@@ -1058,6 +1058,47 @@ describe('feedProjector', () => {
     expect(usage?.cacheReadTokens).toBe(80); // updated by the final event
   });
 
+  it('preserves native Codex context through a cold snapshot when later metadata is absent', async () => {
+    const projector = new SessionStateProjector('codex-session');
+
+    async function* turn(): AsyncIterable<StreamEvent> {
+      yield {
+        type: 'session_status',
+        data: {
+          sessionId: 'codex-session',
+          contextTokens: 54_999,
+          contextMaxTokens: 258_400,
+          outputTokens: 141,
+          cacheReadTokens: 277_120,
+        },
+      };
+      yield { type: 'done', data: { sessionId: 'codex-session' } };
+    }
+
+    await feedProjector(projector, turn());
+    async function* nextTurnWithoutNativeContext(): AsyncIterable<StreamEvent> {
+      yield {
+        type: 'session_status',
+        data: {
+          sessionId: 'codex-session',
+          outputTokens: 148,
+          cacheReadTokens: 326_000,
+        },
+      };
+      yield { type: 'done', data: { sessionId: 'codex-session' } };
+    }
+    await feedProjector(projector, nextTurnWithoutNativeContext());
+    const snapshot = await projector.buildSnapshot(async () => []);
+
+    expect(snapshot.status.contextUsage).toEqual({
+      totalTokens: 54_999,
+      maxTokens: 258_400,
+      outputTokens: 148,
+      cacheReadTokens: 326_000,
+      cacheCreationTokens: 0,
+    });
+  });
+
   // DOR-97/DOR-104: the original bug. `control_ui` pushes a `ui_command`
   // StreamEvent onto the eventQueue (drained into the turn's stream); pre-fix the
   // normalizer default-dropped it, so the agent canvas was a silent no-op for

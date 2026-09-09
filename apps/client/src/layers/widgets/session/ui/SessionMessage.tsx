@@ -77,6 +77,8 @@ interface SessionMessageProps {
    * whether it did.
    */
   onSigninComplete?: () => boolean;
+  /** Opens the active session's model picker from a model error card. */
+  onChooseModel?: () => void;
   /** Tool call ID being handled in the input zone, or null. */
   inputZoneToolCallId?: string | null;
   /** Text animation effect for streaming text. When undefined, StreamingText uses its default. */
@@ -116,6 +118,7 @@ export function SessionMessage({
   onToolDecided,
   onRetry,
   onSigninComplete,
+  onChooseModel,
   inputZoneToolCallId = null,
   textEffect,
   runtimeLabel,
@@ -168,6 +171,7 @@ export function SessionMessage({
         onToolDecided,
         onRetry,
         onSigninComplete,
+        onChooseModel,
         inputZoneToolCallId,
         textEffect,
         runtimeLabel,

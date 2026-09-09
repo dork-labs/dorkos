@@ -293,6 +293,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     status,
     messages,
     hydrated,
+    canStart: !options.agentLookupPending && !options.agentLookupFailed,
     submitKickoff,
     submitContent: submitFirstMessage,
   });

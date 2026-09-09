@@ -1,10 +1,65 @@
 import { describe, expect, it } from 'vitest';
 import {
   AUTH_ERROR_SUBTYPES,
+  describeCodexDiagnostic,
+  describeKnownModelError,
   describeAuthError,
   describeRuntimeError,
   detectAuthError,
 } from '../runtime-error-classification.js';
+
+const CODEX_UPDATE_ERROR =
+  '{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The \'gpt-6-astra\' model requires a newer version of Codex. Please upgrade to the latest app or CLI and try again."}}';
+const CHATGPT_MODEL_ERROR =
+  '{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The \'gpt-5.4\' model is not supported when using Codex with a ChatGPT account."}}';
+
+describe('describeCodexDiagnostic', () => {
+  it.each([
+    [
+      'Model metadata for `gpt-6-astra` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.',
+      'Using fallback settings for gpt-6-astra.',
+    ],
+    [
+      'This session was recorded with model `gpt-6-astra` but is resuming with `gpt-5.4`. Consider switching back to `gpt-6-astra` as it may affect Codex performance.',
+      'Resumed with gpt-5.4 instead of gpt-6-astra.',
+    ],
+    [
+      'Falling back from WebSockets to HTTPS. stream disconnected before completion',
+      'Codex switched to a standard connection.',
+    ],
+  ])('turns a known nonfatal diagnostic into calm status copy', (message, expected) => {
+    expect(describeCodexDiagnostic(message)).toBe(expected);
+  });
+
+  it('does not suppress an unknown item error', () => {
+    expect(describeCodexDiagnostic('Tool failed with exit code 1')).toBeNull();
+  });
+});
+
+describe('describeKnownModelError', () => {
+  it('extracts an update-required model error from nested JSON and keeps the raw payload', () => {
+    expect(describeKnownModelError(CODEX_UPDATE_ERROR)).toEqual({
+      message:
+        'The Codex version DorkOS is using is too old for gpt-6-astra. Update DorkOS (or your custom Codex installation), then try again. You can also choose another model.',
+      category: 'runtime_update_required',
+      details: CODEX_UPDATE_ERROR,
+    });
+  });
+
+  it('explains that a model is unavailable with a ChatGPT account', () => {
+    expect(describeKnownModelError(CHATGPT_MODEL_ERROR)).toEqual({
+      message:
+        'gpt-5.4 isn\u2019t available with a ChatGPT account. Choose another model from the model menu.',
+      category: 'model_unavailable',
+      details: CHATGPT_MODEL_ERROR,
+    });
+  });
+
+  it('leaves unknown JSON and unrelated failures alone', () => {
+    expect(describeKnownModelError('{"error":{"message":"Unknown model error"}}')).toBeNull();
+    expect(describeKnownModelError('Tool run_command exited with code 1')).toBeNull();
+  });
+});
 
 describe('detectAuthError', () => {
   it('matches the exact Claude Code 401 example', () => {

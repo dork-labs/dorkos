@@ -27,6 +27,7 @@ function tooling(port: ConnectorRuntimePrincipalPort): ConnectorRuntimeTools {
   return {
     principals: port,
     listenerUrl: 'http://127.0.0.1:4341/mcp',
+    agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
     isConnectorCapabilityId: (id) => ids.has(id),
   };
 }

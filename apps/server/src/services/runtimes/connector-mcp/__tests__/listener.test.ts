@@ -11,7 +11,26 @@ import {
   CONNECTOR_RUNTIME_CWD_HEADER,
   CONNECTOR_RUNTIME_KIND_HEADER,
 } from '../../connector-tools.js';
-import { startConnectorRuntimeMcpListener, type ConnectorRuntimeMcpListener } from '../listener.js';
+import {
+  startConnectorRuntimeMcpListener as startRawListener,
+  type ConnectorRuntimeMcpListener,
+  type ConnectorRuntimeMcpListenerOptions,
+} from '../listener.js';
+import { AgentIdentitySnapshotPrincipalPort } from '../agent-identity-snapshots.js';
+
+type TestListenerOptions = Omit<
+  ConnectorRuntimeMcpListenerOptions,
+  'agentServerFactory' | 'agentToolsEnabled'
+> &
+  Partial<Pick<ConnectorRuntimeMcpListenerOptions, 'agentServerFactory' | 'agentToolsEnabled'>>;
+
+function startConnectorRuntimeMcpListener(options: TestListenerOptions) {
+  return startRawListener({
+    agentServerFactory: () => new McpServer({ name: 'dorkos-agent-test', version: '1.0.0' }),
+    agentToolsEnabled: () => true,
+    ...options,
+  });
+}
 
 const principal = {
   claims: {
@@ -107,6 +126,144 @@ describe('connector runtime MCP listener', () => {
     expect(factory).toHaveBeenCalledWith(principal);
     expect(principals.renew).not.toHaveBeenCalled();
     await client.close();
+  });
+
+  it('serves agent tools only from the verified turn principal', async () => {
+    const agentFactory = vi.fn(
+      () => new McpServer({ name: 'dorkos-agent-test', version: '1.0.0' })
+    );
+    const listener = await startConnectorRuntimeMcpListener({
+      principals: port({ status: 'resolved', principal }),
+      serverFactory: () => new McpServer({ name: 'dorkos-connections-test', version: '1.0.0' }),
+      agentServerFactory: agentFactory,
+    });
+    listeners.push(listener);
+
+    const response = await request(listener.agentUrl, {
+      // Caller-controlled identity is ignored; the server factory receives the
+      // principal the binding store authenticated.
+      'x-dorkos-agent': 'forged-standing-token',
+    });
+
+    expect(response.status).toBe(200);
+    expect(agentFactory).toHaveBeenCalledWith(principal);
+  });
+
+  it('keeps the agent route available through the same successfully renewed turn binding', async () => {
+    let now = new Date('2026-09-08T10:00:00.000Z');
+    const renewalPermit = Object.freeze({}) as never;
+    const renewedPrincipal = {
+      claims: { ...principal.claims, canonicalCwd: '/repo' },
+    } as ServerPrincipalProof;
+    const backing: ConnectorRuntimePrincipalPort = {
+      openTurn: vi.fn(async () => ({
+        bindingId: 'binding-1',
+        bearer: 'turn-secret',
+        expiresAt: '2026-09-08T12:00:00.000Z',
+        renewalPermit,
+      })),
+      renew: vi.fn(async () => ({
+        status: 'renewed' as const,
+        expiresAt: '2026-09-08T16:00:00.000Z',
+      })),
+      resolve: vi.fn(async () => ({
+        status: 'resolved' as const,
+        principal: renewedPrincipal,
+      })),
+      revoke: vi.fn(),
+    };
+    const principals = new AgentIdentitySnapshotPrincipalPort({
+      principals: backing,
+      snapshotIdentity: async (agentPath) => ({
+        agentPath,
+        displayName: 'Agent A',
+        tierCeiling: 'observe',
+        createdAt: '2026-09-08T00:00:00.000Z',
+      }),
+      identityWasRevoked: async () => false,
+      now: () => now,
+    });
+    const opened = await principals.openTurn(
+      {
+        runtime: 'codex',
+        canonicalSessionId: 'session-1',
+        agentPath: '/repo',
+        canonicalCwd: '/repo',
+        signal: new AbortController().signal,
+      },
+      { isCurrent: () => true }
+    );
+    await principals.renew({ bindingId: opened.bindingId, permit: opened.renewalPermit });
+    now = new Date('2026-09-08T13:00:00.000Z');
+
+    const listener = await startConnectorRuntimeMcpListener({
+      principals,
+      serverFactory: () => new McpServer({ name: 'dorkos-connections-test', version: '1.0.0' }),
+      agentServerFactory: async (verifiedPrincipal) =>
+        (await principals.identityFor(verifiedPrincipal))
+          ? new McpServer({ name: 'dorkos-agent-test', version: '1.0.0' })
+          : null,
+    });
+    listeners.push(listener);
+
+    expect((await request(listener.agentUrl)).status).toBe(200);
+    expect(backing.renew).toHaveBeenCalledWith({
+      bindingId: opened.bindingId,
+      permit: renewalPermit,
+    });
+  });
+
+  it('keeps the agent route dark while runtime tools are disabled', async () => {
+    const agentFactory = vi.fn(
+      () => new McpServer({ name: 'dorkos-agent-test', version: '1.0.0' })
+    );
+    const listener = await startConnectorRuntimeMcpListener({
+      principals: port({ status: 'resolved', principal }),
+      serverFactory: () => new McpServer({ name: 'dorkos-connections-test', version: '1.0.0' }),
+      agentToolsEnabled: () => false,
+      agentServerFactory: agentFactory,
+    });
+    listeners.push(listener);
+
+    const response = await request(listener.agentUrl);
+
+    expect(response.status).toBe(404);
+    expect(agentFactory).not.toHaveBeenCalled();
+  });
+
+  it('rejects revoked bindings on the agent route before projection', async () => {
+    const agentFactory = vi.fn(
+      () => new McpServer({ name: 'dorkos-agent-test', version: '1.0.0' })
+    );
+    const listener = await startConnectorRuntimeMcpListener({
+      principals: port({ status: 'refused', reason: 'revoked' }),
+      serverFactory: () => new McpServer({ name: 'dorkos-connections-test', version: '1.0.0' }),
+      agentServerFactory: agentFactory,
+    });
+    listeners.push(listener);
+
+    const response = await request(listener.agentUrl);
+
+    expect(response.status).toBe(401);
+    expect(agentFactory).not.toHaveBeenCalled();
+  });
+
+  it('returns the same unauthorized shape when an agent identity cannot be established', async () => {
+    const listener = await startConnectorRuntimeMcpListener({
+      principals: port({ status: 'resolved', principal }),
+      serverFactory: () => new McpServer({ name: 'dorkos-connections-test', version: '1.0.0' }),
+      agentServerFactory: () => null,
+    });
+    listeners.push(listener);
+
+    const response = await request(listener.agentUrl);
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      jsonrpc: '2.0',
+      error: { code: -32001, message: 'Unauthorized' },
+      id: null,
+    });
   });
 
   it.each<ConnectorTurnRefusalReason>([

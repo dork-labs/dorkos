@@ -49,20 +49,17 @@
  *
  * ## Which surfaces a verdict can actually reach, and why that is not every one
  *
- * Delivery needs an ADDRESS, and only the in-session claude-code server records
- * one (`runtimes/claude-code/mcp-tools/index.ts`, both the hand-registered tools
- * and the registry projection). The external `/mcp` server — which is how Codex
- * and OpenCode agents reach DorkOS capabilities — records none, so their
- * approvals keep the token/poll flow exactly as they always have. That is not an
- * oversight: it is spec `approval-verdict-delivery` §Acceptance item 6, which
- * requires that surface to stay byte-identical, and it mirrors the in-session
- * HOLD, which is claude-code-only for the same structural reason.
+ * Delivery needs a server-bound ADDRESS. The in-session Claude Code server and
+ * the private `/agent-mcp` endpoints injected into Codex and OpenCode turns
+ * record one from the authenticated turn principal at injection time. The
+ * public external `/mcp` server has no authenticated turn address, so approvals
+ * requested through that surface retain the token-and-poll flow.
  *
- * It is also why an address must never be caller-asserted. A session id arriving
- * in a header is a session id an agent chose, and a delivery address an agent
- * chooses is a way to make DorkOS start a turn in somebody else's session.
- * Giving the other runtimes a verdict means binding a session at INJECTION time,
- * server-side — real work, and not this seam's.
+ * An address must never be caller-asserted. A session id arriving in a header is
+ * a session id an agent chose, and a delivery address an agent chooses is a way
+ * to make DorkOS start a turn in somebody else's session. Runtime injection
+ * derives the address from the authenticated principal instead; no header or
+ * caller-selected session can choose the delivery target.
  *
  * The RENDERING is cross-runtime regardless, and deliberately so: the shared
  * writer is what stops a verdict reading as a formatted block on one runtime and

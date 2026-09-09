@@ -10,11 +10,11 @@
  * shows and the model picker was filled from), so it says it.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { renderHook, waitFor } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TransportProvider } from '@/layers/shared/model';
-import { createMockTransport } from '@dorkos/test-utils';
+import { createMockSession, createMockTransport } from '@dorkos/test-utils';
 import { useSessionStatus } from '../use-session-status';
 
 vi.mock('@/layers/shared/model', async (importOriginal) => {
@@ -92,5 +92,35 @@ describe('useSessionStatus — the runtime hint on a settings write', () => {
       { runtime: 'claude-code', model: 'sonnet' },
       '/test/cwd'
     );
+  });
+
+  it('derives context pressure from the selected Codex model metadata', async () => {
+    const session = createMockSession({
+      id: SESSION_ID,
+      runtime: 'codex',
+      model: 'gpt-6-astra',
+      contextTokens: 129_200,
+    });
+    const transport = createMockTransport({
+      getSession: vi.fn().mockResolvedValue(session),
+      getModels: vi.fn().mockResolvedValue([
+        {
+          value: 'gpt-6-astra',
+          displayName: 'GPT-6-Astra',
+          description: 'Capable model',
+          contextWindow: 258_400,
+        },
+      ]),
+    });
+
+    const { result } = renderHook(() => useSessionStatus(SESSION_ID, null, false, 'codex'), {
+      wrapper: createWrapper(transport),
+    });
+
+    await waitFor(() => expect(result.current.contextPercent).toBe(50));
+    expect(transport.getModels).toHaveBeenCalledWith({
+      runtime: 'codex',
+      sessionId: SESSION_ID,
+    });
   });
 });

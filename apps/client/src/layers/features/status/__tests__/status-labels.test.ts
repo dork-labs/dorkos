@@ -105,10 +105,8 @@ describe('the compactness invariant the slot budget rests on', () => {
   // bound outright, or the budget is over-promising before a third party is even
   // involved. See features/status/model/status-budget.
   //
-  // The model half of this invariant is asserted where the catalogs live —
-  // `apps/server/.../runtimes/__tests__/model-catalog-labels.test.ts` — because a
-  // fixture written in this file could only ever fail if someone edited the
-  // fixture, which is no invariant at all.
+  // Model display names come from account-aware runtime catalogs and are truncated
+  // at the render boundary, so this assertion covers the DorkOS-authored labels.
   it('keeps every runtime display label within the bound', () => {
     for (const descriptor of Object.values(RUNTIME_DESCRIPTORS)) {
       expect(descriptor.label.length).toBeLessThanOrEqual(STATUS_VALUE_MAX_CHARS);

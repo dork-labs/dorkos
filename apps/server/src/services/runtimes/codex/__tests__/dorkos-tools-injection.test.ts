@@ -43,17 +43,6 @@ vi.mock('../enumerate-mcp-servers.js', () => ({
 }));
 vi.mock('../scan-skill-commands.js', () => ({ scanSkillCommands: vi.fn(() => []) }));
 
-const envState = vi.hoisted(() => ({
-  DORKOS_HOST: 'localhost',
-  DORKOS_PORT: 4242,
-  MCP_API_KEY: undefined as string | undefined,
-}));
-
-vi.mock('../../../../env.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../../env.js')>();
-  return { ...actual, env: envState };
-});
-
 const configState = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 
 vi.mock('../../../core/config-manager.js', async (importOriginal) => {
@@ -65,11 +54,6 @@ vi.mock('../../../core/config-manager.js', async (importOriginal) => {
       getAll: () => configState.value,
     },
   };
-});
-
-vi.mock('../../../core/auth/mcp-local-token.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../core/auth/mcp-local-token.js')>();
-  return { ...actual, getMcpLocalToken: () => 'dork_mcp_local_abc123' };
 });
 
 const loggerMocks = vi.hoisted(() => ({ warn: vi.fn(), debug: vi.fn(), info: vi.fn() }));
@@ -162,9 +146,6 @@ describe('the dorkos tool server on a Codex turn', () => {
     sdkMocks.behavior = 'complete';
     sdkMocks.releaseParked = undefined;
     loggerMocks.warn.mockClear();
-    envState.DORKOS_HOST = 'localhost';
-    envState.DORKOS_PORT = 4242;
-    envState.MCP_API_KEY = undefined;
     configState.value = { runtimes: { dorkosTools: true }, mcp: { enabled: true } };
     agentDir = await mkdtemp(path.join(tmpdir(), 'codex-dorkos-tools-'));
     await mkdir(path.join(agentDir, '.dork'), { recursive: true });
@@ -191,7 +172,34 @@ describe('the dorkos tool server on a Codex turn', () => {
     await rm(agentDir, { recursive: true, force: true });
   });
 
-  function makeRuntime(opts: { managed?: ManagedMcpServerResolver } = {}): CodexRuntime {
+  function connectorPort(
+    bearers: readonly string[] = ['connector-turn-secret']
+  ): ConnectorRuntimePrincipalPort {
+    let turn = 0;
+    return {
+      openTurn: vi.fn().mockImplementation(async () => {
+        const index = Math.min(turn, bearers.length - 1);
+        const bearer = bearers[index] ?? 'connector-turn-secret';
+        turn += 1;
+        return {
+          bindingId: `binding-${turn}`,
+          bearer,
+          expiresAt: '2099-01-01T00:00:00.000Z',
+          renewalPermit: Object.freeze({}) as never,
+        };
+      }),
+      renew: vi.fn(),
+      resolve: vi.fn(),
+      revoke: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  function makeRuntime(
+    opts: {
+      managed?: ManagedMcpServerResolver;
+      runtimeTools?: ConnectorRuntimePrincipalPort | false;
+    } = {}
+  ): CodexRuntime {
     const runtime = new CodexRuntime({
       threadMap: new CodexThreadMap(db),
       resolveBinary: async () => '/bin/codex',
@@ -199,35 +207,40 @@ describe('the dorkos tool server on a Codex turn', () => {
       mcpUiUrl: 'http://localhost:4242/codex-ui-mcp',
     });
     runtime.setMeshCore(meshWithAgent(agentDir));
+    if (opts.runtimeTools !== false) {
+      runtime.setConnectorRuntimeTools({
+        principals: opts.runtimeTools ?? connectorPort(),
+        listenerUrl: 'http://127.0.0.1:4341/mcp',
+        agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
+        isConnectorCapabilityId: (id) => id.startsWith('connectors.'),
+      });
+    }
     if (opts.managed) runtime.setManagedMcpServers(opts.managed);
     return runtime;
   }
 
   describe('flag ON', () => {
-    it('injects a streamable-HTTP dorkos server naming both headers by env var', async () => {
+    it('injects the agent route with the complete turn binding via env vars', async () => {
       await drain(makeRuntime().sendMessage('s1', 'hello', { cwd: agentDir }));
 
       const dorkos = lastMcpServers()['dorkos'];
       expect(dorkos).toBeDefined();
-      expect(dorkos?.['url']).toBe('http://localhost:4242/mcp');
+      expect(dorkos?.['url']).toBe('http://127.0.0.1:4341/agent-mcp');
       // `env_http_headers`, never `http_headers` — see the argv case below.
       expect(dorkos?.['http_headers']).toBeUndefined();
       expect(dorkos?.['env_http_headers']).toEqual({
-        Authorization: 'DORKOS_MCP_HEADER_AUTHORIZATION',
-        // Without this one `callerAuthor` falls through to the install owner and
-        // the agent posts in the operator's name.
-        'x-dorkos-agent': 'DORKOS_MCP_HEADER_AGENT_TOKEN',
+        Authorization: 'DORKOS_CONNECTOR_MCP_AUTHORIZATION',
+        'X-DorkOS-Connector-Runtime': 'DORKOS_CONNECTOR_MCP_RUNTIME',
+        'X-DorkOS-Connector-Cwd': 'DORKOS_CONNECTOR_MCP_CWD',
       });
     });
 
-    it('keeps both credential VALUES out of the config, and puts them in the env', async () => {
+    it('keeps the turn credential out of argv-visible config', async () => {
       // The vulnerability this shape exists for. `CodexOptions.config` is
       // flattened by the SDK into `--config key=value` arguments on the
       // `codex exec` command line, so anything written there is in the spawned
       // process's argv — readable by any process running as this user, with a
-      // bare `ps`. Both values are credentials: one is the MCP bearer for this
-      // whole instance, the other is an identity that can post in rooms AS this
-      // agent.
+      // bare `ps`.
       //
       // Asserted by serialising the WHOLE options object and searching it,
       // rather than by checking the one key they used to live under: the SDK
@@ -239,24 +252,22 @@ describe('the dorkos tool server on a Codex turn', () => {
         config?: unknown;
         env?: Record<string, string>;
       };
-      const bearer = 'dork_mcp_local_abc123';
-      const agentToken = options.env?.['DORKOS_MCP_HEADER_AGENT_TOKEN'];
+      const bearer = 'connector-turn-secret';
 
       // The env carries them — that is the whole point of the redirection.
-      expect(options.env?.['DORKOS_MCP_HEADER_AUTHORIZATION']).toBe(`Bearer ${bearer}`);
-      expect(agentToken).toEqual(expect.any(String));
-      expect(agentToken).not.toBe('');
+      expect(options.env?.['DORKOS_CONNECTOR_MCP_AUTHORIZATION']).toBe(`Bearer ${bearer}`);
+      expect(options.env?.['DORKOS_CONNECTOR_MCP_RUNTIME']).toBe('codex');
+      expect(options.env?.['DORKOS_CONNECTOR_MCP_CWD']).toBe(encodeURIComponent(agentDir));
 
-      // And the config carries neither, anywhere in it.
+      // And the config carries no credential, anywhere in it.
       const serializedConfig = JSON.stringify(options.config ?? {});
       expect(serializedConfig).not.toContain(bearer);
-      expect(serializedConfig).not.toContain(agentToken);
       expect(serializedConfig).not.toContain('Bearer ');
     });
 
-    it('still inherits the parent environment when it adds the header vars', async () => {
-      // Setting `CodexOptions.env` at all stops the SDK inheriting `process.env`
-      // wholesale, so the header vars must not cost the subprocess its PATH.
+    it('keeps the projected runtime baseline when it adds the header vars', async () => {
+      // Setting `CodexOptions.env` replaces SDK inheritance, so the projected
+      // baseline and the private turn identity must be passed together.
       await drain(makeRuntime().sendMessage('s1', 'hello', { cwd: agentDir }));
       const env = (sdkMocks.constructorOptions.at(-1) as { env?: Record<string, string> }).env;
       expect(env?.['PATH']).toBe(process.env['PATH']);
@@ -264,34 +275,44 @@ describe('the dorkos tool server on a Codex turn', () => {
       expect(env?.['DORKOS_AGENT_TOKEN']).toEqual(expect.any(String));
     });
 
-    it('never mints a URL containing 127.0.0.1, including the UI bridge (DOR-723)', async () => {
+    it('dials the dedicated IPv4-loopback route returned by the listener', async () => {
       await drain(makeRuntime().sendMessage('s1', 'hello', { cwd: agentDir }));
-      const urls = Object.values(lastMcpServers()).map((entry) => String(entry['url']));
-      expect(urls.length).toBeGreaterThan(0);
-      for (const url of urls) expect(url).not.toContain('127.0.0.1');
+      expect(lastMcpServers()['dorkos']?.['url']).toBe('http://127.0.0.1:4341/agent-mcp');
     });
 
     it('leaves the dorkos_ui bridge alongside it, not replaced by it', async () => {
       await drain(makeRuntime().sendMessage('s1', 'hello', { cwd: agentDir }));
-      expect(Object.keys(lastMcpServers()).sort()).toEqual(['dorkos', 'dorkos_ui']);
+      expect(Object.keys(lastMcpServers()).sort()).toEqual([
+        'dorkos',
+        'dorkos_connections',
+        'dorkos_ui',
+      ]);
     });
 
-    it('mints a fresh identity token per TURN, so a long session cannot go stale', async () => {
-      // The 30-day absolute fuse is why this is per turn rather than per
-      // session: a cached credential would eventually 401 on every room write.
-      // Read off the ENV now, which is where the value lives.
-      const agentTokenOf = (): string | undefined =>
+    it('uses a fresh turn-bound bearer on every turn', async () => {
+      const bearerOf = (): string | undefined =>
         (sdkMocks.constructorOptions.at(-1) as { env?: Record<string, string> }).env?.[
-          'DORKOS_MCP_HEADER_AGENT_TOKEN'
+          'DORKOS_CONNECTOR_MCP_AUTHORIZATION'
         ];
-      const runtime = makeRuntime();
+      const runtime = makeRuntime({ runtimeTools: connectorPort(['turn-one', 'turn-two']) });
       await drain(runtime.sendMessage('s1', 'one', { cwd: agentDir }));
-      const first = agentTokenOf();
+      const first = bearerOf();
       await drain(runtime.sendMessage('s1', 'two', { cwd: agentDir }));
-      const second = agentTokenOf();
-      expect(first).toBeDefined();
-      expect(second).toBeDefined();
-      expect(second).not.toBe(first);
+      const second = bearerOf();
+      expect(first).toBe('Bearer turn-one');
+      expect(second).toBe('Bearer turn-two');
+    });
+
+    it('keeps agent tools available when login is on and public MCP is off', async () => {
+      configState.value = {
+        runtimes: { dorkosTools: true },
+        mcp: { enabled: false },
+        auth: { enabled: true },
+      };
+
+      await drain(makeRuntime().sendMessage('s1', 'hello', { cwd: agentDir }));
+
+      expect(lastMcpServers()['dorkos']?.['url']).toBe('http://127.0.0.1:4341/agent-mcp');
     });
 
     it("teaches the room verbs under codex's prefix, never claude-code's bare names", async () => {
@@ -315,7 +336,7 @@ describe('the dorkos tool server on a Codex turn', () => {
 
       // Ours survived; theirs did not overwrite it.
       const dorkos = lastMcpServers()['dorkos'];
-      expect(dorkos?.['url']).toBe('http://localhost:4242/mcp');
+      expect(dorkos?.['url']).toBe('http://127.0.0.1:4341/agent-mcp');
       expect(dorkos?.['command']).toBeUndefined();
 
       const warned = loggerMocks.warn.mock.calls.map((call) => String(call[0]));
@@ -326,24 +347,6 @@ describe('the dorkos tool server on a Codex turn', () => {
   });
 
   describe('connector runtime binding', () => {
-    function connectorPort(): ConnectorRuntimePrincipalPort {
-      let sequence = 0;
-      return {
-        openTurn: vi.fn(async () => {
-          sequence += 1;
-          return {
-            bindingId: `binding-${sequence}`,
-            bearer: `connector-turn-secret-${sequence}`,
-            expiresAt: '2099-01-01T00:00:00.000Z',
-            renewalPermit: {} as never,
-          };
-        }),
-        renew: vi.fn(),
-        resolve: vi.fn(),
-        revoke: vi.fn().mockResolvedValue(undefined),
-      };
-    }
-
     it('injects independently of external MCP posture and revokes on terminal completion', async () => {
       configState.value = { runtimes: { dorkosTools: false }, mcp: { enabled: false } };
       const principals = connectorPort();
@@ -361,6 +364,7 @@ describe('the dorkos tool server on a Codex turn', () => {
       runtime.setConnectorRuntimeTools({
         principals,
         listenerUrl: 'http://127.0.0.1:4341/mcp',
+        agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
         isConnectorCapabilityId: (id) =>
           new Set([
             'connectors.execute_read',
@@ -411,6 +415,7 @@ describe('the dorkos tool server on a Codex turn', () => {
       runtime.setConnectorRuntimeTools({
         principals,
         listenerUrl: 'http://127.0.0.1:4341/mcp',
+        agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
         isConnectorCapabilityId: () => true,
         createLeaseSupervisor,
       });
@@ -440,6 +445,7 @@ describe('the dorkos tool server on a Codex turn', () => {
       runtime.setConnectorRuntimeTools({
         principals,
         listenerUrl: 'http://127.0.0.1:4341/mcp',
+        agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
         isConnectorCapabilityId: (id) =>
           new Set([
             'connectors.execute_read',
@@ -462,6 +468,7 @@ describe('the dorkos tool server on a Codex turn', () => {
       runtime.setConnectorRuntimeTools({
         principals,
         listenerUrl: 'http://127.0.0.1:4341/mcp',
+        agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
         isConnectorCapabilityId: (id) =>
           new Set([
             'connectors.execute_read',
@@ -483,6 +490,7 @@ describe('the dorkos tool server on a Codex turn', () => {
       runtime.setConnectorRuntimeTools({
         principals,
         listenerUrl: 'http://127.0.0.1:4341/mcp',
+        agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
         isConnectorCapabilityId: (id) =>
           new Set([
             'connectors.execute_read',
@@ -505,6 +513,7 @@ describe('the dorkos tool server on a Codex turn', () => {
       runtime.setConnectorRuntimeTools({
         principals,
         listenerUrl: 'http://127.0.0.1:4341/mcp',
+        agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
         isConnectorCapabilityId: (id) =>
           ['connectors.list_granted_connections', 'connectors.execute_read'].includes(id),
       });
@@ -531,6 +540,7 @@ describe('the dorkos tool server on a Codex turn', () => {
       runtime.setConnectorRuntimeTools({
         principals,
         listenerUrl: 'http://127.0.0.1:4341/mcp',
+        agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
         isConnectorCapabilityId: (id) =>
           ['connectors.list_granted_connections', 'connectors.execute_read'].includes(id),
       });
@@ -557,6 +567,7 @@ describe('the dorkos tool server on a Codex turn', () => {
       runtime.setConnectorRuntimeTools({
         principals: fixture.principals,
         listenerUrl: 'http://127.0.0.1:4341/mcp',
+        agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
         isConnectorCapabilityId: () => true,
         createLeaseSupervisor: fixture.createLeaseSupervisor,
       });
@@ -588,7 +599,9 @@ describe('the dorkos tool server on a Codex turn', () => {
       // absence check on the `dorkos` key would pass while some neighbouring
       // field changed shape.
       configState.value = { runtimes: { dorkosTools: false }, mcp: { enabled: true } };
-      await drain(makeRuntime().sendMessage('s1', 'hello', { cwd: agentDir }));
+      await drain(
+        makeRuntime({ runtimeTools: false }).sendMessage('s1', 'hello', { cwd: agentDir })
+      );
       const withFlagOff = sdkMocks.constructorOptions.at(-1);
 
       expect(withFlagOff).toEqual({
@@ -601,7 +614,9 @@ describe('the dorkos tool server on a Codex turn', () => {
 
     it('names no room tool in the prompt, because the session has none', async () => {
       configState.value = { runtimes: { dorkosTools: false }, mcp: { enabled: true } };
-      await drain(makeRuntime().sendMessage('s1', 'hello', { cwd: agentDir }));
+      await drain(
+        makeRuntime({ runtimeTools: false }).sendMessage('s1', 'hello', { cwd: agentDir })
+      );
       const prompt = sdkMocks.prompts.at(-1) ?? '';
       expect(prompt).not.toContain('<room_tools>');
       expect(prompt).not.toContain('post_to_room');
@@ -623,7 +638,9 @@ describe('the dorkos tool server on a Codex turn', () => {
           dorkos: { transport: 'stdio', command: '/bin/their-server' },
         }),
       } as unknown as ManagedMcpServerResolver;
-      await drain(makeRuntime({ managed }).sendMessage('s1', 'hello', { cwd: agentDir }));
+      await drain(
+        makeRuntime({ managed, runtimeTools: false }).sendMessage('s1', 'hello', { cwd: agentDir })
+      );
 
       // Theirs, verbatim — same name, their command, and no URL of ours.
       expect(lastMcpServers()['dorkos']).toEqual({ command: '/bin/their-server' });

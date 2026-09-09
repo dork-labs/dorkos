@@ -119,9 +119,9 @@ export default defineConfig({
     //   that file without this alias — they read the dist and passed — and 5 with
     //   it, one of them the door's own gating pin. Without the alias the guard
     //   cannot see a source change until somebody remembers to rebuild.
-    // - `constants` backs `model-catalog-labels`, which asserts every runtime's
-    //   model display name fits inside `STATUS_VALUE_MAX_CHARS`. Shrink the budget
-    //   in `src/` and a stale dist measures against the old, roomier one.
+    // - `constants` backs runtime/status tests that consume
+    //   `STATUS_VALUE_MAX_CHARS`. Shrink the budget in `src/` and a stale dist
+    //   measures against the old, roomier one.
     // - `trait-renderer` backs the `DEFAULT_TRAITS` pins in `routes/__tests__/
     //   agents-conventions.test.ts` and `agents-creation.test.ts`, which assert the
     //   scaffolder is called with a SIX-KEY literal (`{ verbosity: 3, … spice: 3 }`).

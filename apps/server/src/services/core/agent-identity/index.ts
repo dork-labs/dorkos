@@ -17,6 +17,7 @@ export {
 } from './agent-identity-service.js';
 export {
   resolveAgentTokenEnv,
+  ensureInSessionAgentIdentity,
   createInSessionContextResolver,
   AGENT_TOKEN_ENV_VAR,
 } from './agent-token-env.js';

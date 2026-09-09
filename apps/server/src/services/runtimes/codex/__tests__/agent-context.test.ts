@@ -322,7 +322,7 @@ describe('what a Codex turn carries', () => {
   // === DOR-477: what a SECOND turn of the same thread carries ===
   //
   // Codex exec has no system-prompt channel at all (`ThreadOptions` carries no
-  // such field at 0.147.0), so everything the adapter injects rides the prompt
+  // such field at 0.153.4), so everything the adapter injects rides the prompt
   // and lands in the thread's persisted rollout. Re-sending the identity blocks
   // every turn therefore does not just cost the send — it stacks a byte-identical
   // copy into the conversation for every turn ever taken. `CodexContextGate` is

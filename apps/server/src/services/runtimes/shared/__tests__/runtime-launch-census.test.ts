@@ -14,6 +14,7 @@ const expected: Record<string, number> = {
   'claude-code/sessions/warm-process-ledger.ts': 1,
   'claude-code/sdk/sdk-utils.ts': 1,
   'claude-code/tooling/provision.ts': 1,
+  'codex/model-catalog.ts': 1,
   'codex/codex-runtime.ts': 2,
   'codex/provision.ts': 1,
   'connect/delegated-login.ts': 2,
@@ -30,7 +31,14 @@ function files(dir: string): string[] {
     return entry.isDirectory() ? files(name) : entry.name.endsWith('.ts') ? [name] : [];
   });
 }
-const childCalls = new Set(['spawn', 'execFile', 'execFileSync', 'execFileAsync', 'query']);
+const childCalls = new Set([
+  'spawn',
+  'nodeSpawn',
+  'execFile',
+  'execFileSync',
+  'execFileAsync',
+  'query',
+]);
 
 /** Parse executable calls; comments and illustrative snippets cannot satisfy the census. */
 function census(text: string, name: string): { count: number; unprojected: string[] } {
@@ -54,7 +62,8 @@ function census(text: string, name: string): { count: number; unprojected: strin
         (name === 'claude-code/messaging/message-sender.ts' &&
           call === '{ prompt: heldPrompt.prompt, options: sdkOptions }') ||
         (name === 'claude-code/sessions/pump-launch.ts' && call.includes('...plan.sdkOptions')) ||
-        (name === 'claude-code/sessions/tracked-spawn.ts' && /\benv,/.test(call));
+        (name === 'claude-code/sessions/tracked-spawn.ts' && /\benv,/.test(call)) ||
+        (name === 'codex/model-catalog.ts' && call === "{ stdio: 'pipe', env: environment }");
       if (!forwarded && !(/\benv:/.test(call) && /runtimeEnvironment\(/.test(call)))
         unprojected.push(kind);
     }
@@ -91,6 +100,22 @@ describe('runtime launch adoption census', () => {
         const mutant = source.slice(0, match.index) + source.slice(match.index! + match[0].length);
         expect(census(mutant, name).unprojected).toHaveLength(1);
       }
+    }
+  });
+
+  it('rejects a Codex model probe that drops projection or restores ambient inheritance', () => {
+    const name = 'codex/model-catalog.ts';
+    const source = readFileSync(path.join(root, name), 'utf8');
+    const reviewed = "{ stdio: 'pipe', env: environment }";
+    expect(source).toContain(reviewed);
+
+    for (const replacement of [
+      "{ stdio: 'pipe' }",
+      "{ stdio: 'pipe', env: { ...process.env, ...environment } }",
+    ]) {
+      expect(census(source.replace(reviewed, replacement), name).unprojected).toContain(
+        'nodeSpawn'
+      );
     }
   });
 });

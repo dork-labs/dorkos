@@ -1,5 +1,5 @@
 /**
- * Register registry capabilities as tools on the external `/mcp` `McpServer`
+ * Register registry capabilities as tools on an HTTP `McpServer`
  * (spec `capability-registry`, task 2.2).
  *
  * This is the `@modelcontextprotocol/sdk`-specific half of the MCP projection —
@@ -26,20 +26,20 @@ import { abortSignalOf } from '../capabilities/index.js';
 
 /**
  * Register every registry capability advertised on the given MCP server against
- * an existing external `McpServer` instance.
+ * an existing `McpServer` instance.
  *
  * Each tool's `annotations` (read/write/destructive/open-world hints) are
  * derived from the capability's tier + per-tool overrides, its input schema is
  * recovered as the SDK's field-map shape, and its handler runs the capability
  * through the registry and re-wraps the plain result into the MCP envelope.
  *
- * @param server - The external `McpServer` instance to register tools against.
+ * @param server - The `McpServer` instance to register tools against.
  * @param registry - The composed capability registry.
  * @param transport - Which server's tool surface to project (defaults to
  *   `external`).
- * @param context - Optional request-scoped context. The external server is
- *   rebuilt per request, so this carries the calling agent's resolved identity
- *   and every tool handler registered here invokes under it.
+ * @param context - Optional request-scoped context. HTTP servers are rebuilt per
+ *   request, so this carries the calling agent's resolved identity and every
+ *   tool handler registered here invokes under it.
  */
 export function registerCapabilitiesAsMcpTools(
   server: McpServer,
