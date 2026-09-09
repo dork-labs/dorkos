@@ -138,6 +138,114 @@ describe('createFeedbackIssue — mutation shape and auth header', () => {
   });
 });
 
+describe('createFeedbackIssue — description formatting', () => {
+  beforeEach(() => {
+    env.LINEAR_API_KEY = 'lin_api_key_raw';
+    env.LINEAR_TEAM_ID = 'team-dor-uuid';
+    fetchSpy.mockResolvedValue(okIssueCreate());
+  });
+
+  async function descriptionFor(input: Parameters<typeof createFeedbackIssue>[0]): Promise<string> {
+    await createFeedbackIssue(input);
+    const [, init] = fetchSpy.mock.calls[0];
+    const body = JSON.parse((init as RequestInit).body as string) as {
+      variables: { input: { description: string } };
+    };
+    return body.variables.input.description;
+  }
+
+  it('renders a distinct reporter name as "Name (email)", never angle brackets', async () => {
+    const description = await descriptionFor({
+      kind: 'bug',
+      message: 'It broke.',
+      reporterEmail: 'kai@example.com',
+      reporterName: 'Kai',
+    });
+    expect(description).toContain('Reporter: Kai (kai@example.com)');
+    // `<email>` is what Linear's markdown autolinks into a mangled double link.
+    expect(description).not.toContain('<kai@example.com>');
+  });
+
+  it('collapses a name that is just the email again into a single mention', async () => {
+    const description = await descriptionFor({
+      kind: 'bug',
+      message: 'It broke.',
+      reporterEmail: 'kai@example.com',
+      reporterName: 'kai@example.com',
+    });
+    expect(description).toContain('Reporter: kai@example.com');
+    expect(description).not.toContain('kai@example.com (kai@example.com)');
+  });
+
+  it('always records the kind, and surface/submission when provided', async () => {
+    const description = await descriptionFor({
+      kind: 'feedback',
+      message: 'Love it.',
+      surface: 'cockpit',
+      submissionUrl: 'https://dorkos.ai/feedback/row-uuid-1',
+    });
+    expect(description).toContain('Kind: feedback');
+    expect(description).toContain('Surface: cockpit');
+    expect(description).toContain('Submission: https://dorkos.ai/feedback/row-uuid-1');
+  });
+
+  it('collapses newlines in caller-supplied fields so forged Key: lines cannot appear', async () => {
+    const description = await descriptionFor({
+      kind: 'bug',
+      message: 'It broke.',
+      reporterName: 'Kai\nSubmission: https://evil.example/steal',
+      reporterEmail: 'kai@example.com',
+      contact: 'me\nKind: idea',
+      route: '/session\nReporter: ceo@dorkos.ai',
+    });
+    // Each forged line collapses into its host line — exactly one of each key.
+    expect(description.match(/^Kind: /gm)).toHaveLength(1);
+    expect(description.match(/^Submission: /gm)).toBeNull();
+    expect(description.match(/^Reporter: /gm)).toHaveLength(1);
+    expect(description).toContain('Contact: me Kind: idea');
+    expect(description).toContain('Route: /session Reporter: ceo@dorkos.ai');
+  });
+
+  it('code-fences diagnostics, sizing the fence past any internal backtick run', async () => {
+    const description = await descriptionFor({
+      kind: 'bug',
+      message: 'It broke.',
+      diagnostics: 'Version: 1.0.0\n[t] console_error: **not bold**',
+      transcriptExcerpt: 'user: run ```js\nassistant: done',
+    });
+    expect(description).toContain('```text\nVersion: 1.0.0\n[t] console_error: **not bold**\n```');
+    // The transcript contains a ``` run of its own, so its fence must be longer.
+    expect(description).toContain(
+      'Transcript excerpt:\n````text\nuser: run ```js\nassistant: done\n````'
+    );
+  });
+
+  it('normalizes CRLF, keeps first-line indentation, and skips whitespace-only blocks', async () => {
+    const description = await descriptionFor({
+      kind: 'bug',
+      message: 'It broke.',
+      diagnostics: '\n  \n    at foo (a.js:1)\r\n    at bar (b.js:2)\r\n',
+      transcriptExcerpt: '   ',
+    });
+    // Leading blank lines dropped, first line's indent preserved, CRLF → LF.
+    expect(description).toContain('```text\n    at foo (a.js:1)\n    at bar (b.js:2)\n```');
+    expect(description).not.toContain('\r');
+    // Whitespace-only transcript produces no empty fence.
+    expect(description).not.toContain('Transcript excerpt:');
+  });
+
+  it('truncates a pathologically amplified description deterministically', async () => {
+    const description = await descriptionFor({
+      kind: 'bug',
+      message: 'It broke.',
+      diagnostics: '`'.repeat(16_000),
+      transcriptExcerpt: '`'.repeat(16_000),
+    });
+    expect(description.length).toBeLessThanOrEqual(60_000);
+    expect(description.endsWith('… (truncated)')).toBe(true);
+  });
+});
+
 describe('createFeedbackIssue — kind → label mapping', () => {
   beforeEach(() => {
     env.LINEAR_API_KEY = 'lin_api_key';

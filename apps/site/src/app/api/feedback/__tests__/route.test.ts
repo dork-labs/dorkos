@@ -173,7 +173,8 @@ describe('POST /api/feedback — Linear success', () => {
       hasTranscript: false,
     });
 
-    // The Linear client received the reporter identity and message.
+    // The Linear client received the reporter identity, message, and the
+    // cross-reference metadata (surface + the row's public status URL).
     expect(createFeedbackIssue).toHaveBeenCalledWith(
       expect.objectContaining({
         kind: 'bug',
@@ -181,6 +182,8 @@ describe('POST /api/feedback — Linear success', () => {
         reporterEmail: 'kai@example.com',
         reporterName: 'Kai',
         route: '/session',
+        surface: 'cockpit',
+        submissionUrl: `https://dorkos.ai/feedback/${INSERTED_ROW_ID}`,
       })
     );
 
@@ -194,6 +197,26 @@ describe('POST /api/feedback — Linear success', () => {
       })
     );
     expect(mockWhere).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes diagnostics and transcript through raw — rendering is the Linear client responsibility', async () => {
+    vi.mocked(createFeedbackIssue).mockResolvedValue(null);
+
+    await POST(
+      post({
+        ...VALID_SUBMISSION,
+        diagnostics: 'Version: 1.0.0\nBreadcrumbs:\n[t] console_error: **not bold**',
+        transcriptExcerpt: 'user: run ```js\nassistant: done',
+        hasTranscript: true,
+      })
+    );
+
+    expect(createFeedbackIssue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        diagnostics: 'Version: 1.0.0\nBreadcrumbs:\n[t] console_error: **not bold**',
+        transcriptExcerpt: 'user: run ```js\nassistant: done',
+      })
+    );
   });
 });
 

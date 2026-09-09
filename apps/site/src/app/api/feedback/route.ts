@@ -232,7 +232,10 @@ export async function POST(request: Request): Promise<Response> {
       reporterName: submission.reporterName,
       contact: submission.contact,
       route: submission.route,
-      diagnosticsSummary: buildDiagnosticsSummary(submission),
+      surface: submission.surface,
+      submissionUrl: `${resolveBaseURL()}/feedback/${insertedId}`,
+      diagnostics: submission.diagnostics,
+      transcriptExcerpt: submission.transcriptExcerpt,
       attachmentUrls: submission.attachmentUrls,
     });
     if (issue) {
@@ -288,14 +291,4 @@ async function markTriaged(
       updatedAt: new Date(),
     })
     .where(eq(feedbackSubmission.id, id));
-}
-
-/** Fold the diagnostics text and transcript excerpt into one summary block for the Linear description. */
-function buildDiagnosticsSummary(submission: FeedbackIntake): string | undefined {
-  const parts: string[] = [];
-  if (submission.diagnostics) parts.push(submission.diagnostics);
-  if (submission.transcriptExcerpt) {
-    parts.push(`Transcript excerpt:\n${submission.transcriptExcerpt}`);
-  }
-  return parts.length > 0 ? parts.join('\n\n') : undefined;
 }
