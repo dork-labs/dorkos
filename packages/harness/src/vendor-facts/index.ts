@@ -9,10 +9,14 @@
  *
  * Three properties are load-bearing:
  *
- * 1. **Every cell is documentation-derived.** `verified` is `'docs'` on every
- *    row: nothing here has been checked against a running harness binary. The H
- *    tier of `plans/harness-sync-test-plan.md` is the first thing that will ever
- *    set a cell to `'binary'`, and it is expected to contradict some of these.
+ * 1. **Almost every cell is documentation-derived.** `verified` is `'docs'` on
+ *    every row but one: nothing else here has been checked against a running
+ *    harness binary. The exception is `codex.skills`, which the H tier's free
+ *    probe settled on 2026-09-09 (DOR-1856) — `observed` on that row names the
+ *    six cells a real `codex-cli 0.145.0` was watched deciding, the report they
+ *    were read from, and leaves the four nobody looked at alone. Read
+ *    `verified: 'binary'` as "a run touched this row", never as "every cell here
+ *    is measured"; that is what `observed.cells` is for.
  * 2. **`unknown` is an answer.** Where a vendor page said nothing — OpenCode's
  *    and Cursor's and Copilot's symlink handling, Gemini's identity rule,
  *    several live-reload clauses — the cell says `unknown` and the coverage walk
@@ -122,8 +126,25 @@ export const HARNESS_VENDOR_FACTS: Readonly<Record<HarnessId, HarnessFacts>> = {
         quote:
           '`.agents/skills/` in cwd, then every ancestor up to the repo root; … frontmatter `name`; duplicates are NOT merged — both appear; symlinks: yes (documented)',
       },
-      verified: 'docs',
+      verified: 'binary',
+      observed: {
+        binary: 'codex-cli 0.145.0',
+        observedAt: '2026-09-09',
+        report: 'meta/harness-smoke/20260909-071805.598-codex.md',
+        cells: ['readPaths', 'walk', 'identity', 'nameMustMatchDir', 'dedupe', 'symlinks'],
+        summary:
+          'A `codex debug prompt-input` run over a staged, projected fixture listed each skill ' +
+          'under its FRONTMATTER name with the absolute SKILL.md path beside it: `pkg__x` ' +
+          'appeared as `x`, so identity is the frontmatter key and the directory need not match; ' +
+          'two skills whose frontmatter agreed both appeared, so duplicates are not merged; the ' +
+          '`.agents/skills/pkg__x` entry is a symlink into `.dork/plugins`, so symlinks are ' +
+          'followed; and a skill of the operator’s in `~/.agents/skills` appeared on a fixture ' +
+          'whose CODEX_HOME was an empty temp directory, so the user-scope read path is real.',
+      },
       notes: [
+        'Four cells on this row are still `docs` and nothing has looked at them: `nameRegex`, ' +
+          '`nameRequired`, `onInvalidName` and `liveReload`. `verified: binary` is a claim about ' +
+          'the row having been observed at all — `observed.cells` is the claim about WHICH cells.',
         'Codex documents no charset rule and no directory-match rule for a skill name, which is why the engine\'s `<pkg>__<name>` projection into `.agents/skills` is expected to load here and nowhere else with confidence: the contract\'s SK-09 calls Codex "the one harness DorkOS source-verified" and names OpenCode, Cursor and Copilot as the ones whose stated name rules `pkg__name` violates.',
         '`dedupe: none` is the vendor\'s own statement that duplicates are not merged — a different claim from "we do not know", and the reason two skills sharing a frontmatter name are a collision warning (SK-06) rather than a silent merge.',
         'The user scope also includes skills bundled with the binary; those are not a filesystem path a projection can reach, so they are not listed.',
