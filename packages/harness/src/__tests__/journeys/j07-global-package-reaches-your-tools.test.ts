@@ -29,7 +29,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, relative, resolve } from 'node:path';
+import { join, relative } from 'node:path';
 import { projectGlobal, type GlobalPlanRoots } from '../../plan/global-projector.js';
 import { applyGlobalPlan, checkGlobalPlan } from '../../apply/global-apply.js';
 import { linkCheckFor, linkMatchesPlan } from '../../apply/symlink-occupants.js';
@@ -91,16 +91,12 @@ describe('J-07: a package installed for all your projects reaches the tools you 
       .map((action) => action.target ?? '')
       .filter((target) => target.startsWith(home))
       .sort();
-    // `${dir}/${name}`, never `join`: that is the shape the planner builds and
-    // slice A2's suite pins, and on Windows the two differ by one character.
-    // Everything below that touches DISK keeps `join`.
-    const planTarget = (dir: string, name: string): string => `${dir}/${name}`;
     expect(promised).toEqual(
       [
-        planTarget(agentsSkillsDir, 'globex__greet'),
-        planTarget(agentsSkillsDir, 'globex__wave'),
-        planTarget(claudeSkillsDir, 'globex__greet'),
-        planTarget(claudeSkillsDir, 'globex__wave'),
+        join(agentsSkillsDir, 'globex__greet'),
+        join(agentsSkillsDir, 'globex__wave'),
+        join(claudeSkillsDir, 'globex__greet'),
+        join(claudeSkillsDir, 'globex__wave'),
       ].sort()
     );
 
@@ -184,17 +180,12 @@ describe('J-07: a package installed for all your projects reaches the tools you 
     const afterPlan = projectGlobal({ roots: open, harnesses });
     const willGo = checkGlobalPlan(afterPlan, open).removals;
     // The promise, before the deletion: every path, each with its own reason.
-    //
-    // `resolve` on BOTH sides. A sweep path comes back native, a plan target is
-    // built `${dir}/${name}`, and on Windows those are the same place spelled
-    // two ways — which is exactly the bridge `findGlobalOrphans` itself crosses
-    // by resolving before it compares.
     expect(
       willGo
-        .map(({ path }) => resolve(path))
+        .map(({ path }) => path)
         .filter((p) => p.startsWith(home))
         .sort()
-    ).toEqual(promised.map((t) => resolve(t)).sort());
+    ).toEqual(promised);
     for (const { reason } of willGo) expect(reason).toBeTruthy();
 
     const { removals } = applyGlobalPlan(afterPlan, open, { sweepOrphans: true });
