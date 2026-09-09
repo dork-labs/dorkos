@@ -94,8 +94,11 @@ let hookDecisions: HookDecisions = NO_DECISIONS;
  * Whether DorkOS login is on, per case.
  *
  * `false` is the default posture and the one DOR-502 is about: a person's own
- * terminal sends no cookie and must still be able to sync. `true` is what makes
- * a signed-in user required, and both are asserted.
+ * terminal sends no cookie and must still be able to sync. `true` is the
+ * login-on posture, where proof is required and a per-user API key is proof —
+ * which is exactly what `trustedCaller` would refuse and what makes the choice
+ * of `resolveDecisionAuthority` a decision rather than a preference. Both
+ * postures have a case below.
  */
 let loginEnabled = false;
 
@@ -719,6 +722,39 @@ describe('POST /api/harness/sync', () => {
     expect(refused.status).toBe(403);
     expect(refused.body.code).toBe('operator_only_harness_sync');
     expect((await syncProject(repo)).status).toBe(200);
+  });
+
+  it('VC-05, DOR-502: lets a person through under login-on when their proof is an API key', async () => {
+    // Purpose: the OTHER posture, and the one that decides which predicate this
+    // route reads. Seeded defect: swap `resolveDecisionAuthority` for
+    // `trustedCaller` and this reds with a 403 — DOR-474 put a cookie
+    // requirement inside `trustedCaller`, so a person driving their own
+    // terminal with a per-user API key would be refused a sync of their own
+    // project. Every other case in this file stays green through that swap,
+    // which is why this one has to exist.
+    const repo = stageSyncProject('sync-signed-in');
+    loginEnabled = true;
+    signedInUser = { userId: 'u1', credential: 'api-key' };
+
+    expect((await syncProject(repo)).status).toBe(200);
+
+    // And the bar is still a bar in that posture: an agent holding the same
+    // key is refused, so this is not "login-on allows everybody".
+    const asAgent = await request(testServer)
+      .post('/api/harness/sync')
+      .set('X-DorkOS-Agent', 'some-agent-token')
+      .send({ projectPath: repo });
+    expect(asAgent.status).toBe(403);
+  });
+
+  it('VC-05: refuses under login-on when nobody is signed in at all', async () => {
+    // The fail-closed leaf: login is on, so proof is required, and this caller
+    // has none. Seeded defect: read `allowed` off a resolver that defaults to
+    // permissive when it cannot tell, and an unauthenticated caller syncs.
+    const repo = stageSyncProject('sync-anonymous');
+    loginEnabled = true;
+
+    expect((await syncProject(repo)).status).toBe(403);
   });
 
   it('answers 400 for a missing, blank or relative projectPath', async () => {
