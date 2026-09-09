@@ -20,6 +20,7 @@ covers:
   # Same fold: it reverses the line above it and repairs two more Windows-only
   # reds. All of it is inside this one unreleased feature.
   - 'fix(harness): the user tier is measured the way Windows spells things (DOR-1924)'
+  - 'fix(harness): a plan target is a real path, spelled the way the platform does (DOR-1924)'
 ---
 
 ### Added
