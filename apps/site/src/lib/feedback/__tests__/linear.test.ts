@@ -188,6 +188,62 @@ describe('createFeedbackIssue — description formatting', () => {
     expect(description).toContain('Surface: cockpit');
     expect(description).toContain('Submission: https://dorkos.ai/feedback/row-uuid-1');
   });
+
+  it('collapses newlines in caller-supplied fields so forged Key: lines cannot appear', async () => {
+    const description = await descriptionFor({
+      kind: 'bug',
+      message: 'It broke.',
+      reporterName: 'Kai\nSubmission: https://evil.example/steal',
+      reporterEmail: 'kai@example.com',
+      contact: 'me\nKind: idea',
+      route: '/session\nReporter: ceo@dorkos.ai',
+    });
+    // Each forged line collapses into its host line — exactly one of each key.
+    expect(description.match(/^Kind: /gm)).toHaveLength(1);
+    expect(description.match(/^Submission: /gm)).toBeNull();
+    expect(description.match(/^Reporter: /gm)).toHaveLength(1);
+    expect(description).toContain('Contact: me Kind: idea');
+    expect(description).toContain('Route: /session Reporter: ceo@dorkos.ai');
+  });
+
+  it('code-fences diagnostics, sizing the fence past any internal backtick run', async () => {
+    const description = await descriptionFor({
+      kind: 'bug',
+      message: 'It broke.',
+      diagnostics: 'Version: 1.0.0\n[t] console_error: **not bold**',
+      transcriptExcerpt: 'user: run ```js\nassistant: done',
+    });
+    expect(description).toContain('```text\nVersion: 1.0.0\n[t] console_error: **not bold**\n```');
+    // The transcript contains a ``` run of its own, so its fence must be longer.
+    expect(description).toContain(
+      'Transcript excerpt:\n````text\nuser: run ```js\nassistant: done\n````'
+    );
+  });
+
+  it('normalizes CRLF, keeps first-line indentation, and skips whitespace-only blocks', async () => {
+    const description = await descriptionFor({
+      kind: 'bug',
+      message: 'It broke.',
+      diagnostics: '\n  \n    at foo (a.js:1)\r\n    at bar (b.js:2)\r\n',
+      transcriptExcerpt: '   ',
+    });
+    // Leading blank lines dropped, first line's indent preserved, CRLF → LF.
+    expect(description).toContain('```text\n    at foo (a.js:1)\n    at bar (b.js:2)\n```');
+    expect(description).not.toContain('\r');
+    // Whitespace-only transcript produces no empty fence.
+    expect(description).not.toContain('Transcript excerpt:');
+  });
+
+  it('truncates a pathologically amplified description deterministically', async () => {
+    const description = await descriptionFor({
+      kind: 'bug',
+      message: 'It broke.',
+      diagnostics: '`'.repeat(16_000),
+      transcriptExcerpt: '`'.repeat(16_000),
+    });
+    expect(description.length).toBeLessThanOrEqual(60_000);
+    expect(description.endsWith('… (truncated)')).toBe(true);
+  });
 });
 
 describe('createFeedbackIssue — kind → label mapping', () => {

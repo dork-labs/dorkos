@@ -199,7 +199,7 @@ describe('POST /api/feedback — Linear success', () => {
     expect(mockWhere).toHaveBeenCalledTimes(1);
   });
 
-  it('code-fences diagnostics and transcript so Linear renders them literally', async () => {
+  it('passes diagnostics and transcript through raw — rendering is the Linear client responsibility', async () => {
     vi.mocked(createFeedbackIssue).mockResolvedValue(null);
 
     await POST(
@@ -211,14 +211,11 @@ describe('POST /api/feedback — Linear success', () => {
       })
     );
 
-    const input = vi.mocked(createFeedbackIssue).mock.calls[0][0];
-    // Diagnostics ride inside a fence, so markdown in log lines stays literal.
-    expect(input.diagnosticsSummary).toContain(
-      '```text\nVersion: 1.0.0\nBreadcrumbs:\n[t] console_error: **not bold**\n```'
-    );
-    // The transcript contains a ``` run of its own, so its fence must be longer.
-    expect(input.diagnosticsSummary).toContain(
-      'Transcript excerpt:\n````text\nuser: run ```js\nassistant: done\n````'
+    expect(createFeedbackIssue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        diagnostics: 'Version: 1.0.0\nBreadcrumbs:\n[t] console_error: **not bold**',
+        transcriptExcerpt: 'user: run ```js\nassistant: done',
+      })
     );
   });
 });
