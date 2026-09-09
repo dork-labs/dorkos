@@ -1103,6 +1103,12 @@ the same string: if the page paraphrased, two surfaces would describe one fact i
 could not tell which one was current. Measured on J-01: 16 rows under Codex, 9 under Cursor, 1 under Claude
 Code.
 
+**The count carries its unit — "37 agent files", never a bare 37 — and the opened panel repeats it in
+words.** This panel is every KIND of agent file a tool cannot see (D27), while the list above it draws
+skills alone: on this repository the page lists 31 skills and the Codex panel counts 37, not one of which is
+a skill, and two numbers sharing one unit on a page titled Skills is a reader being asked to reconcile
+something that was never the same thing. "Project-level notices" carries `N entries` for the same reason.
+
 Beneath them, **"Project-level notices"** renders `projectLevel` — the `harnessAgnostic` entries of §1.3,
 which are about a package rather than about any harness. It mirrors the CLI's `plugin layers:` heading and
 exists so that a project running only Codex is never shown a notice filed under Claude Code.

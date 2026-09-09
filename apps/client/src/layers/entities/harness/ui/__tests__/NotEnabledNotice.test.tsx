@@ -18,7 +18,15 @@ describe('NotEnabledNotice', () => {
     expect(
       screen.getByText('Gemini CLI files are in this folder, but DorkOS isn’t sharing to it.')
     ).toBeInTheDocument();
-    expect(screen.getByText('dorkos harness sync --fix --enable gemini')).toBeInTheDocument();
+    // The command is one token per non-breaking span, so `getByText` — which
+    // reads an element's DIRECT text nodes — sees only the spaces between them.
+    // Both halves are asserted: the whole command, and the shape that keeps a
+    // flag whole when the line wraps at the docked panel's narrowest.
+    const command = document.querySelector('[data-slot="inline-code"]');
+    expect(command?.textContent).toBe('dorkos harness sync --fix --enable gemini');
+    expect(
+      [...(command?.querySelectorAll('span.whitespace-nowrap') ?? [])].map((s) => s.textContent)
+    ).toEqual(['dorkos', 'harness', 'sync', '--fix', '--enable', 'gemini']);
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 

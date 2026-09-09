@@ -2,20 +2,24 @@
  * Harness entity — what DorkOS shares with each agent tool for one project,
  * read and drawn.
  *
- * A path in, a list out. `entities` and not `features` for the same reason
- * `SkillPacksList` gave: it owns the shape of a row and no surface owns it
- * instead, so a second drawing of the same fact cannot drift. The profile
- * feature composes it, which is the allowed direction.
+ * A path in, a list out. `entities` and not `features`, for the reason the
+ * skill-pack list it replaced gave: it owns the shape of a row and no surface
+ * owns it instead, so a second drawing of the same fact cannot drift. The
+ * profile feature composes it, which is the allowed direction.
  *
  * Nothing in this slice writes. The sync — the banner, the mutation and the
  * "what changed" summary — is a separate change; this half is what a person
  * reads.
  *
+ * **This barrel is the slice's whole public surface, and nothing more.** The
+ * key factory, the pure display helpers in `lib/harness-status.ts` and every
+ * component's props type are deliberately NOT here: the modules inside this
+ * slice reach them by relative path, no surface outside has ever needed one,
+ * and a re-export nothing imports is dead surface that `pnpm knip` names. A
+ * later slice that needs one adds the line it needs.
+ *
  * @module entities/harness
  */
-
-// --- Query key factory ---
-export { harnessKeys } from './api/query-keys';
 
 // --- Query hooks ---
 export { useHarnessStatus } from './model/use-harness-status';
@@ -23,38 +27,13 @@ export { useHarnessStatus } from './model/use-harness-status';
 // row's number, which must not cost three filesystem walks on every open.
 export { useHarnessStatusCached } from './model/use-harness-status-cached';
 
-// --- Display helpers (pure) ---
-export {
-  HARNESS_CHIP_TONE,
-  collapsedChipLabel,
-  groupDropsByHarness,
-  harnessChipDescription,
-  harnessChipWord,
-  harnessRowCells,
-  harnessRowKey,
-  isRowFullyShared,
-  projectEntryHeading,
-} from './lib/harness-status';
-export type {
-  HarnessChipTone,
-  HarnessDropEntry,
-  HarnessDropGroup,
-  HarnessRowCell,
-} from './lib/harness-status';
-
 // --- UI ---
 export { SkillsWithHarnessesList } from './ui/SkillsWithHarnessesList';
-export type { SkillsWithHarnessesListProps } from './ui/SkillsWithHarnessesList';
-export { SkillHarnessRow, ADOPTABLE_ADVICE } from './ui/SkillHarnessRow';
-export type { SkillHarnessRowProps } from './ui/SkillHarnessRow';
+export { SkillHarnessRow } from './ui/SkillHarnessRow';
 export { HarnessStateChip } from './ui/HarnessStateChip';
-export type { HarnessStateChipProps } from './ui/HarnessStateChip';
 export { NotSharedPanel } from './ui/NotSharedPanel';
-export type { NotSharedPanelProps } from './ui/NotSharedPanel';
 export { ProjectLevelNoticesPanel } from './ui/ProjectLevelNoticesPanel';
-export type { ProjectLevelNoticesPanelProps } from './ui/ProjectLevelNoticesPanel';
 export { NotEnabledNotice } from './ui/NotEnabledNotice';
-export type { NotEnabledNoticeProps } from './ui/NotEnabledNotice';
 
 // --- Fixtures ---
 // Exported from the production barrel because the Dev Playground showcase

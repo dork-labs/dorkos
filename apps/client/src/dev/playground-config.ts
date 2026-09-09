@@ -239,7 +239,7 @@ export const PAGE_CONFIGS: PageConfig[] = [
     id: 'features',
     label: 'Agent & Relay',
     description:
-      'An agent and the network it lives in — sidebar chrome, the fleet table, Relay adapters, Mesh, and Tasks.',
+      'An agent and the network it lives in — sidebar chrome, the fleet table, Relay adapters, Mesh, Tasks, and the agent files it shares with every coding tool you run.',
     icon: Blocks,
     group: 'agents',
     sections: FEATURE_AGENT_SECTIONS,

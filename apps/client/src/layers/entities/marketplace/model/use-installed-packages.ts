@@ -6,20 +6,19 @@ import type { InstalledPackage } from '@dorkos/shared/marketplace-schemas';
 /**
  * List marketplace packages installed in the DorkOS data directory.
  *
+ * Every caller is a marketplace surface a person opened on purpose, so there is
+ * no `enabled` flag: the one caller that had to ask conditionally was the
+ * profile's Skills row, and it now reads the harness status instead.
+ *
  * @param projectPath - Optional agent project path for scoped listing.
  *   When provided, returns merged global + agent-local packages with scope tags.
  *   When omitted, returns global packages only.
- * @param options - Query options.
- * @param options.enabled - False to ask for nothing at all. For a caller that
- *   only sometimes has an agent to ask about — the profile's rows read this on
- *   every identity, and a person has no installed packages to list.
  */
-export function useInstalledPackages(projectPath?: string, options?: { enabled?: boolean }) {
+export function useInstalledPackages(projectPath?: string) {
   const transport = useTransport();
   return useQuery<InstalledPackage[]>({
     queryKey: marketplaceKeys.installed(projectPath),
     queryFn: () => transport.listInstalledPackages(projectPath),
-    enabled: options?.enabled ?? true,
     staleTime: 60_000,
   });
 }

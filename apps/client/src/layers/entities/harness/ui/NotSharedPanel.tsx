@@ -6,7 +6,12 @@
 import { useState } from 'react';
 import type { HarnessId, HarnessRow } from '@dorkos/shared/harness-schemas';
 import { Badge, CollapsibleFieldCard } from '@/layers/shared/ui';
-import { groupDropsByHarness, type HarnessDropGroup } from '../lib/harness-status';
+import {
+  dropCountLabel,
+  dropPanelSummary,
+  groupDropsByHarness,
+  type HarnessDropGroup,
+} from '../lib/harness-status';
 
 /** What a {@link NotSharedPanel} draws. */
 export interface NotSharedPanelProps {
@@ -26,12 +31,13 @@ function DropPanel({ group }: { group: HarnessDropGroup }) {
       onOpenChange={setOpen}
       trigger={<span className="text-xs">Not shared with {group.label}</span>}
       badge={
-        <Badge variant="secondary" size="xs">
-          {group.entries.length}
+        <Badge variant="secondary" size="xs" className="whitespace-nowrap">
+          {dropCountLabel(group.entries.length)}
         </Badge>
       }
     >
-      <ul className="space-y-2 px-4 pb-3">
+      <p className="text-muted-foreground text-3xs px-4 pt-3">{dropPanelSummary(group.label)}</p>
+      <ul className="space-y-2 px-4 pt-2 pb-3">
         {group.entries.map((entry) => (
           <li key={entry.key} className="flex flex-col gap-0.5">
             <span className="text-3xs font-medium">
@@ -61,6 +67,14 @@ function DropPanel({ group }: { group: HarnessDropGroup }) {
  * tool and nine under another, and a page that opened with them expanded would
  * bury the list it exists to show. A tool with nothing missing gets no panel at
  * all, so a project running Codex alone is never shown an empty Cursor heading.
+ *
+ * **The count carries its unit, and the panel says it again in words.** The
+ * badge reads "37 agent files" rather than "37", and the opened panel leads with
+ * the sentence naming what is in it. On this repository the page lists 31 skills
+ * while this panel counts 37, and not one of the 37 is a skill — the list draws
+ * skills and the panel draws every kind of agent file (D27). Two numbers sharing
+ * one unit is a reader being asked to reconcile something that was never the
+ * same thing.
  */
 export function NotSharedPanel({ rows, enabled }: NotSharedPanelProps) {
   const groups = groupDropsByHarness(rows, enabled);

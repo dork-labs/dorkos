@@ -16,7 +16,7 @@ import {
   useAgentToolStatus,
   useCurrentAgent,
 } from '@/layers/entities/agent';
-import { useInstalledPackages } from '@/layers/entities/marketplace';
+import { useHarnessStatusCached } from '@/layers/entities/harness';
 import { useAgentSessions } from '@/layers/entities/session';
 import { useTasks } from '@/layers/entities/tasks';
 import type { ProfileAgentFacts } from '../lib/profile-rows';
@@ -59,13 +59,16 @@ export function useManagedAgentFacts(member: TeamMember, enabled: boolean): Prof
   // shows no tasks row at all.
   const tasksEnabled = projectPath !== null && toolStatus.tasks !== 'disabled-by-server';
   const { data: schedules } = useTasks(tasksEnabled);
-  // Gated like every other read here. Without the flag this fired
-  // `GET /api/marketplace/installed` from a PERSON's profile, which is exactly
-  // the "asks for nothing" promise above being broken by the one hook that had
-  // no way to be told.
-  const { data: packages } = useInstalledPackages(projectPath ?? '', {
-    enabled: projectPath !== null,
-  });
+  // The Skills row's number, read from whatever the Skills page has already put
+  // under this folder's key — and NEVER asked for (Decision 28).
+  // `buildHarnessStatus` is three synchronous filesystem walks, about 22 ms of
+  // blocked event loop, and this profile opens on every `/session`: buying that
+  // on every visit for a number nobody has asked to see is the wrong trade. The
+  // row says nothing until the page has been opened, which is what
+  // `countValue(null)` was built for. It used to count installed
+  // marketplace skill-packs, which is why it said "Skills 0" about an agent
+  // with thirty-one.
+  const { data: harnessStatus } = useHarnessStatusCached(projectPath);
   const { data: mcpServers } = useAgentMcpServers(agentId);
   // A cache hit: the profile root reads the same manifest for the About row.
   const { data: manifest } = useCurrentAgent(projectPath);
@@ -102,7 +105,7 @@ export function useManagedAgentFacts(member: TeamMember, enabled: boolean): Prof
             newestAt: sessions.at(0)?.updatedAt ?? null,
           },
     tasks: schedules ? { count: mine.length, nextRunAt: next ?? null } : null,
-    skills: packages ? packages.filter((pkg) => pkg.type === 'skill-pack').length : null,
+    skills: harnessStatus?.counts.skills ?? null,
     tools: mcpServers ? mcpServers.filter((server) => server.enabled).length : null,
     personality,
     tasksAvailable: toolStatus.tasks !== 'disabled-by-server',

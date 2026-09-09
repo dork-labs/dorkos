@@ -71,7 +71,11 @@ export interface ProfileAgentFacts {
   sessions: { count: number; newestAt: string | null } | null;
   /** How many schedules this agent has, and when the next one fires. */
   tasks: { count: number; nextRunAt: string | null } | null;
-  /** Installed skill-packs. */
+  /**
+   * Every skill this agent's folder holds — the harness status's own count,
+   * read from cache. `null` until the Skills page has filled it, which is the
+   * honest middle state between a lie and the truth (Decision 28).
+   */
   skills: number | null;
   /** Enabled managed MCP servers. */
   tools: number | null;

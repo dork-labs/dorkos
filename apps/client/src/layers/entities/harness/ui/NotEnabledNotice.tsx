@@ -3,6 +3,7 @@
  *
  * @module entities/harness/ui/NotEnabledNotice
  */
+import { Fragment } from 'react';
 import type { HarnessStatusResponse } from '@dorkos/shared/harness-schemas';
 import { HARNESS_LABELS } from '@dorkos/shared/harness-schemas';
 import { InlineCode } from '@/layers/shared/ui';
@@ -11,6 +12,35 @@ import { InlineCode } from '@/layers/shared/ui';
 export interface NotEnabledNoticeProps {
   /** The tools DorkOS found signs of and is not sharing to. */
   notEnabled: HarnessStatusResponse['notEnabled'];
+}
+
+/**
+ * A command that wraps at its spaces and nowhere else.
+ *
+ * At the docked panel's narrowest this line broke inside a flag — `dorkos
+ * harness sync --` / `fix --enable gemini` — and half a flag is worse than no
+ * flag, because somebody retyping it off the screen gets a command that fails.
+ * Cancelling `InlineCode`'s `break-all` was not enough on its own: a hyphen is a
+ * break opportunity in its own right, so `--fix` still split after the dashes.
+ * Each token is its own non-breaking box instead, which leaves the spaces
+ * already between them as the only places a line can end.
+ *
+ * The alternative — one unbreakable line in a scrolling box — hides the end of
+ * the command behind a gesture, and this is the only copy of it on the page.
+ *
+ * @param command - The whole command, tokens separated by single spaces.
+ */
+function WrappableCommand({ command }: { command: string }) {
+  return (
+    <InlineCode className="break-normal">
+      {command.split(' ').map((token, index) => (
+        <Fragment key={`${index}-${token}`}>
+          {index > 0 && ' '}
+          <span className="whitespace-nowrap">{token}</span>
+        </Fragment>
+      ))}
+    </InlineCode>
+  );
 }
 
 /**
@@ -37,8 +67,8 @@ export function NotEnabledNotice({ notEnabled }: NotEnabledNoticeProps) {
             {HARNESS_LABELS[harness]} files are in this folder, but DorkOS isn’t sharing to it.
           </p>
           <p className="text-muted-foreground text-3xs">
-            Run <InlineCode>dorkos harness sync --fix --enable {harness}</InlineCode> in this folder
-            to turn it on.
+            Run <WrappableCommand command={`dorkos harness sync --fix --enable ${harness}`} /> in
+            this folder to turn it on.
           </p>
         </div>
       ))}

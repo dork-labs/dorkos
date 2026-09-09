@@ -10,6 +10,11 @@ import { MeshShowcases } from '../showcases/MeshShowcases';
 import { TasksShowcases } from '../showcases/TasksShowcases';
 import { PersonalityPickerShowcases } from '../showcases/PersonalityPickerShowcases';
 import { PulsePanelShowcase } from '../showcases/PulsePanelShowcases';
+import {
+  HarnessPanelShowcases,
+  SkillRowShowcases,
+  SkillsPageStateShowcases,
+} from '../showcases/HarnessStatusShowcases';
 import { PipPanelShowcases } from '../showcases/PipPanelShowcases';
 import { ApprovalsShowcases } from '../showcases/ApprovalsShowcases';
 import { ScheduleApprovalShowcases } from '../showcases/ScheduleApprovalShowcases';
@@ -43,7 +48,7 @@ export function FeaturesPage() {
   return (
     <PlaygroundPageLayout
       title="Agent & Relay"
-      description="An agent and the network it lives in — sidebar chrome, the fleet table, Relay adapters, Mesh, and Tasks."
+      description="An agent and the network it lives in — sidebar chrome, the fleet table, Relay adapters, Mesh, Tasks, and the agent files it shares with every coding tool you run."
       sections={FEATURE_AGENT_SECTIONS}
     >
       <PersonalityPickerShowcases />
@@ -56,6 +61,9 @@ export function FeaturesPage() {
       <MeshShowcases />
       <TasksShowcases />
       <PulsePanelShowcase />
+      <SkillRowShowcases />
+      <HarnessPanelShowcases />
+      <SkillsPageStateShowcases />
     </PlaygroundPageLayout>
   );
 }
