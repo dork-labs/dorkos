@@ -383,9 +383,14 @@ describe('AP-17 — --claude-only writes one manifest element and moves nothing'
     });
     // A pure insertion, asserted as BYTES: the file with the one new element
     // taken back out is the file that was there before, separator included.
-    const inserted =
-      `,\n  "claudeOnlySkills": [{"name":"${NAME}","path":".claude/skills/${NAME}",` +
-      `"reason":"Kept in Claude Code on purpose."}]`;
+    const inserted = [
+      ',',
+      '  "claudeOnlySkills": [{',
+      `    "name": "${NAME}",`,
+      `    "path": ".claude/skills/${NAME}",`,
+      '    "reason": "Kept in Claude Code on purpose."',
+      '  }]',
+    ].join('\n');
     expect(after.replace(inserted, '')).toBe(before);
     expect(hashTree(join(repo, '.claude', 'skills', NAME))).toEqual(skillBefore);
   });

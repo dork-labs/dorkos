@@ -273,9 +273,14 @@ describe('runHarnessAdopt', () => {
 
     expect(result).toEqual({ exitCode: 0 });
     const after = fs.readFileSync(manifest, 'utf8');
-    const inserted =
-      `,\n  "claudeOnlySkills": [{"name":"${NAME}","path":".claude/skills/${NAME}",` +
-      `"reason":"Kept in Claude Code: its settings use hooks, which only Claude Code understands."}]`;
+    const inserted = [
+      ',',
+      '  "claudeOnlySkills": [{',
+      `    "name": "${NAME}",`,
+      `    "path": ".claude/skills/${NAME}",`,
+      '    "reason": "Kept in Claude Code: its settings use hooks, which only Claude Code understands."',
+      '  }]',
+    ].join('\n');
     expect(after.replace(inserted, '')).toBe(before);
     // And the skill did not move.
     expect(snapshotTree(path.join(repo, '.claude'))).toEqual(skillBefore);

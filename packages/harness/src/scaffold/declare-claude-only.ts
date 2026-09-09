@@ -115,7 +115,7 @@ export function declareClaudeOnlySkill(
   const rawEntries = Array.isArray(raw) ? raw : [];
   const array = findValueSpan(before, 'claudeOnlySkills', '[');
   const edit = array
-    ? insertInto(before, array, JSON.stringify(entry))
+    ? insertInto(before, array, serialize(entry, before))
     : editAddingTheKey(before, rawEntries, entry);
   if (!edit) {
     return {
@@ -160,8 +160,24 @@ function editAddingTheKey(
 ): { text: string; inserted: string } | undefined {
   const root = findRootObject(text);
   if (!root) return undefined;
-  const list = [...existing, entry].map((item) => JSON.stringify(item)).join(', ');
+  const list = [...existing, entry].map((item) => serialize(item, text)).join(', ');
   return insertInto(text, root, `"claudeOnlySkills": [${list}]`);
+}
+
+/**
+ * One entry, serialized in the file's own indentation.
+ *
+ * Pretty-printed rather than compact because the manifest is hand-authored and
+ * hand-read: an entry with three keys on one 180-character line is a line
+ * nobody edits by choice. The step is read off the file, so a four-space
+ * manifest gets four-space keys.
+ *
+ * @param entry - the entry to serialize.
+ * @param text - the manifest as written, for its own indentation step.
+ * @returns the JSON text of the entry.
+ */
+function serialize(entry: unknown, text: string): string {
+  return JSON.stringify(entry, null, /\n([ \t]+)\S/.exec(text)?.[1] ?? '  ');
 }
 
 /**

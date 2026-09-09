@@ -117,6 +117,16 @@ function skipWhitespace(text: string, from: number): number {
  * the line the last entry ends on (or one step in from the bracket when the
  * container is empty); a single-line one gets `, x`. Either way the entry goes
  * AFTER the last, so no trailing comma is ever introduced and none is needed.
+ *
+ * An entry that is itself several lines — a whole object, which is what a
+ * `claudeOnlySkills` line is — has every line after its first indented to the
+ * same place, so it reads as part of the file rather than as one very long line
+ * somebody's tool must have written.
+ *
+ * @param text - the file as written.
+ * @param span - the container to insert into.
+ * @param entry - the entry, already serialized.
+ * @returns the edited text and the exact text inserted.
  */
 export function insertInto(
   text: string,
@@ -129,15 +139,29 @@ export function insertInto(
   // Empty container: the entry goes straight after the bracket, so the closing
   // one and whatever whitespace sits in front of it are untouched.
   if (inner.trim() === '') {
-    const inserted = multiline
-      ? `\n${indentOfLineAt(text, span.open)}${indentUnit(text)}${entry}`
-      : entry;
+    const indent = `${indentOfLineAt(text, span.open)}${indentUnit(text)}`;
+    const inserted = multiline ? `\n${indent}${reindent(entry, indent)}` : entry;
     return { text: splice(text, span.open + 1, inserted), inserted };
   }
 
   const lastEntryEnd = span.open + 1 + trimmedEnd(inner);
-  const inserted = multiline ? `,\n${indentOfLineAt(text, lastEntryEnd)}${entry}` : `, ${entry}`;
+  const indent = indentOfLineAt(text, lastEntryEnd);
+  const inserted = multiline ? `,\n${indent}${reindent(entry, indent)}` : `, ${entry}`;
   return { text: splice(text, lastEntryEnd, inserted), inserted };
+}
+
+/**
+ * A serialized entry with every line after the first pushed out to `indent`.
+ *
+ * A single-line entry comes back untouched, which is every entry the harness
+ * list has ever had.
+ *
+ * @param entry - the serialized entry.
+ * @param indent - the whitespace its first line sits behind.
+ * @returns the entry, indented to match.
+ */
+function reindent(entry: string, indent: string): string {
+  return entry.split('\n').join(`\n${indent}`);
 }
 
 /** `text` with `insertion` placed at `at`, and nothing else changed. */
