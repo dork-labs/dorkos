@@ -622,6 +622,11 @@ jobs:
 
             You are reviewing this pull request as a senior DorkOS engineer.
 
+            Complete this as one uninterrupted, one-shot review. Do all analysis
+            yourself in this session: do not delegate to subagents, start
+            background work, or schedule a later wakeup. Do not return until you
+            have posted the required top-level summary.
+
             You have no `gh` command. Every GitHub call goes through one helper,
             which already knows this repo and this PR, so you never pass either:
 
@@ -735,6 +740,17 @@ jobs:
           # the reviewer's permissions come from --allowedTools instead — but it is a
           # real narrowing of protection, not a free one.
           #
+          # THE BUILT-IN SURFACE (DOR-1948). `--allowedTools` approves calls; it
+          # does NOT decide which built-in tools the model can see. Three reviews
+          # exited successfully while Agent-spawned reviewers were still running,
+          # so the verdict gate correctly found no summary and failed the job.
+          # `--tools` is the availability boundary: Bash is present for the one
+          # approved helper below, and Read/Grep/Glob cover the review itself.
+          # Omitting Agent and the task/scheduling tools makes a one-shot action
+          # incapable of handing work to a future turn. The flag does not affect
+          # MCP tools, so the inline-comment tool remains separately permissioned
+          # by `--allowedTools`.
+          #
           # THE ALLOW-LIST (DOR-464). Five entries, and exactly ONE of them is a
           # Bash grant: the helper materialized above. Read the CONTAINMENT
           # INVARIANT in the header before adding a sixth — the list is asserted
@@ -806,6 +822,7 @@ jobs:
           # So the list above is already the whole control for the file tools.
           # (`Glob` is not separately denied: it returns path names, not contents.)
           claude_args: |
+            --tools "Bash,Read,Grep,Glob"
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(bash ${{ runner.temp }}/trusted/review-gh.sh:*),Read,Grep,Glob"
             --disallowedTools "Read(//proc/**),Read(//sys/**),Read(//etc/**),Read(~/.claude/**),Read(~/.config/**),Read(~/.ssh/**)"
             --setting-sources user
