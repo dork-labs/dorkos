@@ -425,8 +425,11 @@ function countRoots(input: UserTierReportInput): number {
  */
 function rootsLine(input: UserTierReportInput): string {
   const count = countRoots(input);
-  if (count === 0) return 'nothing outside it was written, and every root named';
-  return count === 1 ? 'the one user directory' : `the ${count} user directories`;
+  // Every round links at least one subject, so zero cannot happen; the small
+  // counts are spelled the way the rest of the page spells its numbers.
+  const spelled = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+  const word = spelled[count] ?? String(count);
+  return count === 1 ? 'the one user directory' : `the ${word} user directories`;
 }
 
 /**

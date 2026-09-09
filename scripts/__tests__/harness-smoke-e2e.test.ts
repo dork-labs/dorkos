@@ -452,7 +452,7 @@ describe('end to end, against the fake harness', () => {
     // harness was. Claude Code's rounds write two; a run whose rounds wrote one
     // has to say one.
     const both = runSmokeE2e('claude', 'ok', ['--free', '--scenario', 'user-tier']);
-    expect(both.report).toContain('the 2 user directories below are inside it');
+    expect(both.report).toContain('the two user directories below are inside it');
     const one = runSmokeE2e('opencode', 'ok', ['--scenario', 'user-tier', '--max-usd', '0.10']);
     expect(one.report).toContain('the one user directory below is inside it');
   }, 120_000);
