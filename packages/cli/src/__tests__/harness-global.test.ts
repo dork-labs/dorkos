@@ -713,7 +713,7 @@ describe('dorkos harness global — sharing your all-projects packages', () => {
     it('names `global` among the subcommands an unknown one is measured against', async () => {
       const code = await runHarnessDispatcher('nonsense', []);
       expect(code).toBe(1);
-      expect(errors()).toContain('Usage: dorkos harness <sync|hooks|global> [options]');
+      expect(errors()).toContain('Usage: dorkos harness <sync|adopt|hooks|global> [options]');
     });
   });
 
