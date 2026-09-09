@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(harness): a reason no longer uses a retired word, and a guard keeps it so (DOR-1896)'
+  - 'fix(harness,e2e): the guard covers the conflict family, and says what it does not (DOR-1896)'
 ---
 
 ### Fixed
