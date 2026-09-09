@@ -351,7 +351,7 @@ describe('VC-02 — the sentences the engine shows a person', () => {
   });
 
   it('VC-02: the fixture reaches every family of sentence the ENGINE writes', () => {
-    // A count alone can be met by one family repeated. Five families, and each
+    // A count alone can be met by one family repeated. Six families, and each
     // is a different producer with a different failure mode: the note on an
     // action, the reason on a drop, a warning, what is in the way of a write,
     // what a sweep removes, and what is wrong with the manifest itself.
