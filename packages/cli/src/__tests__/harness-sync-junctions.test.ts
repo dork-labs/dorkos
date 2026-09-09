@@ -134,7 +134,10 @@ describe('a Windows checkout whose links are junctions', () => {
     'AP-06: says nothing on a checkout whose links git would commit as links',
     async () => {
       await stageJunctionCheckout();
-      Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true });
+      // A POSIX platform by NAME, not the host's: on the `harness-windows` leg
+      // the host is `win32`, and restoring it here would ask this case to
+      // assert POSIX silence about a Windows run (measured, run 34418725309).
+      Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
 
       await runHarnessSync(syncArgs({ check: true }));
 
