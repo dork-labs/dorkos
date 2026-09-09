@@ -78,6 +78,8 @@
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/meta/harness-sync-capabilities.md",
         "$TURBO_ROOT$/scripts/lib/code-only.mjs",
+        "$TURBO_ROOT$/scripts/vocab-gate/banned-terms.json",
+        "$TURBO_ROOT$/scripts/check-vocab-gate.ts",
         "$TURBO_ROOT$/apps/server/src/services/harness/__tests__/**",
         "$TURBO_ROOT$/apps/server/src/routes/__tests__/harness.test.ts",
         "$TURBO_ROOT$/apps/server/src/services/runtimes/codex/__tests__/scan-skill-commands.test.ts",
