@@ -232,6 +232,8 @@ export async function POST(request: Request): Promise<Response> {
       reporterName: submission.reporterName,
       contact: submission.contact,
       route: submission.route,
+      surface: submission.surface,
+      submissionUrl: `${resolveBaseURL()}/feedback/${insertedId}`,
       diagnosticsSummary: buildDiagnosticsSummary(submission),
       attachmentUrls: submission.attachmentUrls,
     });
@@ -290,12 +292,25 @@ async function markTriaged(
     .where(eq(feedbackSubmission.id, id));
 }
 
+/**
+ * Wrap free text in a markdown code fence long enough that no backtick run
+ * inside the text can close it early. Diagnostics and transcripts are
+ * user/session content — fencing keeps Linear from rendering their markdown
+ * (a chat excerpt full of `**` or links would garble), keeps line breaks and
+ * monospace alignment, and gives a parsing agent unambiguous delimiters.
+ */
+function fenceBlock(text: string): string {
+  const longestBacktickRun = text.match(/`+/g)?.reduce((max, run) => Math.max(max, run.length), 0);
+  const fence = '`'.repeat(Math.max(3, (longestBacktickRun ?? 0) + 1));
+  return `${fence}text\n${text.trim()}\n${fence}`;
+}
+
 /** Fold the diagnostics text and transcript excerpt into one summary block for the Linear description. */
 function buildDiagnosticsSummary(submission: FeedbackIntake): string | undefined {
   const parts: string[] = [];
-  if (submission.diagnostics) parts.push(submission.diagnostics);
+  if (submission.diagnostics) parts.push(fenceBlock(submission.diagnostics));
   if (submission.transcriptExcerpt) {
-    parts.push(`Transcript excerpt:\n${submission.transcriptExcerpt}`);
+    parts.push(`Transcript excerpt:\n${fenceBlock(submission.transcriptExcerpt)}`);
   }
   return parts.length > 0 ? parts.join('\n\n') : undefined;
 }

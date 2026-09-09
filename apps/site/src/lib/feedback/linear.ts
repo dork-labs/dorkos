@@ -49,6 +49,15 @@ export interface CreateFeedbackIssueInput {
   contact?: string;
   /** The app route the reporter was on, if resolvable. */
   route?: string;
+  /** Which product surface the submission came from. */
+  surface?: 'cockpit' | 'site';
+  /**
+   * Public status-page URL for the submission (`/feedback/{id}`), linking the
+   * Linear issue back to the durable Neon row it mirrors. Rendered into the
+   * description so a triager (human or agent) can cross-reference the row
+   * without querying the database.
+   */
+  submissionUrl?: string;
   /**
    * Pre-rendered diagnostics block (version/platform/runtimes/log excerpt
    * summary) — rendering is the route's job (Part 1's `serverLogExcerpt` and
@@ -127,23 +136,40 @@ function buildTitle(message: string): string {
   return truncate(firstLine, MAX_TITLE_LEN) || 'Feedback submission';
 }
 
+/**
+ * One `Reporter:` line. The upstream resolver may only know the account email,
+ * in which case it sends it as the name too — collapse that to the email alone
+ * rather than printing the address twice. The email rides in parentheses, not
+ * `<angle brackets>`: Linear's markdown turns `<email>` into an autolink,
+ * which mangled the line when name and email were both addresses.
+ */
+function buildReporterLine(input: CreateFeedbackIssueInput): string | undefined {
+  const name = input.reporterName?.trim();
+  const email = input.reporterEmail?.trim();
+  if (email) {
+    const distinctName = name && name.toLowerCase() !== email.toLowerCase() ? name : undefined;
+    return `Reporter: ${distinctName ? `${distinctName} (${email})` : email}`;
+  }
+  if (name) return `Reporter: ${name}`;
+  return undefined;
+}
+
 /** Description = full message + a rendered identity block + diagnostics + attachments. */
 function buildDescription(input: CreateFeedbackIssueInput): string {
   const sections = [input.message.trim()];
 
   const identityLines: string[] = [];
-  if (input.reporterEmail) {
-    identityLines.push(
-      `Reporter: ${input.reporterName ? `${input.reporterName} ` : ''}<${input.reporterEmail}>`
-    );
-  } else if (input.reporterName) {
-    identityLines.push(`Reporter: ${input.reporterName}`);
-  }
+  const reporterLine = buildReporterLine(input);
+  if (reporterLine) identityLines.push(reporterLine);
   if (input.contact) identityLines.push(`Contact: ${input.contact}`);
+  // One `Key: value` line each — a triaging agent parses these without
+  // guessing, and `Kind:` is the only place a plain `feedback` submission's
+  // kind is visible at all (only bug/idea get labels).
+  identityLines.push(`Kind: ${input.kind}`);
+  if (input.surface) identityLines.push(`Surface: ${input.surface}`);
   if (input.route) identityLines.push(`Route: ${input.route}`);
-  if (identityLines.length > 0) {
-    sections.push(['---', '**Submitted by**', ...identityLines].join('\n'));
-  }
+  if (input.submissionUrl) identityLines.push(`Submission: ${input.submissionUrl}`);
+  sections.push(['---', '**Submitted by**', ...identityLines].join('\n'));
 
   if (input.diagnosticsSummary) {
     sections.push(['---', '**Diagnostics**', input.diagnosticsSummary].join('\n'));

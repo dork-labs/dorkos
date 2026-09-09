@@ -173,7 +173,8 @@ describe('POST /api/feedback — Linear success', () => {
       hasTranscript: false,
     });
 
-    // The Linear client received the reporter identity and message.
+    // The Linear client received the reporter identity, message, and the
+    // cross-reference metadata (surface + the row's public status URL).
     expect(createFeedbackIssue).toHaveBeenCalledWith(
       expect.objectContaining({
         kind: 'bug',
@@ -181,6 +182,8 @@ describe('POST /api/feedback — Linear success', () => {
         reporterEmail: 'kai@example.com',
         reporterName: 'Kai',
         route: '/session',
+        surface: 'cockpit',
+        submissionUrl: `https://dorkos.ai/feedback/${INSERTED_ROW_ID}`,
       })
     );
 
@@ -194,6 +197,29 @@ describe('POST /api/feedback — Linear success', () => {
       })
     );
     expect(mockWhere).toHaveBeenCalledTimes(1);
+  });
+
+  it('code-fences diagnostics and transcript so Linear renders them literally', async () => {
+    vi.mocked(createFeedbackIssue).mockResolvedValue(null);
+
+    await POST(
+      post({
+        ...VALID_SUBMISSION,
+        diagnostics: 'Version: 1.0.0\nBreadcrumbs:\n[t] console_error: **not bold**',
+        transcriptExcerpt: 'user: run ```js\nassistant: done',
+        hasTranscript: true,
+      })
+    );
+
+    const input = vi.mocked(createFeedbackIssue).mock.calls[0][0];
+    // Diagnostics ride inside a fence, so markdown in log lines stays literal.
+    expect(input.diagnosticsSummary).toContain(
+      '```text\nVersion: 1.0.0\nBreadcrumbs:\n[t] console_error: **not bold**\n```'
+    );
+    // The transcript contains a ``` run of its own, so its fence must be longer.
+    expect(input.diagnosticsSummary).toContain(
+      'Transcript excerpt:\n````text\nuser: run ```js\nassistant: done\n````'
+    );
   });
 });
 

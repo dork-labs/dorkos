@@ -138,6 +138,58 @@ describe('createFeedbackIssue — mutation shape and auth header', () => {
   });
 });
 
+describe('createFeedbackIssue — description formatting', () => {
+  beforeEach(() => {
+    env.LINEAR_API_KEY = 'lin_api_key_raw';
+    env.LINEAR_TEAM_ID = 'team-dor-uuid';
+    fetchSpy.mockResolvedValue(okIssueCreate());
+  });
+
+  async function descriptionFor(input: Parameters<typeof createFeedbackIssue>[0]): Promise<string> {
+    await createFeedbackIssue(input);
+    const [, init] = fetchSpy.mock.calls[0];
+    const body = JSON.parse((init as RequestInit).body as string) as {
+      variables: { input: { description: string } };
+    };
+    return body.variables.input.description;
+  }
+
+  it('renders a distinct reporter name as "Name (email)", never angle brackets', async () => {
+    const description = await descriptionFor({
+      kind: 'bug',
+      message: 'It broke.',
+      reporterEmail: 'kai@example.com',
+      reporterName: 'Kai',
+    });
+    expect(description).toContain('Reporter: Kai (kai@example.com)');
+    // `<email>` is what Linear's markdown autolinks into a mangled double link.
+    expect(description).not.toContain('<kai@example.com>');
+  });
+
+  it('collapses a name that is just the email again into a single mention', async () => {
+    const description = await descriptionFor({
+      kind: 'bug',
+      message: 'It broke.',
+      reporterEmail: 'kai@example.com',
+      reporterName: 'kai@example.com',
+    });
+    expect(description).toContain('Reporter: kai@example.com');
+    expect(description).not.toContain('kai@example.com (kai@example.com)');
+  });
+
+  it('always records the kind, and surface/submission when provided', async () => {
+    const description = await descriptionFor({
+      kind: 'feedback',
+      message: 'Love it.',
+      surface: 'cockpit',
+      submissionUrl: 'https://dorkos.ai/feedback/row-uuid-1',
+    });
+    expect(description).toContain('Kind: feedback');
+    expect(description).toContain('Surface: cockpit');
+    expect(description).toContain('Submission: https://dorkos.ai/feedback/row-uuid-1');
+  });
+});
+
 describe('createFeedbackIssue — kind → label mapping', () => {
   beforeEach(() => {
     env.LINEAR_API_KEY = 'lin_api_key';
