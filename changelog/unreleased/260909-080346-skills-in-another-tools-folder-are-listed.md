@@ -5,6 +5,8 @@ covers:
   # Folds in here: it corrects the two bullets above before either has shipped,
   # so there is nothing a person could have seen go wrong.
   - 'fix(harness): a real parser counts MCP servers, and links there are yours (DOR-1902)'
+  # Same fold: the reader met DOR-1882's file-where-a-folder-belongs shape at rebase.
+  - 'fix(harness): a file where .codex belongs no longer throws out of the MCP read (DOR-1902)'
 ---
 
 ### Added
