@@ -4,7 +4,11 @@ covers:
   - 'feat(config): global scope remembers which tools it shares with (DOR-1924)'
   - "feat(harness): a global package's skills reach the folders your tools read (DOR-1924)"
   - 'feat(cli): DorkOS asks once before it puts a link in your home folder (DOR-1924)'
-  - 'test(harness): the J-07 journey, and the case that guards what a DorkOS session still gets (DOR-1924)'
+  - 'test(harness): the J-07 journey, and the case that guards what a session keeps (DOR-1924)'
+  - 'test(server): the new config writer says which gate stands in front of it (DOR-1924)'
+  # Folds in here: all three refine this same unreleased behaviour, and nothing a
+  # person could have seen before it.
+  - 'fix(harness,cli): the lines about a shared package stop saying nobody can see it (DOR-1924)'
 ---
 
 ### Added
@@ -13,7 +17,10 @@ covers:
 - `dorkos harness global --list` shows what you chose and where the links go. `--disable <tool>` stops sharing with one tool and removes the links that tool's folder no longer needs first. Five tools share one folder, so turning one off while another still reads it removes nothing (DOR-1924)
 - DorkOS only ever creates links in those two folders, never files, and it only ever removes a link it made itself. Your own skills, and shortcuts you made yourself with the same shape, are left exactly where they are. If you uninstall a package later, DorkOS removes its links too (DOR-1924)
 
+- The line about a package you installed for all your projects now says it is shared once you have shared it, and tells you which command shares it until then (DOR-1924)
+
 ### Changed
 
 - If you told DorkOS to stay inside one folder on this machine, it does not put links in your home directory. It says so, names the folder you set, and your timed skills keep running (DOR-1924)
 - Saying no is remembered. DorkOS asks the question once, and a no means it does not ask again (DOR-1924)
+- If DorkOS cannot write in one of those folders, it says which folder and that nothing in it was changed or removed, instead of stopping with an error nobody can read (DOR-1924)
