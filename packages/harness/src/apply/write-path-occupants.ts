@@ -194,18 +194,43 @@ export function findBlockedWritePaths(repoRoot: string, plan: ProjectionPlan): M
   for (const action of plan.actions) {
     const target = action.target;
     if (target === undefined || !WRITING_KINDS.has(action.kind)) continue;
-    for (const relDir of writePathDirs(target)) {
-      let cause = probed.get(relDir);
-      if (!probed.has(relDir)) {
-        cause = directoryBlock(join(repoRoot, relDir));
-        probed.set(relDir, cause);
-      }
-      if (cause === undefined) continue;
-      blocked.set(target, writePathReason(relDir, cause));
-      break; // the outermost obstacle is the one to clear
-    }
+    const reason = blockedWritePath(repoRoot, target, probed);
+    if (reason !== undefined) blocked.set(target, reason);
   }
   return blocked;
+}
+
+/**
+ * Why the write path to ONE target may not be created, or `undefined` when every
+ * directory on the way to it is fine.
+ *
+ * The per-target half of {@link findBlockedWritePaths}, extracted so a caller
+ * that has a path rather than a plan asks the identical question and gets the
+ * identical sentence. Adopt is that caller: it has a source folder and a target
+ * folder and no projection plan at all, and a second implementation of this
+ * would be a second set of words about the same file.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param target - the repo-relative path a write would create.
+ * @param probed - a memo of directories already answered for, shared across a
+ *   batch so siblings ask about a common ancestor once.
+ * @returns the reason naming the OUTERMOST obstacle — the one to clear, since a
+ *   file at `.claude/skills` makes everything under it unwritable too.
+ */
+export function blockedWritePath(
+  repoRoot: string,
+  target: string,
+  probed: Map<string, WritePathCause | undefined> = new Map()
+): string | undefined {
+  for (const relDir of writePathDirs(target)) {
+    let cause = probed.get(relDir);
+    if (!probed.has(relDir)) {
+      cause = directoryBlock(join(repoRoot, relDir));
+      probed.set(relDir, cause);
+    }
+    if (cause !== undefined) return writePathReason(relDir, cause);
+  }
+  return undefined;
 }
 
 /**
