@@ -468,7 +468,15 @@ export function buildGlobalPlan(input: GlobalPlanInput): GlobalProjectionPlan {
     for (const skill of plugin.skills) {
       const namespaced = `${plugin.name}__${skill.name}`;
       for (const tier of tiers) {
-        const target = join(tier.dir, namespaced);
+        // `${dir}/${name}`, never `join`, because that is the convention slice A2
+        // set and its tests pin: a NATIVE directory plus a forward slash. On
+        // Windows the two forms differ in one character and every reader of a
+        // global target has to agree with the planner about which one it is —
+        // `startsWith(`${globalSkillsDir(dorkHome)}/`)` is asserted in A2's own
+        // suite, and joining reds it there. Nothing downstream cares: the sweep
+        // and the apply both `resolve()` before comparing, which normalises the
+        // separator, and `dirname` reads either one.
+        const target = `${tier.dir}/${namespaced}`;
         if (planned.has(target)) continue;
         planned.add(target);
         actions.push({

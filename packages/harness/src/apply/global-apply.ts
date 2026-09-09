@@ -346,15 +346,25 @@ type SymlinkOutcome =
   { kind: 'written' } | { kind: 'unchanged' } | { kind: 'blocked'; reason: string };
 
 /**
- * Whether this platform can be asked about write permission at all.
+ * Whether this platform can be asked about write PERMISSION at all.
  *
  * Not Windows, for the reason `write-path-occupants.ts` states about its own
  * probe: `accessSync(dir, W_OK)` there reports the read-only ATTRIBUTE, which
  * directories do not meaningfully carry, and answers "writable" for a folder an
  * ACL denies. A probe that is wrong in both directions is worse than the write
  * reporting the failure itself.
+ *
+ * A FUNCTION rather than a module constant, and read at each call, so a test can
+ * ask what a Windows run would answer. The distinction it draws is the one that
+ * broke on Windows: the permission half is platform-bound and the SHAPE half is
+ * not, and a single module-scope gate in front of both took the working half
+ * down with the one that cannot work.
+ *
+ * @returns `true` where `accessSync` means what it says about a directory.
  */
-const CAN_ASK_ABOUT_WRITING = process.platform !== 'win32';
+function canAskAboutWriting(): boolean {
+  return process.platform !== 'win32';
+}
 
 /**
  * Why a global link cannot be written, when the folder that would hold it says
@@ -375,36 +385,69 @@ const CAN_ASK_ABOUT_WRITING = process.platform !== 'win32';
  * @returns the sentence, or `undefined` when the write may go ahead.
  */
 function unwritableGlobalDir(target: string, memo: WritePathMemo): string | undefined {
-  if (!CAN_ASK_ABOUT_WRITING) return undefined;
+  // SHAPE, on every platform, over every ancestor, OUTERMOST first — the exact
+  // walk `findBlockedWritePaths` does for a repository, through the exact
+  // helpers, so the two cannot answer differently about the same shape. Naming
+  // the outermost obstacle is what makes the answer actionable: a file at
+  // `~/.agents` makes `~/.agents/skills` unreadable too, and naming the deeper
+  // one sends somebody to look at a path that is only wrong because of the one
+  // above it. `directoryWriteBlock` answers `undefined` for a level that is
+  // simply absent, which is every level this engine is about to create.
+  //
+  // TWO bugs lived in the version this replaces, and Windows found both.
+  //
+  // It asked only about the target's immediate parent and answered `undefined`
+  // for anything that was not a directory — "a shape question, answered
+  // elsewhere" — and at global scope there IS no elsewhere: no global path ever
+  // reaches `findBlockedWritePaths`. And it returned early on the whole probe
+  // when the platform could not answer about PERMISSION, which took the shape
+  // half down with it on Windows, where the shape half is the one that works.
+  // A plain file at `~/.agents/skills` therefore sailed past on both counts and
+  // raised EEXIST out of `mkdirSync`, after the config had recorded the answer.
+  //
+  // The platforms disagree about which error a bad ancestor produces — Windows
+  // answers ENOENT for a stat under a file and EEXIST for the `mkdir`, POSIX
+  // answers ENOTDIR for both — and that is exactly why this asks `statSync`
+  // through DOR-1882's helper rather than reading an `errno` of its own.
+  for (const dir of writePathDirs(target)) {
+    const reason = memoisedShapeBlock(dir, memo);
+    if (reason !== undefined) return reason;
+  }
 
-  // The DEEPEST ancestor that already exists is the only one worth asking about,
-  // and asking about it answers for every level above it too. If `~/.agents` is
-  // a file then `~/.agents/skills` does not exist, so the walk lands on
-  // `~/.agents` and names it — which is also the shallowest problem, the one the
-  // project engine's own walk goes out of its way to report. Everything BELOW
-  // the deepest existing directory this engine creates itself, inside a parent
-  // it has just proved it may write in.
-  //
-  // Asking only about the target's immediate parent was the bug. It answered
-  // `undefined` for anything that was not a directory — "a shape question,
-  // answered elsewhere" — and at global scope there IS no elsewhere: the project
-  // engine's `findBlockedWritePaths` runs over a repository, and no global path
-  // ever reaches it. A plain FILE at `~/.agents/skills` therefore sailed past
-  // this probe and raised EEXIST out of `mkdirSync`, after the config had
-  // already recorded the answer.
-  //
-  // Walking to the filesystem root instead would be correct and slow: it reads
-  // every ancestor, and one of them is the temp root a test stages under, which
-  // can hold thousands of entries. Stopping at the first existing level is the
-  // same answer for a fraction of the work.
+  // PERMISSION second, only where the platform can answer it, and only of the
+  // one folder that will really take the new entry: the deepest ancestor that
+  // already exists. Everything below it this engine creates itself, inside a
+  // parent it has just proved it may write in.
+  if (!canAskAboutWriting()) return undefined;
+  const parent = deepestExistingDir(target);
+  if (parent === undefined) return undefined;
+  try {
+    accessSync(parent, constants.W_OK | constants.X_OK);
+    return undefined;
+  } catch {
+    return writePathReason(parent, 'read-only');
+  }
+}
+
+/**
+ * The deepest ancestor of `target` that already exists on disk.
+ *
+ * The one folder a write really touches: `mkdirSync(..., { recursive: true })`
+ * creates every level below it, and the level it starts from is the one whose
+ * mode decides whether it may.
+ *
+ * `pathExists` is lstat-based on purpose: a DANGLING symlink is an entry
+ * `mkdirSync` refuses, and an `existsSync` here would step over it.
+ *
+ * @param target - the absolute link target.
+ * @returns the deepest existing ancestor directory, or `undefined` when none of
+ *   them exists.
+ */
+function deepestExistingDir(target: string): string | undefined {
   const dirs = writePathDirs(target);
   for (let i = dirs.length - 1; i >= 0; i -= 1) {
     const dir = dirs[i];
-    // `pathExists` is lstat-based on purpose: a DANGLING symlink is an entry
-    // `mkdirSync` refuses with EEXIST, and an `existsSync` here would step over
-    // it and let the write throw.
-    if (dir === undefined || !pathExists(dir)) continue;
-    return memoisedDirBlock(dir, memo);
+    if (dir !== undefined && pathExists(dir)) return dir;
   }
   return undefined;
 }
@@ -420,28 +463,22 @@ function unwritableGlobalDir(target: string, memo: WritePathMemo): string | unde
 type WritePathMemo = Map<string, string | undefined>;
 
 /**
- * Why this directory cannot take a new entry, asked at most once per run.
+ * Whether this directory's SHAPE stops a write through it, asked at most once
+ * per run.
  *
- * @param dir - the absolute directory that would hold the new link.
+ * Shape only. Permission is a different question with a different scope (one
+ * folder, not every ancestor) and a different platform answer, and it is asked
+ * separately in {@link unwritableGlobalDir}.
+ *
+ * @param dir - an absolute ancestor of the link target.
  * @param memo - the run's cache.
- * @returns the sentence, or `undefined` when the write may go ahead.
+ * @returns the sentence, or `undefined` when a write may pass through here.
  */
-function memoisedDirBlock(dir: string, memo: WritePathMemo): string | undefined {
+function memoisedShapeBlock(dir: string, memo: WritePathMemo): string | undefined {
   const cached = memo.get(dir);
   if (cached !== undefined || memo.has(dir)) return cached;
   const cause = directoryWriteBlock(dir);
-  // Shape first, then permission — and only permission of the one folder that
-  // will really take the entry, which is this one.
-  let reason: string | undefined;
-  if (cause !== undefined) {
-    reason = writePathReason(dir, cause);
-  } else {
-    try {
-      accessSync(dir, constants.W_OK | constants.X_OK);
-    } catch {
-      reason = writePathReason(dir, 'read-only');
-    }
-  }
+  const reason = cause === undefined ? undefined : writePathReason(dir, cause);
   memo.set(dir, reason);
   return reason;
 }

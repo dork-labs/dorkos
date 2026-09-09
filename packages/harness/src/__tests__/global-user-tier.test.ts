@@ -42,6 +42,7 @@ import {
   type GlobalPlanRoots,
 } from '../plan/global-projector.js';
 import { applyGlobalPlan, checkGlobalPlan, findGlobalOrphans } from '../apply/global-apply.js';
+import { linkCheckFor, linkMatchesPlan } from '../apply/symlink-occupants.js';
 import { snapshotTree } from './journeys/stage.js';
 import type { HarnessId } from '../manifest/schema.js';
 
@@ -86,10 +87,54 @@ function stageHome(): { home: string; agentsSkillsDir: string; claudeSkillsDir: 
   return { home, agentsSkillsDir, claudeSkillsDir };
 }
 
+/**
+ * The target string the PLANNER builds for one link: a native directory plus a
+ * forward slash, which is slice A2's convention and what its own suite pins
+ * (`startsWith(`${globalSkillsDir(dorkHome)}/`)`).
+ *
+ * `join` would be wrong here, and only on Windows, where the two forms differ by
+ * one character. Every comparison against a plan, conflict or blocked `target`
+ * goes through this; anything that touches DISK keeps `join`, because that is a
+ * real path and the platform spells it natively. The sweep bridges the two by
+ * `resolve()`-ing before it compares, which normalises the separator.
+ */
+function planTarget(dir: string, name: string): string {
+  return `${dir}/${name}`;
+}
+
 /** Every absolute symlink target a plan names, sorted. */
 function targetsOf(plan: { actions: readonly { target?: string }[] }): string[] {
   return plan.actions.map((a) => a.target ?? '').sort();
 }
+
+describe('the target convention every reader of a global plan shares', () => {
+  it('a target is the native directory plus a FORWARD SLASH plus the name', () => {
+    // Slice A2 set this and its own suite pins it
+    // (`startsWith(`${globalSkillsDir(dorkHome)}/`)`); slice A3 has to agree,
+    // because one plan now carries targets in three directories and every
+    // reader — the apply, the sweep, the CLI report, these tests — compares them
+    // as strings.
+    //
+    // **This cannot fail on POSIX**, and that is the whole reason it is written
+    // down rather than left to `join`. There `join(a, b)` IS `${a}/${b}`, so a
+    // planner that joined looked identical here and red only on Windows, where
+    // the two differ by one character. The Windows leg of CI is the instrument;
+    // this is the statement it measures.
+    const dorkHome = stageDorkHome([{ name: 'globex', skills: ['greet'] }]);
+    const { agentsSkillsDir, claudeSkillsDir } = stageHome();
+    const roots: GlobalPlanRoots = { dorkHome, agentsSkillsDir, claudeSkillsDir };
+
+    const plan = projectGlobal({ roots, harnesses: ['codex', 'claude-code'] });
+    expect(plan.actions).toHaveLength(3);
+    for (const dir of [globalSkillsDir(dorkHome), agentsSkillsDir, claudeSkillsDir]) {
+      const target = plan.actions.find((a) => (a.target ?? '').startsWith(`${dir}/`))?.target;
+      expect(target, `no target under ${dir}`).toBe(`${dir}/globex__greet`);
+      // The directory is carried VERBATIM, so a reader can slice it off.
+      expect(target?.slice(0, dir.length)).toBe(dir);
+      expect(target?.charAt(dir.length)).toBe('/');
+    }
+  });
+});
 
 describe('SRC-04 global: which directories the user tier writes', () => {
   it('case 1: one link in the shared folder for the five tools, and a Claude link only for the sixth', () => {
@@ -103,8 +148,8 @@ describe('SRC-04 global: which directories the user tier writes', () => {
     const codexOnly = projectGlobal({ roots, harnesses: ['codex'] });
     expect(targetsOf(codexOnly)).toEqual(
       [
-        join(globalSkillsDir(dorkHome), 'globex__greet'),
-        join(agentsSkillsDir, 'globex__greet'),
+        planTarget(globalSkillsDir(dorkHome), 'globex__greet'),
+        planTarget(agentsSkillsDir, 'globex__greet'),
       ].sort()
     );
 
@@ -114,8 +159,8 @@ describe('SRC-04 global: which directories the user tier writes', () => {
     const claudeOnly = projectGlobal({ roots, harnesses: ['claude-code'] });
     expect(targetsOf(claudeOnly)).toEqual(
       [
-        join(globalSkillsDir(dorkHome), 'globex__greet'),
-        join(claudeSkillsDir, 'globex__greet'),
+        planTarget(globalSkillsDir(dorkHome), 'globex__greet'),
+        planTarget(claudeSkillsDir, 'globex__greet'),
       ].sort()
     );
 
@@ -125,9 +170,9 @@ describe('SRC-04 global: which directories the user tier writes', () => {
     const both = projectGlobal({ roots, harnesses: [...AGENTS_SKILLS_DIR_READERS, 'claude-code'] });
     expect(targetsOf(both)).toEqual(
       [
-        join(globalSkillsDir(dorkHome), 'globex__greet'),
-        join(agentsSkillsDir, 'globex__greet'),
-        join(claudeSkillsDir, 'globex__greet'),
+        planTarget(globalSkillsDir(dorkHome), 'globex__greet'),
+        planTarget(agentsSkillsDir, 'globex__greet'),
+        planTarget(claudeSkillsDir, 'globex__greet'),
       ].sort()
     );
   });
@@ -139,9 +184,11 @@ describe('SRC-04 global: which directories the user tier writes', () => {
 
     for (const harness of AGENTS_SKILLS_DIR_READERS) {
       const plan = projectGlobal({ roots, harnesses: [harness] });
-      expect(targetsOf(plan), `${harness} alone`).toContain(join(agentsSkillsDir, 'globex__greet'));
+      expect(targetsOf(plan), `${harness} alone`).toContain(
+        planTarget(agentsSkillsDir, 'globex__greet')
+      );
       expect(targetsOf(plan), `${harness} alone`).not.toContain(
-        join(claudeSkillsDir, 'globex__greet')
+        planTarget(claudeSkillsDir, 'globex__greet')
       );
     }
   });
@@ -155,7 +202,7 @@ describe('SRC-04 global: which directories the user tier writes', () => {
       roots: { dorkHome },
       harnesses: ['codex', 'claude-code'],
     });
-    expect(targetsOf(plan)).toEqual([join(globalSkillsDir(dorkHome), 'globex__greet')]);
+    expect(targetsOf(plan)).toEqual([planTarget(globalSkillsDir(dorkHome), 'globex__greet')]);
   });
 
   it('case 1: carries the two frozen reasons, and labels the shared link as no one tool’s', () => {
@@ -166,12 +213,16 @@ describe('SRC-04 global: which directories the user tier writes', () => {
       harnesses: ['codex', 'claude-code'],
     });
 
-    const shared = plan.actions.find((a) => a.target === join(agentsSkillsDir, 'globex__greet'));
+    const shared = plan.actions.find(
+      (a) => a.target === planTarget(agentsSkillsDir, 'globex__greet')
+    );
     expect(shared?.reason).toBe(AGENTS_USER_LINK_REASON);
     // Five tools read that one link, so no per-tool cell may claim it.
     expect(shared?.harnessAgnostic).toBe(true);
 
-    const claude = plan.actions.find((a) => a.target === join(claudeSkillsDir, 'globex__greet'));
+    const claude = plan.actions.find(
+      (a) => a.target === planTarget(claudeSkillsDir, 'globex__greet')
+    );
     expect(claude?.reason).toBe(CLAUDE_USER_LINK_REASON);
     // That directory has exactly one reader, so the label is a claim and it is true.
     expect(claude?.harness).toBe('claude-code');
@@ -199,9 +250,7 @@ describe('SRC-04 global: which directories the user tier writes', () => {
     }
 
     // Nothing but the two links and the folders holding them is in the home
-    // directory, and both links are symlinks with relative text — so a dork home
-    // that moves, or lives under a symlinked parent, keeps working. Every macOS
-    // temp directory is one.
+    // directory, and both entries are LINKS rather than copies.
     const homeAfter = snapshotTree(home);
     expect([...homeAfter.keys()].sort()).toEqual([
       '.agents',
@@ -211,15 +260,40 @@ describe('SRC-04 global: which directories the user tier writes', () => {
       '.claude/skills',
       '.claude/skills/globex__greet',
     ]);
+    for (const key of ['.agents/skills/globex__greet', '.claude/skills/globex__greet']) {
+      expect(homeAfter.get(key)?.kind, key).toBe('symlink');
+    }
+
+    // WHERE each link points, asked the way this engine asks it everywhere else:
+    // `linkMatchesPlan` with the check this platform can make.
+    //
+    // The link TEXT cannot be asserted directly on both platforms. POSIX stores
+    // the relative text verbatim, which is what makes a dork home that moves, or
+    // one under a symlinked parent, keep working — every macOS temp directory is
+    // the second case. Windows has no relative junction: `symlinkSync(text, ...,
+    // 'junction')` resolves the text and stores an ABSOLUTE path, so `readlink`
+    // there answers `C:\Users\RUNNER~1\...` for the same link. Asserting the
+    // relative text is asserting the POSIX representation, and it reds on
+    // Windows for a link that is perfectly correct.
     const linkTarget = join(dorkHome, 'plugins', 'globex', 'skills', 'greet');
-    expect(homeAfter.get('.agents/skills/globex__greet')).toEqual({
-      kind: 'symlink',
-      linkText: relative(agentsSkillsDir, linkTarget),
-    });
-    expect(homeAfter.get('.claude/skills/globex__greet')).toEqual({
-      kind: 'symlink',
-      linkText: relative(claudeSkillsDir, linkTarget),
-    });
+    const how = linkCheckFor(process.platform);
+    for (const dir of [agentsSkillsDir, claudeSkillsDir]) {
+      const link = join(dir, 'globex__greet');
+      expect(
+        linkMatchesPlan(link, linkTarget, relative(dir, linkTarget), how),
+        `${link} does not point at the staged skill`
+      ).toBe(true);
+    }
+    // And on the platform that keeps the text, the text is RELATIVE — the
+    // property the absolute form would silently lose.
+    if (how === 'link-text') {
+      expect(homeAfter.get('.agents/skills/globex__greet')?.linkText).toBe(
+        relative(agentsSkillsDir, linkTarget)
+      );
+      expect(homeAfter.get('.claude/skills/globex__greet')?.linkText).toBe(
+        relative(claudeSkillsDir, linkTarget)
+      );
+    }
   });
 });
 
@@ -350,22 +424,25 @@ describe('AP-07 global: the user tier removes only what DorkOS wrote', () => {
     const roots: GlobalPlanRoots = { dorkHome, agentsSkillsDir };
 
     // Exactly where the plan wants to write, and the person got there first.
-    const occupied = join(agentsSkillsDir, 'globex__greet');
-    mkdirSync(occupied, { recursive: true });
+    // Two spellings of one path on purpose: `occupiedOnDisk` is what the
+    // filesystem is handed, `occupied` is what the PLAN calls the same place.
+    const occupiedOnDisk = join(agentsSkillsDir, 'globex__greet');
+    const occupied = planTarget(agentsSkillsDir, 'globex__greet');
+    mkdirSync(occupiedOnDisk, { recursive: true });
     const theirs = '---\nname: mine\ndescription: I wrote this\n---\nHands off.\n';
-    writeFileSync(join(occupied, 'SKILL.md'), theirs);
+    writeFileSync(join(occupiedOnDisk, 'SKILL.md'), theirs);
 
     const plan = projectGlobal({ roots, harnesses: ['codex'] });
     const { applied, conflicts } = applyGlobalPlan(plan, roots, { sweepOrphans: true });
 
     // The dork-home link is written; the occupied user target is not.
     expect(applied.map((a) => a.target)).toEqual([
-      join(globalSkillsDir(dorkHome), 'globex__greet'),
+      planTarget(globalSkillsDir(dorkHome), 'globex__greet'),
     ]);
     expect(conflicts.map((a) => a.target)).toEqual([occupied]);
     expect(conflicts[0]?.reason).toBeTruthy();
     // Their bytes, unchanged. The seeded defect replaces the target and this reds.
-    expect(readFileSync(join(occupied, 'SKILL.md'), 'utf8')).toBe(theirs);
+    expect(readFileSync(join(occupiedOnDisk, 'SKILL.md'), 'utf8')).toBe(theirs);
     // And `--check` says the same thing rather than calling it drift, so nobody
     // is told to run a command they then watch decline.
     const drift = checkGlobalPlan(plan, roots);
@@ -439,7 +516,7 @@ describe('F2: a user root that is not a folder at all', () => {
     }).not.toThrow();
     expect(result).toBeDefined();
     const { applied, conflicts } = result as ReturnType<typeof applyGlobalPlan>;
-    expect(conflicts.map((a) => a.target)).toEqual([join(agentsSkillsDir, 'globex__greet')]);
+    expect(conflicts.map((a) => a.target)).toEqual([planTarget(agentsSkillsDir, 'globex__greet')]);
     // DOR-1882's sentence shape, from DOR-1882's own table: the obstacle and the
     // way out, naming the path that is really in the way.
     expect(conflicts[0]?.reason).toBe(
@@ -449,15 +526,51 @@ describe('F2: a user root that is not a folder at all', () => {
     // The dork-home tier is unaffected: one hostile path costs exactly the links
     // that go through it.
     expect(applied.map((a) => a.target)).toEqual([
-      join(globalSkillsDir(dorkHome), 'globex__greet'),
+      planTarget(globalSkillsDir(dorkHome), 'globex__greet'),
     ]);
     // Their file, byte for byte.
     expect(readFileSync(agentsSkillsDir, 'utf8')).toBe('not a folder\n');
     // And `--check` says the same thing, so nobody is promised a fix that then
     // refuses.
     expect(checkGlobalPlan(plan, roots).blocked.map((a) => a.target)).toEqual([
-      join(agentsSkillsDir, 'globex__greet'),
+      planTarget(agentsSkillsDir, 'globex__greet'),
     ]);
+  });
+
+  it('the SHAPE half runs on a platform that cannot be asked about permission', () => {
+    // The Windows failure, reproduced on this machine. The probe opened with a
+    // single gate — "not Windows" — in front of BOTH halves, so on Windows it
+    // returned `undefined` for everything and a plain file at the shared folder
+    // reached `mkdirSync`. The log said `EEXIST: file already exists, mkdir
+    // 'C:\...\.agents\skills'`, and on POSIX the same shape says ENOTDIR — which
+    // is exactly why the shape question is asked through DOR-1882's helper
+    // rather than by reading an `errno` here.
+    //
+    // Permission is genuinely unanswerable on Windows (`accessSync` reports the
+    // read-only attribute, which a directory does not meaningfully carry). Shape
+    // is not, and `write-path-occupants.test.ts` runs green there. So the gate
+    // belongs in front of the permission half alone, and this pins that.
+    const dorkHome = stageDorkHome([{ name: 'globex', skills: ['greet'] }]);
+    const { home } = stageHome();
+    const agentsSkillsDir = join(home, '.agents', 'skills');
+    mkdirSync(join(home, '.agents'), { recursive: true });
+    writeFileSync(agentsSkillsDir, 'not a folder\n');
+    const roots: GlobalPlanRoots = { dorkHome, agentsSkillsDir };
+
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    try {
+      const plan = projectGlobal({ roots, harnesses: ['codex'] });
+      const { conflicts } = applyGlobalPlan(plan, roots, { sweepOrphans: true });
+      expect(conflicts.map((a) => a.target)).toEqual([
+        planTarget(agentsSkillsDir, 'globex__greet'),
+      ]);
+      expect(conflicts[0]?.reason).toContain('is a file');
+    } finally {
+      if (platform) Object.defineProperty(process, 'platform', platform);
+    }
+    // Restored, so nothing after this case is measured on a fake platform.
+    expect(process.platform).not.toBe('win32');
   });
 
   it('a file at an ANCESTOR is named, rather than the deeper path it makes unreadable', () => {
@@ -521,7 +634,7 @@ describe('a user folder DorkOS may not write in', () => {
         // `--check` says it, rather than promising a fix that would then throw.
         const drift = checkGlobalPlan(plan, roots);
         expect(drift.blocked.map((a) => a.target)).toContain(
-          join(agentsSkillsDir, 'globex__greet')
+          planTarget(agentsSkillsDir, 'globex__greet')
         );
         expect(drift.blocked[0]?.reason).toContain('cannot read (permission denied)');
 
@@ -529,12 +642,12 @@ describe('a user folder DorkOS may not write in', () => {
         // `symlinkSync`, which is what it did before this probe existed.
         const result = applyGlobalPlan(plan, roots, { sweepOrphans: true });
         expect(result.conflicts.map((a) => a.target)).toContain(
-          join(agentsSkillsDir, 'globex__greet')
+          planTarget(agentsSkillsDir, 'globex__greet')
         );
         // The dork-home tier is unaffected: one hostile folder costs exactly the
         // links that go through it.
         expect(result.applied.map((a) => a.target)).toEqual([
-          join(globalSkillsDir(dorkHome), 'globex__greet'),
+          planTarget(globalSkillsDir(dorkHome), 'globex__greet'),
         ]);
         // And nothing was removed from the folder nobody could read. The sweep
         // already skipped it — `listDir` answers nothing — and this pins that the
@@ -562,7 +675,7 @@ describe('DORKOS_BOUNDARY: the user tier is skipped and the dork-home tier is no
     const { applied } = applyGlobalPlan(plan, roots, { sweepOrphans: true });
 
     expect(applied.map((a) => a.target)).toEqual([
-      join(globalSkillsDir(dorkHome), 'globex__greet'),
+      planTarget(globalSkillsDir(dorkHome), 'globex__greet'),
     ]);
     // Nothing at all in the home directory, and nothing was read there either:
     // an absent root is not scanned, so the sweep cannot remove from it.
@@ -587,7 +700,7 @@ describe('the harness list is the switch, and an empty one is off', () => {
       roots: { dorkHome, agentsSkillsDir, claudeSkillsDir },
       harnesses: [],
     });
-    expect(targetsOf(plan)).toEqual([join(globalSkillsDir(dorkHome), 'globex__greet')]);
+    expect(targetsOf(plan)).toEqual([planTarget(globalSkillsDir(dorkHome), 'globex__greet')]);
   });
 
   it('the readers of the shared folder are every harness but claude-code', () => {

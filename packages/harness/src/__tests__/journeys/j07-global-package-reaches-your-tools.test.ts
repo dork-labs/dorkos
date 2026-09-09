@@ -29,9 +29,10 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, relative } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { projectGlobal, type GlobalPlanRoots } from '../../plan/global-projector.js';
 import { applyGlobalPlan, checkGlobalPlan } from '../../apply/global-apply.js';
+import { linkCheckFor, linkMatchesPlan } from '../../apply/symlink-occupants.js';
 import { diffSnapshots, snapshotTree } from './stage.js';
 import { stageRepo, type StagedRepo } from './stage-repo.js';
 
@@ -90,12 +91,16 @@ describe('J-07: a package installed for all your projects reaches the tools you 
       .map((action) => action.target ?? '')
       .filter((target) => target.startsWith(home))
       .sort();
+    // `${dir}/${name}`, never `join`: that is the shape the planner builds and
+    // slice A2's suite pins, and on Windows the two differ by one character.
+    // Everything below that touches DISK keeps `join`.
+    const planTarget = (dir: string, name: string): string => `${dir}/${name}`;
     expect(promised).toEqual(
       [
-        join(agentsSkillsDir, 'globex__greet'),
-        join(agentsSkillsDir, 'globex__wave'),
-        join(claudeSkillsDir, 'globex__greet'),
-        join(claudeSkillsDir, 'globex__wave'),
+        planTarget(agentsSkillsDir, 'globex__greet'),
+        planTarget(agentsSkillsDir, 'globex__wave'),
+        planTarget(claudeSkillsDir, 'globex__greet'),
+        planTarget(claudeSkillsDir, 'globex__wave'),
       ].sort()
     );
 
@@ -122,22 +127,32 @@ describe('J-07: a package installed for all your projects reaches the tools you 
       changed: [],
       removed: [],
     });
-    // Every one is a SYMLINK with relative text — a generated file here would
-    // satisfy "added" and fail this.
+    // Every one is a LINK rather than a copy, and it points at the staged skill.
+    //
+    // The link TEXT is asserted only where the platform keeps it. POSIX stores
+    // the relative text verbatim; Windows has no relative junction, so
+    // `symlinkSync(text, ..., 'junction')` resolves it and `readlink` answers an
+    // absolute path for a link that is perfectly correct. `linkMatchesPlan` is
+    // how this engine asks the question everywhere else, and it asks it the way
+    // each platform can answer.
+    const how = linkCheckFor(process.platform);
     for (const [dir, prefix] of [
       [agentsSkillsDir, '.agents/skills'],
       [claudeSkillsDir, '.claude/skills'],
     ] as const) {
       for (const skill of ['greet', 'wave']) {
-        expect(afterApply.get(`${prefix}/globex__${skill}`)).toEqual({
-          kind: 'symlink',
-          linkText: relative(dir, source(skill)),
-        });
+        const key = `${prefix}/globex__${skill}`;
+        expect(afterApply.get(key)?.kind, key).toBe('symlink');
+        const link = join(dir, `globex__${skill}`);
+        expect(linkMatchesPlan(link, source(skill), relative(dir, source(skill)), how), key).toBe(
+          true
+        );
+        if (how === 'link-text') {
+          expect(afterApply.get(key)?.linkText).toBe(relative(dir, source(skill)));
+        }
         // And the skill reads THROUGH it, which a link one directory too high
         // would not.
-        expect(readFileSync(join(dir, `globex__${skill}`, 'SKILL.md'), 'utf8')).toContain(
-          `name: ${skill}`
-        );
+        expect(readFileSync(join(link, 'SKILL.md'), 'utf8')).toContain(`name: ${skill}`);
       }
     }
     // Their own file, untouched.
@@ -169,12 +184,17 @@ describe('J-07: a package installed for all your projects reaches the tools you 
     const afterPlan = projectGlobal({ roots: open, harnesses });
     const willGo = checkGlobalPlan(afterPlan, open).removals;
     // The promise, before the deletion: every path, each with its own reason.
+    //
+    // `resolve` on BOTH sides. A sweep path comes back native, a plan target is
+    // built `${dir}/${name}`, and on Windows those are the same place spelled
+    // two ways — which is exactly the bridge `findGlobalOrphans` itself crosses
+    // by resolving before it compares.
     expect(
       willGo
-        .map(({ path }) => path)
+        .map(({ path }) => resolve(path))
         .filter((p) => p.startsWith(home))
         .sort()
-    ).toEqual(promised);
+    ).toEqual(promised.map((t) => resolve(t)).sort());
     for (const { reason } of willGo) expect(reason).toBeTruthy();
 
     const { removals } = applyGlobalPlan(afterPlan, open, { sweepOrphans: true });
