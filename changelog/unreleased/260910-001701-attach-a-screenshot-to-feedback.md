@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(client): attach a screenshot to feedback — paste, drag, or pick (DOR-1955)'
+  - 'fix(client): close the screenshot capture review findings (DOR-1955)'
 ---
 
 ### Added

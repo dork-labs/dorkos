@@ -16,15 +16,19 @@ import { MAX_FEEDBACK_SCREENSHOT_DATA_URL_LEN } from '@dorkos/shared/telemetry-e
 import {
   compressImage,
   scaleToFit,
+  isAcceptableImageDataUrl,
   ImageCompressError,
-  IMAGE_WEBP_QUALITY,
+  IMAGE_DECODE_TIMEOUT_MS,
+  IMAGE_ENCODE_QUALITY,
   MAX_IMAGE_DATA_URL_LEN,
   MAX_IMAGE_EDGE_PX,
+  RETRY_IMAGE_EDGE_PX,
+  RETRY_IMAGE_QUALITY,
 } from '../image-compress';
 
 /** A stand-in `Image` whose load outcome and reported size the test controls. */
 class FakeImage {
-  static behaviour: { ok: boolean; width: number; height: number } = {
+  static behaviour: { ok: boolean | 'hang'; width: number; height: number } = {
     ok: true,
     width: 100,
     height: 50,
@@ -43,6 +47,9 @@ class FakeImage {
     const { ok, width, height } = FakeImage.behaviour;
     this.naturalWidth = width;
     this.naturalHeight = height;
+    // A real `Image` can fire NEITHER callback (see the timeout test); 'hang'
+    // is that case, and it must not be simulated by simply being slow.
+    if (ok === 'hang') return;
     // Decoding is async in a browser; resolving on a microtask keeps the
     // promise ordering in `compressImage` honest.
     queueMicrotask(() => (ok ? this.onload?.() : this.onerror?.()));
@@ -62,6 +69,10 @@ const canvasState = {
   drawArgs: null as unknown[] | null,
   width: 0,
   height: 0,
+  /** One entry per canvas created, so a step-down retry is visible as a second. */
+  attempts: [] as { width: number; height: number }[],
+  /** Overrides `answers` when set — for a type whose answer differs per call. */
+  encoder: null as ((type: string) => string) | null,
 };
 
 /** A data URL of exactly `length` characters carrying the given prefix. */
@@ -81,6 +92,8 @@ beforeEach(() => {
   canvasState.drawArgs = null;
   canvasState.width = 0;
   canvasState.height = 0;
+  canvasState.attempts = [];
+  canvasState.encoder = null;
 
   vi.stubGlobal('Image', FakeImage);
   vi.stubGlobal('URL', {
@@ -90,15 +103,19 @@ beforeEach(() => {
   });
   vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
     if (tag !== 'canvas') return realCreateElement(tag);
+    const attempt = { width: 0, height: 0 };
+    canvasState.attempts.push(attempt);
     return {
       set width(value: number) {
         canvasState.width = value;
+        attempt.width = value;
       },
       get width() {
         return canvasState.width;
       },
       set height(value: number) {
         canvasState.height = value;
+        attempt.height = value;
       },
       get height() {
         return canvasState.height;
@@ -113,6 +130,7 @@ beforeEach(() => {
           : null,
       toDataURL: (type: string, quality?: number) => {
         canvasState.calls.push({ type, quality });
+        if (canvasState.encoder) return canvasState.encoder(type);
         // A browser that cannot encode `type` answers with a PNG; the fixture
         // says so explicitly per test rather than guessing.
         return canvasState.answers[type] ?? canvasState.answers.fallback ?? '';
@@ -183,30 +201,51 @@ describe('compressImage', () => {
 
   it('asks the encoder for WebP at the configured quality', async () => {
     await compressImage(imageBlob());
-    expect(canvasState.calls[0]).toEqual({ type: 'image/webp', quality: IMAGE_WEBP_QUALITY });
+    expect(canvasState.calls[0]).toEqual({ type: 'image/webp', quality: IMAGE_ENCODE_QUALITY });
   });
 
-  it('keeps the PNG the canvas substituted when it cannot encode WebP', async () => {
-    // The HTML spec's own fallback: asked for WebP, a canvas without it answers PNG.
-    canvasState.answers = { 'image/webp': 'data:image/png;base64,PNG' };
-
-    await expect(compressImage(imageBlob())).resolves.toBe('data:image/png;base64,PNG');
-    // No second encode — the substituted PNG is already the answer.
-    expect(canvasState.calls).toHaveLength(1);
-  });
-
-  it('encodes PNG explicitly when the WebP attempt yields neither format', async () => {
+  it('falls to JPEG — not PNG — when the canvas cannot encode WebP', async () => {
+    // The whole point of the middle rung. A canvas asked for WebP it cannot do
+    // answers with a PNG, and a PNG of a photo runs several times the cap; JPEG
+    // of the same picture fits. Taking the substituted PNG as the answer is the
+    // bug this ladder exists to prevent.
     canvasState.answers = {
-      'image/webp': 'data:image/gif;base64,GIF',
+      'image/webp': 'data:image/png;base64,SUBSTITUTED',
+      'image/jpeg': 'data:image/jpeg;base64,JPEG',
+      'image/png': 'data:image/png;base64,PNG',
+    };
+
+    await expect(compressImage(imageBlob())).resolves.toBe('data:image/jpeg;base64,JPEG');
+    expect(canvasState.calls.map((c) => c.type)).toEqual(['image/webp', 'image/jpeg']);
+  });
+
+  it('asks each encoder at the same quality on the way down the ladder', async () => {
+    canvasState.answers = {
+      'image/webp': 'data:image/png;base64,SUBSTITUTED',
+      'image/jpeg': 'data:image/jpeg;base64,JPEG',
+    };
+
+    await compressImage(imageBlob());
+
+    expect(canvasState.calls).toEqual([
+      { type: 'image/webp', quality: IMAGE_ENCODE_QUALITY },
+      { type: 'image/jpeg', quality: IMAGE_ENCODE_QUALITY },
+    ]);
+  });
+
+  it('reaches PNG only when neither lossy encoding is available', async () => {
+    canvasState.answers = {
+      'image/webp': 'data:image/png;base64,SUBSTITUTED',
+      'image/jpeg': 'data:image/png;base64,SUBSTITUTED',
       'image/png': 'data:image/png;base64,PNG',
     };
 
     await expect(compressImage(imageBlob())).resolves.toBe('data:image/png;base64,PNG');
-    expect(canvasState.calls.map((c) => c.type)).toEqual(['image/webp', 'image/png']);
+    expect(canvasState.calls.map((c) => c.type)).toEqual(['image/webp', 'image/jpeg', 'image/png']);
   });
 
   it('refuses as `unsupported` when no encoding at all comes back', async () => {
-    canvasState.answers = { 'image/webp': '', 'image/png': '' };
+    canvasState.answers = { 'image/webp': '', 'image/jpeg': '', 'image/png': '' };
 
     await expect(compressImage(imageBlob())).rejects.toMatchObject({
       name: 'ImageCompressError',
@@ -240,11 +279,46 @@ describe('compressImage', () => {
     await expect(compressImage(imageBlob())).resolves.toHaveLength(MAX_IMAGE_DATA_URL_LEN);
   });
 
-  it('refuses as `too-large` one character over the cap, rather than sending it', async () => {
+  it('refuses as `too-large` only after the step-down retry also misses', async () => {
     const overCap = dataUrlOfLength('data:image/webp', MAX_IMAGE_DATA_URL_LEN + 1);
     canvasState.answers = { 'image/webp': overCap };
+    FakeImage.behaviour = { ok: true, width: 4000, height: 2000 };
 
     await expect(compressImage(imageBlob())).rejects.toMatchObject({ reason: 'too-large' });
+    // Two canvases: the full-size attempt, then the smaller one.
+    expect(canvasState.attempts).toEqual([
+      { width: MAX_IMAGE_EDGE_PX, height: MAX_IMAGE_EDGE_PX / 2 },
+      { width: RETRY_IMAGE_EDGE_PX, height: RETRY_IMAGE_EDGE_PX / 2 },
+    ]);
+  });
+
+  it('retries smaller and at lower quality when the first encode lands over the cap', async () => {
+    const overCap = dataUrlOfLength('data:image/webp', MAX_IMAGE_DATA_URL_LEN + 1);
+    const underCap = dataUrlOfLength('data:image/webp', MAX_IMAGE_DATA_URL_LEN - 1);
+    let call = 0;
+    canvasState.answers = {};
+    canvasState.encoder = (type) => {
+      if (type !== 'image/webp') return '';
+      call += 1;
+      return call === 1 ? overCap : underCap;
+    };
+    FakeImage.behaviour = { ok: true, width: 4000, height: 2000 };
+
+    // The rescue: a picture that missed by a whisker is sent, not refused.
+    await expect(compressImage(imageBlob())).resolves.toHaveLength(MAX_IMAGE_DATA_URL_LEN - 1);
+    expect(canvasState.calls[1]).toEqual({
+      type: 'image/webp',
+      quality: RETRY_IMAGE_QUALITY,
+    });
+  });
+
+  it('does not retry when the first encode already fits', async () => {
+    FakeImage.behaviour = { ok: true, width: 4000, height: 2000 };
+
+    await compressImage(imageBlob());
+
+    // A second encode of a picture that already fits is pure latency.
+    expect(canvasState.attempts).toHaveLength(1);
   });
 
   it('reads a `data:` URL source directly, without minting an object URL', async () => {
@@ -266,6 +340,81 @@ describe('compressImage', () => {
 
     await expect(compressImage(imageBlob())).rejects.toThrow();
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:fake-object-url');
+  });
+});
+
+describe('compressImage — decode timeout', () => {
+  it('gives up as `unreadable` when the image settles neither way', async () => {
+    // A real `Image` handed something it cannot make progress on may fire
+    // neither `load` nor `error`. Without the bound the promise never settles,
+    // and the caller's "preparing…" state — and its disabled Send — stick.
+    vi.useFakeTimers();
+    FakeImage.behaviour = { ok: 'hang', width: 100, height: 50 };
+    try {
+      const pending = compressImage(imageBlob());
+      const assertion = expect(pending).rejects.toMatchObject({ reason: 'unreadable' });
+      await vi.advanceTimersByTimeAsync(IMAGE_DECODE_TIMEOUT_MS);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not fire the timeout for an image that decoded in time', async () => {
+    vi.useFakeTimers();
+    try {
+      await expect(compressImage(imageBlob())).resolves.toBe('data:image/webp;base64,WEBP');
+      // A timer left armed past a settled promise would reject nothing, but it
+      // also means the handle was never cleared.
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('isAcceptableImageDataUrl', () => {
+  it('accepts each of the three encodings the wire schema allows', () => {
+    expect(isAcceptableImageDataUrl('data:image/webp;base64,AAA')).toBe(true);
+    expect(isAcceptableImageDataUrl('data:image/png;base64,AAA')).toBe(true);
+    expect(isAcceptableImageDataUrl('data:image/jpeg;base64,AAA')).toBe(true);
+  });
+
+  it('rejects an encoding the wire schema does not allow', () => {
+    expect(isAcceptableImageDataUrl('data:image/gif;base64,AAA')).toBe(false);
+    expect(isAcceptableImageDataUrl('data:image/svg+xml;base64,AAA')).toBe(false);
+  });
+
+  it('rejects something that is not an image at all', () => {
+    // The shape that matters: a `data:text/html` embedded in a Linear issue.
+    expect(isAcceptableImageDataUrl('data:text/html;base64,PHNjcmlwdD4=')).toBe(false);
+    expect(isAcceptableImageDataUrl('https://example.com/shot.png')).toBe(false);
+    expect(isAcceptableImageDataUrl('')).toBe(false);
+  });
+
+  it('rejects a URL that is not base64-encoded', () => {
+    expect(isAcceptableImageDataUrl('data:image/png,rawbytes')).toBe(false);
+  });
+
+  it('rejects a well-formed prefix smuggled into the middle of something else', () => {
+    // An unanchored match would call each of these an image, and the value goes
+    // on to be embedded in a Linear issue verbatim.
+    expect(isAcceptableImageDataUrl('https://evil.example/x#data:image/png;base64,AAA')).toBe(
+      false
+    );
+    expect(isAcceptableImageDataUrl(' data:image/png;base64,AAA')).toBe(false);
+    expect(isAcceptableImageDataUrl('data:text/html;base64,x data:image/png;base64,AAA')).toBe(
+      false
+    );
+  });
+
+  it('accepts exactly at the cap and rejects one character over', () => {
+    expect(
+      isAcceptableImageDataUrl(dataUrlOfLength('data:image/webp', MAX_IMAGE_DATA_URL_LEN))
+    ).toBe(true);
+    expect(
+      isAcceptableImageDataUrl(dataUrlOfLength('data:image/webp', MAX_IMAGE_DATA_URL_LEN + 1))
+    ).toBe(false);
   });
 });
 

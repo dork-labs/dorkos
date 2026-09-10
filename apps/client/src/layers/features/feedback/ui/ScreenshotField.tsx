@@ -1,4 +1,4 @@
-import { type ChangeEvent } from 'react';
+import { useId, type ChangeEvent } from 'react';
 import { ImagePlus, Crosshair, X } from 'lucide-react';
 import { Label } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
@@ -20,17 +20,15 @@ interface ScreenshotFieldProps {
   isMobile: boolean;
 }
 
-/** The id shared by the file input and its label, so the whole box is one control. */
-const FILE_INPUT_ID = 'feedback-screenshot-file';
-
 /**
  * The screenshot slot in the feedback dialog's attachments panel.
  *
- * Three ways in, one image out. On a desktop the whole dialog takes a paste or
- * a drop and this box is where the drag lands; on a phone the same box opens the
- * photo picker, which is the only one of the three a touch keyboard can offer.
- * Once something is attached the box becomes the picture itself — the promise
- * of "you see exactly what will be sent" is only kept if the thing is on screen.
+ * Three ways in, one image out. On a pointer surface the whole dialog takes a
+ * paste or a drop and this box is where the drag lands; on a touch surface the
+ * same box opens the photo picker, which is the only one of the three a touch
+ * keyboard can offer. Once something is attached the box becomes the picture
+ * itself — the promise of "you see exactly what will be sent" is only kept if
+ * the thing is on screen, and that holds while a REPLACEMENT is encoding too.
  *
  * "Point at element" is still the roadmap affordance it has always been, shown
  * only on desktop because it is a pointer gesture that will never ship on touch.
@@ -44,6 +42,10 @@ export function ScreenshotField({
   onPreview,
   isMobile,
 }: ScreenshotFieldProps) {
+  // Generated, not a module constant: the Dev Playground mounts three of these
+  // dialogs at once, and a shared id would point every label at the first input.
+  const fileInputId = useId();
+
   function onInputChange(event: ChangeEvent<HTMLInputElement>): void {
     const file = event.target.files?.[0];
     // Clear the input so picking the SAME file twice in a row still fires a
@@ -53,9 +55,9 @@ export function ScreenshotField({
   }
 
   const pickLabel = isMobile ? 'Add a photo' : 'Add screenshot';
-  const pickHint = isMobile
-    ? 'Pick a photo from your phone.'
-    : 'Drop one here, paste one, or browse your files.';
+  // Only the pointer surface gets a hint. On touch the label already says the
+  // whole of it, and the three ways in are two ways a touch device does not have.
+  const pickHint = isMobile ? null : 'Drop one here, paste one, or browse your files.';
 
   function emptyStateLabel(): string {
     if (isPreparing) return 'Getting it ready…';
@@ -72,13 +74,18 @@ export function ScreenshotField({
             alt="The screenshot you attached"
             className="bg-muted/30 max-h-40 w-full rounded-sm object-contain"
           />
+          {isPreparing && (
+            <p role="status" aria-live="polite" className="text-muted-foreground text-xs">
+              Getting it ready…
+            </p>
+          )}
           <div className="flex items-center justify-between gap-2">
             <button
               type="button"
               onClick={onPreview}
               className="text-muted-foreground hover:text-foreground focus-visible:ring-ring rounded-sm text-xs underline underline-offset-2 transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
             >
-              View full preview
+              View full screenshot
             </button>
             <button
               type="button"
@@ -92,7 +99,7 @@ export function ScreenshotField({
         </div>
       ) : (
         <Label
-          htmlFor={FILE_INPUT_ID}
+          htmlFor={fileInputId}
           className={cn(
             'focus-within:ring-ring flex cursor-pointer flex-col items-center justify-center gap-1 rounded-md border border-dashed px-3 py-4 text-center transition-colors duration-150 focus-within:ring-2',
             isDraggingOver
@@ -100,15 +107,19 @@ export function ScreenshotField({
               : 'border-muted-foreground/25 text-muted-foreground hover:border-muted-foreground/50'
           )}
         >
-          <span className="flex items-center gap-2 text-xs font-medium">
+          <span
+            role="status"
+            aria-live="polite"
+            className="flex items-center gap-2 text-xs font-medium"
+          >
             <ImagePlus className="size-4" aria-hidden />
             {emptyStateLabel()}
           </span>
-          {!isPreparing && !isDraggingOver && (
+          {pickHint && !isPreparing && !isDraggingOver && (
             <span className="text-muted-foreground text-xs font-normal">{pickHint}</span>
           )}
           <input
-            id={FILE_INPUT_ID}
+            id={fileInputId}
             type="file"
             accept="image/*"
             aria-label={pickLabel}

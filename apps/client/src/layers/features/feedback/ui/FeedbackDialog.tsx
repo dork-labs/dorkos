@@ -173,6 +173,7 @@ export function FeedbackDialog({
   // on the dialog) otherwise lands a picture the person who pasted it never
   // sees. Either one reveals the panel; closing it again stays theirs to do.
   const screenshot = useScreenshotAttachment({
+    enabled: open && showScreenshot,
     onFileDragIn: () => setPanelOpen(true),
     onAttached: () => setPanelOpen(true),
   });
@@ -196,9 +197,12 @@ export function FeedbackDialog({
       // see (a crash report, or a bug with diagnostics on) — otherwise stay clean.
       setPanelOpen(defaults.diagnostics || defaults.conversation);
       setPreviewOpen(false);
-      // A picture from the last report must never ride along with the next one.
-      screenshot.reset(initialScreenshotDataUrl);
-      if (initialScreenshotDataUrl) setPanelOpen(true);
+      // A picture from the last report must never ride along with the next one,
+      // and a surface that cannot send one must not be holding one either — so
+      // the embedded transport starts empty whatever a caller passed.
+      const initialShot = showScreenshot ? initialScreenshotDataUrl : undefined;
+      screenshot.reset(initialShot);
+      if (initialShot) setPanelOpen(true);
     }
   }
 

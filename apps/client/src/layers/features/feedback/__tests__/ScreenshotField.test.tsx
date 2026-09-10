@@ -11,10 +11,31 @@ import { ScreenshotField } from '../ui/ScreenshotField';
 
 const SAMPLE = 'data:image/webp;base64,AAAA';
 
+type FieldProps = Parameters<typeof ScreenshotField>[0];
+
 afterEach(cleanup);
 
-function renderField(overrides: Partial<Parameters<typeof ScreenshotField>[0]> = {}) {
-  const props = {
+/** Render with a handle that re-renders the SAME element with changed props. */
+function renderFieldWithRerender(overrides: Partial<FieldProps> = {}) {
+  const base: FieldProps = {
+    dataUrl: null,
+    isPreparing: false,
+    isDraggingOver: false,
+    onPick: vi.fn(),
+    onRemove: vi.fn(),
+    onPreview: vi.fn(),
+    isMobile: false,
+    ...overrides,
+  };
+  const view = render(<ScreenshotField {...base} />);
+  return {
+    ...base,
+    rerender: (next: Partial<FieldProps>) => view.rerender(<ScreenshotField {...base} {...next} />),
+  };
+}
+
+function renderField(overrides: Partial<FieldProps> = {}) {
+  const props: FieldProps = {
     dataUrl: null,
     isPreparing: false,
     isDraggingOver: false,
@@ -37,6 +58,44 @@ describe('ScreenshotField — empty state', () => {
     // `sr-only` hides it visually but leaves it in the tab order; `hidden` or
     // `display:none` would take the only keyboard route to the picker away.
     expect(input).not.toHaveAttribute('hidden');
+  });
+
+  it('gives each mounted field its own input id', () => {
+    // The Dev Playground mounts three feedback dialogs at once. With a module
+    // constant for the id, every label points at the FIRST field's input, so
+    // clicking the third box opens the first one's file picker.
+    render(
+      <>
+        <ScreenshotField
+          dataUrl={null}
+          isPreparing={false}
+          isDraggingOver={false}
+          onPick={vi.fn()}
+          onRemove={vi.fn()}
+          onPreview={vi.fn()}
+          isMobile={false}
+        />
+        <ScreenshotField
+          dataUrl={null}
+          isPreparing={false}
+          isDraggingOver={false}
+          onPick={vi.fn()}
+          onRemove={vi.fn()}
+          onPreview={vi.fn()}
+          isMobile={false}
+        />
+      </>
+    );
+
+    const inputs = screen.getAllByLabelText('Add screenshot');
+    expect(inputs).toHaveLength(2);
+    expect(inputs[0].id).not.toBe(inputs[1].id);
+    // And each label is wired to its OWN input, not to a shared one.
+    const labels = document.querySelectorAll('label[for]');
+    expect(Array.from(labels).map((l) => l.getAttribute('for'))).toEqual([
+      inputs[0].id,
+      inputs[1].id,
+    ]);
   });
 
   it('names the three desktop ways in', () => {
@@ -86,6 +145,15 @@ describe('ScreenshotField — empty state', () => {
     renderField({ isPreparing: true });
     expect(screen.getByText('Getting it ready…')).toBeInTheDocument();
   });
+
+  it('announces the empty-state label instead of only painting it', () => {
+    // Drag and compression feedback are the two things a sighted user gets for
+    // free here; a live region is how everyone else gets them.
+    const { rerender } = renderFieldWithRerender();
+    expect(screen.getByRole('status')).toHaveTextContent('Add screenshot');
+    rerender({ isDraggingOver: true });
+    expect(screen.getByRole('status')).toHaveTextContent('Drop to attach');
+  });
 });
 
 describe('ScreenshotField — attached state', () => {
@@ -105,10 +173,26 @@ describe('ScreenshotField — attached state', () => {
     expect(onRemove).toHaveBeenCalledTimes(1);
   });
 
-  it('offers the full preview from the thumbnail', () => {
+  it('offers the full preview from the thumbnail, named for what it opens', () => {
+    // Three controls in the dialog said "View full preview"; this one opens the
+    // screenshot, and a screen-reader list of three identical names is a guess.
     const { onPreview } = renderField({ dataUrl: SAMPLE });
-    fireEvent.click(screen.getByRole('button', { name: 'View full preview' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View full screenshot' }));
     expect(onPreview).toHaveBeenCalledTimes(1);
+  });
+
+  it('says it is working while a REPLACEMENT image is being prepared', () => {
+    // The attached branch used to have no in-flight cue at all, so replacing a
+    // picture looked like nothing was happening until it swapped.
+    renderField({ dataUrl: SAMPLE, isPreparing: true });
+    expect(screen.getByText('Getting it ready…')).toBeInTheDocument();
+    // And the image being replaced is still the one on screen until it lands.
+    expect(screen.getByAltText('The screenshot you attached')).toHaveAttribute('src', SAMPLE);
+  });
+
+  it('announces the in-flight state rather than only showing it', () => {
+    renderField({ dataUrl: SAMPLE, isPreparing: true });
+    expect(screen.getByRole('status')).toHaveTextContent('Getting it ready…');
   });
 });
 
@@ -116,8 +200,15 @@ describe('ScreenshotField — touch surfaces', () => {
   it('offers the photo picker wording instead of the desktop wording', () => {
     renderField({ isMobile: true });
     expect(screen.getByLabelText('Add a photo')).toBeInTheDocument();
-    expect(screen.getByText('Pick a photo from your phone.')).toBeInTheDocument();
+    // No hint at all: the label says the whole of it, and the desktop hint names
+    // two ways in that a touch device does not have.
     expect(screen.queryByText('Drop one here, paste one, or browse your files.')).toBeNull();
+  });
+
+  it('makes no claim about the device being a phone', () => {
+    // 768px is a breakpoint, not a phone — a narrow desktop window hits it too.
+    renderField({ isMobile: true });
+    expect(screen.queryByText(/phone/i)).not.toBeInTheDocument();
   });
 
   it('hides "Point at element", a pointer gesture that will never ship on touch', () => {

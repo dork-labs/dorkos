@@ -264,7 +264,12 @@ export { FILE_PATH_DRAG_TYPE, hasFilePathDrag, readFilePathDrag } from './file-d
 // The caps and the quality dial stay on the module rather than the barrel —
 // they document `compressImage`'s behaviour, and nothing outside it decides
 // anything from them.
-export { compressImage, ImageCompressError, type ImageCompressReason } from './image-compress';
+export {
+  compressImage,
+  ImageCompressError,
+  isAcceptableImageDataUrl,
+  type ImageCompressReason,
+} from './image-compress';
 export {
   buildUiStateSnapshot,
   prepareUiStateForSend,

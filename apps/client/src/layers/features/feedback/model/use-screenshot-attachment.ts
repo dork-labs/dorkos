@@ -14,9 +14,21 @@
  *
  * @module features/feedback/model/use-screenshot-attachment
  */
-import { useCallback, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type DragEvent,
+} from 'react';
 import { toast } from 'sonner';
-import { compressImage, ImageCompressError, type ImageCompressReason } from '@/layers/shared/lib';
+import {
+  compressImage,
+  ImageCompressError,
+  isAcceptableImageDataUrl,
+  type ImageCompressReason,
+} from '@/layers/shared/lib';
 
 /**
  * What the user is told when an image is refused.
@@ -25,7 +37,9 @@ import { compressImage, ImageCompressError, type ImageCompressReason } from '@/l
  * needs to know it was too big, not that "an error occurred".
  */
 const REFUSAL_MESSAGE: Record<ImageCompressReason, string> = {
-  'too-large': 'That image is too big to send, even after shrinking it. Try a smaller one.',
+  // Not "try a smaller file": every image is re-encoded at the same size here,
+  // so a smaller FILE of the same picture changes nothing. Fewer pixels does.
+  'too-large': 'That image is too big to send. Try cropping it to just the part that matters.',
   unreadable: 'Couldn’t read that image. Try a PNG or JPEG.',
   unsupported: 'This browser can’t prepare images to send.',
 };
@@ -49,6 +63,17 @@ function firstImage(files: readonly File[]): File | undefined {
 
 /** Options for {@link useScreenshotAttachment}. */
 export interface ScreenshotAttachmentOptions {
+  /**
+   * Whether the surface is currently accepting images — the dialog being open,
+   * on a transport that can actually send one.
+   *
+   * Drives the window-level guard against a drop that MISSES the dialog. A
+   * browser's default action for a file dropped on a page is to navigate to it,
+   * which replaces the app with a `file:///` view and takes the half-written
+   * report with it. Missing a dialog by a few pixels is an ordinary thing to do,
+   * so the whole window refuses file drops while one is open.
+   */
+  enabled?: boolean;
   /**
    * Called when a file drag first enters the surface, so the host can reveal
    * the drop target. Without it, dragging a picture onto a dialog whose
@@ -103,7 +128,7 @@ export interface UseScreenshotAttachment {
 export function useScreenshotAttachment(
   options: ScreenshotAttachmentOptions = {}
 ): UseScreenshotAttachment {
-  const { onFileDragIn, onAttached } = options;
+  const { onFileDragIn, onAttached, enabled = false } = options;
   const [dataUrl, setDataUrl] = useState<string | null>(null);
   const [isPreparing, setIsPreparing] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -112,36 +137,86 @@ export function useScreenshotAttachment(
   // inside. A plain boolean flickers off the moment the drag crosses a label.
   const dragDepth = useRef(0);
 
+  // Which attach attempt is the live one. Compression is async, so a second
+  // attach, a remove, or a dialog reopen can all land while an earlier one is
+  // still encoding; without this the older promise wins on resolve, and it wins
+  // by writing an image nobody asked for any more.
+  const generation = useRef(0);
+
   const attach = useCallback(
     async (file: File): Promise<void> => {
       if (!file.type.startsWith('image/')) {
         toast.error(NOT_AN_IMAGE_MESSAGE);
         return;
       }
+      const mine = ++generation.current;
       setIsPreparing(true);
       try {
         const compressed = await compressImage(file);
+        // Superseded while encoding: the image was removed, the dialog was
+        // reopened, or a second picture is already on its way. Any of the three
+        // makes this result stale, and writing it would resurrect something the
+        // user believed was gone.
+        if (mine !== generation.current) return;
         setDataUrl(compressed);
         onAttached?.();
       } catch (error) {
+        if (mine !== generation.current) return;
         const reason: ImageCompressReason =
           error instanceof ImageCompressError ? error.reason : 'unreadable';
         toast.error(REFUSAL_MESSAGE[reason]);
       } finally {
-        setIsPreparing(false);
+        // Only the live attempt owns the flag; a stale one clearing it would
+        // re-enable Send while the newer picture is still encoding.
+        if (mine === generation.current) setIsPreparing(false);
       }
     },
     [onAttached]
   );
 
-  const clear = useCallback(() => setDataUrl(null), []);
+  const clear = useCallback(() => {
+    generation.current += 1;
+    setDataUrl(null);
+    setIsPreparing(false);
+  }, []);
 
   const reset = useCallback((initial?: string) => {
+    generation.current += 1;
     dragDepth.current = 0;
-    setDataUrl(initial ?? null);
+    // An image handed in by a caller never passed through `compressImage`, so
+    // this is the only place its bounds are checked. Dropping it is the safe
+    // failure: an over-cap or non-image value would otherwise be refused at
+    // intake, far from whoever could fix it.
+    if (initial !== undefined && !isAcceptableImageDataUrl(initial)) {
+      console.warn(
+        '[feedback] Ignoring an initial screenshot that is not a bounded image data URL.'
+      );
+      setDataUrl(null);
+    } else {
+      setDataUrl(initial ?? null);
+    }
     setIsPreparing(false);
     setIsDraggingOver(false);
   }, []);
+
+  // Swallow file drops that land anywhere but the dialog. Without this the
+  // browser navigates away to the dropped file and the typed report is gone —
+  // the desktop shell blocks that with `will-navigate`, but the web app has no
+  // such backstop. Registered only while a dialog that takes images is open, so
+  // dropping a file on the app at any other time behaves as it always has.
+  useEffect(() => {
+    if (!enabled) return;
+    const swallow = (event: globalThis.DragEvent) => {
+      if (!dragCarriesFiles(event.dataTransfer)) return;
+      event.preventDefault();
+    };
+    window.addEventListener('dragover', swallow);
+    window.addEventListener('drop', swallow);
+    return () => {
+      window.removeEventListener('dragover', swallow);
+      window.removeEventListener('drop', swallow);
+    };
+  }, [enabled]);
 
   const onPaste = useCallback(
     (event: ClipboardEvent) => {

@@ -6,7 +6,7 @@ import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { FeedbackDialog } from '../ui/FeedbackDialog';
 import { __resetBreadcrumbsForTests, addBreadcrumb } from '@/layers/shared/lib/breadcrumbs';
-import { setPlatformAdapter } from '@/layers/shared/lib/platform';
+import { setPlatformAdapter } from '@/layers/shared/lib';
 import { ImageCompressError } from '@/layers/shared/lib/image-compress';
 
 // The submit hook reads the current route via useRouterState (pathname + search).
@@ -60,7 +60,15 @@ afterEach(() => {
 
 function renderDialog(
   transport = createMockTransport(),
-  props?: { currentUser?: { email: string; name?: string } | null }
+  props?: {
+    currentUser?: { email: string; name?: string } | null;
+    initialScreenshotDataUrl?: string;
+    /**
+     * Mount closed, so the caller can drive the closed -> open transition the
+     * real host always drives. The prefill props are read on that transition.
+     */
+    startClosed?: boolean;
+  }
 ) {
   const onOpenChange = vi.fn();
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -71,11 +79,12 @@ function renderDialog(
           open={open}
           onOpenChange={onOpenChange}
           currentUser={props?.currentUser ?? null}
+          initialScreenshotDataUrl={props?.initialScreenshotDataUrl}
         />
       </TransportProvider>
     </QueryClientProvider>
   );
-  const { rerender } = render(ui(true));
+  const { rerender } = render(ui(!props?.startClosed));
   return { onOpenChange, setOpen: (open: boolean) => rerender(ui(open)) };
 }
 
@@ -285,6 +294,17 @@ describe('FeedbackDialog', () => {
       return { types: ['Files'], files, dropEffect: 'none' };
     }
 
+    /**
+     * Paste an image onto the dialog. The route a REPLACEMENT takes: once an
+     * image is attached the box becomes the thumbnail, so the file input is no
+     * longer on screen, but ⌘V still works anywhere on the dialog.
+     */
+    function pasteImage(file: File): void {
+      fireEvent.paste(screen.getByRole('dialog'), {
+        clipboardData: { items: [{ kind: 'file', type: file.type, getAsFile: () => file }] },
+      });
+    }
+
     beforeEach(() => {
       compressImage.mockResolvedValue(SHOT);
     });
@@ -416,14 +436,22 @@ describe('FeedbackDialog', () => {
 
     it('leaves a drag carrying no files alone', async () => {
       renderDialog();
+      const dialog = screen.getByRole('dialog');
 
-      fireEvent.dragEnter(screen.getByRole('dialog'), {
+      // Control first: a file drag DOES produce the treatment, so the absence
+      // asserted below is a real difference and not a selector that never matches.
+      fireEvent.dragEnter(dialog, { dataTransfer: fileTransfer([imageFile()]) });
+      expect(await screen.findByText('Drop to attach')).toBeInTheDocument();
+      fireEvent.dragLeave(dialog, { dataTransfer: fileTransfer([imageFile()]) });
+      await waitFor(() => expect(screen.queryByText('Drop to attach')).not.toBeInTheDocument());
+
+      fireEvent.dragEnter(dialog, {
         dataTransfer: { types: ['application/x-dorkos-file-path'], files: [] },
       });
 
       await act(async () => {});
-      // The panel stayed shut, so the in-app path drag was never claimed.
-      expect(screen.queryByLabelText('Add screenshot')).not.toBeInTheDocument();
+      // An in-app path drag is never claimed, so no treatment appears for it.
+      expect(screen.queryByText('Drop to attach')).not.toBeInTheDocument();
     });
 
     it('refuses a dropped file that is not an image, and says so', async () => {
@@ -452,7 +480,7 @@ describe('FeedbackDialog', () => {
 
       await waitFor(() =>
         expect(toast.error).toHaveBeenCalledWith(
-          'That image is too big to send, even after shrinking it. Try a smaller one.'
+          'That image is too big to send. Try cropping it to just the part that matters.'
         )
       );
       expect(screen.queryByAltText('The screenshot you attached')).not.toBeInTheDocument();
@@ -536,7 +564,7 @@ describe('FeedbackDialog', () => {
         target: { files: [imageFile()] },
       });
       await screen.findByAltText('The screenshot you attached');
-      fireEvent.click(screen.getAllByRole('button', { name: 'View full preview' })[0]);
+      fireEvent.click(screen.getByRole('button', { name: 'View full screenshot' }));
 
       const tab = await screen.findByRole('tab', { name: 'Screenshot' });
       expect(tab).toBeInTheDocument();
@@ -567,6 +595,261 @@ describe('FeedbackDialog', () => {
       // an attachment nobody chose.
       openPanel();
       expect(screen.queryByAltText('The screenshot you attached')).not.toBeInTheDocument();
+    });
+
+    describe('a compression still in flight (cancellation)', () => {
+      /** A `compressImage` whose settlement the test controls, one call at a time. */
+      function deferredCompress() {
+        const settlers: { resolve: (dataUrl: string) => void; reject: (e: unknown) => void }[] = [];
+        compressImage.mockImplementation(
+          () => new Promise<string>((resolve, reject) => settlers.push({ resolve, reject }))
+        );
+        return settlers;
+      }
+
+      it('does not resurrect an image the user removed while it was encoding', async () => {
+        const settlers = deferredCompress();
+        const transport = createMockTransport();
+        const sendFeedback = vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
+        renderDialog(transport);
+        fireEvent.change(screen.getByPlaceholderText(/what works, what does not/i), {
+          target: { value: 'never mind' },
+        });
+        openPanel();
+
+        // Attach one, let it land, then start a REPLACEMENT and remove during it.
+        fireEvent.change(screen.getByLabelText('Add screenshot'), {
+          target: { files: [imageFile()] },
+        });
+        await act(async () => settlers[0].resolve('data:image/webp;base64,FIRST'));
+        await screen.findByAltText('The screenshot you attached');
+
+        pasteImage(imageFile());
+        fireEvent.click(screen.getByRole('button', { name: /remove screenshot/i }));
+        await act(async () => settlers[1].resolve('data:image/webp;base64,SECOND'));
+
+        // The removed image must stay removed — a promise landing after the
+        // remove would put a picture back that the user believed was gone.
+        expect(screen.queryByAltText('The screenshot you attached')).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+        await waitFor(() => expect(sendFeedback).toHaveBeenCalledTimes(1));
+        expect(sendFeedback.mock.calls[0][0].screenshot).toBeUndefined();
+      });
+
+      it('does not leak a mid-flight image into the next report after a reopen', async () => {
+        const settlers = deferredCompress();
+        const transport = createMockTransport();
+        const sendFeedback = vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
+        const { setOpen } = renderDialog(transport);
+        openPanel();
+        fireEvent.change(screen.getByLabelText('Add screenshot'), {
+          target: { files: [imageFile()] },
+        });
+
+        // The host keeps this dialog mounted and only toggles `open`, so hook
+        // state genuinely survives the close — the in-flight promise with it.
+        setOpen(false);
+        setOpen(true);
+        await act(async () => settlers[0].resolve('data:image/webp;base64,STALE'));
+
+        // Read the COLLAPSED panel's summary, not the panel's contents: clicking
+        // the panel open here would toggle shut whatever the attach opened, and
+        // the thumbnail would be missing whether or not the leak happened.
+        expect(screen.queryByText(/Screenshot on/)).not.toBeInTheDocument();
+
+        fireEvent.change(screen.getByPlaceholderText(/what works, what does not/i), {
+          target: { value: 'a fresh report' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+        await waitFor(() => expect(sendFeedback).toHaveBeenCalledTimes(1));
+        expect(sendFeedback.mock.calls[0][0].screenshot).toBeUndefined();
+      });
+
+      it('stays quiet when a superseded attach fails after a newer one landed', async () => {
+        const settlers = deferredCompress();
+        renderDialog();
+        openPanel();
+
+        pasteImage(imageFile());
+        pasteImage(imageFile());
+        await act(async () => settlers[1].resolve('data:image/webp;base64,SECOND'));
+        await act(async () =>
+          settlers[0].reject(new ImageCompressError('too-large', 'stale failure'))
+        );
+
+        // The picture on screen is fine; a toast about the one it replaced is a
+        // complaint about nothing the user can see or act on.
+        expect(toast.error).not.toHaveBeenCalled();
+        expect(await screen.findByAltText('The screenshot you attached')).toHaveAttribute(
+          'src',
+          'data:image/webp;base64,SECOND'
+        );
+      });
+
+      it('keeps Send disabled until the LAST of two rapid attaches finishes', async () => {
+        const settlers = deferredCompress();
+        renderDialog();
+        fireEvent.change(screen.getByPlaceholderText(/what works, what does not/i), {
+          target: { value: 'two at once' },
+        });
+        openPanel();
+
+        pasteImage(imageFile());
+        pasteImage(imageFile());
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled());
+
+        // The FIRST one landing must not re-open the gate: the second picture is
+        // still encoding, and sending now would post the report without it.
+        await act(async () => settlers[0].resolve('data:image/webp;base64,FIRST'));
+        expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
+
+        await act(async () => settlers[1].resolve('data:image/webp;base64,SECOND'));
+        expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled();
+      });
+
+      it('shows the last attach, not whichever promise happened to land last', async () => {
+        const settlers = deferredCompress();
+        renderDialog();
+        openPanel();
+
+        pasteImage(imageFile());
+        pasteImage(imageFile());
+        // Out-of-order resolution: the SECOND finishes, then the first.
+        await act(async () => settlers[1].resolve('data:image/webp;base64,SECOND'));
+        await act(async () => settlers[0].resolve('data:image/webp;base64,FIRST'));
+
+        expect(await screen.findByAltText('The screenshot you attached')).toHaveAttribute(
+          'src',
+          'data:image/webp;base64,SECOND'
+        );
+      });
+    });
+
+    describe('an image handed in by a caller (initialScreenshotDataUrl)', () => {
+      let warn: ReturnType<typeof vi.spyOn>;
+
+      beforeEach(() => {
+        warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      });
+
+      afterEach(() => warn.mockRestore());
+
+      /** Mount closed, then open — the transition the real host always drives. */
+      function openWith(initialScreenshotDataUrl: string, transport = createMockTransport()) {
+        const handle = renderDialog(transport, { initialScreenshotDataUrl, startClosed: true });
+        handle.setOpen(true);
+        return handle;
+      }
+
+      it('accepts one that is a bounded image and sends it', async () => {
+        const transport = createMockTransport();
+        const sendFeedback = vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
+        openWith('data:image/png;base64,GIVEN', transport);
+
+        fireEvent.change(screen.getByPlaceholderText(/what works, what does not/i), {
+          target: { value: 'from the pointer tool' },
+        });
+        expect(await screen.findByAltText('The screenshot you attached')).toHaveAttribute(
+          'src',
+          'data:image/png;base64,GIVEN'
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+        await waitFor(() => expect(sendFeedback).toHaveBeenCalledTimes(1));
+        expect(sendFeedback.mock.calls[0][0].screenshot).toEqual({
+          dataUrl: 'data:image/png;base64,GIVEN',
+        });
+      });
+
+      it('drops one that is not an image, rather than letting intake refuse it', () => {
+        // A `data:text/html` here would be embedded verbatim in a Linear issue.
+        openWith('data:text/html;base64,PHNjcmlwdD4=');
+
+        expect(screen.queryByAltText('The screenshot you attached')).not.toBeInTheDocument();
+        expect(warn).toHaveBeenCalled();
+      });
+
+      it('drops one that is over the cap', () => {
+        openWith(`data:image/png;base64,${'A'.repeat(600_001)}`);
+
+        // Over-cap here would 400 at intake with a toast that names nothing.
+        expect(screen.queryByAltText('The screenshot you attached')).not.toBeInTheDocument();
+        expect(warn).toHaveBeenCalled();
+      });
+
+      it('never holds one on a transport that cannot send it', () => {
+        setPlatformAdapter({ isEmbedded: true, openFile: async () => {} });
+        openWith('data:image/png;base64,GIVEN');
+
+        // The embed renders no screenshot slot, so the absent thumbnail proves
+        // nothing on its own. What IS observable is the panel: a stored image
+        // forces it open, and here it must stay shut over an empty panel.
+        expect(screen.queryByLabelText('Diagnostics')).not.toBeInTheDocument();
+        expect(screen.queryByAltText('The screenshot you attached')).not.toBeInTheDocument();
+      });
+
+      it('reveals the attachments panel on a surface that CAN show it', () => {
+        // The control for the assertion above: same prop, non-embedded surface,
+        // and the panel does open.
+        openWith('data:image/png;base64,GIVEN');
+        expect(screen.getByLabelText('Diagnostics')).toBeInTheDocument();
+      });
+    });
+
+    it('refuses a file dropped anywhere else on the page while the dialog is open', () => {
+      renderDialog();
+
+      // A drop that misses the dialog by a few pixels hits the document, and a
+      // browser's default action is to NAVIGATE to the file — replacing the app,
+      // and the half-written report, with a file:/// view.
+      const drop = new Event('drop', { bubbles: true, cancelable: true });
+      Object.defineProperty(drop, 'dataTransfer', {
+        value: { types: ['Files'], files: [] },
+      });
+      document.body.dispatchEvent(drop);
+
+      expect(drop.defaultPrevented).toBe(true);
+    });
+
+    it('leaves an ordinary drag on the page alone while the dialog is open', () => {
+      renderDialog();
+
+      // Only file drags are swallowed; anything else on the page keeps working.
+      const drop = new Event('drop', { bubbles: true, cancelable: true });
+      Object.defineProperty(drop, 'dataTransfer', {
+        value: { types: ['text/plain'], files: [] },
+      });
+      document.body.dispatchEvent(drop);
+
+      expect(drop.defaultPrevented).toBe(false);
+    });
+
+    it('stops refusing page drops once the dialog closes', () => {
+      const { setOpen } = renderDialog();
+      setOpen(false);
+
+      const drop = new Event('drop', { bubbles: true, cancelable: true });
+      Object.defineProperty(drop, 'dataTransfer', {
+        value: { types: ['Files'], files: [] },
+      });
+      document.body.dispatchEvent(drop);
+
+      // The guard is scoped to the dialog being open — dropping a file on the
+      // app at any other time behaves as it always has.
+      expect(drop.defaultPrevented).toBe(false);
+    });
+
+    it('leaves page drops alone under the in-process (Obsidian) transport', () => {
+      // No capture there, so no reason to claim the window's drops — the embed
+      // is a pane inside someone else's app, whose own drag-and-drop must work.
+      setPlatformAdapter({ isEmbedded: true, openFile: async () => {} });
+      renderDialog();
+
+      const drop = new Event('drop', { bubbles: true, cancelable: true });
+      Object.defineProperty(drop, 'dataTransfer', { value: { types: ['Files'], files: [] } });
+      document.body.dispatchEvent(drop);
+
+      expect(drop.defaultPrevented).toBe(false);
     });
 
     it('offers no capture at all under the in-process (Obsidian) transport', async () => {
