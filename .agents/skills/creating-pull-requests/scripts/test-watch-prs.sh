@@ -149,26 +149,95 @@ probe_check probe_zero_check_pr    ""                         8 '[]'            
 probe_check probe_gh_hard_failure  ""                         4 '[]'            0 1 ERR
 
 # --- Argument-validation tier -----------------------------------------------
-# These must be caught before any network call, so they run against the REAL
-# $PATH (no stub swapped in) — if any of them reached `gh`, that would be the
-# bug, not a test-setup gap.
-arg_error_check() { # $1 name, $2 expected exit code, remaining args = argv
-  local name="$1" expected="$2"
-  shift 2
-  local exit_code=0
-  "$SCRIPT" "$@" >/dev/null 2>&1 || exit_code=$?
-  if [ "$exit_code" != "$expected" ]; then
-    echo "FAIL $name: expected exit '$expected', got '$exit_code'" >&2
+# Help and malformed options must finish before either external side effect in
+# the watch path. These stubs turn an accidental `gh` or `sleep` invocation into
+# an immediate, recorded failure instead of touching GitHub or hanging the test.
+NO_SIDE_EFFECT_DIR="$STUB_DIR/no-side-effects"
+mkdir "$NO_SIDE_EFFECT_DIR"
+SIDE_EFFECT_LOG="$STUB_DIR/side-effects.log"
+for command in gh sleep; do
+  cat > "$NO_SIDE_EFFECT_DIR/$command" <<'STUBEOF'
+#!/usr/bin/env bash
+printf '%s\n' "${0##*/}" >> "$SIDE_EFFECT_LOG"
+exit 97
+STUBEOF
+  chmod +x "$NO_SIDE_EFFECT_DIR/$command"
+done
+
+arg_check() { # $1 name, $2 expected exit, $3 stdout kind, remaining args = argv
+  local name="$1" expected_exit="$2" stdout_kind="$3"
+  shift 3
+  local out_file="$STUB_DIR/$name.out" err_file="$STUB_DIR/$name.err" exit_code=0
+  : > "$SIDE_EFFECT_LOG"
+  SIDE_EFFECT_LOG="$SIDE_EFFECT_LOG" PATH="$NO_SIDE_EFFECT_DIR:$PATH" \
+    "$SCRIPT" "$@" >"$out_file" 2>"$err_file" || exit_code=$?
+  if [ "$exit_code" != "$expected_exit" ]; then
+    echo "FAIL $name: expected exit '$expected_exit', got '$exit_code'" >&2
+    fail=1
+  fi
+  case "$stdout_kind" in
+    help)
+      if [ "$(cat "$out_file")" != "usage: watch-prs.sh [--interval s] [--max-cycles n] [--once] PR... | --classify | --probe PR" ] || [ -s "$err_file" ]; then
+        echo "FAIL $name: help must print only usage on stdout" >&2
+        fail=1
+      fi ;;
+    error)
+      if [ -s "$out_file" ] || ! grep -q '^usage:' "$err_file"; then
+        echo "FAIL $name: invalid input must print usage only on stderr" >&2
+        fail=1
+      fi ;;
+  esac
+  if [ -s "$SIDE_EFFECT_LOG" ]; then
+    echo "FAIL $name: invoked forbidden command(s): $(tr '\n' ' ' < "$SIDE_EFFECT_LOG")" >&2
     fail=1
   fi
 }
 
-# --probe with no PR number: PROBE="${2:-}" must reject the empty value
-# instead of shifting off the end of $@.
-arg_error_check probe_missing_pr 2 --probe
-# --probe takes exactly one PR: a trailing extra argument is a usage error,
-# not "PROBE wins, the rest is silently ignored".
-arg_error_check probe_extra_arg 2 --probe 42 43
+arg_check help_long 0 help --help
+arg_check help_short 0 help -h
+arg_check unknown_option 2 error --wat
+arg_check unknown_short_option 2 error -x
+arg_check missing_pr 2 error
+arg_check probe_missing_pr 2 error --probe
+arg_check probe_next_option 2 error --probe --once
+arg_check probe_next_short_option 2 error --probe -h
+arg_check probe_extra_arg 2 error --probe 42 43
+arg_check interval_missing 2 error --interval
+arg_check interval_next_option 2 error --interval --once 42
+arg_check interval_zero 2 error --interval 0 42
+arg_check interval_non_numeric 2 error --interval soon 42
+arg_check interval_mixed_suffix 2 error --interval 12oops 42
+arg_check interval_leading_zero 2 error --interval 012 42
+arg_check interval_overflow 2 error --interval 2147483648 42
+arg_check interval_giant 2 error --interval 999999999999999999999999999999 42
+arg_check max_cycles_missing 2 error --max-cycles
+arg_check max_cycles_next_option 2 error --max-cycles --once 42
+arg_check max_cycles_negative 2 error --max-cycles -1 42
+arg_check max_cycles_non_numeric 2 error --max-cycles many 42
+arg_check max_cycles_mixed_suffix 2 error --max-cycles 12oops 42
+arg_check max_cycles_leading_zero 2 error --max-cycles 012 42
+arg_check max_cycles_overflow 2 error --max-cycles 2147483648 42
+arg_check max_cycles_giant 2 error --max-cycles 999999999999999999999999999999 42
+
+# The bounded valid modes still reach the existing collector. `--once` exits
+# before sleeping; `--max-cycles 1` expires before sleeping while retaining 0
+# as the documented unbounded value.
+valid_watch_check() { # $1 name, $2 expected exit, remaining args = argv
+  local name="$1" expected_exit="$2" expected_output="$3"
+  shift 3
+  local exit_code=0 out
+  out=$(STUB_GH_CHECKS_OUTPUT="$CHECKS_PASS" STUB_GH_CHECKS_EXIT=0 PATH="$STUB_DIR:$PATH" "$SCRIPT" "$@") || exit_code=$?
+  if [ "$exit_code" != "$expected_exit" ]; then
+    echo "FAIL $name: expected exit '$expected_exit', got '$exit_code'" >&2
+    fail=1
+  fi
+  if [ "$out" != "$expected_output" ]; then
+    echo "FAIL $name: expected output '$expected_output', got '$out'" >&2
+    fail=1
+  fi
+}
+valid_watch_check valid_once 0 "" --interval 1 --once 42
+valid_watch_check valid_bounded_watch 3 "WATCHER EXPIRED after 1 cycles — PRs still open; check them directly" --max-cycles 1 42
 
 # --- `gh repo view` death tier -----------------------------------------------
 # SKILL.md's rule for this script: "a watcher that dies must say so." This is
