@@ -142,6 +142,67 @@ describe('captureAppView — which engine takes the picture', () => {
   });
 });
 
+describe('captureAppShot — what the picture covers', () => {
+  // jsdom limit worth naming: every element here measures 0x0 and there is no
+  // layout to scroll, so the NUMBERS in a region cannot be exercised. What is
+  // this module's own decision — and is what these check — is WHICH box each
+  // path reports: the window for the shell, the captured element for the DOM
+  // re-draw. Get that wrong and a crop lands on the wrong part of the picture,
+  // silently, at every scale.
+  it('reports the window for the shell, which photographs exactly the window', async () => {
+    withDesktopBridge(async () => ({ ok: true, dataUrl: 'data:image/png;base64,SHELL' }));
+    const { captureAppShot } = await loadModule();
+
+    const shot = await captureAppShot();
+
+    expect(shot.region).toEqual({
+      left: 0,
+      top: 0,
+      width: window.innerWidth,
+      height: window.innerHeight,
+    });
+  });
+
+  it('reports the re-drawn element’s own box, which is NOT the window', async () => {
+    // The DOM path frames `#root`. On a page taller than the window that box
+    // runs past the bottom of the viewport and, once scrolled, starts above it
+    // at a negative `top` — so assuming the viewport here would put every crop
+    // off by the scroll offset.
+    const root = document.getElementById('root');
+    if (!root) throw new Error('the test page must have an app root');
+    root.getBoundingClientRect = () =>
+      ({ left: 0, top: -320, width: 1024, height: 4000 }) as DOMRect;
+    snapdomState.toPng.mockResolvedValue(pngImage('data:image/png;base64,DOM'));
+    const { captureAppShot } = await loadModule();
+
+    const shot = await captureAppShot();
+
+    expect(shot.region).toEqual({ left: 0, top: -320, width: 1024, height: 4000 });
+  });
+
+  it('measures the re-drawn box BEFORE the render, not after it', async () => {
+    // snapdom walks and re-serializes the whole tree, which is long enough for a
+    // scroll to move the box. A rect taken afterwards describes where the
+    // element ended up, not what was photographed.
+    const root = document.getElementById('root');
+    if (!root) throw new Error('the test page must have an app root');
+    let scrolled = false;
+    root.getBoundingClientRect = () =>
+      (scrolled
+        ? { left: 0, top: -900, width: 1024, height: 4000 }
+        : { left: 0, top: 0, width: 1024, height: 4000 }) as DOMRect;
+    snapdomState.toPng.mockImplementation(() => {
+      scrolled = true;
+      return Promise.resolve(pngImage('data:image/png;base64,DOM'));
+    });
+    const { captureAppShot } = await loadModule();
+
+    const shot = await captureAppShot();
+
+    expect(shot.region.top).toBe(0);
+  });
+});
+
 describe('captureAppView — getting out of the way first', () => {
   it('hides what floats above the app before the picture is taken', async () => {
     const { root, overlay, panel } = buildPage();
@@ -251,14 +312,31 @@ describe('captureAppView — one capture at a time', () => {
 
   it('hands a concurrent caller the capture already running', async () => {
     const bridge = countedBridge();
-    const { captureAppView } = await loadModule();
+    const { captureAppShot } = await loadModule();
 
-    const first = captureAppView();
-    const second = captureAppView();
+    const first = captureAppShot();
+    const second = captureAppShot();
 
     expect(second).toBe(first);
     await bridge.settle(1, { ok: true, dataUrl: 'data:image/png;base64,SHELL' });
-    await expect(first).resolves.toBe('data:image/png;base64,SHELL');
+    await expect(first).resolves.toMatchObject({ dataUrl: 'data:image/png;base64,SHELL' });
+    expect(bridge.calls).toBe(1);
+  });
+
+  it('shares that one capture with the callers who only wanted the picture', async () => {
+    // `captureAppView` wraps `captureAppShot` to drop the region, so it hands
+    // back a NEW promise each call and promise identity says nothing about it.
+    // What has to hold is the property the identity was only ever a proxy for:
+    // one run, one photograph, however many callers asked.
+    const bridge = countedBridge();
+    const { captureAppShot, captureAppView } = await loadModule();
+
+    const shot = captureAppShot();
+    const view = captureAppView();
+
+    await bridge.settle(1, { ok: true, dataUrl: 'data:image/png;base64,SHELL' });
+    await expect(view).resolves.toBe('data:image/png;base64,SHELL');
+    await expect(shot).resolves.toMatchObject({ dataUrl: 'data:image/png;base64,SHELL' });
     expect(bridge.calls).toBe(1);
   });
 
@@ -281,17 +359,17 @@ describe('captureAppView — one capture at a time', () => {
 
   it('starts a fresh capture once the last one has settled', async () => {
     const bridge = countedBridge();
-    const { captureAppView } = await loadModule();
+    const { captureAppShot } = await loadModule();
 
-    const first = captureAppView();
+    const first = captureAppShot();
     await bridge.settle(1, { ok: true, dataUrl: 'data:image/png;base64,SHELL' });
     await first;
-    const second = captureAppView();
+    const second = captureAppShot();
 
     // A held slot would make the button dead for the rest of the session.
     expect(second).not.toBe(first);
     await bridge.settle(2, { ok: true, dataUrl: 'data:image/png;base64,AGAIN' });
-    await expect(second).resolves.toBe('data:image/png;base64,AGAIN');
+    await expect(second).resolves.toMatchObject({ dataUrl: 'data:image/png;base64,AGAIN' });
     expect(bridge.calls).toBe(2);
   });
 

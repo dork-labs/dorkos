@@ -14,11 +14,17 @@ interface ScreenshotFieldProps {
   onPick: (file: File) => void;
   /** Take a picture of the app itself and attach it. */
   onCapture: () => void;
+  /** Step out of the dialog and let the user aim at one element. */
+  onPointAtElement: () => void;
   /** Drop the attached image. */
   onRemove: () => void;
   /** Open the full preview on its Screenshot tab. */
   onPreview: () => void;
-  /** Whether this is a touch surface — changes the wording and hides "Point at element". */
+  /**
+   * Whether the viewport is below the mobile breakpoint (768px) — changes the
+   * wording and hides "Point at element". A narrow desktop window counts, which
+   * is the honest reading of the media query behind it.
+   */
   isMobile: boolean;
 }
 
@@ -35,8 +41,17 @@ interface ScreenshotFieldProps {
  * "you see exactly what will be sent" is only kept if the thing is on screen,
  * and that holds while a REPLACEMENT is encoding too.
  *
- * "Point at element" is still the roadmap affordance it has always been, shown
- * only on desktop because it is a pointer gesture that will never ship on touch.
+ * "Point at element" is the fifth and the most precise: aim at the thing that
+ * looks wrong and the report arrives cropped to it. Offered only on a wide
+ * viewport, and `isMobile` is honestly named for what it measures — a 768px
+ * media query, not a device. That is the gate the spec chose (decision 7,
+ * `useIsMobile()`), and it is the right SHAPE of gate even though it is not the
+ * exact question: hovering to aim needs both a pointer and room to see the app
+ * you are aiming at, and a window narrow enough to trip that query has neither
+ * to spare. A narrow desktop window therefore loses the affordance too, which
+ * costs a person one drag of a window edge. Hidden rather than disabled, since a
+ * control a surface is not offering is not a control that surface should be
+ * looking at.
  */
 export function ScreenshotField({
   dataUrl,
@@ -44,6 +59,7 @@ export function ScreenshotField({
   isDraggingOver,
   onPick,
   onCapture,
+  onPointAtElement,
   onRemove,
   onPreview,
   isMobile,
@@ -156,10 +172,25 @@ export function ScreenshotField({
         </p>
       </div>
 
+      {/* The most precise way in, and the only one that needs the dialog out of
+          the way: it steps aside, the person aims at the thing that looks wrong,
+          and the report comes back cropped to it. */}
       {!isMobile && (
-        <div className="text-muted-foreground flex items-center gap-1.5 text-xs opacity-70">
-          <Crosshair className="size-3.5" aria-hidden />
-          Point at element (coming soon)
+        <div className="flex flex-col gap-1">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onPointAtElement}
+            disabled={isPreparing}
+            className="w-full text-xs"
+          >
+            <Crosshair className="size-3.5" aria-hidden />
+            Point at element
+          </Button>
+          <p className="text-muted-foreground text-xs">
+            Click the part that looks wrong. We’ll crop the picture to it.
+          </p>
         </div>
       )}
 

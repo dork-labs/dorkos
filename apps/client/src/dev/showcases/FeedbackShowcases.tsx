@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, ChevronsUpDown, Copy, X } from 'lucide-react';
+import { Check, ChevronsUpDown, Copy, Crosshair, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -144,6 +144,56 @@ function CopyToastFallbackDemo() {
   );
 }
 
+/**
+ * A still of the "Point at element" picker, mid-aim.
+ *
+ * A STILL and not the real thing, deliberately: the picker covers the whole
+ * window and swallows every pointer event, so mounting a live one inside a
+ * scrolling gallery of components would take the gallery over. What it is for is
+ * the look — the scrim, the outline, the name pill, the hint bar — in both
+ * themes, side by side with everything else. The live picker is one click away
+ * in the dialog showcase above, and it really runs from there.
+ */
+function PointAtElementStill() {
+  return (
+    <div className="bg-muted/30 relative h-56 w-full overflow-hidden rounded-md border">
+      {/* Stand-ins for the app underneath. */}
+      <div className="flex h-full gap-3 p-3">
+        <div className="bg-background/60 h-full w-28 rounded" />
+        <div className="flex flex-1 flex-col gap-2">
+          <div className="bg-background/60 h-8 rounded" />
+          <div className="bg-background/60 flex-1 rounded" />
+        </div>
+      </div>
+      {/* The picker: everything dims except the one box, which carries the scrim
+          as its own shadow — exactly how the real overlay draws it. */}
+      <div
+        className="border-primary absolute rounded-sm border-2"
+        style={{
+          left: 12,
+          top: 52,
+          width: 112,
+          height: 40,
+          boxShadow: '0 0 0 9999px rgb(0 0 0 / 0.5)',
+        }}
+      />
+      <div
+        className="bg-primary text-primary-foreground absolute rounded-sm px-1.5 py-0.5 font-mono text-[11px] leading-tight"
+        style={{ left: 12, top: 30 }}
+      >
+        sidebar-toggle
+      </div>
+      <div className="bg-popover text-popover-foreground absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-3 rounded-lg border px-3 py-2 shadow-lg">
+        <span className="flex items-center gap-2 text-xs">
+          <Crosshair className="size-3.5 shrink-0" aria-hidden />
+          Click the part that looks wrong. Esc to cancel.
+        </span>
+        <span className="text-muted-foreground text-xs underline underline-offset-2">Cancel</span>
+      </div>
+    </div>
+  );
+}
+
 /** Feedback component showcases: Skeleton, Separator, Tooltip, HoverCard, Collapsible, Toaster, PermissionModeScopeNote, UnverifiedCatalogNotice. */
 export function FeedbackShowcases() {
   const [collapsibleOpen, setCollapsibleOpen] = useState(false);
@@ -155,7 +205,7 @@ export function FeedbackShowcases() {
     <>
       <PlaygroundSection
         title="Feedback dialog"
-        description="Message-first send dialog: kind selector, identity line with anonymous toggle, and a collapsible Attachments & details panel (diagnostics, conversation, and a screenshot you paste, drop, pick, or capture in one click). The third button opens it with a screenshot already attached — the thumbnail, the Remove control, and the Screenshot tab in the full preview. 'Capture app view' really runs here: it hides the dialog, photographs this page, and attaches the result, so the button, its privacy line, and the replace flow can all be seen working."
+        description="Message-first send dialog: kind selector, identity line with anonymous toggle, and a collapsible Attachments & details panel (diagnostics, conversation, and a screenshot you paste, drop, pick, capture in one click, or point at one element to get). The third button opens it with a screenshot already attached — the thumbnail, the Remove control, and the Screenshot tab in the full preview. Both capture paths really run here: 'Capture app view' hides the dialog and photographs this page, and 'Point at element' hands you a crosshair, crops the picture to whatever you click, and comes back with the element's name in the message."
       >
         <ShowcaseDemo>
           <div className="flex flex-wrap gap-2">
@@ -187,6 +237,15 @@ export function FeedbackShowcases() {
             initialScreenshotDataUrl={SAMPLE_SCREENSHOT_DATA_URL}
             currentUser={{ email: 'you@example.com', name: 'You' }}
           />
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="Point at element (still)"
+        description="What the picker looks like mid-aim: the app dims, the thing under the pointer lights up with the name the codebase uses for it, and the bar says how to commit or get out. A still, not the live picker — a real one covers the whole window and swallows every click, which would take this page over. To drive the real one, open the feedback dialog above, expand Attachments & details, and press Point at element."
+      >
+        <ShowcaseDemo>
+          <PointAtElementStill />
         </ShowcaseDemo>
       </PlaygroundSection>
 

@@ -45,6 +45,23 @@
 const APP_ROOT_ID = 'root';
 
 /**
+ * The element every capture frames the app from.
+ *
+ * Exported because "is this thing in the picture?" is a question callers have to
+ * be able to ask, and it is not answerable from the geometry alone. Anything
+ * outside this element is absent from BOTH paths' pictures — snapdom never
+ * frames it, and the desktop shell photographs it faded to nothing by
+ * {@link hideFloatingChrome} — so a caller cropping to one element must refuse a
+ * target that lives out here rather than return a sharp picture of whatever
+ * happens to sit behind it.
+ *
+ * @returns The app root, or `<body>` on a page that has none.
+ */
+export function getAppCaptureRoot(): Element {
+  return document.getElementById(APP_ROOT_ID) ?? document.body;
+}
+
+/**
  * How long a capture may run before it is called off.
  *
  * The bound on the one state nothing can report from: while the picture is being
@@ -58,6 +75,38 @@ const APP_ROOT_ID = 'root';
  * whatever the abandoned capture eventually produces is dropped.
  */
 export const APP_CAPTURE_TIMEOUT_MS = 20_000;
+
+/**
+ * The slice of the page a capture actually covers, in CSS pixels of the current
+ * viewport — the same coordinate space `getBoundingClientRect()` speaks.
+ *
+ * The two capture paths do NOT frame the same thing, and a caller that wants to
+ * find one element inside the picture cannot work without knowing which it got.
+ * The shell photographs the window, so its region is the viewport at the origin.
+ * The DOM path re-draws `#root`, which on a page taller than the window extends
+ * well past the bottom of it — and, once the window is scrolled, starts ABOVE
+ * it, at a negative `top`. Reporting the region rather than assuming one is what
+ * lets a caller cropping to a single element land on the right pixels under
+ * either path (the feedback dialog's "Point at element" is the one that does).
+ */
+export interface AppCaptureRegion {
+  /** Distance from the viewport's left edge to the picture's left edge, in CSS px. */
+  left: number;
+  /** Distance from the viewport's top edge to the picture's top edge, in CSS px. */
+  top: number;
+  /** Width of the captured slice, in CSS px. */
+  width: number;
+  /** Height of the captured slice, in CSS px. */
+  height: number;
+}
+
+/** One picture of the app, and what part of the page it covers. */
+export interface AppCaptureShot {
+  /** The captured image as a `data:` URL, un-compressed. */
+  dataUrl: string;
+  /** What the picture covers, in CSS pixels — see {@link AppCaptureRegion}. */
+  region: AppCaptureRegion;
+}
 
 /** Why {@link captureAppView} came back with no picture. */
 export type AppCaptureReason =
@@ -127,11 +176,11 @@ function nextPaint(): Promise<void> {
  * Hide everything floating above the app, and hand back the undo.
  *
  * The dialog that asks for the picture is standing in front of the thing being
- * reported, and so is its overlay and any toast. All of them are portaled as
- * direct children of `<body>` (Radix's dialog, Vaul's drawer and Sonner all
- * do), so "everything above the app" is exactly "every body child that is not
- * the app root" — and each of those children is a portal WRAPPER, which is the
- * right element to write on: the dialog panel inside it carries
+ * reported, and so is its overlay and the element picker. Those are portaled as
+ * direct children of `<body>` (Radix's dialog and Vaul's drawer both are), so
+ * "everything above the app" is exactly "every body child that is not the app
+ * root" — and each of those children is a portal WRAPPER, which is the right
+ * element to write on: the dialog panel inside it carries
  * `animate-in fade-in-0` with `fill-mode: both`, and an animation's filled
  * opacity beats an inline one. The wrapper carries no animation, so nothing
  * competes with it.
@@ -153,6 +202,15 @@ function nextPaint(): Promise<void> {
  * to begin with; the shell's `capturePage()` photographs the whole window, which
  * is what makes hiding necessary at all. It runs on both paths anyway, so there
  * is one sequence to reason about rather than two.
+ *
+ * **A toast is NOT covered by this, and that is worth saying out loud rather
+ * than leaving to be rediscovered.** Sonner renders its region in place inside
+ * the React tree (there is not one `createPortal` in the installed
+ * `sonner@2.0.8`), so a toast lives INSIDE `#root` and is a toast in the
+ * photograph on both paths. Nothing here can reach it, because reaching into
+ * `#root` is exactly what this must not do — that is the app, and the app is the
+ * picture. The practical consequence is small (a report may arrive with a toast
+ * in the corner of its screenshot) and the alternative is worse, so it stands.
  */
 function hideFloatingChrome(): () => void {
   const restores: Array<() => void> = [];
@@ -170,18 +228,26 @@ function hideFloatingChrome(): () => void {
 }
 
 /** Take the picture through the desktop shell's own compositor. */
-async function captureThroughShell(capture: () => Promise<DesktopCaptureResult>): Promise<string> {
+async function captureThroughShell(
+  capture: () => Promise<DesktopCaptureResult>
+): Promise<AppCaptureShot> {
   // Contractually this never rejects (see the preload's `captureAppView`), but a
   // bridge that is somehow broken must not escape as an unhandled rejection.
   const result = await capture().catch((error: unknown) => {
     throw new AppCaptureError('failed', `The desktop bridge threw: ${String(error)}`);
   });
   if (!result.ok) throw new AppCaptureError('failed', result.message);
-  return result.dataUrl;
+  // `capturePage()` photographs the window's whole web contents, which is the
+  // viewport and exactly the viewport — so the picture's origin IS the origin
+  // every `getBoundingClientRect()` in the app is already measured from.
+  return {
+    dataUrl: result.dataUrl,
+    region: { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight },
+  };
 }
 
 /** Re-draw the app from its own DOM, in a browser that has no window to photograph. */
-async function captureThroughDom(): Promise<string> {
+async function captureThroughDom(): Promise<AppCaptureShot> {
   let snapdom: typeof import('@zumer/snapdom').snapdom;
   try {
     ({ snapdom } = await import('@zumer/snapdom'));
@@ -198,11 +264,18 @@ async function captureThroughDom(): Promise<string> {
   // `<body>` — so a capture of it alone comes back with transparent gaps. Read
   // the real one rather than naming a colour here, which would be a second
   // source of truth for the theme and wrong in one of the two themes.
-  const element = document.getElementById(APP_ROOT_ID) ?? document.body;
+  const element = getAppCaptureRoot();
   const backgroundColor = getComputedStyle(document.body).backgroundColor;
   try {
+    // Measured before the render, not after: snapdom walks and re-serializes the
+    // tree, which is long enough for a scroll or a resize to move the box out
+    // from under a rect taken afterwards.
+    const box = element.getBoundingClientRect();
     const image = await snapdom.toPng(element, { backgroundColor });
-    return image.src;
+    return {
+      dataUrl: image.src,
+      region: { left: box.left, top: box.top, width: box.width, height: box.height },
+    };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new AppCaptureError('failed', `Rendering the app to an image failed: ${detail}`);
@@ -215,7 +288,7 @@ async function captureThroughDom(): Promise<string> {
  * @param capture - The capture in progress.
  * @throws AppCaptureError When {@link APP_CAPTURE_TIMEOUT_MS} passes first.
  */
-async function withTimeout(capture: Promise<string>): Promise<string> {
+async function withTimeout(capture: Promise<AppCaptureShot>): Promise<AppCaptureShot> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const expiry = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(() => {
@@ -235,7 +308,7 @@ async function withTimeout(capture: Promise<string>): Promise<string> {
 }
 
 /** One capture, start to finish: hide, wait for paint, shoot, restore. */
-async function runCapture(): Promise<string> {
+async function runCapture(): Promise<AppCaptureShot> {
   const desktop = getDesktopCapture();
   const restoreChrome = hideFloatingChrome();
   try {
@@ -256,27 +329,28 @@ async function runCapture(): Promise<string> {
  * Sharing one run makes that impossible rather than merely unlikely, which is
  * the right shape for a guard whose failure has no recovery.
  */
-let inFlight: Promise<string> | null = null;
+let inFlight: Promise<AppCaptureShot> | null = null;
 
 /**
- * Take a picture of the app as it stands.
+ * Take a picture of the app as it stands, and say what part of the page it
+ * covers.
  *
  * Hides the dialog (and anything else above the app), waits for that to be on
  * screen, captures, then puts everything back — whatever happened. Feed the
- * result to `compressImage`, which owns the size bound every screenshot has to
- * fit; nothing here is bounded.
+ * `dataUrl` to `compressImage`, which owns the size bound every screenshot has
+ * to fit; nothing here is bounded.
  *
  * **Not reentrant, and answers a concurrent caller with the capture already
  * running** rather than starting a second one. Two at once cannot produce two
  * pictures worth having anyway — they would photograph each other's hidden
  * state — and the state they share is not safely interleavable.
  *
- * @returns A `data:` URL of the app view, un-compressed.
+ * @returns The un-compressed picture and its {@link AppCaptureRegion}.
  * @throws AppCaptureError When the capture produced no picture, took longer than
  *   {@link APP_CAPTURE_TIMEOUT_MS}, or the screenshot library could not be
  *   loaded.
  */
-export function captureAppView(): Promise<string> {
+export function captureAppShot(): Promise<AppCaptureShot> {
   if (inFlight) return inFlight;
   const run = runCapture();
   inFlight = run;
@@ -288,4 +362,19 @@ export function captureAppView(): Promise<string> {
   };
   void run.then(settle, settle);
   return run;
+}
+
+/**
+ * Take a picture of the app as it stands — for the caller that wants the whole
+ * frame and has no use for where it sits on the page.
+ *
+ * The same single capture as {@link captureAppShot}, sharing its one-at-a-time
+ * guard: this is that call with the region dropped, not a second way to take a
+ * picture. Most callers want this one; only a crop needs the region.
+ *
+ * @returns A `data:` URL of the app view, un-compressed.
+ * @throws AppCaptureError For any of {@link captureAppShot}'s refusals.
+ */
+export function captureAppView(): Promise<string> {
+  return captureAppShot().then((shot) => shot.dataUrl);
 }
