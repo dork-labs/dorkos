@@ -59,6 +59,9 @@ import type {
   ConnectorSessionConnections,
 } from '@dorkos/shared/connector-resource-schemas';
 
+/** Browser budget above the local 60s start cap so the server owns the outcome. */
+const CONNECTOR_AUTHENTICATION_START_TIMEOUT_MS = 75_000;
+
 /** Create the connector methods bound to a base URL. */
 export function createConnectorMethods(baseUrl: string) {
   return {
@@ -170,6 +173,7 @@ export function createConnectorMethods(baseUrl: string) {
       return fetchJSON<ConnectorAuthenticationFlowState>(baseUrl, '/connectors/connections', {
         method: 'POST',
         body: JSON.stringify(input),
+        timeout: CONNECTOR_AUTHENTICATION_START_TIMEOUT_MS,
       });
     },
 
@@ -198,7 +202,11 @@ export function createConnectorMethods(baseUrl: string) {
       return fetchJSON<ConnectorAuthenticationFlowState>(
         baseUrl,
         `/connectors/connections/${encodeURIComponent(connectionId)}/reconnect`,
-        { method: 'POST', body: JSON.stringify(input) }
+        {
+          method: 'POST',
+          body: JSON.stringify(input),
+          timeout: CONNECTOR_AUTHENTICATION_START_TIMEOUT_MS,
+        }
       );
     },
 
@@ -384,7 +392,11 @@ export function createConnectorMethods(baseUrl: string) {
       return fetchJSON<ConnectorAuthenticationFlowState>(
         baseUrl,
         `/connectors/agent-requests/${encodeURIComponent(requestId)}/authentication-flows`,
-        { method: 'POST', body: JSON.stringify(input) }
+        {
+          method: 'POST',
+          body: JSON.stringify(input),
+          timeout: CONNECTOR_AUTHENTICATION_START_TIMEOUT_MS,
+        }
       );
     },
 

@@ -6,6 +6,7 @@ import {
   executeManagedConnectorOperation,
   pollForToken,
   requestManagedConnectorExecutionReceipt,
+  requestManagedConnectorAuthentication,
   requestManagedConnectorUsage,
   requestManagedConnectorCatalog,
   readManagedConnectorAuthorityCommand,
@@ -525,6 +526,112 @@ describe('managed connector execution and usage', () => {
         signal: new AbortController().signal,
       })
     ).rejects.toMatchObject({ code: 'invalid_response' });
+  });
+});
+
+describe('managed connector authentication start', () => {
+  it('allows a valid authentication response after the generic ten-second request deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      const timeoutSignal = vi.fn((timeoutMs: number) => {
+        const controller = new AbortController();
+        setTimeout(
+          () => controller.abort(new DOMException('The operation timed out.', 'TimeoutError')),
+          timeoutMs
+        );
+        return controller.signal;
+      });
+      const state = {
+        version: 1,
+        flowId: 'hosted-flow-a',
+        toolkit: 'gmail',
+        createdAt: '2026-09-10T12:00:00.000Z',
+        expiresAt: '2026-09-10T12:10:00.000Z',
+        state: 'pending',
+        authorizeUrl: 'https://dorkos.test/connectors/managed/authorize?flow=hosted-flow-a',
+      } as const;
+      const fetchImpl = vi.fn(
+        async (_url: string | URL | Request, init?: RequestInit) =>
+          await new Promise<Response>((resolve, reject) => {
+            const timer = setTimeout(
+              () => resolve(new Response(JSON.stringify(state), { status: 200 })),
+              11_000
+            );
+            init?.signal?.addEventListener(
+              'abort',
+              () => {
+                clearTimeout(timer);
+                reject(init.signal?.reason);
+              },
+              { once: true }
+            );
+          })
+      );
+
+      const pending = requestManagedConnectorAuthentication({
+        baseUrl: BASE,
+        accessToken: 'dork_inst_abc',
+        request: { version: 1, requestId: 'request-a', toolkit: 'gmail' },
+        fetchImpl,
+        signal: new AbortController().signal,
+        timeoutSignal,
+      });
+      await vi.advanceTimersByTimeAsync(11_000);
+
+      await expect(pending).resolves.toEqual(state);
+      expect(timeoutSignal).toHaveBeenCalledWith(60_000);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps ordinary managed catalog requests on the generic ten-second deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      const timeoutSignal = vi.fn((timeoutMs: number) => {
+        const controller = new AbortController();
+        setTimeout(
+          () => controller.abort(new DOMException('The operation timed out.', 'TimeoutError')),
+          timeoutMs
+        );
+        return controller.signal;
+      });
+      const fetchImpl = vi.fn(
+        async (_url: string | URL | Request, init?: RequestInit) =>
+          await new Promise<Response>((resolve, reject) => {
+            const responseTimer = setTimeout(
+              () => resolve(new Response(JSON.stringify({ services: [], warnings: [] }))),
+              11_000
+            );
+            init?.signal?.addEventListener(
+              'abort',
+              () => {
+                clearTimeout(responseTimer);
+                reject(init.signal?.reason);
+              },
+              { once: true }
+            );
+          })
+      );
+
+      const pending = requestManagedConnectorCatalog({
+        baseUrl: BASE,
+        accessToken: 'dork_inst_abc',
+        request: { query: 'mail' },
+        fetchImpl,
+        signal: new AbortController().signal,
+        timeoutSignal,
+      });
+      const refusal = expect(pending).rejects.toMatchObject({ code: 'network_error' });
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      await refusal;
+      expect(timeoutSignal).toHaveBeenCalledWith(10_000);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
   });
 });
 

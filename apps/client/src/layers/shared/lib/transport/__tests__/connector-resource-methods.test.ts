@@ -39,6 +39,7 @@ describe('connector resource transport methods', () => {
   });
 
   it('sends the durable idempotency claim on the new authentication route', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
     stubFetch({ state: 'pending', flowId: 'flow-a' });
     const input = {
       providerInstanceId: 'provider-a' as never,
@@ -51,6 +52,7 @@ describe('connector resource transport methods', () => {
     expect(url).toBe('http://localhost:4242/api/connectors/connections');
     expect(init.method).toBe('POST');
     expect(init.body).toBe(JSON.stringify(input));
+    expect(timeout).toHaveBeenLastCalledWith(75_000);
   });
 
   it('uses exact encoded owner, agent, and session resource paths', async () => {
@@ -79,6 +81,7 @@ describe('connector resource transport methods', () => {
   });
 
   it('keeps request authentication on its exact encoded owner route', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
     stubFetch({ state: 'starting', flowId: 'flow/a' });
     const input = { providerInstanceId: 'provider-a' as never, label: 'Work mail' };
     await setup().startConnectorAgentRequestAuthentication('request/a', input);
@@ -88,12 +91,86 @@ describe('connector resource transport methods', () => {
     );
     expect(startInit.method).toBe('POST');
     expect(startInit.body).toBe(JSON.stringify(input));
+    expect(timeout).toHaveBeenLastCalledWith(75_000);
 
     stubFetch({ state: 'failed', flowId: 'flow/a' });
     await setup().pollConnectorAgentRequestAuthentication('request/a', 'flow/a');
     expect(lastCall()[0]).toBe(
       'http://localhost:4242/api/connectors/agent-requests/request%2Fa/authentication-flows/flow%2Fa'
     );
+  });
+
+  it('keeps ordinary connector reads on the generic thirty-second deadline', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    stubFetch({ services: [], warnings: [] });
+
+    await setup().getConnectorCatalog();
+
+    expect(timeout).toHaveBeenLastCalledWith(30_000);
+  });
+
+  it('lets authentication start answer after the generic deadline while ordinary reads time out', async () => {
+    vi.useFakeTimers();
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockImplementation((timeoutMs) => {
+      const controller = new AbortController();
+      setTimeout(
+        () => controller.abort(new DOMException('The operation timed out.', 'TimeoutError')),
+        timeoutMs
+      );
+      return controller.signal;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url: string | URL | Request, init?: RequestInit) =>
+          new Promise<Response>((resolve, reject) => {
+            const responseTimer = setTimeout(
+              () => resolve(new Response(JSON.stringify({ state: 'pending', flowId: 'flow-a' }))),
+              31_000
+            );
+            init?.signal?.addEventListener(
+              'abort',
+              () => {
+                clearTimeout(responseTimer);
+                reject(init.signal?.reason);
+              },
+              { once: true }
+            );
+          })
+      )
+    );
+
+    try {
+      const authentication = setup().startConnectorAuthentication({
+        providerInstanceId: 'provider-a' as never,
+        toolkit: 'gmail',
+        idempotencyKey: 'connect-gmail-after-thirty',
+      });
+      await vi.advanceTimersByTimeAsync(31_000);
+      await expect(authentication).resolves.toMatchObject({ state: 'pending' });
+
+      const reconnect = setup().reconnectConnectorConnection('connection-a', {
+        idempotencyKey: 'reconnect-gmail-after-thirty',
+      });
+      await vi.advanceTimersByTimeAsync(31_000);
+      await expect(reconnect).resolves.toMatchObject({ state: 'pending' });
+
+      const agentRequest = setup().startConnectorAgentRequestAuthentication('request-a', {
+        providerInstanceId: 'provider-a' as never,
+      });
+      await vi.advanceTimersByTimeAsync(31_000);
+      await expect(agentRequest).resolves.toMatchObject({ state: 'pending' });
+
+      const catalog = setup().getConnectorCatalog();
+      const refusal = expect(catalog).rejects.toThrow('Request timed out after 30s');
+      await vi.advanceTimersByTimeAsync(30_000);
+      await refusal;
+      expect(timeout).toHaveBeenCalledWith(75_000);
+      expect(timeout).toHaveBeenCalledWith(30_000);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
   });
 
   it('uses exact event discovery, subscription, and source routes', async () => {
