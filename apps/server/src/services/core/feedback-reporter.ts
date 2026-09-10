@@ -242,13 +242,17 @@ interface DurableFeedbackPayload {
  * (see that route's module doc), so this is free-form as long as it stays
  * within {@link DURABLE_DIAGNOSTICS_MAX_LEN}.
  *
- * The environment lines all sit in the HEADER section, ahead of the breadcrumb
- * and server-log sections. That ordering is load-bearing: breadcrumbs alone can
- * reach ~17,000 characters (50 × a 300-char message), so the final
- * {@link DURABLE_DIAGNOSTICS_MAX_LEN} slice is a live possibility and whatever
- * it cuts must be the least valuable text in the block. The header runs well
- * under 1,000 characters even at every cap (a 300-char user-agent is its
- * largest single line), so it always survives.
+ * The environment lines are emitted BEFORE the `Flags` line and before the
+ * breadcrumb and server-log sections. That ordering is what protects them:
+ * breadcrumbs alone can reach ~17,000 characters (50 × a 300-char message), so
+ * the final {@link DURABLE_DIAGNOSTICS_MAX_LEN} slice is a live possibility,
+ * and a tail slice can only ever reach text that comes AFTER what it keeps.
+ *
+ * Note the property claimed here is *ordering*, not a total size budget: the
+ * `flags` record is `z.record()` with no cap on how many keys it carries, so
+ * the header as a whole has no bound worth quoting. The environment lines do
+ * have one — nine lines, the largest a 300-char user-agent — and they precede
+ * the unbounded part, which is the whole point.
  *
  * @param diagnostics - The submission's optional diagnostics bundle.
  * @param serverVersion - This server's own version, for the upgrade-skew line.
@@ -267,8 +271,15 @@ function renderDiagnostics(
   // say. They diverge exactly when the server was upgraded under a long-lived
   // tab — which is a leading cause of "it broke and I don't know why" — so name
   // both numbers only then, rather than printing a redundant pair every time.
-  const versionLine =
-    clientReport.version === serverVersion
+  //
+  // `unknown` is the client's placeholder for "the config query had not
+  // resolved yet" (`buildClientReport`), not a version. Reporting it as skew
+  // would invent a disagreement out of a loading state, so the server's number
+  // simply stands alone.
+  const clientVersionKnown = clientReport.version !== 'unknown' && clientReport.version !== '';
+  const versionLine = !clientVersionKnown
+    ? `Version: ${serverVersion}`
+    : clientReport.version === serverVersion
       ? `Version: ${clientReport.version}`
       : `Version: ${clientReport.version} (server ${serverVersion})`;
 

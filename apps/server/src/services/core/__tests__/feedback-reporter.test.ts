@@ -365,6 +365,20 @@ describe('sendFeedback — durable payload shape', () => {
       expect(diagnostics.split('\n')).toContain('Version: 0.47.0 (server 0.48.1)');
     });
 
+    it('reports the server version alone when the client version is still unknown', async () => {
+      // `unknown` is `buildClientReport`'s placeholder for "the config query has
+      // not resolved yet", not a version. Rendering it as skew invents a
+      // disagreement out of a loading state — and "0.48.1 vs unknown" reads to
+      // triage like a real version mismatch worth chasing.
+      const diagnostics = await renderedFor(reportWithEnvironment({ version: 'unknown' }), {
+        dorkosVersion: '0.48.1',
+      });
+
+      expect(diagnostics.split('\n')).toContain('Version: 0.48.1');
+      expect(diagnostics).not.toContain('unknown');
+      expect(diagnostics).not.toContain('(server');
+    });
+
     it('omits each environment line the client did not send', async () => {
       // A client that predates these fields (or a host that could not read one)
       // must not produce `Theme: undefined` — an absent field is not a value.
@@ -417,20 +431,43 @@ describe('sendFeedback — durable payload shape', () => {
       expect(lines).toContain('Browser: Mozilla/5.0 (Macintosh) TestBrowser/1.0');
     });
 
-    it('leaves room to spare: the whole context header fits well under the cap', async () => {
-      // The budget claim in renderDiagnostics's TSDoc, pinned. At every cap the
-      // header is ~1000 chars against an 8000-char block, so adding a context
-      // line is safe without re-doing this arithmetic by hand.
-      const diagnostics = await renderedFor(
-        reportWithEnvironment({
-          browser: 'U'.repeat(300),
-          locale: 'l'.repeat(64),
-          timezone: 't'.repeat(64),
-          runtimes: ['claude-code', 'codex', 'opencode'],
+    it('emits the context lines before the unbounded flags and breadcrumbs', async () => {
+      // The ordering property renderDiagnostics's TSDoc claims — and the ONLY
+      // thing protecting these lines from the tail slice. Deliberately not a
+      // total-size assertion: `flags` is a `z.record()` with no cap on how many
+      // keys it carries, so the header as a whole has no bound worth pinning.
+      const fetchImpl = makeFetch('ok');
+      await sendFeedback(
+        baseOptions({
+          submission: {
+            kind: 'bug',
+            message: 'layout broke',
+            diagnostics: {
+              clientReport: reportWithEnvironment({
+                browser: 'U'.repeat(300),
+                flags: Object.fromEntries(
+                  Array.from({ length: 40 }, (_, i) => [`flag.number.${i}`, true])
+                ),
+              }),
+              breadcrumbs: [
+                { at: '2026-08-03T00:00:00.000Z', kind: 'console_error', message: 'boom' },
+              ],
+            },
+          },
+          fetchImpl,
         })
       );
 
-      expect(diagnostics.length).toBeLessThan(1000);
+      const diagnostics = durableBody(fetchImpl).diagnostics as string;
+      const viewportAt = diagnostics.indexOf('Viewport:');
+      const browserAt = diagnostics.indexOf('Browser:');
+      const flagsAt = diagnostics.indexOf('Flags:');
+      const breadcrumbsAt = diagnostics.indexOf('Breadcrumbs:');
+
+      expect(viewportAt).toBeGreaterThan(-1);
+      expect(browserAt).toBeGreaterThan(viewportAt);
+      expect(flagsAt).toBeGreaterThan(browserAt);
+      expect(breadcrumbsAt).toBeGreaterThan(flagsAt);
     });
   });
 

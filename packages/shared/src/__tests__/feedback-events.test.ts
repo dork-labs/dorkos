@@ -474,6 +474,12 @@ describe('feedback event registry', () => {
       it('has no slot for a location, a cwd, or a workspace path', () => {
         // The strict allowlist IS the privacy contract. These are the three
         // things the diagnostics bundle deliberately does not carry.
+        //
+        // This guards only the BUNDLE. The other way a path could reach the
+        // wire is the submission's `route`, since `/session` URLs carry the
+        // absolute cwd in `?dir=`; that half is guarded by the query allowlist
+        // in `features/feedback/lib/feedback-route.ts` and its own tests. Both
+        // doors have to stay shut for this assertion to mean what it says.
         for (const forbidden of [
           { geolocation: { lat: 1, lon: 2 } },
           { cwd: '/Users/dorian/secret-project' },

@@ -31,6 +31,8 @@ interface FeedbackPreviewDialogProps {
   diagnostics: FeedbackDiagnostics | undefined;
   /** The submission kind — a server log excerpt is added for `bug` only. */
   kind: FeedbackSubmissionKind;
+  /** The page address that will be recorded (pathname + allowlisted query). */
+  route: string;
   /** Whether the Conversation tab is available (a session is resolvable). */
   showConversation: boolean;
   /** The session the transcript preview reads from. */
@@ -66,9 +68,11 @@ function DiagRow({ label, value }: { label: string; value: string }) {
 function DiagnosticsPreview({
   diagnostics,
   kind,
+  route,
 }: {
   diagnostics: FeedbackDiagnostics | undefined;
   kind: FeedbackSubmissionKind;
+  route: string;
 }) {
   if (!diagnostics) {
     return <p className="text-muted-foreground text-xs">Gathering diagnostics…</p>;
@@ -78,6 +82,10 @@ function DiagnosticsPreview({
   return (
     <div className="flex flex-col gap-3">
       <div className="rounded-md border p-3">
+        {/* Shown first, and shown even though `route` rides OUTSIDE the
+            Diagnostics toggle: it is the one field a person cannot otherwise
+            see before sending, and it is the one that carries an id. */}
+        <DiagRow label="Page" value={route} />
         <DiagRow label="Version" value={clientReport.version} />
         <DiagRow label="Platform" value={clientReport.platform} />
         <DiagRow
@@ -91,8 +99,12 @@ function DiagnosticsPreview({
         {viewport && (
           <DiagRow
             label="Window"
+            // Same predicate as the server's `renderDiagnostics`: a 0 or absent
+            // ratio is "unknown", not "@0x", so both surfaces drop the suffix.
             value={`${viewport.width}×${viewport.height}${
-              viewport.devicePixelRatio !== 1 ? ` @${viewport.devicePixelRatio}x` : ''
+              viewport.devicePixelRatio && viewport.devicePixelRatio !== 1
+                ? ` @${viewport.devicePixelRatio}x`
+                : ''
             }`}
           />
         )}
@@ -201,6 +213,7 @@ export function FeedbackPreviewDialog({
   initialTab,
   diagnostics,
   kind,
+  route,
   showConversation,
   sessionId,
   screenshotDataUrl,
@@ -250,7 +263,7 @@ export function FeedbackPreviewDialog({
 
           <TabsContent value="diagnostics" className="min-h-0">
             <ScrollArea className="max-h-[45vh]">
-              <DiagnosticsPreview diagnostics={diagnostics} kind={kind} />
+              <DiagnosticsPreview diagnostics={diagnostics} kind={kind} route={route} />
             </ScrollArea>
           </TabsContent>
 

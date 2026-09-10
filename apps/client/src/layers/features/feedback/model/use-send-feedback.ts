@@ -5,12 +5,12 @@
  *
  * Owns the small idle → submitting state and the single call to
  * `transport.sendFeedback`, tagging the submission with the current route —
- * pathname AND query string, so `/session?session=abc` names the conversation
- * rather than degrading to a bare `/session` (DOR-1960; see
- * `MAX_FEEDBACK_ROUTE_LEN`'s TSDoc for why the query half is carried) — and
- * (when the "Conversation" toggle is on) the session the transcript should come
- * from. The dialog decides WHAT to attach; this hook turns those choices into
- * the wire submission:
+ * pathname plus an ALLOWLISTED query string, so `/session?session=abc` names
+ * the conversation rather than degrading to a bare `/session`, while `?dir=`
+ * and `?prompt=` never ride along (DOR-1960; the allowlist and its reasoning
+ * live in `../lib/feedback-route`) — and (when the "Conversation" toggle is
+ * on) the session the transcript should come from. The dialog decides WHAT to
+ * attach; this hook turns those choices into the wire submission:
  *   - `includeDiagnostics` → attaches the safe `clientReport` subset the GitHub
  *     path already shows the user, plus the in-memory breadcrumb trail (and, for
  *     a crash report, the stack trace as a breadcrumb).
@@ -38,7 +38,6 @@ import { toast } from 'sonner';
 import {
   MAX_BREADCRUMBS,
   MAX_BREADCRUMB_MESSAGE_LEN,
-  MAX_FEEDBACK_ROUTE_LEN,
   type FeedbackDiagnostics,
   type FeedbackSubmissionKind,
 } from '@dorkos/shared/telemetry-events';
@@ -46,6 +45,7 @@ import type { ServerConfig } from '@dorkos/shared/schemas';
 import { useTransport, useResolvedTheme, type ResolvedTheme } from '@/layers/shared/model';
 import { buildClientReport, captureClientEnvironment, getBreadcrumbs } from '@/layers/shared/lib';
 import { configKeys } from '@/layers/entities/config';
+import { buildFeedbackRoute } from '../lib/feedback-route';
 
 /** A single feedback submission from the dialog. */
 export interface FeedbackDraft {
@@ -82,6 +82,14 @@ export interface UseSendFeedback {
    * only when this is set (there is nothing to attach otherwise).
    */
   sessionId: string | undefined;
+  /**
+   * The page address this submission will record: the pathname plus the
+   * allowlisted query params {@link buildFeedbackRoute} keeps. Exposed so the
+   * preview can show the same string that `send` transmits — it rides outside
+   * the Diagnostics toggle (a coarse route always has), so the preview is the
+   * only place a person can see it before pressing Send.
+   */
+  route: string;
   /**
    * Build the diagnostics bundle that WOULD be attached right now — the exact
    * `clientReport` + breadcrumbs the full preview shows and `send` transmits, so
@@ -166,6 +174,9 @@ export function useSendFeedback(): UseSendFeedback {
   // report's `surface` line stays pathname-only.
   const searchStr = useRouterState({ select: (s) => s.location.searchStr });
   const resolvedTheme = useResolvedTheme();
+  // Built once here so `send` and the preview cannot disagree about what the
+  // recorded address is.
+  const route = buildFeedbackRoute(pathname, searchStr);
   const sessionId = useRouterState({
     select: (s) => {
       const search = s.location.search as { session?: string } | undefined;
@@ -199,12 +210,6 @@ export function useSendFeedback(): UseSendFeedback {
       const includeServerLogs = draft.includeDiagnostics && draft.kind === 'bug';
       const attachConversation = Boolean(draft.includeConversation && sessionId);
 
-      // The page AND its query string: `/session` alone does not say which
-      // conversation broke, and that identifying half is the whole point of
-      // recording a route at all. Bounded by the shared cap, whose TSDoc carries
-      // the reasoning for carrying query params at all.
-      const route = `${pathname}${searchStr}`.slice(0, MAX_FEEDBACK_ROUTE_LEN);
-
       setIsSubmitting(true);
       try {
         const { ok } = await transport.sendFeedback({
@@ -228,8 +233,8 @@ export function useSendFeedback(): UseSendFeedback {
         setIsSubmitting(false);
       }
     },
-    [transport, pathname, searchStr, sessionId, config, resolvedTheme]
+    [transport, pathname, route, sessionId, config, resolvedTheme]
   );
 
-  return { isSubmitting, sessionId, buildDiagnostics, send };
+  return { isSubmitting, sessionId, route, buildDiagnostics, send };
 }

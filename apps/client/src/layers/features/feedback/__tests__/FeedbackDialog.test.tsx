@@ -186,9 +186,10 @@ describe('FeedbackDialog', () => {
       expect(sendFeedback).toHaveBeenCalledTimes(1);
     });
 
-    it('bounds an over-long route at the shared cap rather than failing the send', async () => {
+    it('bounds an over-long route rather than failing the send', async () => {
       // The wire schema refuses over-cap, and a refusal surfaces as a failed
-      // send and a toast about GitHub — which is not what went wrong.
+      // send and a toast about GitHub — which is not what went wrong. A param
+      // that cannot fit is dropped whole, so the address degrades to the page.
       routerState.location = { pathname: '/session', search: { session: 'x'.repeat(500) } };
       const transport = createMockTransport();
       renderDialog(transport);
@@ -198,7 +199,35 @@ describe('FeedbackDialog', () => {
       });
       const submission = await sendAndCapture(transport);
 
-      expect(submission.route).toHaveLength(MAX_FEEDBACK_ROUTE_LEN);
+      expect(submission.route).toBe('/session');
+      expect(submission.route?.length).toBeLessThanOrEqual(MAX_FEEDBACK_ROUTE_LEN);
+    });
+
+    it('never sends the working directory or the typed prompt in the route', async () => {
+      // End-to-end through the real dialog and hook, because this is the leak
+      // that matters: `router.tsx` writes the resolved absolute cwd into `?dir=`
+      // on every /session navigation, and `route` rides OUTSIDE the Diagnostics
+      // toggle. Asserted over the whole serialized submission, not just `route`.
+      routerState.location = {
+        pathname: '/session',
+        search: {
+          dir: '/Users/dorian/clients/acme',
+          prompt: 'refactor my billing code',
+          session: 'sess_abc123',
+        },
+      };
+      const transport = createMockTransport();
+      renderDialog(transport);
+
+      fireEvent.change(screen.getByPlaceholderText(/what works, what does not/i), {
+        target: { value: 'broke' },
+      });
+      const submission = await sendAndCapture(transport);
+
+      expect(submission.route).toBe('/session?session=sess_abc123');
+      const wire = JSON.stringify(submission);
+      expect(wire).not.toContain('/Users/dorian');
+      expect(wire).not.toContain('billing');
     });
 
     it('attaches the window, browser, shell, theme, locale and timezone with diagnostics on', async () => {
@@ -251,6 +280,26 @@ describe('FeedbackDialog', () => {
       expect(wire).not.toContain(navigator.userAgent);
       expect(wire).not.toContain(String(window.innerWidth));
       expect(wire).not.toContain(Intl.DateTimeFormat().resolvedOptions().timeZone);
+    });
+
+    it('shows the recorded page address in the preview', async () => {
+      // `route` rides outside the Diagnostics toggle, so the preview is the only
+      // place a person can see the address — including the id it now carries —
+      // before pressing Send.
+      routerState.location = {
+        pathname: '/session',
+        search: { dir: '/Users/dorian/private', session: 'sess_abc123' },
+      };
+      renderDialog();
+      openAttachments();
+      // A session route also shows the Conversation toggle, so there are two
+      // preview links; the first belongs to Diagnostics.
+      fireEvent.click(screen.getAllByRole('button', { name: 'View full preview' })[0]);
+
+      expect(await screen.findByText('Page')).toBeInTheDocument();
+      expect(screen.getByText('/session?session=sess_abc123')).toBeInTheDocument();
+      // And the preview does not show what the route does not carry.
+      expect(screen.queryByText(/Users\/dorian/)).not.toBeInTheDocument();
     });
 
     it('shows the same context in the preview that it will send', async () => {

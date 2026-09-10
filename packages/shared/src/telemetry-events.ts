@@ -173,17 +173,32 @@ export const MAX_FEEDBACK_CONTACT_LEN = 254;
 
 /**
  * Maximum length of the optional `route` context prop — the page the report was
- * filed from, **including its query string** (e.g. `/session?session=abc123`).
+ * filed from, **including an allowlisted query string** (e.g.
+ * `/session?session=abc123`).
  *
  * The query half is carried on purpose (DOR-1960): `/session` alone says almost
  * nothing, while `/session?session=abc123` names the conversation the bug
- * happened in. DorkOS query params are LOCAL IDENTIFIERS — session ids, agent
- * ids, view names, tab names — meaningful only against the reporter's own
- * machine, so they are context rather than secrets. Nothing in this app puts a
- * credential or a token in a URL, and this cap (which matches the site intake's
- * own `MAX_ROUTE_LEN`) is the only bound applied: there is deliberately no
- * redaction pass here, because a scrubber that guesses at which params are
- * sensitive is a thing that silently drops the identifying half of a bug report.
+ * happened in. But it is carried through a **closed allowlist**, not verbatim,
+ * because DorkOS URLs are NOT all identifiers:
+ *
+ * - `/session` writes the resolved **absolute working directory** into `?dir=`
+ *   on every navigation (`apps/client/src/router.tsx`, DOR-1836), and
+ *   `?agentPath=` is a filesystem path too.
+ * - `?prompt=`, `?message=` and `?seed=` carry **text the user typed to an
+ *   agent** when a conversation is starting.
+ * - `?q=` is the **search box** on both the roster and the marketplace.
+ *
+ * A `route` is stored in Neon, folded into a Linear issue, and sent as a
+ * PostHog property, and — unlike the diagnostics bundle — it rides OUTSIDE the
+ * Diagnostics consent toggle, because a coarse route always has. So passing the
+ * query string through unfiltered would ship a home-directory path and a
+ * half-typed prompt with every report anyone files.
+ *
+ * The allowlist, the reason each key is on it, and the keys deliberately left
+ * off live in `apps/client/src/layers/features/feedback/lib/feedback-route.ts`.
+ * This cap (which matches the site intake's own `MAX_ROUTE_LEN`) is the second
+ * bound: the client appends only params that fit WHOLE, so a `route` never ends
+ * mid-value or mid-percent-escape.
  */
 export const MAX_FEEDBACK_ROUTE_LEN = 256;
 
@@ -262,9 +277,6 @@ export const MAX_CLIENT_REPORT_TAG_LEN = MAX_STRING_LEN;
  */
 export const FEEDBACK_SHELL_KINDS = ['desktop-app', 'browser'] as const;
 
-/** One of the {@link FEEDBACK_SHELL_KINDS}. */
-export type FeedbackShellKind = (typeof FEEDBACK_SHELL_KINDS)[number];
-
 /**
  * The window the report was filed from — CSS pixels plus the display's device
  * pixel ratio, so a layout bug that only reproduces at a given width (or only
@@ -280,9 +292,6 @@ export const FeedbackViewportSchema = z
     devicePixelRatio: z.number().min(0).max(100),
   })
   .strict();
-
-/** The reporting window's size, per {@link FeedbackViewportSchema}. */
-export type FeedbackViewport = z.infer<typeof FeedbackViewportSchema>;
 
 /**
  * One client-side signal captured in the moments before a bug report: a console
