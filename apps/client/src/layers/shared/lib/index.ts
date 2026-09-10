@@ -13,6 +13,7 @@ export { getDesktopAdmin, unwrapDesktopAdminResult } from './desktop-admin';
 export {
   captureAppShot,
   captureAppView,
+  getAppCaptureRoot,
   AppCaptureError,
   type AppCaptureReason,
   type AppCaptureRegion,
@@ -269,11 +270,15 @@ export {
   requestComposerInsert,
 } from './composer-insert';
 export { FILE_PATH_DRAG_TYPE, hasFilePathDrag, readFilePathDrag } from './file-drag';
-// The caps and the quality dial stay on the module rather than the barrel —
+// The size caps and the quality dial stay on the module rather than the barrel —
 // they document `compressImage`'s behaviour, and nothing outside it decides
-// anything from them.
+// anything from them. The DECODE bound is the exception, and is out here because
+// it has a second consumer: the element crop decodes a capture of its own, hits
+// the same "an `Image` may fire neither `load` nor `error`" hazard, and must
+// give up after the same interval rather than pick a number of its own.
 export {
   compressImage,
+  IMAGE_DECODE_TIMEOUT_MS,
   ImageCompressError,
   isAcceptableImageDataUrl,
   type ImageCompressReason,

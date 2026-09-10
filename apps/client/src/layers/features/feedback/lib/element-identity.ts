@@ -16,6 +16,7 @@
  *
  * @module features/feedback/lib/element-identity
  */
+import { MAX_FEEDBACK_MESSAGE_LEN } from '@dorkos/shared/telemetry-events';
 
 /**
  * Longest selector this will build before it gives up on being precise.
@@ -215,6 +216,29 @@ export function formatElementIdentity(identity: ElementIdentity): string {
 }
 
 /**
+ * A trailing identity block, exactly as {@link formatElementIdentity} writes one.
+ *
+ * Anchored to the END of the string, and the two optional lines are in the order
+ * they are emitted, so this can only match a block this module produced and left
+ * where it produced it. A block a person has typed past is no longer trailing and
+ * is therefore left alone — see {@link appendElementIdentity}.
+ */
+const TRAILING_IDENTITY_BLOCK = /\n*Element: [^\n]*(\nSlot: [^\n]*)?(\nTestid: [^\n]*)?$/;
+
+/** What {@link appendElementIdentity} produced, and whether it fitted. */
+export interface MessageWithIdentity {
+  /** The message to put back in the field, never longer than the cap. */
+  message: string;
+  /**
+   * True when the block would have pushed the message over the cap and was left
+   * out entirely. The caller owes the person a word about it: silently dropping
+   * the one fact the gesture exists to gather is the failure this flag exists to
+   * make impossible.
+   */
+  identityDropped: boolean;
+}
+
+/**
  * Fold the identity block into the message the person is writing.
  *
  * Appended to the MESSAGE rather than hidden in diagnostics, and that is a
@@ -223,12 +247,38 @@ export function formatElementIdentity(identity: ElementIdentity): string {
  * and the message is the field they can read and edit before pressing Send,
  * which is what "you see exactly what you are sending" means here.
  *
+ * **One picture, one name.** A second pointing REPLACES a block still sitting at
+ * the end of the message rather than adding to it, because the second pointing
+ * also replaced the screenshot — there is one image, it shows one element, and a
+ * report carrying two "Element:" blocks beside one picture is a report that
+ * misleads whoever reads it. A block the person has since typed past is not
+ * trailing any more, and is left where they left it: at that point it is their
+ * text, not ours to edit.
+ *
+ * **It cannot push the message over the cap.** The field's own `maxLength` stops
+ * a person typing past {@link MAX_FEEDBACK_MESSAGE_LEN}, but nothing stops code
+ * writing past it — and the wire schema refuses the submission at exactly that
+ * bound, so the overflow would surface as a failed send and a toast pointing at
+ * GitHub, which is not what went wrong. When the block will not fit it is left
+ * out and said so.
+ *
  * @param message - What the person has typed so far, possibly empty.
  * @param identity - What {@link describeElement} found.
- * @returns The message with the identity block appended, separated by a blank line.
+ * @param maxLength - The cap to stay within. Defaults to {@link MAX_FEEDBACK_MESSAGE_LEN}.
+ * @returns The new message, and whether the block had to be dropped to fit.
  */
-export function appendElementIdentity(message: string, identity: ElementIdentity): string {
+export function appendElementIdentity(
+  message: string,
+  identity: ElementIdentity,
+  maxLength: number = MAX_FEEDBACK_MESSAGE_LEN
+): MessageWithIdentity {
   const block = formatElementIdentity(identity);
-  const existing = message.trimEnd();
-  return existing ? `${existing}\n\n${block}` : block;
+  const existing = message.replace(TRAILING_IDENTITY_BLOCK, '').trimEnd();
+  const next = existing ? `${existing}\n\n${block}` : block;
+  if (next.length <= maxLength) return { message: next, identityDropped: false };
+  // Room for the block would have to come out of what the person wrote, and
+  // their words are worth more than our labels. Hand the message back as it
+  // stands — with any stale block still stripped, since that one described a
+  // screenshot this pointing has already replaced.
+  return { message: existing.slice(0, maxLength), identityDropped: true };
 }

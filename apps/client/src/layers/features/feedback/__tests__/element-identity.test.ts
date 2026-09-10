@@ -10,6 +10,7 @@
 // `CSS` global at all, and its job is only to keep a missing global from taking
 // the whole identity down — a case a test would have to fabricate to see.
 import { describe, it, expect, afterEach } from 'vitest';
+import { MAX_FEEDBACK_MESSAGE_LEN } from '@dorkos/shared/telemetry-events';
 import {
   appendElementIdentity,
   buildSelector,
@@ -213,22 +214,85 @@ describe('appendElementIdentity — folding it into what was already typed', () 
   it('keeps the report someone had already written, and separates the block from it', () => {
     const next = appendElementIdentity('the toggle does nothing', { selector: '#toggle' });
 
-    expect(next).toBe('the toggle does nothing\n\nElement: #toggle');
+    expect(next).toEqual({
+      message: 'the toggle does nothing\n\nElement: #toggle',
+      identityDropped: false,
+    });
   });
 
   it('starts with the block when nothing has been typed yet', () => {
     // No leading blank lines to delete before the person can start writing.
-    expect(appendElementIdentity('', { selector: '#toggle' })).toBe('Element: #toggle');
-    expect(appendElementIdentity('   \n\n ', { selector: '#toggle' })).toBe('Element: #toggle');
+    expect(appendElementIdentity('', { selector: '#toggle' }).message).toBe('Element: #toggle');
+    expect(appendElementIdentity('   \n\n ', { selector: '#toggle' }).message).toBe(
+      'Element: #toggle'
+    );
   });
 
-  it('appends a second pointing rather than replacing the first', () => {
-    // Pointing twice is pointing at two things — a report that only ever
-    // remembers the last one loses half of what was said.
-    const once = appendElementIdentity('two things look wrong', { selector: '#a' });
-    const twice = appendElementIdentity(once, { selector: '#b' });
+  it('replaces the block from the last pointing instead of stacking a second one', () => {
+    // There is ONE screenshot, and the second pointing already replaced it. Two
+    // "Element:" blocks beside one picture tell whoever reads the report that it
+    // shows two things, which is not true of any report this can produce.
+    const once = appendElementIdentity('two things look wrong', {
+      selector: '#a',
+      slot: 'first',
+      testId: 'first-id',
+    });
+    const twice = appendElementIdentity(once.message, { selector: '#b' });
 
-    expect(twice).toContain('Element: #a');
-    expect(twice).toContain('Element: #b');
+    expect(twice.message).toBe('two things look wrong\n\nElement: #b');
+    expect(twice.message).not.toContain('#a');
+    expect(twice.message).not.toContain('first');
+  });
+
+  it('leaves a block the person has typed past exactly where they left it', () => {
+    // Once there is text after it, it is their writing and not ours to edit —
+    // and it may well be what they are writing ABOUT.
+    const once = appendElementIdentity('look here', { selector: '#a' });
+    const edited = `${once.message}\n\nand this one too:`;
+
+    const twice = appendElementIdentity(edited, { selector: '#b' });
+
+    expect(twice.message).toContain('Element: #a');
+    expect(twice.message).toContain('Element: #b');
+  });
+
+  it('never writes the message past the cap the wire enforces', () => {
+    // The textarea's own `maxLength` stops a PERSON at the cap; nothing stops
+    // code, and the schema refuses the submission at exactly this bound — so an
+    // overflow surfaces as a failed send and a toast about GitHub, which is not
+    // what went wrong.
+    const identity = { selector: '#toggle' };
+    const block = formatElementIdentity(identity);
+    const almostFull = 'x'.repeat(MAX_FEEDBACK_MESSAGE_LEN - block.length);
+
+    const result = appendElementIdentity(almostFull, identity);
+
+    expect(result.identityDropped).toBe(true);
+    expect(result.message.length).toBeLessThanOrEqual(MAX_FEEDBACK_MESSAGE_LEN);
+    expect(result.message).not.toContain('Element:');
+  });
+
+  it('fits the block when there is exactly room for it', () => {
+    // The boundary from the other side: one character less of message and the
+    // block, plus the blank line between them, land on the cap exactly.
+    const identity = { selector: '#toggle' };
+    const block = formatElementIdentity(identity);
+    const typed = 'x'.repeat(MAX_FEEDBACK_MESSAGE_LEN - block.length - 2);
+
+    const result = appendElementIdentity(typed, identity);
+
+    expect(result.identityDropped).toBe(false);
+    expect(result.message).toHaveLength(MAX_FEEDBACK_MESSAGE_LEN);
+    expect(result.message.endsWith(block)).toBe(true);
+  });
+
+  it('keeps every character the person typed when the block will not fit', () => {
+    // Their words are worth more than our labels: making room by trimming the
+    // report is the one thing this must not do.
+    const typed = 'y'.repeat(MAX_FEEDBACK_MESSAGE_LEN);
+
+    const result = appendElementIdentity(typed, { selector: '#toggle' });
+
+    expect(result.message).toBe(typed);
   });
 });

@@ -20,7 +20,11 @@ interface ScreenshotFieldProps {
   onRemove: () => void;
   /** Open the full preview on its Screenshot tab. */
   onPreview: () => void;
-  /** Whether this is a touch surface — changes the wording and hides "Point at element". */
+  /**
+   * Whether the viewport is below the mobile breakpoint (768px) — changes the
+   * wording and hides "Point at element". A narrow desktop window counts, which
+   * is the honest reading of the media query behind it.
+   */
   isMobile: boolean;
 }
 
@@ -38,10 +42,16 @@ interface ScreenshotFieldProps {
  * and that holds while a REPLACEMENT is encoding too.
  *
  * "Point at element" is the fifth and the most precise: aim at the thing that
- * looks wrong and the report arrives cropped to it. Desktop only, because it is
- * a hover-then-commit gesture and touch has no hover — hidden rather than
- * disabled, since a control a surface can never offer is not a control that
- * surface should be looking at.
+ * looks wrong and the report arrives cropped to it. Offered only on a wide
+ * viewport, and `isMobile` is honestly named for what it measures — a 768px
+ * media query, not a device. That is the gate the spec chose (decision 7,
+ * `useIsMobile()`), and it is the right SHAPE of gate even though it is not the
+ * exact question: hovering to aim needs both a pointer and room to see the app
+ * you are aiming at, and a window narrow enough to trip that query has neither
+ * to spare. A narrow desktop window therefore loses the affordance too, which
+ * costs a person one drag of a window edge. Hidden rather than disabled, since a
+ * control a surface is not offering is not a control that surface should be
+ * looking at.
  */
 export function ScreenshotField({
   dataUrl,

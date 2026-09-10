@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vite
 import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
+import { MAX_FEEDBACK_MESSAGE_LEN } from '@dorkos/shared/telemetry-events';
 import { TransportProvider } from '@/layers/shared/model';
 import { FeedbackDialog } from '../ui/FeedbackDialog';
 import { __resetBreadcrumbsForTests, addBreadcrumb } from '@/layers/shared/lib/breadcrumbs';
@@ -884,7 +885,7 @@ describe('FeedbackDialog', () => {
         expect((message as HTMLTextAreaElement).value).not.toContain('something-else-entirely');
       });
 
-      it('says the picture is being taken while the person waits for it', async () => {
+      it('keeps the dialog out of the way for as long as the capture runs', async () => {
         const target = appElement();
         cropShotToElement.mockImplementation(() => new Promise<string>(() => {}));
         renderDialog();
@@ -893,15 +894,144 @@ describe('FeedbackDialog', () => {
 
         pickElement(target);
 
-        // The dialog is still out of the way and the app is mid-capture — the
-        // one moment nothing else on screen can report from.
-        expect(await screen.findByText('Taking the picture…')).toBeInTheDocument();
+        // Not "shows a spinner" — there is nowhere to show one. The capture
+        // fades every child of `<body>` so the picture is of the app alone, and
+        // both the dialog and the picker are such children; the browser spec
+        // measures that. What IS this dialog's decision is staying out of the
+        // frame until the picture is taken, and coming back only then.
+        await waitFor(() => expect(screen.queryByText('Send feedback')).not.toBeInTheDocument());
       });
 
-      // The touch gate is the FIELD's own branch, and is checked where it lives
-      // (`ScreenshotField.test.tsx`): flipping `matchMedia` here would also swap
-      // this dialog for its drawer variant, and the test would then be measuring
-      // the wrong thing.
+      it('ignores a cancel that arrives once the capture has started', async () => {
+        // A cancel accepted here would put the dialog back on screen
+        // MID-PHOTOGRAPH — as a fresh `<body>` child the capture's hide sweep
+        // never snapshotted, which the desktop shell then photographs. That is
+        // the exact failure the sweep exists to prevent. The picker stands its
+        // handlers down; this is the dialog half of the same rule.
+        const target = appElement();
+        let settle: (dataUrl: string) => void = () => {};
+        cropShotToElement.mockImplementation(() => new Promise<string>((r) => (settle = r)));
+        renderDialog();
+        openPanel();
+        startPointing();
+        pickElement(target);
+        await waitFor(() => expect(screen.queryByText('Send feedback')).not.toBeInTheDocument());
+
+        fireEvent.keyDown(document.body, { key: 'Escape' });
+
+        // Still out of the way: the dialog did not come back early.
+        expect(screen.queryByText('Send feedback')).not.toBeInTheDocument();
+        await act(async () => settle(CROPPED));
+        // And when the capture does land, it lands normally.
+        await screen.findByAltText('The screenshot you attached');
+      });
+
+      it('drops a capture whose report has been reset out from under it', async () => {
+        // Seconds pass inside the capture, and the dialog can be closed and
+        // reopened in them. Without a run token the picture, the element's name
+        // and the switch to `bug` all land in a form somebody else has started.
+        const target = appElement();
+        let settle: (dataUrl: string) => void = () => {};
+        cropShotToElement.mockImplementation(() => new Promise<string>((r) => (settle = r)));
+        const { setOpen } = renderDialog();
+        openPanel();
+        startPointing();
+        pickElement(target);
+        // Wait for the crop to be IN FLIGHT before touching anything. Without
+        // this, `settle` is still the no-op it was initialised to — the capture
+        // never resumes, nothing lands, and the assertions below pass no matter
+        // what the guard does. Measured: they did.
+        await waitFor(() => expect(cropShotToElement).toHaveBeenCalled());
+
+        setOpen(false);
+        setOpen(true);
+        await act(async () => settle(CROPPED));
+
+        openPanel();
+        expect(screen.queryByAltText('The screenshot you attached')).not.toBeInTheDocument();
+        const message = screen.getByPlaceholderText(/what works, what does not/i);
+        expect((message as HTMLTextAreaElement).value).toBe('');
+        // And the kind was not flipped either — this report is whatever the
+        // reopen made it, not a bug report nobody asked for.
+        expect(screen.getByRole('radio', { name: 'Feedback' })).toBeChecked();
+      });
+
+      it('does not switch attachments back on that the person switched off', async () => {
+        // Pointing changes the KIND, and `bug` brings diagnostics on with it —
+        // but never over the top of a deliberate choice. Re-deriving the
+        // defaults here re-enables a toggle someone had just turned off, which
+        // is the one thing this dialog promises never to do
+        // (feedback-attachments decision 12).
+        const target = appElement();
+        routerState.location = { pathname: '/session', search: { session: 'abc' } };
+        renderDialog();
+        openPanel();
+        // A bug report turns both on by default, which is the state a person has
+        // to be IN before switching one off can mean anything.
+        fireEvent.click(screen.getByRole('radio', { name: 'Bug' }));
+        const diagnostics = screen.getByLabelText('Diagnostics');
+        const conversation = screen.getByLabelText('Conversation');
+        expect(diagnostics).toBeChecked();
+        expect(conversation).toBeChecked();
+        fireEvent.click(diagnostics);
+        fireEvent.click(conversation);
+        expect(diagnostics).not.toBeChecked();
+        expect(conversation).not.toBeChecked();
+
+        startPointing();
+        pickElement(target);
+        await screen.findByAltText('The screenshot you attached');
+
+        expect(screen.getByRole('radio', { name: 'Bug' })).toBeChecked();
+        expect(screen.getByLabelText('Diagnostics')).not.toBeChecked();
+        expect(screen.getByLabelText('Conversation')).not.toBeChecked();
+      });
+
+      it('still brings diagnostics on for someone who left the toggles alone', async () => {
+        // The other half of the same rule: an untouched form still gets the
+        // defaults that come with a bug report.
+        const target = appElement();
+        renderDialog();
+        openPanel();
+        expect(screen.getByLabelText('Diagnostics')).not.toBeChecked();
+
+        startPointing();
+        pickElement(target);
+        await screen.findByAltText('The screenshot you attached');
+
+        expect(screen.getByLabelText('Diagnostics')).toBeChecked();
+      });
+
+      it('says so rather than silently dropping a name that will not fit', async () => {
+        // The field's own `maxLength` stops a person at the cap; nothing stops
+        // this code, and the wire schema refuses at exactly that bound — so an
+        // overflow would surface as a failed send and a toast about GitHub,
+        // which is not what went wrong.
+        const target = appElement();
+        renderDialog();
+        fireEvent.change(screen.getByPlaceholderText(/what works, what does not/i), {
+          target: { value: 'x'.repeat(MAX_FEEDBACK_MESSAGE_LEN) },
+        });
+        openPanel();
+        startPointing();
+
+        pickElement(target);
+
+        await waitFor(() =>
+          expect(toast.error).toHaveBeenCalledWith(
+            'Your message is too long to add the element’s name to it. The screenshot is still attached.'
+          )
+        );
+        const message = screen.getByPlaceholderText(/what happened, and what did you expect/i);
+        expect((message as HTMLTextAreaElement).value).toHaveLength(MAX_FEEDBACK_MESSAGE_LEN);
+        // The picture still made it, which is what the sentence promises.
+        expect(screen.getByAltText('The screenshot you attached')).toBeInTheDocument();
+      });
+
+      // The narrow-viewport gate is the FIELD's own branch, and is checked where
+      // it lives (`ScreenshotField.test.tsx`): flipping `matchMedia` here would
+      // also swap this dialog for its drawer variant, and the test would then be
+      // measuring the wrong thing.
     });
 
     describe('a compression still in flight (cancellation)', () => {
@@ -1165,7 +1295,10 @@ describe('FeedbackDialog', () => {
       openPanel();
 
       expect(screen.queryByLabelText('Add screenshot')).not.toBeInTheDocument();
-      expect(screen.queryByText('Point at element (coming soon)')).not.toBeInTheDocument();
+      // Asked of the live control, not of the labelled-soon string it replaced:
+      // that string no longer exists anywhere, so an assertion naming it passed
+      // whatever this dialog rendered.
+      expect(screen.queryByRole('button', { name: 'Point at element' })).not.toBeInTheDocument();
       // Including the one-click capture, which is the easiest of the four to
       // press by accident: a picture taken there is dropped on the way out, so
       // offering it would promise something the send path cannot keep.

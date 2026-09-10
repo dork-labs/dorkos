@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+//
 // The crop arithmetic, at every scale and every edge.
 //
 // This is the one part of "point at element" that a person cannot check by
@@ -6,14 +8,18 @@
 // `computeElementCrop` is pure precisely so all of that is reachable here
 // without a browser, a canvas, or a rasterizer.
 //
-// jsdom limit worth naming: the DRAWING half (`cropShotToElement`) is not
+// jsdom limit worth naming: the DRAWING half of `cropShotToElement` is not
 // checked here. It decodes an image and calls `drawImage`, and jsdom has no
 // codec and no 2d context — a test of it would only be a test of its own mocks.
 // The real browser answers that, in
-// `apps/e2e/tests/dev-playground/feedback-point-at-element.spec.ts`.
-import { describe, it, expect } from 'vitest';
+// `apps/e2e/tests/dev-playground/feedback-point-at-element.spec.ts`. Its three
+// REFUSALS are checked, and can be: every one of them is decided before a
+// single pixel is touched, which is why they are ordered that way.
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { AppCaptureError, IMAGE_DECODE_TIMEOUT_MS } from '@/layers/shared/lib';
 import {
   computeElementCrop,
+  cropShotToElement,
   ELEMENT_CROP_PADDING_PX,
   type ElementCropInput,
 } from '../lib/element-crop';
@@ -247,6 +253,22 @@ describe('computeElementCrop — degenerate input', () => {
     expect(crop && crop.sy + crop.sh).toBeLessThanOrEqual(8);
   });
 
+  it('turns an all-zero rect into a crop of the top-left corner', () => {
+    // NOT a bug in here, and the reason `cropShotToElement` refuses before it
+    // ever calls this: a detached or `display: none` element measures
+    // {0,0,0,0}, the padding grows that into a 48x48 box straddling the origin,
+    // and the origin is inside every picture — so this function correctly
+    // returns a rectangle, and the report would arrive cropped to the corner of
+    // the app, sharp and confident and of nothing. Pinned so that anyone who
+    // moves the guard out of the caller sees where it has to go instead.
+    const crop = computeElementCrop({
+      ...shellCapture(1),
+      element: { left: 0, top: 0, width: 0, height: 0 },
+    });
+
+    expect(crop).toEqual({ sx: 0, sy: 0, sw: 24, sh: 24 });
+  });
+
   it('refuses a capture that reports no area', () => {
     // A region or an image of zero size would divide by zero and produce
     // `Infinity` / `NaN` coordinates, which canvas silently accepts.
@@ -283,5 +305,124 @@ describe('computeElementCrop — degenerate input', () => {
     // pixel wider than the box it was measured from — and a pixel narrower for
     // the same element sitting somewhere else on the page.
     expect(crop).toEqual({ sx: 201, sy: 201, sw: 66, sh: 66 });
+  });
+});
+
+describe('cropShotToElement — what it refuses before touching a pixel', () => {
+  /** A shot of a 1000x800 window; never decoded, because none of these get that far. */
+  const SHOT = {
+    dataUrl: 'data:image/png;base64,WHOLE',
+    region: { left: 0, top: 0, width: 1000, height: 800 },
+  };
+
+  /** Put an app root on the page and hand back something inside it. */
+  function mountApp(): HTMLElement {
+    document.body.innerHTML = '<div id="root"><button>Go</button></div>';
+    const target = document.querySelector('#root button');
+    if (!(target instanceof HTMLElement)) throw new Error('the app must have a target');
+    return target;
+  }
+
+  /** Give an element a real box, which jsdom otherwise reports as all zeros. */
+  function withBox(element: Element, box: Partial<DOMRect>): void {
+    element.getBoundingClientRect = () =>
+      ({ left: 100, top: 100, width: 200, height: 40, ...box }) as DOMRect;
+  }
+
+  /**
+   * Stand in for the image decoder jsdom does not have, so a test can reach the
+   * steps AFTER the decode. Reports the shot's own size, which is what a real
+   * decode of it would.
+   */
+  function withDecoder(): void {
+    class DecodingImage {
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      naturalWidth = 1000;
+      naturalHeight = 800;
+      set src(_value: string) {
+        setTimeout(() => this.onload?.(), 0);
+      }
+    }
+    vi.stubGlobal('Image', DecodingImage);
+  }
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+    vi.unstubAllGlobals();
+  });
+
+  it('refuses an element that has been taken out of the page', async () => {
+    // A detached node measures {0,0,0,0}, which the padding grows into a 48x48
+    // box over the origin — so without a refusal the report arrives cropped to
+    // the top-left corner of the app rather than with no picture at all. It is
+    // the SIZE guard that catches this, which is why there is no separate
+    // `isConnected` check: having no box is what being detached means here.
+    const target = mountApp();
+    target.remove();
+
+    await expect(cropShotToElement(SHOT, target)).rejects.toThrow(AppCaptureError);
+    await expect(cropShotToElement(SHOT, target)).rejects.toThrow(
+      'That element has no size to crop to.'
+    );
+  });
+
+  it('refuses an element with no box to crop to', async () => {
+    // `display: none`, or a wrapper that lays out to nothing. Same all-zero
+    // rect, same corner crop, and the element is still in the document — so
+    // being connected is not enough on its own.
+    const target = mountApp();
+    withBox(target, { left: 0, top: 0, width: 0, height: 0 });
+
+    await expect(cropShotToElement(SHOT, target)).rejects.toThrow(
+      'That element has no size to crop to.'
+    );
+  });
+
+  it('refuses something floating outside the app that was captured', async () => {
+    // A popover or tooltip portaled to `<body>`. Neither path photographs those
+    // — snapdom never frames them, and the desktop shell photographs them faded
+    // to nothing — so their rectangle in the picture holds whatever the app was
+    // showing BEHIND them. A picture of the wrong thing, not no picture.
+    mountApp();
+    const floating = document.createElement('div');
+    document.body.append(floating);
+    withBox(floating, {});
+
+    await expect(cropShotToElement(SHOT, floating)).rejects.toThrow(
+      'That element is not part of the app that was captured.'
+    );
+  });
+
+  it('lets a real element inside the app through to the drawing', async () => {
+    // The control case, and the one that proves the three refusals above are
+    // discriminating rather than a blanket no. With a decoder standing in, it
+    // gets all the way to the canvas — which jsdom does not have either, so it
+    // fails exactly one step further on than any of the refusals.
+    const target = mountApp();
+    withBox(target, {});
+    withDecoder();
+
+    await expect(cropShotToElement(SHOT, target)).rejects.toThrow(/no 2d canvas context/);
+  });
+
+  it('gives up on a capture that never decodes, rather than waiting forever', async () => {
+    // Not a hypothetical, and jsdom is the proof: it has no image decoder at
+    // all, so `new Image()` here fires NEITHER `load` nor `error` — the precise
+    // shape of the hazard. Unbounded, this leaves the dialog's "preparing" flag
+    // stuck on and Send disabled for the rest of the session, on a report the
+    // person has already written.
+    vi.useFakeTimers();
+    try {
+      const target = mountApp();
+      withBox(target, {});
+
+      const cropping = cropShotToElement(SHOT, target);
+      const settled = expect(cropping).rejects.toThrow(/did not decode within/);
+      await vi.advanceTimersByTimeAsync(IMAGE_DECODE_TIMEOUT_MS);
+      await settled;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   MessageSquare,
   Bug,
@@ -10,6 +10,7 @@ import {
   Lock,
   ChevronDown,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import type { FeedbackSubmissionKind } from '@dorkos/shared/telemetry-events';
 import {
   ResponsiveDialog,
@@ -179,6 +180,28 @@ export function FeedbackDialog({
   // what it found — the form's own state is untouched the whole time, which is
   // why a half-written report survives the round trip.
   const [pointPhase, setPointPhase] = useState<PointAtElementPhase | null>(null);
+  // How many times this dialog has been opened, and the one token a pointing run
+  // is measured against. A capture takes seconds, and the dialog can be closed
+  // or reopened in them; without a way to notice, the picture, the element's
+  // name and the switch to `bug` all land in a form somebody else has since
+  // started. Counted in an EFFECT rather than in the reset below, because the
+  // reset runs during render and a ref written there is a purity violation
+  // React's own lint rule objects to — and this needs to be the kind of counter
+  // you can trust rather than the kind you argue about.
+  //
+  // There is deliberately no SECOND token counting the runs themselves. Two
+  // overlapping runs would need a second pick while the first was capturing, and
+  // the picker refuses clicks once aiming is over — so a run counter would guard
+  // a state that cannot be reached, and an unreachable guard is worse than none:
+  // it reads as protection and is never exercised.
+  const openEpoch = useRef(0);
+  useEffect(() => {
+    openEpoch.current += 1;
+  }, [open]);
+  // Whether the person has touched the attachment toggles themselves. Once they
+  // have, nothing re-derives those from the kind behind their back — see
+  // `onPointSelect`.
+  const [attachmentsTouched, setAttachmentsTouched] = useState(false);
   // The attachments panel starts shut, and both of these can happen while it
   // is: a drag needs somewhere visible to aim, and a paste (⌘V works anywhere
   // on the dialog) otherwise lands a picture the person who pasted it never
@@ -208,9 +231,11 @@ export function FeedbackDialog({
       // see (a crash report, or a bug with diagnostics on) — otherwise stay clean.
       setPanelOpen(defaults.diagnostics || defaults.conversation);
       setPreviewOpen(false);
+      setAttachmentsTouched(false);
       // A picker left mid-aim by a host that closed the dialog out from under it
       // must not be waiting on the next open — that would show a crosshair over
-      // an app nobody asked to point at.
+      // an app nobody asked to point at. A capture that is STILL RUNNING is
+      // disowned by `openEpoch`, which this reopen has already moved.
       setPointPhase(null);
       // A picture from the last report must never ride along with the next one,
       // and a surface that cannot send one must not be holding one either — so
@@ -221,14 +246,19 @@ export function FeedbackDialog({
     }
   }
 
-  function onKindChange(next: FeedbackSubmissionKind): void {
-    setKind(next);
+  /** Re-derive the attachment toggles from a kind. */
+  function applyKindDefaults(next: FeedbackSubmissionKind): void {
     // Thread the crash flag so switching kind on a crash-prefilled report keeps
     // diagnostics on (the crash stack rides in diagnostics — dropping it here
     // would silently discard it).
     const defaults = defaultsForKind(next, showConversation, Boolean(crashStack));
     setIncludeDiagnostics(defaults.diagnostics);
     setIncludeConversation(defaults.conversation);
+  }
+
+  function onKindChange(next: FeedbackSubmissionKind): void {
+    setKind(next);
+    applyKindDefaults(next);
   }
 
   function openPreview(tab: FeedbackPreviewTab): void {
@@ -244,18 +274,37 @@ export function FeedbackDialog({
    * a re-render may have replaced the node it names.
    */
   async function onPointSelect(element: Element): Promise<void> {
+    const myEpoch = openEpoch.current;
     const identity = describeElement(element);
     setPointPhase('capturing');
     // The crop can still fail (it toasts its own refusal), and the identity is
     // recorded either way: knowing WHICH element is the part of this gesture
     // that a failed screenshot does not take away.
     await screenshot.captureElement(element);
+    // Seconds have passed, and the dialog may have been closed or reopened in
+    // them. Everything below would then be written into a form that has moved
+    // on: a picture nobody asked for, a kind nobody chose, and the name of an
+    // element nobody pointed at in THIS report. The attachment hook already
+    // drops the image on its own generation check (`reset` bumps it); this is
+    // the other half.
+    if (myEpoch !== openEpoch.current) return;
     setPointPhase(null);
-    setMessage((current) => appendElementIdentity(current, identity));
-    // Pointing at something broken is a bug report, and switching kind here goes
-    // through the same door the kind buttons use so the attachment defaults that
-    // come with `bug` are not quietly skipped.
-    onKindChange('bug');
+    const composed = appendElementIdentity(message, identity);
+    setMessage(composed.message);
+    if (composed.identityDropped) {
+      // Never silently: the name is the whole point of the gesture, and a report
+      // that quietly lacks it looks like one where the gesture worked.
+      toast.error(
+        'Your message is too long to add the element’s name to it. The screenshot is still attached.'
+      );
+    }
+    // Pointing at something broken is a bug report. The KIND changes; the
+    // attachment toggles do not, unless the person has left them at whatever we
+    // chose. Re-deriving them here would switch Diagnostics back on for someone
+    // who had just deliberately switched it off, which is the one thing this
+    // dialog promises never to do (feedback-attachments decision 12).
+    setKind('bug');
+    if (!attachmentsTouched) applyKindDefaults('bug');
     setPanelOpen(true);
   }
 
@@ -438,7 +487,10 @@ export function FeedbackDialog({
                     label="Diagnostics"
                     summary="Version, platform, and recent errors."
                     checked={includeDiagnostics}
-                    onCheckedChange={setIncludeDiagnostics}
+                    onCheckedChange={(next) => {
+                      setAttachmentsTouched(true);
+                      setIncludeDiagnostics(next);
+                    }}
                     onPreview={() => openPreview('diagnostics')}
                   />
                   {showConversation && (
@@ -448,7 +500,10 @@ export function FeedbackDialog({
                       label="Conversation"
                       summary="So we can see what led to the bug."
                       checked={includeConversation}
-                      onCheckedChange={setIncludeConversation}
+                      onCheckedChange={(next) => {
+                        setAttachmentsTouched(true);
+                        setIncludeConversation(next);
+                      }}
                       onPreview={() => openPreview('conversation')}
                     />
                   )}

@@ -71,13 +71,19 @@ describe('PointAtElementOverlay — what it says', () => {
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
   });
 
-  it('says the picture is being taken once the aiming is over', () => {
+  it('shows nothing at all once the picture is being taken', () => {
     renderOverlay({ phase: 'capturing' });
 
-    expect(screen.getByText('Taking the picture…')).toBeInTheDocument();
-    // Nothing to cancel any more: the capture is already running, and a control
-    // that cannot stop what it names is a lie.
+    // Not an omission. The capture fades every child of `<body>` to nothing so
+    // the photograph is of the app alone, and this picker is one of those
+    // children — a progress cue here is painted at zero for its whole life
+    // (measured in a real Chromium; the browser spec samples the opacity), and a
+    // cue anywhere it WOULD show is a cue in the photograph. So the hint bar,
+    // the scrim and the Cancel button all stand down, and what bounds the wait
+    // is `APP_CAPTURE_TIMEOUT_MS` rather than a spinner.
+    expect(screen.queryByText(/click the part that looks wrong/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeEmptyDOMElement();
   });
 
   it('names itself for anyone who cannot see the crosshair', () => {
@@ -105,6 +111,33 @@ describe('PointAtElementOverlay — finding what is underneath', () => {
     fireEvent.pointerMove(overlay, { clientX: 40, clientY: 40 });
 
     expect(hitTestingDuringLookup).toBe('none');
+    expect(overlay.style.pointerEvents).not.toBe('none');
+  });
+
+  it('puts its hit-testing back even when the lookup throws', () => {
+    // The one case a `finally` buys and a plain restore does not. If the lookup
+    // throws with hit-testing off, the picker stays transparent to the pointer
+    // for good: every later click sails through to the live app it is supposed
+    // to be covering, and the person is clicking on the thing they came to
+    // report about.
+    const { overlay } = renderOverlay();
+    vi.spyOn(document, 'elementFromPoint').mockImplementation(() => {
+      throw new Error('hit-testing blew up');
+    });
+    // React 19 hands a handler's throw to the error REPORTER rather than back
+    // out of the dispatch, so `fireEvent` returns normally and the throw
+    // surfaces as a window `error` event instead. Left alone it is an unhandled
+    // error for the whole run, which Vitest rightly warns can mask real ones —
+    // so this test owns the one it deliberately caused.
+    const swallow = (event: ErrorEvent) => event.preventDefault();
+    window.addEventListener('error', swallow);
+    try {
+      fireEvent.pointerMove(overlay, { clientX: 40, clientY: 40 });
+    } finally {
+      window.removeEventListener('error', swallow);
+    }
+
+    // The damage is only ever visible in the style it left behind.
     expect(overlay.style.pointerEvents).not.toBe('none');
   });
 
@@ -244,11 +277,25 @@ describe('PointAtElementOverlay — getting out', () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it('leaves other keys to the app', () => {
+  it('takes no key but Escape to mean cancel', () => {
     const { onCancel } = renderOverlay();
 
     fireEvent.keyDown(document.body, { key: 'a' });
     fireEvent.keyDown(document.body, { key: 'Enter' });
+
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it('will not be cancelled once the picture is being taken', () => {
+    // The capture cannot be called off underneath (neither snapdom nor an IPC
+    // round-trip is cancellable), so accepting a cancel here would only put the
+    // dialog back on screen MID-PHOTOGRAPH — as a fresh `<body>` child the
+    // capture's hide sweep never saw, which the desktop shell then photographs.
+    // That is the exact failure the sweep exists to prevent.
+    const { overlay, onCancel } = renderOverlay({ phase: 'capturing' });
+
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    fireEvent.contextMenu(overlay, { clientX: 40, clientY: 40 });
 
     expect(onCancel).not.toHaveBeenCalled();
   });
@@ -262,5 +309,158 @@ describe('PointAtElementOverlay — getting out', () => {
     fireEvent.keyDown(document.body, { key: 'Escape' });
 
     expect(onCancel).not.toHaveBeenCalled();
+  });
+});
+
+describe('PointAtElementOverlay — holding the keyboard while aiming', () => {
+  /**
+   * A global shortcut listener in the position the app really uses.
+   *
+   * All three of them register on `document` in the bubble phase
+   * (`use-global-palette.ts`, `use-message-search-shortcut.ts`,
+   * `use-interactive-shortcuts.ts`), which is what makes them stoppable: a
+   * `window` CAPTURE listener runs before propagation reaches `document` at all.
+   *
+   * Testing it in that position rather than an easier one matters, because the
+   * easier one hides the real limit. A rival listener on `window` in the capture
+   * phase, registered BEFORE the picker mounts, runs first and cannot be stopped
+   * by anything the picker does — nothing in this app takes that position, and
+   * anything that did would need to check for the picker itself.
+   */
+  function withAppShortcut(): { fired: ReturnType<typeof vi.fn>; stop: () => void } {
+    const fired = vi.fn();
+    document.addEventListener('keydown', fired);
+    return { fired, stop: () => document.removeEventListener('keydown', fired) };
+  }
+
+  it('keeps every key from reaching the app it is covering', () => {
+    // Without this the app underneath is fully keyboard-live under a picker
+    // nobody can type into: Tab walks focus into a tree whose focus ring is
+    // behind a scrim, Enter presses whatever it landed on, and every global
+    // shortcut still fires — ⌘K opens the command palette UNDER the picker,
+    // where it cannot be clicked and where this overlay eats its Escape.
+    const { fired, stop } = withAppShortcut();
+    try {
+      renderOverlay();
+
+      fireEvent.keyDown(document.body, { key: 'k', metaKey: true });
+      fireEvent.keyDown(document.body, { key: 'Tab' });
+      fireEvent.keyDown(document.body, { key: 'Enter' });
+
+      expect(fired).not.toHaveBeenCalled();
+    } finally {
+      stop();
+    }
+  });
+
+  it('hands the keyboard back the moment the aiming ends', () => {
+    // The app's own shortcuts have to work again during the capture and after
+    // it — a listener that outlived the picker would swallow them for good.
+    const { fired, stop } = withAppShortcut();
+    try {
+      renderOverlay({ phase: 'capturing' });
+
+      fireEvent.keyDown(document.body, { key: 'k', metaKey: true });
+
+      expect(fired).toHaveBeenCalledTimes(1);
+    } finally {
+      stop();
+    }
+  });
+
+  it('takes focus on mount and gives it back on unmount', () => {
+    // `aria-modal` is a claim, and a focus ring left sitting in the app behind
+    // the picker contradicts it. Handing focus back matters just as much: the
+    // person was writing a report, and cancelling must not drop their caret.
+    const outside = document.createElement('input');
+    document.body.append(outside);
+    outside.focus();
+    expect(document.activeElement).toBe(outside);
+
+    const { overlay } = renderOverlay();
+    expect(document.activeElement).toBe(overlay);
+
+    cleanup();
+    expect(document.activeElement).toBe(outside);
+  });
+});
+
+describe('PointAtElementOverlay — the wheel and the scroll', () => {
+  /** Make an element look like a real scrolling pane to jsdom, which has no layout. */
+  function asScrollingPane(element: HTMLElement): { scrollBy: ReturnType<typeof vi.fn> } {
+    element.style.overflowY = 'auto';
+    Object.defineProperty(element, 'scrollHeight', { configurable: true, value: 900 });
+    Object.defineProperty(element, 'clientHeight', { configurable: true, value: 300 });
+    const scrollBy = vi.fn();
+    element.scrollBy = scrollBy as unknown as HTMLElement['scrollBy'];
+    return { scrollBy };
+  }
+
+  it('scrolls the pane the pointer is over, which never sees the wheel itself', () => {
+    // The picker covers the viewport, so a wheel is delivered to the picker —
+    // and a fixed, non-scrolling box scrolls the DOCUMENT. In this app almost
+    // nothing scrolls the document: the shell fills the window and content
+    // scrolls inside panes. So without forwarding, everything below the fold of
+    // every pane is unreachable the moment aiming starts.
+    const { overlay, target } = renderOverlay();
+    const pane = target.parentElement;
+    if (!pane) throw new Error('the target must sit in a pane');
+    const { scrollBy } = asScrollingPane(pane);
+    stubElementFromPoint(target);
+
+    fireEvent.wheel(overlay, { clientX: 40, clientY: 40, deltaY: 120 });
+
+    // Found by walking UP from what is under the pointer: the thing being
+    // pointed at is rarely the thing that scrolls.
+    expect(scrollBy).toHaveBeenCalledWith({ left: 0, top: 120 });
+  });
+
+  it('leaves the wheel alone once the picture is being taken', () => {
+    const { overlay, target } = renderOverlay({ phase: 'capturing' });
+    const pane = target.parentElement;
+    if (!pane) throw new Error('the target must sit in a pane');
+    const { scrollBy } = asScrollingPane(pane);
+    stubElementFromPoint(target);
+
+    fireEvent.wheel(overlay, { clientX: 40, clientY: 40, deltaY: 120 });
+
+    expect(scrollBy).not.toHaveBeenCalled();
+  });
+
+  it('walks past a pane that cannot scroll', () => {
+    // `overflow-y: auto` on a box whose content fits is not a scroller, and
+    // scrolling it does nothing while the real pane above it stays put.
+    const { overlay, target } = renderOverlay();
+    const inner = target.parentElement;
+    if (!inner?.parentElement) throw new Error('the target needs two ancestors');
+    inner.style.overflowY = 'auto';
+    Object.defineProperty(inner, 'scrollHeight', { configurable: true, value: 100 });
+    Object.defineProperty(inner, 'clientHeight', { configurable: true, value: 100 });
+    const innerScroll = vi.fn();
+    inner.scrollBy = innerScroll as unknown as HTMLElement['scrollBy'];
+    const { scrollBy } = asScrollingPane(inner.parentElement);
+    stubElementFromPoint(target);
+
+    fireEvent.wheel(overlay, { clientX: 40, clientY: 40, deltaY: 40 });
+
+    expect(innerScroll).not.toHaveBeenCalled();
+    expect(scrollBy).toHaveBeenCalledWith({ left: 0, top: 40 });
+  });
+
+  it('re-measures the highlight when something scrolls under it', () => {
+    // The outline is drawn from a rect taken when the pointer last moved, and a
+    // scroll moves the box without moving the pointer — so a stale outline sits
+    // over whatever slid into its place.
+    const { overlay, target } = renderOverlay();
+    let top = 100;
+    target.getBoundingClientRect = () => ({ left: 10, top, width: 200, height: 40 }) as DOMRect;
+    stubElementFromPoint(target);
+    fireEvent.pointerMove(overlay, { clientX: 40, clientY: 40 });
+
+    const before = screen.getByText('nav-toggle').style.top;
+    top = 20;
+    fireEvent.scroll(document.getElementById('root') ?? document);
+
+    expect(screen.getByText('nav-toggle').style.top).not.toBe(before);
   });
 });

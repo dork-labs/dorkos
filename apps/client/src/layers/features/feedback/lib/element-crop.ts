@@ -27,6 +27,8 @@
 import {
   AppCaptureError,
   compressImage,
+  getAppCaptureRoot,
+  IMAGE_DECODE_TIMEOUT_MS,
   type AppCaptureRegion,
   type AppCaptureShot,
 } from '@/layers/shared/lib';
@@ -166,20 +168,35 @@ export function computeElementCrop(input: ElementCropInput): ImageCrop | null {
 }
 
 /**
- * Decode a `data:` URL into an image element.
+ * Decode a `data:` URL into an image element, giving up after
+ * {@link IMAGE_DECODE_TIMEOUT_MS}.
  *
- * Unbounded on purpose, unlike `compressImage`'s own decode: the only thing fed
- * to this is a picture the app itself just produced, and the capture it came
- * from is already behind a timeout.
+ * Bounded for the same reason `compressImage`'s own decode is, and the bound is
+ * the same one: an `Image` handed bytes it cannot make progress on may fire
+ * NEITHER `load` nor `error`, and a promise that never settles here leaves the
+ * dialog's "preparing" flag stuck on — which disables Send for the rest of the
+ * session, on a report the person has already written. The capture's own timeout
+ * does not cover this: it ends the moment the capture hands back a picture, and
+ * this is what happens to that picture next.
  *
  * @param dataUrl - The capture to decode.
  */
 function decode(dataUrl: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const element = new Image();
-    element.onload = () => resolve(element);
-    element.onerror = () =>
-      reject(new AppCaptureError('failed', 'The capture did not decode, so it cannot be cropped.'));
+    const refuse = (detail: string) => {
+      clearTimeout(timer);
+      reject(new AppCaptureError('failed', detail));
+    };
+    const timer = setTimeout(
+      () => refuse(`The capture did not decode within ${IMAGE_DECODE_TIMEOUT_MS}ms.`),
+      IMAGE_DECODE_TIMEOUT_MS
+    );
+    element.onload = () => {
+      clearTimeout(timer);
+      resolve(element);
+    };
+    element.onerror = () => refuse('The capture did not decode, so it cannot be cropped.');
     element.src = dataUrl;
   });
 }
@@ -217,17 +234,43 @@ function cropToDataUrl(image: HTMLImageElement, crop: ImageCrop): string {
  * full re-draw and the layout underneath is free to move in that time. Measuring
  * late means the crop matches the picture that was just taken.
  *
+ * **Two refusals come before any pixels are touched**, and both are cases where
+ * {@link computeElementCrop} would otherwise return a perfectly valid rectangle
+ * over the wrong part of the picture:
+ *
+ * 1. The element has **no box** — `display: none`, a wrapper that lays out to
+ *    nothing, or a node detached from the document, all of which measure
+ *    {0,0,0,0}. The padding grows that into a 48x48 box straddling the origin,
+ *    and the origin is inside every picture, so the report would arrive cropped
+ *    to the top-left corner of the app: sharp, confident, and of nothing. (There
+ *    is no separate `isConnected` check, because a detached node has no box by
+ *    definition and is outside the root besides — it is caught twice over here,
+ *    and a guard that can never be the one to fire is not worth reading.)
+ * 2. The element is **outside the captured app root** — a Radix popover or
+ *    tooltip portaled to `<body>`. Neither path photographs those: snapdom never
+ *    frames them, and the desktop shell photographs them faded to nothing. So
+ *    their rectangle in the picture holds whatever the app was showing BEHIND
+ *    them, which is a picture of the wrong thing rather than no picture.
+ *
  * @param shot - What `captureAppShot()` produced.
  * @param element - The element to crop to.
  * @returns A compressed `data:` URL of the element and its surroundings.
  * @throws ImageCompressError From the compression step.
- * @throws AppCaptureError When the element has left the frame entirely, or the
- *   crop cannot be drawn — the same refusal shape the capture itself uses, so the
+ * @throws AppCaptureError For either refusal above, when the capture will not
+ *   decode, when the element has left the frame entirely, or when the crop
+ *   cannot be drawn — the same refusal shape the capture itself uses, so the
  *   dialog has one sentence for "no picture" however far the attempt got.
  */
 export async function cropShotToElement(shot: AppCaptureShot, element: Element): Promise<string> {
-  const image = await decode(shot.dataUrl);
   const box = element.getBoundingClientRect();
+  if (box.width === 0 && box.height === 0) {
+    throw new AppCaptureError('failed', 'That element has no size to crop to.');
+  }
+  if (!getAppCaptureRoot().contains(element)) {
+    throw new AppCaptureError('failed', 'That element is not part of the app that was captured.');
+  }
+
+  const image = await decode(shot.dataUrl);
   const crop = computeElementCrop({
     element: { left: box.left, top: box.top, width: box.width, height: box.height },
     viewport: { width: window.innerWidth, height: window.innerHeight },

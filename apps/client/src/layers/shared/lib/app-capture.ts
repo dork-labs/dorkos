@@ -45,6 +45,23 @@
 const APP_ROOT_ID = 'root';
 
 /**
+ * The element every capture frames the app from.
+ *
+ * Exported because "is this thing in the picture?" is a question callers have to
+ * be able to ask, and it is not answerable from the geometry alone. Anything
+ * outside this element is absent from BOTH paths' pictures — snapdom never
+ * frames it, and the desktop shell photographs it faded to nothing by
+ * {@link hideFloatingChrome} — so a caller cropping to one element must refuse a
+ * target that lives out here rather than return a sharp picture of whatever
+ * happens to sit behind it.
+ *
+ * @returns The app root, or `<body>` on a page that has none.
+ */
+export function getAppCaptureRoot(): Element {
+  return document.getElementById(APP_ROOT_ID) ?? document.body;
+}
+
+/**
  * How long a capture may run before it is called off.
  *
  * The bound on the one state nothing can report from: while the picture is being
@@ -159,11 +176,11 @@ function nextPaint(): Promise<void> {
  * Hide everything floating above the app, and hand back the undo.
  *
  * The dialog that asks for the picture is standing in front of the thing being
- * reported, and so is its overlay and any toast. All of them are portaled as
- * direct children of `<body>` (Radix's dialog, Vaul's drawer and Sonner all
- * do), so "everything above the app" is exactly "every body child that is not
- * the app root" — and each of those children is a portal WRAPPER, which is the
- * right element to write on: the dialog panel inside it carries
+ * reported, and so is its overlay and the element picker. Those are portaled as
+ * direct children of `<body>` (Radix's dialog and Vaul's drawer both are), so
+ * "everything above the app" is exactly "every body child that is not the app
+ * root" — and each of those children is a portal WRAPPER, which is the right
+ * element to write on: the dialog panel inside it carries
  * `animate-in fade-in-0` with `fill-mode: both`, and an animation's filled
  * opacity beats an inline one. The wrapper carries no animation, so nothing
  * competes with it.
@@ -185,6 +202,15 @@ function nextPaint(): Promise<void> {
  * to begin with; the shell's `capturePage()` photographs the whole window, which
  * is what makes hiding necessary at all. It runs on both paths anyway, so there
  * is one sequence to reason about rather than two.
+ *
+ * **A toast is NOT covered by this, and that is worth saying out loud rather
+ * than leaving to be rediscovered.** Sonner renders its region in place inside
+ * the React tree (there is not one `createPortal` in the installed
+ * `sonner@2.0.8`), so a toast lives INSIDE `#root` and is a toast in the
+ * photograph on both paths. Nothing here can reach it, because reaching into
+ * `#root` is exactly what this must not do — that is the app, and the app is the
+ * picture. The practical consequence is small (a report may arrive with a toast
+ * in the corner of its screenshot) and the alternative is worse, so it stands.
  */
 function hideFloatingChrome(): () => void {
   const restores: Array<() => void> = [];
@@ -238,7 +264,7 @@ async function captureThroughDom(): Promise<AppCaptureShot> {
   // `<body>` — so a capture of it alone comes back with transparent gaps. Read
   // the real one rather than naming a colour here, which would be a second
   // source of truth for the theme and wrong in one of the two themes.
-  const element = document.getElementById(APP_ROOT_ID) ?? document.body;
+  const element = getAppCaptureRoot();
   const backgroundColor = getComputedStyle(document.body).backgroundColor;
   try {
     // Measured before the render, not after: snapdom walks and re-serializes the

@@ -245,7 +245,7 @@ describe('ScreenshotField — capture app view', () => {
   });
 });
 
-describe('ScreenshotField — touch surfaces', () => {
+describe('ScreenshotField — narrow surfaces', () => {
   it('offers the photo picker wording instead of the desktop wording', () => {
     renderField({ isMobile: true });
     expect(screen.getByLabelText('Add a photo')).toBeInTheDocument();
@@ -260,12 +260,12 @@ describe('ScreenshotField — touch surfaces', () => {
     expect(screen.queryByText(/phone/i)).not.toBeInTheDocument();
   });
 
-  it('hides "Point at element", a pointer gesture that will never ship on touch', () => {
+  it('hides "Point at element", which needs room and a pointer to aim with', () => {
     renderField({ isMobile: true });
     expect(screen.queryByRole('button', { name: 'Point at element' })).not.toBeInTheDocument();
   });
 
-  it('offers "Point at element" as a live control on a desktop', () => {
+  it('offers "Point at element" as a live control on a wide surface', () => {
     // It was a labelled-soon placeholder until PR 4. A control that still LOOKS
     // like one — no button, nothing to press — is the failure this pins.
     const { onPointAtElement } = renderField({ isMobile: false });
@@ -274,7 +274,9 @@ describe('ScreenshotField — touch surfaces', () => {
     fireEvent.click(point);
     expect(onPointAtElement).toHaveBeenCalledTimes(1);
   });
+});
 
+describe('ScreenshotField — point at element', () => {
   it('holds "Point at element" back while an image is still being prepared', () => {
     // Aiming at a new element mid-compression would abandon the picture the
     // person is already waiting on, with nothing said about it.

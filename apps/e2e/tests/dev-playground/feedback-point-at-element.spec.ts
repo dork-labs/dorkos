@@ -69,19 +69,25 @@ test.describe('Dev Playground — pointing at one element', () => {
       name: 'Point at the part of the app that looks wrong',
     });
     await expect(picker).toBeVisible();
-    await expect(dialog.getByPlaceholder(/what works, what does not/i)).toBeHidden();
+    // Asked of the PAGE and by count, not of `dialog` and by visibility. Two
+    // traps in one line otherwise: `dialog` now resolves to the picker, so a
+    // textarea query under it matches nothing at all — and `toBeHidden` is
+    // satisfied by matching nothing, so the assertion passes whatever the
+    // feedback dialog is doing.
+    await expect(
+      page.getByPlaceholder(/what works, what does not/i),
+      'the dialog must be out of the way, not merely behind the picker'
+    ).toHaveCount(0);
     // Scoped to the picker: the playground also carries a STILL of this hint,
     // in the showcase that puts the look on the page without the live picker
     // taking it over. An unscoped query matches both.
     await expect(picker.getByText('Click the part that looks wrong. Esc to cancel.')).toBeVisible();
 
     // The playground's own sidebar nav, and three things make it the right
-    // target. It is pinned, so it is on screen whatever the page is scrolled to
-    // — which matters, because the picker swallows the wheel with everything
-    // else and a target below the fold cannot be reached once aiming has
-    // started. It carries a `data-slot` the app really uses, so the identity
-    // block has something real to report. And pressing it NAVIGATES, so a picker
-    // that let the click through would leave this spec on another page entirely.
+    // target. It is pinned, so it is on screen whatever the page is scrolled to.
+    // It carries a `data-slot` the app really uses, so the identity block has
+    // something real to report. And pressing it NAVIGATES, so a picker that let
+    // the click through would leave this spec on another page entirely.
     //
     // Measured after the picker is up, not before: closing the dialog releases
     // its scroll lock, and a box read through a modal is a box read at a
@@ -105,9 +111,31 @@ test.describe('Dev Playground — pointing at one element', () => {
 
     await page.mouse.click(centre.x, centre.y);
 
-    // Its own status while the picture is being taken — the one moment nothing
-    // else on screen can report from, because the dialog is out of the way.
-    await expect(page.getByText('Taking the picture…')).toBeVisible();
+    // Watch what is actually PAINTED for the length of the capture, rather than
+    // what is in the DOM. Playwright's `toBeVisible` does not consider opacity,
+    // so an assertion that some progress cue "is visible" passes perfectly well
+    // against a cue faded to nothing — which is what happens here, and the
+    // reason this spec samples instead.
+    //
+    // Started AFTER the click, and that is the whole reason this is reliable: a
+    // sampler running before it catches the picker mid-AIM at full opacity,
+    // which is correct then and says nothing about the capture. Measured — a run
+    // with the sampler started early logged a `"1"` and failed. Nothing is
+    // missed by starting late: the click's own task runs the hide sweep to
+    // completion before the browser can paint again, so the first paint after
+    // the click is already faded.
+    await page.evaluate(() => {
+      const seen: string[] = [];
+      (window as unknown as { __pickerOpacity: string[] }).__pickerOpacity = seen;
+      const timer = window.setInterval(() => {
+        const picker = document.querySelector(
+          '[aria-label="Point at the part of the app that looks wrong"]'
+        );
+        seen.push(picker instanceof HTMLElement ? getComputedStyle(picker).opacity : 'gone');
+      }, 10);
+      (window as unknown as { __stopPickerSamples: () => void }).__stopPickerSamples = () =>
+        window.clearInterval(timer);
+    });
 
     // And the dialog comes back with the crop attached. snapdom really ran, the
     // canvas really drew, and what came out is a bounded `data:` URL — none of
@@ -117,6 +145,35 @@ test.describe('Dev Playground — pointing at one element', () => {
       timeout: CAPTURE_SETTLE_MS,
     });
     await expect(thumbnail).toHaveAttribute('src', /^data:image\/(webp|jpeg|png);base64,/);
+
+    // THE honest claim about the capture, measured rather than asserted: for
+    // every moment of it the picker is painted at zero. The capture's own hide
+    // sweep fades every child of `<body>` so the picture is of the app and
+    // nothing else, and the picker is one of those children. So there is no
+    // progress cue to show and none is offered — the same truth `app-capture.ts`
+    // states about the dialog. A future "let's add a spinner" lands here.
+    const opacities = await page.evaluate(() => {
+      (window as unknown as { __stopPickerSamples: () => void }).__stopPickerSamples();
+      return (window as unknown as { __pickerOpacity: string[] }).__pickerOpacity;
+    });
+    expect(opacities.length, 'the sampler must have run during the capture').toBeGreaterThan(5);
+    // Measured up to the LAST faded sample, not to the end of the run. The
+    // capture puts every opacity back in a `finally`, and React unmounts the
+    // picker a tick or two later — so the tail of every run holds a frame or two
+    // of the picker at full opacity, which is real and harmless: it renders
+    // nothing at all while capturing, so what is at full opacity is an empty
+    // transparent box. What matters is the window the hide sweep was in effect
+    // for, because that window is what the photograph contains.
+    const lastFaded = opacities.lastIndexOf('0');
+    expect(
+      lastFaded,
+      'the sampler must have caught the capture itself, not only the aftermath'
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      [...new Set(opacities.slice(0, lastFaded + 1))],
+      'the picker must be painted at zero for every moment the capture was running. Anything ' +
+        'else here is a cue that would also be IN the photograph'
+    ).toEqual(['0']);
 
     // Cropped, not the whole app: the picture is of one button plus its
     // surroundings, so it is a small fraction of a full-page capture. Measured
