@@ -8,6 +8,7 @@
  * @module shared/connector-resource-schemas
  */
 import { z } from 'zod';
+import { ConnectorAuthenticationSetupSchema } from './connector-authentication-setup.js';
 import {
   CONNECTOR_OPERATION_SELECTION_LIMIT,
   ConnectionIdSchema,
@@ -49,6 +50,7 @@ export type ConnectorProviderDisclosure = z.infer<typeof ConnectorProviderDisclo
 /** Public provider route for one service, including that route's authentication kind. */
 export const ConnectorCatalogProviderRouteSchema = ConnectorProviderDisclosureSchema.extend({
   authKind: z.enum(['oauth2', 'api-key', 'none']),
+  authenticationSetup: ConnectorAuthenticationSetupSchema.optional(),
 }).strict();
 /** Public, credential-free route through which an account may be connected. */
 export type ConnectorCatalogProviderRoute = z.infer<typeof ConnectorCatalogProviderRouteSchema>;

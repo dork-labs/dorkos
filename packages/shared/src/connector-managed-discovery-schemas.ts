@@ -8,6 +8,7 @@
  * @module shared/connector-managed-discovery-schemas
  */
 import { z } from 'zod';
+import { ConnectorAuthenticationSetupSchema } from './connector-authentication-setup.js';
 import {
   ConnectorCapabilityAvailabilitySchema,
   ConnectorJsonObjectSchema,
@@ -38,6 +39,7 @@ export const ManagedConnectorToolkitSchema = z
     slug: ManagedWireIdSchema,
     displayName: z.string().min(1).max(200),
     authKind: z.enum(['oauth2', 'api-key', 'none']),
+    authenticationSetup: ConnectorAuthenticationSetupSchema.optional(),
     authentication: ConnectorCapabilityAvailabilitySchema.optional(),
     maxAccountsPerUser: z.number().int().positive().optional(),
   })

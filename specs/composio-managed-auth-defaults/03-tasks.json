@@ -1,0 +1,106 @@
+{
+  "spec": "specs/composio-managed-auth-defaults/02-specification.md",
+  "slug": "composio-managed-auth-defaults",
+  "generatedAt": "2026-09-10T00:21:08.943634+00:00",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "status": "completed",
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "Managed sign-in defaults",
+      "subject": "[composio-managed-auth-defaults] Freeze typed authentication and SDK wire contracts",
+      "description": "Add optional secret-free authenticationSetup to toolkit schemas with kind oauth/fields/none/unsupported, source configured/managed/account-fields/unsupported, exact scheme and requiresAccountFields. Keep strict v1 authKind/shape unchanged; use exact header negotiation for optional setup, Vary/private-no-store, page/search propagation, public/operator projection and new-client old-server fallback. Freeze the selected exact scheme and bounded field descriptor; Track A implements metadata selection and scope/config validation against this contract. OAuth1/DCR stay unsupported without pinned wire plus verifier proof. Prove OAuth link, API_KEY/BEARER_TOKEN/BASIC and NO_AUTH create wire unions against pinned @composio/client0.1.0-alpha.76 using synthetic HTTP transport; do not guess display-name-to-wire mapping. NO_AUTH must use explicit owner confirmation with empty credentials and exact ACTIVE account verification, never fake OAuth; unsupported upstream behavior produces a precise visible reason. Freeze descriptor/page/submit seams before parallel tracks, including 64 fields, a 64 KiB encoded fields object and a separate 72 KiB POST envelope and fixed Composio destinations.",
+      "activeForm": "Freeze typed authentication and SDK wire contracts",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": "DOR-1958",
+      "status": "completed",
+      "ownerTrack": "common"
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "Managed sign-in defaults",
+      "subject": "[composio-managed-auth-defaults] Resolve supported auth configurations without a manual catalog map",
+      "description": "Implement explicit deployment override precedence, exact enabled toolkit/config validation, managed OAuth preference and supported account-field/no-auth config fallback. Add durable project-material/toolkit/scheme-policy resolution row provisioning/ready/create_unknown with attempt CAS. Bounded paginated exact-name reuse excludes arbitrary custom/disabled/mismatched configs; sole create maxRetries0, no DB transaction across network, no retry after unknown result. Reconcile exact one matching config by read only; otherwise remain unavailable with explicit override as recovery. Snapshot resolved config/completion kind/descriptor digest on auth flow; migration preserves old OAuth flows. Test concurrency, repeated cursor, unsupported metadata, custom precedence, cancellation and lost-create outcomes. Do not expand account scopes/grants or delete existing configs. Store automatically provisioned configs outside the global material digest; regress unchanged explicit-map generation, connections and grants when adding another toolkit. Fixture override removal is deliberate maintenance.",
+      "activeForm": "Resolve supported auth configurations without a manual catalog map",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [
+        "2.3"
+      ],
+      "issue": null,
+      "parentIssue": "DOR-1958",
+      "status": "completed",
+      "ownerTrack": "A"
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "Managed sign-in defaults",
+      "subject": "[composio-managed-auth-defaults] Complete OAuth and hosted account-field flows with exact owner binding",
+      "description": "Preserve OAuth session_uri deferred verifier and single-use owner cookie; fields submission must reject OAuth rows. Implement dedicated same-origin hosted owner credential POST with explicit Origin/CSRF/session/flow/expiry/material checks, exact descriptor digest, declared keys/types/body limits and no secret persistence/body telemetry/error echo. Consume flow before fixed Composio create, no retry, exact user/toolkit/config/ACTIVE readback and same persistence transaction; ambiguous responses reconcile without replay. Local/agent/CLI transports carry no credentials. Test wrong owner/cookie/config/account, cross-origin, metadata drift, overflow, double submit, lost response and OAuth bypass mutants. Raw link two-account regression proves no fictitious allow_multiple field or newest-account selection.",
+      "activeForm": "Complete OAuth and hosted account-field flows with exact owner binding",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.1"
+      ],
+      "parallelWith": [
+        "2.3"
+      ],
+      "issue": null,
+      "parentIssue": "DOR-1958",
+      "status": "completed",
+      "ownerTrack": "A"
+    },
+    {
+      "id": "2.3",
+      "phase": 2,
+      "phaseName": "Managed sign-in defaults",
+      "subject": "[composio-managed-auth-defaults] Expose the dynamic catalog and hosted credential form honestly",
+      "description": "Normalize catalog page authentication support using exact declared mode metadata; never guess unknown schemes are OAuth or call details per row. Use authenticationSetup contract and existing availability reason, preserve all pages/search and visible unsupported entries. Selected setup revalidates exact metadata. Implement dorkos.ai owner form against frozen TrackA descriptor/submit seams, render provider strings as text, support declared company fields and bounded primitive input types, password-mask secrets, no secret defaults/browser storage/URL params/local transport. Clear fields on submission and explain transient hosted-to-Composio custody. Root-approved no-auth path is explicit owner confirmation without fake credentials. Test representative managed/custom/key/basic/bearer/none/unknown/setup-required cases and field-secret sentinels. Do not modify TrackA flow transactions/provider client.",
+      "activeForm": "Expose the dynamic catalog and hosted credential form honestly",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [
+        "2.1",
+        "2.2"
+      ],
+      "issue": null,
+      "parentIssue": "DOR-1958",
+      "status": "completed",
+      "ownerTrack": "B"
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "Managed sign-in defaults",
+      "subject": "[composio-managed-auth-defaults] Compose security conformance and update setup guidance",
+      "description": "Compose both tracks preserving exact contract, OAuth verifier, raw multiple-account behavior, immutable operation revisions, per-agent read/write grants, approvals/no-action-retry and receipts. Run representative mounted browser and actual SDK synthetic conformance, scoped package type/lint/tests, meaningful override/owner/OAuth-kind/duplicate-create mutants, then separate REVIEW.md review and normal verify/hooks/PR. Update white-label spec configuration wording, Composio setup/custody docs and operations guide: managed defaults, custom precedence, fixture-only Gmail ReadOnly policy, full dynamic catalog exceptions and future custom OAuth migration. Preserve DOR1905 pending live evidence; root alone performs production/live adoption, no individual live test per service gate.",
+      "activeForm": "Compose security conformance and update setup guidance",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.2",
+        "2.3"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": "DOR-1958",
+      "status": "completed",
+      "ownerTrack": "integration"
+    }
+  ]
+}

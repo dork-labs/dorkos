@@ -30,7 +30,7 @@ This guide covers Accounts.
 
 ### Choose a service
 
-Open **Connections**, find **Accounts**, and choose a service. DorkOS shows only setup routes that are configured. When more than one route is ready, you can change the route before continuing.
+Open **Connections**, find **Accounts**, and search the current service catalog. A supported service can use DorkOS-managed OAuth without a separate setup entry. An explicit custom setup takes priority when one exists. Services that need unsupported or custom setup stay visible and explain what is missing. When more than one route is ready, you can change the route before continuing.
 
 </Step>
 
@@ -38,7 +38,7 @@ Open **Connections**, find **Accounts**, and choose a service. DorkOS shows only
 
 ### Sign in
 
-Read where the service will keep your login access. Add a label such as “work” if you plan to connect the service more than once. Open the sign-in page and finish the service's flow. You can close the DorkOS dialog while the flow continues.
+Read where the service will keep your login access. Add a label such as “work” if you plan to connect the service more than once. Open the sign-in page and finish the service's flow. Managed OAuth consent may name Composio because Composio holds the connection in its vault. Some services instead ask for account fields on `dorkos.ai`. Our servers pass these details to Composio without saving them, and they never pass through your local installation or an agent. A service that needs no account fields still asks you to confirm. You can close the DorkOS dialog while an external sign-in flow continues.
 
 </Step>
 
@@ -46,7 +46,7 @@ Read where the service will keep your login access. Add a label such as “work�
 
 ### Choose agent access
 
-Open the new connection and choose **Agent access**. Pick a named agent, then review the exact actions it may use. Notification access is a separate choice. New or changed actions stay off until you review them.
+Open the new connection and choose **Agent access**. Pick a named agent, then review the exact actions it may use. OAuth scopes decide which service actions are available; your agent grant decides which of those actions this agent may run. Notification access is a separate choice. New or changed actions stay off until you review them.
 
 </Step>
 
@@ -108,7 +108,9 @@ DorkOS does not charge for account actions in this release. Usage records distin
 
 A local DorkOS installation without login has one local owner. Keep it on a trusted machine and network. Do not expose an installation without login to the public internet.
 
-Program commands still name an agent and can use only that agent's approved connections. Omitting `--agent` never widens access. An agent or program can request a change, but the owner review in the app is the only place that can approve it.
+Program commands still name an agent and can use only that agent's approved connections. Omitting `--agent` never widens access. Through the supported agent and program paths, a request can ask for access but cannot approve itself.
+
+These controls are boundaries inside DorkOS. They do not isolate other software running as your operating-system user. That software can reach the same local files and credentials that you can. The [threat model](/docs/self-hosting/threat-model#connections-and-account-access) explains token lifetime, runtime settings, and this same-user limit.
 
 ## Remove access
 

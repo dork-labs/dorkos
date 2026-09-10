@@ -11,7 +11,10 @@
 import { createHash } from 'node:crypto';
 import { Composio, ComposioRequestCancelledError } from '@composio/core';
 import { stableStringify } from '@dorkos/shared/capabilities';
-import type { ConnectorToolkit } from '@dorkos/shared/connector-provider';
+import type {
+  ConnectorAuthenticationSetup,
+  ConnectorToolkit,
+} from '@dorkos/shared/connector-provider';
 import type {
   ConnectorCatalogPageRequest,
   ConnectorOperationClassification,
@@ -129,6 +132,61 @@ function containsFilePathInput(value: unknown): boolean {
   return Object.values(record).some(containsFilePathInput);
 }
 
+const SUPPORTED_ACCOUNT_SCHEMES = ['API_KEY', 'BEARER_TOKEN', 'BASIC', 'NO_AUTH'] as const;
+
+function normalizedSchemes(values: readonly string[] | undefined): Set<string> {
+  return new Set(values?.map((value) => value.trim().toUpperCase()) ?? []);
+}
+
+/** Normalize cheap toolkit-page hints without guessing an unknown method is OAuth. */
+export function normalizeComposioCatalogAuthentication(item: {
+  auth_schemes?: readonly string[];
+  composio_managed_auth_schemes?: readonly string[];
+  no_auth?: boolean;
+}): Pick<ConnectorToolkit, 'authKind' | 'authenticationSetup'> {
+  const managed = normalizedSchemes(item.composio_managed_auth_schemes);
+  const declared = normalizedSchemes(item.auth_schemes);
+  if (managed.has('OAUTH2')) {
+    return {
+      authKind: 'oauth2',
+      authenticationSetup: {
+        kind: 'oauth',
+        source: 'managed',
+        scheme: 'OAUTH2',
+        requiresAccountFields: false,
+      },
+    };
+  }
+
+  for (const scheme of SUPPORTED_ACCOUNT_SCHEMES) {
+    if (
+      scheme === 'NO_AUTH' ? item.no_auth === true || declared.has(scheme) : declared.has(scheme)
+    ) {
+      const none = scheme === 'NO_AUTH';
+      return {
+        authKind: none ? 'none' : 'api-key',
+        authenticationSetup: {
+          kind: none ? 'none' : 'fields',
+          source: 'account-fields',
+          scheme,
+          requiresAccountFields: !none,
+        },
+      };
+    }
+  }
+
+  const unsupportedScheme = [...managed, ...declared].find((scheme) =>
+    ['OAUTH2', 'OAUTH1', 'DCR'].includes(scheme)
+  );
+  const authenticationSetup: ConnectorAuthenticationSetup = {
+    kind: 'unsupported',
+    source: 'unsupported',
+    ...(unsupportedScheme && { scheme: unsupportedScheme }),
+    requiresAccountFields: false,
+  };
+  return { authKind: 'none', authenticationSetup };
+}
+
 /**
  * Direct Composio SDK adapter with tracking, tracing, automatic files, latest
  * versions, and write retries disabled by construction.
@@ -187,11 +245,7 @@ export class ComposioSdkClient implements ComposioOperationClient {
         toolkits: result.items.map((item) => ({
           slug: item.slug,
           displayName: item.name,
-          authKind: item.no_auth
-            ? 'none'
-            : item.auth_schemes?.some((scheme) => scheme.toUpperCase().includes('API_KEY'))
-              ? 'api-key'
-              : 'oauth2',
+          ...normalizeComposioCatalogAuthentication(item),
         })),
         ...(nextCursor !== undefined && { nextCursor }),
         truncated: nextCursor !== undefined,

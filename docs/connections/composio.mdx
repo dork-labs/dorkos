@@ -11,9 +11,9 @@ import { Steps, Step } from 'fumadocs-ui/components/steps';
 Composio connects services such as Gmail to DorkOS. Composio holds each service's login access in its vault. DorkOS keeps the stable connection, your agent choices, and the exact action versions you approved.
 
 <Callout type="warn">
-  DorkOS-managed Composio is configured with production readiness off. The Google app is limited to
-  its owner test account, and the real account proof has not completed. This page describes the
-  shipped behavior, not public availability.
+  DorkOS-managed Composio is configured with production readiness off, and the real account proof
+  has not completed. The existing custom Gmail test fixture uses a Google app limited to its owner
+  test account. This page describes the shipped behavior, not public availability.
 </Callout>
 
 ## Pick a route
@@ -24,6 +24,8 @@ Composio connects services such as Gmail to DorkOS. Composio holds each service'
 | Your Composio project | Your installation keeps your project key | You               | Not required | None in DorkOS hosting                                            |
 
 Both routes use Composio's vault for the connected service login. Bring-your-own setup changes who supplies the Composio project. It does not move Gmail or another service's login token into DorkOS.
+
+DorkOS searches Composio's current service catalog instead of keeping a short list of services. A service can still appear when it needs custom setup. Its tile explains the missing requirement instead of hiding it.
 
 DorkOS billing is off. Usage records identify the route and attempt, but DorkOS does not charge you or create an invoice.
 
@@ -43,7 +45,7 @@ Create a Composio project and copy its project API key. A user account key begin
 
 ### Save the key
 
-Open **Connections**, expand **Composio & Nango**, and paste the key into the Composio card. Your browser sends it to your local DorkOS server when you save. The server keeps it in the local encrypted credential store, does not return or echo it after saving, and leaves it out of normal logs.
+Open **Connections**, expand **Advanced account setup**, and paste the key into the Composio card. Your browser sends it to your local DorkOS server when you save. The server keeps it in the local encrypted credential store, does not return or echo it after saving, and leaves it out of normal logs.
 
 </Step>
 
@@ -62,6 +64,18 @@ Your installation calls Composio directly for this route. It also receives signe
 ## Use DorkOS-managed access
 
 When this route is available, the service tile opens an owner-bound sign-in flow. DorkOS uses its server project key and a private account identity derived from your signed-in owner and linked installation. The browser cannot choose another owner, installation, Composio user, or callback.
+
+DorkOS chooses the sign-in method in this order:
+
+1. An explicit setup for that service takes priority. If it is broken, DorkOS stops and shows the problem instead of silently choosing another method.
+2. A service with supported managed OAuth opens the service's consent flow. The consent page may name Composio because Composio handles the service connection. DorkOS owns the surrounding product flow and your access choices.
+3. A service with supported account fields opens a secure form on `dorkos.ai`. The form identifies the service and account context, uses the field labels supplied by the service, masks secret values, and keeps DorkOS sign-in separate. Our servers pass these details to Composio without saving them. They never pass through your local installation or an agent.
+4. A service that needs no account fields asks the owner to confirm before continuing.
+5. A service that needs an unsupported method or custom developer setup stays visible with that requirement.
+
+The actions available after OAuth depend on the scopes approved during consent. You then grant a named agent only the exact action versions it may use. For example, Gmail can offer read or write actions when the approved scopes allow them, but neither set is automatic. The current Gmail Read Only setup is a controlled test fixture, not a limit on every Gmail connection.
+
+[Composio-managed apps](https://docs.composio.dev/docs/authentication/custom-app-vs-managed-app) use shared quotas and default scopes, and their polling triggers have a 15-minute minimum interval. That interval does not describe webhook delivery or Slack and Telegram Messaging.
 
 Action inputs pass through DorkOS hosting and Composio to the service. Results return through the same path. Agents receive neither the project key nor the service login token. DorkOS keeps payload-free usage receipts with the action name, reviewed revision, attempt, outcome, and payer route. Those receipts do not contain action inputs or results.
 

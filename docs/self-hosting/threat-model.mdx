@@ -83,7 +83,7 @@ Agents can talk to each other and to you through the relay. These controls keep 
 
 - **Budgets are enforced before delivery.** Every message passes an authoritative budget and hop check before it is delivered, so a runaway loop is stopped at the source, not just in a mailbox. Cascade depth, cycles, and per-agent call budgets are all bounded.
 - **An hourly ceiling caps the cost, whatever the route in.** A message, a scheduled task, and an outside system speaking A2A all end at the same counted checkpoint before a turn starts, so no route around the relay buys a bigger allowance. You set the cap per agent and for everything combined; see [Relay Messaging](/docs/guides/relay-messaging#the-hourly-ceiling).
-- **Identity cannot be spoofed.** An agent's "from" address is resolved by the server from the session, not taken from the tool call, so one agent cannot impersonate another.
+- **An agent cannot choose its own identity through the supported messaging path.** The server resolves the "from" address from the session instead of trusting the tool call. This stops one normal agent call from naming another agent. It is not operating-system isolation: software running as your user can read the same files and credentials that you can.
 - **Reaching a human is a consent choice.** Whether an agent may start a conversation with you on an integration like Telegram is a per-integration setting you control.
 
 ## What stops an agent operating DorkOS itself
@@ -112,11 +112,54 @@ prompt-injected one. Every decision is recorded with the posture it was made und
 is tell you apart from a bare, credential-free request from other software running as you. That is
 the same boundary as everything else on this page.
 
-With **login on**, deciding requires a verified account. A caller with no credential cannot decide,
-whatever it sends or omits. Note the honest limit even here: a valid per-user API key satisfies the
-check, so "a signed-in account decided this" is what the record says, not "a person did".
+With **login on**, deciding requires a verified account. A network caller with no credential cannot
+decide, whatever it sends or omits. Note the honest limit even here: a valid per-user API key
+satisfies the check, so "a signed-in account decided this" is what the record says, not "a person
+did." Login does not isolate software running as your operating-system user. That software can reach
+files and credentials your account can reach.
 
 </Callout>
+
+## Connections and account access
+
+Connections lets an agent use only the account and actions you grant. Notifications are a separate
+choice with their own event, filter, receiving agent, and destination. DorkOS keeps service login
+tokens and private account references out of the agent-facing response. Removing a grant or
+connection stops the next checked call, but it cannot recall a request already sent to a service.
+
+When you sign in to a service, Composio keeps that service’s login tokens. Some services ask for an
+API key or other account details instead. You enter those on the signed-in `dorkos.ai` page.
+DorkOS passes them to Composio to create the account connection. It does not save or log those
+values, and they never pass through your local app, agents or CLI. Your service’s own permissions
+still apply alongside the grants you choose in DorkOS.
+
+During a turn, DorkOS gives the runtime a private Connections token. The server checks its runtime,
+session, registered agent, working folder, and server start. The token has a four-hour
+expiry window. Finishing the turn or restarting the server invalidates it. Each account action still needs
+the right grant.
+
+The current source includes both protections below. Check your installed build before relying on them:
+
+- **Renewal for long turns.** The server supervisor renews the same token about once an hour,
+  keeping its expiry four hours ahead while the exact turn remains active. Using the token cannot
+  renew it. This supports long turns, but a stolen token could remain useful while that turn continues.
+  Four hours is not a fixed lifetime from the moment the token was issued.
+- **Fewer inherited secrets.** The launch policy passes a deliberate list of settings to
+  Claude Code, Codex and OpenCode. It keeps supported sign-in, system and privacy settings, including
+  `DO_NOT_TRACK`. Other settings require the owner's explicit choice by name. Reserved server secrets
+  cannot be added that way. Existing processes keep their old settings until a safe restart.
+
+<Callout type="warn">
+  **Connections grants are not a sandbox.** Software running as your operating-system user can read
+  files and credentials that you can. Older builds and processes started before the new policy can
+  still inherit the server environment. Filtering that environment reduces accidental exposure; it
+  does not isolate files, processes or software you run as the same user. Login and grants protect
+  their own DorkOS and network paths.
+</Callout>
+
+Managed account access is still in alpha. Automated tests cover its access rules, but the
+real account, revoke, usage, and event proof is not complete. Each managed capability stays
+unavailable until its own production check passes.
 
 ## Marketplace package trust
 

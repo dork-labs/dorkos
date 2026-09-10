@@ -21,6 +21,14 @@
  * @module shared/connector-provider
  */
 import { z } from 'zod';
+import { ConnectorAuthenticationSetupSchema } from './connector-authentication-setup.js';
+export {
+  ConnectorAuthenticationSetupSchema,
+  CONNECTOR_AUTH_SETUP_HEADER,
+  CONNECTOR_AUTH_SETUP_VERSION,
+  projectConnectorAuthentication,
+  type ConnectorAuthenticationSetup,
+} from './connector-authentication-setup.js';
 import type { ConnectorEventCapability } from './connector-events.js';
 import {
   ConnectionIdSchema,
@@ -92,6 +100,8 @@ export const ConnectorToolkitSchema = z.object({
   displayName: z.string(),
   /** How the user authenticates when connecting this toolkit. */
   authKind: ConnectorAuthKindSchema,
+  /** Rich sign-in presentation; wire emission requires explicit negotiation. */
+  authenticationSetup: ConnectorAuthenticationSetupSchema.optional(),
   /** Exact per-service authentication availability when it differs from the provider default. */
   authentication: ConnectorCapabilityAvailabilitySchema.optional(),
   /** Composio's `max_accounts_per_toolkit`; `undefined` = unbounded/one. */

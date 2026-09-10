@@ -141,10 +141,10 @@ export function managedCapabilityAvailability(
     if (!config.callbackOrigin) {
       return { status: 'unavailable', reason: 'Managed account sign-in is not configured yet.' };
     }
-    if (!toolkit || !config.authConfigByToolkit[toolkit]) {
+    if (!toolkit) {
       return {
         status: 'unavailable',
-        reason: 'Managed account sign-in is not available for this service yet.',
+        reason: 'Choose a service before connecting an account.',
       };
     }
   }

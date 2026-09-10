@@ -18,6 +18,10 @@
  */
 import { hostname } from 'node:os';
 import {
+  CONNECTOR_AUTH_SETUP_HEADER,
+  CONNECTOR_AUTH_SETUP_VERSION,
+} from '@dorkos/shared/connector-provider';
+import {
   ManagedConnectorAuthorityCommandSchema,
   ManagedConnectorAuthorityCommandStatusSchema,
   ManagedConnectorExecutionReceiptStatusSchema,
@@ -220,6 +224,7 @@ async function requestManagedConnectorResource<T>(opts: {
   fetchImpl?: FetchLike;
   signal: AbortSignal;
   method?: 'GET' | 'POST';
+  catalogAuthenticationSetup?: boolean;
   body?: unknown;
 }): Promise<T> {
   const fetchImpl = opts.fetchImpl ?? defaultFetch;
@@ -231,6 +236,9 @@ async function requestManagedConnectorResource<T>(opts: {
       method: opts.method ?? 'GET',
       headers: {
         authorization: `Bearer ${opts.accessToken}`,
+        ...(opts.catalogAuthenticationSetup
+          ? { [CONNECTOR_AUTH_SETUP_HEADER]: CONNECTOR_AUTH_SETUP_VERSION }
+          : {}),
         ...(opts.body === undefined ? {} : { 'content-type': 'application/json' }),
       },
       ...(opts.body === undefined ? {} : { body: JSON.stringify(opts.body) }),
@@ -539,6 +547,7 @@ export function requestManagedConnectorCatalog(opts: {
     ...opts,
     path: `/api/instances/connectors/catalog?${query}`,
     schema: ManagedConnectorCatalogPageSchema,
+    catalogAuthenticationSetup: true,
   });
 }
 

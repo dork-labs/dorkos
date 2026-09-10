@@ -1,5 +1,9 @@
 /** Account-free managed toolkit catalog endpoint. */
 import { ZodError } from 'zod';
+import {
+  CONNECTOR_AUTH_SETUP_HEADER,
+  CONNECTOR_AUTH_SETUP_VERSION,
+} from '@dorkos/shared/connector-provider';
 
 import { listManagedConnectorCatalog } from '@/lib/connectors/managed/discovery-service';
 import {
@@ -19,6 +23,8 @@ export async function GET(request: Request): Promise<Response> {
     const query = strictManagedQuery(request, ['version', 'query', 'cursor', 'limit']);
     return Response.json(
       await listManagedConnectorCatalog({
+        includeAuthenticationSetup:
+          request.headers.get(CONNECTOR_AUTH_SETUP_HEADER) === CONNECTOR_AUTH_SETUP_VERSION,
         operations: context.operations,
         config: context.config,
         rawRequest: {
@@ -28,7 +34,8 @@ export async function GET(request: Request): Promise<Response> {
           limit: managedQueryInteger(query.limit),
         },
         signal: request.signal,
-      })
+      }),
+      { headers: { Vary: CONNECTOR_AUTH_SETUP_HEADER, 'Cache-Control': 'private, no-store' } }
     );
   } catch (error) {
     if (

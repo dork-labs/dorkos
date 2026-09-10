@@ -10,7 +10,11 @@
  *
  * @module shared/lib/transport/connector-methods
  */
-import type { ConnectorProviderStatus } from '@dorkos/shared/connector-provider';
+import {
+  CONNECTOR_AUTH_SETUP_HEADER,
+  CONNECTOR_AUTH_SETUP_VERSION,
+  type ConnectorProviderStatus,
+} from '@dorkos/shared/connector-provider';
 import type {
   ConnectorAgentRequestAuthenticationInput,
   ConnectorAgentRequestDecision,
@@ -85,7 +89,9 @@ export function createConnectorMethods(baseUrl: string) {
       input: { query?: string; cursor?: string; limit?: number } = {}
     ): Promise<ConnectorCatalogResourcePage> {
       const qs = buildQueryString({ q: input.query, cursor: input.cursor, limit: input.limit });
-      return fetchJSON<ConnectorCatalogResourcePage>(baseUrl, `/connectors/catalog${qs}`);
+      return fetchJSON<ConnectorCatalogResourcePage>(baseUrl, `/connectors/catalog${qs}`, {
+        headers: { [CONNECTOR_AUTH_SETUP_HEADER]: CONNECTOR_AUTH_SETUP_VERSION },
+      });
     },
 
     getConnectorConnections(): Promise<ConnectorConnectionListResource> {

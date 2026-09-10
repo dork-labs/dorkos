@@ -1,6 +1,10 @@
 /** Provider-neutral Connections catalog, owner resources, and durable authentication routes. */
 import { Router, type Request, type Response } from 'express';
 import { z, ZodError } from 'zod';
+import {
+  CONNECTOR_AUTH_SETUP_HEADER,
+  CONNECTOR_AUTH_SETUP_VERSION,
+} from '@dorkos/shared/connector-provider';
 import { ConnectionIdSchema } from '@dorkos/shared/connector-schemas';
 import {
   ConnectorAuthenticationFlowCreateRequestSchema,
@@ -108,9 +112,13 @@ export function createConnectorResourcesRouter(deps: ConnectorResourcesRouterDep
   router.get('/catalog', async (req, res) => {
     try {
       const query = CatalogQuerySchema.parse(req.query);
+      res.vary(CONNECTOR_AUTH_SETUP_HEADER);
+      res.set('Cache-Control', 'private, no-store');
       res.json(
         await withSignal(req, (signal) =>
           deps.query.catalog({
+            includeAuthenticationSetup:
+              req.get(CONNECTOR_AUTH_SETUP_HEADER) === CONNECTOR_AUTH_SETUP_VERSION,
             ...(query.q !== undefined && { query: query.q }),
             ...(query.cursor !== undefined && { cursor: query.cursor }),
             ...(query.limit !== undefined && { limit: query.limit }),

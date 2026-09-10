@@ -30,6 +30,14 @@ describe('connector resource transport methods', () => {
     );
   });
 
+  it('negotiates authentication metadata on every search and subsequent page', async () => {
+    stubFetch({ services: [], warnings: [] });
+    await setup().getConnectorCatalog({ query: 'mail' });
+    expect(new Headers(lastCall()[1].headers).get('x-dorkos-catalog-auth-setup')).toBe('1');
+    await setup().getConnectorCatalog({ query: 'mail', cursor: 'second' });
+    expect(new Headers(lastCall()[1].headers).get('x-dorkos-catalog-auth-setup')).toBe('1');
+  });
+
   it('sends the durable idempotency claim on the new authentication route', async () => {
     stubFetch({ state: 'pending', flowId: 'flow-a' });
     const input = {

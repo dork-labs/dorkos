@@ -69,6 +69,24 @@ describe('connector resource routes', () => {
     expect(deps.query.catalog).toHaveBeenCalledTimes(1);
   });
 
+  it.each([undefined, '0', '1'])(
+    'negotiates public catalog setup with cache separation: %s',
+    async (version) => {
+      const call = api().get('/api/connectors/catalog?q=mail&cursor=page2&limit=20');
+      if (version) call.set('x-dorkos-catalog-auth-setup', version);
+      const response = await call.expect(200);
+      expect(response.headers.vary).toContain('x-dorkos-catalog-auth-setup');
+      expect(response.headers['cache-control']).toBe('private, no-store');
+      expect(deps.query.catalog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          includeAuthenticationSetup: version === '1',
+          query: 'mail',
+          cursor: 'page2',
+        })
+      );
+    }
+  );
+
   it('returns a useful generic error without exposing an internal failure', async () => {
     vi.mocked(deps.query.listConnections).mockImplementationOnce(() => {
       throw new Error('private upstream detail');

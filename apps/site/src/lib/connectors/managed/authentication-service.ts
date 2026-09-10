@@ -6,6 +6,7 @@
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import {
   ComposioManagedAccountError,
+  ComposioAuthenticationSetupError,
   type ComposioManagedAccountClient,
 } from '@dorkos/connector-providers/composio';
 import {
@@ -25,6 +26,7 @@ import {
   type ManagedConnectorPrincipal,
 } from './authority-service';
 import { managedAccountFromRow } from './discovery-service';
+import type { ManagedResolvedAuthentication } from './auth-config-resolver';
 
 const FLOW_LIFETIME_MS = 10 * 60 * 1_000;
 /** Single browser cookie intentionally allows one active callback flow at a time. */
@@ -62,7 +64,8 @@ function browserNonce(projectApiKey: string, flowId: string): string {
   return createHmac('sha256', projectApiKey).update(`managed-flow:${flowId}`).digest('base64url');
 }
 
-async function persistVerifiedManagedConnection(input: {
+/** Persist only an exact verified account while rechecking live instance and provider authority. */
+export async function persistVerifiedManagedConnection(input: {
   db: ManagedConnectorDatabase;
   flow: typeof schema.managedConnectorAuthFlow.$inferSelect;
   account: Awaited<ReturnType<ManagedAccountReadClient['getAccount']>>;
@@ -280,6 +283,7 @@ export async function startManagedAuthentication(input: {
   materialGeneration: number;
   executionConfigDigest: string;
   accounts: ManagedAccountStartClient;
+  resolveAuthentication: (toolkit: string) => Promise<ManagedResolvedAuthentication>;
   config: ManagedConnectorConfig;
   rawRequest: unknown;
   verifyLiveInstance: () => Promise<boolean>;
@@ -291,6 +295,35 @@ export async function startManagedAuthentication(input: {
     throw new ManagedAuthenticationFlowError('unavailable', available.reason);
   }
   const requestHash = managedRequestHash(request);
+  const [replay] = await input.db
+    .select()
+    .from(schema.managedConnectorAuthFlow)
+    .where(
+      and(
+        eq(schema.managedConnectorAuthFlow.tenantId, input.principal.tenantId),
+        eq(schema.managedConnectorAuthFlow.instanceId, input.principal.instanceId),
+        eq(schema.managedConnectorAuthFlow.idempotencyKey, request.requestId)
+      )
+    )
+    .limit(1);
+  if (replay) {
+    if (replay.requestHash !== requestHash)
+      throw new ManagedAuthenticationFlowError('conflict', 'Authentication request conflicts.');
+    return flowState(input.db, replay, input.config.callbackOrigin!, input.config.projectApiKey!);
+  }
+  if (!(await input.verifyLiveInstance()))
+    throw new ManagedAuthenticationFlowError('forbidden', 'Linked instance is unavailable.');
+  let resolved: ManagedResolvedAuthentication;
+  try {
+    resolved = await input.resolveAuthentication(request.toolkit);
+  } catch (error) {
+    throw new ManagedAuthenticationFlowError(
+      'unavailable',
+      error instanceof ComposioAuthenticationSetupError
+        ? error.message
+        : 'Account setup could not be confirmed. Check this service’s setup before trying again.'
+    );
+  }
   const flowId = randomUUID();
   const nonce = browserNonce(input.config.projectApiKey!, flowId);
   const expiresAt = new Date(Date.now() + FLOW_LIFETIME_MS);
@@ -306,7 +339,10 @@ export async function startManagedAuthentication(input: {
       providerUserId: input.providerUserId,
       toolkit: request.toolkit,
       requestedLabel: request.label ?? null,
-      authConfigId: input.config.authConfigByToolkit[request.toolkit]!,
+      authConfigId: resolved.authConfigId,
+      completionKind: resolved.descriptor.kind,
+      authenticationDescriptor: resolved.descriptor,
+      authenticationDescriptorDigest: resolved.descriptorDigest,
       idempotencyKey: request.requestId,
       requestHash,
       browserNonceHash: hashOpaque(nonce),
@@ -347,17 +383,20 @@ export async function startManagedAuthentication(input: {
         );
       throw new ManagedAuthenticationFlowError('forbidden', 'Linked instance is unavailable.');
     }
-    const link = await input.accounts.createLink({
-      providerUserId: input.providerUserId,
-      authConfigId: input.config.authConfigByToolkit[request.toolkit]!,
-      signal: input.signal,
-    });
+    const link =
+      resolved.descriptor.kind === 'oauth'
+        ? await input.accounts.createLink({
+            providerUserId: input.providerUserId,
+            authConfigId: resolved.authConfigId,
+            signal: input.signal,
+          })
+        : null;
     const [waiting] = await input.db
       .update(schema.managedConnectorAuthFlow)
       .set({
         state: 'waiting',
-        provisionalExternalAccountRef: link.connectedAccountId,
-        upstreamAuthorizeUrl: link.redirectUrl,
+        provisionalExternalAccountRef: link?.connectedAccountId ?? null,
+        upstreamAuthorizeUrl: link?.redirectUrl ?? null,
         updatedAt: new Date(),
       })
       .where(
@@ -528,6 +567,7 @@ export async function bindManagedAuthenticationBrowser(input: {
         eq(schema.managedConnectorAuthFlow.id, input.flowId),
         eq(schema.managedConnectorAuthFlow.ownerUserId, input.ownerId),
         eq(schema.managedConnectorAuthFlow.state, 'waiting'),
+        eq(schema.managedConnectorAuthFlow.completionKind, 'oauth'),
         isNull(schema.managedConnectorAuthFlow.browserBoundAt),
         gt(schema.managedConnectorAuthFlow.expiresAt, new Date())
       )
@@ -550,6 +590,7 @@ export async function bindManagedAuthenticationBrowser(input: {
         eq(schema.managedConnectorAuthFlow.tenantId, flow.tenantId),
         eq(schema.managedConnectorAuthFlow.id, flow.id),
         eq(schema.managedConnectorAuthFlow.state, 'waiting'),
+        eq(schema.managedConnectorAuthFlow.completionKind, 'oauth'),
         isNull(schema.managedConnectorAuthFlow.browserBoundAt),
         gt(schema.managedConnectorAuthFlow.expiresAt, new Date())
       )
@@ -585,6 +626,7 @@ export async function completeManagedAuthentication(input: {
           eq(schema.managedConnectorAuthFlow.id, flowId),
           eq(schema.managedConnectorAuthFlow.ownerUserId, input.ownerId),
           eq(schema.managedConnectorAuthFlow.state, 'waiting'),
+          eq(schema.managedConnectorAuthFlow.completionKind, 'oauth'),
           gt(schema.managedConnectorAuthFlow.expiresAt, now)
         )
       )

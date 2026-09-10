@@ -25,7 +25,8 @@
   },
   "dependencies": {
     "@composio/core": "0.18.1",
-    "@dorkos/shared": "workspace:*"
+    "@dorkos/shared": "workspace:*",
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",

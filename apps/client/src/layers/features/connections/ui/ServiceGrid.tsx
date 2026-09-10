@@ -78,7 +78,8 @@ export function ServiceGrid({
               <div className="bg-muted/40 rounded-lg p-6 text-center">
                 <p className="text-sm font-medium">No matching services</p>
                 <p className="text-muted-foreground mt-1 text-xs">
-                  Try another name or add your own account below.
+                  Try another name. Custom service setup is available under Advanced account setup
+                  on the Connections page.
                 </p>
               </div>
             ) : (

@@ -2,6 +2,15 @@
   "version": 1,
   "specs": [
     {
+      "id": "260910-001729",
+      "slug": "composio-managed-auth-defaults",
+      "title": "Make Composio services ready to connect with managed sign-in defaults",
+      "created": "2026-09-10",
+      "status": "implemented",
+      "linearIssue": "DOR-1958",
+      "project": "DorkOS Connections"
+    },
+    {
       "id": "260909-232320",
       "slug": "feedback-attachments",
       "title": "Feedback Attachments — screenshot capture and point-at-element delivered into Linear",

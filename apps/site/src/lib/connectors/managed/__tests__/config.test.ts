@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { managedCapabilityAvailability, readManagedConnectorConfig } from '../config';
 
 describe('managed connector configuration', () => {
-  it('fails closed while preserving per-capability availability', () => {
+  it('gates capabilities before selected-service metadata validation', () => {
     const config = readManagedConnectorConfig({
       DORKOS_MANAGED_CONNECTORS_ENABLED: '1',
       DORKOS_MANAGED_CONNECTORS_LIVE_READY: '1',
@@ -17,9 +17,23 @@ describe('managed connector configuration', () => {
     expect(managedCapabilityAvailability(config, 'authentication', 'gmail')).toEqual({
       status: 'available',
     });
+    // A deployment override is optional; the real resolver validates the selected method.
     expect(managedCapabilityAvailability(config, 'authentication', 'slack')).toEqual({
+      status: 'available',
+    });
+    expect(managedCapabilityAvailability(config, 'authentication')).toEqual({
       status: 'unavailable',
-      reason: 'Managed account sign-in is not available for this service yet.',
+      reason: 'Choose a service before connecting an account.',
+    });
+    expect(
+      managedCapabilityAvailability(
+        { ...config, callbackOrigin: undefined },
+        'authentication',
+        'slack'
+      )
+    ).toEqual({
+      status: 'unavailable',
+      reason: 'Managed account sign-in is not configured yet.',
     });
     expect(managedCapabilityAvailability(config, 'events')).toEqual({
       status: 'unavailable',

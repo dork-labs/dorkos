@@ -282,6 +282,12 @@ export const managedConnectorAuthFlow = pgTable(
     toolkit: text('toolkit').notNull(),
     requestedLabel: text('requested_label'),
     authConfigId: text('auth_config_id').notNull(),
+    completionKind: text('completion_kind')
+      .notNull()
+      .default('oauth')
+      .$type<'oauth' | 'fields' | 'none'>(),
+    authenticationDescriptor: jsonb('authentication_descriptor').$type<Record<string, unknown>>(),
+    authenticationDescriptorDigest: text('authentication_descriptor_digest'),
     provisionalExternalAccountRef: text('provisional_external_account_ref'),
     upstreamAuthorizeUrl: text('upstream_authorize_url'),
     connectionId: text('connection_id'),

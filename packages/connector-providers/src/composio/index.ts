@@ -20,3 +20,23 @@ export {
 } from './hosted-client-factory.js';
 export { ComposioEventClient, type ComposioEventClientOptions } from './event-client.js';
 export { ComposioWebhookVerifier } from './webhook-verifier.js';
+
+export {
+  ComposioAuthenticationDescriptorSchema,
+  ComposioAuthenticationFieldSchema,
+  ComposioFieldSchemeSchema,
+  validateComposioAuthenticationFields,
+  type ComposioAuthenticationDescriptor,
+  type ComposioAuthenticationField,
+  type ComposioFieldScheme,
+} from './authentication-contract.js';
+export {
+  matchesComposioAutomaticAuthenticationPolicy,
+  normalizeComposioToolkitAuthentication,
+  normalizeComposioAuthenticationConfiguration,
+  selectComposioAuthentication,
+  ComposioAuthenticationSetupError,
+  type ComposioToolkitAuthentication,
+  type ComposioAuthenticationConfiguration,
+  type ComposioAuthenticationMethod,
+} from './authentication-configuration.js';

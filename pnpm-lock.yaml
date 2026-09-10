@@ -1200,6 +1200,9 @@ importers:
       '@dorkos/shared':
         specifier: workspace:*
         version: link:../shared
+      zod:
+        specifier: ^4.5.4
+        version: 4.5.4
     devDependencies:
       '@dorkos/eslint-config':
         specifier: workspace:*

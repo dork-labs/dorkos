@@ -4,7 +4,7 @@
 
 Use this guide to deploy, verify and maintain DorkOS-managed accounts and notifications. It separates code readiness from real service availability, and explains how to stop access without losing recovery records.
 
-Managed source is deployed with its readiness switches off. The dedicated project key, callback verifier, and event secrets are provisioned. Real account, action, and notification proof is still pending because the owner sign-in could not be completed. Keep both readiness switches off until the controlled proof in this guide passes.
+The recorded managed deployment has its readiness switches off. Its project key, callback verifier and event secrets were provisioned. Owner sign-in, local-instance linking and controlled catalog/schema discovery have been observed. Real account-action, usage, revoke-denial and notification proof remains pending. Pin the actual current deployment and keep both readiness switches off outside the controlled proof windows below. See [Connections security verification](connections-security-verification.md) for the dated rollout evidence and open gates.
 
 ## Key Files
 
@@ -53,23 +53,47 @@ DORKOS_MANAGED_CONNECTOR_EVENTS_LIVE_READY=0
 DORKOS_MANAGED_CONNECTOR_AUTH_CONFIGS={}
 ```
 
-The common `LIVE_READY` gate covers catalog, account authentication and execution. Authentication also needs the callback origin and a configured auth entry for the selected service. Events additionally require their own readiness gate, signing secret and usable content key ring. A configured webhook secret alone is not a successful event smoke test.
+The common `LIVE_READY` gate covers catalog, account authentication and execution. Authentication also needs the callback origin and either a validated explicit override or a supported resolved default for the selected service. Events additionally require their own readiness gate, signing secret and usable content key ring. A configured webhook secret alone is not a successful event smoke test.
 
 Missing signing or payload configuration keeps events unavailable without disabling otherwise configured account operations. Malformed shared configuration can reject the whole managed request. Validate configuration before changing a deployment.
 
 Buffered pull and acknowledgement authenticate the linked instance independently of SDK/readiness flags. Pull still needs the correct payload decryption keys and current receive authority. An acknowledgement clears the hosted copy only after durable local inbox persistence; it does not mean a session queue, agent or channel has received the event.
 
+### Resolve each service's authentication method
+
+Managed discovery covers the current paginated Composio catalog. Do not restore a toolkit allowlist. Resolve authentication for each service in this order:
+
+| Condition                                                                    | Result                                                                                                                                     |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| An explicit deployment auth-config override exists                           | Validate and use that exact override. A missing, mismatched or unusable override fails closed; it must not fall through to another method. |
+| Composio declares a supported managed OAuth method                           | Provision or reuse the managed configuration and open the owner-bound consent flow. The consent page may name Composio.                    |
+| Composio declares supported account fields                                   | Show the owner-bound hosted form. Field values stay off the local transport.                                                               |
+| Composio declares that no authentication is needed                           | Ask the owner to confirm the service and account context before continuing.                                                                |
+| The service needs unsupported authentication or custom developer credentials | Keep the service visible with the exact prerequisite. Do not present an OAuth button that cannot work.                                     |
+| Metadata is unknown, malformed or contradictory                              | Fail closed for that service without rejecting unrelated valid catalog entries.                                                            |
+
+OAuth scopes determine which operations the connected account can expose. An explicit grant then limits a named agent to reviewed operation revisions. Do not turn the Gmail Read Only production fixture into a product-wide Gmail rule; other reviewed Gmail connections may expose write operations when their consent scopes allow them.
+
+[Composio-managed apps](https://docs.composio.dev/docs/authentication/custom-app-vs-managed-app) use shared quotas and default scopes, and their polling triggers have a 15-minute minimum interval. Do not apply that interval to webhooks or ordinary Slack and Telegram Messaging.
+
+The hosted account form belongs on `dorkos.ai`, under the signed-in owner session and single-use flow binding. It must identify the service and account context, render provider-declared labels as text, mask secret fields, and return accessible validation errors without echoing values. Keep ordinary DorkOS login visually separate from service credentials. Values may exist only in the page's form memory and site process memory while the fixed Composio request is in progress. Do not persist them, put them in URLs or logs, echo them in a response, or send them to the linked installation or agent.
+
+Automatic toolkit configurations are stored outside the global provider material digest. Adding a service must not pause existing connections or revoke grants. Existing bindings keep their captured configuration identity; a metadata or display-name change does not select a newer account. Changing an explicit map remains a deliberate material rotation.
+
+Do not substitute a generic Composio-hosted field link. Composio documents deferred owner verification for OAuth redirects, but not for every supported account-field scheme. The DorkOS form keeps field completion inside the signed-in owner flow.
+
 ### Keep each secret with its owner
 
-| Material                                              | Stored by                                                            | Use                                                                                                                       |
-| ----------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Managed Composio project key                          | Server-only deployment secret for `apps/site`                        | DorkOS's calls to the dedicated Composio project. Never reuse an operator's BYO or tracker key.                           |
-| Service OAuth tokens                                  | Composio's vault                                                     | Access to the connected Gmail, Notion or other service account. Agents receive neither the token nor its provider handle. |
-| Linked-instance key                                   | The linked local DorkOS installation's credential storage            | Authenticated calls to DorkOS hosting. Owner, tenant and instance derive from verified server state.                      |
-| Managed webhook signing secret                        | Server-only site deployment secret                                   | Verify incoming raw webhook bytes before resolving a stored subscription.                                                 |
-| Managed event content keys                            | Independent site deployment key ring                                 | Encrypt retained event content. Never derive these keys from the project key or signing secret.                           |
-| BYO project/signing keys and local event content keys | The local encrypted credential store                                 | Direct BYO intake and local protected content, without a cloud link.                                                      |
-| Browser completion secret                             | A short-lived HttpOnly cookie, with only its hash stored server-side | Bind one owner browser to the single-use callback. The URL nonce is not this secret.                                      |
+| Material                                              | Stored by                                                            | Use                                                                                                                                        |
+| ----------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Managed Composio project key                          | Server-only deployment secret for `apps/site`                        | DorkOS's calls to the dedicated Composio project. Never reuse an operator's BYO or tracker key.                                            |
+| Service OAuth tokens                                  | Composio's vault                                                     | Access to the connected Gmail, Notion or other service account. Agents receive neither the token nor its provider handle.                  |
+| Hosted account fields                                 | Transient site process memory, then Composio's vault                 | API keys, passwords or similar provider-declared values. DorkOS does not store them; the local installation and agents never receive them. |
+| Linked-instance key                                   | The linked local DorkOS installation's credential storage            | Authenticated calls to DorkOS hosting. Owner, tenant and instance derive from verified server state.                                       |
+| Managed webhook signing secret                        | Server-only site deployment secret                                   | Verify incoming raw webhook bytes before resolving a stored subscription.                                                                  |
+| Managed event content keys                            | Independent site deployment key ring                                 | Encrypt retained event content. Never derive these keys from the project key or signing secret.                                            |
+| BYO project/signing keys and local event content keys | The local encrypted credential store                                 | Direct BYO intake and local protected content, without a cloud link.                                                                       |
+| Browser completion secret                             | A short-lived HttpOnly cookie, with only its hash stored server-side | Bind one owner browser to the single-use callback. The URL nonce is not this secret.                                                       |
 
 Usage and audit records contain identifiers, outcomes, timing and payer attribution. They exclude arguments, results and event content. Those records support future billing work; this programme does not turn billing on.
 
@@ -85,7 +109,7 @@ Keep secrets in the deployment secret manager, not in documentation, screenshots
 | `DORKOS_MANAGED_COMPOSIO_PROJECT_KEY`         | Dedicated Composio project API key, server-only.                                                                                                                                                                                     |
 | `DORKOS_MANAGED_COMPOSIO_API_ORIGIN`          | Optional fixed upstream origin. Production normally omits it and uses the SDK's Composio origin. Never accept a browser-provided URL.                                                                                                |
 | `DORKOS_MANAGED_CONNECTOR_CALLBACK_ORIGIN`    | Canonical HTTPS origin, with no path, query, credentials or fragment. Production callback path is `/api/connectors/managed/callback`.                                                                                                |
-| `DORKOS_MANAGED_CONNECTOR_AUTH_CONFIGS`       | JSON object mapping exact toolkit slugs to their configured auth-config IDs. Empty `{}` provides no managed sign-in services.                                                                                                        |
+| `DORKOS_MANAGED_CONNECTOR_AUTH_CONFIGS`       | JSON object mapping exact toolkit slugs to explicit auth-config overrides. An override takes priority and must validate. An empty `{}` leaves supported managed defaults available.                                                  |
 | `DORKOS_MANAGED_CONNECTOR_WEBHOOK_SECRET`     | Project webhook signing secret, at least 16 characters. Registered receiver path: `/api/connectors/managed/events`.                                                                                                                  |
 | `DORKOS_MANAGED_CONNECTOR_EVENT_PAYLOAD_KEYS` | JSON object with `activeKeyId` and `keys`. Each key ID uses 1–64 ASCII letters/digits/underscore/hyphen. Each value is a base64-encoded 32-byte key. The active ID must exist. Maximum serialized configuration size is 8,192 bytes. |
 | `CRON_SECRET`                                 | Existing server-only cleanup authentication secret. Missing or wrong bearer authentication produces 401 and runs no cleanup.                                                                                                         |
@@ -116,7 +140,7 @@ A passing test validates code behavior. It does not verify an owner sign-in, con
 
 1. **Pin the release and target.** Use the merged, reviewed source. Confirm the recorded Vercel target `dopel/dorkos-web`, selected environment, database, callback origin, and served commit. Preserve evidence outside disposable worktrees.
 
-2. **Provision only the intended services.** The dedicated project key, Gmail custom OAuth app and auth config, callback verifier, webhook signing secret, and payload keys are provisioned. Read them back from the deployment secret manager without copying values into evidence. The Google app remains in Testing for the owner account. Do not describe the consent screen as publicly approved.
+2. **Provision only the intended services.** The dedicated project key, callback verifier, webhook signing secret, and payload keys are provisioned. The controlled Gmail fixture also uses its explicit custom OAuth app and auth config. Read deployment secrets back without copying values into evidence. The Google app remains in Testing for the owner account. Do not describe the fixture, its read-only scopes, or its consent screen as the default for every managed service.
 
 3. **Deploy migrations before capabilities.** `apps/site/vercel.json` runs `pnpm db:migrate` before the site build. Confirm the target migration journal includes the managed tables and all append-only event migrations. Preserve old SQL and snapshots. Verify the deployment completes while readiness remains off. A failed migration or build is a failed rollout, not a reason to skip migrations.
 
@@ -215,13 +239,13 @@ For an incident:
 
 ## Troubleshooting
 
-| Symptom                                                          | Check and safe response                                                                                                                                                                                    |
-| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Managed connections are awaiting production verification.`      | Common readiness is off. Complete the environment's smoke; do not treat changing the flag as proof.                                                                                                        |
-| `Managed account sign-in is not available for this service yet.` | Check that exact toolkit's auth-config mapping and actual OAuth approval. Another service's configuration does not apply.                                                                                  |
-| `Managed account events are awaiting production verification.`   | Event readiness is separately off. Account operations may still be available.                                                                                                                              |
-| `events_unavailable` on buffered pull                            | Check instance authority, current receive scope and the payload key ring. SDK readiness is not required for buffered pull. Missing old keys need restoration, not a new key ID attached to old ciphertext. |
-| Permission upgrade/relink required                               | Relink the exact instance through the existing account flow; do not copy another instance's token.                                                                                                         |
-| Cleanup stays pending                                            | Check its exact instance key, provider generation, event readiness and remaining subscribers. Borrowed BYO triggers may deliberately remain upstream.                                                      |
-| Sign-in link fails after rotation                                | Start a new owner flow under the intended material. Do not forge or reuse the browser completion cookie.                                                                                                   |
-| `outcome_unknown` or an uncertain notification send              | Retain the original operation/event identity and receipt. Investigate without automatic resend.                                                                                                            |
+| Symptom                                                          | Check and safe response                                                                                                                                                                                       |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Managed connections are awaiting production verification.`      | Common readiness is off. Complete the environment's smoke; do not treat changing the flag as proof.                                                                                                           |
+| `Managed account sign-in is not available for this service yet.` | Check an explicit override first, then the service's managed authentication metadata. Report unsupported account fields or developer prerequisites precisely. Another service's configuration does not apply. |
+| `Managed account events are awaiting production verification.`   | Event readiness is separately off. Account operations may still be available.                                                                                                                                 |
+| `events_unavailable` on buffered pull                            | Check instance authority, current receive scope and the payload key ring. SDK readiness is not required for buffered pull. Missing old keys need restoration, not a new key ID attached to old ciphertext.    |
+| Permission upgrade/relink required                               | Relink the exact instance through the existing account flow; do not copy another instance's token.                                                                                                            |
+| Cleanup stays pending                                            | Check its exact instance key, provider generation, event readiness and remaining subscribers. Borrowed BYO triggers may deliberately remain upstream.                                                         |
+| Sign-in link fails after rotation                                | Start a new owner flow under the intended material. Do not forge or reuse the browser completion cookie.                                                                                                      |
+| `outcome_unknown` or an uncertain notification send              | Retain the original operation/event identity and receipt. Investigate without automatic resend.                                                                                                               |
