@@ -229,7 +229,8 @@ describe('ScreenshotField — capture app view', () => {
   });
 
   it('refuses a second capture while one is still being prepared', () => {
-    // Not the safety mechanism — the hook's generation counter is — but a
+    // Not the safety mechanism — `captureAppView` refuses to run twice at once,
+    // and the hook's generation counter decides which result may land — but a
     // button that stays live through a capture invites the double click that
     // makes people believe the first one did nothing.
     const { onCapture } = renderField({ isPreparing: true });

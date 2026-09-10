@@ -9,6 +9,12 @@
 // path is taken, what is asked of each, that the dialog is out of the way
 // BEFORE the picture is taken and back afterwards, and that every failure
 // arrives as a typed refusal rather than a rejection nobody handled.
+//
+// The one thing here that NEEDS a browser has one: focus survival across the
+// hide-and-restore, in
+// `apps/e2e/tests/dev-playground/feedback-capture-focus.spec.ts`. jsdom has no
+// focus semantics to break, and breaking them is exactly what the first
+// implementation of the hide did.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 /**
@@ -139,9 +145,9 @@ describe('captureAppView — which engine takes the picture', () => {
 describe('captureAppView — getting out of the way first', () => {
   it('hides what floats above the app before the picture is taken', async () => {
     const { root, overlay, panel } = buildPage();
-    let visibleAtCapture: string[] = [];
+    let opacityAtCapture: string[] = [];
     withDesktopBridge(async () => {
-      visibleAtCapture = [root, overlay, panel].map((el) => el.style.visibility);
+      opacityAtCapture = [root, overlay, panel].map((el) => el.style.opacity);
       return { ok: true, dataUrl: 'data:image/png;base64,SHELL' };
     });
     const { captureAppView } = await loadModule();
@@ -151,7 +157,14 @@ describe('captureAppView — getting out of the way first', () => {
     // Read at the moment of capture, not after: the shell photographs the
     // window as it stands, so a dialog hidden a tick too late is a dialog in
     // the screenshot.
-    expect(visibleAtCapture).toEqual(['', 'hidden', 'hidden']);
+    //
+    // `opacity`, and this is the assertion that pins it. `visibility: hidden`
+    // paints nothing just as well and was the first implementation, but it blurs
+    // `activeElement` to the body permanently — the caret goes, and React's
+    // `onPaste` on the portaled dialog stops being reached at all. jsdom cannot
+    // see that (see the browser regression spec named in the header), so the
+    // property name is what is defended here.
+    expect(opacityAtCapture).toEqual(['', '0', '0']);
   });
 
   it('waits for the hiding to be on screen, not merely applied', async () => {
@@ -166,23 +179,26 @@ describe('captureAppView — getting out of the way first', () => {
 
     await captureAppView();
 
-    expect(frames.mock.calls.length).toBeGreaterThanOrEqual(2);
+    // Exactly two, not "at least": nothing else on this path asks for a frame,
+    // so the number is knowable — and a third would mean a frame is being waited
+    // for somewhere nobody wrote down.
+    expect(frames.mock.calls.length).toBe(2);
     frames.mockRestore();
   });
 
   it('puts everything back afterwards, exactly as it was found', async () => {
     const { root, overlay, panel } = buildPage();
-    // A floating element that was ALREADY hidden by its own author stays hidden;
-    // blanking the inline value would reveal a closed dialog's leftovers.
-    panel.style.visibility = 'hidden';
+    // A floating element its own author had already faded stays faded; blanking
+    // the inline value would reveal a closed dialog's leftovers.
+    panel.style.opacity = '0.5';
     withDesktopBridge(async () => ({ ok: true, dataUrl: 'data:image/png;base64,SHELL' }));
     const { captureAppView } = await loadModule();
 
     await captureAppView();
 
-    expect(root.style.visibility).toBe('');
-    expect(overlay.style.visibility).toBe('');
-    expect(panel.style.visibility).toBe('hidden');
+    expect(root.style.opacity).toBe('');
+    expect(overlay.style.opacity).toBe('');
+    expect(panel.style.opacity).toBe('0.5');
   });
 
   it('puts everything back even when the capture fails', async () => {
@@ -194,7 +210,155 @@ describe('captureAppView — getting out of the way first', () => {
 
     // Otherwise a failed capture leaves the dialog the person is still looking
     // at invisible, with their half-written report inside it.
-    expect(overlay.style.visibility).toBe('');
+    expect(overlay.style.opacity).toBe('');
+  });
+});
+
+describe('captureAppView — one capture at a time', () => {
+  /**
+   * A desktop bridge that queues each ask, so the test can answer them one at a
+   * time.
+   *
+   * `settle` waits for the ask it is answering to have HAPPENED. The ask is two
+   * animation frames into a capture, so answering straight after the call would
+   * hand a result to a promise that does not exist yet — and answering the
+   * second ask before it arrives would silently re-answer the first.
+   */
+  function countedBridge() {
+    const asks: Array<(result: DesktopCaptureResult) => void> = [];
+    withDesktopBridge(
+      () =>
+        new Promise<DesktopCaptureResult>((resolve) => {
+          asks.push(resolve);
+        })
+    );
+    return {
+      get calls(): number {
+        return asks.length;
+      },
+      /**
+       * Answer the `nth` ask (1-based).
+       *
+       * @param nth - Which ask to answer.
+       * @param result - What the shell answers with.
+       */
+      async settle(nth: number, result: DesktopCaptureResult): Promise<void> {
+        await vi.waitFor(() => expect(asks.length).toBeGreaterThanOrEqual(nth));
+        asks[nth - 1](result);
+      },
+    };
+  }
+
+  it('hands a concurrent caller the capture already running', async () => {
+    const bridge = countedBridge();
+    const { captureAppView } = await loadModule();
+
+    const first = captureAppView();
+    const second = captureAppView();
+
+    expect(second).toBe(first);
+    await bridge.settle(1, { ok: true, dataUrl: 'data:image/png;base64,SHELL' });
+    await expect(first).resolves.toBe('data:image/png;base64,SHELL');
+    expect(bridge.calls).toBe(1);
+  });
+
+  it('does not let a second capture pin the app invisible', async () => {
+    // The damage a second overlapping run does, and why the guard is structural
+    // rather than a disabled button: run two, and the second reads the FIRST
+    // one's already-faded values as "how this was found" — then restores the app
+    // to invisible, permanently, behind a modal nobody can now see to close.
+    const { overlay } = buildPage();
+    const bridge = countedBridge();
+    const { captureAppView } = await loadModule();
+
+    const first = captureAppView();
+    void captureAppView();
+    await bridge.settle(1, { ok: true, dataUrl: 'data:image/png;base64,SHELL' });
+    await first;
+
+    expect(overlay.style.opacity).toBe('');
+  });
+
+  it('starts a fresh capture once the last one has settled', async () => {
+    const bridge = countedBridge();
+    const { captureAppView } = await loadModule();
+
+    const first = captureAppView();
+    await bridge.settle(1, { ok: true, dataUrl: 'data:image/png;base64,SHELL' });
+    await first;
+    const second = captureAppView();
+
+    // A held slot would make the button dead for the rest of the session.
+    expect(second).not.toBe(first);
+    await bridge.settle(2, { ok: true, dataUrl: 'data:image/png;base64,AGAIN' });
+    await expect(second).resolves.toBe('data:image/png;base64,AGAIN');
+    expect(bridge.calls).toBe(2);
+  });
+
+  it('releases the slot after a failure too', async () => {
+    withDesktopBridge(async () => ({ ok: false, message: 'no frame' }));
+    const { captureAppView } = await loadModule();
+
+    await expect(captureAppView()).rejects.toThrow();
+
+    // One refusal must not cost the person every later attempt.
+    await expect(captureAppView()).rejects.toThrow();
+  });
+});
+
+describe('captureAppView — the time bound', () => {
+  it('gives up, restores the app, and says so', async () => {
+    // The state nothing can report from: while the picture is being taken the
+    // dialog is invisible, so a capture that never settles is an app that never
+    // comes back. rAF is faked explicitly — the wait for a paint is on this path
+    // and a real one would never fire on a fake clock.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'Date'] });
+    try {
+      const { overlay } = buildPage();
+      withDesktopBridge(() => new Promise<DesktopCaptureResult>(() => {}));
+      const { captureAppView, AppCaptureError, APP_CAPTURE_TIMEOUT_MS } = await loadModule();
+
+      const capture = captureAppView();
+      const settled = capture.catch((error: unknown) => error);
+      // Two steps: the timer this asserts on is only armed once the paint wait
+      // is over, so one advance of exactly the bound stops 32ms short of it.
+      await vi.advanceTimersByTimeAsync(100);
+      await vi.advanceTimersByTimeAsync(APP_CAPTURE_TIMEOUT_MS);
+      const error = await settled;
+
+      expect(error).toBeInstanceOf(AppCaptureError);
+      expect((error as InstanceType<typeof AppCaptureError>).reason).toBe('failed');
+      expect(overlay.style.opacity).toBe('');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not give up on a capture that finishes in time', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'Date'] });
+    try {
+      let settle: (result: DesktopCaptureResult) => void = () => {};
+      withDesktopBridge(
+        () =>
+          new Promise<DesktopCaptureResult>((resolve) => {
+            settle = resolve;
+          })
+      );
+      const { captureAppView, APP_CAPTURE_TIMEOUT_MS } = await loadModule();
+
+      const capture = captureAppView();
+      await vi.advanceTimersByTimeAsync(APP_CAPTURE_TIMEOUT_MS - 1);
+      settle({ ok: true, dataUrl: 'data:image/png;base64,JUSTINTIME' });
+
+      await expect(capture).resolves.toBe('data:image/png;base64,JUSTINTIME');
+      // Nothing here claims the timer was CLEARED. It is — but the cleared
+      // timer's only job was to reject a promise the race has already discarded,
+      // so advancing the clock past it proves nothing either way (measured: that
+      // assertion passed with `clearTimeout` removed), and a check that cannot
+      // fail is worse than none.
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

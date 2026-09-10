@@ -69,10 +69,14 @@ const CAPTURE_FAILED_MESSAGE = 'DorkOS couldn’t get a picture of this window.'
  */
 export function setupAppViewCapture(options: AppViewCaptureOptions): void {
   ipcMain.handle(CAPTURE_APP_VIEW_CHANNEL, async (event): Promise<CaptureAppViewResult> => {
-    if (!isCockpitSender(event, options.getRendererUrl)) {
-      return { ok: false, message: 'DorkOS only takes this from its own window.' };
-    }
     try {
+      // Inside the `try` on purpose: this reads `event.sender.getURL()`, which
+      // throws on a webContents that is being torn down. The preload promises
+      // this call never rejects, and a promise like that has to hold for every
+      // line the handler runs, not merely the ones that were expected to fail.
+      if (!isCockpitSender(event, options.getRendererUrl)) {
+        return { ok: false, message: 'DorkOS only takes this from its own window.' };
+      }
       const image = await event.sender.capturePage();
       // An empty image is what a capture that could not read the surface comes
       // back as — no throw, just nothing. `toDataURL()` would happily encode it

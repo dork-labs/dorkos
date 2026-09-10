@@ -48,7 +48,23 @@ function senderOn(url: string, capture: () => Promise<NativeImage>) {
   } as unknown as Electron.IpcMainInvokeEvent;
 }
 
-/** Register the handler and hand back a way to call it. */
+/** The registered handler itself, for a test that builds its own invoke event. */
+async function armRawHandler(
+  getRendererUrl: () => string | undefined = () => OWN_ORIGIN
+): Promise<
+  (event: Electron.IpcMainInvokeEvent) => Promise<import('../index').CaptureAppViewResult>
+> {
+  const { ipcMain } = await getElectronMock();
+  const { setupAppViewCapture } = await import('../index');
+  setupAppViewCapture({ getRendererUrl });
+  const call = ipcMain.handle.mock.calls.find(([name]) => name === 'capture:app-view');
+  if (!call) throw new Error('nothing registered on capture:app-view');
+  return call[1] as (
+    event: Electron.IpcMainInvokeEvent
+  ) => Promise<import('../index').CaptureAppViewResult>;
+}
+
+/** Register the handler and hand back a way to call it from an ordinary page. */
 async function armHandler(
   getRendererUrl: () => string | undefined = () => OWN_ORIGIN
 ): Promise<
@@ -57,14 +73,7 @@ async function armHandler(
     url?: string
   ) => Promise<import('../index').CaptureAppViewResult>
 > {
-  const { ipcMain } = await getElectronMock();
-  const { setupAppViewCapture } = await import('../index');
-  setupAppViewCapture({ getRendererUrl });
-  const call = ipcMain.handle.mock.calls.find(([name]) => name === 'capture:app-view');
-  if (!call) throw new Error('nothing registered on capture:app-view');
-  const handler = call[1] as (
-    event: Electron.IpcMainInvokeEvent
-  ) => Promise<import('../index').CaptureAppViewResult>;
+  const handler = await armRawHandler(getRendererUrl);
   return (capture, url = `${OWN_ORIGIN}/`) => handler(senderOn(url, capture));
 }
 
@@ -129,6 +138,28 @@ describe('capture:app-view', () => {
     const result = await invoke(async () => fakeImage('data:image/png;base64,', true));
 
     expect(result).toEqual({ ok: false, message: 'DorkOS couldn’t get a picture of this window.' });
+  });
+
+  it('answers rather than rejects even when the page cannot be identified', async () => {
+    // `getURL()` throws on a webContents being torn down, and that is a line
+    // that runs BEFORE the capture. The preload promises this call never
+    // rejects, and a promise like that has to hold for every line of the
+    // handler — a throw here reaches the renderer as
+    // `Error invoking remote method 'capture:app-view'`.
+    const handler = await armRawHandler();
+    const event = {
+      sender: {
+        getURL: () => {
+          throw new Error('Object has been destroyed');
+        },
+        capturePage: async () => fakeImage('data:image/png;base64,SHOT'),
+      },
+    } as unknown as Electron.IpcMainInvokeEvent;
+
+    await expect(handler(event)).resolves.toEqual({
+      ok: false,
+      message: 'DorkOS couldn’t get a picture of this window.',
+    });
   });
 
   it('turns a failed capture into a message rather than a rejection', async () => {
