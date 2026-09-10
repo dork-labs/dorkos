@@ -605,6 +605,23 @@ export function projectGlobal(input: Omit<GlobalPlanInput, 'packages'>): GlobalP
 }
 
 /**
+ * The two sentences a global plan writes when it could not read a folder,
+ * written down once.
+ *
+ * A table rather than two inline templates for the reason `sweep-reasons.ts`
+ * gives about its own: the terminal prints them verbatim, and
+ * `__tests__/reason-vocabulary.test.ts` enumerates the table whole — no ordinary
+ * tree produces either, since both need somebody to have broken their own dork
+ * home.
+ */
+export const UNREADABLE_GLOBAL_ROOT_REASONS = {
+  packages: (root: string): string =>
+    `DorkOS could not read the folder your all-projects packages live in: ${root}.`,
+  skills: (root: string): string =>
+    `DorkOS could not read the folder your all-projects skills are linked into: ${root}.`,
+} as const;
+
+/**
  * Which of the two folders the scan reads stopped it, and what to say about it.
  *
  * There is ONE catch around `scanInstalledSources` and there are TWO folders
@@ -628,23 +645,6 @@ export function projectGlobal(input: Omit<GlobalPlanInput, 'packages'>): GlobalP
  * @param dorkHome - the DorkOS data directory, absolute.
  * @returns the folder to name, and the sentence naming it.
  */
-/**
- * The two sentences a global plan writes when it could not read a folder,
- * written down once.
- *
- * A table rather than two inline templates for the reason `sweep-reasons.ts`
- * gives about its own: the terminal prints them verbatim, and
- * `__tests__/reason-vocabulary.test.ts` enumerates the table whole — no ordinary
- * tree produces either, since both need somebody to have broken their own dork
- * home.
- */
-export const UNREADABLE_GLOBAL_ROOT_REASONS = {
-  packages: (root: string): string =>
-    `DorkOS could not read the folder your all-projects packages live in: ${root}.`,
-  skills: (root: string): string =>
-    `DorkOS could not read the folder your all-projects skills are linked into: ${root}.`,
-} as const;
-
 function rootInTheWay(dorkHome: string): { root: string; sentence: string } {
   const pluginsRoot = globalPluginsDir(dorkHome);
   const skillsRoot = globalSkillsDir(dorkHome);
