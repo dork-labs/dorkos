@@ -5,7 +5,7 @@ import type {
   ConnectorOperationRevision,
   ConnectorProviderInstanceId,
 } from '@dorkos/shared/connector-schemas';
-import { ComposioSdkClient } from '../sdk-client.js';
+import { ComposioSdkClient, normalizeComposioCatalogAuthentication } from '../sdk-client.js';
 
 const API_KEY = 'sk_fixture_private';
 const SERVER_USER_ID = 'server-user-fixture';
@@ -184,6 +184,7 @@ describe('ComposioSdkClient', () => {
               slug: 'github',
               type: 'native',
               auth_schemes: ['OAUTH2'],
+              composio_managed_auth_schemes: ['OAUTH2'],
               no_auth: false,
             },
           ],
@@ -199,7 +200,19 @@ describe('ComposioSdkClient', () => {
     });
     expect(page).toEqual({
       status: 'ok',
-      toolkits: [{ slug: 'github', displayName: 'GitHub', authKind: 'oauth2' }],
+      toolkits: [
+        {
+          slug: 'github',
+          displayName: 'GitHub',
+          authKind: 'oauth2',
+          authenticationSetup: {
+            kind: 'oauth',
+            source: 'managed',
+            scheme: 'OAUTH2',
+            requiresAccountFields: false,
+          },
+        },
+      ],
       nextCursor: 'toolkit-page-2',
       truncated: true,
     });
@@ -208,6 +221,87 @@ describe('ComposioSdkClient', () => {
       limit: '1',
       include_deprecated: 'false',
       sort_by: 'alphabetically',
+    });
+  });
+
+  it('normalizes only declared supported catalog authentication methods', () => {
+    expect(
+      normalizeComposioCatalogAuthentication({
+        auth_schemes: ['API_KEY', 'OAUTH2'],
+        composio_managed_auth_schemes: ['OAUTH2'],
+      })
+    ).toEqual({
+      authKind: 'oauth2',
+      authenticationSetup: {
+        kind: 'oauth',
+        source: 'managed',
+        scheme: 'OAUTH2',
+        requiresAccountFields: false,
+      },
+    });
+
+    expect(
+      normalizeComposioCatalogAuthentication({
+        auth_schemes: ['BASIC', 'BEARER_TOKEN', 'API_KEY'],
+      })
+    ).toEqual({
+      authKind: 'api-key',
+      authenticationSetup: {
+        kind: 'fields',
+        source: 'account-fields',
+        scheme: 'API_KEY',
+        requiresAccountFields: true,
+      },
+    });
+
+    expect(normalizeComposioCatalogAuthentication({ auth_schemes: ['BEARER_TOKEN'] })).toEqual({
+      authKind: 'api-key',
+      authenticationSetup: {
+        kind: 'fields',
+        source: 'account-fields',
+        scheme: 'BEARER_TOKEN',
+        requiresAccountFields: true,
+      },
+    });
+    expect(normalizeComposioCatalogAuthentication({ auth_schemes: ['BASIC'] })).toEqual({
+      authKind: 'api-key',
+      authenticationSetup: {
+        kind: 'fields',
+        source: 'account-fields',
+        scheme: 'BASIC',
+        requiresAccountFields: true,
+      },
+    });
+    expect(normalizeComposioCatalogAuthentication({ no_auth: true })).toEqual({
+      authKind: 'none',
+      authenticationSetup: {
+        kind: 'none',
+        source: 'account-fields',
+        scheme: 'NO_AUTH',
+        requiresAccountFields: false,
+      },
+    });
+    expect(
+      normalizeComposioCatalogAuthentication({
+        auth_schemes: ['OAUTH1'],
+        composio_managed_auth_schemes: ['OAUTH1'],
+      })
+    ).toEqual({
+      authKind: 'none',
+      authenticationSetup: {
+        kind: 'unsupported',
+        source: 'unsupported',
+        scheme: 'OAUTH1',
+        requiresAccountFields: false,
+      },
+    });
+    expect(normalizeComposioCatalogAuthentication({})).toEqual({
+      authKind: 'none',
+      authenticationSetup: {
+        kind: 'unsupported',
+        source: 'unsupported',
+        requiresAccountFields: false,
+      },
     });
   });
 

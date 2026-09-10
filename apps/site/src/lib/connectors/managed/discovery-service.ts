@@ -5,6 +5,10 @@
  */
 import type { ComposioOperationClient } from '@dorkos/connector-providers/composio';
 import {
+  projectConnectorAuthentication,
+  type ConnectorToolkit,
+} from '@dorkos/shared/connector-provider';
+import {
   ManagedConnectorAccountListRequestSchema,
   ManagedConnectorAccountListResponseSchema,
   ManagedConnectorAccountResponseSchema,
@@ -24,6 +28,69 @@ import type { ManagedConnectorDatabase, ManagedConnectorPrincipal } from './auth
 import { HOSTED_COMPOSIO_PROVIDER_INSTANCE_ID } from './request-context';
 import { managedCapabilityAvailability, type ManagedConnectorConfig } from './config';
 
+function configuredAuthentication(
+  config: ManagedConnectorConfig,
+  toolkit: ConnectorToolkit,
+  includeAuthenticationSetup: boolean
+): ConnectorToolkit {
+  if (!config.authConfigByToolkit[toolkit.slug]) return toolkit;
+  const setup = toolkit.authenticationSetup;
+  if (setup && setup.kind !== 'unsupported') {
+    return { ...toolkit, authenticationSetup: { ...setup, source: 'configured' } };
+  }
+  if (setup?.scheme === 'OAUTH2') {
+    return {
+      ...toolkit,
+      authKind: 'oauth2',
+      authenticationSetup: {
+        kind: 'oauth',
+        source: 'configured',
+        scheme: 'OAUTH2',
+        requiresAccountFields: false,
+      },
+    };
+  }
+  if (!includeAuthenticationSetup) {
+    const legacy = { ...toolkit };
+    delete legacy.authenticationSetup;
+    return legacy;
+  }
+  return {
+    ...toolkit,
+    authenticationSetup: {
+      kind: 'unsupported',
+      source: 'configured',
+      ...(setup?.scheme && { scheme: setup.scheme }),
+      requiresAccountFields: false,
+    },
+  };
+}
+
+function authenticationAvailability(config: ManagedConnectorConfig, toolkit: ConnectorToolkit) {
+  const catalog = managedCapabilityAvailability(config, 'catalog');
+  if (catalog.status === 'unavailable') return catalog;
+  if (!config.callbackOrigin) {
+    return {
+      status: 'unavailable' as const,
+      reason: 'Managed account sign-in is not configured yet.',
+    };
+  }
+  if (config.authConfigByToolkit[toolkit.slug]) return { status: 'available' as const };
+  if (!toolkit.authenticationSetup || toolkit.authenticationSetup.kind === 'unsupported') {
+    const method = toolkit.authenticationSetup?.scheme;
+    return {
+      status: 'unavailable' as const,
+      reason:
+        method === 'OAUTH2'
+          ? 'This service needs a custom OAuth setup before DorkOS can connect it.'
+          : method
+            ? `This service uses ${method}, which DorkOS does not support yet.`
+            : 'Composio did not declare a supported sign-in method for this service.',
+    };
+  }
+  return { status: 'available' as const };
+}
+
 /** Convert one private row to the strict site-owned account wire. */
 export function managedAccountFromRow(
   row: typeof schema.managedConnectorConnection.$inferSelect
@@ -41,6 +108,8 @@ export function managedAccountFromRow(
 
 /** Read one bounded account-free toolkit page from the hosted SDK. */
 export async function listManagedConnectorCatalog(input: {
+  /** Only true after the route receives the exact supported metadata header. */
+  includeAuthenticationSetup?: boolean;
   operations: ComposioOperationClient;
   config: ManagedConnectorConfig;
   rawRequest: unknown;
@@ -55,19 +124,23 @@ export async function listManagedConnectorCatalog(input: {
   });
   return ManagedConnectorCatalogPageSchema.parse({
     version: 1,
-    toolkits: result.toolkits.map((toolkit) => {
-      const availability = managedCapabilityAvailability(
+    toolkits: result.toolkits.map((rawToolkit) => {
+      const toolkit = configuredAuthentication(
         input.config,
-        'authentication',
-        toolkit.slug
+        rawToolkit,
+        input.includeAuthenticationSetup === true
       );
-      return {
-        ...toolkit,
-        authentication:
-          availability.status === 'available'
-            ? { status: 'available' as const }
-            : { status: 'unsupported' as const, reason: availability.reason },
-      };
+      const availability = authenticationAvailability(input.config, toolkit);
+      return projectConnectorAuthentication(
+        {
+          ...toolkit,
+          authentication:
+            availability.status === 'available'
+              ? { status: 'available' as const }
+              : { status: 'unsupported' as const, reason: availability.reason },
+        },
+        input.includeAuthenticationSetup === true
+      );
     }),
     ...(result.nextCursor !== undefined && { nextCursor: result.nextCursor }),
     truncated: result.truncated,

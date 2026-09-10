@@ -63,6 +63,40 @@ function titleCase(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+function authenticationGuidance(
+  route: ConnectorCatalogProviderRoute,
+  serviceName: string
+): string | null {
+  const setup = route.authenticationSetup;
+  if (!setup) return null;
+  if (setup.source === 'configured') {
+    return `This ${serviceName} connection uses the custom sign-in setup configured for this service.`;
+  }
+  if (setup.kind === 'oauth') {
+    return `Continue to Composio to approve access to ${serviceName}.`;
+  }
+  if (setup.kind === 'fields' && route.mode === 'managed') {
+    return `Enter the account details requested by ${serviceName} on dorkos.ai. DorkOS passes them to Composio without saving them.`;
+  }
+  if (setup.kind === 'none' && route.mode === 'managed') {
+    return `Review and confirm this ${serviceName} connection on dorkos.ai. No account details are needed.`;
+  }
+  return null;
+}
+
+function authenticationAction(
+  route: ConnectorCatalogProviderRoute | null,
+  stage: 'start' | 'authorize'
+): string {
+  if (route?.mode === 'managed' && route.authenticationSetup?.kind === 'fields')
+    return 'Enter account details';
+  if (route?.mode === 'managed' && route.authenticationSetup?.kind === 'none')
+    return 'Review and confirm';
+  if (route?.authenticationSetup?.source === 'configured') return 'Continue';
+  if (stage === 'authorize') return 'Open sign-in';
+  return route?.authKind === 'none' ? 'Check connection' : 'Continue';
+}
+
 /** Durable service authentication flow with provider disclosure before authorization. */
 export function ConnectDialog({
   service,
@@ -100,6 +134,7 @@ export function ConnectDialog({
   const activeFlow: ConnectorAuthenticationFlowState | undefined = flow.data ?? start.data;
 
   const serviceName = resolvedService?.displayName ?? titleCase(activeFlow?.toolkit ?? 'service');
+  const guidance = route ? authenticationGuidance(route, serviceName) : null;
   const unavailableReason = useMemo(() => {
     if (route) return null;
     const unavailable = routes.find(
@@ -107,7 +142,7 @@ export function ConnectDialog({
     )?.capabilities.authentication;
     return unavailable?.status === 'unsupported'
       ? unavailable.reason
-      : 'No configured provider can connect this service yet.';
+      : 'No configured setup can connect this service yet.';
   }, [route, routes]);
 
   const close = () => {
@@ -207,6 +242,9 @@ export function ConnectDialog({
                     <p className="text-muted-foreground text-xs leading-relaxed">
                       {route.disclosure}
                     </p>
+                    {guidance && (
+                      <p className="text-muted-foreground text-xs leading-relaxed">{guidance}</p>
+                    )}
                     <p className="text-muted-foreground text-xs">
                       {route.payer === 'dorkos_managed'
                         ? 'DorkOS covers service usage.'
@@ -278,6 +316,9 @@ export function ConnectDialog({
                     <p className="text-muted-foreground text-xs leading-relaxed">
                       {route.disclosure}
                     </p>
+                    {guidance && (
+                      <p className="text-muted-foreground text-xs leading-relaxed">{guidance}</p>
+                    )}
                     <p className="text-muted-foreground text-xs">
                       {route.payer === 'dorkos_managed'
                         ? 'DorkOS covers service usage.'
@@ -295,7 +336,7 @@ export function ConnectDialog({
                         handed anything (DOR-924). */}
                     <Button asChild className="w-full">
                       <ExternalLinkAnchor href={activeFlow.authorizeUrl}>
-                        {route?.authKind === 'none' ? 'Check connection' : 'Open sign-in'}
+                        {authenticationAction(route, 'authorize')}
                         <ExternalLink className="size-4" aria-hidden />
                       </ExternalLinkAnchor>
                     </Button>
@@ -375,11 +416,7 @@ export function ConnectDialog({
                 Cancel
               </Button>
               <Button onClick={begin} disabled={!route || start.isPending}>
-                {start.isPending
-                  ? 'Starting…'
-                  : route?.authKind === 'none'
-                    ? 'Check connection'
-                    : 'Continue'}
+                {start.isPending ? 'Starting…' : authenticationAction(route, 'start')}
               </Button>
             </ResponsiveDialogFooter>
           )}

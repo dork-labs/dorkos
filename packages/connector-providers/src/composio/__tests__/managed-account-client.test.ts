@@ -10,6 +10,7 @@ import {
 interface SeenRequest {
   method: string;
   path: string;
+  query: URLSearchParams;
   headers: IncomingMessage['headers'];
   body: unknown;
 }
@@ -27,6 +28,7 @@ async function fixture(
     const seen: SeenRequest = {
       method: request.method ?? 'GET',
       path: new URL(request.url ?? '/', 'http://fixture').pathname,
+      query: new URL(request.url ?? '/', 'http://fixture').searchParams,
       headers: request.headers,
       body: text ? JSON.parse(text) : null,
     };
@@ -221,6 +223,310 @@ describe('ComposioManagedAccountClient', () => {
     await expect(
       client.deleteAccount('ca_private_1', new AbortController().signal)
     ).resolves.toBeUndefined();
+    expect(local.requests).toHaveLength(1);
+  });
+});
+
+describe('hosted authentication wire contracts', () => {
+  it('creates two separate links for the same user/config with no wrapper duplicate guard', async () => {
+    let count = 0;
+    const local = await fixture((request, response) => {
+      expect(request.path).toBe('/api/v3.1/connected_accounts/link');
+      expect(request.body).toEqual({ user_id: 'owner', auth_config_id: 'ac_managed' });
+      json(response, 201, {
+        connected_account_id: `ca_${++count}`,
+        redirect_url: 'https://accounts.example.test/link',
+      });
+    });
+    const client = new ComposioManagedAccountClient({
+      apiKey: 'synthetic',
+      baseUrl: local.baseUrl,
+    });
+    const input = {
+      providerUserId: 'owner',
+      authConfigId: 'ac_managed',
+      signal: new AbortController().signal,
+    };
+    expect((await client.createLink(input)).connectedAccountId).toBe('ca_1');
+    expect((await client.createLink(input)).connectedAccountId).toBe('ca_2');
+    expect(local.requests).toHaveLength(2);
+  });
+
+  it.each([
+    ['API_KEY', { api_key: 'synthetic-api-key', subdomain: 'company' }],
+    ['BEARER_TOKEN', { token: 'synthetic-bearer' }],
+    ['BASIC', { username: 'synthetic-user', password: 'synthetic-password' }],
+    ['NO_AUTH', {}],
+  ] as const)(
+    'uses the actual pinned %s account-create wire without following field URLs',
+    async (scheme, fields) => {
+      const local = await fixture((request, response) => {
+        expect(request.path).toBe('/api/v3.1/connected_accounts');
+        expect(request.method).toBe('POST');
+        expect(request.body).toEqual({
+          auth_config: { id: 'ac_exact' },
+          connection: {
+            user_id: 'owner_exact',
+            state: { authScheme: scheme, val: { ...fields, status: 'ACTIVE' } },
+          },
+        });
+        json(response, 201, { id: 'ca_exact', credentials: 'must-not-survive' });
+      });
+      const client = new ComposioManagedAccountClient({
+        apiKey: 'synthetic',
+        baseUrl: local.baseUrl,
+      });
+      const result = await client.createFieldAccount({
+        providerUserId: 'owner_exact',
+        authConfigId: 'ac_exact',
+        descriptor: {
+          toolkit: 'synthetic',
+          scheme,
+          kind: scheme === 'NO_AUTH' ? 'none' : 'fields',
+          source: 'account-fields',
+          fields: Object.keys(fields).map((name) => ({
+            name,
+            label: name,
+            description: '',
+            type: 'string' as const,
+            secret: name !== 'subdomain',
+            required: true,
+          })),
+        },
+        fields,
+        signal: new AbortController().signal,
+      });
+      expect(result).toEqual({ connectedAccountId: 'ca_exact' });
+      expect(local.requests).toHaveLength(1);
+    }
+  );
+
+  it('rejects OAuth and undeclared secret fields before dispatch; ambiguous create never retries', async () => {
+    const local = await fixture((_request, response) =>
+      json(response, 503, { error: 'SENTINEL-private-key' })
+    );
+    const client = new ComposioManagedAccountClient({
+      apiKey: 'synthetic',
+      baseUrl: local.baseUrl,
+    });
+    const input = {
+      providerUserId: 'owner',
+      authConfigId: 'ac',
+      descriptor: {
+        toolkit: 'test',
+        scheme: 'API_KEY' as const,
+        kind: 'fields' as const,
+        source: 'account-fields' as const,
+        fields: [
+          {
+            name: 'api_key',
+            label: 'Key',
+            description: '',
+            type: 'password' as const,
+            required: true,
+            secret: true,
+          },
+        ],
+      },
+      fields: { api_key: 'SENTINEL-private-key' },
+      signal: new AbortController().signal,
+    };
+    await expect(
+      client.createFieldAccount({
+        ...input,
+        descriptor: { ...input.descriptor, kind: 'oauth', scheme: 'OAUTH2' },
+      })
+    ).rejects.toThrow('Account details do not match');
+    await expect(
+      client.createFieldAccount({
+        ...input,
+        fields: { ...input.fields, attacker: 'SENTINEL-private-key' },
+      })
+    ).rejects.toThrow('Account details do not match');
+    expect(local.requests).toHaveLength(0);
+    const error = await client.createFieldAccount(input).catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: 'outcome_unknown' });
+    expect(String(error)).not.toContain('SENTINEL');
+    expect(local.requests).toHaveLength(1);
+  });
+});
+
+describe('authentication configuration SDK wire', () => {
+  it('reads exact declared metadata and creates the managed default without developer credentials', async () => {
+    const local = await fixture((request, response) => {
+      if (request.path === '/api/v3.1/toolkits/gmail')
+        return json(response, 200, {
+          slug: 'gmail',
+          enabled: true,
+          composio_managed_auth_schemes: ['OAUTH2'],
+          auth_config_details: [],
+        });
+      if (request.method === 'POST')
+        return json(response, 200, {
+          auth_config: { id: 'ac_new', auth_scheme: 'OAUTH2', is_composio_managed: true },
+          toolkit: { slug: 'gmail' },
+        });
+      return json(response, 200, {
+        id: 'ac_new',
+        name: 'dorkos-default-exact',
+        toolkit: { slug: 'gmail' },
+        auth_scheme: 'OAUTH2',
+        status: 'ENABLED',
+        is_composio_managed: true,
+        type: 'default',
+        tool_access_config: {
+          tools_for_connected_account_creation: [],
+          tools_available_for_execution: [],
+        },
+        is_enabled_for_tool_router: false,
+        credentials: { scopes: ['read', 'read'] },
+        shared_credentials: {},
+        proxy_config: null,
+        expected_input_fields: [{ default: 'PRIVATE_ENVELOPE' }],
+      });
+    });
+    const client = new ComposioManagedAccountClient({
+      apiKey: 'synthetic-project',
+      baseUrl: local.baseUrl,
+    });
+    expect(
+      await client.getToolkitAuthentication('gmail', new AbortController().signal)
+    ).toMatchObject({ toolkit: 'gmail', managedOAuth2: true });
+    await expect(
+      client.createAuthenticationConfiguration({
+        name: 'dorkos-default-exact',
+        descriptor: {
+          toolkit: 'gmail',
+          scheme: 'OAUTH2',
+          kind: 'oauth',
+          source: 'managed',
+          fields: [],
+        },
+        signal: new AbortController().signal,
+      })
+    ).resolves.toEqual({ id: 'ac_new' });
+    expect(local.requests[1].path).toBe('/api/v3.1/auth_configs');
+    expect(local.requests[1].body).toEqual({
+      toolkit: { slug: 'gmail' },
+      auth_config: {
+        type: 'use_composio_managed_auth',
+        name: 'dorkos-default-exact',
+        is_enabled_for_tool_router: false,
+      },
+    });
+    const config = await client.getAuthenticationConfiguration(
+      'ac_new',
+      new AbortController().signal
+    );
+    expect(config).toMatchObject({ id: 'ac_new', scheme: 'OAUTH2', enabled: true, managed: true });
+    expect(JSON.stringify(config)).not.toContain('PRIVATE_ENVELOPE');
+    expect(config.policy).toEqual({
+      type: 'default',
+      scopes: ['read'],
+      userScopes: [],
+      credentialsEmpty: false,
+      routerEnabled: false,
+    });
+  });
+  it.each(['API_KEY', 'BEARER_TOKEN', 'BASIC', 'NO_AUTH'] as const)(
+    'creates a %s blueprint with an empty project credential payload',
+    async (scheme) => {
+      const local = await fixture((_request, response) =>
+        json(response, 200, { auth_config: { id: 'ac_fields' }, toolkit: { slug: 'synthetic' } })
+      );
+      const client = new ComposioManagedAccountClient({
+        apiKey: 'synthetic-project',
+        baseUrl: local.baseUrl,
+      });
+      await client.createAuthenticationConfiguration({
+        name: 'dorkos-default-fields',
+        descriptor: {
+          toolkit: 'synthetic',
+          scheme,
+          kind: scheme === 'NO_AUTH' ? 'none' : 'fields',
+          source: 'account-fields',
+          fields: [],
+        },
+        signal: new AbortController().signal,
+      });
+      expect(local.requests).toHaveLength(1);
+      expect(local.requests[0].body).toEqual({
+        toolkit: { slug: 'synthetic' },
+        auth_config: {
+          type: 'use_custom_auth',
+          authScheme: scheme,
+          name: 'dorkos-default-fields',
+          credentials: {},
+          is_enabled_for_tool_router: false,
+        },
+      });
+    }
+  );
+  it('passes exact candidate filters and cursors through the real SDK without private envelopes', async () => {
+    const local = await fixture((request, response) => {
+      expect(request.method).toBe('GET');
+      expect(request.path).toBe('/api/v3.1/auth_configs');
+      expect(Object.fromEntries(request.query)).toEqual({
+        toolkit_slug: 'gmail',
+        search: 'exact name',
+        limit: '50',
+        show_disabled: 'true',
+        cursor: 'page-two',
+      });
+      return json(response, 200, {
+        items: [
+          {
+            id: 'ac_exact',
+            name: 'exact name',
+            toolkit: { slug: 'gmail' },
+            auth_scheme: 'OAUTH2',
+            status: 'ENABLED',
+            is_composio_managed: true,
+            credentials: { token: 'PRIVATE_LIST_SECRET' },
+          },
+        ],
+        next_cursor: 'page-three',
+      });
+    });
+    const client = new ComposioManagedAccountClient({
+      apiKey: 'synthetic',
+      baseUrl: local.baseUrl,
+    });
+    const page = await client.listAuthenticationConfigurations({
+      toolkit: 'gmail',
+      name: 'exact name',
+      cursor: 'page-two',
+      signal: new AbortController().signal,
+    });
+    expect(page.nextCursor).toBe('page-three');
+    expect(page.items).toHaveLength(1);
+    expect(JSON.stringify(page)).not.toContain('PRIVATE_LIST_SECRET');
+  });
+
+  it('does not retry an ambiguous config POST and does not expose the error body', async () => {
+    const local = await fixture((_request, response) =>
+      json(response, 503, { secret: 'PRIVATE_ERROR' })
+    );
+    const client = new ComposioManagedAccountClient({
+      apiKey: 'synthetic-project',
+      baseUrl: local.baseUrl,
+    });
+    await expect(
+      client.createAuthenticationConfiguration({
+        name: 'dorkos-default',
+        descriptor: {
+          toolkit: 'gmail',
+          scheme: 'OAUTH2',
+          kind: 'oauth',
+          source: 'managed',
+          fields: [],
+        },
+        signal: new AbortController().signal,
+      })
+    ).rejects.toMatchObject({
+      code: 'outcome_unknown',
+      message: 'Account setup could not be confirmed.',
+    });
     expect(local.requests).toHaveLength(1);
   });
 });

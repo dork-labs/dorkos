@@ -34,6 +34,7 @@ import {
 } from 'drizzle-orm/pg-core';
 
 export { account, apikey, deviceCode, session, user, verification } from './auth-schema';
+export { managedConnectorAuthConfigResolution } from './managed-auth-config-schema';
 export { instance, type Instance, type NewInstance } from './instance-schema';
 export { auditLog, type AuditLogEntry, type NewAuditLogEntry } from './audit-schema';
 export {

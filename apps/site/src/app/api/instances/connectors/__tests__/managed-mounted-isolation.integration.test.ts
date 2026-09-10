@@ -5,7 +5,10 @@ import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
 import { neon } from '@neondatabase/serverless';
-import type { ComposioOperationClient } from '@dorkos/connector-providers/composio';
+import type {
+  ComposioManagedAccountClient,
+  ComposioOperationClient,
+} from '@dorkos/connector-providers/composio';
 import { memoryAdapter } from 'better-auth/adapters/memory';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -16,6 +19,15 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Auth } from '@/lib/auth';
 import type { ManagedConnectorDatabase } from '@/lib/connectors/managed/authority-service';
 
+type MountedAccounts = Pick<
+  ComposioManagedAccountClient,
+  | 'completeAuth'
+  | 'createLink'
+  | 'getAccount'
+  | 'getToolkitAuthentication'
+  | 'getAuthenticationConfiguration'
+>;
+
 const state = vi.hoisted(() => {
   process.env.DORKOS_MANAGED_CONNECTORS_ENABLED = '1';
   process.env.DORKOS_MANAGED_CONNECTORS_LIVE_READY = '1';
@@ -25,7 +37,7 @@ const state = vi.hoisted(() => {
   return {
     auth: undefined as unknown as Auth,
     authMemory: undefined as unknown as Record<string, Array<Record<string, unknown>>>,
-    accounts: undefined as unknown as Record<string, unknown>,
+    accounts: undefined as unknown as MountedAccounts,
     db: undefined as unknown as ManagedConnectorDatabase,
     httpDb: undefined as unknown as ManagedConnectorDatabase,
     expectedProviderUserId: '',
@@ -139,6 +151,28 @@ describe('mounted managed connection isolation', () => {
     };
     state.auth = createAuth(memoryAdapter(state.authMemory));
     state.accounts = {
+      getToolkitAuthentication: vi.fn(async (toolkit: string) => {
+        expect(toolkit).toBe('gmail');
+        return {
+          toolkit: 'gmail',
+          enabled: true,
+          managedOAuth2: true,
+          managedScopes: [],
+          managedUserScopes: [],
+          methods: [],
+        };
+      }),
+      getAuthenticationConfiguration: vi.fn(async (id: string) => {
+        expect(id).toBe('ac_gmail');
+        return {
+          id: 'ac_gmail',
+          name: 'Configured Gmail',
+          toolkit: 'gmail',
+          scheme: 'OAUTH2',
+          enabled: true,
+          managed: false,
+        };
+      }),
       completeAuth: async () => {
         state.providerCalls.completeAuth += 1;
         return {
@@ -414,6 +448,14 @@ describe('mounted managed connection isolation', () => {
       })
     );
     expect(authStarted.status).toBe(200);
+    expect(state.accounts.getToolkitAuthentication).toHaveBeenCalledWith(
+      'gmail',
+      expect.any(AbortSignal)
+    );
+    expect(state.accounts.getAuthenticationConfiguration).toHaveBeenCalledWith(
+      'ac_gmail',
+      expect.any(AbortSignal)
+    );
     const authBody = await authStarted.json();
     expect(authBody).toMatchObject({ state: 'pending', toolkit: 'gmail' });
     // Mock only the already-authenticated browser identity; drive the real

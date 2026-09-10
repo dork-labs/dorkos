@@ -7,6 +7,7 @@ import {
   pollForToken,
   requestManagedConnectorExecutionReceipt,
   requestManagedConnectorUsage,
+  requestManagedConnectorCatalog,
   readManagedConnectorAuthorityCommand,
   requestDeviceCode,
   revokeInstanceKey,
@@ -544,5 +545,39 @@ describe('revokeInstanceKey', () => {
     await expect(
       revokeInstanceKey({ baseUrl: BASE, accessToken: 'dork_inst_abc', fetchImpl })
     ).resolves.toBe(false);
+  });
+});
+
+describe('catalog authentication representation', () => {
+  it('opts in on search and page two while accepting an old strict-v1 server response', async () => {
+    const page = {
+      version: 1,
+      toolkits: [{ slug: 'gmail', displayName: 'Gmail', authKind: 'oauth2' }],
+      truncated: false,
+    };
+    const fetchImpl = vi.fn(
+      async (_url: string | URL | Request, _init?: RequestInit) =>
+        new Response(JSON.stringify(page), { status: 200 })
+    );
+    for (const cursor of [undefined, 'page2']) {
+      await expect(
+        requestManagedConnectorCatalog({
+          baseUrl: BASE,
+          accessToken: 'synthetic-instance-token',
+          request: { version: 1, query: 'mail', limit: 25, ...(cursor ? { cursor } : {}) },
+          fetchImpl,
+          signal: new AbortController().signal,
+        })
+      ).resolves.toEqual(page);
+    }
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    for (const [url, init] of fetchImpl.mock.calls) {
+      expect(String(url)).toContain('query=mail');
+      expect(init?.headers).toMatchObject({
+        'x-dorkos-catalog-auth-setup': '1',
+        authorization: 'Bearer synthetic-instance-token',
+      });
+    }
+    expect(String(fetchImpl.mock.calls[1][0])).toContain('cursor=page2');
   });
 });

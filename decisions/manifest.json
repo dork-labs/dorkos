@@ -2,6 +2,21 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260910-001730",
+      "slug": "managed-sign-in-defaults-preserve-owner-bound-completion",
+      "title": "Managed sign-in defaults preserve owner-bound completion",
+      "status": "accepted",
+      "created": "2026-09-10",
+      "extractedFrom": "spec",
+      "specSlug": "composio-managed-auth-defaults",
+      "amends": ["260905-205123"],
+      "supersedes": null,
+      "affects": [
+        "apps/site/src/lib/connectors/managed/authentication-service.ts",
+        "packages/connector-providers/src/composio/managed-account-client.ts"
+      ]
+    },
+    {
       "id": "260908-170643",
       "slug": "rooms-are-an-unattended-surface-and-follow-the-operator-level",
       "title": "A room turn is an unattended surface and follows the operator's power level",

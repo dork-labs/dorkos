@@ -1,5 +1,6 @@
 /** Linked-instance managed account authentication start endpoint. */
 import { ZodError } from 'zod';
+import { resolveManagedAuthenticationConfiguration } from '@/lib/connectors/managed/auth-config-resolver';
 
 import {
   ManagedAuthenticationFlowError,
@@ -26,6 +27,14 @@ export async function POST(request: Request): Promise<Response> {
         materialGeneration: context.materialGeneration,
         executionConfigDigest: context.executionConfigDigest,
         accounts: context.accounts,
+        resolveAuthentication: (toolkit) =>
+          resolveManagedAuthenticationConfiguration({
+            db: context.db,
+            accounts: context.accounts,
+            toolkit,
+            configuredAuthConfigId: context.config.authConfigByToolkit[toolkit],
+            signal: request.signal,
+          }),
         config: context.config,
         rawRequest: await request.json(),
         verifyLiveInstance: context.verifyLiveInstance,

@@ -322,6 +322,17 @@
       ]
     },
     {
+      "guide": "connections-security-verification.md",
+      "description": "Evidence states, security gate matrix, bounded adversarial checks, stop conditions, and same-user trust boundary for Connections",
+      "patterns": [
+        "services/connectors/",
+        "packages/db/src/schema/connectors/connector-execution-state",
+        "DORKOS_MANAGED_CONNECTOR",
+        "packages/connector-providers/",
+        "runtime-principal"
+      ]
+    },
+    {
       "guide": "adding-a-community-adapter.md",
       "description": "Community backend authoring: CommunityAdapter port, capability matrix, the four typed errors + the eager stale-cursor and unknown-room throws, four connection outcomes, agent admission, credential discipline",
       "patterns": [

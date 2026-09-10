@@ -1,16 +1,16 @@
 /**
  * @vitest-environment node
  */
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
-import type { ComposioOperationClient } from '@dorkos/connector-providers/composio';
+import { provisionManagedTestDatabase } from './managed-database-fixture';
+import {
+  createComposioHostedClients,
+  type ComposioOperationClient,
+} from '@dorkos/connector-providers/composio';
+import { resolveManagedAuthenticationConfiguration } from '../auth-config-resolver';
 import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { migrate } from 'drizzle-orm/pglite/migrator';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as siteSchema from '@/db/schema';
@@ -57,8 +57,6 @@ import {
 // the budget moves instead.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
-const MIGRATIONS_DIR = fileURLToPath(new URL('../../../../../drizzle/', import.meta.url));
-const MANAGED_MIGRATION_PREFIXES = ['0011_', '0012_', '0013_', '0015_'];
 const EXECUTION_ATTRIBUTION = {
   surface: 'mcp' as const,
   actorKind: 'agent' as const,
@@ -66,88 +64,13 @@ const EXECUTION_ATTRIBUTION = {
   sessionId: 'session-a',
 };
 
-function isolatedMigrationFolder(): string {
-  const folder = mkdtempSync(join(tmpdir(), 'dorkos-managed-connectors-'));
-  mkdirSync(join(folder, 'meta'));
-  const journal = JSON.parse(
-    readFileSync(join(MIGRATIONS_DIR, 'meta', '_journal.json'), 'utf8')
-  ) as { version: string; dialect: string; entries: Array<Record<string, unknown>> };
-  const selected = MANAGED_MIGRATION_PREFIXES.map((prefix) => {
-    const name = readdirSync(MIGRATIONS_DIR).find(
-      (file) => file.startsWith(prefix) && file.endsWith('.sql')
-    );
-    if (!name) throw new Error('Managed migration missing.');
-    const entry = journal.entries.find((value) => value.tag === name.slice(0, -4));
-    if (!entry) throw new Error('Managed migration journal entry missing.');
-    writeFileSync(join(folder, name), readFileSync(join(MIGRATIONS_DIR, name)));
-    return entry;
-  });
-  writeFileSync(
-    join(folder, 'meta', '_journal.json'),
-    JSON.stringify({
-      version: journal.version,
-      dialect: journal.dialect,
-      entries: selected.map((entry, idx) => ({ ...entry, idx })),
-    })
-  );
-  return folder;
-}
-
-async function provisionBase(client: PGlite): Promise<void> {
-  await client.exec(`
-    CREATE TABLE "user" (
-      "id" text PRIMARY KEY NOT NULL,
-      "name" text NOT NULL,
-      "email" text NOT NULL,
-      "email_verified" boolean DEFAULT false NOT NULL,
-      "created_at" timestamp DEFAULT now() NOT NULL,
-      "updated_at" timestamp DEFAULT now() NOT NULL
-    );
-    CREATE TABLE "instance" (
-      "id" text PRIMARY KEY NOT NULL,
-      "user_id" text NOT NULL REFERENCES "user"("id") ON DELETE cascade,
-      "name" text NOT NULL,
-      "platform" text NOT NULL,
-      "dorkos_version" text NOT NULL,
-      "created_at" timestamp DEFAULT now() NOT NULL,
-      "last_seen_at" timestamp DEFAULT now() NOT NULL,
-      "revoked_at" timestamp
-    );
-    CREATE TABLE "apikey" (
-      "id" text PRIMARY KEY NOT NULL,
-      "reference_id" text NOT NULL,
-      "enabled" boolean DEFAULT true,
-      "expires_at" timestamp,
-      "permissions" text,
-      "metadata" text
-    );
-    INSERT INTO "user" ("id", "name", "email") VALUES
-      ('owner-a', 'Owner A', 'a@dork.test'),
-      ('owner-b', 'Owner B', 'b@dork.test');
-    INSERT INTO "instance" ("id", "user_id", "name", "platform", "dorkos_version") VALUES
-      ('instance-a', 'owner-a', 'A', 'darwin', '1.0.0'),
-      ('instance-c', 'owner-a', 'C', 'darwin', '1.0.0'),
-      ('instance-b', 'owner-b', 'B', 'linux', '1.0.0');
-    INSERT INTO "apikey" ("id", "reference_id", "enabled", "permissions", "metadata") VALUES
-      ('key-a', 'owner-a', true, '{"instance":["link"],"connectors":["authority","execute","usage"]}', '{"instanceId":"instance-a","scope":"instance"}'),
-      ('key-c', 'owner-a', true, '{"instance":["link"],"connectors":["authority","execute","usage"]}', '{"instanceId":"instance-c","scope":"instance"}'),
-      ('key-b', 'owner-b', true, '{"instance":["link"],"connectors":["authority","execute","usage"]}', '{"instanceId":"instance-b","scope":"instance"}');
-  `);
-  const folder = isolatedMigrationFolder();
-  try {
-    await migrate(drizzle(client), { migrationsFolder: folder });
-  } finally {
-    rmSync(folder, { recursive: true, force: true });
-  }
-}
-
 describe('hosted managed authority service', () => {
   let client: PGlite;
   let db: ManagedConnectorDatabase;
 
   beforeEach(async () => {
     client = new PGlite();
-    await provisionBase(client);
+    await provisionManagedTestDatabase(client);
     db = drizzle(client, { schema: siteSchema }) as unknown as ManagedConnectorDatabase;
   });
 
@@ -300,6 +223,72 @@ describe('hosted managed authority service', () => {
     if (page.status !== 'ok') throw new Error('Missing operation page');
     return page.operations[0].hostedRevisionId;
   }
+
+  it('keeps material generation, existing connections and grants when another default toolkit is resolved', async () => {
+    const seeded = await seedExecution();
+    const material = {
+      apiKey: 'synthetic-project',
+      serverUserId: seeded.tenant.providerUserId,
+      authConfigByToolkit: Object.freeze({ gmail: 'ac_gmail' }),
+    };
+    const before = createComposioHostedClients(material);
+    await db
+      .update(siteSchema.managedConnectorProvider)
+      .set({ configurationDigest: before.executionConfigDigest });
+    const connectionsBefore = await db.select().from(siteSchema.managedConnectorConnection);
+    const grantsBefore = await db.select().from(siteSchema.managedConnectorGrant);
+    let createdName = '';
+    await resolveManagedAuthenticationConfiguration({
+      db,
+      toolkit: 'linear',
+      signal: new AbortController().signal,
+      accounts: {
+        authConfigProjectDigest: before.accounts.authConfigProjectDigest,
+        getToolkitAuthentication: async () => ({
+          toolkit: 'linear',
+          enabled: true,
+          managedOAuth2: true,
+          managedScopes: [],
+          managedUserScopes: [],
+          methods: [],
+        }),
+        listAuthenticationConfigurations: async () => ({ items: [] }),
+        createAuthenticationConfiguration: async ({ name }) => {
+          createdName = name;
+          return { id: 'ac_linear_auto' };
+        },
+        getAuthenticationConfiguration: async () => ({
+          id: 'ac_linear_auto',
+          name: createdName,
+          toolkit: 'linear',
+          scheme: 'OAUTH2',
+          managed: true,
+          policy: {
+            type: 'default' as const,
+            scopes: [],
+            userScopes: [],
+            credentialsEmpty: true,
+            routerEnabled: false,
+          },
+          enabled: true,
+        }),
+      },
+    });
+    const after = createComposioHostedClients(material);
+    expect(after.executionConfigDigest).toBe(before.executionConfigDigest);
+    expect(
+      await registerManagedProvider(db, {
+        tenantId: seeded.tenant.id,
+        providerInstanceId: 'managed:composio',
+        configurationDigest: after.executionConfigDigest,
+      })
+    ).toBe(1);
+    expect(await db.select().from(siteSchema.managedConnectorConnection)).toEqual(
+      connectionsBefore
+    );
+    expect(await db.select().from(siteSchema.managedConnectorGrant)).toEqual(grantsBefore);
+    expect(grantsBefore).toHaveLength(1);
+  });
 
   it('rejects a superseded reclassified identity instead of granting its old row', async () => {
     const { principal, revision } = await seedAuthority();
@@ -970,7 +959,19 @@ describe('hosted managed authority service', () => {
     const operations: ComposioOperationClient = {
       listToolkitPage: async (request) => ({
         status: 'ok',
-        toolkits: [{ slug: 'gmail', displayName: 'Gmail', authKind: 'oauth2' }],
+        toolkits: [
+          {
+            slug: 'gmail',
+            displayName: 'Gmail',
+            authKind: 'oauth2',
+            authenticationSetup: {
+              kind: 'oauth',
+              source: 'managed',
+              scheme: 'OAUTH2',
+              requiresAccountFields: false,
+            },
+          },
+        ],
         ...(request.limit === 1 ? { nextCursor: 'next-page' } : {}),
         truncated: request.limit === 1,
       }),
@@ -1024,10 +1025,7 @@ describe('hosted managed authority service', () => {
       toolkits: [
         {
           slug: 'gmail',
-          authentication: {
-            status: 'unsupported',
-            reason: 'Managed account sign-in is not available for this service yet.',
-          },
+          authentication: { status: 'available' },
         },
       ],
     });
@@ -1840,6 +1838,17 @@ describe('hosted managed authority service', () => {
     };
 
     const first = await startManagedAuthentication({
+      resolveAuthentication: async () => ({
+        authConfigId: 'ac_gmail',
+        descriptor: {
+          toolkit: 'gmail',
+          scheme: 'OAUTH2',
+          kind: 'oauth',
+          source: 'configured',
+          fields: [],
+        },
+        descriptorDigest: 'synthetic-metadata-digest',
+      }),
       db,
       principal,
       providerUserId: tenant.providerUserId,
@@ -1853,6 +1862,17 @@ describe('hosted managed authority service', () => {
     });
     expect(first.state).toBe('start_unknown');
     const replay = await startManagedAuthentication({
+      resolveAuthentication: async () => ({
+        authConfigId: 'ac_gmail',
+        descriptor: {
+          toolkit: 'gmail',
+          scheme: 'OAUTH2',
+          kind: 'oauth',
+          source: 'configured',
+          fields: [],
+        },
+        descriptorDigest: 'synthetic-metadata-digest',
+      }),
       db,
       principal,
       providerUserId: tenant.providerUserId,
@@ -1877,6 +1897,17 @@ describe('hosted managed authority service', () => {
       }),
     };
     const started = await startManagedAuthentication({
+      resolveAuthentication: async () => ({
+        authConfigId: 'ac_gmail',
+        descriptor: {
+          toolkit: 'gmail',
+          scheme: 'OAUTH2',
+          kind: 'oauth',
+          source: 'configured',
+          fields: [],
+        },
+        descriptorDigest: 'synthetic-metadata-digest',
+      }),
       db,
       principal,
       providerUserId: tenant.providerUserId,
@@ -1984,6 +2015,17 @@ describe('hosted managed authority service', () => {
   it('recovers an ambiguous callback from the exact account without redeeming it twice', async () => {
     const { tenant, principal } = await seedAuthority();
     const started = await startManagedAuthentication({
+      resolveAuthentication: async () => ({
+        authConfigId: 'ac_gmail',
+        descriptor: {
+          toolkit: 'gmail',
+          scheme: 'OAUTH2',
+          kind: 'oauth',
+          source: 'configured',
+          fields: [],
+        },
+        descriptorDigest: 'synthetic-metadata-digest',
+      }),
       db,
       principal,
       providerUserId: tenant.providerUserId,
@@ -2091,6 +2133,17 @@ describe('hosted managed authority service', () => {
       requestId: string
     ): Promise<{ connectionId: string }> => {
       const started = await startManagedAuthentication({
+        resolveAuthentication: async () => ({
+          authConfigId: 'ac_gmail',
+          descriptor: {
+            toolkit: 'gmail',
+            scheme: 'OAUTH2',
+            kind: 'oauth',
+            source: 'configured',
+            fields: [],
+          },
+          descriptorDigest: 'synthetic-metadata-digest',
+        }),
         db,
         principal: flowPrincipal,
         providerUserId: tenant.providerUserId,
@@ -2147,6 +2200,17 @@ describe('hosted managed authority service', () => {
   it('does not redeem an old flow with newly configured provider material', async () => {
     const { tenant, principal } = await seedAuthority();
     const started = await startManagedAuthentication({
+      resolveAuthentication: async () => ({
+        authConfigId: 'ac_gmail',
+        descriptor: {
+          toolkit: 'gmail',
+          scheme: 'OAUTH2',
+          kind: 'oauth',
+          source: 'configured',
+          fields: [],
+        },
+        descriptorDigest: 'synthetic-metadata-digest',
+      }),
       db,
       principal,
       providerUserId: tenant.providerUserId,

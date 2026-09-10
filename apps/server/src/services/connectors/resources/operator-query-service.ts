@@ -2,6 +2,10 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import {
+  projectConnectorAuthentication,
+  type ConnectorAuthenticationSetup,
+} from '@dorkos/shared/connector-provider';
+import {
   agents,
   and,
   connectionOperationGrants,
@@ -51,7 +55,7 @@ import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 import type { ConnectorRegistry } from '../registry.js';
 import type { RelayAdapterCatalog } from '../routing.js';
 
-const CATALOG_PROVIDER_PAGE_SIZE = 1_000;
+const CATALOG_PROVIDER_PAGE_SIZE = 100;
 const CATALOG_PROVIDER_PAGE_LIMIT = 100;
 const CatalogCursorSchema = z
   .object({ offset: z.number().int().nonnegative(), queryHash: z.string().length(64) })
@@ -169,6 +173,7 @@ export class ConnectorOperatorQueryService {
 
   /** Return a bounded account-free catalog page across every live provider. */
   async catalog(input: {
+    includeAuthenticationSetup?: boolean;
     query?: string;
     cursor?: string;
     limit?: number;
@@ -185,7 +190,10 @@ export class ConnectorOperatorQueryService {
         displayName: string;
         iconKey: string;
         accountRoutes: Array<
-          ConnectorProviderDisclosure & { authKind: 'oauth2' | 'api-key' | 'none' }
+          ConnectorProviderDisclosure & {
+            authKind: 'oauth2' | 'api-key' | 'none';
+            authenticationSetup?: ConnectorAuthenticationSetup;
+          }
         >;
       }
     >();
@@ -227,7 +235,11 @@ export class ConnectorOperatorQueryService {
               });
               return;
             }
-            for (const toolkit of result.toolkits) {
+            for (const rawToolkit of result.toolkits) {
+              const toolkit = projectConnectorAuthentication(
+                rawToolkit,
+                input.includeAuthenticationSetup === true
+              );
               const disclosure = this.providerDisclosure(provider);
               const routeAuthentication =
                 disclosure.capabilities.authentication.status === 'available'
@@ -248,6 +260,9 @@ export class ConnectorOperatorQueryService {
                   },
                 }),
                 authKind: toolkit.authKind,
+                ...(toolkit.authenticationSetup
+                  ? { authenticationSetup: toolkit.authenticationSetup }
+                  : {}),
               });
               services.set(toolkit.slug, current);
             }

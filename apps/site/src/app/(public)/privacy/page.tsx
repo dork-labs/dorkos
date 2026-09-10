@@ -25,7 +25,7 @@ export default function PrivacyPolicyPage() {
       <article className="space-y-8">
         <header className="space-y-2">
           <h1 className="text-charcoal font-mono text-3xl font-bold">Privacy Policy</h1>
-          <p className="text-warm-gray text-lg">Last updated: September 7, 2026</p>
+          <p className="text-warm-gray text-lg">Last updated: September 9, 2026</p>
           <p className="text-warm-gray leading-relaxed">
             DorkOS is made by Blaze Ventures, LLC. When this page says “we,” that is who we mean.
           </p>
@@ -112,6 +112,11 @@ export default function PrivacyPolicyPage() {
             Composio to link your service account and carry out approved actions. Composio holds the
             service account’s login access in its vault. Our servers hold the project key used to
             make those requests. Agents do not receive those credentials.
+          </p>
+          <p className="text-warm-gray leading-relaxed">
+            Some supported services ask for account details such as an API key or password. You
+            enter them on a secure form on dorkos.ai. Our servers pass these details to Composio
+            without saving them. Agents and local DorkOS installations never receive them.
           </p>
           <p className="text-warm-gray leading-relaxed">
             When an agent uses this access, the action’s inputs pass through our servers and

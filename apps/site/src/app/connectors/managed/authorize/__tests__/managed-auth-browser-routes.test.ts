@@ -22,6 +22,9 @@ vi.mock('@/lib/connectors/managed/authentication-service', () => ({
   bindManagedAuthenticationBrowser: mocks.bindBrowser,
   completeManagedAuthentication: mocks.completeAuthentication,
 }));
+vi.mock('@/lib/connectors/managed/authentication-owner-service', () => ({
+  createManagedAuthenticationOwnerService: () => ({ authorize: mocks.bindBrowser }),
+}));
 vi.mock('@/lib/connectors/managed/config', () => ({
   readManagedConnectorConfig: () => ({
     enabled: true,
@@ -44,6 +47,8 @@ describe('managed authentication browser routes', () => {
     vi.clearAllMocks();
     mocks.getSession.mockResolvedValue({ user: { id: 'owner-a' } });
     mocks.bindBrowser.mockResolvedValue({
+      kind: 'oauth',
+      cookieMaxAgeSeconds: 600,
       cookieValue: 'flow-cookie',
       redirectUrl: 'https://provider.test/consent',
     });
@@ -62,13 +67,48 @@ describe('managed authentication browser routes', () => {
       'dorkos_managed_connector_flow=flow-cookie; Path=/api/connectors/managed/callback; HttpOnly; SameSite=Lax; Max-Age=600'
     );
     expect(mocks.bindBrowser).toHaveBeenCalledWith({
-      db: { kind: 'managed-test-db' },
+      signal: expect.any(AbortSignal),
       ownerId: 'owner-a',
       flowId: 'flow-a',
       nonce: 'nonce-a',
     });
   });
 
+  it('uses a separate strict root-path fields cookie capped at remaining lifetime', async () => {
+    mocks.bindBrowser.mockResolvedValue({
+      kind: 'fields',
+      cookieValue: 'fields-cookie',
+      cookieMaxAgeSeconds: 3,
+    });
+    const response = await authorizeBrowser(
+      new Request('https://dorkos.test/connectors/managed/authorize?flow=flow-a&nonce=nonce-a')
+    );
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe('/connectors/managed/fields');
+    expect(response.headers.get('set-cookie')).toContain(
+      'dorkos_managed_account_fields=fields-cookie; Path=/; HttpOnly; SameSite=Strict; Max-Age=3'
+    );
+    expect(response.headers.get('set-cookie')).not.toContain('dorkos_managed_connector_flow');
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+  });
+  it('does not issue an expired cookie or echo a service failure', async () => {
+    mocks.bindBrowser.mockResolvedValueOnce({
+      kind: 'fields',
+      cookieValue: 'expired',
+      cookieMaxAgeSeconds: 0,
+    });
+    const first = await authorizeBrowser(
+      new Request('https://dorkos.test/connectors/managed/authorize?flow=flow-a&nonce=nonce-a')
+    );
+    expect(first.status).toBe(404);
+    expect(first.headers.get('set-cookie')).toBeNull();
+    mocks.bindBrowser.mockRejectedValueOnce(new Error('PRIVATE_ERROR_SENTINEL'));
+    const failed = await authorizeBrowser(
+      new Request('https://dorkos.test/connectors/managed/authorize?flow=flow-a&nonce=nonce-a')
+    );
+    expect(failed.status).toBe(503);
+    expect(await failed.text()).not.toContain('PRIVATE_ERROR_SENTINEL');
+  });
   it('does not bind a provider flow before browser sign-in', async () => {
     mocks.getSession.mockResolvedValueOnce(null);
     const response = await authorizeBrowser(

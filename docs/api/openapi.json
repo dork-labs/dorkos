@@ -19227,6 +19227,43 @@
                                               "api-key",
                                               "none"
                                             ]
+                                          },
+                                          "authenticationSetup": {
+                                            "type": "object",
+                                            "properties": {
+                                              "kind": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "oauth",
+                                                  "fields",
+                                                  "none",
+                                                  "unsupported"
+                                                ]
+                                              },
+                                              "source": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "configured",
+                                                  "managed",
+                                                  "account-fields",
+                                                  "unsupported"
+                                                ]
+                                              },
+                                              "scheme": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 100
+                                              },
+                                              "requiresAccountFields": {
+                                                "type": "boolean"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "source",
+                                              "requiresAccountFields"
+                                            ],
+                                            "additionalProperties": false
                                           }
                                         },
                                         "required": [

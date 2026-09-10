@@ -112,6 +112,30 @@ describe('ServiceGrid', () => {
       expect.objectContaining({ query: 'Slack', limit: 24 })
     );
   });
+
+  it('shows a useful empty result without promising a missing action inside the dialog', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorCatalog).mockResolvedValue({ services: [], warnings: [] });
+    renderWith(transport, <ServiceGrid onConnect={() => undefined} />);
+
+    await user.click(screen.getByRole('button', { name: 'Connect service' }));
+    expect(await screen.findByText('No matching services')).toBeInTheDocument();
+    expect(screen.getByText(/Advanced account setup on the Connections page/)).toBeInTheDocument();
+    expect(screen.queryByText(/add your own account below/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps a catalog error separate from an empty result and offers a retry', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorCatalog).mockRejectedValue(new Error('catalog offline'));
+    renderWith(transport, <ServiceGrid onConnect={() => undefined} />);
+
+    await user.click(screen.getByRole('button', { name: 'Connect service' }));
+    expect(await screen.findByText('Couldn’t load services')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(screen.queryByText('No matching services')).not.toBeInTheDocument();
+  });
 });
 
 describe('AccountsList', () => {

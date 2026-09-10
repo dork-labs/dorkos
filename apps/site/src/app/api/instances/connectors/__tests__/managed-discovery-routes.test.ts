@@ -91,6 +91,27 @@ describe('managed discovery route boundaries', () => {
     );
   });
 
+  it.each([undefined, '0', '1'])(
+    'negotiates catalog setup only for exact supported header %s',
+    async (version) => {
+      const response = await getCatalog(
+        new Request(
+          'https://dorkos.test/api/instances/connectors/catalog?version=1&query=mail&cursor=page2&limit=25',
+          { headers: version ? { 'x-dorkos-catalog-auth-setup': version } : {} }
+        )
+      );
+      expect(response.status).toBe(200);
+      expect(response.headers.get('vary')).toBe('x-dorkos-catalog-auth-setup');
+      expect(response.headers.get('cache-control')).toBe('private, no-store');
+      expect(mocks.listCatalog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          includeAuthenticationSetup: version === '1',
+          rawRequest: { version: 1, query: 'mail', cursor: 'page2', limit: 25 },
+        })
+      );
+    }
+  );
+
   it('rejects duplicate and unknown selectors before any provider or database read', async () => {
     const duplicate = await getCatalog(
       new Request('https://dorkos.test/api/instances/connectors/catalog?version=1&limit=2&limit=3')
