@@ -7,8 +7,10 @@ import { createServer } from 'node:http';
 import { AddressInfo } from 'node:net';
 import { provisionManagedTestDatabase } from './managed-database-fixture';
 import {
+  ComposioAuthenticationSetupError,
   ComposioManagedAccountError,
   createComposioHostedClients,
+  normalizeComposioToolkitAuthentication,
   type ComposioOperationClient,
 } from '@dorkos/connector-providers/composio';
 import { resolveManagedAuthenticationConfiguration } from '../auth-config-resolver';
@@ -2057,6 +2059,115 @@ describe('hosted managed authority service', () => {
     );
     expect(JSON.stringify(warn.mock.calls)).not.toContain(privateMessage);
     expect(JSON.stringify(warn.mock.calls)).not.toContain('auth-safe-diagnostic');
+  });
+
+  it('logs only a closed setup reason before any authentication claim or link dispatch', async () => {
+    const { tenant, principal } = await seedAuthority();
+    const privateKey = 'unsupported_private_shape';
+    const privateValue = 'SECRET_TOOLKIT_BODY_OR_CREDENTIAL';
+    const createLink = vi.fn();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const failures: Array<{
+      reason: ComposioAuthenticationSetupError['reason'];
+      error: () => ComposioAuthenticationSetupError;
+    }> = [
+      {
+        reason: 'unsupported_metadata',
+        error: () => {
+          try {
+            normalizeComposioToolkitAuthentication({
+              slug: 'gmail',
+              enabled: true,
+              auth_config_details: [
+                {
+                  mode: 'OAUTH2',
+                  fields: {
+                    auth_config_creation: { required: [], optional: [] },
+                    connected_account_initiation: {
+                      required: [
+                        {
+                          name: 'api_key',
+                          displayName: 'API key',
+                          description: '',
+                          required: true,
+                          type: 'string',
+                          [privateKey]: privateValue,
+                        },
+                      ],
+                      optional: [],
+                    },
+                  },
+                },
+              ],
+            });
+          } catch (error) {
+            if (error instanceof ComposioAuthenticationSetupError) return error;
+            throw error;
+          }
+          throw new Error('Expected strict authentication metadata refusal.');
+        },
+      },
+      ...(['disabled', 'configured_mismatch', 'unsupported_method'] as const).map((reason) => ({
+        reason,
+        error: () => new ComposioAuthenticationSetupError(reason),
+      })),
+    ];
+
+    for (const { reason, error: setupError } of failures) {
+      const requestId = `auth-setup-${reason}`;
+      const failure = setupError();
+      Object.assign(failure, {
+        cause: new Error(privateValue),
+        providerBody: { [privateKey]: privateValue },
+      });
+      await expect(
+        startManagedAuthentication({
+          resolveAuthentication: async () => {
+            throw failure;
+          },
+          db,
+          principal,
+          providerUserId: tenant.providerUserId,
+          materialGeneration: 1,
+          executionConfigDigest: 'digest-a',
+          accounts: { createLink },
+          config: { ...managedConfig, authConfigByToolkit: {} },
+          rawRequest: { version: 1, toolkit: 'gmail', requestId },
+          verifyLiveInstance: async () => true,
+          signal: new AbortController().signal,
+        })
+      ).rejects.toMatchObject({ code: 'unavailable' });
+
+      expect(warn).toHaveBeenLastCalledWith(
+        '[Managed connectors] Authentication start did not complete',
+        {
+          stage: 'resolve_authentication',
+          category: 'authentication_setup',
+          setupReason: reason,
+          ...(reason === 'unsupported_metadata'
+            ? {
+                setupMetadataIssueCount: 1,
+                setupMetadataIssueLocations: ['connected_account_initiation_required'],
+                setupMetadataMethodKinds: ['oauth2'],
+              }
+            : {}),
+          elapsedMs: expect.any(Number),
+        }
+      );
+    }
+
+    expect(createLink).not.toHaveBeenCalled();
+    expect(
+      await db
+        .select()
+        .from(siteSchema.managedConnectorAuthFlow)
+        .where(eq(siteSchema.managedConnectorAuthFlow.toolkit, 'gmail'))
+    ).toHaveLength(0);
+    const logged = JSON.stringify(warn.mock.calls);
+    expect(logged).not.toContain(privateKey);
+    expect(logged).not.toContain(privateValue);
+    expect(logged).not.toContain('account-field constraints');
+    expect(logged).not.toContain('auth-setup-');
   });
 
   it('requires the same signed-in browser and consumes a callback before provider redemption', async () => {

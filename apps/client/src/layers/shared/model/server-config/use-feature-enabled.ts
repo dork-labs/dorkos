@@ -19,6 +19,14 @@ export interface FeatureEnabledState {
    * flag (DOR-1391).
    */
   isLoading: boolean;
+  /** True when DorkOS could not read the server config. */
+  isError: boolean;
+  /** True while a settled read is being tried again. */
+  isRetrying: boolean;
+  /** A startup failure reported for a subsystem the server tried to start. */
+  initError?: string;
+  /** Ask the server for its current config again. */
+  retry: () => void;
 }
 
 /**
@@ -30,13 +38,21 @@ export interface FeatureEnabledState {
 export function useFeatureEnabledState(subsystem: Subsystem): FeatureEnabledState {
   const transport = useTransport();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: configKeys.current(),
     queryFn: () => transport.getConfig(),
     staleTime: CONFIG_STALE_TIME_MS,
   });
 
-  return { enabled: data?.[subsystem]?.enabled ?? false, isLoading };
+  const initError = data?.[subsystem]?.initError;
+  return {
+    enabled: data?.[subsystem]?.enabled ?? false,
+    isLoading,
+    isError,
+    isRetrying: isFetching && !isLoading,
+    ...(initError && { initError }),
+    retry: () => void refetch(),
+  };
 }
 
 /**

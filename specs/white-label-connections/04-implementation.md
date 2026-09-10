@@ -4,8 +4,8 @@
 **Umbrella:** DOR-1792  
 **Project:** DorkOS Connections  
 **Branch:** programme record on `codex/connections-program`
-**Status:** In progress — workstreams 1–6 are merged; workstream 7 and the separate production proof remain open
-**Updated:** 2026-09-07
+**Status:** In progress — workstreams 1–6 are merged; workstream 7 and the remaining production proof are open
+**Updated:** 2026-09-10
 
 ## Prerequisites and related work
 
@@ -25,21 +25,27 @@
 
 ## Workstream status
 
-| ID  | Workstream                          | Tracker                                                                                                                        | State       | Evidence                                                                             |
-| --- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ----------- | ------------------------------------------------------------------------------------ |
-| 1.1 | Contracts and migration             | [DOR-1793](https://linear.app/dorkspace/issue/DOR-1793/white-label-connections-p1-stable-provider-instance-connection-grant)   | Merged      | See P1 checkpoint below                                                              |
-| 2.1 | Authorization, execution, and usage | [DOR-1794](https://linear.app/dorkspace/issue/DOR-1794/white-label-connections-p2-enforced-connector-execution-across-dorkos)  | Merged      | P2 record below                                                                      |
-| 3.1 | Complete local experience           | [DOR-1795](https://linear.app/dorkspace/issue/DOR-1795/white-label-connections-p3-complete-connections-management-access)      | Merged      | PR #1663                                                                             |
-| 4.1 | Managed tenant service              | [DOR-1796](https://linear.app/dorkspace/issue/DOR-1796/white-label-connections-p4-tenant-scoped-managed-connector-service-in)  | Merged      | PR #1663                                                                             |
-| 5.1 | Managed and BYO events              | [DOR-1797](https://linear.app/dorkspace/issue/DOR-1797/white-label-connections-p5-signed-managed-and-byo-event-ingress-with)   | Merged      | PR #1681                                                                             |
-| 6.1 | Agent request, grant, and resume    | [DOR-740](https://linear.app/dorkspace/issue/DOR-740/white-label-connections-p6-respec-dor-740-for-private-agent-requests)     | Merged      | PR #1681                                                                             |
-| 7.1 | Rollout and production evidence     | [DOR-1798](https://linear.app/dorkspace/issue/DOR-1798/white-label-connections-p7-remove-legacy-paths-verify-all-surfaces-and) | In progress | Alias/raw/docs cleanup; production action and notification proof remains unavailable |
+| ID  | Workstream                          | Tracker                                                                                                                        | State       | Evidence                                                                                          |
+| --- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ----------- | ------------------------------------------------------------------------------------------------- |
+| 1.1 | Contracts and migration             | [DOR-1793](https://linear.app/dorkspace/issue/DOR-1793/white-label-connections-p1-stable-provider-instance-connection-grant)   | Merged      | See P1 checkpoint below                                                                           |
+| 2.1 | Authorization, execution, and usage | [DOR-1794](https://linear.app/dorkspace/issue/DOR-1794/white-label-connections-p2-enforced-connector-execution-across-dorkos)  | Merged      | P2 record below                                                                                   |
+| 3.1 | Complete local experience           | [DOR-1795](https://linear.app/dorkspace/issue/DOR-1795/white-label-connections-p3-complete-connections-management-access)      | Merged      | PR #1663                                                                                          |
+| 4.1 | Managed tenant service              | [DOR-1796](https://linear.app/dorkspace/issue/DOR-1796/white-label-connections-p4-tenant-scoped-managed-connector-service-in)  | Merged      | PR #1663                                                                                          |
+| 5.1 | Managed and BYO events              | [DOR-1797](https://linear.app/dorkspace/issue/DOR-1797/white-label-connections-p5-signed-managed-and-byo-event-ingress-with)   | Merged      | PR #1681                                                                                          |
+| 6.1 | Agent request, grant, and resume    | [DOR-740](https://linear.app/dorkspace/issue/DOR-740/white-label-connections-p6-respec-dor-740-for-private-agent-requests)     | Merged      | PR #1681                                                                                          |
+| 7.1 | Rollout and production evidence     | [DOR-1798](https://linear.app/dorkspace/issue/DOR-1798/white-label-connections-p7-remove-legacy-paths-verify-all-surfaces-and) | In progress | Managed defaults are deployed; account, action, notification, usage, and revoke proof remain open |
 
-Managed source and migrations are deployed, and the required secrets are provisioned. Both
-production readiness switches remain off. The Gmail OAuth app is still in Google Testing mode and
-the owner sign-in popup could not be completed, so there is no real connected-account, action,
-notification, usage, or revoke proof. Hermetic provider and browser fixtures do not satisfy that
-external gate.
+As of 2026-09-10, managed sign-in defaults from
+[PR #1759](https://github.com/dork-labs/dorkos/pull/1759) and migration 0016 are deployed. A bounded
+production catalog check verified Gmail's managed default after removing the temporary Gmail
+auth-config override, then restored the common readiness switch to off. The earlier Google Testing
+and popup note described the custom read-only fixture and is no longer a blocker for the managed
+default. An owner sign-in has not yet reached provider consent, so there is still no real
+connected-account, action, notification, usage, or revoke proof.
+[PR #1764](https://github.com/dork-labs/dorkos/pull/1764) merged as
+[`ec3b46952`](https://github.com/dork-labs/dorkos/commit/ec3b46952fb9e81805c713cac91a2319533756ed)
+to bound the sign-in waits and preserve safe failure details for the next attempt. Hermetic provider
+and browser fixtures do not satisfy that external gate. Refs DOR-1798.
 
 The specification incorporated both independent review rounds before implementation dispatch; PR #1599 merged the reviewed artifacts on 2026-09-05.
 

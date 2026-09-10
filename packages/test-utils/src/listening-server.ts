@@ -46,7 +46,11 @@ export function listeningServer(handler: RequestListener): Server {
   const server = createServer(handler);
 
   beforeAll(async () => {
-    server.listen(0);
+    // Supertest always connects to 127.0.0.1, even when the supplied server is
+    // listening on an unspecified address. macOS can assign the same ephemeral
+    // port to an IPv6-unspecified listener and a separate IPv4 listener, which
+    // lets an aggregate test reach the wrong app. Bind the address it dials.
+    server.listen(0, '127.0.0.1');
     await once(server, 'listening');
   });
 

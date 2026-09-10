@@ -37,10 +37,43 @@ export interface ComposioAuthenticationConfiguration {
   policy?: ComposioAuthenticationConfigPolicy;
 }
 
+const metadataIssueLocations = [
+  'auth_config_creation_required',
+  'auth_config_creation_optional',
+  'connected_account_initiation_required',
+  'connected_account_initiation_optional',
+] as const;
+type MetadataIssueLocation = (typeof metadataIssueLocations)[number];
+const metadataMethodKinds = ['oauth2', 'supported_account_fields', 'other'] as const;
+type MetadataMethodKind = (typeof metadataMethodKinds)[number];
+
+function isMetadataIssueLocation(value: string): value is MetadataIssueLocation {
+  return (metadataIssueLocations as readonly string[]).includes(value);
+}
+
+function isMetadataMethodKind(value: string): value is MetadataMethodKind {
+  return (metadataMethodKinds as readonly string[]).includes(value);
+}
+
 /** Closed capability refusal with no provider response or credential values. */
 export class ComposioAuthenticationSetupError extends Error {
+  /** Stable server-only reason safe for structured diagnostics. */
+  readonly reason:
+    'disabled' | 'configured_mismatch' | 'unsupported_method' | 'unsupported_metadata';
+  /** Count of strict metadata issue objects, never provider keys or values. */
+  readonly metadataIssueCount?: number;
+  /** Fixed schema regions containing strict metadata issues. */
+  readonly metadataIssueLocations?: readonly MetadataIssueLocation[];
+  /** Closed authentication-method classes containing strict metadata issues. */
+  readonly metadataMethodKinds?: readonly MetadataMethodKind[];
+
   constructor(
-    reason: 'disabled' | 'configured_mismatch' | 'unsupported_method' | 'unsupported_metadata'
+    reason: ComposioAuthenticationSetupError['reason'],
+    metadata?: {
+      issueCount: number;
+      issueLocations: readonly string[];
+      methodKinds: readonly string[];
+    }
   ) {
     super(
       reason === 'unsupported_metadata'
@@ -52,6 +85,21 @@ export class ComposioAuthenticationSetupError extends Error {
             : 'This service needs advanced account setup or uses account fields DorkOS does not support yet.'
     );
     this.name = 'ComposioAuthenticationSetupError';
+    this.reason = reason;
+    if (
+      reason === 'unsupported_metadata' &&
+      metadata &&
+      Number.isSafeInteger(metadata.issueCount) &&
+      metadata.issueCount > 0
+    ) {
+      this.metadataIssueCount = metadata.issueCount;
+      this.metadataIssueLocations = Object.freeze(
+        [...new Set(metadata.issueLocations.filter(isMetadataIssueLocation))].sort()
+      );
+      this.metadataMethodKinds = Object.freeze(
+        [...new Set(metadata.methodKinds.filter(isMetadataMethodKind))].sort()
+      );
+    }
   }
 }
 
@@ -104,14 +152,57 @@ function invalid(): never {
   throw new Error('Composio returned invalid authentication metadata.');
 }
 
+function strictMetadataIssueLocation(path: PropertyKey[]): MetadataIssueLocation | undefined {
+  if (
+    path.length !== 6 ||
+    path[0] !== 'auth_config_details' ||
+    typeof path[1] !== 'number' ||
+    path[2] !== 'fields' ||
+    !['auth_config_creation', 'connected_account_initiation'].includes(String(path[3])) ||
+    !['required', 'optional'].includes(String(path[4])) ||
+    typeof path[5] !== 'number'
+  ) {
+    return undefined;
+  }
+  const location = `${String(path[3])}_${String(path[4])}`;
+  return isMetadataIssueLocation(location) ? location : undefined;
+}
+
+function strictMetadataMethodKind(raw: unknown, path: PropertyKey[]): MetadataMethodKind {
+  if (
+    path[0] !== 'auth_config_details' ||
+    typeof path[1] !== 'number' ||
+    !raw ||
+    typeof raw !== 'object'
+  ) {
+    return 'other';
+  }
+  const details = (raw as Record<string, unknown>).auth_config_details;
+  const method = Array.isArray(details) ? details[path[1]] : undefined;
+  const mode =
+    method && typeof method === 'object' ? (method as Record<string, unknown>).mode : undefined;
+  if (mode === 'OAUTH2') return 'oauth2';
+  if (['API_KEY', 'BEARER_TOKEN', 'BASIC', 'NO_AUTH'].includes(String(mode)))
+    return 'supported_account_fields';
+  return 'other';
+}
+
 /** Normalize only declared fields; unsupported types stay unavailable rather than becoming OAuth. */
 export function normalizeComposioToolkitAuthentication(
   raw: unknown
 ): ComposioToolkitAuthentication {
   const parsed = metadata.safeParse(raw);
   if (!parsed.success) {
-    if (parsed.error.issues.some((issue) => issue.code === 'unrecognized_keys'))
-      throw new ComposioAuthenticationSetupError('unsupported_metadata');
+    const strictIssues = parsed.error.issues.filter((issue) => issue.code === 'unrecognized_keys');
+    if (strictIssues.length > 0)
+      throw new ComposioAuthenticationSetupError('unsupported_metadata', {
+        issueCount: strictIssues.length,
+        issueLocations: strictIssues.flatMap((issue) => {
+          const location = strictMetadataIssueLocation(issue.path);
+          return location ? [location] : [];
+        }),
+        methodKinds: strictIssues.map((issue) => strictMetadataMethodKind(raw, issue.path)),
+      });
     return invalid();
   }
   const value = parsed.data;

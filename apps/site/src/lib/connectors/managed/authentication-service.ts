@@ -80,7 +80,17 @@ function logAuthenticationStartFailure(input: {
           status: input.error.status,
         }
       : input.error instanceof ComposioAuthenticationSetupError
-        ? { category: 'authentication_setup' }
+        ? {
+            category: 'authentication_setup',
+            setupReason: input.error.reason,
+            ...(input.error.metadataIssueCount === undefined
+              ? {}
+              : {
+                  setupMetadataIssueCount: input.error.metadataIssueCount,
+                  setupMetadataIssueLocations: input.error.metadataIssueLocations,
+                  setupMetadataMethodKinds: input.error.metadataMethodKinds,
+                }),
+          }
         : input.signal.aborted
           ? { category: 'deadline_exceeded' }
           : { category: 'unknown' };

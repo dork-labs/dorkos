@@ -94,8 +94,12 @@ import { codeOnly, lexWithoutComments } from '../../../../../../../../scripts/li
 vi.mock('../../../../core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(undefined), getAll: vi.fn().mockReturnValue({}) },
 }));
-vi.mock('../../../relay/relay-state.js', () => ({ isRelayEnabled: vi.fn().mockReturnValue(true) }));
-vi.mock('../../../tasks/task-state.js', () => ({ isTasksEnabled: vi.fn().mockReturnValue(true) }));
+vi.mock('../../../../relay/relay-state.js', () => ({
+  isRelayEnabled: vi.fn().mockReturnValue(true),
+}));
+vi.mock('../../../../tasks/task-state.js', () => ({
+  isTasksEnabled: vi.fn().mockReturnValue(true),
+}));
 vi.mock('@dorkos/shared/manifest', () => ({
   readManifest: vi.fn().mockResolvedValue({
     id: 'dor-1292',

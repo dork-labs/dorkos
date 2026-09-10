@@ -4,9 +4,11 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
   FeatureDisabledState,
+  QueryErrorState,
+  Skeleton,
 } from '@/layers/shared/ui';
 import { TOUR_ANCHORS } from '@/layers/shared/config';
-import { useRelayEnabled, useRelayEventStream } from '@/layers/entities/relay';
+import { useRelayEnabledState, useRelayEventStream } from '@/layers/entities/relay';
 import { MessagingConnections, ActivityFeed, RelayHealthBar } from '@/layers/features/relay';
 import { ClaimFeed, MessagePolicyCard } from '@/layers/features/connections';
 
@@ -19,8 +21,8 @@ import { ClaimFeed, MessagePolicyCard } from '@/layers/features/connections';
  * of this page that is waiting on a decision.
  */
 export function MessagingRegion() {
-  const enabled = useRelayEnabled();
-  useRelayEventStream(enabled);
+  const relay = useRelayEnabledState();
+  useRelayEventStream(relay.enabled);
 
   return (
     <section
@@ -37,11 +39,30 @@ export function MessagingRegion() {
         </p>
       </header>
 
-      {enabled ? (
+      {relay.isLoading ? (
+        <div className="space-y-3" aria-label="Loading Messaging">
+          <Skeleton className="h-24 w-full rounded-xl" />
+          <Skeleton className="h-24 w-full rounded-xl" />
+        </div>
+      ) : relay.isError ? (
+        <QueryErrorState
+          title="Couldn’t check Messaging"
+          description="Check that DorkOS is running, then try again."
+          onRetry={relay.retry}
+          isRetrying={relay.isRetrying}
+        />
+      ) : relay.initError ? (
+        <QueryErrorState
+          title="Messaging didn’t start"
+          description="Restart DorkOS, then try again."
+          onRetry={relay.retry}
+          isRetrying={relay.isRetrying}
+        />
+      ) : relay.enabled ? (
         <>
-          <ClaimFeed enabled={enabled} />
-          <RelayHealthBar enabled={enabled} />
-          <MessagingConnections enabled={enabled} />
+          <ClaimFeed enabled={relay.enabled} />
+          <RelayHealthBar enabled={relay.enabled} />
+          <MessagingConnections enabled={relay.enabled} />
           <MessagePolicyCard />
 
           {/* Deep enough to be worth keeping, quiet enough not to lead. */}
@@ -50,7 +71,7 @@ export function MessagingRegion() {
               Message history
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-3">
-              <ActivityFeed enabled={enabled} />
+              <ActivityFeed enabled={relay.enabled} />
             </CollapsibleContent>
           </Collapsible>
         </>

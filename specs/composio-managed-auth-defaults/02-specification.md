@@ -7,7 +7,7 @@ status: implemented
 
 # Make Composio services ready to connect with managed sign-in defaults
 
-**Status:** Implemented; final composition verification pending
+**Status:** Implemented and merged in PR #1759; separate DOR-1905 live proof remains open
 **Issue:** DOR-1958, parent DOR-1792
 **Source base:** 57171c402690bc82b3166ae057e75d6c599ed3d8
 
@@ -121,7 +121,7 @@ Amend white-label-connections §hosted configuration/availability to make the ma
 
 ## Open Questions
 
-All product policy choices are resolved. The common wire/compatibility contract and separate implementation tracks have independent checkpoints; final composition, normal verification and publication remain gates. Live deployment and provider consent remain separate operational work under DOR-1905. SDK wire mappings are proven against the pinned transport and are not guessed from display names.
+All product policy choices are resolved. As of 2026-09-10, final composition, normal verification, publication, migration 0016, and managed-default deployment have passed through [PR #1759](https://github.com/dork-labs/dorkos/pull/1759). Live provider consent and the remaining account, action, usage, revoke, and notification proof stay separate under DOR-1905. SDK wire mappings are proven against the pinned transport and are not guessed from display names. Refs DOR-1798.
 
 ## Related ADRs
 

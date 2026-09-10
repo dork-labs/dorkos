@@ -13,6 +13,8 @@ import { watchSessionLifecycle } from '../emitters/session-lifecycle.js';
 import { NotifyBudget } from '../../relay/notify-budget.js';
 import { createRelayNotifyUserHandler } from '../../runtimes/claude-code/mcp-tools/relay-notify-tools.js';
 
+vi.mock('../../relay/relay-state.js', () => ({ isRelayEnabled: vi.fn(() => true) }));
+
 /** One captured SSE broadcast. */
 type Broadcast = [string, unknown];
 
