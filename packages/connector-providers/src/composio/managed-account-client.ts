@@ -23,6 +23,7 @@ import {
 
 /** Composio's production API origin. Tests may supply a loopback origin. */
 const DEFAULT_COMPOSIO_BASE_URL = 'https://backend.composio.dev';
+const COMPOSIO_LINK_CREATE_TIMEOUT_MS = 15_000;
 
 /** Input for the hosted Composio management client. */
 export interface ComposioManagedAccountClientOpts {
@@ -207,11 +208,21 @@ export class ComposioManagedAccountClient {
   ): Promise<ComposioToolkitAuthentication> {
     signal.throwIfAborted();
     try {
-      const result = normalizeComposioToolkitAuthentication(
-        await this._client.toolkits.retrieve(toolkit, {}, { signal, timeout: 15_000 })
+      const response = await this._client.toolkits.retrieve(
+        toolkit,
+        {},
+        { signal, timeout: 15_000 }
       );
-      if (result.toolkit !== toolkit) throw new Error('Toolkit mismatch.');
-      return result;
+      try {
+        const result = normalizeComposioToolkitAuthentication(response);
+        if (result.toolkit !== toolkit) throw new Error('Toolkit mismatch.');
+        return result;
+      } catch {
+        throw new ComposioManagedAccountError(
+          'invalid_provider_response',
+          'Composio returned invalid account metadata.'
+        );
+      }
     } catch (error) {
       return rethrowSafe(error, signal, this._apiError);
     }
@@ -224,11 +235,20 @@ export class ComposioManagedAccountClient {
   ): Promise<ComposioAuthenticationConfiguration> {
     signal.throwIfAborted();
     try {
-      const result = normalizeComposioAuthenticationConfiguration(
-        await this._client.authConfigs.retrieve(id, { signal, timeout: 15_000 })
-      );
-      if (result.id !== id) throw new Error('Configuration mismatch.');
-      return result;
+      const response = await this._client.authConfigs.retrieve(id, {
+        signal,
+        timeout: 15_000,
+      });
+      try {
+        const result = normalizeComposioAuthenticationConfiguration(response);
+        if (result.id !== id) throw new Error('Configuration mismatch.');
+        return result;
+      } catch {
+        throw new ComposioManagedAccountError(
+          'invalid_provider_response',
+          'Composio returned invalid account metadata.'
+        );
+      }
     } catch (error) {
       return rethrowSafe(error, signal, this._apiError);
     }
@@ -253,19 +273,26 @@ export class ComposioManagedAccountClient {
         },
         { signal: input.signal, timeout: 15_000 }
       );
-      if (!Array.isArray(page.items) || page.items.length > 50)
-        throw new Error('Invalid configuration page.');
-      const cursor = page.next_cursor;
-      if (
-        cursor !== undefined &&
-        cursor !== null &&
-        (typeof cursor !== 'string' || cursor.length > 4096)
-      )
-        throw new Error('Invalid configuration cursor.');
-      return {
-        items: page.items.map(normalizeComposioAuthenticationConfiguration),
-        ...(cursor ? { nextCursor: cursor } : {}),
-      };
+      try {
+        if (!Array.isArray(page.items) || page.items.length > 50)
+          throw new Error('Invalid configuration page.');
+        const cursor = page.next_cursor;
+        if (
+          cursor !== undefined &&
+          cursor !== null &&
+          (typeof cursor !== 'string' || cursor.length > 4096)
+        )
+          throw new Error('Invalid configuration cursor.');
+        return {
+          items: page.items.map(normalizeComposioAuthenticationConfiguration),
+          ...(cursor ? { nextCursor: cursor } : {}),
+        };
+      } catch {
+        throw new ComposioManagedAccountError(
+          'invalid_provider_response',
+          'Composio returned invalid account metadata.'
+        );
+      }
     } catch (error) {
       return rethrowSafe(error, input.signal, this._apiError);
     }
@@ -324,13 +351,26 @@ export class ComposioManagedAccountClient {
     try {
       const response = await this._client.link.create(
         { user_id: input.providerUserId, auth_config_id: input.authConfigId },
-        { signal: input.signal }
+        { signal: input.signal, timeout: COMPOSIO_LINK_CREATE_TIMEOUT_MS }
       );
       return {
         connectedAccountId: providerString(response.connected_account_id),
         redirectUrl: providerUrl(response.redirect_url),
       };
     } catch (error) {
+      const status = providerHttpStatus(error, this._apiError);
+      if (
+        input.signal.aborted ||
+        error instanceof ComposioRequestCancelledError ||
+        status === undefined ||
+        status >= 500
+      ) {
+        throw new ComposioManagedAccountError(
+          'outcome_unknown',
+          'Account sign-in could not be confirmed.',
+          status
+        );
+      }
       rethrowSafe(error, input.signal, this._apiError);
     }
   }

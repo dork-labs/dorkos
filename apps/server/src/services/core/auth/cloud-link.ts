@@ -527,19 +527,29 @@ export class CloudLinkManager {
   }
 
   /** Start one idempotent managed provider-authentication flow. */
-  startManagedConnectorAuthentication(
+  async startManagedConnectorAuthentication(
     request: ManagedConnectorAuthenticationCreateRequest,
     signal: AbortSignal
   ): Promise<ManagedConnectorAuthenticationState> {
-    return this.withManagedConnectorToken((accessToken) =>
-      requestManagedConnectorAuthentication({
-        baseUrl: resolveCloudBaseUrl(),
-        accessToken,
-        request,
-        fetchImpl: this.fetchImpl,
-        signal,
-      })
-    );
+    try {
+      return await this.withManagedConnectorToken((accessToken) =>
+        requestManagedConnectorAuthentication({
+          baseUrl: resolveCloudBaseUrl(),
+          accessToken,
+          request,
+          fetchImpl: this.fetchImpl,
+          signal,
+        })
+      );
+    } catch (error) {
+      if (error instanceof ManagedConnectorCloudError) {
+        logger.warn('[CloudLink] Managed authentication start did not complete', {
+          code: error.code,
+          status: error.status,
+        });
+      }
+      throw error;
+    }
   }
 
   /** Read one exact managed provider-authentication flow. */

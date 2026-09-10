@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   ComposioManagedAccountClient,
@@ -38,8 +38,12 @@ async function fixture(
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as AddressInfo;
   openFixtures.push({
-    close: () =>
-      new Promise<void>((resolve, reject) => server.close((e) => (e ? reject(e) : resolve()))),
+    close: () => {
+      server.closeAllConnections();
+      return new Promise<void>((resolve, reject) =>
+        server.close((e) => (e ? reject(e) : resolve()))
+      );
+    },
   });
   return { baseUrl: `http://127.0.0.1:${port}`, requests };
 }
@@ -71,6 +75,32 @@ afterEach(async () => {
 });
 
 describe('ComposioManagedAccountClient', () => {
+  it('bounds account-link creation at the SDK boundary', async () => {
+    const client = new ComposioManagedAccountClient({ apiKey: 'project-key' });
+    const create = vi.fn(async () => ({
+      connected_account_id: 'ca_private_1',
+      redirect_url: 'https://accounts.example.test/authorize',
+    }));
+    const sdk = (
+      client as unknown as {
+        _client: { link: { create: typeof create } };
+      }
+    )._client;
+    sdk.link.create = create;
+    const signal = new AbortController().signal;
+
+    await client.createLink({
+      providerUserId: 'tenant:owner-1',
+      authConfigId: 'ac_github',
+      signal,
+    });
+
+    expect(create).toHaveBeenCalledWith(
+      { user_id: 'tenant:owner-1', auth_config_id: 'ac_github' },
+      { signal, timeout: 15_000 }
+    );
+  });
+
   it('creates one exact provider-user/auth-config link without preliminary account lookup', async () => {
     const local = await fixture((request, response) => {
       expect(request.path).toBe('/api/v3.1/connected_accounts/link');
@@ -99,6 +129,26 @@ describe('ComposioManagedAccountClient', () => {
       user_id: 'tenant:owner-1',
       auth_config_id: 'ac_github',
     });
+  });
+
+  it('marks caller cancellation after the link POST dispatch as outcome unknown', async () => {
+    const controller = new AbortController();
+    const local = await fixture((_request, _response) => {
+      controller.abort(new DOMException('The operation was aborted.', 'AbortError'));
+    });
+    const client = new ComposioManagedAccountClient({
+      apiKey: 'project-key',
+      baseUrl: local.baseUrl,
+    });
+
+    await expect(
+      client.createLink({
+        providerUserId: 'tenant:owner-1',
+        authConfigId: 'ac_github',
+        signal: controller.signal,
+      })
+    ).rejects.toMatchObject({ code: 'outcome_unknown' });
+    expect(local.requests).toHaveLength(1);
   });
 
   it('normalizes only exact private account facts', async () => {
@@ -352,6 +402,24 @@ describe('hosted authentication wire contracts', () => {
 });
 
 describe('authentication configuration SDK wire', () => {
+  it('classifies malformed toolkit metadata without exposing provider values', async () => {
+    const privateValue = 'PRIVATE_TOOLKIT_RESPONSE';
+    const local = await fixture((_request, response) =>
+      json(response, 200, { slug: privateValue, auth_config_details: 'invalid' })
+    );
+    const client = new ComposioManagedAccountClient({
+      apiKey: 'synthetic-project',
+      baseUrl: local.baseUrl,
+    });
+
+    const error = await client
+      .getToolkitAuthentication('gmail', new AbortController().signal)
+      .catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: 'invalid_provider_response', status: undefined });
+    expect(String(error)).not.toContain(privateValue);
+    expect(local.requests).toHaveLength(1);
+  });
+
   it('reads exact declared metadata and creates the managed default without developer credentials', async () => {
     const local = await fixture((request, response) => {
       if (request.path === '/api/v3.1/toolkits/gmail')

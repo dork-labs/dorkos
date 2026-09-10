@@ -3,8 +3,11 @@
  */
 
 import { PGlite } from '@electric-sql/pglite';
+import { createServer } from 'node:http';
+import { AddressInfo } from 'node:net';
 import { provisionManagedTestDatabase } from './managed-database-fixture';
 import {
+  ComposioManagedAccountError,
   createComposioHostedClients,
   type ComposioOperationClient,
 } from '@dorkos/connector-providers/composio';
@@ -1886,6 +1889,174 @@ describe('hosted managed authority service', () => {
     });
     expect(replay).toEqual(first);
     expect(creates).toBe(1);
+  });
+
+  it('keeps a caller abort after the actual provider link POST as an unknown start', async () => {
+    const { tenant, principal } = await seedAuthority();
+    const controller = new AbortController();
+    let requests = 0;
+    const server = createServer(async (request) => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of request) chunks.push(Buffer.from(chunk));
+      expect(request.method).toBe('POST');
+      expect(request.url).toBe('/api/v3.1/connected_accounts/link');
+      expect(JSON.parse(Buffer.concat(chunks).toString('utf8'))).toEqual({
+        user_id: tenant.providerUserId,
+        auth_config_id: 'ac_gmail',
+      });
+      requests += 1;
+      controller.abort(new DOMException('The operation was aborted.', 'AbortError'));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address() as AddressInfo;
+    const accounts = createComposioHostedClients({
+      apiKey: 'synthetic-project',
+      serverUserId: tenant.providerUserId,
+      authConfigByToolkit: { gmail: 'ac_gmail' },
+      baseUrl: `http://127.0.0.1:${address.port}`,
+    }).accounts;
+
+    try {
+      const started = await startManagedAuthentication({
+        resolveAuthentication: async () => ({
+          authConfigId: 'ac_gmail',
+          descriptor: {
+            toolkit: 'gmail',
+            scheme: 'OAUTH2',
+            kind: 'oauth',
+            source: 'configured',
+            fields: [],
+          },
+          descriptorDigest: 'synthetic-metadata-digest',
+        }),
+        db,
+        principal,
+        providerUserId: tenant.providerUserId,
+        materialGeneration: 1,
+        executionConfigDigest: 'digest-a',
+        accounts,
+        config: managedConfig,
+        rawRequest: {
+          version: 1,
+          toolkit: 'gmail',
+          requestId: 'auth-post-dispatch-abort',
+        },
+        verifyLiveInstance: async () => true,
+        signal: controller.signal,
+      });
+
+      expect(started.state).toBe('start_unknown');
+      expect(requests).toBe(1);
+      expect(
+        await db
+          .select({ state: siteSchema.managedConnectorAuthFlow.state })
+          .from(siteSchema.managedConnectorAuthFlow)
+          .where(eq(siteSchema.managedConnectorAuthFlow.idempotencyKey, 'auth-post-dispatch-abort'))
+      ).toEqual([{ state: 'start_unknown' }]);
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve()))
+      );
+    }
+  });
+
+  it('bounds the whole hosted start and never dispatches after slow resolution exhausts it', async () => {
+    const { tenant, principal } = await seedAuthority();
+    const createLink = vi.fn();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    let resolutionSignal: AbortSignal | undefined;
+    await expect(
+      startManagedAuthentication({
+        resolveAuthentication: async (_toolkit, signal) => {
+          resolutionSignal = signal;
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          return {
+            authConfigId: 'ac_gmail',
+            descriptor: {
+              toolkit: 'gmail',
+              scheme: 'OAUTH2',
+              kind: 'oauth',
+              source: 'configured',
+              fields: [],
+            },
+            descriptorDigest: 'synthetic-metadata-digest',
+          };
+        },
+        db,
+        principal,
+        providerUserId: tenant.providerUserId,
+        materialGeneration: 1,
+        executionConfigDigest: 'digest-a',
+        accounts: { createLink },
+        config: managedConfig,
+        rawRequest: {
+          version: 1,
+          toolkit: 'gmail',
+          requestId: 'auth-whole-deadline',
+        },
+        verifyLiveInstance: async () => true,
+        signal: new AbortController().signal,
+        startTimeoutMs: 20,
+      })
+    ).rejects.toMatchObject({ code: 'unavailable' });
+    expect(resolutionSignal?.aborted).toBe(true);
+    expect(createLink).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(
+      '[Managed connectors] Authentication start did not complete',
+      expect.objectContaining({
+        stage: 'resolve_authentication',
+        category: 'deadline_exceeded',
+        elapsedMs: expect.any(Number),
+      })
+    );
+    expect(
+      await db
+        .select()
+        .from(siteSchema.managedConnectorAuthFlow)
+        .where(eq(siteSchema.managedConnectorAuthFlow.idempotencyKey, 'auth-whole-deadline'))
+    ).toHaveLength(0);
+  });
+
+  it('logs only the closed provider code and status when authentication resolution fails', async () => {
+    const { tenant, principal } = await seedAuthority();
+    const privateMessage = 'SECRET_PROVIDER_BODY_OR_CREDENTIAL';
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(
+      startManagedAuthentication({
+        resolveAuthentication: async () => {
+          throw new ComposioManagedAccountError('provider_rejected', privateMessage, 503);
+        },
+        db,
+        principal,
+        providerUserId: tenant.providerUserId,
+        materialGeneration: 1,
+        executionConfigDigest: 'digest-a',
+        accounts: { createLink: vi.fn() },
+        config: managedConfig,
+        rawRequest: {
+          version: 1,
+          toolkit: 'gmail',
+          requestId: 'auth-safe-diagnostic',
+        },
+        verifyLiveInstance: async () => true,
+        signal: new AbortController().signal,
+      })
+    ).rejects.toMatchObject({ code: 'unavailable' });
+
+    expect(warn).toHaveBeenCalledWith(
+      '[Managed connectors] Authentication start did not complete',
+      expect.objectContaining({
+        stage: 'resolve_authentication',
+        category: 'provider_request',
+        code: 'provider_rejected',
+        status: 503,
+        elapsedMs: expect.any(Number),
+      })
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(privateMessage);
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('auth-safe-diagnostic');
   });
 
   it('requires the same signed-in browser and consumes a callback before provider redemption', async () => {

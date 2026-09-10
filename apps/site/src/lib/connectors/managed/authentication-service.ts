@@ -29,6 +29,8 @@ import { managedAccountFromRow } from './discovery-service';
 import type { ManagedResolvedAuthentication } from './auth-config-resolver';
 
 const FLOW_LIFETIME_MS = 10 * 60 * 1_000;
+/** Allows the 30s resolver cap followed by at most 15s of account-link I/O. */
+export const MANAGED_AUTHENTICATION_START_TIMEOUT_MS = 45_000;
 /** Single browser cookie intentionally allows one active callback flow at a time. */
 export const MANAGED_CONNECTOR_FLOW_COOKIE = 'dorkos_managed_connector_flow';
 
@@ -62,6 +64,31 @@ function safeEqualHash(value: string, expectedHash: string): boolean {
 
 function browserNonce(projectApiKey: string, flowId: string): string {
   return createHmac('sha256', projectApiKey).update(`managed-flow:${flowId}`).digest('base64url');
+}
+
+function logAuthenticationStartFailure(input: {
+  stage: 'resolve_authentication';
+  error: unknown;
+  startedAt: number;
+  signal: AbortSignal;
+}): void {
+  const diagnostic =
+    input.error instanceof ComposioManagedAccountError
+      ? {
+          category: 'provider_request',
+          code: input.error.code,
+          status: input.error.status,
+        }
+      : input.error instanceof ComposioAuthenticationSetupError
+        ? { category: 'authentication_setup' }
+        : input.signal.aborted
+          ? { category: 'deadline_exceeded' }
+          : { category: 'unknown' };
+  console.warn('[Managed connectors] Authentication start did not complete', {
+    stage: input.stage,
+    ...diagnostic,
+    elapsedMs: Math.max(0, Date.now() - input.startedAt),
+  });
 }
 
 /** Persist only an exact verified account while rechecking live instance and provider authority. */
@@ -283,12 +310,22 @@ export async function startManagedAuthentication(input: {
   materialGeneration: number;
   executionConfigDigest: string;
   accounts: ManagedAccountStartClient;
-  resolveAuthentication: (toolkit: string) => Promise<ManagedResolvedAuthentication>;
+  resolveAuthentication: (
+    toolkit: string,
+    signal: AbortSignal
+  ) => Promise<ManagedResolvedAuthentication>;
   config: ManagedConnectorConfig;
   rawRequest: unknown;
   verifyLiveInstance: () => Promise<boolean>;
   signal: AbortSignal;
+  startTimeoutMs?: number;
 }): Promise<ManagedConnectorAuthenticationState> {
+  const startedAt = Date.now();
+  const signal = AbortSignal.any([
+    input.signal,
+    AbortSignal.timeout(input.startTimeoutMs ?? MANAGED_AUTHENTICATION_START_TIMEOUT_MS),
+  ]);
+  signal.throwIfAborted();
   const request = ManagedConnectorAuthenticationCreateRequestSchema.parse(input.rawRequest);
   const available = managedCapabilityAvailability(input.config, 'authentication', request.toolkit);
   if (available.status === 'unavailable') {
@@ -315,8 +352,15 @@ export async function startManagedAuthentication(input: {
     throw new ManagedAuthenticationFlowError('forbidden', 'Linked instance is unavailable.');
   let resolved: ManagedResolvedAuthentication;
   try {
-    resolved = await input.resolveAuthentication(request.toolkit);
+    resolved = await input.resolveAuthentication(request.toolkit, signal);
+    signal.throwIfAborted();
   } catch (error) {
+    logAuthenticationStartFailure({
+      stage: 'resolve_authentication',
+      error,
+      startedAt,
+      signal,
+    });
     throw new ManagedAuthenticationFlowError(
       'unavailable',
       error instanceof ComposioAuthenticationSetupError
@@ -383,12 +427,13 @@ export async function startManagedAuthentication(input: {
         );
       throw new ManagedAuthenticationFlowError('forbidden', 'Linked instance is unavailable.');
     }
+    signal.throwIfAborted();
     const link =
       resolved.descriptor.kind === 'oauth'
         ? await input.accounts.createLink({
             providerUserId: input.providerUserId,
             authConfigId: resolved.authConfigId,
-            signal: input.signal,
+            signal,
           })
         : null;
     const [waiting] = await input.db

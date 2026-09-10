@@ -203,6 +203,30 @@ describe('ConnectorAuthenticationFlowService', () => {
     expect(start).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    ['request_failed', 503],
+    ['conflict', 409],
+  ] as const)(
+    'keeps managed %s status %i ambiguous and does not replay it',
+    async (code, status) => {
+      const start = vi
+        .spyOn(provider, 'startConnect')
+        .mockRejectedValue(Object.assign(new Error('safe managed refusal'), { code, status }));
+      const input = {
+        providerInstanceId: PROVIDER_ID,
+        toolkit: 'gmail',
+        idempotencyKey: `ambiguous-${code}`,
+      };
+
+      const first = await service.start(OWNER, input);
+      const repeated = await service.start(OWNER, input);
+
+      expect(first).toMatchObject({ state: 'start_unknown' });
+      expect(repeated).toEqual(first);
+      expect(start).toHaveBeenCalledTimes(1);
+    }
+  );
+
   it('invalidates only interrupted start claims during boot recovery', () => {
     db.insert(connectorAuthenticationFlows)
       .values({

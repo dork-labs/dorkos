@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { initConfigManager, configManager } from '../../config-manager.js';
 import { CloudLinkManager, initCloudLinkManager, getCloudLinkManager } from '../cloud-link.js';
+import { logger } from '../../../../lib/logger.js';
 
 /** Immediate, deterministic sleep so the background poll settles synchronously. */
 const noSleep = async (): Promise<void> => {};
@@ -19,6 +20,7 @@ function routerFetch(handlers: {
   authority?: () => Step;
   execution?: () => Step;
   usage?: () => Step;
+  authentication?: () => Step;
 }) {
   return vi.fn(async (url: string) => {
     const p = new URL(url).pathname;
@@ -33,6 +35,8 @@ function routerFetch(handlers: {
       step = handlers.execution?.();
     } else if (p.includes('/instances/connectors/usage')) {
       step = handlers.usage?.();
+    } else if (p.endsWith('/instances/connectors/authentication-flows')) {
+      step = handlers.authentication?.();
     }
     if (!step) throw new Error(`unexpected request: ${p}`);
     return new Response(JSON.stringify(step.body), { status: step.status });
@@ -369,6 +373,77 @@ describe('CloudLinkManager', () => {
     expect(manager.getStatus().state).toBe('idle');
     const paths = fetchImpl.mock.calls.map((c) => new URL(c[0] as string).pathname);
     expect(paths).toContain('/api/instances/revoke');
+  });
+
+  it('logs only closed managed authentication failure details and rethrows unchanged', async () => {
+    const token = 'SECRET_INSTANCE_TOKEN';
+    const privateBody = 'SECRET_HOSTED_BODY';
+    configManager.set('cloud', {
+      instanceToken: token,
+      instanceName: 'kai-mbp',
+      linkedAccountLabel: null,
+    });
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    manager = new CloudLinkManager({
+      fetchImpl: routerFetch({
+        authentication: () => ({ status: 503, body: { privateBody } }),
+      }),
+      sleep: noSleep,
+    });
+
+    const failure = await manager
+      .startManagedConnectorAuthentication(
+        { version: 1, requestId: 'request-a', toolkit: 'gmail' },
+        new AbortController().signal
+      )
+      .catch((error: unknown) => error);
+
+    expect(failure).toMatchObject({ code: 'request_failed', status: 503 });
+    expect(warn).toHaveBeenCalledWith('[CloudLink] Managed authentication start did not complete', {
+      code: 'request_failed',
+      status: 503,
+    });
+    const logged = JSON.stringify(warn.mock.calls);
+    expect(logged).not.toContain(token);
+    expect(logged).not.toContain(privateBody);
+
+    warn.mockClear();
+    const privateCause = 'SECRET_NETWORK_CAUSE';
+    manager = new CloudLinkManager({
+      fetchImpl: vi.fn(async () => {
+        throw new Error(privateCause);
+      }),
+      sleep: noSleep,
+    });
+    await expect(
+      manager.startManagedConnectorAuthentication(
+        { version: 1, requestId: 'request-network', toolkit: 'gmail' },
+        new AbortController().signal
+      )
+    ).rejects.toMatchObject({ code: 'network_error', status: undefined });
+    expect(warn).toHaveBeenCalledWith('[CloudLink] Managed authentication start did not complete', {
+      code: 'network_error',
+      status: undefined,
+    });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(privateCause);
+
+    warn.mockClear();
+    const arbitrarySecret = new Error('SECRET_ARBITRARY_CAUSE');
+    const aborted = new AbortController();
+    aborted.abort(arbitrarySecret);
+    manager = new CloudLinkManager({
+      fetchImpl: vi.fn(async () => {
+        throw arbitrarySecret;
+      }),
+      sleep: noSleep,
+    });
+    await expect(
+      manager.startManagedConnectorAuthentication(
+        { version: 1, requestId: 'request-b', toolkit: 'gmail' },
+        aborted.signal
+      )
+    ).rejects.toBe(arbitrarySecret);
+    expect(warn).not.toHaveBeenCalled();
   });
 });
 

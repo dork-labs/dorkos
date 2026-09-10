@@ -87,6 +87,8 @@ export const DEVICE_GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:device_code';
 /** Seconds added to the poll interval each time the cloud answers `slow_down` (RFC 8628 §3.5). */
 const SLOW_DOWN_INCREMENT_SECONDS = 5;
 const MANAGED_CONNECTOR_REQUEST_TIMEOUT_MS = 10_000;
+/** Hosted start is capped at 45s; retain 15s for transport and response parsing. */
+const MANAGED_CONNECTOR_AUTHENTICATION_START_TIMEOUT_MS = 60_000;
 
 /** A minimal `fetch` shape so callers can inject a mock without pulling DOM lib types. */
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -226,9 +228,14 @@ async function requestManagedConnectorResource<T>(opts: {
   method?: 'GET' | 'POST';
   catalogAuthenticationSetup?: boolean;
   body?: unknown;
+  timeoutMs?: number;
+  timeoutSignal?: (timeoutMs: number) => AbortSignal;
 }): Promise<T> {
   const fetchImpl = opts.fetchImpl ?? defaultFetch;
-  const timeout = AbortSignal.timeout(MANAGED_CONNECTOR_REQUEST_TIMEOUT_MS);
+  const timeoutMs = opts.timeoutMs ?? MANAGED_CONNECTOR_REQUEST_TIMEOUT_MS;
+  const timeout = opts.timeoutSignal
+    ? opts.timeoutSignal(timeoutMs)
+    : AbortSignal.timeout(timeoutMs);
   const signal = AbortSignal.any([opts.signal, timeout]);
   let response: Response;
   try {
@@ -536,6 +543,7 @@ export function requestManagedConnectorCatalog(opts: {
   request: ManagedConnectorCatalogRequest;
   fetchImpl?: FetchLike;
   signal: AbortSignal;
+  timeoutSignal?: (timeoutMs: number) => AbortSignal;
 }): Promise<ManagedConnectorCatalogPage> {
   const query = managedQuery({
     version: 1,
@@ -630,6 +638,7 @@ export function requestManagedConnectorAuthentication(opts: {
   request: ManagedConnectorAuthenticationCreateRequest;
   fetchImpl?: FetchLike;
   signal: AbortSignal;
+  timeoutSignal?: (timeoutMs: number) => AbortSignal;
 }): Promise<ManagedConnectorAuthenticationState> {
   const request = ManagedConnectorAuthenticationCreateRequestSchema.parse(opts.request);
   return requestManagedConnectorResource({
@@ -638,6 +647,7 @@ export function requestManagedConnectorAuthentication(opts: {
     body: request,
     path: '/api/instances/connectors/authentication-flows',
     schema: ManagedConnectorAuthenticationStateSchema,
+    timeoutMs: MANAGED_CONNECTOR_AUTHENTICATION_START_TIMEOUT_MS,
   });
 }
 
