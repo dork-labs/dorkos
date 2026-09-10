@@ -41,7 +41,7 @@
  *
  * @module apply/apply
  */
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import type { DriftResult, ProjectionAction, ProjectionPlan, SweptPath } from '../plan/types.js';
 import { explainSweep } from './sweep-reasons.js';
@@ -60,7 +60,13 @@ import {
   pathExists,
   tryListDir,
 } from './link-state.js';
-import { blockingSymlinkOccupant, linkCheckFor, linkMatchesPlan } from './symlink-occupants.js';
+import {
+  blockingSymlinkOccupant,
+  linkCheckFor,
+  linkMatchesPlan,
+  type LinkCheck,
+} from './symlink-occupants.js';
+import { junctionCommitWarnings, symlinkTypeFor } from './windows-links.js';
 import {
   applyGeneratedHookFile,
   findBlockedGenerateTargets,
@@ -122,10 +128,15 @@ function skillSourcesUnreadable(plan: ProjectionPlan): boolean {
 /**
  * How this platform decides whether a link on disk is the link the plan wants.
  *
- * Resolved once at module scope: it is a property of the running platform, not
- * of any one path, and `--check` and `--fix` must ask the same question.
+ * A FUNCTION read at each call rather than a module constant, for the reason
+ * `global-apply.ts` gives for `canAskAboutWriting`: it is a property of the
+ * running platform, which never changes under a running process, and asking it
+ * per call is what lets a test ask what a Windows run would answer. `--check`
+ * and `--fix` both go through here, so they cannot ask different questions.
  */
-const LINK_CHECK = linkCheckFor(process.platform);
+function linkCheck(): LinkCheck {
+  return linkCheckFor(process.platform);
+}
 
 /**
  * True when a scaffold target already holds a pointer.
@@ -141,25 +152,6 @@ function scaffoldPresent(absTarget: string): boolean {
 /** The relative symlink text that points from `target` to `source`. */
 function relativeLink(repoRoot: string, source: string, target: string): string {
   return relative(dirname(join(repoRoot, target)), join(repoRoot, source));
-}
-
-/**
- * The symlink type to request for a source path. Windows needs `'junction'` for
- * directory targets (which skill sources are) to avoid an EPERM without admin /
- * Developer Mode; POSIX ignores the type argument.
- *
- * The stat FOLLOWS the source deliberately. A skill source may itself be a
- * symlink into a shared directory, and `lstat` on that answers "not a directory"
- * — which asked Windows for a file link to a directory, the exact EPERM this
- * function exists to avoid. A dangling source still answers `undefined`.
- */
-function symlinkType(repoRoot: string, source: string): 'junction' | 'file' | undefined {
-  if (process.platform !== 'win32') return undefined;
-  try {
-    return statSync(join(repoRoot, source)).isDirectory() ? 'junction' : 'file';
-  } catch {
-    return undefined;
-  }
 }
 
 /**
@@ -219,14 +211,14 @@ function applySymlink(repoRoot: string, action: ProjectionAction): string | unde
       // A real file/dir — never destroy hand-authored content, and say what it is.
       const blocked = blockingSymlinkOccupant(absTarget, linkText);
       if (blocked !== undefined) return blocked;
-      if (linkMatchesPlan(absTarget, absSource, linkText, LINK_CHECK)) {
+      if (linkMatchesPlan(absTarget, absSource, linkText, linkCheck())) {
         return undefined; // already the correct managed link
       }
       rmSync(absTarget, { force: true }); // a stale *managed* symlink — safe to replace
     }
     mkdirSync(dirname(absTarget), { recursive: true });
     try {
-      symlinkSync(linkText, absTarget, symlinkType(repoRoot, action.source));
+      symlinkSync(linkText, absTarget, symlinkTypeFor(absSource));
       return undefined;
     } catch (err) {
       // Anything but "somebody got here first" is a real failure to report.
@@ -738,8 +730,9 @@ export function sweepSettingsHooksOrphan(repoRoot: string, plan: ProjectionPlan)
  * directory reports what it changed instead.
  *
  * @returns the realized actions, the blocked projections left intact, any swept
- *   orphans (bare and with their reasons), and the generated-hook paths the
- *   engine stepped over.
+ *   orphans (bare and with their reasons), the generated-hook paths the engine
+ *   stepped over, and any warning about the run itself (today: junctions in a
+ *   git checkout, which git commits as directories rather than as links).
  * @throws When `sweepOrphans` is asked for on a plan narrowed to one harness —
  *   the combination deletes every other harness's LIVE projection, and the
  *   engine refuses it here rather than trusting each caller to remember.
@@ -754,6 +747,7 @@ export function applyPlan(
   swept: string[];
   removals: SweptPath[];
   leftAlone: string[];
+  warnings: string[];
 } {
   // `checkPlan` withholds orphans for a narrowed plan; this is the same rule on
   // the writing side, and it has to THROW rather than skip the sweep, because a
@@ -859,7 +853,17 @@ export function applyPlan(
         ...explainSweep(sweepSettingsHooksOrphan(repoRoot, plan), 'settings-hooks'),
       ]
     : [];
-  return { applied, conflicts, swept: removals.map(({ path }) => path), removals, leftAlone };
+  return {
+    applied,
+    conflicts,
+    swept: removals.map(({ path }) => path),
+    removals,
+    leftAlone,
+    // Asked LAST, so it answers about the links this run just made rather than
+    // about the tree it found. `checkPlan` asks the same function off the same
+    // plan, which is what keeps the two modes saying one thing.
+    warnings: junctionCommitWarnings(repoRoot, plan),
+  };
 }
 
 /** Whether a single action's on-disk target diverges from the plan. */
@@ -876,7 +880,7 @@ function isDrifted(repoRoot: string, action: ProjectionAction): boolean {
       if (kind === 'absent') return true;
       if (kind === 'file' || kind === 'directory') return false;
       const linkText = relativeLink(repoRoot, action.source, action.target);
-      return !linkMatchesPlan(absTarget, join(repoRoot, action.source), linkText, LINK_CHECK);
+      return !linkMatchesPlan(absTarget, join(repoRoot, action.source), linkText, linkCheck());
     }
     case 'scaffold':
       return !action.target || !scaffoldPresent(join(repoRoot, action.target));
@@ -1007,8 +1011,8 @@ function findOrphans(repoRoot: string, plan: ProjectionPlan): SweptPath[] {
  * @param repoRoot - absolute path to the repository root.
  * @param plan - the projection plan to check.
  * @returns the drifted actions, the blocked ones, the orphans a sweep would
- *   take (bare and with the reason each one goes), the paths left alone, and
- *   whether the tree is clean.
+ *   take (bare and with the reason each one goes), the paths left alone, any
+ *   warning about the run itself, and whether the tree is clean.
  */
 export function checkPlan(repoRoot: string, plan: ProjectionPlan): DriftResult {
   // The same pure pass `applyPlan` acts on, so `--check` names a hostile folder
@@ -1048,6 +1052,10 @@ export function checkPlan(repoRoot: string, plan: ProjectionPlan): DriftResult {
     orphans: removals.map(({ path }) => path),
     removals,
     leftAlone: findLeftAloneGeneratedHookFiles(repoRoot, plan),
+    // Not drift, and never an exit code: a junction resolves where the plan
+    // says. It is what COMMITTING one would do that a person has to be told,
+    // and told before they commit, which is why `--check` answers it too.
+    warnings: junctionCommitWarnings(repoRoot, plan),
     // A skill folder nobody could read is the fourth way this answer is not
     // "everything is as the plan says": the sweeps stood down over it, so the
     // tree may hold links a readable folder would have settled either way, and

@@ -368,6 +368,21 @@ export interface DriftResult {
    */
   leftAlone: string[];
   /**
+   * Something true about this RUN that no path of its own — one sentence, or
+   * none (DOR-1883).
+   *
+   * Today there is exactly one: the links at this plan's targets are Windows
+   * junctions and the repository is a git checkout, so `git add` would commit
+   * the files inside them instead of the links (`apply/windows-links.ts`). It
+   * is not drift and never an exit code — a junction resolves where the plan
+   * says, and every agent tool reading it gets the right files. It is about
+   * what COMMITTING one would do, which is why a person is told before they do.
+   *
+   * `applyPlan` answers the same list off the same function, so `--check` and
+   * `--fix` say one thing.
+   */
+  warnings: string[];
+  /**
    * True when the plan is fully realized on disk: nothing drifted, nothing
    * blocked, nothing a sweep would remove, and every skill folder readable.
    * `leftAlone` entries do not make a tree unclean.

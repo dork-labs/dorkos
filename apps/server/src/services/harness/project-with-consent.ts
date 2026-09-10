@@ -359,6 +359,17 @@ export interface ProjectWithConsentResult extends ConsentedPlan {
   removals: SweptPath[];
   /** Repo-relative hooks files DorkOS did not write and stepped over. */
   leftAlone: string[];
+  /**
+   * What is true about the RUN rather than about any one path — one sentence,
+   * or none (DOR-1883).
+   *
+   * Today there is exactly one: the links this sync made are Windows junctions
+   * inside a git checkout, so committing them commits the files inside them
+   * instead of the links. Never a fault and never an exit code; a caller that
+   * reports to a person prints it, and `checkPlan` answers the same list, so
+   * `--check` and `--fix` say one thing.
+   */
+  warnings: string[];
 }
 
 /**
@@ -496,10 +507,10 @@ export function projectWithConsent(
     );
   }
   const { plan, withheld } = planWithConsent(projectPath, opts);
-  const { applied, conflicts, swept, removals, leftAlone } = _internal.applyPlan(
+  const { applied, conflicts, swept, removals, leftAlone, warnings } = _internal.applyPlan(
     projectPath,
     plan,
     { sweepOrphans: opts.sweepOrphans }
   );
-  return { plan, withheld, applied, conflicts, swept, removals, leftAlone };
+  return { plan, withheld, applied, conflicts, swept, removals, leftAlone, warnings };
 }

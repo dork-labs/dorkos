@@ -104,18 +104,76 @@ export function formatDropList(plan: ProjectionPlan): string {
 }
 
 /**
- * Render `plan.warnings` as a readable block grouped by harness. Two things land
- * here: a projection that DID happen but may not work in the target harness (e.g.
- * a hook command carrying a Claude-only substitution token Codex cannot resolve),
- * and a source declaration the engine could not read, so it reached no harness at
- * all (e.g. a matcher group the `hooks/hooks.json` salvage discarded). Returns an
- * empty string when there are no warnings, so callers can omit the block cleanly.
+ * The families of warning, in the words the heading uses, in the order they are
+ * listed.
+ *
+ * A PLAN warning is two of them, and the block cannot tell which of the two any
+ * one entry is — a projection that landed but may not work, and a declaration
+ * nobody could read, are one `reason` string apiece. So both are named whenever
+ * plan warnings are present, which is what the heading has always said.
+ */
+const PLAN_WARNING_FAMILIES = ['may not work in the target harness', 'could not be read'] as const;
+
+/** The one family a RUN warning is: something here may not commit as a link. */
+const RUN_WARNING_FAMILY = 'may not commit as a link';
+
+/**
+ * The block's first line, naming only the families this run actually carries.
+ *
+ * It matters that it is built rather than fixed: the heading is read by
+ * everybody on every platform, and a run with no run-level warning in it has no
+ * link that might fail to commit. A fixed heading naming all three told a person
+ * on macOS about a Windows problem their tree does not have, every time any
+ * warning at all was printed.
+ *
+ * @param hasPlanWarnings - whether the plan contributed any.
+ * @param hasRunWarnings - whether the run contributed any.
+ * @returns the heading line, ending in a colon.
+ */
+function warningHeading(hasPlanWarnings: boolean, hasRunWarnings: boolean): string {
+  const families = [
+    ...(hasPlanWarnings ? PLAN_WARNING_FAMILIES : []),
+    ...(hasRunWarnings ? [RUN_WARNING_FAMILY] : []),
+  ];
+  const listed =
+    families.length === 1
+      ? families[0]
+      : `${families.slice(0, -1).join(', ')}, or ${families[families.length - 1]}`;
+  return `Warnings (${listed}):`;
+}
+
+/**
+ * The heading run warnings are filed under.
+ *
+ * Its own heading beside the harness ones because it is a different subject: a
+ * plan warning is about an artifact and a tool, and a run warning is about the
+ * computer the sync just ran on.
+ */
+const MACHINE_HEADING = 'this machine:';
+
+/**
+ * Render the warnings a run carries as a readable block grouped by heading.
+ *
+ * Three things land here. From the PLAN: a projection that DID happen but may
+ * not work in the target harness (e.g. a hook command carrying a Claude-only
+ * substitution token Codex cannot resolve), and a source declaration the engine
+ * could not read, so it reached no harness at all (e.g. a matcher group the
+ * `hooks/hooks.json` salvage discarded). From the RUN itself: what `applyPlan`
+ * and `checkPlan` answer in `warnings` — today, that the links here are Windows
+ * junctions and git would commit the files inside them instead of the links
+ * (DOR-1883). All three are things a person needs told and none of them is a
+ * fault to fix, which is what makes them one block rather than two. The heading
+ * names only the ones this run really carries ({@link warningHeading}).
+ *
+ * Returns an empty string when there is nothing to say, so callers can omit the
+ * block cleanly.
  *
  * @param plan - the projection plan whose warnings to format.
+ * @param runWarnings - what the apply or check answered about the run itself.
  * @returns a multi-line warning report, or `''` when there are no warnings.
  */
-export function formatWarnings(plan: ProjectionPlan): string {
-  if (plan.warnings.length === 0) return '';
+export function formatWarnings(plan: ProjectionPlan, runWarnings: readonly string[] = []): string {
+  if (plan.warnings.length === 0 && runWarnings.length === 0) return '';
 
   const byHarness = new Map<string, ProjectionPlan['warnings']>();
   for (const warning of plan.warnings) {
@@ -125,7 +183,7 @@ export function formatWarnings(plan: ProjectionPlan): string {
     byHarness.set(heading, list);
   }
 
-  const lines: string[] = ['Warnings (may not work in the target harness, or could not be read):'];
+  const lines: string[] = [warningHeading(plan.warnings.length > 0, runWarnings.length > 0)];
   for (const [harness, warnings] of [...byHarness.entries()].sort(([a], [b]) =>
     a.localeCompare(b)
   )) {
@@ -133,6 +191,13 @@ export function formatWarnings(plan: ProjectionPlan): string {
     for (const warning of warnings) {
       lines.push(`  - ${warning.artifact} "${warning.name}": ${warning.reason}`);
     }
+  }
+  // LAST, whatever the harness headings sorted to: it is about the machine
+  // rather than about any tool, and the tool sections read as a list of one
+  // kind of thing.
+  if (runWarnings.length > 0) {
+    lines.push('', MACHINE_HEADING);
+    for (const warning of runWarnings) lines.push(`  - ${warning}`);
   }
   return lines.join('\n');
 }

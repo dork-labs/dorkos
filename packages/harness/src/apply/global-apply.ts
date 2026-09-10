@@ -80,7 +80,6 @@ import {
   mkdirSync,
   readlinkSync,
   rmSync,
-  statSync,
   symlinkSync,
 } from 'node:fs';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
@@ -96,6 +95,7 @@ import { listDir, occupantKind, pathExists } from './link-state.js';
 import { directoryWriteBlock, writePathDirs, writePathReason } from './write-path-occupants.js';
 import { SWEEP_REASONS } from './sweep-reasons.js';
 import { blockingSymlinkOccupant, linkCheckFor, linkMatchesPlan } from './symlink-occupants.js';
+import { symlinkTypeFor } from './windows-links.js';
 
 /**
  * How this platform decides whether a link on disk is the link the plan wants.
@@ -312,22 +312,6 @@ export function sweepGlobalOrphans(
   const orphans = findGlobalOrphans(plan, roots);
   for (const { path } of orphans) rmSync(path, { force: true });
   return orphans;
-}
-
-/**
- * The symlink type to request for an absolute source. Windows needs `'junction'`
- * for a directory target; POSIX ignores the argument. The stat FOLLOWS the
- * source deliberately — a source that is itself a link into a shared directory
- * is still a directory, and asking Windows for a file link to one is the exact
- * EPERM this avoids.
- */
-function symlinkTypeFor(absSource: string): 'junction' | 'file' | undefined {
-  if (process.platform !== 'win32') return undefined;
-  try {
-    return statSync(absSource).isDirectory() ? 'junction' : 'file';
-  } catch {
-    return undefined;
-  }
 }
 
 /** The relative link text that points from an absolute target to an absolute source. */
@@ -637,7 +621,8 @@ function isGlobalDrifted(action: ProjectionAction): boolean {
  * Four answers kept apart exactly as `checkPlan` keeps them: what is stale
  * (`drifted`), what somebody else's file occupies (`blocked`), what a sweep
  * would remove (`orphans`), and what the engine stepped over (`leftAlone`,
- * always empty here). It never throws for what it finds on disk.
+ * always empty here, as is `warnings`). It never throws for what it finds on
+ * disk.
  *
  * @param plan - the global plan to check.
  * @param roots - the same roots the plan was built from.
@@ -665,6 +650,11 @@ export function checkGlobalPlan(plan: GlobalProjectionPlan, roots: GlobalPlanRoo
     orphans: removals.map(({ path }) => path),
     removals,
     leftAlone: [],
+    // Always empty, and by nature rather than by omission: the one warning a
+    // run can carry is about committing a Windows junction, and a global plan's
+    // targets are in somebody's home directory, which no git checkout tracks
+    // (`apply/windows-links.ts`).
+    warnings: [],
     clean: drifted.length === 0 && blocked.length === 0 && removals.length === 0,
   };
 }

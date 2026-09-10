@@ -18,7 +18,7 @@
  * loadManifest(projectPath)                    → the enabled set + the declared Claude-only names
  * manifestNotices(manifest)                    → what is wrong with the manifest itself
  * planWithConsent(projectPath, …)              → { plan, withheld }
- * checkPlan(projectPath, plan)                 → { drifted, blocked, orphans, leftAlone, clean }
+ * checkPlan(projectPath, plan)                 → { drifted, blocked, orphans, removals, leftAlone, warnings, clean }
  * inventorySourceTree(projectPath)             → what is authored in the tree
  * ```
  *
@@ -776,7 +776,7 @@ export function buildHarnessStatus(options: BuildHarnessStatusOptions): HarnessS
     // deletes anything.
     removals: [...drift.removals],
     rows,
-    projectLevel: projectLevelEntries(plan, enabledSet, notices),
+    projectLevel: projectLevelEntries(plan, enabledSet, notices, drift.warnings),
     pendingApproval: withheld.map(pendingApprovalEntry),
   };
 }
@@ -834,11 +834,18 @@ function isAboutEnabledHarness(
  * Drops are not either — every non-agnostic drop names an enabled harness, since
  * the drop lists are built by walking `manifest.harnesses` — and if that ever
  * stops being true this is where the case belongs.
+ *
+ * The RUN's own warnings land here last, and they are the one population that
+ * is about the machine rather than about a file: today, that the links here are
+ * Windows junctions and git would commit the files inside them instead of the
+ * links (DOR-1883). There is no cell for a computer, and the terminal files the
+ * same sentence under its own `this machine:` heading.
  */
 function projectLevelEntries(
   plan: ProjectionPlan,
   enabled: ReadonlySet<HarnessId>,
-  notices: readonly string[]
+  notices: readonly string[],
+  runWarnings: readonly string[]
 ): HarnessProjectEntry[] {
   const entry = (
     kind: 'drop' | 'warning' | 'write',
@@ -861,7 +868,24 @@ function projectLevelEntries(
       .filter((w) => !isAboutEnabledHarness(w, enabled))
       .map((w) => entry('warning', w)),
     ...plan.actions.filter(isUnattributedWrite(enabled)).map((a) => entry('write', a)),
+    ...runWarnings.map(machineWarningEntry),
   ];
+}
+
+/**
+ * One thing that is true about this machine, as a project-level entry.
+ *
+ * The `name` is the shape rather than a path, and deliberately: the sentence is
+ * one per RUN and not one per link, so naming any single `.claude/skills/<x>`
+ * would say the problem is that file's. `skill` is the artifact because skill
+ * links are the only thing the engine projects as a directory link, which is
+ * the only shape a junction can be.
+ *
+ * @param reason - the engine's own sentence, unchanged.
+ * @returns the entry the page draws.
+ */
+function machineWarningEntry(reason: string): HarnessProjectEntry {
+  return { kind: 'warning', artifact: 'skill', name: 'Windows junctions', reason };
 }
 
 /**

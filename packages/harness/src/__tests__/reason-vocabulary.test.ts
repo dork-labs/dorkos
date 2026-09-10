@@ -81,6 +81,7 @@ import {
   SYMLINK_DIRECTORY_REASON,
   SYMLINK_FILE_REASON,
 } from '../apply/symlink-occupants.js';
+import { JUNCTION_COMMIT_WARNING } from '../apply/windows-links.js';
 
 /** Where the term list lives, relative to this file. Its own constant so a seeded defect can move it. */
 const BANNED_TERMS_PATH = join(
@@ -266,6 +267,11 @@ function collectReasons(repoRoot: string, dorkHome: string): Reason[] {
   // tree trips depends on what somebody happened to leave at a target.
   for (const reason of Object.values(SWEEP_REASONS)) add('sweep', reason);
   for (const reason of BLOCKED_REASONS) add('blocked', reason);
+  // Enumerated for the same reason as those two tables: it is a sentence a
+  // person reads — in the terminal's Warnings block and in the app's
+  // project-level notices — and no tree on this platform can produce it, since
+  // it is only ever true on Windows (`apply/windows-links.ts`).
+  add('warning', JUNCTION_COMMIT_WARNING);
 
   // `plan.notEnabled` is deliberately NOT collected. Its entries carry a
   // `signal` — `.gemini/`, `.github/copilot-instructions.md` — which is a PATH,

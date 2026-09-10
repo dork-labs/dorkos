@@ -34,7 +34,12 @@ import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { project } from '../../engine.js';
 import { applyPlan, checkPlan } from '../../apply/apply.js';
-import { SYMLINKS_OFF_REASON } from '../../apply/symlink-occupants.js';
+import {
+  SYMLINKS_OFF_REASON,
+  linkCheckFor,
+  linkMatchesPlan,
+} from '../../apply/symlink-occupants.js';
+import { JUNCTION_COMMIT_WARNING, canSymlinkDirs } from '../../apply/windows-links.js';
 import { diffSnapshots, snapshotTree, writeFileAt, writeJsonAt } from './stage.js';
 
 /** The two authored skills this repo carries, and the links they project to. */
@@ -103,11 +108,16 @@ function stageProjectedRepo(): void {
  * Commit the projected repo, with the two skill links stored as symlinks.
  *
  * Built with git plumbing rather than `add` + `commit`, for one reason that only
- * shows up on Windows: a Windows directory link is a JUNCTION, and git sees a
- * junction as a DIRECTORY. `git add --all` there walks into it and commits the
- * skill's files a second time, so the tree holds no symlink at all and every
- * clone below proves nothing. Measured on a `windows-latest` runner (DOR-1855) —
- * `git ls-files --stage` reported zero entries in mode 120000.
+ * shows up on Windows: a directory link there is a real symlink only where the
+ * account may make one, and a JUNCTION where it may not — and git sees a
+ * junction as a DIRECTORY. `git add --all` on a machine without the privilege
+ * walks into it and commits the skill's files a second time, so the tree holds
+ * no symlink at all and every clone below proves nothing. Measured on a
+ * `windows-latest` runner (DOR-1855) — `git ls-files --stage` reported zero
+ * entries in mode 120000. DOR-1883 made the engine ask for the real link where
+ * the privilege exists and say so where it does not, and the case at the bottom
+ * of this file measures which of the two THIS runner did; the staging here stays
+ * plumbing so that the journey is the same on every machine either way.
  *
  * Writing the index entry by hand is exact and platform-independent: a symlink
  * in git is a blob holding the target path at mode 120000, which is precisely
@@ -274,6 +284,70 @@ describe('J-10 — a clone whose checkout cannot make symlinks', () => {
       // leg compares them against these same literals.
       expect(paths.length).toBeGreaterThan(0);
       expect(paths.filter((p) => p.includes('\\'))).toEqual([]);
+    },
+    SLOW_UNDER_LOAD_MS
+  );
+
+  /**
+   * The ticket's own measurement, as a test — and the only case in this repo
+   * that can take it.
+   *
+   * DOR-1855 measured `git ls-files --stage` reporting ZERO entries in mode
+   * 120000 after a `--fix` on Windows, because every link was a junction. This
+   * asks the same question of the same command on the same platform, and holds
+   * the answer against what the capability probe said this machine could do:
+   *
+   * - the probe answers one of its two answers and never throws;
+   * - whatever it answered, the link it wrote reads through — the engine's own
+   *   predicate agrees the link on disk is the link the plan wanted;
+   * - a real link is COMMITTED as a link (mode 120000), and a junction is not,
+   *   in which case a person has been told not to commit it from here.
+   *
+   * A real directory symlink must also keep its RELATIVE text on Windows, which
+   * is what AP-06 is about and what `apply/windows-links.ts` rests on when it
+   * calls an absolute stored target a junction. Only this runner can say so.
+   *
+   * The GitHub runner has had the privilege on every run so far, so the `'dir'`
+   * branch is the one this normally exercises — which is the fix.
+   */
+  it.skipIf(process.platform !== 'win32')(
+    'J-10, AP-06: what this Windows checkout commits is what the capability probe answered',
+    () => {
+      stageProjectedRepo();
+      const canMakeRealLinks = canSymlinkDirs();
+      expect(typeof canMakeRealLinks).toBe('boolean');
+
+      const plan = project(origin);
+      // Initialised BEFORE the apply, because the sentence is about what
+      // `git add` would do and `junctionCommitWarnings` answers nothing where
+      // there is no `.git` yet — asking afterwards would have made the junction
+      // branch below assert a warning the apply could never have carried.
+      git(origin, ['init', '--quiet', '--initial-branch=main']);
+      const { warnings } = applyPlan(origin, plan);
+      for (const [i, link] of LINKS.entries()) {
+        const abs = join(origin, link);
+        const source = join(origin, '.agents', 'skills', SKILLS[i]);
+        expect(lstatSync(abs).isSymbolicLink()).toBe(true);
+        expect(
+          linkMatchesPlan(abs, source, `../../.agents/skills/${SKILLS[i]}`, linkCheckFor('win32'))
+        ).toBe(true);
+        // The discriminator the engine reads: a real link keeps the relative
+        // text it was given, a junction is stored absolute.
+        expect(isAbsolute(readlinkSync(abs))).toBe(!canMakeRealLinks);
+      }
+
+      git(origin, ['add', '--all']);
+      const staged = git(origin, ['ls-files', '--stage', '--', '.claude/skills'])
+        .split('\n')
+        .filter((line) => line.startsWith('120000'));
+
+      if (canMakeRealLinks) {
+        expect(staged).toHaveLength(LINKS.length);
+        expect(warnings).toEqual([]);
+      } else {
+        expect(staged).toEqual([]);
+        expect(warnings).toEqual([JUNCTION_COMMIT_WARNING]);
+      }
     },
     SLOW_UNDER_LOAD_MS
   );

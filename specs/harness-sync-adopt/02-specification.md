@@ -543,7 +543,7 @@ Its return value is unchanged from what `planSkill` builds today (`plan/projecto
 
 and it is realized by `applySymlink` through `applyPlan` — the same function every sync uses, which
 computes its link text as `relative(dirname(target), source)` (`../../.agents/skills/<name>`) and
-asks `symlinkType()` for the right kind on Windows.
+asks `symlinkTypeFor()` for the right kind on Windows.
 
 **So "the next sync's plan already matches" is true by construction, not by care.** `checkPlan`
 compares the plan's action against what is on disk through `linkMatchesPlan`, and the action it

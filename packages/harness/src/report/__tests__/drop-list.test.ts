@@ -142,4 +142,40 @@ describe('formatWarnings', () => {
     // Callers omit the block entirely when empty.
     expect(formatWarnings({ actions: [], drops: [], warnings: [], notEnabled: [] })).toBe('');
   });
+
+  describe('the heading names only what this run has to say', () => {
+    /** A plan carrying one ordinary harness warning. */
+    const withPlanWarning = {
+      actions: [],
+      drops: [],
+      warnings: [
+        { artifact: 'hook' as const, harness: 'codex' as const, name: 'Stop', reason: 'a reason' },
+      ],
+      notEnabled: [],
+    };
+
+    /** The heading, which is the first line of the block. */
+    const heading = (out: string): string => out.split('\n')[0];
+
+    it('VC-01: says nothing about committing when nothing in this run is about committing', () => {
+      // The heading is read by everybody on every platform, and a run with no
+      // run-level warning has no link that may fail to commit in it. Naming one
+      // there tells a person on macOS about a Windows problem they do not have.
+      expect(heading(formatWarnings(withPlanWarning))).toBe(
+        'Warnings (may not work in the target harness, or could not be read):'
+      );
+    });
+
+    it('VC-01: names the machine alone when that is all there is', () => {
+      expect(heading(formatWarnings({ ...withPlanWarning, warnings: [] }, ['a sentence']))).toBe(
+        'Warnings (may not commit as a link):'
+      );
+    });
+
+    it('VC-01: names both when a run carries both', () => {
+      expect(heading(formatWarnings(withPlanWarning, ['a sentence']))).toBe(
+        'Warnings (may not work in the target harness, could not be read, or may not commit as a link):'
+      );
+    });
+  });
 });
