@@ -64,6 +64,52 @@ describe('exact Composio authentication selection', () => {
     expect(JSON.stringify(normalized)).not.toContain('SECRET_DEFAULT');
     expect(normalized.managedScopes).toEqual(['read', 'write']);
   });
+  it('ignores provider-owned OAuth app setup constraints without weakening account fields', () => {
+    const privateKey = 'PRIVATE_PROVIDER_CONSTRAINT';
+    const privateValue = 'PRIVATE_PROVIDER_VALUE';
+    const value = raw();
+    const oauth = value.auth_config_details.find((method) => method.mode === 'OAUTH2')!;
+    const oauthSetup = oauth.fields.auth_config_creation;
+    oauthSetup.required.push(
+      Object.assign({ ...field, name: 'oauth_required_1' }, { [privateKey]: privateValue }),
+      Object.assign({ ...field, name: 'oauth_required_2' }, { [privateKey]: privateValue })
+    );
+    oauthSetup.optional.push(
+      Object.assign({ ...field, name: 'oauth_optional_1' }, { [privateKey]: privateValue }),
+      Object.assign({ ...field, name: 'oauth_optional_2' }, { [privateKey]: privateValue })
+    );
+
+    const normalized = normalizeComposioToolkitAuthentication(value);
+    expect(selectComposioAuthentication(normalized)).toMatchObject({
+      kind: 'oauth',
+      source: 'managed',
+      scheme: 'OAUTH2',
+    });
+    expect(selectComposioAuthentication(normalized, config)).toMatchObject({
+      kind: 'fields',
+      source: 'configured',
+      scheme: 'API_KEY',
+    });
+    const brokenOverride = (() => {
+      try {
+        selectComposioAuthentication(normalized, { ...config, scheme: 'DCR_OAUTH' });
+      } catch (error) {
+        return error;
+      }
+    })();
+    expect(brokenOverride).toMatchObject({ reason: 'unsupported_method' });
+    expect(JSON.stringify(normalized)).not.toContain(privateKey);
+    expect(JSON.stringify(normalized)).not.toContain(privateValue);
+
+    const collected = raw(['API_KEY']);
+    Object.assign(
+      collected.auth_config_details[0].fields.connected_account_initiation.required[0],
+      { [privateKey]: privateValue }
+    );
+    expect(() => normalizeComposioToolkitAuthentication(collected)).toThrow(
+      'account-field constraints'
+    );
+  });
   it('preserves an explicit supported custom choice and refuses broken overrides without fallback', () => {
     const normalized = normalizeComposioToolkitAuthentication(raw());
     expect(selectComposioAuthentication(normalized, config)).toMatchObject({

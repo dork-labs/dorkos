@@ -116,10 +116,49 @@ const rawField = z
     legacy_template_name: z.string().optional(),
   })
   .strict();
+const providerOwnedOAuthAppSetupField = rawField.strip();
 const fieldGroup = z.object({
   required: z.array(rawField).max(64),
   optional: z.array(rawField).max(64),
 });
+
+function stripProviderOwnedOAuthAppSetupConstraints(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw;
+  const method = raw as Record<string, unknown>;
+  if (method.mode !== 'OAUTH2' || !method.fields || typeof method.fields !== 'object') return raw;
+  const fields = method.fields as Record<string, unknown>;
+  const creation = fields.auth_config_creation;
+  if (!creation || typeof creation !== 'object' || Array.isArray(creation)) return raw;
+  const groups = creation as Record<string, unknown>;
+  if (!Array.isArray(groups.required) || !Array.isArray(groups.optional)) return raw;
+
+  const strip = (field: unknown): unknown => {
+    const parsed = providerOwnedOAuthAppSetupField.safeParse(field);
+    return parsed.success ? parsed.data : field;
+  };
+  return {
+    ...method,
+    fields: {
+      ...fields,
+      auth_config_creation: {
+        ...groups,
+        required: groups.required.map(strip),
+        optional: groups.optional.map(strip),
+      },
+    },
+  };
+}
+
+const authenticationMethod = z.preprocess(
+  stripProviderOwnedOAuthAppSetupConstraints,
+  z.object({
+    mode: text,
+    fields: z.object({
+      auth_config_creation: fieldGroup,
+      connected_account_initiation: fieldGroup,
+    }),
+  })
+);
 const metadata = z.object({
   slug: z.string().min(1).max(200),
   enabled: z.boolean(),
@@ -134,18 +173,7 @@ const metadata = z.object({
     )
     .max(64)
     .optional(),
-  auth_config_details: z
-    .array(
-      z.object({
-        mode: text,
-        fields: z.object({
-          auth_config_creation: fieldGroup,
-          connected_account_initiation: fieldGroup,
-        }),
-      })
-    )
-    .max(64)
-    .optional(),
+  auth_config_details: z.array(authenticationMethod).max(64).optional(),
 });
 
 function invalid(): never {
