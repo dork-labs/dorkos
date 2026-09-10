@@ -171,7 +171,35 @@ export const MAX_FEEDBACK_MESSAGE_LEN = 4000;
 /** Maximum length of an optional `contact` string (fits any real email/handle). */
 export const MAX_FEEDBACK_CONTACT_LEN = 254;
 
-/** Maximum length of the optional `route` context prop (e.g. `/agents`). */
+/**
+ * Maximum length of the optional `route` context prop — the page the report was
+ * filed from, **including an allowlisted query string** (e.g.
+ * `/session?session=abc123`).
+ *
+ * The query half is carried on purpose (DOR-1960): `/session` alone says almost
+ * nothing, while `/session?session=abc123` names the conversation the bug
+ * happened in. But it is carried through a **closed allowlist**, not verbatim,
+ * because DorkOS URLs are NOT all identifiers:
+ *
+ * - `/session` writes the resolved **absolute working directory** into `?dir=`
+ *   on every navigation (`apps/client/src/router.tsx`, DOR-1836), and
+ *   `?agentPath=` is a filesystem path too.
+ * - `?prompt=`, `?message=` and `?seed=` carry **text the user typed to an
+ *   agent** when a conversation is starting.
+ * - `?q=` is the **search box** on both the roster and the marketplace.
+ *
+ * A `route` is stored in Neon, folded into a Linear issue, and sent as a
+ * PostHog property, and — unlike the diagnostics bundle — it rides OUTSIDE the
+ * Diagnostics consent toggle, because a coarse route always has. So passing the
+ * query string through unfiltered would ship a home-directory path and a
+ * half-typed prompt with every report anyone files.
+ *
+ * The allowlist, the reason each key is on it, and the keys deliberately left
+ * off live in `apps/client/src/layers/features/feedback/lib/feedback-route.ts`.
+ * This cap (which matches the site intake's own `MAX_ROUTE_LEN`) is the second
+ * bound: the client appends only params that fit WHOLE, so a `route` never ends
+ * mid-value or mid-percent-escape.
+ */
 export const MAX_FEEDBACK_ROUTE_LEN = 256;
 
 /** Maximum length of an optional session id attached to a bug/idea submission. */
@@ -220,6 +248,52 @@ export const MAX_BREADCRUMB_MESSAGE_LEN = 300;
 export const MAX_CLIENT_REPORT_RUNTIMES = 16;
 
 /**
+ * Maximum length of a `clientReport`'s `browser` user-agent string. Longer than
+ * {@link MAX_STRING_LEN} because a real user-agent runs 120-250 characters, and
+ * the tail (the engine and platform tokens) is the half that identifies which
+ * browser to reproduce in.
+ */
+export const MAX_CLIENT_REPORT_BROWSER_LEN = 300;
+
+/**
+ * The largest pixel extent accepted for a `clientReport` viewport dimension.
+ * Bounds an adversarial payload; no real window is anywhere near it.
+ */
+export const MAX_CLIENT_REPORT_VIEWPORT_PX = 100_000;
+
+/**
+ * Maximum length of a `clientReport`'s short environment tags (`locale`,
+ * `timezone`). Exported rather than left as the module-private
+ * `MAX_STRING_LEN` so the client capture in
+ * `apps/client/src/layers/shared/lib/client-environment.ts` bounds its reads
+ * against this schema's own number instead of a hand-copied 64.
+ */
+export const MAX_CLIENT_REPORT_TAG_LEN = MAX_STRING_LEN;
+
+/**
+ * Which shell the app was running in when a report was filed: our own Electron
+ * desktop app, or an ordinary browser tab. Answered client-side by
+ * `isDesktopShell()` (`apps/client/src/layers/shared/lib/platform.ts`).
+ */
+export const FEEDBACK_SHELL_KINDS = ['desktop-app', 'browser'] as const;
+
+/**
+ * The window the report was filed from — CSS pixels plus the display's device
+ * pixel ratio, so a layout bug that only reproduces at a given width (or only
+ * on a HiDPI screen) is reproducible from the report alone.
+ */
+export const FeedbackViewportSchema = z
+  .object({
+    /** `window.innerWidth` in CSS pixels. */
+    width: z.number().int().min(0).max(MAX_CLIENT_REPORT_VIEWPORT_PX),
+    /** `window.innerHeight` in CSS pixels. */
+    height: z.number().int().min(0).max(MAX_CLIENT_REPORT_VIEWPORT_PX),
+    /** `window.devicePixelRatio` — 1 on a standard display, 2 on Retina. */
+    devicePixelRatio: z.number().min(0).max(100),
+  })
+  .strict();
+
+/**
  * One client-side signal captured in the moments before a bug report: a console
  * error/warning, a TanStack Query/Mutation failure, or a durable-stream
  * disconnect. Populated by the in-memory ring buffer at
@@ -252,6 +326,13 @@ export type Breadcrumb = z.infer<typeof BreadcrumbSchema>;
  * client-side, the latter server-side (see `getRecentLogExcerpt` in
  * `apps/server/src/lib/log-excerpt.ts`); the client never sends
  * `serverLogExcerpt` itself.
+ *
+ * The `viewport`/`browser`/`shell`/`theme`/`locale`/`timezone` fields (DOR-1960)
+ * are the "what was on screen" half of the same bundle: everything triage needs
+ * to reproduce a layout or rendering bug without a round-trip asking the
+ * reporter. All six are optional so a client that predates them still validates.
+ * They are environment facts, never content — there is deliberately no slot here
+ * for a geolocation, a cwd, or a workspace path.
  */
 export const FeedbackDiagnosticsSchema = z
   .object({
@@ -262,6 +343,18 @@ export const FeedbackDiagnosticsSchema = z
         platform: z.string().max(MAX_STRING_LEN),
         runtimes: z.array(z.string().max(MAX_STRING_LEN)).max(MAX_CLIENT_REPORT_RUNTIMES),
         flags: z.record(z.string(), z.union([z.boolean(), z.string().max(MAX_STRING_LEN)])),
+        /** The reporting window's size and pixel density. */
+        viewport: FeedbackViewportSchema.optional(),
+        /** `navigator.userAgent`, capped — which browser build to reproduce in. */
+        browser: z.string().max(MAX_CLIENT_REPORT_BROWSER_LEN).optional(),
+        /** Whether this was our desktop app or an ordinary browser tab. */
+        shell: z.enum(FEEDBACK_SHELL_KINDS).optional(),
+        /** The color scheme actually in effect (`system` already resolved). */
+        theme: z.enum(['light', 'dark']).optional(),
+        /** `navigator.language`, e.g. `en-US` — formatting/RTL bugs need it. */
+        locale: z.string().max(MAX_CLIENT_REPORT_TAG_LEN).optional(),
+        /** IANA timezone, e.g. `America/Los_Angeles` — dates off by a day need it. */
+        timezone: z.string().max(MAX_CLIENT_REPORT_TAG_LEN).optional(),
       })
       .strict(),
     /** Recent client-side signals leading up to the report, oldest first. */

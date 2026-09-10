@@ -157,7 +157,7 @@ export function FeedbackDialog({
   initialScreenshotDataUrl,
 }: FeedbackDialogProps) {
   const isDesktop = !useIsMobile();
-  const { isSubmitting, sessionId, buildDiagnostics, send } = useSendFeedback();
+  const { isSubmitting, sessionId, route, buildDiagnostics, send } = useSendFeedback();
   const showConversation = Boolean(sessionId);
   // Obsidian's in-process transport forwards only the light telemetry event and
   // drops `screenshot` by design (feedback-attachments decision 8), so offering
@@ -485,7 +485,7 @@ export function FeedbackDialog({
                     id="feedback-diagnostics"
                     icon={Stethoscope}
                     label="Diagnostics"
-                    summary="Version, platform, and recent errors."
+                    summary="Version, window size, browser, and recent errors."
                     checked={includeDiagnostics}
                     onCheckedChange={(next) => {
                       setAttachmentsTouched(true);
@@ -545,6 +545,7 @@ export function FeedbackDialog({
             initialTab={previewTab}
             diagnostics={buildDiagnostics(crashStack ? { crashStack } : undefined)}
             kind={kind}
+            route={route}
             showConversation={showConversation}
             sessionId={sessionId}
             {...(showScreenshot && screenshot.dataUrl

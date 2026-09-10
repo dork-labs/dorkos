@@ -31,6 +31,8 @@ interface FeedbackPreviewDialogProps {
   diagnostics: FeedbackDiagnostics | undefined;
   /** The submission kind — a server log excerpt is added for `bug` only. */
   kind: FeedbackSubmissionKind;
+  /** The page address that will be recorded (pathname + allowlisted query). */
+  route: string;
   /** Whether the Conversation tab is available (a session is resolvable). */
   showConversation: boolean;
   /** The session the transcript preview reads from. */
@@ -66,23 +68,51 @@ function DiagRow({ label, value }: { label: string; value: string }) {
 function DiagnosticsPreview({
   diagnostics,
   kind,
+  route,
 }: {
   diagnostics: FeedbackDiagnostics | undefined;
   kind: FeedbackSubmissionKind;
+  route: string;
 }) {
   if (!diagnostics) {
     return <p className="text-muted-foreground text-xs">Gathering diagnostics…</p>;
   }
   const { clientReport, breadcrumbs } = diagnostics;
+  const { viewport, browser, shell, theme, locale, timezone } = clientReport;
   return (
     <div className="flex flex-col gap-3">
       <div className="rounded-md border p-3">
+        {/* Shown first, and shown even though `route` rides OUTSIDE the
+            Diagnostics toggle: it is the one field a person cannot otherwise
+            see before sending, and it is the one that carries an id. */}
+        <DiagRow label="Page" value={route} />
         <DiagRow label="Version" value={clientReport.version} />
         <DiagRow label="Platform" value={clientReport.platform} />
         <DiagRow
           label="Runtimes"
           value={clientReport.runtimes.length ? clientReport.runtimes.join(', ') : 'none'}
         />
+        {/* The environment rows (DOR-1960). Each is rendered only when the
+            capture actually answered it, so this list is the payload and not a
+            menu of fields that might be filled in — the preview's whole job is
+            that what is shown is what goes. */}
+        {viewport && (
+          <DiagRow
+            label="Window"
+            // Same predicate as the server's `renderDiagnostics`: a 0 or absent
+            // ratio is "unknown", not "@0x", so both surfaces drop the suffix.
+            value={`${viewport.width}×${viewport.height}${
+              viewport.devicePixelRatio && viewport.devicePixelRatio !== 1
+                ? ` @${viewport.devicePixelRatio}x`
+                : ''
+            }`}
+          />
+        )}
+        {shell && <DiagRow label="Shell" value={shell} />}
+        {theme && <DiagRow label="Theme" value={theme} />}
+        {locale && <DiagRow label="Locale" value={locale} />}
+        {timezone && <DiagRow label="Timezone" value={timezone} />}
+        {browser && <DiagRow label="Browser" value={browser} />}
         {Object.entries(clientReport.flags).map(([key, value]) => (
           <DiagRow key={key} label={key} value={String(value)} />
         ))}
@@ -183,6 +213,7 @@ export function FeedbackPreviewDialog({
   initialTab,
   diagnostics,
   kind,
+  route,
   showConversation,
   sessionId,
   screenshotDataUrl,
@@ -232,7 +263,7 @@ export function FeedbackPreviewDialog({
 
           <TabsContent value="diagnostics" className="min-h-0">
             <ScrollArea className="max-h-[45vh]">
-              <DiagnosticsPreview diagnostics={diagnostics} kind={kind} />
+              <DiagnosticsPreview diagnostics={diagnostics} kind={kind} route={route} />
             </ScrollArea>
           </TabsContent>
 

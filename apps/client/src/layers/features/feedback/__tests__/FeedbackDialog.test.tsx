@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vite
 import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
-import { MAX_FEEDBACK_MESSAGE_LEN } from '@dorkos/shared/telemetry-events';
+import { MAX_FEEDBACK_MESSAGE_LEN, MAX_FEEDBACK_ROUTE_LEN } from '@dorkos/shared/telemetry-events';
 import { TransportProvider } from '@/layers/shared/model';
 import { FeedbackDialog } from '../ui/FeedbackDialog';
 import { __resetBreadcrumbsForTests, addBreadcrumb } from '@/layers/shared/lib/breadcrumbs';
@@ -11,15 +11,28 @@ import { setPlatformAdapter } from '@/layers/shared/lib';
 import { ImageCompressError } from '@/layers/shared/lib/image-compress';
 import { AppCaptureError } from '@/layers/shared/lib/app-capture';
 
-// The submit hook reads the current route via useRouterState (pathname + search).
-// A mutable object lets a test put us on a session route to exercise the
-// Conversation toggle without a second module mock.
+// The submit hook reads the current route via useRouterState (pathname, the
+// parsed search, and the serialized `searchStr`). A mutable object lets a test
+// put us on a session route to exercise the Conversation toggle without a second
+// module mock.
 const routerState = vi.hoisted(() => ({
   location: { pathname: '/team', search: {} as Record<string, unknown> },
 }));
 vi.mock('@tanstack/react-router', () => ({
-  useRouterState: (opts?: { select?: (s: unknown) => unknown }) =>
-    opts?.select ? opts.select(routerState) : undefined,
+  useRouterState: (opts?: { select?: (s: unknown) => unknown }) => {
+    // `searchStr` is DERIVED from `search` here, exactly as the real router
+    // derives it, rather than being a third field a test has to remember to set.
+    // Setting only one of the two is how a mock starts describing a location the
+    // router could never produce — a pathname with query params that the
+    // serialized string does not contain.
+    const query = new URLSearchParams(
+      Object.entries(routerState.location.search).map(([key, value]) => [key, String(value)])
+    ).toString();
+    const state = {
+      location: { ...routerState.location, searchStr: query ? `?${query}` : '' },
+    };
+    return opts?.select ? opts.select(state) : undefined;
+  },
 }));
 
 // Toasts — assert the honest success/error paths without a real toaster.
@@ -140,6 +153,177 @@ describe('FeedbackDialog', () => {
     expect(sendFeedback.mock.calls[0][0].diagnostics).toBeUndefined();
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
     expect(toast.success).toHaveBeenCalledWith('Thanks, sent.');
+  });
+
+  describe('triage context (DOR-1960)', () => {
+    /** Reveal the collapsed Attachments & details panel the toggles live in. */
+    function openAttachments(): void {
+      fireEvent.click(screen.getByRole('button', { name: /attachments & details/i }));
+    }
+
+    /** Type the message and press Send, returning the submission that went out. */
+    async function sendAndCapture(transport = createMockTransport()) {
+      const sendFeedback = vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
+      fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+      await waitFor(() => expect(sendFeedback).toHaveBeenCalledTimes(1));
+      return sendFeedback.mock.calls[0][0];
+    }
+
+    it('records the page AND its query string, not just the pathname', async () => {
+      // `/session` alone does not say WHICH conversation broke, which is the
+      // whole reason a route is recorded. The query half is the identifying half.
+      routerState.location = { pathname: '/session', search: { session: 'sess_abc123' } };
+      const transport = createMockTransport();
+      const sendFeedback = vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
+      renderDialog(transport);
+
+      fireEvent.change(screen.getByPlaceholderText(/what works, what does not/i), {
+        target: { value: 'the composer froze' },
+      });
+      const submission = await sendAndCapture(transport);
+
+      expect(submission.route).toBe('/session?session=sess_abc123');
+      expect(sendFeedback).toHaveBeenCalledTimes(1);
+    });
+
+    it('bounds an over-long route rather than failing the send', async () => {
+      // The wire schema refuses over-cap, and a refusal surfaces as a failed
+      // send and a toast about GitHub — which is not what went wrong. A param
+      // that cannot fit is dropped whole, so the address degrades to the page.
+      routerState.location = { pathname: '/session', search: { session: 'x'.repeat(500) } };
+      const transport = createMockTransport();
+      renderDialog(transport);
+
+      fireEvent.change(screen.getByPlaceholderText(/what works, what does not/i), {
+        target: { value: 'broke' },
+      });
+      const submission = await sendAndCapture(transport);
+
+      expect(submission.route).toBe('/session');
+      expect(submission.route?.length).toBeLessThanOrEqual(MAX_FEEDBACK_ROUTE_LEN);
+    });
+
+    it('never sends the working directory or the typed prompt in the route', async () => {
+      // End-to-end through the real dialog and hook, because this is the leak
+      // that matters: `router.tsx` writes the resolved absolute cwd into `?dir=`
+      // on every /session navigation, and `route` rides OUTSIDE the Diagnostics
+      // toggle. Asserted over the whole serialized submission, not just `route`.
+      routerState.location = {
+        pathname: '/session',
+        search: {
+          dir: '/Users/dorian/clients/acme',
+          prompt: 'refactor my billing code',
+          session: 'sess_abc123',
+        },
+      };
+      const transport = createMockTransport();
+      renderDialog(transport);
+
+      fireEvent.change(screen.getByPlaceholderText(/what works, what does not/i), {
+        target: { value: 'broke' },
+      });
+      const submission = await sendAndCapture(transport);
+
+      expect(submission.route).toBe('/session?session=sess_abc123');
+      const wire = JSON.stringify(submission);
+      expect(wire).not.toContain('/Users/dorian');
+      expect(wire).not.toContain('billing');
+    });
+
+    it('attaches the window, browser, shell, theme, locale and timezone with diagnostics on', async () => {
+      const transport = createMockTransport();
+      renderDialog(transport);
+      openAttachments();
+      fireEvent.click(screen.getByLabelText('Diagnostics'));
+      fireEvent.change(screen.getByPlaceholderText(/what works, what does not/i), {
+        target: { value: 'the sidebar overlaps' },
+      });
+
+      const report = (await sendAndCapture(transport)).diagnostics?.clientReport;
+
+      // jsdom's own window/navigator are the environment under test here, so
+      // these are asserted as shapes rather than as this machine's literals.
+      expect(report?.viewport).toEqual({
+        width: window.innerWidth,
+        height: window.innerHeight,
+        devicePixelRatio: window.devicePixelRatio,
+      });
+      expect(report?.browser).toBe(navigator.userAgent);
+      expect(report?.shell).toBe('browser');
+      expect(report?.theme).toBe('light');
+      expect(report?.locale).toBe(navigator.language);
+      expect(report?.timezone).toEqual(expect.any(String));
+    });
+
+    it('sends none of it when the Diagnostics toggle is off', async () => {
+      // The consent contract: these fields ride INSIDE the gated bundle, so
+      // switching the toggle off must take every one of them with it — not
+      // leave a viewport or a user agent riding along outside the gate.
+      const transport = createMockTransport();
+      renderDialog(transport);
+      openAttachments();
+      fireEvent.click(screen.getByRole('radio', { name: 'Bug' }));
+      // A bug report turns diagnostics ON by default; switch it back off.
+      fireEvent.click(screen.getByLabelText('Diagnostics'));
+      expect(screen.getByLabelText('Diagnostics')).not.toBeChecked();
+      fireEvent.change(screen.getByPlaceholderText(/what happened/i), {
+        target: { value: 'it broke' },
+      });
+
+      const submission = await sendAndCapture(transport);
+
+      expect(submission.diagnostics).toBeUndefined();
+      // Asserted over the WHOLE serialized submission, not field by field: a
+      // field-by-field check only rules out the names it happens to list, while
+      // this rules out the values reaching the wire by any route at all.
+      const wire = JSON.stringify(submission);
+      expect(wire).not.toContain(navigator.userAgent);
+      expect(wire).not.toContain(String(window.innerWidth));
+      expect(wire).not.toContain(Intl.DateTimeFormat().resolvedOptions().timeZone);
+    });
+
+    it('shows the recorded page address in the preview', async () => {
+      // `route` rides outside the Diagnostics toggle, so the preview is the only
+      // place a person can see the address — including the id it now carries —
+      // before pressing Send.
+      routerState.location = {
+        pathname: '/session',
+        search: { dir: '/Users/dorian/private', session: 'sess_abc123' },
+      };
+      renderDialog();
+      openAttachments();
+      // A session route also shows the Conversation toggle, so there are two
+      // preview links; the first belongs to Diagnostics.
+      fireEvent.click(screen.getAllByRole('button', { name: 'View full preview' })[0]);
+
+      expect(await screen.findByText('Page')).toBeInTheDocument();
+      expect(screen.getByText('/session?session=sess_abc123')).toBeInTheDocument();
+      // And the preview does not show what the route does not carry.
+      expect(screen.queryByText(/Users\/dorian/)).not.toBeInTheDocument();
+    });
+
+    it('shows the same context in the preview that it will send', async () => {
+      // "Pressing Send is the consent" only holds while the preview is the
+      // payload. A field that is sent but not previewed breaks that promise.
+      renderDialog();
+      openAttachments();
+      fireEvent.click(screen.getByLabelText('Diagnostics'));
+      fireEvent.click(screen.getByRole('button', { name: 'View full preview' }));
+
+      expect(await screen.findByText('What will be sent')).toBeInTheDocument();
+      // Awaited: the bundle is `undefined` until the config query settles, and
+      // the preview honestly says "Gathering diagnostics…" until then.
+      expect(await screen.findByText('Window')).toBeInTheDocument();
+      expect(screen.getByText(`${window.innerWidth}×${window.innerHeight}`)).toBeInTheDocument();
+      expect(screen.getByText('Shell')).toBeInTheDocument();
+      expect(screen.getByText('browser')).toBeInTheDocument();
+      expect(screen.getByText('Theme')).toBeInTheDocument();
+      expect(screen.getByText('light')).toBeInTheDocument();
+      expect(screen.getByText('Locale')).toBeInTheDocument();
+      expect(screen.getByText('Timezone')).toBeInTheDocument();
+      expect(screen.getByText('Browser')).toBeInTheDocument();
+      expect(screen.getByText(navigator.userAgent)).toBeInTheDocument();
+    });
   });
 
   it('sends the selected kind (Bug)', async () => {

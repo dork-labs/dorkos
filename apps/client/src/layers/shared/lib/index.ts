@@ -106,6 +106,7 @@ export { operatorStopForRuntime, resolveConfiguredStopMode } from './unattended-
 export { isSessionRequestReady } from './session-request-scope';
 export { rankMatch, type MatchTier, type RankMatchResult } from './rank-match';
 export { buildClientReport } from './build-issue-report';
+export { captureClientEnvironment, type ClientEnvironment } from './client-environment';
 // The two Transport implementations are deliberately NOT on this barrel, and
 // neither is anything that has to load one (DOR-1809).
 //
