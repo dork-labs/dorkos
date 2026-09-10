@@ -158,9 +158,21 @@ export async function getRecentLogExcerpt(
   const tail = matched.slice(-maxLines);
   const scrubbed = redactTokens(redactPaths(tail.map(formatLine).join('\n')));
 
+  // Cut from the FRONT, not the back (DOR-1976). `slice(-maxLines)` above has
+  // already decided the newest lines are the ones worth keeping, and a report
+  // is filed about the moment at the END of the log — so a head slice here
+  // would throw away exactly the lines the reader came for, while still
+  // looking like a full excerpt. The ellipsis leads for the same reason: it
+  // marks where the cut actually happened.
+  //
+  // Deliberately the opposite of the head slice in
+  // `services/core/feedback-reporter.ts` (DURABLE_DIAGNOSTICS_MAX_LEN), which
+  // is correct there: that one emits the environment lines first precisely so
+  // a head slice preserves them.
+  //
   // Reserve one character for the ellipsis so a truncated excerpt never
   // exceeds MAX_LOG_EXCERPT_LEN by one (the schema bound this feeds).
   return scrubbed.length > MAX_LOG_EXCERPT_LEN
-    ? `${scrubbed.slice(0, MAX_LOG_EXCERPT_LEN - 1)}…`
+    ? `…${scrubbed.slice(-(MAX_LOG_EXCERPT_LEN - 1))}`
     : scrubbed;
 }

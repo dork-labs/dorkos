@@ -151,6 +151,49 @@ describe('getRecentLogExcerpt', () => {
     expect(result!.length).toBeLessThanOrEqual(MAX_LOG_EXCERPT_LEN);
   });
 
+  it('keeps the NEWEST lines when the character cap truncates, not the oldest', async () => {
+    // The whole point of the excerpt is the moment the person hit the problem,
+    // which is at the END. `slice(-maxLines)` already picks the newest lines;
+    // the character cap has to agree with it or a noisy report silently loses
+    // exactly the lines a triager needs (DOR-1976, found triaging FB-15).
+    loggerModule.initLogger({ logDir, level: 5 });
+    for (let i = 0; i < 500; i++) {
+      loggerModule.logger.warn(`warning number ${i} `.repeat(5));
+    }
+
+    const result = await logExcerptModule.getRecentLogExcerpt(1000);
+
+    expect(result).toBeDefined();
+    expect(result!.length).toBeLessThanOrEqual(MAX_LOG_EXCERPT_LEN);
+    expect(result).toContain('warning number 499');
+    expect(result).not.toContain('warning number 0 ');
+  });
+
+  it('marks a character-capped excerpt at the front, where the cut happened', async () => {
+    loggerModule.initLogger({ logDir, level: 5 });
+    for (let i = 0; i < 500; i++) {
+      loggerModule.logger.warn(`warning number ${i} `.repeat(5));
+    }
+
+    const result = await logExcerptModule.getRecentLogExcerpt(1000);
+
+    expect(result!.startsWith('…')).toBe(true);
+    // The ellipsis is reserved out of the budget, not added to it: the schema
+    // field this feeds is `.max(MAX_LOG_EXCERPT_LEN)`, so one character over
+    // would be a validation failure rather than a cosmetic overshoot.
+    expect(result!.length).toBe(MAX_LOG_EXCERPT_LEN);
+  });
+
+  it('leaves an excerpt that fits unmarked', async () => {
+    loggerModule.initLogger({ logDir, level: 5 });
+    loggerModule.logger.warn('a short warning');
+
+    const result = await logExcerptModule.getRecentLogExcerpt();
+
+    expect(result!.startsWith('…')).toBe(false);
+    expect(result).toContain('a short warning');
+  });
+
   it('never throws when the log directory is unreadable', async () => {
     loggerModule.initLogger({ logDir, level: 5 });
     await rm(logDir, { recursive: true, force: true });
