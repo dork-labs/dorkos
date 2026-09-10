@@ -52,6 +52,23 @@
 #   RECOVERED                  was FAILING/CONFLICTING last cycle, healthy now
 set -euo pipefail
 
+USAGE="usage: watch-prs.sh [--interval s] [--max-cycles n] [--once] PR... | --classify | --probe PR"
+usage() {
+  printf '%s\n' "$USAGE"
+}
+usage_error() {
+  [ $# -eq 0 ] || printf 'error: %s\n' "$*" >&2
+  usage >&2
+  exit 2
+}
+is_non_negative_integer() {
+  local value="$1"
+  case "$value" in
+    '' | *[!0-9]* | 0[0-9]*) return 1 ;;
+  esac
+  [ ${#value} -lt 10 ] || { [ ${#value} -eq 10 ] && [[ "$value" < "2147483648" ]]; }
+}
+
 INTERVAL=60
 MAX_CYCLES=0 # 0 = unbounded (caller supplies the timeout)
 ONCE=0
@@ -60,14 +77,25 @@ PROBE=""
 PRS=()
 while [ $# -gt 0 ]; do
   case "$1" in
-    --interval) INTERVAL="$2"; shift 2 ;;
-    --max-cycles) MAX_CYCLES="$2"; shift 2 ;;
+    --interval)
+      [ $# -ge 2 ] || usage_error "--interval requires a positive integer up to 2147483647"
+      is_non_negative_integer "$2" && [ "$2" != 0 ] || usage_error "--interval requires a positive integer up to 2147483647"
+      INTERVAL="$2"
+      shift 2 ;;
+    --max-cycles)
+      [ $# -ge 2 ] || usage_error "--max-cycles requires a non-negative integer up to 2147483647"
+      is_non_negative_integer "$2" || usage_error "--max-cycles requires a non-negative integer up to 2147483647"
+      MAX_CYCLES="$2"
+      shift 2 ;;
     --once) ONCE=1; shift ;;
+    -h | --help) usage; exit 0 ;;
     --classify) CLASSIFY=1; shift ;;
     --probe)
       PROBE="${2:-}"
-      [ -n "$PROBE" ] || { echo "usage: watch-prs.sh --probe PR" >&2; exit 2; }
+      [ -n "$PROBE" ] || usage_error "--probe requires exactly one PR"
+      case "$PROBE" in -*) usage_error "--probe requires exactly one PR" ;; esac
       shift 2 ;;
+    -*) usage_error "unknown option: $1" ;;
     *) PRS+=("$1"); shift ;;
   esac
 done
@@ -109,14 +137,11 @@ if [ "$CLASSIFY" = 1 ]; then
   exit 0
 fi
 
-USAGE="usage: watch-prs.sh [--interval s] [--max-cycles n] [--once] PR... | --classify | --probe PR"
-[ ${#PRS[@]} -gt 0 ] || [ -n "$PROBE" ] || { echo "$USAGE" >&2; exit 2; }
+[ ${#PRS[@]} -gt 0 ] || [ -n "$PROBE" ] || usage_error
 # --probe takes exactly one PR: a stray extra argument (e.g. `--probe 42 43`)
 # must be a usage error, not a silent "PROBE wins, the rest is ignored".
 if [ -n "$PROBE" ] && [ ${#PRS[@]} -gt 0 ]; then
-  echo "$USAGE" >&2
-  echo "  --probe takes exactly one PR; got extra argument(s): ${PRS[*]}" >&2
-  exit 2
+  usage_error "--probe takes exactly one PR; got extra argument(s): ${PRS[*]}"
 fi
 
 # SKILL.md's own rule for this script: "a watcher that dies must say so."
