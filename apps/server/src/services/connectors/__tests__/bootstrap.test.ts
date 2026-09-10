@@ -1,5 +1,15 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { connectorProviderInstances, createDb, eq, runMigrations, type Db } from '@dorkos/db';
+import {
+  agents,
+  connectionOperationGrants,
+  connections,
+  connectorOperationRevisions,
+  connectorProviderInstances,
+  createDb,
+  eq,
+  runMigrations,
+  type Db,
+} from '@dorkos/db';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 import type { CredentialProvider, CredentialResolution } from '../../core/credential-provider.js';
 import { ConnectorRegistry } from '../registry.js';
@@ -15,6 +25,7 @@ import { ComposioApiError, type ComposioHttpClient } from '../providers/composio
 import { NANGO_SECRET_KEY_REF } from '../providers/nango.js';
 import type { NangoHttpClient } from '../providers/nango-client.js';
 import type { RawMcpServerDescriptor } from '../providers/raw-mcp.js';
+import { ConnectorOperatorQueryService } from '../resources/operator-query-service.js';
 
 /** A valid 256-bit key written in base64 (32 zero bytes) for the enforced gate. */
 const VALID_ENCRYPTION_KEY = Buffer.alloc(32).toString('base64');
@@ -222,6 +233,199 @@ describe('ConnectorProviderBootstrapper', () => {
       linked = false;
       await restarted.reloadManagedCloud();
       expect(restartedRegistry.resolveProviderInstance(managed.instanceId)).toBeUndefined();
+    });
+
+    it('recovers one failed hosted boot through concurrent normal catalog reads without changing authority', async () => {
+      const instanceId = 'managed-provider' as never;
+      const healthy = new FakeConnectorProvider({
+        instanceId,
+        type: 'dorkos-managed',
+        custody: 'managed',
+      });
+      const firstBoot = makeBootstrapper({
+        managedCloud: {
+          instanceId,
+          configured: () => true,
+          executionConfigDigest: () => 'linked-material',
+          create: () => healthy,
+        },
+      });
+      await firstBoot.registerBootProviders();
+
+      const now = '2026-09-10T00:00:00.000Z';
+      db.insert(agents)
+        .values({
+          id: 'agent-a',
+          name: 'agent-a',
+          displayName: 'Agent A',
+          runtime: 'claude-code',
+          projectPath: '/agents/a',
+          registeredAt: now,
+          updatedAt: now,
+        })
+        .run();
+      db.insert(connections)
+        .values({
+          id: 'connection-a',
+          providerInstanceId: instanceId,
+          externalAccountRef: 'account-a',
+          toolkit: 'gmail',
+          label: 'Gmail',
+          status: 'active',
+          lifecycleState: 'connected',
+          enabled: true,
+          grantReconciliationStatus: 'ready',
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      db.insert(connectorOperationRevisions)
+        .values({
+          id: 'revision-a',
+          providerInstanceId: instanceId,
+          toolkit: 'gmail',
+          operationSlug: 'GMAIL_GET_PROFILE',
+          toolkitVersion: '20260910',
+          schemaHash: 'sha256:profile',
+          capabilityClassification: 'read',
+          retryPolicy: 'never',
+          inputSchemaJson: '{}',
+          discoveredAt: now,
+        })
+        .run();
+      db.insert(connectionOperationGrants)
+        .values({
+          id: 'grant-a',
+          subjectType: 'agent',
+          subjectId: 'agent-a',
+          agentId: 'agent-a',
+          connectionId: 'connection-a',
+          operationRevisionId: 'revision-a',
+          createdBy: 'operator',
+          createdAt: now,
+        })
+        .run();
+
+      const restartedRegistry = new ConnectorRegistry({ db });
+      let probeCount = 0;
+      let releaseRecovery!: () => void;
+      const recoveryGate = new Promise<void>((resolve) => {
+        releaseRecovery = resolve;
+      });
+      const recovered = new FakeConnectorProvider({
+        instanceId,
+        type: 'dorkos-managed',
+        custody: 'managed',
+      });
+      recovered.listAccounts = async () => {
+        probeCount += 1;
+        if (probeCount === 1) throw new Error('temporary hosted outage');
+        await recoveryGate;
+        return [];
+      };
+      const restarted = new ConnectorProviderBootstrapper({
+        rawMcpPendingConnect: () => undefined,
+        registry: restartedRegistry,
+        credentials: fakeCredentials(secrets),
+        nangoEnv: () => ({}),
+        rawMcpServers: () => [],
+        makeComposioClient: () => fakeComposioClient(),
+        makeNangoClient: () => fakeNangoClient(),
+        managedCloud: {
+          instanceId,
+          configured: () => true,
+          executionConfigDigest: () => 'linked-material',
+          create: () => recovered,
+        },
+      });
+      await restarted.registerBootProviders();
+      expect(restartedRegistry.resolveProviderInstance(instanceId)).toBeUndefined();
+
+      const queries = new ConnectorOperatorQueryService({
+        db,
+        registry: restartedRegistry,
+        recoverManagedProvider: () => restarted.recoverManagedCloud(),
+        sessions: { resolveSessionAgent: () => undefined },
+        agentOwnership: { ownsAgent: () => false },
+      });
+      const first = queries.catalog({ signal: new AbortController().signal });
+      const second = queries.catalog({ signal: new AbortController().signal });
+      await Promise.resolve();
+      expect(probeCount).toBe(2);
+      releaseRecovery();
+      const [firstCatalog, secondCatalog] = await Promise.all([first, second]);
+
+      expect(firstCatalog.services.some((service) => service.serviceSlug === 'gmail')).toBe(true);
+      expect(secondCatalog.services.some((service) => service.serviceSlug === 'gmail')).toBe(true);
+      expect(probeCount).toBe(2);
+      expect(
+        db
+          .select({ generation: connectorProviderInstances.executionConfigGeneration })
+          .from(connectorProviderInstances)
+          .where(eq(connectorProviderInstances.id, instanceId))
+          .get()
+      ).toEqual({ generation: 1 });
+      expect(db.select().from(connectionOperationGrants).all()).toEqual([
+        expect.objectContaining({ id: 'grant-a', revokedAt: null }),
+      ]);
+
+      await restarted.recoverManagedCloud();
+      expect(probeCount).toBe(2);
+    });
+
+    it('keeps recovery absent when unlinked, unavailable, or the linked material changes in flight', async () => {
+      const instanceId = 'managed-provider' as never;
+      let linked = false;
+      let digest: string | undefined;
+      let createCount = 0;
+      let probeCount = 0;
+      let releaseProbe!: () => void;
+      const probeGate = new Promise<void>((resolve) => {
+        releaseProbe = resolve;
+      });
+      const managed = new FakeConnectorProvider({
+        instanceId,
+        type: 'dorkos-managed',
+        custody: 'managed',
+      });
+      managed.listAccounts = async () => {
+        probeCount += 1;
+        await probeGate;
+        return [];
+      };
+      const bootstrapper = makeBootstrapper({
+        managedCloud: {
+          instanceId,
+          configured: () => linked,
+          executionConfigDigest: () => digest,
+          create: () => {
+            createCount += 1;
+            return managed;
+          },
+        },
+      });
+
+      await bootstrapper.registerBootProviders();
+      await bootstrapper.recoverManagedCloud();
+      expect(createCount).toBe(0);
+
+      linked = true;
+      digest = 'linked-material-a';
+      const recovery = bootstrapper.recoverManagedCloud();
+      await Promise.resolve();
+      expect(probeCount).toBe(1);
+      digest = 'linked-material-b';
+      releaseProbe();
+      await recovery;
+      expect(registry.resolveProviderInstance(instanceId)).toBeUndefined();
+
+      managed.listAccounts = async () => {
+        probeCount += 1;
+        throw new Error('hosted readiness is off');
+      };
+      await bootstrapper.recoverManagedCloud();
+      expect(registry.resolveProviderInstance(instanceId)).toBeUndefined();
+      expect(probeCount).toBe(2);
     });
 
     it('logs-and-skips the Nango encryption-key refusal — boot resolves, status carries the error', async () => {

@@ -2547,6 +2547,7 @@ async function start() {
   const connectorOperatorQueries = new ConnectorOperatorQueryService({
     db,
     registry: connectorRegistry,
+    recoverManagedProvider: () => connectorBootstrapper.recoverManagedCloud(),
     ...(adapterManager && { relay: adapterManager }),
     agentOwnership: { ownsAgent: connectorOwnsAgent },
     managedUsage: getCloudLinkManager(),

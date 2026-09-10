@@ -25,6 +25,7 @@ import {
   ConnectorOperatorQueryError,
   ConnectorOperatorQueryService,
 } from '../resources/operator-query-service.js';
+import { ConnectionStore } from '../connection-store.js';
 import { ConnectorRegistry } from '../registry.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
@@ -175,6 +176,32 @@ describe('ConnectorOperatorQueryService', () => {
       }),
     ]);
     expect(JSON.stringify(catalog)).not.toContain('private-account-a');
+  });
+
+  it('refuses before managed recovery when canonical connector data is unavailable', async () => {
+    const recoverManagedProvider = vi.fn<() => Promise<void>>().mockResolvedValue();
+    const unavailableRegistry = new ConnectorRegistry({
+      db,
+      connectionStore: new ConnectionStore({
+        db,
+        runMigration: () => ({
+          status: 'migration_failed',
+          error: 'Connector data could not be upgraded.',
+        }),
+      }),
+    });
+    const unavailable = new ConnectorOperatorQueryService({
+      db,
+      registry: unavailableRegistry,
+      recoverManagedProvider,
+      sessions: { resolveSessionAgent: () => undefined },
+      agentOwnership: { ownsAgent: () => false },
+    });
+
+    await expect(
+      unavailable.catalog({ signal: new AbortController().signal })
+    ).rejects.toMatchObject({ code: 'migration_failed' });
+    expect(recoverManagedProvider).not.toHaveBeenCalled();
   });
 
   it('paginates the real managed wire within its strict page limit', async () => {

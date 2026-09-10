@@ -199,6 +199,7 @@ export class ConnectorProviderBootstrapper {
   private readonly _specs = new Map<string, ManagedProviderSpec>();
   private readonly _managedCloud: ConnectorProviderBootstrapperOpts['managedCloud'];
   private _managedCloudReload: Promise<void> = Promise.resolve();
+  private _managedCloudRecovery: Promise<void> | undefined;
   private readonly _instanceBySpecType = new Map<string, ConnectorProvider['instanceId']>();
   /** Last refusal/connection-check failure per provider type, surfaced on the status DTO. */
   private readonly _lastError = new Map<string, string>();
@@ -321,6 +322,51 @@ export class ConnectorProviderBootstrapper {
     const reload = this._managedCloudReload.then(() => this._reloadManagedCloud());
     this._managedCloudReload = reload.catch(() => {});
     return reload;
+  }
+
+  /**
+   * Restore an absent hosted provider after a transient startup failure.
+   *
+   * Unlike {@link reloadManagedCloud}, this path never removes a live provider.
+   * Concurrent catalog reads share one probe, and the linked-key digest is
+   * revalidated after the probe so an unlinked or rotated key cannot register a
+   * provider created from stale state.
+   */
+  recoverManagedCloud(): Promise<void> {
+    if (this._managedCloudRecovery) return this._managedCloudRecovery;
+    const recovery = this._managedCloudReload.then(() => this._recoverManagedCloud());
+    this._managedCloudReload = recovery.catch(() => {});
+    const sharedRecovery = recovery.finally(() => {
+      if (this._managedCloudRecovery === sharedRecovery) this._managedCloudRecovery = undefined;
+    });
+    this._managedCloudRecovery = sharedRecovery;
+    return sharedRecovery;
+  }
+
+  private async _recoverManagedCloud(): Promise<void> {
+    const managed = this._managedCloud;
+    if (!managed || this._registry.resolveProviderInstance(managed.instanceId)) return;
+    const expectedDigest = managed.executionConfigDigest();
+    if (!managed.configured() || !expectedDigest) return;
+    try {
+      const provider = managed.create();
+      await provider.listAccounts();
+      if (
+        !managed.configured() ||
+        managed.executionConfigDigest() !== expectedDigest ||
+        this._registry.resolveProviderInstance(managed.instanceId)
+      ) {
+        return;
+      }
+      this._registry.register(provider, expectedDigest, 'managed');
+      logger.info('[Connectors] DorkOS managed provider recovered');
+    } catch (error) {
+      logger.error(
+        `[Connectors] DorkOS managed provider recovery check failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
   }
 
   private async _reloadManagedCloud(): Promise<void> {
