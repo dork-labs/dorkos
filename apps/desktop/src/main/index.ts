@@ -22,6 +22,7 @@ import { announceBackgroundRunning } from './background-notice';
 import { armQuitGuard } from './quit-guard';
 import { setupCloseTab } from './close-tab';
 import { setupAdminActions } from './admin';
+import { setupAppViewCapture } from './capture';
 import { clearHttpCacheOnVersionChange } from './cache-hygiene';
 import { describeLogLocation } from './log-location';
 import { offerMoveToApplications } from './install-location';
@@ -274,6 +275,11 @@ if (!gotTheLock) {
   // supervisor's work here rather than the server's, because a server that ends
   // its own process inside a UtilityProcess never comes back (see `admin/`).
   setupAdminActions({ getRendererUrl });
+
+  // "Capture app view" in the feedback dialog. The shell answers it because it
+  // has a real window to photograph, where the browser has to redraw the page
+  // from its own DOM and guess (see `capture/`).
+  setupAppViewCapture({ getRendererUrl });
 
   ipcMain.on('get-server-port', (event) => {
     event.returnValue = getServerPort();

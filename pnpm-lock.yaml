@@ -214,6 +214,9 @@ importers:
       '@xyflow/react':
         specifier: ^12.11.6
         version: 12.11.6(@types/react-dom@19.2.5(@types/react@19.2.18))(@types/react@19.2.18)(immer@11.1.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@zumer/snapdom':
+        specifier: 2.24.17
+        version: 2.24.17
       ansi-regex:
         specifier: ^6.3.0
         version: 6.3.0
@@ -5943,6 +5946,9 @@ packages:
 
   '@xyflow/system@0.0.82':
     resolution: {integrity: sha512-4DKnL3CGtCGLRSmgDqaajRVgeksMXq/Yw4wPfdMfm7JvdIiWHGzVYOfFUztiATwdBXZqUU6HhehwUdbV9G23PQ==}
+
+  '@zumer/snapdom@2.24.17':
+    resolution: {integrity: sha512-UI+DGlq+/x1ZzP8/5sN2GCf7T8kE4gzq3ER2SRn3g7QUJmjqdrQlJ0omHF+V7ODzT7zer+IKG12XF9ZnmVVXOw==}
 
   abbrev@4.0.0:
     resolution: {integrity: sha512-a1wflyaL0tHtJSmLSOVybYhy22vRih4eduhhrkcjgrWGnRfrZtovJ2FRjxuTtkkj47O/baf0R86QU5OuYpz8fA==}
@@ -15587,6 +15593,8 @@ snapshots:
       d3-interpolate: 3.0.1
       d3-selection: 3.0.0
       d3-zoom: 3.0.0
+
+  '@zumer/snapdom@2.24.17': {}
 
   abbrev@4.0.0: {}
 

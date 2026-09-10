@@ -2,6 +2,7 @@ import { app, BrowserWindow, nativeTheme, screen, shell } from 'electron';
 import type {
   HandlerDetails,
   Event,
+  IpcMainInvokeEvent,
   WebContentsWillNavigateEventParams,
   WindowOpenHandlerResponse,
 } from 'electron';
@@ -119,6 +120,31 @@ export function isOwnOrigin(url: string, rendererUrl?: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Whether an IPC invoke came from a page of ours.
+ *
+ * Not a claim that the sender is trustworthy — the app runs marketplace
+ * extension code as ordinary modules, and in a browser that code can already
+ * `fetch` the endpoints some of these channels replace. It is the narrower
+ * promise that a privileged channel reaches no FURTHER than the app's own
+ * pages: a document that is not one of ours (a devtools context, a page the
+ * shell was steered onto) cannot restart the server, delete the data directory,
+ * or take a picture of the window.
+ *
+ * The same predicate the link guards and the permission policy use, through the
+ * same live accessor, so there is one answer to "is this our own page?" and it
+ * survives the server's port moving.
+ *
+ * @param event - The invoke to judge.
+ * @param getRendererUrl - Live accessor for the app's own origin.
+ */
+export function isCockpitSender(
+  event: IpcMainInvokeEvent,
+  getRendererUrl: () => string | undefined
+): boolean {
+  return isOwnOrigin(event.sender.getURL(), getRendererUrl());
 }
 
 /**

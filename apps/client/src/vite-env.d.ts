@@ -51,6 +51,17 @@ declare global {
    */
   type DesktopAdminResult = { ok: true } | { ok: false; message: string };
 
+  /**
+   * What the desktop shell answers "Capture app view" with, mirrored from the
+   * main process's `CaptureAppViewResult` (`main/capture/index.ts`, where this
+   * union is the source of truth). Kept in sync by hand, like
+   * {@link DesktopAdminResult}.
+   *
+   * `dataUrl` is a PNG of this window, un-compressed —
+   * `shared/lib/image-compress.ts` is what bounds it before it goes anywhere.
+   */
+  type DesktopCaptureResult = { ok: true; dataUrl: string } | { ok: false; message: string };
+
   /** API exposed by the Electron preload script via contextBridge. */
   interface ElectronAPI {
     /**
@@ -82,6 +93,21 @@ declare global {
      * and the same reason as {@link restartServer}.
      */
     resetAllData?(): Promise<DesktopAdminResult>;
+    /**
+     * Take a picture of this window, for the feedback dialog's "Capture app
+     * view" (feedback-attachments PR 3). Photographs **this page and nothing
+     * else** — never the desktop, never another window.
+     *
+     * Hide whatever is in front of the app and wait for a repaint before
+     * calling: the picture is of the window as it stands, so the dialog would
+     * otherwise photograph itself. `shared/lib/app-capture.ts` is the one place
+     * that is done, and is where the browser fallback lives.
+     *
+     * **Optional on purpose.** Absent in the browser app, in the Obsidian
+     * embed, and in any desktop build predating this — all of which capture
+     * through the DOM instead.
+     */
+    captureAppView?(): Promise<DesktopCaptureResult>;
     /** The current platform (darwin, win32, linux). */
     platform: NodeJS.Platform;
     /**

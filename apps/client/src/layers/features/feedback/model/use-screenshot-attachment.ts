@@ -1,12 +1,13 @@
 /**
- * The one screenshot a feedback submission may carry, and the three ways a
- * person can hand one over (feedback-attachments PR 2).
+ * The one screenshot a feedback submission may carry, and the four ways a
+ * person can hand one over (feedback-attachments PR 2 and PR 3).
  *
- * Paste, drag-and-drop and the file picker all land here, go through the same
- * compression step, and end up as the same bounded `data:` URL. One image at a
- * time on purpose: a second attach replaces the first rather than growing a
- * list, because the submission carries a single `screenshot` field and a queue
- * the wire cannot express would only be a way to lose pictures quietly.
+ * Paste, drag-and-drop, the file picker and one-click "Capture app view" all
+ * land here, go through the same compression step, and end up as the same
+ * bounded `data:` URL. One image at a time on purpose: a second attach replaces
+ * the first rather than growing a list, because the submission carries a single
+ * `screenshot` field and a queue the wire cannot express would only be a way to
+ * lose pictures quietly.
  *
  * Nothing is ever attached on its own — every path through this hook starts
  * with a deliberate act (feedback-attachments decision 12), and every refusal
@@ -24,9 +25,12 @@ import {
 } from 'react';
 import { toast } from 'sonner';
 import {
+  AppCaptureError,
+  captureAppView,
   compressImage,
   ImageCompressError,
   isAcceptableImageDataUrl,
+  type AppCaptureReason,
   type ImageCompressReason,
 } from '@/layers/shared/lib';
 
@@ -43,6 +47,32 @@ const REFUSAL_MESSAGE: Record<ImageCompressReason, string> = {
   unreadable: 'Couldn’t read that image. Try a PNG or JPEG.',
   unsupported: 'This browser can’t prepare images to send.',
 };
+
+/**
+ * What the user is told when the one-click capture came back with no picture.
+ *
+ * Both point at the other way in, because there is one and it is two clicks
+ * away: a refusal that only says "no" leaves someone with a bug to report and
+ * nowhere to go.
+ */
+const CAPTURE_REFUSAL_MESSAGE: Record<AppCaptureReason, string> = {
+  failed: 'Couldn’t capture the app view. You can still add a screenshot yourself.',
+  unsupported:
+    'Couldn’t load what it takes to capture the app view. Reload the page, or add a screenshot yourself.',
+};
+
+/**
+ * Which sentence a failed attach or capture earns.
+ *
+ * A capture goes through the same compressor as a picked file, so it can be
+ * refused for either module's reasons — and "that image is too big" is the
+ * honest answer for a capture too.
+ */
+function refusalMessage(error: unknown): string {
+  if (error instanceof AppCaptureError) return CAPTURE_REFUSAL_MESSAGE[error.reason];
+  if (error instanceof ImageCompressError) return REFUSAL_MESSAGE[error.reason];
+  return REFUSAL_MESSAGE.unreadable;
+}
 
 /** Shown when something that is not a picture is dropped or pasted in. */
 const NOT_AN_IMAGE_MESSAGE = 'Only images can be attached.';
@@ -100,6 +130,13 @@ export interface UseScreenshotAttachment {
   isDraggingOver: boolean;
   /** Attach a picked, pasted, or dropped file, replacing any current one. */
   attach: (file: File) => Promise<void>;
+  /**
+   * Take a picture of the app itself and attach it, replacing any current one.
+   *
+   * The same state machine as {@link attach} — one image, the newest attempt
+   * wins — so a capture and a paste racing each other cannot both land.
+   */
+  capture: () => Promise<void>;
   /** Drop the attached image. */
   clear: () => void;
   /**
@@ -143,17 +180,21 @@ export function useScreenshotAttachment(
   // by writing an image nobody asked for any more.
   const generation = useRef(0);
 
-  const attach = useCallback(
-    async (file: File): Promise<void> => {
-      if (!file.type.startsWith('image/')) {
-        toast.error(NOT_AN_IMAGE_MESSAGE);
-        return;
-      }
+  /**
+   * Run one attach attempt to its end, whatever produced the picture.
+   *
+   * The single owner of the in-flight flag and the generation counter, so every
+   * way in — a picked file, a paste, a drop, a one-click capture — obeys the
+   * same "newest attempt wins" rule. A second state machine beside this one is
+   * how two paths end up both writing an image.
+   */
+  const attachFrom = useCallback(
+    async (produce: () => Promise<string>): Promise<void> => {
       const mine = ++generation.current;
       setIsPreparing(true);
       try {
-        const compressed = await compressImage(file);
-        // Superseded while encoding: the image was removed, the dialog was
+        const compressed = await produce();
+        // Superseded while working: the image was removed, the dialog was
         // reopened, or a second picture is already on its way. Any of the three
         // makes this result stale, and writing it would resurrect something the
         // user believed was gone.
@@ -162,9 +203,7 @@ export function useScreenshotAttachment(
         onAttached?.();
       } catch (error) {
         if (mine !== generation.current) return;
-        const reason: ImageCompressReason =
-          error instanceof ImageCompressError ? error.reason : 'unreadable';
-        toast.error(REFUSAL_MESSAGE[reason]);
+        toast.error(refusalMessage(error));
       } finally {
         // Only the live attempt owns the flag; a stale one clearing it would
         // re-enable Send while the newer picture is still encoding.
@@ -172,6 +211,24 @@ export function useScreenshotAttachment(
       }
     },
     [onAttached]
+  );
+
+  const attach = useCallback(
+    async (file: File): Promise<void> => {
+      if (!file.type.startsWith('image/')) {
+        toast.error(NOT_AN_IMAGE_MESSAGE);
+        return;
+      }
+      await attachFrom(() => compressImage(file));
+    },
+    [attachFrom]
+  );
+
+  const capture = useCallback(
+    // Compressed like every other picture: the shell hands back a full-size PNG
+    // of a retina window, which is several times the size the wire accepts.
+    (): Promise<void> => attachFrom(async () => compressImage(await captureAppView())),
+    [attachFrom]
   );
 
   const clear = useCallback(() => {
@@ -286,6 +343,7 @@ export function useScreenshotAttachment(
     isPreparing,
     isDraggingOver,
     attach,
+    capture,
     clear,
     reset,
     handlers: { onPaste, onDragEnter, onDragOver, onDragLeave, onDrop },

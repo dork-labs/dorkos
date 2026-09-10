@@ -371,6 +371,7 @@ export function FeedbackDialog({
                   isPreparing={screenshot.isPreparing}
                   isDraggingOver={screenshot.isDraggingOver}
                   onPick={(file) => void screenshot.attach(file)}
+                  onCapture={() => void screenshot.capture()}
                   onRemove={screenshot.clear}
                   onPreview={() => openPreview('screenshot')}
                   isMobile={!isDesktop}
