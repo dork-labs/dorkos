@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ComposioAuthenticationSetupError,
   normalizeComposioToolkitAuthentication,
   normalizeComposioAuthenticationConfiguration,
   selectComposioAuthentication,
@@ -37,7 +38,7 @@ function raw(modes: string[] = ['API_KEY', 'OAUTH2']) {
                       mode === 'BASIC' ? 'username' : mode === 'BEARER_TOKEN' ? 'token' : 'api_key',
                   },
                 ],
-          optional: [],
+          optional: [] as Array<typeof field>,
         },
       },
     })),
@@ -131,9 +132,19 @@ describe('exact Composio authentication selection', () => {
       constrained.auth_config_details[0].fields.connected_account_initiation.required[0],
       { enum: ['fixed'] }
     );
-    expect(() => normalizeComposioToolkitAuthentication(constrained)).toThrow(
-      'declares account-field constraints'
-    );
+    const constrainedError = (() => {
+      try {
+        normalizeComposioToolkitAuthentication(constrained);
+      } catch (error) {
+        return error;
+      }
+    })();
+    expect(constrainedError).toMatchObject({
+      reason: 'unsupported_metadata',
+      metadataIssueCount: 1,
+      metadataIssueLocations: ['connected_account_initiation_required'],
+    });
+    expect(String(constrainedError)).toContain('declares account-field constraints');
     const value = raw(['API_KEY']);
     value.composio_managed_auth = [];
     value.auth_config_details[0].fields.connected_account_initiation.required[0] = {
@@ -143,6 +154,63 @@ describe('exact Composio authentication selection', () => {
     expect(() =>
       selectComposioAuthentication(normalizeComposioToolkitAuthentication(value))
     ).toThrow();
+  });
+  it('projects strict issues only to fixed field regions and an issue-object count', () => {
+    const privateKey = 'PRIVATE_UNKNOWN_KEY';
+    const privateValue = 'PRIVATE_UNKNOWN_VALUE';
+    const value = raw(['API_KEY']);
+    const constrained = Object.assign({ ...field }, { [privateKey]: privateValue });
+    const groups = value.auth_config_details[0].fields;
+    groups.auth_config_creation.required.push({ ...constrained });
+    groups.auth_config_creation.optional.push({ ...constrained });
+    Object.assign(groups.connected_account_initiation.required[0], {
+      [privateKey]: privateValue,
+    });
+    groups.connected_account_initiation.optional.push({ ...constrained });
+
+    const error = (() => {
+      try {
+        normalizeComposioToolkitAuthentication(value);
+      } catch (caught) {
+        return caught;
+      }
+    })();
+    expect(error).toMatchObject({
+      reason: 'unsupported_metadata',
+      metadataIssueCount: 4,
+      metadataIssueLocations: [
+        'auth_config_creation_optional',
+        'auth_config_creation_required',
+        'connected_account_initiation_optional',
+        'connected_account_initiation_required',
+      ],
+      metadataMethodKinds: ['supported_account_fields'],
+    });
+    expect(JSON.stringify(error)).not.toContain(privateKey);
+    expect(JSON.stringify(error)).not.toContain(privateValue);
+
+    const unknownLocation = new ComposioAuthenticationSetupError('unsupported_metadata', {
+      issueCount: 1,
+      issueLocations: [privateKey],
+      methodKinds: [privateKey],
+    });
+    expect(unknownLocation.metadataIssueLocations).toEqual([]);
+    expect(unknownLocation.metadataMethodKinds).toEqual([]);
+    expect(JSON.stringify(unknownLocation)).not.toContain(privateKey);
+
+    const otherMethod = raw(['DCR']);
+    Object.assign(
+      otherMethod.auth_config_details[0].fields.connected_account_initiation.required[0],
+      { [privateKey]: privateValue }
+    );
+    const otherError = (() => {
+      try {
+        normalizeComposioToolkitAuthentication(otherMethod);
+      } catch (caught) {
+        return caught;
+      }
+    })();
+    expect(otherError).toMatchObject({ metadataMethodKinds: ['other'] });
   });
   it('normalizes config identity without copying credentials or proxy secrets', () => {
     const normalized = normalizeComposioAuthenticationConfiguration({

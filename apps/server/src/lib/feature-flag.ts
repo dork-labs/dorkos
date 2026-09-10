@@ -16,7 +16,10 @@ interface FeatureFlag {
 
 /** Create a runtime feature flag with get/set accessors and optional init error tracking. */
 export function createFeatureFlag(): FeatureFlag {
-  const state: { enabled: boolean; initError?: string } = { enabled: true };
+  // A subsystem is running only after its startup path says so. Starting true
+  // makes an explicit disable and an initialization failure indistinguishable
+  // from a successful start on the config wire (DOR-1966).
+  const state: { enabled: boolean; initError?: string } = { enabled: false };
   return {
     setEnabled: (enabled: boolean) => {
       state.enabled = enabled;

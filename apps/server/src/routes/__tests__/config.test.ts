@@ -1356,7 +1356,33 @@ describe('GET /api/config', () => {
   // restart — or forever, when an environment variable is deciding instead
   // (spec team-room-home D6).
   describe('tasks/relay — what is running versus what the setting says', () => {
-    it('reports both as on for a fresh install', async () => {
+    it('reports each subsystem off until its startup path succeeds', async () => {
+      const beforeStartup = await request(server).get('/api/config').expect(200);
+
+      expect(beforeStartup.body.tasks).toMatchObject({
+        enabled: false,
+        enabledInConfig: true,
+        lockedByEnv: false,
+      });
+      expect(beforeStartup.body.relay).toMatchObject({
+        enabled: false,
+        enabledInConfig: true,
+        lockedByEnv: false,
+      });
+
+      const [{ setTasksEnabled }, { setRelayEnabled }] = await Promise.all([
+        import('../../services/tasks/task-state.js'),
+        import('../../services/relay/relay-state.js'),
+      ]);
+      setTasksEnabled(true);
+      setRelayEnabled(true);
+
+      const afterStartup = await request(server).get('/api/config').expect(200);
+      expect(afterStartup.body.tasks.enabled).toBe(true);
+      expect(afterStartup.body.relay.enabled).toBe(true);
+    });
+
+    it('reports both configured on for a fresh install', async () => {
       const res = await request(server).get('/api/config').expect(200);
 
       expect(res.body.tasks.enabledInConfig).toBe(true);
@@ -1519,6 +1545,35 @@ describe('GET /api/config', () => {
 
       expect(res.body.tasks.lockedByEnv).toBe(true);
       expect(res.body.relay.lockedByEnv).toBe(true);
+    });
+
+    it('keeps explicit false locks separate from running and configured state', async () => {
+      process.env.DORKOS_TASKS_ENABLED = 'false';
+      process.env.DORKOS_RELAY_ENABLED = 'false';
+      vi.resetModules();
+
+      const { initConfigManager } = await import('../../services/core/config-manager.js');
+      initConfigManager(tmpDir);
+      const configRouter = (await import('../config.js')).default;
+      await registerDeclaringRuntimes();
+      const app = express();
+      app.use(express.json());
+      mountCallerFixture(app);
+      app.use('/api/config', configRouter);
+      target.mount(app);
+
+      const res = await request(server).get('/api/config').expect(200);
+
+      expect(res.body.tasks).toMatchObject({
+        enabled: false,
+        enabledInConfig: true,
+        lockedByEnv: true,
+      });
+      expect(res.body.relay).toMatchObject({
+        enabled: false,
+        enabledInConfig: true,
+        lockedByEnv: true,
+      });
     });
 
     it('flags only the one whose variable is set, leaving the other switchable', async () => {

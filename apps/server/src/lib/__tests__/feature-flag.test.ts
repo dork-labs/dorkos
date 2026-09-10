@@ -9,9 +9,9 @@ describe('createFeatureFlag', () => {
     createFeatureFlag = mod.createFeatureFlag;
   });
 
-  it('defaults to enabled (true)', () => {
+  it('stays disabled until startup reports success', () => {
     const flag = createFeatureFlag();
-    expect(flag.isEnabled()).toBe(true);
+    expect(flag.isEnabled()).toBe(false);
   });
 
   it('setEnabled(true) enables the flag', () => {
@@ -43,12 +43,16 @@ describe('createFeatureFlag', () => {
     // Initially no error
     expect(flag.getInitError()).toBeUndefined();
 
-    // Set error does not affect enabled
+    // Set error does not turn a subsystem on.
     flag.setInitError('Database connection failed');
+    expect(flag.isEnabled()).toBe(false);
+    expect(flag.getInitError()).toBe('Database connection failed');
+
+    // Changing running state does not discard the error.
+    flag.setEnabled(true);
     expect(flag.isEnabled()).toBe(true);
     expect(flag.getInitError()).toBe('Database connection failed');
 
-    // Disable does not affect error
     flag.setEnabled(false);
     expect(flag.isEnabled()).toBe(false);
     expect(flag.getInitError()).toBe('Database connection failed');
@@ -76,14 +80,14 @@ describe('createFeatureFlag', () => {
     const flagA = createFeatureFlag();
     const flagB = createFeatureFlag();
 
-    // Both start enabled
-    expect(flagA.isEnabled()).toBe(true);
-    expect(flagB.isEnabled()).toBe(true);
+    // Neither claims to be running before its own startup succeeds.
+    expect(flagA.isEnabled()).toBe(false);
+    expect(flagB.isEnabled()).toBe(false);
 
-    // Disable A, B should stay enabled
+    // Disable A, B stays at its independent fail-closed default.
     flagA.setEnabled(false);
     expect(flagA.isEnabled()).toBe(false);
-    expect(flagB.isEnabled()).toBe(true);
+    expect(flagB.isEnabled()).toBe(false);
 
     // Disable B, A stays disabled
     flagB.setEnabled(false);

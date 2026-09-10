@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Plug2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
-import { Skeleton, Button } from '@/layers/shared/ui';
+import { Skeleton, Button, EmptyState, QueryErrorState } from '@/layers/shared/ui';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -56,7 +56,7 @@ interface MessagingConnectionsProps {
  * pointing a chat at someone new is offered as a move rather than refused.
  */
 export function MessagingConnections({ enabled }: MessagingConnectionsProps) {
-  const { data: catalog = [], isLoading } = useAdapterCatalog(enabled);
+  const { data: catalog, isLoading, isError, isFetching, refetch } = useAdapterCatalog(enabled);
   const { data: agentsData } = useRegisteredAgents();
   const { mutate: toggleAdapter } = useToggleAdapter();
   const { mutate: removeAdapter } = useRemoveAdapter();
@@ -75,7 +75,7 @@ export function MessagingConnections({ enabled }: MessagingConnectionsProps) {
   // Resolve the adapter manifest for the binding dialog from catalog data.
   function lookupAdapterManifest(adapterId: string) {
     return catalog
-      .flatMap((e) => e.instances.map((i) => ({ instance: i, manifest: e.manifest })))
+      ?.flatMap((e) => e.instances.map((i) => ({ instance: i, manifest: e.manifest })))
       .find((x) => x.instance.id === adapterId)?.manifest;
   }
 
@@ -156,6 +156,28 @@ export function MessagingConnections({ enabled }: MessagingConnectionsProps) {
     );
   }
 
+  if (isError) {
+    return (
+      <QueryErrorState
+        title="Couldn’t load messaging options"
+        description="Try again. Your existing connections are unchanged."
+        onRetry={() => void refetch()}
+        isRetrying={isFetching}
+      />
+    );
+  }
+
+  if (!catalog || catalog.length === 0) {
+    return (
+      <EmptyState
+        icon={Plug2}
+        headline="No messaging options available"
+        description="DorkOS has no messaging options to add right now."
+        action={{ label: 'Check again', onClick: () => void refetch(), busy: isFetching }}
+      />
+    );
+  }
+
   // Configured: entries that have at least one instance — flatten to individual cards.
   const configuredCards = catalog.flatMap((entry) =>
     entry.instances.map((inst) => ({ instance: inst, manifest: entry.manifest }))
@@ -222,8 +244,10 @@ export function MessagingConnections({ enabled }: MessagingConnectionsProps) {
             <Plug2 className="text-muted-foreground/40 size-8" />
             <div className="text-center">
               <p className="text-muted-foreground text-sm">Nothing reaches your agents yet</p>
-              <p className="text-muted-foreground/60 text-xs">
-                Pick one below to start messaging them from somewhere else
+              <p className="text-muted-foreground text-xs">
+                {availableEntries.length > 0
+                  ? 'Pick one below to start messaging them from somewhere else'
+                  : 'There are no messaging options to add right now'}
               </p>
             </div>
           </div>
@@ -251,10 +275,14 @@ export function MessagingConnections({ enabled }: MessagingConnectionsProps) {
         <h3 id="messaging-add" className="mb-2 text-sm font-semibold">
           Add a way to reach them
         </h3>
-        {availableEntries.length === 0 ? (
+        {availableEntries.length === 0 && configuredCards.length > 0 ? (
           <p className="text-muted-foreground text-sm">
             You are using every kind there is. Some, like Webhook, can be added more than once from
             the list above.
+          </p>
+        ) : availableEntries.length === 0 ? (
+          <p className="text-muted-foreground text-sm">
+            There are no messaging options to add right now.
           </p>
         ) : (
           <div
