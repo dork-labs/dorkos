@@ -1,5 +1,5 @@
 /**
- * Submit logic for the cockpit feedback dialog (DOR-317, ADR 260713-143958
+ * Submit logic for the app's feedback dialog (DOR-317, ADR 260713-143958
  * Phase 5; diagnostics + transcript + anonymous plumbing per feedback-pipeline
  * spec Part 5).
  *
@@ -17,6 +17,8 @@
  *   - `includeConversation` (only when a `sessionId` is resolvable from the
  *     route) → sets `sessionId` + `includeTranscript` so the server gathers and
  *     attaches a bounded, scrubbed transcript excerpt.
+ *   - `screenshotDataUrl` → becomes the `screenshot` attachment, already
+ *     downscaled and bounded by `compressImage` before it reaches this hook.
  *   - `anonymous` → tells the server to skip its identity lookup.
  *
  * The transport never throws (a network failure is a truthful `{ ok: false }`),
@@ -53,6 +55,13 @@ export interface FeedbackDraft {
   includeDiagnostics?: boolean;
   /** Attach the current session's transcript excerpt (server-gathered). */
   includeConversation?: boolean;
+  /**
+   * The compressed `data:` URL of the one screenshot the user attached, already
+   * bounded by `compressImage`. Becomes the submission's `screenshot` field; the
+   * server derives the `hasScreenshot` hint from its presence, so nothing here
+   * sets that flag itself.
+   */
+  screenshotDataUrl?: string;
   /** Send without a reporter identity even when signed in. */
   anonymous?: boolean;
   /** A crash stack to fold into diagnostics as a breadcrumb (crash reports). */
@@ -179,6 +188,7 @@ export function useSendFeedback(): UseSendFeedback {
           ...(diagnostics ? { diagnostics } : {}),
           ...(includeServerLogs ? { includeServerLogs: true } : {}),
           ...(attachConversation ? { sessionId, includeTranscript: true } : {}),
+          ...(draft.screenshotDataUrl ? { screenshot: { dataUrl: draft.screenshotDataUrl } } : {}),
           ...(draft.anonymous ? { anonymous: true } : {}),
         });
         if (ok) {

@@ -5,8 +5,6 @@ import {
   Lightbulb,
   Stethoscope,
   MessagesSquare,
-  ImagePlus,
-  Crosshair,
   User,
   VenetianMask,
   Lock,
@@ -30,9 +28,11 @@ import {
   CollapsibleContent,
 } from '@/layers/shared/ui';
 import { useIsMobile } from '@/layers/shared/model';
-import { cn } from '@/layers/shared/lib';
+import { cn, getPlatform } from '@/layers/shared/lib';
 import { useSendFeedback } from '../model/use-send-feedback';
+import { useScreenshotAttachment } from '../model/use-screenshot-attachment';
 import { FeedbackPreviewDialog, type FeedbackPreviewTab } from './FeedbackPreviewDialog';
+import { ScreenshotField } from './ScreenshotField';
 
 interface FeedbackDialogProps {
   /** Whether the dialog is open. */
@@ -45,6 +45,14 @@ interface FeedbackDialogProps {
   prefillMessage?: string;
   /** A crash stack trace, folded into the bug report's diagnostics. */
   crashStack?: string;
+  /**
+   * A screenshot to start attached, as an already-compressed `data:` URL.
+   *
+   * The dialog can be opened from somewhere that already has the picture — the
+   * Dev Playground's captured-state showcase today — rather than only from an
+   * empty form the user then fills.
+   */
+  initialScreenshotDataUrl?: string;
   /**
    * The signed-in user, when one is resolvable. Drives the identity line; the
    * server is the authority on identity (this is display only). Passed in by the
@@ -122,10 +130,12 @@ function AttachmentToggle({
 
 /**
  * A small dialog for sending feedback, a bug report, or a feature idea straight
- * from the cockpit. Message-first: the kind and message lead, and diagnostics,
- * a screenshot slot, and the conversation excerpt live in a collapsible
+ * from the app. Message-first: the kind and message lead, and diagnostics, a
+ * screenshot, and the conversation excerpt live in a collapsible
  * "Attachments & details" panel that stays closed for a clean first impression
- * (design-decisions §2). Pressing Send delivers the message to the DorkOS team;
+ * (design-decisions §2). The whole dialog is the screenshot's drop and paste
+ * target while it is open, so a picture aimed anywhere on it lands in the
+ * report. Pressing Send delivers the message to the DorkOS team;
  * it is not telemetry and is sent only when the user submits it. The GitHub
  * option stays available in the help menu for developers who want an issue
  * thread.
@@ -137,10 +147,17 @@ export function FeedbackDialog({
   prefillMessage,
   crashStack,
   currentUser,
+  initialScreenshotDataUrl,
 }: FeedbackDialogProps) {
   const isDesktop = !useIsMobile();
   const { isSubmitting, sessionId, buildDiagnostics, send } = useSendFeedback();
   const showConversation = Boolean(sessionId);
+  // Obsidian's in-process transport forwards only the light telemetry event and
+  // drops `screenshot` by design (feedback-attachments decision 8), so offering
+  // the capture there would promise something the send path cannot keep. The
+  // embed is the single place `DirectTransport` is built, and the same
+  // `onOpen` sets this flag (`apps/obsidian-plugin/src/views/CopilotView.tsx`).
+  const showScreenshot = !getPlatform().isEmbedded;
 
   const [kind, setKind] = useState<FeedbackSubmissionKind>(initialKind ?? 'feedback');
   const [message, setMessage] = useState(prefillMessage ?? '');
@@ -151,6 +168,15 @@ export function FeedbackDialog({
   const [includeConversation, setIncludeConversation] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewTab, setPreviewTab] = useState<FeedbackPreviewTab>('diagnostics');
+  // The attachments panel starts shut, and both of these can happen while it
+  // is: a drag needs somewhere visible to aim, and a paste (⌘V works anywhere
+  // on the dialog) otherwise lands a picture the person who pasted it never
+  // sees. Either one reveals the panel; closing it again stays theirs to do.
+  const screenshot = useScreenshotAttachment({
+    enabled: open && showScreenshot,
+    onFileDragIn: () => setPanelOpen(true),
+    onAttached: () => setPanelOpen(true),
+  });
 
   // Reset the form each time the dialog (re)opens, adjusting state during render
   // rather than in an effect (the React-recommended pattern for deriving state
@@ -171,6 +197,12 @@ export function FeedbackDialog({
       // see (a crash report, or a bug with diagnostics on) — otherwise stay clean.
       setPanelOpen(defaults.diagnostics || defaults.conversation);
       setPreviewOpen(false);
+      // A picture from the last report must never ride along with the next one,
+      // and a surface that cannot send one must not be holding one either — so
+      // the embedded transport starts empty whatever a caller passed.
+      const initialShot = showScreenshot ? initialScreenshotDataUrl : undefined;
+      screenshot.reset(initialShot);
+      if (initialShot) setPanelOpen(true);
     }
   }
 
@@ -199,22 +231,38 @@ export function FeedbackDialog({
       includeConversation,
       anonymous,
       ...(crashStack ? { crashStack } : {}),
+      ...(showScreenshot && screenshot.dataUrl ? { screenshotDataUrl: screenshot.dataUrl } : {}),
     });
     if (ok) onOpenChange(false);
   }
 
-  const canSend = message.trim().length > 0 && !isSubmitting;
+  // Sending mid-compression would drop the picture the user just chose without
+  // saying so, so the button waits for it.
+  const canSend = message.trim().length > 0 && !isSubmitting && !screenshot.isPreparing;
 
   const panelSummary = [
     includeDiagnostics ? 'Diagnostics on' : null,
     showConversation && includeConversation ? 'Conversation on' : null,
+    showScreenshot && screenshot.dataUrl ? 'Screenshot on' : null,
   ]
     .filter(Boolean)
     .join(' · ');
 
+  // The whole dialog takes the paste and the drop — a picture aimed anywhere on
+  // it is a picture meant for it, and the drop target being one small box is the
+  // usual reason a drag "does nothing".
+  const captureHandlers = showScreenshot ? screenshot.handlers : undefined;
+
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
-      <ResponsiveDialogContent className={cn('max-h-[85vh]', isDesktop && 'max-w-md')}>
+      <ResponsiveDialogContent
+        {...captureHandlers}
+        className={cn(
+          'max-h-[85vh]',
+          isDesktop && 'max-w-md',
+          screenshot.isDraggingOver && 'ring-primary ring-2'
+        )}
+      >
         <ResponsiveDialogHeader>
           <ResponsiveDialogTitle className="text-sm font-medium">
             Send feedback
@@ -315,20 +363,19 @@ export function FeedbackDialog({
               </span>
             </CollapsibleTrigger>
             <CollapsibleContent className="flex flex-col gap-3 pt-3">
-              {/* Screenshot area — placeholder only (a separate round adds capture) */}
-              <div className="flex flex-col gap-2">
-                <div
-                  aria-disabled
-                  className="border-muted-foreground/25 text-muted-foreground flex items-center justify-center gap-2 rounded-md border border-dashed px-3 py-4 text-xs opacity-70"
-                >
-                  <ImagePlus className="size-4" aria-hidden />
-                  Add screenshot (coming soon)
-                </div>
-                <div className="text-muted-foreground flex items-center gap-1.5 text-xs opacity-70">
-                  <Crosshair className="size-3.5" aria-hidden />
-                  Point at element (coming soon)
-                </div>
-              </div>
+              {/* Screenshot slot. Absent under the in-process transport, which
+                  drops the field on the way out (feedback-attachments §8). */}
+              {showScreenshot && (
+                <ScreenshotField
+                  dataUrl={screenshot.dataUrl}
+                  isPreparing={screenshot.isPreparing}
+                  isDraggingOver={screenshot.isDraggingOver}
+                  onPick={(file) => void screenshot.attach(file)}
+                  onRemove={screenshot.clear}
+                  onPreview={() => openPreview('screenshot')}
+                  isMobile={!isDesktop}
+                />
+              )}
 
               {/* Two side-by-side toggles */}
               <div className={cn('grid gap-2', showConversation ? 'grid-cols-2' : 'grid-cols-1')}>
@@ -392,6 +439,9 @@ export function FeedbackDialog({
           kind={kind}
           showConversation={showConversation}
           sessionId={sessionId}
+          {...(showScreenshot && screenshot.dataUrl
+            ? { screenshotDataUrl: screenshot.dataUrl }
+            : {})}
         />
       </ResponsiveDialogContent>
     </ResponsiveDialog>
