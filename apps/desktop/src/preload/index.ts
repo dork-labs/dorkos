@@ -5,6 +5,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 // same reason.
 import type { UpdateStatus } from '../main/auto-updater';
 import type { AdminActionResult } from '../main/admin';
+import type { CaptureAppViewResult } from '../main/capture';
 
 /** IPC channel the main process pushes {@link UpdateStatus} events on (mirrors `UPDATE_STATUS_CHANNEL` in auto-updater.ts). */
 const UPDATE_STATUS_CHANNEL = 'update:status';
@@ -26,6 +27,9 @@ const RESTART_SERVER_CHANNEL = 'admin:restart-server';
 
 /** IPC channel "Reset All Data" goes out on (mirrors `RESET_ALL_DATA_CHANNEL` in main/admin/index.ts). */
 const RESET_ALL_DATA_CHANNEL = 'admin:reset-all-data';
+
+/** IPC channel "Capture app view" goes out on (mirrors `CAPTURE_APP_VIEW_CHANNEL` in main/capture/index.ts). */
+const CAPTURE_APP_VIEW_CHANNEL = 'capture:app-view';
 
 /** IPC channel a mounted renderer reports itself alive on (mirrors `ALIVE_CHANNEL` in renderer-health/index.ts). */
 const ALIVE_CHANNEL = 'renderer:alive';
@@ -133,6 +137,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * Same no-reject contract as {@link restartServer}.
    */
   resetAllData: (): Promise<AdminActionResult> => ipcRenderer.invoke(RESET_ALL_DATA_CHANNEL),
+  /**
+   * Take a picture of this window, for the feedback dialog's "Capture app view"
+   * (feedback-attachments PR 3).
+   *
+   * The desktop half of a screenshot the browser has to build out of the DOM.
+   * `webContents.capturePage()` hands back the pixels that are really on screen,
+   * so nothing about fonts, shadows or transforms has to be re-derived and got
+   * wrong. It photographs **this page and nothing else** — never the desktop,
+   * never another window — which is what the dialog's privacy line promises.
+   *
+   * **Hide whatever is standing in front of the app first**, and wait for a
+   * repaint before calling: the picture is of the window as it stands, so the
+   * dialog would otherwise photograph itself. The renderer's seam
+   * (`shared/lib/app-capture.ts`) does exactly that around this call.
+   *
+   * Never rejects: a failure comes back as `{ ok: false, message }`, in words
+   * meant for the person who clicked.
+   */
+  captureAppView: (): Promise<CaptureAppViewResult> => ipcRenderer.invoke(CAPTURE_APP_VIEW_CHANNEL),
   /** The current platform (darwin, win32, linux). */
   platform: process.platform,
   /**

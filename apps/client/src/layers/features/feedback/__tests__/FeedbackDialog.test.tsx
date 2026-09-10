@@ -8,6 +8,7 @@ import { FeedbackDialog } from '../ui/FeedbackDialog';
 import { __resetBreadcrumbsForTests, addBreadcrumb } from '@/layers/shared/lib/breadcrumbs';
 import { setPlatformAdapter } from '@/layers/shared/lib';
 import { ImageCompressError } from '@/layers/shared/lib/image-compress';
+import { AppCaptureError } from '@/layers/shared/lib/app-capture';
 
 // The submit hook reads the current route via useRouterState (pathname + search).
 // A mutable object lets a test put us on a session route to exercise the
@@ -31,6 +32,17 @@ const compressImage = vi.hoisted(() => vi.fn());
 vi.mock('@/layers/shared/lib/image-compress', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/shared/lib/image-compress')>()),
   compressImage,
+}));
+
+// Same for the one-click capture: neither engine behind it runs in jsdom (no
+// compositor, no rasterizer), so what it produces is a stub. `AppCaptureError`
+// stays REAL, so the mapping from a refusal's reason to what the user is told is
+// exercised for real — the capture's own behaviour is covered next door in
+// `shared/lib/__tests__/app-capture.test.ts`.
+const captureAppView = vi.hoisted(() => vi.fn());
+vi.mock('@/layers/shared/lib/app-capture', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/lib/app-capture')>()),
+  captureAppView,
 }));
 
 beforeAll(() => {
@@ -597,6 +609,123 @@ describe('FeedbackDialog', () => {
       expect(screen.queryByAltText('The screenshot you attached')).not.toBeInTheDocument();
     });
 
+    describe('one-click capture of the app view (PR 3)', () => {
+      const CAPTURED = 'data:image/png;base64,CAPTURED';
+
+      /** Click "Capture app view" in the (already open) attachments panel. */
+      function clickCapture(): void {
+        fireEvent.click(screen.getByRole('button', { name: /capture app view/i }));
+      }
+
+      it('compresses the captured picture and sends it like any other', async () => {
+        captureAppView.mockResolvedValue(CAPTURED);
+        const transport = createMockTransport();
+        const sendFeedback = vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
+        renderDialog(transport);
+        fireEvent.change(screen.getByPlaceholderText(/what works, what does not/i), {
+          target: { value: 'the sidebar looks wrong' },
+        });
+        openPanel();
+
+        clickCapture();
+
+        await screen.findByAltText('The screenshot you attached');
+        // Through the SAME compressor: the shell hands back a full-size PNG of a
+        // retina window, several times what the wire accepts.
+        expect(compressImage).toHaveBeenCalledWith(CAPTURED);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+        await waitFor(() => expect(sendFeedback).toHaveBeenCalledTimes(1));
+        expect(sendFeedback.mock.calls[0][0].screenshot).toEqual({ dataUrl: SHOT });
+      });
+
+      it('says the capture failed, and points at the way in that still works', async () => {
+        captureAppView.mockRejectedValue(new AppCaptureError('failed', 'no frame'));
+        renderDialog();
+        openPanel();
+
+        clickCapture();
+
+        await waitFor(() =>
+          expect(toast.error).toHaveBeenCalledWith(
+            'Couldn’t capture the app view. You can still add a screenshot yourself.'
+          )
+        );
+        expect(screen.queryByAltText('The screenshot you attached')).not.toBeInTheDocument();
+      });
+
+      it('says to reload when the capture tool could not be loaded at all', async () => {
+        // A different sentence because it is different advice: nothing ran, and
+        // reloading is what fixes a chunk a redeploy deleted.
+        captureAppView.mockRejectedValue(new AppCaptureError('unsupported', 'chunk 404'));
+        renderDialog();
+        openPanel();
+
+        clickCapture();
+
+        await waitFor(() =>
+          expect(toast.error).toHaveBeenCalledWith(
+            'Couldn’t load what it takes to capture the app view. Reload the page, or add a screenshot yourself.'
+          )
+        );
+      });
+
+      it('still refuses a capture the compressor cannot fit', async () => {
+        // The capture goes through the same size bound as a picked file, so it
+        // can be refused for the compressor's reasons too — and that reason is
+        // the honest one to show.
+        captureAppView.mockResolvedValue(CAPTURED);
+        compressImage.mockRejectedValue(new ImageCompressError('too-large', 'over the cap'));
+        renderDialog();
+        openPanel();
+
+        clickCapture();
+
+        await waitFor(() =>
+          expect(toast.error).toHaveBeenCalledWith(
+            'That image is too big to send. Try cropping it to just the part that matters.'
+          )
+        );
+      });
+
+      it('shares one state machine with the other ways in', async () => {
+        // A capture is not a second attach path with its own rules: removing the
+        // image while a capture is still in flight must keep it removed, exactly
+        // as it does for a paste.
+        let settle: (dataUrl: string) => void = () => {};
+        captureAppView.mockImplementation(() => new Promise<string>((r) => (settle = r)));
+        renderDialog();
+        openPanel();
+
+        // Something attached, so there is a Remove control to press.
+        fireEvent.change(screen.getByLabelText('Add screenshot'), {
+          target: { files: [imageFile()] },
+        });
+        await screen.findByAltText('The screenshot you attached');
+
+        clickCapture();
+        fireEvent.click(screen.getByRole('button', { name: /remove screenshot/i }));
+        await act(async () => settle(CAPTURED));
+
+        expect(screen.queryByAltText('The screenshot you attached')).not.toBeInTheDocument();
+      });
+
+      it('holds Send while the capture is being taken', async () => {
+        captureAppView.mockImplementation(() => new Promise<string>(() => {}));
+        renderDialog();
+        fireEvent.change(screen.getByPlaceholderText(/what works, what does not/i), {
+          target: { value: 'mid-capture' },
+        });
+        openPanel();
+
+        clickCapture();
+
+        // Sending now would post the report without the picture the person is
+        // waiting for.
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled());
+      });
+    });
+
     describe('a compression still in flight (cancellation)', () => {
       /** A `compressImage` whose settlement the test controls, one call at a time. */
       function deferredCompress() {
@@ -859,6 +988,10 @@ describe('FeedbackDialog', () => {
 
       expect(screen.queryByLabelText('Add screenshot')).not.toBeInTheDocument();
       expect(screen.queryByText('Point at element (coming soon)')).not.toBeInTheDocument();
+      // Including the one-click capture, which is the easiest of the four to
+      // press by accident: a picture taken there is dropped on the way out, so
+      // offering it would promise something the send path cannot keep.
+      expect(screen.queryByRole('button', { name: /capture app view/i })).not.toBeInTheDocument();
 
       // And the paste path is gone with it — that transport drops the field.
       fireEvent.paste(screen.getByRole('dialog'), {

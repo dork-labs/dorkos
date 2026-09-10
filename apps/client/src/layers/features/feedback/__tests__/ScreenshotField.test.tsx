@@ -22,6 +22,7 @@ function renderFieldWithRerender(overrides: Partial<FieldProps> = {}) {
     isPreparing: false,
     isDraggingOver: false,
     onPick: vi.fn(),
+    onCapture: vi.fn(),
     onRemove: vi.fn(),
     onPreview: vi.fn(),
     isMobile: false,
@@ -40,6 +41,7 @@ function renderField(overrides: Partial<FieldProps> = {}) {
     isPreparing: false,
     isDraggingOver: false,
     onPick: vi.fn(),
+    onCapture: vi.fn(),
     onRemove: vi.fn(),
     onPreview: vi.fn(),
     isMobile: false,
@@ -71,6 +73,7 @@ describe('ScreenshotField — empty state', () => {
           isPreparing={false}
           isDraggingOver={false}
           onPick={vi.fn()}
+          onCapture={vi.fn()}
           onRemove={vi.fn()}
           onPreview={vi.fn()}
           isMobile={false}
@@ -80,6 +83,7 @@ describe('ScreenshotField — empty state', () => {
           isPreparing={false}
           isDraggingOver={false}
           onPick={vi.fn()}
+          onCapture={vi.fn()}
           onRemove={vi.fn()}
           onPreview={vi.fn()}
           isMobile={false}
@@ -196,6 +200,46 @@ describe('ScreenshotField — attached state', () => {
   });
 });
 
+describe('ScreenshotField — capture app view', () => {
+  it('offers one click that takes the picture', () => {
+    const { onCapture } = renderField();
+    fireEvent.click(screen.getByRole('button', { name: /capture app view/i }));
+    expect(onCapture).toHaveBeenCalledTimes(1);
+  });
+
+  it('says what the capture does and does not include', () => {
+    // The one claim in this dialog that is about SCOPE rather than consent, and
+    // the only capture whose output can honestly make it: both paths photograph
+    // this page, never the screen around it.
+    renderField();
+    expect(
+      screen.getByText('Captures only the app — never the rest of your screen.')
+    ).toBeInTheDocument();
+  });
+
+  it('keeps the capture on offer with an image already attached, to replace it', () => {
+    const { onCapture } = renderField({ dataUrl: SAMPLE });
+    fireEvent.click(screen.getByRole('button', { name: /capture app view/i }));
+    expect(onCapture).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers it on touch too — a phone renders its own DOM as well as a laptop', () => {
+    renderField({ isMobile: true });
+    expect(screen.getByRole('button', { name: /capture app view/i })).toBeInTheDocument();
+  });
+
+  it('refuses a second capture while one is still being prepared', () => {
+    // Not the safety mechanism — the hook's generation counter is — but a
+    // button that stays live through a capture invites the double click that
+    // makes people believe the first one did nothing.
+    const { onCapture } = renderField({ isPreparing: true });
+    const button = screen.getByRole('button', { name: /capture app view/i });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(onCapture).not.toHaveBeenCalled();
+  });
+});
+
 describe('ScreenshotField — touch surfaces', () => {
   it('offers the photo picker wording instead of the desktop wording', () => {
     renderField({ isMobile: true });
@@ -225,7 +269,7 @@ describe('ScreenshotField — touch surfaces', () => {
 describe('ScreenshotField — privacy microcopy', () => {
   it('says nothing is captured on its own, on both surfaces', () => {
     const line =
-      'You pick the image and see it here before you send. Nothing is captured on its own.';
+      'You choose what to attach and see it here before you send. Nothing is captured on its own.';
     renderField();
     expect(screen.getByText(line)).toBeInTheDocument();
     cleanup();

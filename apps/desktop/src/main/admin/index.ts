@@ -1,5 +1,4 @@
 import { dialog, ipcMain } from 'electron';
-import type { IpcMainInvokeEvent } from 'electron';
 import { rm } from 'node:fs/promises';
 import log from 'electron-log';
 import { liveInstanceLockHolder } from '@dorkos/shared/instance-lock';
@@ -7,7 +6,7 @@ import type { InstanceLockInfo } from '@dorkos/shared/instance-lock';
 import { resolveDataDirectory } from '../dork-home';
 import { pointWindowsAtServer } from '../server-crash-recovery';
 import { RestartFailedError, restartServer } from '../server-process';
-import { isOwnOrigin } from '../window-manager';
+import { isCockpitSender } from '../window-manager';
 
 /**
  * "Restart Server" and "Reset All Data", done by the supervisor that owns the
@@ -189,25 +188,6 @@ async function runReset(): Promise<AdminActionResult> {
     const deletion = interrupted ? interrupted.message : 'Your data was deleted.';
     return { ok: false, message: `${deletion} ${restartFailureMessage(err)}` };
   }
-}
-
-/**
- * Whether an invoke came from a page of ours.
- *
- * Not a claim that the sender is trustworthy — the cockpit runs marketplace
- * extension code as ordinary modules, and in a browser that code can already
- * `fetch` the very endpoints these channels replace. It is the narrower promise
- * that these two channels reach no FURTHER than that: a document that is not the
- * cockpit (a devtools context, a page the shell was steered onto) cannot restart
- * the server or delete the data directory. Same predicate the link guards and the
- * permission policy use, through the same live accessor, so there is one answer
- * to "is this our own page?" and it survives the port moving.
- *
- * @param event - The invoke to judge.
- * @param getRendererUrl - Live accessor for the app's own origin.
- */
-function isCockpitSender(event: IpcMainInvokeEvent, getRendererUrl: () => string | undefined) {
-  return isOwnOrigin(event.sender.getURL(), getRendererUrl());
 }
 
 /**

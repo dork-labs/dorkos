@@ -155,7 +155,7 @@ export function FeedbackShowcases() {
     <>
       <PlaygroundSection
         title="Feedback dialog"
-        description="Message-first send dialog: kind selector, identity line with anonymous toggle, and a collapsible Attachments & details panel (diagnostics, conversation, and a screenshot you paste, drop, or pick). The third button opens it with a screenshot already attached — the thumbnail, the Remove control, and the Screenshot tab in the full preview."
+        description="Message-first send dialog: kind selector, identity line with anonymous toggle, and a collapsible Attachments & details panel (diagnostics, conversation, and a screenshot you paste, drop, pick, or capture in one click). The third button opens it with a screenshot already attached — the thumbnail, the Remove control, and the Screenshot tab in the full preview. 'Capture app view' really runs here: it hides the dialog, photographs this page, and attaches the result, so the button, its privacy line, and the replace flow can all be seen working."
       >
         <ShowcaseDemo>
           <div className="flex flex-wrap gap-2">

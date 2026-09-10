@@ -10,6 +10,7 @@
 export { cn } from './utils';
 export { resolveApiBaseUrl } from './api-base-url';
 export { getDesktopAdmin, unwrapDesktopAdminResult } from './desktop-admin';
+export { captureAppView, AppCaptureError, type AppCaptureReason } from './app-capture';
 export { MODELS_KEY } from './models-query-key';
 export {
   getAuthRequired,

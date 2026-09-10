@@ -1,6 +1,6 @@
 import { useId, type ChangeEvent } from 'react';
-import { ImagePlus, Crosshair, X } from 'lucide-react';
-import { Label } from '@/layers/shared/ui';
+import { ImagePlus, Camera, Crosshair, X } from 'lucide-react';
+import { Button, Label } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 
 interface ScreenshotFieldProps {
@@ -12,6 +12,8 @@ interface ScreenshotFieldProps {
   isDraggingOver: boolean;
   /** Attach a file the user picked from the file input. */
   onPick: (file: File) => void;
+  /** Take a picture of the app itself and attach it. */
+  onCapture: () => void;
   /** Drop the attached image. */
   onRemove: () => void;
   /** Open the full preview on its Screenshot tab. */
@@ -23,12 +25,15 @@ interface ScreenshotFieldProps {
 /**
  * The screenshot slot in the feedback dialog's attachments panel.
  *
- * Three ways in, one image out. On a pointer surface the whole dialog takes a
+ * Four ways in, one image out. On a pointer surface the whole dialog takes a
  * paste or a drop and this box is where the drag lands; on a touch surface the
- * same box opens the photo picker, which is the only one of the three a touch
- * keyboard can offer. Once something is attached the box becomes the picture
- * itself — the promise of "you see exactly what will be sent" is only kept if
- * the thing is on screen, and that holds while a REPLACEMENT is encoding too.
+ * same box opens the photo picker, which is the only one of those three a touch
+ * keyboard can offer. "Capture app view" is the fourth and the easiest — one
+ * click and the picture is of the app — and it is offered on every surface,
+ * because a phone can render its own DOM as well as a laptop can. Once
+ * something is attached the box becomes the picture itself — the promise of
+ * "you see exactly what will be sent" is only kept if the thing is on screen,
+ * and that holds while a REPLACEMENT is encoding too.
  *
  * "Point at element" is still the roadmap affordance it has always been, shown
  * only on desktop because it is a pointer gesture that will never ship on touch.
@@ -38,6 +43,7 @@ export function ScreenshotField({
   isPreparing,
   isDraggingOver,
   onPick,
+  onCapture,
   onRemove,
   onPreview,
   isMobile,
@@ -129,6 +135,27 @@ export function ScreenshotField({
         </Label>
       )}
 
+      {/* One click, and the picture is of the app — the only path here that
+          needs no file, no photo library and no aim. It stays on offer with an
+          image already attached, where it replaces that one, because "capture
+          it again now that the bug is on screen" is the common second act. */}
+      <div className="flex flex-col gap-1">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onCapture}
+          disabled={isPreparing}
+          className="w-full text-xs"
+        >
+          <Camera className="size-3.5" aria-hidden />
+          Capture app view
+        </Button>
+        <p className="text-muted-foreground text-xs">
+          Captures only the app — never the rest of your screen.
+        </p>
+      </div>
+
       {!isMobile && (
         <div className="text-muted-foreground flex items-center gap-1.5 text-xs opacity-70">
           <Crosshair className="size-3.5" aria-hidden />
@@ -137,7 +164,7 @@ export function ScreenshotField({
       )}
 
       <p className="text-muted-foreground text-xs">
-        You pick the image and see it here before you send. Nothing is captured on its own.
+        You choose what to attach and see it here before you send. Nothing is captured on its own.
       </p>
     </div>
   );
