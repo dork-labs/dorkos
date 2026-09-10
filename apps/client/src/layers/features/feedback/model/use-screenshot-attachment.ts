@@ -1,10 +1,11 @@
 /**
- * The one screenshot a feedback submission may carry, and the four ways a
- * person can hand one over (feedback-attachments PR 2 and PR 3).
+ * The one screenshot a feedback submission may carry, and the five ways a
+ * person can hand one over (feedback-attachments PR 2, PR 3 and PR 4).
  *
- * Paste, drag-and-drop, the file picker and one-click "Capture app view" all
- * land here, go through the same compression step, and end up as the same
- * bounded `data:` URL. One image at a time on purpose: a second attach replaces
+ * Paste, drag-and-drop, the file picker, one-click "Capture app view" and
+ * pointing at a single element all land here, go through the same compression
+ * step, and end up as the same bounded `data:` URL. One image at a time on
+ * purpose: a second attach replaces
  * the first rather than growing a list, because the submission carries a single
  * `screenshot` field and a queue the wire cannot express would only be a way to
  * lose pictures quietly.
@@ -26,6 +27,7 @@ import {
 import { toast } from 'sonner';
 import {
   AppCaptureError,
+  captureAppShot,
   captureAppView,
   compressImage,
   ImageCompressError,
@@ -33,6 +35,7 @@ import {
   type AppCaptureReason,
   type ImageCompressReason,
 } from '@/layers/shared/lib';
+import { cropShotToElement } from '../lib/element-crop';
 
 /**
  * What the user is told when an image is refused.
@@ -137,6 +140,16 @@ export interface UseScreenshotAttachment {
    * wins — so a capture and a paste racing each other cannot both land.
    */
   capture: () => Promise<void>;
+  /**
+   * Take a picture of the app and attach only the part of it showing one
+   * element, replacing any current one.
+   *
+   * The same single capture as {@link capture} with a crop on the end, and the
+   * same state machine — one image, the newest attempt wins.
+   *
+   * @param element - The element the person pointed at.
+   */
+  captureElement: (element: Element) => Promise<void>;
   /** Drop the attached image. */
   clear: () => void;
   /**
@@ -228,6 +241,15 @@ export function useScreenshotAttachment(
     // Compressed like every other picture: the shell hands back a full-size PNG
     // of a retina window, which is several times the size the wire accepts.
     (): Promise<void> => attachFrom(async () => compressImage(await captureAppView())),
+    [attachFrom]
+  );
+
+  const captureElement = useCallback(
+    // `cropShotToElement` owns the compression too — cropping first is what makes
+    // the bound worth spending on the part someone pointed at rather than on a
+    // whole window that happens to contain it.
+    (element: Element): Promise<void> =>
+      attachFrom(async () => cropShotToElement(await captureAppShot(), element)),
     [attachFrom]
   );
 
@@ -344,6 +366,7 @@ export function useScreenshotAttachment(
     isDraggingOver,
     attach,
     capture,
+    captureElement,
     clear,
     reset,
     handlers: { onPaste, onDragEnter, onDragOver, onDragLeave, onDrop },

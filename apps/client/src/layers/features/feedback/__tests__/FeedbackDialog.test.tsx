@@ -40,9 +40,22 @@ vi.mock('@/layers/shared/lib/image-compress', async (importOriginal) => ({
 // exercised for real — the capture's own behaviour is covered next door in
 // `shared/lib/__tests__/app-capture.test.ts`.
 const captureAppView = vi.hoisted(() => vi.fn());
+const captureAppShot = vi.hoisted(() => vi.fn());
 vi.mock('@/layers/shared/lib/app-capture', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/shared/lib/app-capture')>()),
   captureAppView,
+  captureAppShot,
+}));
+
+// And the crop on the end of the pointing gesture. Its arithmetic is pure and
+// is checked exhaustively in `element-crop.test.ts`; the DRAWING needs an image
+// decoder and a 2d canvas context, neither of which jsdom has, so what it
+// produces is a stub here. What this file is for is the round trip either side
+// of it: the dialog stepping aside, what comes back, and what survives.
+const cropShotToElement = vi.hoisted(() => vi.fn());
+vi.mock('../lib/element-crop', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/element-crop')>()),
+  cropShotToElement,
 }));
 
 beforeAll(() => {
@@ -724,6 +737,171 @@ describe('FeedbackDialog', () => {
         // waiting for.
         await waitFor(() => expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled());
       });
+    });
+
+    describe('pointing at one element (PR 4)', () => {
+      const CROPPED = 'data:image/webp;base64,CROPPED';
+      const SHOT_WITH_REGION = {
+        dataUrl: 'data:image/png;base64,WHOLE',
+        region: { left: 0, top: 0, width: 1024, height: 768 },
+      };
+
+      /** Something in the app to point at, outside the dialog's own tree. */
+      function appElement(): Element {
+        const app = document.createElement('div');
+        app.id = 'root';
+        app.innerHTML = '<button data-slot="sidebar-toggle" data-testid="nav-toggle">Go</button>';
+        document.body.append(app);
+        const target = app.querySelector('button');
+        if (!target) throw new Error('the app must have something to point at');
+        return target;
+      }
+
+      /** Step out of the dialog into the picker. */
+      function startPointing(): void {
+        fireEvent.click(screen.getByRole('button', { name: 'Point at element' }));
+      }
+
+      /** Click the picker at a point that resolves to `target`. */
+      function pickElement(target: Element): void {
+        Object.defineProperty(document, 'elementFromPoint', {
+          configurable: true,
+          writable: true,
+          value: () => target,
+        });
+        fireEvent.click(screen.getByRole('dialog'), { clientX: 40, clientY: 40 });
+      }
+
+      beforeEach(() => {
+        captureAppShot.mockResolvedValue(SHOT_WITH_REGION);
+        cropShotToElement.mockResolvedValue(CROPPED);
+      });
+
+      it('gets the dialog out of the way so there is something to point at', async () => {
+        renderDialog();
+        openPanel();
+
+        startPointing();
+
+        // The dialog IS what is standing in front of the bug. The picker takes
+        // its place — one thing on screen at a time, so the person is never
+        // aiming past a panel.
+        expect(screen.queryByText('Send feedback')).not.toBeInTheDocument();
+        expect(
+          screen.getByText('Click the part that looks wrong. Esc to cancel.')
+        ).toBeInTheDocument();
+      });
+
+      it('comes back with the picture, the kind, and the element’s name', async () => {
+        const target = appElement();
+        const transport = createMockTransport();
+        const sendFeedback = vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
+        renderDialog(transport);
+        fireEvent.change(screen.getByPlaceholderText(/what works, what does not/i), {
+          target: { value: 'this control is dead' },
+        });
+        openPanel();
+        startPointing();
+
+        pickElement(target);
+
+        await screen.findByAltText('The screenshot you attached');
+        expect(cropShotToElement).toHaveBeenCalledWith(SHOT_WITH_REGION, target);
+        // Pointing at something broken is a bug report.
+        expect(screen.getByRole('radio', { name: 'Bug' })).toBeChecked();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+        await waitFor(() => expect(sendFeedback).toHaveBeenCalledTimes(1));
+        const sent = sendFeedback.mock.calls[0][0];
+        expect(sent.screenshot).toEqual({ dataUrl: CROPPED });
+        expect(sent.kind).toBe('bug');
+        // The names go in the MESSAGE, which is the field the person can read
+        // and edit before pressing Send — diagnostics is a checkbox they can
+        // turn off, and this is the one fact the whole gesture exists to gather.
+        expect(sent.message).toContain('this control is dead');
+        expect(sent.message).toContain('Element: ');
+        expect(sent.message).toContain('Slot: sidebar-toggle');
+        expect(sent.message).toContain('Testid: nav-toggle');
+      });
+
+      it('leaves the half-written report exactly as it was when cancelled', async () => {
+        renderDialog();
+        fireEvent.change(screen.getByPlaceholderText(/what works, what does not/i), {
+          target: { value: 'changed my mind' },
+        });
+        openPanel();
+        startPointing();
+
+        fireEvent.keyDown(document.body, { key: 'Escape' });
+
+        // Not a fresh dialog: the same one, with everything still in it. A round
+        // trip that resets the form makes the affordance not worth pressing.
+        expect(screen.getByPlaceholderText(/what works, what does not/i)).toHaveValue(
+          'changed my mind'
+        );
+        expect(screen.queryByAltText('The screenshot you attached')).not.toBeInTheDocument();
+        expect(captureAppShot).not.toHaveBeenCalled();
+      });
+
+      it('records which element even when the picture could not be taken', async () => {
+        // A failed capture takes the screenshot away; it does not take away the
+        // fact that this person pointed at THIS control.
+        cropShotToElement.mockRejectedValue(new AppCaptureError('failed', 'no frame'));
+        const target = appElement();
+        renderDialog();
+        openPanel();
+        startPointing();
+
+        pickElement(target);
+
+        await waitFor(() =>
+          expect(toast.error).toHaveBeenCalledWith(
+            'Couldn’t capture the app view. You can still add a screenshot yourself.'
+          )
+        );
+        const message = screen.getByPlaceholderText(/what happened, and what did you expect/i);
+        expect((message as HTMLTextAreaElement).value).toContain('Testid: nav-toggle');
+      });
+
+      it('names the element as it was clicked, not as it is seconds later', async () => {
+        // The capture takes seconds, and a live app re-renders in that time. A
+        // name read after it describes whatever now sits at that spot — which is
+        // the wrong control, named with total confidence.
+        const target = appElement();
+        cropShotToElement.mockImplementation(async () => {
+          target.setAttribute('data-testid', 'something-else-entirely');
+          return CROPPED;
+        });
+        renderDialog();
+        openPanel();
+        startPointing();
+
+        pickElement(target);
+
+        await screen.findByAltText('The screenshot you attached');
+        const message = screen.getByPlaceholderText(/what happened, and what did you expect/i);
+        expect((message as HTMLTextAreaElement).value).toContain('Testid: nav-toggle');
+        expect((message as HTMLTextAreaElement).value).not.toContain('something-else-entirely');
+      });
+
+      it('says the picture is being taken while the person waits for it', async () => {
+        const target = appElement();
+        cropShotToElement.mockImplementation(() => new Promise<string>(() => {}));
+        renderDialog();
+        openPanel();
+        startPointing();
+
+        pickElement(target);
+
+        // The dialog is still out of the way and the app is mid-capture — the
+        // one moment nothing else on screen can report from.
+        expect(await screen.findByText('Taking the picture…')).toBeInTheDocument();
+      });
+
+      // The touch gate is the FIELD's own branch, and is checked where it lives
+      // (`ScreenshotField.test.tsx`): flipping `matchMedia` here would also swap
+      // this dialog for its drawer variant, and the test would then be measuring
+      // the wrong thing.
     });
 
     describe('a compression still in flight (cancellation)', () => {

@@ -23,6 +23,7 @@ function renderFieldWithRerender(overrides: Partial<FieldProps> = {}) {
     isDraggingOver: false,
     onPick: vi.fn(),
     onCapture: vi.fn(),
+    onPointAtElement: vi.fn(),
     onRemove: vi.fn(),
     onPreview: vi.fn(),
     isMobile: false,
@@ -42,6 +43,7 @@ function renderField(overrides: Partial<FieldProps> = {}) {
     isDraggingOver: false,
     onPick: vi.fn(),
     onCapture: vi.fn(),
+    onPointAtElement: vi.fn(),
     onRemove: vi.fn(),
     onPreview: vi.fn(),
     isMobile: false,
@@ -74,6 +76,7 @@ describe('ScreenshotField — empty state', () => {
           isDraggingOver={false}
           onPick={vi.fn()}
           onCapture={vi.fn()}
+          onPointAtElement={vi.fn()}
           onRemove={vi.fn()}
           onPreview={vi.fn()}
           isMobile={false}
@@ -84,6 +87,7 @@ describe('ScreenshotField — empty state', () => {
           isDraggingOver={false}
           onPick={vi.fn()}
           onCapture={vi.fn()}
+          onPointAtElement={vi.fn()}
           onRemove={vi.fn()}
           onPreview={vi.fn()}
           isMobile={false}
@@ -258,12 +262,24 @@ describe('ScreenshotField — touch surfaces', () => {
 
   it('hides "Point at element", a pointer gesture that will never ship on touch', () => {
     renderField({ isMobile: true });
-    expect(screen.queryByText('Point at element (coming soon)')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Point at element' })).not.toBeInTheDocument();
   });
 
-  it('keeps "Point at element" on a desktop, where it is still the roadmap', () => {
-    renderField({ isMobile: false });
-    expect(screen.getByText('Point at element (coming soon)')).toBeInTheDocument();
+  it('offers "Point at element" as a live control on a desktop', () => {
+    // It was a labelled-soon placeholder until PR 4. A control that still LOOKS
+    // like one — no button, nothing to press — is the failure this pins.
+    const { onPointAtElement } = renderField({ isMobile: false });
+    const point = screen.getByRole('button', { name: 'Point at element' });
+    expect(point).toBeEnabled();
+    fireEvent.click(point);
+    expect(onPointAtElement).toHaveBeenCalledTimes(1);
+  });
+
+  it('holds "Point at element" back while an image is still being prepared', () => {
+    // Aiming at a new element mid-compression would abandon the picture the
+    // person is already waiting on, with nothing said about it.
+    renderField({ isMobile: false, isPreparing: true });
+    expect(screen.getByRole('button', { name: 'Point at element' })).toBeDisabled();
   });
 });
 

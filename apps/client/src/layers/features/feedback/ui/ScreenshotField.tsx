@@ -14,6 +14,8 @@ interface ScreenshotFieldProps {
   onPick: (file: File) => void;
   /** Take a picture of the app itself and attach it. */
   onCapture: () => void;
+  /** Step out of the dialog and let the user aim at one element. */
+  onPointAtElement: () => void;
   /** Drop the attached image. */
   onRemove: () => void;
   /** Open the full preview on its Screenshot tab. */
@@ -35,8 +37,11 @@ interface ScreenshotFieldProps {
  * "you see exactly what will be sent" is only kept if the thing is on screen,
  * and that holds while a REPLACEMENT is encoding too.
  *
- * "Point at element" is still the roadmap affordance it has always been, shown
- * only on desktop because it is a pointer gesture that will never ship on touch.
+ * "Point at element" is the fifth and the most precise: aim at the thing that
+ * looks wrong and the report arrives cropped to it. Desktop only, because it is
+ * a hover-then-commit gesture and touch has no hover — hidden rather than
+ * disabled, since a control a surface can never offer is not a control that
+ * surface should be looking at.
  */
 export function ScreenshotField({
   dataUrl,
@@ -44,6 +49,7 @@ export function ScreenshotField({
   isDraggingOver,
   onPick,
   onCapture,
+  onPointAtElement,
   onRemove,
   onPreview,
   isMobile,
@@ -156,10 +162,25 @@ export function ScreenshotField({
         </p>
       </div>
 
+      {/* The most precise way in, and the only one that needs the dialog out of
+          the way: it steps aside, the person aims at the thing that looks wrong,
+          and the report comes back cropped to it. */}
       {!isMobile && (
-        <div className="text-muted-foreground flex items-center gap-1.5 text-xs opacity-70">
-          <Crosshair className="size-3.5" aria-hidden />
-          Point at element (coming soon)
+        <div className="flex flex-col gap-1">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onPointAtElement}
+            disabled={isPreparing}
+            className="w-full text-xs"
+          >
+            <Crosshair className="size-3.5" aria-hidden />
+            Point at element
+          </Button>
+          <p className="text-muted-foreground text-xs">
+            Click the part that looks wrong. We’ll crop the picture to it.
+          </p>
         </div>
       )}
 
