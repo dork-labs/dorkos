@@ -74,6 +74,7 @@ function DiagnosticsPreview({
     return <p className="text-muted-foreground text-xs">Gathering diagnostics…</p>;
   }
   const { clientReport, breadcrumbs } = diagnostics;
+  const { viewport, browser, shell, theme, locale, timezone } = clientReport;
   return (
     <div className="flex flex-col gap-3">
       <div className="rounded-md border p-3">
@@ -83,6 +84,23 @@ function DiagnosticsPreview({
           label="Runtimes"
           value={clientReport.runtimes.length ? clientReport.runtimes.join(', ') : 'none'}
         />
+        {/* The environment rows (DOR-1960). Each is rendered only when the
+            capture actually answered it, so this list is the payload and not a
+            menu of fields that might be filled in — the preview's whole job is
+            that what is shown is what goes. */}
+        {viewport && (
+          <DiagRow
+            label="Window"
+            value={`${viewport.width}×${viewport.height}${
+              viewport.devicePixelRatio !== 1 ? ` @${viewport.devicePixelRatio}x` : ''
+            }`}
+          />
+        )}
+        {shell && <DiagRow label="Shell" value={shell} />}
+        {theme && <DiagRow label="Theme" value={theme} />}
+        {locale && <DiagRow label="Locale" value={locale} />}
+        {timezone && <DiagRow label="Timezone" value={timezone} />}
+        {browser && <DiagRow label="Browser" value={browser} />}
         {Object.entries(clientReport.flags).map(([key, value]) => (
           <DiagRow key={key} label={key} value={String(value)} />
         ))}

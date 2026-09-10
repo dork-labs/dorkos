@@ -140,7 +140,12 @@ export interface SendFeedbackOptions {
   submission: FeedbackSubmission;
   /** Resolved dorkHome path (for the anonymous instance id). */
   dorkHome: string;
-  /** Current DorkOS version, attached as a context property on the metrics event. */
+  /**
+   * Current DorkOS version. Attached as a context property on the metrics
+   * event, AND rendered into the durable diagnostics block beside the version
+   * the client reported — so an upgrade that happened under a long-lived tab is
+   * visible to triage instead of being invisible skew (DOR-1960).
+   */
   dorkosVersion: string;
   /**
    * The requester's identity, resolved server-side by {@link resolveFeedbackIdentity}
@@ -187,6 +192,7 @@ export async function sendFeedback(options: SendFeedbackOptions): Promise<{ ok: 
     submission,
     instanceId,
     identity,
+    serverVersion: dorkosVersion,
     endpoint: durableEndpoint,
     fetchImpl,
   });
@@ -236,17 +242,57 @@ interface DurableFeedbackPayload {
  * (see that route's module doc), so this is free-form as long as it stays
  * within {@link DURABLE_DIAGNOSTICS_MAX_LEN}.
  *
+ * The environment lines all sit in the HEADER section, ahead of the breadcrumb
+ * and server-log sections. That ordering is load-bearing: breadcrumbs alone can
+ * reach ~17,000 characters (50 × a 300-char message), so the final
+ * {@link DURABLE_DIAGNOSTICS_MAX_LEN} slice is a live possibility and whatever
+ * it cuts must be the least valuable text in the block. The header runs well
+ * under 1,000 characters even at every cap (a 300-char user-agent is its
+ * largest single line), so it always survives.
+ *
  * @param diagnostics - The submission's optional diagnostics bundle.
+ * @param serverVersion - This server's own version, for the upgrade-skew line.
  * @returns The rendered text, or `undefined` when no diagnostics were attached.
  */
-function renderDiagnostics(diagnostics: FeedbackDiagnostics | undefined): string | undefined {
+function renderDiagnostics(
+  diagnostics: FeedbackDiagnostics | undefined,
+  serverVersion: string
+): string | undefined {
   if (!diagnostics) return undefined;
 
   const { clientReport, breadcrumbs, serverLogExcerpt } = diagnostics;
-  const headerLines = [`Version: ${clientReport.version}`, `Platform: ${clientReport.platform}`];
+
+  // The client's `version` is whatever the server reported to it when its config
+  // query last ran, so the two agree in the normal case and there is nothing to
+  // say. They diverge exactly when the server was upgraded under a long-lived
+  // tab — which is a leading cause of "it broke and I don't know why" — so name
+  // both numbers only then, rather than printing a redundant pair every time.
+  const versionLine =
+    clientReport.version === serverVersion
+      ? `Version: ${clientReport.version}`
+      : `Version: ${clientReport.version} (server ${serverVersion})`;
+
+  const headerLines = [versionLine, `Platform: ${clientReport.platform}`];
   if (clientReport.runtimes.length > 0) {
     headerLines.push(`Runtimes: ${clientReport.runtimes.join(', ')}`);
   }
+
+  // The "what was on screen" half (DOR-1960). Each line is emitted only when the
+  // client actually answered that field: an absent one means the host could not
+  // report it, and a placeholder would read as a measurement.
+  const { viewport, browser, shell, theme, locale, timezone } = clientReport;
+  if (viewport) {
+    const dpr = viewport.devicePixelRatio;
+    headerLines.push(
+      `Viewport: ${viewport.width}x${viewport.height}${dpr && dpr !== 1 ? ` @${dpr}x` : ''}`
+    );
+  }
+  if (shell) headerLines.push(`Shell: ${shell}`);
+  if (theme) headerLines.push(`Theme: ${theme}`);
+  if (locale) headerLines.push(`Locale: ${locale}`);
+  if (timezone) headerLines.push(`Timezone: ${timezone}`);
+  if (browser) headerLines.push(`Browser: ${browser}`);
+
   const flagEntries = Object.entries(clientReport.flags);
   if (flagEntries.length > 0) {
     headerLines.push(
@@ -266,13 +312,21 @@ function renderDiagnostics(diagnostics: FeedbackDiagnostics | undefined): string
   return sections.join('\n\n').slice(0, DURABLE_DIAGNOSTICS_MAX_LEN);
 }
 
-/** Build the {@link DurableFeedbackPayload} for one submission. */
+/**
+ * Build the {@link DurableFeedbackPayload} for one submission.
+ *
+ * @param submission - The gathered submission.
+ * @param instanceId - This install's anonymous id.
+ * @param identity - The server-resolved reporter identity, when there is one.
+ * @param serverVersion - This server's version, rendered into the diagnostics block.
+ */
 function buildDurablePayload(
   submission: FeedbackSubmission,
   instanceId: string,
-  identity: FeedbackIdentity | undefined
+  identity: FeedbackIdentity | undefined,
+  serverVersion: string
 ): DurableFeedbackPayload {
-  const diagnostics = renderDiagnostics(submission.diagnostics);
+  const diagnostics = renderDiagnostics(submission.diagnostics, serverVersion);
   const transcriptExcerpt = submission.transcriptExcerpt
     ? submission.transcriptExcerpt.slice(0, DURABLE_TRANSCRIPT_MAX_LEN)
     : undefined;
@@ -314,6 +368,8 @@ async function postDurableFeedback(args: {
   submission: FeedbackSubmission;
   instanceId: string;
   identity: FeedbackIdentity | undefined;
+  /** This server's version, rendered into the diagnostics block. */
+  serverVersion: string;
   endpoint: string;
   fetchImpl: typeof fetch;
 }): Promise<boolean> {
@@ -326,7 +382,12 @@ async function postDurableFeedback(args: {
     });
 
   try {
-    const payload = buildDurablePayload(args.submission, args.instanceId, args.identity);
+    const payload = buildDurablePayload(
+      args.submission,
+      args.instanceId,
+      args.identity,
+      args.serverVersion
+    );
     const res = await send(payload);
     if (res.ok) return true;
     if (res.status !== 413 || !payload.screenshot) return false;

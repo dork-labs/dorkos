@@ -23,6 +23,8 @@ import {
   MAX_BREADCRUMBS,
   MAX_TRANSCRIPT_LEN,
   MAX_LOG_EXCERPT_LEN,
+  MAX_CLIENT_REPORT_BROWSER_LEN,
+  MAX_CLIENT_REPORT_TAG_LEN,
   TelemetryEventInputSchema,
 } from '../telemetry-events.js';
 
@@ -389,6 +391,97 @@ describe('feedback event registry', () => {
         message: 'x',
       });
       expect(res.success).toBe(false);
+    });
+
+    describe('environment context (DOR-1960)', () => {
+      /** A clientReport with the four always-present fields plus `extra`. */
+      function report(extra: Record<string, unknown> = {}) {
+        return {
+          clientReport: {
+            version: '0.47.0',
+            platform: 'darwin-arm64',
+            runtimes: [],
+            flags: {},
+            ...extra,
+          },
+        };
+      }
+
+      it('accepts a fully-populated environment', () => {
+        const res = FeedbackDiagnosticsSchema.safeParse(
+          report({
+            viewport: { width: 1512, height: 856, devicePixelRatio: 2 },
+            browser: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
+            shell: 'desktop-app',
+            theme: 'dark',
+            locale: 'en-US',
+            timezone: 'America/Los_Angeles',
+          })
+        );
+        expect(res.success).toBe(true);
+      });
+
+      it('accepts a bundle with none of them (a client that predates the fields)', () => {
+        expect(FeedbackDiagnosticsSchema.safeParse(report()).success).toBe(true);
+      });
+
+      it('rejects a fractional viewport dimension', () => {
+        // A zoomed window reports fractional CSS pixels; the client rounds them.
+        // If it stops rounding, this refusal is what makes that a loud failure.
+        const res = FeedbackDiagnosticsSchema.safeParse(
+          report({ viewport: { width: 1512.5, height: 856, devicePixelRatio: 2 } })
+        );
+        expect(res.success).toBe(false);
+      });
+
+      it('rejects an unknown key inside viewport (strict all the way down)', () => {
+        const res = FeedbackDiagnosticsSchema.safeParse(
+          report({
+            viewport: { width: 100, height: 100, devicePixelRatio: 1, screenX: 40 },
+          })
+        );
+        expect(res.success).toBe(false);
+      });
+
+      it('rejects an over-cap browser string', () => {
+        const res = FeedbackDiagnosticsSchema.safeParse(
+          report({ browser: 'x'.repeat(MAX_CLIENT_REPORT_BROWSER_LEN + 1) })
+        );
+        expect(res.success).toBe(false);
+      });
+
+      it('rejects an over-cap locale or timezone', () => {
+        const tooLong = 'x'.repeat(MAX_CLIENT_REPORT_TAG_LEN + 1);
+        expect(FeedbackDiagnosticsSchema.safeParse(report({ locale: tooLong })).success).toBe(
+          false
+        );
+        expect(FeedbackDiagnosticsSchema.safeParse(report({ timezone: tooLong })).success).toBe(
+          false
+        );
+      });
+
+      it('rejects a shell or theme outside its enum', () => {
+        // Both are closed sets, so a free-form string cannot ride in on either
+        // — that is what keeps them context rather than another text field.
+        expect(FeedbackDiagnosticsSchema.safeParse(report({ shell: 'terminal' })).success).toBe(
+          false
+        );
+        expect(FeedbackDiagnosticsSchema.safeParse(report({ theme: 'system' })).success).toBe(
+          false
+        );
+      });
+
+      it('has no slot for a location, a cwd, or a workspace path', () => {
+        // The strict allowlist IS the privacy contract. These are the three
+        // things the diagnostics bundle deliberately does not carry.
+        for (const forbidden of [
+          { geolocation: { lat: 1, lon: 2 } },
+          { cwd: '/Users/dorian/secret-project' },
+          { workspacePath: '/Users/dorian/vault' },
+        ]) {
+          expect(FeedbackDiagnosticsSchema.safeParse(report(forbidden)).success).toBe(false);
+        }
+      });
     });
   });
 

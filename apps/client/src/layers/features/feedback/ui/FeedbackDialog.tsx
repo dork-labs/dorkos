@@ -485,7 +485,7 @@ export function FeedbackDialog({
                     id="feedback-diagnostics"
                     icon={Stethoscope}
                     label="Diagnostics"
-                    summary="Version, platform, and recent errors."
+                    summary="Version, window size, browser, and recent errors."
                     checked={includeDiagnostics}
                     onCheckedChange={(next) => {
                       setAttachmentsTouched(true);

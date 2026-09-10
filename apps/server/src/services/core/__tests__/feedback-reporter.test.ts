@@ -21,8 +21,13 @@ vi.mock('../auth/index.js', () => ({
   getUserById: vi.fn(),
 }));
 
+import type { FeedbackDiagnostics } from '@dorkos/shared/telemetry-events';
+
 import { sendFeedback, resolveFeedbackIdentity, listMyFeedback } from '../feedback-reporter.js';
 import { getUserById } from '../auth/index.js';
+
+/** The `clientReport` half of a diagnostics bundle, typed from the schema. */
+type ClientReport = FeedbackDiagnostics['clientReport'];
 
 const mockGetUserById = vi.mocked(getUserById);
 
@@ -280,6 +285,153 @@ describe('sendFeedback — durable payload shape', () => {
 
     const body = durableBody(fetchImpl);
     expect(body).not.toHaveProperty('diagnostics');
+  });
+
+  describe('diagnostics context lines (DOR-1960)', () => {
+    /** A `clientReport` carrying every environment field the client can capture. */
+    function reportWithEnvironment(overrides: Partial<ClientReport> = {}): ClientReport {
+      return {
+        version: '0.47.0',
+        platform: 'darwin-arm64',
+        runtimes: ['claude-code'],
+        flags: {},
+        viewport: { width: 1280, height: 720, devicePixelRatio: 2 },
+        browser: 'Mozilla/5.0 (Macintosh) TestBrowser/1.0',
+        shell: 'desktop-app' as const,
+        theme: 'dark' as const,
+        locale: 'en-GB',
+        timezone: 'Europe/London',
+        ...overrides,
+      };
+    }
+
+    /** Send one submission with the given clientReport and return the rendered text. */
+    async function renderedFor(
+      clientReport: ClientReport,
+      options: Partial<Parameters<typeof sendFeedback>[0]> = {}
+    ): Promise<string> {
+      const fetchImpl = makeFetch('ok');
+      await sendFeedback(
+        baseOptions({
+          submission: { kind: 'bug', message: 'layout broke', diagnostics: { clientReport } },
+          fetchImpl,
+          ...options,
+        })
+      );
+      return durableBody(fetchImpl).diagnostics as string;
+    }
+
+    it('renders every captured environment field as a Key: value line', async () => {
+      const diagnostics = await renderedFor(reportWithEnvironment());
+
+      // Asserted as whole lines, not substrings: the site fences this text
+      // verbatim into the Linear issue, so the LINE is the contract a human
+      // reads. A bare `toContain('dark')` would also pass on `darwin-arm64`.
+      const lines = diagnostics.split('\n');
+      expect(lines).toContain('Viewport: 1280x720 @2x');
+      expect(lines).toContain('Shell: desktop-app');
+      expect(lines).toContain('Theme: dark');
+      expect(lines).toContain('Locale: en-GB');
+      expect(lines).toContain('Timezone: Europe/London');
+      expect(lines).toContain('Browser: Mozilla/5.0 (Macintosh) TestBrowser/1.0');
+    });
+
+    it('omits the density suffix on a standard-density display', async () => {
+      const diagnostics = await renderedFor(
+        reportWithEnvironment({ viewport: { width: 800, height: 600, devicePixelRatio: 1 } })
+      );
+
+      expect(diagnostics.split('\n')).toContain('Viewport: 800x600');
+    });
+
+    it('prints one version when the client and server agree', async () => {
+      // The common case: `clientReport.version` came FROM this server's config
+      // route, so a redundant "(server 0.47.0)" on every report is noise.
+      const diagnostics = await renderedFor(reportWithEnvironment({ version: '0.47.0' }), {
+        dorkosVersion: '0.47.0',
+      });
+
+      expect(diagnostics.split('\n')).toContain('Version: 0.47.0');
+      expect(diagnostics).not.toContain('(server');
+    });
+
+    it('names both versions when the server has moved on under the client', async () => {
+      // The upgrade-skew case this line exists for: a long-lived tab holding a
+      // cached config while the server was restarted onto a new build.
+      const diagnostics = await renderedFor(reportWithEnvironment({ version: '0.47.0' }), {
+        dorkosVersion: '0.48.1',
+      });
+
+      expect(diagnostics.split('\n')).toContain('Version: 0.47.0 (server 0.48.1)');
+    });
+
+    it('omits each environment line the client did not send', async () => {
+      // A client that predates these fields (or a host that could not read one)
+      // must not produce `Theme: undefined` — an absent field is not a value.
+      const diagnostics = await renderedFor({
+        version: '0.47.0',
+        platform: 'darwin-arm64',
+        runtimes: [],
+        flags: {},
+      });
+
+      expect(diagnostics).not.toContain('Viewport:');
+      expect(diagnostics).not.toContain('Shell:');
+      expect(diagnostics).not.toContain('Theme:');
+      expect(diagnostics).not.toContain('Locale:');
+      expect(diagnostics).not.toContain('Timezone:');
+      expect(diagnostics).not.toContain('Browser:');
+      expect(diagnostics).not.toContain('undefined');
+      expect(diagnostics.split('\n')).toContain('Version: 0.47.0');
+    });
+
+    it('keeps the context lines when a full breadcrumb trail overruns the 8000-char cap', async () => {
+      // Breadcrumbs alone reach ~17,000 characters at their own caps (50 x 300),
+      // so the final slice is a live possibility on a real report. The context
+      // header must be on the surviving side of it — which is only true while
+      // the header is rendered BEFORE the breadcrumb section.
+      const fetchImpl = makeFetch('ok');
+      await sendFeedback(
+        baseOptions({
+          submission: {
+            kind: 'bug',
+            message: 'layout broke',
+            diagnostics: {
+              clientReport: reportWithEnvironment(),
+              breadcrumbs: Array.from({ length: 50 }, (_, i) => ({
+                at: '2026-08-03T00:00:00.000Z',
+                kind: 'console_error' as const,
+                message: `${i}-${'x'.repeat(295)}`,
+              })),
+            },
+          },
+          fetchImpl,
+        })
+      );
+
+      const diagnostics = durableBody(fetchImpl).diagnostics as string;
+      expect(diagnostics).toHaveLength(8000);
+      const lines = diagnostics.split('\n');
+      expect(lines).toContain('Viewport: 1280x720 @2x');
+      expect(lines).toContain('Theme: dark');
+      expect(lines).toContain('Browser: Mozilla/5.0 (Macintosh) TestBrowser/1.0');
+    });
+
+    it('leaves room to spare: the whole context header fits well under the cap', async () => {
+      // The budget claim in renderDiagnostics's TSDoc, pinned. At every cap the
+      // header is ~1000 chars against an 8000-char block, so adding a context
+      // line is safe without re-doing this arithmetic by hand.
+      const diagnostics = await renderedFor(
+        reportWithEnvironment({
+          browser: 'U'.repeat(300),
+          locale: 'l'.repeat(64),
+          timezone: 't'.repeat(64),
+          runtimes: ['claude-code', 'codex', 'opencode'],
+        })
+      );
+
+      expect(diagnostics.length).toBeLessThan(1000);
+    });
   });
 
   it('carries transcriptExcerpt and sets hasTranscript:true when present', async () => {
