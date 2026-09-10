@@ -107,6 +107,8 @@ export interface ConnectorOperatorQueryServiceOptions {
   readonly agentOwnership: ConnectorAgentOwnershipPort;
   /** Hosted authoritative counts for DorkOS-managed connections. */
   readonly managedUsage?: ConnectorManagedUsageQueryPort;
+  /** Recover an absent hosted provider before a normal catalog read. */
+  readonly recoverManagedProvider?: () => Promise<void>;
 }
 
 function ownerColumns(owner: ConnectorOwnerAuthority): {
@@ -160,6 +162,7 @@ export class ConnectorOperatorQueryService {
   private readonly sessions: ConnectorSessionOwnerResolver;
   private readonly agentOwnership: ConnectorAgentOwnershipPort;
   private readonly managedUsage: ConnectorManagedUsageQueryPort | undefined;
+  private readonly recoverManagedProvider: (() => Promise<void>) | undefined;
 
   /** Construct owner projections over canonical connector state. */
   constructor(options: ConnectorOperatorQueryServiceOptions) {
@@ -169,6 +172,7 @@ export class ConnectorOperatorQueryService {
     this.sessions = options.sessions;
     this.agentOwnership = options.agentOwnership;
     this.managedUsage = options.managedUsage;
+    this.recoverManagedProvider = options.recoverManagedProvider;
   }
 
   /** Return a bounded account-free catalog page across every live provider. */
@@ -180,6 +184,7 @@ export class ConnectorOperatorQueryService {
     signal: AbortSignal;
   }): Promise<ConnectorCatalogResourcePage> {
     this.registry.assertAvailable();
+    await this.recoverManagedProvider?.();
     const query = input.query?.trim().toLowerCase() ?? '';
     const offset = decodeCatalogCursor(input.cursor, query);
     const limit = input.limit ?? 50;
