@@ -11,6 +11,11 @@
 export { roomKeys } from './api/query-keys';
 export { useRoomSessions } from './api/use-room-sessions';
 export { useRooms, useRoomsByKind } from './model/use-rooms';
+export { routeShowsRoom, useRouteRoom } from './model/use-route-room';
+export type { RouteRoom } from './model/use-route-room';
+export { useRoomBoundSession, resolveRoomBoundSession } from './model/use-room-bound-session';
+export type { ResolveRoomSessionDeps } from './model/use-room-bound-session';
+export { roomBoundSessionId } from './lib/room-bound-session';
 export { useTeamRoom } from './model/use-team-room';
 export type { TeamRoomState } from './model/use-team-room';
 export { useThreads } from './model/use-threads';
