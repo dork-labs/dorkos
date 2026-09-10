@@ -18,7 +18,7 @@ import { useIsMobile } from '@/layers/shared/model';
 import { useTranscriptPreview } from '../model/use-transcript-preview';
 
 /** Which preview tab is showing. */
-export type FeedbackPreviewTab = 'diagnostics' | 'conversation';
+export type FeedbackPreviewTab = 'diagnostics' | 'conversation' | 'screenshot';
 
 interface FeedbackPreviewDialogProps {
   /** Whether the preview is open. */
@@ -35,6 +35,11 @@ interface FeedbackPreviewDialogProps {
   showConversation: boolean;
   /** The session the transcript preview reads from. */
   sessionId: string | undefined;
+  /**
+   * The compressed screenshot that will be sent, or `undefined` when none is
+   * attached — in which case the Screenshot tab does not exist at all.
+   */
+  screenshotDataUrl?: string;
 }
 
 /** The privacy scope line, repeated at the foot of the preview (design §5). */
@@ -148,6 +153,23 @@ function ConversationPreview({
   );
 }
 
+/** The screenshot preview: the exact bytes that will be sent, at full width. */
+function ScreenshotPreview({ dataUrl }: { dataUrl: string }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-muted-foreground text-xs">
+        This is the picture that goes with your report, exactly as we will send it. It is shrunk to
+        keep the message small.
+      </p>
+      <img
+        src={dataUrl}
+        alt="The screenshot you attached"
+        className="bg-muted/30 w-full rounded-md border object-contain"
+      />
+    </div>
+  );
+}
+
 /**
  * The full preview of what a feedback submission will send: a tabbed, scrollable
  * surface showing the exact diagnostics bundle and a faithful, scrubbed preview
@@ -163,11 +185,18 @@ export function FeedbackPreviewDialog({
   kind,
   showConversation,
   sessionId,
+  screenshotDataUrl,
 }: FeedbackPreviewDialogProps) {
   const isDesktop = !useIsMobile();
   // A closed preview must not fetch; the Conversation tab only reads when the
-  // preview is open on that tab.
-  const tab = showConversation ? initialTab : 'diagnostics';
+  // preview is open on that tab. A tab whose content is not there cannot be the
+  // landing tab either — fall back to the one tab that always exists.
+  const available: FeedbackPreviewTab[] = [
+    'diagnostics',
+    ...(showConversation ? (['conversation'] as const) : []),
+    ...(screenshotDataUrl ? (['screenshot'] as const) : []),
+  ];
+  const tab = available.includes(initialTab) ? initialTab : 'diagnostics';
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
@@ -188,9 +217,17 @@ export function FeedbackPreviewDialog({
           defaultValue={tab}
           className="flex min-h-0 flex-col gap-3 px-4 pb-4 sm:px-0"
         >
-          <TabsList className={cn('grid', showConversation ? 'grid-cols-2' : 'grid-cols-1')}>
+          <TabsList
+            className={cn(
+              'grid',
+              available.length === 3 && 'grid-cols-3',
+              available.length === 2 && 'grid-cols-2',
+              available.length === 1 && 'grid-cols-1'
+            )}
+          >
             <TabsTrigger value="diagnostics">Diagnostics</TabsTrigger>
             {showConversation && <TabsTrigger value="conversation">Conversation</TabsTrigger>}
+            {screenshotDataUrl && <TabsTrigger value="screenshot">Screenshot</TabsTrigger>}
           </TabsList>
 
           <TabsContent value="diagnostics" className="min-h-0">
@@ -203,6 +240,14 @@ export function FeedbackPreviewDialog({
             <TabsContent value="conversation" className="min-h-0">
               <ScrollArea className="max-h-[45vh]">
                 <ConversationPreview sessionId={sessionId} active={open} />
+              </ScrollArea>
+            </TabsContent>
+          )}
+
+          {screenshotDataUrl && (
+            <TabsContent value="screenshot" className="min-h-0">
+              <ScrollArea className="max-h-[45vh]">
+                <ScreenshotPreview dataUrl={screenshotDataUrl} />
               </ScrollArea>
             </TabsContent>
           )}

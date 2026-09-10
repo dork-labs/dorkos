@@ -25,6 +25,14 @@ import { useCopyFeedback } from '@/layers/shared/lib';
 import { FeedbackDialog } from '@/layers/features/feedback';
 
 /**
+ * A stand-in for an attached screenshot: a 200x120 PNG of an app window,
+ * small enough to sit inline here. A real one comes out of `compressImage`
+ * as WebP, but the dialog only ever renders whatever `data:` URL it is given.
+ */
+const SAMPLE_SCREENSHOT_DATA_URL =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMgAAAB4CAIAAAA48Cq8AAABY0lEQVR42u3asQ3AIAxFQaagiCioKDIDZUSZ/cdhCZQYcdKbwLrOP7V2S8tLTiCwBJbAksASWAJLAktgCSwJLIElsCSwBJbAksBSYFil1C3K+dJGgSWwBBZYYIElsAQWWGCBJbAEFlhggSWwBNY3sMZ4tTywwAILLLDAAgssDsACCyywwAJLYIEFFlhggSWwwAILLLDAElhmM2YzYAksgQUWWGAJLIEFFlhgCSyBBRZYMWH1/hwbWGCBBRZYYIEFFlhggQUWWGCBBRZYYIEFFlhggQUWWGCBBRZYYIFlNiOwBBZYYIElsAQWWGCBJbAEFlhggSUvHf37/wELLLDAAgsssMACCyywwAILLLDAAgsssMACCyywwAILLLDAAgsssGQ2AxZYYAksgQUWWGAJLIEFFlhgCSyBBRZYYAksgQUWWGAJLIEFFlhgCSyBBRZYYAksgQUWWGAJLIEFFlhgCSwFaAL7shD3S2x8pAAAAABJRU5ErkJggg==';
+
+/**
  * Breaks `navigator.clipboard.writeText` for exactly one call, so the
  * showcase can put `useCopyFeedback`'s failure state on screen without
  * relying on a browser permission that is rarely denied in practice.
@@ -141,12 +149,13 @@ export function FeedbackShowcases() {
   const [collapsibleOpen, setCollapsibleOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackBugOpen, setFeedbackBugOpen] = useState(false);
+  const [feedbackShotOpen, setFeedbackShotOpen] = useState(false);
 
   return (
     <>
       <PlaygroundSection
         title="Feedback dialog"
-        description="Message-first send dialog: kind selector, identity line with anonymous toggle, and a collapsible Attachments & details panel (diagnostics + conversation + screenshot placeholder)."
+        description="Message-first send dialog: kind selector, identity line with anonymous toggle, and a collapsible Attachments & details panel (diagnostics, conversation, and a screenshot you paste, drop, or pick). The third button opens it with a screenshot already attached — the thumbnail, the Remove control, and the Screenshot tab in the full preview."
       >
         <ShowcaseDemo>
           <div className="flex flex-wrap gap-2">
@@ -155,6 +164,9 @@ export function FeedbackShowcases() {
             </Button>
             <Button variant="outline" onClick={() => setFeedbackBugOpen(true)}>
               Open (Bug)
+            </Button>
+            <Button variant="outline" onClick={() => setFeedbackShotOpen(true)}>
+              Open (screenshot attached)
             </Button>
           </div>
           <FeedbackDialog
@@ -166,6 +178,13 @@ export function FeedbackShowcases() {
             open={feedbackBugOpen}
             onOpenChange={setFeedbackBugOpen}
             initialKind="bug"
+            currentUser={{ email: 'you@example.com', name: 'You' }}
+          />
+          <FeedbackDialog
+            open={feedbackShotOpen}
+            onOpenChange={setFeedbackShotOpen}
+            initialKind="bug"
+            initialScreenshotDataUrl={SAMPLE_SCREENSHOT_DATA_URL}
             currentUser={{ email: 'you@example.com', name: 'You' }}
           />
         </ShowcaseDemo>
