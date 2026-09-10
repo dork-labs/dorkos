@@ -217,7 +217,8 @@ export class ComposioManagedAccountClient {
         const result = normalizeComposioToolkitAuthentication(response);
         if (result.toolkit !== toolkit) throw new Error('Toolkit mismatch.');
         return result;
-      } catch {
+      } catch (error) {
+        if (error instanceof ComposioAuthenticationSetupError) throw error;
         throw new ComposioManagedAccountError(
           'invalid_provider_response',
           'Composio returned invalid account metadata.'

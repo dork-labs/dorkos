@@ -6,6 +6,7 @@ import {
   ComposioManagedAccountClient,
   ComposioManagedAccountError,
 } from '../managed-account-client.js';
+import { ComposioAuthenticationSetupError } from '../authentication-configuration.js';
 
 interface SeenRequest {
   method: string;
@@ -402,6 +403,48 @@ describe('hosted authentication wire contracts', () => {
 });
 
 describe('authentication configuration SDK wire', () => {
+  it('preserves the specific setup refusal for unsupported toolkit metadata', async () => {
+    const local = await fixture((_request, response) =>
+      json(response, 200, {
+        slug: 'gmail',
+        enabled: true,
+        auth_config_details: [
+          {
+            mode: 'API_KEY',
+            fields: {
+              auth_config_creation: { required: [], optional: [] },
+              connected_account_initiation: {
+                required: [
+                  {
+                    name: 'api_key',
+                    displayName: 'API key',
+                    description: '',
+                    required: true,
+                    type: 'string',
+                    unsupported_private_shape: 'PRIVATE_TOOLKIT_RESPONSE',
+                  },
+                ],
+                optional: [],
+              },
+            },
+          },
+        ],
+      })
+    );
+    const client = new ComposioManagedAccountClient({
+      apiKey: 'synthetic-project',
+      baseUrl: local.baseUrl,
+    });
+
+    const error = await client
+      .getToolkitAuthentication('gmail', new AbortController().signal)
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ComposioAuthenticationSetupError);
+    expect(String(error)).toContain('account-field constraints');
+    expect(String(error)).not.toContain('PRIVATE_TOOLKIT_RESPONSE');
+    expect(local.requests).toHaveLength(1);
+  });
+
   it('classifies malformed toolkit metadata without exposing provider values', async () => {
     const privateValue = 'PRIVATE_TOOLKIT_RESPONSE';
     const local = await fixture((_request, response) =>
