@@ -134,6 +134,7 @@ export function ConnectDialog({
   const activeFlow: ConnectorAuthenticationFlowState | undefined = flow.data ?? start.data;
 
   const serviceName = resolvedService?.displayName ?? titleCase(activeFlow?.toolkit ?? 'service');
+  const guidance = route ? authenticationGuidance(route, serviceName) : null;
   const unavailableReason = useMemo(() => {
     if (route) return null;
     const unavailable = routes.find(
@@ -241,10 +242,8 @@ export function ConnectDialog({
                     <p className="text-muted-foreground text-xs leading-relaxed">
                       {route.disclosure}
                     </p>
-                    {authenticationGuidance(route, serviceName) && (
-                      <p className="text-muted-foreground text-xs leading-relaxed">
-                        {authenticationGuidance(route, serviceName)}
-                      </p>
+                    {guidance && (
+                      <p className="text-muted-foreground text-xs leading-relaxed">{guidance}</p>
                     )}
                     <p className="text-muted-foreground text-xs">
                       {route.payer === 'dorkos_managed'
@@ -317,10 +316,8 @@ export function ConnectDialog({
                     <p className="text-muted-foreground text-xs leading-relaxed">
                       {route.disclosure}
                     </p>
-                    {authenticationGuidance(route, serviceName) && (
-                      <p className="text-muted-foreground text-xs leading-relaxed">
-                        {authenticationGuidance(route, serviceName)}
-                      </p>
+                    {guidance && (
+                      <p className="text-muted-foreground text-xs leading-relaxed">{guidance}</p>
                     )}
                     <p className="text-muted-foreground text-xs">
                       {route.payer === 'dorkos_managed'
