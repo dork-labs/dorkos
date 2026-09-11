@@ -5,9 +5,11 @@ import {
   connectorManagedReceiptRecoveries,
   connectorManagedUsageMirrors,
   connectorUsageAttempts,
+  connectorUsageTerminalReceipts,
   eq,
   isNull,
   lte,
+  ne,
   or,
   type Db,
 } from '@dorkos/db';
@@ -168,8 +170,18 @@ export class ManagedUsageMirrorService {
           connectorManagedReceiptRecoveries,
           eq(connectorManagedReceiptRecoveries.attemptId, connectorUsageAttempts.attemptId)
         )
+        .leftJoin(
+          connectorUsageTerminalReceipts,
+          eq(connectorUsageTerminalReceipts.attemptId, connectorUsageAttempts.attemptId)
+        )
         .where(
           and(
+            // This local refusal proves no hosted receipt can exist. Historical
+            // unknown attempts remain recoverable; absence is not terminal evidence.
+            or(
+              isNull(connectorUsageTerminalReceipts.errorCode),
+              ne(connectorUsageTerminalReceipts.errorCode, 'MANAGED_LINK_REQUIRED')
+            ),
             eq(connectorUsageAttempts.payer, 'dorkos_managed'),
             isNull(connectorManagedUsageMirrors.attemptId),
             or(
