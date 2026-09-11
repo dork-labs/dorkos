@@ -21,7 +21,8 @@ import {
 } from '@/layers/features/command-palette';
 import { SIDEBAR_FOOTER_BUTTONS } from '@/layers/features/session-list';
 import { PROFILE_PANEL_ID } from '@/layers/features/profile';
-import { ROOM_PANEL_ID, routeShowsRoom } from '@/layers/features/room-management';
+import { ROOM_PANEL_ID } from '@/layers/features/room-management';
+import { routeShowsRoom } from '@/layers/entities/room';
 import { DIALOG_CONTRIBUTIONS } from '@/layers/widgets/app-layout';
 
 /**

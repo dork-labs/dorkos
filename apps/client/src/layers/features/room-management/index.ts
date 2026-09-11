@@ -36,7 +36,6 @@ export { RoomPanel } from './ui/RoomPanel';
 // question answered, which is what the playground's fixtures need.
 export { RoomPanelBody } from './ui/RoomPanelBody';
 export { openRoomPanel, ROOM_PANEL_ID, useRoomPanelFocusStore } from './model/room-panel-focus';
-export { routeShowsRoom } from './model/use-route-room';
 // The fleet's faces, for the one surface outside this slice that draws a room's
 // mark: the bar. Exported rather than re-derived there — see `use-room-faces`.
 export { useRoomFaces, facesOfRoster } from './model/use-room-faces';

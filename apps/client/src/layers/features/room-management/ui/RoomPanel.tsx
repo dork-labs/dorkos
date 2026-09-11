@@ -5,8 +5,8 @@
  */
 import { useEffect, useRef } from 'react';
 import { Skeleton } from '@/layers/shared/ui';
+import { useRouteRoom } from '@/layers/entities/room';
 import { useRoomPanelFocusStore } from '../model/room-panel-focus';
-import { useRouteRoom } from '../model/use-route-room';
 import { RoomPanelBody } from './RoomPanelBody';
 import { RoomPanelNotice } from './RoomPanelNotice';
 

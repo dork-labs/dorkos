@@ -15,6 +15,7 @@ import { Skeleton } from '@/layers/shared/ui';
 import { useSafeNavigate } from '@/layers/shared/model';
 import { useCurrentAgent } from '@/layers/entities/agent';
 import { useInteractionStore } from '@/layers/entities/interactions';
+import { useRoomBoundSession } from '@/layers/entities/room';
 import { findTeamOwner, teamMemberFace, useMemberRooms } from '@/layers/entities/team';
 import { deriveRelationship } from '../lib/profile-relationship';
 import { messageTarget } from '../lib/profile-message';
@@ -91,6 +92,10 @@ export function ProfileView({
   // and must not be asked about it.
   const ownsWork = relationship === 'managed' || relationship === 'system';
   const facts = useManagedAgentFacts(member, ownsWork);
+  // Where this agent works in the room the page is showing, when one is. Answers
+  // `null` everywhere else, which is what leaves the docked home — and every
+  // route that is not a room — resolving exactly as it always did.
+  const resolveRoomSession = useRoomBoundSession();
 
   const ctx: ProfileRowsContext = {
     relationship,
@@ -107,12 +112,29 @@ export function ProfileView({
   const canOpenSession =
     target !== null && relationship !== 'self' && !inOwnSession && navigate !== null;
 
-  function openSession() {
+  async function openSession() {
     if (!target || !navigate) return;
     // The roster's door into a conversation (DOR-1156): it names a directory,
     // not a session, so the AGENT is the only honest thing to record — and it
     // is what ⌘K's ranking and the New menu's "last used" read.
     useInteractionStore.getState().recordOpened('agent', target.projectPath);
+    // Opened from inside a room, this button means "take me to what this agent
+    // is doing HERE" (DOR-1974). Every other door into the profile from a room
+    // — a mention pill, the face beside a message, a roster row — arrives
+    // through this one button, so naming the room's session here is what fixes
+    // all of them at once.
+    const inRoom = await resolveRoomSession(target.projectPath);
+    if (inRoom !== null) {
+      // The session id ALONE, no `dir` — the same shape the live lane's own
+      // link uses. A room turn does not necessarily run in the agent's own
+      // directory (it can run in the room's worktree), and every per-session
+      // read is addressed by id AND directory, so pairing the room's session
+      // with the agent's folder is how a real conversation reads as an empty
+      // one (DOR-1836). Omitting it is a complete question the server answers
+      // from the session's own binding.
+      void navigate({ to: '/session', search: { session: inRoom } });
+      return;
+    }
     void navigate({ to: '/session', search: { dir: target.projectPath } });
   }
 
@@ -185,7 +207,7 @@ export function ProfileView({
                 onOpenOwner={
                   owner ? () => onPush({ kind: 'profile', memberId: owner.id }) : undefined
                 }
-                onOpenSession={canOpenSession ? openSession : undefined}
+                onOpenSession={canOpenSession ? () => void openSession() : undefined}
                 // Only an agent you manage: DorkBot's face is part of DorkOS
                 // (its About row says so), and nobody else's identity is yours
                 // to restyle. Its VOICE is a different question and is yours —

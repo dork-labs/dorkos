@@ -1,11 +1,20 @@
 /**
- * Which room the page is showing — the only question the room panel asks about
- * the route.
+ * Which room the page is showing.
  *
- * @module features/room-management/model/use-route-room
+ * It lives with the room ENTITY rather than with the room-management feature
+ * that first asked it (DOR-1974). Two surfaces now need the answer and they are
+ * in different features — the right panel's Room tab, and every affordance that
+ * opens an agent's session from inside a room — so a home either of them could
+ * import from is the only one that keeps "which room is on screen" a single
+ * answer. It reads nothing but the route and this slice's own `#team` lookup,
+ * so entities is where it always belonged.
+ *
+ * @module entities/room/model/use-route-room
  */
 import { useSafePathname, useSafeSearch } from '@/layers/shared/model';
-import { useTeamRoom } from '@/layers/entities/room';
+// Same-slice sibling, not the barrel: a slice's own barrel importing back into
+// its own module is the self-reference the entity DAG rule exists to keep out.
+import { useTeamRoom } from './use-team-room';
 
 /** The route that addresses a room by search param. */
 const CHANNELS_PATHNAME = '/channels';

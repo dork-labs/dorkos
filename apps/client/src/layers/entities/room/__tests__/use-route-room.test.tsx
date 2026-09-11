@@ -22,10 +22,9 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
 
 /** What `useTeamRoom` is answering with, per test. */
 const team = { current: { status: 'ready', room: { id: 'team-room' }, retry: vi.fn() } as unknown };
-vi.mock('@/layers/entities/room', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/layers/entities/room')>();
-  return { ...actual, useTeamRoom: () => team.current };
-});
+// The sibling module rather than this slice's barrel: `use-route-room` reads
+// `useTeamRoom` from `./use-team-room`, and a barrel mock would not intercept it.
+vi.mock('../model/use-team-room', () => ({ useTeamRoom: () => team.current }));
 
 beforeEach(() => {
   route.pathname = '/';
