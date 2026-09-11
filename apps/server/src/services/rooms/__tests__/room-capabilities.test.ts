@@ -154,7 +154,7 @@ describe('the rooms capability domain', () => {
   });
 
   describe('what it declares', () => {
-    it('advertises the fifteen tools on both MCP servers, with the tiers and the grant it means', () => {
+    it('advertises the sixteen tools on both MCP servers, with the tiers and the grant it means', () => {
       const declared = roomsDomain.capabilities.map((capability) => ({
         id: capability.id,
         tool: capability.surfaces.mcp?.toolName,
@@ -315,6 +315,17 @@ describe('the rooms capability domain', () => {
           group: 'roomsManage',
           tool: 'leave_room',
           tier: 'act',
+          servers: ['in-session', 'external'],
+          readOnly: false,
+        },
+        {
+          id: 'rooms.readCanvas',
+          group: null,
+          tool: 'read_canvas',
+          // `observe`, like every other read here — and, like every other read
+          // here, deliberately NOT in the tokenless carve-out: what it returns
+          // is what the room's members put in front of each other.
+          tier: 'observe',
           servers: ['in-session', 'external'],
           readOnly: false,
         },

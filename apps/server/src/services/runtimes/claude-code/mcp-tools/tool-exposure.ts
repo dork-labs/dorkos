@@ -132,6 +132,17 @@ export function inSessionToolName(bare: string): string {
  * commands it is already running. The cost the other way is a schema in the
  * turn-1 prompt of EVERY session on the install, including the majority with no
  * project room at all.
+ *
+ * **`read_canvas` IS here, and the difference from merging is the turn it lands
+ * in** (DOR-1999). `<room_tools>` names it callably, in the same breath as the
+ * four conversation verbs and under the same prefix — a deferred name inside
+ * THAT block is the DOR-1292 shape this file warns about twice, because the
+ * block's whole contract is "these are the tools you have". And the turn is the
+ * one this list exists for: the room's context block tells every turn what is on
+ * the canvas but never what a document SAYS, so an agent answering "what does
+ * that say?" needs it inside the reply somebody is waiting on. Merging is the
+ * opposite turn — it follows work already committed, so its lookup lands among
+ * the git commands the agent is already running.
  */
 export const ALWAYS_LOADED_TOOLS: ReadonlySet<string> = new Set([
   'post_to_room',
@@ -140,6 +151,7 @@ export const ALWAYS_LOADED_TOOLS: ReadonlySet<string> = new Set([
   'search_room_history',
   'list_member_rooms',
   'search_member_rooms',
+  'read_canvas',
   'list_capabilities',
   'memory_write',
 ]);

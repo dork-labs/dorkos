@@ -18,6 +18,7 @@
  * @module server/services/rooms/service/room-core
  */
 import type { RoomPresencePayload } from '@dorkos/shared/room-schemas';
+import type { RoomContextCanvas } from '@dorkos/shared/additional-context';
 import type { ReadCursorService } from '../../core/read-cursor-service.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
 import type { BridgeStore } from '../../relay/chat-bridge/bridge-store.js';
@@ -96,6 +97,42 @@ export interface RoomCore {
 }
 
 /**
+ * The `canvas` section of one room's turn context, or `null` when the room has
+ * nothing on its table (spec `room-canvas` §6.1).
+ *
+ * Built here rather than in `RoomCanvasService` because what the context
+ * carries is a decision about the PROMPT — labels only, no content — and the
+ * service's job is the table. The handle it names each author by is the roster's
+ * own, so an agent reading this section can address whoever put something there
+ * with the same string the members line uses.
+ *
+ * @param deps - Everything the service was constructed from.
+ * @param roomId - The room taking a turn.
+ * @returns The section, or `null`.
+ */
+function canvasContextFor(deps: RoomServiceDeps, roomId: string): RoomContextCanvas | null {
+  const documents = deps.canvasDocuments.list(roomId);
+  if (documents.length === 0) return null;
+  return {
+    viewers: deps.broadcaster.subscriberCount(roomId),
+    documents: documents.map((row) => {
+      const author = deps.authors.getById(row.authorId);
+      const url =
+        row.content.type === 'url' || row.content.type === 'browser' ? row.content.url : undefined;
+      return {
+        id: row.id,
+        type: row.contentType,
+        title: row.title,
+        ...(url !== undefined ? { url } : {}),
+        author: author?.handle ?? author?.displayName ?? 'Unknown',
+        pinned: row.pinned,
+        lastChangedAt: row.lastTouchedAt,
+      };
+    }),
+  };
+}
+
+/**
  * The three ways the trigger dispatcher reaches back into the service that
  * owns it.
  *
@@ -144,6 +181,11 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
     },
     topicNamesFor: (entryIds) => topicNamesForEntries(deps.bridges, entryIds),
     attachmentsFor: (roomId, entryIds) => deps.attachments.listFor(roomId, entryIds),
+    // What is on this room's table, as LABELS — never a document's contents.
+    // Resolved per turn, so an agent reads the table as it stands when its turn
+    // starts rather than as it stood when this service was built. `null` for a
+    // room with nothing on it, which renders no section at all.
+    canvasFor: (roomId) => canvasContextFor(deps, roomId),
     runner: deps.turns,
     ...(deps.worktrees ? { worktrees: deps.worktrees } : {}),
     budget: deps.budget,

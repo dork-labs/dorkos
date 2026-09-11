@@ -137,7 +137,7 @@ import type {
   RoomWorkingClaim,
   SkippedTrigger,
 } from '@dorkos/shared/room-schemas';
-import type { RoomContextFiles } from '@dorkos/shared/additional-context';
+import type { RoomContextCanvas, RoomContextFiles } from '@dorkos/shared/additional-context';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
 import type { InterruptReceipt } from '@dorkos/shared/types';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
@@ -401,6 +401,11 @@ export interface RoomTriggerDeps {
    * the same reason as {@link RoomTriggerDeps.bridgedFraming}.
    */
   attachmentsFor(roomId: string, entryIds: readonly string[]): Map<string, RoomAttachment[]>;
+  /**
+   * What is on this room's shared canvas, as LABELS. Read only by
+   * `buildRoomContext`, for the same reason as {@link RoomTriggerDeps.bridgedFraming}.
+   */
+  canvasFor(roomId: string): RoomContextCanvas | null;
   runner: RoomTurnRunner;
   /**
    * The install's room-worktree manager, for placing a turn in a project room

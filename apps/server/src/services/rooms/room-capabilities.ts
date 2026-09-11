@@ -1466,5 +1466,135 @@ export const roomsDomain: CapabilityDomain = {
         return Promise.resolve({ left: true, roomId: input.roomId });
       },
     }),
+    defineCapability({
+      id: 'rooms.readCanvas',
+      title: "Read the room's canvas",
+      description:
+        'See what is on the shared canvas of a room you are in — the documents its members, ' +
+        'people and agents alike, have put in front of each other. ' +
+        'Call it with no documentId to list what is there: what each one is, what it is called, ' +
+        'who put it there, and how many windows are open on the room right now. ' +
+        'Call it with one to read that document. ' +
+        'Nothing here notifies anybody, and reading the canvas starts no turn. ' +
+        'A document that names a file you could not open yourself comes back as its name and ' +
+        'who opened it, without the contents.',
+      tier: 'observe',
+      input: z.object({
+        roomId: z
+          .string()
+          .describe(
+            'The room whose canvas to read, by its id — not its #name. Inside a room turn your ' +
+              'room context names it. You must be a member of it.'
+          ),
+        documentId: z
+          .string()
+          .optional()
+          .describe('Omit to list what is on the canvas; pass one to read that document.'),
+      }),
+      output: z.unknown(),
+      surfaces: {
+        mcp: {
+          toolName: 'read_canvas',
+          // Both servers, so the verb reaches claude-code, codex and opencode
+          // alike — which is what makes "any agent in a room can read the table"
+          // true rather than true of one runtime (spec §7).
+          servers: ['in-session', 'external'],
+          annotations: { idempotentHint: true },
+        },
+      },
+      invoke: (deps, input, context) => {
+        const rooms = requireRoomDeps(deps);
+        const caller = callerAuthor(rooms, context);
+        return Promise.resolve(
+          answering(() => readRoomCanvas(rooms, input, caller.id, context.cwd))
+        );
+      },
+    }),
   ],
 };
+
+/**
+ * What `read_canvas` answers with — the list, or one document under the §8.1
+ * reader rule.
+ *
+ * **The rule, stated once and enforced here:** a canvas document never lets a
+ * member read a tree they could not already read. Otherwise "open a document"
+ * would be a cross-tree read primitive with a friendlier name. So a document
+ * whose file lives somewhere this reader cannot reach comes back as its
+ * metadata plus one plain sentence, and never as content — checked on the
+ * READER at read time, so it holds for a member who joined after the document
+ * was opened.
+ *
+ * Membership is asked first, by the service, and refuses a non-member exactly as
+ * it refuses a room that does not exist.
+ *
+ * @param rooms - The rooms service.
+ * @param input - The room, and the document when one was named.
+ * @param callerAuthorId - Who is asking, resolved server-side.
+ * @param callerCwd - Where they are working, when the surface carries it.
+ * @returns The list, or the document.
+ */
+function readRoomCanvas(
+  rooms: RoomService,
+  input: { roomId: string; documentId?: string },
+  callerAuthorId: string,
+  callerCwd: string | undefined
+): unknown {
+  // Membership, asked the same way every other read here asks it.
+  rooms.requireMembership(input.roomId, callerAuthorId);
+  const canvas = rooms.canvas;
+  if (input.documentId === undefined) {
+    return {
+      note: UNTRUSTED_NOTE,
+      viewers: canvas.viewers(input.roomId),
+      documents: canvas.list(input.roomId).map((document) => ({
+        documentId: document.id,
+        type: document.contentType,
+        title: sanitizeIdentity(document.title) ?? document.title,
+        author: authorLabel(rooms, document.authorId),
+        pinned: document.pinned,
+        lastChangedAt: document.lastTouchedAt,
+      })),
+    };
+  }
+  const document = canvas.get(input.roomId, input.documentId);
+  if (!document) {
+    throw new RoomError('CANVAS_DOCUMENT_NOT_FOUND', 'No such document on this room’s canvas');
+  }
+  const metadata = {
+    note: UNTRUSTED_NOTE,
+    documentId: document.id,
+    type: document.contentType,
+    title: sanitizeIdentity(document.title) ?? document.title,
+    author: authorLabel(rooms, document.authorId),
+    pinned: document.pinned,
+    openedAt: document.openedAt,
+    lastChangedAt: document.lastTouchedAt,
+  };
+  if (!canvas.mayReadContent(document, callerCwd)) {
+    return {
+      ...metadata,
+      content: null,
+      reason:
+        `This file is in ${metadata.author}'s project, which you cannot read from here. ` +
+        'Ask them to share it, or open your own copy.',
+    };
+  }
+  return { ...metadata, content: document.content };
+}
+
+/**
+ * How a member is named in a canvas answer — their handle when they have one.
+ *
+ * Sanitized like every other label this seam hands back: it lands in text
+ * another model reads.
+ *
+ * @param rooms - The rooms service, for its author registry.
+ * @param authorId - The member to name.
+ * @returns A short label.
+ */
+function authorLabel(rooms: RoomService, authorId: string): string {
+  const author = rooms.authorRegistry.getById(authorId);
+  const name = author?.handle ?? author?.displayName;
+  return (name === undefined ? undefined : sanitizeIdentity(name)) ?? 'Somebody';
+}
