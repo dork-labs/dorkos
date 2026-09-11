@@ -73,7 +73,9 @@ only in `features/chat/ui/message/StreamingText.tsx:61-77` and room bodies go th
    are deleted with the room.
 2. Any agent in a room can put a document on that table with the verbs it already knows
    (`open_canvas`, `update_canvas`, `close_canvas`, `open_file`, `open_diff`, `browser_navigate`) —
-   on claude-code, codex and the deterministic test-mode runtime alike.
+   on claude-code, codex and the deterministic test-mode runtime alike — and can name **which**
+   document it means, because `update_canvas` and `close_canvas` gain an optional `documentId` and a
+   stated default (§5.6).
 3. Any agent in a room can **read** the table, on every runtime, without a person relaying it.
 4. Other members learn the table changed without anybody's turn being triggered.
 5. The Browser is its own right-panel tab on `/session` and on room routes, over the same document
@@ -148,6 +150,10 @@ export const canvasDocuments = sqliteTable(
     pinned: integer('pinned', { mode: 'boolean' }).notNull().default(false),
     /** Monotonic per room. Bumped on every write. Last-write-wins ordering, NOT a stream cursor. */
     rev: integer('rev').notNull(),
+    /** Who last opened or updated this document — the per-author default target of §5.6. */
+    lastTouchedBy: text('last_touched_by').notNull(),
+    /** When they did, ISO 8601. `(room, author)` ordered by this is `lastDocumentFor`. */
+    lastTouchedAt: text('last_touched_at').notNull(),
     /** The room author currently holding the edit lock, or null (§3.5). */
     editingBy: text('editing_by'),
     /** When that lock was last refreshed, ISO 8601. Read lazily; a stale lock is simply not a lock. */
@@ -159,6 +165,11 @@ export const canvasDocuments = sqliteTable(
     index('idx_canvas_documents_room').on(table.roomId, table.lastActiveAt),
     uniqueIndex('canvas_documents_source_unique').on(table.scope, table.sourceKey),
     index('idx_canvas_documents_type').on(table.roomId, table.contentType),
+    index('idx_canvas_documents_last_touched').on(
+      table.roomId,
+      table.lastTouchedBy,
+      table.lastTouchedAt
+    ),
   ]
 );
 ```
@@ -186,9 +197,10 @@ the next free index rather than touching theirs — two branches minting the sam
 `_journal.json` (`.claude/rules/testing.md:317`). This is also why P2a is one PR that owns the whole
 table rather than a stack that mints two.
 
-**Archiving keeps rows; deleting a room drops them.** Archive is a flag on `rooms`, so the cascade
-never fires; a dormant room keeps its table and shows it read-only, exactly as `RoomPanelBody`'s
-archived banner (`:413-421`) already treats the rest of the room.
+**Archiving keeps rows and freezes them; deleting a room drops them.** Archive is a flag on `rooms`,
+so the cascade never fires: a dormant room keeps its whole table and shows it read-only, exactly as
+`RoomPanelBody`'s archived banner (`:413-421`) already treats the rest of the room. **Every write
+refuses on an archived room before touching the table** — see §3.7.
 
 ### 2. The wire: a `canvas` room frame that is state, not a sequence
 
@@ -248,6 +260,7 @@ entry and `RoomService` owns the single write path into a room's log.
 
 | Method                                             | What it does                                                                |
 | -------------------------------------------------- | --------------------------------------------------------------------------- |
+| `apply({ roomId, authorId, turnId, command })`     | **The agent path.** The single writer and single enforcement point (§5.1)   |
 | `open(roomId, authorId, content, opts)`            | Insert or refresh by source key; evict; publish `opened`; returns the row   |
 | `update(roomId, authorId, documentId, content)`    | Replace `content`; refuse while another author holds the edit lock; publish |
 | `close(roomId, authorId, documentId)`              | Delete the row; publish `closed`                                            |
@@ -257,11 +270,17 @@ entry and `RoomService` owns the single write path into a room's log.
 | `get(roomId, documentId)`                          | One row, content included                                                   |
 | `heartbeat(roomId, authorId, documentId, editing)` | Take, refresh or release the edit lock (§3.5)                               |
 | `viewers(roomId)`                                  | `roomStream.subscriberCount(roomId)` — see §3.6                             |
+| `lastDocumentFor(roomId, authorId)`                | The author's own most recently opened-or-updated document, or `null` (§5.6) |
 | `resync(roomId)`                                   | Every live document as `canvas` frames, for a stream resume                 |
 
-Every mutating method takes an `authorId` and every route resolves it server-side; a caller never
-supplies one. `requireMembership(roomId, authorId)` gates all of them, the same call the merge
-service is handed (`room-merge-service.ts:170`).
+`apply` is the agent path and wraps `open`/`update`/`close` with the refusals of §5.1. The rest are
+the human path and the service's own internals; every one of them takes an `authorId` that the route
+resolves server-side, and a caller never supplies one. `requireMembership(roomId, authorId)` gates
+all of them, the same call the merge service is handed
+(`services/rooms/repo/room-merge-service.ts:170`).
+
+`lastDocumentFor` reads the `lastTouchedBy` / `lastTouchedAt` columns rather than a process-memory
+map, so the default target of a bare `update_canvas` survives a server restart mid-conversation.
 
 #### 3.2 Dedupe, mirroring the client's `sourceKey()`
 
@@ -280,14 +299,13 @@ that mirrors `app-store-canvas.ts:148-176` case for case:
 | `mcp_app`                                     | `mcp:<serverName>:<uri>`                |
 | `json`, `widget`                              | `null` (every open is a fresh document) |
 
-and a **pure** `canvasDocumentId(roomId, sourceKey)` = a stable hash of the two, so a document with a
-source key has an id that can be **computed without writing**. That property is load-bearing: it is
-what lets the `control_ui` tool result name the document id honestly while the write happens
-elsewhere (§5). A document with a null source key gets a fresh ULID at insert and its id is not
-predictable — the tool result for `json`/`widget` opens omits `documentId` rather than inventing one.
+and a **pure** `canvasDocumentId(scope, sourceKey)` = a stable hash of the two. A key of `null`
+means "no natural identity", and that document gets a random ULID instead — see §5.7 for which
+content gets which, and why the result carries the id either way.
 
-A second test pins the two implementations against one shared table of cases, so the client and the
-server can never disagree about what "the same document" means.
+The dedupe rule is what makes the table a table: two agents that open the same file land on one
+document rather than two. A test pins the client and server implementations against one shared table
+of cases, so they can never disagree about what "the same document" means.
 
 #### 3.3 Capacity
 
@@ -300,9 +318,10 @@ evicted document, so no viewer is left holding a row the server dropped.
 #### 3.4 Per-turn bounds
 
 `rooms.maxCanvasOpsPerTurn`, default **3** — the shape `rooms.maxPostsPerTurn` already has
-(`room-posting.ts:258-271`). Counted against the room turn's live claim, read per call rather than
-captured, so moving the number in Settings takes effect on the next operation. Over the ceiling, the
-operation is refused with the same shape of sentence:
+(`room-posting.ts:258-271`). **Counted inside `apply`, keyed by `turnId`** (the room turn's dispatch
+id), read per call rather than captured, so moving the number in Settings takes effect on the next
+operation. Counting it anywhere else would be counting it too late to refuse — §5.1. Over the
+ceiling, the operation is refused with the same shape of sentence:
 
 > You have already changed the canvas 3 times in this conversation during this turn, which is the
 > limit. Put the rest in one update next turn.
@@ -331,13 +350,33 @@ so one person with two tabs open counts twice, and an agent counts zero because 
 subscribe. The tool result and the teaching say exactly that: `0` means nobody is looking right now,
 and a higher number is tabs, not people.
 
+#### 3.7 An archived room's canvas is frozen
+
+**Every write refuses before it touches the table** — `apply`, `open`, `update`, `close`, `activate`,
+`pin`, `heartbeat`, and every human route in §4:
+
+```ts
+const room = this.visibility.requireRoom(roomId);
+if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
+```
+
+That is the precedent `postMergeEvent` sets, line for line
+(`services/rooms/messages/room-system-posts.ts:197-202`: "an archived room gains no entries, in its
+own voice least of all"). A canvas document is the same kind of claim as an entry — it says the room
+is still being worked in — and an archived room must not make it.
+
+**Reads still work.** `list`, `get`, `read_canvas`, the two `GET` routes and the stream snapshot all
+answer normally, so an archived room's table stays readable forever. That asymmetry is the whole
+point of archiving: the record survives, the activity stops.
+
 ### 4. Routes
 
 New router `apps/server/src/routes/room-canvas.ts`, mounted under the rooms router. Every route
 resolves the caller with `resolveCaller(req, res).id` and gates on membership exactly as
 `room-events-handler.ts:47-55` does — an unknown room and a room the caller is not in answer
 identically with `404 ROOM_NOT_FOUND`, because "not a member" must not be distinguishable from "no
-such room".
+such room". The four writing routes additionally refuse an archived room (§3.7) before touching the
+table; the two reading routes do not.
 
 | Method   | Path                                        | Body                                | Answers                             |
 | -------- | ------------------------------------------- | ----------------------------------- | ----------------------------------- |
@@ -350,7 +389,8 @@ such room".
 
 Refusal codes join `STATUS_BY_CODE` (`routes/room-error-response.ts`):
 `CANVAS_DOCUMENT_NOT_FOUND` (404), `CANVAS_BEING_EDITED` (409), `TOO_MANY_CANVAS_OPS_THIS_TURN` (429),
-`CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM` (400).
+`CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM` (400), `CANVAS_NO_DEFAULT_DOCUMENT` (400), and the existing
+`ROOM_ARCHIVED` (§3.7).
 
 **OpenAPI.** Each path is registered in `apps/server/src/services/core/openapi-registry.ts` with its
 tags and schemas, and the published docs are regenerated in the same commit — **both steps**, because
@@ -364,58 +404,69 @@ pnpm --filter=@dorkos/site generate:api-docs  # that JSON -> docs/api/api/**/*.m
 
 ### 5. Routing a `control_ui` in a room turn (D3)
 
-This is the load-bearing seam, and it has two halves that are deliberately **not** in the same place.
+This is the load-bearing seam. It has one **writer and enforcement point**, reached by two callers —
+one synchronous, one runtime-neutral — and a stamp that keeps them from doubling.
 
-#### 5.1 The single writer is a tap on the turn's own event stream
-
-`collectReply` (`room-turn-runner.ts:1262-1400`) already iterates **every** event of a room turn off
-the session projector — it is how the room reads the reply, how it derives the live activity lane
-(`:1381-1383`), and how it knows the turn ended (`:1384-1389`). It currently ignores `ui_command`.
-It gains one branch:
+#### 5.1 `RoomCanvasService.apply` is the single writer and the single enforcement point
 
 ```ts
-if (event.type === 'ui_command') applyRoomCanvasCommand(event.command);
+apply(input: {
+  roomId: string;
+  authorId: string;
+  /** The room turn's dispatch id. The per-turn ceiling is counted against it. */
+  turnId: string;
+  command: UiCommand;
+}): { applied: true; documentId: string; rev: number; viewers: number } | { applied: false; reason: string };
 ```
 
-`applyRoomCanvasCommand` is the **only** writer to `RoomCanvasService` on the agent path. It:
+`apply` is where **everything** that can say no lives, in this order: the room is archived (§3.7), the
+action is not a canvas verb (§5.4), the command has no usable referent (§5.2), the author is over
+`rooms.maxCanvasOpsPerTurn` for this `turnId` (§3.4), the document is held by another member's edit
+lock (§3.5). Nothing else in the system refuses a canvas command, and nothing else writes a row.
 
-1. maps `open_canvas` / `update_canvas` / `close_canvas` / `open_file` / `open_diff` /
-   `browser_navigate` onto the service, resolving files per §8;
-2. ignores every other action (they are meaningless in a room and were already refused at the tool,
-   §5.3 — this branch is what makes a runtime that cannot refuse simply do nothing);
-3. counts against `rooms.maxCanvasOpsPerTurn` and stops applying past it;
-4. accumulates what it applied, and composes the single coalesced entry when the collector settles
-   (§6) — in the same `finally` that clears the activity lane, so a turn killed by the ceiling still
-   reports what it put on the table.
+**Why the enforcement point moved here** — this replaces an earlier design in which the
+`collectReply` tap was the only writer. That design cannot work, and the reason is worth stating
+because it is easy to re-derive badly: the claude-code `control_ui` handler **returns
+synchronously**, while the tap sees the event only after the projector has ingested it and woken its
+subscribers. A ceiling enforced at the tap would refuse an operation the tool had already told the
+model succeeded. `rooms.maxPostsPerTurn` only works because `postFromTool` is the _same synchronous
+call_ that returns to the model (`room-posting.ts:258-271`); a bound that answers later is not a
+bound, it is a silent drop. So `apply` is synchronous, and the handler calls it.
 
-**Why the tap and not the tool handler.** The tap is **runtime-neutral for free**. A `ui_command`
-reaches the projector from three different places today and every one of them flows through
-`collectReply`:
+#### 5.2 Caller one: the claude-code handler, synchronously
 
-- claude-code pushes it in the `control_ui` handler (`ui-tools.ts:164-168`);
-- codex mints it in its **event mapper**, not in a tool handler, because its `dorkos_ui` MCP server
-  is session-less (`codex/event-mapper.ts:644`, `codex-ui-mcp-server.ts:17,46`);
-- the deterministic test-mode runtime **yields one directly** from a scripted scenario
-  (`test-mode/demo-scenarios.ts:211-225`, the `demoCanvas` scenario).
+When `session.roomTurn` is set (§5.3), `createControlUiHandler` calls `apply` and returns **its real
+result** — never a fabricated success:
 
-A writer in the claude-code tool handler would serve one of those three. The tap serves all three,
-which is what makes an end-to-end room-canvas browser test possible with no model spend and no
-credential (§Testing Strategy).
+```json
+{ "success": true, "target": "room", "roomId": "…", "documentId": "…", "rev": 7, "viewers": 2 }
+```
 
-**Rejected: the handler writes and the tap writes, with a dedupe.** The obvious dedupe is for the
-handler to stamp the event with the document id it wrote and for the tap to skip stamped events. It
-works, and it is two writers, two orderings and two places where the op counter can be spent — for a
-runtime-specific optimisation that buys nothing the pure id function below does not already buy. One
-writer; the dedupe question does not arise.
+and on a refusal, `{ "success": false, "target": "room", "reason": "<the sentence>" }`.
 
-#### 5.2 How the handler learns it is in a room turn
+Only after `apply` returns `applied: true` does the handler push the `ui_command` event, stamped:
+
+```ts
+session.eventQueue.push({
+  type: 'ui_command',
+  data: { command, applied: { documentId, rev } },
+} as StreamEvent);
+```
+
+`UiCommandEventSchema` (`schemas.ts:5498-5502`) gains an optional `applied` field. **It is
+server-side data and the client never reads it** — `executeUiCommand` takes the `command` and nothing
+else (`ui-action-dispatcher.ts:192-196`), and a client-side read of it is forbidden by a test. Its
+only job is dedupe (§5.5). A refused command is never pushed at all, so no room, no session and no
+viewer sees an effect the model was told did not happen.
+
+#### 5.3 How the handler learns it is in a room turn
 
 `roomContext` does **not** reach the session object today. `room-turn-runner.ts:865` passes it to
 `dispatchMessage`; `trigger-turn.ts:742` folds it into the neutral additional-context bag as
 `{ kind: 'room_context', scope: 'per-turn', data }` (`context-assembler.ts:177-178`); the bag is
-rendered into the prompt and nothing else. The session object has no room marker.
+rendered into the prompt and nothing else.
 
-The precedent for adding one is three lines above the place it goes.
+The precedent for adding a marker is three lines above where it goes.
 `claude-code-runtime.ts:476-480` already lifts a bag entry onto the session for exactly this reason:
 
 ```ts
@@ -429,51 +480,140 @@ So `sendMessage` lifts the room marker the same way, with one difference that is
 const roomEntry = opts?.additionalContext?.find((e) => e.kind === 'room_context');
 session.roomTurn =
   roomEntry?.kind === 'room_context'
-    ? { roomId: roomEntry.data.room.id, kind: roomEntry.data.room.kind }
+    ? { roomId: roomEntry.data.room.id, authorId: opts.roomAuthorId, turnId: opts.dispatchId }
     : undefined;
 ```
 
 **It is assigned unconditionally, including to `undefined`.** The `ui_state` lift sets and never
 clears, which is harmless for a snapshot and would be a defect here: a session that ran one room turn
 would keep claiming to be in that room for every later direct turn, and a person's own `open_canvas`
-would land on a channel. `session.roomTurn` is per-turn state and is written on every turn.
+would land on a channel.
 
-`UiToolSession` (`ui-tools.ts:126-144`) gains the field. It is used for **two things and no third**:
-the honest tool result, and the refusals.
+`UiToolSession` (`ui-tools.ts:126-144`) gains the field. The agent's room author id and the turn's
+dispatch id ride beside the room id because `apply` needs all three and none of them may be taken
+from the model.
 
-#### 5.3 What the handler returns, and what it refuses
+#### 5.4 What is refused in a room, and where each runtime refuses it
 
-`control_ui` in a room turn returns:
-
-```json
-{ "success": true, "target": "room", "roomId": "…", "documentId": "…", "viewers": 2 }
-```
-
-`documentId` is computed, not written: `canvasDocumentId(roomId, canvasSourceKey(content))` (§3.2) is
-pure, so the handler names the id the tap is about to write without writing anything. For content
-with no source key (`json`, `widget`) the field is omitted — an invented id would be worse than a
-missing one. `viewers` is a synchronous read of `RoomCanvasService.viewers(roomId)` (§3.6).
-
-Sixteen of the twenty-two actions are refused in a room — every one that is not a canvas verb — with this sentence (`writing-for-humans`: short, plain, says what
-to do instead):
+Sixteen of the twenty-two actions are refused in a room — every one that is not a canvas verb —
+with this sentence (`writing-for-humans`: short, plain, says what to do instead):
 
 > That only works in a one-on-one session, not in a room. Rooms share a canvas, not a whole window —
 > put a document on the canvas instead.
 
-The sixteen: `show_toast`, `open_panel`, `close_panel`, `toggle_panel`, `open_sidebar`, `close_sidebar`,
-`switch_sidebar_tab`, `set_theme`, `scroll_to_message`, `switch_agent`, `open_pip`, `close_pip`,
-`open_terminal`, `open_command_palette`, `celebrate` and `apply_layout` — that is, **everything that
-is not one of the six canvas verbs**, expressed as an allow-list so a twenty-third action is refused
-by default rather than leaking. `apply_layout` is named separately in the ADR because it is the one
-`reaches-the-machine` action (`schemas.ts:5486`) and refusing it in a room is a security property,
-not a tidiness one.
+The sixteen: `show_toast`, `open_panel`, `close_panel`, `toggle_panel`, `open_sidebar`,
+`close_sidebar`, `switch_sidebar_tab`, `set_theme`, `scroll_to_message`, `switch_agent`, `open_pip`,
+`close_pip`, `open_terminal`, `open_command_palette`, `celebrate` and `apply_layout` — that is,
+**everything that is not one of the six canvas verbs**, expressed as an allow-list so a
+twenty-third action is refused by default rather than leaking. `apply_layout` matters most: it is the
+one `reaches-the-machine` action (`schemas.ts:5486`), and refusing it in a room is a security
+property.
 
-A refused action never reaches `session.eventQueue`, so the tap never sees it. On codex and
-test-mode, where there is no handler to refuse, the tap's allow-list is the backstop: the command
-lands on the agent's own private session stream, exactly as it does today, and changes nothing in the
-room. The teaching block says which verbs work in a room, so an agent is told rather than corrected.
+Two more refusals close the referent gaps the schema leaves open (§5.5):
 
-#### 5.4 `get_ui_state` in a room
+- `open_canvas` with **no `content`** (it is optional at `schemas.ts:5278`) — in a session it merely
+  reveals the pane, which a room has no equivalent of:
+
+  > Opening the canvas by itself does nothing in a room. Pass the content you want the room to see.
+
+- `update_canvas` or `close_canvas` naming no document and with nothing to default to (§5.5).
+
+**Codex refuses through its own existing seam.** The spec's earlier claim that codex has no refusal
+path was wrong: `mapControlUi` already calls `isUiActionRefusedOnCodex(parsed.data.action)` and emits
+`uiActionRefusalMessage(...)` under `UI_COMMAND_REFUSED_CODE` **instead of** the `ui_command` event
+(`codex/event-mapper.ts:631-640`, policy in `codex/ui-command-consent.ts`). That module is the right
+home for the room rule too, so it gains a sibling predicate `isUiActionRefusedInRoom(action)` and the
+room sentence, and `CodexEventContext` (`event-mapper.ts:122`) gains the same `roomTurn` marker the
+session object carries. Codex therefore refuses in a room for the same reason and with the same
+words as claude-code, and the refused command never becomes an event. Only the deterministic
+test-mode runtime, which scripts events directly, has no refusal seam — and its scenarios are ours,
+so the tap's allow-list (§5.5) is the whole answer there.
+
+#### 5.5 Caller two: the tap, for producers that cannot call `apply`
+
+`collectReply` (`room-turn-runner.ts:1262-1400`) already reads every event of a room turn off the
+projector — it is how the room collects the reply, derives the live activity lane (`:1381-1383`) and
+learns the turn ended (`:1384-1389`). Its `bounds` argument gains `roomId`, `authorId` and
+`dispatchId`, and its loop gains one branch:
+
+```ts
+if (event.type === 'ui_command' && event.applied === undefined) {
+  applyRoomCanvasCommand({
+    roomId: bounds.roomId,
+    authorId: bounds.authorId,
+    turnId: bounds.dispatchId,
+    event,
+  });
+}
+```
+
+**The stamp is the dedupe, and it is the whole of it.** An event the claude-code handler applied
+carries `applied`, so the tap skips it. An event from codex or test-mode carries none, so the tap
+calls the same `apply` — same ceiling, same refusals, same rows. `applyRoomCanvasCommand` is a thin
+wrapper around `apply` that discards the result, because on this path there is nobody to return it
+to.
+
+**What a tap-only producer gives up, said plainly.** Its refusal is not visible to the model: the
+turn already moved on. So the property this design guarantees instead is that **an operation the tap
+did not apply is never claimed applied anywhere** — it produces no row, no frame, and no line in the
+turn's coalesced entry (§6.2). There are exactly two paths and they differ only in whether the model
+is told:
+
+| Path                                     | Refusal reaches the model?                            | Can an operation be silently lost? |
+| ---------------------------------------- | ----------------------------------------------------- | ---------------------------------- |
+| claude-code (`apply` from the handler)   | yes, in the tool result                               | no — the call is synchronous       |
+| codex / test-mode (`apply` from the tap) | only for the sixteen actions codex's own seam refuses | no — unapplied means unclaimed     |
+
+Neither path can report success for something that did not happen, which is the property the ceiling
+and the `turn_end` boundary both hinge on: an event that arrives after the turn's collector has
+settled is simply not applied, and nothing anywhere says it was.
+
+#### 5.6 Naming the document: `documentId`, and the default
+
+`update_canvas` carries only `content` (`schemas.ts:5281-5284`) and `close_canvas` carries nothing at
+all (`:5285`). In a session that is fine — they act on the store's single `activeDocumentId`. A room
+has **no shared active document** by design (§9.3: nothing steals anyone's tab), so those two verbs
+arrive in a room with no referent.
+
+**(a) The schema gains an optional target.** `UiCommandSchema` adds
+`documentId: z.string().optional()` to `update_canvas` and to `close_canvas`, and `CONTROL_UI_INPUT`
+(`ui-tool-contract.ts:67-109`) gains the matching field. It is **additive**: the session client
+ignores it when absent (today's behaviour, unchanged) and honours it when present, acting on that
+document instead of the active one — which is an improvement on the session surface too.
+
+**(b) The default, when it is absent, is the author's own last document.** `RoomCanvasService` keeps
+a per-`(roomId, authorId)` last-touched pointer, persisted on the row as `lastTouchedBy` and
+`lastTouchedAt` so it survives a restart rather than living in process memory: the author's most
+recently opened-or-updated document in that room. This is the honest default because it is the only
+one that cannot act on somebody else's work by accident.
+
+**(c) When there is nothing to default to**, `apply` refuses:
+
+> You have not opened anything on this room's canvas yet, so there is nothing to update. Open a
+> document first, or pass the documentId of one that is already open.
+
+**(d) The agent is told where the id comes from.** `open_canvas`, `open_file`, `open_diff` and
+`browser_navigate` all return `documentId` in their result, and the teaching block (§12.3) says so in
+one sentence, names the default, and says that passing a `documentId` is how to act on a document
+somebody else opened.
+
+#### 5.7 The id story
+
+Two kinds of id, and which one you get is decided by whether the content has a natural identity:
+
+- **Content with a source key** (`url`, `browser`, `markdown` with `sourcePath`, `file`, `diff`, the
+  six media types, `mcp_app`) gets a **deterministic** id: `canvasDocumentId(scope, sourceKey)`, a
+  stable hash of the two. Two agents opening the same file land on one document rather than two, which
+  is what makes the table a table.
+- **Content with no natural identity** (`json`, `widget` — `sourceKey` is `null` for both,
+  `app-store-canvas.ts:148-176`) gets a **random ULID**. Every open is a fresh document, exactly as
+  the session store already treats them.
+
+**Either way the result carries the id**, because `apply` writes the row before returning. The
+earlier draft had the handler _predict_ the id from the pure function and omit it for `json` and
+`widget`; with `apply` synchronous there is nothing to predict and no asymmetry to explain.
+
+#### 5.8 `get_ui_state` in a room
 
 `createGetUiStateHandler` (`ui-tools.ts:189-193`) returns `session.uiState ?? DEFAULT_UI_STATE`. In a
 room turn it answers about the room's table instead — the private session UI state is not what the
@@ -484,6 +624,7 @@ agent is looking at:
   "surface": "room",
   "roomId": "…",
   "viewers": 2,
+  "yourLastDocumentId": "…",
   "canvas": {
     "documents": [
       { "id": "…", "type": "diff", "title": "src/router.ts", "author": "Ana", "pinned": false }
@@ -493,8 +634,9 @@ agent is looking at:
 }
 ```
 
-No document content is inlined; `read_canvas` is how content is fetched (§7). Outside a room turn the
-handler is unchanged, byte for byte.
+`yourLastDocumentId` is the §5.6 default, named so an agent can see what a bare `update_canvas` would
+act on. No document content is inlined; `read_canvas` is how content is fetched (§7). Outside a room
+turn the handler is unchanged, byte for byte.
 
 ### 6. How other members find out (D2)
 
@@ -577,7 +719,9 @@ export const RoomCanvasChangeSchema = z
 ```
 
 Written through `RoomService.postCanvasEvent(roomId, { text, canvas, subjectAuthorId })` — the same
-single-write-path shape `postMergeEvent` has (`room-merge-service.ts:181-197`). Like a merge entry it
+single-write-path shape `postMergeEvent` has (`services/rooms/messages/room-system-posts.ts:197-202`,
+whose interface the merge service is handed at `services/rooms/repo/room-merge-service.ts:184-197`),
+archived-room refusal included (§3.7). Like a merge entry it
 **stores no mentions, addresses nobody, and triggers no turn**; agents learn the table moved at their
 next turn from §6.1.
 
@@ -623,12 +767,18 @@ defineCapability({
 ```
 
 - **No `documentId`** → the list: id, type, title, author, pinned, last change, and `viewers`.
-- **With `documentId`** → the document. A file-backed one (`file`, `markdown` with `sourcePath`,
-  `diff`) is read through the existing files route with the row's stored `resolvedCwd`, so the
-  **boundary check is unchanged** and an agent cannot read outside it. A `browser`/`url` document
-  returns its URL and nothing else (browser history is per-viewer and in-memory,
-  `app-store-canvas.ts:61-74`). A `widget` returns its definition. A `json` returns its data. Byte
-  caps follow the files route's own.
+- **With `documentId`** → the document, subject to the rule in §8.1. A file-backed one (`file`,
+  `markdown` with `sourcePath`, `diff`) is read through the existing files route with the row's
+  stored `resolvedCwd`, so the **boundary check is unchanged** and an agent cannot read outside it. A
+  `browser`/`url` document returns its URL and nothing else (browser history is per-viewer and
+  in-memory, `app-store-canvas.ts:61-74`). A `widget` returns its definition. A `json` returns its
+  data. Byte caps follow the files route's own.
+
+  **A document whose tree this reader cannot already read returns metadata only** — id, type, title,
+  author, timestamps — plus one sentence, never content:
+
+  > This file is in Ana's project, which you cannot read from here. Ask them to share it, or open
+  > your own copy.
 
 Adding a verb makes the `rooms` domain 16 capabilities, which **reds two claude-code tool-count
 guards by design**; both are updated in the same PR (§Testing Strategy).
@@ -658,6 +808,30 @@ other members may not be able to read it:
 
 > Opened in your own copy of the files, not the room's. Other members see the tab but may not be able
 > to open it.
+
+#### 8.1 A canvas document never lets a member read a tree it could not already read
+
+This is a property, not a convention, and it is enforced rather than documented. Putting a file on a
+shared table must not become a way to hand somebody the contents of a tree they have no claim on —
+otherwise "open a document" is a read primitive with a different name.
+
+- **Room with a repo.** A file document resolves only under the room's `repoPath`, which every member
+  can already read, **or** under the reading member's **own** `worktreePath`. An agent may open a
+  document from its own worktree (D5), and it is the only member that can read that document's
+  content; everybody else gets the metadata and the sentence below.
+- **Room without a repo.** `read_canvas` returns content only when the document's stored
+  `resolvedCwd` equals the **reader's own** cwd. Otherwise: metadata plus the sentence. The author
+  can always read their own document, which is the case that matters and the only one that is safe.
+- **The human file route is unchanged and stays operator-only**, as it is today. This rule constrains
+  what an _agent_ can reach through a canvas document; it neither widens nor narrows what the
+  operator of the machine can open.
+
+> This file is in Ana's project, which you cannot read from here. Ask them to share it, or open your
+> own copy.
+
+The check is on the **reader**, evaluated at read time against the row's stored `resolvedCwd`, never
+on the writer at open time — which is what makes it hold for a member who joined after the document
+was opened.
 
 ### 9. The client
 
@@ -743,6 +917,13 @@ A shared table that yanks everybody's tab is over-participation one layer down. 
 - **`update`, `activate` and `pin` never change anybody's active tab.** `activate` bumps recency and
   ordering on the server; it is not a remote-control verb.
 - A viewer who is **editing** a document is never moved off it, by anything.
+- **The panel's own auto-select is untouched.** `RightPanelContainer.tsx:148-156` picks the first
+  _contextual_ visible contribution in priority order, and on a room route that is **Room** (priority
+  8), which beats Canvas (20) and Browser (22). So a room route opens on the Room tab, as it does
+  today, and a document arriving while the panel sits on Room — or on any other tab — lights the
+  **unread dot** on Canvas or Browser and moves nothing. Nothing in this spec changes that effect,
+  and nothing in it should: a tab that selects itself when another member acts is the same failure as
+  a turn that triggers itself.
 
 This is a deliberate tightening of D4/D14's "append-and-activate" inheritance from the session store,
 and it is what makes "a canvas change wakes nobody" true of pixels as well as of turns.
@@ -825,6 +1006,9 @@ sentences:
 
 - which six verbs put something on the room's canvas, and that everything else about the window only
   works in a one-on-one session;
+- that `open_canvas`, `open_file`, `open_diff` and `browser_navigate` **give back a `documentId`**,
+  that `update_canvas` and `close_canvas` take one, and that leaving it out means "the last document
+  **you** opened here" — so acting on somebody else's document takes naming it (§5.6);
 - that a canvas change **notifies nobody** — to ask for eyes, `@mention` somebody;
 - that `read_canvas` is how to see what is already there;
 - that `viewers: 0` means nobody is looking right now, so say it in words too;
@@ -852,7 +1036,7 @@ Otherwise a widget an agent posts to a room shows as a code block.
      install and the object literal feeds an upgrade, and they can silently disagree;
    - `projectVersion` bumped in `ConfigManager`, and a migration appended to `CONFIG_MIGRATIONS`
      (`config-manager.ts:3272-3921`) under a key strictly greater than the newest present, `'0.78.0'`
-     (`:3910`), guarded with `store.has()` and pinned in `merged-migration-hashes.ts` in the same PR;
+     (`:3911`), guarded with `store.has()` and pinned in `merged-migration-hashes.ts` in the same PR;
    - classified in `CONFIG_DISCLOSURE` and `CONFIG_WRITE_POLICY`, given a verdict in
      `safe-defaults/default-verdicts.ts`, and a `PROTECTIVE_CARRYOVERS` decision;
    - documented in the Settings Reference table and mirrored to
@@ -864,10 +1048,16 @@ Otherwise a widget an agent posts to a room shows as a code block.
    member; `RoomSnapshotSchema` gains `canvas`; `RoomEntryBodySchema` (`:908`) gains `canvas`;
    `RoomContextData` (`additional-context.ts:427`) gains `canvas`. Every one is **optional or
    additive**, so an older client parses a newer server's frames.
-4. **Untouched on purpose:** `CommunityEntrySchema`, `communityConformance`, and the `CommunityAdapter`
+4. **`UiCommandSchema`** (`packages/shared/src/schemas.ts:5276-5285`) — `update_canvas` and
+   `close_canvas` each gain `documentId: z.string().optional()`, and `CONTROL_UI_INPUT`
+   (`ui-tool-contract.ts:67-109`) gains the matching optional field (§5.6). Additive on the session
+   surface: absent behaves exactly as today, present targets that document. `UiCommandEventSchema`
+   (`:5498-5502`) gains an optional `applied: { documentId, rev }` — **server-side data the client
+   never reads** (§5.2), pinned by a test.
+5. **Untouched on purpose:** `CommunityEntrySchema`, `communityConformance`, and the `CommunityAdapter`
    port. A test asserts the port's surface is unchanged by this spec.
-5. **`Transport`** — the room methods live on `RoomTransport` (`packages/shared/src/transport-rooms.ts`,
-   which `Transport` extends at `transport.ts:554`). Five additions, each of which must land in
+6. **`Transport`** — the room methods live on `RoomTransport` (`packages/shared/src/transport-rooms.ts`,
+   which `Transport` extends at `transport.ts:554`). Six additions, each of which must land in
    **all three** implementations or the build breaks: `HttpTransport`
    (`apps/client/src/layers/shared/lib/transport/http-transport.ts`), `DirectTransport`
    (`apps/client/src/layers/shared/lib/direct-transport.ts`), and `createMockTransport`
@@ -875,14 +1065,16 @@ Otherwise a widget an agent posts to a room shows as a code block.
 
 ## User Experience
 
-**Kai opens a channel.** The right panel shows Pulse · Room · Canvas · Browser. Canvas is the first
-contextual tab, so it is what auto-selects (`RightPanelContainer.tsx:148-156`). It is empty, with the
-canvas splash.
+**Kai opens a channel.** The right panel shows Pulse · Room · Canvas · Browser. **Room** is what
+auto-selects, because the panel picks the first contextual tab in priority order and Room (8) sorts
+ahead of Canvas (20) and Browser (22) (`RightPanelContainer.tsx:148-156`). Kai clicks Canvas; it is
+empty, with the canvas splash.
 
 **Kai asks two agents to look at a failing build.** Ana opens the diff of `src/router.ts`; Ikechi
-opens a preview of `localhost:5173`. Kai sees a diff tab appear in Canvas with Ana's avatar and a
-preview tab appear in Browser with Ikechi's, neither of which moves the tab he is on. One line lands
-in the room's log per turn: "Ana opened the diff of `src/router.ts`." Nothing pings.
+opens a preview of `localhost:5173`. Kai sees a diff tab appear in Canvas with Ana's avatar; the
+Browser tab, which he is not on, shows an unread dot for Ikechi's preview. Neither moves the tab he
+is on, and neither moves him off Canvas. One line lands in the room's log per turn: "Ana opened the
+diff of `src/router.ts`." Nothing pings.
 
 **Kai switches to the Browser tab** and clicks Ikechi's preview. It frames through the existing
 serve/proxy/external cascade in his own browser, with the same reachability sentences the session
@@ -904,7 +1096,7 @@ Browser tab behaves as the Canvas tab does, tab strip scrolling included.
 because that shell has no way to serve or proxy a page.
 
 **Error and exit paths.** Every refusal is a plain sentence: over the per-turn ceiling (§3.4), an
-action that only works in a session (§5.3), a document another member is editing (§3.5), a file
+action that only works in a session (§5.4), a document another member is editing (§3.5), a file
 outside the shared tree (§8). Closing the last document leaves the splash, not an error. Losing the
 stream shows the room's existing stalled indicator and re-hydrates the whole table on reconnect.
 
@@ -936,15 +1128,28 @@ code, and each is listed with the defect it would catch.
 
 - `canvasSourceKey` matches the client's `sourceKey` for all 14 content types, driven from one shared
   case table. _Catches the two implementations drifting, which would silently double every document._
-- `canvasDocumentId` is stable across processes for the same `(roomId, sourceKey)`. _This is what the
-  tool result's `documentId` depends on (§5.3); if it is not stable the result names a document that
-  does not exist._
+- `canvasDocumentId` is stable across processes for the same `(scope, sourceKey)`, and content with a
+  `null` key gets a fresh random id every time (§5.7). _If the first were unstable, two agents opening
+  one file would get two documents and the table would stop being shared; if the second were stable,
+  every `json` open would overwrite the last one._
 - LRU evicts the 13th unpinned document and publishes a `closed` frame for it; a pinned document and
   one under a live edit lock are never evicted.
 - The edit lock expires **lazily** at 45 s with no timer, and a 15 s heartbeat holds it. _Catches a
   crashed browser wedging a document forever._
 - `update` is refused while another author holds the lock, and **allowed** once it lapses.
-- The per-turn ceiling refuses the 4th operation of a turn and the count resets on the next turn.
+- The per-turn ceiling refuses the 4th operation of a turn, keyed by `turnId`, and the count resets
+  on the next turn. Asserted **twice, once per path**: on claude-code, on the **tool result the
+  handler returns** (`success: false` and the sentence, and no row written); on a test-mode scenario
+  that scripts four `ui_command`s, on the **applied count** (three rows, three frames, one coalesced
+  entry naming three operations). _Catches the defect this review found: a ceiling enforced after the
+  handler already answered is not a bound._
+- A bare `update_canvas` with no `documentId` targets the **author's own** last-touched document,
+  never another member's, and survives a service restart because the pointer is on the row.
+- A bare `update_canvas` or `close_canvas` from an author with no document in that room is refused
+  with the "nothing to update" sentence rather than acting on somebody else's work.
+- `open_canvas` with no `content` is refused in a room. _It is optional at `schemas.ts:5278` and in a
+  session means "just reveal the pane", which a room has no equivalent of._
+- Every write refuses on an archived room **before** the table is touched; every read still answers.
 - Membership is required by every mutating method; a non-member is refused identically to a caller
   naming a room that does not exist.
 
@@ -954,18 +1159,36 @@ code, and each is listed with the defect it would catch.
   entry is absent**. _This is the defect the `ui_state` lift at `claude-code-runtime.ts:476-480` would
   have if it were copied naively: a session that ran one room turn would keep writing to that room
   forever._
-- `control_ui` in a room turn returns `{ target: 'room', roomId, documentId, viewers }` and writes
-  nothing itself; outside a room turn its behaviour is byte-identical to today's.
+- `control_ui` in a room turn calls `RoomCanvasService.apply` **synchronously** and returns its real
+  result — `{ target: 'room', roomId, documentId, rev, viewers }` on success, the refusal sentence on
+  failure — and pushes no `ui_command` event at all when `apply` refused. Outside a room turn its
+  behaviour is byte-identical to today's.
+- An event the handler applied carries the `applied` stamp and the tap **skips** it; an unstamped
+  event from codex or test-mode is applied exactly once. _Catches double-application, which would
+  double-count the ceiling and double the coalesced entry._
+- The client never reads `applied`: a test greps `apps/client/src` for the field and fails on a hit.
 - Each of the sixteen non-canvas actions is refused in a room with the exact sentence, and the
   refused command **never reaches `session.eventQueue`**. _Catches a refusal that still leaks onto a
   private stream._
+- The same sixteen are refused on **codex**, through `isUiActionRefusedInRoom` in
+  `codex/ui-command-consent.ts`, emitting `UI_COMMAND_REFUSED_CODE` instead of a `ui_command` event —
+  asserted on the event-mapper's output, the way the existing `apply_layout` refusal already is.
 - `get_ui_state` answers with the room summary in a room turn and with `UiState` outside one.
-- The `collectReply` tap applies a `ui_command` to `RoomCanvasService` exactly once, counts it, and
-  composes **one** entry per turn no matter how many operations ran — including for a turn the
-  ceiling killed. _Catches a notice per operation, which is the E17 failure._
+- The `collectReply` tap applies an **unstamped** `ui_command` through the same `apply`, and composes
+  **one** entry per turn no matter how many operations ran — including for a turn the ceiling or the
+  deadline killed. _Catches a notice per operation, which is the E17 failure._
+- An operation that was not applied — refused, or arriving after the collector settled — produces **no
+  row, no frame, and no line in the coalesced entry**. _Catches the "reported successful but lost"
+  class: unapplied must mean unclaimed on both paths._
 
-**`apps/server` — routes** (`routes/__tests__/`): each of the six routes, member-gated; the four
-refusal codes and their statuses; the OpenAPI registry entry existing for each path.
+- `read_canvas` returns **content** to the document's author and **metadata plus the sentence** to a
+  member whose cwd differs, in a repo-less room; and returns content to every member for a document
+  under the room's `repoPath`. _Catches the cross-member read this review found: a canvas document
+  becoming a way to read a tree the reader has no claim on._
+
+**`apps/server` — routes** (`routes/__tests__/`): each of the six routes, member-gated; the refusal
+codes and their statuses, `ROOM_ARCHIVED` and `CANVAS_NO_DEFAULT_DOCUMENT` included; the OpenAPI
+registry entry existing for each path.
 
 **Tool census.** Adding `rooms.readCanvas` changes the advertised tool set, which reds the count
 guards in `apps/server/src/services/runtimes/claude-code/mcp-tools/__tests__/tool-exposure.test.ts`
@@ -985,7 +1208,7 @@ every runtime that ships must satisfy it:
 > read off the trigger dispatcher, not off a sleep.
 
 Written against the event stream rather than against the claude-code tool handler, which is what
-makes it satisfiable by codex and by test-mode (§5.1) rather than by one runtime.
+makes it satisfiable by codex and by test-mode through the tap (§5.5) rather than by one runtime.
 
 ### Client tests (RTL + jsdom, mock `Transport`)
 
@@ -1019,7 +1242,7 @@ than one place, and a UI-copy change that misses one of them goes red only in th
 
 | Spec                                         | Change                                                                                |
 | -------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `tests/pulse/right-panel-tab-strip.spec.ts`  | asserts **six** tabs (…Files, Canvas, Terminal); becomes seven with Browser           |
+| `tests/pulse/right-panel-tab-strip.spec.ts`  | its **premise** changes, not just a count — see below                                 |
 | `tests/workbench/dev-server-preview.spec.ts` | drives the preview through `pages/canvas-dev-server.ts`; it now opens the Browser tab |
 | `tests/responsive/touch-reach.spec.ts`       | opens a "Web Page" canvas document; that document is now a Browser-tab document       |
 | `tests/production/shipped-shell.spec.ts`     | reuses `pages/canvas-dev-server.ts`, so it follows that page object                   |
@@ -1031,7 +1254,7 @@ use (`fixtures/rooms-api.ts` → `RoomsApi.createChannel`, `:273`) and **no mode
 1. Create a channel with two agent members through `RoomsApi`.
 2. Drive a room turn on the deterministic **test-mode** runtime with a scenario modelled on
    `demoCanvas` (`test-mode/demo-scenarios.ts:203-229`) that yields a `ui_command` `open_canvas`.
-   This is the payoff of routing at the event level (§5.1): a real agent turn puts a real document on
+   This is the payoff of the runtime-neutral second caller (§5.5): a real agent turn puts a real document on
    a real room canvas with no credential and no cost.
 3. Assert the document appears in the room's **Canvas** tab, with the agent's avatar on the tab.
 4. Assert **one** coalesced line appears in the room log, and that the second agent was not triggered.
@@ -1043,6 +1266,15 @@ use (`fixtures/rooms-api.ts` → `RoomsApi.createChannel`, `:273`) and **no mode
 
 Step 5's two-context assertion is the one that fails hardest on today's code, and it is the whole
 feature in one line.
+
+**`right-panel-tab-strip.spec.ts` needs its premise rewritten, not its number bumped.** The file is
+built on a measured claim — "six tabs do not fit a 45% panel at this window width" (`:5-8, 27-28,
+96`) — **and on its converse**, a wide-window test asserting the same split "fits all six tabs"
+(`:33-36, 137-155`). A seventh tab changes the arithmetic under both halves: the narrow case still
+overflows (more so), but the wide case may no longer fit, and a spec that only had its count changed
+from six to seven would either pass vacuously or fail for a reason that is not the bug it was filed
+for (ADR `260725-004456`, the scroll-affordance rule it pins). P1 re-measures both window widths and
+rewrites the premise sentences to match.
 
 **Mocking strategy.** Server tests use the rooms test harness and a real SQLite database, never a
 mocked `RoomCanvasService` — a mock here would encode the hypothesis rather than test it. Client
@@ -1077,9 +1309,16 @@ credential, and none may.
 2. **Membership gates everything.** Every route resolves the caller server-side and calls
    `requireMembership`; a non-member is refused identically to a caller naming a room that does not
    exist, so room ids stay non-probing (`room-events-handler.ts:48-55`).
-3. **File documents do not widen the boundary.** `open_file`, `open_diff` and `read_canvas` go
-   through the existing files routes with the row's stored `resolvedCwd`. The boundary check is
-   unchanged, and a document opened against one directory is never later read against another.
+3. **File documents do not widen the boundary, and never widen a member's reach.** `open_file`,
+   `open_diff` and `read_canvas` go through the existing files routes with the row's stored
+   `resolvedCwd`, so the process boundary check is unchanged and a document opened against one
+   directory is never later read against another. On top of that, §8.1 states the property that
+   matters in a shared room: **a canvas document never lets a member read a tree it could not already
+   read.** In a room with a repo, file documents resolve only under the shared `repoPath` or the
+   reader's own worktree; in a repo-less room, `read_canvas` returns content only when the document's
+   cwd is the reader's own, and otherwise metadata plus one plain sentence. Enforced on the reader at
+   read time, so it holds for a member who joined after the document was opened. Without this rule,
+   "open a document" would be a cross-tree read primitive with a friendlier name.
 4. **The sandbox posture is unchanged.** A browser document is a URL and who opened it. Every viewer
    frames it locally through the existing serve/proxy/external cascade — opaque-origin sandbox for
    served files, a per-port minted origin for dev servers, direct framing for external sites.
@@ -1088,9 +1327,12 @@ credential, and none may.
    (`schemas.ts:5463-5481`) and stay auto-approved. `apply_layout` — the one
    `reaches-the-machine` action (`:5486`) — is **refused** in a room, so a room turn cannot write a
    `SKILL.md`, rewrite `~/.dork/config.json` or create a scheduled task through the UI path. The
-   refusal is an allow-list (§5.3), so a twenty-third action is refused by default.
-6. **The per-turn ceiling is a mechanism, not a prompt.** It is enforced in the service, where an
-   agent cannot talk its way past it, and the tool is merely told.
+   refusal is an allow-list (§5.4), so a twenty-third action is refused by default.
+6. **The per-turn ceiling is a mechanism, not a prompt.** It is enforced inside
+   `RoomCanvasService.apply`, synchronously, keyed by the turn's dispatch id — where an agent cannot
+   talk its way past it and, crucially, early enough to refuse rather than to drop (§5.1).
+7. **An archived room accepts no canvas writes** (§3.7), refused before the table is touched, on the
+   same precedent and for the same reason `postMergeEvent` refuses to speak in one.
 
 ## Documentation
 
@@ -1110,9 +1352,10 @@ credential, and none may.
 today, so this is a new section rather than an edit. It goes beside **"Files a room owns"** (`:99`),
 whose structure it parallels: "The room's canvas", with subsections for what it is, who can put
 things on it, that a change notifies nobody and how to ask for eyes, that a file document opens
-against the room's shared copy, and what it looks like on a phone. **"What a room can never do to an
-agent"** (`:213`) gains one sentence: a room's canvas cannot make an agent do anything a session
-could not. The REST surface table under **"Reference (for developers)"** (`:550`) gains the six
+against the room's shared copy, and what it looks like on a phone. **"What a room can never do to an agent"** (`:213`) gains two sentences: a room's canvas cannot make
+an agent do anything a session could not, and **a document on the canvas never lets a member read a
+file they could not already read** — a file from somebody's own project shows as a tab with its name
+and who opened it, and says so instead of opening (§8.1). The REST surface table under **"Reference (for developers)"** (`:550`) gains the six
 routes.
 
 **`docs/guides/generative-ui.mdx`** — **"Canvas"** (`:56`) is session-scoped prose ("rendering live
@@ -1189,7 +1432,8 @@ back to a code block rather than breaking the message.
   table, the rewritten note
 - `packages/shared/src/transport.ts` + both implementations + `mock-factories.ts` — the
   workbench-serve capability flag
-- `apps/e2e/pages/canvas-dev-server.ts`, `tests/pulse/right-panel-tab-strip.spec.ts`,
+- `apps/e2e/pages/canvas-dev-server.ts`, `apps/e2e/pages/RightPanelPage.ts`,
+  `tests/pulse/right-panel-tab-strip.spec.ts` (premise re-measured, not just recounted),
   `tests/workbench/dev-server-preview.spec.ts`, `tests/responsive/touch-reach.spec.ts`,
   `tests/production/shipped-shell.spec.ts`
 - `docs/guides/workbench.mdx`; a changelog fragment
@@ -1211,10 +1455,15 @@ Browser tab is absent under DirectTransport; every listed e2e spec passes agains
 - `apps/server/src/routes/room-canvas.ts` + `openapi-registry.ts` + regenerated docs
 - `apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts:476-480` — the
   `session.roomTurn` lift, assigned unconditionally
-- `apps/server/src/services/runtimes/claude-code/mcp-tools/ui-tools.ts` — room result, refusals,
-  room-aware `get_ui_state`
-- `apps/server/src/services/rooms/room-turn-runner.ts:1262-1400` — the tap, the op count, the
-  coalesced entry
+- `apps/server/src/services/runtimes/claude-code/mcp-tools/ui-tools.ts` — the synchronous `apply`
+  call, the real result, the `applied` stamp, refusals, room-aware `get_ui_state`
+- `packages/shared/src/schemas.ts:5276-5285, 5498-5502` — the optional `documentId` on
+  `update_canvas`/`close_canvas`, the optional `applied` on `UiCommandEventSchema`;
+  `runtimes/shared/ui-tool-contract.ts` — the matching input field
+- `apps/server/src/services/runtimes/codex/ui-command-consent.ts` + `event-mapper.ts:122, 631-640` —
+  `isUiActionRefusedInRoom` and the `roomTurn` marker on `CodexEventContext`
+- `apps/server/src/services/rooms/room-turn-runner.ts:1262-1400` — `collectReply`'s `bounds` gains
+  `roomId`, `authorId` and `dispatchId`; the unstamped-event tap; the coalesced entry
 - `apps/server/src/services/rooms/room-capabilities.ts` — `rooms.readCanvas`
 - `apps/server/src/services/rooms/room-context.ts` — the `canvas` section;
   `runtimes/shared/room-context-block.ts` — its rendering across the fence;
@@ -1225,9 +1474,13 @@ Browser tab is absent under DirectTransport; every listed e2e spec passes agains
 
 **Acceptance:** the conformance case passes on claude-code and on test-mode; a room turn's
 `open_canvas` is visible in `GET /api/rooms/:id/canvas` and on the stream; a second agent's next
-context lists it; no turn is triggered; exactly one entry lands per turn; the 4th operation of a turn
-is refused; the sixteen non-canvas actions are refused with the sentence and never reach the event
-queue; a session that ran a room turn writes to no room on its next direct turn.
+context lists it; no turn is triggered; exactly one entry lands per turn; **the 4th operation is
+refused in the tool result the model reads**, and nothing was written for it; a stamped event is
+applied once and an unstamped one is applied once; the sixteen non-canvas actions are refused with
+the sentence on claude-code and on codex and never reach the event queue; a bare `update_canvas`
+targets the author's own last document and refuses plainly when there is none; an archived room
+refuses every write and answers every read; a repo-less room's document returns content only to its
+author; a session that ran a room turn writes to no room on its next direct turn.
 
 ### P2b — Client: the room canvas (depends on P1 and P2a)
 
@@ -1241,7 +1494,8 @@ queue; a session that ran a room turn writes to no room on its next direct turn.
 - `CanvasBrowserContent.tsx:159-166` — the address bar posts to the room on a room route
 - `RoomPanelBody.tsx:563-570` — the Files section opens onto the room canvas
 - the edit-lock heartbeat; the source-editor rule for `sourcePath` documents
-- `apps/e2e/tests/rooms/room-canvas.spec.ts`; a changelog fragment
+- `apps/e2e/pages/RoomsPage.ts` — canvas and browser tab selectors, the document tab strip, the
+  unread dot; `apps/e2e/tests/rooms/room-canvas.spec.ts`; a changelog fragment
 
 **Acceptance:** two browser contexts viewing one room see the same documents, live, without
 reloading; a reload restores the whole table; closing a document in one context removes it in the

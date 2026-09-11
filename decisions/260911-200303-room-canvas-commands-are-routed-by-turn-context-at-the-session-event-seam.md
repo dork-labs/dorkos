@@ -25,70 +25,94 @@ reports success anyway.
 Every skill, `ui/*.widget.json` template and teaching block in the product emits these verbs. A
 second `room_canvas_*` vocabulary would fork all of it on day one.
 
-A `ui_command` also reaches the session projector from three different producers, and only one of
-them is a tool handler: claude-code pushes it from `control_ui` (`ui-tools.ts:164`), **codex mints it
-in its event mapper** because its `dorkos_ui` MCP server is session-less
-(`codex/event-mapper.ts:644`), and the deterministic **test-mode** runtime yields one straight out of
-a scripted scenario (`test-mode/demo-scenarios.ts:211-225`).
+A `ui_command` also reaches the session projector from three producers, and only one is a tool
+handler: claude-code pushes it from `control_ui` (`ui-tools.ts:164`), **codex mints it in its event
+mapper** because its `dorkos_ui` MCP server is session-less (`codex/event-mapper.ts:644`), and the
+deterministic **test-mode** runtime yields one straight out of a scripted scenario
+(`test-mode/demo-scenarios.ts:211-225`).
 
 ## Decision
 
-We will keep the same `control_ui` verbs and route them by **turn context**, and we will apply them
-at the **session-event seam** rather than in any runtime's tool handler.
+We will keep the same `control_ui` verbs and route them by **turn context**, with
+`RoomCanvasService.apply({ roomId, authorId, turnId, command })` as the **single writer and the
+single enforcement point** — ceiling, refusals, dedupe and the archived-room rule all live in it —
+reached by two callers.
 
-`collectReply` (`room-turn-runner.ts:1262-1400`) already reads every event of a room turn off the
-projector. It gains one branch that applies canvas-shaped `ui_command`s to `RoomCanvasService`, counts
-them against `rooms.maxCanvasOpsPerTurn`, and composes the turn's single coalesced entry when it
-settles. **That tap is the only writer**, so there is no dedupe question to answer, and all three
-producers above work unchanged — which is what makes an end-to-end room-canvas browser test possible
-with a scripted test-mode scenario, no model and no credential.
+**Caller one, synchronous: the claude-code `control_ui` handler**, when `session.roomTurn` is set. It
+returns `apply`'s real result (the applied `documentId`, `rev` and the live viewer count, or the
+refusal sentence) and only then pushes the `ui_command` event, stamped with a server-only
+`applied: { documentId, rev }`. That stamp is data the client never reads; its only job is dedupe.
 
-The claude-code handler learns it is in a room from a new per-turn `session.roomTurn`, lifted out of
-the `room_context` additional-context entry exactly as `session.uiState` is lifted out of the
-`ui_state` entry three lines away (`claude-code-runtime.ts:476-480`) — **assigned unconditionally,
-including to `undefined`**, because a marker that is set and never cleared would make every later
-direct turn in that session write to a channel. The handler uses it for two things only: an honest
-result (`{ target: 'room', roomId, documentId, viewers }`, where `documentId` comes from a **pure**
-`canvasDocumentId(roomId, sourceKey(content))` so the handler can name it without writing), and
-refusals. Everything that is not one of the six canvas verbs is refused in a room, as an **allow-list**
-so a twenty-third action is refused by default, with one plain sentence; a refused command never
-reaches the event queue. `get_ui_state` in a room answers about the room's table.
+**Caller two, runtime-neutral: the `collectReply` tap** (`room-turn-runner.ts:1262-1400`), which
+already reads every event of a room turn off the projector. It calls the same `apply` for every
+`ui_command` carrying **no** stamp — codex, test-mode, and any future producer.
+
+`session.roomTurn` is lifted out of the `room_context` additional-context entry exactly as
+`session.uiState` is lifted out of the `ui_state` entry three lines away
+(`claude-code-runtime.ts:476-480`) — **assigned unconditionally, including to `undefined`**, because a
+marker that is set and never cleared would make every later direct turn in that session write to a
+channel. It carries the room id, the agent's room author id and the turn's dispatch id, because
+`apply` needs all three and none may be taken from the model.
+
+Everything that is not one of the six canvas verbs is refused in a room, as an **allow-list** so a
+twenty-third action is refused by default, with one plain sentence. Codex refuses through the seam it
+already has — `isUiActionRefusedOnCodex` / `uiActionRefusalMessage` in `codex/ui-command-consent.ts`,
+applied in `event-mapper.ts:631-640` — which gains a room-aware sibling rather than a second
+mechanism.
+
+Because `update_canvas` carries only `content` (`schemas.ts:5281-5284`) and `close_canvas` carries
+nothing (`:5285`), while a room deliberately has no shared active document, both verbs gain an
+**optional `documentId`** (additive; the session client ignores it when absent) and a stated default:
+the author's **own** most recently opened-or-updated document in that room, persisted on the row so it
+survives a restart, and a plain refusal when they have none.
 
 ## Consequences
 
 ### Positive
 
 - Every existing skill and widget template works in a room the day this ships; nothing forks.
-- One writer, so the op ceiling is spent once and the ordering is unambiguous.
-- Canvas routing is runtime-neutral by construction rather than per-adapter: claude-code, codex and
-  test-mode all reach the same tap.
-- The room canvas gets a free, deterministic end-to-end test, which is the difference between a
-  covered feature and a demo.
-- `apply_layout` — the one `reaches-the-machine` action — is refused in a room, so a room turn cannot
-  reach a person's disk through the UI path.
+- The per-turn ceiling can actually refuse, because the enforcement point is reached synchronously by
+  the call that answers the model.
+- One writer, so the ceiling is spent once, the ordering is unambiguous, and a new producer inherits
+  every refusal for free.
+- Canvas routing stays runtime-neutral: claude-code, codex and test-mode all end at the same `apply`,
+  which is what makes a deterministic end-to-end room-canvas browser test possible with no model
+  spend.
+- `apply_layout` — the one `reaches-the-machine` action — is refused in a room on both runtimes that
+  have a refusal seam, so a room turn cannot reach a person's disk through the UI path.
+- An operation that was not applied is not claimed applied anywhere: no row, no frame, no line in the
+  turn's coalesced entry.
 
 ### Negative
 
-- The tool result's `documentId` is a prediction made by a pure function rather than a read of the
-  row that was written. It is only correct as long as the two implementations of the source key agree,
-  which is why a shared-case-table test pins them.
-- Content with no natural identity (`json`, `widget`) has no predictable id, so those results omit
-  `documentId` — an asymmetry a tool author has to know about.
-- On codex and test-mode there is no handler to refuse a non-canvas action, so it lands harmlessly on
-  a private session stream instead of being explained. The teaching block carries the explanation.
-- `collectReply` gains a responsibility beyond collecting the reply, which makes an already dense
-  function denser.
+- Two callers means a stamp, and a stamp means an optional field on an event schema that exists only
+  for server-side bookkeeping. It has to be documented as "the client never reads this", and pinned
+  by a test, or someone will read it.
+- On codex and test-mode a ceiling refusal still cannot reach the model mid-turn; the honest
+  guarantee there is narrower — unapplied means unclaimed — and the agent learns the table's real
+  state from its next turn's context.
+- `collectReply` gains a responsibility beyond collecting the reply, and three new fields on its
+  `bounds`, which makes an already dense function denser.
+- The room's default target ("your last document") is a piece of hidden state an agent has to be
+  taught about; `get_ui_state` names it for exactly that reason.
 
 ## Alternatives rejected
 
+- **The tap as the only writer** (this ADR's own first draft, rejected in adversarial review). The
+  claude-code handler returns synchronously and the tap runs after the projector has already streamed
+  the event, so a ceiling or a refusal there would contradict a success the model had already been
+  given. `rooms.maxPostsPerTurn` only works because `postFromTool` is the same synchronous call that
+  answers the model (`room-posting.ts:258-271`).
+- **The handler as the only writer.** It serves one of three producers, and leaves codex and
+  test-mode dark — including the test-mode path that makes the feature testable without spending.
 - **New `room_canvas_*` verbs in the room capability domain.** It forks the vocabulary every skill and
   template already emits, to express a destination the turn already knows.
-- **Write in the claude-code `control_ui` handler.** It serves one of three producers, and it is the
-  producer least in need of help — codex and test-mode would both stay dark.
-- **Both write, with a dedupe stamp on the event.** It works and it is two writers, two orderings and
-  two places the op counter can be spent, for no capability the pure id function does not already
-  provide.
-- **A `target` field on `control_ui`.** Reserved for the follow-on spec; the default has to be "the
-  room this turn is running in" either way, and that is the whole of the common case.
+- **Predicting the document id from a pure function instead of returning the written row's id.** It
+  worked only for content with a natural source key and had to omit the id for `json` and `widget`;
+  with `apply` synchronous there is nothing to predict.
+- **Making `documentId` required on `update_canvas`.** It is a breaking change to a shipped session
+  verb for a room-only problem; optional plus a stated default costs nothing on the old surface.
+- **Defaulting a bare `update_canvas` to the room's most recent document, whoever opened it.** It
+  silently edits somebody else's work; the author's own last document is the only default that cannot.
 - **Deriving the room from `clientId === 'dorkos-room'`** (`constants.ts:388`). It says a room turn is
-  running and does not say **which** room, which is the fact the writer needs.
+  running and does not say **which** room, nor who the agent is in it.

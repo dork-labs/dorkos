@@ -63,9 +63,12 @@ everything else reveals Canvas.
 ### Negative
 
 - Every place that asserts the tab strip has to change, and those assertions are literal strings in
-  more than one e2e spec (`pulse/right-panel-tab-strip.spec.ts` counts six tabs today,
-  `responsive/touch-reach.spec.ts` and `workbench/dev-server-preview.spec.ts` drive the browser
-  through the Canvas tab). A miss here goes red only in the merge queue.
+  more than one e2e spec (`responsive/touch-reach.spec.ts` and `workbench/dev-server-preview.spec.ts`
+  drive the browser through the Canvas tab). A miss here goes red only in the merge queue.
+- `pulse/right-panel-tab-strip.spec.ts` is worse than a count: it is built on a **measured premise**
+  in both directions — six tabs do not fit a 45% panel at one window width, and the same split fits
+  all six at a wider one. A seventh tab changes the arithmetic under both halves, so that spec's
+  premise is re-measured rather than renumbered, or it passes vacuously.
 - Seven tabs is a fuller strip on a phone, and the strip already scrolls to keep the selection
   visible — one more tab makes that mechanism load-bearing rather than a nicety.
 - Two active-document ids is a small amount of state that did not exist, and the "which view does
@@ -83,3 +86,7 @@ everything else reveals Canvas.
   content type is added; the renderer is the definition that already exists.
 - **Show the Browser tab under DirectTransport with an explanatory empty state.** A tab that can only
   say "not here" is worse than no tab, and the Terminal already settled the question.
+- **Auto-selecting Canvas or Browser on a room route.** The panel picks the first contextual tab by
+  priority and Room (8) sorts ahead of both, which is the right answer: a tab that selects itself
+  because another member acted is the pixel version of a turn that triggers itself. A document
+  arriving while the panel is elsewhere lights an unread dot and moves nothing.

@@ -43,6 +43,11 @@ the row's own monotonic `rev`, which is explicitly not a stream cursor. Because 
 the resync is authoritative as a set: a client replaces its table from it rather than merging, which
 is what makes a close missed while disconnected self-correct.
 
+An **archived room's table is frozen, not dropped**: every write refuses before touching it, on the
+precedent `postMergeEvent` sets (`services/rooms/messages/room-system-posts.ts:197-202` — "an
+archived room gains no entries, in its own voice least of all"), while every read still answers, so
+the record survives and the activity stops.
+
 The `session:<id>` scope is reserved and never written by this work; migrating the session canvas is a
 separate decision.
 
@@ -62,6 +67,9 @@ separate decision.
 
 - A second durable store to keep consistent with the client, and a resync path to keep in step with
   the reaction resync — the two are now parallel mechanisms that must not drift.
+- The row carries per-author bookkeeping (`lastTouchedBy` / `lastTouchedAt`) that exists only so a
+  verb with no target has an honest default — state on the table serving a decision made in the tool
+  layer.
 - The session canvas and the room canvas are two different stores until the follow-on spec migrates
   the first, so the same concept has two implementations for a while.
 - Whole-document frames are larger on the wire than deltas would be; bounded by the twelve-document
