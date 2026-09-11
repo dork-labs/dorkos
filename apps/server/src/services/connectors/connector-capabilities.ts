@@ -8,6 +8,7 @@
  * @module services/connectors/connector-capabilities
  */
 import { z } from 'zod';
+import type { ConnectorCatalogResourcePage } from '@dorkos/shared/connector-resource-schemas';
 
 import { defineCapability, type CapabilityDomain } from '../core/capabilities/index.js';
 import type { CapabilityDeps } from '../core/capabilities/index.js';
@@ -18,6 +19,13 @@ import type { ConnectorRegistry } from './registry.js';
 export interface ConnectorCapabilityDeps {
   /** Registry holding the configured provider toolkit catalogs. */
   registry: ConnectorRegistry;
+  /** Account-free catalog projection; never exposes authentication setup or account inventory. */
+  catalog: (input: {
+    query?: string;
+    cursor?: string;
+    limit?: number;
+    signal: AbortSignal;
+  }) => Promise<ConnectorCatalogResourcePage>;
   /** Optional relay adapter catalog for relay-adapter-first recommendations. */
   relay?: RelayAdapterCatalog;
 }
@@ -55,9 +63,16 @@ export const connectorDomain: CapabilityDomain = {
       title: 'List connectable services',
       description:
         'List services you can use with DorkOS. Open Connections in the ' +
-        'DorkOS app to connect an account or change access.',
+        'DorkOS app to connect an account or change access. Follow nextCursor with the ' +
+        'same query to see more services; warnings mean the catalog is incomplete.',
       tier: 'observe',
-      input: z.object({}),
+      input: z
+        .object({
+          query: z.string().trim().max(200).optional(),
+          cursor: z.string().max(500).optional(),
+          limit: z.number().int().min(1).max(100).optional(),
+        })
+        .strict(),
       output: z.unknown(),
       surfaces: {
         mcp: {
@@ -67,7 +82,31 @@ export const connectorDomain: CapabilityDomain = {
           annotations: { idempotentHint: true, openWorldHint: true },
         },
       },
-      invoke: async (deps) => requireConnectorDeps(deps).registry.listToolkits(),
+      invoke: async (deps, input, context) => {
+        const page = await requireConnectorDeps(deps).catalog({
+          ...input,
+          signal: context.signal ?? AbortSignal.timeout(30_000),
+        });
+        return {
+          ...page,
+          // Keep the original toolkit fields for callers that predate pagination.
+          // Messaging-only entries remain in services, without inventing account support.
+          toolkits: page.services.flatMap((service) => {
+            const account = service.intents.find((intent) => intent.kind === 'account');
+            const route = account?.routes[0];
+            return route
+              ? [
+                  {
+                    slug: service.serviceSlug,
+                    displayName: service.displayName,
+                    authKind: route.authKind,
+                  },
+                ]
+              : [];
+          }),
+          warnings: page.warnings.map((warning) => ({ ...warning, provider: 'catalog' })),
+        };
+      },
     }),
     defineCapability({
       id: 'connector.recommend',

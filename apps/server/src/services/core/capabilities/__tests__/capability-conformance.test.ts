@@ -194,6 +194,7 @@ const conformanceConnectorProvider = new FakeConnectorProvider({
 conformanceConnectorRegistry.register(conformanceConnectorProvider);
 const connectorDeps = {
   registry: conformanceConnectorRegistry,
+  catalog: async () => ({ services: [], warnings: [] }),
 };
 
 // The MCP-server-management domain. The locator returns undefined (no agent), so
