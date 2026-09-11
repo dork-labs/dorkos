@@ -301,9 +301,13 @@ export async function resolveLaunch(args: {
     // count of absolute paths under `<dorkHome>/plugins/`. Windows has a hard
     // command-line length limit, so with enough plugins installed the CLI stops
     // starting at all — on the one platform whose desktop build has no confirmed
-    // end-user install to notice. Loading is otherwise identical, and
-    // `initializationResult().plugins_applied` reports whether every listed
-    // plugin actually loaded.
+    // end-user install to notice. Loading is otherwise identical.
+    //
+    // `initializationResult().plugins_applied` is NOT a success signal, whatever
+    // its name suggests: it says the CLI read and acted on this list, not that
+    // every entry loaded. It was observed `true` beside a `plugin_errors` entry
+    // of `path-not-found`. Read `plugin_errors` for whether a plugin is actually
+    // there.
     pluginDelivery: 'initialize',
     env: runtimeEnvironment('claude-code', 'turn', {
       CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1',

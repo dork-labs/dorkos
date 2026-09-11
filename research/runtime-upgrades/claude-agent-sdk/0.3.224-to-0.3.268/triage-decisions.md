@@ -27,7 +27,13 @@
       `.claude/config/runtime-deps.json` rebuilt from a parse of every SDK import
 - [x] **Found during verification, not in the assessment**: four schemas moved off `z.record()`
       /`z.json()`, without which SDK 0.3.257+ with zod 4.5.3+ serves the model **zero** DorkOS
-      tools. See `mcp-tools/tool-exposure.ts`
+      tools. See `mcp-tools/tool-exposure.ts`. Independently reproduced in review; the upstream
+      bug is **[anthropics/claude-agent-sdk-typescript#454](https://github.com/anthropics/claude-agent-sdk-typescript/issues/454)**,
+      OPEN as of 2026-09-11 with two reporters, and the zod half is #6497. **This is a
+      workaround with an expiry**: on the next bump, check whether #454 is fixed and revert the
+      `catchall` swap if it is. It costs the generated JSON Schema its `propertyNames` key
+      bounds (still enforced at runtime) and carries two measured value-level differences, both
+      unreachable over the wire — spelled out in `packages/shared/src/connector-schemas.ts`
 
 ## PR B — turn correlation
 

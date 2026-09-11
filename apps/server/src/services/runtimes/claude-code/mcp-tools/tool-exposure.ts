@@ -64,9 +64,20 @@
  * each carrying a pointer back here — `CONTROL_UI_INPUT.content`,
  * `operator.config_patch`'s `patch`, `McpServerTransportSchema`'s `env`/`headers`,
  * and `ConnectorJsonValueSchema` (which `z.json()` no longer builds).
- * `__tests__/tool-exposure.test.ts` lists every tool off the live server on all
- * three session shapes, so a record added anywhere in the surface reds there
- * immediately rather than shipping.
+ * `__tests__/tool-exposure.test.ts` lists tools off the live server on all three
+ * session shapes, so a record added to any of them reds there immediately rather
+ * than shipping — but read that as broad coverage, not as a proof over the whole
+ * surface. Its plain and agent shapes build from
+ * `composeCapabilityRegistryForDocs()`, whose docstring claims every domain and
+ * in fact omits `connectorExecutionDomain`; the connector execute tools are
+ * reached only by the third shape, which builds its own registry. A domain that
+ * neither path composes would carry a record unseen.
+ *
+ * The aliases for `@dorkos/shared/{mesh,connector}-schemas` in
+ * `apps/server/vitest.config.ts` are the other half of that guard: four of these
+ * schemas live in `@dorkos/shared`, and against a stale `dist/` the test reads the
+ * old ones and passes. Measured — a record put back on
+ * `McpServerTransportSchema.env` reds 0 of 17 without those aliases and 7 with.
  *
  * Nothing here is runtime-neutral. Codex and OpenCode reach the same tools through
  * the external `/mcp` server — under `dorkos_ui` for the UI server Codex spawns

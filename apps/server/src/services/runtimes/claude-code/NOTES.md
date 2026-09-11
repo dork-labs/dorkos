@@ -15,7 +15,7 @@ not. The dispositions live in `PIN_DISPOSITIONS`
 
 ### Evidence basis
 
-SDK **0.3.224**, the version this repo pins. Verified against both the declarations
+SDK **0.3.268**, the version this repo pins. Verified against both the declarations
 (`sdk.d.ts`) and the **shipped implementation** (`sdk.mjs`), which is the stronger of the
 two: a method can be declared and not wired, and the implementation shows the actual
 control-request subtype that goes down the wire.

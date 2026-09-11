@@ -26,9 +26,28 @@ export type ConnectorJsonValue =
  * and a record anywhere in an in-session tool's schema crashes the WHOLE
  * `tools/list` answer on claude-agent-sdk 0.3.257+ with zod 4.5.3+ — the model is
  * then handed no DorkOS tools at all, with no other symptom. Full story in
- * `apps/server/.../claude-code/mcp-tools/tool-exposure.ts`. The accepted values are
- * unchanged: strings, numbers, booleans, null, and arrays/objects of those, with
- * `undefined`, functions and `NaN` still refused.
+ * `apps/server/.../claude-code/mcp-tools/tool-exposure.ts`.
+ *
+ * **Two measured differences from the record it replaces, both unreachable over
+ * the wire.** `catchall` walks a value as an object where `record` first insisted
+ * it was a plain one, so: a class instance (`new Date()`, `new Map()`) that a
+ * record REJECTED is now accepted and parses to `{}`; and an object carrying
+ * inherited enumerable properties keeps them, where a record kept only its own.
+ * Everything else is identical — strings, numbers, booleans, null, arrays and
+ * plain objects of those, with `undefined`, functions, `NaN` and arrays-as-objects
+ * still refused.
+ *
+ * Neither delta can be reached by a caller: every consumer parses a value that
+ * arrived as JSON — `managed-authority-sync-service.ts` calls
+ * `ConnectorJsonObjectSchema.parse(JSON.parse(…))` outright, and the rest are DTO
+ * fields on an HTTP body or on an agent tool's arguments — and `JSON.parse`
+ * produces neither a class instance nor a non-`Object` prototype. A `.refine()`
+ * guard was measured and does NOT close the gap: refinements run on the parsed
+ * OUTPUT, by which point a `Date` is already `{}`. Restoring it exactly would need
+ * a pre-parse `pipe`/`preprocess` — a shape change to the very schema whose
+ * JSON-Schema conversion is the reason this workaround exists, which is not a risk
+ * worth taking for an unreachable case. Revisit if an in-process caller ever hands
+ * this schema a hand-built object.
  */
 export const ConnectorJsonValueSchema: z.ZodType<ConnectorJsonValue> = z.lazy(() =>
   z.union([
@@ -51,7 +70,12 @@ export const ConnectorJsonValueSchema: z.ZodType<ConnectorJsonValue> = z.lazy(()
  * claude-agent-sdk 0.3.257+ with zod 4.5.3+ — the model is then handed no DorkOS
  * tools at all, with no other symptom. Full story in
  * `apps/server/.../claude-code/mcp-tools/tool-exposure.ts`. The check keeps the
- * key bounds a record would have enforced, so the accepted values are unchanged.
+ * 1–200 key bounds a record enforced, so the accepted values are unchanged — but
+ * it enforces them at RUNTIME ONLY. A record contributed `propertyNames` to the
+ * generated JSON Schema; `catchall` contributes none, so the bounds no longer
+ * reach a model reading the tool's schema or a reader of the OpenAPI document.
+ * They are still refused on the way in. See {@link ConnectorJsonValueSchema} for
+ * the two value-level differences the same swap carries.
  */
 export const ConnectorJsonObjectSchema = z
   .object({})

@@ -90,18 +90,27 @@ describe('live API-error assistant message', () => {
  * refused got no card at all — the turn simply ended.
  */
 describe('the assistant errors added in SDK 0.3.268', () => {
-  it('tells someone their Claude account is on hold', async () => {
+  // The sentences are asserted WHOLE, not by keyword. These three cards are the
+  // only account a person gets of a failure they alone can fix, so the copy is the
+  // feature — a `toContain('on hold')` stays green while the rest of the sentence
+  // degrades into something unactionable. Each says what happened and what to do
+  // about it; change the words here deliberately or not at all.
+  it('tells someone their Claude account is on hold, and where to go', async () => {
     const [event] = await errorEvents(apiErrorMessage('account_on_hold', undefined));
 
-    expect(event.message).toContain('on hold');
+    expect(event.message).toBe(
+      'Your Claude account is on hold, so it cannot run this. Check your Claude account settings, then try again.'
+    );
     expect(event.code).toBe('account_on_hold');
     expect(event.category).toBe('execution_error');
   });
 
-  it('tells someone their Claude account needs verifying', async () => {
+  it('tells someone their Claude account needs verifying, and where to go', async () => {
     const [event] = await errorEvents(apiErrorMessage('verification_required', undefined));
 
-    expect(event.message).toContain('verified');
+    expect(event.message).toBe(
+      'Your Claude account needs to be verified before it can run this. Finish verification in your Claude account settings, then try again.'
+    );
     expect(event.code).toBe('verification_required');
     expect(event.category).toBe('execution_error');
   });
@@ -109,8 +118,9 @@ describe('the assistant errors added in SDK 0.3.268', () => {
   it('points a refused cloud credential at Settings, not at signing in again', async () => {
     const [event] = await errorEvents(apiErrorMessage('cloud_credential_error', undefined));
 
-    expect(event.message).toContain('cloud credentials');
-    expect(event.message).toContain('Settings');
+    expect(event.message).toBe(
+      'Claude could not use the cloud credentials it was given. Check them in Settings, then try again.'
+    );
     expect(event.code).toBe('cloud_credential_error');
     // NOT `auth_error`: that category earns the client's "Fix sign-in" button,
     // and signing in again cannot repair a Bedrock/Vertex/Foundry credential.
