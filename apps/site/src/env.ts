@@ -147,13 +147,10 @@ const webEnvSchema = z.object({
   // Optional: when unset, the issue is still created at the team level, just
   // unassigned to a project.
   LINEAR_FEEDBACK_PROJECT_ID: z.string().optional(),
-  // Label ids applied by submission kind — `bug` gets this label, `idea` gets
-  // LINEAR_FEATURE_LABEL_ID, plain `feedback` gets neither (see
-  // `lib/feedback/linear.ts`'s kind→label mapping). Ids, not names, because
-  // `issueCreate` takes `labelIds`. Both optional: an unset label for a given
-  // kind just files the issue without it.
-  LINEAR_BUG_LABEL_ID: z.string().optional(),
-  LINEAR_FEATURE_LABEL_ID: z.string().optional(),
+  // There is deliberately no label-id var here. The kind a reporter picked is
+  // stamped as a `reported/*` label whose id is looked up by name at runtime
+  // (`lib/feedback/reported-labels.ts`), so the labels can be renamed or
+  // re-created in Linear without an env change in three environments.
 
   // Linear webhook signature secret (feedback-pipeline Part 4, decision
   // 260803-205035). `POST /api/webhooks/linear` verifies every inbound

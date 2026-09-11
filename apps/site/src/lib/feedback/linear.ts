@@ -5,10 +5,16 @@
  * Raw GraphQL over `fetch` — no `@linear/sdk`. This matches the style of the
  * only existing Linear client in the repo, the read-only, user-supplied-key
  * extension at `apps/server/src/core-extensions/linear-issues/server.ts`:
- * same `gql()` helper shape, same `Authorization: <apiKey>` header (the raw
- * key, NOT `Bearer <key>` — Linear's personal/app API keys go in the header
+ * same `gql()` helper shape (here `linearGraphQL` in
+ * `lib/feedback/linear-graphql.ts`), same `Authorization: <apiKey>` header (the
+ * raw key, NOT `Bearer <key>` — Linear's personal/app API keys go in the header
  * unprefixed). This repo has never taken the `@linear/sdk` dependency and one
  * small mutation doesn't justify starting.
+ *
+ * **Labels**: the kind a reporter picked is recorded as a `reported/*` label,
+ * resolved by name in `lib/feedback/reported-labels.ts` — never as `Bug` or
+ * `Feature`, which are triage's own verdict vocabulary. No priority is set:
+ * priority is a judgment about our plan, and a form cannot know the backlog.
  *
  * Unlike that extension (a user-supplied key read from per-install secret
  * storage), this client is authenticated with a **server-only key from site
@@ -37,18 +43,18 @@
  */
 import { env } from '@/env';
 
-const LINEAR_API = 'https://api.linear.app/graphql';
+import { linearGraphQL } from './linear-graphql';
+import { reportedLabelIdsForKind } from './reported-labels';
 
 /**
- * Per-request timeouts. The whole upload-then-create sequence runs inside the
- * cockpit server's own 10s abort on `POST /api/feedback`, so an unbounded leg
- * here does not merely hang — it lets that abort fire while this route keeps
- * going, and the reporter is told the send failed while the Neon row and the
- * Linear issue both exist. They then refile, and triage gets a duplicate. Two
- * GraphQL calls plus one upload have to fit inside that budget with room for
- * the Neon insert and the receipt email, hence the 4/6/4 split.
+ * Cap on the raw screenshot `PUT`. Every Linear leg of a submission runs inside
+ * the app's own 10s abort on `POST /api/feedback`, so an unbounded one does not
+ * merely hang — it lets that abort fire while this route keeps going, and the
+ * reporter is told the send failed while the Neon row and the Linear issue both
+ * exist. They then refile, and triage gets a duplicate. The GraphQL legs carry
+ * their own caps (`lib/feedback/linear-graphql.ts`, plus the tighter one the
+ * label lookup passes).
  */
-const GRAPHQL_TIMEOUT_MS = 4_000;
 const SCREENSHOT_PUT_TIMEOUT_MS = 6_000;
 
 /** Submission kind, mirrors `FeedbackKind` in `db/feedback-schema.ts`. */
@@ -56,7 +62,7 @@ export type FeedbackIssueKind = 'feedback' | 'bug' | 'idea';
 
 /** Input to {@link createFeedbackIssue}. */
 export interface CreateFeedbackIssueInput {
-  /** Drives the label mapping (see {@link labelIdsForKind}). */
+  /** Drives the `reported/*` label (see `lib/feedback/reported-labels.ts`). */
   kind: FeedbackIssueKind;
   /** The full report body. Title is derived from this (truncated first line). */
   message: string;
@@ -114,12 +120,6 @@ const ISSUE_CREATE_MUTATION = `
   }
 `;
 
-/** A GraphQL envelope: `data` on success, `errors` when Linear rejected the operation. */
-interface GraphQLResponse<TData> {
-  data?: TData;
-  errors?: Array<{ message: string }>;
-}
-
 interface IssueCreateData {
   issueCreate?: {
     success: boolean;
@@ -136,30 +136,6 @@ interface FileUploadData {
       headers?: Array<{ key: string; value: string }>;
     };
   };
-}
-
-/** Raw GraphQL POST, mirroring the extension's `gql()` helper. Throws on any non-success outcome. */
-async function gql<TData>(
-  apiKey: string,
-  query: string,
-  variables: Record<string, unknown>
-): Promise<GraphQLResponse<TData>> {
-  const res = await fetch(LINEAR_API, {
-    method: 'POST',
-    // The raw key, NOT `Bearer <key>` — Linear's API expects the API key
-    // unprefixed in the Authorization header.
-    headers: { Authorization: apiKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, variables }),
-    signal: AbortSignal.timeout(GRAPHQL_TIMEOUT_MS),
-  });
-  if (!res.ok) {
-    throw new Error(`Linear API error: ${res.status}`);
-  }
-  const json = (await res.json()) as GraphQLResponse<TData>;
-  if (json.errors?.length) {
-    throw new Error(`Linear GraphQL: ${json.errors.map((e) => e.message).join('; ')}`);
-  }
-  return json;
 }
 
 const FILE_UPLOAD_MUTATION = `
@@ -276,7 +252,7 @@ export async function uploadScreenshot(apiKey: string, dataUrl: string): Promise
     throw new Error('screenshot bytes do not match declared type');
   }
 
-  const json = await gql<FileUploadData>(apiKey, FILE_UPLOAD_MUTATION, {
+  const json = await linearGraphQL<FileUploadData>(apiKey, FILE_UPLOAD_MUTATION, {
     contentType,
     filename: `feedback-screenshot.${SCREENSHOT_EXTENSIONS[contentType] ?? 'png'}`,
     // Linear validates this against what actually arrives, so it must be the
@@ -403,8 +379,8 @@ function buildDescription(input: CreateFeedbackIssueInput, screenshotLine?: stri
   if (reporterLine) identityLines.push(reporterLine);
   if (input.contact) identityLines.push(`Contact: ${oneLine(input.contact)}`);
   // One `Key: value` line each — a triaging agent parses these without
-  // guessing, and `Kind:` is the only place a plain `feedback` submission's
-  // kind is visible at all (only bug/idea get labels).
+  // guessing. `Kind:` is also the fallback record of what the reporter picked
+  // when the `reported/*` label could not be resolved.
   identityLines.push(`Kind: ${input.kind}`);
   if (input.surface) identityLines.push(`Surface: ${input.surface}`);
   if (input.route) identityLines.push(`Route: ${oneLine(input.route)}`);
@@ -439,18 +415,6 @@ function buildDescription(input: CreateFeedbackIssueInput, screenshotLine?: stri
 }
 
 /**
- * Map submission kind to Linear label ids. `bug` → `LINEAR_BUG_LABEL_ID`,
- * `idea` → `LINEAR_FEATURE_LABEL_ID`, plain `feedback` → no label. Either env
- * var being unset just files the issue without that label — labels are a
- * triage nicety, never a precondition for creating the issue.
- */
-function labelIdsForKind(kind: FeedbackIssueKind): string[] {
-  if (kind === 'bug' && env.LINEAR_BUG_LABEL_ID) return [env.LINEAR_BUG_LABEL_ID];
-  if (kind === 'idea' && env.LINEAR_FEATURE_LABEL_ID) return [env.LINEAR_FEATURE_LABEL_ID];
-  return [];
-}
-
-/**
  * Create a Linear issue for a feedback submission.
  *
  * Resolves `null` (no-op) when `LINEAR_API_KEY` or `LINEAR_TEAM_ID` is unset
@@ -477,6 +441,11 @@ export async function createFeedbackIssue(
   // create proceeds. That is also why the error is logged rather than
   // rethrown — the caller's own catch would leave the row `received` with no
   // Linear issue at all, over a picture.
+  // Started before the upload so the two independent network legs overlap
+  // inside the route's budget. It never rejects — a lookup that fails resolves
+  // to no label, because a report is worth more than its tag.
+  const labelIdsPromise = reportedLabelIdsForKind(apiKey, teamId, input.kind);
+
   let screenshotLine: string | undefined;
   if (input.screenshot) {
     try {
@@ -492,13 +461,16 @@ export async function createFeedbackIssue(
     }
   }
 
-  const json = await gql<IssueCreateData>(apiKey, ISSUE_CREATE_MUTATION, {
+  const json = await linearGraphQL<IssueCreateData>(apiKey, ISSUE_CREATE_MUTATION, {
     input: {
       teamId,
       projectId: env.LINEAR_FEEDBACK_PROJECT_ID || undefined,
       title: buildTitle(input.message),
       description: buildDescription(input, screenshotLine),
-      labelIds: labelIdsForKind(input.kind),
+      // A COMPLETE label set, which is the only form the exclusive `reported`
+      // group tolerates — adding a second member to an issue that already has
+      // one is rejected outright, never swapped (see `reported-labels.ts`).
+      labelIds: await labelIdsPromise,
     },
   });
 
