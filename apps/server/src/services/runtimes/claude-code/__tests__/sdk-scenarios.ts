@@ -121,9 +121,11 @@ export function wrapSdkQuery(
       rawMaxTokens: 200000,
       percentage: 0.5,
       model: 'claude-test',
+      // `kind` is required since SDK 0.3.268 and is what the mapper classifies
+      // rows by — the display names here are only what a person would read.
       categories: [
-        { name: 'Messages', tokens: 1000, color: '#4CAF50' },
-        { name: 'Free space', tokens: 199000, color: '#eee' },
+        { name: 'Messages', tokens: 1000, color: '#4CAF50', kind: 'used' },
+        { name: 'Free space', tokens: 199000, color: '#eee', kind: 'free' },
       ],
       gridRows: [],
       memoryFiles: [],
