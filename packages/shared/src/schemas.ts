@@ -5281,8 +5281,26 @@ export const UiCommandSchema = z
     z.object({
       action: z.literal('update_canvas'),
       content: UiCanvasContentSchema,
+      /**
+       * Which document to replace, when the surface has more than one and no
+       * shared idea of an active one — that is, in a room.
+       *
+       * **Additive, and absent means exactly what it always meant.** A session
+       * has one active document and ignores this when it is absent, which is
+       * today's behaviour unchanged; passing one acts on that document instead,
+       * which is an improvement on the session surface too. In a ROOM there is no
+       * shared active document by design (nothing steals anyone's tab), so
+       * leaving it out means "the last document YOU opened here" and there is a
+       * plain refusal when you have none. Naming somebody else's document is how
+       * you act on it (spec `room-canvas` §5.6).
+       */
+      documentId: z.string().optional(),
     }),
-    z.object({ action: z.literal('close_canvas') }),
+    z.object({
+      action: z.literal('close_canvas'),
+      /** Which document to close. Same rule as `update_canvas`'s. */
+      documentId: z.string().optional(),
+    }),
 
     // PIP (floating panel)
     z.object({
@@ -5498,6 +5516,29 @@ export const UI_COMMAND_REACH: Record<UiCommand['action'], UiCommandReach> = {
 export const UiCommandEventSchema = z
   .object({
     command: UiCommandSchema,
+    /**
+     * Where a room turn's canvas command already landed — **server-side data the
+     * client never reads** (spec `room-canvas` §5.2).
+     *
+     * A `ui_command` reaches the session projector from three producers, and only
+     * one of them is a tool handler that can answer the model synchronously. The
+     * claude-code `control_ui` handler calls `RoomCanvasService.apply` itself and
+     * stamps the event with what it wrote; the room turn's collector applies
+     * every UNSTAMPED `ui_command` it sees, which is how codex and the scripted
+     * test-mode runtime reach the same writer. **The stamp is the dedupe, and it
+     * is the whole of it** — without it every claude-code operation would apply
+     * twice.
+     *
+     * `executeUiCommand` takes the `command` and nothing else, and a client-side
+     * read of this field is pinned as a failure by a test. It exists for one
+     * server-side decision and has no meaning anywhere else.
+     */
+    applied: z
+      .object({
+        documentId: z.string().min(1),
+        rev: z.number().int().nonnegative(),
+      })
+      .optional(),
   })
   .openapi('UiCommandEvent');
 
