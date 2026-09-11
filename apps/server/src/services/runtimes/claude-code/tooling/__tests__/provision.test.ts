@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, rm } from 'node:fs/promises';
 import type { RuntimeProvisionProgress } from '@dorkos/shared/transport';
 import {
@@ -14,7 +14,7 @@ import {
 
 // MOCK the spawned installer — never run a real npm install in CI.
 vi.mock('node:child_process', () => ({ spawn: vi.fn() }));
-vi.mock('node:fs', () => ({ existsSync: vi.fn() }));
+vi.mock('node:fs', () => ({ existsSync: vi.fn(), readFileSync: vi.fn() }));
 vi.mock('node:fs/promises', () => ({
   mkdir: vi.fn(async () => undefined),
   rm: vi.fn(async () => undefined),
@@ -44,6 +44,10 @@ describe('provisionClaudeCode', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     armSpawn();
+    // A freshly provisioned install reports the pinned version — the state the
+    // resolver's version gate is built for. Cases that need a stale or
+    // unreadable manifest override this.
+    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ version: CLAUDE_SDK_VERSION }));
     vi.stubEnv('MCP_API_KEY', 'synthetic-server');
     vi.stubEnv('NANGO_ENCRYPTION_KEY', 'synthetic-encryption');
     vi.stubEnv('ANTHROPIC_API_KEY', 'synthetic-model');
@@ -194,11 +198,68 @@ describe('provisionClaudeCode', () => {
 
   it('resolves the provisioned binary inside the scoped install, or null when absent', () => {
     vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ version: CLAUDE_SDK_VERSION }));
     expect(resolveProvisionedClaudePath()).toMatch(
       /^\/dork-home-test\/runtimes\/claude-code\/node_modules\/@anthropic-ai\/claude-agent-sdk-.+\/claude(\.exe)?$/
     );
 
     vi.mocked(existsSync).mockReturnValue(false);
+    expect(resolveProvisionedClaudePath()).toBeNull();
+  });
+});
+
+/**
+ * The provisioned rung fails closed on VERSION, not just on existence.
+ *
+ * Nothing ever re-checked a provisioned install after it was written, so a pin
+ * bump left a stale `claude` on the ladder forever (the same bug DOR-1034 fixed
+ * for OpenCode). From SDK 0.3.268 that is a hard failure rather than a
+ * curiosity: a session with a plugin enabled is launched with
+ * `--await-initialize`, which an older binary rejects as an unknown option, so a
+ * host with no bundled binary would fail to start every turn.
+ *
+ * Existence is mocked true throughout — the question here is only what the
+ * version check does with a binary that IS there.
+ */
+describe('resolveProvisionedClaudePath — the version gate', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(existsSync).mockReturnValue(true);
+  });
+
+  it('returns the binary when the installed version matches the pin', () => {
+    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ version: CLAUDE_SDK_VERSION }));
+
+    expect(resolveProvisionedClaudePath()).toContain('/runtimes/claude-code/node_modules/');
+  });
+
+  it('refuses a binary left behind by an earlier pin', () => {
+    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ version: '0.3.224' }));
+
+    expect(
+      resolveProvisionedClaudePath(),
+      'a stale provisioned CLI must read as "not provisioned" so the ladder falls through and ' +
+        'the provisioner replaces it — returning it costs every turn'
+    ).toBeNull();
+  });
+
+  it('refuses an install whose package.json is missing', () => {
+    vi.mocked(readFileSync).mockImplementation(() => {
+      throw new Error('ENOENT');
+    });
+
+    expect(resolveProvisionedClaudePath()).toBeNull();
+  });
+
+  it('refuses an install whose package.json names no version', () => {
+    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ name: 'no-version-here' }));
+
+    expect(resolveProvisionedClaudePath()).toBeNull();
+  });
+
+  it('refuses an install whose package.json is not JSON at all', () => {
+    vi.mocked(readFileSync).mockReturnValue('<!doctype html>');
+
     expect(resolveProvisionedClaudePath()).toBeNull();
   });
 });
