@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import { TransportProvider } from '@/layers/shared/model';
+import { connectorKeys } from '@/layers/entities/connectors';
 import { CloudLinkPanel } from '../ui/CloudLinkPanel';
 
 function renderPanel(transport: Transport) {
@@ -21,6 +22,7 @@ function renderPanel(transport: Transport) {
       </TransportProvider>
     </QueryClientProvider>
   );
+  return queryClient;
 }
 
 /** Flush pending promise microtasks + due timers under fake timers. */
@@ -56,7 +58,9 @@ describe('CloudLinkPanel', () => {
       expiresAt: new Date(Date.now() + 900_000).toISOString(),
     });
     vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({ state: 'idle' });
-    renderPanel(transport);
+    const cache = renderPanel(transport);
+    cache.setQueryData(connectorKeys.catalog('gmail'), { pages: [] });
+    cache.setQueryData(connectorKeys.providers(), []);
 
     await flush();
     const linkBtn = screen.getByRole('button', { name: /link this instance/i });
@@ -81,6 +85,8 @@ describe('CloudLinkPanel', () => {
     await flush(2500);
     expect(screen.getByText('kai@dork.dev')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /unlink/i })).toBeInTheDocument();
+    expect(cache.getQueryState(connectorKeys.catalog('gmail'))?.isInvalidated).toBe(true);
+    expect(cache.getQueryState(connectorKeys.providers())?.isInvalidated).toBe(true);
   });
 
   it('expired: renders the copy and a "Generate a new code" action', async () => {
@@ -119,7 +125,9 @@ describe('CloudLinkPanel', () => {
       lastHeartbeatAt: new Date().toISOString(),
     });
     vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({ state: 'idle' });
-    renderPanel(transport);
+    const cache = renderPanel(transport);
+    cache.setQueryData(connectorKeys.catalog('gmail'), { pages: [] });
+    cache.setQueryData(connectorKeys.providers(), []);
 
     // Linked view from the settled summary.
     expect(await screen.findByText('kai@dork.dev')).toBeInTheDocument();
@@ -130,6 +138,8 @@ describe('CloudLinkPanel', () => {
     await user.click(confirm);
 
     await waitFor(() => expect(transport.unlinkCloud).toHaveBeenCalledTimes(1));
+    expect(cache.getQueryState(connectorKeys.catalog('gmail'))?.isInvalidated).toBe(true);
+    expect(cache.getQueryState(connectorKeys.providers())?.isInvalidated).toBe(true);
     // Returns to the unlinked/idle entry point.
     expect(await screen.findByRole('button', { name: /link this instance/i })).toBeInTheDocument();
   });

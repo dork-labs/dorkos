@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { HostedAccountSetup } from './HostedAccountSetup';
 import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-schemas';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/layers/shared/ui';
 import {
@@ -61,6 +62,8 @@ export function AccountsRegion({
         </div>
         <ServiceGrid onConnect={setSelectedService} />
       </header>
+
+      <HostedAccountSetup />
 
       <section aria-labelledby="connections-connected" className="space-y-3">
         <h3 id="connections-connected" className="text-sm font-semibold">
