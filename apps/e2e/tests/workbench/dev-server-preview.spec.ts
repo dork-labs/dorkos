@@ -11,9 +11,9 @@ import {
 } from '../../pages/canvas-dev-server';
 
 /**
- * Opening a dev server in the canvas browser.
+ * Opening a dev server in the embedded browser.
  *
- * The failure this exists to catch is silent: the canvas used to fetch a
+ * The failure this exists to catch is silent: the browser used to fetch a
  * localhost URL through a path-prefixed proxy, so an app whose HTML asks for
  * `/main.js` asked the COCKPIT for it, got the cockpit's own page back, and
  * rendered a blank white rectangle with no message. Every Vite, Next and CRA dev
@@ -37,7 +37,7 @@ import {
  * test noticed, because every test of it ran with that field set by hand.
  */
 
-test.describe('Canvas — a dev server running on this machine @smoke', () => {
+test.describe('Browser — a dev server running on this machine @smoke', () => {
   let devServer: Server;
   let devPort: number;
 

@@ -365,6 +365,45 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
     yield { type: 'text_delta', data: { text: 'Done.' } } as StreamEvent;
     yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
   },
+  /**
+   * One turn that drives BOTH right-panel document views: it opens a markdown
+   * document and then navigates the embedded browser.
+   *
+   * The fixture for verifying the Canvas/Browser split in a real browser (ADR
+   * 260911-200304) without spending a model call — a page must land in the
+   * Browser tab and leave the Canvas tab's document exactly where it was.
+   * Deliberately NOT advertised in `features.testModeScenarios`, the same choice
+   * the slow-close fixture above makes: it is named explicitly by whoever drives
+   * it, not picked off a list.
+   */
+  'ui-canvas-and-browser': async function* (_content) {
+    yield {
+      type: 'session_status',
+      data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
+    } as StreamEvent;
+    yield {
+      type: 'ui_command',
+      data: {
+        command: {
+          action: 'open_canvas',
+          content: {
+            type: 'markdown',
+            title: 'notes.md',
+            content: '# Notes\n\nThis document belongs to the Canvas tab.',
+          },
+        },
+      },
+    } as StreamEvent;
+    yield {
+      type: 'ui_command',
+      data: { command: { action: 'browser_navigate', url: 'https://example.com/' } },
+    } as StreamEvent;
+    yield {
+      type: 'text_delta',
+      data: { text: 'Notes are on the Canvas tab; the page is on the Browser tab.' },
+    } as StreamEvent;
+    yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
+  },
   'todo-write': async function* (_content) {
     yield {
       type: 'session_status',
