@@ -72,7 +72,7 @@ Managed discovery covers the current paginated Composio catalog. Do not restore 
 | The service needs unsupported authentication or custom developer credentials | Keep the service visible with the exact prerequisite. Do not present an OAuth button that cannot work.                                     |
 | Metadata is unknown, malformed or contradictory                              | Fail closed for that service without rejecting unrelated valid catalog entries.                                                            |
 
-OAuth scopes determine which operations the connected account can expose. An explicit grant then limits a named agent to reviewed operation revisions. Do not turn the Gmail Read Only production fixture into a product-wide Gmail rule; other reviewed Gmail connections may expose write operations when their consent scopes allow them.
+OAuth scopes determine which operations the connected account can expose. An explicit grant then limits a named agent to reviewed operation revisions. Gmail connections may expose write operations when their consent scopes allow them; Gmail is not restricted to read-only operations across the product.
 
 [Composio-managed apps](https://docs.composio.dev/docs/authentication/custom-app-vs-managed-app) use shared quotas and default scopes, and their polling triggers have a 15-minute minimum interval. Do not apply that interval to webhooks or ordinary Slack and Telegram Messaging.
 
@@ -96,6 +96,21 @@ Do not substitute a generic Composio-hosted field link. Composio documents defer
 | Browser completion secret                             | A short-lived HttpOnly cookie, with only its hash stored server-side | Bind one owner browser to the single-use callback. The URL nonce is not this secret.                                                       |
 
 Usage and audit records contain identifiers, outcomes, timing and payer attribution. They exclude arguments, results and event content. Those records support future billing work; this programme does not turn billing on.
+
+### Provision the hosted Composio project key
+
+Use a dedicated Composio project for DorkOS hosting. In that project's API-key creation UI, select **Read All** and **Write All** for the setup described here. Store the issued key only as `DORKOS_MANAGED_COMPOSIO_PROJECT_KEY` in the server-side secret configuration for the intended `apps/site` deployment environment. Keep Production and Preview credentials separate; never put the key in a public environment variable, browser, local installation, agent session, or tracker.
+
+**Verified permission caveat (2026-09-11):** the dashboard's all-selection creation payload and key inventory reported `{ type: 'scoped', preset: 'proxy_execute' }`. Composio's [scoped-key permission reference](https://docs.composio.dev/reference/authenticating-to-composio/project-api-key-permissions) lists permission areas and routes, but does not list `complete_auth` or define this preset's effective permission set. The UI labels and preset name alone establish neither least privilege nor unrestricted access. Do not replace this setup with a guessed list of API permissions.
+
+| Credential selection observed                                   | Diagnostic result                                                                                                                    | What it establishes                                                                                                                       |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Six explicit permissions                                        | `complete_auth` rejected with HTTP 403 / code 812                                                                                    | That tested selection did not permit the callback completion request. Successful link creation alone was insufficient.                    |
+| Dashboard Read All + Write All; reported `proxy_execute` preset | Empty `complete_auth` input reached HTTP 400 / code 10400 validation; Gmail toolkit and existing auth-config reads returned HTTP 200 | Those requests passed the previous permission barrier. Empty-input validation does not prove a completed OAuth flow or an active account. |
+
+After provisioning, verify the real owner-bound sign-in flow through DorkOS, followed by a reviewed harmless action, matching usage receipts and revoke denial. Keep both readiness gates off outside the controlled proof window below. Do not infer event readiness from account authentication or these diagnostic requests.
+
+This hosted project credential authorizes DorkOS's upstream requests. DorkOS still derives the tenant from authenticated server state and checks the named agent's exact connection and operation grants before dispatch. Changing the upstream key selection does not expand an agent's DorkOS grants. Replacing an existing key is a material rotation: follow [Rotate Keys Without Losing Recovery](#rotate-keys-without-losing-recovery), including fresh owner review, rather than silently continuing old grants.
 
 ### Configure the actual fields
 
@@ -140,7 +155,7 @@ A passing test validates code behavior. It does not verify an owner sign-in, con
 
 1. **Pin the release and target.** Use the merged, reviewed source. Confirm the recorded Vercel target `dopel/dorkos-web`, selected environment, database, callback origin, and served commit. Preserve evidence outside disposable worktrees.
 
-2. **Provision only the intended services.** The dedicated project key, callback verifier, webhook signing secret, and payload keys are provisioned. The controlled Gmail fixture also uses its explicit custom OAuth app and auth config. Read deployment secrets back without copying values into evidence. The Google app remains in Testing for the owner account. Do not describe the fixture, its read-only scopes, or its consent screen as the default for every managed service.
+2. **Provision only the intended services.** Follow the hosted project-key setup and permission caveat above. The dedicated project key, callback verifier, webhook signing secret, and payload keys are provisioned. Use Composio-managed OAuth defaults for supported services, including the current Gmail verification flow; reuse a suitable existing managed auth config. Honor an explicit custom auth-config override only when one is actually configured and valid. Read deployment secrets back without copying values into evidence. The selected account's consent scopes determine its available operations; do not impose the historical custom Gmail fixture or its read-only scopes on new connections.
 
 3. **Deploy migrations before capabilities.** `apps/site/vercel.json` runs `pnpm db:migrate` before the site build. Confirm the target migration journal includes the managed tables and all append-only event migrations. Preserve old SQL and snapshots. Verify the deployment completes while readiness remains off. A failed migration or build is a failed rollout, not a reason to skip migrations.
 
@@ -148,7 +163,7 @@ A passing test validates code behavior. It does not verify an owner sign-in, con
 
 5. **Run a separate production event smoke.** Keep common and event readiness independent. Create exact receive consent, deliver a real signed event, and prove hosted persistence, local persistence before ACK, intended destination delivery, and a truthful receipt. Confirm duplicates do not create a second local effect and revoked receive consent blocks another event. Verify the cleanup job runs and report its bounded counts. Read actual timing metadata; polling and unknown timing are not instant webhook promises.
 
-6. **Restore the gates.** The flags are deployment-wide, not owner allowlists. Restore both readiness values to `0` after the bounded proof while Google OAuth remains in Testing. If any step fails, restore the relevant gate before diagnosis or retry. A rollout that needs narrower exposure requires an explicit reviewed gating change.
+6. **Restore the gates.** The flags are deployment-wide, not owner allowlists. Restore both readiness values to `0` after the bounded proof while rollout acceptance remains pending. If any step fails, restore the relevant gate before diagnosis or retry. A rollout that needs narrower exposure requires an explicit reviewed gating change.
 
 7. **Publish the evidence status.** Record deployment SHA/environment, timestamp, tested service, account flow outcome, reviewed read/receipt match, revoke denial, event receipt and cleanup outcome. Keep credentials, provider-private IDs, auth URLs, cookies and message content out of artifacts. Record a missing key or OAuth approval as the exact pending gate. Do not substitute an offline fixture result.
 

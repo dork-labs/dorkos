@@ -313,7 +313,7 @@
     },
     {
       "guide": "managed-connections-operations.md",
-      "description": "Provisioning, rollout, rotation, retention, incident response, and production proof for DorkOS-managed account actions and notifications",
+      "description": "Hosted credential setup and permission caveats, rollout, rotation, retention, incident response, and production proof for DorkOS-managed account actions and notifications",
       "patterns": [
         "apps/site/src/lib/connectors/managed/",
         "apps/site/src/db/managed-connector",
