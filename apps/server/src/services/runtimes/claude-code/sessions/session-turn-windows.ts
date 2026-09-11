@@ -125,8 +125,32 @@
  * after EVERY steer, 23 to 53 events each.
  *
  * So a `result` that names one of a window's ids while a STEERED id of that
- * window is still unanswered does not close it. The close is deferred for
- * {@link CONTINUATION_GRACE_MS}, and three things settle it:
+ * window is still unanswered does not close it. It waits — and the CLI's own
+ * `queued_turn_count` (claude-agent-sdk 0.3.243) decides only HOW LONG, never
+ * whether ({@link continuationOutlook}). A count greater than zero is the CLI
+ * stating that a send of this session's is still queued behind the turn that
+ * just ended, and the wait extends to {@link CONTINUATION_CAP_MS} on the
+ * strength of it. A zero, and an absent field, both leave the short grace below
+ * exactly as it was. The field is a snapshot taken while the `result` object is
+ * built, so a steer written into the gap before the CLI reads stdin again is
+ * real and uncounted; treating a zero as "close now" would trade the whole
+ * continuation for half a second, on precisely the tail-of-turn timing DOR-1312
+ * measured.
+ *
+ * **That field is read HERE and nowhere else, deliberately.** The obvious
+ * alternative was to put it on the wire — a `queuedTurnCount` on the terminal
+ * `done` event — so a client could draw "another turn is coming". It was built
+ * that way and then removed, because nothing could honestly read it: the app's
+ * queue surfaces (`QueuePanel`, the Queued-messages diagnostics row,
+ * `SessionAsks`) all count DorkOS's OWN durable queue, which is authoritative
+ * for the person's messages and answers the same question better — it counts
+ * what THEY sent, not what one runtime happens to be holding. A second number
+ * beside it would be two answers to one question, and a schema field nobody
+ * reads is the shape REVIEW.md calls declared-and-unreachable. The value the
+ * field genuinely has is the one above: it lengthens a wait this module was
+ * already going to have.
+ *
+ * The deferral lasts {@link CONTINUATION_GRACE_MS}, and three things settle it:
  *
  * - **The CLI starts a turn** (an `assistant` message or the `stream_event`
  *   partials of one — {@link beginsATurn}). The clock stops, the continuation's
@@ -498,6 +522,38 @@ function readAnsweredIds(message: SDKMessage): readonly string[] {
 }
 
 /**
+ * How many of this session's sends the CLI still had QUEUED when it produced
+ * this `result` (`queued_turn_count`, claude-agent-sdk 0.3.243), or `undefined`
+ * when it did not say.
+ *
+ * A positive count is the CLI stating, about its own queue, that another turn
+ * runs without anybody sending anything else — which is the only thing
+ * {@link continuationOutlook} acts on. A `0` and an ABSENT field are treated
+ * identically there and deliberately so; read that function for why a `0` is
+ * not evidence of an empty queue.
+ *
+ * Anything that is not a finite count of zero or more is read as ABSENT: a
+ * negative is not a queue depth, and inventing a meaning for it would be
+ * inventing evidence. Same reason the value is read off the message rather than
+ * by narrowing to a branch — see {@link readAnsweredIds}.
+ *
+ * That normalization is **contract hygiene, not behaviour**, and saying so is
+ * the honest thing: today's one reader asks `> 0`, so a negative would take the
+ * same branch as an absent field whether this rejected it or not. No test can
+ * therefore prove the guard from the outside, and none pretends to. It is here
+ * so this function's promise — a count of zero or more, or nothing — is true for
+ * whoever reads it next, rather than true only for the caller that happens to
+ * exist now.
+ *
+ * @param message - The `result` closing, or about to close, a window
+ */
+function readQueuedTurnCount(message: SDKMessage): number | undefined {
+  const queued = (message as { queued_turn_count?: unknown }).queued_turn_count;
+  if (typeof queued !== 'number' || !Number.isFinite(queued) || queued < 0) return undefined;
+  return queued;
+}
+
+/**
  * What a `result` says about a turn DorkOS did not ask for — the fields that
  * explain a synthetic `origin: 'runtime'` window instead of leaving it a
  * mystery (claude-agent-sdk 0.3.268).
@@ -700,6 +756,58 @@ function provesSteeredTurnBegan(record: WindowRecord, message: SDKMessage): bool
  */
 function namesAny(record: WindowRecord, answered: readonly string[]): boolean {
   return answered.some((id) => record.ids.includes(id));
+}
+
+/**
+ * How long this window should WAIT, after the `result` that answered its
+ * dispatch, to see whether the CLI gave a still-unanswered steer a turn of its
+ * own (DOR-1314).
+ *
+ * **`queued_turn_count` may only ever ADD confidence, never remove it**, and
+ * that asymmetry is the whole design of this function. The SDK's own sentence is
+ * the reason: the field counts sends "still waiting in the command queue **when
+ * this result was produced**" — a snapshot taken as the result OBJECT is built,
+ * before it is serialized and before the CLI's read loop looks at stdin again.
+ * A steer DorkOS writes into that gap is real, is coming, and is NOT in the
+ * count. And that gap is not a theoretical one: it is precisely the tail-of-turn
+ * timing DOR-1312 measured, where a person types as the agent goes quiet.
+ *
+ * So:
+ *
+ * - **`> 0` — another turn IS coming**, stated by the CLI about its own queue.
+ *   Wait toward the absolute cap rather than the short grace. This is new
+ *   information and it is only ever load-bearing in the safe direction: it
+ *   extends a wait DorkOS was already going to have.
+ * - **`0`, or ABSENT — no new reason to wait**, which is emphatically not
+ *   "close now". A `0` may mean the queue really was empty, or it may be the
+ *   snapshot above, or — the SDK overloads this value too — that the session is
+ *   ending and the backlog was discarded. None of those is worth trading for
+ *   the loss a wrong close causes: the continuation opens with no window, and
+ *   `PersistentDispatch` drains every word of it into nothing. So both fall
+ *   through to exactly the short grace this module has always used, which any
+ *   continuation frame still stops instantly.
+ *
+ * A FAILED turn follows the same rule, deliberately. The module used to say an
+ * error result was terminal whatever was outstanding, which it got for free
+ * because before claude-agent-sdk 0.3.268 an `SDKResultError` carried no id and
+ * so could not reach this wait at all. At 0.3.268 it names its dispatch and
+ * does reach it — and the snapshot race applies to a steer at the tail of a
+ * FAILING turn exactly as it does to a healthy one. DorkOS does not know whether
+ * the CLI runs or discards a steer it accepted before failing, so the short
+ * grace is the honest answer: it costs half a second on a turn that is over, and
+ * it is the difference between showing the continuation and dropping it.
+ *
+ * @param record - The window whose close is in question
+ * @param result - The `result` that answered its dispatch
+ * @returns `'close'` to take the close now, or which wait to arm
+ */
+function continuationOutlook(
+  record: WindowRecord,
+  result: SDKMessage
+): 'close' | 'grace' | 'until-cap' {
+  if (record.steered.size === 0) return 'close';
+  const queued = readQueuedTurnCount(result);
+  return queued !== undefined && queued > 0 ? 'until-cap' : 'grace';
 }
 
 /**
@@ -1148,14 +1256,17 @@ export class SessionTurnWindows {
       // above clears it, and the window closes at once instead of spending a
       // grace finding out. What still reaches the wait is the case the wait was
       // built for — a steer the CLI kept for a turn of its own, which this
-      // result does not name.
+      // result does not name. How LONG it waits is the one thing the CLI's own
+      // `queued_turn_count` gets to change ({@link continuationOutlook}), and
+      // only ever upward.
       //
       // An UNNAMED result never waits, and that is row 2 rather than an
       // exemption: it names no dispatch at all, so there is nothing here to
       // correlate a continuation TO. Row 2's whole job is to terminate whatever
       // window is open, and it does that job the same way it always did.
-      if (answered.length > 0 && record.steered.size > 0) {
-        this.holdForContinuation(record, result);
+      const outlook = answered.length > 0 ? continuationOutlook(record, result) : 'close';
+      if (outlook !== 'close') {
+        this.holdForContinuation(record, result, outlook);
         return;
       }
       this.current = undefined;
@@ -1241,13 +1352,22 @@ export class SessionTurnWindows {
    *
    * @param record - The window whose close is being deferred
    * @param result - The `result` to close it with if nothing more arrives
+   * @param wait - `'grace'` for the short question this has always asked, and
+   *   `'until-cap'` when the CLI has stated that a send of this session's is
+   *   still queued behind the turn that just ended — the one case where waiting
+   *   longer is backed by evidence rather than by hope
+   *   ({@link continuationOutlook})
    */
-  private holdForContinuation(record: WindowRecord, result: SDKMessage): void {
+  private holdForContinuation(
+    record: WindowRecord,
+    result: SDKMessage,
+    wait: 'grace' | 'until-cap'
+  ): void {
     record.deferred = result;
     // A fresh `result` is a discrete new reason to expect a continuation, so
     // the cap starts over. Process chatter never gets to do this.
     record.graceDeadline = undefined;
-    this.armGrace(record, 'grace');
+    this.armGrace(record, wait);
   }
 
   /**

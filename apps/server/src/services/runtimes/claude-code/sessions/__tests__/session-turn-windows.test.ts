@@ -1653,6 +1653,152 @@ describe('a steered window waits for the continuation, and only for that (DOR-13
     expect(h.windows.openWindow).toBeUndefined();
   });
 
+  /**
+   * `queued_turn_count` may only ever ADD to the wait, never shorten it. Every
+   * case below is about that asymmetry.
+   */
+  describe("the CLI's own count of what is still queued (SDK 0.3.243)", () => {
+    // A positive count is the CLI stating, about its own queue, that another
+    // turn runs without anybody sending anything else. That is evidence, so the
+    // window waits toward the CAP rather than the short grace — a 40ms grace
+    // against a 400ms cap, with the continuation arriving at 150ms, is red
+    // unless the count was read.
+    it('waits toward the cap when the CLI says a turn is still queued', async () => {
+      const h = harness({ graceMs: 40, capMs: 400 });
+
+      await h.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
+      expect(h.windows.steerOpenWindow('steer-1')).toBe(true);
+      h.live().emit(textDeltaMessage('the first answer'));
+      h.live().emit(resultMessage('m1', { queued_turn_count: 1 }));
+
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      h.live().emit(textDeltaMessage('and the steer, in its own turn'));
+      h.live().emit(resultMessage('steer-1'));
+      await settled(h, 1);
+
+      const windows = h.windowsOnStream();
+      expect(windows).toHaveLength(1);
+      expect(
+        windows[0]!.events.some(
+          (e) => e.type === 'text_delta' && e.text === 'and the steer, in its own turn'
+        )
+      ).toBe(true);
+    });
+
+    // A `0` is NOT evidence of an empty queue, and this is the shape that says
+    // why. The SDK counts sends "still waiting in the command queue when this
+    // result was produced" — a snapshot taken as the result object is built. A
+    // steer DorkOS writes after that assignment and before the CLI's read loop
+    // comes back around is real, is coming, and is not in the count. That gap is
+    // the tail-of-turn timing DOR-1312 measured.
+    //
+    // So a `0` keeps the short grace, and the continuation lands INSIDE the
+    // dispatched window. Make `0` close the window instead and this goes red
+    // twice over: one window becomes two, and the second is the `runtime` one
+    // `PersistentDispatch` drains and drops.
+    it('keeps the grace on a zero count, so a racing continuation is not lost', async () => {
+      const h = harness({ graceMs: 200, capMs: 400 });
+
+      await h.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
+      expect(h.windows.steerOpenWindow('steer-1')).toBe(true);
+      h.live().emit(textDeltaMessage('the first answer'));
+      // The snapshot says nothing is queued. The steer reached the CLI after it.
+      h.live().emit(resultMessage('m1', { queued_turn_count: 0 }));
+      h.live().emit(textDeltaMessage('the steer, answered after all'));
+      h.live().emit(resultMessage('steer-1'));
+
+      await settled(h, 1);
+      const windows = h.windowsOnStream();
+      expect(windows).toHaveLength(1);
+      expect(windows[0]!.origin).toBeUndefined();
+      expect(
+        windows[0]!.events.some(
+          (e) => e.type === 'text_delta' && e.text === 'the steer, answered after all'
+        )
+      ).toBe(true);
+    });
+
+    // An absent field is "this producer does not say", and it must change
+    // NOTHING — that is what makes reading the field safe on every older CLI and
+    // on the surfaces the SDK documents as having no command queue at all. A 40ms
+    // grace expiring on its own is the pre-0.3.243 behaviour, unchanged.
+    it('falls through to the grace when the CLI said nothing at all', async () => {
+      const h = harness({ graceMs: 40, capMs: 200 });
+
+      await h.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
+      expect(h.windows.steerOpenWindow('steer-1')).toBe(true);
+      h.live().emit(textDeltaMessage('the first answer'));
+      h.live().emit(resultMessage('m1'));
+
+      // Still open immediately after the result: it deferred, exactly as before.
+      expect(h.windows.openWindow?.ids).toEqual(['m1', 'steer-1']);
+
+      await settled(h, 1);
+      expect(h.windowsOnStream()).toHaveLength(1);
+      expect(h.rawStream().some((e) => e.type === 'error')).toBe(false);
+    });
+
+    // Deliberately NOT tested here: that a negative count is normalized away.
+    // `readQueuedTurnCount` does normalize it, but the only reader asks
+    // `> 0` — so a negative and an absent field take the same branch, and any
+    // test written against a window could not tell them apart. It would pass
+    // whether the guard existed or not, which is the one thing a test may never
+    // do. The guard is there so the function's own contract ("a count of zero or
+    // more, or nothing") holds for the next reader; see its TSDoc.
+
+    // A FAILED turn gets the same treatment, and that is a decision rather than
+    // an oversight. The module used to call an error result terminal whatever
+    // was outstanding — which it got for free, because before SDK 0.3.268 an
+    // `SDKResultError` carried no id and could not reach this wait at all. It
+    // names its dispatch now, and the snapshot race above applies to a steer at
+    // the tail of a FAILING turn exactly as it does to a healthy one. DorkOS
+    // cannot tell whether the CLI ran or discarded that steer, so it waits the
+    // short grace and shows the answer if one comes.
+    it('gives a failed turn the same short grace, and shows the answer if it comes', async () => {
+      const h = harness({ graceMs: 200, capMs: 400 });
+
+      await h.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
+      expect(h.windows.steerOpenWindow('steer-1')).toBe(true);
+      h.live().emit({
+        ...(errorResultMessage() as unknown as Record<string, unknown>),
+        user_message_uuid: 'm1',
+        queued_turn_count: 0,
+      } as unknown as SDKMessage);
+      h.live().emit(textDeltaMessage('answering the steer after the failure'));
+      h.live().emit(resultMessage('steer-1'));
+
+      await settled(h, 1);
+      const windows = h.windowsOnStream();
+      expect(windows).toHaveLength(1);
+      expect(
+        windows[0]!.events.some(
+          (e) => e.type === 'text_delta' && e.text === 'answering the steer after the failure'
+        )
+      ).toBe(true);
+    });
+
+    // ...and when nothing comes, it still settles on the CLI's own terminal
+    // rather than hanging. The grace expiring is a clean close.
+    it('settles a failed turn on its own result when no continuation comes', async () => {
+      const h = harness({ graceMs: 40, capMs: 200 });
+
+      await h.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
+      expect(h.windows.steerOpenWindow('steer-1')).toBe(true);
+      h.live().emit({
+        ...(errorResultMessage() as unknown as Record<string, unknown>),
+        user_message_uuid: 'm1',
+      } as unknown as SDKMessage);
+
+      await settled(h, 1);
+      const windows = h.windowsOnStream();
+      expect(windows).toHaveLength(1);
+      expect(windows[0]!.events.find((e) => e.type === 'turn_end')).toMatchObject({
+        terminalReason: 'error',
+      });
+      expect(h.windows.openWindow).toBeUndefined();
+    });
+  });
+
   // A steer answered by a THINKING turn. The CLI has started the continuation
   // but says nothing while thinking is redacted — only `thinking_tokens` frames,
   // which since SDK 0.3.260 name the message whose turn they belong to. Read as

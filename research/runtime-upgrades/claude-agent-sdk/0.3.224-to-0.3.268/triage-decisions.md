@@ -43,7 +43,21 @@ they are one subsystem and one set of tests:
 - `user_message_uuids` (0.3.259) — every message a coalesced turn answered, replacing the
   inference the module's four-row table is built on
 - `queued_turn_count` (0.3.243) — "is another turn coming?", answered by the CLI instead of
-  tracked by DorkOS
+  tracked by DorkOS. **Adopted as a decision input inside `session-turn-windows.ts`, NOT as a
+  wire field.** The assessment proposed "one field read, one piece of session state, one event
+  field"; the event field was built (`DoneEventSchema.queuedTurnCount` + an
+  `AgentSession.queuedTurnCount`) and then removed in review, because no reader could honestly
+  consume it. Every queue surface in the app — `QueuePanel`, the Queued-messages diagnostics row,
+  `SessionAsks` — counts DorkOS's own durable queue, which is authoritative for the person's
+  messages and answers the same question better (it counts what THEY sent, not what one runtime
+  is holding); a second number beside it would be two answers to one question, and a schema
+  field nobody reads is exactly the declared-and-unreachable shape `REVIEW.md` rejects. What
+  the field is genuinely worth is the DOR-1314 wait, in ONE direction only: a count greater than
+  zero extends the wait to `CONTINUATION_CAP_MS`, while a zero and an absent field both leave
+  the short grace exactly as it was. The count is a snapshot taken as the result object is
+  built, so a steer written into the gap before the CLI next reads stdin is real and uncounted —
+  a zero closing the window early would trade the whole continuation for half a second. If a
+  future surface needs the count on the wire, put it back then, with the consumer
 - `resume_reason` / `local_command` / `result_index` (0.3.268) — three more field reads on
   the same object
 - `user_message_uuid` on `thinking_tokens` system messages (0.3.260)
