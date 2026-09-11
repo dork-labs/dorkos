@@ -539,7 +539,7 @@ describe('executeUiCommand — open_terminal', () => {
 // --- browser_navigate (agent tool → open a browser canvas document) ---
 
 describe('executeUiCommand — browser_navigate', () => {
-  it('appends a browser document and reveals the canvas', () => {
+  it('appends a browser document and reveals the Browser tab', () => {
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'browser_navigate', url: 'http://localhost:5173' }, 'agent');
     // Append-and-activate (dedup by URL inside the store) — never clobbers an
@@ -549,10 +549,62 @@ describe('executeUiCommand — browser_navigate', () => {
       url: 'http://localhost:5173',
     });
     expect(ctx.getStore().setRightPanelOpen).toHaveBeenCalledWith(true);
-    // Agent origin → view-only tab switch (DOR-227).
-    expect(ctx.getStore().setActiveRightPanelTabView).toHaveBeenCalledWith('canvas');
+    // Agent origin → view-only tab switch (DOR-227). A page belongs to the
+    // Browser tab, so revealing Canvas would show the reader the wrong strip.
+    expect(ctx.getStore().setActiveRightPanelTabView).toHaveBeenCalledWith('browser');
     expect(ctx.getStore().setActiveRightPanelTab).not.toHaveBeenCalled();
     expect(ctx.getStore().setCanvasOpen).toHaveBeenCalledWith(true);
+  });
+});
+
+// --- The reveal table: which tab a command surfaces (ADR 260911-200304) ---
+
+describe('executeUiCommand — reveal follows what the command produced', () => {
+  /** The tab an agent-origin dispatch of `command` switched the panel to. */
+  function revealedTab(command: UiCommand): string | undefined {
+    const ctx = makeMockCtx();
+    executeUiCommand(ctx, command, 'agent');
+    const calls = vi.mocked(ctx.getStore().setActiveRightPanelTabView).mock.calls;
+    return calls.at(-1)?.[0] ?? undefined;
+  }
+
+  it('reveals Browser for an open_canvas carrying a page', () => {
+    expect(
+      revealedTab({ action: 'open_canvas', content: { type: 'url', url: 'https://a.test/' } })
+    ).toBe('browser');
+    expect(
+      revealedTab({ action: 'open_canvas', content: { type: 'browser', url: 'https://a.test/' } })
+    ).toBe('browser');
+  });
+
+  it('reveals Canvas for an open_canvas carrying a document, and for a bare one', () => {
+    expect(
+      revealedTab({ action: 'open_canvas', content: { type: 'markdown', content: '# hi' } })
+    ).toBe('canvas');
+    // An app is not a page: `mcp_app` has its own viewer (Q3 of the spec).
+    expect(
+      revealedTab({
+        action: 'open_canvas',
+        content: { type: 'mcp_app', serverName: 's', uri: 'ui://a' },
+      })
+    ).toBe('canvas');
+    expect(revealedTab({ action: 'open_canvas' })).toBe('canvas');
+  });
+
+  it('reveals Canvas for open_file of a markdown file, and for open_diff', () => {
+    expect(revealedTab({ action: 'open_file', sourcePath: 'notes/plan.md' })).toBe('canvas');
+    expect(revealedTab({ action: 'open_diff', sourcePath: 'src/app.ts' })).toBe('canvas');
+  });
+
+  it('reveals nothing at all for update_canvas — an update is not an open', () => {
+    // A tab that selects itself because an agent refreshed a document is the
+    // pixel version of a turn that triggers itself.
+    expect(
+      revealedTab({ action: 'update_canvas', content: { type: 'url', url: 'https://a.test/' } })
+    ).toBe(undefined);
+    expect(
+      revealedTab({ action: 'update_canvas', content: { type: 'markdown', content: '# hi' } })
+    ).toBe(undefined);
   });
 });
 

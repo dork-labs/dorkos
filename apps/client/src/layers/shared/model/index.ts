@@ -8,6 +8,7 @@ export { useAppStore, type ContextFile, type RecentCwd } from './app-store';
 export { useAppTabsStore, useAppTabs, type AppTab } from './app-tabs/app-tabs-store';
 export type { SettingsTab } from './app-store/app-store-panels';
 export type { CanvasDocument, BrowserHistoryState } from './app-store/app-store-canvas';
+export { documentsInView } from './app-store/app-store-canvas';
 export type { PipContent } from './app-store/app-store-pip';
 export { useDialogTabState } from './use-dialog-tab-state';
 export {

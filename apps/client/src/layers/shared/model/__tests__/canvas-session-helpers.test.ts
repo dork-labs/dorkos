@@ -5,7 +5,14 @@ import type { CanvasSessionEntry } from '../app-store/app-store-helpers';
 
 /** A multi-document canvas entry for a session. */
 function entry(overrides: Partial<CanvasSessionEntry> = {}): CanvasSessionEntry {
-  return { open: true, documents: [], activeDocumentId: null, accessedAt: 1000, ...overrides };
+  return {
+    open: true,
+    documents: [],
+    activeCanvasDocumentId: null,
+    activeBrowserDocumentId: null,
+    accessedAt: 1000,
+    ...overrides,
+  };
 }
 
 describe('readCanvasSession', () => {
@@ -30,12 +37,12 @@ describe('readCanvasSession', () => {
       lastActiveAt: 2,
       sourceLabel: 'Test',
     };
-    const stored = entry({ documents: [doc], activeDocumentId: 'doc-1' });
+    const stored = entry({ documents: [doc], activeCanvasDocumentId: 'doc-1' });
     localStorage.setItem(STORAGE_KEYS.CANVAS_SESSIONS, JSON.stringify({ 'session-1': stored }));
 
     const result = readCanvasSession('session-1');
     expect(result?.documents).toHaveLength(1);
-    expect(result?.activeDocumentId).toBe('doc-1');
+    expect(result?.activeCanvasDocumentId).toBe('doc-1');
     expect(result?.documents[0].content.type).toBe('markdown');
   });
 
@@ -48,7 +55,39 @@ describe('readCanvasSession', () => {
     expect(result?.open).toBe(true);
     expect(result?.documents).toHaveLength(1);
     expect(result?.documents[0].content.type).toBe('json');
-    expect(result?.activeDocumentId).toBe(result?.documents[0].id);
+    expect(result?.activeCanvasDocumentId).toBe(result?.documents[0].id);
+  });
+
+  it('routes a pre-split `activeDocumentId` into the view that renders its document', () => {
+    // What a browser that last ran before the Canvas/Browser split has on disk.
+    const stored = {
+      open: true,
+      documents: [
+        {
+          id: 'doc-page',
+          content: { type: 'url', url: 'https://a.test/' },
+          openedAt: 1,
+          lastActiveAt: 1,
+          sourceLabel: 'a.test',
+        },
+      ],
+      activeDocumentId: 'doc-page',
+      accessedAt: 500,
+    };
+    localStorage.setItem(STORAGE_KEYS.CANVAS_SESSIONS, JSON.stringify({ 'session-1': stored }));
+
+    const result = readCanvasSession('session-1');
+    expect(result?.activeBrowserDocumentId).toBe('doc-page');
+    expect(result?.activeCanvasDocumentId).toBeNull();
+  });
+
+  it('drops a pre-split `activeDocumentId` that names no stored document', () => {
+    const stored = { open: true, documents: [], activeDocumentId: 'ghost', accessedAt: 500 };
+    localStorage.setItem(STORAGE_KEYS.CANVAS_SESSIONS, JSON.stringify({ 'session-1': stored }));
+
+    const result = readCanvasSession('session-1');
+    expect(result?.activeCanvasDocumentId).toBeNull();
+    expect(result?.activeBrowserDocumentId).toBeNull();
   });
 
   it('returns null when localStorage contains corrupt JSON', () => {

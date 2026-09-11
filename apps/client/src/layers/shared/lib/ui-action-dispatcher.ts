@@ -2,6 +2,7 @@ import type { UiCommand, UiCanvasContent, UiPanelId, UiSidebarTab } from '@dorko
 import { resolveViewerForPath, type CanvasViewerType } from '@dorkos/shared/viewer-registry';
 import { toast } from 'sonner';
 import type { PipContent } from '@/layers/shared/model';
+import { canvasViewForContent } from './canvas-view';
 import { getPlatform } from './platform';
 import { fireCelebration, type CelebrationOrigin } from './celebrations/celebration-effects';
 
@@ -39,8 +40,9 @@ export interface DispatcherStore {
    */
   openCanvasDocument: (content: UiCanvasContent) => void;
   /**
-   * Mutate the active document's content. A no-op while that document is being
-   * edited, so the in-canvas editor stays the sole writer (ADR-0292).
+   * Mutate the active document of the view this content belongs to. A no-op
+   * while that document is being edited, so the in-canvas editor stays the sole
+   * writer (ADR-0292).
    */
   updateActiveDocument: (content: UiCanvasContent) => void;
   setCanvasPreferredWidth: (width: number | null) => void;
@@ -76,6 +78,9 @@ export type UiCommandOrigin = 'user' | 'agent';
 
 /** Right-panel tab id the canvas contribution registers under (init-extensions). */
 const CANVAS_TAB_ID = 'canvas';
+
+/** Right-panel tab id the browser contribution registers under (init-extensions). */
+const BROWSER_TAB_ID = 'browser';
 
 /** Right-panel tab id the terminal contribution registers under (init-extensions). */
 const TERMINAL_TAB_ID = 'terminal';
@@ -241,11 +246,25 @@ export function executeUiCommand(
       if (command.preferredWidth != null) {
         store.setCanvasPreferredWidth(command.preferredWidth);
       }
-      revealCanvas(store, origin);
+      // The reveal follows what the command produced: a page surfaces the
+      // Browser tab, everything else the Canvas tab. An `open_canvas` carrying
+      // no content asks for the canvas itself.
+      if (command.content != null) {
+        revealForContent(store, origin, command.content);
+      } else {
+        revealCanvas(store, origin);
+      }
       break;
     case 'update_canvas':
-      // `updateActiveDocument` ignores the push while the active document is
-      // being edited (ADR-0292); the editor stays the sole writer.
+      // Routed by view inside the store: a page push acts on the Browser tab's
+      // document and a document push on the Canvas tab's, so an update can never
+      // rewrite the thing somebody is reading in the other tab.
+      // `updateActiveDocument` ignores the push while that document is being
+      // edited (ADR-0292); the editor stays the sole writer.
+      //
+      // Deliberately does NOT reveal anything: an update is not an open, and a
+      // tab that selects itself because an agent refreshed a document is the
+      // pixel version of a turn that triggers itself (spec `room-canvas` §9.3).
       store.updateActiveDocument(command.content);
       break;
     case 'open_file': {
@@ -255,8 +274,12 @@ export function executeUiCommand(
       // here. This is the client seam the file explorer and the agent's
       // `open_file` tool both drive.
       const viewer = resolveViewerForPath(command.sourcePath, ctx.workbenchViewerOverrides);
-      store.openCanvasDocument(buildOpenFileContent(viewer, command.sourcePath));
-      revealCanvas(store, origin);
+      const content = buildOpenFileContent(viewer, command.sourcePath);
+      store.openCanvasDocument(content);
+      // No viewer resolves to the embedded browser today, so every opened file
+      // reveals Canvas — and the day one does, this line routes it to Browser
+      // without an edit, because it asks the content rather than the extension.
+      revealForContent(store, origin, content);
       break;
     }
     case 'open_diff':
@@ -292,9 +315,12 @@ export function executeUiCommand(
       // store), then reveal the canvas. Appending never clobbers a document the
       // user is editing (edit-protection is per-doc; ADR-0292).
       store.openCanvasDocument({ type: 'browser', url: command.url });
-      revealCanvas(store, origin);
+      revealBrowser(store, origin);
       break;
     case 'close_canvas':
+      // Closes the whole panel, both views with it — the verb names the surface,
+      // not a document. (Naming one document is the `documentId` the room canvas
+      // adds to this command later.)
       store.setCanvasOpen(false);
       store.setRightPanelOpen(false);
       break;
@@ -387,15 +413,29 @@ function tabSetterFor(
 }
 
 /**
- * Reveal the canvas via its live host: open the right panel and select the
- * canvas tab. `setCanvasOpen` is kept for the legacy AgentCanvas surface.
- * The tab switch respects `origin` — agent-driven reveals do not persist over
- * the user's per-agent tab preference (DOR-227).
+ * Reveal one of the panel's two document views: open the right panel and select
+ * that tab. `setCanvasOpen` is kept for the legacy AgentCanvas surface. The tab
+ * switch respects `origin` — agent-driven reveals do not persist over the user's
+ * per-agent tab preference (DOR-227).
  *
- * NOTE: the canvas contribution is only `visibleWhen` pathname === '/session'
- * (init-extensions), so off that route RightPanelContainer's auto-select falls
- * back to the first visible tab — the command still lands (the document is
- * persisted per session) and shows on return to /session.
+ * @param store - `useAppStore.getState()`.
+ * @param origin - Who is revealing it.
+ * @param tabId - The contribution id to select.
+ */
+function revealTab(store: DispatcherStore, origin: UiCommandOrigin, tabId: string): void {
+  store.setCanvasOpen(true);
+  store.setRightPanelOpen(true);
+  tabSetterFor(store, origin)(tabId);
+}
+
+/**
+ * Reveal the Canvas tab — documents, data, diffs, widgets and apps.
+ *
+ * NOTE: both the canvas and browser contributions are `visibleWhen` pathname
+ * === '/session' (init-extensions), so off that route RightPanelContainer's
+ * auto-select falls back to the first visible tab — the command still lands (the
+ * document is persisted per session) and shows on return to /session. The room
+ * routes get both tabs in a later phase of the `room-canvas` spec.
  *
  * Exported because opening a document is not the same act as showing it, and
  * anything in the app that opens one owes the reader both. A caller that
@@ -408,9 +448,38 @@ function tabSetterFor(
  *   preference, `'agent'` switches the view without overwriting one.
  */
 export function revealCanvas(store: DispatcherStore, origin: UiCommandOrigin): void {
-  store.setCanvasOpen(true);
-  store.setRightPanelOpen(true);
-  tabSetterFor(store, origin)(CANVAS_TAB_ID);
+  revealTab(store, origin, CANVAS_TAB_ID);
+}
+
+/**
+ * Reveal the Browser tab — the pages the embedded browser renders.
+ *
+ * The sibling of {@link revealCanvas}, for the same reason: a page opened into a
+ * tab nobody selected is a page nobody sees.
+ *
+ * @param store - `useAppStore.getState()`.
+ * @param origin - Who is revealing it: `'user'` persists the tab choice as a
+ *   preference, `'agent'` switches the view without overwriting one.
+ */
+export function revealBrowser(store: DispatcherStore, origin: UiCommandOrigin): void {
+  revealTab(store, origin, BROWSER_TAB_ID);
+}
+
+/**
+ * Reveal whichever tab renders `content` — the reveal half of the two-view split
+ * (ADR 260911-200304), asked of the content rather than of a list of commands.
+ *
+ * @param store - `useAppStore.getState()`.
+ * @param origin - Who is revealing it.
+ * @param content - The content the command just opened.
+ */
+function revealForContent(
+  store: DispatcherStore,
+  origin: UiCommandOrigin,
+  content: UiCanvasContent
+): void {
+  if (canvasViewForContent(content) === 'browser') revealBrowser(store, origin);
+  else revealCanvas(store, origin);
 }
 
 /** Build the canvas content for an `open_file` command from its resolved viewer. */

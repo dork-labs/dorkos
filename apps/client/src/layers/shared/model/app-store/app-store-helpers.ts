@@ -9,6 +9,7 @@ import {
   MAX_CANVAS_SESSIONS,
   MAX_RIGHT_PANEL_LAYOUTS,
 } from '@/layers/shared/lib/constants';
+import { canvasViewForContent } from '@/layers/shared/lib/canvas-view';
 import type { FloatingPanelGeometry } from '@/layers/shared/ui';
 
 /** Read a boolean from localStorage with try/catch safety. */
@@ -144,7 +145,10 @@ export interface PersistedCanvasDocument {
 export interface CanvasSessionEntry {
   open: boolean;
   documents: PersistedCanvasDocument[];
-  activeDocumentId: string | null;
+  /** Active document of the Canvas view (everything the embedded browser does not render). */
+  activeCanvasDocumentId: string | null;
+  /** Active document of the Browser view (`url` / `browser`). */
+  activeBrowserDocumentId: string | null;
   accessedAt: number;
 }
 
@@ -153,9 +157,11 @@ type CanvasSessionMap = Record<string, CanvasSessionEntry>;
 /**
  * Read a single session's canvas state from the persisted map.
  *
- * Tolerates the pre-multi-document shape (`{ open, content }`) by wrapping a
- * legacy single `content` into a one-document array, so a canvas persisted
- * before DOR-219 restores as a single open document instead of being dropped.
+ * Tolerates both older shapes, so nothing a reader had open is dropped on
+ * upgrade: the pre-multi-document `{ open, content }` becomes a one-document
+ * array (pre-DOR-219), and a single `activeDocumentId` written before the canvas
+ * split into two views is routed into the view its own document belongs to (ADR
+ * 260911-200304), leaving the other view for the store to settle.
  */
 export function readCanvasSession(sessionId: string): CanvasSessionEntry | null {
   try {
@@ -170,16 +176,44 @@ export function readCanvasSession(sessionId: string): CanvasSessionEntry | null 
   }
 }
 
-/** Coerce a stored entry (current or legacy single-content shape) into a {@link CanvasSessionEntry}. */
+/** Read a string field, or null when the stored value is anything else. */
+function storedId(value: unknown): string | null {
+  return typeof value === 'string' ? value : null;
+}
+
+/**
+ * Split one persisted active id into the two the store now holds, by looking up
+ * the document it names and asking which view renders it. An id naming no stored
+ * document (or no id at all) leaves both views for the store to settle.
+ */
+function activeIdsForDocuments(
+  documents: PersistedCanvasDocument[],
+  entry: Record<string, unknown>
+): Pick<CanvasSessionEntry, 'activeCanvasDocumentId' | 'activeBrowserDocumentId'> {
+  const canvasId = storedId(entry.activeCanvasDocumentId);
+  const browserId = storedId(entry.activeBrowserDocumentId);
+  if (canvasId !== null || browserId !== null) {
+    return { activeCanvasDocumentId: canvasId, activeBrowserDocumentId: browserId };
+  }
+  const legacyId = storedId(entry.activeDocumentId);
+  const legacyDoc = documents.find((d) => d.id === legacyId);
+  if (!legacyDoc) return { activeCanvasDocumentId: null, activeBrowserDocumentId: null };
+  return canvasViewForContent(legacyDoc.content) === 'browser'
+    ? { activeCanvasDocumentId: null, activeBrowserDocumentId: legacyDoc.id }
+    : { activeCanvasDocumentId: legacyDoc.id, activeBrowserDocumentId: null };
+}
+
+/** Coerce a stored entry (current or either legacy shape) into a {@link CanvasSessionEntry}. */
 function normalizeCanvasEntry(entry: Record<string, unknown>): CanvasSessionEntry {
   const open = entry.open === true;
   const accessedAt = typeof entry.accessedAt === 'number' ? entry.accessedAt : Date.now();
 
   if (Array.isArray(entry.documents)) {
+    const documents = entry.documents as PersistedCanvasDocument[];
     return {
       open,
-      documents: entry.documents as PersistedCanvasDocument[],
-      activeDocumentId: typeof entry.activeDocumentId === 'string' ? entry.activeDocumentId : null,
+      documents,
+      ...activeIdsForDocuments(documents, entry),
       accessedAt,
     };
   }
@@ -188,23 +222,30 @@ function normalizeCanvasEntry(entry: Record<string, unknown>): CanvasSessionEntr
   const legacyContent = entry.content as UiCanvasContent | null | undefined;
   if (legacyContent) {
     const id = 'legacy-canvas-document';
+    const documents: PersistedCanvasDocument[] = [
+      {
+        id,
+        content: legacyContent,
+        openedAt: accessedAt,
+        lastActiveAt: accessedAt,
+        sourceLabel: '',
+      },
+    ];
     return {
       open,
-      documents: [
-        {
-          id,
-          content: legacyContent,
-          openedAt: accessedAt,
-          lastActiveAt: accessedAt,
-          sourceLabel: '',
-        },
-      ],
-      activeDocumentId: id,
+      documents,
+      ...activeIdsForDocuments(documents, { activeDocumentId: id }),
       accessedAt,
     };
   }
 
-  return { open, documents: [], activeDocumentId: null, accessedAt };
+  return {
+    open,
+    documents: [],
+    activeCanvasDocumentId: null,
+    activeBrowserDocumentId: null,
+    accessedAt,
+  };
 }
 
 /** Write a session's canvas state to the persisted map, enforcing LRU eviction. */

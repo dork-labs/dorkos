@@ -86,7 +86,8 @@ function sawTestId(moved: HTMLElement[], testId: string): boolean {
 beforeEach(() => {
   useAppStore.setState({
     openDocuments: [],
-    activeDocumentId: null,
+    activeCanvasDocumentId: null,
+    activeBrowserDocumentId: null,
     canvasOpen: false,
     rightPanelOpen: false,
     activeRightPanelTab: null,

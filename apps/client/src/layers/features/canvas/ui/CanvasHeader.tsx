@@ -15,7 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import type { UiCanvasContent } from '@dorkos/shared/types';
-import { cn } from '@/layers/shared/lib';
+import { cn, type CanvasView } from '@/layers/shared/lib';
 import { useRovingTabList } from '@/layers/shared/ui';
 
 const CONTENT_TYPE_ICONS = {
@@ -57,8 +57,25 @@ const CONTENT_TYPE_ICONS = {
  */
 const TAB_CLOSE_TOUCH_REACH = 'after:absolute after:inset-x-0 after:-inset-y-2 md:after:hidden';
 
-/** DOM id of the canvas content region the active tab controls. */
-export const CANVAS_PANEL_ID = 'canvas-panel';
+/**
+ * DOM id of the content region a view's active tab controls.
+ *
+ * One per view, because the Canvas and Browser tabs render the same body over
+ * different documents and an `aria-controls` that resolves to the other tab's
+ * region is worse than none.
+ *
+ * @param view - Which of the right panel's two document views is rendering.
+ * @returns The region's DOM id.
+ */
+export function canvasPanelId(view: CanvasView): string {
+  return view === 'browser' ? 'browser-panel' : 'canvas-panel';
+}
+
+/** What a screen reader calls each view's document strip. */
+const TABLIST_LABELS: Record<CanvasView, string> = {
+  canvas: 'Open canvas documents',
+  browser: 'Open browser pages',
+};
 
 /** Stable DOM id for a canvas document's tab — links panel `aria-labelledby` to it. */
 export function canvasTabDomId(documentId: string): string {
@@ -73,7 +90,9 @@ export interface CanvasHeaderDocument {
 }
 
 interface CanvasHeaderProps {
-  /** Open documents, in tab order. Empty renders just the shared panel header (splash). */
+  /** Which view's strip this is — decides the panel id and the strip's name. */
+  view: CanvasView;
+  /** Open documents of that view, in tab order. Empty renders just the shared panel header (splash). */
   documents: CanvasHeaderDocument[];
   /** Id of the active document. */
   activeDocumentId: string | null;
@@ -95,11 +114,13 @@ interface CanvasHeaderProps {
  * non-tab-stop sibling of the tab (mouse/touch only) so the DOM stays valid.
  */
 export function CanvasHeader({
+  view,
   documents,
   activeDocumentId,
   onActivate,
   onClose,
 }: CanvasHeaderProps) {
+  const panelId = canvasPanelId(view);
   const { getTabProps } = useRovingTabList({
     orderedIds: documents.map((doc) => doc.id),
     activeId: activeDocumentId,
@@ -109,7 +130,7 @@ export function CanvasHeader({
     onClose: (id) => onClose(id),
     // Delete on the last document: focus the (always-mounted, tabIndex=-1)
     // canvas content container — it shows the splash next — never the body.
-    getFallbackFocus: () => document.getElementById(CANVAS_PANEL_ID),
+    getFallbackFocus: () => document.getElementById(panelId),
   });
 
   if (documents.length === 0) return null;
@@ -117,7 +138,7 @@ export function CanvasHeader({
   return (
     <div
       role="tablist"
-      aria-label="Open canvas documents"
+      aria-label={TABLIST_LABELS[view]}
       className="flex items-stretch gap-1 overflow-x-auto border-b px-2 py-1"
     >
       {documents.map((doc) => {
@@ -134,7 +155,7 @@ export function CanvasHeader({
               role="tab"
               aria-selected={isActive}
               id={canvasTabDomId(doc.id)}
-              aria-controls={isActive ? CANVAS_PANEL_ID : undefined}
+              aria-controls={isActive ? panelId : undefined}
               {...getTabProps(doc.id)}
               className={cn(
                 'focus-ring flex items-center gap-1.5 rounded-md py-3 pr-7 pl-2 text-xs transition-colors md:py-1',

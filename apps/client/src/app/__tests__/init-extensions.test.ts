@@ -124,6 +124,38 @@ describe('initializeExtensions — right-panel contributions', () => {
     expect(canvas?.visibleWhen?.({ pathname: '/marketplace' })).toBe(false);
   });
 
+  it('shows the Browser tab on /session under a transport that can serve a page', () => {
+    const browser = getRightPanelContribution('browser');
+    expect(browser?.title).toBe('Browser');
+    const httpTransport = createMockTransport({ supportsWorkbenchServe: true });
+    expect(browser?.visibleWhen?.({ pathname: '/session', transport: httpTransport })).toBe(true);
+  });
+
+  it('hides the Browser tab under the in-process (Direct/Obsidian) transport', () => {
+    // That shell has neither the serve route nor the preview listener, so the
+    // tab could only ever show an error — the same posture as Terminal.
+    const browser = getRightPanelContribution('browser');
+    const directTransport = createMockTransport({ supportsWorkbenchServe: false });
+    expect(browser?.visibleWhen?.({ pathname: '/session', transport: directTransport })).toBe(
+      false
+    );
+  });
+
+  it('hides the Browser tab off the session route even when supported', () => {
+    const browser = getRightPanelContribution('browser');
+    const httpTransport = createMockTransport({ supportsWorkbenchServe: true });
+    for (const pathname of ['/', '/team', '/tasks', '/marketplace']) {
+      expect(browser?.visibleWhen?.({ pathname, transport: httpTransport })).toBe(false);
+    }
+  });
+
+  it('orders Browser (22) between Canvas (20) and Terminal (25)', () => {
+    // Documents, then pages, then a shell.
+    expect(getRightPanelContribution('canvas')?.priority).toBe(20);
+    expect(getRightPanelContribution('browser')?.priority).toBe(22);
+    expect(getRightPanelContribution('terminal')?.priority).toBe(25);
+  });
+
   it('registers the Terminal contribution', () => {
     expect(getRightPanelContribution('terminal')).toBeDefined();
   });

@@ -6,7 +6,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
-import { CanvasHeader, CANVAS_PANEL_ID, type CanvasHeaderDocument } from '../ui/CanvasHeader';
+import { CanvasHeader, canvasPanelId, type CanvasHeaderDocument } from '../ui/CanvasHeader';
 
 afterEach(cleanup);
 
@@ -37,6 +37,7 @@ function Harness({
     <>
       <button type="button">before</button>
       <CanvasHeader
+        view="canvas"
         documents={docs}
         activeDocumentId={active}
         onActivate={setActive}
@@ -50,7 +51,7 @@ function Harness({
       />
       {/* Mirrors AgentCanvas's always-mounted content container — the strip's
           Delete-last-tab fallback focus target (found by id). */}
-      <div id={CANVAS_PANEL_ID} tabIndex={-1} data-testid="canvas-panel" />
+      <div id={canvasPanelId('canvas')} tabIndex={-1} data-testid="canvas-panel" />
       <button type="button">after</button>
     </>
   );
@@ -167,7 +168,7 @@ describe('CanvasHeader — keyboard accessibility (WAI-ARIA Tabs)', () => {
 
   it('wires the active tab to the canvas panel via aria-controls', () => {
     render(<Harness initial="a" />);
-    expect(tab('Doc A')).toHaveAttribute('aria-controls', CANVAS_PANEL_ID);
+    expect(tab('Doc A')).toHaveAttribute('aria-controls', canvasPanelId('canvas'));
     expect(tab('Doc B')).not.toHaveAttribute('aria-controls');
   });
 

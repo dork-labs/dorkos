@@ -4,6 +4,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+import type { UiCanvasContent } from '@dorkos/shared/types';
+import { canvasViewForContent } from '@/layers/shared/lib/canvas-view';
 
 // Mock react-resizable-panels before importing the component under test
 vi.mock('react-resizable-panels', () => ({
@@ -86,7 +88,8 @@ interface MockDoc {
 const mockState = {
   canvasOpen: false as boolean,
   openDocuments: [] as MockDoc[],
-  activeDocumentId: null as string | null,
+  activeCanvasDocumentId: null as string | null,
+  activeBrowserDocumentId: null as string | null,
   selectedCwd: null as string | null,
   canvasSessionId: null as string | null,
   browserHistories: {} as Record<string, { contentUrl: string; stack: string[]; cursor: number }>,
@@ -94,7 +97,7 @@ const mockState = {
   openCanvasDocument: vi.fn(),
   activateCanvasDocument: vi.fn(),
   closeCanvasDocument: vi.fn(),
-  setActiveDocumentContent: vi.fn(),
+  setDocumentContent: vi.fn(),
   setDocumentEditing: vi.fn(),
   writeBrowserHistory: vi.fn(),
 };
@@ -108,7 +111,7 @@ const FALLBACK_LABELS: Record<string, string> = {
   video: 'Video',
 };
 
-/** Open a single active document, deriving its tab label like the real store. */
+/** Open a single active document in its own view, labelled like the real store. */
 function setActiveDoc(content: MockContent): void {
   mockState.openDocuments = [
     {
@@ -120,14 +123,24 @@ function setActiveDoc(content: MockContent): void {
       editing: false,
     },
   ];
-  mockState.activeDocumentId = 'd1';
+  if (canvasViewForContent(content as UiCanvasContent) === 'browser') {
+    mockState.activeBrowserDocumentId = 'd1';
+  } else {
+    mockState.activeCanvasDocumentId = 'd1';
+  }
 }
 
-vi.mock('@/layers/shared/model', () => {
+vi.mock('@/layers/shared/model', async () => {
+  // The real split rule, not a copy of it: the view a document belongs to has
+  // exactly one definition, and a component test restating it would pass while
+  // the app disagreed.
+  const { canvasViewForContent: viewFor } = await import('@/layers/shared/lib/canvas-view');
   const useAppStore = (selector: (s: typeof mockState) => unknown) => selector(mockState);
   (useAppStore as unknown as { getState: () => typeof mockState }).getState = () => mockState;
   return {
     useAppStore,
+    documentsInView: (docs: MockDoc[], view: string) =>
+      docs.filter((d) => viewFor(d.content as UiCanvasContent) === view),
     useIsMobile: () => mockIsMobile,
     useTheme: () => ({ theme: 'light', setTheme: vi.fn() }),
     useTransport: () => ({ writeFile: async () => ({ ok: true, hash: 'x' }) }),
@@ -135,7 +148,7 @@ vi.mock('@/layers/shared/model', () => {
 });
 
 import { setPrefersReducedMotion } from '@/test-setup';
-import { AgentCanvas } from '../ui/AgentCanvas';
+import { AgentCanvas, BrowserContent } from '../ui/AgentCanvas';
 
 // The suite's own local `motion/react` shadow used to answer
 // `useReducedMotion: () => true`; deleting it (DOR-1416) silently flipped
@@ -149,7 +162,8 @@ describe('AgentCanvas', () => {
     vi.clearAllMocks();
     mockState.canvasOpen = false;
     mockState.openDocuments = [];
-    mockState.activeDocumentId = null;
+    mockState.activeCanvasDocumentId = null;
+    mockState.activeBrowserDocumentId = null;
     mockIsMobile = false;
   });
 
@@ -164,7 +178,9 @@ describe('AgentCanvas', () => {
     expect(screen.getByText('A blank canvas')).toBeInTheDocument();
     expect(screen.getByText('Markdown')).toBeInTheDocument();
     expect(screen.getByText('JSON')).toBeInTheDocument();
-    expect(screen.getByText('Web Page')).toBeInTheDocument();
+    // Pages live in the Browser tab now, so offering one from here would open a
+    // document into a tab the reader is not looking at.
+    expect(screen.queryByText('Web Page')).not.toBeInTheDocument();
   });
 
   it('renders panel and resize handle when open with a markdown document', () => {
@@ -189,11 +205,25 @@ describe('AgentCanvas', () => {
     expect(screen.getByText('JSON Data')).toBeInTheDocument();
   });
 
-  it('renders the URL fallback tab label when no title', () => {
+  it('leaves a page to the Browser view rather than showing it in the canvas', () => {
     mockState.canvasOpen = true;
     setActiveDoc({ type: 'url', url: 'https://example.com' });
     render(<AgentCanvas />);
-    expect(screen.getByText('Web Page')).toBeInTheDocument();
+    // The canvas holds no page tab, and falls back to its own empty state.
+    expect(screen.queryByRole('tab', { name: 'Web Page' })).not.toBeInTheDocument();
+    expect(screen.getByText('A blank canvas')).toBeInTheDocument();
+  });
+
+  it('renders that same page in the Browser view, with its fallback tab label', () => {
+    setActiveDoc({ type: 'url', url: 'https://example.com' });
+    render(<BrowserContent />);
+    expect(screen.getByRole('tab', { name: 'Web Page' })).toBeInTheDocument();
+  });
+
+  it('tells an empty Browser view what it is for', () => {
+    render(<BrowserContent />);
+    expect(screen.getByText('No page open')).toBeInTheDocument();
+    expect(screen.getByText(/This tab shows web pages/)).toBeInTheDocument();
   });
 
   it('renders as Sheet on mobile instead of Panel', () => {

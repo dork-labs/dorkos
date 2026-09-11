@@ -45,7 +45,7 @@ const UI_SNAPSHOT = buildUiStateSnapshot(
   {
     canvasOpen: false,
     openDocuments: [],
-    activeDocumentId: null,
+    activeCanvasDocumentId: null,
     settingsOpen: false,
     tasksOpen: false,
     relayOpen: false,
