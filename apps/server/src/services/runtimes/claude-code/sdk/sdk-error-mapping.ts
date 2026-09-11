@@ -109,6 +109,14 @@ export function mapErrorCategory(subtype: string): ErrorCategory {
  * Excludes `rate_limit` / `overloaded` (handled by the `api_retry` and
  * `rate_limit_event` channels) and `max_output_tokens` (handled by the
  * `stop_reason === 'max_tokens'` branch) to avoid double-reporting.
+ *
+ * **This set is hand-maintained, and a value missing from it is dropped on the
+ * floor** — `message-event-mapper.ts` gates every assistant-error card on it, so
+ * an unlisted value ends the turn with no card, no log line and nothing a person
+ * can debug. Re-read the `SDKAssistantMessageError` union on every SDK bump: the
+ * 0.3.224 → 0.3.268 range added three values, and all three are things only the
+ * person can fix. Anything new belongs here unless one of the three channels
+ * above already reports it.
  */
 export const SURFACED_ASSISTANT_ERRORS = new Set([
   'model_not_found',
@@ -117,6 +125,9 @@ export const SURFACED_ASSISTANT_ERRORS = new Set([
   'billing_error',
   'invalid_request',
   'server_error',
+  'account_on_hold',
+  'verification_required',
+  'cloud_credential_error',
 ]);
 
 /**
@@ -170,6 +181,19 @@ export function describeAssistantError(error: string, noticeText?: string): stri
       return describeAuthError(CLAUDE_CODE_RUNTIME_TYPE);
     case 'billing_error':
       return 'There is a billing issue with your Claude account.';
+    case 'account_on_hold':
+      return 'Your Claude account is on hold, so it cannot run this. Check your Claude account settings, then try again.';
+    case 'verification_required':
+      return 'Your Claude account needs to be verified before it can run this. Finish verification in your Claude account settings, then try again.';
+    case 'cloud_credential_error':
+      // Deliberately NOT `describeAuthError`, which its two credential siblings
+      // above do use. That sentence says the Claude sign-in stopped working and
+      // earns the client's "Fix sign-in" treatment; this failure is the cloud
+      // credential DorkOS was handed (Bedrock, Vertex or Foundry), which a
+      // sign-in cannot repair. Sending someone to sign in again for it would be
+      // a confident wrong answer, so the card stays an execution error and says
+      // where the fix actually is.
+      return 'Claude could not use the cloud credentials it was given. Check them in Settings, then try again.';
     case 'invalid_request':
       return isSafeguardRefusal(noticeText)
         ? SAFEGUARD_REFUSAL_MESSAGE

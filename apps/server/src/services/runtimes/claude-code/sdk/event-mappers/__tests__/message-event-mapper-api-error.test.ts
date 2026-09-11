@@ -11,7 +11,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { mapMessageEvent } from '../message-event-mapper.js';
-import { SAFEGUARD_REFUSAL_MESSAGE } from '../../sdk-error-mapping.js';
+import { SAFEGUARD_REFUSAL_MESSAGE, SURFACED_ASSISTANT_ERRORS } from '../../sdk-error-mapping.js';
 import type { AgentSession, ToolState } from '../../../agent-types.js';
 import type { ErrorEvent } from '@dorkos/shared/types';
 
@@ -79,5 +79,60 @@ describe('live API-error assistant message', () => {
 
     expect(event.message).toBe('Claude encountered a server error. Try again in a moment.');
     expect(event).not.toHaveProperty('details');
+  });
+});
+
+/**
+ * The three values `SDKAssistantMessageError` gained across SDK 0.3.224 →
+ * 0.3.268. `SURFACED_ASSISTANT_ERRORS` is a hand-maintained set and the mapper
+ * drops anything absent from it, so before these were added a person whose
+ * account went on hold, needed verification, or whose cloud credentials were
+ * refused got no card at all — the turn simply ended.
+ */
+describe('the assistant errors added in SDK 0.3.268', () => {
+  it('tells someone their Claude account is on hold', async () => {
+    const [event] = await errorEvents(apiErrorMessage('account_on_hold', undefined));
+
+    expect(event.message).toContain('on hold');
+    expect(event.code).toBe('account_on_hold');
+    expect(event.category).toBe('execution_error');
+  });
+
+  it('tells someone their Claude account needs verifying', async () => {
+    const [event] = await errorEvents(apiErrorMessage('verification_required', undefined));
+
+    expect(event.message).toContain('verified');
+    expect(event.code).toBe('verification_required');
+    expect(event.category).toBe('execution_error');
+  });
+
+  it('points a refused cloud credential at Settings, not at signing in again', async () => {
+    const [event] = await errorEvents(apiErrorMessage('cloud_credential_error', undefined));
+
+    expect(event.message).toContain('cloud credentials');
+    expect(event.message).toContain('Settings');
+    expect(event.code).toBe('cloud_credential_error');
+    // NOT `auth_error`: that category earns the client's "Fix sign-in" button,
+    // and signing in again cannot repair a Bedrock/Vertex/Foundry credential.
+    expect(event.category).toBe('execution_error');
+  });
+
+  it('keeps the CLI’s own words when it wrote any', async () => {
+    const [event] = await errorEvents(
+      apiErrorMessage('account_on_hold', 'API Error: account is on hold. Request ID: req_42')
+    );
+
+    expect(event.details).toBe('API Error: account is on hold. Request ID: req_42');
+  });
+
+  it('surfaces every value the set names', async () => {
+    for (const code of SURFACED_ASSISTANT_ERRORS) {
+      const [event] = await errorEvents(apiErrorMessage(code, undefined));
+      expect(event, `${code} is in the set but produced no card`).toBeDefined();
+      expect(
+        event.message,
+        `${code} falls through to the default sentence, which tells a person nothing`
+      ).not.toBe('The agent stopped with an unexpected error.');
+    }
   });
 });
