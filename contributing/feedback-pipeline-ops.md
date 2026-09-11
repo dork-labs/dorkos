@@ -95,6 +95,31 @@ the screenshot leg, add
 POST and confirm the issue body renders the image. Cancel the test issue when
 done.
 
+## Processing the queue
+
+Intake fills the FB team's Triage; **`/feedback:triage` is the processing
+loop** — run it in any session. It triages new reports (dedupe → accept with a
+linked DOR issue / decline with a reason / duplicates share the original's DOR
+link so both reporters ship together), refreshes the status mirror, and ends
+with an anomaly report (unlinked items, early promises, stale Triage,
+dropped-work cases needing a human). Full rules live in the command itself.
+
+Three invariants worth restating here because breaking them lies to a reporter:
+
+- **On the FB team, Done means "the reporter has been told it shipped."**
+  Moving an FB issue to Done fires their email. Decline is Canceled.
+- **The shipped-email pass (`/feedback:triage --sweep`) runs only from the
+  release flow.** A DOR issue is Done at merge; the fix is only in the
+  reporter's hands at release. `/system:release` owns the trigger.
+- **Relations are read via GraphQL only** — `LINEAR_GET_LINEAR_ISSUE` returns
+  `relations: null` and would make the sweep believe nothing is linked.
+
+Dependency: team-scoped groom/snapshot behavior in the flow plugin is
+guaranteed as of `dork-labs/marketplace` commit `1c43bd5` (2026-09-11). A
+plugin regression there could let a DOR-team groom ingest FB issues; the repo
+cannot enforce an external plugin's behavior, so this note names the SHA
+instead.
+
 ## Failure modes → causes
 
 | Symptom                                                | Cause                                                                                                                                 |
