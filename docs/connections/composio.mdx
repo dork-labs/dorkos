@@ -11,9 +11,9 @@ import { Steps, Step } from 'fumadocs-ui/components/steps';
 Composio connects services such as Gmail to DorkOS. Composio holds each service's login access in its vault. DorkOS keeps the stable connection, your agent choices, and the exact action versions you approved.
 
 <Callout type="warn">
-  DorkOS-managed Composio is configured with production readiness off, and the real account proof
-  has not completed. The existing custom Gmail test fixture uses a Google app limited to its owner
-  test account. This page describes the shipped behavior, not public availability.
+  DorkOS-managed Accounts are available in alpha. A real Gmail sign-in, one profile read, usage
+  tracking, and removal of agent access have been verified. Other services may still need custom
+  setup. Managed account notifications remain unavailable pending a separate live delivery check.
 </Callout>
 
 ## Pick a route
@@ -63,7 +63,9 @@ Your installation calls Composio directly for this route. It also receives signe
 
 ## Use DorkOS-managed access
 
-When this route is available, the service tile opens an owner-bound sign-in flow. DorkOS uses its server project key and a private account identity derived from your signed-in owner and linked installation. The browser cannot choose another owner, installation, Composio user, or callback.
+Open **Connections → Accounts**. If the app asks you to link your DorkOS account, choose **Link DorkOS account**. This opens **Settings → Access**. Select **Link this instance** and finish the DorkOS sign-in flow.
+
+Return to **Connections → Accounts**, search for Gmail, Google Drive, Linear, or another service, and select **Connect**. You do not need your own Composio key for this route. The service tile opens a sign-in flow bound to your account. DorkOS uses its server project key and a private account identity derived from your signed-in owner and linked installation. The browser cannot choose another owner, installation, Composio user, or callback.
 
 DorkOS chooses the sign-in method in this order:
 
@@ -73,7 +75,7 @@ DorkOS chooses the sign-in method in this order:
 4. A service that needs no account fields asks the owner to confirm before continuing.
 5. A service that needs an unsupported method or custom developer setup stays visible with that requirement.
 
-The actions available after OAuth depend on the scopes approved during consent. You then grant a named agent only the exact action versions it may use. For example, Gmail can offer read or write actions when the approved scopes allow them, but neither set is automatic. The current Gmail Read Only setup is a controlled test fixture, not a limit on every Gmail connection.
+The actions available after OAuth depend on the scopes approved during consent. You then grant a named agent only the exact action versions it may use. For example, Gmail can offer read or write actions when the approved scopes allow them, but neither set is automatic. Gmail send and draft actions are available to review when consent allows them. Actions whose effects are uncertain require the stricter approval level.
 
 [Composio-managed apps](https://docs.composio.dev/docs/authentication/custom-app-vs-managed-app) use shared quotas and default scopes, and their polling triggers have a 15-minute minimum interval. That interval does not describe webhook delivery or Slack and Telegram Messaging.
 
@@ -84,9 +86,14 @@ Managed availability has two separate switches:
 - common readiness covers catalog, sign-in, and actions;
 - event readiness covers new notification intake.
 
-A configured key does not make either switch healthy by itself. Each switch stays off until its own production proof passes.
+Accounts are enabled after the real-account check passed. Managed notifications stay off until their separate live delivery check passes. A configured key alone does not enable either capability.
 
 ## Add notifications
+
+<Callout type="warn">
+  DorkOS-managed notifications are not available yet. The steps below apply only when notifications
+  are available for your chosen route. This does not affect Slack or Telegram Messaging.
+</Callout>
 
 Open a connected account and choose **Notifications**. Select an activity type, any supported filter, the receiving agent, and the destination. Action access does not grant notification access.
 
