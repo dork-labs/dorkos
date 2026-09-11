@@ -1,5 +1,5 @@
 {
-  "ignoreCommand": "npx turbo-ignore",
+  "ignoreCommand": "node scripts/ignore-build.mjs",
   "buildCommand": "pnpm db:migrate && pnpm exec turbo run build --filter=@dorkos/site",
   "crons": [
     {
