@@ -40,6 +40,34 @@
  * are sets and not a flag: eighty-odd tool schemas would ride every turn's prompt,
  * on every session, to save a lookup that only a few turns genuinely cannot afford.
  *
+ * ## Schemas: no `z.record()` in an in-session tool's input
+ *
+ * An in-session tool's input schema must not contain `z.record(...)` at ANY depth,
+ * `z.json()` included — it builds its object branch from a record. This is a hard
+ * constraint rather than a style note, and one tool breaking it takes down all
+ * ninety.
+ *
+ * `claude-agent-sdk` 0.3.257+ converts tool schemas to JSON Schema through the
+ * installed zod's own per-schema processor, but builds the conversion context
+ * itself, and that context carries no `deferred` array. zod 4.5.3+ is the first
+ * version whose record processor pushes onto `ctx.deferred` (its only user, for
+ * rewriting key names), so a record throws `Cannot read properties of undefined`
+ * INSIDE the `tools/list` handler. `tools/list` answers for the whole server, so
+ * the model is handed zero DorkOS tools — no error card, no log line, nothing to
+ * debug from. Bisected on the 0.3.224 → 0.3.268 bump: SDK 0.3.252 + zod 4.5.4 is
+ * fine and 0.3.257 is not; SDK 0.3.268 + zod 4.5.2 is fine and 4.5.3 is not. Both
+ * halves are the vendors' to fix; until one of them does, this constraint stands.
+ *
+ * `z.object({}).catchall(valueType)` is the drop-in: it accepts the same values,
+ * and its JSON Schema (`additionalProperties`) says the same thing without the
+ * `propertyNames` clause a record adds. Four schemas were converted for this reason,
+ * each carrying a pointer back here — `CONTROL_UI_INPUT.content`,
+ * `operator.config_patch`'s `patch`, `McpServerTransportSchema`'s `env`/`headers`,
+ * and `ConnectorJsonValueSchema` (which `z.json()` no longer builds).
+ * `__tests__/tool-exposure.test.ts` lists every tool off the live server on all
+ * three session shapes, so a record added anywhere in the surface reds there
+ * immediately rather than shipping.
+ *
  * Nothing here is runtime-neutral. Codex and OpenCode reach the same tools through
  * the external `/mcp` server — under `dorkos_ui` for the UI server Codex spawns
  * itself, and otherwise under whatever the person's harness config named it — so

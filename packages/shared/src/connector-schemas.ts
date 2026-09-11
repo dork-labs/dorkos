@@ -15,15 +15,57 @@ export const CONNECTOR_OPERATION_SELECTION_LIMIT = 100_000;
 export const CONNECTOR_EVENT_REVIEW_SCOPE_LIMIT = 32;
 
 /** JSON value accepted by connector operation arguments and provider schemas. */
-export const ConnectorJsonValueSchema = z.json();
-/** JSON value accepted by connector operation arguments and provider schemas. */
-export type ConnectorJsonValue = z.infer<typeof ConnectorJsonValueSchema>;
+export type ConnectorJsonValue =
+  string | number | boolean | null | ConnectorJsonValue[] | { [key: string]: ConnectorJsonValue };
 
-/** JSON object accepted as one connector operation's argument payload. */
-export const ConnectorJsonObjectSchema = z.record(
-  z.string().min(1).max(200),
-  ConnectorJsonValueSchema
+/**
+ * JSON value accepted by connector operation arguments and provider schemas.
+ *
+ * Spelled out rather than `z.json()`, which builds its object branch from
+ * `z.record()`: this schema reaches the three `connectors.execute_*` agent tools,
+ * and a record anywhere in an in-session tool's schema crashes the WHOLE
+ * `tools/list` answer on claude-agent-sdk 0.3.257+ with zod 4.5.3+ — the model is
+ * then handed no DorkOS tools at all, with no other symptom. Full story in
+ * `apps/server/.../claude-code/mcp-tools/tool-exposure.ts`. The accepted values are
+ * unchanged: strings, numbers, booleans, null, and arrays/objects of those, with
+ * `undefined`, functions and `NaN` still refused.
+ */
+export const ConnectorJsonValueSchema: z.ZodType<ConnectorJsonValue> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number().refine(Number.isFinite, { message: 'Expected a finite number' }),
+    z.boolean(),
+    z.null(),
+    z.array(ConnectorJsonValueSchema),
+    z.object({}).catchall(ConnectorJsonValueSchema),
+  ])
 );
+
+/**
+ * JSON object accepted as one connector operation's argument payload.
+ *
+ * `z.object({}).catchall(...)` plus an explicit key check, rather than the
+ * `z.record(z.string().min(1).max(200), …)` it reads as: this schema is the input
+ * of the three `connectors.execute_*` agent tools, and a record anywhere in an
+ * in-session tool's schema crashes the WHOLE `tools/list` answer on
+ * claude-agent-sdk 0.3.257+ with zod 4.5.3+ — the model is then handed no DorkOS
+ * tools at all, with no other symptom. Full story in
+ * `apps/server/.../claude-code/mcp-tools/tool-exposure.ts`. The check keeps the
+ * key bounds a record would have enforced, so the accepted values are unchanged.
+ */
+export const ConnectorJsonObjectSchema = z
+  .object({})
+  .catchall(ConnectorJsonValueSchema)
+  .superRefine((value, ctx) => {
+    for (const key of Object.keys(value)) {
+      if (key.length >= 1 && key.length <= 200) continue;
+      ctx.addIssue({
+        code: 'custom',
+        path: [key],
+        message: 'Argument names must be between 1 and 200 characters',
+      });
+    }
+  });
 /** JSON object accepted as one connector operation's argument payload. */
 export type ConnectorJsonObject = z.infer<typeof ConnectorJsonObjectSchema>;
 

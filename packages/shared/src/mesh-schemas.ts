@@ -218,23 +218,30 @@ export const McpServerAuthKindSchema = z.literal('oauth2');
 
 export type McpServerAuthKind = z.infer<typeof McpServerAuthKindSchema>;
 
+// `env`/`headers` below are `z.object({}).catchall(z.string())` rather than the
+// `z.record(z.string(), z.string())` they read as. This schema is the input of the
+// `mcp_add_server` / `mcp_update_server` agent tools, and a record anywhere in an
+// in-session tool's schema crashes the WHOLE `tools/list` answer on
+// claude-agent-sdk 0.3.257+ with zod 4.5.3+ — the model is then handed no DorkOS
+// tools at all, with no other symptom. `catchall` accepts exactly the same values.
+// Full story in `apps/server/.../claude-code/mcp-tools/tool-exposure.ts`.
 export const McpServerTransportSchema = z.discriminatedUnion('transport', [
   z.object({
     transport: z.literal('stdio'),
     command: z.string().min(1),
     args: z.array(z.string()).default([]),
-    env: z.record(z.string(), z.string()).default({}),
+    env: z.object({}).catchall(z.string()).default({}),
   }),
   z.object({
     transport: z.literal('http'),
     url: z.string().url(),
-    headers: z.record(z.string(), z.string()).default({}),
+    headers: z.object({}).catchall(z.string()).default({}),
     authKind: McpServerAuthKindSchema.optional(),
   }),
   z.object({
     transport: z.literal('sse'),
     url: z.string().url(),
-    headers: z.record(z.string(), z.string()).default({}),
+    headers: z.object({}).catchall(z.string()).default({}),
     authKind: McpServerAuthKindSchema.optional(),
   }),
 ]);

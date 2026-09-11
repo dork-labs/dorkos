@@ -673,11 +673,15 @@ runtimeConformance(
       }
       const launchedAppend = (index: number): string => {
         const systemPrompt = warmCli?.processes.at(index)?.options.systemPrompt;
-        // The SDK's `systemPrompt` is a union — a preset carrying an `append`,
-        // or a whole prompt as a bare string. DorkOS always launches the preset
-        // form; narrowing rather than casting is what would make a change to
-        // that visible here instead of silently reading `undefined`.
-        return typeof systemPrompt === 'object' && !Array.isArray(systemPrompt)
+        // The SDK's `systemPrompt` is a union — a preset carrying an `append`, a
+        // `{ type: 'custom' }` object carrying a whole prompt (added in SDK
+        // 0.3.268), or a whole prompt as a bare string. DorkOS always launches
+        // the preset form; narrowing on the discriminant rather than on
+        // `typeof === 'object'` is what would make a change to that visible here
+        // instead of silently reading `undefined` off a custom prompt.
+        return typeof systemPrompt === 'object' &&
+          !Array.isArray(systemPrompt) &&
+          systemPrompt.type === 'preset'
           ? (systemPrompt.append ?? '')
           : '';
       };

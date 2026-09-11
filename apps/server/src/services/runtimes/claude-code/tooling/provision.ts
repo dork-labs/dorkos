@@ -47,7 +47,7 @@ import { logger, logError } from '../../../../lib/logger.js';
  * it; if Anthropic ships a text-only model, the `supportsVision` claim is the
  * one that goes wrong first.
  */
-export const CLAUDE_SDK_VERSION = '0.3.224';
+export const CLAUDE_SDK_VERSION = '0.3.268';
 
 /** npm name of the SDK whose per-platform binary packages this module installs. */
 const SDK_PKG = '@anthropic-ai/claude-agent-sdk';

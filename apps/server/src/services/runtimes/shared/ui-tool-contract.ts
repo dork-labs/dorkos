@@ -71,8 +71,13 @@ export const CONTROL_UI_INPUT = {
     .string()
     .optional()
     .describe('Tab name for switch_sidebar_tab (embedded app only; no-op on the web cockpit)'),
+  // Not `z.record()`: a record anywhere in an in-session tool's schema crashes the
+  // whole `tools/list` answer on claude-agent-sdk 0.3.257+ with zod 4.5.3+, and the
+  // model is handed no DorkOS tools at all. `catchall` accepts the same values.
+  // The full story is in `claude-code/mcp-tools/tool-exposure.ts`.
   content: z
-    .record(z.string(), z.unknown())
+    .object({})
+    .catchall(z.unknown())
     .optional()
     .describe(
       'Canvas content for open_canvas/update_canvas. One of: ' +

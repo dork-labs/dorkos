@@ -375,7 +375,12 @@ export const operatorDomain: CapabilityDomain = {
         'agents.defaultDirectory, mesh.scanRoots). Ask the person to change those in Settings themselves.',
       tier: 'act',
       input: z.object({
-        patch: z.record(z.string(), z.unknown()).describe(
+        // Not `z.record()`: a record anywhere in an in-session tool's schema
+        // crashes the whole `tools/list` answer on claude-agent-sdk 0.3.257+ with
+        // zod 4.5.3+, and the model is handed no DorkOS tools at all. `catchall`
+        // accepts the same values. Full story in
+        // `runtimes/claude-code/mcp-tools/tool-exposure.ts`.
+        patch: z.object({}).catchall(z.unknown()).describe(
           // Keep this example a field that actually exists. It has drifted twice
           // already: `ui.sidebar` never had a `collapsed` key, `ui.statusBar` is
           // a `pins` list rather than per-item booleans (DOR-452), and the
