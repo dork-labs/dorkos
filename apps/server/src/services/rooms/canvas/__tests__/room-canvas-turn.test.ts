@@ -1,0 +1,339 @@
+/**
+ * One room turn, end to end: a `ui_command` off the turn's own stream becomes a
+ * row, a frame and one line in the room's log — and never two of any of them
+ * (spec `room-canvas` §5.5, §6.2).
+ *
+ * **The REAL runner and the REAL projector.** Only the dispatcher is stubbed,
+ * because a real one needs a model; everything the assertions are about — the
+ * collector's tap, the per-turn ledger, `finishTurn` in the `finally` — is the
+ * code that ships. The room service is real too, over a real SQLite database, so
+ * "one row" is read out of the table rather than off a spy.
+ *
+ * Every case here uses `json` content deliberately. It has no dedupe key, so
+ * nothing would quietly absorb a second write: if the tap applied a stamped
+ * event as well as the handler, this file would see two rows rather than one
+ * refreshed one.
+ *
+ * Seeded defects, each run red before the code stood:
+ *
+ * - Dropping the `event.applied === undefined` guard on the tap reddens "applies
+ *   a stamped event exactly once" with two rows.
+ * - Moving `finishTurn` out of the `finally` and into the success path reddens
+ *   "a turn the ceiling gave up on still reports what it put on the table".
+ * - Composing the coalesced line from the tap's observations rather than the
+ *   service's ledger reddens "one line naming both operations".
+ *
+ * @module server/services/rooms/canvas/tests/room-canvas-turn
+ */
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { mockInterruptReceipt } from '@dorkos/test-utils';
+import { USER_CONFIG_DEFAULTS, type UserConfig } from '@dorkos/shared/config-schema';
+import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
+import type { RoomTurnRequest } from '../../room-trigger.js';
+
+/** The runtime capabilities the stub registry declares. Enough to take a turn. */
+const DECLARED_CAPABILITIES = {
+  logBackedHistory: false,
+  nativeContext: [],
+  settings: { configSection: 'claudeCode', supportsEffort: true, sections: [] },
+  permissionModes: {
+    supported: true,
+    default: 'default',
+    values: [{ id: 'default', label: 'Default', description: '', stop: 'ask' }],
+  },
+};
+
+vi.mock('../../../core/runtime-registry.js', () => ({
+  runtimeRegistry: {
+    persistSessionRuntime: () => Promise.resolve(true),
+    getSessionSettings: () => Promise.resolve(null),
+    resolveSessionRuntime: () => Promise.resolve({ type: 'claude-code', bound: false }),
+    get: () => ({
+      getCapabilities: () => DECLARED_CAPABILITIES,
+      acquireLock: () => true,
+      releaseLock: () => undefined,
+      sendMessage: () => undefined,
+      interruptQuery: () => Promise.resolve(mockInterruptReceipt('not-running')),
+      getInternalSessionId: () => undefined,
+    }),
+    has: () => true,
+    getDefaultType: () => 'claude-code',
+  },
+}));
+
+vi.mock('@dorkos/shared/manifest', () => ({ readManifest: async () => null }));
+
+let runtimesConfig: UserConfig['runtimes'] = USER_CONFIG_DEFAULTS.runtimes;
+vi.mock('../../../core/config-manager.js', () => ({
+  configManager: {
+    get: (key: string) => (key === 'runtimes' ? runtimesConfig : undefined),
+  },
+}));
+
+/** The projector the stub is handed, as this file drives it. */
+interface TestProjector {
+  ingest: (event: Record<string, unknown>) => { seq: number };
+}
+
+/** What the runner hands the dispatcher, as this file inspects it. */
+interface TriggerCall {
+  sessionId: string;
+  projector: TestProjector;
+  onTurnStart?: (seq: number) => void;
+  runtime: { getInternalSessionId: (sessionId: string) => string | undefined };
+  roomTurn?: { roomId: string; authorId: string; turnId: string };
+}
+
+/** What the stubbed dispatch does with the projector it is handed. */
+let turnBehaviour: (opts: TriggerCall) => { accepted: boolean; canonicalId?: string };
+/** Every dispatch this file's runner made, in order. */
+const triggered: TriggerCall[] = [];
+
+vi.mock('../../../session/index.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../session/index.js')>()),
+  dispatchMessage: (opts: never) => {
+    triggered.push(opts);
+    return Promise.resolve(turnBehaviour(opts));
+  },
+}));
+
+const { createSessionRoomTurnRunner } = await import('../../room-turn-runner.js');
+const { SessionEventStore, setSessionEventStore } = await import('../../../session/index.js');
+const { createTestDb } = await import('@dorkos/test-utils/db');
+const { setRoomService } = await import('../../index.js');
+const { agentLookupFor, createRoomHarness, scriptedRunner } =
+  await import('../../__tests__/room-test-harness.js');
+const { tooManyCanvasOpsMessage } = await import('../room-canvas-service.js');
+
+type Harness = ReturnType<typeof createRoomHarness>;
+
+const ANA = '/agents/ana';
+const agents = agentLookupFor({
+  [ANA]: { name: 'ana', displayName: 'Ana', responseMode: 'always' },
+});
+
+/** A json document — no dedupe key, so a double write shows up as a second row. */
+const jsonCommand = (label: string) => ({
+  action: 'open_canvas' as const,
+  content: { type: 'json' as const, data: { label }, title: label },
+});
+
+describe('a room turn’s canvas commands', () => {
+  let harness: Harness;
+  let room: RoomWithRoster;
+  let ana: string;
+
+  beforeEach(() => {
+    runtimesConfig = USER_CONFIG_DEFAULTS.runtimes;
+    triggered.length = 0;
+    setSessionEventStore(new SessionEventStore(createTestDb()));
+    harness = createRoomHarness({ agents, runner: scriptedRunner(() => null) });
+    setRoomService(harness.service);
+    room = harness.service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: [ANA] },
+      harness.human
+    );
+    ana = harness.authors.resolveAgent(ANA, 'Ana').id;
+  });
+
+  /** A trigger for the real room this harness holds. */
+  function turnRequest(): RoomTurnRequest {
+    const entry: RoomEntry = {
+      roomId: room.id,
+      seq: 1,
+      id: 'entry-1',
+      authorId: harness.human,
+      kind: 'post',
+      body: { text: 'show me the plan' },
+      mentions: [],
+      sessionId: null,
+      cascadeRoot: 'entry-1',
+      cascadeDepth: 0,
+      parentEntryId: null,
+      threadRootEntryId: null,
+      signature: null,
+      createdAt: room.createdAt,
+    };
+    return {
+      room,
+      authorId: ana,
+      externalAuthor: false,
+      agentPath: ANA,
+      cwd: ANA,
+      sessionId: null,
+      entry,
+      prompt: entry.body.text,
+      roomContext: {
+        room: { id: room.id, kind: 'channel', name: '#backend', bridged: false },
+        thread: null,
+        members: [],
+        working: [],
+        pending: [],
+        pendingTruncated: false,
+        ownRecent: [],
+        acknowledgments: [],
+        triggerEntryId: entry.id,
+        triggerAttachments: [],
+        addressing: {
+          responseMode: 'always',
+          engagedUntil: null,
+          engagedPostsLeft: null,
+          addressedNow: true,
+        },
+        budget: {
+          automaticRepliesLeftInThisRoomThisHour: 9,
+          automaticRepliesLeftInTotalThisHour: 99,
+          repliesLeftInThisChain: 3,
+        },
+      },
+      attachmentProjection: [],
+      onWaiting: () => undefined,
+      onActivity: () => undefined,
+      onReplyMode: () => undefined,
+      onSessionBound: () => undefined,
+    };
+  }
+
+  /** Open the turn the runner is waiting for, as the real dispatcher does. */
+  function openTurn(opts: TriggerCall): void {
+    const start = opts.projector.ingest({ type: 'turn_start' });
+    opts.onTurnStart?.(start.seq);
+  }
+
+  /** The room's log, oldest first. */
+  const log = () => harness.service.listEntries(room.id, harness.human, { limit: 100 });
+
+  it('carries the room, the member and one turn id into the runtime', async () => {
+    turnBehaviour = (opts) => {
+      openTurn(opts);
+      opts.projector.ingest({ type: 'turn_end' });
+      return { accepted: true, canonicalId: opts.sessionId };
+    };
+    await createSessionRoomTurnRunner().run(turnRequest());
+
+    // Routing metadata, and every field of it server-derived. Without this a
+    // `control_ui` the turn takes has no way to know which room it is in.
+    expect(triggered[0].roomTurn).toMatchObject({ roomId: room.id, authorId: ana });
+    expect(typeof triggered[0].roomTurn?.turnId).toBe('string');
+  });
+
+  it('applies an UNSTAMPED command — the codex and test-mode path', async () => {
+    turnBehaviour = (opts) => {
+      openTurn(opts);
+      opts.projector.ingest({ type: 'ui_command', command: jsonCommand('the plan') });
+      opts.projector.ingest({ type: 'turn_end' });
+      return { accepted: true, canonicalId: opts.sessionId };
+    };
+    await createSessionRoomTurnRunner().run(turnRequest());
+
+    const documents = harness.service.canvas.list(room.id);
+    expect(documents).toHaveLength(1);
+    expect(documents[0].title).toBe('the plan');
+    expect(documents[0].authorId).toBe(ana);
+  });
+
+  it('applies a STAMPED command exactly once — the handler already did', async () => {
+    // The dedupe, and the whole reason the stamp exists. `json` has no source
+    // key, so a tap that ignored the stamp would leave TWO rows here rather than
+    // one refreshed one — which is what makes this able to fail.
+    const applied = harness.service.canvas.apply({
+      roomId: room.id,
+      authorId: ana,
+      turnId: 'handler-turn',
+      command: jsonCommand('the plan'),
+    });
+    expect(applied.applied).toBe(true);
+
+    turnBehaviour = (opts) => {
+      openTurn(opts);
+      opts.projector.ingest({
+        type: 'ui_command',
+        command: jsonCommand('the plan'),
+        applied: applied.applied ? { documentId: applied.documentId, rev: applied.rev } : undefined,
+      });
+      opts.projector.ingest({ type: 'turn_end' });
+      return { accepted: true, canonicalId: opts.sessionId };
+    };
+    await createSessionRoomTurnRunner().run(turnRequest());
+
+    expect(harness.service.canvas.list(room.id)).toHaveLength(1);
+  });
+
+  it('writes exactly one line in the room’s log, naming every operation', async () => {
+    const before = log().length;
+    turnBehaviour = (opts) => {
+      openTurn(opts);
+      opts.projector.ingest({ type: 'ui_command', command: jsonCommand('the plan') });
+      opts.projector.ingest({
+        type: 'ui_command',
+        command: { action: 'browser_navigate', url: 'http://localhost:5173/' },
+      });
+      opts.projector.ingest({ type: 'text_delta', text: 'Put it on the canvas.' });
+      opts.projector.ingest({ type: 'turn_end' });
+      return { accepted: true, canonicalId: opts.sessionId };
+    };
+    await createSessionRoomTurnRunner().run(turnRequest());
+
+    const entries = log();
+    const canvasLines = entries.filter((entry) => entry.body.canvas !== undefined);
+    expect(canvasLines).toHaveLength(1);
+    expect(canvasLines[0].body.canvas?.ops).toHaveLength(2);
+    expect(canvasLines[0].body.subjectAuthorId).toBe(ana);
+    // It wakes nobody: written by the system author, addressing no one.
+    expect(canvasLines[0].authorId).toBe(harness.authors.system().id);
+    expect(canvasLines[0].mentions).toEqual([]);
+    expect(entries.length).toBeGreaterThan(before);
+  });
+
+  it('triggers no turn for anybody', async () => {
+    // The property ADR 260911-200302 exists for, read off the dispatcher rather
+    // than off a sleep: the canvas line is an entry, and an entry is the one
+    // thing that starts a turn in a room — so an entry that started one would
+    // show up here as a second dispatch.
+    turnBehaviour = (opts) => {
+      openTurn(opts);
+      opts.projector.ingest({ type: 'ui_command', command: jsonCommand('the plan') });
+      opts.projector.ingest({ type: 'turn_end' });
+      return { accepted: true, canonicalId: opts.sessionId };
+    };
+    await createSessionRoomTurnRunner().run(turnRequest());
+    await harness.service.triggersIdle();
+
+    expect(triggered).toHaveLength(1);
+  });
+
+  it('writes no line at all for a turn that changed nothing', async () => {
+    turnBehaviour = (opts) => {
+      openTurn(opts);
+      opts.projector.ingest({ type: 'text_delta', text: 'Nothing to show.' });
+      opts.projector.ingest({ type: 'turn_end' });
+      return { accepted: true, canonicalId: opts.sessionId };
+    };
+    await createSessionRoomTurnRunner().run(turnRequest());
+
+    expect(log().filter((entry) => entry.body.canvas !== undefined)).toEqual([]);
+  });
+
+  it('refuses past the ceiling and names only what it applied', async () => {
+    turnBehaviour = (opts) => {
+      openTurn(opts);
+      for (const n of [1, 2, 3, 4]) {
+        opts.projector.ingest({ type: 'ui_command', command: jsonCommand(`doc ${n}`) });
+      }
+      opts.projector.ingest({ type: 'turn_end' });
+      return { accepted: true, canonicalId: opts.sessionId };
+    };
+    await createSessionRoomTurnRunner().run(turnRequest());
+
+    // Three rows, and a line naming three. An operation nothing applied is
+    // claimed nowhere — which is the honest guarantee on this path, where a
+    // refusal cannot reach the model.
+    expect(harness.service.canvas.list(room.id)).toHaveLength(3);
+    const canvasLines = log().filter((entry) => entry.body.canvas !== undefined);
+    expect(canvasLines).toHaveLength(1);
+    expect(canvasLines[0].body.canvas?.ops).toHaveLength(3);
+    // And the sentence a refused operation would have carried is the one the
+    // handler path returns, not something this path invents.
+    expect(tooManyCanvasOpsMessage(3)).toContain('3 times');
+  });
+});

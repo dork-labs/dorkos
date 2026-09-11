@@ -16,6 +16,8 @@ import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { UiCommandSchema } from '@dorkos/shared/schemas';
 import type { UiState, UiCommand, StreamEvent } from '@dorkos/shared/types';
 import { CONTROL_UI_DESCRIPTION, CONTROL_UI_INPUT } from '../../shared/ui-tool-contract.js';
+import { getRoomService, RoomError } from '../../../rooms/index.js';
+import type { CanvasApplyResult } from '../../../rooms/canvas/index.js';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 
@@ -134,6 +136,14 @@ export interface UiToolSession {
    */
   cwd?: string;
   /**
+   * The room this session's CURRENT turn is answering in, or absent for an
+   * ordinary one-on-one turn (spec `room-canvas` §5.3).
+   *
+   * Server-derived and assigned on every turn — including to `undefined` — so a
+   * session that ran one room turn writes to no room on its next direct turn.
+   */
+  roomTurn?: { roomId: string; authorId: string; turnId: string };
+  /**
    * The session's canonical SDK id, seeded to the request id at creation and
    * updated when the SDK init assigns the real id (see `session-store.ts`).
    * The DevTools read tools resolve it at READ time so a first-turn rekey
@@ -159,6 +169,38 @@ export function createControlUiHandler(session: UiToolSession) {
     }
 
     const command = parsed.data;
+
+    // **In a room, this is the writer's call and it answers the model with what
+    // really happened** (spec `room-canvas` §5.2). Synchronous, because the
+    // alternative is refusing an operation the tool has already reported as
+    // successful — a bound that answers later is a silent drop, not a bound.
+    //
+    // A refusal pushes NO event at all, so no room, no session and no viewer
+    // ever sees an effect the model was told did not happen.
+    const roomTurn = session.roomTurn;
+    if (roomTurn !== undefined) {
+      const applied = applyToRoomCanvas(session, roomTurn, command);
+      if (!applied.applied) {
+        return jsonContent({ success: false, target: 'room', reason: applied.reason }, true);
+      }
+      session.eventQueue.push({
+        type: 'ui_command',
+        // The stamp the room turn's collector reads. It exists for one decision
+        // — "did the handler already apply this?" — and the client never reads
+        // it. Without it the collector would apply the same command a second
+        // time.
+        data: { command, applied: { documentId: applied.documentId, rev: applied.rev } },
+      } as StreamEvent);
+      session.eventQueueNotify?.();
+      return jsonContent({
+        success: true,
+        target: 'room',
+        roomId: roomTurn.roomId,
+        documentId: applied.documentId,
+        rev: applied.rev,
+        viewers: applied.viewers,
+      });
+    }
 
     // Emit the command as a ui_command StreamEvent to the SSE stream
     session.eventQueue.push({
@@ -188,8 +230,75 @@ export function createControlUiHandler(session: UiToolSession) {
  */
 export function createGetUiStateHandler(session: UiToolSession) {
   return async () => {
+    // In a room, the private session UI state is not what the agent is looking
+    // at — the room's shared table is (spec `room-canvas` §5.8). Outside a room
+    // turn this handler is unchanged, byte for byte.
+    const roomTurn = session.roomTurn;
+    if (roomTurn !== undefined) {
+      const canvas = getRoomService().canvas;
+      const documents = canvas.list(roomTurn.roomId);
+      return jsonContent({
+        surface: 'room',
+        roomId: roomTurn.roomId,
+        // Live readers of this room's stream. One person with two tabs counts
+        // twice and an agent counts zero, and the teaching says exactly that —
+        // `0` means nobody is looking right now.
+        viewers: canvas.viewers(roomTurn.roomId),
+        // What a bare `update_canvas` would act on, named so the agent can see
+        // the default rather than discover it.
+        yourLastDocumentId: canvas.lastDocumentFor(roomTurn.roomId, roomTurn.authorId)?.id ?? null,
+        canvas: {
+          documents: documents.map((document) => ({
+            id: document.id,
+            type: document.contentType,
+            title: document.title,
+            author: document.authorId,
+            pinned: document.pinned,
+          })),
+          count: documents.length,
+        },
+      });
+    }
     return jsonContent(session.uiState ?? DEFAULT_UI_STATE);
   };
+}
+
+/**
+ * Put one canvas command on the room's table, through the single writer.
+ *
+ * A thin wrapper so the handler above reads as one decision. It resolves the
+ * service late — the rooms subsystem is registered during boot and a tool
+ * created before it would otherwise capture nothing — and degrades a wiring
+ * failure into a refusal the model can read rather than a stack trace.
+ *
+ * @param session - The session taking the turn, for the directory it stands in.
+ * @param roomTurn - Where this turn is happening.
+ * @param command - The validated command.
+ * @returns What was written, or why nothing was.
+ */
+function applyToRoomCanvas(
+  session: UiToolSession,
+  roomTurn: { roomId: string; authorId: string; turnId: string },
+  command: UiCommand
+): CanvasApplyResult {
+  try {
+    return getRoomService().canvas.apply({
+      roomId: roomTurn.roomId,
+      authorId: roomTurn.authorId,
+      turnId: roomTurn.turnId,
+      command,
+      ...(session.cwd !== undefined ? { cwd: session.cwd } : {}),
+    });
+  } catch (err) {
+    return {
+      applied: false,
+      code: 'ROOM_NOT_FOUND',
+      reason:
+        err instanceof RoomError
+          ? err.message
+          : 'That room’s canvas could not be reached just now.',
+    };
+  }
 }
 
 /**

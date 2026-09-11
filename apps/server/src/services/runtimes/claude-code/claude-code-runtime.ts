@@ -479,6 +479,18 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     const uiStateEntry = opts?.additionalContext?.find((e) => e.kind === 'ui_state');
     if (uiStateEntry?.kind === 'ui_state') session.uiState = uiStateEntry.data;
 
+    // Where this turn is happening, when a ROOM triggered it — what makes a
+    // `control_ui` taken inside a room turn land on the ROOM's shared canvas
+    // instead of on this agent's private session stream (spec `room-canvas` §5.3).
+    //
+    // **Assigned unconditionally, `undefined` included, and that is the whole
+    // line.** The `ui_state` lift above sets and never clears, which is harmless
+    // for a snapshot and would be a defect here: a session that ran one room
+    // turn would keep claiming to be in that room for every later direct turn,
+    // and the person's own `open_canvas` would land in a channel they are not
+    // looking at.
+    session.roomTurn = opts?.roomTurn;
+
     const cwdKey = opts?.cwd || session.cwd || this.cwd;
 
     const meshAgent = this.meshCore?.getByPath(cwdKey);

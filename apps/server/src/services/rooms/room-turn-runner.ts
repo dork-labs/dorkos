@@ -47,7 +47,9 @@ import type { InterruptReceipt } from '@dorkos/shared/types';
 import { logger } from '../../lib/logger.js';
 import { ROOMS } from '../../config/constants.js';
 import { projectRoomAttachments } from './attachments/attachment-projection.js';
-import { getRoomAttachmentStore, tryGetRoomRepoService } from './index.js';
+import { ulid } from 'ulidx';
+import type { UiCommand } from '@dorkos/shared/schemas';
+import { getRoomAttachmentStore, getRoomService, tryGetRoomRepoService } from './index.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 // The one VALUE this module takes from the port, so it comes straight from the
 // port rather than through `room-trigger.js`'s type re-export below: a value
@@ -763,8 +765,18 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // — which is a claim held, and an agent shown as working, for the life of
       // the process. Unknown means "not mine", which is exactly right.
       const ownTurn: OwnTurn = { startSeq: null };
+      // **This turn's dispatch id, minted once and used in three places.** It
+      // travels to the runtime as `MessageOpts.roomTurn.turnId`, so the
+      // claude-code `control_ui` handler counts its canvas changes against the
+      // same ceiling this collector's tap does; and it is what
+      // `RoomCanvasService.finishTurn` composes the turn's one line from. One id
+      // is what makes the handler's ledger and the tap's the SAME ledger.
+      const canvasTurnId = ulid();
       const collecting = collectReply(projector, projector.getCursor(), {
         waitMs,
+        roomId: request.room.id,
+        authorId: request.authorId,
+        turnId: canvasTurnId,
         // A ceiling below the wait would stop the room listening before it
         // stopped waiting, so a perfectly healthy turn would be reported as
         // failed and its answer dropped — this PR's own defect, walked back in
@@ -863,6 +875,11 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         content: prompt,
         cwd: request.cwd,
         roomContext,
+        // Routing metadata, never prompt context: the room, the acting member and
+        // this turn's id, so a `control_ui` the turn takes lands on the ROOM's
+        // shared canvas rather than on this agent's private session stream
+        // (spec `room-canvas` §5.3).
+        roomTurn: { roomId: request.room.id, authorId: request.authorId, turnId: canvasTurnId },
         // Omitted, never passed as an empty string, when this room has no files.
         // Not because `''` misbehaves today — it does not: all three adapters
         // guard with `if (opts?.systemPromptAppend)` and claude-code's launch
@@ -1106,6 +1123,44 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
   };
 }
 
+/**
+ * Put one unstamped `ui_command` on the room's canvas, through the single
+ * writer.
+ *
+ * A thin wrapper that DISCARDS the result, because on this path there is nobody
+ * to return it to: the turn produced the event and has moved on, so a refusal
+ * has no channel back to the model. That is stated rather than hidden — what the
+ * design guarantees here instead is that an operation nothing applied is never
+ * claimed applied anywhere.
+ *
+ * Never throws: a canvas that cannot be reached must not take a room turn's
+ * reply down with it.
+ *
+ * @param bounds - The room, the acting member and this turn's dispatch id.
+ * @param command - The command the turn produced.
+ */
+function applyRoomCanvasCommand(
+  bounds: { roomId: string; authorId: string; turnId: string; cwd?: string },
+  command: UiCommand
+): void {
+  try {
+    getRoomService().canvas.apply({
+      roomId: bounds.roomId,
+      authorId: bounds.authorId,
+      turnId: bounds.turnId,
+      command,
+      ...(bounds.cwd !== undefined ? { cwd: bounds.cwd } : {}),
+    });
+  } catch (err) {
+    logger.warn('[rooms] a turn’s canvas command could not be applied', {
+      roomId: bounds.roomId,
+      turnId: bounds.turnId,
+      action: command.action,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 /** One turn's output, once it has closed one way or another. */
 interface CollectedTurn {
   /** The agent's text, or `null` if it said nothing worth posting. */
@@ -1270,6 +1325,18 @@ function collectReply(
     onActivity: (activity: SessionActivity | null) => void;
     graceMs: number;
     onProducing: () => void;
+    /** The room this turn is answering in — where its canvas commands land. */
+    roomId: string;
+    /** The agent taking the turn, as a room author. What a document is attributed to. */
+    authorId: string;
+    /**
+     * This turn's dispatch id.
+     *
+     * The SAME id `MessageOpts.roomTurn` carried into the runtime, so the
+     * handler's ledger entries and this tap's are one ledger and the per-turn
+     * canvas ceiling counts them together.
+     */
+    turnId: string;
   }
 ): ReplyCollector {
   const abort = new AbortController();
@@ -1381,6 +1448,25 @@ function collectReply(
         if (event.type === 'tool_call') {
           bounds.onActivity(deriveSessionActivity(event.toolName, event.input) ?? null);
         }
+        // **The runtime-neutral half of the canvas seam** (spec `room-canvas`
+        // §5.5). A `ui_command` reaches the projector from three producers and
+        // only one of them — claude-code's `control_ui` — is a tool handler that
+        // can call the writer itself. That one STAMPS what it wrote; codex and
+        // the scripted test-mode runtime stamp nothing, so an unstamped event is
+        // exactly the set this tap owns.
+        //
+        // **The stamp is the dedupe, and it is the whole of it.** Apply a
+        // stamped event here too and every claude-code operation lands twice:
+        // two rows for content with no dedupe key, two counts against the
+        // ceiling, two mentions in the turn's one line.
+        //
+        // What a tap-only producer gives up is stated rather than hidden: its
+        // refusal cannot reach the model, because the turn has moved on. The
+        // property that holds instead is that an operation nothing applied is
+        // never claimed applied anywhere — no row, no frame, and no line.
+        if (event.type === 'ui_command' && event.applied === undefined) {
+          applyRoomCanvasCommand(bounds, event.command);
+        }
         if (event.type === 'turn_end') {
           ended = true;
           failed = event.terminalReason === 'error';
@@ -1407,6 +1493,26 @@ function collectReply(
       // exit says so — and `clearActivity` makes saying it three times cost one
       // publish.
       clearActivity();
+      // **The turn's one canvas line, posted here so every ending reaches it** —
+      // a turn the ceiling or the deadline killed still reports what it put on
+      // the table. Composed from the SERVICE's per-turn ledger rather than from
+      // what this loop observed, which is what keeps "has a row" and "is named
+      // in the line" the same set: a stamped event that reaches the projector
+      // after this collector has settled still has both.
+      //
+      // Try-wrapped and logged, exactly as the runner wraps
+      // `persistSessionRuntime`: posting can fail (a room archived mid-turn, a
+      // busy database) and a rejection out of here would surface from a `closed`
+      // promise this function documents as never rejecting.
+      try {
+        getRoomService().canvas.finishTurn(bounds.turnId);
+      } catch (err) {
+        logger.warn('[rooms] could not close out a turn’s canvas line', {
+          roomId: bounds.roomId,
+          turnId: bounds.turnId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
     // Whatever was streaming when the turn closed — or when the ceiling gave up
     // on it — is a paragraph too. An abandoned read still keeps what it heard.
