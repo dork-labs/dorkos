@@ -9,10 +9,10 @@ import path from 'node:path';
 import { z } from 'zod';
 
 const MAX_MODELS_CACHE_BYTES = 2 * 1024 * 1024;
-// Codex 0.153.4 uses this exact 300-second freshness window and rewrites
+// Codex 0.154.0 uses this exact 300-second freshness window and rewrites
 // `fetched_at` after an ETag revalidation once half that lifetime has elapsed:
-// https://github.com/openai/codex/blob/rust-v0.153.4/codex-rs/models-manager/src/manager.rs
-// https://github.com/openai/codex/blob/rust-v0.153.4/codex-rs/models-manager/src/cache.rs
+// https://github.com/openai/codex/blob/rust-v0.154.0/codex-rs/models-manager/src/manager.rs
+// https://github.com/openai/codex/blob/rust-v0.154.0/codex-rs/models-manager/src/cache.rs
 const MODELS_CACHE_MAX_AGE_MS = 5 * 60_000;
 const MAX_FUTURE_CLOCK_SKEW_MS = 60_000;
 
@@ -46,8 +46,8 @@ export interface ReadCodexModelContextWindowsOptions {
  * Parse the Codex version from the app-server initialization response.
  *
  * App-server prefixes its own version with the initializing client's name.
- * DorkOS therefore receives `dorkos/0.153.4 (...)`, while a desktop originator
- * can receive `Codex Desktop/0.153.4 (...)`. An unknown format produces no
+ * DorkOS therefore receives `dorkos/0.154.0 (...)`, while a desktop originator
+ * can receive `Codex Desktop/0.154.0 (...)`. An unknown format produces no
  * version and therefore no cache enrichment.
  *
  * @param userAgent - `initialize.result.userAgent` from the running app-server.
