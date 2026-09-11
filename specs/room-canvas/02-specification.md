@@ -781,6 +781,12 @@ operation it applies to a per-`turnId` ledger (§3.1), whichever of its two call
 When the turn settles, the runner calls `RoomCanvasService.finishTurn(turnId)` once — in the same
 `finally` that clears the activity lane, so a turn the ceiling or the deadline killed still reports
 what it put on the table — and that method composes the line, posts the entry and clears the ledger.
+The call is try-wrapped and logged, exactly as the runner wraps `persistSessionRuntime`
+(`room-turn-runner.ts:985-1000`): the entry can fail to post (`ROOM_ARCHIVED` for a room archived
+mid-turn, a busy database), and a failure there clears the ledger, writes one log line, and never
+surfaces as a rejection out of `collectReply`, whose `closed` promise is documented never to reject
+(`room-turn-runner.ts:1316-1318`). The table keeps its rows either way; only the line is lost, and
+the log says so.
 
 This is what keeps "has a row" and "is named in the entry" the same set. Composing from the tap would
 have missed any handler-applied operation whose stamped event reached the projector after the
