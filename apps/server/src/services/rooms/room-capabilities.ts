@@ -173,7 +173,13 @@
  * @module server/services/rooms/room-capabilities
  */
 import { z } from 'zod';
+import { promises as fs } from 'node:fs';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
+import { canvasSourcePath } from './canvas/document-key.js';
+import type { CanvasDocument } from '@dorkos/shared/room-schemas';
+import { FILE_LIMITS } from '../../config/constants.js';
+import { resolveWithinCwd } from '../../lib/file-route-guards.js';
+import { logger } from '../../lib/logger.js';
 import {
   directMessageTitle,
   MERGE_SUMMARY_MAX_CHARS,
@@ -1505,9 +1511,7 @@ export const roomsDomain: CapabilityDomain = {
       invoke: (deps, input, context) => {
         const rooms = requireRoomDeps(deps);
         const caller = callerAuthor(rooms, context);
-        return Promise.resolve(
-          answering(() => readRoomCanvas(rooms, input, caller.id, context.cwd))
-        );
+        return answeringAsync(() => readRoomCanvas(rooms, input, caller.id, context.cwd));
       },
     }),
   ],
@@ -1534,12 +1538,12 @@ export const roomsDomain: CapabilityDomain = {
  * @param callerCwd - Where they are working, when the surface carries it.
  * @returns The list, or the document.
  */
-function readRoomCanvas(
+async function readRoomCanvas(
   rooms: RoomService,
   input: { roomId: string; documentId?: string },
   callerAuthorId: string,
   callerCwd: string | undefined
-): unknown {
+): Promise<unknown> {
   // Membership, asked the same way every other read here asks it.
   rooms.requireMembership(input.roomId, callerAuthorId);
   const canvas = rooms.canvas;
@@ -1568,6 +1572,9 @@ function readRoomCanvas(
     title: sanitizeIdentity(document.title) ?? document.title,
     author: authorLabel(rooms, document.authorId),
     pinned: document.pinned,
+    ...(document.treeKind !== undefined
+      ? { tree: document.treeKind, aheadOfMain: document.aheadOfMain ?? null }
+      : {}),
     openedAt: document.openedAt,
     lastChangedAt: document.lastTouchedAt,
   };
@@ -1580,7 +1587,72 @@ function readRoomCanvas(
         'Ask them to share it, or open your own copy.',
     };
   }
+  // **A file document is read off DISK, not out of the row** (spec §7). The row
+  // records which file this tab is, and the file has very likely changed since
+  // it was opened — handing back the blob would answer with the past and call it
+  // the present. It goes through the same boundary check and the same byte cap
+  // the file route uses, so nothing here widens what a caller can reach.
+  const filePath = canvasSourcePath(document.content);
+  if (filePath !== null) {
+    return { ...metadata, ...(await readFileBacked(rooms, document, filePath)) };
+  }
   return { ...metadata, content: document.content };
+}
+
+/**
+ * Read a file-backed canvas document's CURRENT bytes, through the same guard the
+ * file route uses.
+ *
+ * Three refusals, each handed back as a sentence rather than thrown: the
+ * document's tree was never recorded (an older row), the file is gone, and the
+ * file is too big or is not text. None of them is a failure of the tool — they
+ * are all true things about a file — so each answers with the metadata beside a
+ * `content: null` and says which one it was.
+ *
+ * @param rooms - The rooms service, for the directory the row recorded.
+ * @param document - The document.
+ * @param filePath - The path the document names.
+ * @returns `content` and, on any refusal, the sentence saying why there is none.
+ */
+async function readFileBacked(
+  rooms: RoomService,
+  document: CanvasDocument,
+  filePath: string
+): Promise<{ content: string | null; reason?: string }> {
+  // The directory the ROW recorded, never one derived here: the same boundary
+  // the check ran against at open time is the one it runs against now.
+  const cwd = rooms.canvas.resolvedTreeOf(document.roomId, document.id);
+  if (cwd === null) {
+    return {
+      content: null,
+      reason: 'This document does not record which folder its file is in, so it cannot be read.',
+    };
+  }
+  try {
+    const { resolved } = await resolveWithinCwd(cwd, filePath);
+    const stat = await fs.stat(resolved);
+    if (!stat.isFile()) return { content: null, reason: 'That path is not a file.' };
+    if (stat.size > FILE_LIMITS.MAX_TEXT_FILE_BYTES) {
+      return { content: null, reason: 'That file is too large to read as text.' };
+    }
+    const buffer = await fs.readFile(resolved);
+    // The standard binary heuristic, and git's: a NUL byte anywhere.
+    if (buffer.includes(0)) {
+      return { content: null, reason: 'That file is not text, so there is nothing to read out.' };
+    }
+    return { content: buffer.toString('utf8') };
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') {
+      return { content: null, reason: 'That file is not there any more.' };
+    }
+    logger.warn('[rooms] could not read a canvas document’s file', {
+      roomId: document.roomId,
+      documentId: document.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { content: null, reason: 'That file could not be read just now.' };
+  }
 }
 
 /**

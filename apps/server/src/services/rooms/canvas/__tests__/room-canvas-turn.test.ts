@@ -302,6 +302,78 @@ describe('a room turn’s canvas commands', () => {
     expect(triggered).toHaveLength(1);
   });
 
+  it('records the tree a FILE document was opened against', async () => {
+    // Without the turn's cwd on the collector's bounds, every document the tap
+    // writes records nothing — and the §8.1 reader rule short-circuits to
+    // "anybody may read this", which is the rule inverted rather than relaxed.
+    turnBehaviour = (opts) => {
+      openTurn(opts);
+      opts.projector.ingest({
+        type: 'ui_command',
+        command: { action: 'open_file', sourcePath: 'src/router.ts' },
+      });
+      opts.projector.ingest({ type: 'turn_end' });
+      return { accepted: true, canonicalId: opts.sessionId };
+    };
+    await createSessionRoomTurnRunner().run(turnRequest());
+
+    const [document] = harness.service.canvas.list(room.id);
+    expect(document.treeKind).toBe('agent-cwd');
+    expect(harness.service.canvas.resolvedTreeOf(room.id, document.id)).toBe(ANA);
+    // …and a member standing somewhere else is refused its contents, which is
+    // the behaviour the recorded tree is FOR.
+    expect(harness.service.canvas.mayReadContent(document, '/somewhere/else')).toBe(false);
+    expect(harness.service.canvas.mayReadContent(document, ANA)).toBe(true);
+  });
+
+  it('names an operation that lands AFTER its turn closed, exactly once', async () => {
+    // The ceiling can give up on a turn the agent is still running, and the spec
+    // allows that agent to carry on. An operation from it used to open a fresh
+    // ledger nothing would ever close: a row on the table with no line in the
+    // log naming it, and a map that grew for the life of the process.
+    turnBehaviour = (opts) => {
+      openTurn(opts);
+      opts.projector.ingest({ type: 'ui_command', command: jsonCommand('during') });
+      opts.projector.ingest({ type: 'turn_end' });
+      return { accepted: true, canonicalId: opts.sessionId };
+    };
+    await createSessionRoomTurnRunner().run(turnRequest());
+    const turnId = triggered[0].roomTurn?.turnId ?? '';
+    expect(turnId).not.toBe('');
+
+    // The straggler: same turn id, long after the collector settled.
+    const late = harness.service.canvas.apply({
+      roomId: room.id,
+      authorId: ana,
+      turnId,
+      command: jsonCommand('after the ceiling gave up'),
+    });
+    expect(late.applied).toBe(true);
+
+    const canvasLines = log().filter((entry) => entry.body.canvas !== undefined);
+    // Two lines, not one and not three: the turn's own, and the straggler's.
+    // Every applied operation is named exactly once.
+    expect(canvasLines).toHaveLength(2);
+    expect(canvasLines[0].body.canvas?.ops.map((op) => op.title)).toEqual(['during']);
+    expect(canvasLines[1].body.canvas?.ops.map((op) => op.title)).toEqual([
+      'after the ceiling gave up',
+    ]);
+    // And it left nothing behind: the ledger it would once have opened is not
+    // there, because it was never filed.
+    expect(harness.service.canvas.bookkeepingSize().openLedgers).toBe(0);
+  });
+
+  it('keeps its bookkeeping bounded however many turns run', async () => {
+    // The other half: `finishTurn` remembers a turn so a straggler is
+    // recognised, and that memory has to stop growing. Driven past the count
+    // bound rather than reasoned about.
+    const canvas = harness.service.canvas;
+    for (let n = 0; n < 700; n += 1) canvas.finishTurn(`turn-${n}`);
+    const { openLedgers, rememberedTurns } = canvas.bookkeepingSize();
+    expect(openLedgers).toBe(0);
+    expect(rememberedTurns).toBeLessThanOrEqual(500);
+  });
+
   it('writes no line at all for a turn that changed nothing', async () => {
     turnBehaviour = (opts) => {
       openTurn(opts);

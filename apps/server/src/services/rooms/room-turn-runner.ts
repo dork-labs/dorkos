@@ -777,6 +777,13 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         roomId: request.room.id,
         authorId: request.authorId,
         turnId: canvasTurnId,
+        // The tree this turn stands in, so a file document the tap writes
+        // records where its path was resolved — and every later read of it is
+        // judged against that directory rather than against nothing.
+        cwd: request.cwd,
+        // And how far that copy is ahead of the room's `main`, as the dispatcher
+        // measured it for this turn. `null` is "not measured".
+        aheadOfMain: request.roomContext.files?.ahead ?? null,
         // A ceiling below the wait would stop the room listening before it
         // stopped waiting, so a perfectly healthy turn would be reported as
         // failed and its answer dropped — this PR's own defect, walked back in
@@ -879,7 +886,15 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         // this turn's id, so a `control_ui` the turn takes lands on the ROOM's
         // shared canvas rather than on this agent's private session stream
         // (spec `room-canvas` §5.3).
-        roomTurn: { roomId: request.room.id, authorId: request.authorId, turnId: canvasTurnId },
+        roomTurn: {
+          roomId: request.room.id,
+          authorId: request.authorId,
+          turnId: canvasTurnId,
+          cwd: request.cwd,
+          // Measured once, here, by the code that already measured it for the
+          // context block. `null` means git could not be asked — never "level".
+          aheadOfMain: request.roomContext.files?.ahead ?? null,
+        },
         // Omitted, never passed as an empty string, when this room has no files.
         // Not because `''` misbehaves today — it does not: all three adapters
         // guard with `if (opts?.systemPromptAppend)` and claude-code's launch
@@ -1337,6 +1352,25 @@ function collectReply(
      * canvas ceiling counts them together.
      */
     turnId: string;
+    /**
+     * The directory this turn is STANDING in — the one the dispatcher resolved,
+     * which in a project room is this agent's own working copy of the room's
+     * files and its own folder otherwise.
+     *
+     * Carried because a file document records the tree it was resolved against,
+     * and every later read of it is checked on the READER against that stored
+     * directory (spec `room-canvas` §8.1). Without it every document the tap
+     * writes records nothing, and the reader rule short-circuits to "anybody may
+     * read this" — which is exactly the rule inverted.
+     */
+    cwd: string;
+    /**
+     * Commits this agent's working copy has that the room's `main` does not, as
+     * the dispatcher measured them for this turn — the label half of §8, taken
+     * as a snapshot at open time. `null` means git could not be asked, which is
+     * a different claim from "level with the room".
+     */
+    aheadOfMain: number | null;
   }
 ): ReplyCollector {
   const abort = new AbortController();

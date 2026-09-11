@@ -1050,6 +1050,25 @@ export const canvasDocuments = sqliteTable(
     sourceLabel: text('source_label'),
     /** Absolute directory this document's `sourcePath` was resolved against, or null. */
     resolvedCwd: text('resolved_cwd'),
+    /**
+     * WHICH tree that directory is, for the label a reader is shown: the room's
+     * own shared copy, one member's working copy of it, or somebody's own
+     * project. Null for a document that names no file.
+     *
+     * Stored rather than re-derived, because the answer depends on what the room
+     * held at OPEN time — a room that gains or loses a repo later must not
+     * silently relabel documents opened before it did.
+     */
+    treeKind: text('tree_kind'),
+    /**
+     * Commits this member's working copy had that the room's `main` did not, at
+     * open time — a snapshot with a timestamp, never a live number.
+     *
+     * Null means "not measured", never "level with the room". The two must not
+     * collapse: a label saying a copy is up to date when nothing checked is one
+     * somebody will act on.
+     */
+    aheadOfMain: integer('ahead_of_main'),
     /** Pinned documents sort first and are never evicted. */
     pinned: integer('pinned', { mode: 'boolean' }).notNull().default(false),
     /**

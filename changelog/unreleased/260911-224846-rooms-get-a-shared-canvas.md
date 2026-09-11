@@ -10,6 +10,8 @@ covers:
   - 'test(runtimes): make the room canvas a conformance gate (DOR-1999)'
   - 'test(test-mode): let a scripted turn report what the canvas told it (DOR-1999)'
   - "docs(rooms): write down how a room's canvas works (DOR-1999)"
+  - 'test(db): name canvas_documents in the table census (DOR-1999)'
+  - 'fix(rooms): close the seven holes an adversarial read found in the canvas (DOR-1999)'
 ---
 
 ### Added

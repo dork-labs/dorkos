@@ -912,6 +912,28 @@ export const CanvasDocumentSchema = z
     editingBy: z.string().min(1).optional(),
     /** Where a file document came from, for the reader: `Ana's copy · 3 ahead of main`. */
     sourceLabel: z.string().optional(),
+    /**
+     * WHICH tree a file document's path was resolved against, so a reader can be
+     * told whose copy they are looking at.
+     *
+     * - `room-main` — the room's own shared copy. Every member can read it.
+     * - `worktree` — one member's working copy of the room's files.
+     * - `agent-cwd` — somebody's own project, in a room with no files of its own.
+     *
+     * Absent for a document that names no file. Recorded at OPEN time, so a room
+     * that gains or loses a repo later never relabels what is already on the
+     * table.
+     */
+    treeKind: z.enum(['room-main', 'worktree', 'agent-cwd']).optional(),
+    /**
+     * Commits that member's copy had which the room's `main` did not, when the
+     * document was opened — a snapshot, never a live number.
+     *
+     * `null` means "not measured" rather than "level with the room". A label
+     * that said a copy was up to date when nothing checked is one somebody would
+     * act on.
+     */
+    aheadOfMain: z.number().int().nonnegative().nullable().optional(),
     openedAt: z.string().min(1),
     lastActiveAt: z.string().min(1),
   })

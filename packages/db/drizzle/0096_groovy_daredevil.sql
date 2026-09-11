@@ -9,6 +9,8 @@ CREATE TABLE `canvas_documents` (
 	`source_key` text,
 	`source_label` text,
 	`resolved_cwd` text,
+	`tree_kind` text,
+	`ahead_of_main` integer,
 	`pinned` integer DEFAULT false NOT NULL,
 	`rev` integer NOT NULL,
 	`last_touched_by` text NOT NULL,

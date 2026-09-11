@@ -37,7 +37,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DRIZZLE_DIR = path.join(__dirname, '../../drizzle');
 
 /** The migration under test. */
-const TAG = '0096_charming_darwin';
+const TAG = '0096_groovy_daredevil';
 
 type Raw = Database.Database;
 
@@ -76,8 +76,9 @@ function seedDocument(
     .prepare(
       `INSERT INTO canvas_documents
         (id, scope, room_id, content, title, content_type, author_id, source_key, source_label,
-         resolved_cwd, pinned, rev, last_touched_by, last_touched_at, opened_at, last_active_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+         resolved_cwd, tree_kind, ahead_of_main, pinned, rev, last_touched_by, last_touched_at,
+         opened_at, last_active_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
     )
     .run(
       input.id,
@@ -88,6 +89,8 @@ function seedDocument(
       'url',
       'author-ana',
       input.sourceKey,
+      null,
+      null,
       null,
       null,
       0,
@@ -133,6 +136,8 @@ describe('0096 — the room canvas table', () => {
       'source_key',
       'source_label',
       'resolved_cwd',
+      'tree_kind',
+      'ahead_of_main',
       'pinned',
       'rev',
       'last_touched_by',

@@ -32,6 +32,8 @@ export interface CanvasDocumentInsert {
   sourceKey: string | null;
   sourceLabel: string | null;
   resolvedCwd: string | null;
+  treeKind: 'room-main' | 'worktree' | 'agent-cwd' | null;
+  aheadOfMain: number | null;
   pinned: boolean;
   rev: number;
   lastTouchedBy: string;
@@ -70,6 +72,10 @@ function project(row: {
   sourceKey: string | null;
   sourceLabel: string | null;
   resolvedCwd: string | null;
+  // A `text` column, so SQLite hands back any string. Narrowed below rather
+  // than trusted: a row written by an older build carries whatever it carried.
+  treeKind: string | null;
+  aheadOfMain: number | null;
   pinned: boolean;
   rev: number;
   lastTouchedBy: string;
@@ -88,7 +94,26 @@ function project(row: {
     });
     return null;
   }
-  return { ...row, content: content.data };
+  return { ...row, content: content.data, treeKind: narrowTreeKind(row.treeKind) };
+}
+
+/** The three trees a file document can have been resolved against. */
+const TREE_KINDS = new Set(['room-main', 'worktree', 'agent-cwd']);
+
+/**
+ * Read a stored tree kind back, or `null` for anything this build does not know.
+ *
+ * Narrowed rather than cast: the column is text, so a row written by a future
+ * build — or by a hand-edited database — must degrade to "no label" rather than
+ * reach a reader as a value the client cannot draw.
+ *
+ * @param stored - What the column held.
+ * @returns The kind, or `null`.
+ */
+function narrowTreeKind(stored: string | null): CanvasDocumentRow['treeKind'] {
+  return stored !== null && TREE_KINDS.has(stored)
+    ? (stored as CanvasDocumentRow['treeKind'])
+    : null;
 }
 
 /** Reads and writes over `canvas_documents`. */
@@ -187,6 +212,8 @@ export class CanvasDocumentStore {
       contentType: string;
       sourceLabel: string | null;
       resolvedCwd: string | null;
+      treeKind: 'room-main' | 'worktree' | 'agent-cwd' | null;
+      aheadOfMain: number | null;
       pinned: boolean;
       rev: number;
       lastTouchedBy: string;
@@ -351,6 +378,11 @@ export function toCanvasDocument(
     lastTouchedAt: row.lastTouchedAt,
     ...(live && row.editingBy !== null ? { editingBy: row.editingBy } : {}),
     ...(row.sourceLabel !== null ? { sourceLabel: row.sourceLabel } : {}),
+    // Both together or neither: `aheadOfMain` is a fact ABOUT a tree, and a
+    // count with no tree to attach it to is a number nobody can place. `null`
+    // travels on purpose — it means "not measured", which is a different claim
+    // from "level with the room" and must not collapse into it.
+    ...(row.treeKind !== null ? { treeKind: row.treeKind, aheadOfMain: row.aheadOfMain } : {}),
     openedAt: row.openedAt,
     lastActiveAt: row.lastActiveAt,
   };

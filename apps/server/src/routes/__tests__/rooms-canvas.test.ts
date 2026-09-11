@@ -14,7 +14,7 @@
  * shared helper.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import request from '@dorkos/test-utils/supertest';
+import request, { type Test } from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { agents, type Db } from '@dorkos/db';
@@ -52,7 +52,10 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import { createApp, finalizeApp } from '../../app.js';
 import { createRoomSubsystem, setRoomService } from '../../services/rooms/index.js';
-import { resetAgentIdentityService } from '../../services/core/agent-identity/agent-identity-service.js';
+import {
+  initAgentIdentityService,
+  resetAgentIdentityService,
+} from '../../services/core/agent-identity/agent-identity-service.js';
 
 const app = createApp();
 finalizeApp(app);
@@ -175,6 +178,77 @@ describe('the room canvas routes', () => {
   });
 
   describe('the gate', () => {
+    /**
+     * Ask as an agent this machine knows and the room does not.
+     *
+     * A REAL non-member caller rather than a header the server ignores: the
+     * whole point is that `resolveCaller` happily names this caller — that is
+     * its job — and the gate is what has to refuse them.
+     */
+    async function seedOutsider(): Promise<string> {
+      const now = new Date().toISOString();
+      db.insert(agents)
+        .values({
+          id: 'ULID_MALLORY',
+          name: 'mallory',
+          displayName: 'Mallory',
+          runtime: 'claude-code',
+          projectPath: '/agents/mallory',
+          behaviorJson: '{"responseMode":"silent"}',
+          registeredAt: now,
+          updatedAt: now,
+        })
+        .run();
+      const identity = initAgentIdentityService(db);
+      return identity.mint({ agentPath: '/agents/mallory', displayName: 'Mallory' });
+    }
+
+    it('refuses a real NON-MEMBER on every route, before it reads anything', async () => {
+      const created = await open('https://example.test/private');
+      const token = await seedOutsider();
+      const asOutsider = (req: Test) => req.set('X-DorkOS-Agent', token);
+
+      const listed = await asOutsider(request(testServer).get(`/api/rooms/${roomId}/canvas`));
+      const read = await asOutsider(
+        request(testServer).get(`/api/rooms/${roomId}/canvas/${created.body.id}`)
+      );
+      // The route the gap was found on: a body that asks for nothing used to
+      // fall through every branch and answer 200 with the document.
+      const patched = await asOutsider(
+        request(testServer).patch(`/api/rooms/${roomId}/canvas/${created.body.id}`).send({})
+      );
+      const deleted = await asOutsider(
+        request(testServer).delete(`/api/rooms/${roomId}/canvas/${created.body.id}`)
+      );
+      const editing = await asOutsider(
+        request(testServer)
+          .post(`/api/rooms/${roomId}/canvas/${created.body.id}/editing`)
+          .send({ editing: true })
+      );
+      const opened = await asOutsider(
+        request(testServer)
+          .post(`/api/rooms/${roomId}/canvas`)
+          .send({ content: urlContent('https://example.test/theirs') })
+      );
+
+      for (const [name, res] of Object.entries({
+        listed,
+        read,
+        patched,
+        deleted,
+        editing,
+        opened,
+      })) {
+        expect(res.status, `${name} answered a stranger`).toBe(404);
+        expect(JSON.stringify(res.body), `${name} leaked the document`).not.toContain(
+          'example.test/private'
+        );
+      }
+      // …and nothing they sent landed.
+      const listedAsMember = await request(testServer).get(`/api/rooms/${roomId}/canvas`);
+      expect(listedAsMember.body.documents).toHaveLength(1);
+    });
+
     it('answers a room that does not exist exactly as it answers one you cannot see', async () => {
       // Both 404 with the same code, so an id tells a caller nothing. Asserted
       // on the ROUTE rather than on the helper, because that is where a future
@@ -207,6 +281,19 @@ describe('the room canvas routes', () => {
       const listed = await request(testServer).get(`/api/rooms/${roomId}/canvas`);
       expect(listed.status).toBe(200);
       expect(listed.body.documents).toHaveLength(1);
+    });
+
+    it('refuses a PATCH that asks for NOTHING, rather than answering 200', async () => {
+      // `{}` reaches no branch in the handler, so before the gate moved it fell
+      // straight through to the response with the document it had fetched.
+      const documentId = (await request(testServer).get(`/api/rooms/${roomId}/canvas`)).body
+        .documents[0].id;
+      const res = await request(testServer)
+        .patch(`/api/rooms/${roomId}/canvas/${documentId}`)
+        .send({});
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('ROOM_ARCHIVED');
+      expect(JSON.stringify(res.body)).not.toContain('example.test/before');
     });
 
     it('refuses every WRITE with 409', async () => {

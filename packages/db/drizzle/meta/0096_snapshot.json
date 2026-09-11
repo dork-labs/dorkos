@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "7ef18afc-7f41-4ca3-9ea0-0c4020712375",
+  "id": "59601ee2-9b04-4f1f-8b6a-45ab4b7caef2",
   "prevId": "c74dac35-eb56-450f-91f3-1f7b1461e30a",
   "tables": {
     "a2a_tasks": {
@@ -6700,6 +6700,20 @@
         "resolved_cwd": {
           "name": "resolved_cwd",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "tree_kind": {
+          "name": "tree_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ahead_of_main": {
+          "name": "ahead_of_main",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false

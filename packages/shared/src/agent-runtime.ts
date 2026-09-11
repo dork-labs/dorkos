@@ -812,6 +812,21 @@ export interface MessageOpts extends SessionSettings {
     authorId: string;
     /** The room turn's dispatch id. The per-turn canvas ceiling is counted against it. */
     turnId: string;
+    /**
+     * Where the turn is standing, so a canvas document that names a FILE records
+     * the tree its path was resolved against.
+     */
+    cwd?: string;
+    /**
+     * Commits this agent's working copy has that the room's `main` does not, as
+     * the dispatcher measured them for THIS turn.
+     *
+     * Carried on the marker rather than measured again where it is used, because
+     * the measurement is a `git` call and the one place that can take it has
+     * already taken it. `null` — or absent — means NOT MEASURED, which is a
+     * different claim from "level with the room" and must not collapse into it.
+     */
+    aheadOfMain?: number | null;
   };
   /**
    * Title to assign the session on its first turn, skipping auto-generation.

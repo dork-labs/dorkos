@@ -9770,6 +9770,21 @@
           "sourceLabel": {
             "type": "string"
           },
+          "treeKind": {
+            "type": "string",
+            "enum": [
+              "room-main",
+              "worktree",
+              "agent-cwd"
+            ]
+          },
+          "aheadOfMain": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
           "openedAt": {
             "type": "string",
             "minLength": 1

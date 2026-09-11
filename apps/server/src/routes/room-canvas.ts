@@ -20,7 +20,7 @@
  *
  * @module routes/room-canvas
  */
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import {
   CanvasEditingRequestSchema,
   OpenCanvasDocumentRequestSchema,
@@ -52,19 +52,42 @@ interface CanvasParams {
   documentId: string;
 }
 
+/**
+ * Refuse anybody who may not act on this room's canvas, BEFORE a single row is
+ * read.
+ *
+ * **The order is the whole of it.** `resolveCaller` answers for any
+ * authenticated caller — that is its job — so a handler that reads first and
+ * gates afterwards has already fetched the document by the time it decides
+ * whether the reader may have it. `requireMembership` is the gate every other
+ * room read uses, and it refuses a non-member with the same `ROOM_NOT_FOUND` a
+ * room that does not exist gets, so a room id is never a probe.
+ *
+ * `forWrite` adds the archived-room refusal. Reads answer for an archived room
+ * on purpose — the record survives, the activity stops — and putting that check
+ * on a read would take the record away with it.
+ *
+ * @param req - The request, for its caller and its `:id`.
+ * @param res - The response, for `resolveCaller`.
+ * @param forWrite - Whether this route changes the canvas.
+ * @returns The caller's author id.
+ * @throws {RoomError} `ROOM_NOT_FOUND` for a stranger, `ROOM_ARCHIVED` for a
+ *   write into a room that has been put away.
+ */
+function requireCanvasAccess(req: Request<CanvasParams>, res: Response, forWrite: boolean): string {
+  const callerId = resolveCaller(req, res).id;
+  const room = getRoomService().requireMembership(req.params.id, callerId);
+  if (forWrite && room.archived) {
+    throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
+  }
+  return callerId;
+}
+
 /** GET / — everything on this room's canvas, pinned first then most recent. */
 router.get<CanvasParams>('/', (req, res) => {
   try {
-    const service = getRoomService();
-    const caller = resolveCaller(req, res);
-    // The membership check, asked the same way the stream handler asks it:
-    // a room this caller may not see answers 404, and so does one that is not
-    // there. Asked before the table is read, so nothing leaks from the shape of
-    // the answer.
-    if (!service.getRoom(req.params.id, caller.id)) {
-      return sendError(res, 404, 'No such room', 'ROOM_NOT_FOUND');
-    }
-    res.json({ documents: service.canvas.list(req.params.id) });
+    requireCanvasAccess(req, res, false);
+    res.json({ documents: getRoomService().canvas.list(req.params.id) });
   } catch (err) {
     sendRoomError(res, err, 'GET /:id/canvas');
   }
@@ -73,12 +96,8 @@ router.get<CanvasParams>('/', (req, res) => {
 /** GET /:documentId — one document, content included. */
 router.get<CanvasParams>('/:documentId', (req, res) => {
   try {
-    const service = getRoomService();
-    const caller = resolveCaller(req, res);
-    if (!service.getRoom(req.params.id, caller.id)) {
-      return sendError(res, 404, 'No such room', 'ROOM_NOT_FOUND');
-    }
-    const document = service.canvas.get(req.params.id, req.params.documentId);
+    requireCanvasAccess(req, res, false);
+    const document = getRoomService().canvas.get(req.params.id, req.params.documentId);
     if (!document) {
       return sendError(
         res,
@@ -98,9 +117,10 @@ router.post<CanvasParams>('/', (req, res) => {
   const body = parseBody(OpenCanvasDocumentRequestSchema, req.body, res);
   if (!body) return;
   try {
+    const caller = requireCanvasAccess(req, res, true);
     const document = getRoomService().canvas.open(
       req.params.id,
-      resolveCaller(req, res).id,
+      caller,
       body.content,
       ...(body.pinned !== undefined ? [{ pinned: body.pinned }] : [])
     );
@@ -121,8 +141,12 @@ router.patch<CanvasParams>('/:documentId', (req, res) => {
   const body = parseBody(UpdateCanvasDocumentRequestSchema, req.body, res);
   if (!body) return;
   try {
+    // Gated FIRST, and this is the route the gap was found on: a body of `{}`
+    // asks for nothing, so every branch below was skipped and the handler
+    // answered 200 with the document it had already fetched — to a caller who
+    // may not be a member, out of a room that may be archived.
+    const caller = requireCanvasAccess(req, res, true);
     const service = getRoomService();
-    const caller = resolveCaller(req, res).id;
     const roomId = req.params.id;
     const documentId = req.params.documentId;
     let document = service.canvas.get(roomId, documentId);
@@ -149,7 +173,8 @@ router.patch<CanvasParams>('/:documentId', (req, res) => {
 /** DELETE /:documentId — take a document off the table. */
 router.delete<CanvasParams>('/:documentId', (req, res) => {
   try {
-    getRoomService().canvas.close(req.params.id, resolveCaller(req, res).id, req.params.documentId);
+    const caller = requireCanvasAccess(req, res, true);
+    getRoomService().canvas.close(req.params.id, caller, req.params.documentId);
     res.status(204).end();
   } catch (err) {
     sendRoomError(res, err, 'DELETE /:id/canvas/:documentId');
@@ -169,13 +194,9 @@ router.post<CanvasParams>('/:documentId/editing', (req, res) => {
   const body = parseBody(CanvasEditingRequestSchema, req.body, res);
   if (!body) return;
   try {
+    const caller = requireCanvasAccess(req, res, true);
     res.json(
-      getRoomService().canvas.heartbeat(
-        req.params.id,
-        resolveCaller(req, res).id,
-        req.params.documentId,
-        body.editing
-      )
+      getRoomService().canvas.heartbeat(req.params.id, caller, req.params.documentId, body.editing)
     );
   } catch (err) {
     sendRoomError(res, err, 'POST /:id/canvas/:documentId/editing');

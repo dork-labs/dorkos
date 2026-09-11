@@ -30,7 +30,7 @@ export const CONTROL_UI_DESCRIPTION = `Control the DorkOS client UI. Actions:
 - open_sidebar / close_sidebar
 - switch_sidebar_tab: { tab: "overview"|"sessions"|"schedules"|"connections" } — select a sidebar tab. The sidebar tab strip exists ONLY in the embedded DorkOS app (the Obsidian plugin); the web cockpit shows a persistent agent roster with no tab strip, so this is a no-op there (like open_terminal off the web).
 - open_canvas: { content: <canvas>, preferredWidth?: 20-80 } — reveal the canvas pane with content
-- update_canvas: { content: <canvas> } — replace the current canvas content
+- update_canvas: { content: <canvas>, documentId?: string } — replace what a canvas document shows. In a session, omitting documentId acts on the active document; in a ROOM there is no shared active document, so omitting it means "the last document YOU opened there" and passing one acts on somebody else's.
   <canvas> is EXACTLY ONE of these shapes (note each type's payload key differs):
     { type: "markdown", content: "<markdown text>", title?: string, sourcePath?: string }  // markdown goes in "content", NOT "markdown"/"text"
     { type: "url", url: "https://…", title?: string }
@@ -44,7 +44,7 @@ export const CONTROL_UI_DESCRIPTION = `Control the DorkOS client UI. Actions:
 - open_diff: { sourcePath: string } — open a review of what YOU changed in a file: a diff of the file's current contents against its state before your first edit this session, with per-hunk accept/reject the user drives. DorkOS auto-opens this when you edit a file, so use it only to deliberately re-surface a change for review (e.g. "here's exactly what I changed"). Opens as a diff document; repeat opens of the same file refresh it in place.
 - open_terminal: { cwd?: string } — reveal the workbench Terminal so the user has a shell in this session's worktree. Use it when you're about to suggest commands the user should run, or want them to watch a build/test as it happens. The terminal always runs in the session's own working directory; cwd is an optional hint. Terminals are web-only — in environments without one (e.g. the Obsidian plugin) this surfaces a brief notice that the terminal isn't available here instead of opening anything.
 - browser_navigate: { url: string } — open a page in the workbench's embedded browser: a running local dev server (localhost), a local HTML file in the working directory, or an external URL. Use it to show the user a live preview of something you built or a page relevant to the work. Opens as a new browser document; navigating to a URL that's already open just re-focuses it.
-- close_canvas
+- close_canvas: { documentId?: string } — close a canvas document. Same targeting rule as update_canvas.
 - open_pip: { title?: string } — pop the session's NEWEST inline dorkos-ui widget into the floating picture-in-picture panel (a bottom sheet on phones). The panel FOLLOWS the live widget fence, so you MUST first emit the widget as an inline \`\`\`dorkos-ui fence in a message, THEN call open_pip. Each subsequent re-emit of that fence updates the PIP live (send the new board as a fresh fence and the floating panel refreshes in place). Use this — NOT open_canvas — when the user asks for PIP, a floating panel, a pop-out, or picture-in-picture: those words mean the floating panel, and open_canvas opens the side canvas instead, which is the wrong surface.
 - close_pip — close the floating picture-in-picture panel.
 - show_toast: { message: string, level?: "success"|"error"|"info"|"warning", description?: string }
@@ -63,6 +63,13 @@ Notes:
  * tool. Registered alongside {@link CONTROL_UI_DESCRIPTION} by both the Claude
  * in-process tool and the Codex scoped `dorkos_ui` MCP server so each exposes an
  * identical tool contract without duplicating the schema.
+ *
+ * **It is the whole advertised surface, not a hint.** The SDK builds the tool's
+ * JSON Schema from exactly these keys and validates a call against it, so a
+ * field that is missing HERE is a field the MCP layer strips before any handler
+ * runs — the argument arrives, the tool succeeds, and the value is simply gone.
+ * Adding a member to `UiCommandSchema` therefore means adding it here too, or
+ * the union grows a field nothing can ever send.
  */
 export const CONTROL_UI_INPUT = {
   action: z.string().describe('The UI action to perform'),
@@ -82,6 +89,16 @@ export const CONTROL_UI_INPUT = {
         '{ type:"image", src:"<https url | data: URI | local file path>", title?:string, alt?:string } (image goes in "src"); ' +
         '{ type:"pdf", src:"<https url | data: URI | local file path>", title?:string } (pdf goes in "src"); ' +
         '{ type:"widget", definition:<dorkos-ui widget document>, title?:string } (render a Tier-1 generative-UI widget in the canvas)'
+    ),
+  documentId: z
+    .string()
+    .optional()
+    .describe(
+      'Which canvas document update_canvas / close_canvas should act on. In a one-on-one ' +
+        'session, omit it to act on the active document (today’s behaviour). In a ROOM there is ' +
+        'no shared active document, so omitting it means "the last document YOU opened in this ' +
+        'room" — pass one to act on a document somebody else put there. Every verb that opens ' +
+        'something gives you back the id to pass.'
     ),
   sourcePath: z
     .string()

@@ -23,7 +23,22 @@
  *
  * @module server/services/rooms/canvas/tests/room-canvas-context
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
+// The file route's own boundary guard, answered for the temp trees these cases
+// stage. What is under test is the CANVAS's rule — which tree a document is read
+// against — not the process-wide boundary, which has its own suite.
+vi.mock('../../../../lib/boundary.js', () => ({
+  validateBoundary: vi.fn(async (p: string) => p),
+  validateBoundaryOrDorkHome: vi.fn(async (p: string) => p),
+  getBoundary: vi.fn(() => '/'),
+  initBoundary: vi.fn().mockResolvedValue('/'),
+  isWithinBoundary: vi.fn().mockResolvedValue(true),
+  BoundaryError: class BoundaryError extends Error {},
+}));
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import { formatRoomContext } from '../../../runtimes/shared/room-context-block.js';
 import { roomsDomain } from '../../room-capabilities.js';
@@ -200,13 +215,23 @@ describe('read_canvas', () => {
       roomDeps: { rooms: h.service },
     });
 
+  /** A real directory with a real file in it — the thing a file document names. */
+  let tree: string;
+
   beforeEach(() => {
+    tree = mkdtempSync(path.join(tmpdir(), 'dorkos-canvas-tree-'));
+    mkdirSync(path.join(tree, 'src'));
+    writeFileSync(path.join(tree, 'src', 'router.ts'), 'export const version = 1;\n');
     harness = createRoomHarness({ agents, runner: scriptedRunner(() => null) });
     roomId = harness.service.createRoom(
       { kind: 'channel', title: 'Backend', members: [], agentPaths: [ANA, BEN] },
       harness.human
     ).id;
     ana = harness.authors.resolveAgent(ANA, 'Ana').id;
+  });
+
+  afterEach(() => {
+    rmSync(tree, { recursive: true, force: true });
   });
 
   it('lists what is on the table, with the viewer count', async () => {
@@ -236,6 +261,65 @@ describe('read_canvas', () => {
     expect(result.content).toEqual({ type: 'json', data: { ok: true }, title: 'the plan' });
   });
 
+  it('reads the file as it is NOW, not the blob as it was opened', async () => {
+    // A canvas document records WHICH file a tab is; the file goes on changing.
+    // Answering with the stored blob would hand back the past and call it the
+    // present, which is the defect this case exists for.
+    writeFileSync(path.join(tree, 'src', 'router.ts'), 'export const version = 2;\n');
+    harness.service.canvas.apply({
+      roomId,
+      authorId: ana,
+      turnId: 'turn-1',
+      command: { action: 'open_file', sourcePath: 'src/router.ts' },
+      cwd: tree,
+    });
+    const [document] = harness.service.canvas.list(roomId);
+    writeFileSync(path.join(tree, 'src', 'router.ts'), 'export const version = 3;\n');
+
+    const result = (await registryFor(harness).invoke(
+      'rooms.readCanvas',
+      { roomId, documentId: document.id },
+      { identity: identityFor(ANA, 'Ana'), cwd: tree }
+    )) as { content: string };
+    expect(result.content).toBe('export const version = 3;\n');
+  });
+
+  it('says so plainly when the file has gone', async () => {
+    harness.service.canvas.apply({
+      roomId,
+      authorId: ana,
+      turnId: 'turn-1',
+      command: { action: 'open_file', sourcePath: 'src/gone.ts' },
+      cwd: tree,
+    });
+    const [document] = harness.service.canvas.list(roomId);
+    const result = (await registryFor(harness).invoke(
+      'rooms.readCanvas',
+      { roomId, documentId: document.id },
+      { identity: identityFor(ANA, 'Ana'), cwd: tree }
+    )) as { content: string | null; reason?: string };
+    expect(result.content).toBeNull();
+    expect(result.reason).toContain('not there any more');
+  });
+
+  it('records WHICH tree a file document belongs to, and how far ahead it is', async () => {
+    harness.service.canvas.apply({
+      roomId,
+      authorId: ana,
+      turnId: 'turn-1',
+      command: { action: 'open_file', sourcePath: 'src/router.ts' },
+      cwd: tree,
+      aheadOfMain: 3,
+    });
+    const [document] = harness.service.canvas.list(roomId);
+    // No repo on this install, so the tree is somebody's own project and there
+    // is nothing to be ahead OF — `null` says "not measured", which is the
+    // honest answer rather than a zero.
+    expect(document.treeKind).toBe('agent-cwd');
+    expect(document.aheadOfMain).toBeNull();
+    expect(document.sourceLabel).toContain("'s project");
+  });
+
   it('withholds the contents of a tree the reader cannot reach, and says why', async () => {
     // The §8.1 property: a canvas document is not a way to read somebody else's
     // project. The reader here is a member in good standing — what stops them is
@@ -245,7 +329,7 @@ describe('read_canvas', () => {
       authorId: ana,
       turnId: 'turn-1',
       command: { action: 'open_file', sourcePath: 'src/router.ts' },
-      cwd: '/work/ana',
+      cwd: tree,
     });
     const [document] = harness.service.canvas.list(roomId);
     const result = (await registryFor(harness).invoke(
@@ -266,15 +350,15 @@ describe('read_canvas', () => {
       authorId: ana,
       turnId: 'turn-1',
       command: { action: 'open_file', sourcePath: 'src/router.ts' },
-      cwd: '/work/ana',
+      cwd: tree,
     });
     const [document] = harness.service.canvas.list(roomId);
     const result = (await registryFor(harness).invoke(
       'rooms.readCanvas',
       { roomId, documentId: document.id },
-      { identity: identityFor(ANA, 'Ana'), cwd: '/work/ana' }
-    )) as { content: unknown };
-    expect(result.content).toMatchObject({ type: 'file', sourcePath: 'src/router.ts' });
+      { identity: identityFor(ANA, 'Ana'), cwd: tree }
+    )) as { content: string };
+    expect(result.content).toBe('export const version = 1;\n');
   });
 
   it('refuses a non-member exactly as it refuses a room that is not there', async () => {

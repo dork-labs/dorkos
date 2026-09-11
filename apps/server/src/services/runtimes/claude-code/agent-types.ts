@@ -160,7 +160,13 @@ export interface AgentSession {
    *
    * Read by the `control_ui` and `get_ui_state` handlers, and by nothing else.
    */
-  roomTurn?: { roomId: string; authorId: string; turnId: string };
+  roomTurn?: {
+    roomId: string;
+    authorId: string;
+    turnId: string;
+    cwd?: string;
+    aheadOfMain?: number | null;
+  };
   /**
    * Memory file paths surfaced by the SDK for this session (SDK 0.2.105+).
    * Populated when `system/memory_recall` events arrive; aggregated across the session.

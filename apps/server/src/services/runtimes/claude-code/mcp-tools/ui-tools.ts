@@ -142,7 +142,13 @@ export interface UiToolSession {
    * Server-derived and assigned on every turn — including to `undefined` — so a
    * session that ran one room turn writes to no room on its next direct turn.
    */
-  roomTurn?: { roomId: string; authorId: string; turnId: string };
+  roomTurn?: {
+    roomId: string;
+    authorId: string;
+    turnId: string;
+    cwd?: string;
+    aheadOfMain?: number | null;
+  };
   /**
    * The session's canonical SDK id, seeded to the request id at creation and
    * updated when the SDK init assigns the real id (see `session-store.ts`).
@@ -278,7 +284,7 @@ export function createGetUiStateHandler(session: UiToolSession) {
  */
 function applyToRoomCanvas(
   session: UiToolSession,
-  roomTurn: { roomId: string; authorId: string; turnId: string },
+  roomTurn: NonNullable<UiToolSession['roomTurn']>,
   command: UiCommand
 ): CanvasApplyResult {
   try {
@@ -287,7 +293,10 @@ function applyToRoomCanvas(
       authorId: roomTurn.authorId,
       turnId: roomTurn.turnId,
       command,
-      ...(session.cwd !== undefined ? { cwd: session.cwd } : {}),
+      // The turn's own directory, preferred over the session's: in a project
+      // room they differ, and the marker's is the tree this TURN was placed in.
+      ...((roomTurn.cwd ?? session.cwd) ? { cwd: roomTurn.cwd ?? session.cwd } : {}),
+      ...(roomTurn.aheadOfMain !== undefined ? { aheadOfMain: roomTurn.aheadOfMain } : {}),
     });
   } catch (err) {
     return {

@@ -86,6 +86,38 @@ export const CANVAS_EDIT_HEARTBEAT_MS = 15_000;
  */
 export const CANVAS_EDIT_TTL_MS = 45_000;
 
+/**
+ * How long a finished turn is remembered, so an operation that lands after its
+ * line was posted is recognised as late rather than filed as new.
+ *
+ * Two hours: comfortably past `rooms.lateReplyCeilingMinutes` at its shipped
+ * default, which is the longest the room itself will wait on a turn. Past it, an
+ * operation from that turn is treated as the opening of a fresh one — it still
+ * gets a row and still gets a line, so nothing is lost either way.
+ */
+const CLOSED_TURN_MEMORY_MS = 2 * 60 * 60_000;
+
+/**
+ * The hard ceiling on how many finished turns are remembered at once.
+ *
+ * The age bound above is the honest one; this is the one that holds on a machine
+ * busy enough that ages alone would not prune fast enough. Dropping the oldest
+ * memory costs nothing but the late-operation shortcut for a turn that finished
+ * long ago.
+ */
+const MAX_REMEMBERED_CLOSED_TURNS = 500;
+
+/**
+ * How long an OPEN ledger is kept for a turn nothing ever closed.
+ *
+ * `finishTurn` runs in the collector's `finally`, so every dispatched turn
+ * reaches it — but a process that died between the write and the close leaves an
+ * entry behind, and a map that only ever grows is a leak however rare the case.
+ * Dropping one loses the LINE and never a row, which is exactly what a failed
+ * post already loses.
+ */
+const LEDGER_TTL_MS = 2 * 60 * 60_000;
+
 /** The six `control_ui` verbs a room's canvas accepts. Everything else is refused. */
 const CANVAS_VERBS = new Set<UiCommand['action']>([
   'open_canvas',
@@ -216,8 +248,23 @@ export class RoomCanvasService {
    */
   private readonly ledger = new Map<
     string,
-    { roomId: string; authorId: string; ops: CanvasLedgerEntry[] }
+    { roomId: string; authorId: string; ops: CanvasLedgerEntry[]; openedAt: number }
   >();
+
+  /**
+   * Turns whose line has already been posted, and when.
+   *
+   * A turn does not stop the moment its collector settles: the ceiling can give
+   * up on a turn the agent is still running, and the spec allows that agent to
+   * keep working. An operation that lands afterwards would otherwise open a
+   * FRESH ledger entry nothing will ever close — a row with no line naming it,
+   * and a map that grows for the life of the process. This set is how such an
+   * operation is recognised, and {@link RoomCanvasService.record} posts its own
+   * one-line entry on the spot instead of filing it.
+   *
+   * Bounded twice: by age and by count. Neither bound loses a row.
+   */
+  private readonly closedTurns = new Map<string, number>();
 
   /**
    * Build the service over its collaborators.
@@ -262,6 +309,10 @@ export class RoomCanvasService {
    *   FILE records the directory it was resolved against. Every later read
    *   resolves against that stored directory rather than re-deriving one, which
    *   is what makes §8.1's reader rule hold for a member who joined afterwards.
+   * @param input.aheadOfMain - Commits this member's copy has that the room's
+   *   `main` does not, measured once per turn by the code that already measures
+   *   it. `null` — or absent — means NOT MEASURED, which is a different claim
+   *   from "level with the room" and is stored as such.
    * @returns What was written, or the sentence explaining why nothing was.
    */
   apply(input: {
@@ -270,6 +321,7 @@ export class RoomCanvasService {
     turnId: string;
     command: UiCommand;
     cwd?: string;
+    aheadOfMain?: number | null;
   }): CanvasApplyResult {
     const { roomId, authorId, turnId, command } = input;
 
@@ -298,7 +350,7 @@ export class RoomCanvasService {
       };
     }
 
-    const plan = this.planFrom(roomId, authorId, command, input.cwd);
+    const plan = this.planFrom(roomId, authorId, command, input.cwd, input.aheadOfMain ?? null);
     if ('reason' in plan) {
       return { applied: false, code: 'CANVAS_NO_DEFAULT_DOCUMENT', reason: plan.reason };
     }
@@ -373,20 +425,9 @@ export class RoomCanvasService {
   finishTurn(turnId: string): void {
     const turn = this.ledger.get(turnId);
     this.ledger.delete(turnId);
+    this.markClosed(turnId);
     if (!turn || turn.ops.length === 0) return;
-    try {
-      this.postCanvasEvent(turn.roomId, {
-        text: canvasChangeSentence(this.displayNameFor(turn.authorId), turn.ops),
-        canvas: { ops: turn.ops },
-        subjectAuthorId: turn.authorId,
-      });
-    } catch (err) {
-      logger.warn('[rooms] could not post a turn’s canvas line; the documents are still there', {
-        roomId: turn.roomId,
-        turnId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+    this.postLine(turn.roomId, turn.authorId, turn.ops, turnId);
   }
 
   /**
@@ -429,6 +470,7 @@ export class RoomCanvasService {
         documentBeingEditedMessage(this.displayNameFor(held))
       );
     }
+    const where = this.resolveTree(roomId, authorId, content, opts.resolvedCwd ?? undefined, null);
     return this.write(roomId, authorId, {
       kind: 'write',
       content,
@@ -436,7 +478,9 @@ export class RoomCanvasService {
       existing,
       pinned: opts.pinned ?? false,
       resolvedCwd: opts.resolvedCwd ?? null,
-      sourceLabel: opts.sourceLabel ?? null,
+      sourceLabel: opts.sourceLabel ?? where.sourceLabel,
+      treeKind: where.treeKind,
+      aheadOfMain: where.aheadOfMain,
     });
   }
 
@@ -472,6 +516,8 @@ export class RoomCanvasService {
       pinned: existing.pinned,
       resolvedCwd: existing.resolvedCwd,
       sourceLabel: existing.sourceLabel,
+      treeKind: existing.treeKind,
+      aheadOfMain: existing.aheadOfMain,
     });
   }
 
@@ -655,6 +701,23 @@ export class RoomCanvasService {
   }
 
   /**
+   * The directory a file document's path was resolved against, as the row
+   * recorded it — `null` when the row records none.
+   *
+   * The one thing a reader needs beyond {@link RoomCanvasService.mayReadContent}
+   * to actually open the file: the same directory the boundary check ran against
+   * at OPEN time is the one it must run against now, so a document opened in one
+   * tree can never later be read against another.
+   *
+   * @param roomId - The room.
+   * @param documentId - The document.
+   * @returns The absolute directory, or `null`.
+   */
+  resolvedTreeOf(roomId: string, documentId: string): string | null {
+    return this.documents.get(roomId, documentId)?.resolvedCwd ?? null;
+  }
+
+  /**
    * Whether this reader may be handed a document's CONTENT, or only its
    * metadata (§8.1).
    *
@@ -685,6 +748,18 @@ export class RoomCanvasService {
     if (repoPath !== null && isWithin(row.resolvedCwd, repoPath)) return true;
     if (readerCwd === undefined) return false;
     return isWithin(row.resolvedCwd, readerCwd);
+  }
+
+  /**
+   * How many turns this service is holding state for.
+   *
+   * @internal Exported for testing only. The two bounds above — the ledger's TTL
+   * and the closed-turn set's age-and-count pair — are the claim, and a test that
+   * could not read the sizes could only assert whatever behaviour happens to
+   * follow from them.
+   */
+  bookkeepingSize(): { openLedgers: number; rememberedTurns: number } {
+    return { openLedgers: this.ledger.size, rememberedTurns: this.closedTurns.size };
   }
 
   // -------------------------------------------------------------------------
@@ -754,21 +829,46 @@ export class RoomCanvasService {
     roomId: string,
     authorId: string,
     content: UiCanvasContent,
-    cwd: string | undefined
-  ): { resolvedCwd: string | null; sourceLabel: string | null } {
+    cwd: string | undefined,
+    aheadOfMain: number | null
+  ): {
+    resolvedCwd: string | null;
+    sourceLabel: string | null;
+    treeKind: CanvasDocumentRow['treeKind'];
+    aheadOfMain: number | null;
+  } {
     if (canvasSourcePath(content) === null || cwd === undefined) {
-      return { resolvedCwd: null, sourceLabel: null };
+      return { resolvedCwd: null, sourceLabel: null, treeKind: null, aheadOfMain: null };
     }
     const repoPath = this.roomRepoPath(roomId);
     if (repoPath !== null && isWithin(cwd, repoPath)) {
       // The room's own shared copy. Every member can already read it, so there
-      // is nothing to warn anybody about and no label to carry.
-      return { resolvedCwd: cwd, sourceLabel: null };
+      // is nothing to warn anybody about and no count to carry — being ahead of
+      // `main` is a thing a WORKING COPY is, and this is `main`.
+      return { resolvedCwd: cwd, sourceLabel: null, treeKind: 'room-main', aheadOfMain: null };
     }
     const who = this.displayNameFor(authorId);
+    if (repoPath === null) {
+      // A room with no files of its own: this is somebody's own project, and
+      // nothing here is measured against anything.
+      return {
+        resolvedCwd: cwd,
+        sourceLabel: `in ${who}'s project`,
+        treeKind: 'agent-cwd',
+        aheadOfMain: null,
+      };
+    }
+    // A member's own working copy of the room's files. The count is a SNAPSHOT
+    // taken when the document was opened, and `null` says nobody measured —
+    // which is why the label drops the count rather than printing a zero.
     return {
       resolvedCwd: cwd,
-      sourceLabel: repoPath !== null ? `${who}'s copy` : `in ${who}'s project`,
+      sourceLabel:
+        aheadOfMain !== null && aheadOfMain > 0
+          ? `${who}'s copy · ${aheadOfMain} ahead of main`
+          : `${who}'s copy`,
+      treeKind: 'worktree',
+      aheadOfMain,
     };
   }
 
@@ -784,7 +884,8 @@ export class RoomCanvasService {
     roomId: string,
     authorId: string,
     command: UiCommand,
-    cwd: string | undefined
+    cwd: string | undefined,
+    aheadOfMain: number | null
   ): CanvasWritePlan | CanvasClosePlan | { reason: string } {
     // The four OPENING verbs resolve by dedupe key: two agents opening one file
     // land on one row, which is what makes the table a table.
@@ -793,7 +894,7 @@ export class RoomCanvasService {
       if (content === null) return { reason: OPEN_CANVAS_NEEDS_CONTENT_MESSAGE };
       const sourceKey = canvasSourceKey(content);
       const existing = this.documents.findBySourceKey(roomScope(roomId), sourceKey);
-      const where = this.resolveTree(roomId, authorId, content, cwd);
+      const where = this.resolveTree(roomId, authorId, content, cwd, aheadOfMain);
       return {
         kind: 'write',
         content,
@@ -802,6 +903,8 @@ export class RoomCanvasService {
         pinned: existing?.pinned ?? false,
         resolvedCwd: where.resolvedCwd ?? existing?.resolvedCwd ?? null,
         sourceLabel: where.sourceLabel ?? existing?.sourceLabel ?? null,
+        treeKind: where.treeKind ?? existing?.treeKind ?? null,
+        aheadOfMain: where.treeKind !== null ? where.aheadOfMain : (existing?.aheadOfMain ?? null),
       };
     }
 
@@ -827,6 +930,8 @@ export class RoomCanvasService {
       pinned: target.pinned,
       resolvedCwd: target.resolvedCwd,
       sourceLabel: target.sourceLabel,
+      treeKind: target.treeKind,
+      aheadOfMain: target.aheadOfMain,
     };
   }
 
@@ -846,6 +951,9 @@ export class RoomCanvasService {
         lastActiveAt: at,
         ...(plan.resolvedCwd !== null ? { resolvedCwd: plan.resolvedCwd } : {}),
         ...(plan.sourceLabel !== null ? { sourceLabel: plan.sourceLabel } : {}),
+        ...(plan.treeKind !== null
+          ? { treeKind: plan.treeKind, aheadOfMain: plan.aheadOfMain }
+          : {}),
       });
       const row: CanvasDocumentRow = {
         ...plan.existing,
@@ -858,6 +966,8 @@ export class RoomCanvasService {
         lastActiveAt: at,
         resolvedCwd: plan.resolvedCwd ?? plan.existing.resolvedCwd,
         sourceLabel: plan.sourceLabel ?? plan.existing.sourceLabel,
+        treeKind: plan.treeKind ?? plan.existing.treeKind,
+        aheadOfMain: plan.treeKind !== null ? plan.aheadOfMain : plan.existing.aheadOfMain,
       };
       return this.publishDocument(roomId, row, 'updated');
     }
@@ -873,6 +983,8 @@ export class RoomCanvasService {
       sourceKey: plan.sourceKey,
       sourceLabel: plan.sourceLabel,
       resolvedCwd: plan.resolvedCwd,
+      treeKind: plan.treeKind,
+      aheadOfMain: plan.aheadOfMain,
       pinned: plan.pinned,
       rev,
       lastTouchedBy: authorId,
@@ -926,9 +1038,101 @@ export class RoomCanvasService {
 
   /** Append one applied operation to its turn's ledger. */
   private record(turnId: string, roomId: string, authorId: string, entry: CanvasLedgerEntry): void {
-    const turn = this.ledger.get(turnId) ?? { roomId, authorId, ops: [] };
+    // **An operation that arrives after its turn's line was already posted gets
+    // its own line, now.** Filing it would open a ledger entry nothing will ever
+    // close: the collector has settled, so nothing will call `finishTurn` again,
+    // and the row would sit on the table with nothing in the log naming it.
+    // Posting immediately keeps the invariant this whole design turns on — every
+    // applied operation is named exactly once.
+    if (this.closedTurns.has(turnId)) {
+      this.postLine(roomId, authorId, [entry], turnId);
+      return;
+    }
+    this.expireStaleLedgers();
+    const turn = this.ledger.get(turnId) ?? {
+      roomId,
+      authorId,
+      ops: [],
+      openedAt: this.now(),
+    };
     turn.ops.push(entry);
     this.ledger.set(turnId, turn);
+  }
+
+  /**
+   * Write one canvas line into the room's log, or say in the log why it could
+   * not be.
+   *
+   * Never throws. Posting can fail — a room archived mid-turn, a busy database —
+   * and a rejection out of here would surface from a collector whose `closed`
+   * promise is documented never to reject. The rows stay either way; only the
+   * line is lost, and the log says so.
+   */
+  private postLine(
+    roomId: string,
+    authorId: string,
+    ops: readonly CanvasLedgerEntry[],
+    turnId: string
+  ): void {
+    try {
+      this.postCanvasEvent(roomId, {
+        text: canvasChangeSentence(this.displayNameFor(authorId), ops),
+        canvas: { ops: [...ops] },
+        subjectAuthorId: authorId,
+      });
+    } catch (err) {
+      logger.warn('[rooms] could not post a turn’s canvas line; the documents are still there', {
+        roomId,
+        turnId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * Remember that this turn's line has been posted, and forget the oldest such
+   * memories so the set cannot grow for the life of the process.
+   *
+   * Two bounds rather than one. The age bound is the honest one — past it, a
+   * turn that is still running is not a turn any more — and the count bound is
+   * the one that holds when a machine is busy enough that ages alone would not
+   * prune fast enough.
+   */
+  private markClosed(turnId: string): void {
+    const at = this.now();
+    this.closedTurns.set(turnId, at);
+    for (const [id, closedAt] of this.closedTurns) {
+      if (at - closedAt >= CLOSED_TURN_MEMORY_MS) this.closedTurns.delete(id);
+    }
+    // Insertion order is close order, so the front of the map is the oldest.
+    while (this.closedTurns.size > MAX_REMEMBERED_CLOSED_TURNS) {
+      const oldest = this.closedTurns.keys().next().value;
+      if (oldest === undefined) break;
+      this.closedTurns.delete(oldest);
+    }
+  }
+
+  /**
+   * Drop any OPEN ledger nobody ever closed.
+   *
+   * The other half of the bound. `finishTurn` is called from the collector's
+   * `finally`, so it runs for every turn the room dispatched — but a turn whose
+   * process died, or one applied through a path that never had a collector, has
+   * no such call coming. Its rows are already on the table and stay there; what
+   * is dropped is the line, which is the same thing a failed post loses, and the
+   * log says which turn it was.
+   */
+  private expireStaleLedgers(): void {
+    const at = this.now();
+    for (const [id, turn] of this.ledger) {
+      if (at - turn.openedAt < LEDGER_TTL_MS) continue;
+      this.ledger.delete(id);
+      logger.warn('[rooms] gave up on a canvas line for a turn that never closed', {
+        roomId: turn.roomId,
+        turnId: id,
+        ops: turn.ops.length,
+      });
+    }
   }
 }
 
@@ -941,6 +1145,10 @@ interface CanvasWritePlan {
   pinned: boolean;
   resolvedCwd: string | null;
   sourceLabel: string | null;
+  /** Which tree the path was resolved against, or `null` for a non-file document. */
+  treeKind: CanvasDocumentRow['treeKind'];
+  /** The open-time ahead count for a working copy; `null` means not measured. */
+  aheadOfMain: number | null;
 }
 
 /** A close this command implies, with the row it resolved to. */
