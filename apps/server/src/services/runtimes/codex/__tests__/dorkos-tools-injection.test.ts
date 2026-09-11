@@ -20,7 +20,7 @@
  * @vitest-environment node
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -67,7 +67,7 @@ vi.mock('../../../../lib/logger.js', async (importOriginal) => {
 const sdkMocks = vi.hoisted(() => ({
   constructorOptions: [] as (Record<string, unknown> | undefined)[],
   prompts: [] as string[],
-  behavior: 'complete' as 'complete' | 'fail' | 'wait-for-abort' | 'park-past-abort',
+  behavior: 'complete' as 'complete' | 'fail' | 'lazy-fail' | 'wait-for-abort' | 'park-past-abort',
   releaseParked: undefined as (() => void) | undefined,
 }));
 
@@ -82,6 +82,13 @@ vi.mock('@openai/codex-sdk', () => ({
         runStreamed: async (prompt: string, options?: { signal?: AbortSignal }) => {
           sdkMocks.prompts.push(prompt);
           if (sdkMocks.behavior === 'fail') throw new Error('codex runtime failed');
+          if (sdkMocks.behavior === 'lazy-fail')
+            return {
+              events: (async function* () {
+                throw new Error('lazy dispatch failed');
+                yield;
+              })(),
+            };
           if (sdkMocks.behavior === 'wait-for-abort') {
             await new Promise<never>((_resolve, reject) => {
               options?.signal?.addEventListener(
@@ -100,7 +107,7 @@ vi.mock('@openai/codex-sdk', () => ({
               sdkMocks.releaseParked = resolve;
             });
           }
-          return { events: makeMockThread(codexSimpleTurn('ok')).runStreamed() };
+          return await makeMockThread(codexSimpleTurn('ok')).runStreamed();
         },
       };
     }
@@ -198,6 +205,7 @@ describe('the dorkos tool server on a Codex turn', () => {
     opts: {
       managed?: ManagedMcpServerResolver;
       runtimeTools?: ConnectorRuntimePrincipalPort | false;
+      accessSnapshot?: () => Promise<{ accountCount: number; revision: string }>;
     } = {}
   ): CodexRuntime {
     const runtime = new CodexRuntime({
@@ -213,6 +221,7 @@ describe('the dorkos tool server on a Codex turn', () => {
         listenerUrl: 'http://127.0.0.1:4341/mcp',
         agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
         isConnectorCapabilityId: (id) => id.startsWith('connectors.'),
+        ...(opts.accessSnapshot ? { accessSnapshot: opts.accessSnapshot } : {}),
       });
     }
     if (opts.managed) runtime.setManagedMcpServers(opts.managed);
@@ -347,6 +356,56 @@ describe('the dorkos tool server on a Codex turn', () => {
   });
 
   describe('connector runtime binding', () => {
+    it('sends fresh account awareness on a resumed thread even with generic DorkOS tools off', async () => {
+      configState.value.runtimes = { dorkosTools: false };
+      let revision = 'grant-one';
+      const runtime = makeRuntime({ accessSnapshot: async () => ({ accountCount: 1, revision }) });
+      await drain(
+        runtime.sendMessage('s-awareness', 'what connections do you have?', { cwd: agentDir })
+      );
+      expect(sdkMocks.prompts.at(-1)).toContain(
+        'mcp__dorkos_connections__connectors.list_granted_connections'
+      );
+      expect(sdkMocks.prompts.at(-1)).not.toContain('Access changed');
+      revision = 'different-operation-same-count';
+      await drain(runtime.sendMessage('s-awareness', 'what changed?', { cwd: agentDir }));
+      expect(sdkMocks.prompts.at(-1)).toContain('Access changed');
+      expect(sdkMocks.prompts.at(-1)).toContain(
+        'Currently granted accounts for this agent session: 1'
+      );
+      expect(JSON.stringify(sdkMocks.constructorOptions.at(-1))).toContain('dorkos_connections');
+      expect(sdkMocks.prompts.at(-1)).not.toContain(revision);
+    });
+
+    it('keeps a changed-access notice owed when lazy SDK iteration fails before delivery', async () => {
+      let revision = 'one';
+      const runtime = makeRuntime({ accessSnapshot: async () => ({ accountCount: 1, revision }) });
+      await drain(runtime.sendMessage('lazy-awareness', 'first', { cwd: agentDir }));
+      revision = 'two';
+      const manifestPath = path.join(agentDir, '.dork', 'agent.json');
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+      await writeFile(
+        manifestPath,
+        JSON.stringify({ ...manifest, description: 'Fresh identity after edit' })
+      );
+      sdkMocks.behavior = 'lazy-fail';
+      await drain(runtime.sendMessage('lazy-awareness', 'failed', { cwd: agentDir }));
+      sdkMocks.behavior = 'complete';
+      await drain(runtime.sendMessage('lazy-awareness', 'retry', { cwd: agentDir }));
+      expect(sdkMocks.prompts.at(-1)).toContain('Access changed');
+      expect(sdkMocks.prompts.at(-1)).toContain('Fresh identity after edit');
+      await drain(runtime.sendMessage('lazy-awareness', 'delivered', { cwd: agentDir }));
+      expect(sdkMocks.prompts.at(-1)).not.toContain('Access changed');
+      expect(sdkMocks.prompts.at(-1)).not.toContain('Fresh identity after edit');
+    });
+
+    it('does not claim account tools when the connector injection is absent', async () => {
+      await drain(
+        makeRuntime({ runtimeTools: false }).sendMessage('no-accounts', 'hello', { cwd: agentDir })
+      );
+      expect(sdkMocks.prompts.at(-1)).not.toContain('<accounts_access>');
+    });
+
     it('injects independently of external MCP posture and revokes on terminal completion', async () => {
       configState.value = { runtimes: { dorkosTools: false }, mcp: { enabled: false } };
       const principals = connectorPort();

@@ -1,3 +1,4 @@
+import { AccountsAccessContext } from '../shared/accounts-access-context.js';
 /**
  * OpenCode Runtime — implements the AgentRuntime interface for OpenCode.
  *
@@ -190,6 +191,7 @@ export class OpenCodeRuntime implements AgentRuntime {
   private readonly connectorLeases = new ConnectorTurnLeaseManager();
   /** Internal connector tool boundary, installed after boot opens its listener. */
   private connectorRuntimeTools: ConnectorRuntimeTools | undefined;
+  private readonly accountsAccess = new AccountsAccessContext();
   private settingsPort: SessionSettingsPort | undefined;
   /**
    * The agent registry, when the composition root injected it. Used only to
@@ -332,20 +334,32 @@ export class OpenCodeRuntime implements AgentRuntime {
       sessionId,
       cwd,
       opts?.title,
-      async (client, ocSessionId, dorkosApplied) => {
+      async (client, ocSessionId, dorkosApplied, connectionsApplied) => {
         // Build the prompt only after the leased MCP reconcile, so the room
         // verbs describe what this exact turn can actually call.
         const agentContext = await buildOpenCodeTurnContext(cwd, dorkosApplied);
         const model = parseModelSelection(settings.model);
-        const system = buildOpenCodeSystem(opts, agentContext);
+        const agent = this.meshCore?.getByPath(cwd);
+        const accessContext =
+          connectionsApplied && this.connectorRuntimeTools && agent
+            ? await this.accountsAccess.select(this.connectorRuntimeTools, agent.id, sessionId)
+            : undefined;
+        const turnOpts = accessContext
+          ? {
+              ...opts,
+              additionalContext: [...(opts?.additionalContext ?? []), accessContext.entry],
+            }
+          : opts;
+        const system = buildOpenCodeSystem(turnOpts, agentContext);
         const prompted = await client.session.promptAsync({
           path: { id: ocSessionId },
           body: {
-            parts: buildOpenCodeParts(content, opts),
+            parts: buildOpenCodeParts(content, turnOpts),
             ...(system !== undefined ? { system } : {}),
             ...(model !== undefined ? { model } : {}),
           },
         });
+        if (prompted.error === undefined) accessContext?.commit();
         if (prompted.error !== undefined) {
           throw new Error(`OpenCode session.promptAsync failed: ${JSON.stringify(prompted.error)}`);
         }
@@ -422,7 +436,12 @@ export class OpenCodeRuntime implements AgentRuntime {
     sessionId: string,
     cwd: string,
     title: string | undefined,
-    trigger: (client: OpencodeClient, ocSessionId: string, dorkosApplied: boolean) => Promise<void>,
+    trigger: (
+      client: OpencodeClient,
+      ocSessionId: string,
+      dorkosApplied: boolean,
+      connectionsApplied: boolean
+    ) => Promise<void>,
     opts?: { connectorTurn?: boolean }
   ): AsyncGenerator<StreamEvent> {
     const ocSessionId = await this.resolveOpenCodeSession(sessionId, cwd, title);
@@ -522,7 +541,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       // elapses) — a fast turn must not complete before we can see its idle.
       await Promise.race([subscription.live, delay(STREAM_LIVE_TIMEOUT_MS)]);
 
-      await trigger(client, ocSessionId, mcpResult.dorkosApplied);
+      await trigger(client, ocSessionId, mcpResult.dorkosApplied, mcpResult.connectorApplied);
 
       const routing: ApprovalRouting = { sessionId, ocSessionId, cwd, permissions: ctx };
       for await (const event of mapOpenCodeTurn(queue, ctx)) {

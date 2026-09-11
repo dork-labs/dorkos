@@ -51,7 +51,7 @@
  *   compaction can summarize the original prompt away. Re-anchoring is the only
  *   repair the adapter has.
  * - **Nothing is recorded until the prompt is actually dispatched.** {@link select}
- *   hands back a `commit` the caller runs after `runStreamed` resolves. Recording at
+ *   hands back a `commit` the caller runs after the event iterator completes successfully. Recording at
  *   selection time would let a turn that threw on the way to Codex convince the next
  *   turn that a thread already holds context it never received.
  *
@@ -65,8 +65,8 @@ export interface CodexContextSelection {
   /** The neutral context this turn sends — the whole append, or memory alone. */
   readonly text: string;
   /**
-   * Record that this turn's prompt reached Codex. Call it AFTER the prompt was
-   * dispatched, never before; a turn that fails on the way out must leave the
+   * Record that this turn's prompt reached Codex. Call it AFTER successful event consumption, never at the lazy
+   * runStreamed return; a turn that fails on the way out must leave the
    * gate exactly as it found it.
    */
   readonly commit: () => void;

@@ -180,8 +180,9 @@ export interface OperatingSkill {
  *   to conclude the tool is broken. The page it needs, naming the capability that
  *   does work, its two fields, and the approval it waits on, only reaches it on a
  *   bump.
+ * - 17: teach injected Accounts discovery across all runtimes and verified CLI fallback (DOR-1988).
  */
-export const OPERATING_SKILLS_VERSION = 16;
+export const OPERATING_SKILLS_VERSION = 17;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

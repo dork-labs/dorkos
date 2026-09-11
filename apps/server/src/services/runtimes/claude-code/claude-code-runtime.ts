@@ -1,3 +1,4 @@
+import { AccountsAccessContext } from '../shared/accounts-access-context.js';
 /**
  * Claude Code Runtime — implements the AgentRuntime interface for the Claude Agent SDK.
  *
@@ -153,6 +154,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   private meshCore: AgentRegistryPort | null = null;
   /** Internal connector tool boundary, installed after boot opens its listener. */
   private connectorRuntimeTools: ConnectorRuntimeTools | undefined;
+  private readonly accountsAccess = new AccountsAccessContext();
   private mcpAuthEvidence: McpAuthEvidencePort | undefined;
   private bindingRouter: import('../../relay/binding-router.js').BindingRouter | undefined;
   private bindingStore: import('../../relay/binding-store.js').BindingStore | undefined;
@@ -491,6 +493,22 @@ export class ClaudeCodeRuntime implements AgentRuntime {
           })
         : undefined;
     session.connectorTurn = connectorTurn;
+    const accessContext =
+      connectorTurn &&
+      this.connectorRuntimeTools &&
+      meshAgent &&
+      !content.trimStart().startsWith('/')
+        ? await this.accountsAccess.select(
+            this.connectorRuntimeTools,
+            meshAgent.id,
+            session.sdkSessionId || sessionId
+          )
+        : undefined;
+    if (accessContext)
+      opts = {
+        ...opts,
+        additionalContext: [...(opts?.additionalContext ?? []), accessContext.entry],
+      };
     let connectorRevokeReason: RevokeConnectorTurnReason = 'setup_failed';
     let observedEvent = false;
     let sawRuntimeError = false;
@@ -511,6 +529,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         if (event.type === 'error') sawRuntimeError = true;
         yield event;
       }
+      if (!sawRuntimeError) accessContext?.commit(session.sdkSessionId || sessionId);
       connectorRevokeReason = sawRuntimeError ? 'runtime_failed' : 'turn_terminal';
     } catch (error) {
       connectorRevokeReason = observedEvent ? 'runtime_failed' : 'setup_failed';
