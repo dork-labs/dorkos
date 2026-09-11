@@ -83,6 +83,7 @@ const PLAN_OFF: PlanChipState = {
 const DEFAULT_RUNTIME_CHIP: RuntimeChipState = {
   runtime: 'claude-code',
   model: 'claude-opus-4-6',
+  account: null,
   canSelect: false,
   onChangeRuntime: () => {},
 };
@@ -90,6 +91,7 @@ const DEFAULT_RUNTIME_CHIP: RuntimeChipState = {
 const CODEX_RUNTIME_CHIP: RuntimeChipState = {
   runtime: 'codex',
   model: 'gpt-5.3-codex',
+  account: null,
   canSelect: false,
   onChangeRuntime: () => {},
 };

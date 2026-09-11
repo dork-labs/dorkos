@@ -67,6 +67,19 @@ export interface ResolvedSessionRuntime {
    * (spec decision 8); a null model degrades the chip to the runtime alone.
    */
   model: string | null;
+  /**
+   * The started session's Claude account — the config directory it bills to —
+   * or `null` pre-launch and for runtimes with no account concept.
+   *
+   * Read off the same list row as {@link ResolvedSessionRuntime.model}, and for
+   * the same reason: it is server-authoritative and fixed once a session starts
+   * (spec `claude-code-accounts` D3). It rides this resolution rather than being
+   * fetched again at the chip, so the composer, the sidebar row and the session
+   * details panel cannot disagree about which account a session runs on — which
+   * is exactly what DOR-1970 reported, the account being legible on the row and
+   * nowhere else.
+   */
+  account: string | null;
   /** False once the session has started — runtime is immutable (ADR-0255). */
   canSelect: boolean;
 }
@@ -118,6 +131,11 @@ export function useResolvedSessionRuntime(sessionId: string): ResolvedSessionRun
     // a listed session carries a model; pre-launch it stays null so the chip
     // shows the runtime alone (honest — no invented model).
     model: sessionRow?.model ?? null,
+    // Same source and the same honesty rule as `model` above: only a listed
+    // session carries an account, so pre-launch this stays null rather than
+    // naming the account the session would PROBABLY get. Which account a draft
+    // will bill to is the switcher's question, not this readout's.
+    account: sessionRow?.account ?? null,
     canSelect: !hasStarted,
   };
 }

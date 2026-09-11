@@ -23,6 +23,7 @@ import {
   permissionModeLabel,
 } from '@/layers/shared/lib';
 import { DetailRow, TRUST_TONE_TEXT } from '@/layers/shared/ui';
+import { useClaudeAccounts } from '@/layers/shared/model';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { useSessionPermissionSummary } from '../model/settings/use-session-permission-summary';
 import { getOriginDescriptor } from '../config/origin-descriptors';
@@ -98,6 +99,16 @@ export function SessionDetailsPanel({
   // (DOR-1499). Non-bypass modes stay distinct on purpose (DOR-496) — this
   // does not revive the old "is this bypass?" boolean that conflated them.
   const permissionsValue = isFullPower ? 'Full power' : permissionModeLabel(permissionMode);
+  // The panel's own doc has promised the account since it was extracted, and
+  // until DOR-1970 nothing rendered it — the badge only ever reached session
+  // ROWS (`AccountMark`). Shown whenever the session HAS one, deliberately
+  // unlike `AccountMark`, which hides itself unless several accounts are
+  // registered: that guard exists because an identical badge on every row of a
+  // list tells the operator nothing, and a panel somebody opened on purpose is
+  // asked rather than scanned. `nameFor` falls back to the directory when the
+  // account is not one the server knows, so this cannot render empty.
+  const { nameFor } = useClaudeAccounts();
+  const accountName = session.account ? nameFor(session.account) : null;
 
   return (
     <AnimatePresence initial={false}>
@@ -134,6 +145,16 @@ export function SessionDetailsPanel({
             <DetailRow label="Runtime" align="start" valueClassName={FACT_VALUE}>
               {getRuntimeDescriptor(session.runtime).label}
             </DetailRow>
+            {accountName && (
+              <DetailRow
+                label="Account"
+                align="start"
+                copyValue={session.account}
+                valueClassName={FACT_VALUE}
+              >
+                {accountName}
+              </DetailRow>
+            )}
             <DetailRow label="Origin" align="start" valueClassName={FACT_VALUE}>
               {session.originLabel ?? getOriginDescriptor(session.origin)?.label ?? 'You'}
             </DetailRow>

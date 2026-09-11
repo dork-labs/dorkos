@@ -1302,3 +1302,89 @@ describe('RuntimeItem', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// DOR-1970 — which account THIS session is spending, from the composer.
+//
+// FB-13 asked for it "in the composer somewhere (even if it's just a tooltip)".
+// DOR-729 shipped `AccountMark`, but only onto session ROWS, so the chip a
+// person composes next to could not answer the question at all.
+// ---------------------------------------------------------------------------
+
+describe('RuntimeItem — the account this session bills to (DOR-1970)', () => {
+  it('names the account in the fixed-runtime tooltip of a started session', async () => {
+    mockServerConfig = withAccounts(2);
+    mockRuntimeCapabilities.mockReturnValue({ data: capsMap('claude-code', 'claude-code') });
+    render(
+      <>
+        <AccountsProbe />
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={vi.fn()}
+          canSelect={false}
+          account="/Users/dev/.claude2"
+        />
+      </>
+    );
+
+    await waitFor(() => expect(screen.getByTestId('accounts-known')).toHaveTextContent('2'));
+    // Both facts, in one tooltip: why the runtime cannot be changed, and which
+    // account the turn you are about to send will be billed to.
+    await waitFor(() =>
+      expect(screen.getByTestId('tooltip-content')).toHaveTextContent('Account: Acme Corp')
+    );
+    expect(screen.getByTestId('tooltip-content')).toHaveTextContent(
+      'The runtime is set when a session starts and can’t be changed afterward.'
+    );
+  });
+
+  it('falls back to the directory name for an account the roster does not know', async () => {
+    // `defaultAccount` can be set by hand in `~/.dork/config.json`, and the
+    // server honours it whether or not it is on the roster — so this is an
+    // ordinary case, and the tooltip must not render a bare "Account: ".
+    mockServerConfig = withAccounts(1);
+    mockRuntimeCapabilities.mockReturnValue({ data: capsMap('claude-code', 'claude-code') });
+    render(
+      <>
+        <AccountsProbe />
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={vi.fn()}
+          canSelect={false}
+          account="/Users/dev/.claude-unregistered"
+        />
+      </>
+    );
+
+    await waitFor(() => expect(screen.getByTestId('accounts-known')).toHaveTextContent('1'));
+    await waitFor(() =>
+      expect(screen.getByTestId('tooltip-content')).toHaveTextContent(
+        'Account: .claude-unregistered'
+      )
+    );
+  });
+
+  it('says nothing about an account when the session has none', async () => {
+    // Pre-launch, and every runtime with no account concept. An invented line
+    // here would be worse than silence.
+    mockServerConfig = withAccounts(2);
+    mockRuntimeCapabilities.mockReturnValue({ data: capsMap('claude-code', 'claude-code') });
+    render(
+      <>
+        <AccountsProbe />
+        <RuntimeItem
+          sessionId={SESSION}
+          runtime="claude-code"
+          onChangeRuntime={vi.fn()}
+          canSelect={false}
+          account={null}
+        />
+      </>
+    );
+
+    await waitFor(() => expect(screen.getByTestId('accounts-known')).toHaveTextContent('2'));
+    expect(screen.getByTestId('tooltip-content')).not.toHaveTextContent('Account:');
+  });
+});
