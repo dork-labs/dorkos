@@ -7,16 +7,49 @@ vi.mock('@/env', () => ({
     LINEAR_API_KEY: undefined as string | undefined,
     LINEAR_TEAM_ID: undefined as string | undefined,
     LINEAR_FEEDBACK_PROJECT_ID: undefined as string | undefined,
-    LINEAR_BUG_LABEL_ID: undefined as string | undefined,
-    LINEAR_FEATURE_LABEL_ID: undefined as string | undefined,
   },
 }));
 
 import { env } from '@/env';
 
 import { createFeedbackIssue, uploadScreenshot } from '../linear';
+import { resetReportedLabelCache } from '../reported-labels';
 
 let fetchSpy: ReturnType<typeof vi.spyOn>;
+
+/** One recorded `fetch` call, typed — the spy itself is deliberately loose. */
+type FetchCall = [unknown, RequestInit | undefined];
+
+/** The recorded `fetch` calls, typed for destructuring. */
+function fetchCalls(): FetchCall[] {
+  return fetchSpy.mock.calls as FetchCall[];
+}
+
+/**
+ * The `reported` group's children, as Linear actually returns them: the group
+ * prefix is stripped, so the name is bare and the group is only visible on
+ * `parent`.
+ */
+const REPORTED_LABEL_NODES = [
+  { id: 'label-reported-group', name: 'reported', parent: null },
+  { id: 'label-reported-defect', name: 'defect', parent: { name: 'reported' } },
+  { id: 'label-reported-idea', name: 'idea', parent: { name: 'reported' } },
+  { id: 'label-reported-feedback', name: 'feedback', parent: { name: 'reported' } },
+  // Workspace-level verdict labels, plus another group's child that shares a
+  // name with one of ours. Neither may ever be picked up.
+  { id: 'label-workspace-bug', name: 'Bug', parent: null },
+  { id: 'label-type-idea', name: 'idea', parent: { name: 'type' } },
+];
+
+/** A successful team-labels lookup carrying the `reported/*` group. */
+function okTeamLabels(
+  nodes: Array<{ id: string; name: string; parent: { name: string } | null }> = REPORTED_LABEL_NODES
+): Response {
+  return new Response(JSON.stringify({ data: { team: { labels: { nodes } } } }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
+}
 
 function okIssueCreate(overrides: Partial<{ success: boolean }> = {}): Response {
   return new Response(
@@ -41,14 +74,63 @@ beforeEach(() => {
   env.LINEAR_API_KEY = undefined;
   env.LINEAR_TEAM_ID = undefined;
   env.LINEAR_FEEDBACK_PROJECT_ID = undefined;
-  env.LINEAR_BUG_LABEL_ID = undefined;
-  env.LINEAR_FEATURE_LABEL_ID = undefined;
+  // The label lookup memoizes for 15 minutes, so without this the first test
+  // to run would be the only one that queries and every count below would
+  // depend on file order.
+  resetReportedLabelCache();
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
   vi.clearAllMocks();
 });
+
+/** Per-leg responses for {@link routeLinear}; each defaults to the success case. */
+interface LinearRoutes {
+  labels?: () => Response;
+  fileUpload?: () => Response;
+  screenshotPut?: () => Response;
+  issueCreate?: () => Response;
+}
+
+/**
+ * Answer each Linear leg by what it actually is rather than by call order —
+ * `createFeedbackIssue` overlaps the label lookup with the screenshot upload,
+ * so positional `mockResolvedValueOnce` chains would pin an ordering the code
+ * is free to change.
+ */
+function routeLinear(routes: LinearRoutes = {}): void {
+  fetchSpy.mockImplementation((_url: unknown, init?: RequestInit) => {
+    const body = (init as RequestInit | undefined)?.body;
+    // The screenshot PUT is the only leg that does not carry a GraphQL body.
+    if (typeof body !== 'string') {
+      return Promise.resolve(
+        (routes.screenshotPut ?? (() => new Response(null, { status: 200 })))()
+      );
+    }
+    if (body.includes('FeedbackReportedLabels')) {
+      return Promise.resolve((routes.labels ?? (() => okTeamLabels()))());
+    }
+    if (body.includes('fileUpload')) {
+      return Promise.resolve((routes.fileUpload ?? (() => okFileUpload()))());
+    }
+    return Promise.resolve((routes.issueCreate ?? (() => okIssueCreate()))());
+  });
+}
+
+/** The `issueCreate` mutation's `input`, off whichever call carried it. */
+function issueCreateInput(): Record<string, unknown> {
+  for (const [, init] of fetchCalls()) {
+    const raw = (init as RequestInit | undefined)?.body;
+    if (typeof raw !== 'string') continue;
+    const parsed = JSON.parse(raw) as {
+      query?: string;
+      variables?: { input?: Record<string, unknown> };
+    };
+    if (parsed.query?.includes('issueCreate')) return parsed.variables?.input ?? {};
+  }
+  throw new Error('no issueCreate call was made');
+}
 
 describe('createFeedbackIssue — unconfigured degrade', () => {
   it('resolves null and makes no request when LINEAR_API_KEY is unset', async () => {
@@ -70,20 +152,23 @@ describe('createFeedbackIssue — mutation shape and auth header', () => {
   beforeEach(() => {
     env.LINEAR_API_KEY = 'lin_api_key_raw';
     env.LINEAR_TEAM_ID = 'team-dor-uuid';
-    fetchSpy.mockResolvedValue(okIssueCreate());
+    routeLinear();
   });
 
   it('POSTs to the Linear GraphQL endpoint with the raw key, NOT a Bearer token', async () => {
     await createFeedbackIssue({ kind: 'feedback', message: 'Nice product.' });
 
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchSpy.mock.calls[0];
-    expect(url).toBe('https://api.linear.app/graphql');
-    const headers = (init as RequestInit).headers as Record<string, string>;
-    // The exact bug vector this test guards: `Bearer <key>` would silently
-    // fail every real Linear request while looking correct in a diff.
-    expect(headers.Authorization).toBe('lin_api_key_raw');
-    expect(headers.Authorization).not.toMatch(/^Bearer /);
+    // Two legs: the label lookup and the create. Both go to the same endpoint
+    // with the same header.
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    for (const [url, init] of fetchCalls()) {
+      expect(url).toBe('https://api.linear.app/graphql');
+      const headers = (init as RequestInit).headers as Record<string, string>;
+      // The exact bug vector this test guards: `Bearer <key>` would silently
+      // fail every real Linear request while looking correct in a diff.
+      expect(headers.Authorization).toBe('lin_api_key_raw');
+      expect(headers.Authorization).not.toMatch(/^Bearer /);
+    }
   });
 
   it('sends an issueCreate mutation with teamId, title, and description', async () => {
@@ -95,38 +180,30 @@ describe('createFeedbackIssue — mutation shape and auth header', () => {
       route: '/session',
     });
 
-    const [, init] = fetchSpy.mock.calls[0];
-    const body = JSON.parse((init as RequestInit).body as string) as {
-      query: string;
-      variables: { input: Record<string, unknown> };
-    };
-    expect(body.query).toContain('issueCreate');
-    expect(body.variables.input.teamId).toBe('team-dor-uuid');
-    expect(body.variables.input.title).toBe('The sidebar collapses unexpectedly.');
-    expect(body.variables.input.description).toContain(
+    const input = issueCreateInput();
+    expect(input.teamId).toBe('team-dor-uuid');
+    expect(input.title).toBe('The sidebar collapses unexpectedly.');
+    expect(input.description).toContain(
       'The sidebar collapses unexpectedly.\nHappens every time I resize.'
     );
-    expect(body.variables.input.description).toContain('kai@example.com');
-    expect(body.variables.input.description).toContain('/session');
+    expect(input.description).toContain('kai@example.com');
+    expect(input.description).toContain('/session');
+  });
+
+  it('sets no priority: that is a judgment about our plan, which a form cannot make', async () => {
+    await createFeedbackIssue({ kind: 'bug', message: 'It crashed.' });
+    expect(issueCreateInput()).not.toHaveProperty('priority');
   });
 
   it('omits projectId when LINEAR_FEEDBACK_PROJECT_ID is unset', async () => {
     await createFeedbackIssue({ kind: 'feedback', message: 'hi' });
-    const [, init] = fetchSpy.mock.calls[0];
-    const body = JSON.parse((init as RequestInit).body as string) as {
-      variables: { input: Record<string, unknown> };
-    };
-    expect(body.variables.input.projectId).toBeUndefined();
+    expect(issueCreateInput().projectId).toBeUndefined();
   });
 
   it('includes projectId when LINEAR_FEEDBACK_PROJECT_ID is set', async () => {
     env.LINEAR_FEEDBACK_PROJECT_ID = 'project-uuid-1';
     await createFeedbackIssue({ kind: 'feedback', message: 'hi' });
-    const [, init] = fetchSpy.mock.calls[0];
-    const body = JSON.parse((init as RequestInit).body as string) as {
-      variables: { input: Record<string, unknown> };
-    };
-    expect(body.variables.input.projectId).toBe('project-uuid-1');
+    expect(issueCreateInput().projectId).toBe('project-uuid-1');
   });
 
   it('resolves the issue id and url from a successful response', async () => {
@@ -142,16 +219,12 @@ describe('createFeedbackIssue — description formatting', () => {
   beforeEach(() => {
     env.LINEAR_API_KEY = 'lin_api_key_raw';
     env.LINEAR_TEAM_ID = 'team-dor-uuid';
-    fetchSpy.mockResolvedValue(okIssueCreate());
+    routeLinear();
   });
 
   async function descriptionFor(input: Parameters<typeof createFeedbackIssue>[0]): Promise<string> {
     await createFeedbackIssue(input);
-    const [, init] = fetchSpy.mock.calls[0];
-    const body = JSON.parse((init as RequestInit).body as string) as {
-      variables: { input: { description: string } };
-    };
-    return body.variables.input.description;
+    return issueCreateInput().description as string;
   }
 
   it('renders a distinct reporter name as "Name (email)", never angle brackets', async () => {
@@ -246,40 +319,119 @@ describe('createFeedbackIssue — description formatting', () => {
   });
 });
 
-describe('createFeedbackIssue — kind → label mapping', () => {
+describe('createFeedbackIssue — kind → reported/* label', () => {
+  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
     env.LINEAR_API_KEY = 'lin_api_key';
     env.LINEAR_TEAM_ID = 'team-dor-uuid';
-    env.LINEAR_BUG_LABEL_ID = 'label-bug-uuid';
-    env.LINEAR_FEATURE_LABEL_ID = 'label-feature-uuid';
-    fetchSpy.mockResolvedValue(okIssueCreate());
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    routeLinear();
   });
 
-  it('maps kind "bug" to the bug label', async () => {
+  afterEach(() => {
+    consoleErrorSpy.mockRestore();
+  });
+
+  it.each([
+    ['bug', 'label-reported-defect'],
+    ['idea', 'label-reported-idea'],
+    ['feedback', 'label-reported-feedback'],
+  ] as const)('maps kind "%s" to its reported/* label', async (kind, labelId) => {
+    await createFeedbackIssue({ kind, message: 'Something happened.' });
+    expect(issueCreateInput().labelIds).toEqual([labelId]);
+  });
+
+  it('never applies the workspace verdict label, even when the reporter said "bug"', async () => {
     await createFeedbackIssue({ kind: 'bug', message: 'It crashed.' });
-    const [, init] = fetchSpy.mock.calls[0];
-    const body = JSON.parse((init as RequestInit).body as string) as {
-      variables: { input: Record<string, unknown> };
-    };
-    expect(body.variables.input.labelIds).toEqual(['label-bug-uuid']);
+    // `Bug` is triage's word for what the thing turned out to be. Intake
+    // writing it is the whole defect this ticket fixed.
+    expect(issueCreateInput().labelIds).not.toContain('label-workspace-bug');
   });
 
-  it('maps kind "idea" to the feature label', async () => {
+  it('matches on parent + name, so a same-named child of another group is not picked up', async () => {
     await createFeedbackIssue({ kind: 'idea', message: 'Add dark mode.' });
-    const [, init] = fetchSpy.mock.calls[0];
-    const body = JSON.parse((init as RequestInit).body as string) as {
-      variables: { input: Record<string, unknown> };
-    };
-    expect(body.variables.input.labelIds).toEqual(['label-feature-uuid']);
+    // `type/idea` and `reported/idea` both read back as name "idea"; only the
+    // parent tells them apart, because the API never spells the prefix.
+    expect(issueCreateInput().labelIds).toEqual(['label-reported-idea']);
   });
 
-  it('applies no label for plain "feedback"', async () => {
-    await createFeedbackIssue({ kind: 'feedback', message: 'General thoughts.' });
-    const [, init] = fetchSpy.mock.calls[0];
-    const body = JSON.parse((init as RequestInit).body as string) as {
-      variables: { input: Record<string, unknown> };
+  it('sends at most ONE group member, which is all the exclusive group accepts', async () => {
+    for (const kind of ['bug', 'idea', 'feedback'] as const) {
+      fetchSpy.mockClear();
+      resetReportedLabelCache();
+      await createFeedbackIssue({ kind, message: 'x' });
+      expect(issueCreateInput().labelIds).toHaveLength(1);
+    }
+  });
+
+  it('queries the team labels once and reuses the answer for later submissions', async () => {
+    await createFeedbackIssue({ kind: 'bug', message: 'one' });
+    await createFeedbackIssue({ kind: 'idea', message: 'two' });
+
+    const labelLookups = fetchCalls().filter(([, init]) =>
+      String((init as RequestInit | undefined)?.body ?? '').includes('FeedbackReportedLabels')
+    );
+    expect(labelLookups).toHaveLength(1);
+  });
+
+  it('sends the team id and a bounded page size to the label query', async () => {
+    await createFeedbackIssue({ kind: 'bug', message: 'It crashed.' });
+
+    const lookup = fetchCalls().find(([, init]) =>
+      String((init as RequestInit | undefined)?.body ?? '').includes('FeedbackReportedLabels')
+    );
+    const body = JSON.parse((lookup?.[1] as RequestInit).body as string) as {
+      variables: { teamId: string; first: number };
     };
-    expect(body.variables.input.labelIds).toEqual([]);
+    expect(body.variables.teamId).toBe('team-dor-uuid');
+    // Bounded: a form submission must never trigger an open-ended query.
+    expect(body.variables.first).toBeLessThanOrEqual(250);
+  });
+
+  describe('label resolution failure never costs the report', () => {
+    const failures: Array<[string, () => Response]> = [
+      ['a non-2xx response', () => new Response('', { status: 500 })],
+      [
+        'a GraphQL errors[] response',
+        () =>
+          new Response(JSON.stringify({ errors: [{ message: 'Team not found' }] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+      ],
+      ['a team with no reported group at all', () => okTeamLabels([])],
+      [
+        'a group somebody renamed by hand',
+        () => okTeamLabels([{ id: 'l1', name: 'defect', parent: { name: 'claimed' } }]),
+      ],
+    ];
+
+    it.each(failures)('still files the issue, unlabelled, after %s', async (_label, labels) => {
+      routeLinear({ labels });
+
+      const result = await createFeedbackIssue({ kind: 'bug', message: 'It crashed.' });
+
+      expect(result).toEqual({
+        issueId: 'issue-uuid-1',
+        issueUrl: 'https://linear.app/dor/issue/DOR-999',
+      });
+      expect(issueCreateInput().labelIds).toEqual([]);
+      // The kind is still on record in the description, so the claim survives
+      // even when its label does not.
+      expect(issueCreateInput().description).toContain('Kind: bug');
+    });
+
+    it('files the issue when the label lookup rejects outright', async () => {
+      fetchSpy.mockImplementation((_url: unknown, init?: RequestInit) => {
+        const body = String((init as RequestInit | undefined)?.body ?? '');
+        if (body.includes('FeedbackReportedLabels')) return Promise.reject(new Error('socket'));
+        return Promise.resolve(okIssueCreate());
+      });
+
+      await expect(createFeedbackIssue({ kind: 'bug', message: 'x' })).resolves.not.toBeNull();
+      expect(issueCreateInput().labelIds).toEqual([]);
+    });
   });
 });
 
@@ -290,26 +442,27 @@ describe('createFeedbackIssue — error propagation (never swallowed here)', () 
   });
 
   it('throws on a non-2xx response', async () => {
-    fetchSpy.mockResolvedValue(new Response('', { status: 500 }));
+    routeLinear({ issueCreate: () => new Response('', { status: 500 }) });
     await expect(createFeedbackIssue({ kind: 'bug', message: 'x' })).rejects.toThrow(
       /Linear API error: 500/
     );
   });
 
   it('throws on a GraphQL errors[] response', async () => {
-    fetchSpy.mockResolvedValue(
-      new Response(JSON.stringify({ errors: [{ message: 'Team not found' }] }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      })
-    );
+    routeLinear({
+      issueCreate: () =>
+        new Response(JSON.stringify({ errors: [{ message: 'Team not found' }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    });
     await expect(createFeedbackIssue({ kind: 'bug', message: 'x' })).rejects.toThrow(
       /Team not found/
     );
   });
 
   it('throws when issueCreate.success is false', async () => {
-    fetchSpy.mockResolvedValue(okIssueCreate({ success: false }));
+    routeLinear({ issueCreate: () => okIssueCreate({ success: false }) });
     await expect(createFeedbackIssue({ kind: 'bug', message: 'x' })).rejects.toThrow(
       /did not report success/
     );
@@ -317,9 +470,11 @@ describe('createFeedbackIssue — error propagation (never swallowed here)', () 
 
   it('propagates a network failure', async () => {
     fetchSpy.mockRejectedValue(new Error('network down'));
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     await expect(createFeedbackIssue({ kind: 'bug', message: 'x' })).rejects.toThrow(
       'network down'
     );
+    consoleErrorSpy.mockRestore();
   });
 });
 
@@ -545,26 +700,21 @@ describe('createFeedbackIssue — screenshot embedding', () => {
   async function descriptionWithUpload(
     input: Parameters<typeof createFeedbackIssue>[0]
   ): Promise<string> {
-    fetchSpy
-      .mockResolvedValueOnce(okFileUpload())
-      .mockResolvedValueOnce(new Response(null, { status: 200 }))
-      .mockResolvedValueOnce(okIssueCreate());
+    routeLinear();
     await createFeedbackIssue(input);
     return descriptionOfLastCreate();
   }
 
   /** Pull the description off whichever call carried the issueCreate mutation. */
   function descriptionOfLastCreate(): string {
-    for (const [, init] of [...fetchSpy.mock.calls].reverse()) {
-      const raw = (init as RequestInit).body;
-      if (typeof raw !== 'string') continue;
-      const parsed = JSON.parse(raw) as {
-        query?: string;
-        variables?: { input?: { description?: string } };
-      };
-      if (parsed.query?.includes('issueCreate')) return parsed.variables?.input?.description ?? '';
-    }
-    throw new Error('no issueCreate call was made');
+    return (issueCreateInput().description as string) ?? '';
+  }
+
+  /** Index of the call that carried the `issueCreate` mutation. */
+  function issueCreateCallIndex(): number {
+    return fetchCalls().findIndex(([, init]) =>
+      String((init as RequestInit | undefined)?.body ?? '').includes('issueCreate')
+    );
   }
 
   it('uploads before creating the issue, and embeds the asset as a markdown image', async () => {
@@ -578,8 +728,9 @@ describe('createFeedbackIssue — screenshot embedding', () => {
     expect(description).toContain(`![Screenshot](${ASSET_URL})`);
     // Ordering is the contract: the assetUrl only exists once the upload has
     // resolved, so a create issued first could not carry it.
-    expect(fetchSpy.mock.calls).toHaveLength(3);
-    expect(fetchSpy.mock.calls[1][0]).toBe(UPLOAD_URL);
+    const putIndex = fetchCalls().findIndex(([url]) => url === UPLOAD_URL);
+    expect(putIndex).toBeGreaterThanOrEqual(0);
+    expect(putIndex).toBeLessThan(issueCreateCallIndex());
   });
 
   it('creates the Attachments section for a screenshot with no other attachments', async () => {
@@ -606,11 +757,12 @@ describe('createFeedbackIssue — screenshot embedding', () => {
   });
 
   it('omits the Attachments section entirely when no screenshot is attached', async () => {
-    fetchSpy.mockResolvedValueOnce(okIssueCreate());
+    routeLinear();
     await createFeedbackIssue({ kind: 'bug', message: 'It broke.' });
 
-    // One call only — nothing was uploaded.
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    // Two calls — the label lookup and the create. Nothing was uploaded.
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchCalls().some(([url]) => url === UPLOAD_URL)).toBe(false);
     expect(descriptionOfLastCreate()).not.toContain('**Attachments**');
   });
 
@@ -623,29 +775,35 @@ describe('createFeedbackIssue — screenshot embedding', () => {
       [
         'a GraphQL error from fileUpload',
         () =>
-          fetchSpy.mockResolvedValueOnce(
-            new Response(
-              JSON.stringify({ errors: [{ message: 'Invalid scope: `write` required' }] }),
-              {
-                status: 200,
-                headers: { 'content-type': 'application/json' },
-              }
-            )
-          ),
+          routeLinear({
+            fileUpload: () =>
+              new Response(
+                JSON.stringify({ errors: [{ message: 'Invalid scope: `write` required' }] }),
+                {
+                  status: 200,
+                  headers: { 'content-type': 'application/json' },
+                }
+              ),
+          }),
       ],
       [
         'a rejected PUT',
-        () =>
-          fetchSpy
-            .mockResolvedValueOnce(okFileUpload())
-            .mockResolvedValueOnce(new Response('no', { status: 403 })),
+        () => routeLinear({ screenshotPut: () => new Response('no', { status: 403 }) }),
       ],
-      ['a network failure', () => fetchSpy.mockRejectedValueOnce(new Error('socket hang up'))],
+      [
+        'a network failure',
+        () =>
+          fetchSpy.mockImplementation((_url: unknown, init?: RequestInit) => {
+            const body = String((init as RequestInit | undefined)?.body ?? '');
+            if (body.includes('FeedbackReportedLabels')) return Promise.resolve(okTeamLabels());
+            if (body.includes('issueCreate')) return Promise.resolve(okIssueCreate());
+            return Promise.reject(new Error('socket hang up'));
+          }),
+      ],
     ];
 
     it.each(failures)('still creates the issue after %s', async (_label, arrange) => {
       arrange();
-      fetchSpy.mockResolvedValueOnce(okIssueCreate());
 
       const result = await createFeedbackIssue({
         kind: 'bug',
@@ -666,8 +824,12 @@ describe('createFeedbackIssue — screenshot embedding', () => {
     });
 
     it('records the reason on a single line', async () => {
-      fetchSpy.mockRejectedValueOnce(new Error('socket\nhang\nup'));
-      fetchSpy.mockResolvedValueOnce(okIssueCreate());
+      fetchSpy.mockImplementation((_url: unknown, init?: RequestInit) => {
+        const body = String((init as RequestInit | undefined)?.body ?? '');
+        if (body.includes('FeedbackReportedLabels')) return Promise.resolve(okTeamLabels());
+        if (body.includes('issueCreate')) return Promise.resolve(okIssueCreate());
+        return Promise.reject(new Error('socket\nhang\nup'));
+      });
 
       await createFeedbackIssue({
         kind: 'bug',
@@ -680,7 +842,7 @@ describe('createFeedbackIssue — screenshot embedding', () => {
     });
 
     it('degrades rather than throwing on a malformed data URL', async () => {
-      fetchSpy.mockResolvedValueOnce(okIssueCreate());
+      routeLinear();
 
       const result = await createFeedbackIssue({
         kind: 'bug',
@@ -689,8 +851,9 @@ describe('createFeedbackIssue — screenshot embedding', () => {
       });
 
       expect(result).not.toBeNull();
-      // Nothing was uploaded: the only call was the issue create itself.
-      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      // Nothing was uploaded: the only calls were the label lookup and create.
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      expect(fetchCalls().some(([url]) => url === UPLOAD_URL)).toBe(false);
       expect(descriptionOfLastCreate()).toContain('Screenshot: upload failed');
     });
 
@@ -702,7 +865,7 @@ describe('createFeedbackIssue — screenshot embedding', () => {
         /do not match declared type/,
       ],
     ])('degrades on %s, without uploading anything', async (_label, dataUrl, reason) => {
-      fetchSpy.mockResolvedValueOnce(okIssueCreate());
+      routeLinear();
 
       const result = await createFeedbackIssue({
         kind: 'bug',
@@ -712,7 +875,7 @@ describe('createFeedbackIssue — screenshot embedding', () => {
 
       // The report survives, the picture does not, and the reason is on record.
       expect(result).not.toBeNull();
-      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(fetchCalls().some(([url]) => url === UPLOAD_URL)).toBe(false);
       const section = descriptionOfLastCreate().split('**Attachments**')[1].trim();
       expect(section).toMatch(reason);
       expect(section).not.toContain('![Screenshot]');
