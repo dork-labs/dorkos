@@ -158,6 +158,15 @@ export class ManagedConnectorCloudError extends Error {
   }
 }
 
+/** Local token absence proves that no hosted request has been dispatched. */
+export class ManagedConnectorLinkRequiredError extends ManagedConnectorCloudError {
+  /** Preserve the unauthorized category for existing account recovery consumers. */
+  constructor() {
+    super('unauthorized');
+    this.name = 'ManagedConnectorLinkRequiredError';
+  }
+}
+
 function managedConnectorCloudErrorMessage(code: ManagedConnectorCloudErrorCode): string {
   switch (code) {
     case 'unauthorized':

@@ -18,6 +18,9 @@ import type {
 } from '@dorkos/shared/connector-schemas';
 import { ManagedCloudConnectorProvider, type ManagedConnectorCloudPort } from '../managed-cloud.js';
 
+import { ManagedConnectorCloudError } from '../../../../core/auth/cloud-link-client.js';
+import { CloudLinkManager } from '../../../../core/auth/cloud-link.js';
+
 const instanceId = 'managed:cloud' as ConnectorProviderInstanceId;
 
 const operation: ConnectorOperationRevision = {
@@ -264,6 +267,52 @@ describe('ManagedCloudConnectorProvider', () => {
     expect(cloud.executeManagedConnectorOperation).not.toHaveBeenCalled();
   });
 
+  it('reports a removed local link before dispatch despite valid execution authority', async () => {
+    let token: string | null = 'linked-token';
+    const fetchImpl = vi.fn<typeof fetch>();
+    const manager = new CloudLinkManager({
+      config: {
+        getToken: () => token,
+        getAccountLabel: () => null,
+        save: vi.fn(),
+        setAccountLabel: vi.fn(),
+        clear: vi.fn(),
+      },
+      fetchImpl,
+    });
+    expect(manager.getSummary().linked).toBe(true);
+    token = null;
+    const result = await provider(manager).execute(command());
+    expect(result).toMatchObject({
+      status: 'error',
+      code: 'MANAGED_LINK_REQUIRED',
+      retryable: false,
+      message: expect.stringContaining('Settings > Access'),
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(manager.getSummary().linked).toBe(false);
+  });
+
+  it('keeps a lost remote acknowledgement unknown and never replays the request', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockRejectedValue(new Error('private network detail'));
+    const manager = new CloudLinkManager({
+      config: {
+        getToken: () => 'linked-token',
+        getAccountLabel: () => null,
+        save: vi.fn(),
+        setAccountLabel: vi.fn(),
+        clear: vi.fn(),
+      },
+      fetchImpl,
+    });
+    expect(await provider(manager).execute(command())).toEqual({
+      status: 'outcome_unknown',
+      code: 'MANAGED_EXECUTION_OUTCOME_UNKNOWN',
+      message: 'The hosted service did not confirm the managed connector outcome.',
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it('distinguishes known receipt-only outcomes from pending and unknown outcomes', async () => {
     vi.mocked(cloud.executeManagedConnectorOperation)
       .mockResolvedValueOnce({ state: 'receipt_only', receipt })
@@ -288,6 +337,17 @@ describe('ManagedCloudConnectorProvider', () => {
       status: 'outcome_unknown',
       code: 'MANAGED_RESULT_UNAVAILABLE',
     });
+  });
+
+  it('does not mistake a remote unauthorized response for local token absence', async () => {
+    vi.mocked(cloud.executeManagedConnectorOperation).mockRejectedValue(
+      new ManagedConnectorCloudError('unauthorized', 401)
+    );
+    expect(await provider(cloud).execute(command())).toMatchObject({
+      status: 'outcome_unknown',
+      code: 'MANAGED_EXECUTION_OUTCOME_UNKNOWN',
+    });
+    expect(cloud.executeManagedConnectorOperation).toHaveBeenCalledTimes(1);
   });
 
   it('never retries a thrown response or accepts receipt evidence for another attempt', async () => {

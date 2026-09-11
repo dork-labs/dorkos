@@ -31,7 +31,8 @@ export type ContextKind =
   | 'relay_context'
   | 'room_context'
   | 'seed_context'
-  | 'approval_verdict';
+  | 'approval_verdict'
+  | 'accounts_access';
 
 /** Lifetime of an entry — informs adapter placement, not yet load-bearing. */
 export type ContextScope = 'per-turn' | 'per-session';
@@ -815,7 +816,8 @@ export type AdditionalContextEntry =
   | { kind: 'relay_context'; scope: 'per-turn'; data: RelayContextData }
   | { kind: 'room_context'; scope: 'per-turn'; data: RoomContextData }
   | { kind: 'seed_context'; scope: 'per-turn'; data: SeedContextData }
-  | { kind: 'approval_verdict'; scope: 'per-turn'; data: ApprovalVerdictData };
+  | { kind: 'approval_verdict'; scope: 'per-turn'; data: ApprovalVerdictData }
+  | { kind: 'accounts_access'; scope: 'per-turn'; data: AccountsAccessData };
 
 /** The per-turn bag a runtime receives via `MessageOpts.additionalContext`. */
 export type AdditionalContext = AdditionalContextEntry[];
@@ -849,6 +851,7 @@ export const CONTEXT_TAG = {
   room_context: 'room_context',
   seed_context: 'seed_context',
   approval_verdict: 'approval_verdict',
+  accounts_access: 'accounts_access',
 } satisfies Record<ContextKind, string>;
 
 /**
@@ -1070,6 +1073,20 @@ export const SeedContextDataSchema = z.object({ text: z.string().min(1) });
 /** Zod schema for {@link StagedContextData}. */
 export const StagedContextDataSchema = z.object({ text: z.string().min(1) });
 
+/** Current server-derived account awareness, without any account inventory. */
+export interface AccountsAccessData {
+  /** Null means current access could not be checked; it never means zero. */
+  accountCount: number | null;
+  /** Whether this session has received a different successful snapshot before. */
+  changed: boolean;
+}
+
+/** Zod schema for {@link AccountsAccessData}. */
+export const AccountsAccessDataSchema = z.object({
+  accountCount: z.number().int().nonnegative().nullable(),
+  changed: z.boolean(),
+});
+
 /** Zod schema for {@link ApprovalVerdictData}. */
 export const ApprovalVerdictDataSchema = z.object({
   approvalId: z.string().min(1),
@@ -1081,6 +1098,11 @@ export const ApprovalVerdictDataSchema = z.object({
 
 /** Zod schema for {@link AdditionalContextEntry} (discriminated on `kind`). */
 export const AdditionalContextEntrySchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('accounts_access'),
+    scope: z.literal('per-turn'),
+    data: AccountsAccessDataSchema,
+  }),
   z.object({
     kind: z.literal('git_status'),
     scope: z.literal('per-turn'),

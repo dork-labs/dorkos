@@ -54,6 +54,7 @@ import {
   buildInstanceDescriptor,
   executeManagedConnectorOperation,
   ManagedConnectorCloudError,
+  ManagedConnectorLinkRequiredError,
   pollForToken,
   requestManagedConnectorAccount,
   requestManagedConnectorAccounts,
@@ -698,7 +699,7 @@ export class CloudLinkManager {
 
   private requireConnectorToken(): string {
     const token = this.config.getToken();
-    if (!token) throw new ManagedConnectorCloudError('unauthorized');
+    if (!token) throw new ManagedConnectorLinkRequiredError();
     return token;
   }
 

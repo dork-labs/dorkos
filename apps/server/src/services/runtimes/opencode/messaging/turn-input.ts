@@ -1,3 +1,4 @@
+import { formatAccountsAccess } from '../../shared/accounts-access-context.js';
 /**
  * Per-turn input shaping for the OpenCode runtime: the `session.promptAsync`
  * body assembly that delivers the neutral additional-context bag (ADR-0273)
@@ -81,6 +82,8 @@ function renderContextEntry(entry: AdditionalContextEntry): string {
  */
 function renderContextBody(entry: AdditionalContextEntry): string {
   switch (entry.kind) {
+    case 'accounts_access':
+      return formatAccountsAccess(entry.data, 'opencode');
     case 'approval_verdict':
       return formatApprovalVerdict(entry.data);
     case 'room_context':

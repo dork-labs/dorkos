@@ -173,8 +173,8 @@ describe('what a Codex turn carries', () => {
     expect(prompt).toContain('Name: researcher');
     // Orientation, so it knows how to reach its capabilities from a shell.
     expect(prompt).toContain('<dorkos_context>');
-    expect(prompt).toContain('dorkos capabilities');
-    expect(prompt).toContain('dorkos call');
+    expect(prompt).toContain('Prefer your injected DorkOS MCP tools');
+    expect(prompt).toContain('No verified CLI fallback is available');
     // Environment, so it knows where it is running.
     expect(prompt).toContain('<env>');
     expect(prompt).toContain(`Working directory: ${agentDir}`);

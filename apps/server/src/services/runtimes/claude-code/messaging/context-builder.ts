@@ -1,3 +1,4 @@
+import { formatAccountsAccess } from '../../shared/accounts-access-context.js';
 import type {
   AdditionalContextEntry,
   GitStatusData,
@@ -745,6 +746,8 @@ export function renderContextEntry(entry: AdditionalContextEntry): string {
       // sentence that tells the reader the person cannot see this block, and
       // that sentence must read identically on every runtime.
       return wrapTag(tag, formatSeedContext(entry.data));
+    case 'accounts_access':
+      return wrapTag(tag, formatAccountsAccess(entry.data, 'claude-code'));
     case 'approval_verdict':
       // Shared for the strongest version of the room_context reason: this block
       // reports a SECURITY decision, and one written three times is one that

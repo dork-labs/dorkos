@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 /** Owner-bound connector access and usage reads for REST and CLI programs. */
 import { z } from 'zod';
 import {
@@ -106,6 +107,61 @@ export class ConnectorAccessQueryService {
     private readonly registry: ConnectorRegistry,
     private readonly runtimePrincipals: ConnectorRuntimeDiscoveryPrincipalPort
   ) {}
+
+  /** Build a private, server-only awareness snapshot for the next normal agent turn. */
+  async accessSnapshot(owner: ConnectorOwnerAuthority, agentId: string, sessionId: string) {
+    await this.requireOwnedAgent(owner, agentId);
+    this.registry.assertAvailable();
+    const executable = this.listRuntimeGrantRows(owner, agentId, sessionId);
+    const ownerKey = ownerColumns(owner);
+    // Include retired grants and access-state transitions, not account labels or credentials.
+    // A revoke/regrant or changed operation must change awareness even at the same count.
+    const history = this.db
+      .select({
+        id: connectionOperationGrants.id,
+        revision: connectionOperationGrants.operationRevisionId,
+        createdAt: connectionOperationGrants.createdAt,
+        revokedAt: connectionOperationGrants.revokedAt,
+        connectionUpdatedAt: connections.updatedAt,
+        enabled: connections.enabled,
+        status: connections.status,
+        lifecycle: connections.lifecycleState,
+        reconciliation: connections.grantReconciliationStatus,
+        providerGeneration: connectorProviderInstances.executionConfigGeneration,
+      })
+      .from(connectionOperationGrants)
+      .innerJoin(connections, eq(connections.id, connectionOperationGrants.connectionId))
+      .innerJoin(
+        connectorProviderInstances,
+        eq(connectorProviderInstances.id, connections.providerInstanceId)
+      )
+      .where(
+        and(
+          eq(connectionOperationGrants.agentId, agentId),
+          or(
+            and(
+              eq(connectionOperationGrants.subjectType, 'agent'),
+              eq(connectionOperationGrants.subjectId, agentId)
+            ),
+            and(
+              eq(connectionOperationGrants.subjectType, 'session'),
+              eq(connectionOperationGrants.subjectId, sessionId)
+            )
+          ),
+          eq(connectorProviderInstances.ownerKind, ownerKey.ownerKind),
+          eq(connectorProviderInstances.ownerId, ownerKey.ownerId)
+        )
+      )
+      .all()
+      .sort((a, b) => a.id.localeCompare(b.id));
+    const visible = executable.map((row) => [row.connectionId, row.operationRevisionId]).sort();
+    return {
+      accountCount: new Set(executable.map((row) => row.connectionId)).size,
+      revision: createHash('sha256')
+        .update(JSON.stringify([history, visible]))
+        .digest('hex'),
+    };
+  }
 
   /** List connections that retain at least one exact grant for an owned agent. */
   async listConnections(

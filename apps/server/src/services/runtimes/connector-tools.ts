@@ -29,6 +29,14 @@ export const CONNECTOR_RUNTIME_HEADER_ENV = {
   cwd: 'DORKOS_CONNECTOR_MCP_CWD',
 } as const;
 
+/** Server-derived access awareness; the revision never enters model context. */
+export interface ConnectorAccessSnapshot {
+  /** Number of accounts in the canonical granted-access inventory for this agent/session. */
+  readonly accountCount: number;
+  /** Opaque digest of scoped canonical grants and access state. */
+  readonly revision: string;
+}
+
 /** Dependencies injected into a concrete runtime after the listener starts. */
 export interface ConnectorRuntimeTools {
   /** Server-owned turn binding lifecycle. */
@@ -37,6 +45,11 @@ export interface ConnectorRuntimeTools {
   readonly listenerUrl: string;
   /** Loopback URL exposing the DorkOS capabilities declared for agent sessions. */
   readonly agentToolsUrl: string;
+  /** Read scoped awareness from canonical state, without opening runtime authority. */
+  readonly accessSnapshot?: (
+    agentId: string,
+    sessionId: string
+  ) => Promise<ConnectorAccessSnapshot>;
   /** Broker-owned exact predicate for the five private runtime connector capabilities. */
   readonly isConnectorCapabilityId: (id: string) => boolean;
   /** Testable process-local supervisor constructor; production uses the default. */

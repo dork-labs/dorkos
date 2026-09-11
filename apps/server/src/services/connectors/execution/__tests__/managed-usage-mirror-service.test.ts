@@ -85,6 +85,31 @@ describe('ManagedUsageMirrorService', () => {
     };
   });
 
+  it('does not poll hosted receipts for a proven local missing-link refusal', async () => {
+    usage.appendTerminal({
+      attemptId: 'attempt-a',
+      logicalOperationId: 'logical-a',
+      owner: OWNER,
+      providerInstanceId: provider.instanceId,
+      operationRevisionId: 'revision-a',
+      outcome: 'error',
+      errorCode: 'MANAGED_LINK_REQUIRED',
+      recordedAt: LATER,
+      provenance: 'broker',
+    });
+    const lookup = vi.fn();
+    const service = new ManagedUsageMirrorService({
+      db,
+      cloud: { getManagedConnectorExecutionReceipt: lookup },
+    });
+    expect(await service.recover(100, new AbortController().signal)).toBe(0);
+    expect(lookup).not.toHaveBeenCalled();
+    expect(db.select().from(connectorManagedReceiptRecoveries).all()).toHaveLength(0);
+    expect(db.select().from(connectorUsageTerminalReceipts).all()).toMatchObject([
+      { outcome: 'error', errorCode: 'MANAGED_LINK_REQUIRED' },
+    ]);
+  });
+
   it('keeps hosted evidence separate from an existing local unknown receipt and deduplicates it', () => {
     usage.appendTerminal({
       attemptId: 'attempt-a',

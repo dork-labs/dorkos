@@ -1,6 +1,7 @@
 import path from 'path';
 import { randomUUID } from 'node:crypto';
 import { createApp, finalizeApp } from './app.js';
+import { ManagedConnectorCloudError } from './services/core/auth/cloud-link-client.js';
 import { ClaudeCodeRuntime } from './services/runtimes/claude-code/claude-code-runtime.js';
 import { shutdownSessionPumps } from './services/runtimes/claude-code/sessions/session-pump-registry.js';
 import { reapOrphanedWarmProcesses } from './services/runtimes/claude-code/sessions/warm-process-ledger.js';
@@ -2452,6 +2453,9 @@ async function start() {
       logger.warn('[Connectors] Managed receipt recovery deferred', {
         attemptId,
         error: error instanceof Error ? error.name : 'unknown_error',
+        ...(error instanceof ManagedConnectorCloudError
+          ? { code: error.code, status: error.status }
+          : {}),
       });
     },
   });
@@ -4052,6 +4056,11 @@ async function start() {
       // use the authenticated internal connector listener below.
       connectorDeps: {
         registry: connectorRegistry,
+        catalog: (input) =>
+          connectorOperatorQueries.catalog({
+            ...input,
+            includeAuthenticationSetup: false,
+          }),
         ...(adapterManager && { relay: adapterManager }),
       },
       connectorExecutionDeps: {
@@ -4153,6 +4162,8 @@ async function start() {
         listenerUrl: connectorRuntimeMcpListener.url,
         agentToolsUrl: connectorRuntimeMcpListener.agentUrl,
         isConnectorCapabilityId: isConnectorRuntimeCapabilityId,
+        accessSnapshot: (agentId, sessionId) =>
+          connectorAccess.accessSnapshot(connectorOwner, agentId, sessionId),
       });
     }
     if (env.DORKOS_TEST_RUNTIME) {

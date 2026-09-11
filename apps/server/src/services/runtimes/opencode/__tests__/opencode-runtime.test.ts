@@ -2287,6 +2287,7 @@ describe('OpenCodeRuntime', () => {
         principals,
         listenerUrl: 'http://127.0.0.1:4341/mcp',
         agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
+        accessSnapshot: async () => ({ accountCount: 1, revision: 'private-revision' }),
         isConnectorCapabilityId: (id) =>
           new Set([
             'connectors.execute_read',
@@ -2322,6 +2323,10 @@ describe('OpenCodeRuntime', () => {
       );
       const connection = await openTurn(harness);
 
+      const prompt = JSON.stringify(harness.client.session.promptAsync.mock.calls.at(-1));
+      expect(prompt).toContain('dorkos_connections_connectors_list_granted_connections');
+      expect(prompt).toContain('Currently granted accounts for this agent session: 1');
+      expect(prompt).not.toContain('private-revision');
       const connectorAdd = harness.client.mcp.add.mock.calls.find(
         (call) => call[0]?.body?.name === 'dorkos_connections'
       )?.[0];
