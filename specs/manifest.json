@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "260911-195750",
+      "slug": "room-canvas",
+      "title": "Canvas and Browser in rooms",
+      "created": "2026-09-11",
+      "status": "specified",
+      "project": "Canvas and Browser in Rooms"
+    },
+    {
       "id": "260910-001729",
       "slug": "composio-managed-auth-defaults",
       "title": "Make Composio services ready to connect with managed sign-in defaults",
