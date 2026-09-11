@@ -18,6 +18,8 @@
  * @module test-utils/runtime-conformance
  */
 import { randomUUID } from 'node:crypto';
+import { realpathSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import type {
   AgentRuntime,
@@ -998,6 +1000,46 @@ export interface PresenceObservation {
 }
 
 /**
+ * A directory path collapsed to the location it actually names, for comparing
+ * one binding against another.
+ *
+ * The rule this serves is "the strip omits rather than lies", and naming the
+ * same directory by a path that leads to it is not a lie. macOS is where that
+ * distinction stops being academic: `os.tmpdir()` hands out `/var/folders/...`,
+ * `/var` is a symlink to `/private/var`, and a runtime that resolves the cwd it
+ * was handed — as a real sidecar booted in that directory does — reports
+ * `/private/var/folders/...` for a session created with `/var/folders/...`. A
+ * raw string comparison calls that a fabricated binding and false-reds the live
+ * OpenCode arm on both presence cases, on every sidecar version (measured on
+ * 1.18.15 and 1.18.30, identically — the check, not the runtime).
+ *
+ * Only ABSOLUTE paths are resolved. `realpathSync` resolves a relative one
+ * against whatever `process.cwd()` happens to be, which would make two readings
+ * compare equal for a reason that has nothing to do with either of them — and a
+ * session binding is an absolute directory in every runtime, so a relative one
+ * is already a reading worth failing on its own terms.
+ *
+ * Resolution failure falls back to the path as given, which is the safe
+ * direction: a path that does not exist collapses to itself, so two genuinely
+ * different directories stay different and the assertion keeps its teeth. That
+ * fallback is also what keeps the fabricated readings in
+ * `__tests__/runtime-conformance-presence.test.ts` red — none of their paths is
+ * on disk.
+ *
+ * @param candidate - A directory path as a runtime or a test reported it.
+ * @returns The real path it resolves to, or `candidate` when it is relative or
+ *   cannot resolve.
+ */
+function realBindingPath(candidate: string): string {
+  if (!isAbsolute(candidate)) return candidate;
+  try {
+    return realpathSync.native(candidate);
+  } catch {
+    return candidate;
+  }
+}
+
+/**
  * Check one {@link PresenceObservation} against the presence-truthfulness
  * contract: returns one message per violation, empty when the reading is honest.
  *
@@ -1096,7 +1138,7 @@ export function validatePresenceReport(observation: PresenceObservation): string
           `reports the binding '${reportedBinding}' for a session created bound to nothing — ` +
             'an unattributable session must report no binding rather than borrow one'
         );
-      } else if (reportedBinding !== boundTo) {
+      } else if (realBindingPath(reportedBinding) !== realBindingPath(boundTo)) {
         failures.push(
           `reports the binding '${reportedBinding}' for a session bound to '${boundTo}'`
         );
