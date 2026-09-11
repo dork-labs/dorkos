@@ -59,13 +59,25 @@ export interface StoppedTurnEvidence {
  *   case: an API refusal aborts the main turn controller directly, so a
  *   shape-only gate would drop a real failure's error frame and tell the
  *   operator they stopped a turn they never touched (DOR-1320 review, from the
- *   shipped `claude-agent-sdk` 0.3.224 bundle). Re-extracted from that same
- *   binary for DOR-1684 and unchanged: the CLI's abort predicate, its
- *   nine-cause collapse, the two-member suppression set that puts
- *   `refusal-fallback-edit` and DorkOS's own `interrupt` in one bucket, and the
- *   `result` shapes an abort closes with are all quoted in
+ *   shipped `claude-agent-sdk` 0.3.224 bundle). The CLI's abort predicate, its
+ *   cause collapse, the suppression set that puts `refusal-fallback-edit` and
+ *   DorkOS's own `interrupt` in one bucket, and the `result` shapes an abort
+ *   closes with are all quoted in
  *   `research/20260903_claude-cli-aborted-refusal-shapes.md`, with the recipe
  *   for re-running it after an SDK bump.
+ *
+ *   **Re-extracted from the 0.3.268 bundle (2026-09-11), and the suppression set
+ *   GREW.** The shape predicate is byte-identical, and so is everything DorkOS
+ *   reads. What moved is behind it: a new abort cause `turn-abort` collapses to
+ *   the same `interrupt` vocabulary as DorkOS's own `query.interrupt()`, and the
+ *   suppression set is now three members — `interrupt`, `turn-abort`,
+ *   `refusal-fallback-edit` — where it was two. `turn-abort` is what 0.3.246's
+ *   `perTaskStopAffordance` raises, so it is a stop DorkOS may not have asked
+ *   for. **No change is needed here, and that is the point**: this predicate ANDs
+ *   shape with DorkOS's OWN stop record, so a third cause wearing the same
+ *   terminal reason cannot buy a suppressed error frame. A shape-only gate would
+ *   have silently gained a new way to tell someone they stopped a turn they never
+ *   touched.
  *
  * When both hold the error frame is suppressed and the turn settles on its
  * terminal reason, which the projector already reads as `interrupted`. Nothing
@@ -109,6 +121,14 @@ export function mapErrorCategory(subtype: string): ErrorCategory {
  * Excludes `rate_limit` / `overloaded` (handled by the `api_retry` and
  * `rate_limit_event` channels) and `max_output_tokens` (handled by the
  * `stop_reason === 'max_tokens'` branch) to avoid double-reporting.
+ *
+ * **This set is hand-maintained, and a value missing from it is dropped on the
+ * floor** — `message-event-mapper.ts` gates every assistant-error card on it, so
+ * an unlisted value ends the turn with no card, no log line and nothing a person
+ * can debug. Re-read the `SDKAssistantMessageError` union on every SDK bump: the
+ * 0.3.224 → 0.3.268 range added three values, and all three are things only the
+ * person can fix. Anything new belongs here unless one of the three channels
+ * above already reports it.
  */
 export const SURFACED_ASSISTANT_ERRORS = new Set([
   'model_not_found',
@@ -117,6 +137,9 @@ export const SURFACED_ASSISTANT_ERRORS = new Set([
   'billing_error',
   'invalid_request',
   'server_error',
+  'account_on_hold',
+  'verification_required',
+  'cloud_credential_error',
 ]);
 
 /**
@@ -170,6 +193,19 @@ export function describeAssistantError(error: string, noticeText?: string): stri
       return describeAuthError(CLAUDE_CODE_RUNTIME_TYPE);
     case 'billing_error':
       return 'There is a billing issue with your Claude account.';
+    case 'account_on_hold':
+      return 'Your Claude account is on hold, so it cannot run this. Check your Claude account settings, then try again.';
+    case 'verification_required':
+      return 'Your Claude account needs to be verified before it can run this. Finish verification in your Claude account settings, then try again.';
+    case 'cloud_credential_error':
+      // Deliberately NOT `describeAuthError`, which its two credential siblings
+      // above do use. That sentence says the Claude sign-in stopped working and
+      // earns the client's "Fix sign-in" treatment; this failure is the cloud
+      // credential DorkOS was handed (Bedrock, Vertex or Foundry), which a
+      // sign-in cannot repair. Sending someone to sign in again for it would be
+      // a confident wrong answer, so the card stays an execution error and says
+      // where the fix actually is.
+      return 'Claude could not use the cloud credentials it was given. Check them in Settings, then try again.';
     case 'invalid_request':
       return isSafeguardRefusal(noticeText)
         ? SAFEGUARD_REFUSAL_MESSAGE

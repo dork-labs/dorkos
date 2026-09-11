@@ -30,6 +30,7 @@ import type { McpTargetProbeResult } from '../agent-mcp-target-probe.js';
 // test that deliberately injects `EMFILE` into `fs`, so a fixture read here is a
 // real source of cross-file flake. The import is resolved at transform time.
 import observedStatus from './fixtures/mcp-server-status-401.observed.json' with { type: 'json' };
+import observedStatus268 from './fixtures/mcp-server-status-401-0.3.268.observed.json' with { type: 'json' };
 
 const AGENT_ID = '01HV7KJZZZ0000000000000000';
 const SERVER = 'granola';
@@ -551,6 +552,37 @@ describe('reading a turn’s status snapshot', () => {
     );
     // …and the two servers that were merely still connecting are left alone.
     expect(mcpAuthEvidenceFrom(observed)).not.toContain('shadcn');
+  });
+
+  it('catches the same two on a snapshot re-observed two SDK versions later', async () => {
+    // Provenance: `fixtures/mcp-server-status-401-0.3.268.observed.json` is the
+    // same harness re-run on 2026-09-11 against
+    // `@anthropic-ai/claude-agent-sdk` 0.3.268, on the bump from 0.3.224. Rows
+    // belonging to that machine's own servers were removed; the three kept are
+    // unedited.
+    //
+    // Two things the 0.3.177 snapshot could not show, and the reason a second
+    // anchor is worth committing rather than refreshing the first:
+    //
+    // - the tokenless refusal now carries WORDS ("Dynamic Client Registration
+    //   rejected (HTTP 401)…") where it used to carry an empty string, so a
+    //   detector keying on the message text would read the two versions
+    //   differently. This one deliberately keys on neither;
+    // - a REAL `needs-auth` row appears, which the first run never produced —
+    //   and it carries no `error` field at all, exactly as the binary reading
+    //   said it would.
+    const { mcpAuthEvidenceFrom } = await import('../mcp-revocation.js');
+    const observed: Array<{ name: string; status?: string; error?: string }> = observedStatus268;
+
+    expect(observed.find((s) => s.name === 'probe-bearer')?.status).toBe('failed');
+    expect(observed.find((s) => s.name === 'probe-tokenless')?.error).toMatch(
+      /Dynamic Client Registration rejected/
+    );
+    expect(observed.find((s) => s.status === 'needs-auth')).not.toHaveProperty('error');
+    // `errorCode` still does not cross the SDK boundary — point 2 of the anchor,
+    // now with live evidence at 0.3.268 rather than a binary read alone.
+    for (const row of observed) expect(row).not.toHaveProperty('errorCode');
+    expect(mcpAuthEvidenceFrom(observed)).toEqual(['probe-bearer', 'probe-tokenless', 'linear']);
   });
 
   it('looks at every server that did not come up — `failed` above all', async () => {

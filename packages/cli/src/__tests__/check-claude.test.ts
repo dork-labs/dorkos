@@ -10,6 +10,13 @@ const h = vi.hoisted(() => ({
   exists: ((_p: string) => true) as (path: string) => boolean,
   which: null as string | null,
   versionOk: true,
+  // What the provisioned package's `package.json` reports. The provisioned rung
+  // returns nothing unless this matches the SDK the server pins, so "provisioned"
+  // means present AND current; a test describing a STALE install sets an older
+  // number. Hoisted with the rest because `vi.mock` factories run above every
+  // top-level binding in this file.
+  provisionedVersion: null as string | null,
+  provisionSegment: '/runtimes/claude-code/',
 }));
 
 vi.mock('node:module', () => ({
@@ -21,6 +28,12 @@ vi.mock('node:fs', async (importOriginal) => {
   return {
     ...actual,
     existsSync: (p: string) => h.exists(p),
+    // Scoped to the provisioned tree: a blanket `package.json` intercept also
+    // catches the ones read while other modules are still importing.
+    readFileSync: (file: string, ...rest: unknown[]) =>
+      typeof file === 'string' && file.includes(h.provisionSegment) && file.endsWith('package.json')
+        ? JSON.stringify({ version: h.provisionedVersion ?? CLAUDE_SDK_VERSION })
+        : (actual.readFileSync as (...a: unknown[]) => unknown)(file, ...rest),
   };
 });
 
@@ -44,12 +57,15 @@ vi.mock('node:child_process', () => ({
 
 // Must import after mock setup
 const { checkClaude } = await import('../check-claude.js');
+const { CLAUDE_SDK_VERSION } =
+  await import('../../server/services/runtimes/claude-code/tooling/provision.js');
 
 describe('checkClaude', () => {
   let mockConsoleWarn: MockInstance<typeof console.warn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    h.provisionedVersion = null;
     h.resolve = () => {
       throw new Error('not found');
     };
@@ -120,5 +136,23 @@ describe('checkClaude', () => {
 
     expect(checkClaude()).toBe(true);
     expect(mockConsoleWarn).not.toHaveBeenCalled();
+  });
+
+  // The other half of that rung. A provisioned install left behind by an earlier
+  // SDK pin is not a usable Claude: from claude-agent-sdk 0.3.268 a session with
+  // a plugin enabled is launched with `--await-initialize`, which an older
+  // `claude` rejects outright. It must read as absent here too, so `dorkos
+  // doctor` reports honestly instead of pointing at a binary that cannot run a
+  // turn.
+  it('does not count a provisioned install left behind by an earlier pin', () => {
+    h.resolve = () => {
+      throw new Error('optional dep not installed');
+    };
+    h.which = null;
+    h.exists = (p) => p.includes(PROVISIONED);
+    h.provisionedVersion = '0.3.224';
+
+    expect(checkClaude()).toBe(false);
+    expect(mockConsoleWarn).toHaveBeenCalled();
   });
 });

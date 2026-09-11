@@ -129,6 +129,32 @@ describe('the tool input schema can carry every action it teaches', () => {
     expect(named(hint, CONTENT_TYPES).sort()).toEqual([...CONTENT_TYPES].sort());
   });
 
+  it('carries no z.record at any depth, which would empty the whole tool list', () => {
+    // claude-agent-sdk 0.3.257+ with zod 4.5.3+ throws inside its record
+    // processor while answering `tools/list`, and the model is handed NO DorkOS
+    // tools at all — silently (repo memory: "Claude SDK + zod record tools
+    // vanish"; the full story is in `claude-code/mcp-tools/tool-exposure.ts`).
+    // `z.object({}).catchall(...)` accepts the same values and does not.
+    //
+    // Checked on the JSON Schema the SDK actually serializes, rather than on the
+    // source text: `propertyNames` appears there if and only if a record is in
+    // the tree, at ANY depth, however the record was spelled or re-exported.
+    // `tool-exposure.test.ts` owns the behavioural half over the whole tool
+    // surface; this owns THIS schema, which is the one a catalog edit touches.
+    const json = JSON.stringify(z.toJSONSchema(z.object(CONTROL_UI_INPUT), { io: 'input' }));
+    expect(json).not.toContain('propertyNames');
+
+    // The probe: the same schema with the record restored does contain it, so a
+    // green result above is a fact about the input and not about the matcher.
+    const withRecord = JSON.stringify(
+      z.toJSONSchema(
+        z.object({ ...CONTROL_UI_INPUT, content: z.record(z.string(), z.unknown()).optional() }),
+        { io: 'input' }
+      )
+    );
+    expect(withRecord).toContain('propertyNames');
+  });
+
   it('accepts apply_layout with its shape name, which it used to strip', () => {
     // `tool()` narrows arguments to CONTROL_UI_INPUT's keys before the handler
     // parses them, so an `apply_layout` whose `shape` is not a key arrives

@@ -1414,7 +1414,11 @@ describe('an elicitation-only turn is not a silent turn (DOR-1240)', () => {
     // answers here: the turn closes with nothing else said.
     void process.options.onElicitation?.(
       { serverName: 'test-server', message: 'Which environment?' },
-      { signal: new AbortController().signal }
+      // `requestId` became required on the callback's options bag in SDK
+      // 0.3.268: it is the control_request envelope id an out-of-band
+      // control_response would have to echo. DorkOS answers in-band, so the
+      // value is only ever passed through.
+      { signal: new AbortController().signal, requestId: 'elicit-1' }
     );
     process.emit(resultMessage(process.received[1]!));
     const events = await running;

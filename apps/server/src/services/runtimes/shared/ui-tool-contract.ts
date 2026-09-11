@@ -27,8 +27,10 @@
  * per-variant sentence is written by hand, keyed by variant name in
  * {@link CANVAS_CONTENT_CATALOG} and {@link UI_ACTION_CATALOG}. A variant added
  * to the schema with no entry in its table is a `tsc` error (the tables are
- * total `Record`s over the union's own keys) and a throw at render time, so it
- * cannot ship untaught. `__tests__/ui-tool-contract.test.ts` holds the line from
+ * total `Record`s over the union's own keys) and, if the types are bypassed, a
+ * throw at IMPORT time — both catalogs are rendered into the two exported
+ * constants below at module scope, so the module cannot even load with a
+ * variant nothing teaches. `__tests__/ui-tool-contract.test.ts` holds the line from
  * the other side: it re-derives both sets from the schemas and asserts each
  * rendered surface names exactly those, no more and no fewer.
  *
@@ -309,7 +311,8 @@ export interface UiCatalogOptions {
  *
  * @param options - Indent, whether to include sentences, and which variants.
  * @returns The rendered lines, newline-joined.
- * @throws When a variant has no entry in {@link CANVAS_CONTENT_CATALOG}.
+ * @throws When a variant has no entry in {@link CANVAS_CONTENT_CATALOG}. The
+ *   real call sites are module-scope, so that is a load failure, not a runtime one.
  */
 export function buildCanvasContentCatalog(options: UiCatalogOptions = {}): string {
   const { indent = '  ', sentences = true, names = canvasContentTypes() } = options;
@@ -335,7 +338,8 @@ export function buildCanvasContentCatalog(options: UiCatalogOptions = {}): strin
  *
  * @param options - Indent, whether to include sentences, and which actions.
  * @returns The rendered lines, newline-joined.
- * @throws When an action has no entry in {@link UI_ACTION_CATALOG}.
+ * @throws When an action has no entry in {@link UI_ACTION_CATALOG}. The real
+ *   call sites are module-scope, so that is a load failure, not a runtime one.
  */
 export function buildUiActionCatalog(options: UiCatalogOptions = {}): string {
   const { indent = '  ', sentences = true, names = uiActionNames() } = options;
@@ -392,8 +396,13 @@ export const CONTROL_UI_INPUT = {
     .string()
     .optional()
     .describe('Tab name for switch_sidebar_tab (embedded app only; no-op in the web app)'),
+  // Not `z.record()`: a record anywhere in an in-session tool's schema crashes the
+  // whole `tools/list` answer on claude-agent-sdk 0.3.257+ with zod 4.5.3+, and the
+  // model is handed no DorkOS tools at all. `catchall` accepts the same values.
+  // The full story is in `claude-code/mcp-tools/tool-exposure.ts`.
   content: z
-    .record(z.string(), z.unknown())
+    .object({})
+    .catchall(z.unknown())
     .optional()
     .describe(
       'Canvas content for open_canvas/update_canvas. EXACTLY ONE of:\n' +

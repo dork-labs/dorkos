@@ -181,3 +181,59 @@ how well the blame reads), and deliberately left as a separate opportunity:
 naming the refusal category and offering edit-and-retry from
 `refused_user_message_uuid` would be a real UX improvement on top of the
 settlement fix.
+
+---
+
+## Re-run on 0.3.268 (2026-09-11) — the suppression set grew to three
+
+Re-extracted with the recipe above from the `claude-agent-sdk-darwin-arm64`
+**0.3.268** binary, on the 0.3.224 → 0.3.268 bump. As predicted, every
+identifier moved; the string literals and predicate bodies survived.
+
+**Unchanged, verbatim** — the shape predicate DorkOS mirrors:
+
+```js
+function DR(e) {
+  return e === 'aborted_streaming' || e === 'aborted_tools';
+}
+```
+
+Still byte-for-byte `INTERRUPTED_TERMINAL_REASONS` minus DorkOS's own synthetic
+`'interrupted'`. Nothing DorkOS reads off the SDK surface moved.
+
+**Changed — a new abort cause, and it collapses into `interrupt`:**
+
+```js
+case "interrupt":   return "interrupt";
+case "turn-abort":  return "interrupt";   // NEW at 0.3.268
+case A:             return "subagent_park"; // NEW at 0.3.268
+```
+
+**Changed — the suppression set is now three members, not two:**
+
+```js
+var E = new Set(['interrupt', 'turn-abort', 'refusal-fallback-edit']);
+function fY(e) {
+  return E.has(el(e));
+}
+```
+
+A sibling set appears beside it, naming the causes the CLI treats as
+person-initiated: `new Set(["user-cancel","remote-cancel","shutdown","interrupt","turn-abort"])`.
+
+`turn-abort` is raised per-turn (`(e, n) => n === 'turn' && el(e) === 'turn-abort'`),
+which is the shape of 0.3.246's `perTaskStopAffordance` — an interrupt scoped to
+the current turn that leaves background agents running. So it is an abort DorkOS
+did not necessarily request, wearing the same terminal reason and the same
+suppression as one it did.
+
+**What this costs DorkOS: nothing, by construction.** `isStoppedTurnResult` ANDs
+the shape with DorkOS's own `stopWasRequested` record, so a third cause sharing
+the terminal reason cannot buy a suppressed error frame. A shape-only gate would
+have gained a new way to tell someone they stopped a turn they never touched —
+which is the failure mode the AND was added for, now confirmed by a second
+independent cause rather than by argument alone.
+
+The `[ede_diagnostic]` line is still composed the same way and still filtered
+out of the informational system message, so section 3 holds unchanged. Section 4
+also holds: `apps/server/src` still mentions neither refusal subtype.
