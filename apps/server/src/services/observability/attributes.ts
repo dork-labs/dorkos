@@ -88,6 +88,17 @@ export const ATTR = {
   /** Turn-total output tokens (summed across the turn's requests), when known. */
   GEN_AI_USAGE_OUTPUT_TOKENS: 'gen_ai.usage.output_tokens',
   /**
+   * Turn-total thinking tokens, when the runtime reports them. A SHARE of
+   * {@link ATTR.GEN_AI_USAGE_OUTPUT_TOKENS}, never an addition to it, so a
+   * consumer that adds the two double-counts. Absent means "not reported",
+   * which is not the same as zero — see the `turnThinkingTokens` field doc.
+   *
+   * In the `dorkos.` namespace for the same reason the cost is: the GenAI
+   * convention has no settled key for reasoning tokens, and inventing a
+   * `gen_ai.`-prefixed one would claim a standard that does not exist.
+   */
+  GEN_AI_THINKING_TOKENS: 'dorkos.gen_ai.thinking_tokens',
+  /**
    * Turn cost in USD, when the runtime reports one. Not an OTel-standard GenAI
    * key (the convention leaves cost vendor-specific), so it stays in the
    * `dorkos.` namespace — still a plain number, never content.

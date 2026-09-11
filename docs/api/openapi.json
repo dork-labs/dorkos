@@ -3394,6 +3394,14 @@
             "type": "number",
             "minimum": 0
           },
+          "costBasis": {
+            "type": "string",
+            "enum": [
+              "list",
+              "managed",
+              "unknown"
+            ]
+          },
           "state": {
             "$ref": "#/components/schemas/UsageState"
           },
