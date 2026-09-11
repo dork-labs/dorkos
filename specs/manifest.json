@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260911-181432",
+      "slug": "claude-agent-sdk-upgrade-0.3.268",
+      "title": "Claude Agent SDK Upgrade to 0.3.268",
+      "created": "2026-09-11",
+      "status": "ideation"
+    },
+    {
       "id": "260910-001729",
       "slug": "composio-managed-auth-defaults",
       "title": "Make Composio services ready to connect with managed sign-in defaults",
