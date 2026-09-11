@@ -56,7 +56,6 @@ import { resolveToolConfig } from '../tooling/tool-filter.js';
 import { loadsAgentToAgentTools } from '../mcp-tools/tool-exposure.js';
 import { buildSystemPromptAppend, renderContextEntry } from './context-builder.js';
 import { createCanUseTool, handleElicitation } from './interactive-handlers.js';
-import { mcpToolTimeoutFloorEnv } from './mcp-tool-timeout-env.js';
 import {
   AUTO_DOWNGRADE_STATUS,
   UNKNOWN_MODE_STATUS,
@@ -327,11 +326,13 @@ export async function resolveLaunch(args: {
       // fixtures keep supplying the blocks a real model would have stopped
       // sending — so this is verified by one live turn per bump.
       CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
-      // An inherited MCP_TOOL_TIMEOUT shorter than the in-session approval hold
-      // would kill every held destructive call mid-wait, with an ERROR where the
-      // poll payload used to be. Floored, never erased — see the module TSDoc for
-      // the tradeoff (DOR-987).
-      ...mcpToolTimeoutFloorEnv(),
+      // NOTE: an inherited MCP_TOOL_TIMEOUT is deliberately passed through
+      // untouched. DorkOS used to raise it to the approval hold's cap, because
+      // the variable governs every MCP server in the subprocess and a low value
+      // killed held destructive calls mid-wait (DOR-987). The `dorkos` server now
+      // declares its own per-call ceiling instead (`mcp-tools/tool-timeout.ts`),
+      // so the operator's value applies to the external server they lowered it
+      // for and to nothing else.
       // The account, ALWAYS spelled out (see `claudeConfigDirEnv`) so it is never
       // inherited from `process.env`. That is load-bearing for D8: rename and
       // fork point the in-process SDK at an account by mutating

@@ -22,6 +22,7 @@ import {
   type SenderIdentity,
 } from './relay-helpers.js';
 import { createRelayNotifyUserHandler } from './relay-notify-tools.js';
+import { RELAY_SEND_AND_WAIT_MAX_MS } from './tool-timeout.js';
 import type { RelayBudget } from '@dorkos/shared/relay-schemas';
 
 /**
@@ -689,10 +690,10 @@ export function getRelayTools(
           .number()
           .int()
           .min(1000)
-          .max(600000)
+          .max(RELAY_SEND_AND_WAIT_MAX_MS)
           .optional()
           .describe(
-            'Max milliseconds to wait for a reply (default: 60000, max: 600000). For tasks longer than 10 min, dispatch asynchronously instead.'
+            `Max milliseconds to wait for a reply (default: 60000, max: ${RELAY_SEND_AND_WAIT_MAX_MS}). For tasks longer than 10 min, dispatch asynchronously instead.`
           ),
         budget: z
           .object({

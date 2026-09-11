@@ -83,6 +83,17 @@ describe('fetchContextBreakdown', () => {
     expect(result.categories.some((c) => c.name === 'Free space')).toBe(false);
   });
 
+  it('asks for the FULL breakdown rather than the estimated summary', async () => {
+    // Measured on a live session at SDK 0.3.268 (see the function's TSDoc):
+    // `detail: 'summary'` matches the headline percentage exactly but splits the
+    // per-category rows wrongly — it banks what it could not count against system
+    // tools — and saves ~1ms a turn for it. DorkOS renders those rows, so the
+    // request is pinned here: it must be explicit, and it must be 'full'.
+    const getContextUsage = vi.fn().mockResolvedValue(sdkResponse());
+    await fetchContextBreakdown({ getContextUsage } as unknown as Query, 1000);
+    expect(getContextUsage).toHaveBeenCalledWith({ detail: 'full' });
+  });
+
   it('rejects when the control response does not arrive within the timeout', async () => {
     const query = {
       getContextUsage: vi.fn().mockReturnValue(new Promise(() => {})), // never resolves

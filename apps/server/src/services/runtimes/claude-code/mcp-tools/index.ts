@@ -12,6 +12,7 @@ import {
   alwaysLoadedToolsFor,
   loadsAgentToAgentTools,
 } from './tool-exposure.js';
+import { DORKOS_MCP_TOOL_TIMEOUT_MS } from './tool-timeout.js';
 import { getCoreTools } from './core-tools.js';
 import { getTasksTools } from './task-tools.js';
 import { getRelayTools } from './relay-tools.js';
@@ -363,6 +364,12 @@ export function createDorkOsToolServer(
     // from the same constant (DOR-1292).
     name: DORKOS_MCP_SERVER_NAME,
     version: '1.0.0',
+    // This server's OWN per-call ceiling (SDK 0.3.248), rather than whatever
+    // `MCP_TOOL_TIMEOUT` the subprocess happened to inherit. It is long because
+    // one call here legitimately waits on a person — see the constant's module,
+    // which derives it from the approval hold and explains why the old
+    // environment floor is gone rather than kept beside it.
+    timeout: DORKOS_MCP_TOOL_TIMEOUT_MS,
     tools: [
       ...handRegisteredInSessionTools(deps, {
         ...(session ? { session } : {}),

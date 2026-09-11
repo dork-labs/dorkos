@@ -79,6 +79,7 @@ interface HarvestState {
   model?: string;
   inputTokens?: number;
   outputTokens?: number;
+  thinkingTokens?: number;
   costUsd?: number;
 }
 
@@ -98,11 +99,13 @@ function harvestEvent(event: StreamEvent, state: HarvestState): void {
     costUsd?: unknown;
     turnInputTokens?: unknown;
     turnOutputTokens?: unknown;
+    turnThinkingTokens?: unknown;
   };
   if (typeof data.model === 'string') state.model = data.model;
   if (typeof data.costUsd === 'number') state.costUsd = data.costUsd;
   if (typeof data.turnInputTokens === 'number') state.inputTokens = data.turnInputTokens;
   if (typeof data.turnOutputTokens === 'number') state.outputTokens = data.turnOutputTokens;
+  if (typeof data.turnThinkingTokens === 'number') state.thinkingTokens = data.turnThinkingTokens;
 }
 
 /**
@@ -153,6 +156,15 @@ export async function* observeRuntimeTurn(
         span.setAttr(ATTR.GEN_AI_USAGE_INPUT_TOKENS, state.inputTokens);
       if (state.outputTokens !== undefined)
         span.setAttr(ATTR.GEN_AI_USAGE_OUTPUT_TOKENS, state.outputTokens);
+      // Span only, deliberately: the thinking count goes to the OPERATOR's own
+      // trace (plane 2, which leaves nothing with DorkOS) and NOT to the
+      // consent-gated bridge below. `docs/self-hosting/telemetry.mdx` enumerates
+      // what that bridge sends — "the input and output token counts" — and a
+      // person who read that sentence and said yes did not say yes to a third
+      // count. Widening it is a consent decision with a docs edit attached, not
+      // a field read.
+      if (state.thinkingTokens !== undefined)
+        span.setAttr(ATTR.GEN_AI_THINKING_TOKENS, state.thinkingTokens);
       if (state.costUsd !== undefined) span.setAttr(ATTR.GEN_AI_COST_USD, state.costUsd);
       span.end();
     }
