@@ -4153,6 +4153,8 @@ async function start() {
         listenerUrl: connectorRuntimeMcpListener.url,
         agentToolsUrl: connectorRuntimeMcpListener.agentUrl,
         isConnectorCapabilityId: isConnectorRuntimeCapabilityId,
+        accessSnapshot: (agentId, sessionId) =>
+          connectorAccess.accessSnapshot(connectorOwner, agentId, sessionId),
       });
     }
     if (env.DORKOS_TEST_RUNTIME) {

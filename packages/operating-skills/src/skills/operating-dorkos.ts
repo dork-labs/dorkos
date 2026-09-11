@@ -6,7 +6,7 @@ import { TOOL_NAME_NOTE } from '../tool-name-note.js';
  * it to the right actuation channel (CLI vs in-session MCP tools), and teaches
  * the permission tiers and the approval handshake that gate what it can run.
  *
- * ## This body sits at exactly the 150-line cap
+ * ## This body stays within the 150-line cap
  *
  * `pack.test.ts` fails at 151, so the next edit here MUST cut a line before it
  * adds one. That is a real constraint, not an annoyance: every line is injected
@@ -34,38 +34,35 @@ using-the-marketplace, reading-activity, answering-dorkos-questions, working-in-
 
 ## Two ways to act, pick one
 
-1. **In-session MCP tools** (the \`dorkos\` tool server, in Claude Code sessions).
-   Structured results, no shell. Prefer them when they exist: \`create_agent\`,
-   \`update_agent\`, \`tasks_*\`, \`activity_list\`, \`agents_recent_activity\`,
-   \`config_get\`/\`config_patch\`, \`check_update\`, \`mesh_*\`, \`relay_*\`, \`marketplace_*\`.
-
-2. **The \`dorkos\` CLI** (shell). Works from every runtime, including Codex and
-   OpenCode where MCP tools are not injected. This is the universal surface.
-
-Do not mix channels for one operation: use the MCP tool where one exists, else the CLI.
+1. **Injected DorkOS MCP tools** can exist in Claude Code, Codex, and OpenCode.
+   Prefer them when present. Use the exact tool names supplied in this session.
+2. **CLI fallback** is available only through a verified current-distribution
+   invocation supplied by DorkOS context. Never resolve bare \`dorkos\` through a
+   login shell: an older global install can read or reset incompatible settings.
+   If no verified invocation is provided, use tools or ask for help.
 
 ## Discover, then act
 
-Ask the running instance what it can do rather than guessing. \`dorkos capabilities\`
-prints id, tier, and title for every capability (\`--json\` pipes the raw catalog into
-jq). In-session, \`list_capabilities\` answers with less: one compact line each, one
-page at a time, so discovery cannot flood your context. Narrow with \`domain\` or
-\`query\`, ask \`detail:'full'\` for JSON Schemas, page with \`cursor\`, and read the
-\`guidance\` line when a page left something out. Run any entry by id:
+Use \`list_capabilities\` to discover instance capabilities, narrowing by \`domain\`
+ or \`query\`; request \`detail:'full'\` for schemas and page with \`cursor\`.
+The generic catalog is not the inventory of accounts granted to this agent.
+Use the supplied current CLI invocation for CLI examples below, never a PATH lookup.
 
-    dorkos call <capability-id> [--input '<json>'] [--approval <token>]
-    dorkos call operator.activity_list --input '{"limit":5}'
+## Connections: Accounts and Messaging
 
-\`dorkos call\` is the universal actuation path: most capabilities have no curated
-CLI verb of their own. It prints raw JSON on stdout.
+Accounts let you act on services; Messaging connects Slack/Telegram conversations.
+Use injected tools ending in \`connectors.list_granted_connections\` (OpenCode:
+\`connectors_list_granted_connections\`) to discover your current account access.
+Then call \`list_granted_operations\` with its returned \`connectionId\`; choose the
+exact operation, immutable revision, input schema, and execution classification.
+A profile lookup cannot list messages. Do not invent filters or describe errors as results.
+Access can change between turns: consult the fresh Accounts context and re-list before use.
+If access is missing, \`request_connection\` asks the owner for what the task needs;
+\`get_connection_request\` checks your request. These never expose other accounts.
+Do not inspect shell configuration, credentials, or generic MCP registries to infer access.
 
-The catalog covers capabilities only. The agent, task, relay, mesh, binding,
-extension, and UI tools are registered straight onto the MCP server: they appear
-in your own tool list, not in the catalog, and \`dorkos call\` cannot reach them.
-They carry a tier all the same and answer to the same gate. Some have a CLI verb
-instead (see the list below); relay, mesh, binding, extension, and UI have none, so
-without the MCP tools they are out of reach entirely. Say that plainly rather than
-hunting for a command.
+Some tools (agent, task, relay, mesh, binding, extension and UI) are outside the
+capability catalog. Use the injected tools; do not assume CLI parity or invent commands.
 
 ## Permission tiers
 

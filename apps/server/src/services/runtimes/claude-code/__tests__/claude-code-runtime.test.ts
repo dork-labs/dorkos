@@ -10,6 +10,7 @@ import { DEFAULT_CWD } from '../../../../lib/resolve-root.js';
 // vi.fn() instances for context-builder and tool-filter.
 const {
   _mockBuildSystemPromptAppend,
+  _mockRenderContextEntry,
   _mockResolveToolConfig,
   contextBuilderFactory,
   toolFilterFactory,
@@ -18,13 +19,15 @@ const {
     text: '<env>\nWorking directory: /mock\n</env>',
     stable: '<env>\nWorking directory: /mock\n</env>',
   });
+  const render = vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`);
   const rtc = vi.fn().mockReturnValue({ tasks: true, relay: true, mesh: true, adapter: true });
   return {
     _mockBuildSystemPromptAppend: bspa,
+    _mockRenderContextEntry: render,
     _mockResolveToolConfig: rtc,
     contextBuilderFactory: () => ({
       buildSystemPromptAppend: bspa,
-      renderContextEntry: vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`),
+      renderContextEntry: render,
     }),
     toolFilterFactory: () => ({ resolveToolConfig: rtc }),
   };
@@ -230,70 +233,92 @@ describe('ClaudeCodeRuntime', () => {
   });
 
   describe('sendMessage()', () => {
-    it('opens lazily with the SDK canonical session id and revokes at turn end', async () => {
-      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-      const proof = { claims: { kind: 'runtime' } } as ServerPrincipalProof;
-      const principals: ConnectorRuntimePrincipalPort = {
-        openTurn: vi.fn().mockResolvedValue({
-          bindingId: 'binding-1',
-          bearer: 'turn-secret',
-          expiresAt: '2099-01-01T00:00:00.000Z',
-          renewalPermit: {} as never,
-        }),
-        renew: vi.fn(),
-        resolve: vi.fn().mockResolvedValue({ status: 'resolved', principal: proof }),
-        revoke: vi.fn().mockResolvedValue(undefined),
-      };
-      agentManager.setMeshCore({
-        getByPath: () => ({ id: 'agent-1', name: 'agent' }),
-        listWithPaths: () => [],
-        updateLastSeen: () => undefined,
-      });
-      agentManager.setConnectorRuntimeTools({
-        principals,
-        listenerUrl: 'http://127.0.0.1:4341/mcp',
-        isConnectorCapabilityId: (id) => id === 'connectors.execute_read',
-      });
+    it.each(['hello', '  /help'])(
+      'opens lazily and keeps slash commands free of Accounts context: %s',
+      async (content) => {
+        _mockRenderContextEntry.mockClear();
+        const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+        const proof = { claims: { kind: 'runtime' } } as ServerPrincipalProof;
+        const principals: ConnectorRuntimePrincipalPort = {
+          openTurn: vi.fn().mockResolvedValue({
+            bindingId: 'binding-1',
+            bearer: 'turn-secret',
+            expiresAt: '2099-01-01T00:00:00.000Z',
+            renewalPermit: {} as never,
+          }),
+          renew: vi.fn(),
+          resolve: vi.fn().mockResolvedValue({ status: 'resolved', principal: proof }),
+          revoke: vi.fn().mockResolvedValue(undefined),
+        };
+        agentManager.setMeshCore({
+          getByPath: () => ({ id: 'agent-1', name: 'agent' }),
+          listWithPaths: () => [],
+          updateLastSeen: () => undefined,
+        });
+        const accessSnapshot = vi
+          .fn()
+          .mockResolvedValue({ accountCount: 1, revision: 'private-revision' });
+        agentManager.setConnectorRuntimeTools({
+          principals,
+          listenerUrl: 'http://127.0.0.1:4341/mcp',
+          isConnectorCapabilityId: (id) => id === 'connectors.execute_read',
+          accessSnapshot,
+        });
 
-      let connectorTurn: { resolvePrincipal(): Promise<ServerPrincipalProof> } | undefined;
-      agentManager.setMcpServerFactory((session) => {
-        connectorTurn = session.connectorTurn;
-        return {};
-      });
-      const source = sdkSimpleText('ok', 'canonical-claude-session');
-      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
-        wrapSdkQuery(
-          (async function* () {
-            for await (const message of source) {
-              yield message;
-              if (message.type === 'system' && message.subtype === 'init') {
-                await connectorTurn?.resolvePrincipal();
+        let connectorTurn: { resolvePrincipal(): Promise<ServerPrincipalProof> } | undefined;
+        agentManager.setMcpServerFactory((session) => {
+          connectorTurn = session.connectorTurn;
+          return {};
+        });
+        const source = sdkSimpleText('ok', 'canonical-claude-session');
+        (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
+          wrapSdkQuery(
+            (async function* () {
+              for await (const message of source) {
+                yield message;
+                if (message.type === 'system' && message.subtype === 'init') {
+                  await connectorTurn?.resolvePrincipal();
+                }
               }
-            }
-          })()
-        )
-      );
+            })()
+          )
+        );
 
-      agentManager.ensureSession('requested-session', { permissionMode: 'default' });
-      for await (const event of agentManager.sendMessage('requested-session', 'hello')) void event;
+        agentManager.ensureSession('requested-session', { permissionMode: 'default' });
+        for await (const event of agentManager.sendMessage('requested-session', content))
+          void event;
 
-      expect(principals.openTurn).toHaveBeenCalledWith(
-        {
-          runtime: 'claude-code',
-          canonicalSessionId: 'canonical-claude-session',
-          agentPath: DEFAULT_CWD,
-          canonicalCwd: DEFAULT_CWD,
-          signal: expect.any(AbortSignal),
-        },
-        { isCurrent: expect.any(Function) }
-      );
-      expect(principals.resolve).toHaveBeenCalledWith({
-        bearer: 'turn-secret',
-        expectedRuntime: 'claude-code',
-        expectedCanonicalCwd: DEFAULT_CWD,
-      });
-      expect(principals.revoke).toHaveBeenCalledWith('binding-1', 'turn_terminal');
-    });
+        const entries = _mockRenderContextEntry.mock.calls.map((call) => call[0]);
+        if (content.trimStart().startsWith('/')) {
+          expect(accessSnapshot).not.toHaveBeenCalled();
+          expect(entries.some((entry) => entry.kind === 'accounts_access')).toBe(false);
+        } else {
+          expect(accessSnapshot).toHaveBeenCalledOnce();
+          expect(entries).toContainEqual({
+            kind: 'accounts_access',
+            scope: 'per-turn',
+            data: { accountCount: 1, changed: false },
+          });
+        }
+
+        expect(principals.openTurn).toHaveBeenCalledWith(
+          {
+            runtime: 'claude-code',
+            canonicalSessionId: 'canonical-claude-session',
+            agentPath: DEFAULT_CWD,
+            canonicalCwd: DEFAULT_CWD,
+            signal: expect.any(AbortSignal),
+          },
+          { isCurrent: expect.any(Function) }
+        );
+        expect(principals.resolve).toHaveBeenCalledWith({
+          bearer: 'turn-secret',
+          expectedRuntime: 'claude-code',
+          expectedCanonicalCwd: DEFAULT_CWD,
+        });
+        expect(principals.revoke).toHaveBeenCalledWith('binding-1', 'turn_terminal');
+      }
+    );
 
     it('auto-creates session if not in memory', async () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');

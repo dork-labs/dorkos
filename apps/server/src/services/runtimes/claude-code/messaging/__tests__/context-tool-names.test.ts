@@ -636,6 +636,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // The exact module list, so a new runtime-neutral module is a line to look at
     // here rather than something a `>` bound silently absorbs.
     expect(modules).toEqual([
+      'accounts-access-context.ts',
       'agent-context.ts',
       'approval-verdict-block.ts',
       'asar-path.ts',

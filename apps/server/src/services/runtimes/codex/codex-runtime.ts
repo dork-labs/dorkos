@@ -1,3 +1,4 @@
+import { AccountsAccessContext } from '../shared/accounts-access-context.js';
 /**
  * Codex Runtime — implements the AgentRuntime interface for OpenAI Codex.
  *
@@ -201,6 +202,7 @@ export class CodexRuntime implements AgentRuntime {
   private meshCore: AgentRegistryPort | undefined;
   /** Internal connector tool boundary, installed after boot opens its listener. */
   private connectorRuntimeTools: ConnectorRuntimeTools | undefined;
+  private readonly accountsAccess = new AccountsAccessContext();
   /**
    * Resolver for an agent's enabled managed MCP servers, when the composition
    * root injected it. Absent leaves every turn with only the `dorkos_ui`
@@ -723,16 +725,23 @@ export class CodexRuntime implements AgentRuntime {
             .join('\n\n')
         : neutralContextSelection.text;
 
+      const accessContext =
+        connectorTools && this.connectorRuntimeTools && meshAgent
+          ? await this.accountsAccess.select(this.connectorRuntimeTools, meshAgent.id, sessionId)
+          : undefined;
+      const turnOpts = accessContext
+        ? { ...opts, additionalContext: [...(opts?.additionalContext ?? []), accessContext.entry] }
+        : opts;
       const ctx = createCodexEventContext(sessionId);
       let bound = boundThreadId !== undefined;
       connectorRevokeReason = 'runtime_failed';
-      const { events } = await thread.runStreamed(buildCodexPrompt(content, opts, agentContext), {
-        signal: controller.signal,
-      });
-      // The prompt is with Codex now, so the thread really does hold what this
-      // turn sent. Recorded here and not at selection time: a turn that threw on
-      // the way out must not convince the next one otherwise.
-      neutralContextSelection.commit();
+      const { events } = await thread.runStreamed(
+        buildCodexPrompt(content, turnOpts, agentContext),
+        {
+          signal: controller.signal,
+        }
+      );
+      let completedTurn = false;
       for await (const event of mapCodexThread(events, ctx)) {
         // Persist the binding the moment thread.started reveals the id —
         // before the terminal done — so even an interrupted or crashed first
@@ -750,6 +759,12 @@ export class CodexRuntime implements AgentRuntime {
           );
           bound = true;
         }
+        if (
+          event.type === 'session_status' &&
+          'terminalReason' in event.data &&
+          event.data.terminalReason === 'completed'
+        )
+          completedTurn = true;
         yield event;
         if (
           event.type === 'session_status' &&
@@ -763,6 +778,12 @@ export class CodexRuntime implements AgentRuntime {
         // here — after the event it rode in on, so an image lands in the
         // transcript exactly where the tool result that produced it did.
         yield* captureCodexMedia(this.attachments, sessionId, ctx);
+      }
+      // The SDK iterator is lazy: returning runStreamed is not delivery.
+      // Only acknowledge after successful consumption; failures keep the notice owed.
+      if (completedTurn && !connectorRuntimeFailed && !controller.signal.aborted) {
+        neutralContextSelection.commit();
+        accessContext?.commit();
       }
       connectorRevokeReason = connectorRuntimeFailed ? 'runtime_failed' : 'turn_terminal';
     } finally {

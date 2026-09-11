@@ -229,17 +229,19 @@ describe('the pack teaches the world as it actually is', () => {
     expect(umbrella).toContain('operator_denied');
   });
 
-  it('teaches `dorkos call`, the only actuation path a Codex/OpenCode agent has', () => {
+  it('teaches MCP-first discovery and only a verified CLI fallback', () => {
     expect(ALL_TEXT).toContain('dorkos call');
-    expect(bodyOf('operating-dorkos')).toContain("dorkos call <capability-id> [--input '<json>']");
+    expect(bodyOf('operating-dorkos')).toContain('verified current-distribution');
+    expect(bodyOf('operating-dorkos')).not.toContain('where MCP tools are not injected');
+    expect(bodyOf('operating-dorkos')).toContain('list_granted_operations');
   });
 
   it('says the capability catalog is not the whole tool list', () => {
     // The defect this pack round exists to stop repeating: an agent told the
     // catalog is everything concludes it cannot manage tasks or message a peer.
     const umbrella = bodyOf('operating-dorkos');
-    expect(umbrella).toContain('The catalog covers capabilities only');
-    expect(umbrella).toContain('cannot reach them');
+    expect(umbrella).toContain('outside the\ncapability catalog');
+    expect(umbrella).toContain('do not assume CLI parity');
   });
 
   it('routes marketplace_uninstall through the approval flow, not requires_confirmation', () => {
