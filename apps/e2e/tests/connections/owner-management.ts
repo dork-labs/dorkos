@@ -210,6 +210,121 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
       expect(preview.currentGrants).toEqual([]);
     });
 
+    test('reconnects a disconnected account and removes it only after an acknowledged request', async ({
+      page,
+      request,
+    }) => {
+      const initialId = await harness.connectWorkAccountViaApi(request);
+      await harness.gotoConnections(page);
+      const detail = page.getByTestId('connection-detail');
+      const row = (id: string) => page.getByTestId(`connection-row-${id}`);
+      const disconnect = async (id: string) => {
+        await row(id).getByRole('button').click();
+        await detail.getByRole('button', { name: 'Disconnect', exact: true }).click();
+        const confirmation = page.getByRole('alertdialog', { name: 'Disconnect this account?' });
+        await confirmation.getByRole('button', { name: 'Disconnect', exact: true }).click();
+        await expect(detail).toBeHidden();
+        await expect(
+          page
+            .getByRole('region', { name: 'Disconnected accounts', exact: true })
+            .getByTestId(`connection-row-${id}`)
+        ).toBeVisible();
+        const result = await request.get(`${harness.apiUrl}/api/connectors/connections/${id}`);
+        expect(result.ok()).toBe(true);
+        expect(await result.json()).toMatchObject({
+          connection: { lifecycle: 'disconnected', externalCleanup: 'complete' },
+        });
+      };
+
+      await expect(
+        page
+          .getByRole('region', { name: 'Connected accounts', exact: true })
+          .getByTestId(`connection-row-${initialId}`)
+      ).toBeVisible();
+      await disconnect(initialId);
+      await row(initialId).getByRole('button').click();
+      const initiated = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          response.url().endsWith(`/connections/${initialId}/reconnect`)
+      );
+      await detail.getByRole('button', { name: 'Reconnect', exact: true }).click();
+      const initiation = await initiated;
+      expect(initiation.ok()).toBe(true);
+      const { flowId } = (await initiation.json()) as { flowId: string };
+      expect(flowId).toBeTruthy();
+      const auth = page.getByTestId('connect-auth-dialog');
+      await expect(auth.getByText('Gmail is connected', { exact: true })).toBeVisible();
+      const state = await request.get(
+        `${harness.apiUrl}/api/connectors/authentication-flows/${flowId}`
+      );
+      expect(state.ok()).toBe(true);
+      const completed = (await state.json()) as { state: string; connectionId: string };
+      expect(completed.state).toBe('connected');
+      expect(completed.connectionId).toBeTruthy();
+      await auth.getByRole('button', { name: 'Choose agents' }).click();
+      const access = page.getByRole('dialog', { name: 'Choose agent access' });
+      await expect(access).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(access).toBeHidden();
+      await expect(
+        page
+          .getByTestId('connections-connected')
+          .getByTestId(`connection-row-${completed.connectionId}`)
+      ).toBeVisible();
+      await disconnect(completed.connectionId);
+
+      const removePath = `**/api/connectors/connections/${completed.connectionId}/remove`;
+      await page.route(
+        removePath,
+        (route) =>
+          route.fulfill({
+            status: 503,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: 'Synthetic removal failure' }),
+          }),
+        { times: 1 }
+      );
+      await row(completed.connectionId).getByRole('button').click();
+      await detail.getByTestId('remove-account').click();
+      let confirmation = page.getByRole('alertdialog', {
+        name: 'Remove this account from Accounts?',
+      });
+      const failed = page.waitForResponse((response) =>
+        response.url().endsWith(`/connections/${completed.connectionId}/remove`)
+      );
+      await confirmation.getByRole('button', { name: 'Remove from Accounts', exact: true }).click();
+      expect((await failed).status()).toBe(503);
+      await page.reload();
+      await expect(
+        page
+          .getByTestId('connections-disconnected')
+          .getByTestId(`connection-row-${completed.connectionId}`)
+      ).toBeVisible();
+      await row(completed.connectionId).getByRole('button').click();
+      await detail.getByTestId('remove-account').click();
+      confirmation = page.getByRole('alertdialog', { name: 'Remove this account from Accounts?' });
+      await expect(confirmation).toContainText('past usage and activity will remain');
+      const removed = page.waitForResponse((response) =>
+        response.url().endsWith(`/connections/${completed.connectionId}/remove`)
+      );
+      await confirmation.getByRole('button', { name: 'Remove from Accounts', exact: true }).click();
+      expect((await removed).status()).toBe(204);
+      await expect(detail).toBeHidden();
+      await expect(row(completed.connectionId)).toHaveCount(0);
+      await page.reload();
+      await expect(
+        page.getByRole('heading', { name: 'Connected accounts', exact: true })
+      ).toBeVisible();
+      await expect(row(completed.connectionId)).toHaveCount(0);
+      const inventory = await request.get(`${harness.apiUrl}/api/connectors/connections`);
+      expect(inventory.ok()).toBe(true);
+      const body = (await inventory.json()) as { connections: Array<{ connectionId: string }> };
+      expect(body.connections.map((account) => account.connectionId)).not.toContain(
+        completed.connectionId
+      );
+    });
+
     test('renames, pauses, resumes and disconnects the exact account with visible usage', async ({
       page,
       request,
