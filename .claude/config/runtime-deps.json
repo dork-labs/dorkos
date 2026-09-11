@@ -95,7 +95,8 @@
       "upgrade_notes": [
         "The SDK is only the HTTP client. The `opencode serve` sidecar binary ships as a SEPARATE package (`opencode-ai`, resolved via runtimes.opencode.binaryPath or PATH) and version-couples with the client: assess every SDK bump against the sidecar versions users actually run, and state the supported binary range in the upgrade spec.",
         "npm dist-tags include dozens of `0.0.0-snapshot-*` channels; `latest` is the only meaningful channel: never resolve a target from any other tag.",
-        "Server-driven contract: most behavior lives in the sidecar, so release notes about the server can matter more than client-visible API changes even when no imported type changed."
+        "Server-driven contract: most behavior lives in the sidecar, so release notes about the server can matter more than client-visible API changes even when no imported type changed.",
+        "Some adapter code matches upstream ERROR TEXT rather than a type: the subagent mapper decides stopped-vs-failed from the `task` tool's error string. No type diff can catch a change there, and 1.18.20 made one (a new `Subagent failed (task_id: ...): ...` envelope around a cancelled child). On every bump, diff the upstream task tool, session runner and processor at the target tag for the strings they emit on abort, interrupt, cancel and failure."
       ],
       "changelog_sources": [
         {
@@ -113,12 +114,17 @@
       ],
       "sdk_surface_map": {
         "createOpencodeClient": "server-manager.ts",
-        "OpencodeClient": "server-manager.ts, opencode-runtime.ts, mcp-manager.ts, mcp-status.ts",
-        "Event, AssistantMessage, Permission, SessionStatus, Todo, ToolPart": "event-mapper.ts (ToolPart also session-mapper.ts)",
-        "GlobalEvent": "global-event-hub.ts",
-        "Session, Message, Part": "session-mapper.ts",
-        "ProviderListResponse": "models.ts, opencode-runtime.ts",
-        "McpStatus, McpLocalConfig, McpRemoteConfig": "mcp-status.ts, mcp-server-config.ts"
+        "OpencodeClient": "server-manager.ts, opencode-runtime.ts, mcp/mcp-manager.ts, mcp/mcp-status.ts, sessions/session-mapper.ts, messaging/compaction-model.ts",
+        "Event": "events/event-mapper.ts, events/session-event-mapper.ts, events/part-event-mapper.ts",
+        "GlobalEvent": "events/event-mapper.ts, events/global-event-hub.ts",
+        "AssistantMessage, SessionStatus, Todo": "events/session-event-mapper.ts",
+        "ToolPart": "events/part-event-mapper.ts, events/subagent-mapper.ts, sessions/session-mapper.ts",
+        "FilePart": "events/part-event-mapper.ts",
+        "Session, Message, Part": "sessions/session-mapper.ts",
+        "SessionMessagesResponse": "messaging/compaction-model.ts",
+        "ProviderListResponse": "providers/models.ts, opencode-runtime.ts",
+        "McpStatus": "mcp/mcp-status.ts",
+        "McpLocalConfig, McpRemoteConfig": "mcp/mcp-status.ts, mcp/mcp-server-config.ts"
       }
     }
   }

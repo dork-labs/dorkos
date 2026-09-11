@@ -420,8 +420,8 @@ importers:
         specifier: ~0.154.0
         version: 0.154.0
       '@opencode-ai/sdk':
-        specifier: ^1.18.15
-        version: 1.18.15
+        specifier: ^1.18.30
+        version: 1.18.30
       '@scalar/express-api-reference':
         specifier: ^0.10.17
         version: 0.10.17
@@ -726,8 +726,8 @@ importers:
         specifier: ~0.154.0
         version: 0.154.0
       '@opencode-ai/sdk':
-        specifier: ^1.18.15
-        version: 1.18.15
+        specifier: ^1.18.30
+        version: 1.18.30
       '@opentelemetry/api':
         specifier: ^1.9.1
         version: 1.9.1
@@ -1107,8 +1107,8 @@ importers:
         specifier: ~0.154.0
         version: 0.154.0
       '@opencode-ai/sdk':
-        specifier: ^1.18.15
-        version: 1.18.15
+        specifier: ^1.18.30
+        version: 1.18.30
       '@scalar/express-api-reference':
         specifier: ^0.10.17
         version: 0.10.17
@@ -3713,8 +3713,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@opencode-ai/sdk@1.18.15':
-    resolution: {integrity: sha512-8sfo9nGiVwesAZW9Wqkvynyn7w4wYaHx1O9qOHpYL65+Bs2XUpHP3kBbZe58gjQydFgk6I74kUF7sqCiPu2arQ==}
+  '@opencode-ai/sdk@1.18.30':
+    resolution: {integrity: sha512-uviJ+PZLc/D1szt33WGzzt/rqJ+IaNmRGBb+UcOXrcQANl8XXKJrp4CNQQ2UAnUJ3Ek+VqcamIwjtKHUW/OjOQ==}
 
   '@opentelemetry/api-logs@0.222.0':
     resolution: {integrity: sha512-9mb1If+IF6u0ZVXkHQ6ogEae5HwA6ajIVUgpSDQyRASxft6BSXHvBvPooRle3yFN/fKnCdSOnuu0OC3PLcF6+g==}
@@ -13386,7 +13386,7 @@ snapshots:
   '@openai/codex@0.154.0-win32-x64':
     optional: true
 
-  '@opencode-ai/sdk@1.18.15':
+  '@opencode-ai/sdk@1.18.30':
     dependencies:
       cross-spawn: 7.0.6
 
