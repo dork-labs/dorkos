@@ -91,7 +91,7 @@ describe('ConnectorLifecycleService', () => {
       id: CONNECTION_ID,
       lifecycleState: 'disconnected',
       enabled: false,
-      cleanupGeneration: 1,
+      cleanupGeneration: 2,
       removedAt: expect.any(String),
     });
     service.remove(OWNER, CONNECTION_ID);

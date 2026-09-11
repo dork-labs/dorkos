@@ -318,8 +318,9 @@ export class ConnectorRegistry {
    * attached it. A disconnected account's credential is gone — leaving a
    * consent row pointing at it would let the same private provider account
    * silently inherit stale consent after a future reconnect. This method does not, by
-   * itself, call the provider's disconnect operation; the owner route does that
-   * first, then commits this durable tombstone and authority cleanup.
+   * itself, call the provider's disconnect operation. Callers close this durable
+   * authority first, then attempt external cleanup; only a separately verified
+   * acknowledgement may replace the unknown cleanup state.
    *
    * @param connectionId - The stable connection id to disconnect.
    */

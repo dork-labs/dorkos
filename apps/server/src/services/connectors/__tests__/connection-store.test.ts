@@ -262,6 +262,8 @@ describe('ConnectionStore lifecycle and cleanup', () => {
     expect(db.select().from(connections).get()).toMatchObject({
       status: 'active',
       lifecycleState: 'disconnected',
+      externalCleanupState: 'unknown',
+      cleanupGeneration: 1,
     });
     expect(registry.accountBinding(connection.id)?.status).toBe('revoked');
     expect(db.select().from(connectorOperationRevisions).all()).toHaveLength(1);

@@ -400,7 +400,12 @@ export class ConnectionStore {
     const now = new Date().toISOString();
     this.db.transaction((tx) => {
       tx.update(connections)
-        .set({ lifecycleState: 'disconnected', updatedAt: now })
+        .set({
+          lifecycleState: 'disconnected',
+          externalCleanupState: 'unknown',
+          cleanupGeneration: sql`${connections.cleanupGeneration} + 1`,
+          updatedAt: now,
+        })
         .where(eq(connections.id, connectionId))
         .run();
       tx.delete(agentConnectionAttachments)
