@@ -575,7 +575,12 @@ describe('mapOpenCodeEvent', () => {
       });
 
       it('refuses a `sessionId` that names the parent session, whichever way it lies', () => {
-        // Not reachable at 1.18.15 — but admitting the parent as its own child
+        // Still unreachable at v1.18.30 — the task tool creates the child with
+        // `parentID: ctx.sessionID` and then publishes
+        // `{parentSessionId: ctx.sessionID, sessionId: nextSession.id}`
+        // (`packages/opencode/src/tool/task.ts:159,185-190`), so the two ids
+        // cannot be equal. Re-checked because 1.18.20 invalidated exactly this
+        // class of claim elsewhere in this file. Admitting the parent as its own child
         // would make the child path swallow the whole turn: text dropped,
         // completion misread as progress, `session.idle` dropped → never ends.
         for (const metadata of [
@@ -670,11 +675,12 @@ describe('mapOpenCodeEvent', () => {
       }
 
       /**
-       * Every stop-shape STRING the v1.18.15 wire actually carries. The first is
-       * what a user pressing stop produces (`SessionProcessor.cleanup`); reading
-       * it as a failure paints the feed red on an ordinary interrupt, which is
-       * exactly what this mapping did when it anchored on the last one — the only
-       * shape DorkOS cannot reach.
+       * Every stop-shape STRING the wire actually carries, re-verified against
+       * the upstream source at tag `v1.18.30`. The first is what a user pressing
+       * stop produces (`SessionProcessor.cleanup`); reading it as a failure
+       * paints the feed red on an ordinary interrupt, which is exactly what this
+       * mapping did when it anchored on `Cancelled` — the only shape DorkOS
+       * cannot reach.
        */
       const STOP_SHAPES: Array<[string, string]> = [
         ['abort cleanup', 'Tool execution aborted'],
@@ -685,6 +691,19 @@ describe('mapOpenCodeEvent', () => {
         // message and nothing stamps `interrupted` (DOR-1126).
         ['bare TaskTool throw', 'Task cancelled'],
         ['handleSubtask onInterrupt', 'Cancelled'],
+        // opencode 1.18.20+ wraps a child failure in a resumable envelope
+        // (`tool/task.ts:218` at v1.18.30). A cancelled child returns its last
+        // assistant message carrying `MessageAbortedError{message: "Aborted"}`,
+        // so an ordinary stop now arrives inside that envelope.
+        ['1.18.20 envelope, aborted child', 'Subagent failed (task_id: ses_7c1a): Aborted'],
+        [
+          '1.18.20 envelope, child tool torn down',
+          'Subagent failed (task_id: ses_7c1a): Tool execution aborted',
+        ],
+        [
+          '1.18.20 envelope wrapped by the runner',
+          'Tool execution failed: Subagent failed (task_id: ses_7c1a): Task cancelled',
+        ],
       ];
 
       it.each(STOP_SHAPES)('maps the %s stop text to status stopped', (_name, error) => {
@@ -695,6 +714,36 @@ describe('mapOpenCodeEvent', () => {
           taskToolMetadata()
         );
         expect(doneStatusFor(part)).toBe('stopped');
+      });
+
+      /**
+       * The other half of the 1.18.20 envelope: it carries genuine failures too
+       * (upstream's own tests pin the first two of these strings), and peeling it
+       * must not turn one of those into a stop.
+       */
+      const ENVELOPED_FAILURES: Array<[string, string]> = [
+        ['provider error', 'Subagent failed (task_id: ses_7c1a): Network connection lost'],
+        [
+          'child tool denied',
+          'Subagent failed (task_id: ses_7c1a): The user rejected permission to use this specific tool call.',
+        ],
+        // `Aborted` is a stop only INSIDE the child-session envelope: it is a
+        // generic DOMException message, and nothing at v1.18.30 puts it on a
+        // parent tool part any other way. Peeling the runner's wrapper alone must
+        // not promote it, or any future code path that surfaces a bare `Aborted`
+        // starts reading as the user's own stop.
+        ['runner wrapper alone, no child envelope', 'Tool execution failed: Aborted'],
+        ['bare abort message', 'Aborted'],
+      ];
+
+      it.each(ENVELOPED_FAILURES)('keeps an enveloped %s at status failed', (_name, error) => {
+        const part = taskToolPart(
+          OC,
+          'call_task',
+          toolStateError(input, error),
+          taskToolMetadata()
+        );
+        expect(doneStatusFor(part)).toBe('failed');
       });
 
       it('prefers the structural interrupted flag over unrecognized error text', () => {
