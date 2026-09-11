@@ -88,6 +88,25 @@ describe('ConnectorManagementActionService', () => {
     });
   });
 
+  it('closes authority before a synchronous provider disconnect failure', async () => {
+    vi.spyOn(provider, 'disconnect').mockImplementation(() => {
+      expect(db.select().from(connections).get()).toMatchObject({
+        lifecycleState: 'disconnected',
+        externalCleanupState: 'unknown',
+        cleanupGeneration: 1,
+      });
+      expect(cleanup.revokeConnection).toHaveBeenCalledWith({
+        connectionId: CONNECTION_ID,
+        reason: 'connection_removed',
+      });
+      throw new Error('synthetic immediate failure');
+    });
+    await expect(
+      service.apply(OWNER, { version: 1, kind: 'disconnect', connectionId: CONNECTION_ID })
+    ).rejects.toThrow('synthetic immediate failure');
+    expect(registry.accountBinding(CONNECTION_ID)?.status).toBe('revoked');
+  });
+
   it('updates only the exact owner connection lifecycle and label', async () => {
     await service.apply(OWNER, {
       version: 1,

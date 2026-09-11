@@ -64,6 +64,40 @@ describe('ConnectorLifecycleService', () => {
     authenticationFlows = new ConnectorAuthenticationFlowService({ db, registry });
   });
 
+  it('removes only a disconnected owner account while retaining its tombstone', () => {
+    const service = new ConnectorLifecycleService({
+      db,
+      registry,
+      authenticationFlows,
+      authorityCleanup,
+    });
+    expect(() => service.remove(OWNER, CONNECTION_ID)).toThrow('Disconnect this account');
+    registry.recordDisconnect(CONNECTION_ID);
+    expect(() =>
+      service.remove({ kind: 'local_install', installationId: 'foreign' }, CONNECTION_ID)
+    ).toThrow('Connection not found');
+    db.update(connections)
+      .set({ externalCleanupState: 'unknown' })
+      .where(eq(connections.id, CONNECTION_ID))
+      .run();
+    expect(() => service.remove(OWNER, CONNECTION_ID)).toThrow('Finish disconnecting');
+    db.update(connections)
+      .set({ externalCleanupState: 'complete' })
+      .where(eq(connections.id, CONNECTION_ID))
+      .run();
+    service.remove(OWNER, CONNECTION_ID);
+    const row = db.select().from(connections).get();
+    expect(row).toMatchObject({
+      id: CONNECTION_ID,
+      lifecycleState: 'disconnected',
+      enabled: false,
+      cleanupGeneration: 2,
+      removedAt: expect.any(String),
+    });
+    service.remove(OWNER, CONNECTION_ID);
+    expect(db.select().from(connections).get()?.removedAt).toBe(row?.removedAt);
+  });
+
   it('closes local authority and durable reconnects before provider disconnect settles', async () => {
     db.insert(connectorAuthenticationFlows)
       .values({
@@ -111,6 +145,73 @@ describe('ConnectorLifecycleService', () => {
     await expect(result).resolves.toMatchObject({
       lifecycle: 'disconnected',
       externalCleanup: 'complete',
+    });
+  });
+
+  it('coalesces concurrent deletes across service instances until cleanup is acknowledged', async () => {
+    const releases: Array<() => void> = [];
+    vi.spyOn(provider, 'disconnect').mockImplementation(
+      () => new Promise<void>((resolve) => releases.push(resolve))
+    );
+    const service = new ConnectorLifecycleService({
+      db,
+      registry,
+      authenticationFlows,
+      authorityCleanup,
+    });
+    const first = service.disconnect(OWNER, CONNECTION_ID, new AbortController().signal);
+    expect(db.select().from(connections).get()).toMatchObject({
+      enabled: false,
+      lifecycleState: 'disconnected',
+      externalCleanupState: 'pending',
+      cleanupGeneration: 1,
+    });
+    const restarted = new ConnectorAuthenticationFlowService({ db, registry });
+    await expect(restarted.reconnect(OWNER, CONNECTION_ID, 'while-pending')).rejects.toMatchObject({
+      code: 'connection_cleanup_pending',
+    });
+    const secondService = new ConnectorLifecycleService({
+      db,
+      registry,
+      authenticationFlows,
+      authorityCleanup,
+    });
+    const retry = secondService.disconnect(OWNER, CONNECTION_ID, new AbortController().signal);
+    expect(releases).toHaveLength(1);
+    releases[0]!();
+    await first;
+    await retry;
+    expect(db.select().from(connections).get()).toMatchObject({
+      enabled: false,
+      lifecycleState: 'disconnected',
+      externalCleanupState: 'complete',
+      cleanupGeneration: 1,
+    });
+    await expect(
+      restarted.reconnect(OWNER, CONNECTION_ID, 'after-complete')
+    ).resolves.toMatchObject({ state: 'pending' });
+  });
+
+  it('lets an owner finish a historical unconfirmed disconnect without reopening access', async () => {
+    registry.recordDisconnect(CONNECTION_ID);
+    db.update(connections)
+      .set({ externalCleanupState: 'unknown' })
+      .where(eq(connections.id, CONNECTION_ID))
+      .run();
+    const disconnect = vi.spyOn(provider, 'disconnect').mockResolvedValue();
+    const service = new ConnectorLifecycleService({
+      db,
+      registry,
+      authenticationFlows,
+      authorityCleanup,
+    });
+    await expect(
+      service.disconnect(OWNER, CONNECTION_ID, new AbortController().signal)
+    ).resolves.toMatchObject({ externalCleanup: 'complete', lifecycle: 'disconnected' });
+    expect(disconnect).toHaveBeenCalledWith('provider-account-a');
+    expect(db.select().from(connections).get()).toMatchObject({
+      enabled: false,
+      externalCleanupState: 'complete',
     });
   });
 

@@ -1217,6 +1217,10 @@ export const connectorStubs = {
     throw new Error(EMBEDDED_CONNECTORS_NOTICE);
   },
 
+  async removeConnectorConnection(_connectionId: string): Promise<void> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
   async getAgentConnectorConnections(_agentId: string): Promise<ConnectorAgentConnections> {
     throw new Error(EMBEDDED_CONNECTORS_NOTICE);
   },

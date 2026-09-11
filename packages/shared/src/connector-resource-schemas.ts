@@ -129,6 +129,9 @@ export const ConnectorConnectionSummarySchema = z
     toolkit: z.string().min(1).max(200),
     label: z.string().min(1).max(200),
     identityHint: z.string().min(1).max(500).nullable(),
+    externalCleanup: z
+      .enum(['not_required', 'pending', 'complete', 'failed', 'unknown'])
+      .optional(),
     lifecycle: z.enum(['connected', 'paused', 'disconnected']),
     authenticationStatus: z.enum(['active', 'expired', 'revoked', 'pending']),
     reconciliationStatus: ConnectorGrantReconciliationStatusSchema,

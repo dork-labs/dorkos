@@ -65,17 +65,12 @@ export function AccountsRegion({
 
       <HostedAccountSetup />
 
-      <section aria-labelledby="connections-connected" className="space-y-3">
-        <h3 id="connections-connected" className="text-sm font-semibold">
-          Connected accounts
-        </h3>
-        <AccountsList
-          onOpenDetail={(connectionId) => {
-            detailOpenerRef.current = document.activeElement as HTMLElement | null;
-            setDetailConnectionId(connectionId);
-          }}
-        />
-      </section>
+      <AccountsList
+        onOpenDetail={(connectionId) => {
+          detailOpenerRef.current = document.activeElement as HTMLElement | null;
+          setDetailConnectionId(connectionId);
+        }}
+      />
 
       <AgentRequests
         selectedRequestId={selectedRequestId}

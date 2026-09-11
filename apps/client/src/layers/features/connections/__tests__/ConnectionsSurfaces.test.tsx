@@ -213,6 +213,49 @@ describe('AccountsList', () => {
 });
 
 describe('ConnectionDetailSheet', () => {
+  it.each(['unknown', 'pending', 'failed'] as const)(
+    'keeps sign-in and removal closed during %s cleanup and offers owner recovery',
+    async (externalCleanup) => {
+      const transport = createMockTransport();
+      vi.mocked(transport.getConnectorConnection).mockResolvedValue({
+        connection: connection({ lifecycle: 'disconnected', externalCleanup }),
+        provider: {
+          providerInstanceId: 'provider-1' as never,
+          displayName: 'DorkOS managed',
+          mode: 'managed',
+          custody: 'managed',
+          payer: 'dorkos_managed',
+          capabilities,
+          disclosure: 'DorkOS stores login access in its secure vault.',
+        },
+        agents: [],
+        sessions: { affectedCount: 0 },
+        subscriptions: {
+          totalCount: 0,
+          activeCount: 0,
+          capability: { status: 'unsupported', reason: 'Unavailable' },
+        },
+      });
+      renderWith(
+        transport,
+        <ConnectionDetailSheet
+          connectionId="connection-1"
+          onClose={() => undefined}
+          onManageAccess={() => undefined}
+          onReconnect={() => undefined}
+        />
+      );
+      expect(await screen.findByRole('button', { name: 'Reconnect' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Remove from Accounts' })).toBeDisabled();
+      expect(
+        screen.getByRole('button', {
+          name: externalCleanup === 'failed' ? 'Try disconnecting again' : 'Finish disconnecting',
+        })
+      ).toBeEnabled();
+      expect(transport.disconnectConnectorConnection).not.toHaveBeenCalled();
+    }
+  );
+
   it('shows honest unavailable states and exact impact before disconnecting', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();

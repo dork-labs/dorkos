@@ -1,4 +1,5 @@
 /** Durable local connector identity, authority, and migration schema. */
+import { sql } from 'drizzle-orm';
 import {
   index,
   integer,
@@ -52,6 +53,16 @@ export const connections = sqliteTable(
     lifecycleState: text('lifecycle_state', { enum: ['connected', 'disconnected'] })
       .notNull()
       .default('connected'),
+    /** Owner removal hides the disconnected row while retaining history and cleanup. */
+    removedAt: text('removed_at'),
+    /** Durable provider cleanup acknowledgement; unknown historical cleanup never opens replacement. */
+    externalCleanupState: text('external_cleanup_state', {
+      enum: ['not_required', 'pending', 'complete', 'failed', 'unknown'],
+    })
+      .notNull()
+      .default('not_required'),
+    /** Monotonic cleanup/removal generation captured by owner authentication claims. */
+    cleanupGeneration: integer('cleanup_generation').notNull().default(0),
     /** Operator pause, kept separate from provider-reported authentication status. */
     enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
     authConfigRef: text('auth_config_ref'),
@@ -65,10 +76,9 @@ export const connections = sqliteTable(
     lastVerifiedAt: text('last_verified_at'),
   },
   (table) => [
-    uniqueIndex('connections_instance_external_ref_unique').on(
-      table.providerInstanceId,
-      table.externalAccountRef
-    ),
+    uniqueIndex('connections_instance_external_ref_unique')
+      .on(table.providerInstanceId, table.externalAccountRef)
+      .where(sql`${table.removedAt} IS NULL`),
     index('connections_toolkit_idx').on(table.toolkit),
   ]
 );

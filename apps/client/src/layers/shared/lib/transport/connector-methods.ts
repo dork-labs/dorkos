@@ -241,6 +241,14 @@ export function createConnectorMethods(baseUrl: string) {
       );
     },
 
+    removeConnectorConnection(connectionId: string): Promise<void> {
+      return fetchNoContent(
+        baseUrl,
+        `/connectors/connections/${encodeURIComponent(connectionId)}/remove`,
+        { method: 'POST', body: '{}' }
+      );
+    },
+
     getAgentConnectorConnections(agentId: string): Promise<ConnectorAgentConnections> {
       return fetchJSON<ConnectorAgentConnections>(
         baseUrl,

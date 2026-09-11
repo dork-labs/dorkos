@@ -2583,6 +2583,9 @@ export interface Transport extends RoomTransport {
   /** Disconnect one stable connection with local close-first semantics. */
   disconnectConnectorConnection(connectionId: string): Promise<ConnectorLifecycleResult>;
 
+  /** Remove a disconnected account from the owner inventory while retaining its history. */
+  removeConnectorConnection(connectionId: string): Promise<void>;
+
   /** Read the current exact connection grants for one owned agent. */
   getAgentConnectorConnections(agentId: string): Promise<ConnectorAgentConnections>;
 

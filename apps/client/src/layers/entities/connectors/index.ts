@@ -36,6 +36,7 @@ export {
   usePauseConnectorConnection,
   useResumeConnectorConnection,
   useDisconnectConnectorConnection,
+  useRemoveConnectorConnection,
 } from './model/use-connector-resources';
 
 // --- Mutation hooks ---

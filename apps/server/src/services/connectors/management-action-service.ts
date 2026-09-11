@@ -120,15 +120,12 @@ export class ConnectorManagementActionService implements ConnectorManagementActi
           return;
         }
         const provider = this.registry.resolveProviderInstance(binding.providerInstanceId);
-        const providerDisconnect = provider
-          ? provider.disconnect(binding.externalAccountRef)
-          : Promise.resolve();
         this.registry.recordDisconnect(connectionId);
         this.authorityCleanup.revokeConnection({
           connectionId,
           reason: 'connection_removed',
         });
-        await providerDisconnect;
+        if (provider) await provider.disconnect(binding.externalAccountRef);
         return;
       }
       case 'set_agent_access':

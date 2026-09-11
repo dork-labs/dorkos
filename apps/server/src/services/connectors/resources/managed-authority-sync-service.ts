@@ -344,6 +344,47 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
     readonly owner: ConnectorOwnerAuthority;
     readonly signal: AbortSignal;
   }): Promise<ConnectorManagedLifecycleSyncResult> {
+    // A pending disconnect already owns cleanup of this exact binding. Retrying
+    // reads its receipt rather than issuing another delete that could finish late.
+    if (input.lifecycle === 'disconnected') {
+      const owned = ownerColumns(input.owner);
+      const pending = this.options.db
+        .select()
+        .from(connectorManagedAuthorityOutbox)
+        .where(
+          and(
+            eq(connectorManagedAuthorityOutbox.connectionId, input.connectionId),
+            eq(connectorManagedAuthorityOutbox.state, 'pending'),
+            eq(connectorManagedAuthorityOutbox.scopeKind, 'connection_lifecycle'),
+            eq(connectorManagedAuthorityOutbox.ownerKind, owned.ownerKind),
+            eq(connectorManagedAuthorityOutbox.ownerId, owned.ownerId),
+            eq(connectorManagedAuthorityOutbox.providerInstanceId, input.providerInstanceId),
+            eq(
+              connectorManagedAuthorityOutbox.executionConfigGeneration,
+              input.executionConfigGeneration
+            ),
+            eq(connectorManagedAuthorityOutbox.managedConnectionId, input.managedConnectionId)
+          )
+        )
+        .all()
+        .find((row) => {
+          const command = ManagedConnectorAuthorityCommandSchema.parse(JSON.parse(row.requestJson));
+          return (
+            command.kind === 'set_connection_lifecycle' &&
+            command.lifecycle === 'disconnected' &&
+            this.isCurrent(this.options.db, row) &&
+            this.isBindingCurrent(this.options.db, row, command)
+          );
+        });
+      if (pending) {
+        const result = await this.deliverClaimed(pending.commandId, input.signal, true);
+        return {
+          ...result,
+          externalCleanup:
+            result.externalCleanup === 'not_required' ? 'pending' : result.externalCleanup,
+        };
+      }
+    }
     const commandId = this.options.db.transaction((tx) => {
       this.stageLocalLifecycle(tx, input.connectionId, input.lifecycle);
       return this.appendCommandInTransaction(tx, {
@@ -488,7 +529,13 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
       return;
     }
     tx.update(connections)
-      .set({ lifecycleState: 'disconnected', enabled: false, updatedAt: now })
+      .set({
+        lifecycleState: 'disconnected',
+        enabled: false,
+        externalCleanupState: 'pending',
+        cleanupGeneration: sql`${connections.cleanupGeneration} + 1`,
+        updatedAt: now,
+      })
       .where(eq(connections.id, connectionId))
       .run();
     tx.delete(agentConnectionAttachments)
@@ -704,6 +751,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         providerInstanceId: connectorProviderInstances.id,
         generation: connectorProviderInstances.executionConfigGeneration,
         managedConnectionId: connections.externalAccountRef,
+        cleanupGeneration: connections.cleanupGeneration,
         mode: connectorProviderInstances.mode,
         ownerKind: connectorProviderInstances.ownerKind,
         ownerId: connectorProviderInstances.ownerId,
@@ -758,6 +806,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
       .values({
         commandId,
         connectionId: input.connectionId,
+        cleanupGeneration: connection!.cleanupGeneration,
         providerInstanceId: input.providerInstanceId,
         executionConfigGeneration: input.executionConfigGeneration,
         ownerKind: owned.ownerKind,
@@ -908,7 +957,13 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
     const now = this.now().toISOString();
     const resolution = this.options.db.transaction((tx) => {
       const current = this.isCurrent(tx, row) && this.isBindingCurrent(tx, row, command);
-      const state = current ? status.state : 'superseded';
+      const cleanupPending =
+        command.kind === 'set_connection_lifecycle' &&
+        command.lifecycle === 'disconnected' &&
+        status.state === 'applied' &&
+        status.externalCleanup === 'pending';
+      // Keep polling the exact status receipt until credential cleanup also settles.
+      const state = current ? (cleanupPending ? 'pending' : status.state) : 'superseded';
       const safeReason =
         state === 'rejected'
           ? this.rejectionReason(status.state === 'rejected' ? status.rejectionCode : undefined)
@@ -934,6 +989,26 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         )
         .run();
       const committed = updated.changes === 1;
+      if (
+        committed &&
+        current &&
+        command.kind === 'set_connection_lifecycle' &&
+        command.lifecycle === 'disconnected' &&
+        status.state === 'applied'
+      ) {
+        tx.update(connections)
+          .set({ externalCleanupState: status.externalCleanup, updatedAt: now })
+          .where(
+            and(
+              eq(connections.id, row.connectionId),
+              eq(connections.externalAccountRef, row.managedConnectionId),
+              eq(connections.cleanupGeneration, row.cleanupGeneration),
+              eq(connections.lifecycleState, 'disconnected')
+            )
+          )
+          .run();
+      }
+
       if (committed && state === 'applied') {
         if (command.kind === 'replace_agent_grants') {
           this.activateCurrentAgentGrants(tx, row, command);
@@ -1068,6 +1143,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         providerInstanceId: connections.providerInstanceId,
         managedConnectionId: connections.externalAccountRef,
         lifecycleState: connections.lifecycleState,
+        cleanupGeneration: connections.cleanupGeneration,
         enabled: connections.enabled,
         authenticationStatus: connections.status,
         reconciliationStatus: connections.grantReconciliationStatus,
@@ -1131,7 +1207,11 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
     if (command.kind === 'replace_agent_grants') {
       return binding.lifecycleState === 'connected' && binding.enabled;
     }
-    if (command.lifecycle === 'disconnected') return binding.lifecycleState === 'disconnected';
+    if (command.lifecycle === 'disconnected')
+      return (
+        binding.lifecycleState === 'disconnected' &&
+        binding.cleanupGeneration === row.cleanupGeneration
+      );
     if (command.lifecycle === 'paused') {
       return binding.lifecycleState === 'connected' && !binding.enabled;
     }

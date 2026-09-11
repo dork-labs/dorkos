@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   connectorAuthenticationFlows,
+  connectorOperationRevisions,
+  connectionOperationGrants,
   connections,
   createDb,
   eq,
@@ -18,6 +20,7 @@ import {
   ConnectorAuthenticationFlowService,
 } from '../resources/authentication-flow-service.js';
 import { ConnectorRegistry } from '../registry.js';
+import { ConnectorLifecycleService } from '../resources/lifecycle-service.js';
 import { FetchComposioHttpClient } from '../providers/composio-client.js';
 import { ComposioConnectorProvider } from '../providers/composio.js';
 
@@ -255,8 +258,63 @@ describe('ConnectorAuthenticationFlowService', () => {
     ).toMatchObject({ state: 'start_unknown', providerFlowId: null });
   });
 
-  it('keeps the old connection paused when reconnect lacks positive same-account evidence', async () => {
+  it('starts disconnected-account sign-in once without reopening local authority', async () => {
     const existing = insertActiveConnection(db);
+    registry.recordDisconnect(existing);
+    db.update(connections)
+      .set({ externalCleanupState: 'complete' })
+      .where(eq(connections.id, existing))
+      .run();
+    const start = vi.spyOn(provider, 'startConnect');
+
+    const pending = await service.reconnect(OWNER, existing, 'disconnected-reconnect');
+    expect(pending.state).toBe('pending');
+    expect(registry.accountBinding(existing)?.status).toBe('revoked');
+    await expect(service.reconnect(OWNER, existing, 'disconnected-reconnect')).resolves.toEqual(
+      pending
+    );
+    expect(start).toHaveBeenCalledTimes(1);
+    await expect(
+      service.reconnect(FOREIGN_OWNER, existing, 'foreign-reconnect')
+    ).rejects.toMatchObject({
+      code: 'connection_not_found',
+    });
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+
+  it('reconnects a different returned identity without reviving the disconnected account or grants', async () => {
+    const existing = insertActiveConnection(db);
+    db.insert(connectorOperationRevisions)
+      .values({
+        id: 'read-v1',
+        providerInstanceId: PROVIDER_ID,
+        toolkit: 'gmail',
+        operationSlug: 'GMAIL_FETCH_EMAILS',
+        toolkitVersion: 'v1',
+        schemaHash: 'read-schema',
+        capabilityClassification: 'read',
+        retryPolicy: 'never',
+        inputSchemaJson: '{"type":"object"}',
+        discoveredAt: NOW.toISOString(),
+      })
+      .run();
+    db.insert(connectionOperationGrants)
+      .values({
+        id: 'old-grant',
+        subjectType: 'agent',
+        subjectId: 'agent-a',
+        agentId: 'agent-a',
+        connectionId: existing,
+        operationRevisionId: 'read-v1',
+        createdBy: 'owner',
+        createdAt: NOW.toISOString(),
+      })
+      .run();
+    registry.recordDisconnect(existing);
+    db.update(connections)
+      .set({ externalCleanupState: 'complete', cleanupGeneration: 1 })
+      .where(eq(connections.id, existing))
+      .run();
     vi.spyOn(provider, 'pollConnect').mockResolvedValue({
       status: 'connected',
       account: {
@@ -272,9 +330,204 @@ describe('ConnectorAuthenticationFlowService', () => {
     const completed = await service.poll(OWNER, started.flowId);
     expect(completed).toMatchObject({ state: 'connected' });
     expect(completed.state === 'connected' && completed.connectionId).not.toBe(existing);
+    expect(
+      db.select().from(connections).where(eq(connections.id, existing)).get()?.lifecycleState
+    ).toBe('disconnected');
+    expect(db.select().from(connectionOperationGrants).all()).toEqual([
+      expect.objectContaining({
+        id: 'old-grant',
+        connectionId: existing,
+        revokedAt: expect.any(String),
+      }),
+    ]);
     expect(db.select().from(connections).where(eq(connections.id, existing)).get()?.enabled).toBe(
       false
     );
+  });
+
+  it('refuses unknown cleanup before provider dispatch and fences a later cleanup generation', async () => {
+    const existing = insertActiveConnection(db);
+    registry.recordDisconnect(existing);
+    db.update(connections)
+      .set({ externalCleanupState: 'unknown' })
+      .where(eq(connections.id, existing))
+      .run();
+    const start = vi.spyOn(provider, 'startConnect');
+    await expect(service.reconnect(OWNER, existing, 'unknown-cleanup')).rejects.toMatchObject({
+      code: 'connection_cleanup_pending',
+    });
+    expect(start).not.toHaveBeenCalled();
+    db.update(connections)
+      .set({ externalCleanupState: 'complete', cleanupGeneration: 1 })
+      .where(eq(connections.id, existing))
+      .run();
+    const pending = await service.reconnect(OWNER, existing, 'after-ack');
+    db.update(connections).set({ cleanupGeneration: 2 }).where(eq(connections.id, existing)).run();
+    expect(await service.poll(OWNER, pending.flowId)).toMatchObject({ state: 'failed' });
+    expect(registry.accountBinding(existing)?.status).toBe('revoked');
+  });
+
+  it('does not let an earlier initial flow reuse an identity acknowledged after it began', async () => {
+    const existing = insertActiveConnection(db);
+    registry.recordDisconnect(existing);
+    db.update(connections)
+      .set({ externalCleanupState: 'unknown' })
+      .where(eq(connections.id, existing))
+      .run();
+    const pending = await service.start(OWNER, {
+      providerInstanceId: PROVIDER_ID,
+      toolkit: 'gmail',
+      label: 'Original',
+      idempotencyKey: 'before-ack',
+    });
+    db.update(connections)
+      .set({ externalCleanupState: 'complete', cleanupGeneration: 1 })
+      .where(eq(connections.id, existing))
+      .run();
+    expect(await service.poll(OWNER, pending.flowId)).toMatchObject({ state: 'failed' });
+    expect(registry.accountBinding(existing)?.status).toBe('revoked');
+  });
+
+  it('fails pre-upgrade pending flows without a snapshot before contacting the provider', async () => {
+    const pending = await service.start(OWNER, {
+      providerInstanceId: PROVIDER_ID,
+      toolkit: 'gmail',
+      idempotencyKey: 'legacy',
+    });
+    db.update(connectorAuthenticationFlows)
+      .set({ cleanupSnapshotJson: null })
+      .where(eq(connectorAuthenticationFlows.id, pending.flowId))
+      .run();
+    const poll = vi.spyOn(provider, 'pollConnect');
+    expect(await service.poll(OWNER, pending.flowId)).toMatchObject({
+      state: 'failed',
+      reason: expect.stringContaining('Start a new sign-in'),
+    });
+    expect(poll).not.toHaveBeenCalled();
+  });
+
+  it.each(['start', 'poll'] as const)(
+    'fences removal while provider %s is pending, including a different returned identity',
+    async (phase) => {
+      const existing = insertActiveConnection(db);
+      registry.recordDisconnect(existing);
+      db.update(connections)
+        .set({ externalCleanupState: 'complete' })
+        .where(eq(connections.id, existing))
+        .run();
+      const lifecycle = new ConnectorLifecycleService({
+        db,
+        registry,
+        authenticationFlows: service,
+        authorityCleanup: {
+          revokeConnection: vi.fn(),
+          revokeAgent: vi.fn(),
+          revokeAgentConnection: vi.fn(),
+        },
+      });
+      let releaseStart!: (value: ConnectStart) => void;
+      let releasePoll!: (value: ConnectPoll) => void;
+      if (phase === 'start')
+        vi.spyOn(provider, 'startConnect').mockReturnValue(
+          new Promise((resolve) => {
+            releaseStart = resolve;
+          })
+        );
+      else
+        vi.spyOn(provider, 'pollConnect').mockReturnValue(
+          new Promise((resolve) => {
+            releasePoll = resolve;
+          })
+        );
+      const starting = service.reconnect(OWNER, existing, `remove-during-${phase}`);
+      let result: Promise<unknown> = starting;
+      if (phase === 'poll') result = service.poll(OWNER, (await starting).flowId);
+      lifecycle.remove(OWNER, existing);
+      if (phase === 'start')
+        releaseStart({ flowId: 'held-start', authorizeUrl: 'https://provider.example/authorize' });
+      else
+        releasePoll({
+          status: 'connected',
+          account: {
+            externalAccountRef: 'different-ref' as never,
+            toolkit: 'gmail',
+            label: 'Different',
+            status: 'active',
+            custody: 'managed',
+          },
+        });
+      expect(await result).toMatchObject({ state: 'failed' });
+      expect(db.select().from(connections).all()).toEqual([
+        expect.objectContaining({
+          id: existing,
+          lifecycleState: 'disconnected',
+          removedAt: expect.any(String),
+        }),
+      ]);
+    }
+  );
+
+  it('rejects an older initial flow after a newer sign-in has reactivated the same identity', async () => {
+    const existing = insertActiveConnection(db);
+    const old = await service.start(OWNER, {
+      providerInstanceId: PROVIDER_ID,
+      toolkit: 'gmail',
+      label: 'Original',
+      idempotencyKey: 'old-active-flow',
+    });
+    registry.recordDisconnect(existing);
+    db.update(connections)
+      .set({ externalCleanupState: 'complete' })
+      .where(eq(connections.id, existing))
+      .run();
+    const fresh = await service.reconnect(OWNER, existing, 'fresh-after-disconnect');
+    expect(await service.poll(OWNER, fresh.flowId)).toMatchObject({
+      state: 'connected',
+      connectionId: existing,
+    });
+    expect(await service.poll(OWNER, old.flowId)).toMatchObject({ state: 'failed' });
+    expect(db.select().from(connections).get()).toMatchObject({
+      lifecycleState: 'connected',
+      cleanupGeneration: 1,
+    });
+  });
+
+  it('requires a fresh flow after removal before replacing the same provider identity', async () => {
+    const existing = insertActiveConnection(db);
+    registry.recordDisconnect(existing);
+    db.update(connections)
+      .set({ externalCleanupState: 'complete' })
+      .where(eq(connections.id, existing))
+      .run();
+    const before = await service.start(OWNER, {
+      providerInstanceId: PROVIDER_ID,
+      toolkit: 'gmail',
+      label: 'Original',
+      idempotencyKey: 'before-remove',
+    });
+    const lifecycle = new ConnectorLifecycleService({
+      db,
+      registry,
+      authenticationFlows: service,
+      authorityCleanup: {
+        revokeConnection: vi.fn(),
+        revokeAgent: vi.fn(),
+        revokeAgentConnection: vi.fn(),
+      },
+    });
+    lifecycle.remove(OWNER, existing);
+    expect(await service.poll(OWNER, before.flowId)).toMatchObject({ state: 'failed' });
+    const after = await service.start(OWNER, {
+      providerInstanceId: PROVIDER_ID,
+      toolkit: 'gmail',
+      label: 'Original',
+      idempotencyKey: 'after-remove',
+    });
+    const connected = await service.poll(OWNER, after.flowId);
+    expect(connected).toMatchObject({ state: 'connected' });
+    expect(connected.state === 'connected' && connected.connectionId).not.toBe(existing);
+    expect(db.select().from(connections).all()).toHaveLength(2);
+    expect(db.select().from(connectionOperationGrants).all()).toEqual([]);
   });
 
   it('does not re-pause a completed reconnect when its idempotency key is replayed', async () => {
