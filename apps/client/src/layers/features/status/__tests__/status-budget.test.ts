@@ -43,8 +43,8 @@ describe('resolveStatusBudget', () => {
     }
   });
 
-  it('gives full labels and at least four right-cluster slots from 640px', () => {
-    const budget = resolveStatusBudget(640);
+  it('gives full labels and at least four right-cluster slots from 648px', () => {
+    const budget = resolveStatusBudget(648);
     expect(budget.density).toBe('full');
     expect(budget.rightBudget).toBe(4);
     expect(budget.dropped).toEqual([]);
@@ -56,17 +56,17 @@ describe('resolveStatusBudget', () => {
     // which is the point: a wider bound must buy fewer slots, not the same number
     // of wider ones.
     const slot = STATUS_VALUE_MAX_CHARS * 8 + 20;
-    expect(resolveStatusBudget(640 + slot - 1).rightBudget).toBe(4);
-    expect(resolveStatusBudget(640 + slot).rightBudget).toBe(5);
-    expect(resolveStatusBudget(640 + slot * 4).rightBudget).toBe(8);
+    expect(resolveStatusBudget(648 + slot - 1).rightBudget).toBe(4);
+    expect(resolveStatusBudget(648 + slot).rightBudget).toBe(5);
+    expect(resolveStatusBudget(648 + slot * 4).rightBudget).toBe(8);
   });
 
-  it('drops the directory and keeps three slots between 440 and 640px', () => {
+  it('drops the directory and keeps three slots between 440 and 648px', () => {
     // Three, and it took a retraction to earn: the first cut to three was masking
     // an item that could neither shrink nor be shrunk, and was reverted when that
     // item was fixed. It is three again because a fourth measured 8-16px past the
     // cluster's box at the 438px floor, whichever item took the slot (DOR-461).
-    for (const width of [440, 639]) {
+    for (const width of [440, 647]) {
       const budget = resolveStatusBudget(width);
       expect(budget.density).toBe('compact');
       expect(budget.rightBudget).toBe(3);
@@ -101,7 +101,7 @@ describe('resolveStatusBudget', () => {
     for (const width of [1, 200, 339, 340, 439, 440, 500, 639]) {
       expect(resolveStatusBudget(width).density).not.toBe('full');
     }
-    for (const width of [640, 900, 2000]) {
+    for (const width of [648, 900, 2000]) {
       expect(resolveStatusBudget(width).density).toBe('full');
     }
   });
@@ -115,7 +115,7 @@ describe('applyStatusBudget — truncation per tier', () => {
   });
 
   it('keeps the four loudest signals at a desktop width', () => {
-    const { items, overflow } = applyStatusBudget(degradedLine(), resolveStatusBudget(640));
+    const { items, overflow } = applyStatusBudget(degradedLine(), resolveStatusBudget(648));
     expect(items.map((i) => i.key)).toEqual([
       'agent',
       'cwd',
