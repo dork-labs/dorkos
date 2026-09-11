@@ -10,6 +10,13 @@
       "project": "Canvas and Browser in Rooms"
     },
     {
+      "id": "260911-181432",
+      "slug": "claude-agent-sdk-upgrade-0.3.268",
+      "title": "Claude Agent SDK Upgrade to 0.3.268",
+      "created": "2026-09-11",
+      "status": "ideation"
+    },
+    {
       "id": "260911-191248",
       "slug": "ambient-background-tasks",
       "title": "Housekeeping tasks stay quiet",

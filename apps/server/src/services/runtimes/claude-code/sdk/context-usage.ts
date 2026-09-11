@@ -26,11 +26,28 @@ const CATEGORY_PALETTE = [
 /**
  * Map the SDK's getContextUsage() response to our ContextUsage event payload.
  *
- * Keeps only the categories that occupy the active context window. Dropped:
- * `isDeferred` categories (tools that are available but not loaded into the
- * prompt) and the "Free space" remainder — neither is current usage, and either
- * would dominate and mislead the status-bar breakdown. Colors are reassigned from
- * {@link CATEGORY_PALETTE} because the SDK's are theme tokens, not CSS colors.
+ * Keeps only the rows that occupy the active context window, classified by the
+ * SDK's `kind` (0.3.268) rather than by the CLI's display string. The names are
+ * what the CLI renders and the SDK's own doc says so outright — _"Use `kind`
+ * (not this name) to classify the row"_ — so the previous `name !== 'Free
+ * space'` match was one wording change away from putting the whole remaining
+ * window into the status-bar breakdown.
+ *
+ * Two of the four kinds are dropped. `'free'` is the remainder, which would
+ * dominate every row beside it. `'deferred'` rows are tool schemas that exist
+ * but are not in the prompt, and the SDK excludes them from its own usage math
+ * (`isDeferred` is the same rows under the older spelling).
+ *
+ * `'buffer'` — the compaction reserve — is KEPT, and that is a decision rather
+ * than a leftover. The name match included or excluded it by accident depending
+ * on what the CLI happened to call it. It is space the conversation cannot use:
+ * it is why free space is smaller than the window, and it is what the session
+ * compacts into. A breakdown that hides it does not add up to the headline
+ * percentage beside it, and an operator who subtracts the rows from the total
+ * finds a gap with no name.
+ *
+ * Colors are reassigned from {@link CATEGORY_PALETTE} because the SDK's are
+ * theme tokens, not CSS colors.
  *
  * @param usage - The SDK getContextUsage() control response.
  */
@@ -41,7 +58,7 @@ export function mapSdkContextUsage(usage: SDKControlGetContextUsageResponse): Co
     percentage: usage.percentage,
     model: usage.model,
     categories: usage.categories
-      .filter((c) => !c.isDeferred && c.name !== 'Free space')
+      .filter((c) => c.kind === 'used' || c.kind === 'buffer')
       .map((c, i) => ({
         name: c.name,
         tokens: c.tokens,

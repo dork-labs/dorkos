@@ -6309,10 +6309,11 @@
                   },
                   "env": {
                     "type": "object",
+                    "properties": {},
+                    "default": {},
                     "additionalProperties": {
                       "type": "string"
-                    },
-                    "default": {}
+                    }
                   }
                 },
                 "required": [
@@ -6335,10 +6336,11 @@
                   },
                   "headers": {
                     "type": "object",
+                    "properties": {},
+                    "default": {},
                     "additionalProperties": {
                       "type": "string"
-                    },
-                    "default": {}
+                    }
                   },
                   "authKind": {
                     "type": "string",
@@ -6367,10 +6369,11 @@
                   },
                   "headers": {
                     "type": "object",
+                    "properties": {},
+                    "default": {},
                     "additionalProperties": {
                       "type": "string"
-                    },
-                    "default": {}
+                    }
                   },
                   "authKind": {
                     "type": "string",
@@ -53057,10 +53060,11 @@
                           },
                           "env": {
                             "type": "object",
+                            "properties": {},
+                            "default": {},
                             "additionalProperties": {
                               "type": "string"
-                            },
-                            "default": {}
+                            }
                           }
                         },
                         "required": [
@@ -53083,10 +53087,11 @@
                           },
                           "headers": {
                             "type": "object",
+                            "properties": {},
+                            "default": {},
                             "additionalProperties": {
                               "type": "string"
-                            },
-                            "default": {}
+                            }
                           },
                           "authKind": {
                             "type": "string",
@@ -53115,10 +53120,11 @@
                           },
                           "headers": {
                             "type": "object",
+                            "properties": {},
+                            "default": {},
                             "additionalProperties": {
                               "type": "string"
-                            },
-                            "default": {}
+                            }
                           },
                           "authKind": {
                             "type": "string",
@@ -53266,10 +53272,11 @@
                           },
                           "env": {
                             "type": "object",
+                            "properties": {},
+                            "default": {},
                             "additionalProperties": {
                               "type": "string"
-                            },
-                            "default": {}
+                            }
                           }
                         },
                         "required": [
@@ -53292,10 +53299,11 @@
                           },
                           "headers": {
                             "type": "object",
+                            "properties": {},
+                            "default": {},
                             "additionalProperties": {
                               "type": "string"
-                            },
-                            "default": {}
+                            }
                           },
                           "authKind": {
                             "type": "string",
@@ -53324,10 +53332,11 @@
                           },
                           "headers": {
                             "type": "object",
+                            "properties": {},
+                            "default": {},
                             "additionalProperties": {
                               "type": "string"
-                            },
-                            "default": {}
+                            }
                           },
                           "authKind": {
                             "type": "string",

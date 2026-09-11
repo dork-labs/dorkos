@@ -33,15 +33,25 @@
  * | a `user_message_uuid` an EARLIER window sent | the CLI carried that message into this turn | the OPEN window closes on it (DOR-1294)                             |
  * | a `user_message_uuid` this session never sent | the CLI answered something nobody sent    | a synthetic `origin: 'runtime'` window; the open window is UNTOUCHED |
  *
- * The second row is reality winning over the spec's phrasing, and it is
- * load-bearing: `SDKResultError` — every `error_during_execution`,
- * `error_max_turns`, `error_max_budget_usd` result — has NO `user_message_uuid`
- * field at all (`sdk.d.ts`, `SDKResultSuccess` declares it, `SDKResultError`
- * does not). Treating an unnamed result as uncorrelated would strand the open
- * window forever on every failed turn, which is precisely the bug windowing
- * exists to prevent. It is not positional guessing either: an unnamed result
- * closes the ONE open window whole, ids and all, which is the same answer
- * coalescing gives — no ordinal is ever counted.
+ * The second row is reality winning over the spec's phrasing. Treating an
+ * unnamed result as uncorrelated would strand the open window forever, which is
+ * precisely the bug windowing exists to prevent. It is not positional guessing
+ * either: an unnamed result closes the ONE open window whole, ids and all, which
+ * is the same answer coalescing gives — no ordinal is ever counted.
+ *
+ * **Which results reach that row has changed, and the change is an improvement.**
+ * Until claude-agent-sdk 0.3.268, `SDKResultError` — every
+ * `error_during_execution`, `error_max_turns`, `error_max_budget_usd` result —
+ * declared no `user_message_uuid` at all, so every failed turn landed on row 2 by
+ * construction, and this module used to say so as a fact its rules turned on. At
+ * 0.3.268 the error result declares `user_message_uuid` (and `user_message_uuids`,
+ * `resume_reason`, `result_index`, `queued_turn_count` beside it), so a failed
+ * turn now mostly lands on row 1 or row 3 instead: the result NAMES the dispatch
+ * it failed, and the window closes on that name rather than on "something ended".
+ * That is the correlation this table always wanted. Row 2 stays because a result
+ * may still carry no id — and because {@link readAnsweredId} reads the field off
+ * the message rather than narrowing on the branch that declares it, which is why
+ * a flipped vendor invariant cost this module a paragraph and not an outage.
  *
  * ## A message id outlives the window that sent it (DOR-1294)
  *
@@ -408,9 +418,16 @@ function createRecord(ids: string[], origin: TurnOrigin): WindowRecord {
 /**
  * The id an SDK `result` says it answers, or `undefined` when it carries none.
  *
- * Read defensively rather than by type narrowing: only `SDKResultSuccess`
- * declares `user_message_uuid`, and the absence on `SDKResultError` is a fact
- * this module's correlation rules turn on.
+ * Read defensively off the message rather than by narrowing to the branch that
+ * declares the field, and keep it that way. Until claude-agent-sdk 0.3.268 only
+ * `SDKResultSuccess` declared `user_message_uuid`; at 0.3.268 `SDKResultError`
+ * declares it too. Narrowing would have made that vendor change an outage here
+ * instead of a comment, and nothing says the field cannot move again.
+ *
+ * This still reads the SINGULAR field. 0.3.259 added `user_message_uuids`, the
+ * full set of messages a coalesced turn answered — the thing rows 2 and 3 infer
+ * today — and adopting it is deliberately its own change, not a side effect of a
+ * version bump.
  */
 function readAnsweredId(message: SDKMessage): string | undefined {
   const named = (message as { user_message_uuid?: unknown }).user_message_uuid;
