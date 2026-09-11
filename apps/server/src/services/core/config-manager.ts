@@ -3148,6 +3148,41 @@ export function seedHarnessAutoAdopt(store: {
 }
 
 /**
+ * Migration body: seed `rooms.maxCanvasOpsPerTurn` on a `rooms` block that
+ * predates the room canvas (spec `room-canvas`, DOR-1999).
+ *
+ * Same mechanism as {@link seedToolOnlyReplyDefaults} and load-bearing for the
+ * same reason: `rooms` is a section every stored config already carries, and
+ * conf's pre-write merge is SHALLOW, so a stored `rooms` object wins wholesale
+ * and never gains a member. Ajv's `useDefaults` does fill the leaf — but only
+ * into the copy conf's `store` getter just built and is about to discard, so
+ * nothing reaches the file without this body.
+ *
+ * Safety-neutral: `3` is a ceiling on something no install could do before this
+ * shipped, so a bound that refuses a fourth canvas change inside one turn
+ * refuses nothing that used to happen.
+ *
+ * Additive and idempotent — it writes only when the leaf is absent, so a
+ * corrupt-recovery re-run leaves a number somebody chose exactly where it is.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedRoomCanvasOps(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const rooms = store.get('rooms');
+  if (rooms == null || typeof rooms !== 'object') return;
+  const current = rooms as Record<string, unknown>;
+  if (current.maxCanvasOpsPerTurn != null) return;
+  store.set('rooms', {
+    ...current,
+    maxCanvasOpsPerTurn: USER_CONFIG_DEFAULTS.rooms.maxCanvasOpsPerTurn,
+  });
+}
+
+/**
  * The `conf` migration chain, keyed by the app version each entry ships in.
  *
  * ## Where a new migration goes
@@ -3916,6 +3951,25 @@ export const CONFIG_MIGRATIONS = {
     // on its own inside the folders it owns (DOR-1853). A nested leaf, so this
     // body is the only thing that writes it; see `seedHarnessAutoAdopt`.
     seedHarnessAutoAdopt(store);
+  },
+  // 0.78.0 has merged (DOR-1853, a `harness` leaf) and 0.74.0 is the newest
+  // tag, so 0.79.0 is the next key. Frozen from merge, not from the release
+  // bump, for the reason `'0.60.0'` above states; anything further opens
+  // `'0.80.0'`.
+  //
+  // Disjoint from every other key here: it writes one nested leaf under
+  // `rooms`. `'0.66.0'`, `'0.70.0'` and `'0.72.0'` also touch that section —
+  // rewriting three sibling numbers, adding `repo`, and seeding
+  // `toolOnlyReplies` with `maxPostsPerTurn` — and this body writes none of
+  // those members, so sequencing them any way round lands the same config.
+  '0.79.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `rooms.maxCanvasOpsPerTurn` — how many times one agent may change a room's
+    // shared canvas inside one turn (spec `room-canvas` §3.4). A nested leaf, so
+    // this body is the only thing that writes it; see `seedRoomCanvasOps`.
+    seedRoomCanvasOps(store);
   },
 } as const;
 

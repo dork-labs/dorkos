@@ -114,4 +114,5 @@ export const MERGED_MIGRATION_HASHES: Readonly<Record<string, string>> = {
   // merges, the key is frozen and a further change of mind opens `'0.78.0'`.
   '0.77.0': '49742f4b2d0c4a24',
   '0.78.0': 'acc5c682defa7a55',
+  '0.79.0': '1944a8d45a438c6c',
 };

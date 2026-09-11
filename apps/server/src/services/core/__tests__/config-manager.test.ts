@@ -61,6 +61,7 @@ import {
   seedHarnessAutoAdopt,
   seedHarnessGlobal,
   seedHarnessRefusedHooks,
+  seedRoomCanvasOps,
   seedToolOnlyReplyDefaults,
 } from '../config-manager.js';
 import { applyConfigPatch } from '../operator/config-patch.js';
@@ -1008,6 +1009,86 @@ describe('seedToolOnlyReplyDefaults migration (tool-only-room-replies §D5, DOR-
       // The upgrade adds two leaves; it changes nothing the person had set.
       expect(onDisk.rooms.maxAgentDepth).toBe(12);
       expect(onDisk.rooms.replyWaitMinutes).toBe(25);
+      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('seedRoomCanvasOps migration (room-canvas §3.4, DOR-1999)', () => {
+  it('reserves the leaf on a `rooms` block that predates the room canvas', () => {
+    // What this catches: conf merges top-level defaults SHALLOWLY, so an
+    // upgrading install with a stored `rooms` block never inherits the new leaf
+    // on its own. Drop the body and it reads `undefined`.
+    const store = createMockStore({ rooms: { maxAgentDepth: 12, maxPostsPerTurn: 1 } });
+    seedRoomCanvasOps(store);
+    expect(store.data.rooms).toEqual({
+      maxAgentDepth: 12,
+      maxPostsPerTurn: 1,
+      maxCanvasOpsPerTurn: 3,
+    });
+  });
+
+  it('never overwrites a ceiling somebody tightened (idempotent)', () => {
+    // What this catches: a re-run — corrupt-recovery instantiates conf twice —
+    // widening a bound the person narrowed. The stored value differs from the
+    // seeded one, so a body that wrote unconditionally is caught here rather
+    // than passing on a coincidence.
+    const store = createMockStore({ rooms: { maxCanvasOpsPerTurn: 1 } });
+    seedRoomCanvasOps(store);
+    expect(store.data.rooms).toEqual({ maxCanvasOpsPerTurn: 1 });
+  });
+
+  it('does nothing when there is no `rooms` block to extend', () => {
+    // The schema default supplies the whole section on read in that case, and
+    // writing a partial `rooms` here would drop every other default in it.
+    const store = createMockStore({ server: { port: 4242 } });
+    seedRoomCanvasOps(store);
+    expect(store.data.rooms).toBeUndefined();
+  });
+
+  it('a real pre-0.79.0 config file gains the leaf on disk (full conf path)', () => {
+    // The half neither the mock store nor a `getDot` assertion can reach: conf's
+    // `store` getter re-reads and re-parses the file and hands back a copy Ajv
+    // has already filled the default into, and that copy is discarded. Suppress
+    // the body and this goes red while `store.get('rooms').maxCanvasOpsPerTurn`
+    // still answers `3` (DOR-1496).
+    //
+    // `projectVersion` is stated explicitly because `SERVER_VERSION` resolves to
+    // `0.0.0` in a dev tree, which runs no migration at all.
+    const dir = path.join(os.tmpdir(), 'test-dork-canvas-ops-mig-' + Date.now());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({
+          version: 1,
+          rooms: { maxAgentDepth: 12, maxPostsPerTurn: 1 },
+          __internal__: { migrations: { version: '0.78.0' } },
+        }),
+        'utf-8'
+      );
+
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        // Structurally compatible at runtime; mirrors the cast in config-manager.ts.
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.79.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+
+      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        rooms: Record<string, unknown>;
+      };
+      expect(onDisk.rooms.maxCanvasOpsPerTurn).toBe(3);
+      // The upgrade adds one leaf; it changes nothing the person had set.
+      expect(onDisk.rooms.maxAgentDepth).toBe(12);
+      expect(onDisk.rooms.maxPostsPerTurn).toBe(1);
       expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -3489,7 +3570,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read.
-    expect(Object.keys(bodies)).toHaveLength(27);
+    expect(Object.keys(bodies)).toHaveLength(28);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')

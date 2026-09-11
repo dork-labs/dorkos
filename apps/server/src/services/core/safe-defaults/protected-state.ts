@@ -331,6 +331,12 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
       'The most messages one agent may post into a room inside one turn. Lower is the tightened bound, and it is the one a person reaches for when a turn has been chatty at them.',
   },
   {
+    path: 'rooms.maxCanvasOpsPerTurn',
+    direction: 'lower',
+    reason:
+      "The most times one agent may change a room's shared canvas inside one turn. Lower is the tightened bound, the same way it is for posts, and it is what a person reaches for when a turn has buried the table under tabs nobody asked for.",
+  },
+  {
     path: 'rooms.repo.enabled',
     direction: 'boolean',
     protectiveValue: false,
