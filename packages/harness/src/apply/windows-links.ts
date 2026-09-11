@@ -242,3 +242,26 @@ export function junctionCommitWarnings(repoRoot: string, plan: ProjectionPlan): 
   );
   return anyJunction && isGitRepo(repoRoot) ? [JUNCTION_COMMIT_WARNING] : [];
 }
+
+/**
+ * Wait before re-observing a Windows symlink after removal was denied.
+ *
+ * Both project and global apply must re-check the whole occupant after this
+ * wait, never retry removal against stale observations. Sixty-four 16 ms waits
+ * bound a sharing conflict to about one second; persistent and other errors
+ * remain the caller's responsibility to throw.
+ *
+ * @param error - the error from removing a stale symlink.
+ * @param retry - how many removal waits this action has already taken.
+ * @returns whether the caller should re-check the occupant and try again.
+ */
+export function waitForSymlinkRemoval(error: unknown, retry: number): boolean {
+  if (
+    process.platform !== 'win32' ||
+    (error as NodeJS.ErrnoException).code !== 'EPERM' ||
+    retry >= 64
+  )
+    return false;
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 16);
+  return true;
+}

@@ -66,7 +66,7 @@ import {
   linkMatchesPlan,
   type LinkCheck,
 } from './symlink-occupants.js';
-import { junctionCommitWarnings, symlinkTypeFor } from './windows-links.js';
+import { junctionCommitWarnings, symlinkTypeFor, waitForSymlinkRemoval } from './windows-links.js';
 import {
   applyGeneratedHookFile,
   findBlockedGenerateTargets,
@@ -155,13 +155,11 @@ function relativeLink(repoRoot: string, source: string, target: string): string 
 }
 
 /**
- * How many times {@link applySymlink} will look again after another writer beat
- * it to the target.
- *
- * Three, not one: the loop only repeats when the path CHANGED under it, so each
- * repeat is evidence of a real concurrent writer rather than of a wait. Two
- * writers applying the same plan settle on the first repeat; the third is slack
- * for a third writer, and the answer after that is whatever is actually there.
+ * How many creation attempts {@link applySymlink} gets when another writer
+ * reaches the target first (`EEXIST`). Two writers applying the same plan
+ * usually settle on the first repeat; the third is slack for another writer.
+ * Windows removal sharing failures have a separate bounded wait budget and
+ * re-check the occupant without consuming these creation attempts.
  */
 const SYMLINK_ATTEMPTS = 3;
 
@@ -206,7 +204,7 @@ function applySymlink(repoRoot: string, action: ProjectionAction): string | unde
   const linkText = relativeLink(repoRoot, action.source, action.target);
 
   const absSource = join(repoRoot, action.source);
-  for (let attempt = 0; attempt < SYMLINK_ATTEMPTS; attempt++) {
+  for (let attempt = 0, removalRetries = 0; attempt < SYMLINK_ATTEMPTS;) {
     if (pathExists(absTarget)) {
       // A real file/dir — never destroy hand-authored content, and say what it is.
       const blocked = blockingSymlinkOccupant(absTarget, linkText);
@@ -214,7 +212,16 @@ function applySymlink(repoRoot: string, action: ProjectionAction): string | unde
       if (linkMatchesPlan(absTarget, absSource, linkText, linkCheck())) {
         return undefined; // already the correct managed link
       }
-      rmSync(absTarget, { force: true }); // a stale *managed* symlink — safe to replace
+      try {
+        rmSync(absTarget, { force: true }); // never recurse into a replacement directory
+      } catch (error) {
+        // Windows can deny removal while another writer replaces this entry.
+        // Retry the whole observation, not just rm: the new occupant may already
+        // match, be absent, or be somebody's real file/directory. Persistent
+        // permission failures still escape after a finite one-second budget.
+        if (!waitForSymlinkRemoval(error, removalRetries++)) throw error;
+        continue;
+      }
     }
     mkdirSync(dirname(absTarget), { recursive: true });
     try {
@@ -223,6 +230,7 @@ function applySymlink(repoRoot: string, action: ProjectionAction): string | unde
     } catch (err) {
       // Anything but "somebody got here first" is a real failure to report.
       if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+      attempt++;
     }
   }
   // Out of attempts: answer for what is actually there, through the same two
