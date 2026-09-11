@@ -13,16 +13,12 @@
  *
  * @module lib/rate-limit/too-many-requests-page
  */
+import { escapeHtml } from '@/lib/html/escape-html';
 
 /** Site palette, inlined (see module doc). */
 const CREAM = '#f5f0e6';
 const CHARCOAL = '#1a1814';
 const WARM_GRAY = '#4a4640';
-
-/** Escape the few characters that could otherwise break out of the markup. */
-export function escapeHtml(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
 
 /**
  * How long to tell a reader to wait, derived from the real `Retry-After`.

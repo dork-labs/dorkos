@@ -199,8 +199,8 @@ describe('provisionCodex', () => {
     ) as { dependencies: Record<string, string> };
     const stripRange = (version: string): string => version.replace(/^[~^]/, '');
 
-    expect(stripRange(pkg.dependencies['@openai/codex'])).toBe('0.153.4');
-    expect(stripRange(pkg.dependencies['@openai/codex-sdk'])).toBe('0.153.4');
+    expect(stripRange(pkg.dependencies['@openai/codex'])).toBe('0.154.0');
+    expect(stripRange(pkg.dependencies['@openai/codex-sdk'])).toBe('0.154.0');
     expect(stripRange(pkg.dependencies['@openai/codex'])).toBe(
       stripRange(pkg.dependencies['@openai/codex-sdk'])
     );

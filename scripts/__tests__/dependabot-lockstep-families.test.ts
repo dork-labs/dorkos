@@ -87,8 +87,10 @@ const FAMILIES: Record<string, readonly string[]> = {
   ],
   // No per-platform siblings in the manifests: the opencode sidecar is
   // provisioned at runtime from OPENCODE_PACKAGE_VERSION in
-  // apps/server/src/services/runtimes/opencode/provision.ts, which that file's
-  // own test keeps in step with this SDK.
+  // apps/server/src/services/runtimes/opencode/providers/provision.ts, which is
+  // a constant in a source file rather than a manifest entry, so the parity
+  // test below cannot see it. The dedicated sidecar-pin test at the end of this
+  // file is what holds it to this family's version.
   '@opencode-ai/sdk': ['@opencode-ai/sdk'],
   // NOT ignored in dependabot.yml, deliberately — see the `groups` comment
   // there. Both of these publish every platform sibling at the parent's
@@ -345,6 +347,44 @@ describe('dependabot lockstep families', () => {
           [...seen.entries()].map(([v, where]) => `${v} (${where.join(', ')})`).join(' vs ')
       ).toHaveLength(seen.size === 0 ? 0 : 1);
     }
+  });
+
+  it('holds the opencode sidecar pin at the version the manifests declare for its SDK', () => {
+    // The opencode sidecar (`opencode-ai`) is not a manifest dependency at all —
+    // it is npm-installed on demand at the version of a CONSTANT in the server's
+    // source. provision.ts states the coupling in its own TSDoc ("pinned to
+    // match the `@opencode-ai/sdk` already depended on by the server ... so the
+    // CLI and the SDK the sidecar talks to never drift"), and that pin is
+    // load-bearing three ways: it drives re-provisioning, the drift warning, and
+    // the `requiredVersion` the readiness check shows the user. Nothing else in
+    // the repo fails when it and the SDK disagree — every other test derives its
+    // expectations FROM the constant, so they pass at any value.
+    const source = readFileSync(
+      path.join(repoRoot, 'apps/server/src/services/runtimes/opencode/providers/provision.ts'),
+      'utf8'
+    );
+    const pin = /OPENCODE_PACKAGE_VERSION\s*=\s*'([^']+)'/.exec(source)?.[1];
+    // Anti-vacuity: a renamed constant or a moved file must fail here rather
+    // than quietly make this test compare undefined with undefined.
+    expect(pin, 'OPENCODE_PACKAGE_VERSION not found in providers/provision.ts').toBeDefined();
+
+    const declared = [
+      ...new Set(
+        declarations
+          .filter((d) => d.name === '@opencode-ai/sdk')
+          .map((d) => comparableVersion(d.specifier))
+          .filter((v): v is string => v !== null)
+      ),
+    ];
+    expect(declared, 'no manifest declares @opencode-ai/sdk — the scanner is broken').not.toEqual(
+      []
+    );
+    expect(
+      declared,
+      `the opencode sidecar pin (OPENCODE_PACKAGE_VERSION = '${pin}') does not match the ` +
+        `@opencode-ai/sdk version the manifests declare (${declared.join(', ')}). Bump both ` +
+        `together: the sidecar binary and the SDK client that talks to it ride one version line.`
+    ).toEqual([pin]);
   });
 
   it('declares the agent SDK peer in every manifest that depends on the agent SDK', () => {

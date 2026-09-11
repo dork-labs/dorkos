@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  escapeHtml,
-  tooManyRequestsHtml,
-  tooManyRequestsPage,
-  waitPhrase,
-} from '../too-many-requests-page';
+import { tooManyRequestsHtml, tooManyRequestsPage, waitPhrase } from '../too-many-requests-page';
 
 describe('tooManyRequestsPage', () => {
   it('is a 429 carrying the Retry-After it was given', () => {
@@ -33,23 +28,10 @@ describe('tooManyRequestsPage', () => {
   });
 });
 
-describe('escapeHtml', () => {
-  it('escapes the characters that could break out of the markup', () => {
-    expect(escapeHtml('<script>alert(1)</script>')).toBe('&lt;script&gt;alert(1)&lt;/script&gt;');
-    expect(escapeHtml('a & b')).toBe('a &amp; b');
-  });
-
-  it('escapes the ampersand first, so an escape is never double-encoded', () => {
-    // Replacing `<` before `&` would turn `&lt;` into `&amp;lt;` on the next
-    // pass. Order matters, so it is pinned.
-    expect(escapeHtml('&lt;')).toBe('&amp;lt;');
-  });
-
-  it('leaves ordinary prose alone', () => {
-    const prose = 'Too many people opened this link from your network just now.';
-    expect(escapeHtml(prose)).toBe(prose);
-  });
-
+describe('escaping', () => {
+  // escapeHtml's own unit tests live with the function, in
+  // `lib/html/__tests__/escape-html.test.ts`. What matters here is that this page
+  // actually reaches for it.
   it('is actually applied to what the page renders', () => {
     const html = tooManyRequestsHtml('<b>Heading</b>', '<img src=x onerror=1>');
     expect(html).toContain('&lt;b&gt;Heading&lt;/b&gt;');

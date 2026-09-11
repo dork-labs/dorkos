@@ -199,6 +199,56 @@ catalog and marked `gpt-6-astra` as the default. The same probe on `0.147.0` log
 model-cache schema error and omitted Astra, which is why the two packages must remain
 on the same current version.
 
+**2026-09-11 update:** the pin moved to `0.154.0` across the whole family (SDK, bundled
+CLI, desktop per-platform aliases, `CODEX_PACKAGE_VERSION`). The npm package is
+byte-identical to `0.153.4` — `dist/index.d.ts` hashes to sha256 `954d28be…` at both
+versions — so every SDK-surface verdict below carries forward without re-probing the
+types. The CLI underneath did move; see
+`research/runtime-upgrades/codex-sdk/0.153.4-to-0.154.0/`.
+
+Because the CLI moved and the SDK did not, the bump's verification was the two
+checklist steps a `.d.ts` diff cannot answer
+(`contributing/adding-a-runtime.md` §"Bumping a pinned SDK", steps 5 and 6).
+Both were run against the SDK-vendored `0.154.0` binary on 2026-09-11 and both
+passed:
+
+**Step 5 — model picker.** `queryCodexModels()` driven straight at the vendored
+binary returned six models, all parsing through `AppServerModelSchema`, with
+`gpt-6-astra` still flagged default — the same catalog and the same default the
+2026-09-08 probe saw at `0.153.4`, so the release's move of model defaults to
+server-side resolution changed nothing observable for this account. Context
+windows came back enriched (258400 for the five current models, 121600 for
+`gpt-5.3-codex-spark`), which also settles the cache question below.
+
+**The `client_version` cache re-keys itself.** `model-context-windows.ts`
+rejects Codex's own `~/.codex/models_cache.json` whenever its `client_version`
+differs from the running binary, so a CLI bump necessarily blanks context-window
+enrichment until the CLI rewrites the cache. Observed end to end: after the
+probe, `models_cache.json` read `client_version: "0.154.0"`, and enrichment was
+already working in that same run. Self-healing within the 300-second freshness
+window, not a regression.
+
+**Step 6 — live smoke.**
+
+```
+DORKOS_CODEX_LIVE=1 pnpm vitest run \
+  src/services/runtimes/codex/__tests__/conformance.test.ts
+```
+
+44 passed, 9 skipped, ~75s of real turns through the full adapter. The suite's
+working directory is a fresh `mkdtemp` the CLI has never been told to trust, so
+this is also the workspace-trust check the release's hardening (#42324, #42716)
+called for: **no refusal and no prompt** in an untrusted cwd under DorkOS's
+headless invocation.
+
+One caveat on step 6 for whoever runs it next: before this bump the live arm
+could not run at all. Restoring the real `check-dependencies` under the flag
+also restores its `configManager.get('runtimes')` read, and `configManager` is
+`undefined` until `initConfigManager()` runs — which no test file gets for free,
+so every binary-resolving assertion failed. The suite now boots it against a
+throwaway temp dir, which also keeps a configured `binaryPath` from redirecting
+the smoke at a binary other than the pinned one.
+
 ## Additional live-verified facts for 2.4 / 2.5
 
 - **JSONL events are stdout-only; tracing lines are stderr-only** (verified with separate
@@ -253,12 +303,14 @@ Originally probed 2026-08-15 against `@openai/codex-sdk@0.147.0` and the system
 (`/Users/doriancollier/.local/bin/codex`). Both capability flags stay `false`: the SDK
 exposes **no primitive to hand a message to a running turn**, so there is nothing to steer
 into or stage onto mid-turn. AC6 asks for a probe rather than a declaration; here is what
-was run. Rechecked 2026-09-08 against the current SDK and bundled CLI `0.153.4`; the
+was run. Rechecked 2026-09-08 against the then-current SDK and bundled CLI `0.153.4`; the
 SDK surface still exposes only turn start/resume operations and no mid-turn input.
+Rechecked again 2026-09-11 at `0.154.0`, where the SDK's `dist/index.d.ts` is
+byte-identical to the `0.153.4` one, so the finding carries forward unchanged.
 
 ### (a) Static probe — the SDK surface (definitive for "does a primitive exist")
 
-`node_modules/.pnpm/@openai+codex-sdk@0.153.4/node_modules/@openai/codex-sdk/dist/index.d.ts`
+`node_modules/.pnpm/@openai+codex-sdk@0.154.0/node_modules/@openai/codex-sdk/dist/index.d.ts`
 (278 lines). The `Thread` class (the SDK's whole turn API) declares exactly:
 
 ```ts
@@ -304,10 +356,10 @@ as an `additionalContext` entry. Nothing a person typed is lost, and the runtime
 described as able to do something it cannot.
 
 **If a future SDK adds a mid-turn primitive, that is a FOLLOW-UP (declare + implement +
-conformance), not a scope expansion here — the result remains `false` at 0.153.4.**
+conformance), not a scope expansion here — the result remains `false` at 0.154.0.**
 
-## Current-context usage — verified 2026-09-08, Codex 0.153.4
+## Current-context usage — verified 2026-09-08 at Codex 0.153.4, re-verified 2026-09-11 at 0.154.0
 
-The SDK’s `turn.completed.usage.input_tokens` accumulates requests across the thread. It is not the current context size, and subtracting the previous turn’s total is also wrong when a turn makes multiple inference requests. Codex’s own rollout record supplies the measurement: `token_count.info.last_token_usage.total_tokens` and `model_context_window`. The [pinned Codex source](https://github.com/openai/codex/blob/rust-v0.153.4/codex-rs/tui/src/token_usage.rs) defines these semantics. DorkOS retains its standard tokens/window percentage; Codex TUI applies an additional display baseline.
+The SDK’s `turn.completed.usage.input_tokens` accumulates requests across the thread. It is not the current context size, and subtracting the previous turn’s total is also wrong when a turn makes multiple inference requests. Codex’s own rollout record supplies the measurement: `token_count.info.last_token_usage.total_tokens` and `model_context_window`. The [pinned Codex source](https://github.com/openai/codex/blob/rust-v0.154.0/codex-rs/tui/src/token_usage.rs) defines these semantics. DorkOS retains its standard tokens/window percentage; Codex TUI applies an additional display baseline.
 
 The runtime reads only the exact UUIDv7 thread’s bounded rollout tail, with directory-entry, byte and time limits and current-turn freshness checks. Live files take precedence over the archive. Missing or unfamiliar metadata leaves the last valid context reading alone; cumulative SDK input never fills the gap. Output and cache totals retain their SDK meanings. The measurement is persisted through the ordinary status event, so it survives reload without another filesystem read. Model catalog enrichment is separate: it uses fresh, same-version Codex-owned effective limits and can never invent an available model.
