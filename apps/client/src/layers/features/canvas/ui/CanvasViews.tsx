@@ -1,7 +1,17 @@
+/**
+ * The right panel's two document views, over one store (ADR 260911-200304).
+ *
+ * {@link CanvasContent} is the Canvas tab and {@link BrowserContent} the Browser
+ * tab; both render the same {@link CanvasBody} over the documents their own view
+ * holds, with their own active document. {@link CanvasRenderer} is the viewer
+ * dispatch those views are DEFINED by — `url` and `browser` go to
+ * `CanvasBrowserContent`, so they are the Browser view, and everything else is
+ * the Canvas view (`canvasViewForContent`).
+ *
+ * @module features/canvas/ui/CanvasViews
+ */
 import { lazy, Suspense } from 'react';
-import { Panel, PanelResizeHandle } from 'react-resizable-panels';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/layers/shared/ui';
-import { useAppStore, useIsMobile, documentsInView } from '@/layers/shared/model';
+import { useAppStore, documentsInView } from '@/layers/shared/model';
 import type { CanvasView } from '@/layers/shared/lib';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { CanvasHeader, canvasPanelId, canvasTabDomId } from './CanvasHeader';
@@ -221,62 +231,5 @@ export function BrowserContent() {
     <div data-slot="browser" className="flex h-full flex-col overflow-hidden">
       <CanvasBody view="browser" />
     </div>
-  );
-}
-
-/**
- * Resizable right-side canvas pane for agent-driven content.
- *
- * Desktop: renders inside a `PanelGroup` alongside the `ChatPanel` with a
- * thin resize handle. Mobile: renders as a full-width Sheet from the right.
- * Returns null when the canvas is closed — no DOM footprint.
- */
-export function AgentCanvas() {
-  const canvasOpen = useAppStore((s) => s.canvasOpen);
-  const setCanvasOpen = useAppStore((s) => s.setCanvasOpen);
-  const isMobile = useIsMobile();
-
-  if (!canvasOpen) return null;
-
-  const handleClose = () => setCanvasOpen(false);
-
-  // Mobile: full-width Sheet from the right (mirrors sidebar mobile pattern)
-  if (isMobile) {
-    return (
-      <Sheet open onOpenChange={(open) => !open && handleClose()}>
-        <SheetContent
-          side="right"
-          showCloseButton={false}
-          className="bg-sidebar text-sidebar-foreground flex w-full flex-col gap-0 p-0 sm:max-w-full"
-        >
-          <SheetHeader className="sr-only">
-            <SheetTitle>Canvas</SheetTitle>
-            <SheetDescription>Agent-driven content pane.</SheetDescription>
-          </SheetHeader>
-          <CanvasBody view="canvas" />
-        </SheetContent>
-      </Sheet>
-    );
-  }
-
-  // Desktop: resizable panel with thin separator
-  return (
-    <>
-      <PanelResizeHandle className="group relative flex w-2 items-center justify-center">
-        <div className="bg-border group-hover:bg-ring h-full w-px transition-colors" />
-      </PanelResizeHandle>
-      <Panel
-        id="agent-canvas"
-        order={2}
-        defaultSize={50}
-        minSize={20}
-        collapsible
-        onCollapse={handleClose}
-      >
-        <div className="bg-sidebar text-sidebar-foreground flex h-full flex-col overflow-hidden rounded-lg border">
-          <CanvasBody view="canvas" />
-        </div>
-      </Panel>
-    </>
   );
 }

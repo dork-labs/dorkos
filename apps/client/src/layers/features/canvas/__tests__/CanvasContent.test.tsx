@@ -91,7 +91,7 @@ vi.mock('@/layers/shared/model', async () => {
 });
 
 import { setPrefersReducedMotion } from '@/test-setup';
-import { CanvasContent, BrowserContent } from '../ui/AgentCanvas';
+import { CanvasContent, BrowserContent } from '../ui/CanvasViews';
 
 // The suite's own local `motion/react` shadow used to answer
 // `useReducedMotion: () => true`; deleting it (DOR-1416) silently flipped

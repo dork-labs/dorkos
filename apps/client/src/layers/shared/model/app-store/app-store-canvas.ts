@@ -286,9 +286,10 @@ interface ActiveIds {
  *
  * An id that still names an open document of its own view is kept; otherwise the
  * view falls back to its most-recently-active remaining document, and to null
- * only when it has none. Called from every path that removes a document (close,
- * LRU eviction) and on hydration — a stranded id would render a tab strip above
- * the empty-state splash.
+ * only when it has none. Called on close and on hydration — a stranded id would
+ * render a tab strip above the empty-state splash. The open path needs no such
+ * repair because {@link evictToCapacity} never drops a document a view is
+ * showing.
  */
 function reconcileActiveIds(documents: CanvasDocument[], current: ActiveIds): ActiveIds {
   const resolve = (view: CanvasView, id: string | null): string | null => {
@@ -305,16 +306,29 @@ function reconcileActiveIds(documents: CanvasDocument[], current: ActiveIds): Ac
 
 /**
  * Enforce the open-document cap by dropping the least-recently-active documents,
- * never evicting the just-activated one or a document being edited.
+ * never evicting a document being edited and never one a view is showing.
  *
  * The cap is over BOTH views together: twelve open documents is twelve, however
- * they are split between the tabs. A view whose active document is evicted falls
- * back through {@link reconcileActiveIds}.
+ * they are split between the tabs. That is exactly why **both** active ids are
+ * protected rather than only the just-opened one. `lastActiveAt` moves when a
+ * document is opened or activated, not when the reader switches tabs, so the
+ * page somebody is sitting on in Browser goes stale the moment an agent opens
+ * twelve documents in Canvas — and the LRU would take the one document on
+ * screen. Before the split that could not happen: there was one active id and it
+ * was always the just-opened one.
+ *
+ * @param documents - The open set, including the document just added.
+ * @param protectedIds - Ids that may never be evicted: the just-opened document
+ *   and each view's active one. Nulls are ignored.
  */
-function evictToCapacity(documents: CanvasDocument[], protectedId: string): CanvasDocument[] {
+function evictToCapacity(
+  documents: CanvasDocument[],
+  protectedIds: readonly (string | null)[]
+): CanvasDocument[] {
   if (documents.length <= MAX_CANVAS_DOCUMENTS) return documents;
+  const keep = new Set(protectedIds.filter((id): id is string => id !== null));
   const evictable = documents
-    .filter((d) => d.id !== protectedId && !d.editing)
+    .filter((d) => !keep.has(d.id) && !d.editing)
     .sort((a, b) => a.lastActiveAt - b.lastActiveAt);
   const dropCount = documents.length - MAX_CANVAS_DOCUMENTS;
   const dropIds = new Set(evictable.slice(0, dropCount).map((d) => d.id));
@@ -422,20 +436,24 @@ export const createCanvasSlice: StateCreator<
           editing: false,
         };
         activeId = doc.id;
-        documents = evictToCapacity([...s.openDocuments, doc], activeId);
+        // Neither view may lose the document it is showing to make room for this
+        // one, so both active ids are protected alongside it.
+        documents = evictToCapacity(
+          [...s.openDocuments, doc],
+          [activeId, s.activeCanvasDocumentId, s.activeBrowserDocumentId]
+        );
       }
 
       // Only the view this content belongs to changes what it is showing; the
-      // other view stays on whatever the reader left there. Eviction may have
-      // taken that document, which is what the reconcile below answers for.
-      const opened =
+      // other view stays on whatever the reader left there, and eviction cannot
+      // have taken it.
+      const activeIds =
         canvasViewForContent(content) === 'browser'
           ? { activeCanvasDocumentId: s.activeCanvasDocumentId, activeBrowserDocumentId: activeId }
           : {
               activeCanvasDocumentId: activeId,
               activeBrowserDocumentId: s.activeBrowserDocumentId,
             };
-      const activeIds = reconcileActiveIds(documents, opened);
       // LRU eviction may have dropped documents — prune their histories too.
       const browserHistories = pruneBrowserHistories(s.browserHistories, documents);
       const next = { openDocuments: documents, ...activeIds, browserHistories };

@@ -3,6 +3,7 @@ covers:
   - 'feat(canvas): split the browser into its own right-panel tab'
   - 'test(e2e): drive the workbench preview through the Browser tab'
   - 'docs(workbench): describe the Canvas and Browser tabs'
+  - 'fix(canvas): open every document into the tab that renders it'
 ---
 
 ### Added

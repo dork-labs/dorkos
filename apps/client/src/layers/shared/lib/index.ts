@@ -261,6 +261,8 @@ export { useRenderSlot, useLatest, type RenderSlot } from './use-render-slot';
 export {
   executeUiCommand,
   revealCanvas,
+  revealBrowser,
+  revealForContent,
   type DispatcherContext,
   type DispatcherStore,
   type UiCommandOrigin,

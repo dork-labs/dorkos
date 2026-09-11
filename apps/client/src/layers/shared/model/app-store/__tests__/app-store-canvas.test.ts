@@ -284,6 +284,9 @@ describe('CanvasSlice — per-document browser history (DOR-252)', () => {
       stack: ['https://first.test/'],
       cursor: 0,
     });
+    // A second page, so the first is no longer the one the Browser view is
+    // showing — a view's own document is never evicted (see the cap test below).
+    openCanvasDocument(browserDoc('https://second.test/'));
 
     // Open enough more documents to push the first past the cap and evict it.
     for (let i = 0; i < MAX_CANVAS_DOCUMENTS; i++) {
@@ -396,18 +399,22 @@ describe('CanvasSlice — two views over one store (ADR 260911-200304)', () => {
     });
   });
 
-  it('never leaves a view pointing at a document the LRU evicted', () => {
+  it('never evicts the document a view is showing, however stale it is', () => {
     const { openCanvasDocument } = useAppStore.getState();
     openCanvasDocument(browserDoc('https://first.test/'));
-    // Fill the shared cap with Canvas-view documents; the page is the
-    // least-recently-active, so it is the one that goes.
-    for (let i = 0; i < MAX_CANVAS_DOCUMENTS; i++) openCanvasDocument(fileDoc(`file-${i}.ts`));
+    const page = useAppStore.getState().activeBrowserDocumentId!;
+    // A burst of agent-opened Canvas documents fills the shared cap. The page is
+    // the least-recently-active of them all — `lastActiveAt` moves on open and
+    // activate, never on a tab switch — so a plain LRU takes the one document
+    // the reader is sitting on in the other tab.
+    for (let i = 0; i <= MAX_CANVAS_DOCUMENTS; i++) openCanvasDocument(fileDoc(`file-${i}.ts`));
 
     const { openDocuments, activeBrowserDocumentId, activeCanvasDocumentId } =
       useAppStore.getState();
     expect(openDocuments).toHaveLength(MAX_CANVAS_DOCUMENTS);
-    // A stranded id renders a tab strip above the empty splash.
-    expect(activeBrowserDocumentId).toBeNull();
+    expect(activeBrowserDocumentId).toBe(page);
+    expect(openDocuments.some((d) => d.id === page)).toBe(true);
+    // And both views still point at something that is open.
     expect(openDocuments.some((d) => d.id === activeCanvasDocumentId)).toBe(true);
   });
 

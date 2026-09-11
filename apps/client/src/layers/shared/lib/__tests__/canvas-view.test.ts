@@ -8,7 +8,7 @@ import { canvasViewForContent, type CanvasView } from '../canvas-view';
  * Typed as a total `Record` over the union on purpose: adding a fifteenth canvas
  * content type fails the typecheck here until somebody decides which tab renders
  * it, which is the only thing standing between this split and the viewer
- * dispatch in `AgentCanvas.tsx` drifting apart.
+ * dispatch in `CanvasViews.tsx` drifting apart.
  */
 const EXPECTED: Record<UiCanvasContent['type'], CanvasView> = {
   url: 'browser',

@@ -13,7 +13,8 @@
  * @module features/mcp-apps/ui/McpAppBlock
  */
 import { AppWindow, Maximize2, PictureInPicture2 } from 'lucide-react';
-import { revealCanvas } from '@/layers/shared/lib';
+import type { UiCanvasContent } from '@dorkos/shared/types';
+import { revealForContent } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { McpAppFrame } from './McpAppFrame';
 import { useRenderConsent } from '../model/render-consent';
@@ -42,13 +43,17 @@ export function McpAppBlock({ sessionId, serverName, uri, title }: McpAppBlockPr
   const openPip = useAppStore((s) => s.openPip);
 
   const openFullscreen = () => {
-    // `revealCanvas` rather than `setCanvasOpen` alone: the canvas renders
-    // inside the right panel, so writing the legacy flag by itself moves the App
-    // somewhere the reader cannot see (DOR-97, DOR-829). `'user'` because a
-    // person pressed fullscreen, so the canvas tab is their choice (DOR-227).
+    // A reveal rather than `setCanvasOpen` alone: the views render inside the
+    // right panel, so writing that flag by itself moves the App somewhere the
+    // reader cannot see (DOR-97, DOR-829). `'user'` because a person pressed
+    // fullscreen, so the tab is their choice (DOR-227).
     const store = useAppStore.getState();
-    store.openCanvasDocument({ type: 'mcp_app', serverName, uri, title });
-    revealCanvas(store, 'user');
+    // An app is not a page, so this lands in the Canvas tab — but the reveal
+    // asks the content rather than naming a tab, so it cannot drift from where
+    // the document actually opened (ADR 260911-200304).
+    const app: UiCanvasContent = { type: 'mcp_app', serverName, uri, title };
+    store.openCanvasDocument(app);
+    revealForContent(store, 'user', app);
   };
 
   const popOut = () => {

@@ -1,12 +1,12 @@
 /**
- * Canvas feature: resizable, multi-document agent-driven content pane.
+ * Canvas feature: the right panel's multi-document, agent-driven content views.
  *
  * It renders as TWO right-panel tabs over ONE document list (ADR
  * 260911-200304): `BrowserContent` shows the pages the embedded browser renders
  * (`url`, `browser`), `CanvasContent` shows every other type, and each keeps its
  * own active document. Same store, same dedupe, same cap, same persistence.
  *
- * The canvas hosts several open documents at once (a tab strip in the header);
+ * Each view hosts several open documents at once (a tab strip in its header);
  * file/markdown documents are user-editable via a pencil toggle that autosaves
  * to disk. Edit protection is per-document: while a document is being edited its
  * own `editing` flag is set (via `setDocumentEditing`), and the store's
@@ -19,5 +19,5 @@
  *
  * @module features/canvas
  */
-export { AgentCanvas, CanvasContent, BrowserContent } from './ui/AgentCanvas';
+export { CanvasContent, BrowserContent } from './ui/CanvasViews';
 export { useCanvasPersistence } from './model/use-canvas-persistence';

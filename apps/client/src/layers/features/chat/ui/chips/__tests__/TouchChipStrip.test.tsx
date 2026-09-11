@@ -590,7 +590,7 @@ describe('TouchChipStrip — clicking through to the canvas', () => {
     expect(activeRightPanelTab).toBe('canvas');
   });
 
-  it('opens a URL chip as a canvas url document, and shows it', async () => {
+  it('opens a URL chip as a page, and shows the tab the page actually opened in', async () => {
     const user = userEvent.setup();
     render(<TouchChipStrip sessionId={SESSION_ID} parts={mixedParts()} />);
 
@@ -604,7 +604,10 @@ describe('TouchChipStrip — clicking through to the canvas', () => {
     expect(openDocuments[0].content).toEqual({ type: 'url', url: 'https://example.com/page' });
     expect(canvasOpen).toBe(true);
     expect(rightPanelOpen).toBe(true);
-    expect(activeRightPanelTab).toBe('canvas');
+    // A `url` is a Browser-view document. Revealing Canvas here would show an
+    // empty canvas with the page one tab over — and, at `'user'` origin, would
+    // persist that wrong tab as the reader's per-agent preference (DOR-227).
+    expect(activeRightPanelTab).toBe('browser');
   });
 
   it('opens nothing for a glob pattern, and says why in the tooltip', async () => {

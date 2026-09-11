@@ -49,7 +49,7 @@ function Harness({
           if (active === id) setActive(next?.id ?? null);
         }}
       />
-      {/* Mirrors AgentCanvas's always-mounted content container — the strip's
+      {/* Mirrors CanvasViews's always-mounted content container — the strip's
           Delete-last-tab fallback focus target (found by id). */}
       <div id={canvasPanelId('canvas')} tabIndex={-1} data-testid="canvas-panel" />
       <button type="button">after</button>

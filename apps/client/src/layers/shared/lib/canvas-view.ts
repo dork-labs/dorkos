@@ -2,7 +2,7 @@
  * Which of the right panel's two document views a piece of canvas content
  * belongs to (ADR 260911-200304).
  *
- * The split is drawn by the renderer, not by a hand-kept list: `AgentCanvas`
+ * The split is drawn by the renderer, not by a hand-kept list: `CanvasViews`
  * dispatches exactly two content types — `url` and `browser` — to
  * `CanvasBrowserContent`, and the other twelve to eleven other viewers. So the
  * Browser view is "the documents the embedded browser renders" and the Canvas

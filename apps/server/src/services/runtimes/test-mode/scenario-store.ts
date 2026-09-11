@@ -366,20 +366,39 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
     yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
   },
   /**
-   * One turn that drives BOTH right-panel document views: it opens a markdown
-   * document and then navigates the embedded browser.
+   * One turn that reaches BOTH right-panel document views: it fetches a page,
+   * opens a markdown document, and navigates the embedded browser.
    *
    * The fixture for verifying the Canvas/Browser split in a real browser (ADR
-   * 260911-200304) without spending a model call — a page must land in the
-   * Browser tab and leave the Canvas tab's document exactly where it was.
-   * Deliberately NOT advertised in `features.testModeScenarios`, the same choice
-   * the slow-close fixture above makes: it is named explicitly by whoever drives
-   * it, not picked off a list.
+   * 260911-200304) without spending a model call. Three things it makes
+   * checkable: a page lands in the Browser tab, the Canvas tab's document stays
+   * exactly where it was, and the `WebFetch` leaves a "Fetched …" touch chip —
+   * the phone-width control whose own tap has to reveal the Browser tab rather
+   * than the Canvas one. Deliberately NOT advertised in
+   * `features.testModeScenarios`, the same choice the slow-close fixture above
+   * makes: it is named explicitly by whoever drives it, not picked off a list.
    */
   'ui-canvas-and-browser': async function* (_content) {
     yield {
       type: 'session_status',
       data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
+    } as StreamEvent;
+    yield {
+      type: 'tool_call_start',
+      data: { toolCallId: 'wf-1', toolName: 'WebFetch', status: 'running' },
+    } as StreamEvent;
+    yield {
+      type: 'tool_call_delta',
+      data: {
+        toolCallId: 'wf-1',
+        toolName: 'WebFetch',
+        input: '{"url":"https://example.com/"}',
+        status: 'running',
+      },
+    } as StreamEvent;
+    yield {
+      type: 'tool_call_end',
+      data: { toolCallId: 'wf-1', toolName: 'WebFetch', status: 'complete' },
     } as StreamEvent;
     yield {
       type: 'ui_command',

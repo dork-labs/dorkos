@@ -75,7 +75,7 @@ vi.mock('@/layers/shared/model', async () => {
 });
 
 import { setPrefersReducedMotion } from '@/test-setup';
-import { CanvasContent } from '../ui/AgentCanvas';
+import { CanvasContent } from '../ui/CanvasViews';
 
 /** Two open documents: a broken JSON viewer (active) and a healthy markdown doc. */
 function setBrokenPlusHealthy(): void {

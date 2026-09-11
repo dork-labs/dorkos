@@ -414,9 +414,11 @@ function tabSetterFor(
 
 /**
  * Reveal one of the panel's two document views: open the right panel and select
- * that tab. `setCanvasOpen` is kept for the legacy AgentCanvas surface. The tab
- * switch respects `origin` — agent-driven reveals do not persist over the user's
- * per-agent tab preference (DOR-227).
+ * that tab. `setCanvasOpen` no longer shows anything by itself — the views are
+ * right-panel contributions — but it is still what the per-session persisted
+ * entry and the agent's `get_ui_state` snapshot read, so a reveal keeps it
+ * truthful. The tab switch respects `origin` — agent-driven reveals do not
+ * persist over the user's per-agent tab preference (DOR-227).
  *
  * @param store - `useAppStore.getState()`.
  * @param origin - Who is revealing it.
@@ -469,11 +471,18 @@ export function revealBrowser(store: DispatcherStore, origin: UiCommandOrigin): 
  * Reveal whichever tab renders `content` — the reveal half of the two-view split
  * (ADR 260911-200304), asked of the content rather than of a list of commands.
  *
+ * **Prefer this over {@link revealCanvas} at any call site that opens a
+ * document.** Picking the reveal by hand is picking the tab by hand, and it is
+ * wrong the moment the content type changes: a chip opening a `url` and then
+ * revealing Canvas shows the reader an empty canvas with their page one tab
+ * over, and persists the wrong tab as their preference for `'user'` origins.
+ *
  * @param store - `useAppStore.getState()`.
- * @param origin - Who is revealing it.
- * @param content - The content the command just opened.
+ * @param origin - Who is revealing it: `'user'` persists the tab choice as a
+ *   preference, `'agent'` switches the view without overwriting one.
+ * @param content - The content that was just opened.
  */
-function revealForContent(
+export function revealForContent(
   store: DispatcherStore,
   origin: UiCommandOrigin,
   content: UiCanvasContent

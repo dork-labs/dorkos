@@ -5,10 +5,13 @@ import type { RightPanelPage } from '../../pages/RightPanelPage';
  * The right panel's tab strip when seven tabs do not fit.
  *
  * `/session` registers seven contributions (Pulse, Profile, Session, Files,
- * Canvas, Browser, Terminal). Measured: they are 529px of tabs, and a 45% panel
- * at this window width gives the strip 378px — so the strip scrolls, and two
- * things have to hold once it does: the selected tab is on screen, and an edge
- * with tabs behind it says so.
+ * Canvas, Browser, Terminal). Measured: they are ~530px of tabs, and a 45% panel
+ * at this window width gives the strip ~370px — so the strip overflows by ~160px
+ * and scrolls, and two things have to hold once it does: the selected tab is on
+ * screen, and an edge with tabs behind it says so. (Figures to the nearest ten:
+ * the panel settles a few pixels either way depending on when the per-agent
+ * layout restore lands, and nothing here turns on the exact number — the
+ * assertions measure the strip themselves.)
  *
  * Clicking a tab got the first one for free, because the browser scrolls what it
  * focuses — which is why nothing a person did by hand ever showed the bug.
@@ -37,9 +40,9 @@ const WINDOW = { width: 1280, height: 800 } as const;
  * Re-measured when the Browser tab arrived (ADR 260911-200304), because a
  * seventh tab changes the arithmetic under BOTH halves of this file: a width
  * that only ever fit six would fail here for a reason that is not the bug this
- * was filed for. Seven tabs are 529px of content and the strip gets about
- * `0.45 × window − 198` px, so the overflow ends near 1620px and this width
- * leaves the strip 612px — roughly 80px of slack. Deliberately not the narrowest
+ * was filed for. Seven tabs are ~530px of content and the strip gets roughly
+ * `0.45 × window − 200` px, so the overflow ends near 1620px and this width
+ * leaves the strip ~610px — about 80px of slack. Deliberately not the narrowest
  * width that fits: the assertion below is "no fade when nothing is hidden", and
  * a value sitting on the boundary would go red on a pixel of rounding.
  */
