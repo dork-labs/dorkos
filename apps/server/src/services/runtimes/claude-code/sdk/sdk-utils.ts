@@ -56,7 +56,7 @@ type HeldPromptMessage = {
   /**
    * When `false`, the SDK appends this message to the transcript WITHOUT running
    * an assistant turn, and merges it into the next user message that does query
-   * (`SDKUserMessage.shouldQuery`, `sdk.d.ts:4764`). This is the native path for
+   * (`SDKUserMessage.shouldQuery`). This is the native path for
    * a `stage` disposition (spec `persistent-session-runtime` §2.5, task 4.2).
    * Omitted for an ordinary message, which queries as usual.
    */
@@ -141,9 +141,9 @@ export interface HeldUserPrompt {
    * as its own afterwards. Measured live (DOR-1315, 2026-08-23): 11/11 inline
    * into tool-using turns, 0/2 into text-only ones.
    *
-   * That is CLI BEHAVIOR pinned to `@anthropic-ai/claude-agent-sdk@0.3.224`, read
-   * out of the bundled binary — the published types do not promise it either way
-   * (the closest is the `isFoldInFlight` aside at `sdk.d.ts:3618`). It
+   * That is CLI BEHAVIOR, measured against `@anthropic-ai/claude-agent-sdk@0.3.224`
+   * and read out of the bundled binary; NOT re-measured on the 0.3.268 bump — the published types do not promise it either way
+   * (the closest is the `isFoldInFlight` aside at `SDKUserMessage.isFoldInFlight`). It
    * corroborates the independent binary read recorded in
    * `messaging/phantom-cancellation.ts`, but treat it as version-pinned
    * observation, not contract: verify by execution before building on it.
@@ -151,7 +151,7 @@ export interface HeldUserPrompt {
    * Two routes into a tool-free turn EXIST and were rejected, so nobody has to
    * rediscover them:
    *
-   * - **A `Stop` hook returning `additionalContext`** (`sdk.d.ts:7069-7075`):
+   * - **A `Stop` hook returning `additionalContext`** (`HookJSONOutput`'s `additionalContext`):
    *   non-error feedback delivered to the model with the conversation continuing,
    *   so the model acts on it inside the same `query()`. DorkOS registers
    *   `PreToolUse` only (`messaging/launch-resolver.ts`) and no `Stop` hook
@@ -181,7 +181,7 @@ export interface HeldUserPrompt {
   /**
    * Stage a message into the still-open stream: appended to the transcript with
    * `shouldQuery: false`, so the SDK runs NO assistant turn and merges it into
-   * the next user message that does query (`sdk.d.ts:4764`). The disposition's
+   * the next user message that does query (`SDKUserMessage.shouldQuery`). The disposition's
    * native path (spec `persistent-session-runtime` §2.5, task 4.2) — no window
    * opens, no `result` answers it.
    *

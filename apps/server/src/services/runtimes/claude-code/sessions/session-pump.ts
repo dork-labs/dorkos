@@ -381,7 +381,7 @@ export class SessionPump {
    * Unlike {@link steer}, this does not require an open turn: it rides
    * `shouldQuery: false`, which the SDK appends to the transcript and runs no
    * assistant turn for, merging it into the next user message that does query
-   * (`sdk.d.ts:4764`). So it is legal whenever there is a live process to append
+   * (`SDKUserMessage.shouldQuery`). So it is legal whenever there is a live process to append
    * to — WARM (idle) or RUNNING alike — and it leaves the state machine untouched
    * either way: no window opens, and no `result` is expected, because a staged
    * message provokes none.

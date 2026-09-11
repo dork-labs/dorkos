@@ -24,7 +24,7 @@
  */
 import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import type { RuntimeProvisionProgress, RuntimeProvisionResult } from '@dorkos/shared/transport';
@@ -47,7 +47,7 @@ import { logger, logError } from '../../../../lib/logger.js';
  * it; if Anthropic ships a text-only model, the `supportsVision` claim is the
  * one that goes wrong first.
  */
-export const CLAUDE_SDK_VERSION = '0.3.224';
+export const CLAUDE_SDK_VERSION = '0.3.268';
 
 /** npm name of the SDK whose per-platform binary packages this module installs. */
 const SDK_PKG = '@anthropic-ai/claude-agent-sdk';
@@ -81,10 +81,20 @@ function isMuslLinux(): boolean {
  * preference order.
  *
  * Since 0.2.113 the Agent SDK ships Claude Code as a native binary in optional
- * dependencies named `@anthropic-ai/claude-agent-sdk-<platform>-<arch>` (with
- * `-musl` and `-android` variants), exposing `claude` (or `claude.exe`) at the
- * package root. Only one is ever installed on a given host, so resolution tries
- * each in turn and provisioning installs the first.
+ * dependencies named `@anthropic-ai/claude-agent-sdk-<platform>-<arch>`, exposing
+ * `claude` (or `claude.exe`) at the package root. Only one is ever installed on a
+ * given host, so resolution tries each in turn and provisioning installs the
+ * first.
+ *
+ * **The published set is EIGHT names, and `-android` is not among them** —
+ * re-read off the SDK's own `optionalDependencies` at both 0.3.224 and 0.3.268:
+ * `linux-x64`, `linux-arm64`, `linux-x64-musl`, `linux-arm64-musl`, `darwin-x64`,
+ * `darwin-arm64`, `win32-x64`, `win32-arm64`. The `android` branch below is
+ * therefore dead today. It stays because its cost is one install attempt that
+ * fails with a clear error on a platform DorkOS has never supported, while
+ * deleting it would silently route such a host at a glibc Linux binary instead —
+ * a wrong answer dressed as a right one. Delete it the day `process.platform`
+ * can be `'android'` here for a reason.
  *
  * @returns Ordered candidate package names (never empty).
  */
@@ -105,18 +115,81 @@ export function resolveClaudeProvisionDir(): string {
 }
 
 /**
- * Absolute path to the provisioned `claude` binary, or `null` when nothing was
- * provisioned for this host.
+ * The version actually installed in a provisioned per-platform package, read
+ * from that package's own `package.json`.
+ *
+ * Returns `null` — never throws — when the file is missing, unreadable or
+ * malformed. Callers treat that exactly like a mismatch, which is the safe
+ * default: an install whose version cannot be established is one that cannot be
+ * trusted to speak the pinned SDK's protocol.
+ *
+ * @param pkg - The per-platform package name whose install is being read.
+ */
+function readProvisionedClaudeVersion(pkg: string): string | null {
+  try {
+    const manifest = path.join(
+      resolveClaudeProvisionDir(),
+      'node_modules',
+      ...pkg.split('/'),
+      'package.json'
+    );
+    const parsed: unknown = JSON.parse(readFileSync(manifest, 'utf-8'));
+    if (
+      parsed !== null &&
+      typeof parsed === 'object' &&
+      'version' in parsed &&
+      typeof parsed.version === 'string'
+    ) {
+      return parsed.version;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Absolute path to the provisioned `claude` binary, or `null` when nothing
+ * USABLE was provisioned for this host.
  *
  * Unlike the codex twin this checks existence itself, because a host can have
  * two plausible package names (glibc/musl) and only the installed one is the
  * answer. The shared ladder existence-checks the result again, harmlessly.
+ *
+ * **Existence is not enough, and this rung fails closed on version.** The
+ * provisioned install is written once and nothing ever re-checked it, so a pin
+ * bump used to leave a stale `claude` on the ladder forever — the same bug
+ * DOR-1034 fixed on the OpenCode side, and this mirrors that fix. It is not
+ * cosmetic: a host with no bundled binary keeps its old provisioned CLI, and
+ * from SDK 0.3.268 a session with at least one plugin enabled is launched with
+ * `--await-initialize`, which an older `claude` rejects as an unknown option.
+ * Every turn would fail to start, for a person who never changed anything.
+ *
+ * So a binary is returned only when its package's own `package.json` reports
+ * exactly {@link CLAUDE_SDK_VERSION}. A mismatched, missing or unreadable
+ * version reads as "not provisioned": resolution falls through to `PATH`, the
+ * readiness ladder projects Claude Code to Connect, and
+ * {@link provisionClaudeCode} installs the pinned version over it. Falling
+ * through costs at worst one re-install; returning a stale binary costs every
+ * turn.
+ *
+ * Deliberately synchronous, and deliberately not self-healing, unlike the
+ * OpenCode twin: this rung is shared verbatim by the SDK spawn seam and the
+ * readiness probe (`resolveClaudeBinaryBeforePath`), both of which need an
+ * answer without awaiting an npm install.
  */
 export function resolveProvisionedClaudePath(): string | null {
   const dir = resolveClaudeProvisionDir();
   for (const pkg of claudePlatformPackages()) {
     const binary = path.join(dir, 'node_modules', ...pkg.split('/'), CLAUDE_BIN);
-    if (existsSync(binary)) return binary;
+    if (!existsSync(binary)) continue;
+    const installed = readProvisionedClaudeVersion(pkg);
+    if (installed === CLAUDE_SDK_VERSION) return binary;
+    logger.info(
+      installed
+        ? `[ClaudeCode] provisioned ${pkg} ${installed} != pinned ${CLAUDE_SDK_VERSION} — treating as not provisioned`
+        : `[ClaudeCode] provisioned ${pkg} version unreadable — treating as not provisioned`
+    );
   }
   return null;
 }
