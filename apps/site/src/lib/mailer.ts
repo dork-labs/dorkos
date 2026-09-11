@@ -21,6 +21,7 @@
 import { Resend } from 'resend';
 
 import { env } from '@/env';
+import { escapeHtml } from '@/lib/html/escape-html';
 import { formatShippedVersionLabel } from '@/lib/feedback/version-label';
 
 /** Arguments shared by every DorkOS account email. */
@@ -187,9 +188,19 @@ export async function sendFeedbackReceipt(to: string, trackingUrl: string): Prom
  *
  * Renders one of **two variants**, because `shippedVersion` is absent for
  * most real reports (see {@link FeedbackShippedDetails}). With a version,
- * the version itself tells the reporter where their fix landed and the
- * release-notes link is a plain extra. Without one, that link is the only
- * pointer to what shipped, so the copy leans on it instead.
+ * the subject and first line name it. Without one, they simply say the
+ * report shipped and the release-notes link carries the rest.
+ *
+ * **Everything interpolated into the body is escaped.** This email quotes
+ * text a stranger wrote (`message`) back into hand-built HTML, and it is
+ * sent to an address that may itself be unverified free text (`contact`, not
+ * a signed-in account's `reporterEmail`). Unescaped, a report reading
+ * `<a href="...">Verify your account</a>` would arrive at a third party as
+ * live markup, over our own SPF/DKIM-signed sender. `versionLabel` is
+ * escaped for the same reason one step removed: it is a Linear
+ * milestone/cycle name off a webhook payload, not a value this codebase
+ * chose. The **subject** is deliberately NOT escaped — a mail header is
+ * plain text, so entity-escaping it would show a reader a literal `&amp;`.
  *
  * @param to - The reporter's email.
  * @param details - The reporter's original message, the version it shipped
@@ -200,16 +211,12 @@ export async function sendFeedbackShipped(
   { message, shippedVersion, changelogUrl }: FeedbackShippedDetails
 ): Promise<void> {
   const versionLabel = shippedVersion ? formatShippedVersionLabel(shippedVersion) : undefined;
-  const changelogLink = changelogUrl ? `<a href="${changelogUrl}">See what changed</a>` : '';
-
-  let releaseLine: string;
-  if (versionLabel) {
-    releaseLine = changelogLink ? `<p>${changelogLink}</p>` : '';
-  } else {
-    releaseLine = changelogLink
-      ? `<p>It went out in a recent DorkOS release. ${changelogLink}</p>`
-      : '<p>It went out in a recent DorkOS release.</p>';
-  }
+  // `changelogUrl` lands in an href, and escapeHtml is text-content-only, so
+  // this relies on the caller passing a URL the codebase built (the webhook
+  // route passes a module constant). Never pass user input here.
+  const changelogLink = changelogUrl
+    ? `<a href="${escapeHtml(changelogUrl)}">See what changed</a>`
+    : '';
 
   try {
     await getResend().emails.send({
@@ -220,10 +227,10 @@ export async function sendFeedbackShipped(
         : 'Your DorkOS report shipped',
       html: [
         versionLabel
-          ? `<p>Good news: this shipped in ${versionLabel}.</p>`
+          ? `<p>Good news: this shipped in ${escapeHtml(versionLabel)}.</p>`
           : '<p>Good news: this shipped.</p>',
-        `<p>"${quoteFirstLine(message)}"</p>`,
-        releaseLine,
+        `<p>"${escapeHtml(quoteFirstLine(message))}"</p>`,
+        changelogLink ? `<p>${changelogLink}</p>` : '',
         "<p>We'll only email you about this report.</p>",
       ].join(''),
     });

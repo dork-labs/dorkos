@@ -11,16 +11,17 @@ import { sendFeedbackShipped } from '@/lib/mailer';
 vi.mock('@/db/client', () => ({ getDb: vi.fn() }));
 vi.mock('@/lib/mailer', () => ({ sendFeedbackShipped: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('@/env', () => ({ env: { LINEAR_WEBHOOK_SECRET: 'test_webhook_secret' } }));
-// Same stub the feedback route's own test uses — the real resolveBaseURL pulls
-// in Better Auth, and the origin is not what this suite is testing.
-vi.mock('@/lib/auth', () => ({ resolveBaseURL: () => 'https://dorkos.ai' }));
 
 import { POST } from '../route';
 
 const SECRET = 'test_webhook_secret';
 const ROW_ID = 'row-uuid-1';
 const LINEAR_ISSUE_ID = 'linear-issue-uuid';
-/** The release-notes link every shipped email carries. */
+/**
+ * The release-notes link every shipped email carries. A fixed public URL, not
+ * one derived from the request origin — pinned here so a change to
+ * origin-derivation cannot silently start mailing preview or localhost links.
+ */
 const CHANGELOG_URL = 'https://dorkos.ai/docs/changelog';
 
 interface MockDb {
@@ -37,6 +38,34 @@ let mockSet: ReturnType<typeof vi.fn>;
 let mockUpdate: ReturnType<typeof vi.fn>;
 let mockDb: MockDb;
 let foundRow: Record<string, unknown> | undefined;
+/**
+ * The status the *database* holds, when a test needs it to differ from the
+ * snapshot a delivery read (`foundRow.status`). That divergence is the
+ * concurrent-delivery race: two deliveries each read a stale `triaged` while
+ * the row is already `shipped`. Left undefined, the database simply agrees
+ * with the snapshot.
+ */
+let persistedStatus: string | undefined;
+
+/**
+ * Literal values bound into a Drizzle condition, read out of its query
+ * chunks.
+ *
+ * This lets the update mock below tell a claim (`id = ? AND status <>
+ * 'shipped'`) from a bare id match, so it can honour the predicate it was
+ * actually given instead of faking a result by call order. That is what
+ * makes dropping the `ne()` from production a genuine red rather than a
+ * mutation the mock cheerfully absorbs.
+ */
+function literalParams(node: unknown, out: unknown[] = []): unknown[] {
+  if (!node || typeof node !== 'object') return out;
+  const n = node as { value?: unknown; queryChunks?: unknown[] };
+  if ('value' in n && (typeof n.value === 'string' || typeof n.value === 'number')) {
+    out.push(n.value);
+  }
+  if (Array.isArray(n.queryChunks)) for (const chunk of n.queryChunks) literalParams(chunk, out);
+  return out;
+}
 
 beforeEach(() => {
   foundRow = {
@@ -48,14 +77,30 @@ beforeEach(() => {
     shippedVersion: null,
     status: 'triaged',
   };
+  persistedStatus = undefined;
 
   mockLimit = vi.fn().mockImplementation(() => Promise.resolve(foundRow ? [foundRow] : []));
   mockWhereSelect = vi.fn().mockReturnValue({ limit: mockLimit });
   mockFrom = vi.fn().mockReturnValue({ where: mockWhereSelect });
   mockSelect = vi.fn().mockReturnValue({ from: mockFrom });
 
-  mockWhereUpdate = vi.fn().mockResolvedValue(undefined);
-  mockSet = vi.fn().mockReturnValue({ where: mockWhereUpdate });
+  // A small honest stand-in for the row: `.returning()` reports the rows the
+  // UPDATE would have matched, so a guarded UPDATE against an already-shipped
+  // row reports none.
+  let pendingStatus: string | undefined;
+  mockWhereUpdate = vi.fn().mockImplementation((condition: unknown) => ({
+    returning: vi.fn().mockImplementation(() => {
+      const isClaim = literalParams(condition).includes('shipped');
+      const dbStatus = persistedStatus ?? (foundRow?.status as string | undefined);
+      if (isClaim && dbStatus === 'shipped') return Promise.resolve([]);
+      if (pendingStatus) persistedStatus = pendingStatus;
+      return Promise.resolve([{ id: ROW_ID }]);
+    }),
+  }));
+  mockSet = vi.fn().mockImplementation((values: { status?: string }) => {
+    pendingStatus = values.status;
+    return { where: mockWhereUpdate };
+  });
   mockUpdate = vi.fn().mockReturnValue({ set: mockSet });
 
   mockDb = { select: mockSelect, update: mockUpdate };
@@ -296,9 +341,7 @@ describe('POST /api/webhooks/linear — shipped email (the core correctness clai
   it('does NOT re-fire the shipped email for a later update on an issue that is already shipped (Linear sends an Issue update webhook for every field change)', async () => {
     // The row was already marked shipped by an earlier delivery — this
     // delivery is some unrelated later edit (label, assignee, description...)
-    // that still resolves to the same completed/shipped state. Pins the
-    // transition guard: `status === 'shipped'` alone is not enough, the prior
-    // row status must NOT already be 'shipped'.
+    // that still resolves to the same completed/shipped state.
     foundRow = {
       ...foundRow,
       reporterEmail: 'kai@example.com',
@@ -307,9 +350,44 @@ describe('POST /api/webhooks/linear — shipped email (the core correctness clai
     };
     await POST(webhookRequest(ISSUE_UPDATE_SHIPPED));
     expect(sendFeedbackShipped).not.toHaveBeenCalled();
-    // The row is still (harmlessly) re-written with the same status/version —
-    // only the email send is gated, not the status write.
+
+    // The UPDATE still runs — it is the claim — but it is issued with the
+    // `status <> 'shipped'` guard, so it matches nothing and reports no rows.
+    // That empty result, not the snapshot comparison it replaced, is what
+    // withholds the email.
     expect(mockUpdate).toHaveBeenCalledTimes(1);
+    expect(literalParams(mockWhereUpdate.mock.calls[0][0])).toContain('shipped');
+  });
+
+  it('sends exactly one email when two concurrent deliveries both read a stale row', async () => {
+    // The real shape of the race. Linear fires several `update` deliveries
+    // for one state change and Vercel runs them concurrently, so both read
+    // the pre-transition snapshot. Only the database can break the tie:
+    // whichever guarded UPDATE lands first claims the row, the other matches
+    // nothing. `foundRow.status` deliberately stays `triaged` for BOTH
+    // deliveries — that is the stale read.
+    foundRow = { ...foundRow, reporterEmail: 'kai@example.com' };
+
+    await POST(webhookRequest(ISSUE_UPDATE_SHIPPED_NO_VERSION));
+    await POST(webhookRequest(ISSUE_UPDATE_SHIPPED_NO_VERSION));
+
+    expect(foundRow.status).toBe('triaged');
+    expect(mockUpdate).toHaveBeenCalledTimes(2);
+    expect(sendFeedbackShipped).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT re-fire on a versionless redelivery of an already-shipped issue', async () => {
+    // The shape every real redelivery takes: no milestone, no cycle, and the
+    // row already shipped. Covered separately from the milestone-bearing
+    // fixture above so the production payload shape is exercised here too.
+    foundRow = {
+      ...foundRow,
+      reporterEmail: 'kai@example.com',
+      status: 'shipped',
+      shippedVersion: null,
+    };
+    await POST(webhookRequest(ISSUE_UPDATE_SHIPPED_NO_VERSION));
+    expect(sendFeedbackShipped).not.toHaveBeenCalled();
   });
 });
 

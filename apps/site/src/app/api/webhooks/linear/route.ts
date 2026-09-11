@@ -16,15 +16,18 @@
  * (`lib/feedback/linear-status-map.ts`) and written onto that row. A mapped
  * status of `shipped` also best-effort captures a `shippedVersion`. The
  * "your report shipped" email fires via `sendFeedbackShipped` only on the
- * **transition into** `shipped` (the row's status before this update was
- * something else) — Linear sends an `Issue` `update` webhook for every field
- * change (label, assignee, description…), so an already-shipped issue keeps
- * generating deliveries this route must not re-notify on. Having an address
- * to send to is the **only** other condition: a resolved version is not
- * required, because the feedback intake team carries none (see the send site
- * below). A mail failure never fails the webhook response, since Linear will
- * retry a non-2xx delivery and this repo's Linear issue is already the
- * source of truth for what happened.
+ * **transition into** `shipped` — Linear sends an `Issue` `update` webhook
+ * for every field change (label, assignee, description…), so an
+ * already-shipped issue keeps generating deliveries this route must not
+ * re-notify on. That transition is claimed by the UPDATE itself
+ * (`ne(status, 'shipped')` in its WHERE, returning the rows it touched), not
+ * by comparing against the row read a moment earlier, because concurrent
+ * deliveries would both pass a snapshot check. Having an address to send to
+ * is the **only** other condition: a resolved version is not required,
+ * because the feedback intake team carries none (see the send site below). A
+ * mail failure never fails the webhook response, since Linear will retry a
+ * non-2xx delivery and this repo's Linear issue is already the source of
+ * truth for what happened.
  *
  * Every other event shape (a different `type`, a non-`update` `action`, an
  * issue that isn't ours, or a state with no mapping) is accepted with a bare
@@ -35,13 +38,12 @@
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-import { eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { getDb } from '@/db/client';
 import { feedbackSubmission } from '@/db/feedback-schema';
 import { env } from '@/env';
-import { resolveBaseURL } from '@/lib/auth';
 import { mapLinearStateToStatus, resolveShippedVersion } from '@/lib/feedback/linear-status-map';
 import { sendFeedbackShipped } from '@/lib/mailer';
 import { resolveNotifyEmail } from '@/lib/feedback/notify-email';
@@ -52,12 +54,20 @@ export const runtime = 'nodejs';
 const SIGNATURE_HEADER = 'linear-signature';
 
 /**
- * Path of the public release-notes page (`docs/changelog.mdx`, served by the
- * Fumadocs `(docs)` route). Sent in every shipped email so the reporter has
- * somewhere to read what actually changed — the only such pointer when no
- * version could be resolved.
+ * The public release-notes page (`docs/changelog.mdx`, served by the Fumadocs
+ * `(docs)` route at `baseUrl: '/docs'`). Sent in every shipped email so the
+ * reporter has somewhere to read what actually changed — the only such
+ * pointer when no version could be resolved.
+ *
+ * **Hardcoded, deliberately not `resolveBaseURL()`.** This is a fixed public
+ * page, and the origin this webhook happens to run on is not where a reader
+ * should be sent: a preview deployment would mail a stranger a
+ * `*.vercel.app` URL that 401s behind preview protection, and a missing
+ * `BETTER_AUTH_URL` would mail them `localhost`. `resolveBaseURL()` stays
+ * right for the per-row `/feedback/[id]` links in `POST /api/feedback`,
+ * which are genuinely origin-bound.
  */
-const CHANGELOG_PATH = '/docs/changelog';
+const CHANGELOG_URL = 'https://dorkos.ai/docs/changelog';
 
 /**
  * Loose schema for the slice of a Linear `Issue` webhook this route reads.
@@ -158,16 +168,36 @@ export async function POST(request: Request): Promise<Response> {
 
   const shippedVersion = status === 'shipped' ? resolveShippedVersion(data) : undefined;
 
-  await db
+  // **The UPDATE is the claim.** Deciding "was this already shipped?" from
+  // `row` — the snapshot read above — is a race: Linear fires several `update`
+  // deliveries for one state change, Vercel runs them concurrently, and two
+  // can both read `triaged` and both send the email. Adding
+  // `ne(status, 'shipped')` hands that decision to the database, which picks
+  // exactly one winner: the first UPDATE to land flips the row and gets a row
+  // back, the other matches nothing and returns empty.
+  //
+  // Scoped to the shipped transition on purpose. Applying the guard to every
+  // status would stop a reopened issue (shipped → started) from ever updating
+  // again. The cost is that a redelivery can no longer backfill
+  // `shippedVersion` onto an already-shipped row; that path writes nothing in
+  // production anyway, since the feedback team has no milestones or cycles for
+  // `resolveShippedVersion` to read.
+  const claim =
+    status === 'shipped'
+      ? and(eq(feedbackSubmission.id, row.id), ne(feedbackSubmission.status, 'shipped'))
+      : eq(feedbackSubmission.id, row.id);
+
+  const claimed = await db
     .update(feedbackSubmission)
     .set({
       status,
       updatedAt: new Date(),
       ...(shippedVersion ? { shippedVersion } : {}),
     })
-    .where(eq(feedbackSubmission.id, row.id));
+    .where(claim)
+    .returning({ id: feedbackSubmission.id });
 
-  if (status === 'shipped' && row.status !== 'shipped') {
+  if (status === 'shipped' && claimed.length > 0) {
     const to = resolveNotifyEmail(row);
     // Gated on an address and nothing else. A version is NOT required: the
     // feedback intake team has no projects and cycles turned off, so
@@ -183,7 +213,7 @@ export async function POST(request: Request): Promise<Response> {
       await sendFeedbackShipped(to, {
         message: row.message,
         shippedVersion: version,
-        changelogUrl: `${resolveBaseURL()}${CHANGELOG_PATH}`,
+        changelogUrl: CHANGELOG_URL,
       });
     }
   }

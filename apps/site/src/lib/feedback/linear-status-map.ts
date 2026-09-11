@@ -11,13 +11,12 @@
  * rarer webhook payload shape that omits `type` (older Linear webhook
  * configurations send `state` as just `{ name }`).
  *
- * {@link TYPE_TO_STATUS} is **not** a closed transcription of that enum, and
- * deliberately does not claim a value count: Linear has grown the enum before
- * (`triage` and `duplicate` both postdate the original six this module was
- * written against) and may again. It maps every type this pipeline has
- * observed — `triage`, `backlog`, `unstarted`, `started`, `completed`,
- * `canceled`/`cancelled`, `duplicate` — and anything unrecognized resolves
- * `undefined` so the row's status is left alone rather than guessed at.
+ * {@link TYPE_TO_STATUS} covers seven type values: `triage`, `backlog`,
+ * `unstarted`, `started`, `completed`, `canceled` (also spelled `cancelled`)
+ * and `duplicate`. It is not written as a closed transcription of Linear's
+ * enum and claims no total: anything unrecognized resolves `undefined`, which
+ * leaves the row's status alone rather than guessing at it, so a value added
+ * upstream is inert here until someone maps it.
  *
  * Either path lands on the same four-plus-received public vocabulary
  * (`triaged`/`in_progress`/`shipped`/`closed`) — never a literal 1:1 mirror of
@@ -51,10 +50,12 @@ const TYPE_TO_STATUS: Record<string, MappedStatus> = {
   // Linear's GraphQL schema spells this both ways across API versions.
   canceled: 'closed',
   cancelled: 'closed',
-  // A duplicate is closed, not still-being-triaged. Mapped by `type` and not
-  // only by the `name` fallback below: a team that renames its "Duplicate"
-  // state loses the name match, and the reporter's public status page would
-  // then sit at "triaged" forever.
+  // A duplicate is closed, not still-being-triaged. The `name` fallback below
+  // already catches this for the feedback team as configured today, whose
+  // state is literally named "Duplicate" — so this key changes nothing now
+  // and fixes no live bug. It is here so that renaming that state (to
+  // "Dupe", "Already reported", anything) cannot silently strand a
+  // reporter's status page at "triaged".
   duplicate: 'closed',
 };
 
