@@ -4052,6 +4052,11 @@ async function start() {
       // use the authenticated internal connector listener below.
       connectorDeps: {
         registry: connectorRegistry,
+        catalog: (input) =>
+          connectorOperatorQueries.catalog({
+            ...input,
+            includeAuthenticationSetup: false,
+          }),
         ...(adapterManager && { relay: adapterManager }),
       },
       connectorExecutionDeps: {
