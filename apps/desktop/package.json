@@ -36,7 +36,7 @@
     "@ngrok/ngrok": "^1.7.0",
     "@openai/codex": "0.153.4",
     "@openai/codex-sdk": "~0.153.4",
-    "@opencode-ai/sdk": "^1.18.15",
+    "@opencode-ai/sdk": "^1.18.30",
     "@scalar/express-api-reference": "^0.10.17",
     "better-sqlite3": "^12.11.1",
     "conf": "^15.1.0",

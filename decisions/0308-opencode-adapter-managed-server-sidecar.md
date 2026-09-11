@@ -11,9 +11,11 @@ superseded-by: null
 
 ## Status
 
-Accepted (implemented in spec: additional-agent-runtimes, `@opencode-ai/sdk@1.18.15`)
+Accepted (implemented in spec: additional-agent-runtimes, `@opencode-ai/sdk@1.18.30`)
 
 **2026-08-07**: Bumped from `1.17.13` to `1.18.15` (DOR-1013). No type changes on DorkOS's import surface across the 23-release range; the lockstep `OPENCODE_PACKAGE_VERSION` sidecar pin (`provision.ts`) moved with it.
+
+**2026-09-11**: Bumped from `1.18.15` to `1.18.30`. No type changes on DorkOS's import surface across the 15-release range; the lockstep `OPENCODE_PACKAGE_VERSION` sidecar pin (`providers/provision.ts`) moved with it. One behavioral change did reach DorkOS: opencode 1.18.20 started wrapping subagent failures in a `Subagent failed (task_id: …): …` envelope, which the subagent mapper now peels before deciding stopped-vs-failed (`research/runtime-upgrades/opencode-sdk/1.18.15-to-1.18.30/triage-decisions.md`).
 
 **2026-08-25**: Amended by [260825-110420](260825-110420-opencode-search-reads-a-snapshot-not-the-live-store.md) (DOR-688), which narrows ONE clause of the Decision below — _"OpenCode's SQLite store is treated as opaque runtime-owned storage — never read or written directly"_. The **written** half stands unchanged. The **read** half now admits one exception: message search may read a throwaway COPY of the store, opened read-only, through a frozen table-and-column allowlist that carries no credential table. The live file is still never opened, and the SDK/sidecar is still the only interactive surface — an indexer may not boot it. Every other clause here is untouched.
 
