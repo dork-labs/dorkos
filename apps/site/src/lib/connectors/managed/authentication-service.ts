@@ -26,7 +26,10 @@ import {
   type ManagedConnectorPrincipal,
 } from './authority-service';
 import { managedAccountFromRow } from './discovery-service';
-import type { ManagedResolvedAuthentication } from './auth-config-resolver';
+import {
+  ManagedAuthenticationResolutionError,
+  type ManagedResolvedAuthentication,
+} from './auth-config-resolver';
 
 const FLOW_LIFETIME_MS = 10 * 60 * 1_000;
 /** Allows the 30s resolver cap followed by at most 15s of account-link I/O. */
@@ -73,27 +76,32 @@ function logAuthenticationStartFailure(input: {
   signal: AbortSignal;
 }): void {
   const diagnostic =
-    input.error instanceof ComposioManagedAccountError
+    input.error instanceof ManagedAuthenticationResolutionError
       ? {
-          category: 'provider_request',
-          code: input.error.code,
-          status: input.error.status,
+          category: 'authentication_resolution',
+          resolutionReason: ManagedAuthenticationResolutionError.safeReason(input.error),
         }
-      : input.error instanceof ComposioAuthenticationSetupError
+      : input.error instanceof ComposioManagedAccountError
         ? {
-            category: 'authentication_setup',
-            setupReason: input.error.reason,
-            ...(input.error.metadataIssueCount === undefined
-              ? {}
-              : {
-                  setupMetadataIssueCount: input.error.metadataIssueCount,
-                  setupMetadataIssueLocations: input.error.metadataIssueLocations,
-                  setupMetadataMethodKinds: input.error.metadataMethodKinds,
-                }),
+            category: 'provider_request',
+            code: input.error.code,
+            status: input.error.status,
           }
-        : input.signal.aborted
-          ? { category: 'deadline_exceeded' }
-          : { category: 'unknown' };
+        : input.error instanceof ComposioAuthenticationSetupError
+          ? {
+              category: 'authentication_setup',
+              setupReason: input.error.reason,
+              ...(input.error.metadataIssueCount === undefined
+                ? {}
+                : {
+                    setupMetadataIssueCount: input.error.metadataIssueCount,
+                    setupMetadataIssueLocations: input.error.metadataIssueLocations,
+                    setupMetadataMethodKinds: input.error.metadataMethodKinds,
+                  }),
+            }
+          : input.signal.aborted
+            ? { category: 'deadline_exceeded' }
+            : { category: 'unknown' };
   console.warn('[Managed connectors] Authentication start did not complete', {
     stage: input.stage,
     ...diagnostic,

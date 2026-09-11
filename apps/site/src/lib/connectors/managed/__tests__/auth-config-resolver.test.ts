@@ -152,6 +152,48 @@ describe('durable default authentication configuration', () => {
     await expect(resolve(accounts)).resolves.toMatchObject({ authConfigId: 'ac_auto' });
     expect(accounts.createAuthenticationConfiguration).toHaveBeenCalledTimes(1);
   });
+  it('reconciles a recorded configuration after a failed read without creating again', async () => {
+    const { client: accounts, setStored } = fakeClient();
+    accounts.getAuthenticationConfiguration.mockRejectedValueOnce(new Error('PRIVATE_SENTINEL'));
+    await expect(resolve(accounts)).rejects.toMatchObject({ reason: 'retrieve_failed' });
+    const [unknown] = await db.select().from(schema.managedConnectorAuthConfigResolution);
+    expect(unknown).toMatchObject({ state: 'create_unknown', authConfigId: 'ac_auto' });
+    setStored(
+      normalizeComposioAuthenticationConfiguration({
+        id: 'ac_auto',
+        name: unknown.name,
+        toolkit: { slug: 'gmail' },
+        status: 'ENABLED',
+        auth_scheme: 'OAUTH2',
+        is_composio_managed: true,
+        type: 'default',
+        is_enabled_for_tool_router: false,
+        is_connection_revoke_supported: true,
+        credentials: {
+          client_id: 'synthetic',
+          client_secret: 'PRIVATE_SENTINEL',
+          oauth_redirect_uri: 'https://backend.composio.dev/api/v1/auth-apps/add',
+          scopes: ['read'],
+        },
+        shared_credentials: {},
+        tool_access_config: {},
+      })
+    );
+    await expect(resolve(accounts)).resolves.toMatchObject({ authConfigId: 'ac_auto' });
+    expect(accounts.createAuthenticationConfiguration).toHaveBeenCalledTimes(1);
+    expect(accounts.getAuthenticationConfiguration).toHaveBeenCalledTimes(2);
+  });
+  it('refuses a replacement candidate when the unknown attempt already recorded another ID', async () => {
+    const { client: accounts } = fakeClient();
+    accounts.getAuthenticationConfiguration.mockRejectedValueOnce(new Error('lost read'));
+    await expect(resolve(accounts)).rejects.toThrow();
+    const original = await accounts.getAuthenticationConfiguration('ac_auto');
+    accounts.listAuthenticationConfigurations.mockResolvedValue({
+      items: [{ ...original, id: 'ac_other' }],
+    });
+    await expect(resolve(accounts)).rejects.toMatchObject({ reason: 'identity_mismatch' });
+    expect(accounts.createAuthenticationConfiguration).toHaveBeenCalledTimes(1);
+  });
   it('does not retry an unknown create when the provider still returns no candidate', async () => {
     const { client: accounts } = fakeClient();
     accounts.createAuthenticationConfiguration.mockRejectedValue(new Error('unknown'));

@@ -13,7 +13,10 @@ import {
   normalizeComposioToolkitAuthentication,
   type ComposioOperationClient,
 } from '@dorkos/connector-providers/composio';
-import { resolveManagedAuthenticationConfiguration } from '../auth-config-resolver';
+import {
+  ManagedAuthenticationResolutionError,
+  resolveManagedAuthenticationConfiguration,
+} from '../auth-config-resolver';
 import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -2060,6 +2063,52 @@ describe('hosted managed authority service', () => {
     expect(JSON.stringify(warn.mock.calls)).not.toContain(privateMessage);
     expect(JSON.stringify(warn.mock.calls)).not.toContain('auth-safe-diagnostic');
   });
+
+  it.each([false, true])(
+    'logs a closed resolver predicate despite mutated reason: %s',
+    async (mutated) => {
+      const { tenant, principal } = await seedAuthority();
+      const privateMessage = 'SECRET_PROVIDER_BODY_OR_CREDENTIAL';
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+      await expect(
+        startManagedAuthentication({
+          resolveAuthentication: async () => {
+            const error = new ManagedAuthenticationResolutionError('policy_mismatch');
+            error.message = privateMessage;
+            if (mutated) Object.assign(error, { reason: privateMessage });
+            throw error;
+          },
+          db,
+          principal,
+          providerUserId: tenant.providerUserId,
+          materialGeneration: 1,
+          executionConfigDigest: 'digest-a',
+          accounts: { createLink: vi.fn() },
+          config: managedConfig,
+          rawRequest: {
+            version: 1,
+            toolkit: 'gmail',
+            requestId: 'auth-safe-diagnostic',
+          },
+          verifyLiveInstance: async () => true,
+          signal: new AbortController().signal,
+        })
+      ).rejects.toMatchObject({ code: 'unavailable' });
+
+      expect(warn).toHaveBeenCalledWith(
+        '[Managed connectors] Authentication start did not complete',
+        expect.objectContaining({
+          stage: 'resolve_authentication',
+          category: 'authentication_resolution',
+          resolutionReason: mutated ? 'state_conflict' : 'policy_mismatch',
+          elapsedMs: expect.any(Number),
+        })
+      );
+      expect(JSON.stringify(warn.mock.calls)).not.toContain(privateMessage);
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('auth-safe-diagnostic');
+    }
+  );
 
   it('logs only a closed setup reason before any authentication claim or link dispatch', async () => {
     const { tenant, principal } = await seedAuthority();
