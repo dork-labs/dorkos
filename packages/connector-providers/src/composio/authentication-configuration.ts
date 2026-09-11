@@ -112,6 +112,7 @@ const rawField = z
     required: z.boolean(),
     type: text,
     is_secret: z.boolean().optional(),
+    user_visible: z.boolean().optional(),
     default: z.string().nullable().optional(),
     legacy_template_name: z.string().optional(),
   })
@@ -279,12 +280,19 @@ export function normalizeComposioToolkitAuthentication(
             )
           : undefined;
       const wireSupported = !requiredWireField || Boolean(requiredField);
+      // Connect Link owns OAuth context. Our credential forms cannot honor hidden
+      // account fields, so keep that method unavailable instead of exposing or
+      // silently dropping them. Other valid methods remain selectable.
+      const visibilitySupported =
+        method.mode === 'OAUTH2' || fields.every((field) => field.user_visible !== false);
       // The pinned create union requires these fields even if toolkit metadata calls them optional.
       if (requiredField) requiredField.required = true;
       return {
         scheme: method.mode,
         needsDeveloperConfiguration: method.fields.auth_config_creation.required.length > 0,
-        ...(normalized.success && wireSupported ? { descriptor: normalized.data } : {}),
+        ...(normalized.success && wireSupported && visibilitySupported
+          ? { descriptor: normalized.data }
+          : {}),
       };
     }),
   };
