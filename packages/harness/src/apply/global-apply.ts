@@ -95,7 +95,7 @@ import { listDir, occupantKind, pathExists } from './link-state.js';
 import { directoryWriteBlock, writePathDirs, writePathReason } from './write-path-occupants.js';
 import { SWEEP_REASONS } from './sweep-reasons.js';
 import { blockingSymlinkOccupant, linkCheckFor, linkMatchesPlan } from './symlink-occupants.js';
-import { symlinkTypeFor } from './windows-links.js';
+import { symlinkTypeFor, waitForSymlinkRemoval } from './windows-links.js';
 
 /**
  * How this platform decides whether a link on disk is the link the plan wants.
@@ -107,9 +107,9 @@ import { symlinkTypeFor } from './windows-links.js';
 const LINK_CHECK = linkCheckFor(process.platform);
 
 /**
- * How many times {@link applyGlobalSymlink} looks again after another writer
- * beat it to the target. The same three the project apply allows, for the same
- * reason: the loop only repeats when the path CHANGED under it.
+ * How many creation attempts {@link applyGlobalSymlink} gets after EEXIST,
+ * matching project apply. Windows removal sharing failures use a separate
+ * bounded wait budget and re-check the occupant.
  */
 const SYMLINK_ATTEMPTS = 3;
 
@@ -497,7 +497,7 @@ function applyGlobalSymlink(action: ProjectionAction, memo: WritePathMemo): Syml
     return { kind: 'blocked', reason: unwritable };
   }
 
-  for (let attempt = 0; attempt < SYMLINK_ATTEMPTS; attempt++) {
+  for (let attempt = 0, removalRetries = 0; attempt < SYMLINK_ATTEMPTS;) {
     if (pathExists(absTarget)) {
       const blocked = blockingSymlinkOccupant(absTarget, linkText);
       if (blocked !== undefined) return { kind: 'blocked', reason: blocked };
@@ -506,7 +506,13 @@ function applyGlobalSymlink(action: ProjectionAction, memo: WritePathMemo): Syml
       // window in which the scheduler enumerating this folder sees one skill
       // fewer, for no gain at all.
       if (linkMatchesPlan(absTarget, absSource, linkText, LINK_CHECK)) return { kind: 'unchanged' };
-      rmSync(absTarget, { force: true }); // a stale link of ours — safe to replace
+      try {
+        rmSync(absTarget, { force: true }); // never recurse into a replacement directory
+      } catch (error) {
+        if (!waitForSymlinkRemoval(error, removalRetries++)) throw error;
+        // The next pass must re-check both ownership and the resolved target.
+        continue;
+      }
     }
     mkdirSync(dirname(absTarget), { recursive: true });
     try {
@@ -514,6 +520,7 @@ function applyGlobalSymlink(action: ProjectionAction, memo: WritePathMemo): Syml
       return { kind: 'written' };
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+      attempt++;
     }
   }
   const reason = blockingSymlinkOccupant(absTarget, linkText);
