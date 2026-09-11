@@ -50,7 +50,7 @@ describe('dorkbot-templates', () => {
         ...DORKBOT_ONBOARDING_LINES.profilePrompt,
         DORKBOT_ONBOARDING_LINES.profileSkip,
         DORKBOT_ONBOARDING_LINES.profileSaved,
-        DORKBOT_ONBOARDING_LINES.profileCardPrompt,
+        ...DORKBOT_ONBOARDING_LINES.profileCardPrompt,
         DORKBOT_ONBOARDING_LINES.discoveryPrompt,
         DORKBOT_ONBOARDING_LINES.scanning,
         DORKBOT_ONBOARDING_LINES.discoveryZero,
@@ -73,7 +73,23 @@ describe('dorkbot-templates', () => {
       expect(DORKBOT_ONBOARDING_LINES.profilePrompt[1]).toContain('stays on this machine');
       expect(DORKBOT_ONBOARDING_LINES.profileSkip.length).toBeGreaterThan(0);
       expect(DORKBOT_ONBOARDING_LINES.profileSaved.length).toBeGreaterThan(0);
-      expect(DORKBOT_ONBOARDING_LINES.profileCardPrompt).toContain('stays on this machine');
+    });
+
+    // FB-11 / DOR-1972: the reporter answered this prompt with no idea where the
+    // answer went, how it was used, or how to change it. Both lines have to
+    // survive together — the ask, and the fact right behind it.
+    it('names the storage fact for the existing-user card prompt (DOR-1972)', () => {
+      expect(DORKBOT_ONBOARDING_LINES.profileCardPrompt).toHaveLength(2);
+      expect(DORKBOT_ONBOARDING_LINES.profileCardPrompt[0]).toContain('What kind of work');
+      expect(DORKBOT_ONBOARDING_LINES.profileCardPrompt[1]).toContain('Stored on this machine');
+    });
+
+    it('points both prompts at the real place to change the answer (DOR-1972)', () => {
+      // The scripted chat beat has no way to render a real link, so its own
+      // text has to name the destination; the card can and does navigate for
+      // real (see `ProfilePromptCard.test.tsx`), so its template string stays
+      // free of a path it would only ever restate as dead text.
+      expect(DORKBOT_ONBOARDING_LINES.profilePrompt[1]).toContain('Settings › Profile');
     });
   });
 

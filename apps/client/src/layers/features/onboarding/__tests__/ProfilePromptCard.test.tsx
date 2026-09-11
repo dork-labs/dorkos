@@ -11,6 +11,26 @@ import { setPrefersReducedMotion } from '@/test-setup';
 import { ProfilePromptCard } from '../ui/ProfilePromptCard';
 import { useProfilePrompt } from '../model/use-profile-prompt';
 
+/** Spy for the card's "Change it in Settings" link (DOR-1972). */
+const { mockOpenSettings } = vi.hoisted(() => ({ mockOpenSettings: vi.fn() }));
+
+vi.mock('@/layers/shared/model/use-dialog-deep-link', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/layers/shared/model/use-dialog-deep-link')>();
+  return {
+    ...actual,
+    useSettingsDeepLink: () => ({
+      isOpen: false,
+      activeTab: null,
+      section: null,
+      open: mockOpenSettings,
+      close: vi.fn(),
+      setTab: vi.fn(),
+      setSection: vi.fn(),
+    }),
+  };
+});
+
 /**
  * The card mounted exactly as the sidebar's bottom slot mounts it: the gate is
  * `useProfilePrompt`, and the card draws only when it says so.
@@ -109,9 +129,32 @@ describe('ProfilePromptCard', () => {
     await renderCard();
 
     expect(await screen.findByTestId('profile-prompt-card')).toBeTruthy();
-    expect(screen.getByText(DORKBOT_ONBOARDING_LINES.profileCardPrompt)).toBeTruthy();
+    expect(screen.getByText(DORKBOT_ONBOARDING_LINES.profileCardPrompt[0])).toBeTruthy();
     // Non-modal, DorkBot-voiced chip group with one-tap dismissal.
     expect(screen.getByTestId('skip-profile').textContent).toBe('Don’t ask again');
+  });
+
+  it('names where the answer goes and offers a real path to change it (DOR-1972)', async () => {
+    await renderCard();
+    await screen.findByTestId('profile-prompt-card');
+
+    expect(
+      screen.getByText(DORKBOT_ONBOARDING_LINES.profileCardPrompt[1], { exact: false })
+    ).toBeTruthy();
+    // A real link into Settings › Profile, not just a name for the place.
+    fireEvent.click(screen.getByRole('button', { name: 'Change it in Settings' }));
+    expect(mockOpenSettings).toHaveBeenCalledWith('profile');
+  });
+
+  it('keeps the "change it in Settings" link up through the saved thanks line', async () => {
+    await renderCard();
+    await screen.findByTestId('profile-prompt-card');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hiring people' }));
+    fireEvent.click(screen.getByTestId('confirm-profile'));
+
+    expect(await screen.findByText(DORKBOT_ONBOARDING_LINES.profileSaved)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Change it in Settings' })).toBeTruthy();
   });
 
   it('never renders while onboarding is still in progress', async () => {

@@ -25,3 +25,11 @@ export type { ProfilePromptCardProps } from './ui/ProfilePromptCard';
 // `sidebar-simplification` D4).
 export { useProfilePrompt } from './model/use-profile-prompt';
 export type { ProfilePromptApi, ProfilePromptPhase } from './model/use-profile-prompt';
+// Exported for `features/profile`'s Settings › Profile tab (DOR-1972): the
+// role beat, the existing-user card and the Settings field all read and write
+// the same `profile.roles`, through the same picker, so an answer given in any
+// of the three shows up correctly in the other two.
+export { useProfile } from './model/use-profile';
+export type { ProfileApi } from './model/use-profile';
+export { ProfileRolePicker } from './ui/ProfileRolePicker';
+export type { ProfileRolePickerProps } from './ui/ProfileRolePicker';

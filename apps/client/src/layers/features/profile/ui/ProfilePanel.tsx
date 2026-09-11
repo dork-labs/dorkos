@@ -20,6 +20,7 @@ import {
   ProfileNameField,
   ProfilePhotoField,
 } from './fields/ProfileFields';
+import { ProfileRolesField } from './fields/ProfileRolesField';
 
 export interface ProfilePanelProps {
   /** The operator's own roster row. */
@@ -27,11 +28,16 @@ export interface ProfilePanelProps {
 }
 
 /**
- * Edit your photo, your name and your handle.
+ * Edit your photo, your name, your handle, and what kind of work you do.
  *
  * Each field saves on its own and reports on its own, because they fail for
  * unrelated reasons: a handle can be taken while a name is perfectly fine, and
  * one shared "save" button would make the person re-submit the part that worked.
+ *
+ * Roles is the odd one out among the four identity fields above it — it isn't
+ * how you appear, it's what DorkBot tells your other agents about who they
+ * work for — but it lives here too (DOR-1972) because this is the one place
+ * every onboarding prompt that asks the question now points back to.
  */
 export function ProfilePanel({ member }: ProfilePanelProps) {
   return (
@@ -44,6 +50,7 @@ export function ProfilePanel({ member }: ProfilePanelProps) {
       <ProfileNameField member={member} />
       <ProfileHandleField member={member} />
       <ProfileEmailField member={member} />
+      <ProfileRolesField />
     </div>
   );
 }

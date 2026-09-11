@@ -74,11 +74,14 @@ export const DORKBOT_ONBOARDING_LINES = {
    * The role-beat question (spec `user-profile-onboarding`). Two lines, revealed
    * one after the other: the question, then the privacy fact in the same breath.
    * The privacy line describes tested behavior (the profile is structurally
-   * excluded from every telemetry payload), not marketing.
+   * excluded from every telemetry payload), not marketing, and names the real
+   * place to change the answer later — Settings › Profile, the tab
+   * `ProfileRolesField` renders into (FB-11 / DOR-1972: people who answered this
+   * once had no way to find out where the answer went or how to change it).
    */
   profilePrompt: [
     "Now I know how to sound. Here's one for you: what kind of work will we be doing together?",
-    "Your answer stays on this machine. It's for me and your other agents, so we know who we work for. Nobody else sees it.",
+    'Your answer stays on this machine, for me and your other agents only. Change it any time in Settings › Profile.',
   ],
   /** Reply when the user skips the role beat. Skipping counts as asked, forever. */
   profileSkip: 'No problem. Tell me any time.',
@@ -87,10 +90,16 @@ export const DORKBOT_ONBOARDING_LINES = {
   /**
    * The one-time existing-user prompt (sidebar card, never a modal). Users who
    * onboarded before the role beat existed hear the same question once, with the
-   * same privacy fact in the same breath.
+   * same privacy fact in the same breath. Two lines like {@link profilePrompt}:
+   * the ask, then where the answer goes — `ProfilePromptCard` appends a real,
+   * clickable path to Settings › Profile after the second line rather than
+   * baking it into this string, since the card (unlike the scripted chat beat)
+   * can actually navigate there (FB-11 / DOR-1972).
    */
-  profileCardPrompt:
-    'I work better knowing who I work for. What kind of work do you do? Your answer stays on this machine, for your agents only.',
+  profileCardPrompt: [
+    'I work better knowing who I work for. What kind of work do you do?',
+    'Stored on this machine, for your agents only.',
+  ],
   /** Consent question before any filesystem scan runs (Beat 2). */
   discoveryPrompt: 'Want me to look around this machine for projects and agents you already have?',
   /** Shown while the consented scan is running (Beat 2). */
