@@ -36,10 +36,39 @@ export function managedAuthenticationDescriptorDigest(
   return createHash('sha256').update(stableStringify(descriptor)).digest('hex');
 }
 
-function unavailable(): never {
-  throw new Error(
-    'Account setup could not be confirmed. Check the existing setup before trying again.'
-  );
+const resolutionReasons = [
+  'identity_mismatch',
+  'policy_metadata_invalid',
+  'router_enabled',
+  'scope_mismatch',
+  'policy_mismatch',
+  'candidate_ambiguity',
+  'state_conflict',
+  'list_failed',
+  'create_failed',
+  'retrieve_failed',
+  'persist_failed',
+] as const;
+
+/** Closed resolver diagnostics; provider values and raw errors never leave this boundary. */
+export class ManagedAuthenticationResolutionError extends Error {
+  constructor(readonly reason: (typeof resolutionReasons)[number]) {
+    super('Account setup could not be confirmed. Check the existing setup before trying again.');
+    this.name = 'ManagedAuthenticationResolutionError';
+  }
+
+  /** Recheck runtime values before logging, including mutated or untyped errors. */
+  static safeReason(
+    error: ManagedAuthenticationResolutionError
+  ): (typeof resolutionReasons)[number] {
+    return resolutionReasons.includes(error.reason) ? error.reason : 'state_conflict';
+  }
+}
+
+function unavailable(
+  reason: ManagedAuthenticationResolutionError['reason'] = 'state_conflict'
+): never {
+  throw new ManagedAuthenticationResolutionError(reason);
 }
 
 /** Resolve explicit settings first, otherwise claim one bounded default blueprint attempt. */
@@ -53,12 +82,13 @@ export async function resolveManagedAuthenticationConfiguration(input: {
   const signal = AbortSignal.any([input.signal, AbortSignal.timeout(30_000)]);
   signal.throwIfAborted();
   const toolkit = await input.accounts.getToolkitAuthentication(input.toolkit, signal);
-  if (toolkit.toolkit !== input.toolkit) return unavailable();
+  if (toolkit.toolkit !== input.toolkit) return unavailable('identity_mismatch');
   // A bad explicit mapping never silently falls back to a new managed config.
   const configured = input.configuredAuthConfigId
     ? await input.accounts.getAuthenticationConfiguration(input.configuredAuthConfigId, signal)
     : undefined;
-  if (configured && configured.id !== input.configuredAuthConfigId) return unavailable();
+  if (configured && configured.id !== input.configuredAuthConfigId)
+    return unavailable('identity_mismatch');
   const descriptor = selectComposioAuthentication(toolkit, configured);
   const descriptorDigest = managedAuthenticationDescriptorDigest(descriptor);
   if (configured) return { authConfigId: configured.id, descriptor, descriptorDigest };
@@ -98,12 +128,25 @@ export async function resolveManagedAuthenticationConfiguration(input: {
     .returning();
   const [existing] = claimed ? [claimed] : await input.db.select().from(table).where(key).limit(1);
   if (!existing || existing.name !== name) return unavailable();
-  const matches = (config: ComposioAuthenticationConfiguration): boolean =>
-    config.enabled &&
-    config.name === name &&
-    config.toolkit === input.toolkit &&
-    config.scheme === descriptor.scheme &&
-    matchesComposioAutomaticAuthenticationPolicy(config, toolkit, descriptor);
+  const requireMatch = (config: ComposioAuthenticationConfiguration): void => {
+    if (
+      !config.enabled ||
+      config.name !== name ||
+      config.toolkit !== input.toolkit ||
+      config.scheme !== descriptor.scheme
+    )
+      return unavailable('identity_mismatch');
+    if (!config.policy) return unavailable('policy_metadata_invalid');
+    if (config.policy.routerEnabled) return unavailable('router_enabled');
+    if (
+      descriptor.source === 'managed' &&
+      (config.policy.scopes.some((scope) => !toolkit.managedScopes.includes(scope)) ||
+        config.policy.userScopes.some((scope) => !toolkit.managedUserScopes.includes(scope)))
+    )
+      return unavailable('scope_mismatch');
+    if (!matchesComposioAutomaticAuthenticationPolicy(config, toolkit, descriptor))
+      return unavailable('policy_mismatch');
+  };
   const result = (id: string): ManagedResolvedAuthentication => ({
     authConfigId: id,
     descriptor,
@@ -115,7 +158,8 @@ export async function resolveManagedAuthenticationConfiguration(input: {
       existing.authConfigId,
       signal
     );
-    if (config.id !== existing.authConfigId || !matches(config)) return unavailable();
+    if (config.id !== existing.authConfigId) return unavailable('identity_mismatch');
+    requireMatch(config);
     return result(config.id);
   }
   if (!claimed && existing.state === 'provisioning') {
@@ -126,6 +170,7 @@ export async function resolveManagedAuthenticationConfiguration(input: {
       .set({ state: 'create_unknown', updatedAt: new Date() })
       .where(and(key, eq(table.attemptId, existing.attemptId), eq(table.state, 'provisioning')));
   }
+  let failureReason: ManagedAuthenticationResolutionError['reason'] = 'list_failed';
   try {
     const candidates: ComposioAuthenticationConfiguration[] = [];
     const seen = new Set<string>();
@@ -147,18 +192,20 @@ export async function resolveManagedAuthenticationConfiguration(input: {
       seen.add(page.nextCursor);
       cursor = page.nextCursor;
     }
-    if (cursor || candidates.length > 1 || (candidates.length === 1 && !matches(candidates[0])))
-      return unavailable();
+    if (cursor || candidates.length > 1) return unavailable('candidate_ambiguity');
+    if (candidates.length === 1) requireMatch(candidates[0]);
     let configId = candidates[0]?.id;
     if (!configId) {
       if (!claimed) return unavailable(); // Unknown creates are reconciled by reads only.
       signal.throwIfAborted();
+      failureReason = 'create_failed';
       const created = await input.accounts.createAuthenticationConfiguration({
         descriptor,
         name,
         signal,
       });
       configId = created.id;
+      failureReason = 'persist_failed';
       const [recorded] = await input.db
         .update(table)
         .set({ authConfigId: configId, updatedAt: new Date() })
@@ -166,8 +213,13 @@ export async function resolveManagedAuthenticationConfiguration(input: {
         .returning();
       if (!recorded) return unavailable();
     }
+    if (existing.authConfigId && existing.authConfigId !== configId)
+      return unavailable('identity_mismatch');
+    failureReason = 'retrieve_failed';
     const config = await input.accounts.getAuthenticationConfiguration(configId, signal);
-    if (config.id !== configId || !matches(config)) return unavailable();
+    if (config.id !== configId) return unavailable('identity_mismatch');
+    requireMatch(config);
+    failureReason = 'persist_failed';
     const [ready] = await input.db
       .update(table)
       .set({ authConfigId: configId, state: 'ready', updatedAt: new Date() })
@@ -181,13 +233,17 @@ export async function resolveManagedAuthenticationConfiguration(input: {
       .returning();
     if (!ready) return unavailable();
     return result(configId);
-  } catch {
+  } catch (error) {
     // Even a known rejection is terminal for this attempt. Never repeat a possibly dispatched create.
     if (claimed)
       await input.db
         .update(table)
         .set({ state: 'create_unknown', updatedAt: new Date() })
         .where(and(key, eq(table.attemptId, attemptId), eq(table.state, 'provisioning')));
-    return unavailable();
+    return unavailable(
+      error instanceof ManagedAuthenticationResolutionError
+        ? ManagedAuthenticationResolutionError.safeReason(error)
+        : failureReason
+    );
   }
 }

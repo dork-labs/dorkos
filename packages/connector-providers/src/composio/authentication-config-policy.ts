@@ -13,6 +13,16 @@ const scopeValue = z.union([z.string().max(16_384), z.array(z.string().max(512))
 const credentials = z
   .object({ scopes: scopeValue.optional(), user_scopes: scopeValue.optional() })
   .strict();
+const managedCredentials = credentials.extend({
+  client_id: z.string().max(16_384).optional(),
+  client_secret: z.string().max(16_384).optional(),
+  oauth_redirect_uri: z
+    .enum([
+      'https://backend.composio.dev/api/v1/auth-apps/add',
+      'https://backend.composio.dev/api/v3/toolkits/auth/callback',
+    ])
+    .optional(),
+});
 const toolAccess = z
   .object({
     tools_available_for_execution: z.array(z.string()).max(0).optional(),
@@ -27,6 +37,7 @@ const policy = z.object({
   restrict_to_following_tools: z.array(z.string()).max(0).optional(),
   tool_access_config: toolAccess,
   is_enabled_for_tool_router: z.boolean(),
+  is_connection_revoke_supported: z.boolean().optional(),
 });
 const knownKeys = new Set([
   'id',
@@ -43,6 +54,7 @@ const knownKeys = new Set([
   'credentials',
   'expected_input_fields',
   'is_composio_managed',
+  'is_connection_revoke_supported',
   'is_enabled_for_tool_router',
   'last_updated_at',
   'proxy_config',
@@ -70,7 +82,16 @@ export function projectComposioAuthenticationConfigPolicy(
     Object.keys(raw).some((key) => !knownKeys.has(key))
   )
     return undefined;
-  const parsed = policy.safeParse(raw);
+  // Managed OAuth app credentials belong to Composio, not the connected account.
+  // Validate only the documented envelope; never retain its client credentials.
+  const envelope = raw as Record<string, unknown>;
+  const managed =
+    envelope.type === 'default' &&
+    envelope.is_composio_managed === true &&
+    envelope.auth_scheme === 'OAUTH2';
+  const parsed = (
+    managed ? policy.extend({ credentials: managedCredentials.optional() }) : policy
+  ).safeParse(raw);
   if (!parsed.success) return undefined;
   return {
     type: parsed.data.type,
