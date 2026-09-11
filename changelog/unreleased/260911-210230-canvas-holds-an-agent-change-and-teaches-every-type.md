@@ -2,6 +2,8 @@
 covers:
   - 'fix(runtimes): teach every canvas type and UI action from one catalog'
   - "fix(canvas): offer an agent's change instead of dropping it mid-edit"
+  - 'fix(canvas): clear a held change once a newer one lands'
+  - 'Merge origin/main (Claude Agent SDK 0.3.268) into DOR-1996'
 ---
 
 ### Fixed
