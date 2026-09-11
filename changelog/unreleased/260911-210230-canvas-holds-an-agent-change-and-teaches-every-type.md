@@ -1,0 +1,10 @@
+---
+covers:
+  - 'fix(runtimes): teach every canvas type and UI action from one catalog'
+  - "fix(canvas): offer an agent's change instead of dropping it mid-edit"
+---
+
+### Fixed
+
+- When an agent changes a document while you are editing it, the canvas now tells you and lets you pick. Your edit was always protected, but the agent's version used to be thrown away without either of you being told. You get a quiet notice with two buttons: Reload shows their version and ends your edit, and Keep mine throws theirs away.
+- Agents now know about everything they can put on the canvas. What they were told listed 6 of the 14 kinds, so files, side-by-side changes, web pages, 3D models, sound, video and CSV tables were all things an agent could open and had never heard of. The command that applies a saved layout was missing too, and could not be run at all.
