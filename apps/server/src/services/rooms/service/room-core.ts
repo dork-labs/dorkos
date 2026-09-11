@@ -29,6 +29,7 @@ import type { AuthorRecord, AuthorRegistry } from '../author-registry.js';
 import type { RoomLimitsResolver } from '../limits/room-limits.js';
 import type { ReactionBudget } from '../reactions/reaction-budget.js';
 import type { ReactionStore } from '../reactions/reaction-store.js';
+import type { CanvasDocumentStore } from '../canvas/canvas-document-store.js';
 import type { AttachmentRowStore } from '../attachments/attachment-row-store.js';
 import type { RoomAgentLookup } from '../room-errors.js';
 import { RoomRoster } from '../room-roster.js';
@@ -42,6 +43,8 @@ export interface RoomCore {
   readonly store: RoomStore;
   /** Reactions on this room's entries — durable state, never a turn. */
   readonly reactions: ReactionStore;
+  /** The documents on this room's shared canvas. */
+  readonly canvasDocuments: CanvasDocumentStore;
   /** How many emoji an agent may still land in one room this hour. */
   readonly reactionBudget: ReactionBudget;
   /** Words in, entry coordinates out. The message index, behind its port. */
@@ -62,6 +65,12 @@ export interface RoomCore {
   /** The live `uploads.maxFiles`. Read per post, so a change takes effect. */
   readonly maxAttachmentsPerEntry: () => number;
   readonly maxPostsPerTurn: () => number;
+  /** The live `rooms.maxCanvasOpsPerTurn`. Read per operation, never captured. */
+  readonly maxCanvasOpsPerTurn: () => number;
+  /** The room's own shared checkout, or `null` when it has no files. */
+  readonly roomRepoPath: (roomId: string) => string | null;
+  /** The clock a canvas edit lock is judged against. Absent means `Date.now`. */
+  readonly canvasNow?: () => number;
   /** Whether an author is the install's owner. Read per check, never captured. */
   readonly isOwnerAuthor: (authorId: string) => boolean;
   /** The record-based twin of {@link RoomCore.isOwnerAuthor}. */
@@ -162,6 +171,7 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
   return {
     store: deps.store,
     reactions: deps.reactions,
+    canvasDocuments: deps.canvasDocuments,
     reactionBudget: deps.reactionBudget,
     findMessages: deps.findMessages,
     indexEntry: deps.indexEntry,
@@ -173,6 +183,9 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
     limitsFor: deps.limitsFor,
     maxAttachmentsPerEntry: deps.maxAttachmentsPerEntry,
     maxPostsPerTurn: deps.maxPostsPerTurn,
+    maxCanvasOpsPerTurn: deps.maxCanvasOpsPerTurn,
+    roomRepoPath: deps.roomRepoPath,
+    ...(deps.canvasNow ? { canvasNow: deps.canvasNow } : {}),
     isOwnerAuthor: deps.isOwnerAuthor,
     isOwnerRecord: deps.isOwnerRecord,
     isOwnerVoice: deps.isOwnerVoice,

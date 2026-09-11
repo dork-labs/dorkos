@@ -14,6 +14,10 @@
  */
 import type { StateCreator } from 'zustand';
 import type { UiCanvasContent } from '@dorkos/shared/types';
+// The dedupe rule, shared with the server's room canvas rather than copied
+// beside it (spec `room-canvas` §3.2). Two implementations of "is this the same
+// document" drift silently into one room holding two tabs for one file.
+import { canvasSourceKey as sourceKey } from '@dorkos/shared/canvas-source-key';
 import { MAX_CANVAS_DOCUMENTS } from '@/layers/shared/lib/constants';
 import { readCanvasSession, writeCanvasSession } from './app-store-helpers';
 import type { PersistedCanvasDocument } from './app-store-helpers';
@@ -143,37 +147,6 @@ export interface CanvasSlice {
 // ---------------------------------------------------------------------------
 // Pure helpers
 // ---------------------------------------------------------------------------
-
-/** Dedup key for a content variant, or null when the variant has no stable identity. */
-function sourceKey(content: UiCanvasContent): string | null {
-  switch (content.type) {
-    case 'url':
-      return `url:${content.url}`;
-    case 'browser':
-      return `browser:${content.url}`;
-    case 'markdown':
-      return content.sourcePath ? `path:${content.sourcePath}` : null;
-    case 'file':
-      return `path:${content.sourcePath}`;
-    case 'diff':
-      // Coalesce repeated diffs of one file onto a single document so an agent's
-      // burst of edits refreshes one tab rather than spawning many (DOR-212).
-      return `diff:${content.sourcePath}`;
-    case 'image':
-    case 'pdf':
-    case 'model3d':
-    case 'audio':
-    case 'video':
-    case 'csv':
-      return `src:${content.src}`;
-    case 'mcp_app':
-      return `mcp:${content.serverName}:${content.uri}`;
-    case 'json':
-    case 'widget':
-      // No natural identity — every open is a fresh document.
-      return null;
-  }
-}
 
 /** Base name of a filesystem-ish path, for a tab label. */
 function baseName(pathLike: string): string {

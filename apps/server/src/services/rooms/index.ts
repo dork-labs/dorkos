@@ -30,6 +30,7 @@ import type { CollectWindow } from './room-collect.js';
 import type { ResponseGateMode } from './response-gate/routing-rules.js';
 import { ReactionBudget } from './reactions/reaction-budget.js';
 import { ReactionStore } from './reactions/reaction-store.js';
+import { CanvasDocumentStore } from './canvas/canvas-document-store.js';
 import { AttachmentRowStore } from './attachments/attachment-row-store.js';
 import type { RoomAttachmentStore } from './attachments/room-attachment-store.js';
 import type { RoomRepoService } from './repo/room-repo-service.js';
@@ -274,6 +275,24 @@ function readMaxAttachmentsPerEntry(): number {
 }
 
 /**
+ * How many times one agent may change a room's shared canvas inside one turn,
+ * read live from `rooms.maxCanvasOpsPerTurn` and degrading to the shipped
+ * default the same way {@link readMaxPostsPerTurn} does (spec `room-canvas`
+ * §3.4).
+ *
+ * Failing to the default keeps the limit BOUNDED, which is the only safe
+ * direction here too: an unreadable config must never let one turn bury a room's
+ * table under tabs nobody asked for.
+ */
+function readMaxCanvasOpsPerTurn(): number {
+  try {
+    return configManager.get('rooms').maxCanvasOpsPerTurn;
+  } catch {
+    return USER_CONFIG_DEFAULTS.rooms.maxCanvasOpsPerTurn;
+  }
+}
+
+/**
  * How many messages one agent may post into a room inside one turn, read live
  * from `rooms.maxPostsPerTurn` and degrading to the shipped default the same way
  * {@link readMaxAgentDepth} does (spec `tool-only-room-replies` §D9).
@@ -376,6 +395,7 @@ export function createRoomSubsystem(opts: {
   const store = new RoomStore(opts.db);
   const limitsFor = createRoomLimitsResolver(store);
   const reactions = new ReactionStore(opts.db);
+  const canvasDocuments = new CanvasDocumentStore(opts.db);
   const attachments = new AttachmentRowStore(opts.db);
   const agentLookup = opts.agents ?? createAgentLookup(opts.db);
   const authors = new AuthorRegistry(opts.db, agentLookup);
@@ -385,6 +405,7 @@ export function createRoomSubsystem(opts: {
   const service = new RoomService({
     store,
     reactions,
+    canvasDocuments,
     attachments,
     authors,
     broadcaster,
@@ -458,6 +479,19 @@ export function createRoomSubsystem(opts: {
     // this number is wrong must be able to move it without waiting for anything
     // to restart.
     maxPostsPerTurn: readMaxPostsPerTurn,
+    // Read per operation, for the same reason and one more: a room's canvas is
+    // a shared surface, so an operator who feels one agent is taking too much of
+    // it must be able to narrow the bound without waiting for a restart.
+    maxCanvasOpsPerTurn: readMaxCanvasOpsPerTurn,
+    // Resolved per read rather than captured: the repo service is registered
+    // later in bootstrap, and an install with no repo machinery answers `null`
+    // forever — which is exactly right, because then no room has a shared tree
+    // and every file document belongs to whoever opened it.
+    roomRepoPath: (roomId) => {
+      const repos = tryGetRoomRepoService();
+      if (!repos) return null;
+      return repos.repoPathFor(roomId);
+    },
     // Read per check for the same reason, and for one more: an install becomes
     // owned partway through its life (the enable-login flow), so a value
     // captured at boot would leave the rooms domain believing forever that the

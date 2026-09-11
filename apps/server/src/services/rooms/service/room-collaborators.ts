@@ -35,6 +35,7 @@ import type { RoomServiceDeps } from './room-service-deps.js';
 import { RoomSystemPosts } from '../messages/room-system-posts.js';
 import { RoomTurnControl } from '../manage/room-turn-control.js';
 import { RoomUpdates } from '../manage/room-updates.js';
+import { RoomCanvasService } from '../canvas/room-canvas-service.js';
 import { RoomVisibility } from './room-visibility.js';
 
 /** Every part of one room service, and the state they all share. */
@@ -79,6 +80,8 @@ export interface RoomCollaborators {
   readonly reactions: RoomReactions;
   /** What a room is working on, and the three ways a person steers it. */
   readonly turnControl: RoomTurnControl;
+  /** The room's shared canvas — the table, and the one writer that changes it. */
+  readonly canvas: RoomCanvasService;
 }
 
 /**
@@ -134,5 +137,20 @@ export function createRoomCollaborators(
     search: new RoomSearch(core, visibility, projection),
     reactions: new RoomReactions(core, visibility, publisher),
     turnControl: new RoomTurnControl(core, visibility),
+    // The canvas is handed `systemPosts.postCanvasEvent` rather than reaching
+    // for the store, so the single write path into a room's log stays the front
+    // door's — the same shape the merge service is given.
+    canvas: new RoomCanvasService({
+      documents: core.canvasDocuments,
+      visibility,
+      broadcaster: core.broadcaster,
+      maxOpsPerTurn: core.maxCanvasOpsPerTurn,
+      postCanvasEvent: (roomId, input) => {
+        systemPosts.postCanvasEvent(roomId, input);
+      },
+      displayNameFor: (authorId) => core.authors.getById(authorId)?.displayName ?? 'Somebody',
+      roomRepoPath: core.roomRepoPath,
+      ...(core.canvasNow ? { now: core.canvasNow } : {}),
+    }),
   };
 }

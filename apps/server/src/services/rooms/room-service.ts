@@ -50,6 +50,7 @@ import type { CreateBridgedRoomRequest } from './manage/room-bridge-create.js';
 import type { RebridgeRequest } from './manage/room-bridge-lifecycle.js';
 import type { ActiveClaimView, HeldView } from './room-claims.js';
 import { createRoomCollaborators, type RoomCollaborators } from './service/room-collaborators.js';
+import type { RoomCanvasService } from './canvas/room-canvas-service.js';
 import type { RoomExternalPostInput } from './messages/room-entry-writer.js';
 import type {
   MemberRoomMatch,
@@ -135,6 +136,16 @@ export class RoomService {
   /** The author registry, for callers that need to resolve their own identity. */
   get authorRegistry(): AuthorRegistry {
     return this.parts.core.authors;
+  }
+  /**
+   * The room's shared canvas — the table, and the single writer that changes it.
+   *
+   * Reachable from the front door because the one coalesced entry a turn writes
+   * is a room entry, and this class owns the single write path into a room's log
+   * (spec `room-canvas` §3).
+   */
+  get canvas(): RoomCanvasService {
+    return this.parts.canvas;
   }
   /** Every room turn in flight right now. See {@link RoomTurnControl.listActiveClaims}. */
   listActiveClaims(): ActiveClaimView[] {

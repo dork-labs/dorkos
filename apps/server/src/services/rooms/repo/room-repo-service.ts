@@ -630,6 +630,23 @@ export class RoomRepoService {
   }
 
   /**
+   * Where this room's own shared copy of its files lives, or `null` when it has
+   * none a caller may use.
+   *
+   * The one question the canvas asks of this service, and it asks it on a read
+   * path: a canvas document that resolved under the SHARED tree is one every
+   * member can already read, which is what makes returning its contents to any
+   * of them safe (spec `room-canvas` §8.1). A room with no repo answers `null`,
+   * and then no document belongs to a shared tree at all.
+   *
+   * @param roomId - The room.
+   * @returns The absolute path, or `null`.
+   */
+  repoPathFor(roomId: string): string | null {
+    return this.hasRepo(roomId) ? this.deps.store.repoPath(roomId) : null;
+  }
+
+  /**
    * Which of a room's agent worktrees hold work that `main` does not have.
    *
    * "Stranded" is either half of the same worry: uncommitted edits, or commits
