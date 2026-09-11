@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
+import { connectorKeys } from '@/layers/entities/connectors';
 import type {
   CloudLinkState,
   CloudLinkStatus,
@@ -104,7 +105,10 @@ export function useCloudLink(): UseCloudLink {
       if (TERMINAL_STATES.has(next.state)) {
         stopPolling();
         if (next.state === 'linked') {
-          await queryClient.invalidateQueries({ queryKey: cloudStatusKey });
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: cloudStatusKey }),
+            queryClient.invalidateQueries({ queryKey: connectorKeys.all }),
+          ]);
         }
       }
     } catch {
@@ -170,7 +174,10 @@ export function useCloudLink(): UseCloudLink {
         accountLabel: null,
         lastHeartbeatAt: null,
       });
-      await queryClient.invalidateQueries({ queryKey: cloudStatusKey });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: cloudStatusKey }),
+        queryClient.invalidateQueries({ queryKey: connectorKeys.all }),
+      ]);
     } catch {
       // Unlink failed (e.g. the local server call errored): the instance was not
       // unlinked, so leave the panel in the linked view and let the user retry.

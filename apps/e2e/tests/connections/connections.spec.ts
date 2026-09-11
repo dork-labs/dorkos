@@ -61,6 +61,45 @@ export async function gotoConnections(page: Page): Promise<void> {
   await new BasePage(page).waitForAppReady();
 }
 
+test('unlinked Accounts opens the existing owner account settings @smoke', async ({
+  page,
+}, testInfo) => {
+  await gotoConnections(page);
+  const link = page.getByTestId('link-dorkos-account');
+  await expect(link).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Advanced account setup' })).toHaveAttribute(
+    'aria-expanded',
+    'false'
+  );
+  await link.scrollIntoViewIfNeeded();
+  await page
+    .locator('[aria-labelledby="region-accounts"]')
+    .screenshot({ path: testInfo.outputPath('accounts-desktop.png') });
+  await link.click();
+  await expect(page).toHaveURL(/settings=access/);
+  await expect(page).toHaveURL(/settingsSection=account/);
+  await expect(
+    page
+      .locator('[data-section="account"]')
+      .getByRole('button', { name: 'Link this instance', exact: true })
+  ).toBeVisible();
+  // Opening settings is the handoff, never approval to initiate a cloud link.
+  await expect(page.getByText('This instance is not linked to a DorkOS account.')).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('account-settings.png'), fullPage: true });
+  await page.goto('/connections');
+  await new BasePage(page).waitForAppReady();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(link).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Advanced account setup' })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true
+  );
+  await link.scrollIntoViewIfNeeded();
+  await page
+    .locator('[aria-labelledby="region-accounts"]')
+    .screenshot({ path: testInfo.outputPath('accounts-mobile.png') });
+});
+
 /**
  * Save the provider key through the real UI form and wait for the live
  * registration to land ("Ready" badge on the provider card).
