@@ -1,0 +1,24 @@
+{
+  "tasks": [
+    {
+      "id": "persistence",
+      "status": "pending"
+    },
+    {
+      "id": "owner-removal-route",
+      "status": "pending"
+    },
+    {
+      "id": "visibility-and-reconcile",
+      "status": "pending"
+    },
+    {
+      "id": "real-sqlite-tests-and-mutant",
+      "status": "pending"
+    },
+    {
+      "id": "independent-review-and-handoff",
+      "status": "pending"
+    }
+  ]
+}

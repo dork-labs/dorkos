@@ -35,6 +35,7 @@ describe('connector resource routes', () => {
         poll: vi.fn().mockResolvedValue({ flowId: 'flow-a', state: 'pending' }),
       },
       lifecycle: {
+        remove: vi.fn(),
         rename: vi.fn().mockReturnValue({ connectionId: 'connection-a', lifecycle: 'connected' }),
         pause: vi.fn().mockResolvedValue({ connectionId: 'connection-a', lifecycle: 'paused' }),
         resume: vi.fn().mockResolvedValue({ connectionId: 'connection-a', lifecycle: 'connected' }),
@@ -86,6 +87,22 @@ describe('connector resource routes', () => {
       );
     }
   );
+
+  it('removes only through the strict owner boundary', async () => {
+    await api().post('/api/connectors/connections/connection-a/remove').send({}).expect(204);
+    expect(deps.lifecycle.remove).toHaveBeenCalledWith(OWNER, 'connection-a');
+    vi.mocked(deps.lifecycle.remove).mockClear();
+    await api()
+      .post('/api/connectors/connections/connection-a/remove')
+      .send({ ownerId: 'foreign' })
+      .expect(400);
+    await api()
+      .post('/api/connectors/connections/connection-a/remove')
+      .set('X-DorkOS-Agent', 'agent-a')
+      .send({})
+      .expect(403);
+    expect(deps.lifecycle.remove).not.toHaveBeenCalled();
+  });
 
   it('returns a useful generic error without exposing an internal failure', async () => {
     vi.mocked(deps.query.listConnections).mockImplementationOnce(() => {

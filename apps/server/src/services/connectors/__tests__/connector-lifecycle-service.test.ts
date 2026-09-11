@@ -64,6 +64,40 @@ describe('ConnectorLifecycleService', () => {
     authenticationFlows = new ConnectorAuthenticationFlowService({ db, registry });
   });
 
+  it('removes only a disconnected owner account while retaining its tombstone', () => {
+    const service = new ConnectorLifecycleService({
+      db,
+      registry,
+      authenticationFlows,
+      authorityCleanup,
+    });
+    expect(() => service.remove(OWNER, CONNECTION_ID)).toThrow('Disconnect this account');
+    registry.recordDisconnect(CONNECTION_ID);
+    expect(() =>
+      service.remove({ kind: 'local_install', installationId: 'foreign' }, CONNECTION_ID)
+    ).toThrow('Connection not found');
+    db.update(connections)
+      .set({ externalCleanupState: 'unknown' })
+      .where(eq(connections.id, CONNECTION_ID))
+      .run();
+    expect(() => service.remove(OWNER, CONNECTION_ID)).toThrow('Finish disconnecting');
+    db.update(connections)
+      .set({ externalCleanupState: 'complete' })
+      .where(eq(connections.id, CONNECTION_ID))
+      .run();
+    service.remove(OWNER, CONNECTION_ID);
+    const row = db.select().from(connections).get();
+    expect(row).toMatchObject({
+      id: CONNECTION_ID,
+      lifecycleState: 'disconnected',
+      enabled: false,
+      cleanupGeneration: 1,
+      removedAt: expect.any(String),
+    });
+    service.remove(OWNER, CONNECTION_ID);
+    expect(db.select().from(connections).get()?.removedAt).toBe(row?.removedAt);
+  });
+
   it('closes local authority and durable reconnects before provider disconnect settles', async () => {
     db.insert(connectorAuthenticationFlows)
       .values({

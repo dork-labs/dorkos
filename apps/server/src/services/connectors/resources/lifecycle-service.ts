@@ -1,5 +1,5 @@
 /** Owner lifecycle mutations with local close-first connector authority. */
-import { and, connections, connectorProviderInstances, eq, type Db } from '@dorkos/db';
+import { and, connections, connectorProviderInstances, eq, isNull, sql, type Db } from '@dorkos/db';
 import {
   ConnectorLifecycleResultSchema,
   type ConnectorAuthoritySyncState,
@@ -44,7 +44,11 @@ export interface ConnectorManagedLifecyclePort {
 /** Safe refusal from the owner lifecycle boundary. */
 export class ConnectorLifecycleError extends Error {
   /** Stable machine-readable refusal. */
-  readonly code: 'connection_not_found' | 'managed_sync_unavailable';
+  readonly code:
+    | 'connection_not_found'
+    | 'managed_sync_unavailable'
+    | 'connection_not_disconnected'
+    | 'connection_cleanup_pending';
 
   /** Construct one safe lifecycle refusal. */
   constructor(code: ConnectorLifecycleError['code'], message: string) {
@@ -91,6 +95,43 @@ export class ConnectorLifecycleService {
     const row = this.requireOwnedConnection(owner, connectionId);
     this.options.registry.setLabel(row.connectionId, label);
     return this.result(row.connectionId, 'not_required');
+  }
+
+  /** Remove one disconnected account from inventory without deleting history or cleanup. */
+  remove(owner: ConnectorOwnerAuthority, connectionId: string): void {
+    const parsed = ConnectionIdSchema.parse(connectionId);
+    this.options.db.transaction((tx) => {
+      const row = this.ownedConnection(owner, parsed);
+      if (!row) throw new ConnectorLifecycleError('connection_not_found', 'Connection not found.');
+      if (row.removedAt) return;
+      if (row.lifecycleState !== 'disconnected') {
+        throw new ConnectorLifecycleError(
+          'connection_not_disconnected',
+          'Disconnect this account before removing it.'
+        );
+      }
+      if (row.externalCleanupState !== 'complete' && row.externalCleanupState !== 'not_required') {
+        throw new ConnectorLifecycleError(
+          'connection_cleanup_pending',
+          'Finish disconnecting this account before removing it.'
+        );
+      }
+      this.options.authenticationFlows.invalidateConnectionFlows(owner, parsed);
+      tx.update(connections)
+        .set({
+          removedAt: new Date().toISOString(),
+          enabled: false,
+          cleanupGeneration: sql`${connections.cleanupGeneration} + 1`,
+        })
+        .where(
+          and(
+            eq(connections.id, parsed),
+            eq(connections.lifecycleState, 'disconnected'),
+            isNull(connections.removedAt)
+          )
+        )
+        .run();
+    });
   }
 
   /** Close one owned connection immediately, then synchronize hosted authority if needed. */
@@ -248,7 +289,7 @@ export class ConnectorLifecycleService {
   private requireOwnedConnection(owner: ConnectorOwnerAuthority, connectionId: string) {
     const parsed = ConnectionIdSchema.parse(connectionId);
     const row = this.ownedConnection(owner, parsed);
-    if (!row || row.lifecycleState === 'disconnected') {
+    if (!row || row.removedAt || row.lifecycleState === 'disconnected') {
       throw new ConnectorLifecycleError('connection_not_found', 'Connection not found.');
     }
     return row;
@@ -262,6 +303,8 @@ export class ConnectorLifecycleService {
         providerInstanceId: connectorProviderInstances.id,
         externalAccountRef: connections.externalAccountRef,
         lifecycleState: connections.lifecycleState,
+        removedAt: connections.removedAt,
+        externalCleanupState: connections.externalCleanupState,
         authenticationStatus: connections.status,
         reconciliationStatus: connections.grantReconciliationStatus,
         executionConfigGeneration: connectorProviderInstances.executionConfigGeneration,

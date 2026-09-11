@@ -139,6 +139,19 @@ describe('ConnectorOperatorQueryService', () => {
     });
   });
 
+  it('omits removed account cards and refuses their owner detail without deleting history', async () => {
+    db.update(connections)
+      .set({ lifecycleState: 'disconnected', removedAt: NOW })
+      .where(eq(connections.id, 'connection-a'))
+      .run();
+    expect(await service.listConnections(OWNER)).toEqual([]);
+    await expect(service.getConnection(OWNER, 'connection-a')).rejects.toThrow(
+      'Connection not found'
+    );
+    expect(db.select().from(connections).all()).toHaveLength(1);
+    expect(db.select().from(connectionOperationGrants).all()).toHaveLength(1);
+  });
+
   it('returns one account-free catalog with per-route authentication and message intents', async () => {
     const catalog = await service.catalog({ signal: new AbortController().signal });
 

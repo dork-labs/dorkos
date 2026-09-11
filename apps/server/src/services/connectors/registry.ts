@@ -296,8 +296,15 @@ export class ConnectorRegistry {
    *
    * @param account - The freshly connected account to persist for routing.
    */
-  recordConnect(provider: ConnectorProvider, account: ProviderConnectedAccount): ConnectedAccount {
-    return this._connections.reconcile(provider, account, { restoreDisconnected: true });
+  recordConnect(
+    provider: ConnectorProvider,
+    account: ProviderConnectedAccount,
+    options: { allowRemovedReplacement?: boolean } = {}
+  ): ConnectedAccount {
+    return this._connections.reconcile(provider, account, {
+      restoreDisconnected: true,
+      ...options,
+    });
   }
 
   /**
@@ -351,7 +358,9 @@ export class ConnectorRegistry {
       const provider = providers[index]!;
       if (result.status === 'fulfilled') {
         accounts.push(
-          ...result.value.map((account) => this._connections.reconcile(provider, account))
+          ...result.value
+            .map((account) => this._connections.reconcile(provider, account))
+            .filter((account) => !this._connections.isRemoved(account.id))
         );
       } else {
         warnings.push({
