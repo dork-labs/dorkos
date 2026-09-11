@@ -218,6 +218,10 @@ describe('Open session, from inside a room', () => {
         search: { session: 'warden-in-general' },
       });
     });
+    // One agent is in many rooms, and each one binds its own session. The room
+    // asked about is the one the page is SHOWING, read off `?id=` — not the
+    // last room touched, and not the agent's default.
+    expect(view.listRoomSessions).toHaveBeenCalledWith(ROOM_ID);
   });
 
   it('keeps two agents in the same room apart', async () => {

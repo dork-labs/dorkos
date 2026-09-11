@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(client): open a room agent’s room session, not its newest chat (DOR-1974)'
+  - "fix(client): re-read a room's bindings before opening a session (DOR-1974)"
 ---
 
 ### Fixed

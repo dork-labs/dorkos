@@ -118,19 +118,38 @@ describe('resolveRoomBoundSession', () => {
     expect(transport.listRoomSessions).toHaveBeenCalledWith(ROOM_ID);
   });
 
-  it('reads a cached answer without asking again', async () => {
+  it('takes the roster from cache — the room on screen already holds a live one', async () => {
     queryClient.setQueryData(roomKeys.detail(ROOM_ID), ROOM);
-    queryClient.setQueryData(roomKeys.sessions(ROOM_ID), { bindings: BINDINGS });
     const transport = createMockTransport({
       getRoom: vi.fn(),
-      listRoomSessions: vi.fn(),
+      listRoomSessions: vi.fn().mockResolvedValue({ bindings: BINDINGS }),
     });
 
     await expect(
       resolveRoomBoundSession({ queryClient, transport }, ROOM_ID, BO_PATH)
     ).resolves.toBe('bo-in-general');
     expect(transport.getRoom).not.toHaveBeenCalled();
-    expect(transport.listRoomSessions).not.toHaveBeenCalled();
+  });
+
+  it('re-asks for the bindings even when a cached pair is sitting there', async () => {
+    // The bindings MOVE — the server rebinds after every turn, because the
+    // runtime can assign a new session id on a resume. A cached pair from an
+    // hour ago names a session the transcript is no longer under, which is the
+    // original bug wearing the fix as a disguise. Serving one would make this
+    // whole feature quietly wrong again.
+    queryClient.setQueryData(roomKeys.detail(ROOM_ID), ROOM);
+    queryClient.setQueryData(roomKeys.sessions(ROOM_ID), {
+      bindings: [{ authorId: 'author-ana', sessionId: 'ana-retired-id' }],
+    });
+    const transport = createMockTransport({
+      getRoom: vi.fn(),
+      listRoomSessions: vi.fn().mockResolvedValue({ bindings: BINDINGS }),
+    });
+
+    await expect(
+      resolveRoomBoundSession({ queryClient, transport }, ROOM_ID, ANA_PATH)
+    ).resolves.toBe('ana-in-general');
+    expect(transport.listRoomSessions).toHaveBeenCalledWith(ROOM_ID);
   });
 
   it('answers null rather than throwing when the room refuses the read', async () => {

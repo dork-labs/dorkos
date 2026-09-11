@@ -54,14 +54,29 @@ export async function resolveRoomBoundSession(
     // Both reads together: the roster is what turns a directory into this
     // room's author id, and the bindings are keyed by that id. Either one alone
     // cannot answer, so waiting for both costs nothing over waiting for one.
+    //
+    // **They are fetched with different appetites for staleness, and the split
+    // is the point.** A ROSTER changes when somebody joins, the room on screen
+    // already holds a live one (`useRoom`), and a stale one can only ever cost
+    // the safe fallback — so `ensureQueryData` takes whatever is cached. The
+    // BINDINGS are the answer this whole function exists to get right, and they
+    // MOVE: the server rebinds after every turn, because the runtime can assign
+    // a new session id on a resume (`rebindRoomSession`). A cached pair from an
+    // hour ago would name a session the transcript is no longer under, which is
+    // the original bug wearing the fix as a disguise. `fetchQuery` with
+    // `staleTime: 0` is the same posture `resolveSessionForCwd` takes for the
+    // same reason, and it costs one small local read per deliberate press —
+    // never one per room open, which is the property `useRoomSessions` argues
+    // for and this keeps.
     const [room, sessions] = await Promise.all([
       deps.queryClient.ensureQueryData<RoomWithRoster>({
         queryKey: roomKeys.detail(roomId),
         queryFn: () => deps.transport.getRoom(roomId),
       }),
-      deps.queryClient.ensureQueryData<RoomSessionsResponse>({
+      deps.queryClient.fetchQuery<RoomSessionsResponse>({
         queryKey: roomKeys.sessions(roomId),
         queryFn: () => deps.transport.listRoomSessions(roomId),
+        staleTime: 0,
       }),
     ]);
     return roomBoundSessionId(room, sessions.bindings, agentPath);
