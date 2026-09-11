@@ -200,7 +200,7 @@ describe('createConnectorRuntimeMcpServer', () => {
     await Promise.all([client.close(), server.close()]);
   });
 
-  it('discovers only live grants, executes the selected revision, and refuses a revoked turn', async () => {
+  it('CN-01/CN-05/CN-10: discovers live grants, validates exact calls, and refuses a revoked turn', async () => {
     const db = createDb(':memory:');
     runMigrations(db);
     const provider = new FakeConnectorProvider({
@@ -342,6 +342,29 @@ describe('createConnectorRuntimeMcpServer', () => {
         },
       ],
     });
+    // Chat tool calls must preserve the same schema/classification boundary as REST.
+    for (const [name, arguments_, code] of [
+      [
+        'connectors.execute_read',
+        { unexpected: 'do not silently drop this' },
+        'CONNECTOR_ARGUMENTS_INVALID',
+      ],
+      ['connectors.execute_write', {}, 'CONNECTOR_CAPABILITY_MISMATCH'],
+    ] as const) {
+      const refused = await client.callTool({
+        name,
+        arguments: {
+          connectionId: 'connection-a',
+          operationRevisionId: 'revision-a',
+          arguments: arguments_,
+        },
+      });
+      expect(refused.isError).toBe(true);
+      expect(payload(refused)).toMatchObject({ code });
+      expect(execute).not.toHaveBeenCalled();
+      expect(db.select().from(connectorUsageAttempts).all()).toHaveLength(0);
+    }
+
     const execution = payload(
       await client.callTool({
         name: 'connectors.execute_read',
