@@ -56,7 +56,8 @@
       "upgrade_notes": [
         "Versions track the Codex CLI release train and an active `alpha` dist-tag exists alongside `latest`; a fix may ship in alpha weeks before stable (the 0.143.0 logs_2.sqlite fix did). Check dist-tags when resolving the target, and never pin an alpha without an explicit user decision.",
         "Follow the pinned-SDK bump checklist in contributing/adding-a-runtime.md (section: Bumping a pinned SDK): dist-tag check, .d.ts diff of the ThreadEvent/ThreadItem unions and imported item types, event-mapper exhaustiveness compile, runtime conformance suite, one live smoke turn.",
-        "The event mapper's `never` exhaustiveness checks fail compilation when the SDK adds union members; that is the intended upgrade tripwire, not an obstacle to suppress."
+        "The event mapper's `never` exhaustiveness checks fail compilation when the SDK adds union members; that is the intended upgrade tripwire, not an obstacle to suppress.",
+        "The CLI pin is version-coupled beyond the SDK's type surface, and sdk_surface_map cannot see it: model-catalog.ts speaks the app-server `initialize` + paginated `model/list` protocol by hand, and model-context-windows.ts parses the CLI's own models_cache.json and rejects it whenever its `client_version` differs from the running binary (so every CLI bump blanks context-window enrichment for one 300-second freshness window). Neither file imports the SDK, so no .d.ts diff can ever flag them — verify the model picker live after every bump."
       ],
       "changelog_sources": [
         {
@@ -79,7 +80,8 @@
         }
       ],
       "sdk_surface_map": {
-        "Codex, CodexOptions": "codex-runtime.ts, mcp-server-config.ts",
+        "Codex": "codex-runtime.ts",
+        "CodexOptions": "codex-options.ts, mcp-server-config.ts",
         "ThreadEvent, ThreadItem (+ AgentMessageItem, CommandExecutionItem, FileChangeItem, McpToolCallItem, ReasoningItem, TodoListItem, WebSearchItem)": "event-mapper.ts",
         "ThreadOptions, SandboxMode, ModelReasoningEffort": "turn-input.ts"
       }

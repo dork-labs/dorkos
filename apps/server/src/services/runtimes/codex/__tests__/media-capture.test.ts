@@ -4,7 +4,7 @@
  * A picture an MCP tool handed Codex reaches the person who asked (DOR-1664).
  *
  * **There is deliberately no generated-image case here, and there cannot be
- * one.** `@openai/codex-sdk@0.153.4` declares `ThreadItem` as
+ * one.** `@openai/codex-sdk@0.154.0` declares `ThreadItem` as
  * `AgentMessageItem | ReasoningItem | CommandExecutionItem | FileChangeItem |
  * McpToolCallItem | WebSearchItem | TodoListItem | ErrorItem` — no image output
  * item of any kind. `type: "local_image"` exists only on `UserInput`, the input

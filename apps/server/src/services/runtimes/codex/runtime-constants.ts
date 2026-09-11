@@ -47,7 +47,7 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
   supportsPlugins: false,
   // Every turn is a fresh subprocess (ADR-0309), and the only interrupt
   // primitive is an `AbortSignal` — there is no live session to steer into or
-  // stage onto. The SDK has no mid-turn input at 0.153.4, so `false` stays the
+  // stage onto. The SDK has no mid-turn input at 0.154.0, so `false` stays the
   // honest answer until a future live probe says otherwise (spec
   // `persistent-session-runtime` §2.6).
   supportsPersistentSession: false,
@@ -63,7 +63,7 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
   // picture, and `'none'` is then the truth.
   //
   // Half of the gap was never fixable here and still is not.
-  // `@openai/codex-sdk@0.153.4`'s `ThreadItem` union carries no image OUTPUT
+  // `@openai/codex-sdk@0.154.0`'s `ThreadItem` union carries no image OUTPUT
   // item at all, so Codex cannot stream a generated picture through this SDK
   // however the adapter is written (`local_image` appears only on `UserInput` —
   // the input direction). An MCP tool result is its ONE media path, and that
@@ -124,7 +124,7 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
   // nothing else.
   settings: { configSection: 'codex', supportsEffort: true, sections: [] },
   // Codex has no compaction/summarize API (`Thread.run` only, verified at the
-  // 0.153.4 pin), so this stays honestly `false` (DOR-109 task 2.3).
+  // 0.154.0 pin), so this stays honestly `false` (DOR-109 task 2.3).
   commandIntents: { compact: { supported: false } },
   features: {},
 };
