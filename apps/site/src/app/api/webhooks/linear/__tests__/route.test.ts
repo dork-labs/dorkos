@@ -11,12 +11,17 @@ import { sendFeedbackShipped } from '@/lib/mailer';
 vi.mock('@/db/client', () => ({ getDb: vi.fn() }));
 vi.mock('@/lib/mailer', () => ({ sendFeedbackShipped: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('@/env', () => ({ env: { LINEAR_WEBHOOK_SECRET: 'test_webhook_secret' } }));
+// Same stub the feedback route's own test uses — the real resolveBaseURL pulls
+// in Better Auth, and the origin is not what this suite is testing.
+vi.mock('@/lib/auth', () => ({ resolveBaseURL: () => 'https://dorkos.ai' }));
 
 import { POST } from '../route';
 
 const SECRET = 'test_webhook_secret';
 const ROW_ID = 'row-uuid-1';
 const LINEAR_ISSUE_ID = 'linear-issue-uuid';
+/** The release-notes link every shipped email carries. */
+const CHANGELOG_URL = 'https://dorkos.ai/docs/changelog';
 
 interface MockDb {
   select: ReturnType<typeof vi.fn>;
@@ -89,6 +94,22 @@ const ISSUE_UPDATE_SHIPPED = {
     id: LINEAR_ISSUE_ID,
     state: { name: 'Done', type: 'completed' },
     projectMilestone: { name: '0.56.3' },
+  },
+};
+
+/**
+ * What a real feedback-team delivery actually looks like: no
+ * `projectMilestone`, no `cycle`, so `resolveShippedVersion` resolves
+ * `undefined`. The FB team has no projects and cycles are disabled, so this
+ * — not the milestone-bearing fixture above — is the shape every production
+ * shipped transition arrives in.
+ */
+const ISSUE_UPDATE_SHIPPED_NO_VERSION = {
+  action: 'update',
+  type: 'Issue',
+  data: {
+    id: LINEAR_ISSUE_ID,
+    state: { name: 'Done', type: 'completed' },
   },
 };
 
@@ -190,13 +211,64 @@ describe('POST /api/webhooks/linear — shipped email (the core correctness clai
     expect(sendFeedbackShipped).toHaveBeenCalledWith('kai@example.com', {
       message: 'Chat stopped updating after the stream dropped.',
       shippedVersion: '0.56.3',
+      changelogUrl: CHANGELOG_URL,
     });
   });
 
-  it('fires the shipped email using an email-shaped contact when reporterEmail is absent', async () => {
-    foundRow = { ...foundRow, contact: 'kai@example.com' };
-    await POST(webhookRequest(ISSUE_UPDATE_SHIPPED));
+  it('does NOT require a version to fire the shipped email', async () => {
+    // The bug this test exists for: the send used to be gated on
+    // `if (to && version)`, and no feedback issue can ever carry a version
+    // (the FB team has no projects and cycles are off). Moving a report to
+    // Done flipped its public status to "shipped" and emailed nobody.
+    // Re-tighten the gate to `if (to && version)` and this reds.
+    foundRow = { ...foundRow, reporterEmail: 'kai@example.com', shippedVersion: null };
+    await POST(webhookRequest(ISSUE_UPDATE_SHIPPED_NO_VERSION));
+
     expect(sendFeedbackShipped).toHaveBeenCalledTimes(1);
+    expect(sendFeedbackShipped).toHaveBeenCalledWith('kai@example.com', {
+      message: 'Chat stopped updating after the stream dropped.',
+      shippedVersion: undefined,
+      changelogUrl: CHANGELOG_URL,
+    });
+  });
+
+  it('passes the release-notes link on every shipped email', async () => {
+    foundRow = { ...foundRow, reporterEmail: 'kai@example.com' };
+    await POST(webhookRequest(ISSUE_UPDATE_SHIPPED_NO_VERSION));
+
+    expect(sendFeedbackShipped).toHaveBeenCalledWith(
+      'kai@example.com',
+      expect.objectContaining({ changelogUrl: CHANGELOG_URL })
+    );
+  });
+
+  it('fires the shipped email using an email-shaped contact when reporterEmail is absent', async () => {
+    // Deliberately the versionless delivery shape, so the production-shaped
+    // payload is exercised here too rather than only in the test above.
+    foundRow = { ...foundRow, contact: 'kai@example.com' };
+    await POST(webhookRequest(ISSUE_UPDATE_SHIPPED_NO_VERSION));
+    expect(sendFeedbackShipped).toHaveBeenCalledTimes(1);
+    expect(sendFeedbackShipped).toHaveBeenCalledWith(
+      'kai@example.com',
+      expect.objectContaining({ shippedVersion: undefined })
+    );
+  });
+
+  it('still prefers a version already on the row when this delivery carries none', async () => {
+    // An earlier delivery filled in shippedVersion; this one has no
+    // milestone. The row's value must still reach the email.
+    foundRow = {
+      ...foundRow,
+      reporterEmail: 'kai@example.com',
+      shippedVersion: '0.56.3',
+      status: 'in_progress',
+    };
+    await POST(webhookRequest(ISSUE_UPDATE_SHIPPED_NO_VERSION));
+
+    expect(sendFeedbackShipped).toHaveBeenCalledWith(
+      'kai@example.com',
+      expect.objectContaining({ shippedVersion: '0.56.3' })
+    );
   });
 
   it('does NOT fire the shipped email when the row has no email at all', async () => {

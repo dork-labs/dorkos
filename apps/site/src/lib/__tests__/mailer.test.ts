@@ -132,6 +132,53 @@ describe('mailer (Resend seam)', () => {
       expect(payload.html).toMatch(/only email you about this report/i);
     });
 
+    it('sends a versionless shipped email when no version is known', async () => {
+      // The common real case: the feedback intake team has no projects and
+      // cycles disabled, so `resolveShippedVersion` never resolves anything.
+      await sendFeedbackShipped(TO, {
+        message: 'Chat stopped updating after the stream dropped.\nMore detail here.',
+        changelogUrl: 'https://dorkos.ai/docs/changelog',
+      });
+
+      expect(sendMock).toHaveBeenCalledTimes(1);
+      const payload = sendMock.mock.calls[0][0] as { to: string; subject: string; html: string };
+      expect(payload.to).toBe(TO);
+      expect(payload.subject).toBe('Your DorkOS report shipped');
+      // No dangling "in undefined"/"in v" where the version used to be.
+      expect(payload.subject).not.toMatch(/\bin\b/);
+      expect(payload.html).toContain('Good news: this shipped.');
+      expect(payload.html).not.toMatch(/undefined/);
+      // The link carries the weight the version otherwise would.
+      expect(payload.html).toContain('https://dorkos.ai/docs/changelog');
+      expect(payload.html).toContain('It went out in a recent DorkOS release.');
+      expect(payload.html).toContain('Chat stopped updating after the stream dropped.');
+      expect(payload.html).not.toContain('More detail here.');
+      expect(payload.html).toMatch(/only email you about this report/i);
+    });
+
+    it('still names the version in the subject and body when one IS known', async () => {
+      await sendFeedbackShipped(TO, {
+        message: 'Add dark mode',
+        shippedVersion: '0.56.3',
+        changelogUrl: 'https://dorkos.ai/docs/changelog',
+      });
+
+      const payload = sendMock.mock.calls[0][0] as { subject: string; html: string };
+      expect(payload.subject).toBe('Your DorkOS report shipped in v0.56.3');
+      expect(payload.html).toContain('Good news: this shipped in v0.56.3.');
+      // The versionless filler line belongs to the other variant only.
+      expect(payload.html).not.toContain('It went out in a recent DorkOS release.');
+    });
+
+    it('renders a versionless email with no link at all when none is passed', async () => {
+      await sendFeedbackShipped(TO, { message: 'Add dark mode' });
+
+      const payload = sendMock.mock.calls[0][0] as { subject: string; html: string };
+      expect(payload.subject).toBe('Your DorkOS report shipped');
+      expect(payload.html).not.toContain('<a href');
+      expect(payload.html).not.toMatch(/undefined/);
+    });
+
     it('includes the changelog link only when one is provided', async () => {
       await sendFeedbackShipped(TO, {
         message: 'Add dark mode',

@@ -1,20 +1,28 @@
 /**
- * Linear workflow state → cockpit-visible feedback status (feedback-pipeline
+ * Linear workflow state → publicly-visible feedback status (feedback-pipeline
  * Part 4, decision 260803-205035). Pure, side-effect-free — the webhook route
  * is the only caller.
  *
  * A Linear team's workflow states are free-text, per-team configurable
  * ("In Progress" can be renamed to anything), but every state also carries a
- * `type` from Linear's own fixed enum (`triage` | `backlog` | `unstarted` |
- * `started` | `completed` | `canceled`) that never changes regardless of how a
- * team relabels its states. {@link mapLinearStateToStatus} maps off `type`
- * first because it is the stable signal; the state `name` is only consulted as
- * a fallback for the rarer webhook payload shape that omits `type` (older
- * Linear webhook configurations send `state` as just `{ name }`). Either path
- * lands on the same four-plus-received cockpit vocabulary
+ * `type` that does not change when a team relabels its states.
+ * {@link mapLinearStateToStatus} maps off `type` first because it is the
+ * stable signal; the state `name` is only consulted as a fallback for the
+ * rarer webhook payload shape that omits `type` (older Linear webhook
+ * configurations send `state` as just `{ name }`).
+ *
+ * {@link TYPE_TO_STATUS} is **not** a closed transcription of that enum, and
+ * deliberately does not claim a value count: Linear has grown the enum before
+ * (`triage` and `duplicate` both postdate the original six this module was
+ * written against) and may again. It maps every type this pipeline has
+ * observed — `triage`, `backlog`, `unstarted`, `started`, `completed`,
+ * `canceled`/`cancelled`, `duplicate` — and anything unrecognized resolves
+ * `undefined` so the row's status is left alone rather than guessed at.
+ *
+ * Either path lands on the same four-plus-received public vocabulary
  * (`triaged`/`in_progress`/`shipped`/`closed`) — never a literal 1:1 mirror of
- * Linear's own state set, which is the point: the cockpit never shows Linear
- * internals.
+ * Linear's own state set, which is the point: the reporter's status page never
+ * shows Linear internals.
  *
  * @module lib/feedback/linear-status-map
  */
@@ -27,13 +35,13 @@ export interface LinearWebhookState {
 }
 
 /**
- * Cockpit-reachable statuses this mapping can produce. `received` is
+ * Publicly-reachable statuses this mapping can produce. `received` is
  * deliberately excluded — it is the row's initial state before Linear ever
  * sees it, never something a Linear state transitions back into.
  */
 type MappedStatus = Exclude<FeedbackStatus, 'received'>;
 
-/** Linear's canonical `WorkflowState.type` enum → cockpit status. Authoritative. */
+/** Linear's `WorkflowState.type` values → DorkOS status. Authoritative. */
 const TYPE_TO_STATUS: Record<string, MappedStatus> = {
   triage: 'triaged',
   backlog: 'triaged',
@@ -43,6 +51,11 @@ const TYPE_TO_STATUS: Record<string, MappedStatus> = {
   // Linear's GraphQL schema spells this both ways across API versions.
   canceled: 'closed',
   cancelled: 'closed',
+  // A duplicate is closed, not still-being-triaged. Mapped by `type` and not
+  // only by the `name` fallback below: a team that renames its "Duplicate"
+  // state loses the name match, and the reporter's public status page would
+  // then sit at "triaged" forever.
+  duplicate: 'closed',
 };
 
 /**
@@ -65,7 +78,7 @@ const NAME_TO_STATUS: Record<string, MappedStatus> = {
 };
 
 /**
- * Map a Linear webhook's issue `state` to a cockpit-visible status, or
+ * Map a Linear webhook's issue `state` to a publicly-visible status, or
  * `undefined` when the state is absent or maps to nothing (an unrecognized
  * `type` and an unrecognized `name`) — the caller's job is to leave the row's
  * status untouched in that case, not guess.

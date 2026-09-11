@@ -12,17 +12,19 @@
  *
  * On a verified `Issue` `update` event whose `data.id` matches a
  * `feedback_submission.linearIssueId`, the issue's workflow state is mapped
- * to the cockpit's four-plus-received status vocabulary
+ * to the public four-plus-received status vocabulary
  * (`lib/feedback/linear-status-map.ts`) and written onto that row. A mapped
  * status of `shipped` also best-effort captures a `shippedVersion`. The
  * "your report shipped" email fires via `sendFeedbackShipped` only on the
  * **transition into** `shipped` (the row's status before this update was
  * something else) — Linear sends an `Issue` `update` webhook for every field
  * change (label, assignee, description…), so an already-shipped issue keeps
- * generating deliveries this route must not re-notify on. A mail failure
- * never fails the webhook response, since Linear will retry a non-2xx
- * delivery and this repo's Linear issue is already the source of truth for
- * what happened.
+ * generating deliveries this route must not re-notify on. Having an address
+ * to send to is the **only** other condition: a resolved version is not
+ * required, because the feedback intake team carries none (see the send site
+ * below). A mail failure never fails the webhook response, since Linear will
+ * retry a non-2xx delivery and this repo's Linear issue is already the
+ * source of truth for what happened.
  *
  * Every other event shape (a different `type`, a non-`update` `action`, an
  * issue that isn't ours, or a state with no mapping) is accepted with a bare
@@ -39,6 +41,7 @@ import { z } from 'zod';
 import { getDb } from '@/db/client';
 import { feedbackSubmission } from '@/db/feedback-schema';
 import { env } from '@/env';
+import { resolveBaseURL } from '@/lib/auth';
 import { mapLinearStateToStatus, resolveShippedVersion } from '@/lib/feedback/linear-status-map';
 import { sendFeedbackShipped } from '@/lib/mailer';
 import { resolveNotifyEmail } from '@/lib/feedback/notify-email';
@@ -47,6 +50,14 @@ export const runtime = 'nodejs';
 
 /** Header Linear sends the HMAC-SHA256 hex signature in. */
 const SIGNATURE_HEADER = 'linear-signature';
+
+/**
+ * Path of the public release-notes page (`docs/changelog.mdx`, served by the
+ * Fumadocs `(docs)` route). Sent in every shipped email so the reporter has
+ * somewhere to read what actually changed — the only such pointer when no
+ * version could be resolved.
+ */
+const CHANGELOG_PATH = '/docs/changelog';
 
 /**
  * Loose schema for the slice of a Linear `Issue` webhook this route reads.
@@ -158,12 +169,22 @@ export async function POST(request: Request): Promise<Response> {
 
   if (status === 'shipped' && row.status !== 'shipped') {
     const to = resolveNotifyEmail(row);
-    const version = shippedVersion ?? row.shippedVersion;
-    if (to && version) {
+    // Gated on an address and nothing else. A version is NOT required: the
+    // feedback intake team has no projects and cycles turned off, so
+    // `resolveShippedVersion` resolves undefined for every feedback issue,
+    // and gating on it meant moving a report to Done flipped its public
+    // status to "shipped" and emailed nobody. Two reporters hit that before
+    // it was caught. sendFeedbackShipped renders a versionless variant.
+    if (to) {
+      const version = shippedVersion ?? row.shippedVersion ?? undefined;
       // Never awaited-through to the response's success/fail — sendFeedbackShipped
       // itself catches and logs, so a Resend outage never turns this 200 into a
       // 500 (and never causes Linear to retry a delivery that already landed).
-      await sendFeedbackShipped(to, { message: row.message, shippedVersion: version });
+      await sendFeedbackShipped(to, {
+        message: row.message,
+        shippedVersion: version,
+        changelogUrl: `${resolveBaseURL()}${CHANGELOG_PATH}`,
+      });
     }
   }
 

@@ -117,9 +117,22 @@ interface FeedbackShippedDetails {
    * this from a milestone/cycle *name* rather than an actual version, that
    * name verbatim. Rendered through {@link formatShippedVersionLabel}, which
    * only prefixes `v` when the value looks like a bare version.
+   *
+   * **Optional, and absent for most real reports.** `resolveShippedVersion`
+   * can only read a Linear project-milestone or cycle name, and the feedback
+   * intake team has neither (no projects, cycles disabled), so no feedback
+   * issue carries a version at all. Requiring one here is what silently
+   * swallowed the shipped email for every reporter — the webhook route gated
+   * the send on it. {@link sendFeedbackShipped} renders a versionless
+   * variant when this is absent.
    */
-  shippedVersion: string;
-  /** Optional link to the release notes covering this version. */
+  shippedVersion?: string;
+  /**
+   * Link to the release notes. In the versionless variant this carries the
+   * weight the version otherwise would, which is why the webhook route
+   * always passes it; optional only so a caller with no public URL to offer
+   * can leave it out.
+   */
   changelogUrl?: string;
 }
 
@@ -172,24 +185,45 @@ export async function sendFeedbackReceipt(to: string, trackingUrl: string): Prom
  * reason: a mail failure must never fail the webhook delivery Linear is
  * waiting on.
  *
+ * Renders one of **two variants**, because `shippedVersion` is absent for
+ * most real reports (see {@link FeedbackShippedDetails}). With a version,
+ * the version itself tells the reporter where their fix landed and the
+ * release-notes link is a plain extra. Without one, that link is the only
+ * pointer to what shipped, so the copy leans on it instead.
+ *
  * @param to - The reporter's email.
  * @param details - The reporter's original message, the version it shipped
- *   in, and an optional link to the release notes.
+ *   in if one is known, and a link to the release notes.
  */
 export async function sendFeedbackShipped(
   to: string,
   { message, shippedVersion, changelogUrl }: FeedbackShippedDetails
 ): Promise<void> {
-  const versionLabel = formatShippedVersionLabel(shippedVersion);
+  const versionLabel = shippedVersion ? formatShippedVersionLabel(shippedVersion) : undefined;
+  const changelogLink = changelogUrl ? `<a href="${changelogUrl}">See what changed</a>` : '';
+
+  let releaseLine: string;
+  if (versionLabel) {
+    releaseLine = changelogLink ? `<p>${changelogLink}</p>` : '';
+  } else {
+    releaseLine = changelogLink
+      ? `<p>It went out in a recent DorkOS release. ${changelogLink}</p>`
+      : '<p>It went out in a recent DorkOS release.</p>';
+  }
+
   try {
     await getResend().emails.send({
       from: env.RESEND_FROM,
       to,
-      subject: `Your DorkOS report shipped in ${versionLabel}`,
+      subject: versionLabel
+        ? `Your DorkOS report shipped in ${versionLabel}`
+        : 'Your DorkOS report shipped',
       html: [
-        `<p>Good news: this shipped in ${versionLabel}.</p>`,
+        versionLabel
+          ? `<p>Good news: this shipped in ${versionLabel}.</p>`
+          : '<p>Good news: this shipped.</p>',
         `<p>"${quoteFirstLine(message)}"</p>`,
-        changelogUrl ? `<p><a href="${changelogUrl}">See what changed</a></p>` : '',
+        releaseLine,
         "<p>We'll only email you about this report.</p>",
       ].join(''),
     });
