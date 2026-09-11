@@ -253,7 +253,7 @@ const slackRoutesToRelayAdapterFirst: Oracle = async (): Promise<OracleResult> =
  */
 export const connectorGmailCase: EvalCase = {
   id: 'connector-gmail',
-  title: 'Connect to my Gmail — the gateway path with two private account bindings',
+  title: 'Gmail interface contract — structural only, no chat or model',
   prompt: '',
   runtimeTier: 'test-mode',
   costClass: 'free',

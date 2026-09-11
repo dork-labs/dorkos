@@ -257,7 +257,7 @@ export function registerEventNotificationTests(harness: EventBrowserHarness): vo
       ).toBeVisible();
     });
 
-    test('holds a real agent MCP request for one exact owner grant or denial', async ({
+    test('CN-04/CN-06: holds a real agent MCP request for one exact owner grant or denial', async ({
       page,
       request,
     }, testInfo) => {
