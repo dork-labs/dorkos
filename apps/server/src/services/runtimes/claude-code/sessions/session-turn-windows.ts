@@ -14,24 +14,53 @@
  * ## Correlation is by id, never by position
  *
  * Every dispatched message is stamped with its server-minted `messageId` as the
- * SDK message's `uuid` (`HeldUserPrompt.push`), and the SDK echoes it back
- * on the `result` as `user_message_uuid`. Matching on that id is the whole
- * design: the CLI coalesces a dequeued BATCH into ONE assistant turn answered by
- * ONE `result`, so "the nth result answers the nth message" is false the first
- * time two rows are dequeued together. Text matching was rejected for the same
- * ambiguity when the room runner needed turn identity; it is not coming back.
+ * SDK message's `uuid` (`HeldUserPrompt.push`), and the SDK echoes it back on
+ * the `result`. Matching on that id is the whole design: the CLI coalesces a
+ * dequeued BATCH into ONE assistant turn answered by ONE `result`, so "the nth
+ * result answers the nth message" is false the first time two rows are dequeued
+ * together. Text matching was rejected for the same ambiguity when the room
+ * runner needed turn identity; it is not coming back.
  *
  * A window therefore carries a SET of ids — every message of the batch that
  * opened it — and the correlated `result` closes all of them at once.
  *
+ * ## The SDK now NAMES the whole set, and this module reads it
+ *
+ * `user_message_uuids` (claude-agent-sdk 0.3.259) is every user message whose
+ * prompt the turn consumed, in consumption order — the batch the CLI merged,
+ * plus anything it folded in mid-turn. The singular `user_message_uuid` names
+ * only the LAST of them, so for years this module had to INFER the rest: it
+ * closed the whole open window on one id and left the batch's other ids sitting
+ * in {@link SessionTurnWindows.awaitingResult} as though the process still owed
+ * an answer for them. {@link readAnsweredIds} reads the plural list when it is
+ * there and falls back to the singular when it is not (older producers, and the
+ * delivery-failure and zeroed results the SDK documents as carrying neither).
+ *
+ * Three things get more honest with the real list, and none of them is cosmetic:
+ *
+ * - **A coalesced batch retires whole.** Every named id leaves `awaitingResult`,
+ *   so a spent id can never later close some FUTURE window through the
+ *   `sentEarlier` branch below — the one shape that turned a correct correlation
+ *   into a wrong one.
+ * - **A steer answered in the same turn stops costing half a second.** The
+ *   DOR-1314 grace exists because a `result` naming only the dispatch left DorkOS
+ *   unable to tell whether the steer had been folded in or queued for its own
+ *   turn. When the list names both, it has been folded in, there is nothing
+ *   outstanding, and the window closes at once.
+ * - **Row 3 mostly stops happening.** A result that carries an earlier window's
+ *   steer AND this window's dispatch now matches row 1 on the dispatch, which is
+ *   what it always meant.
+ *
  * ## Four kinds of `result`, and why only one of them opens a window of its own
  *
- * | The `result` carries                        | What it means                              | What happens                                                        |
- * | ------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------- |
- * | a `user_message_uuid` the open window holds | it answers this dispatch                   | the window closes — one `turn_end`                                   |
- * | no `user_message_uuid` at all               | the SDK does not carry one here            | it terminates whatever window is open, else a runtime window         |
- * | a `user_message_uuid` an EARLIER window sent | the CLI carried that message into this turn | the OPEN window closes on it (DOR-1294)                             |
- * | a `user_message_uuid` this session never sent | the CLI answered something nobody sent    | a synthetic `origin: 'runtime'` window; the open window is UNTOUCHED |
+ * "Names" below is "carries, in `user_message_uuids` or the singular fallback".
+ *
+ * | The `result` names                         | What it means                              | What happens                                                        |
+ * | ------------------------------------------ | ------------------------------------------ | ------------------------------------------------------------------- |
+ * | any id the open window holds               | it answers this dispatch                   | the window closes — one `turn_end`                                   |
+ * | no id at all                               | the SDK does not carry one here            | it terminates whatever window is open, else a runtime window         |
+ * | only ids an EARLIER window sent            | the CLI carried those messages into this turn | the OPEN window closes on it (DOR-1294)                            |
+ * | only ids this session never sent           | the CLI answered something nobody sent    | a synthetic `origin: 'runtime'` window; the open window is UNTOUCHED |
  *
  * The second row is reality winning over the spec's phrasing. Treating an
  * unnamed result as uncorrelated would strand the open window forever, which is
@@ -49,9 +78,10 @@
  * turn now mostly lands on row 1 or row 3 instead: the result NAMES the dispatch
  * it failed, and the window closes on that name rather than on "something ended".
  * That is the correlation this table always wanted. Row 2 stays because a result
- * may still carry no id — and because {@link readAnsweredId} reads the field off
- * the message rather than narrowing on the branch that declares it, which is why
- * a flipped vendor invariant cost this module a paragraph and not an outage.
+ * may still carry no id — and because {@link readAnsweredIds} reads the fields
+ * off the message rather than narrowing on the branch that declares them, which
+ * is why a flipped vendor invariant cost this module a paragraph and not an
+ * outage.
  *
  * ## A message id outlives the window that sent it (DOR-1294)
  *
@@ -74,6 +104,14 @@
  * so it closes it. The distinction against the fourth row is real and worth
  * keeping: an id nobody ever sent is a continuation the CLI started by itself,
  * which genuinely is a turn of its own.
+ *
+ * The ledger is NOT retired by `user_message_uuids`, and this is the case that
+ * says why. The plural list names every message THAT turn consumed — the queued
+ * steer and the dispatch it coalesced with — so the result above now names the
+ * open window too and lands on row 1. But it names them only when the CLI folded
+ * them into one turn; a CLI that runs the steer as a turn entirely of its own
+ * produces a result naming the steer ALONE, and this is still the only thing
+ * that can tell that apart from a turn nobody asked for.
  *
  * ## A steered window waits to see whether the steer got a turn of its own
  *
@@ -416,22 +454,90 @@ function createRecord(ids: string[], origin: TurnOrigin): WindowRecord {
 }
 
 /**
- * The id an SDK `result` says it answers, or `undefined` when it carries none.
+ * Every id an SDK `result` says it answers, or an empty list when it names none.
+ *
+ * **The UNION of both fields, never one instead of the other.**
+ * `user_message_uuids` (claude-agent-sdk 0.3.259) is the full set a coalesced
+ * turn consumed and it LEADS, because its order is the SDK's own consumption
+ * order and this is the only field that can carry more than one id. The singular
+ * `user_message_uuid` is then appended if the list did not already contain it.
+ *
+ * Appending rather than choosing is the whole point. The SDK documents the
+ * plural field as "always contains user_message_uuid", so on a healthy producer
+ * the append is a no-op and the union costs nothing. What it buys is the
+ * unhealthy one: a producer whose two fields DISAGREE would, under a
+ * prefer-the-list rule, have its singular id silently discarded — and an id this
+ * layer drops is an id that cannot close the window it belongs to, which is
+ * exactly the stranding DOR-1294 was. A spurious extra id is the cheaper
+ * failure by a wide margin: it correlates nothing (no window holds it, nothing
+ * sent it) and lands in the runtime-window branch, where it is said out loud.
+ *
+ * An empty or absent list therefore needs no special case — it simply
+ * contributes nothing, and the singular carries the result on its own. That is
+ * the fallback the SDK prescribes for delivery-failure results, zeroed results,
+ * and older producers.
  *
  * Read defensively off the message rather than by narrowing to the branch that
- * declares the field, and keep it that way. Until claude-agent-sdk 0.3.268 only
+ * declares the fields, and keep it that way. Until claude-agent-sdk 0.3.268 only
  * `SDKResultSuccess` declared `user_message_uuid`; at 0.3.268 `SDKResultError`
  * declares it too. Narrowing would have made that vendor change an outage here
- * instead of a comment, and nothing says the field cannot move again.
+ * instead of a comment, and nothing says the fields cannot move again.
  *
- * This still reads the SINGULAR field. 0.3.259 added `user_message_uuids`, the
- * full set of messages a coalesced turn answered — the thing rows 2 and 3 infer
- * today — and adopting it is deliberately its own change, not a side effect of a
- * version bump.
+ * @param message - The `result` being correlated
  */
-function readAnsweredId(message: SDKMessage): string | undefined {
-  const named = (message as { user_message_uuid?: unknown }).user_message_uuid;
-  return typeof named === 'string' && named.length > 0 ? named : undefined;
+function readAnsweredIds(message: SDKMessage): readonly string[] {
+  const ids: string[] = [];
+  const add = (id: unknown): void => {
+    if (typeof id !== 'string' || id.length === 0 || ids.includes(id)) return;
+    ids.push(id);
+  };
+  const all = (message as { user_message_uuids?: unknown }).user_message_uuids;
+  if (Array.isArray(all)) for (const id of all) add(id);
+  add((message as { user_message_uuid?: unknown }).user_message_uuid);
+  return ids;
+}
+
+/**
+ * What a `result` says about a turn DorkOS did not ask for — the fields that
+ * explain a synthetic `origin: 'runtime'` window instead of leaving it a
+ * mystery (claude-agent-sdk 0.3.268).
+ *
+ * All three are diagnostics. None of them changes which window closes, and
+ * `resultIndex` in particular must never become an ordinal this module counts:
+ * correlation here is by id and never by position, which is the one rule the
+ * module doc puts above the others.
+ *
+ * @param message - The `result` about to open or close a window
+ */
+function readTurnProvenance(message: SDKMessage): {
+  /**
+   * Set ONLY on the automatic re-run of a turn a host restart interrupted, and
+   * carrying why (`host_draining`, `checkpoint_restore`, …, else
+   * `'interrupted_turn'`). A `result` carrying this answered a turn nobody in
+   * this session asked for a second time, which is precisely the case the
+   * runtime window exists for — so when it is present, the window is explained
+   * rather than merely reported.
+   */
+  resumeReason?: string;
+  /** The slash command a turn ran without ever entering the model loop. */
+  localCommand?: string;
+  /** This result's delivery sequence within the run; a gap means one was lost. */
+  resultIndex?: number;
+} {
+  const result = message as {
+    resume_reason?: unknown;
+    local_command?: unknown;
+    result_index?: unknown;
+  };
+  return {
+    ...(typeof result.resume_reason === 'string' && result.resume_reason.length > 0
+      ? { resumeReason: result.resume_reason }
+      : {}),
+    ...(typeof result.local_command === 'string' && result.local_command.length > 0
+      ? { localCommand: result.local_command }
+      : {}),
+    ...(typeof result.result_index === 'number' ? { resultIndex: result.result_index } : {}),
+  };
 }
 
 /**
@@ -448,7 +554,7 @@ function readAnsweredId(message: SDKMessage): string | undefined {
  * window's close refetches. Nothing about the turn's honesty rides on it, so
  * the cheaper question is the right one HERE and would be the wrong one there.
  *
- * Read defensively, exactly as {@link readAnsweredId} is, and for the same
+ * Read defensively, exactly as {@link readAnsweredIds} is, and for the same
  * reason: the field is not declared on every `result` member.
  *
  * @param message - The `result` closing a window
@@ -546,6 +652,54 @@ function stoppedResult(crash: PumpCrash): SDKMessage {
  */
 function beginsATurn(message: SDKMessage): boolean {
   return message.type === 'assistant' || message.type === 'stream_event';
+}
+
+/**
+ * Whether this frame proves the CLI has STARTED the turn a steer is waiting on,
+ * even though it has not spoken a word of it yet (claude-agent-sdk 0.3.260).
+ *
+ * A `system/thinking_tokens` frame is the live thinking estimate the SDK digests
+ * out of the redacted-thinking phase, where the API streams only pings — so it
+ * is the ONLY thing a turn emits until thinking ends. Since 0.3.260 it carries
+ * the `user_message_uuid` of the message that triggered its turn, which is the
+ * answer {@link beginsATurn} could not get: a thinking frame naming a steer this
+ * window is still waiting on is that steer's turn, already running.
+ *
+ * Without it, a steer answered by a long thinking turn is charged to
+ * {@link CONTINUATION_CAP_MS} — five seconds is nothing next to extended
+ * thinking — and every word of that turn lands outside any window, which is
+ * exactly the DOR-1314 loss. The frame counts as proof of LIFE either way
+ * ({@link onMessage} re-arms on any non-content frame); this is what makes it
+ * proof the continuation BEGAN.
+ *
+ * Narrow on purpose: only a steered id this window has not seen answered. A
+ * thinking frame naming the dispatch that already ended belongs to the turn that
+ * just finished and proves nothing about a continuation.
+ *
+ * @param record - The window waiting on a steer
+ * @param message - The message the process just produced
+ */
+function provesSteeredTurnBegan(record: WindowRecord, message: SDKMessage): boolean {
+  if (message.type !== 'system') return false;
+  if ((message as { subtype?: unknown }).subtype !== 'thinking_tokens') return false;
+  const named = (message as { user_message_uuid?: unknown }).user_message_uuid;
+  return typeof named === 'string' && record.steered.has(named);
+}
+
+/**
+ * Whether a `result` names any id this window is answering.
+ *
+ * Any, not all: the SDK's list is every message the turn CONSUMED, and a turn
+ * that folded a queued message in mid-turn names it beside the dispatch — so
+ * "the whole list matches" would be a stricter test than the CLI's own
+ * behaviour ever satisfies. The SDK states the consumer rule outright: find
+ * your own uuid anywhere in the list.
+ *
+ * @param record - The open window
+ * @param answered - The ids the `result` named
+ */
+function namesAny(record: WindowRecord, answered: readonly string[]): boolean {
+  return answered.some((id) => record.ids.includes(id));
 }
 
 /**
@@ -659,12 +813,13 @@ export class SessionTurnWindows {
    *
    * A steer pushes a second user message into the running turn's input stream,
    * and the CLI coalesces it into the SAME assistant turn — answered by ONE
-   * `result` carrying ONE `user_message_uuid`, which may be the steer's rather
-   * than the opening message's. Unless the open window holds the steer's id
-   * too, that `result` would be read as answering a message this session never
-   * sent (see {@link onResult}), opening a synthetic runtime turn beside the
-   * real one and stranding the real one open. Adding the id is what keeps a
-   * steered turn to exactly one `turn_start` and one `turn_end`.
+   * `result`, which names the steer beside the opening message (and, on a
+   * producer too old for `user_message_uuids`, may name the steer INSTEAD of it).
+   * Unless the open window holds the steer's id too, that `result` would be read
+   * as answering a message this session never sent (see {@link onResult}),
+   * opening a synthetic runtime turn beside the real one and stranding the real
+   * one open. Adding the id is what keeps a steered turn to exactly one
+   * `turn_start` and one `turn_end`.
    *
    * The id joins the window's live `ids` array — the same array
    * {@link TurnWindow.ids} exposes — so a `result` that arrives after this is
@@ -900,9 +1055,17 @@ export class SessionTurnWindows {
       // the cap rather than adding one more grace is deliberate: neither of
       // those frames is followed by anything until the continuation starts, so
       // another 500ms would have missed it just the same.
+      //
+      // A `thinking_tokens` frame naming the steer is the third answer, and it
+      // is the SPEAKING one: the continuation has begun, it is simply thinking
+      // before it says anything (see {@link provesSteeredTurnBegan}). Reading it
+      // as mere chatter would put a five-second cap on a thinking turn.
       if (this.current.grace !== undefined) {
-        if (beginsATurn(message)) this.stopGrace(this.current);
-        else this.armGrace(this.current, 'until-cap');
+        if (beginsATurn(message) || provesSteeredTurnBegan(this.current, message)) {
+          this.stopGrace(this.current);
+        } else {
+          this.armGrace(this.current, 'until-cap');
+        }
       }
       this.current.channel.push(message);
       return;
@@ -957,24 +1120,41 @@ export class SessionTurnWindows {
     this.opts.onWindowClose?.(record.window);
   }
 
-  /** Route a `result` by the id it answers. See the module doc's table. */
+  /** Route a `result` by the ids it answers. See the module doc's table. */
   private onResult(result: SDKMessage): void {
-    const answered = readAnsweredId(result);
+    const answered = readAnsweredIds(result);
+    const provenance = readTurnProvenance(result);
     const record = this.current;
-    // Answered once, whichever window it closes: an id the process has now
-    // spoken for cannot correlate anything later.
-    const sentEarlier = answered !== undefined && this.awaitingResult.delete(answered);
-    if (record !== undefined && (answered === undefined || record.ids.includes(answered))) {
-      if (answered !== undefined) record.steered.delete(answered);
-      // A steer this window pushed that the CLI has NOT named yet. The CLI
-      // queues a message pushed at the tail of a turn and answers it in the
-      // NEXT turn it runs, so this `result` may not be the end of what the
-      // person is owed — and closing on it strands that whole second turn
-      // outside any window, where `PersistentDispatch` drains it and the
-      // person never sees a word of it (DOR-1314). So the close waits, briefly,
-      // to find out. An UNNAMED result is exempt: it is the error shape, and a
-      // failed turn is terminal whatever is outstanding.
-      if (answered !== undefined && record.steered.size > 0) {
+    // Answered once, whichever window they close, and EVERY one of them: an id
+    // the process has now spoken for cannot correlate anything later. Retiring
+    // only the singular id left a coalesced batch's other ids filed as
+    // unanswered, where a stray later `result` naming one could close a window
+    // it had nothing to do with through the `sentEarlier` branch below.
+    let sentEarlier = false;
+    for (const id of answered) {
+      if (this.awaitingResult.delete(id)) sentEarlier = true;
+    }
+    if (record !== undefined && (answered.length === 0 || namesAny(record, answered))) {
+      for (const id of answered) record.steered.delete(id);
+      // A steer this window pushed that the CLI has NOT named. The CLI queues a
+      // message pushed at the tail of a turn and answers it in the NEXT turn it
+      // runs, so this `result` may not be the end of what the person is owed —
+      // and closing on it strands that whole second turn outside any window,
+      // where `PersistentDispatch` drains it and the person never sees a word of
+      // it (DOR-1314). So the close waits, briefly, to find out.
+      //
+      // The plural list is what usually makes this question unnecessary now: a
+      // steer the CLI folded into this turn is NAMED on this result, the delete
+      // above clears it, and the window closes at once instead of spending a
+      // grace finding out. What still reaches the wait is the case the wait was
+      // built for — a steer the CLI kept for a turn of its own, which this
+      // result does not name.
+      //
+      // An UNNAMED result never waits, and that is row 2 rather than an
+      // exemption: it names no dispatch at all, so there is nothing here to
+      // correlate a continuation TO. Row 2's whole job is to terminate whatever
+      // window is open, and it does that job the same way it always did.
+      if (answered.length > 0 && record.steered.size > 0) {
         this.holdForContinuation(record, result);
         return;
       }
@@ -984,30 +1164,48 @@ export class SessionTurnWindows {
       return;
     }
     if (record !== undefined && sentEarlier) {
-      // A message this session really did send, in a window that has already
-      // closed — so the CLI held it back and answered it inside the turn it is
-      // running NOW, which is the turn this open window claims (DOR-1294).
+      // Messages this session really did send, in a window that has already
+      // closed — so the CLI held them back and answered them inside the turn it
+      // is running NOW, which is the turn this open window claims (DOR-1294).
       // Closing on it is what keeps the window from waiting for a `result` the
       // CLI has already spent.
-      logger.warn('[SessionTurnWindows] a result answered a message an earlier window sent', {
+      logger.warn('[SessionTurnWindows] a result answered messages an earlier window sent', {
         sessionId: this.opts.sessionId,
         answered,
         open: record.ids,
+        ...provenance,
       });
       this.current = undefined;
       this.finalizeGrace(record);
       this.finish(record, result);
       return;
     }
+    // Nobody asked for this one. It gets a window of its own, tagged `runtime`,
+    // carrying whatever the process said on its way here.
+    //
+    // `resume_reason` is the SDK EXPLAINING one of these rather than leaving it
+    // unattributed: it is set only on the automatic re-run of a turn a host
+    // restart interrupted, so the turn had a reason to exist and DorkOS simply
+    // did not ask for this attempt. A re-run is not the "the CLI answered
+    // something nobody sent" surprise the warning below is for, so it is said at
+    // `info` and by name. `local_command` is the other explained shape: a slash
+    // command the CLI ran without ever entering the model loop.
     if (record !== undefined) {
-      logger.warn('[SessionTurnWindows] a result answered a message this session never sent', {
+      const context = {
         sessionId: this.opts.sessionId,
         answered,
         open: record.ids,
-      });
+        ...provenance,
+      };
+      if (provenance.resumeReason !== undefined || provenance.localCommand !== undefined) {
+        logger.info('[SessionTurnWindows] a result closed a turn DorkOS did not ask for', context);
+      } else {
+        logger.warn(
+          '[SessionTurnWindows] a result answered a message this session never sent',
+          context
+        );
+      }
     }
-    // Nobody asked for this one. It gets a window of its own, tagged `runtime`,
-    // carrying whatever the process said on its way here.
     const runtime = createRecord([], 'runtime');
     this.flushHeld(runtime);
     this.opts.onWindowOpen?.(runtime.window);

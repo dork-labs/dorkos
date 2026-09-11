@@ -267,6 +267,14 @@ export async function* mapSystemEvent(
     // message). We render thinking from `thinking_delta` text instead — and force
     // `display: 'summarized'` so that text actually streams (see thinking-config.ts) —
     // so these carry no UI value here. Swallow them to keep the catch-all log quiet.
+    //
+    // Swallowed here, but NOT ignored upstream. Since claude-agent-sdk 0.3.260 the
+    // frame carries the `user_message_uuid` of the message whose turn is thinking,
+    // and `sessions/session-turn-windows.ts` reads it as proof that a steered
+    // message's turn has STARTED before it has said a word — the one signal that
+    // keeps a long thinking turn inside the window the person is watching
+    // (`provesSteeredTurnBegan`). Attribution happens where turns are cut, not here:
+    // this mapper emits no event for the frame, so it has no turn to attribute it to.
     if (message.subtype === 'thinking_tokens') {
       return;
     }
