@@ -59,13 +59,25 @@ export interface StoppedTurnEvidence {
  *   case: an API refusal aborts the main turn controller directly, so a
  *   shape-only gate would drop a real failure's error frame and tell the
  *   operator they stopped a turn they never touched (DOR-1320 review, from the
- *   shipped `claude-agent-sdk` 0.3.224 bundle). Re-extracted from that same
- *   binary for DOR-1684 and unchanged: the CLI's abort predicate, its
- *   nine-cause collapse, the two-member suppression set that puts
- *   `refusal-fallback-edit` and DorkOS's own `interrupt` in one bucket, and the
- *   `result` shapes an abort closes with are all quoted in
+ *   shipped `claude-agent-sdk` 0.3.224 bundle). The CLI's abort predicate, its
+ *   cause collapse, the suppression set that puts `refusal-fallback-edit` and
+ *   DorkOS's own `interrupt` in one bucket, and the `result` shapes an abort
+ *   closes with are all quoted in
  *   `research/20260903_claude-cli-aborted-refusal-shapes.md`, with the recipe
  *   for re-running it after an SDK bump.
+ *
+ *   **Re-extracted from the 0.3.268 bundle (2026-09-11), and the suppression set
+ *   GREW.** The shape predicate is byte-identical, and so is everything DorkOS
+ *   reads. What moved is behind it: a new abort cause `turn-abort` collapses to
+ *   the same `interrupt` vocabulary as DorkOS's own `query.interrupt()`, and the
+ *   suppression set is now three members — `interrupt`, `turn-abort`,
+ *   `refusal-fallback-edit` — where it was two. `turn-abort` is what 0.3.246's
+ *   `perTaskStopAffordance` raises, so it is a stop DorkOS may not have asked
+ *   for. **No change is needed here, and that is the point**: this predicate ANDs
+ *   shape with DorkOS's OWN stop record, so a third cause wearing the same
+ *   terminal reason cannot buy a suppressed error frame. A shape-only gate would
+ *   have silently gained a new way to tell someone they stopped a turn they never
+ *   touched.
  *
  * When both hold the error frame is suppressed and the turn settles on its
  * terminal reason, which the projector already reads as `interrupted`. Nothing

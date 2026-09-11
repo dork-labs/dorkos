@@ -32,6 +32,17 @@ import type { Logger } from '@dorkos/shared/logger';
  * Shape of a Claude Agent SDK `options.plugins` entry. Matches the SDK's
  * `{ type: 'local', path }` discriminated union variant; remote plugins
  * are intentionally not used by DorkOS because we own the install.
+ *
+ * **This is a hand-mirror of `SdkPluginConfig`, and the two now differ.** At
+ * 0.3.268 the SDK's version carries an optional third field,
+ * `skipMcpDiscovery?: boolean` — "load this plugin's skills, hooks, agents and
+ * commands, but do not read its `.mcp.json`". Every value built here is still
+ * assignable to `options.plugins`, so nothing breaks; this is the first time the
+ * shapes have diverged at all, which is exactly what a hand-mirror's note exists
+ * to catch. It is deliberately NOT mirrored yet: the field draws the same line
+ * ADR-0239 does, between the install half DorkOS owns and the runtime half the
+ * SDK owns, and choosing a side of it is a decision about DorkOS's MCP surface
+ * rather than a field to copy across on a version bump.
  */
 export interface ClaudeAgentSdkPlugin {
   type: 'local';

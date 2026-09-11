@@ -9,7 +9,10 @@
       "abstraction_boundary": "AgentRuntime interface",
       "related_adrs": ["0089", "0143", "0239", "0240"],
       "upgrade_notes": [
-        "SDK 0.2.113+ ships a native binary and no longer bundles cli.js: CLI path resolution (sdk-utils.ts) and onboarding assumptions are version-sensitive; verify resolveClaudeCliPath behavior on any bump crossing that line."
+        "SDK 0.2.113+ ships a native binary and no longer bundles cli.js: CLI path resolution (sdk-utils.ts) and onboarding assumptions are version-sensitive; verify resolveClaudeCliPath behavior on any bump crossing that line.",
+        "The pin lives in SEVEN places and they must all move in one commit: root package.json pnpm.overrides (the only one that actually binds while an override exists), apps/server, apps/desktop and packages/cli dependencies, the two apps/desktop optionalDependencies (-darwin-arm64, -win32-x64), and CLAUDE_SDK_VERSION in services/runtimes/claude-code/tooling/provision.ts. scripts/__tests__/dependabot-lockstep-families.test.ts guards the manifest half; provision.ts's own test guards the seventh.",
+        "Never cite a line number in sdk.d.ts. It grew 7429 -> 8978 lines in the 0.3.224 -> 0.3.268 range alone, and every line citation in the codebase pointed at unrelated text afterwards. Cite the symbol (SDKUserMessage.shouldQuery), and in the minified bundle cite the string literal, never the symbol.",
+        "An in-session tool's input schema must contain no z.record() and no z.json() at any depth. SDK 0.3.257+ converts tool schemas through the installed zod's own processor with a context it builds itself, and zod 4.5.3+ record handling dereferences a field that context lacks: one offending schema throws inside tools/list and the model is handed ZERO DorkOS tools, silently. See mcp-tools/tool-exposure.ts. Re-test the day either vendor fixes it."
       ],
       "changelog_sources": [
         {
@@ -32,19 +35,36 @@
         }
       ],
       "sdk_surface_map": {
-        "query()": "messaging/message-sender.ts",
-        "SDKMessage": "sdk/sdk-event-mapper.ts",
-        "Options": "messaging/message-sender.ts",
+        "query()": "claude-code-runtime.ts, messaging/message-sender.ts, messaging/runtime-cache.ts, sessions/pump-launch.ts",
+        "SDKMessage": "14 files: media-capture.ts, messaging/{message-sender,phantom-cancellation,turn-liveness}.ts, sdk/sdk-event-mapper.ts, sdk/event-mappers/{message,result,stream,system}-event-mapper.ts, sessions/{persistent-dispatch,pump-turn-stream,session-pump-contract,session-pump,session-turn-windows}.ts",
+        "Query": "9 files: agent-types.ts, messaging/{launch-probes,runtime-cache}.ts, sdk/{context-usage,subscription-usage}.ts, sessions/{persistent-dispatch,pump-launch,session-pump-contract,session-store}.ts",
+        "Options": "messaging/launch-resolver.ts, sessions/launch-fingerprint.ts, sessions/pump-launch.ts",
+        "McpServerConfig": "claude-code-runtime.ts, mcp-server-config.ts, messaging/message-sender-shared.ts, sessions/launch-fingerprint.ts",
+        "McpServerStatus": "messaging/launch-probes.ts, messaging/message-sender-shared.ts",
+        "PermissionUpdate": "messaging/{always-allow-scope,interaction-wait,interactive-handlers}.ts, sessions/session-store.ts",
+        "PermissionUpdateDestination": "messaging/always-allow-scope.ts, sessions/session-store.ts",
+        "PermissionMode": "sessions/launch-fingerprint.ts",
+        "PermissionResult": "messaging/interactive-handlers.ts",
+        "ElicitationRequest, ElicitationResult": "messaging/interaction-wait.ts, messaging/interactive-handlers.ts",
+        "EffortLevel, ThinkingConfig": "messaging/thinking-config.ts",
+        "ModelInfo": "messaging/runtime-cache.ts",
+        "SdkPluginConfig": "sessions/launch-fingerprint.ts",
+        "SpawnOptions, SpawnedProcess": "sessions/tracked-spawn.ts",
+        "SDKControlGetContextUsageResponse": "sdk/context-usage.ts",
+        "SDKControlGetUsageResponse": "sdk/subscription-usage.ts",
+        "getSessionInfo()": "sessions/transcript-reader.ts",
         "renameSession()": "claude-code-runtime.ts",
         "forkSession()": "sessions/session-store.ts",
-        "McpServerConfig": "mcp-server-config.ts, claude-code-runtime.ts, messaging/message-sender.ts",
-        "tool(), createSdkMcpServer()": "mcp-tools/*.ts (13 files — the largest SDK surface in the codebase)"
+        "tool()": "mcp-tools/*.ts (13 files \u2014 the largest SDK surface in the codebase)",
+        "createSdkMcpServer()": "mcp-tools/index.ts",
+        "$comment": "25 distinct symbols across 55 non-test files, re-derived by parsing every `import \u2026 from '@anthropic-ai/claude-agent-sdk'` on the 0.3.268 bump (2026-09-11). Paths are relative to codebase_root."
       },
       "non_import_couplings": [
-        "sessions/project-slug.ts hand-mirrors the SDK's session-slug hash algorithm (incl. the 200-char cap) with no import — grep/ESLint/surface-map all miss it; re-diff the sdk.mjs hash body on every bump",
-        "plugin-activation.ts hand-mirrors the Options plugin shape without importing it",
-        "sdk-utils.ts resolveClaudeCliPath() resolves the SDK's platform optional-dep packages by name (no SDK import); version-sensitive since the 0.2.113 native-binary split",
-        "services/mesh/mcp-revocation.ts (outside the adapter dir) reasons about SDK-internal MCP connect timing with a fixture-pinned test that passes even when stale — re-observe on every bump"
+        "sessions/project-slug.ts hand-mirrors the SDK's session-slug hash algorithm (incl. the 200-char cap) with no import \u2014 grep/ESLint/surface-map all miss it; re-diff the sdk.mjs hash body on every bump, by STRING not by minified symbol (every symbol it has ever cited was renamed by the next release). Unchanged at 0.3.268.",
+        "messaging/plugin-activation.ts hand-mirrors the Options plugin shape without importing it. The two DIVERGED at 0.3.268: SdkPluginConfig gained an optional skipMcpDiscovery the mirror deliberately does not carry. Still assignable, so nothing breaks \u2014 but re-read both shapes on every bump.",
+        "sdk/sdk-utils.ts resolveClaudeCliPath() resolves the SDK's platform optional-dep packages by name (no SDK import); version-sensitive since the 0.2.113 native-binary split. Eight published variants at 0.3.268, unchanged, and none of them -android.",
+        "services/mesh/mcp-revocation.ts (outside the adapter dir) reasons about SDK-internal MCP connect timing with a fixture-pinned test that passes even when stale \u2014 re-observe on every bump. Re-derived statically AND re-run live at 0.3.268 (second fixture committed beside the first).",
+        "sdk/sdk-error-mapping.ts reasons about the CLI's own abort predicate \u2014 its cause collapse and its suppression set \u2014 read out of the shipped binary and quoted in research/20260903_claude-cli-aborted-refusal-shapes.md, which carries the recipe. No import, no grep hit, no failing test. Re-run at 0.3.268: the suppression set GREW to three members and a new `turn-abort` cause collapses into `interrupt`."
       ]
     },
     "@openai/codex-sdk": {

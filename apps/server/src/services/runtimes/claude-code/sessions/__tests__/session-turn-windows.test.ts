@@ -55,8 +55,13 @@ function resultMessage(answers?: string): SDKMessage {
 }
 
 /**
- * The shape `SDKResultError` really has: no `user_message_uuid` field at all.
- * Every failed turn arrives looking like this.
+ * A `result` that names no message at all.
+ *
+ * This used to be the shape of every `SDKResultError`: until claude-agent-sdk
+ * 0.3.268 the error result declared no `user_message_uuid`, so a failed turn
+ * could arrive no other way. At 0.3.268 it declares one, so this is now the
+ * shape of any result that simply carried no id — the case row 2 of the module's
+ * table still has to answer, and the one this fixture is for.
  */
 function errorResultMessage(): SDKMessage {
   return {
@@ -437,11 +442,11 @@ describe('SessionTurnWindows — a turn opens on dispatch and closes on its resu
     expect(h.opened[1]!.ids).toEqual([]);
   });
 
-  // Reality beating the spec's phrasing: `SDKResultError` declares no
-  // `user_message_uuid`, so every FAILED turn arrives unnamed. Treating it as
-  // uncorrelated would strand the open window on exactly the turns that went
-  // wrong.
-  it('closes the open window on an unnamed result, because error results carry no id', async () => {
+  // Row 2 of the module's table. Treating a result that names nothing as
+  // uncorrelated would strand the open window forever — which, before SDK
+  // 0.3.268 declared `user_message_uuid` on the error result, meant stranding it
+  // on exactly the turns that went wrong.
+  it('closes the open window on a result that names no message', async () => {
     const h = harness();
 
     await h.dispatch([{ content: 'hello', messageId: 'm1' }]);
@@ -452,6 +457,31 @@ describe('SessionTurnWindows — a turn opens on dispatch and closes on its resu
     expect(windows).toHaveLength(1);
     const end = windows[0]!.events.find((e) => e.type === 'turn_end');
     expect(end).toMatchObject({ terminalReason: 'error' });
+    expect(h.pump.state).toBe('warm');
+  });
+
+  // The same failure under SDK 0.3.268, which declares `user_message_uuid` on
+  // `SDKResultError` too. A named failure is row 1 rather than row 2: it closes
+  // the dispatch it NAMES instead of closing whatever happened to be open. Same
+  // outcome here by construction — one window is open and the result names it —
+  // and that is the point: `readAnsweredId` reads the field off the message, so
+  // the vendor moving it between branches changed no behavior at all.
+  it('closes the named window when a failed result carries an id (SDK 0.3.268)', async () => {
+    const h = harness();
+
+    await h.dispatch([{ content: 'hello', messageId: 'm1' }]);
+    h.live().emit({
+      ...(errorResultMessage() as unknown as Record<string, unknown>),
+      user_message_uuid: 'm1',
+    } as unknown as SDKMessage);
+    await settled(h, 1);
+
+    const windows = h.windowsOnStream();
+    expect(windows).toHaveLength(1);
+    expect(h.opened[0]!.ids).toEqual(['m1']);
+    expect(windows[0]!.events.find((e) => e.type === 'turn_end')).toMatchObject({
+      terminalReason: 'error',
+    });
     expect(h.pump.state).toBe('warm');
   });
 

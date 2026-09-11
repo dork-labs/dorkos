@@ -113,12 +113,12 @@ one level up.
 
 ### `fastMode` — RELAUNCH
 
-`Settings.fastMode` exists (`sdk.d.ts:6605`) and `applyFlagSettings` accepts any `Settings`
+`Settings.fastMode` exists and `applyFlagSettings` accepts any `Settings`
 key, so a live path plausibly exists. Two things stopped it being taken:
 
 1. The launch spells fastMode through `Options.settings`, a **different layer** from the
    flag-settings layer `applyFlagSettings` merges into, and there is a second, adjacent key
-   (`fastModePerSessionOptIn`, `sdk.d.ts:6609`) whose interaction with it is not documented.
+   (`fastModePerSessionOptIn`) whose interaction with it is not documented.
 2. `applyFlagSettings` shallow-merges top-level keys, so a later call with any other
    `settings` key would silently drop it.
 

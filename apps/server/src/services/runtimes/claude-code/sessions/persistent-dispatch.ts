@@ -371,6 +371,17 @@ export class PersistentDispatch {
     // The ONE cwd resolution, handed to the gate below AND to the launcher
     // through the plan — the identity `dispatch-boundary.ts` requires, and the
     // reason the gate is not asked twice by two different routes.
+    //
+    // What it validates is where DorkOS INTENDS this turn to run, not where the
+    // CLI's shell currently stands. Until claude-agent-sdk 0.3.265 those were the
+    // same thing for free: the SDK reset the shell to the `cwd` option at every
+    // user message, so intent and reality re-converged each turn. They no longer
+    // do — an agent's `cd` in turn 3 is still in effect at turn 30 — and DorkOS
+    // accepts that, because it is what the interactive app does and what an
+    // operator who watched their agent move expects. It grants nothing new:
+    // `lib/boundary.ts` gates what a tool may touch, not where a shell stands.
+    // Read this check as "the turn was dispatched inside the boundary", never as
+    // "every command this turn runs will execute here".
     const effectiveCwd = resolveEffectiveCwd(opts, messageOpts);
     try {
       await validateDispatchBoundary(effectiveCwd);

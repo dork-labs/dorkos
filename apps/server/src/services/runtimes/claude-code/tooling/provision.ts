@@ -81,10 +81,20 @@ function isMuslLinux(): boolean {
  * preference order.
  *
  * Since 0.2.113 the Agent SDK ships Claude Code as a native binary in optional
- * dependencies named `@anthropic-ai/claude-agent-sdk-<platform>-<arch>` (with
- * `-musl` and `-android` variants), exposing `claude` (or `claude.exe`) at the
- * package root. Only one is ever installed on a given host, so resolution tries
- * each in turn and provisioning installs the first.
+ * dependencies named `@anthropic-ai/claude-agent-sdk-<platform>-<arch>`, exposing
+ * `claude` (or `claude.exe`) at the package root. Only one is ever installed on a
+ * given host, so resolution tries each in turn and provisioning installs the
+ * first.
+ *
+ * **The published set is EIGHT names, and `-android` is not among them** —
+ * re-read off the SDK's own `optionalDependencies` at both 0.3.224 and 0.3.268:
+ * `linux-x64`, `linux-arm64`, `linux-x64-musl`, `linux-arm64-musl`, `darwin-x64`,
+ * `darwin-arm64`, `win32-x64`, `win32-arm64`. The `android` branch below is
+ * therefore dead today. It stays because its cost is one install attempt that
+ * fails with a clear error on a platform DorkOS has never supported, while
+ * deleting it would silently route such a host at a glibc Linux binary instead —
+ * a wrong answer dressed as a right one. Delete it the day `process.platform`
+ * can be `'android'` here for a reason.
  *
  * @returns Ordered candidate package names (never empty).
  */
