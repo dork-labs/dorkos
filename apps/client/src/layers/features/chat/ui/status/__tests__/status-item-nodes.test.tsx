@@ -103,7 +103,13 @@ function inputWith(overrides: Partial<StatusItemNodesInput>): StatusItemNodesInp
     plan: null,
     gitStatus: undefined,
     workspace: null,
-    runtimeChip: { runtime: 'test-mode', model: null, canSelect: false, onChangeRuntime: vi.fn() },
+    runtimeChip: {
+      runtime: 'test-mode',
+      model: null,
+      account: null,
+      canSelect: false,
+      onChangeRuntime: vi.fn(),
+    },
     contextPercent: null,
     contextUsage: null,
     compact: null,
@@ -233,6 +239,7 @@ describe('buildStatusItemNodes — the permission node while Plan holds the sess
         runtimeChip: {
           runtime: 'claude-code',
           model: null,
+          account: null,
           canSelect: false,
           onChangeRuntime: vi.fn(),
         },
@@ -253,6 +260,7 @@ describe('buildStatusItemNodes — the permission node while Plan holds the sess
         runtimeChip: {
           runtime: 'claude-code',
           model: null,
+          account: null,
           canSelect: false,
           onChangeRuntime: vi.fn(),
         },
@@ -318,6 +326,7 @@ function buildLine(
       runtimeChip: {
         runtime: 'claude-code',
         model: null,
+        account: null,
         canSelect: false,
         onChangeRuntime: vi.fn(),
       },
@@ -421,6 +430,7 @@ describe('PermissionModeItem vs. PlanModeItem — never the same word when both 
         runtimeChip: {
           runtime: 'claude-code',
           model: null,
+          account: null,
           canSelect: false,
           onChangeRuntime: vi.fn(),
         },

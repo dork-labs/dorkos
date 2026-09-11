@@ -24,6 +24,7 @@ import {
   TooltipContent,
 } from '@/layers/shared/ui';
 import { claudeAccountName } from '@/layers/shared/lib';
+import { useClaudeAccounts } from '@/layers/shared/model';
 import { DEFAULT_ACCOUNT_VALUE, useAccountSwitch } from '../model/use-account-switch';
 import { STATUS_ITEM_TRIGGER_CLASS } from '../lib/status-item-classes';
 
@@ -64,6 +65,17 @@ interface RuntimeItemProps {
    * spells out; the runtime name is what makes this item worth a slot.
    */
   compact?: boolean;
+  /**
+   * The started session's Claude account, or `null` pre-launch and for runtimes
+   * with no account concept.
+   *
+   * Named in the chip's tooltip rather than on its face: the account is one
+   * hover away everywhere a turn is composed, without spending a slot the
+   * status line's density budget counts (DOR-1970 — it was legible on the
+   * sidebar row and nowhere else, so the composer could not answer "which
+   * account is this session spending?" at all).
+   */
+  account?: string | null;
 }
 
 /** Setup-dialog state: closed, scoped to one runtime, or the unscoped overview. */
@@ -102,10 +114,15 @@ export function RuntimeItem({
   canSelect,
   compact,
   sessionId,
+  account: sessionAccount,
 }: RuntimeItemProps) {
   const { data: capabilityMap } = useRuntimeCapabilities();
   const { data: requirements } = useRuntimeRequirements();
   const account = useAccountSwitch(sessionId);
+  // The roster read, for naming the account a STARTED session already bills to.
+  // `account` above is the pre-launch switcher — it holds a pending pick, which
+  // is a different question from what this session actually ran on.
+  const { nameFor: accountName } = useClaudeAccounts();
   const [setupDialog, setSetupDialog] = useState<SetupDialogState>({ open: false });
   // Generated, not a literal: the status line renders one chip, but the tree can
   // hold more (the dev playground shows several side by side), and a duplicated
@@ -156,12 +173,23 @@ export function RuntimeItem({
     <RuntimeIdentity runtime={runtime} model={shownModel} iconClassName="size-(--size-icon-xs)" />
   );
 
+  // Which account this session is actually spending, for the tooltip (DOR-1970).
+  // Named whenever the session HAS one, not only when several are registered:
+  // the multi-account guard `AccountMark` carries is a LIST argument (an
+  // identical badge on every row says nothing), and a tooltip costs a reader
+  // nothing until they ask for it. `nameFor` falls back to the directory name,
+  // so a line is never rendered blank.
+  const accountLine = sessionAccount ? `Account: ${accountName(sessionAccount)}` : null;
+
   if (!canSelect) {
     return (
       <Tooltip>
         <TooltipTrigger asChild>{chip}</TooltipTrigger>
         <TooltipContent side="top">
-          {'The runtime is set when a session starts and can’t be changed afterward.'}
+          <span className="block">
+            {'The runtime is set when a session starts and can’t be changed afterward.'}
+          </span>
+          {accountLine && <span className="block">{accountLine}</span>}
         </TooltipContent>
       </Tooltip>
     );
@@ -169,9 +197,16 @@ export function RuntimeItem({
 
   // Pre-launch but nothing actionable (every known runtime registered and
   // ready with no alternative to pick, or the list is still loading): quiet
-  // identity chip, no dropdown affordance.
+  // identity chip, no dropdown affordance — but still worth a tooltip when
+  // there is an account to name, which is the whole point of DOR-1970.
   if (!selectable) {
-    return chip;
+    if (!accountLine) return chip;
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{chip}</TooltipTrigger>
+        <TooltipContent side="top">{accountLine}</TooltipContent>
+      </Tooltip>
+    );
   }
 
   return (

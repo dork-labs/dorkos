@@ -169,6 +169,7 @@ export function buildStatusItemNodes(
         model={runtimeChip.model}
         onChangeRuntime={runtimeChip.onChangeRuntime}
         canSelect={runtimeChip.canSelect}
+        account={runtimeChip.account}
         compact={compactItems}
       />
     );
