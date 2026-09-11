@@ -478,7 +478,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // The reverse guard on the guard: if nothing were prefixed at all, the check
     // above would pass while teaching nothing callable. Counted exactly, so the
     // day a block stops rendering the number moves rather than the bound holding.
-    expect(prefixed.length).toBe(83);
+    expect(prefixed.length).toBe(84);
   });
 
   it('names only advertised tools in the agent-session variant of the prompt too', async () => {

@@ -84,6 +84,9 @@ export function CanvasFileContent({ content, documentId }: CanvasFileContentProp
   const transport = useTransport();
   const cwd = useAppStore((s) => s.selectedCwd);
   const setDocumentEditing = useAppStore((s) => s.setDocumentEditing);
+  const documentEditing = useAppStore(
+    (s) => s.openDocuments.find((d) => d.id === documentId)?.editing ?? false
+  );
   const resolvedTheme = useResolvedTheme();
 
   const { data, error, isLoading } = useQuery({
@@ -116,10 +119,19 @@ export function CanvasFileContent({ content, documentId }: CanvasFileContentProp
     return <FileMessage>{loadErrorMessage(error)}</FileMessage>;
   }
 
+  // Edit mode is the AND of this viewer's own session and the store's flag for
+  // this document, derived rather than mirrored. The flag can be cleared from
+  // OUTSIDE — "Reload" on the held-update banner takes the agent's version and
+  // ends the edit — and deriving is what lets that land on the next render
+  // instead of through a state-sync effect.
+  const editing = editSession !== null && documentEditing;
+
   // Remount the editor when the loaded document identity changes (path or the
   // on-disk bytes) so edit state + save baseline never straddle two documents —
-  // except mid-edit, where the pinned hash keeps the mounted editor stable.
-  const mountHash = editSession?.pinnedHash ?? data.hash;
+  // except mid-edit, where the pinned hash keeps the mounted editor stable. A
+  // session the store has already ended pins nothing, so an edit ended from
+  // outside cannot leave the key stuck on a hash no editor is showing.
+  const mountHash = (editing ? editSession?.pinnedHash : null) ?? data.hash;
 
   return (
     <FileEditor
@@ -129,7 +141,7 @@ export function CanvasFileContent({ content, documentId }: CanvasFileContentProp
       cwd={cwd}
       loaded={data.content}
       theme={resolvedTheme}
-      isEditing={editSession !== null}
+      isEditing={editing}
       onEditingChange={handleEditingChange}
       setDocumentEditing={setDocumentEditing}
     />
@@ -233,6 +245,17 @@ function FileEditor({
       queryKey: fileContentQueryKey(cwd, content.sourcePath),
     });
   };
+
+  // The edit can also end from OUTSIDE: "Reload" on the held-update banner takes
+  // the agent's version, and the parent's derived `isEditing` goes false. Cancel
+  // the pending autosave when that happens rather than letting it flush a draft
+  // the person just gave up. Every other exit path has already nulled the timer,
+  // so this is a no-op on all of them.
+  useEffect(() => {
+    if (isEditing || !timerRef.current) return;
+    clearTimeout(timerRef.current);
+    timerRef.current = null;
+  }, [isEditing]);
 
   // Flush a pending save AND release this document's edit-protection on unmount
   // (canvas closed / tab switched mid-edit). Because the setter is id-scoped, it

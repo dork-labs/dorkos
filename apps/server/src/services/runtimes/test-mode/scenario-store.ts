@@ -408,6 +408,10 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
           content: {
             type: 'markdown',
             title: 'notes.md',
+            // File-backed so a second run of this scenario RE-OPENS the same
+            // document rather than adding one: that is the path a held update
+            // travels when somebody is editing it (ADR-0292).
+            sourcePath: 'notes.md',
             content: '# Notes\n\nThis document belongs to the Canvas tab.',
           },
         },

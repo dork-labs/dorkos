@@ -11,7 +11,7 @@
  * **The wait is two stages, and only the second one refuses.** A prompt counts
  * down for {@link SESSIONS.INTERACTION_TIMEOUT_MS} exactly as it always has. Past
  * that it PARKS: the promise stays unresolved, the tool call stays held, the SDK
- * holds its loop open (`sdk.d.ts:196-205`), and the person is told the agent is
+ * holds its loop open (`CanUseTool`, whose own doc says permission prompts have no park deadline), and the person is told the agent is
  * waiting. Only at {@link SESSIONS.INTERACTION_PARK_CEILING_MS} is the model
  * handed a refusal. An unattended run is the exception and refuses at the
  * countdown, because nobody is coming back to it.
@@ -431,7 +431,7 @@ export function refusalDeadlineMs(session: InteractiveSession): number {
  *
  * Parking is not a resolution. Nothing is handed to the model, the tool call
  * stays held, and the SDK holds its loop open for as long as the promise stays
- * unresolved (`sdk.d.ts:196-205`). What happens at ten minutes is a sentence to
+ * unresolved (`CanUseTool`, whose own doc says permission prompts have no park deadline). What happens at ten minutes is a sentence to
  * the operator, a log line, and a second timer.
  *
  * **The returned timer is the FIRST one.** It is stored on the pending entry as

@@ -115,11 +115,46 @@
  * each other on names. The string literals quoted instead survived both. Cite
  * strings, not symbols.
  *
- * **Still unverified on 0.3.224**: the live half. Nobody has re-run the two-server
- * 401 harness against it, so the observed status *distribution* — in particular
- * whether 0.3.221's connect-before-first-turn fix makes the two unrelated project
- * servers report something other than `pending` — rests on the 0.3.177 run.
- * That distribution is not something this module acts on.
+ * ### Re-run live 2026-09-11 against 0.3.268 — the whole anchor, not just the
+ * static half
+ *
+ * The two-server 401 harness was re-run for real on the 0.3.224 → 0.3.268 bump,
+ * which closes the "still unverified" note the 0.3.224 pass had to leave. Its
+ * output is committed beside the first one, at
+ * `__tests__/fixtures/mcp-server-status-401-0.3.268.observed.json`, and replayed
+ * in `mcp-revocation.test.ts`. Points 1 and 2 now hold on live evidence at this
+ * version, and point 3's first half finally has some:
+ *
+ * - the bearer-carrying server reports `failed` with a message byte-identical to
+ *   the 0.3.177 one — the CLI builds it by concatenation now, but the text is the
+ *   same sentence;
+ * - `errorCode` is still absent from every observed object, and still absent from
+ *   `McpServerStatus`. The type is **byte-identical** across 0.3.224 and 0.3.268 —
+ *   diffed declaration-body to declaration-body, `status` union included. (The
+ *   `added` / `removed` / `errors` triple that appears at 0.3.268 belongs to the
+ *   NEW `McpSetServersResult`, the return of `setMcpServers`, which DorkOS never
+ *   calls. Do not read it as a change to this type.)
+ * - a REAL `needs-auth` row was observed for the first time, on an unrelated
+ *   project server, and it carries no `error` field — which is what the binary
+ *   reading behind point 3 said it would do;
+ * - **the tokenless refusal now carries words**: `Dynamic Client Registration
+ *   rejected (HTTP 401): …` where 0.3.177 recorded an empty string. Nothing here
+ *   changes, because {@link mcpAuthEvidenceFrom} keys on the status and never on
+ *   the message — but a detector that had keyed on text would read the two
+ *   versions differently, which is the whole argument for not keying on text;
+ * - the distribution question the 0.3.224 note left open is answered: every
+ *   unrelated project server reported `connected`, not `pending`, in the first
+ *   `system/init` frame. 0.3.221's connect-before-first-turn fix is real and
+ *   landed. That still changes nothing here — a snapshot remains a rumour and the
+ *   probe remains the arbiter — but the module no longer rests on a stale guess
+ *   about it.
+ *
+ * One meaning of `pending` DID widen in this range, and it widens toward this
+ * module's own reading rather than away from it: since 0.3.243 a remote server
+ * whose connection dropped reports `pending` while it RECONNECTS, not
+ * `connected`. So `pending` now means "still connecting" or "connecting again".
+ * Point 3 reasons about the first; the second is the same instruction — look with
+ * the probe, conclude nothing from the snapshot.
  *
  * ## What it refuses to conclude
  *

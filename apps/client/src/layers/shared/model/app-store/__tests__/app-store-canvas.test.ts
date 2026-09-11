@@ -147,6 +147,99 @@ describe('CanvasSlice — multi-document reducer', () => {
     expect(bContent()).toBe('B1');
   });
 
+  it('a held push survives, then Reload applies it and Keep mine discards it (ADR-0292)', () => {
+    const { openCanvasDocument, setDocumentEditing, updateActiveDocument } = useAppStore.getState();
+    openCanvasDocument({ type: 'markdown', content: 'mine' });
+    const doc = useAppStore.getState().activeCanvasDocumentId!;
+    setDocumentEditing(doc, true);
+
+    const read = () => useAppStore.getState().openDocuments.find((d) => d.id === doc)!;
+    const body = () => (read().content as { content: string }).content;
+
+    // The push is kept instead of vanishing — this is the whole ticket.
+    updateActiveDocument({ type: 'markdown', content: 'theirs' });
+    expect(body()).toBe('mine');
+    expect(read().heldUpdate).toEqual({ type: 'markdown', content: 'theirs' });
+
+    // Keep mine throws it away and leaves the edit running.
+    useAppStore.getState().discardHeldUpdate(doc);
+    expect(read().heldUpdate).toBeNull();
+    expect(body()).toBe('mine');
+    expect(read().editing).toBe(true);
+
+    // Reload takes the agent's version and ends the edit.
+    updateActiveDocument({ type: 'markdown', content: 'theirs again' });
+    useAppStore.getState().applyHeldUpdate(doc);
+    expect(body()).toBe('theirs again');
+    expect(read().heldUpdate).toBeNull();
+    expect(read().editing).toBe(false);
+  });
+
+  it('drops a stale hold once a newer push lands on a document nobody is editing', () => {
+    const { openCanvasDocument, setDocumentEditing, updateActiveDocument } = useAppStore.getState();
+    openCanvasDocument({ type: 'markdown', content: 'v1' });
+    const doc = useAppStore.getState().activeCanvasDocumentId!;
+    const read = () => useAppStore.getState().openDocuments.find((d) => d.id === doc)!;
+
+    setDocumentEditing(doc, true);
+    updateActiveDocument({ type: 'markdown', content: 'v2' });
+    // The person stops editing WITHOUT answering the banner.
+    setDocumentEditing(doc, false);
+    updateActiveDocument({ type: 'markdown', content: 'v3' });
+
+    // v3 landed, so offering v2 back would hand them a version older than what
+    // they are looking at.
+    expect((read().content as { content: string }).content).toBe('v3');
+    expect(read().heldUpdate).toBeNull();
+  });
+
+  it('never leaves Reload offering a version older than what is on screen', () => {
+    // The scenario, which the re-open path used to get wrong: hold v2 while
+    // editing, stop editing without answering, let v3 LAND through the same
+    // dedupe path, come back. A hold that survived that would put v2 — older
+    // than the v3 on screen — behind the Reload button.
+    const { openCanvasDocument, setDocumentEditing } = useAppStore.getState();
+    const version = (n: string) =>
+      ({ type: 'markdown', content: n, sourcePath: 'notes.md' }) as UiCanvasContent;
+
+    openCanvasDocument(version('v1'));
+    const doc = useAppStore.getState().activeCanvasDocumentId!;
+    const read = () => useAppStore.getState().openDocuments.find((d) => d.id === doc)!;
+
+    setDocumentEditing(doc, true);
+    openCanvasDocument(version('v2'));
+    expect(read().heldUpdate).toEqual(version('v2'));
+
+    setDocumentEditing(doc, false);
+    openCanvasDocument(version('v3'));
+
+    expect((read().content as { content: string }).content).toBe('v3');
+    expect(read().heldUpdate).toBeNull();
+
+    // And the button that would have done the damage does nothing at all.
+    useAppStore.getState().applyHeldUpdate(doc);
+    expect((read().content as { content: string }).content).toBe('v3');
+  });
+
+  it('holds an open_canvas that re-opens a document being edited', () => {
+    const { openCanvasDocument, setDocumentEditing } = useAppStore.getState();
+    openCanvasDocument({ type: 'markdown', content: 'mine', sourcePath: 'notes.md' });
+    const doc = useAppStore.getState().activeCanvasDocumentId!;
+    setDocumentEditing(doc, true);
+
+    // Same source key, so this re-opens the SAME document rather than adding one.
+    openCanvasDocument({ type: 'markdown', content: 'theirs', sourcePath: 'notes.md' });
+
+    const read = () => useAppStore.getState().openDocuments.find((d) => d.id === doc)!;
+    expect(useAppStore.getState().openDocuments).toHaveLength(1);
+    expect((read().content as { content: string }).content).toBe('mine');
+    expect(read().heldUpdate).toEqual({
+      type: 'markdown',
+      content: 'theirs',
+      sourcePath: 'notes.md',
+    });
+  });
+
   it('setDocumentEditing clears a NON-active document (unmount after a tab switch)', () => {
     const { openCanvasDocument, setDocumentEditing, activateCanvasDocument } =
       useAppStore.getState();

@@ -160,6 +160,15 @@ export default defineConfig({
     //   scanners never look. The test used to import the schema from the package
     //   ROOT; it now takes the narrow subpath so the alias can be a single
     //   zod-only module instead of the whole package index.
+    // - `mesh-schemas` and `connector-schemas` back the no-`z.record()` constraint
+    //   on in-session tool schemas, which `mcp-tools/__tests__/tool-exposure.test.ts`
+    //   enforces by listing every tool off the LIVE SDK MCP server. A record
+    //   anywhere in a tool's input schema makes `tools/list` throw for the whole
+    //   server (claude-agent-sdk 0.3.257+ with zod 4.5.3+, upstream #454), so the
+    //   guard's subject is the source text of these two schema modules — the same
+    //   family as `untrusted-text`. Measured: putting `z.record` back on
+    //   `McpServerTransportSchema.env` in `src/` with `dist/` left stale passed all
+    //   17 of that file's tests without these aliases and fails 7 with them.
     //
     // Scoped to these modules on purpose. Aliasing all 43 subpaths made every
     // worker re-transform the whole package and took the suite from ~51s to
@@ -196,6 +205,18 @@ export default defineConfig({
         find: '@dorkos/shared/mcp-tool-groups',
         replacement: fileURLToPath(
           new URL('../../packages/shared/src/mcp-tool-groups.ts', import.meta.url)
+        ),
+      },
+      {
+        find: '@dorkos/shared/mesh-schemas',
+        replacement: fileURLToPath(
+          new URL('../../packages/shared/src/mesh-schemas.ts', import.meta.url)
+        ),
+      },
+      {
+        find: '@dorkos/shared/connector-schemas',
+        replacement: fileURLToPath(
+          new URL('../../packages/shared/src/connector-schemas.ts', import.meta.url)
         ),
       },
       {

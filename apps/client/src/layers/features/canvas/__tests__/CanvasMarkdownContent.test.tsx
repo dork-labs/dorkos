@@ -8,10 +8,23 @@ import '@testing-library/jest-dom/vitest';
 // Mutable mock store — the component reads canvasSessionId/selectedCwd reactively
 // (via selectors) and live (via getState() inside callbacks), and calls
 // setDocumentEditing(id, editing) to flag this document's per-document edit mode.
+/**
+ * The per-document edit flag the editor writes with `setDocumentEditing` — and,
+ * since notify-and-reconcile, READS back: "Reload" on the held-update banner
+ * ends the edit from outside, and the editor follows the store out of edit mode.
+ * A mock that swallowed the write would leave the editor stuck in edit mode
+ * against a store that says otherwise, which is the state the effect exists to
+ * resolve.
+ */
 const mockState = {
   canvasSessionId: 'sess-A' as string | null,
   selectedCwd: '/work' as string | null,
-  setDocumentEditing: vi.fn(),
+  openDocuments: [{ id: 'doc-1', editing: false }],
+  setDocumentEditing: vi.fn((id: string, editing: boolean) => {
+    mockState.openDocuments = mockState.openDocuments.map((d) =>
+      d.id === id ? { ...d, editing } : d
+    );
+  }),
 };
 
 /** Document id passed to the editor under test. */
@@ -79,6 +92,7 @@ afterEach(cleanup);
 describe('CanvasMarkdownContent', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockState.openDocuments = [{ id: 'doc-1', editing: false }];
     mockState.canvasSessionId = 'sess-A';
     mockState.selectedCwd = '/work';
     mockFileSave.status = 'idle';

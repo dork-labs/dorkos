@@ -188,7 +188,7 @@ export const SESSIONS = {
    *
    * **Why there is a ceiling at all, when the SDK has none.** A held permission
    * decision is indefinite as far as the Claude Agent SDK is concerned
-   * (`sdk.d.ts:196-205`). Four DorkOS bounds are not:
+   * (`CanUseTool`, whose own doc says permission prompts have no park deadline). Four DorkOS bounds are not:
    *
    * 1. `SessionStateProjector.hasPendingInteractions` bounds a pending entry on
    *    purpose, because an entry CAN strand and a stranded entry read as "still

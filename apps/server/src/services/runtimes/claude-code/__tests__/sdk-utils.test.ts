@@ -1,17 +1,28 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import path from 'node:path';
 import { resolveClaudeCliPath, createIdlePrompt, createHeldUserPrompt } from '../sdk/sdk-utils.js';
+import { CLAUDE_SDK_VERSION } from '../tooling/provision.js';
 
 // Mutable holder so each test can steer the three resolution primitives.
 // `exists` accepts either a flat boolean (every path exists / none do) or a
 // per-path predicate — the env-override tests need to say "the override path
 // is missing but the bundled one exists", which a single boolean can't express.
 const h = vi.hoisted(() => ({
+  // Hoisted with the rest of the holder, not declared as a top-level const:
+  // `vi.mock` factories run above every top-level binding in this file, and the
+  // fs mock below needs this string while `lib/version.ts` is still importing.
+  provisionSegment: `${'/'}runtimes${'/'}claude-code${'/'}`,
   resolve: ((_s: string): string => {
     throw new Error('not found');
   }) as (s: string) => string,
   exists: true as boolean | ((path: string) => boolean),
   which: null as string | null,
+  // What the provisioned package's `package.json` reports. The provisioned rung
+  // returns nothing unless this equals the pinned `CLAUDE_SDK_VERSION`, so a
+  // test describing a STALE install sets it to an older number. `null` means
+  // "whatever the pin is" — resolved at call time, since this holder is hoisted
+  // above the import that defines the constant.
+  provisionedVersion: null as string | null,
 }));
 
 vi.mock('node:module', () => ({
@@ -23,8 +34,25 @@ vi.mock('node:fs', async (importOriginal) => {
   return {
     ...actual,
     existsSync: (path: string) => (typeof h.exists === 'function' ? h.exists(path) : h.exists),
+    // The provisioned rung reads the installed package's own `package.json` and
+    // returns nothing when its version is not the pinned one, so "provisioned"
+    // now means present AND current. `h.provisionedVersion` is what these tests
+    // turn to describe a stale install; by default it matches the pin, which is
+    // the state every case here but one is about.
+    //
+    // Scoped to the provisioned tree deliberately. A blanket `package.json`
+    // intercept also catches the one `lib/version.ts` reads at IMPORT time,
+    // which runs before this file's imports are initialised and takes the whole
+    // suite down with a TDZ error rather than a useful failure.
+    readFileSync: (file: string, ...rest: unknown[]) =>
+      typeof file === 'string' && file.includes(h.provisionSegment) && file.endsWith('package.json')
+        ? JSON.stringify({ version: h.provisionedVersion ?? CLAUDE_SDK_VERSION })
+        : (actual.readFileSync as (...a: unknown[]) => unknown)(file, ...rest),
   };
 });
+
+/** Where a provisioned Claude install would live (dork-home-scoped). */
+const PROVISION_SEGMENT = `${path.sep}runtimes${path.sep}claude-code${path.sep}`;
 
 /** Env var the packaged desktop app sets to an explicit `claude` binary path. */
 const CLI_PATH_ENV = 'DORKOS_CLAUDE_CLI_PATH';
@@ -41,9 +69,6 @@ vi.mock('node:child_process', () => ({
   },
 }));
 
-/** Where a provisioned Claude install would live (dork-home-scoped). */
-const PROVISION_SEGMENT = `${path.sep}runtimes${path.sep}claude-code${path.sep}`;
-
 /** Nothing provisioned — the default host these tests describe. */
 const nothingProvisioned = (p: string): boolean => !p.includes(PROVISION_SEGMENT);
 
@@ -54,6 +79,7 @@ describe('resolveClaudeCliPath — Hybrid native-binary resolution', () => {
   beforeEach(() => {
     savedEnv = process.env[CLI_PATH_ENV];
     delete process.env[CLI_PATH_ENV];
+    h.provisionedVersion = null;
     h.resolve = () => {
       throw new Error('not found');
     };
@@ -177,6 +203,24 @@ describe('resolveClaudeCliPath — Hybrid native-binary resolution', () => {
     h.which = null;
 
     expect(resolveClaudeCliPath()).toContain(PROVISION_SEGMENT);
+  });
+
+  // The other half of that rung, and the reason it is not existence-only: a
+  // provisioned install left behind by an EARLIER pin must not be spawned. From
+  // SDK 0.3.268 a session with a plugin enabled is launched with
+  // `--await-initialize`, which an older `claude` rejects outright, so a stale
+  // binary here is every turn failing to start. It reads as "not provisioned" and
+  // the ladder carries on to PATH — which is also absent in this case, leaving
+  // `undefined` so the SDK self-resolves and Connect offers the install.
+  it('refuses a provisioned install left behind by an earlier pin', () => {
+    h.resolve = () => {
+      throw new Error('optional dependency not installed');
+    };
+    h.exists = (p) => p.includes(PROVISION_SEGMENT);
+    h.which = null;
+    h.provisionedVersion = '0.3.224';
+
+    expect(resolveClaudeCliPath()).toBeUndefined();
   });
 
   // Purpose: a provisioned install must never outrank the SDK's own bundled,
