@@ -260,6 +260,7 @@ export { createModalHandoff } from './modal-handoff';
 export { useRenderSlot, useLatest, type RenderSlot } from './use-render-slot';
 export {
   executeUiCommand,
+  isLocalUiOnlyCommand,
   revealCanvas,
   revealBrowser,
   revealForContent,

@@ -161,7 +161,7 @@ const CANVAS_CONTENT_CATALOG: Record<UiCanvasContent['type'], CanvasContentEntry
   model3d: {
     shape: '{ type: "model3d", src: "<https url | data: URI | local file path>", title?: string }',
     sentence:
-      'A 3D model the person can spin and zoom (glTF, GLB, STL, OBJ, 3MF, PLY or DAE), with the same rules for "src" as an image.',
+      'A 3D model the person can spin and zoom (glTF, GLB, STL, OBJ, 3MF, PLY, FBX or DAE), with the same rules for "src" as an image.',
   },
   audio: {
     shape: '{ type: "audio", src: "<https url | data: URI | local file path>", title?: string }',
