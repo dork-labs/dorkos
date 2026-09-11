@@ -2,6 +2,8 @@
   "$schema": "https://turbo.build/schema.json",
   "ui": "tui",
   "concurrency": "15",
+  "cacheMaxAge": "7d",
+  "cacheMaxSize": "10GB",
   "globalPassThroughEnv": [
     "VITEST_RETRY",
     "VITEST_MAX_WORKERS",
@@ -56,7 +58,14 @@
   "tasks": {
     "build": {
       "dependsOn": ["generate:api-docs", "^build"],
-      "outputs": ["dist/**", "dist-server/**", "dist-obsidian/**", ".next/**"],
+      "outputs": [
+        "dist/**",
+        "dist-server/**",
+        "dist-obsidian/**",
+        ".next/**",
+        "!.next/cache/**",
+        "!.next/dev/**"
+      ],
       "env": ["NODE_ENV", "VITE_*", "NEXT_PUBLIC_*", "POSTHOG_*"]
     },
     "generate:api-docs": {
