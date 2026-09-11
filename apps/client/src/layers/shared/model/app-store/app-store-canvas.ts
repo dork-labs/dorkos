@@ -5,8 +5,11 @@
  * output) via `openDocuments` + `activeDocumentId`; agent `open_*` commands
  * append-and-activate (deduping by source), while `update_canvas` mutates the
  * active document. Edit-protection is per-document: while one document is being
- * edited, agent pushes to it are held (ADR-0292), but other documents stay
- * agent-writable. The document array is persisted per-session via localStorage
+ * edited, agent pushes to it are held on `heldUpdate` (ADR-0292) for the canvas
+ * to offer back as Reload / Keep mine, but other documents stay agent-writable.
+ * A held push is kept, never dropped — dropping it in silence, with neither side
+ * told, is the half of ADR-0292 that was deferred when it was written. The
+ * document array is persisted per-session via localStorage
  * (see the canvas session helpers in app-store-helpers.ts). See ADR
  * 260708-185518 (multi-document canvas model).
  *
@@ -41,6 +44,25 @@ export interface CanvasDocument {
    * Transient — never persisted, so a reload never resurrects edit mode.
    */
   editing: boolean;
+  /**
+   * The agent push that arrived while this document was being edited, kept
+   * rather than dropped — ADR-0292's deferred notify-and-reconcile half.
+   *
+   * `null` when nothing is waiting. Only the NEWEST held push is kept: a person
+   * choosing between their draft and "the agent's version" means the current
+   * one, and a queue of superseded versions is a queue nobody would read.
+   *
+   * The invariant that makes that true is **a push that lands clears any hold**,
+   * on every write path — otherwise a hold taken during an edit outlives the
+   * edit, a later push lands while nobody is editing, and Reload then replaces
+   * what is on screen with a version OLDER than it. A hold does survive the edit
+   * ending, though, and deliberately: a choice the person has not answered is
+   * not a choice to delete the moment they stop typing, which is the silent drop
+   * this whole field exists to remove.
+   *
+   * Transient, like {@link editing} — a reload starts with nothing held.
+   */
+  heldUpdate: UiCanvasContent | null;
 }
 
 /**
@@ -90,15 +112,29 @@ export interface CanvasSlice {
    * Append a document for `content` and activate it. Dedups by source key
    * (`sourcePath`/`src`/`url`/`uri`): re-activates and refreshes an existing
    * document rather than opening a duplicate — but preserves the existing
-   * document's content while it is being edited (edit-protection). Evicts the
+   * document's content while it is being edited, holding the push on
+   * {@link CanvasDocument.heldUpdate} instead (edit-protection). Evicts the
    * least-recently-active document when over {@link MAX_CANVAS_DOCUMENTS}.
    */
   openCanvasDocument: (content: UiCanvasContent) => void;
   /**
    * Mutate the active document's content (the agent `update_canvas` path). A
-   * no-op while the active document is being edited, or when none is active.
+   * no-op when no document is active; while the active one is being edited the
+   * push is HELD on {@link CanvasDocument.heldUpdate} rather than dropped, so
+   * the canvas can offer it (ADR-0292).
    */
   updateActiveDocument: (content: UiCanvasContent) => void;
+  /**
+   * Take a held agent push: it becomes the document's content, the hold is
+   * cleared, and the edit ends — the person chose the other version, so keeping
+   * their draft protected against the version they just accepted would leave
+   * them looking at neither. The canvas banner's "Reload".
+   */
+  applyHeldUpdate: (id: string) => void;
+  /**
+   * Drop a held agent push and keep editing. The canvas banner's "Keep mine".
+   */
+  discardHeldUpdate: (id: string) => void;
   /**
    * Write the active document's content unconditionally (the in-canvas editor's
    * own write + conflict-reload path). Unlike {@link updateActiveDocument} this
@@ -307,7 +343,7 @@ export const createCanvasSlice: StateCreator<
   [['zustand/devtools', never]],
   [],
   CanvasSlice
-> = (set, get) => ({
+> = (set) => ({
   canvasOpen: false,
   setCanvasOpen: (open) =>
     set((s) => {
@@ -340,10 +376,20 @@ export const createCanvasSlice: StateCreator<
       if (existingIdx >= 0) {
         const existing = s.openDocuments[existingIdx];
         activeId = existing.id;
-        // Re-activate; refresh content + label unless the doc is being edited.
+        // Re-activate; refresh content + label unless the doc is being edited,
+        // in which case hold the push for the banner instead of losing it. A
+        // push that LANDS clears any hold — the same rule `updateActiveDocument`
+        // follows, and for the same reason: an older version left on offer would
+        // let Reload replace what is on screen with something staler than it.
         const refreshed: CanvasDocument = existing.editing
-          ? { ...existing, lastActiveAt: now }
-          : { ...existing, content, sourceLabel: sourceLabel(content), lastActiveAt: now };
+          ? { ...existing, heldUpdate: content, lastActiveAt: now }
+          : {
+              ...existing,
+              content,
+              sourceLabel: sourceLabel(content),
+              heldUpdate: null,
+              lastActiveAt: now,
+            };
         documents = s.openDocuments.map((d, i) => (i === existingIdx ? refreshed : d));
       } else {
         const doc: CanvasDocument = {
@@ -353,6 +399,7 @@ export const createCanvasSlice: StateCreator<
           lastActiveAt: now,
           sourceLabel: sourceLabel(content),
           editing: false,
+          heldUpdate: null,
         };
         activeId = doc.id;
         documents = evictToCapacity([...s.openDocuments, doc], activeId);
@@ -365,13 +412,55 @@ export const createCanvasSlice: StateCreator<
       return next;
     }),
 
-  updateActiveDocument: (content) => {
-    const s = get();
-    const active = s.openDocuments.find((d) => d.id === s.activeDocumentId);
-    // Protect the edit (ADR-0292): ignore agent pushes while this doc is edited.
-    if (!active || active.editing) return;
-    s.setActiveDocumentContent(content);
-  },
+  updateActiveDocument: (content) =>
+    set((s) => {
+      const activeId = s.activeDocumentId;
+      if (!s.openDocuments.some((d) => d.id === activeId)) return {};
+
+      const applied = (d: CanvasDocument): CanvasDocument => {
+        // Protect the edit (ADR-0292) — but HOLD the push for the banner
+        // instead of dropping it, which is what this did in silence until
+        // notify-and-reconcile landed.
+        if (d.editing) return { ...d, heldUpdate: content };
+        // Not editing: the push lands, and a hold left over from an earlier
+        // edit is stale — a newer version is the document's content now.
+        return { ...d, content, sourceLabel: sourceLabel(content), heldUpdate: null };
+      };
+
+      const documents = s.openDocuments.map((d) => (d.id === activeId ? applied(d) : d));
+      persist(s.canvasSessionId, { ...s, openDocuments: documents });
+      return { openDocuments: documents };
+    }),
+
+  applyHeldUpdate: (id) =>
+    set((s) => {
+      const target = s.openDocuments.find((d) => d.id === id);
+      if (!target?.heldUpdate) return {};
+      const content = target.heldUpdate;
+      const documents = s.openDocuments.map((d) =>
+        d.id === id
+          ? {
+              ...d,
+              content,
+              sourceLabel: sourceLabel(content),
+              heldUpdate: null,
+              editing: false,
+            }
+          : d
+      );
+      persist(s.canvasSessionId, { ...s, openDocuments: documents });
+      return { openDocuments: documents };
+    }),
+
+  discardHeldUpdate: (id) =>
+    set((s) => {
+      if (!s.openDocuments.some((d) => d.id === id && d.heldUpdate)) return {};
+      // `heldUpdate` is transient, so nothing to persist — the draft the person
+      // kept is the editor's, and the editor owns writing it.
+      return {
+        openDocuments: s.openDocuments.map((d) => (d.id === id ? { ...d, heldUpdate: null } : d)),
+      };
+    }),
 
   setActiveDocumentContent: (content) =>
     set((s) => {
@@ -428,12 +517,14 @@ export const createCanvasSlice: StateCreator<
     if (entry) {
       set({
         canvasOpen: entry.open,
-        // Hydrate fresh: `editing` always starts false, and any doc with an
-        // empty label (e.g. a legacy pre-DOR-219 doc migrated on read) gets one
+        // Hydrate fresh: `editing` and `heldUpdate` always start empty — a held
+        // push belongs to an edit that is over — and any doc with an empty
+        // label (e.g. a legacy pre-DOR-219 doc migrated on read) gets one
         // derived from its content so its tab never renders blank.
         openDocuments: entry.documents.map((d) => ({
           ...d,
           editing: false,
+          heldUpdate: null,
           sourceLabel: d.sourceLabel || sourceLabel(d.content),
         })),
         activeDocumentId: entry.activeDocumentId,

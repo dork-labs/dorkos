@@ -12,9 +12,22 @@ import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/re
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
 
+/**
+ * The per-document edit flag the editor writes with `setDocumentEditing` — and,
+ * since notify-and-reconcile, READS back: "Reload" on the held-update banner
+ * ends the edit from outside, and the editor follows the store out of edit mode.
+ * A mock that swallowed the write would leave the editor stuck in edit mode
+ * against a store that says otherwise, which is the state the effect exists to
+ * resolve.
+ */
 const mockState = {
   selectedCwd: '/work' as string | null,
-  setDocumentEditing: vi.fn(),
+  openDocuments: [{ id: 'doc-md', editing: false }],
+  setDocumentEditing: vi.fn((id: string, editing: boolean) => {
+    mockState.openDocuments = mockState.openDocuments.map((d) =>
+      d.id === id ? { ...d, editing } : d
+    );
+  }),
 };
 const readFileContent = vi.fn();
 
@@ -65,6 +78,7 @@ function editableSurface(): HTMLElement | null {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockState.openDocuments = [{ id: 'doc-md', editing: false }];
   mockState.selectedCwd = '/work';
   mockFileSave.status = 'idle';
   mockFileSave.conflict = null;

@@ -16,6 +16,7 @@ import {
   buildRoomToolsBlock,
   roomReplyModeForToolCapableSession,
 } from '../../shared/room-tools-context.js';
+import { buildCanvasContentCatalog, buildUiActionCatalog } from '../../shared/ui-tool-contract.js';
 import { formatRoomContext } from '../../shared/room-context-block.js';
 import { formatApprovalVerdict } from '../../shared/approval-verdict-block.js';
 import { formatSeedContext } from '../../shared/seed-context-block.js';
@@ -358,25 +359,26 @@ Available tools:
   ${T}get_ui_state() -- query current UI state (panels, sidebar, canvas, active agent)
 
 Actions:
-  open_panel / close_panel / toggle_panel: { panel: "settings"|"tasks"|"relay"|"picker" }
-  open_sidebar / close_sidebar
-  switch_sidebar_tab: { tab: "overview"|"sessions"|"schedules"|"connections" } (embedded app only; the web cockpit has no sidebar tab strip, so this is a no-op there)
-  open_canvas: { content: { type: "url"|"markdown"|"json"|"image"|"pdf"|"model3d"|"audio"|"video"|"csv"|"widget", ... }, preferredWidth?: 20-80 }
-    image/pdf/model3d/audio/video/csv take a "src" (https url, data: URI, or local file path); widget takes a "definition" (a dorkos-ui widget document, see <gen_ui>)
-  update_canvas / close_canvas
-  show_toast: { message, level?: "success"|"error"|"info"|"warning", description? }
-  set_theme: { theme: "light"|"dark" }
-  scroll_to_message: { messageId? } (omit for bottom)
-  switch_agent: { cwd: string }
-  open_command_palette
-  celebrate -- fire a brief confetti burst
+${buildUiActionCatalog({ indent: '  ', sentences: false })}
 
+The <canvas> that open_canvas and update_canvas take is EXACTLY ONE of these shapes:
+${buildCanvasContentCatalog({ indent: '    ', sentences: false })}
+
+Each action's full description is on the ${T}control_ui tool itself — read it there before a first call.
 Use ${T}get_ui_state() before making layout decisions to avoid redundant commands. It reflects the state the client reported at turn start plus the commands you issued this turn — not a live read.
-UI commands only take visible effect when an interactive client is attached (headless/scheduled runs accept them but show nothing), and canvas content pushes may be deferred while the user is editing the canvas — a success result means "accepted", not "displayed".
+UI commands only take visible effect when an interactive client is attached (headless/scheduled runs accept them but show nothing), and a canvas push to a document somebody is editing is held rather than applied — a success result means "accepted", not "displayed".
 </ui_tools>`;
 
 /**
  * Build the static `<ui_tools>` context block.
+ *
+ * Its two lists are GENERATED from `UiCanvasContentSchema` and `UiCommandSchema`
+ * by the catalogs in `runtimes/shared/ui-tool-contract.ts`, which is also what
+ * the tool's own description is composed from — so the block and the tool can no
+ * longer name different sets. Hand-written, they had drifted to 10 content types
+ * here against 6 on the tool and 14 in the schema. The block names each action
+ * and shape without the per-action sentence: it rides the cached system-prompt
+ * prefix, and the sentence is one tool-description read away.
  *
  * Always included — UI tools are core tools with no feature flag dependency.
  * The dynamic `<ui_state>` snapshot is no longer appended here; it rides the
