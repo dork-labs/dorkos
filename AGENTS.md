@@ -189,6 +189,14 @@ Also on GitHub Actions: `fragment-present` (changelog), `scripts-test`, and CLI 
 
 **Landing a PR is automated.** `merge-tail.yml` arms auto-merge every 10 minutes on PRs that are finished (open, undrafted, unlabelled `hold`, cleanly mergeable, no unresolved threads, every check settled green). Its decision is `scripts/should-arm-automerge.sh`, fixture-pinned. Apply `hold` (or `do-not-merge`, `wip`, `blocked`) to keep a green PR from being armed.
 
+## Signing outward writes (agent provenance)
+
+Anything you post to an external tracker or forge — a Linear comment or description, a GitHub PR body or comment — ends with one hidden, machine-readable line so a later session can route a follow-up back to yours:
+
+`<!-- agent:provenance {"v":1,"harness":"claude-code","sessionId":"…","account":"…","host":"…","surface":"…"} -->`
+
+Emit only fields you actually know (omitted is a fact; invented is a lie); the value must be valid JSON or the line is omitted entirely. `account` is a short non-PII handle (for Claude Code: the `CLAUDE_CONFIG_DIR` basename, default `claude`) — **never an email**. Both Linear and GitHub store the line verbatim (verified 2026-09-11). The canonical spec, field table, and the reply-routing rules live in the flow plugin's `linear-adapter` skill; git commits keep their existing `Claude-Session:` trailer, which is this same idea in commit form.
+
 ## Research
 
 350+ reports in `research/` (`YYYYMMDD_topic-slug.md`). **Always check `research/` before doing new research.**
