@@ -297,6 +297,22 @@ export async function resolveLaunch(args: {
     },
     env: runtimeEnvironment('claude-code', 'turn', {
       CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1',
+      // Keeps the task and todo tools on the model's surface. SDK 0.3.233 took
+      // TodoWrite / TaskCreate / TaskUpdate / TaskGet / TaskList off the DEFAULT
+      // tool set on every newer model, and 0.3.268 restated that as a positive
+      // list ending at Opus 4.7 / Sonnet 4.6 / Haiku 4.5. DorkOS builds its whole
+      // task and todo surface by watching those exact tool names go past
+      // (`sdk/build-task-event.ts`, `sessions/task-reader.ts`), so without this
+      // the model simply never calls them, the todo panel and the Tasks surface
+      // stay empty forever, and nothing errors. The env var is the only lever
+      // that does not cost something else: `allowedTools` is an auto-approval
+      // list rather than an access list, so naming tools there widens
+      // auto-approval (DOR-519, argued at length in `tooling/tool-filter.ts`),
+      // and `tools` would mean declaring a whole base tool set DorkOS has never
+      // taken a position on. Fixture-fed tests cannot catch a regression here —
+      // fixtures keep supplying the blocks a real model would have stopped
+      // sending — so this is verified by one live turn per bump.
+      CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
       // An inherited MCP_TOOL_TIMEOUT shorter than the in-session approval hold
       // would kill every held destructive call mid-wait, with an ERROR where the
       // poll payload used to be. Floored, never erased — see the module TSDoc for
