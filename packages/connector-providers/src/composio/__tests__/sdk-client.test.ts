@@ -356,6 +356,7 @@ describe('ComposioSdkClient', () => {
     });
     expect(second.page.operations.map((entry) => entry.operationSlug)).toEqual([
       'GITHUB_CREATE_ISSUE',
+      'GITHUB_GENERIC_PROXY',
     ]);
     expect(second.page.operations[0]?.capabilityClassification).toBe('destructive');
     expect(second.page.truncated).toBe(false);
@@ -372,6 +373,83 @@ describe('ComposioSdkClient', () => {
     expect(listRequests[1]?.query.cursor).toBe('cursor/page+2=');
     expect(local.requests.every((entry) => entry.apiKey === API_KEY)).toBe(true);
   });
+
+  it.each([
+    ['GMAIL_SEND_EMAIL', ['important', 'openWorldHint', 'createHint'], 'destructive'],
+    ['GMAIL_CREATE_EMAIL_DRAFT', ['important', 'openWorldHint', 'createHint'], 'destructive'],
+    [
+      'GMAIL_SEND_DRAFT',
+      ['important', 'openWorldHint', 'destructiveHint', 'updateHint'],
+      'destructive',
+    ],
+    ['GMAIL_UNKNOWN', [], 'destructive'],
+    ['GMAIL_UNKNOWN', ['futureEffectHint'], 'destructive'],
+    ['GMAIL_UNKNOWN', ['openWorldHint', 'idempotentHint'], 'destructive'],
+    ['GMAIL_CONFLICT', ['readOnlyHint', 'createHint'], 'destructive'],
+    ['GMAIL_CONFLICT', ['updateHint', 'readOnlyHint'], 'destructive'],
+    ['GMAIL_CONFLICT', ['readOnlyHint', 'futureEffectHint'], 'destructive'],
+    ['GMAIL_CONFLICT', ['destructiveHint', 'readOnlyHint'], 'destructive'],
+    ['GMAIL_GET_PROFILE', ['readOnlyHint'], 'read'],
+    ['GMAIL_GET_PROFILE', ['important', 'openWorldHint', 'idempotentHint', 'readOnlyHint'], 'read'],
+  ])('retains %s with conservative effects for %j', async (slug, tags, classification) => {
+    const metadata = {
+      ...tool(slug, tags),
+      toolkit: { slug: 'gmail', name: 'Gmail', logo: 'https://fixture.invalid/gmail.svg' },
+    };
+    const local = await fixture((_request, response) =>
+      json(response, 200, {
+        current_page: 1,
+        total_pages: 1,
+        total_items: 1,
+        next_cursor: null,
+        items: [metadata],
+      })
+    );
+    const result = await client(local.baseUrl).listOperationSchemas(INSTANCE_ID, {
+      toolkit: 'gmail',
+      toolkitVersion: TOOLKIT_VERSION,
+      limit: 10,
+      signal: new AbortController().signal,
+    });
+    expect(result.page.operations).toHaveLength(1);
+    expect(result.page.operations[0]).toMatchObject({
+      operationSlug: slug,
+      toolkit: 'gmail',
+      toolkitVersion: TOOLKIT_VERSION,
+      capabilityClassification: classification,
+      retryPolicy: 'never',
+      inputSchema: metadata.input_parameters,
+      schemaHash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+    });
+    expect(local.requests.map(({ method }) => method)).toEqual(['GET']);
+  });
+
+  it.each(['toolkit', 'version'])(
+    'rejects uncertain metadata with mismatched %s',
+    async (field) => {
+      const metadata = tool('GITHUB_UNKNOWN', []);
+      if (field === 'toolkit') metadata.toolkit.slug = 'gmail';
+      else metadata.version = '20200101_00';
+      const local = await fixture((_request, response) =>
+        json(response, 200, {
+          current_page: 1,
+          total_pages: 1,
+          total_items: 1,
+          next_cursor: null,
+          items: [metadata],
+        })
+      );
+      await expect(
+        client(local.baseUrl).listOperationSchemas(INSTANCE_ID, {
+          toolkit: 'github',
+          toolkitVersion: TOOLKIT_VERSION,
+          limit: 10,
+          signal: new AbortController().signal,
+        })
+      ).rejects.toThrow('another version');
+      expect(local.requests.map(({ method }) => method)).toEqual(['GET']);
+    }
+  );
 
   it('sends one exact-account write and returns operation content without session metadata', async () => {
     const local = await fixture((request, response) => {

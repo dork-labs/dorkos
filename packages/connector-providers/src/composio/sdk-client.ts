@@ -111,11 +111,23 @@ function rethrowDiscoveryError(error: unknown, signal: AbortSignal): never {
   throw new ComposioCatalogError('Composio catalog discovery failed. Check the provider status.');
 }
 
-/** Return a conservative classification, or null when metadata cannot prove one. */
-function classify(tags: readonly string[]): ConnectorOperationClassification | null {
-  if (tags.includes('destructiveHint')) return 'destructive';
-  if (tags.includes('readOnlyHint')) return 'read';
-  return null;
+/** Tags that do not contradict an explicit read-only assertion. */
+const READ_COMPATIBLE_TAGS = new Set([
+  'readOnlyHint',
+  'idempotentHint',
+  'openWorldHint',
+  'important',
+]);
+
+/**
+ * Keep uncertain operations available behind destructive approval. Only an
+ * explicit, uncontradicted read-only assertion permits the read tier; unknown
+ * future hints cannot silently weaken it. Idempotence does not prove read-only.
+ */
+function classify(tags: readonly string[]): ConnectorOperationClassification {
+  return tags.includes('readOnlyHint') && tags.every((tag) => READ_COMPATIBLE_TAGS.has(tag))
+    ? 'read'
+    : 'destructive';
 }
 
 /** Hash the exact input schema body reviewed by the operator. */
@@ -334,27 +346,24 @@ export class ComposioSdkClient implements ComposioOperationClient {
         throw new ComposioCatalogError('Composio repeated an operation catalog cursor.');
       }
 
-      const operations = result.items.flatMap((item) => {
+      const operations = result.items.map((item) => {
         const classification = classify(item.tags);
-        if (classification === null) return [];
         if (item.toolkit.slug !== request.toolkit || item.version !== request.toolkitVersion) {
           throw new ComposioCatalogError(
             'Composio returned operation metadata for another version.'
           );
         }
         const inputSchema = item.input_parameters;
-        return [
-          {
-            providerInstanceId,
-            toolkit: request.toolkit,
-            operationSlug: item.slug,
-            toolkitVersion: request.toolkitVersion,
-            schemaHash: schemaHash(inputSchema),
-            capabilityClassification: classification,
-            retryPolicy: 'never' as const,
-            inputSchema,
-          },
-        ];
+        return {
+          providerInstanceId,
+          toolkit: request.toolkit,
+          operationSlug: item.slug,
+          toolkitVersion: request.toolkitVersion,
+          schemaHash: schemaHash(inputSchema),
+          capabilityClassification: classification,
+          retryPolicy: 'never' as const,
+          inputSchema,
+        };
       });
       return {
         status: 'ok',
