@@ -920,6 +920,83 @@ export const CanvasDocumentSchema = z
 /** One document on a room's canvas. See {@link CanvasDocumentSchema}. */
 export type CanvasDocument = z.infer<typeof CanvasDocumentSchema>;
 
+/** Everything on one room's canvas (`GET /api/rooms/{id}/canvas`). */
+export const CanvasDocumentListResponseSchema = z
+  .object({ documents: z.array(CanvasDocumentSchema) })
+  .openapi('CanvasDocumentListResponse');
+
+/** A room's whole canvas. See {@link CanvasDocumentListResponseSchema}. */
+export type CanvasDocumentListResponse = z.infer<typeof CanvasDocumentListResponseSchema>;
+
+/**
+ * Putting something on a room's canvas as yourself
+ * (`POST /api/rooms/{id}/canvas`).
+ *
+ * The author is resolved from the request, never sent: an author a caller could
+ * name is an author a caller could impersonate.
+ */
+export const OpenCanvasDocumentRequestSchema = z
+  .object({
+    content: UiCanvasContentSchema.describe('What to show. One of the fourteen canvas shapes.'),
+    pinned: z
+      .boolean()
+      .optional()
+      .describe('Pin it, so it sorts first and is never dropped to make room.'),
+  })
+  .openapi('OpenCanvasDocumentRequest');
+
+/** A request to put a document on a room's canvas. */
+export type OpenCanvasDocumentRequest = z.infer<typeof OpenCanvasDocumentRequestSchema>;
+
+/**
+ * Changing one document on a room's canvas
+ * (`PATCH /api/rooms/{id}/canvas/{documentId}`).
+ *
+ * Every field is optional and each does one thing, so a caller that only wants
+ * to pin something does not have to re-send its content.
+ */
+export const UpdateCanvasDocumentRequestSchema = z
+  .object({
+    content: UiCanvasContentSchema.optional().describe('Replace what the document shows.'),
+    pinned: z.boolean().optional().describe('Pin it, or unpin it.'),
+    activate: z
+      .boolean()
+      .optional()
+      .describe(
+        'Move it to the front of the list. It changes the ORDER and nobody’s open tab — a shared canvas does not steal anyone’s view.'
+      ),
+  })
+  .openapi('UpdateCanvasDocumentRequest');
+
+/** A request to change a canvas document. */
+export type UpdateCanvasDocumentRequest = z.infer<typeof UpdateCanvasDocumentRequestSchema>;
+
+/**
+ * Saying you are editing a canvas document, or that you have stopped
+ * (`POST /api/rooms/{id}/canvas/{documentId}/editing`).
+ *
+ * While you hold this, an agent's update to the same document is held rather
+ * than applied, and the agent is told so. It lapses on its own when the
+ * heartbeats stop.
+ */
+export const CanvasEditingRequestSchema = z
+  .object({ editing: z.boolean() })
+  .openapi('CanvasEditingRequest');
+
+/** A request to take, refresh or release a canvas edit lock. */
+export type CanvasEditingRequest = z.infer<typeof CanvasEditingRequestSchema>;
+
+/** Who holds a canvas document's edit lock, and when it lapses. */
+export const CanvasEditingResponseSchema = z
+  .object({
+    editingBy: z.string().nullable(),
+    expiresAt: z.string().nullable(),
+  })
+  .openapi('CanvasEditingResponse');
+
+/** The state of one document's edit lock. */
+export type CanvasEditingResponse = z.infer<typeof CanvasEditingResponseSchema>;
+
 /**
  * The most of a merge summary that survives to the commit subject and the room.
  *

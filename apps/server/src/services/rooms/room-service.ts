@@ -25,12 +25,14 @@ import type { DbTransaction } from '@dorkos/db';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { SignalType } from '@dorkos/shared/relay-schemas';
 import type {
+  CanvasDocument,
   CreateRoomRequest,
   Room,
   RoomEntry,
   RoomEntryBody,
   RoomEntryListResponse,
   RoomEntryReaction,
+  RoomEvent,
   RoomKind,
   RoomMember,
   RoomMergeEvent,
@@ -475,8 +477,18 @@ export class RoomService {
     roomId: string,
     viewerAuthorId: string,
     historyLimit: number
-  ): { room: RoomWithRoster; entries: RoomEntry[]; cursor: number } {
+  ): { room: RoomWithRoster; entries: RoomEntry[]; cursor: number; canvas: CanvasDocument[] } {
     return this.parts.reads.snapshot(roomId, viewerAuthorId, historyLimit);
+  }
+  /**
+   * Every live canvas document as its own frame — the resync a stream resume
+   * sends. See {@link RoomCanvasService.resync}.
+   *
+   * @param roomId - The room.
+   * @returns One `canvas` frame per live document.
+   */
+  canvasResync(roomId: string): RoomEvent[] {
+    return this.parts.canvas.resync(roomId);
   }
   /** The highest `seq` this room has issued. See {@link RoomReads.maxSeq}. */
   maxSeq(roomId: string): number {
