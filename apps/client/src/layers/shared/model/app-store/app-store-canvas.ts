@@ -51,6 +51,15 @@ export interface CanvasDocument {
    * `null` when nothing is waiting. Only the NEWEST held push is kept: a person
    * choosing between their draft and "the agent's version" means the current
    * one, and a queue of superseded versions is a queue nobody would read.
+   *
+   * The invariant that makes that true is **a push that lands clears any hold**,
+   * on every write path — otherwise a hold taken during an edit outlives the
+   * edit, a later push lands while nobody is editing, and Reload then replaces
+   * what is on screen with a version OLDER than it. A hold does survive the edit
+   * ending, though, and deliberately: a choice the person has not answered is
+   * not a choice to delete the moment they stop typing, which is the silent drop
+   * this whole field exists to remove.
+   *
    * Transient, like {@link editing} — a reload starts with nothing held.
    */
   heldUpdate: UiCanvasContent | null;
@@ -368,10 +377,19 @@ export const createCanvasSlice: StateCreator<
         const existing = s.openDocuments[existingIdx];
         activeId = existing.id;
         // Re-activate; refresh content + label unless the doc is being edited,
-        // in which case hold the push for the banner instead of losing it.
+        // in which case hold the push for the banner instead of losing it. A
+        // push that LANDS clears any hold — the same rule `updateActiveDocument`
+        // follows, and for the same reason: an older version left on offer would
+        // let Reload replace what is on screen with something staler than it.
         const refreshed: CanvasDocument = existing.editing
           ? { ...existing, heldUpdate: content, lastActiveAt: now }
-          : { ...existing, content, sourceLabel: sourceLabel(content), lastActiveAt: now };
+          : {
+              ...existing,
+              content,
+              sourceLabel: sourceLabel(content),
+              heldUpdate: null,
+              lastActiveAt: now,
+            };
         documents = s.openDocuments.map((d, i) => (i === existingIdx ? refreshed : d));
       } else {
         const doc: CanvasDocument = {

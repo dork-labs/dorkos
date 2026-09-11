@@ -189,6 +189,34 @@ describe('CanvasSlice — multi-document reducer', () => {
     expect(read().heldUpdate).toBeNull();
   });
 
+  it('never leaves Reload offering a version older than what is on screen', () => {
+    // The scenario, which the re-open path used to get wrong: hold v2 while
+    // editing, stop editing without answering, let v3 LAND through the same
+    // dedupe path, come back. A hold that survived that would put v2 — older
+    // than the v3 on screen — behind the Reload button.
+    const { openCanvasDocument, setDocumentEditing } = useAppStore.getState();
+    const version = (n: string) =>
+      ({ type: 'markdown', content: n, sourcePath: 'notes.md' }) as UiCanvasContent;
+
+    openCanvasDocument(version('v1'));
+    const doc = useAppStore.getState().activeDocumentId!;
+    const read = () => useAppStore.getState().openDocuments.find((d) => d.id === doc)!;
+
+    setDocumentEditing(doc, true);
+    openCanvasDocument(version('v2'));
+    expect(read().heldUpdate).toEqual(version('v2'));
+
+    setDocumentEditing(doc, false);
+    openCanvasDocument(version('v3'));
+
+    expect((read().content as { content: string }).content).toBe('v3');
+    expect(read().heldUpdate).toBeNull();
+
+    // And the button that would have done the damage does nothing at all.
+    useAppStore.getState().applyHeldUpdate(doc);
+    expect((read().content as { content: string }).content).toBe('v3');
+  });
+
   it('holds an open_canvas that re-opens a document being edited', () => {
     const { openCanvasDocument, setDocumentEditing } = useAppStore.getState();
     openCanvasDocument({ type: 'markdown', content: 'mine', sourcePath: 'notes.md' });
