@@ -87,6 +87,33 @@ function heldRoomTurn(say: string | null, finishRequested: FinishRequested): Sce
  */
 export function roomReplyScenarios(finishRequested: FinishRequested): Record<string, ScenarioFn> {
   return {
+    // Puts one document on the room's shared canvas and says so, through the
+    // same `ui_command` path a real runtime produces one on (spec
+    // `room-canvas`). It needs no room id and no token: the room turn's own
+    // collector applies every UNSTAMPED `ui_command` it sees, which is exactly
+    // what makes a deterministic, credential-free end-to-end test of the canvas
+    // possible at all.
+    'rooms-open-canvas': async function* () {
+      yield {
+        type: 'session_status',
+        data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
+      } as StreamEvent;
+      yield {
+        type: 'ui_command',
+        data: {
+          command: {
+            action: 'open_canvas',
+            content: {
+              type: 'markdown',
+              title: 'The plan',
+              content: '# The plan\n\nOne: measure. Two: decide.',
+            },
+          },
+        },
+      } as StreamEvent;
+      yield { type: 'text_delta', data: { text: 'Put the plan on the canvas.' } } as StreamEvent;
+      yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
+    },
     // Holds, then narrates. With the flip on, this text is the thing that must
     // NOT appear in the room; with it off, it is the answer.
     'rooms-hold-then-narrate': heldRoomTurn(

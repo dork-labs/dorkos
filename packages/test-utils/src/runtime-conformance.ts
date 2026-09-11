@@ -238,6 +238,35 @@ export interface RuntimeConformanceOpts {
   mediaTurn?: () => Promise<StreamEvent[]>;
 
   /**
+   * Drives ONE ROOM turn that puts a document on the room's shared canvas, and
+   * reports what the room holds afterwards (spec `room-canvas` §5.5).
+   *
+   * Written against what the TURN produced rather than against any one
+   * runtime's tool handler, which is what makes it satisfiable by every adapter:
+   * claude-code applies its own canvas command synchronously from `control_ui`,
+   * and codex and the scripted test-mode runtime reach the same writer through
+   * the room turn's collector. Both ends have to land in the same place.
+   *
+   * Wire it to `driveRoomCanvasTurn`
+   * (`apps/server/src/services/session/__tests__/durable-turn-harness.ts`),
+   * which owns the room, the runner and the registry; what a wiring supplies is
+   * the one runtime-specific part — how ITS adapter comes to emit the command.
+   *
+   * Omit it and the case SKIPs by name rather than passing on an absence the
+   * suite manufactured, exactly as every other driver here does.
+   */
+  roomCanvasTurn?: () => Promise<{
+    /** Every document on the room's canvas afterwards. */
+    documents: Array<{ id: string; title: string; authorId: string }>;
+    /** Titles a SECOND member's next turn context carries. */
+    nextTurnContextTitles: string[];
+    /** How many turns the room dispatched before anybody asked a second question. */
+    turnsDispatchedByTheCanvasChange: number;
+    /** How many coalesced canvas lines the room's log holds. */
+    canvasEntries: number;
+  }>;
+
+  /**
    * Drives ONE turn that ASKS a question nobody answers, lets the ask expire,
    * closes the turn, and returns the history a reopened session would be
    * served.
@@ -1147,6 +1176,7 @@ export function runtimeConformance(
     authFailure,
     makeCompactingRuntime,
     mediaTurn,
+    roomCanvasTurn,
     durableHistory,
     expiredQuestionHistory,
     presenceTurn,
@@ -2812,6 +2842,47 @@ export function runtimeConformance(
           expect(question.approvalOutcome).toBeUndefined();
         }
       });
+    });
+
+    describe('a room turn puts a document on the room’s canvas (spec `room-canvas`)', () => {
+      const drives = roomCanvasTurn ? it : it.skip;
+
+      drives(
+        'lands on the room canvas, reaches the next turn’s context, and wakes nobody',
+        async () => {
+          const outcome = await roomCanvasTurn!();
+
+          // (a) The table holds it. A command the turn produced and nothing
+          // applied would leave this empty — which is the failure every runtime
+          // reached differently before there was one writer.
+          expect(
+            outcome.documents.length,
+            'the turn produced a canvas command and the room holds no document'
+          ).toBeGreaterThan(0);
+
+          // (b) A SECOND member's next turn is told about it, by name. This is
+          // the channel the whole feature rests on: nothing is pushed at
+          // anybody, so a document nobody's context mentions is a document
+          // nobody learns about.
+          for (const document of outcome.documents) {
+            expect(
+              outcome.nextTurnContextTitles,
+              `the next turn's context does not mention "${document.title}"`
+            ).toContain(document.title);
+          }
+
+          // (c) It woke nobody. Read off the DISPATCHER — the count of turns the
+          // room asked for — rather than off a sleep, so this says "no turn was
+          // started" rather than "none had started yet".
+          expect(
+            outcome.turnsDispatchedByTheCanvasChange,
+            'putting something on the canvas started a turn; a canvas change wakes nobody'
+          ).toBe(1);
+
+          // …and the room said so exactly once, in its own voice.
+          expect(outcome.canvasEntries).toBe(1);
+        }
+      );
     });
 
     if (durableHistory) {

@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { runtimeConformance } from '@dorkos/test-utils';
+import { createControlUiHandler } from '../mcp-tools/ui-tools.js';
+import { driveRoomCanvasTurn } from '../../../session/__tests__/durable-turn-harness.js';
 import {
   wrapSdkQuery,
   sdkError,
@@ -541,6 +543,35 @@ runtimeConformance(
     // not persist, DOR-189), which is exactly what `drivePresenceTurn` does.
     presenceTurn: (runtime, sessionId, content, probes) =>
       drivePresenceTurn(runtime, sessionId, content, '/projects/conformance', probes),
+    // A room turn that puts a document on the room's shared canvas (spec
+    // `room-canvas` §5.5). Claude-code reaches the table by a different route
+    // from every other runtime — its `control_ui` handler calls the writer
+    // SYNCHRONOUSLY and stamps the event it then pushes, rather than leaving the
+    // work to the room turn's collector — so this wiring drives that handler,
+    // which is the code production binds to the session.
+    //
+    // The `roomTurn` marker is the one the RUNNER minted, handed over by the
+    // harness rather than rebuilt here: it keys the per-turn ledger, and a
+    // command applied under an invented turn id would write a row that no line
+    // in the room's log names.
+    roomCanvasTurn: () =>
+      driveRoomCanvasTurn(
+        new ClaudeCodeRuntime(
+          '/tmp/dorkos-conformance',
+          '/projects/conformance',
+          new LocalSessionAttachmentStore(ATTACHMENT_HOME)
+        ),
+        {
+          agentPath: '/agents/ana',
+          otherAgentPath: '/agents/ben',
+          produce: async (_sessionId, roomTurn) => {
+            await createControlUiHandler({ eventQueue: [], roomTurn })({
+              action: 'open_canvas',
+              content: { type: 'markdown', title: 'The plan', content: '# The plan' },
+            });
+          },
+        }
+      ),
     // The media gate. Owns its own scripted turn because a media turn needs a
     // differently-scripted SDK than the default `sdkSimpleText` — a `Read` of a
     // PNG, which is the most ordinary media case on the DEFAULT runtime and the
