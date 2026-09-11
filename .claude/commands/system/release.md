@@ -581,6 +581,16 @@ Also tell the user the "Desktop Release" workflow is building the macOS + Window
 
 If npm publish failed after the tag was pushed: retry `pnpm run publish:cli`; check auth with `npm whoami` (see the token section above).
 
+### Phase 7.1: Tell the reporters (feedback sweep)
+
+Run `/feedback:triage --sweep` now. This release is the ONLY sanctioned trigger
+for the sweep: a DOR issue goes Done at merge, but the reporter's fix is only
+real once a release ships it — sweeping at any other moment emails "this
+shipped" about work nobody can install yet. The sweep moves each fully-shipped
+feedback issue to Done, which fires the reporter's "your report shipped" email
+(mind its pre-flight; rules in `contributing/feedback-pipeline-ops.md`).
+Include its result line (reporters emailed / held / skipped) in the report.
+
 ---
 
 ## Related Commands
