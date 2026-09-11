@@ -8,7 +8,7 @@
  * belongs to the launched process rather than to the transcript. OpenCode puts it
  * on `session.promptAsync`'s `body.system`, which the sidecar re-reads per request
  * and never persists as a message. Codex exec has NEITHER: `ThreadOptions` carries
- * no system-prompt field at 0.153.4, so the only input channel is the prompt string
+ * no system-prompt field at 0.154.0, so the only input channel is the prompt string
  * — and a prompt string lands in the thread's persisted rollout.
  *
  * That is what makes repetition expensive here rather than merely wasteful. Sending
