@@ -295,6 +295,16 @@ export async function resolveLaunch(args: {
     toolConfig: {
       askUserQuestion: { previewFormat: 'html' },
     },
+    // Send the plugin list over stdin instead of on the command line (SDK
+    // 0.3.261). ADR-0239 activates every enabled marketplace plugin through
+    // `options.plugins`, and that array is an unbounded, person-controlled
+    // count of absolute paths under `<dorkHome>/plugins/`. Windows has a hard
+    // command-line length limit, so with enough plugins installed the CLI stops
+    // starting at all — on the one platform whose desktop build has no confirmed
+    // end-user install to notice. Loading is otherwise identical, and
+    // `initializationResult().plugins_applied` reports whether every listed
+    // plugin actually loaded.
+    pluginDelivery: 'initialize',
     env: runtimeEnvironment('claude-code', 'turn', {
       CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1',
       // Keeps the task and todo tools on the model's surface. SDK 0.3.233 took

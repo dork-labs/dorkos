@@ -94,4 +94,15 @@ describe('the launch options every Claude Code turn is given', () => {
         'and the Tasks surface stay empty forever and nothing anywhere errors'
     ).toBe('1');
   });
+
+  it('sends the plugin list over stdin rather than on the command line', async () => {
+    const options = await captureSdkOptions();
+
+    expect(
+      options.pluginDelivery,
+      'ADR-0239 activates every enabled marketplace plugin through `options.plugins`, and on ' +
+        'argv that list is an unbounded count of absolute paths — past Windows\u2019 command-line ' +
+        'length limit the CLI simply stops starting'
+    ).toBe('initialize');
+  });
 });
