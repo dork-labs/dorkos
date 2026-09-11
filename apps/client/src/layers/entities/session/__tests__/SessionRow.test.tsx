@@ -471,6 +471,58 @@ describe('SessionRow variant="full"', () => {
     expect(onRename).toHaveBeenCalledWith('abc12345-def6-7890-abcd-ef1234567890', 'New title');
   });
 
+  // FB-16: "When renaming a session in the right pane I'm unable to use spaces."
+  //
+  // The full row is a synthetic `role="button"`, so Enter and Space are wired
+  // by hand — and the rename input is a DESCENDANT of it, so its keystrokes
+  // bubble into that handler. It called `preventDefault()` on Space, which ate
+  // the keystroke and "activated" the row instead. The sibling rows never had
+  // it: `sidebar-row` swaps its `<button>` out for the editor, and the compact
+  // row's editor sits in a real `<button>`, which browsers already keep clear
+  // of a focused input. This row hand-rolls the handling, so it is the only one
+  // that had to remember.
+  it('lets a space through to the rename field instead of activating the row', () => {
+    const onClick = vi.fn();
+    renderRow(
+      <SessionRow
+        variant="full"
+        session={makeSession()}
+        isActive={false}
+        onClick={onClick}
+        onRename={vi.fn()}
+      />
+    );
+    fireEvent.click(screen.getByLabelText('Rename session'));
+    onClick.mockClear();
+
+    const input = screen.getByLabelText('Session title') as HTMLInputElement;
+    // `fireEvent` reports whether any handler called `preventDefault()`: false
+    // means the default was prevented, which for a space in a text field is
+    // exactly the bug — the character never gets typed.
+    const notPrevented = fireEvent.keyDown(input, { key: ' ', code: 'Space', bubbles: true });
+
+    expect(notPrevented).toBe(true);
+    // And the row must not have taken the keystroke as an activation.
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it('still activates the row on Space when no rename is in progress', () => {
+    // The guard is scoped to the rename state, so the row keeps the keyboard
+    // affordance its `role="button"` promises.
+    const onClick = vi.fn();
+    renderRow(
+      <SessionRow
+        variant="full"
+        session={makeSession()}
+        isActive={false}
+        onClick={onClick}
+        onRename={vi.fn()}
+      />
+    );
+    fireEvent.keyDown(screen.getByLabelText(/^Session: /), { key: ' ', code: 'Space' });
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
   it('Escape cancels a rename without calling onRename', () => {
     const onRename = vi.fn();
     renderRow(

@@ -116,6 +116,21 @@ export function SessionRowFull({
               aria-label={`Session: ${sessionDisplayTitle(session.title)}. ${borderState.label}.`}
               onClick={onClick}
               onKeyDown={(e) => {
+                // Not while the rename field is up. This row is a synthetic
+                // `role="button"`, so Enter and Space have to be wired by hand
+                // — but the rename `<input>` below is a DESCENDANT of it, and
+                // its keystrokes bubble here. Without this guard the
+                // `preventDefault()` below ate every space a person typed into
+                // a session name, and "activated" the row instead (FB-16).
+                //
+                // The sibling rows never had the bug because neither nests the
+                // field inside an activatable ancestor: `sidebar-row` renders
+                // the editor INSTEAD of its `<button>`, and `SessionRowCompact`
+                // puts it inside a real `<button>`, which browsers already keep
+                // out of a focused input's way. This row is the only one that
+                // hand-rolls the key handling, so it is the only one that had
+                // to remember, and it did not.
+                if (isRenaming) return;
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
                   onClick();
