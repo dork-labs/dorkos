@@ -4,6 +4,7 @@
  * @module services/connectors/providers/managed/managed-cloud
  */
 import { randomUUID } from 'node:crypto';
+import { ManagedConnectorLinkRequiredError } from '../../../core/auth/cloud-link-client.js';
 import type {
   ConnectorEventCapability,
   ConnectorEventPageRequest,
@@ -314,7 +315,16 @@ export class ManagedCloudConnectorProvider implements ConnectorProvider {
     let response: ManagedConnectorExecutionResponse;
     try {
       response = await this.#cloud.executeManagedConnectorOperation(request, command.signal);
-    } catch {
+    } catch (error) {
+      if (error instanceof ManagedConnectorLinkRequiredError) {
+        return {
+          status: 'error',
+          code: 'MANAGED_LINK_REQUIRED',
+          message:
+            'This instance is not linked to a DorkOS account. Nothing was sent. Ask the owner to open Settings > Access and choose Link this instance.',
+          retryable: false,
+        };
+      }
       return terminalUnknown(
         'MANAGED_EXECUTION_OUTCOME_UNKNOWN',
         'The hosted service did not confirm the managed connector outcome.'
