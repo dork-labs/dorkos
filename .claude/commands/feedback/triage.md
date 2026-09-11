@@ -122,3 +122,6 @@ Announce results: how many reporters were emailed, held, skipped.
   2026-09-11).
 - Concurrent human triage in the Linear UI is normal and expected; the anomaly
   report is how their half-done work surfaces instead of being skipped.
+- Every comment this command posts ends with the `agent:provenance` line (see
+  "Signing outward writes" in AGENTS.md) so a later session can route a
+  follow-up back to the one that wrote it.
