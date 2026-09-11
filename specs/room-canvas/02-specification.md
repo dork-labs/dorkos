@@ -271,6 +271,7 @@ entry and `RoomService` owns the single write path into a room's log.
 | `heartbeat(roomId, authorId, documentId, editing)` | Take, refresh or release the edit lock (§3.5)                               |
 | `viewers(roomId)`                                  | `roomStream.subscriberCount(roomId)` — see §3.6                             |
 | `lastDocumentFor(roomId, authorId)`                | The author's own most recently opened-or-updated document, or `null` (§5.6) |
+| `finishTurn(turnId)`                               | Compose and post this turn's one coalesced entry from the ledger (§6.2)     |
 | `resync(roomId)`                                   | Every live document as `canvas` frames, for a stream resume                 |
 
 `apply` is the agent path and wraps `open`/`update`/`close` with the refusals of §5.1. The rest are
@@ -281,6 +282,12 @@ all of them, the same call the merge service is handed
 
 `lastDocumentFor` reads the `lastTouchedBy` / `lastTouchedAt` columns rather than a process-memory
 map, so the default target of a bare `update_canvas` survives a server restart mid-conversation.
+
+**`apply` keeps a per-turn ledger**, keyed by `turnId`: every operation it applies appends
+`{ change, documentId, type, title }` to it, whichever caller made the call. The ledger is what the
+turn's coalesced entry is composed from, and `finishTurn(turnId)` is what composes, posts and clears
+it. It is in-process and per-turn — a turn whose process dies never posts an entry, which is correct:
+its rows are still there, and the room's next context reads them.
 
 #### 3.2 Dedupe, mirroring the client's `sourceKey()`
 
@@ -459,39 +466,73 @@ else (`ui-action-dispatcher.ts:192-196`), and a client-side read of it is forbid
 only job is dedupe (§5.5). A refused command is never pushed at all, so no room, no session and no
 viewer sees an effect the model was told did not happen.
 
+**The stamp only works if the normalizer carries it, and today it would not.** A `StreamEvent` does
+not reach `collectReply` as it was pushed: `session-event-normalizer.ts:319-326` **rebuilds** the
+`ui_command` member field by field —
+
+```ts
+case 'ui_command': {
+  const command = data.command;
+  if (command === undefined) return null;
+  const uiCommand: RawOf<'ui_command'> = { type: 'ui_command', command: ... };
+  return uiCommand;
+}
+```
+
+— and drops everything else on `data`. A stamp pushed by the handler would be erased between the
+event queue and the projector, the tap would see an unstamped event, and **every claude-code
+operation would apply twice**: two rows for `json`/`widget` (no source key, so no dedupe to save it),
+two counts against the ceiling, and two mentions in the turn's entry. So the normalizer's
+`ui_command` arm is widened to `{ type, command, applied? }` and the `SessionEvent` contract's
+`ui_command` member gains the same optional field. This is the one edit that makes the whole
+two-caller design safe, and it is invisible until it is missing — §Testing pins it with a round-trip
+assertion rather than leaving it to review.
+
 #### 5.3 How the handler learns it is in a room turn
 
-`roomContext` does **not** reach the session object today. `room-turn-runner.ts:865` passes it to
-`dispatchMessage`; `trigger-turn.ts:742` folds it into the neutral additional-context bag as
-`{ kind: 'room_context', scope: 'per-turn', data }` (`context-assembler.ts:177-178`); the bag is
-rendered into the prompt and nothing else.
+`apply` needs three facts — room id, the acting agent's **room author id**, and a **turn id** — and
+none may be taken from the model. What exists today:
 
-The precedent for adding a marker is three lines above where it goes.
-`claude-code-runtime.ts:476-480` already lifts a bag entry onto the session for exactly this reason:
+- `room-turn-runner.ts:860-905` passes `dispatchMessage` a `roomContext` and
+  `clientId: ROOMS.CLIENT_ID` (`constants.ts:388`). `clientId` says a room turn is running and not
+  **which** room.
+- `roomContext` reaches the runtime only as a prompt-context bag entry:
+  `trigger-turn.ts:742` folds it in as `{ kind: 'room_context', scope: 'per-turn', data }`
+  (`context-assembler.ts:177-178`). It carries `room.id`, so the room is recoverable — **but not the
+  author id**: `RoomContextMember` deliberately carries no id, because a member is addressed by
+  handle (the reasoning is stated at `additional-context.ts:196-204`). And it carries no turn id at
+  all, nor should it: an opaque routing id has no business in a prompt.
+- Both missing facts are already in scope at the dispatch site. `RoomTurnRequest.authorId`
+  (`room-turn-port.ts:83`) is "the agent author being triggered" — exactly the id `apply` records as
+  the document's author.
+
+So the marker is threaded as **routing metadata, not prompt context**: one new optional field on
+`MessageOpts` (`packages/shared/src/agent-runtime.ts`, beside `additionalContext` at `:790`),
+server-derived and never client-supplied:
 
 ```ts
-const uiStateEntry = opts?.additionalContext?.find((e) => e.kind === 'ui_state');
-if (uiStateEntry?.kind === 'ui_state') session.uiState = uiStateEntry.data;
+  /** Set only for a room turn. Server-derived; a client may not supply it. */
+  roomTurn?: { roomId: string; authorId: string; turnId: string };
 ```
 
-So `sendMessage` lifts the room marker the same way, with one difference that is not optional:
+threaded, in order:
 
-```ts
-const roomEntry = opts?.additionalContext?.find((e) => e.kind === 'room_context');
-session.roomTurn =
-  roomEntry?.kind === 'room_context'
-    ? { roomId: roomEntry.data.room.id, authorId: opts.roomAuthorId, turnId: opts.dispatchId }
-    : undefined;
-```
+| File                                                  | Change                                                                                                          |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `services/rooms/room-turn-runner.ts:860-905`          | mints `turnId` (a ULID) once per turn, passes `{ roomId: request.room.id, authorId: request.authorId, turnId }` |
+| `services/session/message-dispatcher.ts:935`          | adds `roomTurn` to the field list it forwards, beside `roomContext`                                             |
+| `services/session/trigger-turn.ts:611, 742`           | forwards it to `deps.sendMessage`; it does **not** enter `assembleAdditionalContext`                            |
+| `runtimes/claude-code/claude-code-runtime.ts:476-480` | `session.roomTurn = opts?.roomTurn` — **assigned unconditionally, including to `undefined`**                    |
 
-**It is assigned unconditionally, including to `undefined`.** The `ui_state` lift sets and never
-clears, which is harmless for a snapshot and would be a defect here: a session that ran one room turn
-would keep claiming to be in that room for every later direct turn, and a person's own `open_canvas`
-would land on a channel.
+That last line is the one that must not be copied loosely from its neighbour. The `ui_state` lift
+beside it sets and never clears, which is harmless for a snapshot and would be a defect here: a
+session that ran one room turn would keep claiming to be in that room for every later direct turn,
+and a person's own `open_canvas` would land on a channel.
 
-`UiToolSession` (`ui-tools.ts:126-144`) gains the field. The agent's room author id and the turn's
-dispatch id ride beside the room id because `apply` needs all three and none of them may be taken
-from the model.
+The same `turnId` the runner mints is what `collectReply` and `finishTurn` use (§6.2), so the
+handler's ledger entries and the tap's are the same ledger. `UiToolSession` (`ui-tools.ts:126-144`)
+gains the field; `CodexEventContext` (`event-mapper.ts:122`) gains it from the same source for its
+refusals (§5.4).
 
 #### 5.4 What is refused in a room, and where each runtime refuses it
 
@@ -534,14 +575,15 @@ so the tap's allow-list (§5.5) is the whole answer there.
 `collectReply` (`room-turn-runner.ts:1262-1400`) already reads every event of a room turn off the
 projector — it is how the room collects the reply, derives the live activity lane (`:1381-1383`) and
 learns the turn ended (`:1384-1389`). Its `bounds` argument gains `roomId`, `authorId` and
-`dispatchId`, and its loop gains one branch:
+`turnId` — the same `turnId` the runner minted for `MessageOpts.roomTurn` (§5.3) — and its loop
+gains one branch:
 
 ```ts
 if (event.type === 'ui_command' && event.applied === undefined) {
   applyRoomCanvasCommand({
     roomId: bounds.roomId,
     authorId: bounds.authorId,
-    turnId: bounds.dispatchId,
+    turnId: bounds.turnId,
     event,
   });
 }
@@ -554,10 +596,19 @@ wrapper around `apply` that discards the result, because on this path there is n
 to.
 
 **What a tap-only producer gives up, said plainly.** Its refusal is not visible to the model: the
-turn already moved on. So the property this design guarantees instead is that **an operation the tap
-did not apply is never claimed applied anywhere** — it produces no row, no frame, and no line in the
-turn's coalesced entry (§6.2). There are exactly two paths and they differ only in whether the model
-is told:
+turn already moved on. So the property this design guarantees instead is that **an operation nothing
+applied is never claimed applied anywhere** — no row, no frame, and no line in the turn's coalesced
+entry.
+
+The converse holds too, and it holds **by construction rather than by timing**: the coalesced entry
+is composed from the service's own per-turn ledger (§3.1), which `apply` appends to whichever caller
+called it, never from what the tap happened to observe. So a handler-applied operation whose stamped
+event reaches the projector after the collector has already settled still has its row **and** its
+line — the runner calls `finishTurn(turnId)` at turn end and the ledger already holds it. Composing
+the entry from the tap's observations would have made "has a row" and "is named in the entry" two
+different sets, which is the shape of a bug nobody notices for a month.
+
+There are exactly two paths and they differ only in whether the model is told:
 
 | Path                                     | Refusal reaches the model?                            | Can an operation be silently lost? |
 | ---------------------------------------- | ----------------------------------------------------- | ---------------------------------- |
@@ -725,12 +776,22 @@ archived-room refusal included (§3.7). Like a merge entry it
 **stores no mentions, addresses nobody, and triggers no turn**; agents learn the table moved at their
 next turn from §6.1.
 
-The text is one line, composed once when the turn settles (`writing-for-humans`):
+**Composed from the service's ledger, never from the tap's observations.** `apply` appends every
+operation it applies to a per-`turnId` ledger (§3.1), whichever of its two callers made the call.
+When the turn settles, the runner calls `RoomCanvasService.finishTurn(turnId)` once — in the same
+`finally` that clears the activity lane, so a turn the ceiling or the deadline killed still reports
+what it put on the table — and that method composes the line, posts the entry and clears the ledger.
+
+This is what keeps "has a row" and "is named in the entry" the same set. Composing from the tap would
+have missed any handler-applied operation whose stamped event reached the projector after the
+collector settled: the row would exist and nothing would name it.
+
+The text is one line (`writing-for-humans`):
 
 > Ana opened the diff of `src/router.ts` and a preview of localhost:5173.
 
 Exactly one of these per turn however many operations ran (E17), and none at all for a turn that
-changed nothing.
+applied nothing.
 
 #### 6.3 A mention
 
@@ -1155,17 +1216,27 @@ code, and each is listed with the defect it would catch.
 
 **`apps/server` — the routing seam**
 
-- `sendMessage` sets `session.roomTurn` from a `room_context` bag entry **and clears it when the
-  entry is absent**. _This is the defect the `ui_state` lift at `claude-code-runtime.ts:476-480` would
+- `sendMessage` sets `session.roomTurn` from `opts.roomTurn` **and clears it when the field is
+  absent**, and `MessageOpts.roomTurn` reaches it unchanged from the room turn runner. _This is the defect the `ui_state` lift at `claude-code-runtime.ts:476-480` would
   have if it were copied naively: a session that ran one room turn would keep writing to that room
   forever._
 - `control_ui` in a room turn calls `RoomCanvasService.apply` **synchronously** and returns its real
   result — `{ target: 'room', roomId, documentId, rev, viewers }` on success, the refusal sentence on
   failure — and pushes no `ui_command` event at all when `apply` refused. Outside a room turn its
   behaviour is byte-identical to today's.
+- **Round-trip:** a stamped `ui_command` pushed onto `session.eventQueue` arrives at `collectReply`
+  with `applied` **intact**, through the real normalizer. _This is the test that catches the defect
+  this review found: `session-event-normalizer.ts:319-326` rebuilds the event field by field, and a
+  stamp it does not copy is a stamp the tap never sees._
+- **End to end:** a room turn that runs one claude-code `open_canvas` ends with exactly **one** row,
+  **one** `canvas` frame, **one** ledger entry and **one** named operation in the coalesced entry —
+  asserted for `json` content, which has no source key and so no dedupe to mask a double write.
 - An event the handler applied carries the `applied` stamp and the tap **skips** it; an unstamped
   event from codex or test-mode is applied exactly once. _Catches double-application, which would
   double-count the ceiling and double the coalesced entry._
+- The coalesced entry is composed from the ledger, not the tap: an operation whose stamped event is
+  delivered **after** the collector settles is still named in the entry, and still has exactly one
+  row. _Catches the row-without-a-line split._
 - The client never reads `applied`: a test greps `apps/client/src` for the field and fails on a hit.
 - Each of the sixteen non-canvas actions is refused in a room with the exact sentence, and the
   refused command **never reaches `session.eventQueue`**. _Catches a refusal that still leaks onto a
@@ -1273,8 +1344,11 @@ built on a measured claim — "six tabs do not fit a 45% panel at this window wi
 (`:33-36, 137-155`). A seventh tab changes the arithmetic under both halves: the narrow case still
 overflows (more so), but the wide case may no longer fit, and a spec that only had its count changed
 from six to seven would either pass vacuously or fail for a reason that is not the bug it was filed
-for (ADR `260725-004456`, the scroll-affordance rule it pins). P1 re-measures both window widths and
-rewrites the premise sentences to match.
+for. The rule it is protecting — a fade must never advertise tabs that cannot be reached — is pinned
+by the spec's own assertions and by nothing else; the ADR its comment credits (`260725-004456`) is
+about registry-driven status-bar items, and reasons about a fade only in passing, so it is not a
+source to lean on here. P1 re-measures both window widths and rewrites the premise sentences to
+match.
 
 **Mocking strategy.** Server tests use the rooms test harness and a real SQLite database, never a
 mocked `RoomCanvasService` — a mock here would encode the hypothesis rather than test it. Client
@@ -1453,8 +1527,13 @@ Browser tab is absent under DirectTransport; every listed e2e spec passes agains
 - `apps/server/src/services/rooms/canvas/` — service, `document-key.ts`, tests
 - `apps/server/src/services/core/streams/room-stream-delivery.ts` — the canvas resync
 - `apps/server/src/routes/room-canvas.ts` + `openapi-registry.ts` + regenerated docs
-- `apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts:476-480` — the
-  `session.roomTurn` lift, assigned unconditionally
+- `packages/shared/src/agent-runtime.ts:790` — `MessageOpts.roomTurn`;
+  `services/session/message-dispatcher.ts:935` and `services/session/trigger-turn.ts:611, 742` — the
+  threading (§5.3); `apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts:476-480` —
+  `session.roomTurn = opts?.roomTurn`, assigned unconditionally
+- `apps/server/src/services/session/session-event-normalizer.ts:319-326` — the `ui_command` arm
+  carries `applied` through; the `SessionEvent` contract's `ui_command` member gains the field. **Not
+  optional: without it every claude-code operation applies twice** (§5.2)
 - `apps/server/src/services/runtimes/claude-code/mcp-tools/ui-tools.ts` — the synchronous `apply`
   call, the real result, the `applied` stamp, refusals, room-aware `get_ui_state`
 - `packages/shared/src/schemas.ts:5276-5285, 5498-5502` — the optional `documentId` on
@@ -1463,7 +1542,8 @@ Browser tab is absent under DirectTransport; every listed e2e spec passes agains
 - `apps/server/src/services/runtimes/codex/ui-command-consent.ts` + `event-mapper.ts:122, 631-640` —
   `isUiActionRefusedInRoom` and the `roomTurn` marker on `CodexEventContext`
 - `apps/server/src/services/rooms/room-turn-runner.ts:1262-1400` — `collectReply`'s `bounds` gains
-  `roomId`, `authorId` and `dispatchId`; the unstamped-event tap; the coalesced entry
+  `roomId`, `authorId` and `turnId`; the minted `turnId`; the unstamped-event tap; the
+  `finishTurn(turnId)` call in the collector's `finally`
 - `apps/server/src/services/rooms/room-capabilities.ts` — `rooms.readCanvas`
 - `apps/server/src/services/rooms/room-context.ts` — the `canvas` section;
   `runtimes/shared/room-context-block.ts` — its rendering across the fence;
@@ -1472,8 +1552,10 @@ Browser tab is absent under DirectTransport; every listed e2e spec passes agains
 - `packages/test-utils/src/runtime-conformance.ts` — the new case
 - `tool-exposure.test.ts` — the census update
 
-**Acceptance:** the conformance case passes on claude-code and on test-mode; a room turn's
-`open_canvas` is visible in `GET /api/rooms/:id/canvas` and on the stream; a second agent's next
+**Acceptance:** the conformance case passes on claude-code and on test-mode; a claude-code room turn
+that opens one `json` document ends with exactly one row, one frame and one named operation in the
+coalesced entry; a room turn's `open_canvas` is visible in `GET /api/rooms/:id/canvas` and on the
+stream; a second agent's next
 context lists it; no turn is triggered; exactly one entry lands per turn; **the 4th operation is
 refused in the tool result the model reads**, and nothing was written for it; a stamped event is
 applied once and an unstamped one is applied once; the sixteen non-canvas actions are refused with

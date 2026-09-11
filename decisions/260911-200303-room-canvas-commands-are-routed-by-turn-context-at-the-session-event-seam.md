@@ -47,12 +47,22 @@ refusal sentence) and only then pushes the `ui_command` event, stamped with a se
 already reads every event of a room turn off the projector. It calls the same `apply` for every
 `ui_command` carrying **no** stamp — codex, test-mode, and any future producer.
 
-`session.roomTurn` is lifted out of the `room_context` additional-context entry exactly as
-`session.uiState` is lifted out of the `ui_state` entry three lines away
-(`claude-code-runtime.ts:476-480`) — **assigned unconditionally, including to `undefined`**, because a
-marker that is set and never cleared would make every later direct turn in that session write to a
-channel. It carries the room id, the agent's room author id and the turn's dispatch id, because
-`apply` needs all three and none may be taken from the model.
+**Two supporting edits are load-bearing rather than incidental.** First, the room marker travels as
+_routing metadata_, not prompt context: a new optional `MessageOpts.roomTurn`
+(`{ roomId, authorId, turnId }`), minted by the room turn runner from `request.room.id` and
+`request.authorId` (`room-turn-port.ts:83`) and threaded to `claude-code-runtime.ts:476-480`, where
+it is **assigned unconditionally, including to `undefined`** — a marker that is set and never cleared
+would make every later direct turn in that session write to a channel. The prompt-context bag was the
+wrong carrier: `RoomContextData` has the room id but deliberately no member ids, and an opaque turn
+id has no business in a prompt. Second, `session-event-normalizer.ts:319-326` **rebuilds** the
+`ui_command` event field by field and drops everything else, so it must be widened to carry
+`applied`; without that edit the stamp is erased before the tap sees it and every claude-code
+operation applies twice.
+
+**The coalesced entry is composed from the service's own per-turn ledger**, appended by `apply`
+whichever caller called it and posted by `finishTurn(turnId)` at turn end — never from what the tap
+observed. That is what keeps "has a row" and "is named in the turn's entry" the same set even when a
+stamped event reaches the projector after the collector has settled.
 
 Everything that is not one of the six canvas verbs is refused in a room, as an **allow-list** so a
 twenty-third action is refused by default, with one plain sentence. Codex refuses through the seam it
@@ -91,6 +101,10 @@ survives a restart, and a plain refusal when they have none.
 - On codex and test-mode a ceiling refusal still cannot reach the model mid-turn; the honest
   guarantee there is narrower — unapplied means unclaimed — and the agent learns the table's real
   state from its next turn's context.
+- The stamp has to survive a normalizer that exists to strip unknown fields, so one more contract
+  (`SessionEvent`'s `ui_command` member) now carries a field only the server reads. A future
+  normalizer rewrite that "tidies" it away silently doubles every operation, which is why a
+  round-trip test pins it rather than a comment.
 - `collectReply` gains a responsibility beyond collecting the reply, and three new fields on its
   `bounds`, which makes an already dense function denser.
 - The room's default target ("your last document") is a piece of hidden state an agent has to be
@@ -107,6 +121,8 @@ survives a restart, and a plain refusal when they have none.
   test-mode dark — including the test-mode path that makes the feature testable without spending.
 - **New `room_canvas_*` verbs in the room capability domain.** It forks the vocabulary every skill and
   template already emits, to express a destination the turn already knows.
+- **Composing the coalesced entry from the tap's observations.** It loses any operation the handler
+  applied whose event lands after the collector settles: a row with nothing naming it.
 - **Predicting the document id from a pure function instead of returning the written row's id.** It
   worked only for content with a natural source key and had to omit the id for `json` and `widget`;
   with `apply` synchronous there is nothing to predict.
