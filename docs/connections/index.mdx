@@ -17,9 +17,9 @@ The **Connections** page brings the outside world into one place. It has two reg
 This guide covers Accounts.
 
 <Callout type="warn">
-  Accounts are in alpha. The complete flow is tested with an offline service fixture. A real vendor
-  account has not completed the production proof yet. Managed services stay unavailable until each
-  production readiness check passes.
+  DorkOS-managed Accounts are available in alpha. A real Gmail sign-in, profile read, usage record,
+  and access removal have been verified. This does not certify every service. Managed account
+  notifications remain unavailable while their separate live delivery check is incomplete.
 </Callout>
 
 ## Connect an account in three steps
@@ -30,7 +30,9 @@ This guide covers Accounts.
 
 ### Choose a service
 
-Open **Connections**, find **Accounts**, and search the current service catalog. A supported service can use DorkOS-managed OAuth without a separate setup entry. An explicit custom setup takes priority when one exists. Services that need unsupported or custom setup stay visible and explain what is missing. When more than one route is ready, you can change the route before continuing.
+Open **Connections** and find **Accounts**. If you see **Link DorkOS account**, select it to open **Settings → Access**. Choose **Link this instance** and finish signing in to your DorkOS account. Return to **Connections → Accounts**, search for a service, and select its **Connect** button.
+
+Supported services use Composio-managed sign-in by default, without a separate developer setup. An explicit custom setup takes priority when one exists. Services that need unsupported or custom setup stay visible and explain what is missing. When more than one route is ready, you can change the route before continuing.
 
 </Step>
 
@@ -61,6 +63,8 @@ An agent can ask for a service and explain why it needs access. The request does
 If the request is still attached to a live turn, the agent receives the result there. After a restart, DorkOS can continue the exact recorded session once. A denied, expired, failed, or deleted request grants no access.
 
 ## Actions and notifications are separate
+
+DorkOS-managed account notifications are not available yet. The choices below describe notification access when the selected route supports it. Slack and Telegram Messaging are separate from this limitation.
 
 An action grant lets an agent run a reviewed operation, such as reading a profile. It does not let the agent receive account activity.
 

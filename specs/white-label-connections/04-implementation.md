@@ -3,9 +3,9 @@
 **Spec:** `specs/white-label-connections/02-specification.md`  
 **Umbrella:** DOR-1792  
 **Project:** DorkOS Connections  
-**Branch:** programme record on `codex/connections-program`
-**Status:** In progress — workstreams 1–6 are merged; workstream 7 and the remaining production proof are open
-**Updated:** 2026-09-10
+**Branch:** acceptance record on `codex/connections-acceptance-record`
+**Status:** In progress — workstreams 1–6 are merged; Accounts acceptance passed and availability is enabled; workstream 7 remains open for event acceptance and final follow-ups
+**Updated:** 2026-09-11
 
 ## Prerequisites and related work
 
@@ -25,15 +25,125 @@
 
 ## Workstream status
 
-| ID  | Workstream                          | Tracker                                                                                                                        | State       | Evidence                                                                                          |
-| --- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ----------- | ------------------------------------------------------------------------------------------------- |
-| 1.1 | Contracts and migration             | [DOR-1793](https://linear.app/dorkspace/issue/DOR-1793/white-label-connections-p1-stable-provider-instance-connection-grant)   | Merged      | See P1 checkpoint below                                                                           |
-| 2.1 | Authorization, execution, and usage | [DOR-1794](https://linear.app/dorkspace/issue/DOR-1794/white-label-connections-p2-enforced-connector-execution-across-dorkos)  | Merged      | P2 record below                                                                                   |
-| 3.1 | Complete local experience           | [DOR-1795](https://linear.app/dorkspace/issue/DOR-1795/white-label-connections-p3-complete-connections-management-access)      | Merged      | PR #1663                                                                                          |
-| 4.1 | Managed tenant service              | [DOR-1796](https://linear.app/dorkspace/issue/DOR-1796/white-label-connections-p4-tenant-scoped-managed-connector-service-in)  | Merged      | PR #1663                                                                                          |
-| 5.1 | Managed and BYO events              | [DOR-1797](https://linear.app/dorkspace/issue/DOR-1797/white-label-connections-p5-signed-managed-and-byo-event-ingress-with)   | Merged      | PR #1681                                                                                          |
-| 6.1 | Agent request, grant, and resume    | [DOR-740](https://linear.app/dorkspace/issue/DOR-740/white-label-connections-p6-respec-dor-740-for-private-agent-requests)     | Merged      | PR #1681                                                                                          |
-| 7.1 | Rollout and production evidence     | [DOR-1798](https://linear.app/dorkspace/issue/DOR-1798/white-label-connections-p7-remove-legacy-paths-verify-all-surfaces-and) | In progress | Managed defaults are deployed; account, action, notification, usage, and revoke proof remain open |
+| ID  | Workstream                          | Tracker                                                                                                                        | State       | Evidence                                                                                   |
+| --- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ----------- | ------------------------------------------------------------------------------------------ |
+| 1.1 | Contracts and migration             | [DOR-1793](https://linear.app/dorkspace/issue/DOR-1793/white-label-connections-p1-stable-provider-instance-connection-grant)   | Merged      | See P1 checkpoint below                                                                    |
+| 2.1 | Authorization, execution, and usage | [DOR-1794](https://linear.app/dorkspace/issue/DOR-1794/white-label-connections-p2-enforced-connector-execution-across-dorkos)  | Merged      | P2 record below                                                                            |
+| 3.1 | Complete local experience           | [DOR-1795](https://linear.app/dorkspace/issue/DOR-1795/white-label-connections-p3-complete-connections-management-access)      | Merged      | PR #1663                                                                                   |
+| 4.1 | Managed tenant service              | [DOR-1796](https://linear.app/dorkspace/issue/DOR-1796/white-label-connections-p4-tenant-scoped-managed-connector-service-in)  | Merged      | PR #1663                                                                                   |
+| 5.1 | Managed and BYO events              | [DOR-1797](https://linear.app/dorkspace/issue/DOR-1797/white-label-connections-p5-signed-managed-and-byo-event-ingress-with)   | Merged      | PR #1681                                                                                   |
+| 6.1 | Agent request, grant, and resume    | [DOR-740](https://linear.app/dorkspace/issue/DOR-740/white-label-connections-p6-respec-dor-740-for-private-agent-requests)     | Merged      | PR #1681                                                                                   |
+| 7.1 | Rollout and production evidence     | [DOR-1798](https://linear.app/dorkspace/issue/DOR-1798/white-label-connections-p7-remove-legacy-paths-verify-all-surfaces-and) | In progress | Accounts OAuth, action, usage, and revoke proof passed; live event acceptance remains open |
+
+## Current production acceptance — September 11
+
+Managed Accounts passed the real-service acceptance sequence. Normal Composio-managed Gmail
+OAuth completed through Connections. One named test agent received one exact `GMAIL_GET_PROFILE`
+revision and executed it once through the installed DorkOS CLI. Hosted and local usage each
+recorded the same single attempt. After that grant was revoked, the next call was denied before
+another provider attempt. This closes the account, harmless action, usage, and grant-revocation
+smoke in specification §8; it does not claim a sent email or a live notification.
+
+The common Accounts readiness switch was deliberately promoted on September 11 at 04:38 UTC,
+after the smoke and a separate successful Linear setup start. The replacement server-only
+Composio key created the reusable managed Linear OAuth configuration. That setup stopped before
+external Linear consent; its expired provisional account was deleted and confirmed absent, while
+the reusable configuration was retained. The actual dogfood app was linked through the existing
+Settings → Access flow to the intended signed-in account, without restarting its running server,
+copying fixture credentials, enabling optional usage sharing, or granting agent access. Gmail,
+Google Drive, and Linear searches were visible in Accounts after reload.
+
+The two superseded dedicated-project keys were revoked after the replacement passed Gmail
+completion/execution and Linear configuration creation. Fresh inventory showed only the
+replacement key. The obsolete Preview override and temporary diagnostic keys were removed.
+The temporary fixture program key was also deleted and confirmed absent: the same harmless
+authenticated probe changed from 200 to 401, then its private file was removed. Actual dogfood
+keys were untouched; the fixture owner session, runtime, and active Gmail account remain
+available for the pending event acceptance.
+The current dashboard key preset's effective permission set remains undocumented; the operator
+guide records the observed setup rather than describing it as least-privilege or claiming an
+unverified permission matrix. Existing Google grants and active Gmail authority were preserved.
+
+Live event acceptance remains separate. The first bounded test observed no matching notification
+and no event rows, so it provides no delivery proof. Its exact subscription was revoked locally
+and remotely, its upstream trigger was confirmed absent, and the events switch was restored to
+off on a READY canonical deployment. The second bounded window also observed no matching event.
+Read-only GitHub settings showed this repository was ignored and not subscribed, so naturally
+arriving repository notifications were not a usable acceptance source. The exact test subscription
+was revoked in both authorities and its upstream trigger was confirmed absent. At 05:26 UTC,
+canonical deployment `dpl_BtqpF4223BUgJWGNkVMPhKvN8VH6` was READY with events off and Accounts on;
+authenticated local event-definition discovery returned `503 events_unavailable`. Both event
+windows are closed and their restoration obligations discharged. Events remain unavailable for
+general use. No email was sent, notification preference changed, or GitHub activity manufactured
+for either test.
+
+The remaining event gate is one genuine signed event persisted while the local runtime is
+offline, delivered after restart, acknowledged with protected payload cleared, followed by exact
+subscription revocation and confirmed upstream disablement or removal. A second live email after
+revocation is optional: existing negative tests cover post-revocation refusal. The first missing
+notification was inconclusive, not proof of a provider defect. The concrete external blocker is
+a genuine incoming event for the narrow test subscription. One bounded test email has been
+proposed, but its send requires explicit user authorization and has not occurred. Existing
+hermetic ingress, retry, ACK, and revocation tests remain valid without being relabeled as live
+provider proof. Workstream 7.1 remains
+`in_progress` in `03-tasks.json`; neither DOR-1798 nor the programme is complete.
+
+### Follow-ups and evidence
+
+[PR #1775](https://github.com/dork-labs/dorkos/pull/1775) corrected managed OAuth application
+metadata. [PR #1780](https://github.com/dork-labs/dorkos/pull/1780) updated the hosted-key operator
+guide. [PR #1781](https://github.com/dork-labs/dorkos/pull/1781) merged the visible account-field
+metadata correction at `9bba0e2f966a114a05df926b42bc969acbd6b993`; the subsequent Linear setup
+start proved its deployed path. [PR #1782](https://github.com/dork-labs/dorkos/pull/1782) merged
+account-link discovery at `e478b7ca753a10037debeb49e17ffa02e3bc8067`; its independently reviewed
+client artifact was applied to dogfood without restarting the running server. All 225 artifact
+files were verified, 67 new hashed assets were added while retaining older assets, and the index
+was published last. Browser verification on the actual app confirmed the Accounts region, enabled
+Connect controls, Gmail/Google Drive/Linear search results, and pagination from 24 to 48 services
+with another page available. No new OAuth flow or grant was started during that UI check; the
+actual dogfood account list remains empty.
+[PR #1783](https://github.com/dork-labs/dorkos/pull/1783) merged at
+`c0c7c89c0f6004b2b5bd811e920f18432732976e` after independent review and required queue checks.
+It retains ordinary write and uncertain-effect operations behind the stricter approval tier,
+closing the observed Gmail Send Email/Create Draft discovery gap; its SDK tests are not an
+email-send claim. On its READY canonical deployment, one owner Gmail preview returned a complete
+61-action catalog; Send Email and Create Email Draft were supported at the destructive tier with
+no retries. The preview created no grants and executed no action. Both follow-up implementation
+worktrees were removed after merge with source bundles and evidence retained; this record
+worktree remains owned until its own reviewed PR merges.
+
+The local evidence archive is `~/.codex/connections-recovery-20260911/`. It contains safe receipts,
+not a public credential bundle. Key acceptance records are:
+
+- `gmail-profile-execution.json`, `gmail-local-usage.json`, and
+  `dor-1982/window-2-hosted-usage.json`: one exact profile action and its usage.
+- `gmail-grant-revocation.json` and `gmail-revocation-denial.json`: grant removal and the next
+  call's denial without another attempt.
+- `dogfood-client-update/deployment-receipt.json`: merged client deployment and actual browser
+  catalog/pagination proof with the existing server process preserved.
+- `dogfood-catalog-live-proof.json`, `dor-1984/linear-auth-config-readback.json`, and
+  `dor-1984/linear-provisional-account-cleanup.json`: normal instance linking, visible catalog,
+  fresh managed configuration creation, and exact provisional-account cleanup.
+- `rollout-window-2.json` and `old-key-retirement.json`: deliberate Accounts promotion and
+  superseded-key retirement. `temporary-fixture-program-key-retirement.json` records exact test-key
+  deletion and subsequent authentication refusal.
+- `event-rollout-window.json`, `event-observer/provider-revocation-readback.json`,
+  `event-rollout-window-2.json`, and `event-observer-2/restoration-readback.json`: both bounded
+  event windows closed without delivery proof, exact receive-access cleanup, and events-off
+  canonical restoration.
+- `dor-1986/production-gmail-preview.json`: final deployed discovery includes send/draft actions
+  with conservative classification, without granting or executing them.
+- `requirements-audit.md` and `event-observer/acceptance-calibration.md`: original acceptance
+  requirements mapped to existing proof, distinguishing required live consent from fixtures.
+
+This reconciliation is owned by `cache_final_review` in worktree
+`~/.dork/workspaces/dorkos/codex-connections-acceptance-record`, based on pinned commit
+`9bba0e2f966a114a05df926b42bc969acbd6b993`. It stays under existing P7/DOR-1798, with an independent
+REVIEW.md review required before publication. Historical checkpoints below are retained as the
+record of earlier states; their pending-review and missing-live-proof sentences are superseded
+by this section and the current workstream table.
+
+## Historical September 10 acceptance checkpoint — superseded
 
 As of 2026-09-10, managed sign-in defaults from
 [PR #1759](https://github.com/dork-labs/dorkos/pull/1759) and migration 0016 are deployed. A bounded
