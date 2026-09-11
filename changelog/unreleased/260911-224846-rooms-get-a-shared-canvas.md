@@ -8,6 +8,8 @@ covers:
   - "feat(rooms): route a room turn's canvas commands to the room (DOR-1999)"
   - "feat(rooms): tell every turn what is on the room's canvas (DOR-1999)"
   - 'test(runtimes): make the room canvas a conformance gate (DOR-1999)'
+  - 'test(test-mode): let a scripted turn report what the canvas told it (DOR-1999)'
+  - "docs(rooms): write down how a room's canvas works (DOR-1999)"
 ---
 
 ### Added
