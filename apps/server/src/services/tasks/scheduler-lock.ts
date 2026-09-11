@@ -16,6 +16,8 @@ import { mkdirSync, readFileSync, writeFileSync, renameSync, unlinkSync } from '
 import { dirname, join } from 'node:path';
 import { hostname as osHostname } from 'node:os';
 
+import { createTaggedLogger } from '../../lib/logger.js';
+
 /** How often the leader refreshes its heartbeat. */
 export const SCHEDULER_HEARTBEAT_MS = 10_000;
 
@@ -64,6 +66,8 @@ export interface SchedulerLockOptions {
   staleTtlMs?: number;
 }
 
+const logger = createTaggedLogger('SchedulerLock');
+
 /**
  * File-based, `dorkHome`-keyed leader lock. One leader per lock path; a stale
  * (crashed) leader's lock is stolen on the next {@link tryAcquire}.
@@ -77,6 +81,12 @@ export class SchedulerLock implements LeaderLock {
   /** Per-instance identity (with `pid`) — lets two same-pid locks be told apart in tests. */
   private readonly startedAt: number;
   private leader = false;
+  /**
+   * Whether the current run of write failures has already been reported, so a
+   * disk that stays full does not fill the log with the same line. Cleared by
+   * the next successful write — see {@link SchedulerLock.onWriteFailed}.
+   */
+  private reportedWriteFailure = false;
 
   constructor(opts: SchedulerLockOptions) {
     this.lockPath = join(opts.dorkHome, 'tasks', 'scheduler.lock');
@@ -114,7 +124,11 @@ export class SchedulerLock implements LeaderLock {
     }
     // Stale lock, or already ours → claim by atomic overwrite, then verify we
     // won (a concurrent stale-steal may have raced us; last rename wins).
-    this.write();
+    // A claim we could not write is simply a claim we did not win.
+    if (!this.write()) {
+      this.leader = false;
+      return false;
+    }
     const after = this.read();
     this.leader = after !== null && this.isOurs(after);
     return this.leader;
@@ -132,7 +146,11 @@ export class SchedulerLock implements LeaderLock {
       this.leader = false;
       return;
     }
-    this.write();
+    // A heartbeat we could not write is a heartbeat that did not happen, so
+    // step down rather than keep firing tasks while our record rots. Another
+    // process takes over once the TTL expires; if the write starts working
+    // again we re-acquire on the next tick through the follower path above.
+    if (!this.write()) this.leader = false;
   }
 
   release(): void {
@@ -158,8 +176,36 @@ export class SchedulerLock implements LeaderLock {
   }
 
   /**
+   * Report a lock write we could not complete — once per spell, not once per
+   * heartbeat.
+   *
+   * The heartbeat runs every {@link SCHEDULER_HEARTBEAT_MS}, so a disk that
+   * stays full would otherwise write six identical lines a minute into the very
+   * log file competing for the space that ran out. The counter resets on the
+   * next successful write, so a second outage is reported again.
+   */
+  private onWriteFailed(err: unknown): void {
+    if (this.reportedWriteFailure) return;
+    this.reportedWriteFailure = true;
+    const code = (err as NodeJS.ErrnoException).code;
+    logger.warn(
+      'Could not refresh the scheduler lock — standing down as scheduler leader. ' +
+        'Scheduled tasks will be run by another DorkOS process, or by this one once ' +
+        'the write succeeds again.' +
+        (code === 'ENOSPC' ? ' The disk is full.' : ''),
+      { path: this.lockPath, ...(code === undefined ? {} : { code }) }
+    );
+  }
+
+  /**
    * Exclusively create the lock file (O_EXCL). Returns `false` (without throwing)
    * if it already exists — the caller then re-reads and becomes a follower.
+   *
+   * Nor does it throw for anything else. This is reached from the heartbeat
+   * timer via `tryAcquire`, so a throw here is the same uncaught exception, and
+   * the same whole-server shutdown, that {@link SchedulerLock.write} documents.
+   * An unwritable lock file means we did not become leader; it never means the
+   * process should die.
    */
   private createExclusive(): boolean {
     try {
@@ -167,15 +213,54 @@ export class SchedulerLock implements LeaderLock {
       return true;
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'EEXIST') return false;
-      throw err;
+      this.onWriteFailed(err);
+      return false;
     }
   }
 
-  /** Atomically overwrite our record (temp file + rename — atomic on the same filesystem). */
-  private write(): void {
+  /**
+   * Atomically overwrite our record (temp file + rename — atomic on the same
+   * filesystem).
+   *
+   * **Never throws, and that is the whole point.** This runs from a
+   * `setInterval` heartbeat, where a throw is an UNCAUGHT EXCEPTION and takes
+   * the entire server down — not the scheduler, the server. A full disk did
+   * exactly that four times on the operator's machine (2026-08-28, twice on
+   * 2026-09-07, and 2026-09-10, every one of them `ENOSPC` on this write,
+   * every one of them `[DorkOS] Uncaught exception — shutting down`). The
+   * chat a person was in the middle of died with it (FB-17).
+   *
+   * A write that fails is the ordinary meaning of "this process can no longer
+   * prove it is alive", which the lock already has an answer for: the record
+   * goes stale and the next acquirer steals it after the TTL. So the failure
+   * is survivable by design — it just has to be caught and reported to the
+   * callers, who step down.
+   *
+   * `read()` above has always been guarded this way. This one was not, and the
+   * asymmetry was the defect.
+   *
+   * @returns Whether the record was durably written.
+   */
+  private write(): boolean {
     const tmp = `${this.lockPath}.${this.pid}.${this.startedAt}.tmp`;
-    writeFileSync(tmp, JSON.stringify(this.record()));
-    renameSync(tmp, this.lockPath);
+    try {
+      writeFileSync(tmp, JSON.stringify(this.record()));
+      renameSync(tmp, this.lockPath);
+      // Recovered — let a future outage be reported again.
+      this.reportedWriteFailure = false;
+      return true;
+    } catch (err) {
+      this.onWriteFailed(err);
+      // Best-effort: a failed rename can leave the temp file behind, and on a
+      // full disk every one of those is a file the operator has to find. If
+      // this cleanup fails too there is nothing further to do about it.
+      try {
+        unlinkSync(tmp);
+      } catch {
+        // Not there, or unremovable — either way, not worth a second report.
+      }
+      return false;
+    }
   }
 
   /** Read the current record, or `null` if missing/unreadable/malformed. */
