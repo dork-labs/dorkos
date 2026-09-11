@@ -34,6 +34,41 @@ declare const __CLI_VERSION__: string;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Refuse unknown commands before any home/configuration/server initialization.
+// Older installations treated these as startup, potentially opening newer data.
+const knownCommands = new Set([
+  'package',
+  'harness',
+  'cache',
+  'install',
+  'uninstall',
+  'update',
+  'marketplace',
+  'shape',
+  'doctor',
+  'feedback',
+  'auth',
+  'cloud',
+  'telemetry',
+  'agent',
+  'task',
+  'room',
+  'activity',
+  'connections',
+  'capabilities',
+  'call',
+  'debug',
+  'version',
+  'cleanup',
+  'config',
+  'init',
+]);
+const firstArgument = process.argv[2];
+if (firstArgument && !firstArgument.startsWith('-') && !knownCommands.has(firstArgument)) {
+  console.error(`Unknown command: ${firstArgument}`);
+  process.exit(1);
+}
+
 // `package` subcommand has its own flag namespace (`--type`, `--parent-dir`, etc.).
 // Intercept before the top-level parseArgs call so those flags aren't rejected as
 // unknown options by the strict top-level parser. Package commands don't need the
@@ -499,6 +534,14 @@ function parseCliArgs() {
 }
 
 const { values, positionals } = parseCliArgs();
+if (positionals[0] && !knownCommands.has(positionals[0])) {
+  console.error(`Unknown command: ${positionals[0]}`);
+  process.exit(1);
+}
+if (positionals[0] && !['cleanup', 'config', 'init'].includes(positionals[0])) {
+  console.error(`Place the command before global options: ${positionals[0]}`);
+  process.exit(1);
+}
 
 if (values.help) {
   console.log(`
@@ -852,6 +895,9 @@ uninstallCliErrorHandlers?.();
 // The module itself is the handle on the running server: `../server/index.js`
 // is the one specifier the CLI bundle leaves external, so what it exports is
 // live state from the process the server is running in (see below).
+// Only this bootstrap establishes the current distribution for agent CLI fallback.
+process.env.DORKOS_CLI_ENTRYPOINT = fileURLToPath(import.meta.url);
+process.env.DORKOS_CLI_VERSION = __CLI_VERSION__;
 let server: typeof import('../server/index.js');
 try {
   server = await import('../server/index.js');
