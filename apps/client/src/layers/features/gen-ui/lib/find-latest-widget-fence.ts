@@ -34,11 +34,23 @@ const OPTIMISTIC_USER_KEY = '__optimistic_user__';
 const IN_PROGRESS_TURN_KEY = '__in_progress_turn__';
 
 /**
+ * The markdown code-fence language a widget document travels in.
+ *
+ * The one place this word is spelled. Every surface that draws a widget from a
+ * message body registers a Streamdown renderer for it (`widget-fence-renderers`
+ * for a read-only surface, `StreamingText` for a session's own), and the scanner
+ * below finds the fence by it — three registrations that must never drift apart,
+ * because a surface registering a language nothing emits silently falls back to
+ * a code block and says nothing about it.
+ */
+export const WIDGET_FENCE_LANGUAGE = 'dorkos-ui';
+
+/**
  * Opening fence marker for a `dorkos-ui` widget document. Any match is enough —
  * no full markdown parse. Exported so the inline chat path (`SessionTranscript`) can
  * compute its newest-fence-bearing-message index with the same marker.
  */
-export const WIDGET_FENCE_MARKER = '```dorkos-ui';
+export const WIDGET_FENCE_MARKER = `\`\`\`${WIDGET_FENCE_LANGUAGE}`;
 
 /** A closing markdown fence line. */
 const FENCE_CLOSE_LINE = '```';

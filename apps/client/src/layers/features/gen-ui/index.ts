@@ -15,6 +15,8 @@ export { parseWidget, validateWidgetDocument, type ParseWidgetResult } from './m
 export { parseUiActionMessage, type ParsedUiAction } from './lib/ui-action-parse';
 export {
   findLatestWidgetFence,
+  WIDGET_FENCE_LANGUAGE,
   WIDGET_FENCE_MARKER,
   type LatestWidgetFence,
 } from './lib/find-latest-widget-fence';
+export { READ_ONLY_WIDGET_FENCE_RENDERERS } from './ui/widget-fence-renderers';
