@@ -140,6 +140,11 @@ describe('Database Migrations', () => {
       // Opaque author identities keyed on (kind, natural_key) — an agent's
       // agentPath, never its manifest ULID (ADR 260726-170126, migration 0034).
       'authors',
+      // The documents a room's members have put on its shared canvas — server
+      // owned, so every viewer sees one table (spec `room-canvas`, migration
+      // 0096). Cascades with its room; archiving one keeps the rows and freezes
+      // them.
+      'canvas_documents',
       'codex_threads',
       // Derived cache binding a ConnectionId → owning connector provider
       // (connector-gateway spec §Detailed Design 2, migration 0029).
