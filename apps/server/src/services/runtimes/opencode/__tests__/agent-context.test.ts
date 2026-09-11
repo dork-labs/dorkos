@@ -181,8 +181,8 @@ describe('what an OpenCode turn carries', () => {
     expect(system).toContain('Name: researcher');
     // Orientation, so it knows how to reach its capabilities from a shell.
     expect(system).toContain('<dorkos_context>');
-    expect(system).toContain('dorkos capabilities');
-    expect(system).toContain('dorkos call');
+    expect(system).toContain('Prefer your injected DorkOS MCP tools');
+    expect(system).toContain('No verified CLI fallback is available');
     // Environment, so it knows where it is running.
     expect(system).toContain(`Working directory: ${agentDir}`);
   });
