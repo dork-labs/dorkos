@@ -1,7 +1,8 @@
 import { ProfilePanelContainer } from '@/layers/features/profile';
 
 /**
- * Profile tab for the Settings dialog — your photo, your name, your `@handle`.
+ * Profile tab for the Settings dialog — your photo, your name, your `@handle`,
+ * and what kind of work you do.
  *
  * A thin `features/settings` wrapper that composes the `features/profile`
  * {@link ProfilePanelContainer} (sibling UI composition), exactly as the

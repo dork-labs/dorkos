@@ -76,7 +76,7 @@ function useServerSeededDraft(serverValue: string): [string, (next: string) => v
  * and gating the confirmation on it would make "Saved" appear late, flicker on
  * a slow read, and never appear at all where the refetch cannot happen.
  */
-function FieldNote({ tone, children }: { tone: 'error' | 'ok'; children: ReactNode }) {
+export function FieldNote({ tone, children }: { tone: 'error' | 'ok'; children: ReactNode }) {
   return (
     <p
       role={tone === 'error' ? 'alert' : 'status'}
