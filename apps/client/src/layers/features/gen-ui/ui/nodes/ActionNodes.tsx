@@ -40,9 +40,10 @@ interface WidgetActionButtonProps {
  * post back to the session (gen-ui §3) and latch the whole widget: the fired
  * button shows a spinner, then settles into a quiet "sent" state, and every
  * agent action in the widget goes inert. A failure un-latches (handled by the
- * provider) and surfaces an error toast. When no target session exists (dev
- * playground) or the widget is superseded, the action renders inert with an
- * explanatory tooltip.
+ * provider) and surfaces an error toast. When no session sits behind the widget
+ * (a room message, the dev playground) or the widget is superseded, the action
+ * renders inert with an explanatory tooltip — and so does a `ui` action whose
+ * command needs a session (see `widget-context`'s module doc).
  */
 export function WidgetActionButton({ action, label, variant, fullWidth }: WidgetActionButtonProps) {
   const { onAction } = useWidgetActions();

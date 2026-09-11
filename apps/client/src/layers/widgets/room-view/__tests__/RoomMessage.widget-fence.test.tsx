@@ -8,9 +8,14 @@
  * not "a widget appears" — it is the ROOM's version of the contract: the
  * widget is read-only, because a room message has no session for an
  * `agent`-kind control to post into, while `ui` and `url` controls are as live
- * here as they are in chat. And the two things a room body already had to do —
- * draw its mention pills, and survive a body it cannot parse — must both
- * survive the fence sharing the message with them.
+ * here as they are in chat — with one line drawn through the `ui` half: a
+ * command that needs a session (canvas, browser, file, diff, terminal, PiP,
+ * agent switching, layout) is inert here too, because a room message can come
+ * from an agent the reader does not run or be relayed in from a bridged
+ * Telegram or Slack room, and firing one would write into whichever session the
+ * READER happens to have open (DOR-1997). And the two things a room body
+ * already had to do — draw its mention pills, and survive a body it cannot
+ * parse — must both survive the fence sharing the message with them.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
@@ -45,7 +50,8 @@ afterEach(() => {
   cleanup();
   useRoomDraftStore.setState({ drafts: {} });
   useRoomOpenThreadStore.setState({ open: {} });
-  useAppStore.setState({ settingsOpen: false });
+  useAppStore.setState({ settingsOpen: false, rightPanelOpen: false, canvasOpen: false });
+  localStorage.removeItem(CANVAS_STORAGE_KEY);
   // Call history only — `mockRestore` would strip the mock transport's own
   // implementations, which are shared across this file's tests.
   vi.clearAllMocks();
@@ -154,6 +160,9 @@ const STAT_WIDGET = {
   root: { type: 'stat', label: 'Slowest step', value: 'typecheck' },
 };
 
+/** Where the app keeps each session's canvas documents — the probe's target. */
+const CANVAS_STORAGE_KEY = 'dorkos-canvas-sessions';
+
 /** One `agent` control — the kind a room can show but never fire. */
 const AGENT_BUTTON_WIDGET = {
   version: 1,
@@ -258,6 +267,51 @@ describe('RoomMessage — dorkos-ui fences in a room body', () => {
     expect(content()).toHaveTextContent('Here you go:');
     expect(content()).toHaveTextContent('Anything else?');
     expect(screen.getByTestId('room-entry')).toBeInTheDocument();
+  });
+
+  it('renders a session-shaped `ui` control inert — a room message cannot drive a canvas', async () => {
+    // The probe this closes (DOR-1997 review): a `browser_navigate` button in a
+    // room message wrote an arbitrary URL into whichever session's canvas the
+    // reader had open, revealed the right panel on it, and asked nobody. The
+    // widget is somebody else's words — possibly a stranger's, through a
+    // bridged Telegram room — so the control is inert, like an `agent` one.
+    const user = userEvent.setup();
+    const openCanvasDocument = vi.spyOn(useAppStore.getState(), 'openCanvasDocument');
+    localStorage.setItem(CANVAS_STORAGE_KEY, JSON.stringify({ 'sess-mine': { open: false } }));
+    const before = localStorage.getItem(CANVAS_STORAGE_KEY);
+
+    renderRow(
+      entry(
+        bodyWithFence({
+          version: 1,
+          title: 'Preview',
+          root: {
+            type: 'button',
+            label: 'Preview it',
+            action: {
+              kind: 'ui',
+              command: { action: 'browser_navigate', url: 'https://evil.example/steal' },
+            },
+          },
+        })
+      )
+    );
+
+    const preview = await screen.findByRole('button', { name: 'Preview it' });
+    expect(preview).toHaveAttribute('aria-disabled', 'true');
+    await user.hover(preview);
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'Interactions aren’t available here'
+    );
+
+    await user.click(preview);
+    expect(openCanvasDocument).not.toHaveBeenCalled();
+    expect(localStorage.getItem(CANVAS_STORAGE_KEY)).toBe(before);
+    expect(useAppStore.getState().canvasOpen).toBe(false);
+    expect(useAppStore.getState().rightPanelOpen).toBe(false);
+    // Restored here rather than in `afterEach`, which clears call history only
+    // (a blanket restore would strip the mock transport's implementations).
+    openCanvasDocument.mockRestore();
   });
 
   it('draws a mention pill and a widget in the same body', async () => {
