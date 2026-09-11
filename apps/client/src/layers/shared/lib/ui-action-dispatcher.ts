@@ -80,6 +80,75 @@ const CANVAS_TAB_ID = 'canvas';
 /** Right-panel tab id the terminal contribution registers under (init-extensions). */
 const TERMINAL_TAB_ID = 'terminal';
 
+/**
+ * Which `ui` commands are safe to run from a surface that has **no session**
+ * behind it — a room message, chiefly (DOR-1997).
+ *
+ * A widget in a session belongs to that session, so a command it fires lands
+ * where the person who is reading it already is. A widget in a room message
+ * belongs to nobody: the message may have been written by an agent nobody in
+ * the room runs, or relayed in from a bridged Telegram or Slack room by a
+ * stranger, and every viewer's click runs against THEIR app. So the
+ * session-shaped commands are exactly the dangerous ones there — a
+ * `browser_navigate` writes an arbitrary URL into whichever session's canvas
+ * the reader happens to have open, with no confirmation and nothing on screen
+ * to say where it came from.
+ *
+ * `true` means the command changes only local, visible, reversible chrome the
+ * reader can undo by looking at it: a panel, the palette, a toast, the theme,
+ * some confetti. Everything else is `false`, including commands that merely
+ * look harmless (`open_sidebar`, `close_canvas`, `scroll_to_message`) — an
+ * allowlist earns its keep by erring closed, and nothing has asked for them.
+ *
+ * **Exhaustive on purpose.** It is a `Record` over the whole `UiCommand` union,
+ * so a 23rd command added to the schema fails this file's typecheck until
+ * somebody decides which side of the line it is on. That decision must never be
+ * made by a default.
+ */
+const LOCAL_UI_ONLY_COMMANDS: Record<UiCommand['action'], boolean> = {
+  // Local, visible, reversible chrome.
+  open_panel: true,
+  close_panel: true,
+  toggle_panel: true,
+  open_command_palette: true,
+  show_toast: true,
+  set_theme: true,
+  celebrate: true,
+  // Canvas, browser, file and diff — all write into a session's own document
+  // store, keyed by whichever session the reader has open.
+  open_canvas: false,
+  update_canvas: false,
+  close_canvas: false,
+  open_file: false,
+  open_diff: false,
+  browser_navigate: false,
+  // The terminal runs commands; PiP follows a session's newest fence.
+  open_terminal: false,
+  open_pip: false,
+  close_pip: false,
+  // These move the reader somewhere, or change what their app IS.
+  switch_agent: false,
+  apply_layout: false,
+  scroll_to_message: false,
+  // Embedded-shell chrome, off the approved list rather than judged harmless.
+  open_sidebar: false,
+  close_sidebar: false,
+  switch_sidebar_tab: false,
+};
+
+/**
+ * Whether `command` may run with no session behind the widget that fired it.
+ *
+ * Read by `features/gen-ui`'s action state, which renders a control inert when
+ * this is `false` on a session-less surface — see {@link LOCAL_UI_ONLY_COMMANDS}
+ * for what the line is and why it is drawn where it is.
+ *
+ * @param command - The `ui` command a control is about to render or fire.
+ */
+export function isLocalUiOnlyCommand(command: UiCommand): boolean {
+  return LOCAL_UI_ONLY_COMMANDS[command.action];
+}
+
 /** Dependencies injected by the caller. All are obtainable outside React. */
 export interface DispatcherContext {
   /**

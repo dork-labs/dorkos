@@ -6,9 +6,10 @@
  * the other, and `features/conversation` imports neither.
  *
  * Everything here is derived from the entry's own words, which is what makes it
- * one module: the markdown handed to Streamdown and the whitelist that decides
- * which `<mention>` tags may become pills change together when the body does,
- * and never when anything else about the row does.
+ * one module: the markdown handed to Streamdown, the whitelist that decides
+ * which `<mention>` tags may become pills, and the code fences that draw as
+ * something other than code all change together when the body does, and never
+ * when anything else about the row does.
  *
  * The spoof guard lives one door down in `MentionPillRenderer`
  * ({@link buildMentionComponents}) and is untouched: the pill gate is still
@@ -19,6 +20,7 @@
 import { useMemo } from 'react';
 import type { ConversationBodyRenderer } from '@/layers/features/conversation';
 import type { RoomEntry } from '@/layers/entities/room';
+import { READ_ONLY_WIDGET_FENCE_RENDERERS } from '@/layers/features/gen-ui';
 import { MarkdownContent } from '@/layers/shared/ui';
 import {
   MENTION_ALLOWED_TAGS,
@@ -88,6 +90,11 @@ function RoomBody({ entry, authors }: RoomBodyProps) {
         allowedTags={MENTION_ALLOWED_TAGS}
         literalTagContent={MENTION_LITERAL_TAG_CONTENT}
         components={mentionComponents}
+        // A ` ```dorkos-ui ` fence draws as the widget it describes, the same
+        // way it does in a session — read-only, because a room message has no
+        // session for an `agent` control to post into (`widget-fence-renderers`).
+        // Without this a widget an agent posted to a room was a wall of JSON.
+        renderers={READ_ONLY_WIDGET_FENCE_RENDERERS}
       />
     </MentionRosterProvider>
   );
