@@ -125,6 +125,66 @@ function viewerAuthorIdFromCache(queryClient: QueryClient, roomId: string): stri
 }
 
 /**
+ * How long the canvas resync may go quiet before the reader concludes it is
+ * over.
+ *
+ * Generous on purpose: the burst is written into the same response as the entry
+ * replay, so in practice it lands in one tick, and the whole cost of waiting is
+ * that a document closed while this reader was away lingers for another second
+ * or two. The cost of NOT waiting is sweeping rows whose frames were still in
+ * flight, which is the table flickering on every reconnect.
+ */
+const RESYNC_BURST_QUIET_MS = 2_000;
+
+/** What the stream uses to say when a room's resync burst has finished. */
+interface ResyncBurstEnd {
+  /** Start (or restart) the quiet countdown for this room. */
+  arm: (roomId: string) => void;
+  /** The burst is over now — sweep immediately. */
+  now: (roomId: string) => void;
+}
+
+/**
+ * A single quiet-period timer for the canvas resync, cleared when the hook goes
+ * away.
+ *
+ * One timer rather than one per frame: `arm` replaces whatever was pending, so a
+ * burst of twelve documents schedules one sweep rather than twelve.
+ */
+function useResyncBurstEnd(): ResyncBurstEnd {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clear = useCallback(() => {
+    if (timer.current === null) return;
+    clearTimeout(timer.current);
+    timer.current = null;
+  }, []);
+
+  const now = useCallback(
+    (roomId: string) => {
+      clear();
+      useAppStore.getState().endRoomCanvasCycle(roomId);
+    },
+    [clear]
+  );
+
+  const arm = useCallback(
+    (roomId: string) => {
+      clear();
+      timer.current = setTimeout(() => {
+        timer.current = null;
+        useAppStore.getState().endRoomCanvasCycle(roomId);
+      }, RESYNC_BURST_QUIET_MS);
+    },
+    [clear]
+  );
+
+  useEffect(() => clear, [clear]);
+
+  return { arm, now };
+}
+
+/**
  * Full-jitter exponential backoff, the same curve `WSConnection` retries on.
  *
  * @param failures - Consecutive failed attempts, starting at 1.
@@ -250,6 +310,19 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
    */
   const betweenStreamsRef = useRef(false);
 
+  /**
+   * When to stop waiting for more of the canvas resync and sweep what nobody
+   * vouched for.
+   *
+   * A cycle arms it, every resync frame pushes it back, and the first frame
+   * carrying a `change` ends it outright — that frame is live traffic, so the
+   * re-send is over. The timer is the other half and it is the half that matters
+   * for an EMPTY table: a room whose canvas the server no longer holds sends no
+   * resync frames at all, and without a deadline the rows this reader is holding
+   * would never be swept.
+   */
+  const endBurst = useResyncBurstEnd();
+
   // Re-running the effect is the whole of a retry: the cycle below clears the
   // stall itself, so there is nothing to reset here.
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
@@ -369,12 +442,14 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
         // to the stability window and a live-but-unproven stream is not one the
         // wake-ups should be tearing down.
         betweenStreamsRef.current = false;
-        // The table this reader holds is now unknown: a document CLOSED while
-        // they were away leaves no frame to replay, so nothing but the canvas
-        // resync that follows this resume can correct it — and it corrects it by
-        // being the whole set (spec `room-canvas` §2). Merging into what is held
-        // would leave a closed document on screen forever.
+        // Every row this reader holds is now unvouched-for: a document CLOSED
+        // while they were away leaves no frame to replay, so nothing but the
+        // canvas resync that follows this resume can correct it (spec
+        // `room-canvas` §2). The table is MARKED rather than emptied — an empty
+        // table would render, and what renders over it is a splash that unmounts
+        // whatever somebody was typing in.
         useAppStore.getState().beginRoomCanvasCycle(roomId);
+        endBurst.arm(roomId);
         // A room can be healthy and completely silent, so "an event arrived" is
         // not the only proof of life — a stream still open after the stability
         // window is the other, and it is the one that takes the notice back down
@@ -424,6 +499,11 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
               useAppStore
                 .getState()
                 .applyRoomCanvasFrame(roomId, event, viewerAuthorIdFromCache(queryClient, roomId));
+              // A frame naming a `change` is something that just HAPPENED, so
+              // the re-send of what was already there is over; anything else is
+              // still the burst, and the sweep waits a little longer.
+              if (event.change !== undefined) endBurst.now(roomId);
+              else endBurst.arm(roomId);
               continue;
             }
             // An author's own entry retires that author's indicators here. It

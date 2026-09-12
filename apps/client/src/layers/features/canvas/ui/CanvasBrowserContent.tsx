@@ -6,7 +6,7 @@ import { useAppStore } from '@/layers/shared/model';
 import { Input } from '@/layers/shared/ui';
 import { cn, openExternalLink } from '@/layers/shared/lib';
 import { useDevtoolsBridge } from '../model/use-devtools-bridge';
-import { useRoomCanvasActions } from '../model/use-room-canvas';
+import { roomCanvasRefusal, useRoomCanvasActions } from '../model/use-room-canvas';
 import {
   useResolvedFrame,
   type ResolveError,
@@ -150,6 +150,18 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
   // in shells and tests with no router behind them.
   const roomId = useAppStore((s) => s.roomCanvasLiveRoomId);
   const { open: openInRoom } = useRoomCanvasActions(roomId ?? '');
+  /**
+   * The address the room refused, and what it said — held so the typed URL
+   * survives the failure.
+   *
+   * Losing what somebody just typed is the worst thing a text field can do, and
+   * it is exactly what happened while this posted and forgot: the bar reverted
+   * to the page already on screen and nothing said why. The bar reopens on this
+   * value instead, so the fix is an edit rather than a retype.
+   */
+  const [refusedAddress, setRefusedAddress] = useState<{ url: string; message: string } | null>(
+    null
+  );
 
   const navigate = useCallback(
     (url: string) => {
@@ -178,7 +190,10 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
         return;
       }
       if (roomId) {
-        openInRoom({ type: 'browser', url: next });
+        setRefusedAddress(null);
+        void openInRoom({ type: 'browser', url: next }).catch((error: unknown) => {
+          setRefusedAddress({ url: next, message: roomCanvasRefusal(error) });
+        });
         return;
       }
       navigate(next);
@@ -206,11 +221,25 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
         <ChromeButton label="Reload" onClick={() => setReloadNonce((n) => n + 1)}>
           <RotateCw className="size-4" />
         </ChromeButton>
-        <AddressBar url={currentUrl} onSubmit={submitAddress} />
+        {/* Keyed on the refusal so a failed post remounts the bar in edit mode,
+            seeded with what was typed rather than with the page still on
+            screen. */}
+        <AddressBar
+          key={refusedAddress === null ? 'address' : `retry:${refusedAddress.url}`}
+          url={refusedAddress?.url ?? currentUrl}
+          startEditing={refusedAddress !== null}
+          onSubmit={submitAddress}
+        />
         <ChromeButton label="Open in system browser" onClick={openExternally}>
           <ExternalLink className="size-4" />
         </ChromeButton>
       </div>
+
+      {refusedAddress !== null && (
+        <p role="status" className="text-destructive border-border/60 border-b px-2 py-1 text-xs">
+          {refusedAddress.message}
+        </p>
+      )}
 
       <BrowserBody
         target={target}
@@ -237,8 +266,17 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
  * Enter commits (navigate or reload); Escape and blur revert without navigating,
  * so an accidental focus never changes the page.
  */
-function AddressBar({ url, onSubmit }: { url: string; onSubmit: (value: string) => void }) {
-  const [editing, setEditing] = useState(false);
+function AddressBar({
+  url,
+  startEditing = false,
+  onSubmit,
+}: {
+  url: string;
+  /** Open as a text box rather than at rest — how a refused address is offered back. */
+  startEditing?: boolean;
+  onSubmit: (value: string) => void;
+}) {
+  const [editing, setEditing] = useState(startEditing);
   const [draft, setDraft] = useState(url);
 
   if (!editing) {

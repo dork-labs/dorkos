@@ -16,13 +16,22 @@
  *    five frames and caught the sixth is correct again.
  * 2. **A lower `rev` never overwrites a higher one.** `rev` is what orders two
  *    frames racing for one document; it is deliberately not a stream cursor.
- * 3. **A stream cycle starts from nothing.** A close is a DELETION, so a
- *    document taken off the table while this reader was disconnected leaves no
- *    trace on the log to replay — nothing but a re-send of everything still
- *    there can correct it. The server sends exactly that on every resume (the
- *    canvas resync), so a reader clears the room's table when a subscription
- *    cycle begins and rebuilds it from the burst that follows. Merging instead
- *    would leave a closed document on screen forever.
+ * 3. **A stream cycle re-proves the table rather than emptying it.** A close is
+ *    a DELETION, so a document taken off the table while this reader was
+ *    disconnected leaves no trace on the log to replay — nothing but a re-send
+ *    of everything still there can correct it, and the server sends exactly that
+ *    on every resume (the canvas resync). So a cycle marks every row STALE,
+ *    every arriving frame clears its own row's mark, and only when the burst has
+ *    ended are rows nobody vouched for swept.
+ *
+ *    **Emptying the table at cycle start is the thing this replaces, and it was
+ *    a data-loss bug.** The resync arrives a round trip later, so the empty
+ *    state rendered: the view fell to its splash, the editor unmounted, a
+ *    half-typed draft went with it, and the edit lock's cleanup told the server
+ *    nobody was typing — all from a two-second network blip, which is an
+ *    ordinary event (a tab coming forward, `online` firing, the global stream
+ *    recovering). Nothing a person is in the middle of may depend on the network
+ *    staying up.
  *
  * What is NOT the server's is which document each of this viewer's two views is
  * showing, and which arrivals they have not looked at yet. Those are per-viewer
@@ -74,6 +83,16 @@ export interface RoomCanvasSlice {
    */
   roomCanvasEditing: Readonly<Record<string, string | null>>;
   /**
+   * Rows whose resync has not arrived yet, per room — the working set of a
+   * cycle, empty between cycles.
+   *
+   * A row is marked when a subscription cycle begins and unmarked by the frame
+   * that names it. Whatever is still marked when the burst ends is what the
+   * server no longer has, which is the only way a close missed while
+   * disconnected can be learned.
+   */
+  roomCanvasStale: Readonly<Record<string, readonly string[]>>;
+  /**
    * The room whose table is live in this browser right now, or null off a room
    * route.
    *
@@ -87,18 +106,33 @@ export interface RoomCanvasSlice {
   roomCanvasLiveRoomId: string | null;
 
   /**
-   * A subscription cycle is starting: forget this room's table, because what is
-   * on it is now unknown.
+   * A subscription cycle is starting: every row this room holds is now
+   * unvouched-for until its resync frame arrives.
    *
-   * The resync burst that follows the resume rebuilds it. Clearing rather than
-   * merging is what makes a close this reader missed self-correct — see rule 3
-   * above. The viewer's own active ids and unread marks are kept: they are
-   * per-viewer facts about attention, and a reconnect is not a reason to forget
-   * which tab somebody was on.
+   * Marks, never empties (rule 3). What is on screen stays on screen — it was
+   * correct a moment ago and is almost certainly correct still — and the sweep
+   * at {@link RoomCanvasSlice.endRoomCanvasCycle} is what corrects it. The
+   * viewer's own active ids and unread marks are kept too: they are per-viewer
+   * facts about attention, and a reconnect is not a reason to forget which tab
+   * somebody was on.
    *
    * @param roomId - The room whose stream is (re)connecting.
    */
   beginRoomCanvasCycle: (roomId: string) => void;
+
+  /**
+   * The resync burst has ended: drop the rows nobody vouched for.
+   *
+   * **The document this viewer is EDITING is spared, always.** Their draft is
+   * the only copy of what they have typed, and a table that tidied itself by
+   * throwing that away would be the bug this whole cycle design exists to
+   * prevent. A document genuinely closed under a live edit therefore lingers on
+   * this one screen until the edit ends — and the next cycle, which marks it
+   * stale again with nothing to vouch for it, is what finally takes it away.
+   *
+   * @param roomId - The room whose burst has ended.
+   */
+  endRoomCanvasCycle: (roomId: string) => void;
 
   /**
    * Apply one `canvas` frame from a room's stream.
@@ -223,6 +257,24 @@ function withUnread(unread: RoomCanvasUnread, view: CanvasView, id: string): Roo
   return { ...unread, [view]: [...unread[view], id] };
 }
 
+/**
+ * Take one document off a room's stale list — the patch a frame that vouched for
+ * a row contributes.
+ *
+ * Returns an EMPTY patch when there was nothing to clear, so a frame that
+ * changes nothing else still returns a no-op rather than churning the store on
+ * every heartbeat-shaped event.
+ */
+function vouchFor(
+  stale: Readonly<Record<string, readonly string[]>>,
+  roomId: string,
+  documentId: string
+): { roomCanvasStale?: Record<string, readonly string[]> } {
+  const held = stale[roomId];
+  if (held === undefined || !held.includes(documentId)) return {};
+  return { roomCanvasStale: { ...stale, [roomId]: held.filter((id) => id !== documentId) } };
+}
+
 /** Remove a document id from both views' unread lists. */
 function withoutUnread(unread: RoomCanvasUnread, id: string): RoomCanvasUnread {
   return {
@@ -245,12 +297,40 @@ export const createRoomCanvasSlice: StateCreator<
   roomCanvasActive: {},
   roomCanvasUnread: {},
   roomCanvasEditing: {},
+  roomCanvasStale: {},
   roomCanvasLiveRoomId: null,
 
   beginRoomCanvasCycle: (roomId) =>
+    set((s) => ({
+      roomCanvasStale: {
+        ...s.roomCanvasStale,
+        [roomId]: (s.roomCanvasDocuments[roomId] ?? []).map((d) => d.id),
+      },
+    })),
+
+  endRoomCanvasCycle: (roomId) =>
     set((s) => {
-      if ((s.roomCanvasDocuments[roomId] ?? []).length === 0) return {};
-      return { roomCanvasDocuments: { ...s.roomCanvasDocuments, [roomId]: [] } };
+      const stale = s.roomCanvasStale[roomId] ?? [];
+      const roomStale = { ...s.roomCanvasStale, [roomId]: [] };
+      if (stale.length === 0) return { roomCanvasStale: roomStale };
+      // Whatever this viewer is typing in stays, whatever the server says.
+      const editing = s.roomCanvasEditing[roomId] ?? null;
+      const drop = new Set(stale.filter((id) => id !== editing));
+      if (drop.size === 0) return { roomCanvasStale: roomStale };
+      const held = s.roomCanvasDocuments[roomId] ?? [];
+      const documents = held.filter((d) => !drop.has(d.id));
+      return {
+        roomCanvasStale: roomStale,
+        roomCanvasDocuments: { ...s.roomCanvasDocuments, [roomId]: documents },
+        roomCanvasActive: {
+          ...s.roomCanvasActive,
+          [roomId]: reconcileActive(documents, s.roomCanvasActive[roomId] ?? NO_ACTIVE),
+        },
+        roomCanvasUnread: {
+          ...s.roomCanvasUnread,
+          [roomId]: pruneUnread(s.roomCanvasUnread[roomId] ?? NO_UNREAD, documents),
+        },
+      };
     }),
 
   applyRoomCanvasFrame: (roomId, event, viewerAuthorId) =>
@@ -263,11 +343,21 @@ export const createRoomCanvasSlice: StateCreator<
       const held = s.roomCanvasDocuments[roomId] ?? [];
       const active = s.roomCanvasActive[roomId] ?? NO_ACTIVE;
       const unread = s.roomCanvasUnread[roomId] ?? NO_UNREAD;
+      // Somebody vouched for this row, so it is not swept at the end of the
+      // cycle — whether they vouched by re-sending it or by closing it.
+      const vouched = vouchFor(s.roomCanvasStale, roomId, event.documentId);
 
       if (event.closed === true || !event.document) {
-        if (!held.some((d) => d.id === event.documentId)) return {};
+        // **A close can only ever reach the room whose stream carried it.** It
+        // names an id and no room, and the filter below runs over THIS room's
+        // own list — so unlike a frame carrying a document, which could write a
+        // foreign row in, there is nothing here for a room check to prevent. The
+        // ids are scope-derived (`room:<id>` + source key) on top of that, so
+        // two rooms cannot even mint the same one.
+        if (!held.some((d) => d.id === event.documentId)) return vouched;
         const documents = held.filter((d) => d.id !== event.documentId);
         return {
+          ...vouched,
           roomCanvasDocuments: { ...s.roomCanvasDocuments, [roomId]: documents },
           roomCanvasActive: {
             ...s.roomCanvasActive,
@@ -283,8 +373,9 @@ export const createRoomCanvasSlice: StateCreator<
       const document = event.document;
       const existing = held.find((d) => d.id === document.id);
       // Two frames can race for one document; `rev` is what orders them. An
-      // older one arriving late must not put an older version back on screen.
-      if (existing && existing.rev > document.rev) return {};
+      // older one arriving late must not put an older version back on screen —
+      // but it has still vouched for the row, so the sweep must not take it.
+      if (existing && existing.rev > document.rev) return vouched;
 
       const documents = sorted(
         existing ? held.map((d) => (d.id === document.id ? document : d)) : [...held, document]
@@ -299,8 +390,19 @@ export const createRoomCanvasSlice: StateCreator<
       const mine = viewerAuthorId !== null && document.authorId === viewerAuthorId;
       const editing = s.roomCanvasEditing[roomId] ?? null;
       const followIt = event.change === 'opened' && mine && editing === null;
+      const looking = followIt || active[view] === document.id;
+
+      // **Only something that HAPPENED lights the dot**, which is exactly what
+      // `change` reports. A resync frame carries none: it is the server saying
+      // "this is still here", and a reconnect that re-lit every dot would put an
+      // unread mark back on the tab the reader had just finished reading — once
+      // per network blip, forever. `activated` and `pinned` are changes to the
+      // ORDER rather than to what a document says, so they light nothing either.
+      const arrival = event.change === 'opened' || event.change === 'updated';
+      const lights = arrival && !mine && !looking;
 
       return {
+        ...vouched,
         roomCanvasDocuments: { ...s.roomCanvasDocuments, [roomId]: documents },
         roomCanvasActive: {
           ...s.roomCanvasActive,
@@ -311,11 +413,13 @@ export const createRoomCanvasSlice: StateCreator<
         roomCanvasUnread: {
           ...s.roomCanvasUnread,
           [roomId]: pruneUnread(
-            // A document this viewer is already showing is not unread, and
-            // neither is one they just opened themselves.
-            followIt || active[view] === document.id
-              ? withoutUnread(unread, document.id)
-              : withUnread(unread, view, document.id),
+            lights
+              ? withUnread(unread, view, document.id)
+              : // A document this viewer is already showing is not unread, and
+                // neither is one they just opened themselves.
+                looking
+                ? withoutUnread(unread, document.id)
+                : unread,
             documents
           ),
         },

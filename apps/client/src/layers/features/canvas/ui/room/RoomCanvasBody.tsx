@@ -19,7 +19,8 @@
  *
  * @module features/canvas/ui/room/RoomCanvasBody
  */
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
+import { toast } from 'sonner';
 import type { CanvasDocument } from '@dorkos/shared/room-schemas';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { useRoom } from '@/layers/entities/room';
@@ -32,7 +33,7 @@ import { CanvasSplash } from '../CanvasSplash';
 import { RoomCanvasFileCard } from './RoomCanvasFileCard';
 import { RoomCanvasMarkdown } from './RoomCanvasMarkdown';
 import { roomDocumentReading } from '../../lib/room-canvas-reading';
-import { useRoomCanvasActions } from '../../model/use-room-canvas';
+import { roomCanvasRefusal, useRoomCanvasActions } from '../../model/use-room-canvas';
 
 /** What a document's tab says it is, when nothing named it. */
 function tabLabel(document: CanvasDocument): string {
@@ -106,6 +107,20 @@ export function RoomCanvasBody({ roomId, view }: RoomCanvasBodyProps) {
   const actions = useRoomCanvasActions(roomId);
   const room = useRoom(roomId);
 
+  /**
+   * Run one write and say so if the room refused it.
+   *
+   * A toast rather than something in the strip: these are pressed on a tab that
+   * may be GONE a moment later (a close that half-worked, a pin on a document
+   * somebody else just took away), so a message anchored to the tab would have
+   * nowhere to live. The refusal is the server's own sentence.
+   */
+  const attempt = useCallback((what: string, run: () => Promise<void>) => {
+    void run().catch((error: unknown) => {
+      toast.error(what, { description: roomCanvasRefusal(error) });
+    });
+  }, []);
+
   const inView = useMemo(() => roomDocumentsInView(documents ?? [], view), [documents, view]);
   const active = inView.find((d) => d.id === activeDocumentId) ?? null;
 
@@ -152,8 +167,12 @@ export function RoomCanvasBody({ roomId, view }: RoomCanvasBodyProps) {
         documents={headerDocs}
         activeDocumentId={activeDocumentId}
         onActivate={(id) => activate(roomId, id)}
-        onClose={actions.close}
-        onPin={actions.pin}
+        onClose={(id) => attempt('Couldn’t take that off the canvas.', () => actions.close(id))}
+        onPin={(id, pinned) =>
+          attempt(pinned ? 'Couldn’t pin that.' : 'Couldn’t unpin that.', () =>
+            actions.pin(id, pinned)
+          )
+        }
       />
       {/* Whose copy of the files this document came out of — a snapshot taken
           when it was opened, never a live count, which is why it is stated
@@ -170,13 +189,24 @@ export function RoomCanvasBody({ roomId, view }: RoomCanvasBodyProps) {
       >
         {active ? (
           <CanvasErrorBoundary key={active.id} documentId={active.id}>
-            <RoomCanvasDocumentBody roomId={roomId} document={active} onUpdate={actions.update} />
+            <RoomCanvasDocumentBody
+              roomId={roomId}
+              document={active}
+              onUpdate={(id, content) =>
+                attempt('Couldn’t save that for the room.', () => actions.update(id, content))
+              }
+            />
           </CanvasErrorBoundary>
         ) : (
           // The same starting points a private canvas offers, with one
           // difference the person can see the moment they use one: what they
           // pick lands on the room's table, for everybody.
-          <CanvasSplash view={view} onAction={actions.open} />
+          <CanvasSplash
+            view={view}
+            onAction={(content) =>
+              attempt('Couldn’t put that on the canvas.', () => actions.open(content))
+            }
+          />
         )}
       </div>
     </>

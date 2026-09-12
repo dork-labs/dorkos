@@ -11,7 +11,9 @@
  * @module shared/lib/transport/room-methods
  */
 
+import { z } from 'zod';
 import {
+  CanvasDocumentSchema,
   RoomEventSchema,
   type AddRoomMemberRequest,
   type AuthorRef,
@@ -59,6 +61,17 @@ import { SSE_RESILIENCE } from '../constants';
 import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
 import { streamSocketFrames, type StreamSocketClosed } from './stream-socket-iterator';
 import { uploadRoomAttachmentsOverHttp } from './upload-methods';
+
+/**
+ * The one part of a cold connect's snapshot this adapter consumes.
+ *
+ * A room's roster and history are hydrated through `getRoom` and
+ * `listRoomEntries`, so the snapshot's other fields are dropped unread — and
+ * parsing what you drop is how an unrelated field's drift takes down the field
+ * you needed. The canvas has no second source: this stream is the only thing
+ * that ever tells a client what is on a room's table (spec `room-canvas` §9.2).
+ */
+const SNAPSHOT_CANVAS = z.object({ canvas: z.array(CanvasDocumentSchema).optional() });
 
 /**
  * A room's event stream answered with an HTTP error rather than a stream.
@@ -422,8 +435,10 @@ export function createRoomMethods(baseUrl: string) {
     /**
      * Subscribe to a room's durable event stream, over a WebSocket.
      *
-     * The leading `snapshot` frame of a cold connect is skipped: the room and
-     * its history are hydrated through `getRoom` / `listRoomEntries`, so
+     * The leading `snapshot` frame of a cold connect is skipped EXCEPT for its
+     * canvas: the room and its history are hydrated through `getRoom` /
+     * `listRoomEntries`, while the room's shared canvas is hydrated from this
+     * stream and nowhere else — so
      * re-parsing the snapshot here would only duplicate what the cache already
      * holds. Callers that already have entries pass the highest `seq` they hold
      * as `sinceCursor`, which the server replays from gap-free.
@@ -454,7 +469,33 @@ export function createRoomMethods(baseUrl: string) {
       });
 
       for await (const frame of frames) {
-        if (frame.event === 'snapshot') continue;
+        // The leading frame of a COLD connect. Its roster and history are
+        // already hydrated through `getRoom` / `listRoomEntries`, so almost all
+        // of it is skipped — but the room's canvas is hydrated from this stream
+        // and nowhere else (spec `room-canvas` §9.2), so dropping the whole
+        // frame would leave a cold reader looking at an empty table. Each
+        // document comes through as the `canvas` frame a resume would have sent:
+        // no `change`, because nothing just happened — these are the rows that
+        // were already there.
+        if (frame.event === 'snapshot') {
+          // **Only the canvas is parsed, not the whole snapshot.** The rest of
+          // that frame is thrown away here, and validating what you discard buys
+          // nothing while costing something real: a roster field this adapter
+          // never reads, drifting or arriving from an older server, would fail
+          // the parse and take the canvas down with it.
+          const snapshot = SNAPSHOT_CANVAS.safeParse(frame.data);
+          if (!snapshot.success) {
+            console.warn('[Transport] dropping a room snapshot’s malformed canvas', {
+              roomId,
+              issues: snapshot.error.issues,
+            });
+            continue;
+          }
+          for (const document of snapshot.data.canvas ?? []) {
+            yield { type: 'canvas', documentId: document.id, document };
+          }
+          continue;
+        }
         const parsed = RoomEventSchema.safeParse(frame.data);
         if (!parsed.success) {
           console.warn('[Transport] dropping malformed room-event frame', {

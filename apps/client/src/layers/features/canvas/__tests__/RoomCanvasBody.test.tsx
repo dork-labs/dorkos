@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport, mockCanvasDocument } from '@dorkos/test-utils';
@@ -17,13 +17,30 @@ vi.mock('streamdown', () => ({
   ),
 }));
 vi.mock('streamdown/styles.css', () => ({}));
+// A stand-in that can be TYPED IN, because the draft surviving a reconnect is
+// the property one of the tests below exists for: a read-only stub could not
+// tell a preserved draft from a re-seeded document.
 vi.mock('../ui/BlintzCanvas', () => ({
-  BlintzCanvas: ({ value, editable }: { value: string; editable: boolean }) => (
-    <div data-testid="blintz-canvas" data-editable={editable}>
-      {value}
-    </div>
+  BlintzCanvas: ({
+    value,
+    editable,
+    onChange,
+  }: {
+    value: string;
+    editable: boolean;
+    onChange?: (markdown: string) => void;
+  }) => (
+    <textarea
+      data-testid="blintz-canvas"
+      data-editable={editable}
+      readOnly={!editable}
+      value={value}
+      onChange={(e) => onChange?.(e.target.value)}
+    />
   ),
 }));
+
+vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 
 const ROOM = 'room-1';
 const VIEWER = 'author-you';
@@ -83,6 +100,7 @@ beforeEach(() => {
     roomCanvasActive: {},
     roomCanvasUnread: {},
     roomCanvasEditing: {},
+    roomCanvasStale: {},
     roomCanvasLiveRoomId: ROOM,
   });
 });
@@ -264,5 +282,76 @@ describe('the room canvas — editing markdown the room owns (§10)', () => {
 
     expect(screen.queryByRole('button', { name: 'Edit this document' })).not.toBeInTheDocument();
     expect(screen.getByTestId('blintz-canvas')).toHaveTextContent('# Notes');
+  });
+});
+
+describe('the room canvas — a reconnect never takes what somebody is typing', () => {
+  it('keeps a half-finished draft, its edit mode and its lock across a stream cycle', async () => {
+    // The reviewer's case, verbatim: a two-second blip while somebody is
+    // mid-sentence. Emptying the table at cycle start rendered the splash, which
+    // unmounted the editor — the draft went, the Save went, and the lock's
+    // cleanup told the server nobody was typing.
+    const half = '# Notes\n\nhalf a sentence I am still typ';
+    seed({ id: 'note', title: 'Notes', content: { type: 'markdown', content: '# Notes' } });
+    renderTab('canvas');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit this document' }));
+    await waitFor(() => {
+      expect(transport.setRoomCanvasEditing).toHaveBeenCalledWith(ROOM, 'note', true);
+    });
+    fireEvent.change(screen.getByTestId('blintz-canvas'), { target: { value: half } });
+    vi.mocked(transport.setRoomCanvasEditing).mockClear();
+
+    // The blip: the stream drops and reconnects, and its resync lands a round
+    // trip later.
+    act(() => {
+      useAppStore.getState().beginRoomCanvasCycle(ROOM);
+    });
+
+    expect(screen.getByTestId('blintz-canvas')).toHaveValue(half);
+    expect(screen.getByTestId('blintz-canvas')).toHaveAttribute('data-editable', 'true');
+    expect(screen.getByRole('button', { name: 'Save for the room' })).toBeInTheDocument();
+    expect(transport.setRoomCanvasEditing).not.toHaveBeenCalledWith(ROOM, 'note', false);
+
+    // And the resync, arriving late, still finds the same editor.
+    act(() => {
+      useAppStore.getState().applyRoomCanvasFrame(
+        ROOM,
+        {
+          type: 'canvas',
+          documentId: 'note',
+          document: mockCanvasDocument({
+            id: 'note',
+            roomId: ROOM,
+            title: 'Notes',
+            content: { type: 'markdown', content: '# Notes' },
+          }),
+        },
+        VIEWER
+      );
+      useAppStore.getState().endRoomCanvasCycle(ROOM);
+    });
+
+    expect(screen.getByTestId('blintz-canvas')).toHaveValue(half);
+    expect(transport.setRoomCanvasEditing).not.toHaveBeenCalledWith(ROOM, 'note', false);
+  });
+});
+
+describe('the room canvas — a refused write is said where it was made', () => {
+  it('says what the room said when a close is refused', async () => {
+    const { toast } = await import('sonner');
+    transport.closeRoomCanvasDocument = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error('This room is archived'), { status: 409 }));
+    seed({ id: 'note', title: 'Notes' });
+    renderTab('canvas');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close Notes' }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith('Couldn’t take that off the canvas.', {
+        description: 'This room is archived',
+      });
+    });
   });
 });

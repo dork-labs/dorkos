@@ -501,10 +501,12 @@ export interface RoomTransport {
    *
    * Modeled on {@link subscribeSession}: with `sinceCursor` the server replays
    * only entries above it, and without one the connect is cold — the server
-   * leads with a `snapshot` frame, which this skips, because a room's roster and
-   * history are already hydrated through {@link getRoom} and
-   * {@link listRoomEntries}. Ephemeral `signal` events are delivered live and
-   * never replayed.
+   * leads with a `snapshot` frame, whose roster and history this skips, because
+   * both are already hydrated through {@link getRoom} and
+   * {@link listRoomEntries}. Its `canvas` is the exception and is delivered as
+   * `canvas` events: the room's shared table is hydrated from this stream and
+   * from nothing else. Ephemeral `signal` events are delivered live and never
+   * replayed.
    *
    * @param roomId - The room id.
    * @param sinceCursor - The highest `seq` already held, to resume from.

@@ -17,6 +17,7 @@ function resetRoomCanvas() {
     roomCanvasActive: {},
     roomCanvasUnread: {},
     roomCanvasEditing: {},
+    roomCanvasStale: {},
   });
 }
 
@@ -58,7 +59,7 @@ describe('RoomCanvasSlice — hydration', () => {
     expect(table().map((d) => d.id)).toEqual(['d1', 'd2']);
   });
 
-  it('forgets the table when a stream cycle begins, so a close missed while away self-corrects', () => {
+  it('sweeps a document closed while away, once the resync burst has ended', () => {
     apply(resyncFrame(doc({ id: 'd1' })));
     apply(resyncFrame(doc({ id: 'closed-while-away' })));
 
@@ -67,8 +68,56 @@ describe('RoomCanvasSlice — hydration', () => {
     // close is a deletion and leaves no frame to replay.
     useAppStore.getState().beginRoomCanvasCycle(ROOM);
     apply(resyncFrame(doc({ id: 'd1' })));
+    useAppStore.getState().endRoomCanvasCycle(ROOM);
 
     expect(table().map((d) => d.id)).toEqual(['d1']);
+  });
+
+  it('never lets an empty table be observed between a cycle starting and its resync', () => {
+    // **The bug this replaces.** Emptying the table at cycle start rendered:
+    // the view fell to its splash, the editor unmounted, and a half-typed draft
+    // went with it — from a two-second network blip. So the property is about
+    // what any reader of the store could SEE, not about where it ends up.
+    apply(resyncFrame(doc({ id: 'd1' })));
+    apply(resyncFrame(doc({ id: 'd2' })));
+
+    const seen: number[] = [];
+    const stop = useAppStore.subscribe((state) => {
+      seen.push((state.roomCanvasDocuments[ROOM] ?? []).length);
+    });
+    try {
+      useAppStore.getState().beginRoomCanvasCycle(ROOM);
+      apply(resyncFrame(doc({ id: 'd1' })));
+      apply(resyncFrame(doc({ id: 'd2' })));
+      useAppStore.getState().endRoomCanvasCycle(ROOM);
+    } finally {
+      stop();
+    }
+
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen).not.toContain(0);
+  });
+
+  it('keeps the document this viewer is editing, even when nothing vouches for it', () => {
+    // Their draft is the only copy of what they have typed. A table that tidied
+    // itself by throwing that away is the failure this design exists to stop.
+    apply(resyncFrame(doc({ id: 'drafting' })));
+    useAppStore.getState().setRoomCanvasEditing(ROOM, 'drafting');
+
+    useAppStore.getState().beginRoomCanvasCycle(ROOM);
+    useAppStore.getState().endRoomCanvasCycle(ROOM);
+
+    expect(table().map((d) => d.id)).toEqual(['drafting']);
+  });
+
+  it('a close arriving during a cycle vouches for its own row, so the sweep is a no-op for it', () => {
+    apply(resyncFrame(doc({ id: 'd1' })));
+    useAppStore.getState().beginRoomCanvasCycle(ROOM);
+    apply({ type: 'canvas', documentId: 'd1', closed: true });
+    useAppStore.getState().endRoomCanvasCycle(ROOM);
+
+    expect(table()).toHaveLength(0);
+    expect(useAppStore.getState().roomCanvasStale[ROOM]).toEqual([]);
   });
 });
 
@@ -207,6 +256,45 @@ describe('RoomCanvasSlice — closing and reading', () => {
 
     expect(useAppStore.getState().roomCanvasUnread[ROOM]?.canvas).toEqual([]);
     expect(useAppStore.getState().roomCanvasActive[ROOM]?.canvas).toBe('theirs');
+  });
+
+  it('does not re-light a dot the reader cleared, on every reconnect', () => {
+    // A resync frame is the server saying "this is still here". Read as an
+    // arrival it would put the mark back once per network blip, forever.
+    // The reader sits on their own document, so `theirs` is a tab they are NOT
+    // looking at — which is the only state in which a dot can be lit at all.
+    apply(frame(doc({ id: 'mine', authorId: VIEWER })));
+    apply(frame(doc({ id: 'theirs', authorId: 'author-ana' })));
+    useAppStore.getState().clearRoomCanvasUnread(ROOM, 'canvas');
+
+    useAppStore.getState().beginRoomCanvasCycle(ROOM);
+    apply(resyncFrame(doc({ id: 'theirs', authorId: 'author-ana', rev: 2 })));
+    useAppStore.getState().endRoomCanvasCycle(ROOM);
+
+    expect(useAppStore.getState().roomCanvasUnread[ROOM]?.canvas).toEqual([]);
+  });
+
+  it('lights nothing for an activate or a pin — those change the order, not what it says', () => {
+    apply(frame(doc({ id: 'mine', authorId: VIEWER })));
+    apply(frame(doc({ id: 'theirs', authorId: 'author-ana' })));
+    useAppStore.getState().clearRoomCanvasUnread(ROOM, 'canvas');
+
+    apply(frame(doc({ id: 'theirs', authorId: 'author-ana', rev: 2 }), 'activated'));
+    apply(frame(doc({ id: 'theirs', authorId: 'author-ana', rev: 3, pinned: true }), 'pinned'));
+
+    expect(useAppStore.getState().roomCanvasUnread[ROOM]?.canvas).toEqual([]);
+  });
+
+  it('lights the dot again when another member really changes a document', () => {
+    // The reader is looking at their OWN document; a document you are looking
+    // at is never unread, so the one being changed has to be a different tab.
+    apply(frame(doc({ id: 'mine', authorId: VIEWER })));
+    apply(frame(doc({ id: 'theirs', authorId: 'author-ana' })));
+    useAppStore.getState().clearRoomCanvasUnread(ROOM, 'canvas');
+
+    apply(frame(doc({ id: 'theirs', authorId: 'author-ana', rev: 2 }), 'updated'));
+
+    expect(useAppStore.getState().roomCanvasUnread[ROOM]?.canvas).toEqual(['theirs']);
   });
 
   it('clears a whole view’s unread marks when the reader arrives on that tab', () => {

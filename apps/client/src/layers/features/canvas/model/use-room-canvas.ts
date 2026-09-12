@@ -27,26 +27,50 @@ import { useAppStore, useTransport } from '@/layers/shared/model';
  */
 export const CANVAS_EDIT_HEARTBEAT_MS = 15_000;
 
-/** What a person can do to a room's table. */
+/** What a person can do to a room's table. Each REJECTS when the room refused. */
 export interface RoomCanvasActions {
   /** Put something on the table as yourself. */
-  open: (content: UiCanvasContent) => void;
+  open: (content: UiCanvasContent) => Promise<void>;
   /** Replace what one document shows. */
-  update: (documentId: string, content: UiCanvasContent) => void;
+  update: (documentId: string, content: UiCanvasContent) => Promise<void>;
   /** Pin a document so it sorts first and is never dropped to make room, or unpin it. */
-  pin: (documentId: string, pinned: boolean) => void;
+  pin: (documentId: string, pinned: boolean) => Promise<void>;
   /** Take a document off the table, for everybody. */
-  close: (documentId: string) => void;
+  close: (documentId: string) => Promise<void>;
+}
+
+/**
+ * The sentence a person reads when the room refused a write.
+ *
+ * **The server's own words, wherever it has any.** Its refusals already say the
+ * thing that matters and say it plainly — "This room is archived", "No such
+ * document on this room's canvas" — so restating them here would mean
+ * maintaining two vocabularies and shipping the vaguer one. That is also what
+ * covers an archived room without a second check: the door is refused where it
+ * is pressed, in the room's own words, rather than pre-greyed on a flag this
+ * surface would have to fetch and keep current.
+ *
+ * Only a failure with nothing to quote — the network went away mid-click — gets
+ * a sentence of its own.
+ *
+ * @param error - Whatever the write rejected with.
+ * @returns One sentence, always.
+ */
+export function roomCanvasRefusal(error: unknown): string {
+  const message = error instanceof Error ? error.message.trim() : '';
+  if (message.length > 0) return message;
+  return 'DorkOS couldn’t reach the server. Check your connection and try again.';
 }
 
 /**
  * The four writes, bound to one room.
  *
- * Failures are reported to the console rather than raised: none of these is a
- * form submission, every one of them is answered by a frame that either arrives
- * or does not, and a thrown promise inside a click handler would take the panel
- * down with it. A refusal the person needs to act on — an archived room — is
- * already said by the room's own banner.
+ * **Each one rejects rather than swallowing.** They used to log to the console
+ * and return, which made a refused close look exactly like a slow one: the tab
+ * stayed, nothing was said, and the person pressed it again. Every caller now
+ * has to decide what the person sees — a toast where they pressed a control, a
+ * sentence under the field where they typed — and none of them may decide
+ * "nothing".
  *
  * @param roomId - The room whose table these act on.
  * @returns The four writes.
@@ -54,43 +78,30 @@ export interface RoomCanvasActions {
 export function useRoomCanvasActions(roomId: string): RoomCanvasActions {
   const transport = useTransport();
 
-  const report = useCallback(
-    (what: string, err: unknown) => {
-      console.warn(`[room-canvas] ${what} failed`, { roomId, err });
-    },
-    [roomId]
-  );
-
   return {
     open: useCallback(
-      (content) => {
-        void transport.openRoomCanvasDocument(roomId, content).catch((err) => report('open', err));
+      async (content) => {
+        await transport.openRoomCanvasDocument(roomId, content);
       },
-      [transport, roomId, report]
+      [transport, roomId]
     ),
     update: useCallback(
-      (documentId, content) => {
-        void transport
-          .updateRoomCanvasDocument(roomId, documentId, { content })
-          .catch((err) => report('update', err));
+      async (documentId, content) => {
+        await transport.updateRoomCanvasDocument(roomId, documentId, { content });
       },
-      [transport, roomId, report]
+      [transport, roomId]
     ),
     pin: useCallback(
-      (documentId, pinned) => {
-        void transport
-          .updateRoomCanvasDocument(roomId, documentId, { pinned })
-          .catch((err) => report('pin', err));
+      async (documentId, pinned) => {
+        await transport.updateRoomCanvasDocument(roomId, documentId, { pinned });
       },
-      [transport, roomId, report]
+      [transport, roomId]
     ),
     close: useCallback(
-      (documentId) => {
-        void transport
-          .closeRoomCanvasDocument(roomId, documentId)
-          .catch((err) => report('close', err));
+      async (documentId) => {
+        await transport.closeRoomCanvasDocument(roomId, documentId);
       },
-      [transport, roomId, report]
+      [transport, roomId]
     ),
   };
 }
