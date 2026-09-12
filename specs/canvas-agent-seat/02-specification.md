@@ -984,7 +984,7 @@ adds no config field at all, which is stated here so a reviewer can check it rat
 
 #### 3.4 Where the file lands, and what comes back
 
-`POST /api/sessions/:id/devtools/recording` — multipart, one file part, `requestId` in the body,
+`POST /api/sessions/:id/devtools/recording` — multipart with **two file parts**: `recording` (the GIF) and `keyframe` (the final keyframe as a PNG, the same bytes the last `browser_screenshot`-style capture produced, so the tool result can return it as the image block §3.5 promises), `requestId` in the body,
 reusing `upload-handler.ts`'s multer configuration and its `10 MiB` ceiling so the byte cap is one
 number in one place. The server writes it to
 
@@ -1914,7 +1914,7 @@ One PR per phase. Each phase's acceptance criteria are the gate, and none of the
   import; **delete** `features/canvas/model/use-canvas-persistence.ts`
 - `apps/server/src/routes/sessions.ts` — mount; `openapi-registry.ts` + both regeneration commands
 - `apps/server/src/index.ts:2727` — `onProjectorRekey(... canvasService.rekeyScope(...))` beside the
-  connector-attachment line; `onSessionRemoved(...)` beside `noteSessionOrphaned`
+  connector-attachment line; that wiring lives in `index.ts`, which the Obsidian shell (DirectTransport) never runs — so the `CanvasService` self-subscribes to `onProjectorRekey` at module scope, the way `message-dispatcher.ts:2275-2282` self-wires its own listener, and `index.ts` adds nothing; one root owns it and both shells get it; `onSessionRemoved(...)` beside `noteSessionOrphaned`
   (`message-dispatcher.ts:2282`); `sweepOrphanedCanvasDocuments()` in the health-check interval
   (`index.ts:4395-4402`)
 - `apps/client/src/layers/features/chat/model/use-session-submit.ts:419-424` and
