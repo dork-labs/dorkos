@@ -33,6 +33,7 @@ import {
   scriptedRunner,
   type RoomHarness,
 } from '../../__tests__/room-test-harness.js';
+import { UNBOUND_ATTACHMENT_TTL_MS } from '../unbound-sweep.js';
 import { LocalRoomAttachmentStore } from '../local-room-attachment-store.js';
 import { setRoomAttachmentStores } from '../attachment-stores.js';
 import { projectRoomAttachments } from '../attachment-projection.js';
@@ -45,6 +46,9 @@ const agents = agentLookupFor({
   [ANA_PATH]: { name: 'ana', displayName: 'Ana', responseMode: 'always' },
   [KAI_PATH]: { name: 'kai', displayName: 'Kai', responseMode: 'always' },
 });
+
+/** The smallest thing that reads as a GIF — what a recording arrives as. */
+const GIF = Buffer.concat([Buffer.from('GIF89a', 'latin1'), Buffer.alloc(8, 3)]);
 
 /** A one-pixel PNG, so a `preview: 'image'` assertion means the bytes sniffed. */
 const PNG = Buffer.from(
@@ -75,9 +79,17 @@ function unboundRows() {
   return harness.attachments.listUnboundBefore(roomId, new Date(Date.now() + 60_000).toISOString());
 }
 
-/** The room's attachment directory, or `[]` when nothing ever wrote to it. */
-async function storedFiles(): Promise<string[]> {
-  return fs.readdir(path.join(bytesHome, 'rooms', roomId, 'attachments')).catch(() => []);
+/**
+ * One room's attachment directory, or `[]` when nothing ever wrote to it.
+ *
+ * Takes the room, because a post to a room id that does not exist stages under
+ * THAT id — asserting against the real room's directory would be empty whether
+ * the rollback ran or not.
+ *
+ * @param room - The room whose stored bytes to list. Defaults to the seeded one.
+ */
+async function storedFiles(room: string = roomId): Promise<string[]> {
+  return fs.readdir(path.join(bytesHome, 'rooms', room, 'attachments')).catch(() => []);
 }
 
 /** Nothing was written: no unbound rows, no bytes, no entry. */
@@ -261,6 +273,109 @@ describe('an agent attaches a file it made', () => {
       fs.stat(path.join(bytesHome, 'rooms', roomId, 'attachments', `${file.id}.png`)),
     ]);
     expect(projectedStat.ino).toBe(sourceStat.ino);
+  });
+
+  it('shows a recording as a picture, not as a download chip', async () => {
+    // THE flow this phase exists for, joined: `browser_record_stop` writes a GIF
+    // into the agent's own directory and `post_to_room` puts that file in front
+    // of the room. Until GIF joined the previewable set it came back
+    // `application/octet-stream` with no preview — the one kind of picture the
+    // product tells an agent to post was the one kind it would not show.
+    await fs.writeFile(path.join(anaCwd, 'run.gif'), GIF);
+
+    const result = (await post({
+      roomId,
+      text: 'here is the run',
+      attachments: ['run.gif'],
+    })) as { entryId: string };
+
+    const entry = harness.service
+      .readHistory(roomId, harness.human, { limit: 10 })
+      .find((e) => e.id === result.entryId);
+    const file = entry!.attachments![0];
+    expect(file.name).toBe('run.gif');
+    expect(file.mimeType).toBe('image/gif');
+    expect(file.preview).toBe('image');
+  });
+
+  it('accepts an agent’s GIF wherever a person’s GIF is accepted', async () => {
+    // Spec §4 step 2: the agent's caps ARE the human route's caps. On an install
+    // whose `uploads.allowedTypes` is narrowed, a GIF typed from the BYTES is
+    // what makes the two doors agree; typing it as an opaque stream refused the
+    // agent while accepting the person.
+    uploads.allowedTypes = ['image/png', 'image/gif'];
+    try {
+      await fs.writeFile(path.join(anaCwd, 'run.gif'), GIF);
+
+      const result = (await post({ roomId, text: 'a', attachments: ['run.gif'] })) as {
+        attached: number;
+      };
+
+      expect(result.attached).toBe(1);
+    } finally {
+      uploads.allowedTypes = ['*/*'];
+    }
+  });
+
+  it('takes the bytes back when the post itself is refused', async () => {
+    // The refusal the spec's Testing Strategy asks about, and the everyday one:
+    // a mistyped room id. Staging happens before the write, so without a
+    // rollback here up to ten files sit on disk referenced by nothing.
+    await fs.writeFile(path.join(anaCwd, 'shot.png'), PNG);
+
+    await expect(
+      post({ roomId: 'no-such-room', text: 'a', attachments: ['shot.png'] })
+    ).rejects.toBeDefined();
+
+    // Under the id that was NAMED, which is where staging put them — the real
+    // room's directory is empty either way, so asserting on it proves nothing.
+    expect(await storedFiles('no-such-room')).toEqual([]);
+    expect(
+      harness.attachments.listUnboundBefore(
+        'no-such-room',
+        new Date(Date.now() + 60_000).toISOString()
+      )
+    ).toHaveLength(0);
+  });
+
+  it('takes the bytes back when the post is refused after the room was archived', async () => {
+    await fs.writeFile(path.join(anaCwd, 'shot.png'), PNG);
+    harness.service.updateRoom(roomId, harness.human, { archived: true });
+
+    await expect(post({ roomId, text: 'a', attachments: ['shot.png'] })).rejects.toBeDefined();
+
+    expect(unboundRows()).toHaveLength(0);
+    expect(await storedFiles()).toEqual([]);
+  });
+
+  it('sweeps a day-old orphan on the agent’s own path', async () => {
+    // The sweep had exactly one call site, inside the PEOPLE_ONLY upload route.
+    // A room only agents post in therefore never swept, which is the whole
+    // reason the spec tolerates an orphan at all ("the 24-hour sweep reclaims
+    // it"). Now the agent path runs it too.
+    const stale = 'STALEATTACHMENT01';
+    const { url } = await store.put(roomId, stale, 'png', PNG);
+    harness.attachments.create(
+      {
+        roomId,
+        id: stale,
+        authorId: harness.human,
+        name: 'old.png',
+        extension: 'png',
+        mimeType: 'image/png',
+        size: PNG.byteLength,
+        preview: 'image',
+        url,
+      },
+      new Date(Date.now() - UNBOUND_ATTACHMENT_TTL_MS - 60_000).toISOString()
+    );
+    expect(unboundRows().some((row) => row.id === stale)).toBe(true);
+
+    await fs.writeFile(path.join(anaCwd, 'shot.png'), PNG);
+    await post({ roomId, text: 'a', attachments: ['shot.png'] });
+
+    expect(unboundRows().some((row) => row.id === stale)).toBe(false);
+    expect(await storedFiles()).not.toContain(`${stale}.png`);
   });
 
   it('posts with no attachments exactly as it always did', async () => {

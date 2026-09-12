@@ -106,6 +106,49 @@ async function readOwnFile(cwd: string, named: string): Promise<{ bytes: Buffer;
 }
 
 /**
+ * Undo staging: take the bytes and the unbound rows back.
+ *
+ * **Exported because the caller needs it too.** Staging happens before the
+ * entry is written, and the write can still refuse — a mistyped `roomId`, the
+ * per-turn post ceiling, a stopped turn, an archived room. Without this the
+ * files stay on disk with nothing referencing them, in a room where the only
+ * sweep runs on the person's upload route, which an agent-only room never
+ * reaches. So the caller runs the same cleanup this module runs on its own
+ * failures, and there is one expression of it rather than two.
+ *
+ * Best-effort by necessity: a cleanup failure must not replace the refusal the
+ * agent actually needs to read.
+ *
+ * @param request.roomId - The room the files were staged in.
+ * @param request.ids - The attachment ids to take back.
+ * @param request.store - Where the bytes went.
+ * @param request.rows - Where the rows went.
+ */
+export async function discardStagedAttachments(request: {
+  roomId: string;
+  ids: readonly string[];
+  store: RoomAttachmentStore;
+  rows: AttachmentRowStore;
+}): Promise<void> {
+  const { roomId, ids, store, rows } = request;
+  for (const id of ids) {
+    try {
+      // Read the extension back off the row before deleting it: the store needs
+      // it to name the file, and the row is the only place it was written down.
+      const extension = rows.get(roomId, id)?.extension ?? '';
+      rows.deleteUnbound(roomId, [id]);
+      await store.delete(roomId, id, extension);
+    } catch (cleanupErr) {
+      logger.warn('[rooms] could not clean up a half-finished agent attachment', {
+        roomId,
+        attachmentId: id,
+        error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+      });
+    }
+  }
+}
+
+/**
  * Store an agent's files and answer with the unbound attachment ids.
  *
  * Every refusal happens before the entry exists, so a post that cannot carry
@@ -174,21 +217,9 @@ export async function stageAgentAttachments(request: AgentAttachmentRequest): Pr
     return ids;
   } catch (err) {
     // All-or-nothing: the caller gets no ids, so nothing here may survive to be
-    // referenced later. Best-effort by necessity — a cleanup failure must not
-    // replace the refusal the agent actually needs to read — and anything that
-    // does survive is unbound, so the existing sweep collects it within the day.
-    for (const orphan of committed) {
-      try {
-        rows.deleteUnbound(roomId, [orphan.id]);
-        await store.delete(roomId, orphan.id, orphan.extension);
-      } catch (cleanupErr) {
-        logger.warn('[rooms] could not clean up a half-finished agent attachment', {
-          roomId,
-          attachmentId: orphan.id,
-          error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
-        });
-      }
-    }
+    // referenced later. The same cleanup the CALLER runs when the write refuses
+    // after this returned — one expression, so the two cannot drift.
+    await discardStagedAttachments({ roomId, ids: committed.map((file) => file.id), store, rows });
     throw err;
   }
 }

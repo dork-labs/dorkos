@@ -187,7 +187,11 @@ import {
   ROOM_ATTACHMENT_NAME_MAX,
   type RoomEntry,
 } from '@dorkos/shared/room-schemas';
-import { stageAgentAttachments } from './attachments/agent-attachments.js';
+import {
+  discardStagedAttachments,
+  stageAgentAttachments,
+} from './attachments/agent-attachments.js';
+import { sweepUnboundAttachments } from './attachments/unbound-sweep.js';
 import { getAttachmentRowStore, getRoomAttachmentStore } from './attachments/attachment-stores.js';
 
 import {
@@ -776,14 +780,49 @@ export const roomsDomain: CapabilityDomain = {
                   nameMax: ROOM_ATTACHMENT_NAME_MAX,
                 })
               );
-        const entry = answering(() =>
-          rooms.postFromTool(input.roomId, {
-            authorId,
-            text: input.text,
-            ...(input.replyTo !== undefined ? { replyTo: input.replyTo } : {}),
-            ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
-          })
-        );
+        // **The write can still refuse after the bytes are on disk**, and a
+        // refusal is the ordinary case rather than the exotic one: a mistyped
+        // `roomId`, the per-turn post ceiling, a stopped turn, an archived room,
+        // a direct message. The rules that decide those live inside
+        // `postFromTool` and must stay there — a dry run here would be the
+        // second write path that file exists to refuse — so the files are taken
+        // back instead, with the same cleanup the staging failure uses.
+        let entry;
+        try {
+          entry = answering(() =>
+            rooms.postFromTool(input.roomId, {
+              authorId,
+              text: input.text,
+              ...(input.replyTo !== undefined ? { replyTo: input.replyTo } : {}),
+              ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
+            })
+          );
+        } catch (err) {
+          if (attachmentIds.length > 0) {
+            await discardStagedAttachments({
+              roomId: input.roomId,
+              ids: attachmentIds,
+              store: getRoomAttachmentStore(),
+              rows: getAttachmentRowStore(),
+            });
+          }
+          throw err;
+        }
+
+        // Housekeeping on the path that creates the mess, exactly as the
+        // person's upload route does it. Without a call here the 24-hour sweep
+        // had ONE site — inside the `PEOPLE_ONLY` route — so a room only agents
+        // post in never swept at all, and the spec's reason for tolerating an
+        // orphan ("the sweep reclaims it") was not true there. Awaited but never
+        // fatal: it swallows its own errors, so a post cannot fail because a
+        // sweep did.
+        if (attachmentIds.length > 0) {
+          void (await sweepUnboundAttachments({
+            rows: getAttachmentRowStore(),
+            store: getRoomAttachmentStore(),
+            roomId: input.roomId,
+          }));
+        }
         return {
           posted: true,
           entryId: entry.id,
