@@ -23,6 +23,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ROOM_LIVE_BEAT_MS, ROOM_LIVE_TTL_MS } from '@dorkos/shared/room-schemas';
+import { lexWithoutComments } from '../../../../../../scripts/lib/code-only.mjs';
 import { FOLLOW_CLAIM_TTL_MS, FOLLOW_REFRESH_MS } from '../follow/room-follow-service.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -33,15 +34,32 @@ function source(relative: string): string {
 }
 
 /**
- * The same file with its comments taken out.
+ * The same file with its comments blanked, through the repo's shared stripper.
  *
- * Crude on purpose — a `//` inside a string literal would be cut too — and
- * sound for what it is asked: these files hold no URLs, and over-cutting can
- * only make the search below find LESS, which a companion `toContain` case
- * would catch.
+ * **Not a regex of this file's own**, which is a rule with a census behind it
+ * (`scripts/__tests__/code-only.test.ts`): no pair of comment regexes can be
+ * ordered correctly, because a `/*` inside a string and a `//` inside a block
+ * comment each desynchronise them, and both shapes have been measured getting
+ * it wrong in this repo. The shared lexer finds comment spans only after the
+ * parser has blanked every literal, so neither failure is reachable.
+ *
+ * `lexWithoutComments` and not `codeOnly`: this file asks "does this source say
+ * ten thousand outside its prose", which is a question about text, and
+ * `codeOnly` would blank the string literals the sibling cases below search.
+ * Positions are preserved — comments become spaces of the same length — so a
+ * `toContain` on a line of code still matches exactly.
+ *
+ * **The parse count is checked, not ignored.** An unparseable file would lex to
+ * nothing and report no copies, which is the one way a sweep like this passes
+ * for the wrong reason.
+ *
+ * @param text - The file's full source.
+ * @returns The same source with every comment span blanked.
  */
 function withoutComments(text: string): string {
-  return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  const { code, parseErrors } = lexWithoutComments(text, 'scan.ts');
+  expect(parseErrors, 'the stripper could not parse this file, so it found nothing').toBe(0);
+  return code;
 }
 
 describe('the room’s one ephemeral beat', () => {
