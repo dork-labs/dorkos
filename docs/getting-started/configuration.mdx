@@ -148,6 +148,37 @@ It is still early alpha. Only turn it on when you know what is on the other side
   }}
 />
 
+### Telling auto mode about DorkOS's own tools
+
+Most DorkOS tools carry a safety level DorkOS checks before the tool runs. Auto
+mode in Claude Code cannot see that check, so it used to stop and ask you about
+calls DorkOS had already decided — two questions for one decision. DorkOS now
+tells it which level the call passed, and it asks you less often.
+
+This covers the tools that carry a declared safety level. DorkOS's other tools —
+the ones it also offers as named capabilities, such as `config_get`,
+`memory_write`, `list_capabilities` and the `marketplace_*` tools — are checked a
+different way and say nothing to auto mode, so it keeps asking about those
+exactly as it did before.
+
+The note only ever says what DorkOS itself decided, and only one thing: which of
+DorkOS's three safety levels the tool sits at. It never carries anything from the
+tool's arguments, its output, or your conversation, and it cannot let an agent do
+anything it could not do already — Claude Code is still free to ask you about
+anything, any time. Codex and OpenCode have no way to be told, so this changes
+nothing for them.
+
+<TypeTable
+  type={{
+    DORKOS_CLASSIFIER_CONTEXT: {
+      description:
+        'Tell Claude Code which DorkOS safety tier a tool call already passed. On unless you set it to `0`, `false`, `no` or `off`. Turn it off and auto mode goes back to guessing about DorkOS tools, which means more questions, not fewer.',
+      type: 'boolean',
+      default: 'true',
+    },
+  }}
+/>
+
 ### Mesh
 
 Mesh is always on. It scans your projects for agent-capable directories and builds a discoverable registry without any additional configuration. See the [Agent Discovery guide](/docs/guides/agent-discovery) for details on registration and access control.

@@ -27,7 +27,8 @@ import {
   type InteractiveSession,
 } from './interaction-wait.js';
 import { toSdkQuestionAnswers } from '../sessions/question-answers.js';
-import { inSessionToolName } from '../mcp-tools/tool-exposure.js';
+import { inSessionToolName, IN_SESSION_TOOL_PREFIX } from '../mcp-tools/tool-exposure.js';
+import { recordAutoModeStop } from '../../../observability/auto-mode-stops.js';
 import {
   approvalTimeoutDenial,
   describeWaited,
@@ -980,6 +981,15 @@ export function createCanUseTool(
     }
 
     if (resolveModeDecision(session.permissionMode) === 'ask') {
+      // The measurement (spec `auto-mode-classifier-context`). Reaching here in
+      // AUTO mode with a DorkOS tool means the runtime's classifier decided this
+      // call deserved a person, and DorkOS's own auto-allow list did not cover
+      // it — which is exactly the stop the host-context note exists to remove.
+      // Only `auto`: every other mode asks by design, so counting its cards
+      // would bury the signal under the modes that are supposed to produce them.
+      if (session.permissionMode === 'auto' && toolName.startsWith(IN_SESSION_TOOL_PREFIX)) {
+        recordAutoModeStop({ sessionId: session.sdkSessionId ?? 'unknown', toolName });
+      }
       // info, not debug: from here the turn makes no progress until a person
       // answers, and this line is what tells a reader that (DOR-782).
       // `agentID` is present when the call came from inside a subagent, which is
