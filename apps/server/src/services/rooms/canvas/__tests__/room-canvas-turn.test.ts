@@ -363,15 +363,36 @@ describe('a room turn’s canvas commands', () => {
     expect(harness.service.canvas.bookkeepingSize().openLedgers).toBe(0);
   });
 
-  it('keeps its bookkeeping bounded however many turns run', async () => {
-    // The other half: `finishTurn` remembers a turn so a straggler is
-    // recognised, and that memory has to stop growing. Driven past the count
-    // bound rather than reasoned about.
+  it('keeps its memory of FINISHED turns bounded however many turns run', async () => {
+    // `finishTurn` remembers a turn so a straggler is recognised and charged,
+    // and that memory has to stop growing. Driven past the count bound rather
+    // than reasoned about.
     const canvas = harness.service.canvas;
     for (let n = 0; n < 700; n += 1) canvas.finishTurn(`turn-${n}`);
     const { openLedgers, rememberedTurns } = canvas.bookkeepingSize();
     expect(openLedgers).toBe(0);
     expect(rememberedTurns).toBeLessThanOrEqual(500);
+  });
+
+  it('keeps its OPEN ledgers bounded however many turns never close', async () => {
+    // The other map, and it needs its own case: the two bounds are separate
+    // constants precisely so a break in one cannot hide behind the other. A
+    // ledger is opened by the first operation of a turn and emptied by
+    // `finishTurn`; a turn whose process died never reaches one, so without a
+    // count bound this map grows for the life of the server.
+    const canvas = harness.service.canvas;
+    for (let n = 0; n < 700; n += 1) {
+      canvas.apply({
+        roomId: room.id,
+        authorId: ana,
+        turnId: `abandoned-${n}`,
+        command: jsonCommand(`doc ${n}`),
+      });
+    }
+    const { openLedgers, rememberedTurns } = canvas.bookkeepingSize();
+    expect(openLedgers).toBeLessThanOrEqual(500);
+    // …and none of them was closed, so nothing leaked into the other map.
+    expect(rememberedTurns).toBe(0);
   });
 
   it('writes no line at all for a turn that changed nothing', async () => {
@@ -407,5 +428,37 @@ describe('a room turn’s canvas commands', () => {
     // And the sentence a refused operation would have carried is the one the
     // handler path returns, not something this path invents.
     expect(tooManyCanvasOpsMessage(3)).toContain('3 times');
+  });
+
+  it('does not hand a finished turn a fresh ceiling', async () => {
+    // The ceiling is a per-TURN budget, and ending is not how a turn earns a new
+    // one. Counting only the OPEN ledger reads zero for every turn that has
+    // closed, so an agent still running past its own line could spend three,
+    // three, three, forever — measured, before this stood, as eight more
+    // applied operations and nine canvas lines for one turn.
+    turnBehaviour = (opts) => {
+      openTurn(opts);
+      for (const n of [1, 2, 3, 4]) {
+        opts.projector.ingest({ type: 'ui_command', command: jsonCommand(`doc ${n}`) });
+      }
+      opts.projector.ingest({ type: 'turn_end' });
+      return { accepted: true, canonicalId: opts.sessionId };
+    };
+    await createSessionRoomTurnRunner().run(turnRequest());
+    const turnId = triggered[0].roomTurn?.turnId ?? '';
+    expect(turnId).not.toBe('');
+
+    const late = harness.service.canvas.apply({
+      roomId: room.id,
+      authorId: ana,
+      turnId,
+      command: jsonCommand('one more, after the line went out'),
+    });
+
+    // Refused exactly as the in-turn fourth was, with the same sentence.
+    expect(late).toMatchObject({ applied: false, code: 'TOO_MANY_CANVAS_OPS_THIS_TURN' });
+    // And a refusal writes nothing: no row, and no line announcing one.
+    expect(harness.service.canvas.list(room.id)).toHaveLength(3);
+    expect(log().filter((entry) => entry.body.canvas !== undefined)).toHaveLength(1);
   });
 });

@@ -203,6 +203,48 @@ describe('RoomCanvasService.apply', () => {
       expect(canvas.list(room.id)).toHaveLength(3);
     });
 
+    it('survives a turn that is closed more than once', () => {
+      // `finishTurn` runs from the collector's `finally`, and a room turn can
+      // reach one more than once — an abort and a settle, a retry, a second
+      // close on a turn that already ended. Each of those calls arrives with an
+      // EMPTY ledger, so a closed record that assigned its count rather than
+      // adding to it would hand the turn a fresh budget every time anything
+      // closed it again. Nothing else in this file can see that: it needs a
+      // second close AND an operation after it.
+      for (const n of [1, 2, 3]) {
+        applyAs(ana, 'turn-1', { action: 'open_canvas', content: jsonContent(`doc ${n}`) });
+      }
+      canvas.finishTurn('turn-1');
+      canvas.finishTurn('turn-1');
+
+      expect(
+        applyAs(ana, 'turn-1', { action: 'open_canvas', content: jsonContent('doc 4') })
+      ).toMatchObject({ applied: false, code: 'TOO_MANY_CANVAS_OPS_THIS_TURN' });
+      expect(canvas.list(room.id)).toHaveLength(3);
+    });
+
+    it('charges a late operation against the turn that spent it', () => {
+      // Two ops in-turn leaves one. The straggler takes it — and is named, which
+      // is the round-one behaviour — and the one after it is refused, because a
+      // late operation is charged like any other rather than being free.
+      for (const n of [1, 2]) {
+        applyAs(ana, 'turn-1', { action: 'open_canvas', content: jsonContent(`doc ${n}`) });
+      }
+      canvas.finishTurn('turn-1');
+
+      const third = applyAs(ana, 'turn-1', {
+        action: 'open_canvas',
+        content: jsonContent('doc 3'),
+      });
+      expect(third.applied, 'the third of three is still inside the ceiling').toBe(true);
+      // A second close, with nothing open, must not give the charge back.
+      canvas.finishTurn('turn-1');
+      expect(
+        applyAs(ana, 'turn-1', { action: 'open_canvas', content: jsonContent('doc 4') })
+      ).toMatchObject({ applied: false, code: 'TOO_MANY_CANVAS_OPS_THIS_TURN' });
+      expect(canvas.list(room.id)).toHaveLength(3);
+    });
+
     it('starts again on the next turn', () => {
       for (const n of [1, 2, 3]) {
         applyAs(ana, 'turn-1', { action: 'open_canvas', content: jsonContent(`a${n}`) });

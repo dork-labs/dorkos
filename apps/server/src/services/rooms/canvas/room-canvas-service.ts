@@ -102,10 +102,23 @@ const CLOSED_TURN_MEMORY_MS = 2 * 60 * 60_000;
  *
  * The age bound above is the honest one; this is the one that holds on a machine
  * busy enough that ages alone would not prune fast enough. Dropping the oldest
- * memory costs nothing but the late-operation shortcut for a turn that finished
- * long ago.
+ * memory hands a turn that finished long ago a fresh per-turn budget — which is
+ * why both bounds are set where they are: a turn 500 turns old, or two hours
+ * old, is not a turn any more.
  */
 const MAX_REMEMBERED_CLOSED_TURNS = 500;
+
+/**
+ * The hard ceiling on how many OPEN ledgers are held at once.
+ *
+ * The sibling of {@link MAX_REMEMBERED_CLOSED_TURNS}, and deliberately its own
+ * constant rather than a shared one: two bounds that move together cannot be
+ * told apart by a test, and each of these is worth being able to break on its
+ * own. Dropping the oldest open ledger loses that turn's LINE and never a row —
+ * the same thing the age bound below loses, and the same thing a failed post
+ * loses.
+ */
+const MAX_OPEN_LEDGERS = 500;
 
 /**
  * How long an OPEN ledger is kept for a turn nothing ever closed.
@@ -262,9 +275,16 @@ export class RoomCanvasService {
    * operation is recognised, and {@link RoomCanvasService.record} posts its own
    * one-line entry on the spot instead of filing it.
    *
+   * **It carries the turn's spend, not just its clock.** The ceiling is a
+   * per-TURN budget, and a turn does not get a fresh one by ending: an agent
+   * that spent all three operations in-turn and then keeps working must be
+   * refused on its fourth exactly as it would have been on its fourth in-turn.
+   * Remembering only the instant would reset the count to zero the moment the
+   * line was posted, which is the ceiling deleting itself.
+   *
    * Bounded twice: by age and by count. Neither bound loses a row.
    */
-  private readonly closedTurns = new Map<string, number>();
+  private readonly closedTurns = new Map<string, { at: number; spent: number }>();
 
   /**
    * Build the service over its collaborators.
@@ -356,7 +376,7 @@ export class RoomCanvasService {
     }
 
     const limit = this.maxOpsPerTurn();
-    if ((this.ledger.get(turnId)?.ops.length ?? 0) >= limit) {
+    if (this.spentThisTurn(turnId) >= limit) {
       return {
         applied: false,
         code: 'TOO_MANY_CANVAS_OPS_THIS_TURN',
@@ -425,7 +445,7 @@ export class RoomCanvasService {
   finishTurn(turnId: string): void {
     const turn = this.ledger.get(turnId);
     this.ledger.delete(turnId);
-    this.markClosed(turnId);
+    this.markClosed(turnId, turn?.ops.length ?? 0);
     if (!turn || turn.ops.length === 0) return;
     this.postLine(turn.roomId, turn.authorId, turn.ops, turnId);
   }
@@ -753,10 +773,9 @@ export class RoomCanvasService {
   /**
    * How many turns this service is holding state for.
    *
-   * @internal Exported for testing only. The two bounds above — the ledger's TTL
-   * and the closed-turn set's age-and-count pair — are the claim, and a test that
-   * could not read the sizes could only assert whatever behaviour happens to
-   * follow from them.
+   * @internal Exported for testing only. The four bounds — an age and a count on
+   * each of the two maps — are the claim, and a test that could not read the
+   * sizes could only assert whatever behaviour happens to follow from them.
    */
   bookkeepingSize(): { openLedgers: number; rememberedTurns: number } {
     return { openLedgers: this.ledger.size, rememberedTurns: this.closedTurns.size };
@@ -1044,11 +1063,15 @@ export class RoomCanvasService {
     // and the row would sit on the table with nothing in the log naming it.
     // Posting immediately keeps the invariant this whole design turns on — every
     // applied operation is named exactly once.
-    if (this.closedTurns.has(turnId)) {
+    const closed = this.closedTurns.get(turnId);
+    if (closed !== undefined) {
+      // Charged before it is announced, so the turn's budget keeps shrinking
+      // while it keeps working. `apply` refused it already if there was nothing
+      // left, so anything reaching here is inside the ceiling.
+      closed.spent += 1;
       this.postLine(roomId, authorId, [entry], turnId);
       return;
     }
-    this.expireStaleLedgers();
     const turn = this.ledger.get(turnId) ?? {
       roomId,
       authorId,
@@ -1057,6 +1080,10 @@ export class RoomCanvasService {
     };
     turn.ops.push(entry);
     this.ledger.set(turnId, turn);
+    // AFTER the write, and told which turn it must not drop. Pruning first would
+    // leave the map one over its bound for as long as this turn is open, and a
+    // bound that is only true between calls is not one.
+    this.expireStaleLedgers(turnId);
   }
 
   /**
@@ -1098,11 +1125,15 @@ export class RoomCanvasService {
    * the one that holds when a machine is busy enough that ages alone would not
    * prune fast enough.
    */
-  private markClosed(turnId: string): void {
+  private markClosed(turnId: string, spent: number): void {
     const at = this.now();
-    this.closedTurns.set(turnId, at);
-    for (const [id, closedAt] of this.closedTurns) {
-      if (at - closedAt >= CLOSED_TURN_MEMORY_MS) this.closedTurns.delete(id);
+    // ADDED to whatever is already there, never assigned over it. `finishTurn`
+    // runs from a `finally` and a room turn can reach one more than once; an
+    // assignment would let the second, empty call hand the turn a fresh budget.
+    const already = this.closedTurns.get(turnId)?.spent ?? 0;
+    this.closedTurns.set(turnId, { at, spent: already + spent });
+    for (const [id, record] of this.closedTurns) {
+      if (at - record.at >= CLOSED_TURN_MEMORY_MS) this.closedTurns.delete(id);
     }
     // Insertion order is close order, so the front of the map is the oldest.
     while (this.closedTurns.size > MAX_REMEMBERED_CLOSED_TURNS) {
@@ -1121,8 +1152,12 @@ export class RoomCanvasService {
    * no such call coming. Its rows are already on the table and stay there; what
    * is dropped is the line, which is the same thing a failed post loses, and the
    * log says which turn it was.
+   *
+   * @param keep - The turn being written right now, which is never the one
+   *   dropped. Without it a turn whose ledger is the oldest in the map would
+   *   have the entry it just filed thrown away underneath it.
    */
-  private expireStaleLedgers(): void {
+  private expireStaleLedgers(keep?: string): void {
     const at = this.now();
     for (const [id, turn] of this.ledger) {
       if (at - turn.openedAt < LEDGER_TTL_MS) continue;
@@ -1133,6 +1168,34 @@ export class RoomCanvasService {
         ops: turn.ops.length,
       });
     }
+    // Insertion order is open order, so the front of the map is the oldest.
+    while (this.ledger.size > MAX_OPEN_LEDGERS) {
+      const oldest = [...this.ledger.keys()].find((id) => id !== keep);
+      if (oldest === undefined) break;
+      const turn = this.ledger.get(oldest);
+      this.ledger.delete(oldest);
+      logger.warn('[rooms] dropped the oldest open canvas ledger to stay bounded', {
+        roomId: turn?.roomId,
+        turnId: oldest,
+        ops: turn?.ops.length ?? 0,
+      });
+    }
+  }
+
+  /**
+   * How much of its ceiling one turn has already spent — what it applied while
+   * it was open, plus what it has applied since its line went out.
+   *
+   * The two halves have to be added rather than chosen between: the open ledger
+   * is emptied at `finishTurn`, so reading it alone says zero for every turn
+   * that has ended, and the ceiling would rearm itself the instant the line was
+   * posted.
+   *
+   * @param turnId - The room turn's dispatch id.
+   * @returns Operations charged to this turn so far.
+   */
+  private spentThisTurn(turnId: string): number {
+    return (this.closedTurns.get(turnId)?.spent ?? 0) + (this.ledger.get(turnId)?.ops.length ?? 0);
   }
 }
 

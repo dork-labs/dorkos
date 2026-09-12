@@ -12,6 +12,7 @@ covers:
   - "docs(rooms): write down how a room's canvas works (DOR-1999)"
   - 'test(db): name canvas_documents in the table census (DOR-1999)'
   - 'fix(rooms): close the seven holes an adversarial read found in the canvas (DOR-1999)'
+  - 'fix(rooms): keep the canvas ceiling a per-turn budget, not a per-line one (DOR-1999)'
 ---
 
 ### Added
