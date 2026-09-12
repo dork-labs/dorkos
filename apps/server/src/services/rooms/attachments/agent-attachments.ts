@@ -136,7 +136,11 @@ export async function discardStagedAttachments(request: {
       // Read the extension back off the row before deleting it: the store needs
       // it to name the file, and the row is the only place it was written down.
       const extension = rows.get(roomId, id)?.extension ?? '';
-      rows.deleteUnbound(roomId, [id]);
+      // **Claim the row first, and only touch the bytes if the claim won.** The
+      // delete re-checks `entry_id IS NULL`, so a row that got bound in the
+      // meantime keeps both halves and a message never loses the file it is
+      // about. Same rule the 24-hour sweep follows, for the same reason.
+      if (rows.deleteUnbound(roomId, [id]) !== 1) continue;
       await store.delete(roomId, id, extension);
     } catch (cleanupErr) {
       logger.warn('[rooms] could not clean up a half-finished agent attachment', {

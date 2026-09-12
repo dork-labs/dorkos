@@ -39,6 +39,7 @@ import { setRoomAttachmentStores } from '../attachment-stores.js';
 import { projectRoomAttachments } from '../attachment-projection.js';
 import { projectedAttachmentPath } from '../attachment-paths.js';
 import type { RoomAttachmentStore } from '../room-attachment-store.js';
+import { discardStagedAttachments } from '../agent-attachments.js';
 
 const ANA_PATH = '/agents/ana';
 const KAI_PATH = '/agents/kai';
@@ -336,6 +337,33 @@ describe('an agent attaches a file it made', () => {
         new Date(Date.now() + 60_000).toISOString()
       )
     ).toHaveLength(0);
+  });
+
+  it('leaves a posted file alone when a rollback names its id', async () => {
+    await fs.writeFile(path.join(anaCwd, 'shot.png'), PNG);
+    const result = (await post({ roomId, text: 'here', attachments: ['shot.png'] })) as {
+      entryId: string;
+    };
+    const posted = harness.service
+      .readHistory(roomId, harness.human, { limit: 10 })
+      .find((e) => e.id === result.entryId)!.attachments![0];
+
+    // The row is BOUND to a message now, so the rollback cannot win it — and it
+    // must not take the bytes of a row it did not win. A message never loses the
+    // file it is about, whichever cleanup runs afterwards.
+    await discardStagedAttachments({
+      roomId,
+      ids: [posted.id],
+      store,
+      rows: harness.attachments,
+    });
+
+    expect(await store.get(roomId, posted.id, 'png', posted.mimeType)).not.toBeNull();
+    expect(
+      harness.service
+        .readHistory(roomId, harness.human, { limit: 10 })
+        .find((e) => e.id === result.entryId)?.attachments
+    ).toHaveLength(1);
   });
 
   it('takes the bytes back when the post is refused after the room was archived', async () => {
