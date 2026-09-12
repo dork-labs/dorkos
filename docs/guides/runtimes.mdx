@@ -175,16 +175,16 @@ Most people never hit the differences below. This section is the deep reference 
 
 The runtimes are not identical, and DorkOS doesn't pretend they are. Surfaces that depend on runtime capabilities, like the cost strip, permission modes, and plugin commands, adapt to the active runtime instead of showing controls that don't work.
 
-| Capability                              | Claude Code | Codex         | OpenCode |
-| --------------------------------------- | ----------- | ------------- | -------- |
-| Interactive tool approvals              | Yes         | No, sandboxed | Yes      |
-| Cost tracking                           | Yes         | Tokens only   | Yes      |
-| Plugins and marketplace commands        | Yes         | No            | No       |
+| Capability                              | Claude Code | Codex         | OpenCode   |
+| --------------------------------------- | ----------- | ------------- | ---------- |
+| Interactive tool approvals              | Yes         | No, sandboxed | Yes        |
+| Cost tracking                           | Yes         | Tokens only   | Yes        |
+| Plugins and marketplace commands        | Yes         | No            | No         |
 | DorkOS agent tools (Relay, Mesh, Tasks) | Yes         | Experiment    | Experiment |
 | Canvas and browser tools                | Yes         | Experiment    | Experiment |
-| Local / open-source models              | No          | No            | Yes      |
-| Auto mode is told about DorkOS's tools  | Yes         | No            | No       |
-| Marks its own housekeeping tasks        | Yes         | No            | No       |
+| Local / open-source models              | No          | No            | Yes        |
+| Auto mode is told about DorkOS's tools  | Yes         | No            | No         |
+| Marks its own housekeeping tasks        | Yes         | No            | No         |
 
 Known limitations, stated plainly:
 
