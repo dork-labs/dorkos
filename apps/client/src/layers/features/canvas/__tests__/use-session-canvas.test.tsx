@@ -53,6 +53,25 @@ function seedLegacy(sessionId: string, documents: { content: unknown; openedAt: 
 const A = { content: { type: 'file', sourcePath: '/src/a.ts' }, openedAt: 1 };
 const B = { content: { type: 'file', sourcePath: '/src/b.ts' }, openedAt: 2 };
 
+/** One of the server's rows, with everything the matcher does not read filled in. */
+function serverRow(content: unknown): Record<string, unknown> {
+  return {
+    id: `row-${JSON.stringify(content)}`,
+    scope: `session:${SESSION}`,
+    roomId: null,
+    content,
+    title: 'row',
+    contentType: (content as { type: string }).type,
+    authorId: 'owner',
+    pinned: false,
+    rev: 1,
+    lastTouchedBy: 'owner',
+    lastTouchedAt: '2026-09-12T10:00:00.000Z',
+    openedAt: '2026-09-12T09:00:00.000Z',
+    lastActiveAt: '2026-09-12T10:00:00.000Z',
+  };
+}
+
 describe('useSessionCanvas — the one-time import', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -100,20 +119,25 @@ describe('useSessionCanvas — the one-time import', () => {
     expect(transport.openSessionCanvasDocument).not.toHaveBeenCalled();
   });
 
-  it('POSTs nothing when the table is already filled, and still deletes the entry', async () => {
-    // Another device imported first, or this session's own agent put something
-    // there. The emptiness check is what makes the import idempotent across
-    // devices; re-seeding here would double everything.
+  it('still imports the person’s tabs when the table holds something ELSE', async () => {
+    // The agent opened its own document before the person came back. That is
+    // not this entry's documents, so it is not a reason to discard them — which
+    // is what the old "the table is already filled" branch did: any row at all
+    // deleted the local copy, tabs and all.
     seedLegacy(SESSION, [A, B]);
     vi.mocked(transport.listSessionCanvas).mockResolvedValue([
-      {} as Awaited<ReturnType<typeof transport.listSessionCanvas>>[number],
-    ]);
+      serverRow({ type: 'markdown', content: '# the agent’s own note' }),
+    ] as Awaited<ReturnType<typeof transport.listSessionCanvas>>);
+
     renderHook(() => useSessionCanvas(SESSION), { wrapper });
 
     await waitFor(() => {
       expect(localStorage.getItem(LEGACY_KEY)).toBeNull();
     });
-    expect(transport.openSessionCanvasDocument).not.toHaveBeenCalled();
+    expect(vi.mocked(transport.openSessionCanvasDocument).mock.calls.map((c) => c[1])).toEqual([
+      A.content,
+      B.content,
+    ]);
   });
 
   it('POSTs nothing and deletes nothing while the id is still the pre-rekey one', async () => {
@@ -149,8 +173,8 @@ describe('useSessionCanvas — the one-time import', () => {
 
   it('KEEPS the entry when a POST fails, and retries on the next hydrate', async () => {
     // The half with no way back if it is wrong: a table half written and the
-    // local copy gone. The retry is safe because the emptiness check sees what
-    // the first attempt did land.
+    // local copy gone. The retry is safe because each document is matched
+    // against what the first attempt did land.
     seedLegacy(SESSION, [A, B]);
     vi.mocked(transport.openSessionCanvasDocument).mockRejectedValueOnce(new Error('offline'));
     const first = renderHook(() => useSessionCanvas(SESSION), { wrapper });
@@ -166,6 +190,76 @@ describe('useSessionCanvas — the one-time import', () => {
     await waitFor(() => {
       expect(localStorage.getItem(LEGACY_KEY)).toBeNull();
     });
+  });
+
+  /**
+   * The import is per DOCUMENT, and this is the case that proved it had to be
+   * (the automated review of PR #1822).
+   *
+   * `[A, B]` where the write of B throws AFTER A landed is the ordinary
+   * half-failure. The entry is kept for the retry, exactly as designed — and the
+   * old retry then listed the canvas, saw the `A` it had just written, took the
+   * "the table is already filled" branch, and deleted the entry. `B` was gone
+   * from `localStorage` and had never reached the server: data loss, from the
+   * recovery path.
+   *
+   * The existing test above cannot see it, because it rejects the FIRST write,
+   * so nothing lands and the retry meets an empty table.
+   */
+  it('sends only the document that did NOT land, and deletes the entry after it does', async () => {
+    seedLegacy(SESSION, [A, B]);
+    // A lands; B throws. `listSessionCanvas` then answers the way the server
+    // really would — holding A alone.
+    vi.mocked(transport.openSessionCanvasDocument).mockImplementation(async (_id, content) => {
+      if ((content as { sourcePath?: string }).sourcePath === '/src/b.ts') {
+        throw new Error('offline');
+      }
+      vi.mocked(transport.listSessionCanvas).mockResolvedValue([serverRow(A.content)] as Awaited<
+        ReturnType<typeof transport.listSessionCanvas>
+      >);
+      return {} as Awaited<ReturnType<typeof transport.openSessionCanvasDocument>>;
+    });
+    const first = renderHook(() => useSessionCanvas(SESSION), { wrapper });
+
+    await waitFor(() => {
+      expect(transport.openSessionCanvasDocument).toHaveBeenCalledTimes(2);
+    });
+    expect(localStorage.getItem(LEGACY_KEY)).not.toBeNull();
+    first.unmount();
+
+    // The retry, against a table that now holds A. Every write succeeds.
+    vi.mocked(transport.openSessionCanvasDocument).mockClear();
+    vi.mocked(transport.openSessionCanvasDocument).mockResolvedValue(
+      {} as Awaited<ReturnType<typeof transport.openSessionCanvasDocument>>
+    );
+    renderHook(() => useSessionCanvas(SESSION), { wrapper });
+
+    await waitFor(() => {
+      expect(localStorage.getItem(LEGACY_KEY)).toBeNull();
+    });
+    // B, and ONLY B: A is already a row, and sending it again would refresh
+    // somebody's tab for nothing.
+    expect(vi.mocked(transport.openSessionCanvasDocument).mock.calls.map((c) => c[1])).toEqual([
+      B.content,
+    ]);
+  });
+
+  it('writes NOTHING when the server already holds every document in the entry', async () => {
+    // The short-circuit that makes a second device add nothing — kept honest by
+    // being about THIS entry's documents rather than about the table being
+    // non-empty.
+    seedLegacy(SESSION, [A, B]);
+    vi.mocked(transport.listSessionCanvas).mockResolvedValue([
+      serverRow(A.content),
+      serverRow(B.content),
+    ] as Awaited<ReturnType<typeof transport.listSessionCanvas>>);
+
+    renderHook(() => useSessionCanvas(SESSION), { wrapper });
+
+    await waitFor(() => {
+      expect(localStorage.getItem(LEGACY_KEY)).toBeNull();
+    });
+    expect(transport.openSessionCanvasDocument).not.toHaveBeenCalled();
   });
 
   it('leaves a session with no entry alone', async () => {
