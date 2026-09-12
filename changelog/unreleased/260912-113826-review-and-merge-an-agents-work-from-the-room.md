@@ -4,6 +4,7 @@ covers:
   - "feat(rooms): review an agent's work on the room's canvas and merge it"
   - 'test(rooms): merge an agent’s work from the diff, in a real browser'
   - 'docs(rooms): reviewing work before it lands, and sending it from a chat'
+  - 'fix(rooms): read and write a room worktree through the room, not the file API'
 ---
 
 ### Added
