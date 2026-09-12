@@ -2,7 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { noopLogger } from '@dorkos/shared/logger';
 import { z } from 'zod';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   composeRegistry,
   defineCapability,
@@ -19,6 +19,8 @@ import {
   scriptedRunner,
 } from '../../../rooms/__tests__/room-test-harness.js';
 import { createAgentRuntimeMcpServer } from '../agent-runtime-server.js';
+import { uiDomain } from '../../../session/browser-seat/ui-capabilities.js';
+import { devtoolsCaptureStore } from '../../../session/devtools-capture-store.js';
 import { AgentIdentitySnapshotPrincipalPort } from '../agent-identity-snapshots.js';
 import type { ConnectorRuntimePrincipalPort } from '../../../connectors/runtime-principal-port.js';
 
@@ -32,6 +34,20 @@ const principal = createServerPrincipal({
   agentPath: '/agents/a',
   canonicalCwd: '/work/a',
 });
+
+/** A turn-bound principal for one runtime and one session. */
+function runtimePrincipal(runtime: 'codex' | 'opencode', sessionId: string) {
+  return createServerPrincipal({
+    kind: 'runtime',
+    owner: { kind: 'local_install', installationId: 'install-a' },
+    bindingId: `binding-${sessionId}`,
+    runtime,
+    canonicalSessionId: sessionId,
+    agentId: 'agent-a',
+    agentPath: '/agents/a',
+    canonicalCwd: '/work/a',
+  });
+}
 
 const identity = {
   agentPath: '/agents/a',
@@ -290,5 +306,141 @@ describe('createAgentRuntimeMcpServer', () => {
       })
     );
     expect(refused).toMatchObject({ code: 'ROOM_NOT_FOUND' });
+  });
+});
+
+
+/**
+ * The parity this whole phase exists for: Codex and OpenCode reach the canvas
+ * and the browser through the loopback `dorkos` server, with the same tool names
+ * a Claude Code session has always had (spec `canvas-agent-seat` §5).
+ *
+ * Driven through the REAL server and a REAL client, because the thing under test
+ * is the projection: which capabilities this surface advertises, and what caller
+ * facts a call arrives with. A unit test of the handlers would prove neither.
+ */
+describe('the `ui` domain over the loopback runtime server', () => {
+  const registry = composeRegistry([uiDomain], { logger: noopLogger });
+
+  afterEach(() => devtoolsCaptureStore.clear());
+
+  it('advertises every `ui` verb to a Codex session', async () => {
+    const client = await connect(
+      createAgentRuntimeMcpServer(registry, runtimePrincipal('codex', 'session-codex'), identity)
+    );
+    const names = (await client.listTools()).tools.map((tool) => tool.name).sort();
+
+    expect(names).toEqual(
+      uiDomain.capabilities.map((capability) => capability.surfaces.mcp!.toolName).sort()
+    );
+    // The five a Codex agent could not reach at all before: one was a stub with
+    // no session behind it, and four did not exist on this runtime.
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'control_ui',
+        'get_ui_state',
+        'browser_read_console',
+        'browser_click',
+        'browser_screenshot',
+      ])
+    );
+  });
+
+  it('advertises the same set to an OpenCode session', async () => {
+    const client = await connect(
+      createAgentRuntimeMcpServer(
+        registry,
+        runtimePrincipal('opencode', 'session-opencode'),
+        identity
+      )
+    );
+    const names = (await client.listTools()).tools.map((tool) => tool.name).sort();
+
+    expect(names).toEqual(
+      uiDomain.capabilities.map((capability) => capability.surfaces.mcp!.toolName).sort()
+    );
+  });
+
+  it('reads the capture buffer of the session the PRINCIPAL names, and no other', async () => {
+    // The security property, driven rather than reasoned about: there is no
+    // session argument on any of these verbs, so the only session a call can
+    // reach is the one the verified turn binding names. Two live sessions, two
+    // servers, and neither can see the other's preview.
+    devtoolsCaptureStore.ingest('session-codex', {
+      seq: 1,
+      console: [{ level: 'error', text: 'codex saw this', timestamp: 1 }],
+      network: [],
+    });
+    devtoolsCaptureStore.ingest('session-opencode', {
+      seq: 1,
+      console: [{ level: 'error', text: 'opencode saw this', timestamp: 1 }],
+      network: [],
+    });
+
+    const codex = await connect(
+      createAgentRuntimeMcpServer(registry, runtimePrincipal('codex', 'session-codex'), identity)
+    );
+    const opencode = await connect(
+      createAgentRuntimeMcpServer(
+        registry,
+        runtimePrincipal('opencode', 'session-opencode'),
+        identity
+      )
+    );
+
+    const codexRead = payload(
+      await codex.callTool({ name: 'browser_read_console', arguments: {} })
+    );
+    const opencodeRead = payload(
+      await opencode.callTool({ name: 'browser_read_console', arguments: {} })
+    );
+
+    const textsOf = (read: Record<string, unknown>) =>
+      (read['entries'] as { text: string }[]).map((entry) => entry.text);
+    expect(textsOf(codexRead)).toEqual(['codex saw this']);
+    expect(textsOf(opencodeRead)).toEqual(['opencode saw this']);
+  });
+
+  it('refuses an action that writes to the machine, on Codex AND on OpenCode', async () => {
+    // The rule used to be "refused on Codex" and lived in that adapter. It is a
+    // property of this SURFACE: an agent reaching in from outside the DorkOS app
+    // has no way to put the question to the person first, and that is as true of
+    // OpenCode as it is of Codex (spec `canvas-agent-seat` §5).
+    for (const runtime of ['codex', 'opencode'] as const) {
+      const client = await connect(
+        createAgentRuntimeMcpServer(
+          registry,
+          runtimePrincipal(runtime, `session-${runtime}`),
+          identity
+        )
+      );
+      const refused = payload(
+        await client.callTool({
+          name: 'control_ui',
+          arguments: { action: 'apply_layout', shape: 'nightly-release' },
+        })
+      );
+
+      expect(refused['success'], runtime).toBe(false);
+      expect(String(refused['error']), runtime).toContain('apply_layout');
+      expect(String(refused['error']), runtime).toContain('DorkOS app');
+    }
+  });
+
+  it('lets a client-only action through on the same surface', async () => {
+    // The discriminator on the case above: the refusal is about what the action
+    // REACHES, not about the door it came through being closed.
+    const client = await connect(
+      createAgentRuntimeMcpServer(registry, runtimePrincipal('codex', 'session-codex'), identity)
+    );
+
+    expect(
+      payload(
+        await client.callTool({
+          name: 'control_ui',
+          arguments: { action: 'show_toast', message: 'hello', level: 'info' },
+        })
+      )
+    ).toMatchObject({ success: true, action: 'show_toast' });
   });
 });

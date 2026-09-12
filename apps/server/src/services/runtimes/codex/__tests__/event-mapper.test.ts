@@ -334,11 +334,10 @@ describe('mapCodexEvent', () => {
       const events = mapCodexEvent(codexItemCompleted(item), ctx);
 
       expect(events.some((e) => e.type === 'ui_command')).toBe(false);
-      expect(events.map((e) => e.type)).toEqual([
-        'tool_call_start',
-        'tool_call_end',
-        'tool_result',
-      ]);
+      // No `tool_result`: this fixture's item carries no result text, and the
+      // generic mapper emits one only when there is something to show. The two
+      // call events are what says it went down the ORDINARY path.
+      expect(events.map((e) => e.type)).toEqual(['tool_call_start', 'tool_call_end']);
       expect(events[0]!.data).toMatchObject({ toolName: 'mcp__dorkos__control_ui' });
     });
 

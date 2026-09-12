@@ -36,7 +36,15 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { DevtoolsConsoleEntry, DevtoolsNetworkEntry } from '@dorkos/shared/schemas';
 import { WORKBENCH } from '../../../config/constants.js';
-import { CapabilityImageResult, CapabilityToolError } from '../../core/capabilities/index.js';
+// The LEAF module, not the `core/capabilities` barrel. That barrel closes an
+// import cycle back to this domain, and a cycle here is not a style problem: the
+// two input schemas below are read at MODULE scope by `ui-capabilities.ts`, so a
+// partially-initialized copy of this module made `z.object(undefined)` — an
+// empty shape — and both reads advertised NO arguments to the model. Silently.
+import {
+  CapabilityImageResult,
+  CapabilityToolError,
+} from '../../core/capabilities/mcp-envelope.js';
 import type { CaptureBufferView, DevtoolsCaptureStore } from '../devtools-capture-store.js';
 import type { RawSessionEvent } from '../session-state-projector.js';
 import { NO_PREVIEW_NOTE } from './act-protocol.js';

@@ -283,25 +283,32 @@ describe('list_capabilities surface', () => {
      * a family is only worth naming while it has tools to name.
      *
      * Checked against `MCP_TOOL_TIERS`, which is every hand-registered tool. Not
-     * every family is spelled the way its tools are (`devtools` is the
-     * `browser_*` trio), so this asserts the families that ARE tool-shaped still
-     * have tools, rather than demanding a tool-name segment for each.
+     * every family is spelled the way its tools are, so this asserts the families
+     * that ARE tool-shaped still have tools, rather than demanding a tool-name
+     * segment for each.
      */
-    it('keeps ui listed while control_ui and get_ui_state are hand-registered', () => {
-      expect(UNREGISTERED_TOOL_FAMILIES).toContain('ui');
-      // The two tools the caveat is about. When Q4 catalogues them they leave
-      // this table, and the guard above starts failing on the projected names —
-      // either way `ui` has to leave the list at the same time.
-      expect(Object.keys(MCP_TOOL_TIERS)).toContain('control_ui');
-      expect(Object.keys(MCP_TOOL_TIERS)).toContain('get_ui_state');
-      // The one `ui` capability that IS catalogued does not project a `ui`-segment
-      // tool name, which is why the family can honestly stay listed.
+    it('retires `ui` and `devtools`, which are capabilities now', () => {
+      // The case this replaces said to keep them "while control_ui and
+      // get_ui_state are hand-registered". They are not: the whole browser-and-
+      // canvas surface is the `ui` capability domain (spec `canvas-agent-seat`
+      // §5), so the catalog projects `control_ui` and the guard above fails on a
+      // caveat that still claims the family is absent.
+      expect(UNREGISTERED_TOOL_FAMILIES).not.toContain('ui');
+      expect(UNREGISTERED_TOOL_FAMILIES).not.toContain('devtools');
+      // …and they really did leave the hand-registered table, which is the other
+      // half of why neither family has anything left to name.
+      expect(Object.keys(MCP_TOOL_TIERS)).not.toContain('control_ui');
+      expect(Object.keys(MCP_TOOL_TIERS)).not.toContain('get_ui_state');
+      expect(Object.keys(MCP_TOOL_TIERS).filter((n) => n.startsWith('browser_'))).toEqual([]);
+      // The catalog answers for them instead.
       const catalog = composeDorkOsCapabilityRegistry({
         logger: noopLogger,
         operatorDeps: {} as McpToolDeps,
       });
-      const uiCapability = catalog.capabilities.find((c) => c.id === 'ui.read_canvas_document');
-      expect(uiCapability?.surfaces.mcp?.toolName).toBe('read_canvas_document');
+      const uiTools = catalog.capabilities
+        .filter((c) => c.id.startsWith('ui.'))
+        .map((c) => c.surfaces.mcp?.toolName);
+      expect(uiTools).toEqual(expect.arrayContaining(['control_ui', 'get_ui_state']));
     });
 
     it('does not name a family that IS on the registry (the agent overclaim)', () => {

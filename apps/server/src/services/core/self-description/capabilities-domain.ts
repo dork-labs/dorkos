@@ -83,15 +83,13 @@ function requireRegistry(deps: CapabilityDeps): CapabilityRegistry {
  * `operator.agents_recent_activity` are real catalog entries with tiers, so
  * naming `agent` wholesale as absent would be its own overclaim.
  *
- * `ui` STAYS here even though `ui.read_canvas_document` opened a real registry
- * domain (spec `canvas-agent-seat` §5). One capability is not the family: the two
- * tools an agent actually reaches for when it wants to drive the app,
- * `control_ui` and `get_ui_state`, are still hand-registered on the in-session
- * server and still absent from the catalog, and a model told the `ui` family is
- * catalogued will look for them there and conclude it cannot drive the window at
- * all. That is the exact defect this list exists to prevent, pointed the other
- * way. The entry retires when Q4 catalogues those two — at which point the
- * registry projects a tool whose name carries `ui` and the guard says so.
+ * `ui` and `devtools` are GONE from this list, and the guard is what retired
+ * them (spec `canvas-agent-seat` §5). `control_ui`, `get_ui_state` and every
+ * `browser_*` verb are `ui` capabilities now, so the catalog projects
+ * `control_ui` — a tool whose name carries the `ui` segment — and the guard fails
+ * on any claim that the family is absent. `devtools` left with them for the
+ * other half of the same rule: its tools were the `browser_*` ones, and a family
+ * with nothing in it is not worth naming.
  */
 export const UNREGISTERED_TOOL_FAMILIES: readonly string[] = [
   'tasks',
@@ -100,8 +98,6 @@ export const UNREGISTERED_TOOL_FAMILIES: readonly string[] = [
   'binding',
   'trace',
   'extension',
-  'devtools',
-  'ui',
 ];
 
 /**

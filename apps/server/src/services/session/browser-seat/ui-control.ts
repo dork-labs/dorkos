@@ -42,7 +42,10 @@ import {
 } from '../../canvas/index.js';
 import { getRoomService, RoomError } from '../../rooms/index.js';
 import type { RawSessionEvent } from '../session-state-projector.js';
-import { CapabilityToolError } from '../../core/capabilities/index.js';
+// The leaf module rather than the `core/capabilities` barrel, for the reason
+// `./devtools-reads` states in full: the barrel closes an import cycle back to
+// this domain, and the domain reads schemas from these files at module scope.
+import { CapabilityToolError } from '../../core/capabilities/mcp-envelope.js';
 import { logger } from '../../../lib/logger.js';
 import { emitToSession } from './session-reach.js';
 import { uiTurnFacts, type UiRoomTurn } from './ui-turn-facts.js';
