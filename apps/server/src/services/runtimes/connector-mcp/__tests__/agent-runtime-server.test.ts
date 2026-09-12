@@ -309,7 +309,6 @@ describe('createAgentRuntimeMcpServer', () => {
   });
 });
 
-
 /**
  * The parity this whole phase exists for: Codex and OpenCode reach the canvas
  * and the browser through the loopback `dorkos` server, with the same tool names

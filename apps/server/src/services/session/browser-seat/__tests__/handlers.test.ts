@@ -68,10 +68,7 @@ describe('a driving verb addresses exactly one window', () => {
       'client-b'
     );
     const { emit, emitted } = makeSink();
-    const handlers = createBrowserSeatHandlers(
-      { sessionId: 's1', store, emit },
-      50
-    );
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit }, 50);
 
     const answer = handlers.click({ role: 'button', name: 'Pay' });
     // The request is minted synchronously; the await is only the wait for a
@@ -95,10 +92,7 @@ describe('a driving verb addresses exactly one window', () => {
       'client-b'
     );
     const { emit, emitted } = makeSink();
-    const handlers = createBrowserSeatHandlers(
-      { sessionId: 's1', store, emit },
-      50
-    );
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit }, 50);
 
     const answer = handlers.readPage({ documentId: 'doc-a' });
     expect(pushedRequest(emitted).targetClientId).toBe('client-a');
@@ -108,10 +102,7 @@ describe('a driving verb addresses exactly one window', () => {
   it('reports the document it acted in on every answer', async () => {
     const store = storeWithDriver();
     const { emit, emitted } = makeSink();
-    const handlers = createBrowserSeatHandlers(
-      { sessionId: 's1', store, emit },
-      1_000
-    );
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit }, 1_000);
 
     const answer = handlers.click({ selector: '#pay' });
     const result: DevtoolsActionResult = {
@@ -256,10 +247,7 @@ describe('the three answers that never mint a request', () => {
     // clock DOES move when a request was minted and nothing answered.
     const store = storeWithDriver();
     const { emit } = makeSink();
-    const handlers = createBrowserSeatHandlers(
-      { sessionId: 's1', store, emit },
-      8_000
-    );
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit }, 8_000);
 
     let answer: { payload: Record<string, unknown> } | undefined;
     const spent = await elapsed(async () => {
@@ -303,10 +291,7 @@ describe('refusals decided before anything is minted', () => {
   it("reads browser_type's `text` as what to type, never as a way to name the field", async () => {
     const store = storeWithDriver();
     const { emit, emitted } = makeSink();
-    const handlers = createBrowserSeatHandlers(
-      { sessionId: 's1', store, emit },
-      50
-    );
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit }, 50);
 
     // Naming nothing means "the focused field" — and `text` must not sneak in
     // as a visible-text target, which would send a command naming an element by
@@ -319,10 +304,7 @@ describe('refusals decided before anything is minted', () => {
   it('names the field by role and name on browser_type, and keeps the typed text out of it', async () => {
     const store = storeWithDriver();
     const { emit, emitted } = makeSink();
-    const handlers = createBrowserSeatHandlers(
-      { sessionId: 's1', store, emit },
-      50
-    );
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit }, 50);
 
     const answer = handlers.type({ role: 'textbox', name: 'Card number', text: '4242' });
     expect(pushedRequest(emitted).command).toEqual({
@@ -415,10 +397,7 @@ describe('bounds every driving verb carries', () => {
     // agent is deciding what to pass next time.
     const store = storeWithDriver();
     const { emit, emitted } = makeSink();
-    const handlers = createBrowserSeatHandlers(
-      { sessionId: 's1', store, emit },
-      1_000
-    );
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit }, 1_000);
 
     const answer = handlers.click({ text: 'Delete' });
     store.resolveAction({
@@ -434,10 +413,7 @@ describe('bounds every driving verb carries', () => {
   it('names the tab on every one of the six verbs, not just the ones with a target', async () => {
     const store = storeWithDriver();
     const { emit, emitted } = makeSink();
-    const handlers = createBrowserSeatHandlers(
-      { sessionId: 's1', store, emit },
-      1_000
-    );
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit }, 1_000);
 
     const calls: [string, Promise<{ payload: Record<string, unknown> }>][] = [
       ['browser_click', handlers.click({ selector: '#a' })],
@@ -460,10 +436,7 @@ describe('bounds every driving verb carries', () => {
   it('passes a page failure through as the page worded it, with what it matched', async () => {
     const store = storeWithDriver();
     const { emit, emitted } = makeSink();
-    const handlers = createBrowserSeatHandlers(
-      { sessionId: 's1', store, emit },
-      1_000
-    );
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit }, 1_000);
 
     const answer = handlers.click({ text: 'Delete' });
     store.resolveAction({

@@ -370,7 +370,9 @@ describe('the three reads as `ui` capabilities', () => {
     const names = registry.capabilities
       .filter((c) => c.id.startsWith('ui.'))
       .map((c) => c.surfaces.mcp!.toolName);
-    expect(names).toEqual(expect.arrayContaining(['browser_read_console', 'browser_read_network', 'browser_screenshot']));
+    expect(names).toEqual(
+      expect.arrayContaining(['browser_read_console', 'browser_read_network', 'browser_screenshot'])
+    );
   });
 
   it('reach no surface but the in-session one', () => {

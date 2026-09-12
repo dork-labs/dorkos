@@ -166,10 +166,7 @@ function seatFor(sessionId: string): BrowserSeatHandlers {
  * @param sessionId - The calling session.
  * @returns The handlers, bound to that session's windows.
  */
-function recorderFor(
-  context: CapabilityHandlerContext,
-  sessionId: string
-): RecordingHandlers {
+function recorderFor(context: CapabilityHandlerContext, sessionId: string): RecordingHandlers {
   return createRecordingHandlers({
     sessionId,
     ...(context.cwd !== undefined ? { cwd: context.cwd } : {}),
@@ -343,7 +340,8 @@ export const uiDomain: CapabilityDomain = {
       input: z.object(CLICK_INPUT),
       output: z.unknown(),
       surfaces: { mcp: { toolName: 'browser_click', servers: ['in-session'] } },
-      invoke: (_deps, input, context) => drive(context, (sessionId) => seatFor(sessionId).click(input as ClickInput)),
+      invoke: (_deps, input, context) =>
+        drive(context, (sessionId) => seatFor(sessionId).click(input as ClickInput)),
     }),
     defineCapability({
       id: 'ui.type',
@@ -353,7 +351,8 @@ export const uiDomain: CapabilityDomain = {
       input: z.object(TYPE_INPUT),
       output: z.unknown(),
       surfaces: { mcp: { toolName: 'browser_type', servers: ['in-session'] } },
-      invoke: (_deps, input, context) => drive(context, (sessionId) => seatFor(sessionId).type(input as TypeInput)),
+      invoke: (_deps, input, context) =>
+        drive(context, (sessionId) => seatFor(sessionId).type(input as TypeInput)),
     }),
     defineCapability({
       id: 'ui.press',
@@ -363,7 +362,8 @@ export const uiDomain: CapabilityDomain = {
       input: z.object(PRESS_INPUT),
       output: z.unknown(),
       surfaces: { mcp: { toolName: 'browser_press', servers: ['in-session'] } },
-      invoke: (_deps, input, context) => drive(context, (sessionId) => seatFor(sessionId).press(input as PressInput)),
+      invoke: (_deps, input, context) =>
+        drive(context, (sessionId) => seatFor(sessionId).press(input as PressInput)),
     }),
     defineCapability({
       id: 'ui.scroll',
