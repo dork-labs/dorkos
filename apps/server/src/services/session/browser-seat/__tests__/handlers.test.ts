@@ -201,6 +201,32 @@ describe('the three answers that never mint a request', () => {
     expect(eventQueue).toHaveLength(0);
   });
 
+  it('says so at once when a page STOPPED being instrumented', async () => {
+    // The half a never-instrumented page does not cover. A frame outlives its
+    // page: an instrumented preview that navigates to an external site is the
+    // same window and the same tab, still holding the seat, and only its
+    // re-reported claim says the shim is gone. Waiting out the timeout here
+    // would be the exact eight-second pause this note exists to replace.
+    const store = storeWithDriver('s1', 'client-a', 'doc-a', true);
+    store.ingest(
+      's1',
+      { documentId: 'doc-a', seq: 2, console: [], network: [], active: true, instrumented: false },
+      'client-a'
+    );
+    const { session, eventQueue } = makeSession();
+    const handlers = createBrowserSeatHandlers({ resolveSessionId: () => 's1', store, session });
+
+    let answer: { payload: Record<string, unknown> } | undefined;
+    const spent = await elapsed(async () => {
+      answer = await handlers.click({ selector: '#pay' });
+    });
+
+    expect(answer!.payload.note).toBe(NOT_INSTRUMENTED_NOTE);
+    expect(answer!.payload.documentId).toBe('doc-a');
+    expect(spent).toBe(0);
+    expect(eventQueue).toHaveLength(0);
+  });
+
   it('names the fix when a page id nobody holds is passed', async () => {
     const store = storeWithDriver();
     const { session } = makeSession();
@@ -368,6 +394,58 @@ describe('bounds every driving verb carries', () => {
     const answer = await handlers.click({ selector: '#pay' });
     expect(answer.isError).toBe(true);
     expect(answer.payload.error).toContain('attached interactive session');
+  });
+
+  it('names the tab on a REFUSAL too, which is where an agent learns the id', async () => {
+    // In a one-on-one session this is the only place a tab id comes from:
+    // `get_ui_state` returns `{ open, contentType }` with no list, and
+    // `control_ui` answers `{ success, action }` because the client mints the id
+    // there and the server never learns it. The notes that used to send an agent
+    // to `get_ui_state` now send it here, so the id has to actually be here —
+    // including when the answer is a refusal, which is exactly the moment an
+    // agent is deciding what to pass next time.
+    const store = storeWithDriver();
+    const { session, eventQueue } = makeSession();
+    const handlers = createBrowserSeatHandlers(
+      { resolveSessionId: () => 's1', store, session },
+      1_000
+    );
+
+    const answer = handlers.click({ text: 'Delete' });
+    store.resolveAction({
+      requestId: pushedRequest(eventQueue).data.requestId,
+      ok: false,
+      matched: 4,
+      error: '4 things matched the text "Delete". Pass nth to pick one, or name it more exactly.',
+    });
+
+    expect((await answer).payload.documentId).toBe('doc-a');
+  });
+
+  it('names the tab on every one of the six verbs, not just the ones with a target', async () => {
+    const store = storeWithDriver();
+    const { session, eventQueue } = makeSession();
+    const handlers = createBrowserSeatHandlers(
+      { resolveSessionId: () => 's1', store, session },
+      1_000
+    );
+
+    const calls: [string, Promise<{ payload: Record<string, unknown> }>][] = [
+      ['browser_click', handlers.click({ selector: '#a' })],
+      ['browser_type', handlers.type({ selector: '#a', text: 'x' })],
+      ['browser_press', handlers.press({ key: 'Enter' })],
+      ['browser_scroll', handlers.scroll({ by: 10 })],
+      ['browser_wait_for', handlers.waitFor({ text: 'done' })],
+      ['browser_read_page', handlers.readPage({})],
+    ];
+    // Answer each minted request in the order they were pushed.
+    for (const event of eventQueue) {
+      const request = event as unknown as { data: { requestId: string } };
+      store.resolveAction({ requestId: request.data.requestId, ok: true, did: 'did it.' });
+    }
+    for (const [verb, pending] of calls) {
+      expect((await pending).payload.documentId, `${verb} did not name the tab`).toBe('doc-a');
+    }
   });
 
   it('passes a page failure through as the page worded it, with what it matched', async () => {
