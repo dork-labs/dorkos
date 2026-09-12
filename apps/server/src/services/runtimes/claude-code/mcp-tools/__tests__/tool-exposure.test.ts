@@ -371,15 +371,27 @@ describe('in-session tool exposure', () => {
     // and that is exactly why it also joins `ALWAYS_LOADED_TOOLS` above — both
     // counts move by one, which is what says nothing else came with it.
     //
-    // 92 → 93 for `read_canvas_document`, the first verb of the `ui` domain
-    // (spec `canvas-agent-seat` §5). It is DEFERRED, and it stays deferred: the
-    // eager slot is the scarcest thing in the prompt, and nothing names this
-    // tool before an agent has decided to look at its own canvas — `get_ui_state`
-    // is where an agent learns there is anything to read, and that is a tool call
-    // too. Both counts move by exactly one, which is what says nothing else came
-    // with it.
-    expect(tools).toHaveLength(93);
-    expect(deferred).toHaveLength(84);
+    // 92 -> 98 for the six browser-driving verbs (spec `canvas-agent-seat`):
+    // click, type, press, scroll, wait_for and read_page. All six land in the
+    // DEFERRED column, and both counts moving by the same six is what says so.
+    // A turn that is about to drive a page can afford the ToolSearch hop — it is
+    // already several round trips into the preview — and always-loading six more
+    // schemas onto every turn of every session is the trade this file refuses.
+    // The rule that would force them the other way is the one
+    // `context-tool-names.test.ts` owns: a tool the PROMPT names may not be
+    // deferred. `<ui_tools>` does name them, in full and prefixed, which is the
+    // same shape `control_ui` and `get_ui_state` have always had there and which
+    // costs one search rather than a failed call.
+    //
+    // 98 -> 99 for `read_canvas_document`, the first verb of the `ui` capability
+    // DOMAIN (spec `canvas-agent-seat` §5). Deferred for the same reason, and it
+    // stays deferred: the eager slot is the scarcest thing in the prompt, and
+    // nothing names this tool before an agent has decided to look at its own
+    // canvas — `get_ui_state` is where an agent learns there is anything to
+    // read, and that is a tool call too. Both counts move by exactly one, which
+    // is what says nothing else came with it.
+    expect(tools).toHaveLength(99);
+    expect(deferred).toHaveLength(90);
     const retiredConnectorTools = [
       'connector_list_accounts',
       'connector_start_connect',

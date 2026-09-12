@@ -246,6 +246,8 @@ export class CanvasService {
   private readonly displayNameFor: (authorId: string) => string;
   private readonly viewerOverrides: () => Record<string, string> | undefined;
   private readonly now: () => number;
+  /** Who wants to hear that a row is gone. See {@link onRemoved}. */
+  private readonly removalListeners = new Set<(scope: string, documentId: string) => void>();
 
   /**
    * Sessions a runtime has reported gone, waiting for the sweep to confirm it.
@@ -482,8 +484,28 @@ export class CanvasService {
    */
   close(scope: string, documentId: string): void {
     this.requireDocument(scope, documentId);
-    this.documents.remove(scope, documentId);
-    this.publish(scope, { type: 'canvas', documentId, closed: true });
+    this.remove(scope, documentId);
+  }
+
+  /**
+   * Be told when a row goes, whichever path took it — an explicit close, or the
+   * LRU making room.
+   *
+   * **One subscription rather than two call sites**, because a caller that holds
+   * per-document state of its own (a room's presence map: whose face is on which
+   * tab) has to hear about BOTH, and the eviction happens deep inside a write it
+   * did not make. A tab that no longer exists cannot hold a face, so a map that
+   * never heard would keep pointing at it.
+   *
+   * @param listener - Called with the scope and the id, after the row is gone
+   *   and the `closed` frame is out.
+   * @returns An unsubscribe function.
+   */
+  onRemoved(listener: (scope: string, documentId: string) => void): () => void {
+    this.removalListeners.add(listener);
+    return () => {
+      this.removalListeners.delete(listener);
+    };
   }
 
   /**
@@ -1047,8 +1069,7 @@ export class CanvasService {
         (row) => row.id !== protectedId && !onScreen.has(row.id) && this.lockHolder(row) === null
       );
     for (const row of candidates.slice(0, over)) {
-      this.documents.remove(scope, row.id);
-      this.publish(scope, { type: 'canvas', documentId: row.id, closed: true });
+      this.remove(scope, row.id);
     }
   }
 
@@ -1061,6 +1082,18 @@ export class CanvasService {
     const document = toCanvasDocument(row, this.now(), CANVAS_EDIT_TTL_MS);
     this.publish(scope, { type: 'canvas', documentId: document.id, document, change });
     return document;
+  }
+
+  /**
+   * Delete one row, tell every window, and tell whoever holds state about it.
+   *
+   * The single removal path, so a caller subscribed through {@link onRemoved}
+   * hears about an eviction exactly as it hears about a close.
+   */
+  private remove(scope: string, documentId: string): void {
+    this.documents.remove(scope, documentId);
+    this.publish(scope, { type: 'canvas', documentId, closed: true });
+    for (const listener of this.removalListeners) listener(scope, documentId);
   }
 
   /** Fan one frame out to this scope's live readers. */

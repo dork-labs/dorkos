@@ -422,6 +422,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // `supportsWorkbenchServe: false`.
     supportsWorkbenchServe: true,
     ingestDevtoolsCapture: vi.fn(async () => {}),
+    postDevtoolsAction: vi.fn(async () => {}),
     // Embedded terminal — the default mock behaves like the HTTP transport
     // (supported); tests that need the DirectTransport path override
     // `supportsTerminal: false`.
@@ -560,6 +561,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     followRoomMember: vi.fn().mockResolvedValue(undefined),
     unfollowRoomMember: vi.fn().mockResolvedValue(undefined),
     publishRoomView: vi.fn().mockResolvedValue({ followed: true }),
+    setRoomCanvasViewing: vi.fn().mockResolvedValue(undefined),
     subscribeRoom: vi.fn(emptyAsyncIterable),
     // The session canvas (spec `canvas-agent-seat` §1.6). Honest-empty reads: a
     // test that has said nothing about the canvas gets a session with nothing on

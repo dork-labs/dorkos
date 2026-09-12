@@ -1044,6 +1044,22 @@ export const CanvasEditingResponseSchema = z
 export type CanvasEditingResponse = z.infer<typeof CanvasEditingResponseSchema>;
 
 /**
+ * Saying which document on a room's canvas you are looking at, or that you are
+ * looking at none (`POST /api/rooms/{id}/canvas/viewing`).
+ *
+ * The whole effect is one ephemeral `signal` frame telling the room's other
+ * readers where your face goes. Nothing is written down, nothing is replayed,
+ * and `null` is a real answer rather than a missing one: it is what a reader who
+ * has left the canvas says on their way out.
+ */
+export const CanvasViewingRequestSchema = z
+  .object({ documentId: z.string().min(1).nullable() })
+  .openapi('CanvasViewingRequest');
+
+/** A request to say where on a room's canvas somebody is looking. */
+export type CanvasViewingRequest = z.infer<typeof CanvasViewingRequestSchema>;
+
+/**
  * The most of a merge summary that survives to the commit subject and the room.
  *
  * **Shared so the cap is asked once.** The server sanitizes and truncates at
@@ -2177,17 +2193,44 @@ export const RoomSignalEventSchema = z
      * with, so the server never mints one of these about an agent.
      */
     follows: z.string().min(1).nullable().optional(),
+    /**
+     * Which document on the room's canvas this author is looking at, on a
+     * `'presence'` signal — the fact a small face on a tab is drawn from.
+     *
+     * **Absent is a real answer, not a gap.** On a `'presence'` signal it means
+     * this author is looking at no document, which is what a reader says on the
+     * way out of the canvas and what a turn says when its claim is released. So
+     * a frame with it and a frame without it are the two halves of the same
+     * statement, and neither is ever replayed: signals carry no `seq`, and a
+     * face on a document somebody left ten minutes ago would be a worse answer
+     * than no face at all.
+     *
+     * **An optional field rather than a seventh signal name**, for the reason
+     * {@link RoomSignalEventSchema}'s `outcome` is one: the signal vocabulary is
+     * shared with the relay and with `CommunityAdapter.publishSignal`, and a
+     * client that cannot parse a new member drops the whole frame. `'presence'`
+     * already exists in that vocabulary and nothing else in a room produces it.
+     */
+    documentId: z.string().optional(),
   })
   .check((ctx) => {
     const frame = ctx.value;
-    // Three payloads, one per frame. `state` is an agent's work claim, `view` a
-    // follow position, `follows` a claim opening or closing — a frame carrying
-    // two of them describes two different things at once, and every reader
-    // downstream branches on exactly one field.
+    // FOUR payloads, one per frame. `state` is an agent's work claim, `view` a
+    // follow position, `follows` a claim opening or closing, `documentId` which
+    // tab this author is on — a frame carrying two of them describes two
+    // different things at once, and every reader downstream branches on exactly
+    // one field.
+    //
+    // `documentId` is in this list for a reason a reader of the stream cares
+    // about: absence of it is what tells the canvas slice that somebody LOOKED
+    // AWAY. A follow frame carries no `documentId`, so one that also carried a
+    // follow payload would be two statements at once, and the second of them
+    // would take a face off a tab on every scroll.
     const carried = [
       frame.state !== undefined ? 'state' : null,
       frame.view !== undefined ? 'view' : null,
       frame.follows !== undefined ? 'follows' : null,
+      frame.documentId !== undefined ? 'documentId' : null,
     ].filter((name): name is string => name !== null);
     if (carried.length > 1) {
       ctx.issues.push({

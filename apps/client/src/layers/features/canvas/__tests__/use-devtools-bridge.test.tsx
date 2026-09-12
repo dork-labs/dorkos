@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { renderHook, cleanup, act } from '@testing-library/react';
 import { useRef, type RefObject } from 'react';
+import type { DevtoolsIngest } from '@dorkos/shared/schemas';
 import { WORKBENCH_SANDBOX_ISOLATED } from '../lib/browser-url';
 
 const ingestDevtoolsCapture = vi.fn(async () => {});
@@ -19,7 +20,32 @@ const ingestDevtoolsCapture = vi.fn(async () => {});
  * observe what happens to a batch that is still coalescing when something
  * changes. The flush-window session bleed lived in that blind spot.
  */
-const transport = { ingestDevtoolsCapture };
+const postDevtoolsAction = vi.fn(async () => {});
+const transport = { ingestDevtoolsCapture, postDevtoolsAction, clientId: 'web-this-window' };
+
+/**
+ * The CAPTURE relays only — the seat claims filtered out.
+ *
+ * The bridge posts two different things down one route: console/network
+ * captures, and the claim that says which page this window is showing (spec
+ * `canvas-agent-seat` §2.2). A claim carries `active` and never carries an
+ * entry, so the two are trivially separable — and every assertion in this file
+ * is about one or the other, never about the raw call count, which would now
+ * mean "captures plus however many times the window claimed".
+ */
+function relayedBatches(): [string, DevtoolsIngest][] {
+  return (ingestDevtoolsCapture as Mock).mock.calls as unknown as [string, DevtoolsIngest][];
+}
+
+/** The capture relays only. */
+function captureCalls(): [string, DevtoolsIngest][] {
+  return relayedBatches().filter(([, batch]) => batch.active === undefined);
+}
+
+/** The seat claims only — the mirror image of {@link captureCalls}. */
+function claimCalls(): [string, DevtoolsIngest][] {
+  return relayedBatches().filter(([, batch]) => batch.active !== undefined);
+}
 
 /**
  * The routed cockpit's `?session=`.
@@ -117,6 +143,9 @@ function postFrom(source: Window | null, data: unknown, origin = 'null'): void {
   window.dispatchEvent(new MessageEvent('message', { data, source, origin }));
 }
 
+/** The bridge's seat-refresh beat, mirrored so a reload test can advance past one. */
+const SEAT_REFRESH_BEAT_MS = 15_000;
+
 const consoleEntry = { level: 'error' as const, text: 'boom', timestamp: 1 };
 const networkEntry = {
   method: 'GET',
@@ -135,6 +164,7 @@ beforeEach(() => {
   useAppStore.getState().setSessionId(null);
   attachInUrl('session-1');
   ingestDevtoolsCapture.mockClear();
+  postDevtoolsAction.mockClear();
   loadRasterizerSource.mockClear();
   sessionEventListeners.clear();
   iframe = document.createElement('iframe');
@@ -158,21 +188,21 @@ describe('useDevtoolsBridge — source-identity guard (anti-spoofing)', () => {
       network: [],
     });
     vi.advanceTimersByTime(500);
-    expect(ingestDevtoolsCapture).not.toHaveBeenCalled();
+    expect(captureCalls()).toHaveLength(0);
   });
 
   it('ignores a batch from the top window', () => {
     mount();
     postFrom(window, { __dorkosDevtools: 'batch', seq: 1, console: [consoleEntry], network: [] });
     vi.advanceTimersByTime(500);
-    expect(ingestDevtoolsCapture).not.toHaveBeenCalled();
+    expect(captureCalls()).toHaveLength(0);
   });
 
   it('ignores a non-DevTools message from our own frame', () => {
     mount();
     postFrom(iframe.contentWindow, { some: 'other-app-message' });
     vi.advanceTimersByTime(500);
-    expect(ingestDevtoolsCapture).not.toHaveBeenCalled();
+    expect(captureCalls()).toHaveLength(0);
   });
 
   it('ignores a frame with a real origin — only our own opaque frames carry the shim', () => {
@@ -187,7 +217,7 @@ describe('useDevtoolsBridge — source-identity guard (anti-spoofing)', () => {
       'http://localhost:5173'
     );
     vi.advanceTimersByTime(500);
-    expect(ingestDevtoolsCapture).not.toHaveBeenCalled();
+    expect(captureCalls()).toHaveLength(0);
   });
 
   it('never acks a hello from a frame with a real origin', () => {
@@ -207,7 +237,7 @@ describe('useDevtoolsBridge — source-identity guard (anti-spoofing)', () => {
       'http://localhost:4390'
     );
     vi.advanceTimersByTime(500);
-    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(1);
+    expect(captureCalls()).toHaveLength(1);
   });
 
   it('still rejects a different real origin while a preview origin is allowed', () => {
@@ -218,7 +248,7 @@ describe('useDevtoolsBridge — source-identity guard (anti-spoofing)', () => {
       'http://localhost:4391'
     );
     vi.advanceTimersByTime(500);
-    expect(ingestDevtoolsCapture).not.toHaveBeenCalled();
+    expect(captureCalls()).toHaveLength(0);
   });
 });
 
@@ -347,8 +377,8 @@ describe('useDevtoolsBridge — relay', () => {
     });
     vi.advanceTimersByTime(300);
 
-    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(1);
-    const [sid, batch] = (ingestDevtoolsCapture as Mock).mock.calls[0];
+    expect(captureCalls()).toHaveLength(1);
+    const [sid, batch] = captureCalls()[0];
     expect(sid).toBe('session-1');
     expect(batch.console).toHaveLength(2);
     expect(batch.network).toHaveLength(1);
@@ -368,7 +398,7 @@ describe('useDevtoolsBridge — relay', () => {
       network: [],
     });
     vi.advanceTimersByTime(500);
-    expect(ingestDevtoolsCapture).not.toHaveBeenCalled();
+    expect(captureCalls()).toHaveLength(0);
   });
 
   it('relays a reset (and clears stale captures) on a navigation boundary', () => {
@@ -382,8 +412,8 @@ describe('useDevtoolsBridge — relay', () => {
     postFrom(iframe.contentWindow, { __dorkosDevtools: 'navigated' });
     vi.advanceTimersByTime(300);
 
-    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(1);
-    const [, batch] = (ingestDevtoolsCapture as Mock).mock.calls[0];
+    expect(captureCalls()).toHaveLength(1);
+    const [, batch] = captureCalls()[0];
     expect(batch.reset).toBe(true);
     expect(batch.console).toHaveLength(0); // pre-navigation captures dropped
   });
@@ -410,8 +440,8 @@ describe('useDevtoolsBridge — which session is the attached one (DOR-1305)', (
     mount();
     sendOneBatch();
 
-    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(1);
-    expect((ingestDevtoolsCapture as Mock).mock.calls[0][0]).toBe('session-from-url');
+    expect(captureCalls()).toHaveLength(1);
+    expect(captureCalls()[0][0]).toBe('session-from-url');
   });
 
   it('relays a screenshot result in the browser app too', () => {
@@ -424,8 +454,8 @@ describe('useDevtoolsBridge — which session is the attached one (DOR-1305)', (
       dataUrl: 'data:image/png;base64,AAAA',
     });
 
-    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(1);
-    expect((ingestDevtoolsCapture as Mock).mock.calls[0][0]).toBe('session-from-url');
+    expect(captureCalls()).toHaveLength(1);
+    expect(captureCalls()[0][0]).toBe('session-from-url');
   });
 
   it('still relays in the Obsidian embed, where it lives in the store', () => {
@@ -434,8 +464,8 @@ describe('useDevtoolsBridge — which session is the attached one (DOR-1305)', (
     mount();
     sendOneBatch();
 
-    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(1);
-    expect((ingestDevtoolsCapture as Mock).mock.calls[0][0]).toBe('session-from-store');
+    expect(captureCalls()).toHaveLength(1);
+    expect(captureCalls()[0][0]).toBe('session-from-store');
   });
 
   /**
@@ -478,8 +508,8 @@ describe('useDevtoolsBridge — which session is the attached one (DOR-1305)', (
     act(() => rerender()); // the address moved; the bridge re-renders under B
     act(() => void vi.advanceTimersByTime(500));
 
-    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(1);
-    const [sid, batch] = (ingestDevtoolsCapture as Mock).mock.calls[0];
+    expect(captureCalls()).toHaveLength(1);
+    const [sid, batch] = captureCalls()[0];
     expect(sid).toBe('session-a');
     expect(batch.console[0].text).toBe('captured-under-a');
   });
@@ -497,11 +527,11 @@ describe('useDevtoolsBridge — which session is the attached one (DOR-1305)', (
     sendBatch('captured-under-b', 2);
     act(() => void vi.advanceTimersByTime(500));
 
-    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(2);
-    const [firstSid, firstBatch] = (ingestDevtoolsCapture as Mock).mock.calls[0];
+    expect(captureCalls()).toHaveLength(2);
+    const [firstSid, firstBatch] = captureCalls()[0];
     expect(firstSid).toBe('session-a');
     expect(firstBatch.console.map((e: { text: string }) => e.text)).toEqual(['captured-under-a']);
-    const [secondSid, secondBatch] = (ingestDevtoolsCapture as Mock).mock.calls[1];
+    const [secondSid, secondBatch] = captureCalls()[1];
     expect(secondSid).toBe('session-b');
     expect(secondBatch.console.map((e: { text: string }) => e.text)).toEqual(['captured-under-b']);
   });
@@ -514,7 +544,7 @@ describe('useDevtoolsBridge — which session is the attached one (DOR-1305)', (
     mount();
     sendOneBatch();
 
-    expect(ingestDevtoolsCapture).not.toHaveBeenCalled();
+    expect(captureCalls()).toHaveLength(0);
   });
 });
 
@@ -591,8 +621,8 @@ describe('useDevtoolsBridge — screenshot round-trip (DOR-213 Phase 3)', () => 
     });
 
     // Immediate — the awaiting tool must not eat the 300ms batch debounce.
-    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(1);
-    const [sid, batch] = (ingestDevtoolsCapture as Mock).mock.calls[0];
+    expect(captureCalls()).toHaveLength(1);
+    const [sid, batch] = captureCalls()[0];
     expect(sid).toBe('session-1');
     expect(batch.screenshot).toEqual({
       requestId: 'r1',
@@ -610,8 +640,8 @@ describe('useDevtoolsBridge — screenshot round-trip (DOR-213 Phase 3)', () => 
       error: 'CSP blocked the rasterizer',
     });
 
-    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(1);
-    const [, batch] = (ingestDevtoolsCapture as Mock).mock.calls[0];
+    expect(captureCalls()).toHaveLength(1);
+    const [, batch] = captureCalls()[0];
     expect(batch.screenshot).toEqual({ requestId: 'r1', error: 'CSP blocked the rasterizer' });
   });
 
@@ -622,7 +652,7 @@ describe('useDevtoolsBridge — screenshot round-trip (DOR-213 Phase 3)', () => 
       requestId: 'r1',
       dataUrl: 'data:image/png;base64,AAAA',
     });
-    expect(ingestDevtoolsCapture).not.toHaveBeenCalled();
+    expect(captureCalls()).toHaveLength(0);
   });
 
   it('drops a capture-result when no session is attached', () => {
@@ -633,6 +663,420 @@ describe('useDevtoolsBridge — screenshot round-trip (DOR-213 Phase 3)', () => 
       requestId: 'r1',
       dataUrl: 'data:image/png;base64,AAAA',
     });
-    expect(ingestDevtoolsCapture).not.toHaveBeenCalled();
+    expect(captureCalls()).toHaveLength(0);
+  });
+});
+
+describe('useDevtoolsBridge — the driver seat (spec `canvas-agent-seat` §2.2)', () => {
+  /** Push one addressed request onto the stream, the way the server does. */
+  function emitActionRequest(
+    requestId: string,
+    addressing: { targetClientId?: string; documentId?: string } = {}
+  ): void {
+    for (const handler of sessionEventListeners) {
+      handler('session-1', {
+        type: 'devtools_action_request',
+        requestId,
+        targetClientId: 'web-this-window',
+        documentId: 'doc',
+        command: { action: 'click', target: { selector: '#pay' } },
+        seq: 1,
+        ...addressing,
+      });
+    }
+  }
+
+  /** Mount, and let the chained claim actually go out. */
+  async function mountAndSettle(): Promise<void> {
+    mount();
+    await vi.advanceTimersByTimeAsync(0);
+  }
+
+  it('claims the seat for its page on mount, before any handshake', async () => {
+    await mountAndSettle();
+    const claims = claimCalls();
+    expect(claims).toHaveLength(1);
+    expect(claims[0][0]).toBe('session-1');
+    expect(claims[0][1]).toMatchObject({ active: true, instrumented: false });
+  });
+
+  it('upgrades the claim to instrumented once the shim says hello', async () => {
+    await mountAndSettle();
+    postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' });
+    await vi.advanceTimersByTimeAsync(0);
+    const claims = claimCalls();
+    expect(claims).toHaveLength(2);
+    expect(claims[1][1]).toMatchObject({ active: true, instrumented: true });
+  });
+
+  it('releases the seat when the page goes away', async () => {
+    await mountAndSettle();
+    cleanup();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(claimCalls().at(-1)![1]).toMatchObject({ active: false });
+  });
+
+  it('releases the seat on pagehide, with a request that can outlive the page', async () => {
+    // The one release a window that is being closed can still send. Without it,
+    // a killed tab leaves a seat nobody is sitting in and every verb addresses a
+    // window that no longer answers. `keepalive` is what lets the request leave
+    // at all; the server's staleness rule is what makes it not have to.
+    await mountAndSettle();
+    ingestDevtoolsCapture.mockClear();
+    window.dispatchEvent(new Event('pagehide'));
+    await vi.advanceTimersByTimeAsync(0);
+
+    const release = claimCalls().at(-1);
+    expect(release![1]).toMatchObject({ active: false });
+    expect((ingestDevtoolsCapture as Mock).mock.calls.at(-1)![2]).toEqual({ keepalive: true });
+  });
+
+  it('keeps reporting that it is still showing the page', async () => {
+    // A window that goes quiet loses its seat after three missed beats, so a
+    // window that is genuinely still there has to say so. Asserted on the beat,
+    // because a claim posted only at mount would expire under a person who left
+    // the preview open and went to lunch.
+    await mountAndSettle();
+    ingestDevtoolsCapture.mockClear();
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(claimCalls()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(claimCalls()).toHaveLength(3);
+    for (const [, batch] of claimCalls()) expect(batch.active).toBe(true);
+  });
+
+  it('re-reports the moment the tab becomes visible again', async () => {
+    // A tab hidden for more than five minutes has its timers aligned to one wake
+    // per minute (Chrome), so the 15s beat that should have reported is late and
+    // the seat may already have yielded. Coming back has to take it straight
+    // back rather than waiting for the next beat.
+    //
+    // The THROTTLING itself is not reproducible here, and not in Playwright
+    // either — the browser is launched with `--disable-background-timer-throttling`,
+    // which is what makes the rest of the suite deterministic. What is asserted
+    // is the half this code owns: the event fires, the claim goes out.
+    await mountAndSettle();
+    ingestDevtoolsCapture.mockClear();
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => 'visible',
+    });
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(claimCalls()).toHaveLength(1);
+    expect(claimCalls()[0][1]).toMatchObject({ active: true });
+  });
+
+  it('does not re-report when the tab is going AWAY, only when it comes back', async () => {
+    await mountAndSettle();
+    ingestDevtoolsCapture.mockClear();
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => 'hidden',
+    });
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Hiding a tab is not closing it: the preview is still there, and claiming
+    // on the way out would be a claim about nothing while `pagehide` already
+    // covers the real departure.
+    expect(claimCalls()).toHaveLength(0);
+  });
+
+  it('re-reports when the page is restored from the back/forward cache', async () => {
+    // A restored page ran no timers at all while it was away, so the beat did
+    // not merely run late — it never happened.
+    await mountAndSettle();
+    ingestDevtoolsCapture.mockClear();
+    window.dispatchEvent(new Event('pageshow'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(claimCalls()).toHaveLength(1);
+    expect(claimCalls()[0][1]).toMatchObject({ active: true });
+  });
+
+  it('stops claiming for a session it is no longer attached to', async () => {
+    // The frame OUTLIVES the conversation: the session goes away while the
+    // preview stays mounted, so the claim effect tears down and the message
+    // listener — keyed on the transport and the ref, not the session — does not.
+    // A `hello` arriving after that must not re-claim a seat under the id the
+    // torn-down closure captured, because that is not the session on screen.
+    //
+    // Unmounting instead would prove nothing: it takes the listener with it, so
+    // the `hello` would reach nothing whether or not the claim was nulled.
+    const { rerender } = renderHook(() => {
+      const ref = useRef<HTMLIFrameElement | null>(iframe) as RefObject<HTMLIFrameElement | null>;
+      useDevtoolsBridge({
+        iframeRef: ref,
+        documentId: 'doc',
+        logicalUrl: 'preview.html',
+        reloadNonce: 0,
+        previewOrigin: null,
+      });
+      return ref;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(claimCalls()).toHaveLength(1);
+
+    detachSession();
+    rerender();
+    await vi.advanceTimersByTimeAsync(0);
+    ingestDevtoolsCapture.mockClear();
+
+    postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(claimCalls()).toHaveLength(0);
+  });
+
+  it('stops reporting a page as instrumented once it navigates away', async () => {
+    // A frame outlives its page. Before this, `instrumented` was a plain boolean
+    // set once by `hello` and never reset — so after a same-tab navigation from
+    // an instrumented preview to a page carrying no shim (an external site, a
+    // directly framed dev server), the seat still said the page could be driven.
+    // Every driving verb then minted a real request and waited out the whole
+    // timeout instead of refusing in a sentence.
+    await mountAndSettle();
+    postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(claimCalls().at(-1)![1]).toMatchObject({ active: true, instrumented: true });
+
+    ingestDevtoolsCapture.mockClear();
+    // The shim's own last word before its document is replaced.
+    postFrom(iframe.contentWindow, { __dorkosDevtools: 'navigated' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(claimCalls().at(-1)![1]).toMatchObject({ active: true, instrumented: false });
+
+    // And the new page says hello, so it is drivable again.
+    ingestDevtoolsCapture.mockClear();
+    postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(claimCalls().at(-1)![1]).toMatchObject({ instrumented: true });
+  });
+
+  it('reports the new page honestly when the address changes before the shim says so', async () => {
+    // The other order the two signals can arrive in: the parent re-points the
+    // frame and the old page's `navigated` is still in flight, or never comes at
+    // all. Keying the handshake to the document rather than resetting a flag is
+    // what covers this — the old answer simply stops matching.
+    const { rerender } = renderHook(
+      ({ url }: { url: string }) => {
+        const ref = useRef<HTMLIFrameElement | null>(iframe) as RefObject<HTMLIFrameElement | null>;
+        useDevtoolsBridge({
+          iframeRef: ref,
+          documentId: 'doc',
+          logicalUrl: url,
+          reloadNonce: 0,
+          previewOrigin: null,
+        });
+        return ref;
+      },
+      { initialProps: { url: 'preview.html' } }
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(claimCalls().at(-1)![1]).toMatchObject({ instrumented: true });
+
+    ingestDevtoolsCapture.mockClear();
+    rerender({ url: 'https://example.com/' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(claimCalls().at(-1)![1]).toMatchObject({ instrumented: false });
+  });
+
+  it('treats a reload of the same address as a new page it has not heard from', async () => {
+    const { rerender } = renderHook(
+      ({ nonce }: { nonce: number }) => {
+        const ref = useRef<HTMLIFrameElement | null>(iframe) as RefObject<HTMLIFrameElement | null>;
+        useDevtoolsBridge({
+          iframeRef: ref,
+          documentId: 'doc',
+          logicalUrl: 'preview.html',
+          reloadNonce: nonce,
+          previewOrigin: null,
+        });
+        return ref;
+      },
+      { initialProps: { nonce: 0 } }
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(claimCalls().at(-1)![1]).toMatchObject({ instrumented: true });
+
+    // A reload leaves the URL alone, so only the nonce says the document
+    // changed. The next claim — the refresh beat — must report the truth.
+    ingestDevtoolsCapture.mockClear();
+    rerender({ nonce: 1 });
+    await vi.advanceTimersByTimeAsync(SEAT_REFRESH_BEAT_MS);
+    expect(claimCalls().at(-1)![1]).toMatchObject({ instrumented: false });
+  });
+
+  it('holds a release until the claim before it has actually gone out', async () => {
+    // Two fire-and-forget POSTs can arrive either way round. On an in-preview
+    // navigation the pair is a release then a claim, and arriving swapped the
+    // release lands last — dropping a seat the window is still holding.
+    //
+    // The assertion is that the second POST has not been MADE yet while the
+    // first is still in flight. Asserting only on the final order would pass
+    // with no chain at all, because both calls land either way.
+    let letFirstFinish: (() => void) | undefined;
+    ingestDevtoolsCapture.mockImplementationOnce(
+      async () =>
+        new Promise<void>((resolve) => {
+          letFirstFinish = resolve;
+        })
+    );
+    mount();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(1);
+
+    cleanup();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(
+      ingestDevtoolsCapture,
+      'the release was posted while the claim before it was still in flight'
+    ).toHaveBeenCalledTimes(1);
+
+    letFirstFinish!();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(claimCalls().map(([, batch]) => batch.active)).toEqual([true, false]);
+  });
+
+  it('forwards a request addressed to this window and this page', () => {
+    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
+    mount();
+    emitActionRequest('a1');
+
+    expect(postSpy).toHaveBeenCalledWith(
+      {
+        __dorkosDevtools: 'act-request',
+        requestId: 'a1',
+        documentId: 'doc',
+        command: { action: 'click', target: { selector: '#pay' } },
+      },
+      '*'
+    );
+  });
+
+  it('ignores a request addressed to another window, however active this one is', () => {
+    // The bug this closes, in its new place: re-deriving "am I the active one"
+    // locally gives two windows on one session the same answer.
+    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
+    mount();
+    emitActionRequest('a2', { targetClientId: 'web-the-other-window' });
+    expect(postSpy).not.toHaveBeenCalled();
+  });
+
+  it('ignores a request for a page this window is not holding', () => {
+    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
+    mount();
+    emitActionRequest('a3', { documentId: 'some-other-doc' });
+    expect(postSpy).not.toHaveBeenCalled();
+  });
+
+  it('applies the same addressing to a screenshot request', async () => {
+    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
+    mount();
+    for (const handler of sessionEventListeners) {
+      handler('session-1', {
+        type: 'devtools_capture_request',
+        requestId: 'c1',
+        targetClientId: 'web-the-other-window',
+        documentId: 'doc',
+        seq: 1,
+      });
+    }
+    await vi.advanceTimersByTimeAsync(0);
+    expect(postSpy).not.toHaveBeenCalled();
+  });
+
+  it('still forwards a request that names nobody, the way an older server sends it', async () => {
+    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
+    mount();
+    for (const handler of sessionEventListeners) {
+      handler('session-1', { type: 'devtools_capture_request', requestId: 'c2', seq: 1 });
+    }
+    await vi.advanceTimersByTimeAsync(0);
+    expect(postSpy).toHaveBeenCalledWith(
+      { __dorkosDevtools: 'capture-request', requestId: 'c2', lib: 'RASTERIZER_SRC' },
+      '*'
+    );
+  });
+
+  it('relays an act-result immediately, with no debounce', () => {
+    mount();
+    postFrom(iframe.contentWindow, {
+      __dorkosDevtools: 'act-result',
+      requestId: 'a1',
+      ok: true,
+      did: 'Clicked button "Pay $42.00".',
+      matched: 1,
+      documentId: 'doc',
+      page: { title: 'Checkout', url: 'https://preview/checkout', focused: null },
+    });
+
+    // Not a capture batch, and not waiting out the 300ms flush window: a tool
+    // call is awaiting this requestId server-side.
+    expect(postDevtoolsAction).toHaveBeenCalledTimes(1);
+    expect((postDevtoolsAction as Mock).mock.calls[0]).toEqual([
+      'session-1',
+      {
+        requestId: 'a1',
+        ok: true,
+        did: 'Clicked button "Pay $42.00".',
+        matched: 1,
+        documentId: 'doc',
+        page: { title: 'Checkout', url: 'https://preview/checkout', focused: null },
+      },
+    ]);
+  });
+
+  it('relays a page-side failure as a failure, keeping its sentence', () => {
+    mount();
+    postFrom(iframe.contentWindow, {
+      __dorkosDevtools: 'act-result',
+      requestId: 'a1',
+      ok: false,
+      matched: 4,
+      error: '4 things matched that. Pass nth to pick one, or name it more exactly.',
+    });
+
+    expect((postDevtoolsAction as Mock).mock.calls[0][1]).toMatchObject({
+      ok: false,
+      matched: 4,
+      error: '4 things matched that. Pass nth to pick one, or name it more exactly.',
+    });
+  });
+
+  it('drops a malformed page summary rather than posting a body the route rejects', () => {
+    mount();
+    postFrom(iframe.contentWindow, {
+      __dorkosDevtools: 'act-result',
+      requestId: 'a1',
+      ok: true,
+      page: { title: 42, url: null },
+    });
+
+    expect((postDevtoolsAction as Mock).mock.calls[0][1]).not.toHaveProperty('page');
+  });
+
+  it('ignores an act-result from a foreign frame (anti-spoofing)', () => {
+    mount();
+    postFrom(foreignFrame.contentWindow, {
+      __dorkosDevtools: 'act-result',
+      requestId: 'a1',
+      ok: true,
+      did: 'Clicked something nobody asked for.',
+    });
+    expect(postDevtoolsAction).not.toHaveBeenCalled();
+  });
+
+  it('drops an act-result when no session is attached', () => {
+    detachSession();
+    mount();
+    postFrom(iframe.contentWindow, { __dorkosDevtools: 'act-result', requestId: 'a1', ok: true });
+    expect(postDevtoolsAction).not.toHaveBeenCalled();
   });
 });

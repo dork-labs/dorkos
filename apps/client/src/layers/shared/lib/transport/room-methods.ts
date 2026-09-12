@@ -422,6 +422,14 @@ export function createRoomMethods(baseUrl: string) {
       );
     },
 
+    /** Say which canvas document you are looking at, or that you have looked away. */
+    setRoomCanvasViewing(id: string, documentId: string | null): Promise<void> {
+      return fetchNoContent(baseUrl, `/rooms/${encodeURIComponent(id)}/canvas/viewing`, {
+        method: 'POST',
+        body: JSON.stringify({ documentId }),
+      });
+    },
+
     /** Take, refresh or release the edit lock on one canvas document. */
     setRoomCanvasEditing(
       id: string,

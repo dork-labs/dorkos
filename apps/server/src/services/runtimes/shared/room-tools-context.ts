@@ -160,6 +160,10 @@ want somebody to look now, @mention them in a message and say what to look at. W
 canvas says no windows are open on this room, nobody is looking at all -- so say the
 important part in words too.
 
+A pinned document stays on the table however much else gets opened, and it sorts first.
+A room can keep a board that way -- one document everybody checks, which any member here
+may update_canvas as things change. #team starts with one.
+
 Long output belongs on the canvas with a one-line message beside it, not pasted into the
 room.
 </room_tools>`;
@@ -282,6 +286,10 @@ everybody else sees the table the next time they look; nothing is interrupted. I
 want somebody to look now, @mention them in a message and say what to look at. When the
 canvas says no windows are open on this room, nobody is looking at all -- so say the
 important part in words too.
+
+A pinned document stays on the table however much else gets opened, and it sorts first.
+A room can keep a board that way -- one document everybody checks, which any member here
+may update_canvas as things change. #team starts with one.
 
 Long output belongs on the canvas with a one-line message beside it, not pasted into the
 room.

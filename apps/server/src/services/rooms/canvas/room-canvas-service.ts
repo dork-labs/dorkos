@@ -62,6 +62,7 @@ import {
   NO_DEFAULT_DOCUMENT_MESSAGE,
   canvasSourcePath,
   documentBeingEditedMessage,
+  parseScope,
   roomScope,
   type CanvasApplyResult,
   type CanvasLedgerEntry,
@@ -248,6 +249,39 @@ export class RoomCanvasService {
   private readonly closedTurns = new Map<string, { at: number; spent: number }>();
 
   /**
+   * Who is looking at what, right now — room, then member, then the document
+   * they are on.
+   *
+   * **Not the table's state and never persisted.** It exists only so the same
+   * fact is not published twice and so a clear for somebody who was not looking
+   * publishes nothing at all. A restart forgets it, which is correct: every open
+   * client's stream cycles at the same moment and forgets its faces too, so the
+   * two agree without anything being written down.
+   *
+   * Bounded by the roster: at most one entry per member per room they are
+   * looking at, removed the moment they look away, when the document goes, and
+   * when their turn ends.
+   */
+  private readonly watching = new Map<string, Map<string, string>>();
+
+  /**
+   * How many live streams each member has open on each room — room, then member,
+   * then a count.
+   *
+   * **This is what makes a face outlive nobody.** A person who closes the
+   * browser, loses the network or shuts the lid runs no cleanup, so the tab they
+   * were on would keep their face on it for everybody else until those readers
+   * happened to reconnect. Their stream ending is the one event that always
+   * happens, and the moment their LAST one does they are no longer looking at
+   * anything.
+   *
+   * A count rather than a flag, because two windows and a phone are three
+   * streams for one member, and a reconnect opens the new stream before the old
+   * one finishes closing.
+   */
+  private readonly readers = new Map<string, Map<string, number>>();
+
+  /**
    * Build the service over its collaborators.
    *
    * @param deps - The writer, the rules and the stream. See {@link RoomCanvasDeps}.
@@ -261,6 +295,15 @@ export class RoomCanvasService {
     this.displayNameFor = deps.displayNameFor;
     this.roomRepoPath = deps.roomRepoPath;
     this.now = deps.now ?? Date.now;
+    // **Faces follow the rows.** Whoever was looking at a document that has just
+    // gone is looking at nothing, and the writer is the only thing that knows a
+    // row went — an LRU eviction happens deep inside somebody else's write.
+    // Never unsubscribed: this service lives as long as the process does, and a
+    // teardown hook nothing calls would be one more thing to get wrong.
+    this.canvas.onRemoved((scope, documentId) => {
+      const parsed = parseScope(scope);
+      if (parsed.kind === 'room') this.clearWatchersOf(parsed.id, documentId);
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -454,6 +497,8 @@ export class RoomCanvasService {
    */
   close(roomId: string, authorId: string, documentId: string): void {
     this.requireWritableRoom(roomId, authorId);
+    // Faces come off the document through the removal subscription below, which
+    // catches an EVICTION as well as this explicit close.
     this.canvas.close(roomScope(roomId), documentId);
   }
 
@@ -582,6 +627,162 @@ export class RoomCanvasService {
       throw new RoomError('CANVAS_DOCUMENT_NOT_FOUND', 'Couldn’t start a discussion here.');
     }
     return { threadRootEntryId: entry.id, created: true };
+  }
+
+  // -------------------------------------------------------------------------
+  // Who is looking (§9.4)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Say that a member is looking at one of this room's documents, or at none.
+   *
+   * The whole effect is one ephemeral `signal` frame, which is what puts a small
+   * face on that document's tab for everybody else in the room. **Nothing is
+   * written down and nothing is replayed**: the frame carries no `seq`, so a
+   * reader who connects a minute later never learns it, and a reconnect forgets
+   * it. That is the point — a face left on a document somebody walked away from
+   * ten minutes ago is a worse answer than no face.
+   *
+   * **It publishes only when the answer CHANGED.** Restating the same document
+   * costs nothing and fans out nothing, and — the half that matters for
+   * etiquette — clearing an author who was never looking publishes nothing
+   * either. That is what makes the unconditional clear at the end of every room
+   * turn silent for a turn that never read the canvas (E16a: a face appears
+   * because a `read_canvas` really happened, never because a model chose to
+   * announce itself).
+   *
+   * A READ's gate, not a write's: looking at an archived room's canvas is
+   * allowed, exactly as reading it is.
+   *
+   * @param roomId - The room.
+   * @param authorId - Who is looking.
+   * @param documentId - What they are looking at, or `null` for none.
+   * @throws {RoomError} `ROOM_NOT_FOUND` for a caller who is not a member, and
+   *   `CANVAS_DOCUMENT_NOT_FOUND` for a document this room does not hold — a
+   *   face must never be paintable onto a tab that does not exist.
+   */
+  setViewing(roomId: string, authorId: string, documentId: string | null): void {
+    this.visibility.requireMembership(roomId, authorId);
+    // Through the writer, which is where the rows live now: a face must never
+    // be paintable onto a tab this room does not hold.
+    if (documentId !== null && this.canvas.get(roomScope(roomId), documentId) === null) {
+      throw new RoomError('CANVAS_DOCUMENT_NOT_FOUND', 'No such document on this canvas');
+    }
+    this.publishViewing(roomId, authorId, documentId);
+  }
+
+  /**
+   * The same statement without the membership check — for the server's own
+   * callers, which have already resolved both.
+   *
+   * @param roomId - The room.
+   * @param authorId - Who is looking.
+   * @param documentId - What they are looking at, or `null` for none.
+   */
+  private publishViewing(roomId: string, authorId: string, documentId: string | null): void {
+    const room = this.watching.get(roomId);
+    if ((room?.get(authorId) ?? null) === documentId) return;
+    if (documentId === null) {
+      room?.delete(authorId);
+      if (room?.size === 0) this.watching.delete(roomId);
+    } else if (room) {
+      room.set(authorId, documentId);
+    } else {
+      this.watching.set(roomId, new Map([[authorId, documentId]]));
+    }
+    this.broadcaster.publish(roomId, {
+      type: 'signal',
+      signal: 'presence',
+      authorId,
+      at: new Date(this.now()).toISOString(),
+      ...(documentId !== null ? { documentId } : {}),
+    });
+  }
+
+  /**
+   * Record that an agent's live turn just read one of this room's documents.
+   *
+   * Called from `read_canvas` and gated by the caller on a live claim, so the
+   * face is a consequence of work actually happening rather than of anything the
+   * model decided to say.
+   *
+   * @param roomId - The room.
+   * @param authorId - The agent.
+   * @param documentId - The document it read.
+   */
+  noteAgentRead(roomId: string, authorId: string, documentId: string): void {
+    this.publishViewing(roomId, authorId, documentId);
+  }
+
+  /**
+   * Take one member's face off this room's canvas — what the end of a room turn
+   * calls for the agent that ran it.
+   *
+   * Silent when that member had no face, which is every turn that never read the
+   * canvas.
+   *
+   * @param roomId - The room.
+   * @param authorId - The member.
+   */
+  clearViewing(roomId: string, authorId: string): void {
+    this.publishViewing(roomId, authorId, null);
+  }
+
+  /**
+   * One more of this member's streams is live on this room.
+   *
+   * @param roomId - The room.
+   * @param authorId - The member.
+   */
+  readerArrived(roomId: string, authorId: string): void {
+    const room = this.readers.get(roomId);
+    if (room) room.set(authorId, (room.get(authorId) ?? 0) + 1);
+    else this.readers.set(roomId, new Map([[authorId, 1]]));
+  }
+
+  /**
+   * One of this member's streams on this room has ended — and if it was their
+   * last, their face comes off whatever it was on.
+   *
+   * Silent for a member who had no face, which is every reader who never opened
+   * the canvas.
+   *
+   * @param roomId - The room.
+   * @param authorId - The member.
+   */
+  readerLeft(roomId: string, authorId: string): void {
+    const room = this.readers.get(roomId);
+    const held = room?.get(authorId) ?? 0;
+    if (room === undefined || held === 0) return;
+    if (held > 1) {
+      room.set(authorId, held - 1);
+      return;
+    }
+    room.delete(authorId);
+    if (room.size === 0) this.readers.delete(roomId);
+    this.publishViewing(roomId, authorId, null);
+  }
+
+  /**
+   * Clear every face that was on a document that has just gone.
+   *
+   * A tab that no longer exists cannot hold a face, so the map would otherwise
+   * keep pointing at it — and the next thing that member looked at would be
+   * published as a change from a document nobody can see.
+   *
+   * @param roomId - The room.
+   * @param documentId - The document that was closed or evicted.
+   */
+  private clearWatchersOf(roomId: string, documentId: string): void {
+    const room = this.watching.get(roomId);
+    if (room === undefined) return;
+    // Collected before publishing: `publishViewing` deletes out of this very
+    // map, and an entry removed while it is being walked is a row somebody's
+    // face is left on.
+    const looking = [...room]
+      .filter(([, held]) => held === documentId)
+      .map(([authorId]) => authorId);
+    for (const authorId of looking) this.publishViewing(roomId, authorId, null);
   }
 
   // -------------------------------------------------------------------------

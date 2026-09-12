@@ -67,3 +67,18 @@ describe('the text-reply room tools block', () => {
     expect(block).toContain('there your reply is already the message');
   });
 });
+
+describe('what both blocks say about a pinned document', () => {
+  // Stated in BOTH variants, because a pin is not a thing about how a turn
+  // speaks: an agent whose words are posted and one whose words are dropped
+  // both need to know that a pinned document is the one that stays.
+  it.each([
+    ['text-reply', buildRoomToolsBlock(PREFIX)],
+    ['tool-only', buildRoomToolsBlock(PREFIX, 'tool-only')],
+  ])('tells a %s turn that a pin is how a board stays put', (_mode, block) => {
+    expect(block).toContain('A pinned document stays on the table');
+    // The board is the whole of D13's "documentation, not a primitive": the
+    // teaching names it, and nothing in the schema does.
+    expect(block).toContain('#team starts with one');
+  });
+});

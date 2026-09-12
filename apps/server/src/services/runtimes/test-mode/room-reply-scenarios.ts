@@ -17,19 +17,29 @@
  *
  * ## How a scripted turn "calls the tool"
  *
- * It does not, and it deliberately cannot: a scenario is handed the message it
- * is answering and nothing else — no room id, no entry id, no capability
- * registry — so a scenario that posted would have to be told which room to post
- * into, which is a whole second seam for a fixture. Both scenarios here HOLD the
- * turn open until `POST /api/test/finish-turn` instead, and the driver does the
- * posting: it mints a real agent token (`POST /api/test/agent-token`) and calls
- * the real `post_to_room` capability with it, mid-turn, exactly as an injected
- * `dorkos` MCP server would. So what is under test is the production mechanism —
- * `postFromTool`, the claim marks, `deliver` — driven deterministically.
+ * For the two tool-only scenarios it does not, and deliberately: a turn that
+ * posted would have to be told which room to post into, so both HOLD the turn
+ * open until `POST /api/test/finish-turn` and the DRIVER does the posting — it
+ * mints a real agent token (`POST /api/test/agent-token`) and calls the real
+ * `post_to_room` capability with it, mid-turn, exactly as an injected `dorkos`
+ * MCP server would.
+ *
+ * {@link roomReadsCanvas} is the one scenario that does call a capability
+ * itself, and it has to: what it exists to prove is that a face appears on a
+ * canvas tab **only while a claim is held**, and the claim is held for exactly
+ * as long as the turn runs. A driver calling from outside would be calling after
+ * the turn, which is the case that must show nothing. It can, because a room
+ * turn is now handed `MessageOpts.roomTurn` — the room, the member and the turn
+ * id, all server-derived (spec `room-canvas` §5.3) — so nothing about which room
+ * it is in has to be invented.
  *
  * @module services/runtimes/test-mode/room-reply-scenarios
  */
 import type { StreamEvent } from '@dorkos/shared/types';
+import type { RoomContextData } from '@dorkos/shared/additional-context';
+import { getRoomService } from '../../rooms/index.js';
+import { roomsDomain } from '../../rooms/room-capabilities.js';
+import { composeRegistry } from '../../core/capabilities/registry.js';
 import type { ScenarioFn } from './scenario-store.js';
 
 /**
@@ -74,6 +84,83 @@ function heldRoomTurn(say: string | null, finishRequested: FinishRequested): Sce
     // posted would leave the two orders indistinguishable in a transcript.
     if (say !== null) {
       yield { type: 'text_delta', data: { text: say } } as StreamEvent;
+    }
+    yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
+  };
+}
+
+/**
+ * The room's own canvas, as this turn's context was handed it.
+ *
+ * @param opts - The message options the runtime was called with.
+ * @returns The documents, or an empty list when the room has none.
+ */
+function canvasInContext(
+  opts: Parameters<ScenarioFn>[2]
+): NonNullable<RoomContextData['canvas']>['documents'] {
+  const room = (opts?.additionalContext ?? []).find((entry) => entry.kind === 'room_context');
+  return room?.kind === 'room_context' ? (room.data.canvas?.documents ?? []) : [];
+}
+
+/**
+ * Read the first document on the room's canvas, then hold the turn open.
+ *
+ * **The only scenario that calls a capability itself, and the reason is the
+ * property under test.** A face on a canvas tab is meant to appear only while
+ * the dispatcher holds a claim for a turn that really read that document
+ * (etiquette E16a), and the claim lives exactly as long as the turn — so a
+ * driver reading from outside would be reading with no claim, which is the case
+ * that must show NOTHING. The read has to happen from in here.
+ *
+ * It reads through the real registry with the turn's own author, resolved from
+ * `MessageOpts.roomTurn.authorId` rather than guessed: an identity that named
+ * the wrong agent would be refused by the membership check and the face would
+ * simply never appear, so this fails closed and says so in its answer.
+ *
+ * @param finishRequested - Reads the store's finish flag.
+ */
+function roomReadsCanvas(finishRequested: FinishRequested): ScenarioFn {
+  return async function* (_content, ctx, opts) {
+    yield {
+      type: 'session_status',
+      data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
+    } as StreamEvent;
+
+    const roomTurn = opts?.roomTurn;
+    const first = canvasInContext(opts)[0];
+    let read = 'NO-ROOM-TURN';
+    if (roomTurn && first) {
+      const rooms = getRoomService();
+      const author = rooms.authorRegistry.getById(roomTurn.authorId);
+      const registry = composeRegistry([roomsDomain], {
+        logger: { debug() {}, info() {}, warn() {}, error() {} },
+        roomDeps: { rooms },
+      });
+      try {
+        await registry.invoke(
+          'rooms.read_canvas',
+          { roomId: roomTurn.roomId, documentId: first.id },
+          {
+            identity: {
+              agentPath: author?.naturalKey ?? '',
+              displayName: author?.displayName ?? '',
+              tierCeiling: 'act',
+              createdAt: new Date().toISOString(),
+            },
+          }
+        );
+        read = `READ-CANVAS: ${first.id}`;
+      } catch (err) {
+        read = `READ-CANVAS-FAILED: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+    // Said before the barrier: a scenario that parked in silence looks exactly
+    // like a send that was dropped, and a test waiting on the face would have no
+    // way to tell a failed read from a slow one.
+    yield { type: 'text_delta', data: { text: read } } as StreamEvent;
+
+    for (let tick = 0; tick < HOLD_TICKS && !finishRequested() && !ctx.signal.aborted; tick += 1) {
+      await ctx.delay(HOLD_TICK_MS);
     }
     yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
   };
@@ -149,6 +236,9 @@ export function roomReplyScenarios(finishRequested: FinishRequested): Record<str
     // Holds, then ends having produced nothing at all — the turn shape that is
     // silence in both modes, and the one `agent_declined` is measured on.
     'rooms-hold-then-quiet': heldRoomTurn(null, finishRequested),
+    // Reads the canvas from inside a live turn and holds, so a browser can see
+    // the face that read put on the tab while the claim is still held.
+    'rooms-read-canvas': roomReadsCanvas(finishRequested),
   };
 }
 

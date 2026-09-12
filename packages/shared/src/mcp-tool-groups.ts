@@ -188,6 +188,14 @@ export const MCP_TOOL_GATE_GROUPS = {
   browser_read_console: 'devtools',
   browser_read_network: 'devtools',
   browser_screenshot: 'devtools',
+  // Using the session's own preview rather than only looking at it: the same
+  // frame, the same toggle (spec `canvas-agent-seat`).
+  browser_click: 'devtools',
+  browser_type: 'devtools',
+  browser_press: 'devtools',
+  browser_scroll: 'devtools',
+  browser_wait_for: 'devtools',
+  browser_read_page: 'devtools',
   create_agent: 'agents',
   get_extension_api: 'extensions',
   list_extensions: 'extensions',

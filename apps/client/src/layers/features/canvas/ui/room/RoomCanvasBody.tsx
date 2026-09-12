@@ -23,6 +23,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import type { CanvasDocument } from '@dorkos/shared/room-schemas';
 import type { UiCanvasContent } from '@dorkos/shared/types';
+import type { AuthorRef } from '@dorkos/shared/room-schemas';
 import {
   useFollowedView,
   useRoom,
@@ -32,7 +33,12 @@ import {
 } from '@/layers/entities/room';
 import type { CanvasView } from '@/layers/shared/lib';
 import { roomDocumentsInView, useAppStore, useTransport } from '@/layers/shared/model';
-import { CanvasHeader, canvasPanelId, canvasTabDomId } from '../CanvasHeader';
+import {
+  CanvasHeader,
+  canvasPanelId,
+  canvasTabDomId,
+  type CanvasDocumentAuthor,
+} from '../CanvasHeader';
 import { CanvasErrorBoundary } from '../CanvasErrorBoundary';
 import { CanvasRenderer } from '../CanvasRenderer';
 import { CanvasSplash } from '../CanvasSplash';
@@ -40,7 +46,11 @@ import { RoomCanvasChrome, type FollowableMember } from './RoomCanvasChrome';
 import { RoomCanvasFileCard } from './RoomCanvasFileCard';
 import { RoomCanvasMarkdown } from './RoomCanvasMarkdown';
 import { roomDocumentReading } from '../../lib/room-canvas-reading';
-import { roomCanvasRefusal, useRoomCanvasActions } from '../../model/use-room-canvas';
+import {
+  roomCanvasRefusal,
+  useRoomCanvasActions,
+  useRoomCanvasViewing,
+} from '../../model/use-room-canvas';
 
 /** What a document's tab says it is, when nothing named it. */
 function tabLabel(document: CanvasDocument): string {
@@ -112,6 +122,7 @@ export function RoomCanvasBody({ roomId, view }: RoomCanvasBodyProps) {
   const unreadIds = useAppStore((s) => s.roomCanvasUnread[roomId]?.[view]);
   const activate = useAppStore((s) => s.activateRoomCanvasDocument);
   const clearUnread = useAppStore((s) => s.clearRoomCanvasUnread);
+  const presence = useAppStore((s) => s.roomCanvasPresence[roomId]);
   const actions = useRoomCanvasActions(roomId);
   const room = useRoom(roomId);
   const transport = useTransport();
@@ -174,29 +185,45 @@ export function RoomCanvasBody({ roomId, view }: RoomCanvasBodyProps) {
 
   const headerDocs = useMemo(() => {
     const members = new Map(room.data?.members.map((m) => [m.author.id, m.author]) ?? []);
+    const face = (author: AuthorRef): CanvasDocumentAuthor => ({
+      id: author.id,
+      displayName: author.displayName,
+      kind: author.kind,
+      ...(author.emoji ? { emoji: author.emoji } : {}),
+      ...(author.color ? { color: author.color } : {}),
+      ...(author.imageUrl ? { imageUrl: author.imageUrl } : {}),
+    });
+    // Who is on each document right now, from the room's live presence. **Never
+    // this reader**: a face telling you where you already are is noise, and it
+    // would sit on the one tab that needs no explaining.
+    const watchersByDocument = new Map<string, CanvasDocumentAuthor[]>();
+    for (const [authorId, documentId] of Object.entries(presence ?? {})) {
+      if (authorId === viewerAuthorId) continue;
+      const author = members.get(authorId);
+      if (!author) continue;
+      const held = watchersByDocument.get(documentId);
+      if (held) held.push(face(author));
+      else watchersByDocument.set(documentId, [face(author)]);
+    }
     return inView.map((d) => {
       const author = members.get(d.authorId);
+      const watchers = watchersByDocument.get(d.id);
       return {
         id: d.id,
         sourceLabel: tabLabel(d),
         contentType: d.content.type,
         pinned: d.pinned,
         unread: unreadIds?.includes(d.id) ?? false,
-        ...(author
-          ? {
-              author: {
-                id: author.id,
-                displayName: author.displayName,
-                kind: author.kind,
-                ...(author.emoji ? { emoji: author.emoji } : {}),
-                ...(author.color ? { color: author.color } : {}),
-                ...(author.imageUrl ? { imageUrl: author.imageUrl } : {}),
-              },
-            }
-          : {}),
+        ...(author ? { author: face(author) } : {}),
+        ...(watchers ? { watchers } : {}),
       };
     });
-  }, [inView, room.data, unreadIds]);
+  }, [inView, room.data, unreadIds, presence, viewerAuthorId]);
+
+  // Tell the room where this viewer is looking, so their face appears on the tab
+  // for everybody else. Only while this body is mounted — which is only while
+  // its tab is the open one — so looking away is expressed by the unmount.
+  useRoomCanvasViewing(roomId, active?.id ?? null);
 
   /** Everybody else in this room who is a person. Agents never appear. */
   const people = useMemo<FollowableMember[]>(
