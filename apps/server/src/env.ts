@@ -214,6 +214,16 @@ export const serverEnvSchema = z.object({
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional(),
   OTEL_SERVICE_NAME: z.string().optional(),
   OTEL_SDK_DISABLED: z.string().optional(),
+  // The off switch for the host context DorkOS gives Claude Code's auto-mode
+  // permission classifier — which safety TIER a DorkOS tool call already passed
+  // (spec `auto-mode-classifier-context` §6). On by
+  // default, so `0`/`false`/`no`/`off` turn it off and anything else — including
+  // unset — leaves it on. A free string rather than `boolFlag` because a kill
+  // switch must not refuse to boot over the spelling of "off"; the reader is
+  // `isClassifierContextEnabled` in
+  // `runtimes/claude-code/messaging/classifier-context.ts`. Only Claude Code has
+  // the hook, so turning this off changes nothing for Codex or OpenCode.
+  DORKOS_CLASSIFIER_CONTEXT: z.string().optional(),
   // Exposure escape hatch (accounts-and-auth task 1.3) — when 'true', allow
   // binding a non-loopback host without a login. Off by default; set only by
   // container images that own their own network boundary (see Dockerfile.*).

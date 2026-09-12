@@ -177,6 +177,22 @@ DOR-519 is the reason that distinction is not academic here.
 - The tool-group toggles, which shape what an agent is told about and are not a
   safety boundary.
 - Any change to what auto mode is allowed to do without a person.
+- **Asserting that a person approved this exact call.** Open decision 1 answered
+  "tier plus a person's approval", and the build attempted both. The approval
+  half was cut in review and is deferred rather than abandoned, because the first
+  attempt got the binding wrong in a way worth writing down. The tier gate records
+  nothing when it ALLOWS a call, so a side record had to be added; it was keyed by
+  tool name and a hash of the arguments and NOT by session, which made it a
+  cross-session leak. One session's genuine approval could be spent on a different
+  session's identical unapproved call, and a Codex or OpenCode approval — same
+  gate, no hook — left a record any matching claude-code call could claim inside
+  the TTL. A false "a person approved this" in front of a permission classifier is
+  the one failure this feature must not have, so nothing is asserted about
+  approval today. A safe version is possible: the ids exist on both sides already
+  (`ApprovalRequestingSession.sessionId` where the gate records, and the hook's own
+  `session_id` beside the DorkOS session id its launch closed over), so the record
+  can be keyed by session as well as by argument hash. It needs its own work item,
+  with the cross-runtime case tested rather than reasoned about.
 
 ## Risks
 

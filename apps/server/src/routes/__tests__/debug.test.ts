@@ -62,6 +62,11 @@ import {
   recordPhantomCancellation,
   resetPhantomCancellations,
 } from '../../services/observability/phantom-cancellations.js';
+import {
+  recordAutoModeStop,
+  recordClassifierAssertion,
+  resetAutoModeStops,
+} from '../../services/observability/auto-mode-stops.js';
 import { runInDispatch } from '../../lib/dispatch-context.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import {
@@ -92,6 +97,7 @@ function buildApp(deps?: DebugDeps) {
 beforeEach(() => {
   resetDispatchBuffers();
   resetPhantomCancellations();
+  resetAutoModeStops();
 });
 
 afterEach(() => {
@@ -99,6 +105,7 @@ afterEach(() => {
   disposeProjector(SESSION_ID);
   resetDispatchBuffers();
   resetPhantomCancellations();
+  resetAutoModeStops();
 });
 
 /**
@@ -234,6 +241,33 @@ describe('GET /api/debug/phantom-cancellations', () => {
     expect(res.body.total).toBe(0);
     expect(res.body.byPath).toEqual({ turn: 0, pump: 0 });
     expect(res.body.recent).toEqual([]);
+  });
+});
+
+describe('GET /api/debug/auto-mode-stops', () => {
+  it('reports the stops beside the notes, so the two can be compared', async () => {
+    // Spec `auto-mode-classifier-context`. The whole point of the endpoint is
+    // that both halves are read off one clock: a stop count with no assertion
+    // count beside it cannot answer whether the notes did anything.
+    recordAutoModeStop({ sessionId: SESSION_ID, toolName: 'mcp__dorkos__tasks_delete' });
+    recordClassifierAssertion({ sessionId: SESSION_ID, tool: 'mesh_list', tier: 'observe' });
+
+    const res = await get(buildApp(), '/api/debug/auto-mode-stops');
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      stops: 1,
+      stopsByTool: { mcp__dorkos__tasks_delete: 1 },
+      stopSessions: 1,
+      assertions: 1,
+      assertionsByTier: { observe: 1, act: 0, destructive: 0 },
+    });
+  });
+
+  it('answers with zeros before anything has happened', async () => {
+    const res = await get(buildApp(), '/api/debug/auto-mode-stops');
+    expect(res.body.stops).toBe(0);
+    expect(res.body.assertions).toBe(0);
+    expect(res.body.stopsByTool).toEqual({});
   });
 });
 

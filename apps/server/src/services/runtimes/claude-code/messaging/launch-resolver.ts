@@ -53,7 +53,9 @@ import { claudeConfigDirEnv, resolveLaunchAccountRoot } from '../claude-config-d
 import type { AgentIdentityPin, LaunchParams } from '../sessions/launch-fingerprint.js';
 import { narrowToClaudeCodeMode } from '../runtime-constants.js';
 import { resolveToolConfig } from '../tooling/tool-filter.js';
-import { loadsAgentToAgentTools } from '../mcp-tools/tool-exposure.js';
+import { loadsAgentToAgentTools, IN_SESSION_TOOL_PREFIX } from '../mcp-tools/tool-exposure.js';
+import { env } from '../../../../env.js';
+import { createClassifierContextHook, isClassifierContextEnabled } from './classifier-context.js';
 import { buildSystemPromptAppend, renderContextEntry } from './context-builder.js';
 import { createCanUseTool, handleElicitation } from './interactive-handlers.js';
 import {
@@ -64,6 +66,22 @@ import {
 import { resolveThinkingOptions } from './thinking-config.js';
 import { createEditBaselineCapture, detectSlashCommandName } from './message-sender-shared.js';
 import type { MessageSenderOpts } from './message-sender-shared.js';
+
+/**
+ * Whether DorkOS attaches host context to auto mode's permission classifier,
+ * resolved ONCE for the life of the process (spec `auto-mode-classifier-context`
+ * §6).
+ *
+ * Once, not per launch, because it is the off switch for a mechanism rather than
+ * a per-session setting: an operator turning it off wants it off everywhere, and
+ * a value re-read per launch would leave half a machine's sessions on the other
+ * side of the change with nothing saying which. `env` is itself parsed once at
+ * boot, so this reads a snapshot either way; the constant makes that explicit.
+ *
+ * Global by design — no config field, nothing per-agent. See
+ * {@link isClassifierContextEnabled} for the spellings that turn it off.
+ */
+const CLASSIFIER_CONTEXT_ON = isClassifierContextEnabled(env.DORKOS_CLASSIFIER_CONTEXT);
 
 /** What one launch resolution produced, for the caller to boot or compare with. */
 export interface ResolvedLaunch {
@@ -523,6 +541,27 @@ export async function resolveLaunch(args: {
             return { continue: true };
           },
         ],
+      },
+    ],
+    // Tell auto mode's permission classifier which safety tier DorkOS's own
+    // gate put this tool at, and that the call passed that gate
+    // (spec `auto-mode-classifier-context`).
+    //
+    // An ASSERTION, never a grant: the note cannot allow anything, and the
+    // classifier is free to ignore it. That is the whole reason this shape is
+    // acceptable where an auto-approval list was not — ADR `260726-171347`
+    // (DOR-519) is the record of what a list of tool names did here.
+    //
+    // The matcher narrows the wire; `classifierContextFor` is the guard. It is
+    // written as a plain substring rather than an anchored pattern because the
+    // matcher is the CLI's to interpret and a pattern it read differently would
+    // fail SILENTLY — the hook would simply never fire. The guard re-checks the
+    // prefix and the gate's own table, so nothing rests on the matcher being
+    // narrow, only on it being wide enough.
+    PostToolUse: [
+      {
+        matcher: IN_SESSION_TOOL_PREFIX,
+        hooks: [createClassifierContextHook({ sessionId, enabled: CLASSIFIER_CONTEXT_ON })],
       },
     ],
   };
