@@ -54,7 +54,8 @@ function RoomCanvasDocumentBody({
 }: {
   roomId: string;
   document: CanvasDocument;
-  onUpdate: (documentId: string, content: UiCanvasContent) => void;
+  /** Replace what this document shows, answering whether the room took it. */
+  onUpdate: (documentId: string, content: UiCanvasContent) => Promise<boolean>;
 }) {
   const reading = roomDocumentReading(document);
   if (reading.kind !== 'inline') {
@@ -108,17 +109,27 @@ export function RoomCanvasBody({ roomId, view }: RoomCanvasBodyProps) {
   const room = useRoom(roomId);
 
   /**
-   * Run one write and say so if the room refused it.
+   * Run one write, say so if the room refused it, and tell the caller which
+   * happened.
    *
    * A toast rather than something in the strip: these are pressed on a tab that
    * may be GONE a moment later (a close that half-worked, a pin on a document
    * somebody else just took away), so a message anchored to the tab would have
    * nowhere to live. The refusal is the server's own sentence.
+   *
+   * **It resolves to whether the write landed, and never rejects.** A caller
+   * holding something the person cannot get back — an editor holding a draft —
+   * has to know, and a rejected promise from a click handler would be an
+   * unhandled rejection for every caller that does not.
    */
-  const attempt = useCallback((what: string, run: () => Promise<void>) => {
-    void run().catch((error: unknown) => {
+  const attempt = useCallback(async (what: string, run: () => Promise<void>): Promise<boolean> => {
+    try {
+      await run();
+      return true;
+    } catch (error) {
       toast.error(what, { description: roomCanvasRefusal(error) });
-    });
+      return false;
+    }
   }, []);
 
   const inView = useMemo(() => roomDocumentsInView(documents ?? [], view), [documents, view]);
@@ -167,9 +178,11 @@ export function RoomCanvasBody({ roomId, view }: RoomCanvasBodyProps) {
         documents={headerDocs}
         activeDocumentId={activeDocumentId}
         onActivate={(id) => activate(roomId, id)}
-        onClose={(id) => attempt('Couldn’t take that off the canvas.', () => actions.close(id))}
+        onClose={(id) =>
+          void attempt('Couldn’t take that off the canvas.', () => actions.close(id))
+        }
         onPin={(id, pinned) =>
-          attempt(pinned ? 'Couldn’t pin that.' : 'Couldn’t unpin that.', () =>
+          void attempt(pinned ? 'Couldn’t pin that.' : 'Couldn’t unpin that.', () =>
             actions.pin(id, pinned)
           )
         }
@@ -204,7 +217,7 @@ export function RoomCanvasBody({ roomId, view }: RoomCanvasBodyProps) {
           <CanvasSplash
             view={view}
             onAction={(content) =>
-              attempt('Couldn’t put that on the canvas.', () => actions.open(content))
+              void attempt('Couldn’t put that on the canvas.', () => actions.open(content))
             }
           />
         )}

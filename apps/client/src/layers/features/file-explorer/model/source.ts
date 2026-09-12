@@ -215,8 +215,12 @@ export interface FileExplorerSource {
    * what clicking it already does.
    *
    * Absent means there is nowhere to put it, and the control is not drawn.
+   *
+   * **It REJECTS when the place refused**, because a write everybody else can
+   * see is exactly the kind a person must not be told succeeded when it did
+   * not. The caller owns what they are told.
    */
-  readonly showToEveryone?: (path: string) => void;
+  readonly showToEveryone?: (path: string) => Promise<void>;
   /**
    * Whether a file opened from this source may be changed and saved back
    * (spec `project-rooms` §3.10).
