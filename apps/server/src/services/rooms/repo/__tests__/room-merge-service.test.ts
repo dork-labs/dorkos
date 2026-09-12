@@ -208,6 +208,7 @@ describe('RoomMergeService', () => {
       getRoom: () => room,
       isOwnerAuthor: (authorId) => authorId === OPERATOR,
       operatorGitName: () => 'Dorian',
+      pinRoomMd: () => {},
       caps: () => caps,
       maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
     });

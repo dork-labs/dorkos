@@ -139,6 +139,7 @@ describe('POST /api/rooms/:id/repo', () => {
         isOwnerAuthor: (authorId) =>
           rooms.authors.isOwner(authorId, readOwnerAccount()?.id ?? null),
         operatorGitName: () => 'Dorian',
+        pinRoomMd: () => {},
         caps: () => ({ ...ROOM_REPO_CAP_DEFAULTS }),
         maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
       })
@@ -337,6 +338,7 @@ describe('the room repo routes', () => {
       getRoom: (roomId, viewerAuthorId) => rooms.service.getRoom(roomId, viewerAuthorId),
       isOwnerAuthor: (authorId) => rooms.authors.isOwner(authorId, readOwnerAccount()?.id ?? null),
       operatorGitName: () => 'Dorian',
+      pinRoomMd: () => {},
       caps: () => ({ ...ROOM_REPO_CAP_DEFAULTS }),
       maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
     });
