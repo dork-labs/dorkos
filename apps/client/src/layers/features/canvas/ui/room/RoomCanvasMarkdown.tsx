@@ -81,18 +81,22 @@ export function RoomCanvasMarkdown({ roomId, document, content, onSave }: RoomCa
           </Button>
         </div>
       )}
-      <Suspense fallback={<div className="text-muted-foreground p-4 text-sm">Loading…</div>}>
-        <BlintzCanvas
-          // Re-seed when the room's copy changes underneath a reader: the
-          // document's own revision is what moved, and keying on it is what
-          // makes another member's update land on screen.
-          key={editing ? 'editing' : `rev-${document.rev}`}
-          value={draft ?? content.content}
-          editable={editing}
-          onChange={setDraft}
-          className="min-h-0 flex-1 overflow-auto"
-        />
-      </Suspense>
+      {/* The same padded box the session's markdown viewer gives Blintz: the
+          editor sizes to its own content, so a flex child with no padding draws
+          a hard-edged white band across a grey panel. */}
+      <div className="flex-1 px-2 pb-6">
+        <Suspense fallback={<div className="text-muted-foreground p-4 text-sm">Loading…</div>}>
+          <BlintzCanvas
+            // Re-seed when the room's copy changes underneath a reader: the
+            // document's own revision is what moved, and keying on it is what
+            // makes another member's update land on screen.
+            key={editing ? 'editing' : `rev-${document.rev}`}
+            value={draft ?? content.content}
+            editable={editing}
+            onChange={setDraft}
+          />
+        </Suspense>
+      </div>
     </div>
   );
 }

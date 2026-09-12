@@ -269,12 +269,16 @@ export class RoomsPage {
   /**
    * The right panel's body — the Room tab's content once it is the active one.
    *
-   * The container gives its body `role="tabpanel"` whenever more than one tab is
-   * visible, which on a room route is always: Pulse is global and the Room tab
-   * is contextual (spec `one-bar-header` §3.6).
+   * **Addressed by the container's own id, not by `role="tabpanel"`.** The
+   * container gives its body that role whenever more than one tab is visible,
+   * which on a room route is always — but the Canvas and Browser tabs put a
+   * SECOND document strip inside it, whose open document is a tabpanel too. A
+   * role match resolves to two elements the moment a room has anything on its
+   * canvas, and Playwright's strict mode turns that into a failure in whichever
+   * test happened to open one.
    */
   get roomPanel(): Locator {
-    return this.page.getByRole('tabpanel');
+    return this.page.locator('#right-panel-content');
   }
 
   /** The right panel's own tab for this room, whether or not it is showing. */
