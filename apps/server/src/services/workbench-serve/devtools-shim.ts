@@ -29,6 +29,7 @@
  *
  * @module services/workbench-serve/devtools-shim
  */
+import { installBrowserDriving, truncateOutlineLines } from './devtools-driving.js';
 
 /**
  * Safely serialize an arbitrary console argument into a structured-clone-safe,
@@ -117,15 +118,33 @@ export function describeResourceError(target: unknown): { tag: string; url: stri
 }
 
 /**
- * The shim body. Self-contained except the injected `serialize` and
- * `describeResource` parameters and browser globals. Wraps `console.*`, uncaught errors, and `fetch`/XHR, batches
+ * The shim body. Self-contained except the injected `serialize`,
+ * `describeResource` and `installDriving` parameters and browser globals. Wraps
+ * `console.*`, uncaught errors, and `fetch`/XHR, batches
  * captures on a short debounce, and delivers them to `window.parent` — only after
  * a handshake ack, so it is inert anywhere that is not our browser pane. Every
  * hook swallows its own errors: instrumentation must never break the page.
+ *
+ * It also answers two kinds of parent request by `requestId`: a screenshot
+ * (`capture-request`) and one driving action (`act-request`, spec
+ * `canvas-agent-seat` §2). Both talk only to `window.parent`.
  */
 function installDevtoolsShim(
   serialize: (value: unknown) => unknown,
-  describeResource: (target: unknown) => { tag: string; url: string } | null
+  describeResource: (target: unknown) => { tag: string; url: string } | null,
+  installDriving: (
+    ctx: { post: (message: unknown) => void; inFlight: () => number },
+    truncate: (
+      header: string,
+      lines: { depth: number; text: string }[],
+      maxChars: number
+    ) => { outline: string; truncated: boolean }
+  ) => (request: { requestId: string; documentId?: string; command: unknown }) => void,
+  truncateOutline: (
+    header: string,
+    lines: { depth: number; text: string }[],
+    maxChars: number
+  ) => { outline: string; truncated: boolean }
 ): void {
   try {
     const w = window as unknown as { __dorkosDevtoolsInstalled?: boolean };
@@ -146,6 +165,19 @@ function installDevtoolsShim(
 
     let acked = false;
     let seq = 0;
+    /**
+     * How many `fetch`/XHR calls have started and not yet settled.
+     *
+     * The ONLY thing `browser_wait_for`'s `fetchIdle` mode measures, and the
+     * reason the mode is not called "network idle": nothing in this page can see
+     * an image, a stylesheet, a `sendBeacon`, a WebSocket or a service worker,
+     * so claiming the network is idle would promise all of that. It is
+     * incremented on entry and decremented in the settle path of BOTH the
+     * success and the failure branch of each wrapper — forgetting the failure
+     * branch leaves the counter above zero forever and wedges every later wait
+     * for the life of the page.
+     */
+    let inFlight = 0;
     let consoleQ: unknown[] = [];
     let networkQ: unknown[] = [];
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -330,9 +362,14 @@ function installDevtoolsShim(
               ? input.href
               : (input as Request).url;
         const p = origFetch.call(window, input, init);
+        // Counted only once the call has actually returned a promise: a fetch
+        // that throws on the way in never settles, and an increment before it
+        // would leave the counter above zero for the life of the page.
+        inFlight += 1;
         try {
           p.then(
             (res) => {
+              inFlight -= 1;
               const len = res.headers && res.headers.get('content-length');
               record(
                 method,
@@ -344,10 +381,16 @@ function installDevtoolsShim(
                 'fetch'
               );
             },
-            () => record(method, url, 0, false, startedAt, undefined, 'fetch')
+            () => {
+              inFlight -= 1;
+              record(method, url, 0, false, startedAt, undefined, 'fetch');
+            }
           );
         } catch {
-          /* ignore */
+          // The wrapper could not attach its own handlers, so nothing will ever
+          // decrement this call. Give the count back now rather than leaving a
+          // wait that can never be satisfied.
+          inFlight -= 1;
         }
         return p;
       };
@@ -373,7 +416,12 @@ function installDevtoolsShim(
         const meta = (this as unknown as { __dork?: { method: string; url: string } }).__dork;
         if (meta) {
           const startedAt = Date.now();
+          inFlight += 1;
+          // `loadend` fires for success, error, abort and timeout alike, so one
+          // listener is the whole settle path and the decrement cannot be
+          // forgotten on a failure the way a `load`-only listener would forget it.
           this.addEventListener('loadend', () => {
+            inFlight -= 1;
             const len = this.getResponseHeader && this.getResponseHeader('content-length');
             record(
               meta.method,
@@ -471,11 +519,24 @@ function installDevtoolsShim(
       }
     }
 
+    // --- Driving: one action per request, answered once (spec
+    // `canvas-agent-seat` §2). Built here rather than inside the listener so the
+    // handler and its element tables are constructed once per page, not once per
+    // click.
+    const drive = installDriving({ post, inFlight: () => inFlight }, truncateOutline);
+
     // --- Handshake + parent requests: ack starts delivery; capture-request
-    // rasterizes on demand. Source identity (ev.source === parent) is the guard.
+    // rasterizes on demand; act-request drives the page. Source identity
+    // (ev.source === parent) is the guard for all three.
     window.addEventListener('message', (ev: MessageEvent) => {
       if (ev.source !== parent) return;
-      const d = ev.data as { __dorkosDevtools?: string; requestId?: unknown; lib?: unknown } | null;
+      const d = ev.data as {
+        __dorkosDevtools?: string;
+        requestId?: unknown;
+        lib?: unknown;
+        documentId?: unknown;
+        command?: unknown;
+      } | null;
       if (!d || typeof d.__dorkosDevtools !== 'string') return;
       if (d.__dorkosDevtools === 'ack') {
         if (!acked) {
@@ -486,6 +547,14 @@ function installDevtoolsShim(
       }
       if (d.__dorkosDevtools === 'capture-request' && typeof d.requestId === 'string') {
         captureScreenshot(d.requestId, d.lib);
+        return;
+      }
+      if (d.__dorkosDevtools === 'act-request' && typeof d.requestId === 'string') {
+        drive({
+          requestId: d.requestId,
+          documentId: typeof d.documentId === 'string' ? d.documentId : undefined,
+          command: d.command,
+        });
       }
     });
     let tries = 0;
@@ -539,4 +608,4 @@ export const DEVTOOLS_SHIM_COMPILER_HELPERS = ['__name'] as const;
  * for why this survives bundling and stays free of `/api` and Node-only syntax,
  * and {@link COMPILER_HELPER_PROLOGUE} for why it carries its own prologue.
  */
-export const DEVTOOLS_AGENT_SCRIPT = `(function(){${COMPILER_HELPER_PROLOGUE}(${installDevtoolsShim.toString()})(${serializeConsoleArg.toString()}, ${describeResourceError.toString()});})();`;
+export const DEVTOOLS_AGENT_SCRIPT = `(function(){${COMPILER_HELPER_PROLOGUE}(${installDevtoolsShim.toString()})(${serializeConsoleArg.toString()}, ${describeResourceError.toString()}, ${installBrowserDriving.toString()}, ${truncateOutlineLines.toString()});})();`;

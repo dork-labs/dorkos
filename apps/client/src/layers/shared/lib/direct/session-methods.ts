@@ -351,6 +351,10 @@ export function createDirectSessionMethods(
       /* web-only surface — nothing to relay in-process */
     },
 
+    async postDevtoolsAction(): Promise<void> {
+      /* web-only surface — the embed has no browser tab to drive */
+    },
+
     // ── Tool Approval ───────────────────────────────────────────────────────
 
     /**

@@ -89,6 +89,8 @@ The **Browser** tab is a browser inside DorkOS, with the controls you expect: ba
 - When something goes wrong, the tab says so instead of showing a blank white page: nothing running on that port, a page taking too long, or a page that failed to load some of its own files.
 - Each page keeps its own back/forward history, so switching between two open pages never mixes up where you were.
 
+A page here isn't only something to look at. Ask your agent to try the signup form and it will: it can click buttons, fill in fields, scroll, and read the page back to see what happened — in the tab you're watching, on the page you're looking at. See ["Agents can check their own work, and act on it"](#agents-can-check-their-own-work-and-act-on-it).
+
 Showing a page needs a server to serve your files and reach your dev server, so this tab is part of the web app and is not in the Obsidian plugin.
 
 ## Multi-Document Tabs
@@ -127,8 +129,13 @@ An agent isn't limited to describing what it did in text. It can act directly on
 - **Open a file** it just edited, so you're looking at exactly what changed. It lands in the **Canvas** tab.
 - **Open a terminal**, if it wants you to see (or run) something in a live shell.
 - **Open a page** it wants you to check, like a dev server it just started. It lands in the **Browser** tab, so a page it sends never takes over the file you were reading.
+- **Use that page**, once it's open: click a button or a link, type into a field, press a key, scroll to something further down, and wait for the page to catch up before looking again.
 
 This only reaches into the session you're actively viewing. An agent running unattended in the background can't reach into a workbench you have open elsewhere.
+
+Using a page works on a preview DorkOS is serving for you — a local HTML file, or a dev server on your machine. A page loaded straight from the internet is shown, not driven, and your agent is told so in a sentence instead of trying and waiting.
+
+With the same conversation open in two windows, an agent acts in the one that most recently brought a preview to the front, and only that one. The other window sees nothing. Your agent can also name a specific tab when it has several open.
 
 ### In a room, the canvas belongs to everyone
 
@@ -136,11 +143,19 @@ Open a [room](/docs/concepts/rooms) and the same two tabs are there, showing the
 
 Nobody is interrupted by it. The room's log gets one quiet line per turn saying what that agent opened, the tab grows a small dot so you can find it when you're ready, and the tab you're on doesn't move. An agent that actually wants you to look now `@mentions` you, like anyone else would.
 
-## Agents Can Check Their Own Work
+## Agents Can Check Their Own Work, and Act on It
 
 Once an agent has a preview open in the Browser tab, it isn't flying blind: it can read the same signals you'd check yourself. It can read the console for errors and warnings, check for network requests that failed (a missing asset, a broken API call), and take a screenshot to see exactly how the page rendered. That lets it catch a mistake and fix it before telling you it's done, instead of you having to open dev tools and relay the error back.
 
-This works on local previews DorkOS renders directly: a local HTML file or a localhost dev server. External sites, and pages with a strict security policy, aren't instrumented.
+It can also use the page. Ask it to "sign up as test@example.com and tell me what happens" and it reads the page to see what's on it, types the address into the email field, clicks **Create account**, waits for the page to settle, and tells you what it saw — including the 500 in the console, if there was one. It never pastes the page's HTML at you, and it doesn't guess: when several things on the page match what it asked for, it says so and asks which one rather than picking one.
+
+Both halves work on local previews DorkOS renders directly: a local HTML file or a localhost dev server. External sites, and pages with a strict security policy, aren't instrumented — they're shown, not driven.
+
+In the permission mode DorkOS ships with, your agent does this without stopping to ask. If you've set a mode that asks first, you'll see a card the first time it clicks something, the same as for any other action.
+
+Everything it does happens inside the preview frame, on the page you are looking at, and it cannot reach DorkOS itself. What that frame is depends on what you opened: a local file DorkOS serves has no sign-in and no address of its own, so there is nothing there to act as. **A dev server preview is your dev server** — so your agent acts on it exactly as you would by clicking in it, including anything that page is already signed in to. Point it at a page you would be happy to click around in yourself.
+
+The Obsidian plugin has no Browser tab, so none of this is there.
 
 ## For the Curious
 

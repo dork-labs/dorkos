@@ -24,6 +24,7 @@ import { getMeshTools } from './mesh-tools.js';
 import { getAgentTools } from './agent-tools.js';
 import { getUiTools } from './ui-tools.js';
 import { getDevtoolsTools } from './devtools-tools.js';
+import { getBrowserDrivingTools } from './browser-driving-tools.js';
 import { getExtensionTools } from './extension-tools.js';
 import {
   capabilityMcpTools,
@@ -108,6 +109,11 @@ export {
   type DevtoolsSessionResolver,
   type DevtoolsEventSession,
 } from './devtools-tools.js';
+export {
+  getBrowserDrivingTools,
+  type BrowserDrivingSession,
+  type BrowserDrivingSessionResolver,
+} from './browser-driving-tools.js';
 export {
   createListExtensionsHandler,
   createGetExtensionErrorsHandler,
@@ -234,6 +240,7 @@ export function handRegisteredInSessionTools(
         ...getAgentTools(deps),
         ...getUiTools(deps, session),
         ...getDevtoolsTools(deps, resolveDevtoolsSessionId, undefined, session),
+        ...getBrowserDrivingTools(deps, resolveDevtoolsSessionId, undefined, session),
         ...getExtensionTools(deps),
       ],
       resolveContext,
