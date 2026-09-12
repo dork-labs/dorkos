@@ -18,4 +18,3 @@ covers:
 
 - A recording is a slideshow of the steps, not a video of them — two frames a second, and at most sixty frames. Past sixty it stops filming and everything the agent is doing keeps working; the answer says so.
 - An agent can only attach a file from its own working directory. It cannot reach into another agent's copy of the work, and the size and count limits are the same ones your own uploads follow.
-- Recording works in Claude Code sessions in this release, like the rest of the browser tools.
