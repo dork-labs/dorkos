@@ -844,10 +844,24 @@ export interface ApprovalVerdictData {
    * agent cannot choose the words a person is told they approved.
    */
   capabilityTitle: string;
-  /** What the person decided. */
-  outcome: 'granted' | 'denied';
-  /** When they decided it. ISO 8601 UTC. */
-  decidedAt: string;
+  /**
+   * How the approval ended.
+   *
+   * `expired` is not a decision — it is the window closing with nobody having
+   * answered (spec `approval-expiry-notice`). It carries no `denyReason`,
+   * because there was nobody to type one.
+   */
+  outcome: 'granted' | 'denied' | 'expired';
+  /**
+   * When it ended. ISO 8601 UTC.
+   *
+   * The moment the person decided, or — for `expired` — the moment the decision
+   * window closed. Named for the ending rather than for the decision because
+   * only two of the three outcomes are decisions, and a field called
+   * `decidedAt` holding the time nobody decided would be the kind of small lie
+   * this payload is built to avoid.
+   */
+  endedAt: string;
   /**
    * The reason the person typed with a refusal, when they gave one.
    *
@@ -1142,14 +1156,30 @@ export const AccountsAccessDataSchema = z.object({
   changed: z.boolean(),
 });
 
-/** Zod schema for {@link ApprovalVerdictData}. */
-export const ApprovalVerdictDataSchema = z.object({
-  approvalId: z.string().min(1),
-  capabilityTitle: z.string().min(1),
-  outcome: z.enum(['granted', 'denied']),
-  decidedAt: z.string().min(1),
-  denyReason: z.string().min(1).optional(),
-});
+/**
+ * Zod schema for {@link ApprovalVerdictData}.
+ *
+ * The refusal reason is bound to the refusal, rather than merely being optional
+ * on all three outcomes. A reason exists because a person typed one, and only a
+ * denial has one to type — so `{ outcome: 'expired', denyReason: '…' }` would
+ * render an "UNTRUSTED REFUSAL REASON" fence underneath a preamble stating that
+ * nobody answered, which is a block contradicting itself. Nothing produces that
+ * shape today (`verdictDelivery` attaches the reason only on a denial); the
+ * constraint is here so the payload's own documentation stays true by
+ * construction rather than by the good behaviour of its one caller.
+ */
+export const ApprovalVerdictDataSchema = z
+  .object({
+    approvalId: z.string().min(1),
+    capabilityTitle: z.string().min(1),
+    outcome: z.enum(['granted', 'denied', 'expired']),
+    endedAt: z.string().min(1),
+    denyReason: z.string().min(1).optional(),
+  })
+  .refine((v) => v.denyReason === undefined || v.outcome === 'denied', {
+    message: 'denyReason belongs only to a denial — nobody types a reason for any other ending',
+    path: ['denyReason'],
+  });
 
 /** Zod schema for {@link AdditionalContextEntry} (discriminated on `kind`). */
 export const AdditionalContextEntrySchema = z.discriminatedUnion('kind', [

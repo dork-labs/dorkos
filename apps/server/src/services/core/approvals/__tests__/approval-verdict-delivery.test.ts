@@ -140,7 +140,7 @@ describe('deliverApprovalVerdict', () => {
       approvalId,
       capabilityTitle: 'mesh.unregister',
       outcome: 'granted',
-      decidedAt: expect.any(String),
+      endedAt: expect.any(String),
     });
     // And the turn's own content is wrapped in the SAME registered tag, so the
     // transcript strip removes it and it can never read as the person's words.
@@ -368,9 +368,15 @@ describe('startApprovalVerdictDelivery', () => {
     expect(eventFanOut.listenerCount).toBe(before);
   });
 
-  it('ignores every outcome that is not a decision', async () => {
-    // `settle` fires for `consumed` and `expired` too, and neither is an answer a
-    // person gave. Expiry is DOR-1932's subject, not this seam's.
+  it('ignores `consumed`, the one ending that is never delivered', async () => {
+    // `settle` fires for `consumed` as well, and it is the one outcome this seam
+    // must drop: the ordinary grant flow settles TWICE for one subject — once
+    // when the operator decides, again when the agent spends the token — so
+    // honoring it would wake a session about a decision it had just acted on.
+    //
+    // `expired` is deliberately NOT in that set any more (DOR-1932): an approval
+    // nobody answered is an ending the agent is just as blocked on, and it rides
+    // this seam. See `approval-expiry-sweep.test.ts`.
     //
     // Driven on a REAL, deliverable approval that has already been delivered
     // once. An earlier version broadcast `consumed` for an id that did not exist,

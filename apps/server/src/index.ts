@@ -317,6 +317,8 @@ import {
 } from './services/core/capabilities/index.js';
 import {
   initApprovalSubjectResolvers,
+  runApprovalExpiryTick,
+  startApprovalExpirySweep,
   startApprovalVerdictDelivery,
 } from './services/core/approvals/index.js';
 import { createMcpRouter } from './routes/mcp.js';
@@ -552,6 +554,9 @@ let dailySnapshotInterval: ReturnType<typeof setInterval> | undefined;
 let sessionAttachmentSweepInterval: ReturnType<typeof setInterval> | undefined;
 let managedAuthorityRecoveryInterval: ReturnType<typeof setInterval> | undefined;
 let managedUsageMirrorRecoveryInterval: ReturnType<typeof setInterval> | undefined;
+// Stops the approval expiry sweep (DOR-1932). A function rather than a timer
+// handle because the sweep owns its own interval and hands back a closer.
+let stopApprovalExpirySweep: (() => void) | undefined;
 // Embedded-terminal PTY manager (ADR 260708-185521). Always-on, boundary-confined;
 // the WebSocket byte channel is attached to the HTTP server after listen().
 let terminalManager: TerminalManager | undefined;
@@ -2266,16 +2271,28 @@ async function start() {
       error: err instanceof Error ? err.message : String(err),
     });
   }
-  try {
-    const purged = approvalService.purgeExpired();
-    if (purged > 0) {
-      logger.info(`[Approvals] Purged ${purged} long-expired approval records`);
-    }
-  } catch (err) {
-    logger.warn('[Approvals] Failed to purge expired approvals (non-fatal)', {
-      error: err instanceof Error ? err.message : String(err),
-    });
+  // One expiry tick right now, then the same tick on a timer. Settling lapsed
+  // approvals is what stops expiry being the one ending nothing announces: until
+  // this ran, an unanswered approval emitted no event at all, and the agent that
+  // asked was never told its request had lapsed (spec `approval-expiry-notice`,
+  // DOR-1932).
+  //
+  // Run once HERE as well as on the interval, because the tick's settle-before-
+  // purge order only matters after the server has been DOWN past the retention
+  // window — and the interval's first tick is up to a minute away. The retention
+  // purge rides along, which is also the fix for it having only ever run at boot:
+  // a server up for a month never trimmed the table after its first second.
+  const firstTick = runApprovalExpiryTick(approvalService);
+  if (firstTick.settled > 0) {
+    logger.info(`[Approvals] Settled ${firstTick.settled} approval(s) that expired unanswered`);
   }
+  if (firstTick.purged > 0) {
+    logger.info(`[Approvals] Purged ${firstTick.purged} long-expired approval records`);
+  }
+  stopApprovalExpirySweep = startApprovalExpirySweep(
+    approvalService,
+    approvalService.expirySweepIntervalMs
+  );
   // Catch the escalation ladder up on approvals that were already waiting when
   // this process started (DOR-1570) — the second standing condition that
   // outlives a restart, and the more dangerous one: an approval is an agent
@@ -4622,6 +4639,10 @@ async function shutdownServices() {
   }
   if (managedUsageMirrorRecoveryInterval) {
     clearInterval(managedUsageMirrorRecoveryInterval);
+  }
+  if (stopApprovalExpirySweep) {
+    stopApprovalExpirySweep();
+    stopApprovalExpirySweep = undefined;
   }
   // Kill any live PTYs so shutdown never leaves an orphaned shell.
   terminalManager?.destroyAll();
