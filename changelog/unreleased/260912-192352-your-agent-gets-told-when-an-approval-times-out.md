@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): an approval nobody answers now ends on its own, and says so (DOR-1932)'
+  - 'fix(server): a held call says the approval died, instead of pointing at a dead token (DOR-1932)'
 ---
 
 ### Fixed
