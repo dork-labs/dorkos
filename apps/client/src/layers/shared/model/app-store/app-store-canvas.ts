@@ -102,6 +102,19 @@ export interface CanvasDocument {
    */
   pinned: boolean;
   /**
+   * Whether a person in THIS window put this document here.
+   *
+   * **Per-viewer and transient, like {@link CanvasDocument.editing}** — never the
+   * server's, and it survives an arriving frame for the same reason that one
+   * does. The table is shared now, so a document can appear in a window because
+   * somebody did something HERE, or because somebody did something in another
+   * window and the row synced over. Only the first is a person bringing a page
+   * to the front, and the driver seat turns on that difference: a window that
+   * merely received a row must not take the seat from the window the person is
+   * actually using (`use-devtools-bridge.ts`).
+   */
+  openedHere: boolean;
+  /**
    * Per-document edit-protection. While `true`, agent content pushes to THIS
    * document are held so the in-canvas editor is the sole writer (ADR-0292).
    * Transient — never persisted, so a reload never resurrects edit mode.
@@ -219,6 +232,18 @@ export interface CanvasSlice {
   setDocumentContent: (id: string, content: UiCanvasContent) => void;
   /** Close a document by id, activating the most-recently-active one left in ITS view. */
   closeCanvasDocument: (id: string) => void;
+  /**
+   * Record that a person in THIS window put one document in front.
+   *
+   * Local only — it writes nothing and tells nobody. What reads it is the driver
+   * seat (`use-devtools-bridge.ts`): a window claims the seat for a page a
+   * person here put in front, and merely keeps its claim alive for one that
+   * arrived over the wire. Typing an address is such an action and does not go
+   * through `openCanvasDocument`, so it says so here.
+   *
+   * @param id - The document the person acted on.
+   */
+  noteDocumentShownHere: (id: string) => void;
   /** Activate an already-open document by id, within its own view. */
   activateCanvasDocument: (id: string) => void;
   /**
@@ -535,6 +560,11 @@ function fromServer(row: ServerCanvasDocument, previous?: CanvasDocument): Canva
     lastActiveAt: Date.parse(row.lastActiveAt),
     sourceLabel: row.title || sourceLabel(row.content),
     pinned: row.pinned,
+    // Kept across arrivals, like `editing` below: the server's row says nothing
+    // about which window a person opened it in, so the answer this window
+    // already had is the only one there is. Absent means it arrived from the
+    // server — a hydrate, or another window's open.
+    openedHere: previous?.openedHere ?? false,
     editing: previous?.editing ?? false,
     heldUpdate: previous?.heldUpdate ?? null,
   };
@@ -639,10 +669,14 @@ export const createCanvasSlice: StateCreator<
           // `updateActiveDocument` follows, and for the same reason: an older
           // version left on offer would let Reload replace what is on screen
           // with something staler than it.
+          // `openedHere` either way: a person in this window asked for this
+          // document, whatever the row's history is, and that is what the driver
+          // seat reads.
           const refreshed: CanvasDocument = existing.editing
-            ? { ...existing, heldUpdate: content, lastActiveAt: now }
+            ? { ...existing, openedHere: true, heldUpdate: content, lastActiveAt: now }
             : {
                 ...existing,
+                openedHere: true,
                 content,
                 sourceLabel: sourceLabel(content),
                 heldUpdate: null,
@@ -660,6 +694,9 @@ export const createCanvasSlice: StateCreator<
             // Nothing this window mints is pinned: the POST does not ask for it
             // and the server answers `pinned: false`.
             pinned: false,
+            // A person here asked for this one, which is what lets it take the
+            // driver seat when it mounts.
+            openedHere: true,
             editing: false,
             heldUpdate: null,
           };
@@ -833,10 +870,22 @@ export const createCanvasSlice: StateCreator<
       );
     },
 
+    noteDocumentShownHere: (id) =>
+      set((s) => {
+        const document = s.openDocuments.find((d) => d.id === id);
+        if (!document || document.openedHere) return {};
+        return {
+          openDocuments: s.openDocuments.map((d) => (d.id === id ? { ...d, openedHere: true } : d)),
+        };
+      }),
+
     activateCanvasDocument: (id) => {
       const before = get();
       const target = before.openDocuments.find((d) => d.id === id);
       if (!target) return;
+      // Clicking a tab is a person in this window putting that document in
+      // front, which is what the driver seat is about.
+      get().noteDocumentShownHere(id);
       set((s) => {
         const documents = s.openDocuments.map((d) =>
           d.id === id ? { ...d, lastActiveAt: Date.now() } : d
