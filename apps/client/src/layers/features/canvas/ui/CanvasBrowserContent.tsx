@@ -137,7 +137,7 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
     cwd,
     reloadNonce,
   });
-  const { resourceErrorCount } = useDevtoolsBridge({
+  const { resourceErrorCount, notePersonNavigated } = useDevtoolsBridge({
     iframeRef,
     documentId,
     logicalUrl: currentUrl,
@@ -216,9 +216,16 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
         });
         return;
       }
+      // A person in THIS window typed an address, which is the plainest possible
+      // statement that they are the one using this page — so it claims the
+      // driver seat, exactly as opening the document here would (spec
+      // `canvas-agent-seat` §2.2). Told to the BRIDGE rather than written to the
+      // store: local navigation is this component's own state, and a store write
+      // here would remount the frame and throw the history stack away.
+      notePersonNavigated();
       navigate(next);
     },
-    [currentUrl, navigate, roomId, openInRoom]
+    [currentUrl, navigate, roomId, openInRoom, notePersonNavigated]
   );
 
   // Always leaves the app, even for one of our own URLs — that is what the

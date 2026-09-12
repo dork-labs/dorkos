@@ -57,7 +57,7 @@
  *
  * @module features/canvas/model/use-devtools-bridge
  */
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import type {
   DevtoolsActionResult,
   DevtoolsConsoleEntry,
@@ -68,7 +68,7 @@ import type { UploadFile } from '@dorkos/shared/transport';
 import { DEVTOOLS_CONSOLE_BATCH_MAX, DEVTOOLS_NETWORK_BATCH_MAX } from '@dorkos/shared/schemas';
 import { useSessionId } from '@/layers/entities/session';
 import { streamManager } from '@/layers/shared/lib/transport';
-import { useTransport } from '@/layers/shared/model';
+import { useAppStore, useTransport } from '@/layers/shared/model';
 import { loadRasterizerSource } from '../lib/load-rasterizer';
 import { drawFrames, encodeGif } from '../lib/encode-recording';
 
@@ -162,6 +162,17 @@ export interface DevtoolsBridge {
    * promises a page is fine.
    */
   resourceErrorCount: number;
+  /**
+   * Say that a person in THIS window drove the page themselves — they typed an
+   * address into it.
+   *
+   * **It claims the driver seat**, which nothing else on that path would: local
+   * navigation is the browser component's own state and reaches no store, so
+   * without this a second window whose page arrived over the wire would keep
+   * only a keep-alive however much the person used it (spec `canvas-agent-seat`
+   * §2.2).
+   */
+  notePersonNavigated: () => void;
 }
 
 /**
@@ -427,8 +438,12 @@ export function useDevtoolsBridge({
           // this upgrade every page would look un-instrumented forever.
           handshookFor.current = documentKeyRef.current;
           // Through the same chain as every other claim, so the upgrade cannot
-          // overtake the mount claim and then be overwritten by it.
-          claimSeat.current?.(true);
+          // overtake the mount claim and then be overwritten by it. It carries
+          // the same activation the mount did, because a page finishing its
+          // handshake is the PAGE talking rather than a person: a background
+          // window whose mount was a keep-alive must not take the seat one
+          // handshake later.
+          claimSeat.current?.(true, { activation: personPutThisHere() });
           return;
         }
         case 'resource-error':
@@ -447,7 +462,9 @@ export function useDevtoolsBridge({
       // beat is what makes the refusal instant.
       if (data.__dorkosDevtools === 'navigated') {
         handshookFor.current = null;
-        claimSeat.current?.(true);
+        // Same reading as the handshake above: the page moved, which says
+        // nothing about whether anybody is looking at this window.
+        claimSeat.current?.(true, { activation: personPutThisHere() });
       }
 
       // Relay captures only for the attached session — never feed another's
@@ -553,6 +570,46 @@ export function useDevtoolsBridge({
     };
   }, [transport, iframeRef]);
 
+  /**
+   * Set once a person has driven this window's page themselves — typing an
+   * address, which is local to the frame and reaches no store.
+   *
+   * Keyed by document, so re-targeting the bridge at another page starts over.
+   */
+  const personActedOn = useRef<string | null>(null);
+
+  /**
+   * Whether a person in THIS window put the page it is showing in front.
+   *
+   * **The question the driver seat turns on** (spec `canvas-agent-seat` §2.2).
+   * Since the canvas became the server's table, a document opened in one window
+   * mounts in every other window of the session too — so a claim that always
+   * announced itself as an activation handed the seat to whichever window
+   * mounted last, including a background tab nobody is looking at, and the
+   * agent's clicks landed there. The store carries the answer per document
+   * (`openedHere`), so the claim asks instead of assuming.
+   *
+   * Asked at CLAIM time rather than captured: the same document can be re-opened
+   * here later, and then the answer is different.
+   */
+  const personPutThisHere = (): boolean =>
+    personActedOn.current === documentIdRef.current ||
+    useAppStore
+      .getState()
+      .openDocuments.some((d) => d.id === documentIdRef.current && d.openedHere);
+
+  /**
+   * Record a person's own navigation in this window, and claim the seat for it.
+   *
+   * A `useCallback` with no dependencies: the component that calls it lists it
+   * in its own callback's deps, and a changing identity there would rebuild that
+   * callback on every render.
+   */
+  const notePersonNavigated = useCallback((): void => {
+    personActedOn.current = documentIdRef.current;
+    claimSeat.current?.(true, { activation: true });
+  }, []);
+
   // Claim the driver seat for this page, so the SERVER can address exactly one
   // window (spec `canvas-agent-seat` §2.2).
   //
@@ -613,10 +670,13 @@ export function useDevtoolsBridge({
           /* best-effort: a dropped claim is corrected by the next refresh */
         });
     };
-    const claim = (active: boolean): void => claimSeat.current?.(active);
+    const claim = (active: boolean): void =>
+      claimSeat.current?.(active, { activation: personPutThisHere() });
     claim(true);
 
-    const onFocus = (): void => claim(true);
+    // The three things that ARE a person in this window, whatever put the
+    // document here: they took the window, or came back to it.
+    const onFocus = (): void => claimSeat.current?.(true, { activation: true });
     // Re-report on a beat, because a window that is killed, suspended or loses
     // its network never sends a release — and a seat nobody is sitting in makes
     // every verb address a window that no longer answers. The server yields a
@@ -643,9 +703,9 @@ export function useDevtoolsBridge({
     // already have yielded. Re-reporting the instant the page is visible again
     // is what takes it straight back.
     const onVisible = (): void => {
-      if (document.visibilityState === 'visible') claim(true);
+      if (document.visibilityState === 'visible') claimSeat.current?.(true, { activation: true });
     };
-    const onPageShow = (): void => claim(true);
+    const onPageShow = (): void => claimSeat.current?.(true, { activation: true });
     window.addEventListener('focus', onFocus);
     window.addEventListener('pagehide', onPageHide);
     window.addEventListener('pageshow', onPageShow);
@@ -854,5 +914,5 @@ export function useDevtoolsBridge({
     }
   }, [iframeRef, transport]);
 
-  return { resourceErrorCount };
+  return { resourceErrorCount, notePersonNavigated };
 }
