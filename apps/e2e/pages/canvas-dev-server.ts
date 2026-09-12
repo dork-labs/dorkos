@@ -83,14 +83,23 @@ export async function reserveClosedPort(): Promise<number> {
  * @param url - The address to type into the browser's address bar.
  * @param sessionId - Lands on a named conversation. The browser app keeps that
  *   in the URL, and it is what the capture relay reports captures under.
+ * @param dir - The working directory to open the conversation in. A spec that
+ *   goes on to SEND needs one from `POST /api/test/seed-agent`: a send into a
+ *   directory outside the boundary is refused with a 400 and the spec then waits
+ *   out its timeout on a message that was never accepted.
  */
 export async function openInCanvasBrowser(
   page: Page,
   rightPanel: RightPanelPage,
   url: string,
-  sessionId?: string
+  sessionId?: string,
+  dir?: string
 ): Promise<void> {
-  await rightPanel.goto(sessionId ? `/session?session=${sessionId}` : '/session');
+  const query = [
+    sessionId ? `session=${sessionId}` : '',
+    dir ? `dir=${encodeURIComponent(dir)}` : '',
+  ].filter(Boolean);
+  await rightPanel.goto(query.length > 0 ? `/session?${query.join('&')}` : '/session');
   await rightPanel.ensureTabStripOpen();
   await rightPanel.browserTab.click();
 
@@ -101,4 +110,54 @@ export async function openInCanvasBrowser(
   const address = page.getByRole('textbox', { name: 'Address' });
   await address.fill(url);
   await address.press('Enter');
+}
+
+/** The button an agent clicks in the driving fixture, by its accessible name. */
+export const DRIVING_BUTTON = 'Mark as done';
+
+/** What the driving fixture shows once that button has been clicked. */
+export const DRIVING_DONE_TEXT = 'Done — 1 item';
+
+const DRIVING_HTML = `<!doctype html>
+<html>
+  <head><title>Driving fixture</title></head>
+  <body>
+    <main>
+      <h1>Inbox</h1>
+      <p id="status">Nothing done yet</p>
+      <button id="done" type="button">${DRIVING_BUTTON}</button>
+      <button type="button" disabled>Archive</button>
+    </main>
+    <script src="/main.js"></script>
+  </body>
+</html>`;
+
+const DRIVING_JS = `document.getElementById('done').addEventListener('click', function () {
+  document.getElementById('status').textContent = '${DRIVING_DONE_TEXT}';
+});`;
+
+/**
+ * A page an agent can actually use: one button that changes the page when it is
+ * clicked, one disabled button beside it, and text that is only there afterwards.
+ *
+ * Deliberately small and deliberately real. The point of the driving spec is
+ * that a click reaches a live document and changes it, so the fixture has to
+ * make "before" and "after" distinguishable by looking at the page — which a
+ * screenshot, an outline read and a human all do the same way.
+ *
+ * Served the way {@link startDevServer} serves its app, because the shim only
+ * reaches a page DorkOS is serving or proxying.
+ */
+export async function startDrivingFixtureServer(): Promise<{ port: number; server: Server }> {
+  const server = createServer((req, res) => {
+    if (req.url === '/main.js') {
+      res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
+      res.end(DRIVING_JS);
+      return;
+    }
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.end(DRIVING_HTML);
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return { port: (server.address() as AddressInfo).port, server };
 }

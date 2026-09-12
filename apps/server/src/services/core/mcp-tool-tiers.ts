@@ -258,6 +258,18 @@ export const MCP_TOOL_TIERS = {
   // script into the live preview page. Calling that "only reads" is a small lie,
   // and `act` costs nothing because it never prompts.
   browser_screenshot: { tier: 'act', title: 'Take a screenshot of the preview' },
+  // Driving the preview (spec `canvas-agent-seat`). The four that change the
+  // page are `act`; the two that only look at it are `observe`, the same split
+  // the console reads already sit on. None is auto-allowed: the three reads
+  // above are not either, and driving a page is strictly more consequential
+  // than reading its console, so putting these on the auto-allow list while the
+  // reads stay off it would be backwards.
+  browser_click: { tier: 'act', title: 'Click something in the preview' },
+  browser_type: { tier: 'act', title: 'Type into the preview' },
+  browser_press: { tier: 'act', title: 'Press a key in the preview' },
+  browser_scroll: { tier: 'act', title: 'Scroll the preview' },
+  browser_wait_for: { tier: 'observe', title: 'Wait for the preview to catch up' },
+  browser_read_page: { tier: 'observe', title: "Read the preview's page outline" },
 } as const satisfies Record<string, McpToolTier>;
 
 /** The name of a hand-registered MCP tool that carries a tier. */

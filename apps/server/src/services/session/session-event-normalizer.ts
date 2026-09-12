@@ -351,8 +351,40 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
       const captureRequest: RawOf<'devtools_capture_request'> = {
         type: 'devtools_capture_request',
         requestId: String(requestId),
+        ...(data.targetClientId !== undefined
+          ? { targetClientId: String(data.targetClientId) }
+          : {}),
+        ...(data.documentId !== undefined ? { documentId: String(data.documentId) } : {}),
       };
       return captureRequest;
+    }
+
+    // A server→client request to act in the preview (spec `canvas-agent-seat`
+    // §2): the driving sibling of the capture request above, and transient for
+    // the same reason — replaying a click from a snapshot would be a second
+    // click nobody asked for. The command is forwarded whole; it was composed
+    // server-side from a tool call and validated on the way out.
+    case 'devtools_action_request': {
+      const requestId = data.requestId;
+      const targetClientId = data.targetClientId;
+      const documentId = data.documentId;
+      const command = data.command;
+      if (
+        requestId === undefined ||
+        targetClientId === undefined ||
+        documentId === undefined ||
+        command === undefined
+      ) {
+        return null;
+      }
+      const actionRequest: RawOf<'devtools_action_request'> = {
+        type: 'devtools_action_request',
+        requestId: String(requestId),
+        targetClientId: String(targetClientId),
+        documentId: String(documentId),
+        command: command as RawOf<'devtools_action_request'>['command'],
+      };
+      return actionRequest;
     }
 
     // A typed turn error, adapter-yielded or server-injected (guardTurnErrors

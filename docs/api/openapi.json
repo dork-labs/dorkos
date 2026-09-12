@@ -3318,12 +3318,53 @@
               },
               "requestId": {
                 "type": "string"
+              },
+              "targetClientId": {
+                "type": "string"
+              },
+              "documentId": {
+                "type": "string"
               }
             },
             "required": [
               "seq",
               "type",
               "requestId"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "devtools_action_request"
+                ]
+              },
+              "requestId": {
+                "type": "string"
+              },
+              "targetClientId": {
+                "type": "string"
+              },
+              "documentId": {
+                "type": "string"
+              },
+              "command": {
+                "$ref": "#/components/schemas/BrowserActCommand"
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "requestId",
+              "targetClientId",
+              "documentId",
+              "command"
             ]
           },
           {
@@ -4368,6 +4409,186 @@
           "rain",
           "stars"
         ]
+      },
+      "BrowserActCommand": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "click"
+                ]
+              },
+              "target": {
+                "$ref": "#/components/schemas/BrowserTarget"
+              }
+            },
+            "required": [
+              "action",
+              "target"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "type"
+                ]
+              },
+              "target": {
+                "$ref": "#/components/schemas/BrowserTarget"
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 10000
+              },
+              "clear": {
+                "type": "boolean"
+              },
+              "submit": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "action",
+              "text"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "press"
+                ]
+              },
+              "key": {
+                "type": "string",
+                "maxLength": 64
+              }
+            },
+            "required": [
+              "action",
+              "key"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "scroll"
+                ]
+              },
+              "target": {
+                "$ref": "#/components/schemas/BrowserTarget"
+              },
+              "by": {
+                "type": "number"
+              },
+              "to": {
+                "type": "string",
+                "enum": [
+                  "top",
+                  "bottom"
+                ]
+              }
+            },
+            "required": [
+              "action"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "wait_for"
+                ]
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 512
+              },
+              "selector": {
+                "type": "string",
+                "maxLength": 512
+              },
+              "gone": {
+                "type": "boolean"
+              },
+              "fetchIdle": {
+                "type": "boolean"
+              },
+              "timeoutMs": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 10000
+              }
+            },
+            "required": [
+              "action",
+              "timeoutMs"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "read_page"
+                ]
+              },
+              "selector": {
+                "type": "string",
+                "maxLength": 512
+              },
+              "maxChars": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 65536
+              }
+            },
+            "required": [
+              "action",
+              "maxChars"
+            ]
+          }
+        ]
+      },
+      "BrowserTarget": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "selector": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "nth": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 999
+          }
+        }
       },
       "QueuedMessage": {
         "type": "object",
@@ -13791,12 +14012,53 @@
                         },
                         "requestId": {
                           "type": "string"
+                        },
+                        "targetClientId": {
+                          "type": "string"
+                        },
+                        "documentId": {
+                          "type": "string"
                         }
                       },
                       "required": [
                         "seq",
                         "type",
                         "requestId"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "devtools_action_request"
+                          ]
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "targetClientId": {
+                          "type": "string"
+                        },
+                        "documentId": {
+                          "type": "string"
+                        },
+                        "command": {
+                          "$ref": "#/components/schemas/BrowserActCommand"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "requestId",
+                        "targetClientId",
+                        "documentId",
+                        "command"
                       ]
                     },
                     {
