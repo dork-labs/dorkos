@@ -78,6 +78,56 @@ function row(taskId: string, status: ActiveSubagent['status']): ActiveSubagent {
   return { taskId, status };
 }
 
+describe('foldActiveSubagents housekeeping (ambient) children', () => {
+  // Spec `ambient-background-tasks`: the status line's subagent count and the
+  // session inspector are activity indicators, and the runtime asked for its own
+  // housekeeping to stay out of those.
+  it('drops a child the runtime marked as housekeeping', () => {
+    const folded = foldActiveSubagents([
+      update(1, 'real', { description: 'Search the codebase' }),
+      update(2, 'chore', { description: 'Watch the docs folder', ambient: true }),
+    ]);
+
+    expect(folded.map((s) => s.taskId)).toEqual(['real']);
+  });
+
+  it('keeps the mark across partial updates that omit it', () => {
+    // Progress frames carry no mark, and neither does the retirement DorkOS
+    // synthesizes for a stranded child — either one would otherwise un-hide it.
+    const folded = foldActiveSubagents([
+      update(1, 'chore', { description: 'Watch the docs folder', ambient: true }),
+      update(2, 'chore', { toolUses: 2 }),
+      update(3, 'chore', { status: 'untracked' }),
+    ]);
+
+    expect(folded).toEqual([]);
+  });
+
+  it('reports a housekeeping child that failed, like any other failure', () => {
+    const folded = foldActiveSubagents([
+      update(1, 'chore', { description: 'Watch the docs folder', ambient: true }),
+      update(2, 'chore', { status: 'error', summary: 'Could not read the folder' }),
+    ]);
+
+    expect(folded).toEqual([
+      {
+        taskId: 'chore',
+        status: 'error',
+        description: 'Watch the docs folder',
+        toolUses: undefined,
+        lastToolName: undefined,
+        summary: 'Could not read the folder',
+      },
+    ]);
+  });
+
+  it('leaves an unmarked child alone, which is what other runtimes send', () => {
+    const folded = foldActiveSubagents([update(1, 'plain', { description: 'Ordinary work' })]);
+
+    expect(folded.map((s) => s.taskId)).toEqual(['plain']);
+  });
+});
+
 describe('partitionSubagents', () => {
   it('treats only `running` as still in flight', () => {
     // Written as a negative check on purpose: `complete`, `error` and `stopped`
