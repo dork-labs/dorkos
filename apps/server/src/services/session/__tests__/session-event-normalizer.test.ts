@@ -327,6 +327,38 @@ describe('toRawSessionEvent', () => {
       input: { type: 'background_task_done', data: { taskId: 'bt1', status: 'failed' } },
       expected: { type: 'subagent_update', taskId: 'bt1', status: 'error' },
     },
+    // Housekeeping tasks (spec `ambient-background-tasks`): the runtime's mark
+    // has to survive the hop onto the durable stream, or a client that
+    // reconnects mid-turn draws work the runtime asked it to hide. Absent stays
+    // absent — that is what every other runtime sends.
+    {
+      name: 'background_task_started carries the housekeeping mark',
+      input: {
+        type: 'background_task_started',
+        data: {
+          taskId: 'bt2',
+          taskType: 'agent',
+          startedAt: 1,
+          description: 'watch',
+          ambient: true,
+        },
+      },
+      expected: {
+        type: 'subagent_update',
+        taskId: 'bt2',
+        status: 'running',
+        description: 'watch',
+        ambient: true,
+      },
+    },
+    {
+      name: 'background_task_done carries the housekeeping mark',
+      input: {
+        type: 'background_task_done',
+        data: { taskId: 'bt2', status: 'completed', ambient: true },
+      },
+      expected: { type: 'subagent_update', taskId: 'bt2', status: 'complete', ambient: true },
+    },
     // The four fidelity members (spec task #19): a live turn renders thinking,
     // tool progress, hooks, and memory recall with the same fidelity the
     // post-turn history reload provides.

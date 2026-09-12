@@ -540,6 +540,19 @@ export class SessionStateProjector {
   private readonly runningSubagents = new Map<string, number>();
 
   /**
+   * The subset of {@link runningSubagents} the runtime marked as housekeeping —
+   * work it started on its own behalf, which it asks hosts to keep out of
+   * activity indicators (spec `ambient-background-tasks`).
+   *
+   * They stay in `runningSubagents` on purpose: the liveness bound and the
+   * stranding sweep must still retire them, or a client's task panel holds a
+   * dead watcher forever. Only `runningSubagentCount` looks away, and the
+   * retirements DorkOS synthesizes carry the mark forward so every client folds
+   * them the same way.
+   */
+  private readonly ambientSubagents = new Set<string>();
+
+  /**
    * Armed liveness sweep for {@link runningSubagents}, or `undefined` when none
    * is (no children, or a turn is open and the clock is not running).
    */
@@ -927,7 +940,7 @@ export class SessionStateProjector {
         this.applyTodoUpdate(event.tasks);
         break;
       case 'subagent_update':
-        this.applySubagentUpdate(event.taskId, event.status);
+        this.applySubagentUpdate(event.taskId, event.status, event.ambient);
         break;
       // Kept in sync with `BLOCKING_INTERACTION_EVENT_TYPES` — a switch cannot
       // be driven by the constant, but `trackInteraction` re-checks it.
@@ -1150,19 +1163,39 @@ export class SessionStateProjector {
   }
 
   /**
-   * Track running subagents; `runningSubagentCount` mirrors the live set size.
+   * Track running subagents; `runningSubagentCount` counts the reportable ones.
    *
    * A `running` update also refreshes the child's silence clock — progress
    * reports are the evidence the liveness bound (DOR-1104) waits for.
+   *
+   * `ambient` children are tracked like any other and simply not counted: the
+   * count is what an activity indicator draws, and the runtime asked for its own
+   * housekeeping to stay out of those. The mark arrives with the start and is
+   * remembered, because the progress reports that follow do not repeat it.
+   *
+   * @param taskId - The child's runtime-assigned id.
+   * @param status - Its reported lifecycle; only `running` is still in flight.
+   * @param ambient - Whether the runtime marked this child as housekeeping.
    */
-  private applySubagentUpdate(taskId: string, status: string): void {
+  private applySubagentUpdate(taskId: string, status: string, ambient?: boolean): void {
+    if (ambient) this.ambientSubagents.add(taskId);
     if (status === 'running') {
       this.runningSubagents.set(taskId, Date.now());
     } else {
       this.runningSubagents.delete(taskId);
+      this.ambientSubagents.delete(taskId);
     }
-    this.status.runningSubagentCount = this.runningSubagents.size;
+    this.status.runningSubagentCount = this.countReportableSubagents();
     this.scheduleSubagentExpiry();
+  }
+
+  /** Live children an activity indicator may count — everything but housekeeping. */
+  private countReportableSubagents(): number {
+    let count = 0;
+    for (const taskId of this.runningSubagents.keys()) {
+      if (!this.ambientSubagents.has(taskId)) count += 1;
+    }
+    return count;
   }
 
   /**
@@ -1214,6 +1247,10 @@ export class SessionStateProjector {
       .filter(([, lastSeenAt]) => lastSeenAt <= cutoff)
       .map(([taskId]) => taskId);
     if (stale.length === 0) return;
+    // Read the housekeeping marks BEFORE the map is emptied: the retirement has
+    // to carry the same mark the start did, or a client that hid this child
+    // counts its ending as one of the children it could not name.
+    const wasAmbient = new Set(stale.filter((taskId) => this.ambientSubagents.has(taskId)));
     // Empty the map, THEN tell anyone. See the recursion note above.
     for (const taskId of stale) this.runningSubagents.delete(taskId);
     for (const taskId of stale) {
@@ -1221,6 +1258,7 @@ export class SessionStateProjector {
         type: 'subagent_update',
         taskId,
         status: 'untracked',
+        ...(wasAmbient.has(taskId) ? { ambient: true } : {}),
       } as RawSessionEvent);
     }
     // The count moved without the lifecycle moving, so nothing else would tell
@@ -1388,13 +1426,16 @@ export class SessionStateProjector {
       // entered with `lifecycle === 'streaming'` and no turn open, and the safety
       // of the loop should not depend on a condition checked in another method.
       const stranded = this.listRunningSubagents();
+      const wasAmbient = new Set(stranded.filter((taskId) => this.ambientSubagents.has(taskId)));
       this.runningSubagents.clear();
+      this.ambientSubagents.clear();
       this.status.runningSubagentCount = 0;
       for (const taskId of stranded) {
         const untracked: RawSessionEvent = {
           type: 'subagent_update',
           taskId,
           status: 'untracked',
+          ...(wasAmbient.has(taskId) ? { ambient: true } : {}),
         } as RawSessionEvent;
         this.ingest(untracked);
       }

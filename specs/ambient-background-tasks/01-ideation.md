@@ -172,6 +172,12 @@ cap is ever raised, that decision can revisit this one.
   did inside a turn.
 - Raising or lowering the subagent depth cap.
 - Stopping or managing background tasks, which already has its own control.
+- The inline transcript card each background task draws in the conversation
+  (`SubagentBlock`). This is about indicators, and a transcript is a record of
+  what happened rather than a signal that something is happening. The SDK's own
+  `skip_transcript` field asks hosts to leave those tasks out of the inline
+  transcript, and adopting it is a separate decision with a separate question to
+  answer — what a person sees when they scroll back. Nothing here settles it.
 
 ## Risks
 
