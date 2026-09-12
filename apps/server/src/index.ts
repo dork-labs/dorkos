@@ -362,6 +362,7 @@ import {
   readRoomRepoConfig,
   RoomFileEditor,
   RoomFilesService,
+  ROOM_MD_FILENAME,
   RoomMergeService,
   RoomRepoMutex,
   RoomRepoReconciler,
@@ -1386,6 +1387,19 @@ async function start() {
     // What may be SENT, as against what `caps` froze onto a room's sidecar
     // for what may be merged IN. Read per turn, like every other value here.
     maxRoomMdBytes: () => readRoomRepoConfig().maxRoomMdBytes,
+    // The room's shared notes land on its canvas the moment it has any, pinned
+    // so the twelve-document ceiling can never push them off. The path is
+    // RELATIVE, exactly as the Room tab's Files section opens one: a document
+    // with no working directory recorded is read back through the room's own
+    // files route, which is the one route every member already has.
+    pinRoomMd: (roomId, authorId) => {
+      roomService.canvas.open(
+        roomId,
+        authorId,
+        { type: 'file', sourcePath: ROOM_MD_FILENAME },
+        { pinned: true }
+      );
+    },
   });
   setRoomRepoService(roomRepoService);
   // Reading those files back (spec §3.9). It shares the store and nothing

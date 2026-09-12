@@ -1565,6 +1565,15 @@ async function readRoomCanvas(
   if (!document) {
     throw new RoomError('CANVAS_DOCUMENT_NOT_FOUND', 'No such document on this room’s canvas');
   }
+  // **The agent's face goes on the tab here, and only from here** (§9.4, E16a).
+  // It is a consequence of a turn that is really running really reading this
+  // document — not of anything the model chose to say — so it is gated on a live
+  // claim, and it is taken off again when that turn ends. An agent reading the
+  // canvas with no turn in hand (a person driving it from a shell, an external
+  // MCP client) shows nothing, which is right: nobody is waiting on it.
+  if (rooms.isWorkingHere(input.roomId, callerAuthorId)) {
+    canvas.noteAgentRead(input.roomId, callerAuthorId, document.id);
+  }
   const metadata = {
     note: UNTRUSTED_NOTE,
     documentId: document.id,

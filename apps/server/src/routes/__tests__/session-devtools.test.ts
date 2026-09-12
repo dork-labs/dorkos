@@ -150,3 +150,112 @@ describe('POST /api/sessions/:id/devtools/ingest', () => {
     expect(devtoolsCaptureStore.read(id)).toBeUndefined();
   });
 });
+
+describe('the driver seat rides the ingest route', () => {
+  it('keeps one claim per window, read off X-Client-Id', async () => {
+    const id = crypto.randomUUID();
+    await request(testServer)
+      .post(`/api/sessions/${id}/devtools/ingest`)
+      .set('X-Client-Id', 'window-a')
+      .send({ documentId: 'doc-a', seq: 1, console: [], network: [], active: true });
+    await request(testServer)
+      .post(`/api/sessions/${id}/devtools/ingest`)
+      .set('X-Client-Id', 'window-b')
+      .send({
+        documentId: 'doc-b',
+        seq: 1,
+        console: [],
+        network: [],
+        active: true,
+        instrumented: true,
+      });
+
+    // The seat is the later claim, and the earlier one is still addressable by
+    // its own page id.
+    expect(devtoolsCaptureStore.resolveDriver(id)).toMatchObject({
+      clientId: 'window-b',
+      documentId: 'doc-b',
+      instrumented: true,
+    });
+    expect(devtoolsCaptureStore.resolveDriver(id, 'doc-a')).toMatchObject({
+      clientId: 'window-a',
+    });
+  });
+
+  it('refuses a seat to a caller that sent no client id, in both directions', async () => {
+    const id = crypto.randomUUID();
+    await request(testServer)
+      .post(`/api/sessions/${id}/devtools/ingest`)
+      .set('X-Client-Id', 'window-a')
+      .send({ documentId: 'doc-a', seq: 1, console: [], network: [], active: true });
+
+    // TAKING is the direction that matters: a header-less claim used to be given
+    // a per-request UUID, which is by definition the most recent claim — so it
+    // took the seat from the window really showing the page, and every verb
+    // afterwards addressed a client that does not exist and timed out.
+    const claimed = await request(testServer)
+      .post(`/api/sessions/${id}/devtools/ingest`)
+      .send({ documentId: 'doc-b', seq: 1, console: [], network: [], active: true });
+    expect(claimed.status).toBe(204);
+    expect(devtoolsCaptureStore.resolveDriver(id)).toMatchObject({ clientId: 'window-a' });
+    expect(devtoolsCaptureStore.resolveDriver(id, 'doc-b')).toBeUndefined();
+
+    // And releasing: it cannot drop a seat it never held either.
+    await request(testServer)
+      .post(`/api/sessions/${id}/devtools/ingest`)
+      .send({ documentId: 'doc-a', seq: 1, console: [], network: [], active: false });
+    expect(devtoolsCaptureStore.resolveDriver(id)).toMatchObject({ clientId: 'window-a' });
+  });
+
+  it('still takes the captures of a caller that sent no client id', async () => {
+    // The refusal is about the SEAT, never about the relay: a preview whose
+    // window has no id still reports its console to the agent.
+    const id = crypto.randomUUID();
+    const res = await request(testServer)
+      .post(`/api/sessions/${id}/devtools/ingest`)
+      .send({
+        documentId: 'doc-a',
+        seq: 1,
+        console: [{ level: 'error', text: 'boom', timestamp: Date.now() }],
+        network: [],
+      });
+    expect(res.status).toBe(204);
+    expect(devtoolsCaptureStore.read(id)?.console[0].text).toBe('boom');
+  });
+});
+
+describe('POST /api/sessions/:id/devtools/action', () => {
+  function postAction(body: unknown, id = crypto.randomUUID()) {
+    return request(testServer).post(`/api/sessions/${id}/devtools/action`).send(body);
+  }
+
+  it('accepts a result (204) and resolves the tool call awaiting it', async () => {
+    const pending = devtoolsCaptureStore.awaitAction('req-route-1', 2_000);
+    const res = await postAction({
+      requestId: 'req-route-1',
+      ok: true,
+      did: 'Clicked button "Pay $42.00".',
+      matched: 1,
+      page: { title: 'Checkout', url: 'https://preview/checkout', focused: null },
+    });
+    expect(res.status).toBe(204);
+    await expect(pending).resolves.toMatchObject({ ok: true, matched: 1 });
+  });
+
+  it('accepts a result nobody is awaiting, because the tool may have timed out', async () => {
+    const res = await postAction({ requestId: 'nobody-waits', ok: true });
+    expect(res.status).toBe(204);
+  });
+
+  it('rejects a malformed result (400)', async () => {
+    const res = await postAction({ requestId: 'req-2' });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a malformed session id (400)', async () => {
+    const res = await request(testServer)
+      .post('/api/sessions/not a session/devtools/action')
+      .send({ requestId: 'req-3', ok: true });
+    expect(res.status).toBe(400);
+  });
+});

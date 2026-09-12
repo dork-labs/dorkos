@@ -100,6 +100,7 @@ import type {
   UiActionRequest,
   McpAppResourceRequest,
   McpAppResourceResponse,
+  DevtoolsActionResult,
   DevtoolsIngest,
   WorkbenchProbeResponse,
   WorkbenchSignResponse,
@@ -1114,7 +1115,34 @@ export interface Transport extends RoomTransport {
    * @param sessionId - The session whose preview produced the batch.
    * @param batch - The validated console/network (and navigation) capture batch.
    */
-  ingestDevtoolsCapture(sessionId: string, batch: DevtoolsIngest): Promise<void>;
+  ingestDevtoolsCapture(
+    sessionId: string,
+    batch: DevtoolsIngest,
+    options?: {
+      /**
+       * Let the request outlive the page that started it. Set on the release a
+       * window sends as it closes, which is the one moment an ordinary `fetch`
+       * is cancelled before it leaves.
+       */
+      keepalive?: boolean;
+    }
+  ): Promise<void>;
+
+  /**
+   * Relay one driving round trip's result — what the click did, what the page
+   * says now — to `POST /sessions/:id/devtools/action` (spec
+   * `canvas-agent-seat` §2.1).
+   *
+   * Separate from {@link Transport.ingestDevtoolsCapture} because it is posted
+   * the moment it exists: an agent's tool call is awaiting this `requestId`
+   * server-side, and a result folded into the 300ms capture debounce is a
+   * result that can arrive after the tool gave up. `DirectTransport` no-ops
+   * (the embedded browser is web-only already).
+   *
+   * @param sessionId - The session whose preview was driven.
+   * @param result - The validated result relayed from the in-page shim.
+   */
+  postDevtoolsAction(sessionId: string, result: DevtoolsActionResult): Promise<void>;
 
   // --- Workbench file service (explorer + viewers; DOR-217) ---
 

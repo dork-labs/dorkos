@@ -44,9 +44,11 @@ import { formatRoomContext } from '../../../runtimes/shared/room-context-block.j
 import { roomsDomain } from '../../room-capabilities.js';
 import { composeRegistry } from '../../../core/capabilities/registry.js';
 import type { AgentIdentity } from '../../../core/agent-identity/index.js';
+import type { RoomEvent } from '@dorkos/shared/room-schemas';
 import {
   agentLookupFor,
   createRoomHarness,
+  gatedRunner,
   scriptedRunner,
   type RoomHarness,
 } from '../../__tests__/room-test-harness.js';
@@ -374,6 +376,79 @@ describe('read_canvas', () => {
         }
       )
     ).rejects.toThrow();
+  });
+
+  describe('the face a read puts on a tab (§9.4, E16a)', () => {
+    /** Start listening to a room's stream; answer with the presence frames it carried. */
+    function watchPresence(h: RoomHarness, id: string) {
+      const abort = new AbortController();
+      const seen: RoomEvent[] = [];
+      const reading = (async () => {
+        for await (const event of h.service.stream.subscribe(id, abort.signal)) seen.push(event);
+      })();
+      return async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        abort.abort();
+        await reading;
+        return seen.filter((e) => e.type === 'signal' && e.signal === 'presence');
+      };
+    }
+
+    it('paints nothing when no turn is running', async () => {
+      // **The gate, on its own.** An agent reading the canvas outside a turn —
+      // a person driving it from a shell, an external MCP client — is nobody the
+      // room is waiting on, so nothing may appear. Replacing the gate with
+      // `if (true)` reddens exactly here, and nowhere else in the suite.
+      const document = harness.service.canvas.open(roomId, ana, {
+        type: 'json',
+        data: { ok: true },
+        title: 'the plan',
+      });
+      const frames = watchPresence(harness, roomId);
+
+      await registryFor(harness).invoke(
+        'rooms.read_canvas',
+        { roomId, documentId: document.id },
+        { identity: identityFor(ANA, 'Ana') }
+      );
+
+      expect(await frames()).toEqual([]);
+    });
+
+    it('paints one while the dispatcher holds that agent’s claim, and takes it off at the end', async () => {
+      // A REAL claim, held open by a runner that does not answer until the test
+      // says so — the only way the middle of a turn is a state a test can look
+      // at (`gatedRunner`'s own doc).
+      const runner = gatedRunner();
+      const held = createRoomHarness({ agents, runner });
+      const room = held.service.createRoom(
+        { kind: 'channel', title: 'Backend', members: [], agentPaths: [ANA] },
+        held.human
+      );
+      const anaHere = held.authors.resolveAgent(ANA, 'Ana').id;
+      const document = held.service.canvas.open(room.id, held.human, {
+        type: 'json',
+        data: { ok: true },
+        title: 'the plan',
+      });
+
+      held.service.post(room.id, { authorId: held.human, text: '@ana what is on the canvas?' });
+      await vi.waitFor(() => expect(runner.holdsFor(anaHere)).toBe(1));
+
+      const midTurn = watchPresence(held, room.id);
+      await registryFor(held).invoke(
+        'rooms.read_canvas',
+        { roomId: room.id, documentId: document.id },
+        { identity: identityFor(ANA, 'Ana') }
+      );
+      expect(await midTurn()).toMatchObject([{ authorId: anaHere, documentId: document.id }]);
+
+      // The face coming OFF at the end is the production runner's `finally`,
+      // which this harness replaces wholesale — so it is asserted where the real
+      // runner runs, in `room-canvas-turn.test.ts`.
+      runner.releaseAll();
+      await held.service.triggersIdle();
+    });
   });
 
   it('answers for an ARCHIVED room — reads never stop', async () => {

@@ -103,6 +103,7 @@ describe('a room turn runs in the room’s repo', () => {
       // The harness's `human` is the owner, and enabling a repo is operator-only.
       isOwnerAuthor: (authorId) => authorId === harness.human,
       operatorGitName: () => 'Dorian',
+      pinRoomMd: () => {},
       caps: () => ({ ...ROOM_REPO_CAP_DEFAULTS }),
       maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
     });

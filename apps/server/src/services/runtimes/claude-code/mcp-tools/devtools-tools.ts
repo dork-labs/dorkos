@@ -55,6 +55,7 @@ import type { DevtoolsConsoleEntry, DevtoolsNetworkEntry } from '@dorkos/shared/
 import type { StreamEvent } from '@dorkos/shared/types';
 import {
   devtoolsCaptureStore,
+  NO_PREVIEW_NOTE,
   type CaptureBufferView,
   type DevtoolsCaptureStore,
 } from '../../../session/index.js';
@@ -93,7 +94,10 @@ const FIELD_ELIDE_CHARS = 2_048;
 export type DevtoolsSessionResolver = () => string | undefined;
 
 /** The subset of {@link DevtoolsCaptureStore} these tools depend on. */
-export type DevtoolsReadStore = Pick<DevtoolsCaptureStore, 'read' | 'awaitScreenshot'>;
+export type DevtoolsReadStore = Pick<
+  DevtoolsCaptureStore,
+  'read' | 'awaitScreenshot' | 'resolveDriver'
+>;
 
 /**
  * The subset of the live session `browser_screenshot` needs to reach the
@@ -120,12 +124,6 @@ const SESSIONLESS_DEVTOOLS_ERROR = {
     'These tools read the console/network/screenshot the current session captured from its live ' +
     'preview. The current MCP surface has no session attached, so there is no preview to reach.',
 };
-
-/** Note shown when the session has never received a capture (no preview opened). */
-const NO_PREVIEW_NOTE =
-  'No preview is open for this session yet, so nothing has been captured. Open a local ' +
-  'preview with browser_navigate first (a local HTML file or a localhost dev server); ' +
-  'external sites and pages with a strict Content-Security-Policy are not instrumented.';
 
 /** Build the `limit` input for one tool, capped at that tool's server ring size. */
 function limitInput(max: number) {
@@ -512,9 +510,20 @@ export function createBrowserScreenshotHandler(
     }
 
     const requestId = randomUUID();
+    // Address the driver seat when there is one (spec `canvas-agent-seat`
+    // §2.2). Before it existed this request carried no target at all, so with
+    // several previews open EVERY window forwarded it into its own frame and
+    // the first answer won nondeterministically — a screenshot of whichever
+    // page happened to rasterize fastest. A window that has claimed nothing
+    // still gets the untargeted request, which is what keeps a client that
+    // predates the seat working.
+    const claim = store.resolveDriver(sessionId);
     session.eventQueue.push({
       type: 'devtools_capture_request',
-      data: { requestId },
+      data: {
+        requestId,
+        ...(claim ? { targetClientId: claim.clientId, documentId: claim.documentId } : {}),
+      },
     } as StreamEvent);
     session.eventQueueNotify?.();
 
