@@ -1540,6 +1540,13 @@ function collectReply(
       // promise this function documents as never rejecting.
       try {
         getRoomService().canvas.finishTurn(bounds.turnId);
+        // **And the agent's face comes off the canvas**, in the same breath and
+        // for the same reason: this is the one block every ending reaches, so
+        // there is no terminal — the ordinary one, the ceiling, a halt — that
+        // can leave a face on a tab for a turn that has stopped. Unconditional
+        // and silent: the service publishes nothing for an agent that was not
+        // looking, which is every turn that never called `read_canvas`.
+        getRoomService().canvas.clearViewing(bounds.roomId, bounds.authorId);
       } catch (err) {
         logger.warn('[rooms] could not close out a turn’s canvas line', {
           roomId: bounds.roomId,

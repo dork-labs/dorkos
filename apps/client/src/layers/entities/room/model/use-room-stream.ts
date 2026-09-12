@@ -472,6 +472,13 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
             // which expires them rather than keeping them.
             if (event.type === 'signal') {
               useRoomPresenceStore.getState().observe(roomId, event);
+              // The same lane also carries who is looking at which canvas
+              // document (spec `room-canvas` §9.4). A different store, because
+              // it is a different fact with a different life: the one above is
+              // about work being done and is keyed by claim, this one is about
+              // attention and is keyed by author. Both stores ignore the
+              // other's frames, so the two can never be confused for each other.
+              useAppStore.getState().applyRoomCanvasPresence(roomId, event);
               continue;
             }
             // Reactions are durable state ON an entry rather than a place in

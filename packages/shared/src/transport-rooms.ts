@@ -497,6 +497,19 @@ export interface RoomTransport {
   ): Promise<CanvasEditingResponse>;
 
   /**
+   * Say which document on a room's canvas you are looking at, or that you have
+   * looked away.
+   *
+   * The room's other readers see a small face on that tab while you are there.
+   * Nothing is written down: the fact rides the live stream only, so a reader
+   * who connects afterwards does not learn it, and a reconnect forgets it.
+   *
+   * @param id - The room.
+   * @param documentId - The document, or `null` when the answer is none.
+   */
+  setRoomCanvasViewing(id: string, documentId: string | null): Promise<void>;
+
+  /**
    * Subscribe to a room's durable event stream (`GET /rooms/:id/events`).
    *
    * Modeled on {@link subscribeSession}: with `sinceCursor` the server replays

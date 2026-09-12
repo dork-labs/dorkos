@@ -1020,6 +1020,22 @@ export const CanvasEditingResponseSchema = z
 export type CanvasEditingResponse = z.infer<typeof CanvasEditingResponseSchema>;
 
 /**
+ * Saying which document on a room's canvas you are looking at, or that you are
+ * looking at none (`POST /api/rooms/{id}/canvas/viewing`).
+ *
+ * The whole effect is one ephemeral `signal` frame telling the room's other
+ * readers where your face goes. Nothing is written down, nothing is replayed,
+ * and `null` is a real answer rather than a missing one: it is what a reader who
+ * has left the canvas says on their way out.
+ */
+export const CanvasViewingRequestSchema = z
+  .object({ documentId: z.string().min(1).nullable() })
+  .openapi('CanvasViewingRequest');
+
+/** A request to say where on a room's canvas somebody is looking. */
+export type CanvasViewingRequest = z.infer<typeof CanvasViewingRequestSchema>;
+
+/**
  * The most of a merge summary that survives to the commit subject and the room.
  *
  * **Shared so the cap is asked once.** The server sanitizes and truncates at
@@ -2121,6 +2137,25 @@ export const RoomSignalEventSchema = z
      * nothing to say about it.
      */
     outcome: z.enum(['answered', 'silent']).optional(),
+    /**
+     * Which document on the room's canvas this author is looking at, on a
+     * `'presence'` signal — the fact a small face on a tab is drawn from.
+     *
+     * **Absent is a real answer, not a gap.** On a `'presence'` signal it means
+     * this author is looking at no document, which is what a reader says on the
+     * way out of the canvas and what a turn says when its claim is released. So
+     * a frame with it and a frame without it are the two halves of the same
+     * statement, and neither is ever replayed: signals carry no `seq`, and a
+     * face on a document somebody left ten minutes ago would be a worse answer
+     * than no face at all.
+     *
+     * **An optional field rather than a seventh signal name**, for the reason
+     * {@link RoomSignalEventSchema}'s `outcome` is one: the signal vocabulary is
+     * shared with the relay and with `CommunityAdapter.publishSignal`, and a
+     * client that cannot parse a new member drops the whole frame. `'presence'`
+     * already exists in that vocabulary and nothing else in a room produces it.
+     */
+    documentId: z.string().optional(),
   })
   .openapi('RoomSignalEvent');
 

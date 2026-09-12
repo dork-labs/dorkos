@@ -23,6 +23,7 @@
 import { Router, type Request, type Response } from 'express';
 import {
   CanvasEditingRequestSchema,
+  CanvasViewingRequestSchema,
   OpenCanvasDocumentRequestSchema,
   UpdateCanvasDocumentRequestSchema,
 } from '@dorkos/shared/room-schemas';
@@ -127,6 +128,30 @@ router.post<CanvasParams>('/', (req, res) => {
     res.status(201).json(document);
   } catch (err) {
     sendRoomError(res, err, 'POST /:id/canvas');
+  }
+});
+
+/**
+ * POST /viewing — say which document on this canvas you are looking at, or that
+ * you have looked away.
+ *
+ * **A read's gate, not a write's.** Looking at an archived room's canvas is
+ * allowed exactly as reading it is, and nothing here changes the record: the
+ * whole effect is one ephemeral `signal` frame that puts a small face on that
+ * tab for the room's other readers. It is never written down and never replayed.
+ *
+ * Declared above `/:documentId` so the literal path is matched before the
+ * parameter would swallow it.
+ */
+router.post<CanvasParams>('/viewing', (req, res) => {
+  const body = parseBody(CanvasViewingRequestSchema, req.body, res);
+  if (!body) return;
+  try {
+    const caller = requireCanvasAccess(req, res, false);
+    getRoomService().canvas.setViewing(req.params.id, caller, body.documentId);
+    res.status(204).end();
+  } catch (err) {
+    sendRoomError(res, err, 'POST /:id/canvas/viewing');
   }
 });
 

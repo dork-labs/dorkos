@@ -150,3 +150,55 @@ export function useRoomCanvasEditLock(roomId: string, documentId: string | null)
     };
   }, [transport, roomId, documentId, setEditing]);
 }
+
+/**
+ * How long a reader has to settle on a tab before the room is told.
+ *
+ * Arrow-keying along a strip of eight tabs is one decision, not eight, and
+ * without this it would be eight requests and eight frames fanned out to
+ * everybody. Short enough that a deliberate switch feels immediate.
+ */
+export const CANVAS_VIEWING_DEBOUNCE_MS = 400;
+
+/**
+ * Tell the room which of its canvas documents this viewer is looking at.
+ *
+ * **One statement per change, and nothing while nothing changes.** There is no
+ * heartbeat: the server publishes only when the answer is different from the one
+ * it already has, so an open canvas costs the room no traffic at all. What
+ * replaces the heartbeat is the stream cycle — every reconnect wipes the room's
+ * faces and re-states this viewer's own, which is what keeps a face from
+ * outliving the person it belongs to after a crash.
+ *
+ * Looking away is expressed by the cleanup: switching documents, switching tabs,
+ * closing the panel and leaving the room all unmount this, and each one sends
+ * the `null`.
+ *
+ * @param roomId - The room.
+ * @param documentId - The document on screen, or null when none is.
+ */
+export function useRoomCanvasViewing(roomId: string, documentId: string | null): void {
+  const transport = useTransport();
+  const epoch = useAppStore((s) => s.roomCanvasPresenceEpoch[roomId] ?? 0);
+
+  useEffect(() => {
+    const say = (id: string | null) => {
+      void transport.setRoomCanvasViewing(roomId, id).catch((err) => {
+        // Nothing a person can act on: a face that did not appear is invisible
+        // by definition, and a retry loop over a surface this ephemeral would
+        // spend traffic on a fact that is already going stale.
+        console.warn('[room-canvas] could not say where we are looking', { roomId, err });
+      });
+    };
+    const timer = setTimeout(() => say(documentId), CANVAS_VIEWING_DEBOUNCE_MS);
+    return () => {
+      clearTimeout(timer);
+      // Unconditional, even for a switch the debounce swallowed: the server
+      // publishes nothing for a viewer who was not on record as looking, so a
+      // redundant clear costs one request and no frame.
+      say(null);
+    };
+    // `epoch` is a dependency on purpose: a stream cycle clears every face in
+    // the room, and re-running this is how this viewer's own comes back.
+  }, [transport, roomId, documentId, epoch]);
+}

@@ -1059,6 +1059,10 @@ export const roomStubs = {
     throw new Error('Rooms are not supported in embedded mode');
   },
 
+  async setRoomCanvasViewing(_id: string, _documentId: string | null): Promise<void> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
   async setRoomCanvasEditing(
     _id: string,
     _documentId: string,
