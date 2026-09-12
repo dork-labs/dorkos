@@ -6,6 +6,8 @@ covers:
   - 'fix(canvas): let a canvas frame reach the other window, and say so in the docs (DOR-2006)'
   - 'fix(canvas): resolve the viewer where the row is written, and let the embed read (DOR-2006)'
   - 'fix(canvas): the client reads the viewer overrides too, and a failed write says so (DOR-2006)'
+  - 'fix(canvas): import the localStorage canvas one document at a time (DOR-2006)'
+  - 'fix(canvas): a window claims the driver seat when a person acts in it (DOR-2006)'
 ---
 
 ### Changed
