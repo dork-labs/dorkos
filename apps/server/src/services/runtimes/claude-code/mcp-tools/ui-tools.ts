@@ -25,6 +25,7 @@ import { UiCommandSchema } from '@dorkos/shared/schemas';
 import type { UiState, UiStateReport, UiCommand, StreamEvent } from '@dorkos/shared/types';
 import { CONTROL_UI_DESCRIPTION, CONTROL_UI_INPUT } from '../../shared/ui-tool-contract.js';
 import { getRoomService, RoomError } from '../../../rooms/index.js';
+import { logger } from '../../../../lib/logger.js';
 import {
   CANVAS_VERBS,
   SESSION_AGENT_AUTHOR,
@@ -234,9 +235,18 @@ export function createControlUiHandler(session: UiToolSession) {
           viewers: applied.viewers,
         });
       }
-      // No canvas service in this process — an embedded host, or a boot that has
-      // not reached the rooms subsystem. Fall through: the command still reaches
-      // the client, which is exactly what it did before the table existed.
+      // No canvas service in this process — an embedded host reading somebody
+      // else's database read-only, or a boot that has not reached the rooms
+      // subsystem. Fall through to the `ui_command` event below.
+      //
+      // **In the embed that event reaches nobody, and that is the whole
+      // behaviour.** `subscribeUiCommand` has exactly one subscriber — the web
+      // app's `main.tsx` — and the Obsidian plugin never subscribes, so the
+      // push is a no-op there rather than the older client-side canvas path it
+      // never had. Net: the embed reads this machine's canvas and writes
+      // nothing to it, which is ADR `260825-194924`'s rule. On a server that
+      // simply has not finished booting, the same fall-through is the older
+      // behaviour, because there the subscriber does exist.
     }
 
     // Emit the command as a ui_command StreamEvent to the SSE stream
@@ -337,11 +347,14 @@ function applyToSessionCanvas(
  * `apply` over a read-only database threw `SqliteError: attempt to write a
  * readonly database` straight through the tool.
  *
- * `ROOM_NOT_FOUND` is the sibling's code and is carried here for the same
- * reason: `CanvasApplyResult` types its code as a `RoomErrorCode`, none of which
- * means "the writer faulted", and the code never leaves this file — the handler
- * answers the model with `reason` alone. A raw driver message is NOT passed on:
- * it names internals the model cannot do anything about.
+ * **It says so in the log, and the code says what happened.** The catch was
+ * silent, so an operator whose agent reported "Your canvas could not be reached
+ * just now" had nothing to work from — and it answered `ROOM_NOT_FOUND`, which
+ * every surface that turns a code into a status reads as 404. Nothing was
+ * missing; the write failed. `CANVAS_UNAVAILABLE` is a 503 and the sentence the
+ * model reads is unchanged. The driver's own message is still NOT passed on to
+ * the model — it names internals a model cannot act on — which is precisely why
+ * the log line carries it.
  *
  * @param session - The session taking the turn.
  * @param command - The validated command.
@@ -354,9 +367,14 @@ function applyToSessionCanvasSafely(
   try {
     return applyToSessionCanvas(session, command);
   } catch (err) {
+    logger.warn('[canvas] a session canvas write faulted', {
+      sessionId: session.sdkSessionId,
+      action: command.action,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return {
       applied: false,
-      code: 'ROOM_NOT_FOUND',
+      code: 'CANVAS_UNAVAILABLE',
       reason: err instanceof RoomError ? err.message : 'Your canvas could not be reached just now.',
     };
   }

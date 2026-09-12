@@ -186,8 +186,11 @@ export function diffMediaKindForPath(
  *
  * @param sourcePath - The file to open, as the caller named it.
  * @param overrides - Extension → viewer overrides (config `workbench.defaultViewers`),
- *   consulted exactly as {@link resolveViewerForPath} does. The SERVER reads them
- *   off the same config the client is handed, so both sides agree.
+ *   consulted exactly as {@link resolveViewerForPath} does. Both callers read
+ *   them off the same `GET /api/config`: the server through `readViewerOverrides`
+ *   in `services/rooms/index.ts`, the client off its config cache in
+ *   `ui-action-dispatcher.ts`. One blind side is not a missing feature — it is a
+ *   second answer for the same file, and two `canvasSourceKey`s make two tabs.
  * @returns The canvas content for that file.
  */
 export function canvasContentForFile(
