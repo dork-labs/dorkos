@@ -1649,6 +1649,9 @@
           },
           "durationMs": {
             "type": "integer"
+          },
+          "ambient": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -2651,6 +2654,9 @@
               },
               "summary": {
                 "type": "string"
+              },
+              "ambient": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -13414,6 +13420,9 @@
                         },
                         "summary": {
                           "type": "string"
+                        },
+                        "ambient": {
+                          "type": "boolean"
                         }
                       },
                       "required": [

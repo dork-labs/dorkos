@@ -451,6 +451,12 @@ export const SessionEventSchema = z
       toolUses: z.number().int().optional(),
       lastToolName: z.string().optional(),
       summary: z.string().optional(),
+      /**
+       * Housekeeping work the runtime asked hosts to keep out of activity
+       * indicators. Absent means ordinary work — the only runtime that sets it
+       * today is claude-code.
+       */
+      ambient: z.boolean().optional(),
     }),
     // A hook lifecycle update, collapsing the adapter's started/progress/response
     // phases into one member keyed by `hookId` (the `subagent_update` precedent).

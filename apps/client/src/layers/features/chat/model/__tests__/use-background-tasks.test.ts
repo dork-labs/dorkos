@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useBackgroundTasks, TASK_COLORS } from '../use-background-tasks';
+import { partitionAmbientTasks } from '@/layers/shared/lib';
 import type { ChatMessage } from '../chat-types';
 import type { BackgroundTaskPart } from '@dorkos/shared/types';
 
@@ -279,6 +280,86 @@ describe('useBackgroundTasks', () => {
     });
     // Fresh reference so useMemo recomputes
     rerender({ msgs: wrapMessages([completedPart]) });
+
+    expect(result.current).toHaveLength(0);
+  });
+
+  // === Housekeeping (ambient) tasks ===
+  //
+  // The runtime marks work it started on its own behalf and asks hosts to keep
+  // it out of activity indicators (spec `ambient-background-tasks`). The hook
+  // still returns them — the expanded panel lists them — but flags them so no
+  // indicator counts them, and resolves the one exception here so no consumer
+  // has to remember it.
+
+  it('flags a housekeeping task so indicators can leave it out', () => {
+    const chore = makePart({ taskId: 'chore', ambient: true, status: 'running' });
+    const work = makePart({ taskId: 'work', status: 'running' });
+
+    const { result } = renderHook(() => useBackgroundTasks(wrapMessages([chore, work])));
+
+    const { shown, ambient } = partitionAmbientTasks(result.current);
+    expect(shown.map((t) => t.taskId)).toEqual(['work']);
+    expect(ambient.map((t) => t.taskId)).toEqual(['chore']);
+  });
+
+  it('treats an unmarked task as ordinary work, which is what other runtimes send', () => {
+    const part = makePart({ taskId: 'plain', status: 'running' });
+    const { result } = renderHook(() => useBackgroundTasks(wrapMessages([part])));
+
+    expect(result.current[0].ambient).toBe(false);
+    expect(partitionAmbientTasks(result.current).shown).toHaveLength(1);
+  });
+
+  it('gives a finished housekeeping task no completion mark', () => {
+    const chore = makePart({ taskId: 'chore', ambient: true, status: 'running' });
+
+    const { result, rerender } = renderHook(
+      ({ msgs }: { msgs: ChatMessage[] }) => useBackgroundTasks(msgs),
+      { initialProps: { msgs: wrapMessages([chore]) } }
+    );
+    expect(result.current).toHaveLength(1);
+
+    const done = { ...chore, status: 'complete' as const };
+    rerender({ msgs: wrapMessages([done]) });
+    rerender({ msgs: wrapMessages([done]) });
+
+    // Gone at once — no celebration window, because a mark for work nobody
+    // asked about is exactly the noise this hides.
+    expect(result.current).toHaveLength(0);
+  });
+
+  it('promotes a housekeeping task that failed into the ordinary view', () => {
+    const chore = makePart({ taskId: 'chore', ambient: true, status: 'running' });
+
+    const { result, rerender } = renderHook(
+      ({ msgs }: { msgs: ChatMessage[] }) => useBackgroundTasks(msgs),
+      { initialProps: { msgs: wrapMessages([chore]) } }
+    );
+
+    const failed = { ...chore, status: 'error' as const };
+    rerender({ msgs: wrapMessages([failed]) });
+    rerender({ msgs: wrapMessages([failed]) });
+
+    // Hiding a broken thing is the one outcome this feature must never produce:
+    // it draws like any other failure, celebration window included.
+    expect(result.current).toHaveLength(1);
+    expect(result.current[0].status).toBe('error');
+    expect(partitionAmbientTasks(result.current).shown.map((t) => t.taskId)).toEqual(['chore']);
+  });
+
+  it('keeps the five-second rule for a housekeeping shell command', () => {
+    // Two different questions: "too fast to matter" and "housekeeping". A short
+    // shell command is hidden by the threshold whether it is marked or not.
+    const fresh = makePart({
+      taskId: 'quick',
+      ambient: true,
+      taskType: 'bash',
+      status: 'running',
+      startedAt: Date.now() - 1000,
+      command: 'git status',
+    });
+    const { result } = renderHook(() => useBackgroundTasks(wrapMessages([fresh])));
 
     expect(result.current).toHaveLength(0);
   });

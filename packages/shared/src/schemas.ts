@@ -1866,6 +1866,14 @@ export const BackgroundTaskStartedEventSchema = z
     toolUseId: z.string().optional(),
     description: z.string().optional(),
     command: z.string().optional(),
+    /**
+     * Housekeeping work the runtime asked hosts to keep out of activity
+     * indicators — a watcher it started to stay oriented, not work anybody
+     * requested. **Absent means not housekeeping**, which is also what every
+     * runtime that does not report this says: only claude-code sets it today
+     * (SDK 0.3.247+), so an OpenCode or Codex task reads as ordinary work.
+     */
+    ambient: z.boolean().optional(),
   })
   .openapi('BackgroundTaskStartedEvent');
 
@@ -1890,6 +1898,14 @@ export const BackgroundTaskDoneEventSchema = z
     summary: z.string().optional(),
     toolUses: z.number().int().optional(),
     durationMs: z.number().int().optional(),
+    /**
+     * Housekeeping work the runtime asked hosts to keep out of activity
+     * indicators. Repeated on the terminal event, not only on the start, so a
+     * client that joined mid-turn and never saw the start still knows not to
+     * mark this one finished. Absent means not housekeeping; only claude-code
+     * sets it today.
+     */
+    ambient: z.boolean().optional(),
   })
   .openapi('BackgroundTaskDoneEvent');
 
@@ -2663,6 +2679,13 @@ export const BackgroundTaskPartSchema = z
     command: z.string().optional(),
     // Shared
     durationMs: z.number().int().optional(),
+    /**
+     * Housekeeping work the runtime asked hosts to keep out of activity
+     * indicators (SDK 0.3.247+, claude-code only). Absent means ordinary work.
+     * Indicators exclude these; a housekeeping task that FAILS is shown like
+     * any other failure, so the exclusion is never allowed to hide breakage.
+     */
+    ambient: z.boolean().optional(),
   })
   .openapi('BackgroundTaskPart');
 

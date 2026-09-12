@@ -644,6 +644,7 @@ function foldSubagent(
     if (event.toolUses !== undefined) existing.toolUses = event.toolUses;
     if (event.lastToolName !== undefined) existing.lastToolName = event.lastToolName;
     if (event.summary !== undefined) existing.summary = event.summary;
+    if (event.ambient !== undefined) existing.ambient = event.ambient;
   } else {
     parts.push({
       type: 'background_task',
@@ -655,6 +656,7 @@ function foldSubagent(
       toolUses: event.toolUses,
       lastToolName: event.lastToolName,
       summary: event.summary,
+      ambient: event.ambient,
     });
   }
 }

@@ -133,6 +133,81 @@ describe('sdk-event-mapper background task lifecycle', () => {
     });
   });
 
+  describe('housekeeping (ambient) tasks', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('leaves ambient absent when the runtime does not mark the task', async () => {
+      const msg = sdkTaskStarted('task-plain', 'Explore codebase');
+      const events = await collectEvents(msg, session, sessionId, toolState);
+
+      // Absent, not `false`: every other runtime omits the field too, and a
+      // consumer reading "not housekeeping" from its absence must keep working.
+      expect(events[0].data).not.toHaveProperty('ambient');
+    });
+
+    it('carries ambient through task_started when the runtime marks the task', async () => {
+      const msg = sdkTaskStarted('task-amb', 'Watch the docs folder', undefined, {
+        ambient: true,
+        is_backgrounded: true,
+        spawn_depth: 1,
+      });
+      const events = await collectEvents(msg, session, sessionId, toolState);
+
+      expect(events[0].type).toBe('background_task_started');
+      expect(events[0].data).toMatchObject({ taskId: 'task-amb', ambient: true });
+    });
+
+    it('carries ambient: false through, because the runtime said so', async () => {
+      const msg = sdkTaskStarted('task-not-amb', 'Run the tests', undefined, { ambient: false });
+      const events = await collectEvents(msg, session, sessionId, toolState);
+
+      expect((events[0].data as Record<string, unknown>).ambient).toBe(false);
+    });
+
+    it('keeps spawn_depth and is_backgrounded off the wire, on the debug log', async () => {
+      const debug = vi.spyOn(logger, 'debug').mockImplementation(() => logger);
+      const msg = sdkTaskStarted('task-depth', 'Nested work', undefined, {
+        ambient: true,
+        is_backgrounded: false,
+        spawn_depth: 2,
+      });
+      const events = await collectEvents(msg, session, sessionId, toolState);
+
+      const data = events[0].data as Record<string, unknown>;
+      expect(data).not.toHaveProperty('spawnDepth');
+      expect(data).not.toHaveProperty('spawn_depth');
+      expect(data).not.toHaveProperty('isBackgrounded');
+      expect(data).not.toHaveProperty('is_backgrounded');
+      expect(debug).toHaveBeenCalledWith(
+        expect.stringContaining('is_backgrounded'),
+        'task-depth',
+        true,
+        false,
+        2
+      );
+      debug.mockRestore();
+    });
+
+    it('carries ambient through task_notification so a late joiner still hides it', async () => {
+      const msg = sdkTaskNotification('task-amb', 'completed', 'Nothing changed', {
+        ambient: true,
+      });
+      const events = await collectEvents(msg, session, sessionId, toolState);
+
+      expect(events[0].type).toBe('background_task_done');
+      expect(events[0].data).toMatchObject({ taskId: 'task-amb', ambient: true });
+    });
+
+    it('leaves ambient absent on task_notification when the runtime omits it', async () => {
+      const msg = sdkTaskNotification('task-plain', 'completed', 'Done');
+      const events = await collectEvents(msg, session, sessionId, toolState);
+
+      expect(events[0].data).not.toHaveProperty('ambient');
+    });
+  });
+
   it('yields nothing for unknown system subtypes', async () => {
     const msg = {
       type: 'system',

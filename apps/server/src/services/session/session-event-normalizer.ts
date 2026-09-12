@@ -134,6 +134,9 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
         taskId: String(data.taskId ?? ''),
         status: 'running',
         ...(data.description !== undefined ? { description: String(data.description) } : {}),
+        // Carried onto the durable event so a client that reconnects mid-turn
+        // still knows this one is housekeeping. Absent stays absent.
+        ...(data.ambient !== undefined ? { ambient: Boolean(data.ambient) } : {}),
       };
       return update;
     }
@@ -155,6 +158,7 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
         status: mapDoneStatus(data.status),
         ...(data.summary !== undefined ? { summary: String(data.summary) } : {}),
         ...(data.toolUses !== undefined ? { toolUses: Number(data.toolUses) } : {}),
+        ...(data.ambient !== undefined ? { ambient: Boolean(data.ambient) } : {}),
       };
       return update;
     }

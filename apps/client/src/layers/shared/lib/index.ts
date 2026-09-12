@@ -8,6 +8,12 @@
  * @module shared/lib
  */
 export { cn } from './utils';
+export {
+  isAmbientTask,
+  partitionAmbientTasks,
+  type AmbientTaskInput,
+  type PartitionedAmbientTasks,
+} from './ambient-tasks';
 export { canvasViewForContent, type CanvasView } from './canvas-view';
 export { resolveApiBaseUrl } from './api-base-url';
 export { getDesktopAdmin, unwrapDesktopAdminResult } from './desktop-admin';

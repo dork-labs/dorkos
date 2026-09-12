@@ -193,6 +193,62 @@ describe('SessionStateProjector', () => {
     expect(p.getStatus().lifecycle).toBe('idle');
   });
 
+  // Housekeeping children (spec `ambient-background-tasks`): the runtime marks
+  // work it started on its own behalf and asks hosts to keep it out of activity
+  // indicators. `runningSubagentCount` is exactly such an indicator — the status
+  // line's subagent item reads it — so it must not see them.
+  it('leaves housekeeping children out of runningSubagentCount', () => {
+    const p = new SessionStateProjector('amb-1');
+    p.ingest({ type: 'turn_start' } as RawSessionEvent);
+    p.ingest({ type: 'subagent_update', taskId: 'real', status: 'running' } as RawSessionEvent);
+    p.ingest({
+      type: 'subagent_update',
+      taskId: 'chore',
+      status: 'running',
+      ambient: true,
+    } as RawSessionEvent);
+
+    expect(p.getStatus().runningSubagentCount).toBe(1);
+    // Tracked all the same: the liveness bound and the stranding sweep still
+    // have to retire it, or a client's task panel holds a dead watcher forever.
+    expect(p.listRunningSubagents()).toEqual(['real', 'chore']);
+
+    // The progress reports that follow do not repeat the mark, and the count
+    // must not gain a member because of that.
+    p.ingest({
+      type: 'subagent_update',
+      taskId: 'chore',
+      status: 'running',
+    } as RawSessionEvent);
+    expect(p.getStatus().runningSubagentCount).toBe(1);
+
+    p.ingest({ type: 'subagent_update', taskId: 'real', status: 'complete' } as RawSessionEvent);
+    expect(p.getStatus().runningSubagentCount).toBe(0);
+  });
+
+  // The retirement DorkOS synthesizes has to carry the mark the start did, or a
+  // client that never counted the child books its ending against a different one.
+  it('stamps the housekeeping mark onto a stranded child it retires', () => {
+    const p = new SessionStateProjector('amb-2');
+    p.ingest({ type: 'turn_start' } as RawSessionEvent);
+    p.ingest({ type: 'subagent_update', taskId: 'real', status: 'running' } as RawSessionEvent);
+    p.ingest({
+      type: 'subagent_update',
+      taskId: 'chore',
+      status: 'running',
+      ambient: true,
+    } as RawSessionEvent);
+
+    const ingestSpy = vi.spyOn(p, 'ingest');
+    p.markInterrupted();
+
+    expect(ingestSpy.mock.calls.map((c) => c[0])).toEqual([
+      { type: 'subagent_update', taskId: 'real', status: 'untracked' },
+      { type: 'subagent_update', taskId: 'chore', status: 'untracked', ambient: true },
+    ]);
+    expect(p.getStatus().runningSubagentCount).toBe(0);
+  });
+
   // Eviction tears a session down without ever running a stream's `finally`, so
   // the stranding sweep never fires there. A count left standing would report
   // live work for a session that no longer exists (DOR-1100).
