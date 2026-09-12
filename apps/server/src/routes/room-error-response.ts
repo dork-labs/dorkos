@@ -79,6 +79,12 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // the room is the wrong surface for it; both MCP-only today, mapped because
   // this table is total by type.
   CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM: 400,
+  // 400: a follow claim on yourself. The request is well formed and the room is
+  // right; the two author ids are the same, and no retry changes that.
+  CANNOT_FOLLOW_YOURSELF: 400,
+  // 429: this process already holds as many follow claims as it will. A retry
+  // is exactly the right thing to do once some of them lapse.
+  TOO_MANY_FOLLOWERS: 429,
   // Same story: an MCP-only verb, mapped because the table is total by type. A
   // 409 rather than a 400 — the request is well formed and the room is right,
   // but somebody stopped this turn while it was being written.

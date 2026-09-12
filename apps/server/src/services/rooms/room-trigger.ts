@@ -405,7 +405,7 @@ export interface RoomTriggerDeps {
    * What is on this room's shared canvas, as LABELS. Read only by
    * `buildRoomContext`, for the same reason as {@link RoomTriggerDeps.bridgedFraming}.
    */
-  canvasFor(roomId: string): RoomContextCanvas | null;
+  canvasFor(roomId: string, threadRootEntryId?: string): RoomContextCanvas | null;
   runner: RoomTurnRunner;
   /**
    * The install's room-worktree manager, for placing a turn in a project room

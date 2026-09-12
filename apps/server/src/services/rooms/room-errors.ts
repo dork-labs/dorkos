@@ -238,6 +238,25 @@ export type RoomErrorCode =
    */
   | 'CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM'
   /**
+   * Somebody asked to follow themselves (spec `canvas-agent-seat` §6).
+   *
+   * A refusal rather than a quiet no-op, because the only way to send one is a
+   * client that has confused two author ids, and a claim that silently did
+   * nothing would leave a toggle stuck on with nothing behind it.
+   */
+  | 'CANNOT_FOLLOW_YOURSELF'
+  /**
+   * More people are following somebody on this machine than one process will
+   * hold claims for (spec `canvas-agent-seat` §6).
+   *
+   * The bound exists because a claim is memory the follower's client asks for,
+   * and anything a client can ask for without limit is something it can ask for
+   * without end. It is far above any real room: reaching it means something is
+   * looping, and the sentence says to try again rather than pretending the
+   * follow worked.
+   */
+  | 'TOO_MANY_FOLLOWERS'
+  /**
    * `post_to_room` was called by an agent whose turn in that room was STOPPED
    * (DOR-1313).
    *

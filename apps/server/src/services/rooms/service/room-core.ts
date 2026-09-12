@@ -108,12 +108,32 @@ export interface RoomCore {
  * own, so an agent reading this section can address whoever put something there
  * with the same string the members line uses.
  *
+ * **A turn inside a document's own thread is narrowed to that document** (spec
+ * `canvas-agent-seat` §7). A thread is a conversation ABOUT one thing, and the
+ * whole table would be eleven other things the agent was not asked about. It is
+ * still labels only — narrowing changes how many documents are named, never what
+ * is said about each one.
+ *
+ * A thread whose root is an ordinary message matches no document, and that turn
+ * reads the whole table exactly as a top-level turn does.
+ *
  * @param deps - Everything the service was constructed from.
  * @param roomId - The room taking a turn.
+ * @param threadRootEntryId - The thread this turn is answering in, when it is
+ *   answering in one.
  * @returns The section, or `null`.
  */
-function canvasContextFor(deps: RoomServiceDeps, roomId: string): RoomContextCanvas | null {
-  const documents = deps.canvasDocuments.list(roomScope(roomId));
+function canvasContextFor(
+  deps: RoomServiceDeps,
+  roomId: string,
+  threadRootEntryId?: string
+): RoomContextCanvas | null {
+  const all = deps.canvasDocuments.list(roomScope(roomId));
+  const rooted =
+    threadRootEntryId === undefined
+      ? []
+      : all.filter((row) => row.threadRootEntryId === threadRootEntryId);
+  const documents = rooted.length > 0 ? rooted : all;
   if (documents.length === 0) return null;
   return {
     viewers: deps.broadcaster.subscriberCount(roomId),
@@ -187,7 +207,7 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
     // Resolved per turn, so an agent reads the table as it stands when its turn
     // starts rather than as it stood when this service was built. `null` for a
     // room with nothing on it, which renders no section at all.
-    canvasFor: (roomId) => canvasContextFor(deps, roomId),
+    canvasFor: (roomId, threadRootEntryId) => canvasContextFor(deps, roomId, threadRootEntryId),
     runner: deps.turns,
     ...(deps.worktrees ? { worktrees: deps.worktrees } : {}),
     budget: deps.budget,

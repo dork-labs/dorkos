@@ -158,8 +158,17 @@ export interface RoomContextDeps {
    * HAVING a canvas near zero and removes the largest prompt-injection surface
    * in the feature by construction rather than by escaping. An agent that wants
    * a document's contents calls `read_canvas`.
+   *
+   * **A thread rooted on a document narrows it to that document** (spec
+   * `canvas-agent-seat` §7): a thread is a conversation about one thing, so the
+   * other eleven tabs are not what this turn was asked about. Still labels only
+   * — the narrowing changes how MANY documents are named, never what the section
+   * says about each.
+   *
+   * @param roomId - The room taking a turn.
+   * @param threadRootEntryId - The thread being answered in, when there is one.
    */
-  canvasFor(roomId: string): RoomContextCanvas | null;
+  canvasFor(roomId: string, threadRootEntryId?: string): RoomContextCanvas | null;
 }
 
 /** The one turn being described. */
@@ -647,7 +656,9 @@ export function buildRoomContext(
     return found;
   }
 
-  const canvas = deps.canvasFor(input.room.id);
+  // The thread scope resolved above rides along, so a turn answering in a
+  // document's own thread is told about that document and no other.
+  const canvas = deps.canvasFor(input.room.id, threadRootEntryId);
   const context: RoomContextData = {
     room: frame.room,
     thread: frame.thread,

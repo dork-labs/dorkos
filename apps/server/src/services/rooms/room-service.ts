@@ -53,6 +53,7 @@ import type { RebridgeRequest } from './manage/room-bridge-lifecycle.js';
 import type { ActiveClaimView, HeldView } from './room-claims.js';
 import { createRoomCollaborators, type RoomCollaborators } from './service/room-collaborators.js';
 import type { RoomCanvasService } from './canvas/room-canvas-service.js';
+import type { RoomFollowService } from './follow/room-follow-service.js';
 import type { RoomExternalPostInput } from './messages/room-entry-writer.js';
 import type {
   MemberRoomMatch,
@@ -148,6 +149,17 @@ export class RoomService {
    */
   get canvas(): RoomCanvasService {
     return this.parts.canvas;
+  }
+
+  /**
+   * Who is following whose browser in this room right now (spec
+   * `canvas-agent-seat` §6).
+   *
+   * Live, memory-only state with no store behind it — the one part of a room
+   * that is deliberately forgotten on restart.
+   */
+  get follow(): RoomFollowService {
+    return this.parts.follow;
   }
   /** Every room turn in flight right now. See {@link RoomTurnControl.listActiveClaims}. */
   listActiveClaims(): ActiveClaimView[] {

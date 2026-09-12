@@ -930,6 +930,94 @@ export const UpdateCanvasDocumentRequestSchema = z
 export type UpdateCanvasDocumentRequest = z.infer<typeof UpdateCanvasDocumentRequestSchema>;
 
 /**
+ * Where a person looking at a room is, so somebody following them can be there
+ * too (spec `canvas-agent-seat` §6).
+ *
+ * **Labels and coordinates, never content.** A document id the follower can
+ * already see on the room's table, the page their browser is on, and how far
+ * down they have scrolled. Nothing about what is IN the page travels, which is
+ * what keeps a follow position safe to broadcast to a whole room.
+ *
+ * Declared HERE, beside the request that carries it, rather than down with the
+ * signal frame that also does: the request schema below is built from it, and a
+ * Zod schema read before its `const` is evaluated is a module-load error.
+ */
+export const RoomSignalViewSchema = z
+  .object({
+    /** The document on the room's table this person is looking at. */
+    documentId: z.string().min(1),
+    /** The page their browser is showing, when the document is a browser page. */
+    url: z.string().optional(),
+    /** How far down the document they have scrolled, in pixels. */
+    scrollY: z.number().int().nonnegative().optional(),
+  })
+  .openapi('RoomSignalView');
+
+/** Where a followed person is looking. See {@link RoomSignalViewSchema}. */
+export type RoomSignalView = z.infer<typeof RoomSignalViewSchema>;
+
+/**
+ * Starting to follow somebody's browser in a room
+ * (`PUT /api/rooms/{id}/follow`).
+ *
+ * The follower is resolved from the request, never sent — a follower a caller
+ * could name is a follow a caller could put on somebody else.
+ */
+export const FollowRoomMemberRequestSchema = z
+  .object({
+    memberId: z
+      .string()
+      .min(1)
+      .describe('The person to follow. People only — an agent has no view to share.'),
+  })
+  .openapi('FollowRoomMemberRequest');
+
+/** A request to follow a room member. See {@link FollowRoomMemberRequestSchema}. */
+export type FollowRoomMemberRequest = z.infer<typeof FollowRoomMemberRequestSchema>;
+
+/**
+ * Saying where you are looking, for whoever is following you
+ * (`POST /api/rooms/{id}/follow/view`).
+ *
+ * Sent at most once every 250 ms, and only while the server has said somebody is
+ * following. A position from somebody nobody follows is dropped.
+ */
+export const PublishRoomViewRequestSchema = RoomSignalViewSchema.openapi('PublishRoomViewRequest');
+
+/** A request to share where you are looking. See {@link PublishRoomViewRequestSchema}. */
+export type PublishRoomViewRequest = z.infer<typeof PublishRoomViewRequestSchema>;
+
+/** Whether anybody was following, so the position was passed on. */
+export const PublishRoomViewResponseSchema = z
+  .object({
+    followed: z
+      .boolean()
+      .describe(
+        'True when somebody is following you and the position went out. False means stop sending.'
+      ),
+  })
+  .openapi('PublishRoomViewResponse');
+
+/** The answer to sharing a view. See {@link PublishRoomViewResponseSchema}. */
+export type PublishRoomViewResponse = z.infer<typeof PublishRoomViewResponseSchema>;
+
+/**
+ * The thread a canvas document's discussion hangs off
+ * (`POST /api/rooms/{id}/canvas/{documentId}/thread`).
+ */
+export const CanvasThreadResponseSchema = z
+  .object({
+    threadRootEntryId: z.string().min(1).describe('The entry heading the document’s discussion.'),
+    created: z
+      .boolean()
+      .describe('True when this call started the thread; false when it was already there.'),
+  })
+  .openapi('CanvasThreadResponse');
+
+/** A canvas document's discussion thread. See {@link CanvasThreadResponseSchema}. */
+export type CanvasThreadResponse = z.infer<typeof CanvasThreadResponseSchema>;
+
+/**
  * Saying you are editing a canvas document, or that you have stopped
  * (`POST /api/rooms/{id}/canvas/{documentId}/editing`).
  *
@@ -2057,6 +2145,69 @@ export const RoomSignalEventSchema = z
      * nothing to say about it.
      */
     outcome: z.enum(['answered', 'silent']).optional(),
+    /**
+     * Where this person is looking, on a `presence` signal about somebody
+     * another member is following (spec `canvas-agent-seat` §6).
+     *
+     * **The payload is the discriminator**, exactly as {@link
+     * RoomSignalEventSchema.shape.state} already discriminates an agent's work
+     * claim from a bare presence: a `presence` frame with `view` is a follow
+     * position, a `presence` frame with `state` is an agent working, and neither
+     * reads the other's field. The check below refuses a frame carrying both,
+     * so the two can never be confused by a reader that forgot to look.
+     *
+     * Published only while somebody is following, so a room where nobody
+     * follows anybody carries none of these at all.
+     */
+    view: RoomSignalViewSchema.optional(),
+    /**
+     * Who this person has just started, or stopped, following.
+     *
+     * The claim itself, on the wire, because "publish only while somebody is
+     * following" needs the person being followed to KNOW — and a room stream
+     * everybody already reads is where they find out. An author id says the
+     * follow began; `null` says it ended.
+     *
+     * **A second payload on the same signal rather than a second signal name.**
+     * `specs/rooms/02-specification.md:229` forbids minting one, and this is
+     * the same shape `view` is: a `presence` frame, discriminated by which
+     * payload it carries, refused when it carries more than one.
+     *
+     * People only. An agent has no viewport to share and nothing to follow
+     * with, so the server never mints one of these about an agent.
+     */
+    follows: z.string().min(1).nullable().optional(),
+  })
+  .check((ctx) => {
+    const frame = ctx.value;
+    // Three payloads, one per frame. `state` is an agent's work claim, `view` a
+    // follow position, `follows` a claim opening or closing — a frame carrying
+    // two of them describes two different things at once, and every reader
+    // downstream branches on exactly one field.
+    const carried = [
+      frame.state !== undefined ? 'state' : null,
+      frame.view !== undefined ? 'view' : null,
+      frame.follows !== undefined ? 'follows' : null,
+    ].filter((name): name is string => name !== null);
+    if (carried.length > 1) {
+      ctx.issues.push({
+        code: 'custom',
+        input: frame,
+        message: `A presence signal carries one payload, not ${carried.join(' and ')}.`,
+      });
+    }
+    // `presence` is the verb both follow payloads hang off. On any other signal
+    // they would be a payload nothing knows how to read.
+    for (const name of ['view', 'follows'] as const) {
+      if (frame[name] !== undefined && frame.signal !== 'presence') {
+        ctx.issues.push({
+          code: 'custom',
+          input: frame,
+          path: [name],
+          message: `\`${name}\` rides a presence signal, never a ${frame.signal} one.`,
+        });
+      }
+    }
   })
   .openapi('RoomSignalEvent');
 

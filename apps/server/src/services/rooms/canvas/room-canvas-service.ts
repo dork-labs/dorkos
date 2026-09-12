@@ -49,6 +49,7 @@
  *
  * @module server/services/rooms/canvas/room-canvas-service
  */
+import type { DbTransaction } from '@dorkos/db';
 import type { CanvasDocument, RoomCanvasChange, RoomEvent } from '@dorkos/shared/room-schemas';
 import type { UiCanvasContent, UiCommand } from '@dorkos/shared/schemas';
 import { logger } from '../../../lib/logger.js';
@@ -181,8 +182,9 @@ export interface RoomCanvasDeps {
    */
   postCanvasEvent: (
     roomId: string,
-    input: { text: string; canvas: RoomCanvasChange; subjectAuthorId: string }
-  ) => void;
+    input: { text: string; canvas: RoomCanvasChange; subjectAuthorId: string },
+    bind?: (tx: DbTransaction, entryId: string) => void
+  ) => { id: string } | void;
   /** How a member is named in the sentence that entry carries. */
   displayNameFor: (authorId: string) => string;
   /** The room's shared checkout, or `null` when the room has no files of its own. */
@@ -507,6 +509,77 @@ export class RoomCanvasService {
   ): { editingBy: string | null; expiresAt: string | null } {
     this.requireWritableRoom(roomId, authorId);
     return this.canvas.heartbeat(roomScope(roomId), authorId, documentId, editing);
+  }
+
+  /**
+   * Open — or re-open — one document's discussion thread (spec
+   * `canvas-agent-seat` §7).
+   *
+   * **The first Discuss posts one system entry naming the document, and writes
+   * its id onto the row in the same transaction.** Both land or neither does:
+   * a root in the log with no column beside it would make the next Discuss start
+   * a second thread on the same document, and a column pointing at an entry that
+   * was never written would open an empty panel.
+   *
+   * **A second Discuss posts nothing.** It hands back the thread that is already
+   * there — for this member and for every other one, and across a restart,
+   * because the answer is read off the row rather than off anything in memory.
+   *
+   * The entry is a `postCanvasEvent`, which is the shape that addresses nobody,
+   * stores no mentions and is never dispatched. So opening a discussion wakes no
+   * agent, exactly as putting the document on the table did (ADR
+   * `260911-200302`), and replies in the thread ride the ordinary thread writer.
+   *
+   * @param roomId - The room.
+   * @param authorId - The member pressing Discuss.
+   * @param documentId - The document to discuss.
+   * @returns The thread's root entry, and whether this call is what started it.
+   * @throws {RoomError} `ROOM_NOT_FOUND` for a stranger, `ROOM_ARCHIVED` for an
+   *   archived room, `CANVAS_DOCUMENT_NOT_FOUND` when the table does not hold it.
+   */
+  discuss(
+    roomId: string,
+    authorId: string,
+    documentId: string
+  ): { threadRootEntryId: string; created: boolean } {
+    this.requireWritableRoom(roomId, authorId);
+    const scope = roomScope(roomId);
+    const document = this.canvas.get(scope, documentId);
+    if (document === null) {
+      throw new RoomError('CANVAS_DOCUMENT_NOT_FOUND', 'No such document on this room’s canvas');
+    }
+    if (document.threadRootEntryId !== undefined) {
+      return { threadRootEntryId: document.threadRootEntryId, created: false };
+    }
+    const entry = this.postCanvasEvent(
+      roomId,
+      {
+        text: discussionOpenedSentence(this.displayNameFor(authorId), document),
+        // The same structured half the coalesced line carries, so a client draws
+        // this entry with the machinery it already has. One operation, because
+        // one document is what was discussed.
+        canvas: {
+          ops: [
+            {
+              change: 'updated',
+              documentId: document.id,
+              type: document.contentType,
+              title: document.title,
+            },
+          ],
+        },
+        subjectAuthorId: authorId,
+      },
+      (tx, entryId) => this.canvas.attachThreadRoot(tx, scope, document.id, entryId)
+    );
+    // The dep is typed to allow a caller that returns nothing — the coalesced
+    // line does not need the entry back. Discuss does, and a wiring that dropped
+    // it would silently stop opening threads, so it is checked rather than
+    // assumed.
+    if (!entry) {
+      throw new RoomError('CANVAS_DOCUMENT_NOT_FOUND', 'Couldn’t start a discussion here.');
+    }
+    return { threadRootEntryId: entry.id, created: true };
   }
 
   // -------------------------------------------------------------------------
@@ -881,6 +954,25 @@ export function canvasChangeSentence(author: string, ops: readonly CanvasLedgerE
   return rest > 0
     ? `${author} ${list}, and changed ${rest} more thing${rest === 1 ? '' : 's'} on the canvas.`
     : `${author} ${list} on the canvas.`;
+}
+
+/**
+ * The line the room reads when somebody starts a discussion about a document.
+ *
+ * Names the document by its own title, because that is what the person pressing
+ * Discuss was looking at and what everybody else sees on the tab. The entry
+ * heads the thread, so this sentence is the thing a reader clicks into.
+ *
+ * @param author - How the member who started it is named.
+ * @param document - The document being discussed.
+ * @returns The sentence.
+ */
+export function discussionOpenedSentence(
+  author: string,
+  document: Pick<CanvasDocument, 'title' | 'contentType'>
+): string {
+  const what = document.title.trim().length > 0 ? document.title : document.contentType;
+  return `${author} started a discussion about ${what}.`;
 }
 
 /**
