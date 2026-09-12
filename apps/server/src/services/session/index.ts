@@ -66,29 +66,26 @@ export { overlayApprovalReceipts } from './overlays/approval-receipt-overlay.js'
 export { overlayPermissionDenials } from './overlays/permission-denial-overlay.js';
 export { RingBuffer, RING_BUFFER_MAX_EVENTS, RING_BUFFER_TTL_MS } from './replay/ring-buffer.js';
 export { DevtoolsCaptureStore, devtoolsCaptureStore } from './devtools-capture-store.js';
+// The browser driver seat (spec `canvas-agent-seat` §2). Re-exported here is
+// what lives OUTSIDE the module — the tool layer and the test-mode scenario that
+// drives a real page. The rest of the seat's surface is reached at
+// `./browser-seat/index.js`, which is where its own tests read it.
 export {
-  DRIVING_SAFETY_SENTENCE,
   DOCUMENT_INPUT,
+  DRIVING_SAFETY_SENTENCE,
+  NO_PREVIEW_NOTE,
   TARGET_INPUT,
   TARGET_INPUT_NO_TEXT,
   createBrowserSeatHandlers,
-  NO_PREVIEW_NOTE,
-  resolveTargetInput,
-  targetIsEmpty,
 } from './browser-seat/index.js';
 export type {
-  BrowserSeatDeps,
-  BrowserSeatHandlers,
-  BrowserSeatSessionResolver,
   BrowserSeatStore,
   ClickInput,
-  DocumentInput,
   DrivingAnswer,
   PressInput,
   ReadPageInput,
   ScrollInput,
   SessionEventSink,
-  TargetInput,
   TypeInput,
   WaitForInput,
 } from './browser-seat/index.js';

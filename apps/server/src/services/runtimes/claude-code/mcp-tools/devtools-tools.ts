@@ -55,6 +55,7 @@ import type { DevtoolsConsoleEntry, DevtoolsNetworkEntry } from '@dorkos/shared/
 import type { StreamEvent } from '@dorkos/shared/types';
 import {
   devtoolsCaptureStore,
+  NO_PREVIEW_NOTE,
   type CaptureBufferView,
   type DevtoolsCaptureStore,
 } from '../../../session/index.js';
@@ -123,12 +124,6 @@ const SESSIONLESS_DEVTOOLS_ERROR = {
     'These tools read the console/network/screenshot the current session captured from its live ' +
     'preview. The current MCP surface has no session attached, so there is no preview to reach.',
 };
-
-/** Note shown when the session has never received a capture (no preview opened). */
-const NO_PREVIEW_NOTE =
-  'No preview is open for this session yet, so nothing has been captured. Open a local ' +
-  'preview with browser_navigate first (a local HTML file or a localhost dev server); ' +
-  'external sites and pages with a strict Content-Security-Policy are not instrumented.';
 
 /** Build the `limit` input for one tool, capped at that tool's server ring size. */
 function limitInput(max: number) {
