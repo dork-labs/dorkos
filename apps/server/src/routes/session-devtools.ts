@@ -20,7 +20,6 @@
  *
  * @module routes/session-devtools
  */
-import { randomUUID } from 'node:crypto';
 import type { Request, Response } from 'express';
 import { DevtoolsActionResultSchema, DevtoolsIngestSchema } from '@dorkos/shared/schemas';
 import { devtoolsCaptureStore } from '../services/session/index.js';
@@ -71,13 +70,22 @@ export async function sessionDevtoolsIngestHandler(req: Request, res: Response):
   // a 50-session LRU cap limit what any made-up id can retain, and buffers are
   // in-memory only. A malformed id is still rejected (400) above.
   // The window's own id, read the way every other handler that needs one reads
-  // it (`routes/sessions.ts`, `session-ui-action-handler.ts`): the header, or a
-  // per-request UUID when a client sends none. A client with no id simply never
-  // wins a seat it did not claim — the fallback is stable for this request and
-  // nothing else, so it can never collide with a real window's claim.
-  const clientId = (req.headers['x-client-id'] as string) || randomUUID();
+  // it — and with NO fallback, which is the difference that matters here.
+  //
+  // The handlers that lock a session mint a `randomUUID()` when the header is
+  // missing, because there a made-up owner is harmless: nobody else holds that
+  // id, so nobody else is locked out. A seat is the opposite. The seat is
+  // whichever claim is most recent, so a made-up id would TAKE it from the
+  // window that really is showing the page — and every driving verb would then
+  // address a client that does not exist and time out. A caller with no id
+  // still ingests its captures; it simply cannot claim.
+  const clientId = req.headers['x-client-id'];
 
-  devtoolsCaptureStore.ingest(sessionId, parsed.data, clientId);
+  devtoolsCaptureStore.ingest(
+    sessionId,
+    parsed.data,
+    typeof clientId === 'string' && clientId.length > 0 ? clientId : undefined
+  );
   res.status(204).end();
 }
 

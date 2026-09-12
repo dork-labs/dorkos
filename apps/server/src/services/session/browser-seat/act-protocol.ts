@@ -60,9 +60,10 @@ export const NOT_INSTRUMENTED_NOTE =
  * person deciding whether to approve the call needs to know.
  */
 export const DRIVING_SAFETY_SENTENCE =
-  'It acts only inside the sandboxed preview frame DorkOS itself serves — a frame with no ' +
-  'credentials, no reach to the DorkOS API, and no path to the machine. It is the same page ' +
-  'you are looking at.';
+  'It acts only inside the preview frame, on the page you are already looking at, and it ' +
+  'cannot reach DorkOS itself. On a page DorkOS serves that frame has no sign-in and no ' +
+  'origin of its own; on a dev server preview it is that dev server, so it acts there exactly ' +
+  'as a person clicking in it would — including anything that page is already signed in to.';
 
 /**
  * The failure sentence for a request the page never answered.

@@ -73,6 +73,16 @@ import { loadRasterizerSource } from '../lib/load-rasterizer';
 /** How long to coalesce shim batches before one ingest POST. */
 const FLUSH_DEBOUNCE_MS = 300;
 
+/**
+ * How often a window re-reports that it is still showing its browser page.
+ *
+ * Matches the server's `WORKBENCH.DEVTOOLS_SEAT_REFRESH_MS`, which is itself the
+ * session stream's heartbeat cadence — the interval this app has already decided
+ * is often enough to notice a window that went away. The server yields a seat
+ * that has missed three of these.
+ */
+const SEAT_REFRESH_MS = 15_000;
+
 /** A message the shim posts to the parent. */
 interface DevtoolsMessage {
   __dorkosDevtools?:
@@ -239,6 +249,13 @@ export function useDevtoolsBridge({
    * useful.
    */
   const handshook = useRef(false);
+  /**
+   * Claims for this page, serialised. See the claim effect for why the ORDER of
+   * two fire-and-forget POSTs is load-bearing.
+   */
+  const claimChain = useRef<Promise<void>>(Promise.resolve());
+  /** Post one claim or release. Set by the claim effect; unset before it runs. */
+  const claimSeat = useRef<((active: boolean, keepalive?: boolean) => void) | null>(null);
 
   useEffect(() => {
     /** Relay whatever is pending to the session it was captured under. */
@@ -315,18 +332,9 @@ export function useDevtoolsBridge({
           // out on mount, before any handshake could have happened, so without
           // this upgrade every page would look un-instrumented forever.
           handshook.current = true;
-          const helloSession = sessionIdRef.current;
-          if (helloSession) {
-            void transport.ingestDevtoolsCapture(helloSession, {
-              documentId: documentIdRef.current,
-              logicalUrl: logicalUrlRef.current,
-              seq: lastSeq.current,
-              console: [],
-              network: [],
-              active: true,
-              instrumented: true,
-            });
-          }
+          // Through the same chain as every other claim, so the upgrade cannot
+          // overtake the mount claim and then be overwritten by it.
+          claimSeat.current?.(true);
           return;
         }
         case 'resource-error':
@@ -443,22 +451,52 @@ export function useDevtoolsBridge({
   useEffect(() => {
     const sid = sessionId;
     if (!sid) return;
-    const claim = (active: boolean): void => {
-      void transport.ingestDevtoolsCapture(sid, {
-        documentId,
-        logicalUrl,
-        seq: lastSeq.current,
-        console: [],
-        network: [],
-        active,
-        instrumented: handshook.current,
-      });
+    claimSeat.current = (active: boolean, keepalive = false): void => {
+      // Claims for one page go out in ORDER, chained on the previous one. Two
+      // fire-and-forget POSTs can arrive either way round, and on an in-preview
+      // navigation the pair is a release followed by a claim: arriving swapped,
+      // the release lands last and the window drops a seat it is still holding.
+      // A chain costs nothing here — these are a handful of small POSTs — and it
+      // removes the ordering question rather than making it unlikely.
+      claimChain.current = claimChain.current
+        .then(() =>
+          transport.ingestDevtoolsCapture(
+            sid,
+            {
+              documentId: documentIdRef.current,
+              logicalUrl: logicalUrlRef.current,
+              seq: lastSeq.current,
+              console: [],
+              network: [],
+              active,
+              instrumented: handshook.current,
+            },
+            keepalive ? { keepalive: true } : undefined
+          )
+        )
+        .catch(() => {
+          /* best-effort: a dropped claim is corrected by the next refresh */
+        });
     };
+    const claim = (active: boolean): void => claimSeat.current?.(active);
     claim(true);
+
     const onFocus = (): void => claim(true);
+    // Re-report on a beat, because a window that is killed, suspended or loses
+    // its network never sends a release — and a seat nobody is sitting in makes
+    // every verb address a window that no longer answers. The server yields a
+    // seat that has missed three of these.
+    const refresh = setInterval(() => claim(true), SEAT_REFRESH_MS);
+    // The one release a vanishing window CAN still send. `keepalive` is what
+    // makes it survive the unload; it is best effort, and the staleness rule
+    // above is what makes it not have to work.
+    const onPageHide = (): void => claimSeat.current?.(false, true);
     window.addEventListener('focus', onFocus);
+    window.addEventListener('pagehide', onPageHide);
     return () => {
       window.removeEventListener('focus', onFocus);
+      window.removeEventListener('pagehide', onPageHide);
+      clearInterval(refresh);
       claim(false);
     };
   }, [transport, sessionId, documentId, logicalUrl]);

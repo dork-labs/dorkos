@@ -146,6 +146,30 @@ export const WORKBENCH = {
    * agent reads several times in a turn and a console read is not.
    */
   DEVTOOLS_OUTLINE_BUDGET_CHARS: 32_768,
+  /**
+   * How often a window re-reports that it is still showing its browser page.
+   *
+   * The same cadence the session stream already proves liveness at
+   * (`SSE.HEARTBEAT_INTERVAL_MS`), and for the same reason: it is the interval
+   * this app has already decided is often enough to notice a window that went
+   * away and rare enough to cost nothing. One small POST per open browser
+   * document.
+   */
+  DEVTOOLS_SEAT_REFRESH_MS: 15_000,
+  /**
+   * How long a seat outlives its window's last word before it yields.
+   *
+   * Three missed refreshes on the beat above. A browser that is killed, loses
+   * its network, or is suspended by the operating system never sends the
+   * `pagehide` release, and without this the seat would stay in the table
+   * forever: every driving verb would address a window that no longer exists
+   * and wait out its whole timeout, for the life of the session.
+   *
+   * Three rather than one because a single missed beat is an ordinary hiccup on
+   * a busy machine, and yielding the seat on one would hand it to a background
+   * window while the person watches the foreground one.
+   */
+  DEVTOOLS_SEAT_STALE_MS: 45_000,
 } as const;
 
 export const WATCHER = {

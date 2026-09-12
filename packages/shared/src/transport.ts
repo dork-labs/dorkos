@@ -1026,7 +1026,18 @@ export interface Transport extends RoomTransport {
    * @param sessionId - The session whose preview produced the batch.
    * @param batch - The validated console/network (and navigation) capture batch.
    */
-  ingestDevtoolsCapture(sessionId: string, batch: DevtoolsIngest): Promise<void>;
+  ingestDevtoolsCapture(
+    sessionId: string,
+    batch: DevtoolsIngest,
+    options?: {
+      /**
+       * Let the request outlive the page that started it. Set on the release a
+       * window sends as it closes, which is the one moment an ordinary `fetch`
+       * is cancelled before it leaves.
+       */
+      keepalive?: boolean;
+    }
+  ): Promise<void>;
 
   /**
    * Relay one driving round trip's result — what the click did, what the page

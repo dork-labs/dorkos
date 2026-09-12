@@ -101,13 +101,88 @@ describe('one session, two windows, one driver seat', () => {
     expect(store.resolveDriver('s1', 'doc-3')).toBeUndefined();
   });
 
-  it('ignores a claim from a window that sent no client id', () => {
-    // The route mints a per-request UUID for a client that sends no header, so
-    // such a claim is real but belongs to nobody — it can never be addressed
-    // twice, which is the point. Here the store is called the way a caller with
-    // nothing to pass would call it.
-    store.ingest('s1', claim('doc-a', true));
-    expect(store.hasDrivers('s1')).toBe(false);
+  it('never lets a window with no client id TAKE the seat', () => {
+    // The direction that matters. A caller with no `X-Client-Id` used to be
+    // given a per-request UUID, and a claim under that id is the most recent
+    // one — so it took the seat from the window really showing the page, and
+    // every verb afterwards addressed a client that does not exist and timed
+    // out. It may still ingest captures; it may not claim.
+    store.ingest('s1', claim('doc-a', true), 'window-a');
+    store.ingest('s1', claim('doc-b', true));
+
+    expect(store.resolveDriver('s1')).toMatchObject({ clientId: 'window-a' });
+    expect(store.resolveDriver('s1', 'doc-b')).toBeUndefined();
+  });
+
+  it('never lets a window with no client id release somebody else seat', () => {
+    store.ingest('s1', claim('doc-a', true), 'window-a');
+    store.ingest('s1', claim('doc-a', false));
+    expect(store.resolveDriver('s1')).toMatchObject({ clientId: 'window-a' });
+  });
+
+  it('still ingests the captures of a window with no client id', () => {
+    store.ingest('s1', {
+      documentId: 'doc-a',
+      seq: 1,
+      console: [{ level: 'error', text: 'boom', timestamp: 1 }],
+      network: [],
+    });
+    expect(store.read('s1')?.console).toHaveLength(1);
+  });
+
+  it('yields a seat whose window stopped reporting, to one that did not', () => {
+    // A window that is killed, suspended or loses its network sends no release.
+    // Without this the seat stays in the table forever and every verb addresses
+    // a window that no longer answers — for the life of the session.
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-09-12T00:00:00Z'));
+      store.ingest('s1', claim('doc-a', true), 'window-a');
+
+      // A second window claims, then keeps reporting while the first goes quiet.
+      vi.setSystemTime(new Date('2026-09-12T00:00:05Z'));
+      store.ingest('s1', claim('doc-b', true), 'window-b');
+      vi.setSystemTime(new Date('2026-09-12T00:00:50Z'));
+      store.ingest('s1', claim('doc-b', true), 'window-b');
+
+      // `window-a` is 50s stale — past three missed 15s refreshes.
+      expect(store.resolveDriver('s1')).toMatchObject({ clientId: 'window-b' });
+      expect(store.resolveDriver('s1', 'doc-a')).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reports no driver at all once every window has gone quiet', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-09-12T00:00:00Z'));
+      store.ingest('s1', claim('doc-a', true), 'window-a');
+      expect(store.hasDrivers('s1')).toBe(true);
+
+      vi.setSystemTime(new Date('2026-09-12T00:01:00Z'));
+      expect(store.resolveDriver('s1')).toBeUndefined();
+      // And `hasDrivers` agrees, so the tool says "nothing is open" rather than
+      // "no window has THAT page" — two different things to do next.
+      expect(store.hasDrivers('s1')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps a seat alive as long as its window keeps reporting', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-09-12T00:00:00Z'));
+      store.ingest('s1', claim('doc-a', true), 'window-a');
+      for (let beat = 1; beat <= 10; beat++) {
+        vi.setSystemTime(new Date(Date.UTC(2026, 8, 12, 0, 0, beat * 15)));
+        store.ingest('s1', claim('doc-a', true), 'window-a');
+        expect(store.resolveDriver('s1')).toMatchObject({ clientId: 'window-a' });
+      }
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('moves the whole table across a first-turn canonical rekey', () => {

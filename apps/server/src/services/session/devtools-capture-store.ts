@@ -326,8 +326,15 @@ export class DevtoolsCaptureStore {
   resolveDriver(sessionId: string, documentId?: string): DriverClaim | undefined {
     const claims = this.buffers.get(sessionId)?.drivers;
     if (!claims || claims.length === 0) return undefined;
+    // Stale rows are skipped, never returned. A window that is killed, suspended
+    // or loses its network sends no release, and a seat nobody is sitting in
+    // would make every verb address a client that no longer answers and wait out
+    // its whole timeout — for the life of the session. A live window re-reports
+    // every `DEVTOOLS_SEAT_REFRESH_MS`, so a row this old has missed three.
+    const floor = Date.now() - WORKBENCH.DEVTOOLS_SEAT_STALE_MS;
     for (let i = claims.length - 1; i >= 0; i--) {
       const claim = claims[i];
+      if (claim.activeAt < floor) continue;
       if (documentId === undefined || claim.documentId === documentId) return { ...claim };
     }
     return undefined;
@@ -342,7 +349,14 @@ export class DevtoolsCaptureStore {
    * @param sessionId - The session whose table to read.
    */
   hasDrivers(sessionId: string): boolean {
-    return (this.buffers.get(sessionId)?.drivers.length ?? 0) > 0;
+    const claims = this.buffers.get(sessionId)?.drivers;
+    if (!claims) return false;
+    // Live rows only, to stay the exact complement of {@link resolveDriver}: a
+    // session whose only claim is stale has nothing open, and telling the agent
+    // "no window has THAT page" when nothing is open at all would point it at
+    // the wrong fix.
+    const floor = Date.now() - WORKBENCH.DEVTOOLS_SEAT_STALE_MS;
+    return claims.some((claim) => claim.activeAt >= floor);
   }
 
   /**

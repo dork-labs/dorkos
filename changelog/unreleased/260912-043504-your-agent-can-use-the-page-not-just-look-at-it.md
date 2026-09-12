@@ -13,6 +13,10 @@ covers:
 - Your agent can now use the page in the Browser tab, not just look at it. Ask it to try the signup form and it will: it reads the page to see what is on it, clicks buttons, fills in fields, presses keys, scrolls, and waits for the page to catch up — then tells you what happened, in the tab you are watching. It never pastes the page's HTML at you, and when several things match what it was looking for it says so and asks which one instead of guessing (DOR-2007).
 - Every one of those answers names the page it acted on and where that page is now, so an agent with three previews open can tell you which one it used.
 
+### Note for people upgrading
+
+- Driving works in Claude Code sessions in this release. Codex and OpenCode get the same six verbs when the shared `ui` tool domain lands (DOR-2009).
+
 ### Changed
 
 - A page that is open but cannot be driven now says so in one sentence, straight away. A page loaded straight from the internet is shown, not driven — and until now asking an agent to look at one meant an eight-second pause followed by a note about opening a preview that was already open.

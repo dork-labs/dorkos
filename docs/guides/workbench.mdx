@@ -143,7 +143,9 @@ It can also use the page. Ask it to "sign up as test@example.com and tell me wha
 
 Both halves work on local previews DorkOS renders directly: a local HTML file or a localhost dev server. External sites, and pages with a strict security policy, aren't instrumented — they're shown, not driven.
 
-In the permission mode DorkOS ships with, your agent does this without stopping to ask. If you've set a mode that asks first, you'll see a card the first time it clicks something, the same as for any other action. Everything it does happens inside the sandboxed preview frame DorkOS serves: that frame has no sign-in of yours, no reach into DorkOS itself, and no path to the rest of your machine.
+In the permission mode DorkOS ships with, your agent does this without stopping to ask. If you've set a mode that asks first, you'll see a card the first time it clicks something, the same as for any other action.
+
+Everything it does happens inside the preview frame, on the page you are looking at, and it cannot reach DorkOS itself. What that frame is depends on what you opened: a local file DorkOS serves has no sign-in and no address of its own, so there is nothing there to act as. **A dev server preview is your dev server** — so your agent acts on it exactly as you would by clicking in it, including anything that page is already signed in to. Point it at a page you would be happy to click around in yourself.
 
 The Obsidian plugin has no Browser tab, so none of this is there.
 

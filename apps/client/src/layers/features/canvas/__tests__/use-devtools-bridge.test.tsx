@@ -683,26 +683,94 @@ describe('useDevtoolsBridge — the driver seat (spec `canvas-agent-seat` §2.2)
     }
   }
 
-  it('claims the seat for its page on mount, before any handshake', () => {
+  /** Mount, and let the chained claim actually go out. */
+  async function mountAndSettle(): Promise<void> {
     mount();
+    await vi.advanceTimersByTimeAsync(0);
+  }
+
+  it('claims the seat for its page on mount, before any handshake', async () => {
+    await mountAndSettle();
     const claims = claimCalls();
     expect(claims).toHaveLength(1);
     expect(claims[0][0]).toBe('session-1');
     expect(claims[0][1]).toMatchObject({ active: true, instrumented: false });
   });
 
-  it('upgrades the claim to instrumented once the shim says hello', () => {
-    mount();
+  it('upgrades the claim to instrumented once the shim says hello', async () => {
+    await mountAndSettle();
     postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' });
+    await vi.advanceTimersByTimeAsync(0);
     const claims = claimCalls();
     expect(claims).toHaveLength(2);
     expect(claims[1][1]).toMatchObject({ active: true, instrumented: true });
   });
 
-  it('releases the seat when the page goes away', () => {
-    mount();
+  it('releases the seat when the page goes away', async () => {
+    await mountAndSettle();
     cleanup();
+    await vi.advanceTimersByTimeAsync(0);
     expect(claimCalls().at(-1)![1]).toMatchObject({ active: false });
+  });
+
+  it('releases the seat on pagehide, with a request that can outlive the page', async () => {
+    // The one release a window that is being closed can still send. Without it,
+    // a killed tab leaves a seat nobody is sitting in and every verb addresses a
+    // window that no longer answers. `keepalive` is what lets the request leave
+    // at all; the server's staleness rule is what makes it not have to.
+    await mountAndSettle();
+    ingestDevtoolsCapture.mockClear();
+    window.dispatchEvent(new Event('pagehide'));
+    await vi.advanceTimersByTimeAsync(0);
+
+    const release = claimCalls().at(-1);
+    expect(release![1]).toMatchObject({ active: false });
+    expect((ingestDevtoolsCapture as Mock).mock.calls.at(-1)![2]).toEqual({ keepalive: true });
+  });
+
+  it('keeps reporting that it is still showing the page', async () => {
+    // A window that goes quiet loses its seat after three missed beats, so a
+    // window that is genuinely still there has to say so. Asserted on the beat,
+    // because a claim posted only at mount would expire under a person who left
+    // the preview open and went to lunch.
+    await mountAndSettle();
+    ingestDevtoolsCapture.mockClear();
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(claimCalls()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(claimCalls()).toHaveLength(3);
+    for (const [, batch] of claimCalls()) expect(batch.active).toBe(true);
+  });
+
+  it('holds a release until the claim before it has actually gone out', async () => {
+    // Two fire-and-forget POSTs can arrive either way round. On an in-preview
+    // navigation the pair is a release then a claim, and arriving swapped the
+    // release lands last — dropping a seat the window is still holding.
+    //
+    // The assertion is that the second POST has not been MADE yet while the
+    // first is still in flight. Asserting only on the final order would pass
+    // with no chain at all, because both calls land either way.
+    let letFirstFinish: (() => void) | undefined;
+    ingestDevtoolsCapture.mockImplementationOnce(
+      async () =>
+        new Promise<void>((resolve) => {
+          letFirstFinish = resolve;
+        })
+    );
+    mount();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(1);
+
+    cleanup();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(
+      ingestDevtoolsCapture,
+      'the release was posted while the claim before it was still in flight'
+    ).toHaveBeenCalledTimes(1);
+
+    letFirstFinish!();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(claimCalls().map(([, batch]) => batch.active)).toEqual([true, false]);
   });
 
   it('forwards a request addressed to this window and this page', () => {

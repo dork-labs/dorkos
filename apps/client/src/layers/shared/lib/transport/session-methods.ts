@@ -384,10 +384,18 @@ export function createSessionMethods(
      * dropped batch must never surface in, or slow, the preview. The injected
      * shim never calls `/api/*`; this same-origin, authenticated client does.
      */
-    async ingestDevtoolsCapture(sessionId: string, batch: DevtoolsIngest): Promise<void> {
+    async ingestDevtoolsCapture(
+      sessionId: string,
+      batch: DevtoolsIngest,
+      options?: { keepalive?: boolean }
+    ): Promise<void> {
       try {
         await fetch(`${baseUrl}/sessions/${sessionId}/devtools/ingest`, {
           method: 'POST',
+          // The release a closing window sends is the one request an ordinary
+          // `fetch` would be cancelled mid-flight; `keepalive` is what lets it
+          // leave anyway.
+          ...(options?.keepalive ? { keepalive: true } : {}),
           // The client id is what makes a seat claim mean anything: the server
           // keeps one driver row per (window, page), and without the header
           // every window would look like the same one.
