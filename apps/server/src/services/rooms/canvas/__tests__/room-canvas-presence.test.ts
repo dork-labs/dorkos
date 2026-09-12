@@ -170,6 +170,24 @@ describe('who is looking at a room’s canvas', () => {
     expect(presence(late)).toEqual([]);
   });
 
+  it('takes a face off when that member’s last stream ends', async () => {
+    const doc = canvas.open(room.id, human, jsonContent('the plan'));
+    // Two windows, one person. The first to close proves nothing.
+    canvas.readerArrived(room.id, human);
+    canvas.readerArrived(room.id, human);
+    canvas.setViewing(room.id, human, doc.id);
+
+    const stillHere = await frames(() => canvas.readerLeft(room.id, human));
+    expect(presence(stillHere)).toEqual([]);
+
+    // The last one is the departure. Nothing a browser does on its way out can
+    // be relied on — a closed lid runs no cleanup — so this is the event that
+    // has to be the one that clears it.
+    const gone = await frames(() => canvas.readerLeft(room.id, human));
+    expect(presence(gone)).toMatchObject([{ authorId: human }]);
+    expect(presence(gone)[0]).not.toHaveProperty('documentId');
+  });
+
   it('refuses a document this room does not hold', () => {
     // Otherwise a face could be painted onto a tab that does not exist, which is
     // a member asserting something about the table rather than about themselves.

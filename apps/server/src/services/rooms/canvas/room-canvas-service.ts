@@ -303,6 +303,23 @@ export class RoomCanvasService {
   private readonly watching = new Map<string, Map<string, string>>();
 
   /**
+   * How many live streams each member has open on each room — room, then member,
+   * then a count.
+   *
+   * **This is what makes a face outlive nobody.** A person who closes the
+   * browser, loses the network or shuts the lid runs no cleanup, so the tab they
+   * were on would keep their face on it for everybody else until those readers
+   * happened to reconnect. Their stream ending is the one event that always
+   * happens, and the moment their LAST one does they are no longer looking at
+   * anything.
+   *
+   * A count rather than a flag, because two windows and a phone are three
+   * streams for one member, and a reconnect opens the new stream before the old
+   * one finishes closing.
+   */
+  private readonly readers = new Map<string, Map<string, number>>();
+
+  /**
    * Build the service over its collaborators.
    *
    * @param deps - The rows, the rules and the stream. See {@link RoomCanvasDeps}.
@@ -751,6 +768,41 @@ export class RoomCanvasService {
    * @param authorId - The member.
    */
   clearViewing(roomId: string, authorId: string): void {
+    this.publishViewing(roomId, authorId, null);
+  }
+
+  /**
+   * One more of this member's streams is live on this room.
+   *
+   * @param roomId - The room.
+   * @param authorId - The member.
+   */
+  readerArrived(roomId: string, authorId: string): void {
+    const room = this.readers.get(roomId);
+    if (room) room.set(authorId, (room.get(authorId) ?? 0) + 1);
+    else this.readers.set(roomId, new Map([[authorId, 1]]));
+  }
+
+  /**
+   * One of this member's streams on this room has ended — and if it was their
+   * last, their face comes off whatever it was on.
+   *
+   * Silent for a member who had no face, which is every reader who never opened
+   * the canvas.
+   *
+   * @param roomId - The room.
+   * @param authorId - The member.
+   */
+  readerLeft(roomId: string, authorId: string): void {
+    const room = this.readers.get(roomId);
+    const held = room?.get(authorId) ?? 0;
+    if (room === undefined || held === 0) return;
+    if (held > 1) {
+      room.set(authorId, held - 1);
+      return;
+    }
+    room.delete(authorId);
+    if (room.size === 0) this.readers.delete(roomId);
     this.publishViewing(roomId, authorId, null);
   }
 

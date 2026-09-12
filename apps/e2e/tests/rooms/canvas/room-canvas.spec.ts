@@ -249,6 +249,101 @@ test.describe('A room has a canvas everybody shares @smoke', () => {
     }
   });
 
+  test('a pinned document sorts first and survives a reload', async ({
+    page,
+    basePage,
+    roomsApi,
+    roomsPage,
+    request,
+  }) => {
+    const tag = roomsApi.runId;
+    const room = await roomsApi.createChannel(`canvas-pin-${tag}`, `Pin ${tag}`, []);
+
+    // Two documents, opened in this order, so "pinned first" is a real reorder
+    // rather than the order they already had.
+    const first = `Older ${tag}`;
+    await putOnCanvas(request, room.id, first);
+    const second = `Newer ${tag}`;
+    await putOnCanvas(request, room.id, second);
+
+    await openRoom(page, basePage, roomsPage, room.id);
+    await roomsPage.openCanvasTab();
+    await expect(roomsPage.canvasDocuments).toContainText(second, {
+      timeout: SERVER_ROUND_TRIP_MS,
+    });
+    const tabs = () => roomsPage.canvasDocuments.getByRole('tab');
+    await expect(tabs().first()).toContainText(first);
+
+    // Pinned from the tab's own control, as a member — nothing here is
+    // owner-only.
+    await roomsPage.canvasDocumentTab(second).hover();
+    await page.getByRole('button', { name: `Pin ${second}` }).click();
+
+    await expect(tabs().first()).toContainText(second, { timeout: SERVER_ROUND_TRIP_MS });
+    // The control now offers the way back, which is how the tab says it is
+    // pinned without a tooltip nobody opens.
+    await expect(page.getByRole('button', { name: `Unpin ${second}` })).toBeVisible();
+
+    // **A pin is a row.** This window has stored nothing, so a reload that still
+    // draws it first can only have got it from the server.
+    await page.reload();
+    await basePage.waitForAppReady();
+    await roomsPage.openCanvasTab();
+    await expect(tabs().first()).toContainText(second, { timeout: SERVER_ROUND_TRIP_MS });
+    await expect(page.getByRole('button', { name: `Unpin ${second}` })).toBeVisible();
+  });
+
+  test('a second window’s face appears on the tab it is looking at', async ({
+    page,
+    basePage,
+    roomsApi,
+    roomsPage,
+    request,
+    browser,
+  }) => {
+    const tag = roomsApi.runId;
+    const room = await roomsApi.createChannel(`canvas-face-${tag}`, `Face ${tag}`, []);
+    const watched = `Watched ${tag}`;
+    const other = `Other ${tag}`;
+    await putOnCanvas(request, room.id, watched);
+    await putOnCanvas(request, room.id, other);
+
+    await openRoom(page, basePage, roomsPage, room.id);
+    await roomsPage.openCanvasTab();
+    // Nobody else is here yet, so no face is on anything.
+    await expect(roomsPage.canvasDocuments).toContainText(watched, {
+      timeout: SERVER_ROUND_TRIP_MS,
+    });
+    await expect(roomsPage.canvasDocumentWatchers(watched)).toHaveCount(0);
+
+    const second = await browser.newContext();
+    const secondPage = await second.newPage();
+    const secondBase = new BasePage(secondPage);
+    const secondRooms = new RoomsPage(secondPage);
+    try {
+      await openRoom(secondPage, secondBase, secondRooms, room.id);
+      await secondRooms.openCanvasTab();
+      await secondRooms.canvasDocumentTab(watched).click();
+
+      // The face arrives over the first window's own stream, with no reload —
+      // which is the whole claim, and the one a per-browser store cannot make.
+      await expect(roomsPage.canvasDocumentWatchers(watched)).toBeVisible({
+        timeout: SERVER_ROUND_TRIP_MS,
+      });
+      await expect(roomsPage.canvasDocumentTab(watched)).toContainText('looking at this');
+      // …and it is on the tab they are ACTUALLY on, not on every tab.
+      await expect(roomsPage.canvasDocumentWatchers(other)).toHaveCount(0);
+
+      // Closing that window is looking away, and the face goes with it.
+      await second.close();
+      await expect(roomsPage.canvasDocumentWatchers(watched)).toHaveCount(0, {
+        timeout: SERVER_ROUND_TRIP_MS,
+      });
+    } finally {
+      if (!secondPage.isClosed()) await second.close();
+    }
+  });
+
   test('a person types an address and the page lands on the room’s table', async ({
     page,
     basePage,

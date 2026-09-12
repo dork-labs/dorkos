@@ -86,6 +86,11 @@ export async function deliverRoomStream(
   // read below lands in this reader's queue instead of falling between the two.
   // The dedupe on `highestSent` then drops whatever the read already covered.
   const iterator = service.stream.subscribe(roomId, sink.signal)[Symbol.asyncIterator]();
+  // **A stream ending is the one departure that always happens.** A reader who
+  // closes the browser, loses the network or shuts the lid runs no cleanup of
+  // their own, so without this the tab they were looking at would keep their
+  // face on it for everybody else (spec `room-canvas` §9.4).
+  service.canvas.readerArrived(roomId, viewerAuthorId);
 
   let highestSent: number;
 
@@ -150,6 +155,7 @@ export async function deliverRoomStream(
       });
     }
   } finally {
+    service.canvas.readerLeft(roomId, viewerAuthorId);
     void iterator.return?.();
     sink.end();
   }
