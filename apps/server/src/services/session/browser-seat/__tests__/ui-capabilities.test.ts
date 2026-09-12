@@ -67,6 +67,11 @@ const EXPECTED: Record<string, { tool: string; tier: string; args: string[] }> =
       'cwd',
       'kind',
       'emoji',
+      // Last, because that is where `CONTROL_UI_INPUT` declares it (spec
+      // `canvas-agent-seat` §9). This list is compared with `toEqual`, so a new
+      // field goes at the index the constant puts it, never appended for
+      // convenience.
+      'target',
     ],
   },
   'ui.state': { tool: 'get_ui_state', tier: 'observe', args: [] },

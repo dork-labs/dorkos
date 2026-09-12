@@ -1155,7 +1155,13 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
  * @param command - The command the turn produced.
  */
 function applyRoomCanvasCommand(
-  bounds: { roomId: string; authorId: string; turnId: string; cwd?: string },
+  bounds: {
+    roomId: string;
+    authorId: string;
+    turnId: string;
+    cwd?: string;
+    aheadOfMain?: number | null;
+  },
   command: UiCommand
 ): void {
   try {
@@ -1165,6 +1171,14 @@ function applyRoomCanvasCommand(
       turnId: bounds.turnId,
       command,
       ...(bounds.cwd !== undefined ? { cwd: bounds.cwd } : {}),
+      // **Carried, like the directory beside it.** The claude-code handler has
+      // always passed this; the tap did not, so every document a CODEX,
+      // OpenCode or scripted turn put on a room's table recorded "not measured"
+      // — and the review surface (spec `canvas-agent-seat` §8) appears only for
+      // a copy that is measurably ahead, so those runtimes could never produce
+      // one. `undefined` still means "the caller did not say", which is what a
+      // room with no files of its own says.
+      ...(bounds.aheadOfMain !== undefined ? { aheadOfMain: bounds.aheadOfMain } : {}),
     });
   } catch (err) {
     logger.warn('[rooms] a turn’s canvas command could not be applied', {

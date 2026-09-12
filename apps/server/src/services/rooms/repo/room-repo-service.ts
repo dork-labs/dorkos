@@ -676,6 +676,22 @@ export class RoomRepoService {
   }
 
   /**
+   * Where this room keeps its members' own working copies.
+   *
+   * The sibling of {@link RoomRepoService.repoPathFor}, and asked by the same
+   * kind of caller: the review surface has to confine a worktree document's
+   * stored directory to somewhere DorkOS itself made (spec `canvas-agent-seat`
+   * §8), and a path a row happens to hold is not a checked input. A room with
+   * no repo answers `null`, and then no directory is inside anything.
+   *
+   * @param roomId - The room.
+   * @returns The absolute path, or `null`.
+   */
+  worktreesPathFor(roomId: string): string | null {
+    return this.hasRepo(roomId) ? this.deps.store.worktreesPath(roomId) : null;
+  }
+
+  /**
    * Which of a room's agent worktrees hold work that `main` does not have.
    *
    * "Stranded" is either half of the same worry: uncommitted edits, or commits

@@ -652,6 +652,12 @@ export const RoomWithRosterSchema = RoomSchema.extend({
     .describe(
       'The author id the server resolved for THIS request — who the reader is. Match a roster member on it to find your own membership (your read cursor, your response mode); never match on `author.kind`. It is not necessarily on `members`: seeing a room and being in it are different things.'
     ),
+  viewerIsOperator: z
+    .boolean()
+    .optional()
+    .describe(
+      'Whether THIS reader is the person who owns this install — the one gate that is not a membership. It rides the room read for the same reason `viewerAuthorId` does: the reader is already resolved here, and nothing else on the wire tells a client, so every operator-only affordance in a room had to be drawn for everybody and refused afterwards. **Absent means "this source cannot say", never `false`** — a caller that predates it still parses, and a screen reading it as a denial would hide the action from the one person who can take it. Used by the merge action on a room worktree diff (spec `canvas-agent-seat` §8); the server still refuses a non-operator, so this only decides what is drawn.'
+    ),
   reactionFrequents: z
     .array(z.string())
     .describe(

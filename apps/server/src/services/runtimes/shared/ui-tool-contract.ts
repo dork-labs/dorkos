@@ -383,7 +383,8 @@ ${buildCanvasContentCatalog({ indent: '  ' })}
 
 Notes:
 - Delivery: UI commands only take visible effect when an interactive client is attached to this session. In headless or scheduled runs (no client) the command is accepted and queued but has no on-screen effect. A success result means "accepted", not "displayed".
-- Canvas edits: while somebody is editing a canvas document, your pushes to it (open_canvas / update_canvas) are held rather than applied, and they are shown a banner offering your version or theirs (ADR-0292). A success result means the command was accepted, not that it replaced what they see.`;
+- Canvas edits: while somebody is editing a canvas document, your pushes to it (open_canvas / update_canvas) are held rather than applied, and they are shown a banner offering your version or theirs (ADR-0292). A success result means the command was accepted, not that it replaced what they see.
+- Putting something on a room: the six canvas actions (open_canvas, update_canvas, close_canvas, open_file, open_diff, browser_navigate) take an optional target with a room id, which puts the document on that room's shared canvas instead of this window. You have to be a member of the room; a room you are not in answers "No such room", the same answer a room that does not exist gives. Everyone in the room sees it, and one line saying what you put there is posted when your turn ends — nobody's turn is started by it. You can do this three times per room per turn, and the other actions ignore a target.`;
 
 /**
  * Shared input schema (a {@link https://zod.dev ZodRawShape}) for the control_ui
@@ -455,4 +456,19 @@ export const CONTROL_UI_INPUT = {
       'Celebration style for celebrate: burst|fireworks|cannons|emoji|rain|stars (default burst)'
     ),
   emoji: z.string().optional().describe('Glyph thrown by the celebrate "emoji" kind (default 🎉)'),
+  // **Advertised, or it never arrives.** The SDK builds this tool's JSON Schema
+  // from exactly these keys, so a field the union accepts and this constant
+  // omits is stripped in transit — the call succeeds and the value is simply
+  // gone. `documentId` hit that trap once already, which is why
+  // `__tests__/control-ui-target.test.ts` drives a real client rather than the
+  // handler.
+  target: z
+    .object({
+      roomId: z.string().describe('The room id to put this on. You must be a member of it.'),
+    })
+    .optional()
+    .describe(
+      'Put the document on a room’s shared canvas instead of this window. Only the six canvas ' +
+        'actions read it; the others ignore it.'
+    ),
 } as const;
