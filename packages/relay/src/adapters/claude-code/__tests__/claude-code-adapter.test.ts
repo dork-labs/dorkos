@@ -114,7 +114,11 @@ function createTasksEnvelope(overrides?: Partial<RelayEnvelope>): RelayEnvelope 
       permissionMode: 'default',
       taskName: 'Budget Monitor',
       cron: '0 * * * *',
-      trigger: 'cron',
+      // What the scheduler actually puts on the wire: `run.trigger`, one of
+      // `scheduled` / `manual` / `agent` (`services/tasks/relay-dispatch.ts`).
+      // This said `'cron'`, which no producer has ever sent, and that mattered
+      // the moment the receiver started reading the field.
+      trigger: 'scheduled',
     },
     ...overrides,
   };
@@ -1092,7 +1096,7 @@ describe('ClaudeCodeAdapter', () => {
   // === What a scheduled run is told about itself (DOR-1567) ===
 
   describe('Tasks: the unattended context a relay-dispatched run carries', () => {
-    it('starts the session unattended, so a prompt nobody answers is refused', async () => {
+    it('starts a timer-started run unattended, so an ask nobody can answer is refused', async () => {
       await adapter.start(relay);
       const envelope = createTasksEnvelope();
 
@@ -1101,6 +1105,24 @@ describe('ClaudeCodeAdapter', () => {
       expect(agentManager.ensureSession).toHaveBeenCalledWith(
         'run-1',
         expect.objectContaining({ unattended: true, permissionMode: 'default' })
+      );
+    });
+
+    it('leaves a "Run now" answerable, on this path as on the direct one', async () => {
+      // A hand-started run can travel the bus too, and somebody is sitting in
+      // front of it. A run must not lose its approval cards because of which
+      // path carried it (spec `unattended-session-permission-prompts`).
+      await adapter.start(relay);
+      const base = createTasksEnvelope();
+      const envelope = createTasksEnvelope({
+        payload: { ...(base.payload as Record<string, unknown>), trigger: 'manual' },
+      });
+
+      await adapter.deliver(envelope.subject, envelope);
+
+      expect(agentManager.ensureSession).toHaveBeenCalledWith(
+        'run-1',
+        expect.objectContaining({ unattended: false })
       );
     });
 

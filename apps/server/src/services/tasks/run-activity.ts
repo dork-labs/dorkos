@@ -8,6 +8,7 @@
  * @module services/tasks/run-activity
  */
 import type { Task, TaskRun } from '@dorkos/shared/types';
+import { readableToolName, type RefusedAsk } from '@dorkos/shared/run-refusals';
 import type { ActivityService } from '../activity/activity-service.js';
 import { formatDuration } from '../../lib/format-duration.js';
 
@@ -130,4 +131,61 @@ export function emitTerminalRunActivity(
     run.durationMs ?? 0,
     run.error ?? undefined
   );
+}
+
+/**
+ * Emit an activity event for one tool a scheduled run reached for and could not
+ * have, because nobody was there to approve it.
+ *
+ * **One entry per TOOL, not per attempt.** A run that reached for four different
+ * things it could not have is four separate facts, and the operator's question
+ * in the morning is which ones — the run row's own summary line already answers
+ * "were there any". A run that reached for the SAME blocked tool thirty times in
+ * a retry loop is still one fact, so the caller only emits when
+ * `RefusedAskLog.observe` answers with a refusal, which it does on a tool's
+ * first one and never again.
+ *
+ * It reuses `emitRunActivity`'s actor shape exactly — the Scheduler for a cron
+ * fire, "You" for a run somebody started by hand — and differs only in its
+ * `eventType`, so the feed can be filtered on `tasks.ask_refused` without
+ * parsing prose.
+ *
+ * The summary may say "nobody was there to approve it" flatly because the log
+ * behind it admits only DorkOS's own unattended refusals; a safety-classifier or
+ * deny-rule denial carries a different discriminator and never reaches here (see
+ * `@dorkos/shared`'s `run-refusals` module doc).
+ *
+ * @param activityService - The feed to write to; nothing is emitted without one.
+ * @param task - The run's task, for its name.
+ * @param run - The run that was refused.
+ * @param refused - The refusal, as the runtime recorded it.
+ */
+export function emitRefusedAskActivity(
+  activityService: ActivityService | null,
+  task: Task,
+  run: TaskRun,
+  refused: RefusedAsk
+): void {
+  if (!activityService) return;
+
+  const scheduled = run.trigger === 'scheduled';
+  const toolLabel = readableToolName(refused.toolName);
+
+  void activityService.emit({
+    actorType: scheduled ? 'tasks' : 'user',
+    actorId: scheduled ? run.scheduleId : null,
+    actorLabel: scheduled ? 'Scheduler' : 'You',
+    category: 'tasks',
+    eventType: 'tasks.ask_refused',
+    resourceType: 'schedule',
+    resourceId: run.scheduleId,
+    resourceLabel: task.name,
+    summary: `${task.name} could not use ${toolLabel} — nobody was there to approve it`,
+    linkPath: '/',
+    metadata: {
+      runId: run.id,
+      toolName: refused.toolName,
+      ...(refused.reason !== undefined ? { reason: refused.reason } : {}),
+    },
+  });
 }
