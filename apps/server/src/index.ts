@@ -316,6 +316,7 @@ import {
 } from './services/core/capabilities/index.js';
 import {
   initApprovalSubjectResolvers,
+  startApprovalExpirySweep,
   startApprovalVerdictDelivery,
 } from './services/core/approvals/index.js';
 import { createMcpRouter } from './routes/mcp.js';
@@ -551,6 +552,9 @@ let dailySnapshotInterval: ReturnType<typeof setInterval> | undefined;
 let sessionAttachmentSweepInterval: ReturnType<typeof setInterval> | undefined;
 let managedAuthorityRecoveryInterval: ReturnType<typeof setInterval> | undefined;
 let managedUsageMirrorRecoveryInterval: ReturnType<typeof setInterval> | undefined;
+// Stops the approval expiry sweep (DOR-1932). A function rather than a timer
+// handle because the sweep owns its own interval and hands back a closer.
+let stopApprovalExpirySweep: (() => void) | undefined;
 // Embedded-terminal PTY manager (ADR 260708-185521). Always-on, boundary-confined;
 // the WebSocket byte channel is attached to the HTTP server after listen().
 let terminalManager: TerminalManager | undefined;
@@ -2267,6 +2271,14 @@ async function start() {
       error: err instanceof Error ? err.message : String(err),
     });
   }
+  // Settle approvals that run out of time with nobody looking, so expiry stops
+  // being the one ending nothing announces: until this ran, an unanswered
+  // approval emitted no event at all, and the agent that asked was never told
+  // its request had lapsed (spec `approval-expiry-notice`, DOR-1932). The same
+  // interval carries the retention purge above, which had only ever run here at
+  // boot — so a server up for a month never trimmed the table after its first
+  // second.
+  stopApprovalExpirySweep = startApprovalExpirySweep(approvalService);
   // Catch the escalation ladder up on approvals that were already waiting when
   // this process started (DOR-1570) — the second standing condition that
   // outlives a restart, and the more dangerous one: an approval is an agent
@@ -4613,6 +4625,10 @@ async function shutdownServices() {
   }
   if (managedUsageMirrorRecoveryInterval) {
     clearInterval(managedUsageMirrorRecoveryInterval);
+  }
+  if (stopApprovalExpirySweep) {
+    stopApprovalExpirySweep();
+    stopApprovalExpirySweep = undefined;
   }
   // Kill any live PTYs so shutdown never leaves an orphaned shell.
   terminalManager?.destroyAll();

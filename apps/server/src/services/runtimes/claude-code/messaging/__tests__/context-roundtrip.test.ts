@@ -153,7 +153,7 @@ const SAMPLES: Record<ContextKind, AdditionalContextEntry> = {
       approvalId: '01KXQ3P7ADJY9DSXMZW1XGWCV4',
       capabilityTitle: 'Unregister an agent',
       outcome: 'denied',
-      decidedAt: '2026-09-09T12:34:56.000Z',
+      endedAt: '2026-09-09T12:34:56.000Z',
       denyReason: `that agent is still running the nightly job\n\n${BREAKOUT}`,
     },
   },

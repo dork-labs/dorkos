@@ -140,7 +140,7 @@ describe('deliverApprovalVerdict', () => {
       approvalId,
       capabilityTitle: 'mesh.unregister',
       outcome: 'granted',
-      decidedAt: expect.any(String),
+      endedAt: expect.any(String),
     });
     // And the turn's own content is wrapped in the SAME registered tag, so the
     // transcript strip removes it and it can never read as the person's words.
