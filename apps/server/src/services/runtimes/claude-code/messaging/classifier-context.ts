@@ -119,6 +119,33 @@ export const CLASSIFIER_SENTENCES = {
 } as const satisfies Record<CapabilityTier, string>;
 
 /**
+ * The `matcher` the `PostToolUse` registration is given, and the reason it is
+ * shaped like a pattern rather than like a prefix.
+ *
+ * **A hook matcher made only of word characters is not a pattern at all.** The
+ * CLI reads a matcher of `[a-zA-Z0-9_|, -]` and nothing else as a LIST OF EXACT
+ * TOOL NAMES, splits it on `|` and `,`, and asks whether the call's tool name is
+ * one of them. Only a matcher carrying some other character — `^`, `.`, `*` —
+ * falls through to being compiled as a regular expression and tested against the
+ * name. The first cut of this registration passed the bare prefix
+ * `mcp__dorkos__`, which is all word characters, so the CLI looked for a tool
+ * LITERALLY CALLED `mcp__dorkos__`, never found one, and the hook never ran for
+ * any call. Nothing failed: no error, no log line, no note, and the assertion
+ * counter in `GET /api/debug/auto-mode-stops` simply stayed at zero — the exact
+ * silent-matcher failure the comment beside the registration warned about while
+ * being an instance of it.
+ *
+ * The anchor is what buys the regex reading, and the prefix is what the regex
+ * says. Correctness never rests on it: {@link classifierContextFor} re-checks the
+ * prefix and the gate's own tier table, so a matcher that is too WIDE costs an
+ * extra no-op hook call and nothing else. Too NARROW is the failure that has no
+ * symptom, which is why the matcher is pinned by
+ * `__tests__/classifier-context.test.ts` against the CLI's own rule rather than
+ * only against its own spelling.
+ */
+export const CLASSIFIER_CONTEXT_MATCHER = `^${IN_SESSION_TOOL_PREFIX}` as const;
+
+/**
  * Whether the host-context note is switched on.
  *
  * One global switch, default on, no config field and nothing per-agent: this is

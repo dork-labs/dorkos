@@ -11,6 +11,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
+import { CLASSIFIER_CONTEXT_MATCHER } from '../classifier-context.js';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
@@ -107,9 +108,9 @@ describe('the launch options every Claude Code turn is given', () => {
     expect(matchers).toHaveLength(1);
     expect(
       matchers[0]?.matcher,
-      'the matcher is the CLI\u2019s to interpret, so it is a plain substring rather than a ' +
-        'pattern a different reading could silently reject'
-    ).toBe('mcp__dorkos__');
+      'the CLI reads a word-characters-only matcher as a list of exact tool names, so the ' +
+        'registration has to hand it a pattern \u2014 see CLASSIFIER_CONTEXT_MATCHER'
+    ).toBe(CLASSIFIER_CONTEXT_MATCHER);
 
     const hook = matchers[0]!.hooks[0]!;
     const result = (await hook(
