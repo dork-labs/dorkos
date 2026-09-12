@@ -6,6 +6,7 @@ covers:
   - 'fix(canvas): name the reset suite among the readers of the retired key'
   - "fix(rooms): keep a follow alive while the leader is still, and sign the room's own lines (DOR-2010)"
   - 'fix(rooms): pin the forget-on-leave wiring, and resolve one author per row (DOR-2010)'
+  - "fix(rooms): strip the beat pin's comments with the repo's own lexer (DOR-2010)"
 ---
 
 ### Added
