@@ -458,3 +458,51 @@ describe('the session pane, over the same component', () => {
     expect(source.scopeKey).toBe('/repo');
   });
 });
+
+describe('putting a room’s file where everybody can see it', () => {
+  /** A room whose ROOM.md the preview can read. */
+  function roomWithReadableFile(): Transport {
+    const transport = roomWithFiles([entry({ name: 'ROOM.md', lastCommit: COMMIT })]);
+    transport.readRoomFileContent = vi.fn().mockResolvedValue({
+      path: 'ROOM.md',
+      commit: 'head',
+      size: 20,
+      lastCommit: COMMIT,
+      body: { kind: 'text', encoding: 'utf-8', text: '# What we are doing' },
+    });
+    return transport;
+  }
+
+  /** Open ROOM.md in the preview, which is where the control lives. */
+  async function openPreview(transport: Transport) {
+    renderSection(transport);
+    fireEvent.click(await screen.findByRole('treeitem', { name: 'ROOM.md' }));
+    return screen.findByRole('button', { name: 'Put on the canvas' });
+  }
+
+  it('puts the file on the room’s canvas and closes', async () => {
+    const transport = roomWithReadableFile();
+    fireEvent.click(await openPreview(transport));
+
+    await waitFor(() => {
+      expect(transport.openRoomCanvasDocument).toHaveBeenCalledWith(ROOM_ID, {
+        type: 'file',
+        sourcePath: 'ROOM.md',
+      });
+    });
+  });
+
+  it('stays open and says what the room said when it is turned down', async () => {
+    // It used to fire and close in the same breath over a source that only
+    // logged its failures, so a refused write looked exactly like a done one and
+    // the person walked away believing the room had the file.
+    const transport = roomWithReadableFile();
+    transport.openRoomCanvasDocument = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error('This room is archived'), { status: 409 }));
+    fireEvent.click(await openPreview(transport));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('This room is archived');
+    expect(screen.getByRole('button', { name: 'Put on the canvas' })).toBeInTheDocument();
+  });
+});

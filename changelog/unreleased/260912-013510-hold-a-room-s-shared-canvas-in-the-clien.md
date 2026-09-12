@@ -4,6 +4,7 @@ covers:
   - 'feat(rooms): give a room a Canvas and a Browser tab everybody shares'
   - "test(rooms): drive a room's shared canvas through two real browsers"
   - 'fix(rooms): never let a reconnect take what somebody is typing'
+  - 'fix(rooms): never report a write as done before the room has taken it'
 ---
 
 ### Added
@@ -22,4 +23,5 @@ covers:
   landed on. Nothing ever moves the tab you are on, and a brief drop in your connection never takes
   away what you were typing
 - When the room turns something down — it has been archived, or the document is already gone — it
-  says so where you pressed, and an address it would not take stays in the box so you can fix it
+  says so where you pressed, and nothing you wrote is thrown away on the way: a save the room would
+  not take leaves your words in the editor, and an address it would not take stays in the box

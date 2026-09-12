@@ -428,3 +428,41 @@ describe('the room canvas — a refused write is said where it was made', () => 
     });
   });
 });
+
+describe('the room canvas — a refused save keeps the words', () => {
+  it('holds the draft, stays in edit mode, and says so when the room turns a save down', async () => {
+    // Clearing the draft before the answer came back was a data-loss bug, not a
+    // cosmetic one: the editor dropped to read-only showing the old text, so the
+    // refusal the toast was about had already deleted the thing it was about.
+    const typed = '# Notes\n\nsomething worth keeping';
+    transport.updateRoomCanvasDocument = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error('This room is archived'), { status: 409 }));
+    seed({ id: 'note', title: 'Notes', content: { type: 'markdown', content: '# Notes' } });
+    renderTab('canvas');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit this document' }));
+    fireEvent.change(screen.getByTestId('blintz-canvas'), { target: { value: typed } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save for the room' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/still here/i);
+    expect(screen.getByTestId('blintz-canvas')).toHaveValue(typed);
+    expect(screen.getByTestId('blintz-canvas')).toHaveAttribute('data-editable', 'true');
+    expect(screen.getByRole('button', { name: 'Save for the room' })).toBeInTheDocument();
+  });
+
+  it('lets the draft go once the room has taken it', async () => {
+    const typed = '# Notes\n\nsomething worth keeping';
+    seed({ id: 'note', title: 'Notes', content: { type: 'markdown', content: '# Notes' } });
+    renderTab('canvas');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit this document' }));
+    fireEvent.change(screen.getByTestId('blintz-canvas'), { target: { value: typed } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save for the room' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Edit this document' })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+});
