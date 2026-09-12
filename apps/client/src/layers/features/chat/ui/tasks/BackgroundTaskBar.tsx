@@ -2,14 +2,18 @@ import { useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { ChevronDown } from 'lucide-react';
 import type { BackgroundTaskStatus } from '@dorkos/shared/types';
-import { cn } from '@/layers/shared/lib';
+import { cn, partitionAmbientTasks } from '@/layers/shared/lib';
 import type { VisibleBackgroundTask } from '../../model/use-background-tasks';
 import { AgentRunner, type AgentRunnerStatus } from './AgentRunner';
 import { TaskDotSection } from './TaskDotSection';
 import { TaskDetailPanel } from './TaskDetailPanel';
 
 interface BackgroundTaskBarProps {
-  /** All visible background tasks (agent and bash) returned by useBackgroundTasks. */
+  /**
+   * All visible background tasks (agent and bash) returned by
+   * `useBackgroundTasks`, housekeeping ones included — the bar splits them
+   * itself so the collapsed row and its panel cannot disagree.
+   */
   tasks: VisibleBackgroundTask[];
   /** Called when the user requests to stop a task. */
   onStopTask: (taskId: string) => void;
@@ -61,14 +65,24 @@ const agentEnterTransition = {
  * Agent tasks are represented as animated SVG running figures via AgentRunner.
  * Bash tasks are represented as pulsing dots via TaskDotSection (task #17).
  * The expand toggle reveals per-task chips via TaskDetailPanel (task #18).
+ *
+ * Housekeeping tasks take no part in any of that: no figure, no dot, no slot in
+ * the count, no share of the stats. When they are the only thing running the
+ * row empties out to just the chevron — quiet, and still a way in, because the
+ * expanded panel is the only place they can be seen and a bar that vanished
+ * would make them unreachable rather than merely quiet. The session still reads
+ * as working because the working line follows the turn in flight, not this bar.
+ * One that FAILS is promoted back into everything above by `useBackgroundTasks`,
+ * so nothing here has to special-case it.
  */
 export function BackgroundTaskBar({ tasks, onStopTask }: BackgroundTaskBarProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const prefersReducedMotion = useReducedMotion();
 
-  const agentTasks = tasks.filter((t) => t.taskType === 'agent');
-  const bashTasks = tasks.filter((t) => t.taskType === 'bash');
-  const count = tasks.length;
+  const { shown, ambient: ambientTasks } = partitionAmbientTasks(tasks);
+  const agentTasks = shown.filter((t) => t.taskType === 'agent');
+  const bashTasks = shown.filter((t) => t.taskType === 'bash');
+  const count = shown.length;
 
   const visibleAgents = agentTasks.slice(0, MAX_VISIBLE_AGENTS);
   const overflowAgentCount = agentTasks.length - MAX_VISIBLE_AGENTS;
@@ -76,29 +90,41 @@ export function BackgroundTaskBar({ tasks, onStopTask }: BackgroundTaskBarProps)
   const totalTools = agentTasks.reduce((sum, t) => sum + (t.toolUses ?? 0), 0);
   const maxDurationSeconds = Math.max(
     0,
-    ...tasks.map((t) => Math.round((t.durationMs ?? 0) / 1000))
+    ...shown.map((t) => Math.round((t.durationMs ?? 0) / 1000))
   );
 
   const barTransition = prefersReducedMotion
     ? { duration: 0 }
     : { duration: 0.35, ease: barTransitionEase };
 
+  // `role="status"` announces itself, which is the right thing for work the
+  // person is waiting on and the wrong thing for the agent's own housekeeping.
+  // With nothing to count, the bar is a labelled control and says nothing.
+  const announces = count > 0;
+
   return (
     <AnimatePresence>
-      {count > 0 && (
+      {(count > 0 || ambientTasks.length > 0) && (
         <motion.div
           key="background-task-bar"
-          role="status"
-          aria-live="polite"
-          aria-label={`${count} background task${count !== 1 ? 's' : ''} running`}
+          {...(announces
+            ? {
+                role: 'status',
+                'aria-live': 'polite' as const,
+                'aria-label': `${count} background task${count !== 1 ? 's' : ''} running`,
+              }
+            : { role: 'group', 'aria-label': 'Background tasks' })}
           initial={{ opacity: 0, y: 6, maxHeight: 0 }}
           animate={{ opacity: 1, y: 0, maxHeight: isExpanded ? 400 : 44 }}
           exit={{ opacity: 0, maxHeight: 0 }}
           transition={barTransition}
           className="border-border bg-card overflow-hidden rounded-lg border"
         >
-          {/* Collapsed bar row */}
-          <div className="flex items-center gap-2 px-2 py-1.5">
+          {/* Collapsed bar row. `min-h-9` is the height an agent figure gives it
+              anyway (24px SVG + 12px padding); pinned so the row does not shrink
+              when housekeeping is all that is left — the expand toggle's
+              invisible reach is sized to this height and the bar clips it. */}
+          <div className="flex min-h-9 items-center gap-2 px-2 py-1.5">
             {/* AgentRunnerSection — animated SVG figures for agent tasks */}
             {agentTasks.length > 0 && (
               <AgentRunnerSection
@@ -115,30 +141,39 @@ export function BackgroundTaskBar({ tasks, onStopTask }: BackgroundTaskBarProps)
 
             {bashTasks.length > 0 && <TaskDotSection bashTasks={bashTasks} />}
 
-            {/* Task count label */}
-            <span className="text-muted-foreground text-xs whitespace-nowrap">
-              <strong className="text-foreground font-semibold">{count}</strong> task
-              {count !== 1 ? 's' : ''} running
-            </span>
+            {count > 0 && (
+              <>
+                {/* Task count label */}
+                <span className="text-muted-foreground text-xs whitespace-nowrap">
+                  <strong className="text-foreground font-semibold">{count}</strong> task
+                  {count !== 1 ? 's' : ''} running
+                </span>
 
-            {/* Stats — tools and max duration */}
-            <span className="text-muted-foreground/60 text-2xs ml-auto font-mono whitespace-nowrap">
-              {totalTools > 0 && <>{totalTools} tools &middot; </>}
-              {maxDurationSeconds}s
-            </span>
+                {/* Stats — tools and max duration */}
+                <span className="text-muted-foreground/60 text-2xs ml-auto font-mono whitespace-nowrap">
+                  {totalTools > 0 && <>{totalTools} tools &middot; </>}
+                  {maxDurationSeconds}s
+                </span>
+              </>
+            )}
 
             {/* ExpandToggle — chevron + task count */}
             <button
               type="button"
               onClick={() => setIsExpanded((prev) => !prev)}
               className={cn(
-                'text-muted-foreground hover:text-foreground ml-1 flex shrink-0 items-center gap-1 transition-colors duration-150',
+                'text-muted-foreground hover:text-foreground flex shrink-0 items-center gap-1 transition-colors duration-150',
+                // Pushed to the far end when the stats span that usually holds
+                // that place is not drawn.
+                count > 0 ? 'ml-1' : 'ml-auto',
                 EXPAND_TOGGLE_TOUCH_REACH
               )}
               aria-label={isExpanded ? 'Collapse task details' : 'Expand task details'}
               aria-expanded={isExpanded}
             >
-              <span className="text-3xs tabular-nums">{count}</span>
+              {/* No number when there is nothing to count: the hidden tally is
+                  stated inside the panel and nowhere else. */}
+              {count > 0 && <span className="text-3xs tabular-nums">{count}</span>}
               <ChevronDown
                 className={cn(
                   'size-3.5 transition-transform duration-200',
@@ -150,7 +185,9 @@ export function BackgroundTaskBar({ tasks, onStopTask }: BackgroundTaskBarProps)
 
           {/* TaskDetailPanel — chip list (task #18 will replace this placeholder) */}
           <AnimatePresence>
-            {isExpanded && <TaskDetailPanel tasks={tasks} onStopTask={onStopTask} />}
+            {isExpanded && (
+              <TaskDetailPanel tasks={shown} ambientTasks={ambientTasks} onStopTask={onStopTask} />
+            )}
           </AnimatePresence>
         </motion.div>
       )}

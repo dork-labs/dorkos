@@ -51,7 +51,8 @@ vi.mock('../../services/core/config-manager.js', () => ({
 }));
 
 import { createApp, finalizeApp } from '../../app.js';
-import { createRoomSubsystem, setRoomService } from '../../services/rooms/index.js';
+import type { RoomEvent } from '@dorkos/shared/room-schemas';
+import { createRoomSubsystem, getRoomService, setRoomService } from '../../services/rooms/index.js';
 import {
   initAgentIdentityService,
   resetAgentIdentityService,
@@ -83,6 +84,31 @@ const testServer = listeningServer(app);
 
 /** A URL document — content with a natural identity, so opens dedupe. */
 const urlContent = (url: string) => ({ type: 'url' as const, url });
+
+/**
+ * Start listening to a room's live stream, and answer with what it carried.
+ *
+ * The frames are the assertion for the viewing route: a refusal that still
+ * published would be the whole defect with a red status code on top of it.
+ *
+ * @param roomId - The room to listen to.
+ * @returns A function that stops listening and returns the frames.
+ */
+function collectRoomFrames(roomId: string): () => Promise<RoomEvent[]> {
+  const abort = new AbortController();
+  const seen: RoomEvent[] = [];
+  const reading = (async () => {
+    for await (const event of getRoomService().stream.subscribe(roomId, abort.signal)) {
+      seen.push(event);
+    }
+  })();
+  return async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    abort.abort();
+    await reading;
+    return seen;
+  };
+}
 
 describe('the room canvas routes', () => {
   let db: Db;
@@ -249,6 +275,44 @@ describe('the room canvas routes', () => {
       expect(listedAsMember.body.documents).toHaveLength(1);
     });
 
+    it('refuses a MEMBER agent on the viewing route, and paints nothing', async () => {
+      // **The hole this closes.** Every spawned agent has an identity token in
+      // its environment, so a member agent could POST here and put its own face
+      // on any tab with no turn and no claim behind it — and, holding no room
+      // stream, nothing would ever take it off again. An agent's face means a
+      // turn really read that document, and the server puts it there from
+      // `read_canvas`, never from a route (etiquette E16a).
+      const created = await open('https://example.test/a');
+      const identity = initAgentIdentityService(db);
+      const token = await identity.mint({ agentPath: ANA_PATH, displayName: 'Ana' });
+
+      const frames = collectRoomFrames(roomId);
+      const res = await request(testServer)
+        .post(`/api/rooms/${roomId}/canvas/viewing`)
+        .set('X-DorkOS-Agent', token)
+        .send({ documentId: created.body.id });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('PEOPLE_ONLY');
+      // A refusal that still published would be the whole bug with a red status
+      // code on it, so the frames are the assertion rather than the status.
+      expect(await frames()).toEqual([]);
+    });
+
+    it('lets the PERSON say where they are looking', async () => {
+      const created = await open('https://example.test/a');
+      const frames = collectRoomFrames(roomId);
+
+      const res = await request(testServer)
+        .post(`/api/rooms/${roomId}/canvas/viewing`)
+        .send({ documentId: created.body.id });
+
+      expect(res.status).toBe(204);
+      expect(await frames()).toMatchObject([
+        { type: 'signal', signal: 'presence', documentId: created.body.id },
+      ]);
+    });
+
     it('answers a room that does not exist exactly as it answers one you cannot see', async () => {
       // Both 404 with the same code, so an id tells a caller nothing. Asserted
       // on the ROUTE rather than on the helper, because that is where a future
@@ -340,7 +404,7 @@ describe('the room canvas routes', () => {
     });
   });
 
-  it('is registered in the OpenAPI document under every one of its six paths', async () => {
+  it('is registered in the OpenAPI document under every one of its seven paths', async () => {
     // A route that ships undocumented is a route the published API does not
     // have. Read off the live registry rather than the committed JSON, so this
     // fails on the edit that forgot the registration rather than on the export.
@@ -350,6 +414,7 @@ describe('the room canvas routes', () => {
     expect(paths).toContain('/api/rooms/{id}/canvas');
     expect(paths).toContain('/api/rooms/{id}/canvas/{documentId}');
     expect(paths).toContain('/api/rooms/{id}/canvas/{documentId}/editing');
+    expect(paths).toContain('/api/rooms/{id}/canvas/viewing');
     const document = spec.paths?.['/api/rooms/{id}/canvas/{documentId}'];
     expect(Object.keys(document ?? {}).sort()).toEqual(['delete', 'get', 'patch']);
   });

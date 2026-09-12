@@ -116,6 +116,13 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   ATTACHMENT_NOT_FOUND: 404,
   ATTACHMENT_ALREADY_POSTED: 409,
   TOO_MANY_ATTACHMENTS: 400,
+  // The three an agent's `post_to_room` can raise. No route reaches them today
+  // — the field is on the capability and the upload route stays people-only —
+  // but the table is exhaustive over the code union on purpose, so a code
+  // without a status cannot exist.
+  ATTACHMENT_PATH_REFUSED: 403,
+  ATTACHMENT_UNREADABLE: 400,
+  ATTACHMENT_TOO_LARGE: 413,
   // A 409 for both room-repo refusals: the request is well formed and the room
   // is right, but the install (or the room's own unmerged work) says not now.
   ROOM_REPOS_DISABLED: 409,

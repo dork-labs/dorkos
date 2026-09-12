@@ -317,9 +317,19 @@ describe('hand-registered MCP tools carry a permission tier', () => {
     it('covers the whole hand-registered surface, and it is not empty', () => {
       // A count, so a composer that silently registered nothing cannot make every
       // other check in this file vacuously green.
-      expect(registeredByServer['in-session']).toHaveLength(47);
+      // 47 -> 53 for the six browser-driving verbs (spec `canvas-agent-seat`).
+      // All six land on the IN-SESSION side only: a verb that acts inside a
+      // preview has to know whose window is holding it, and the external
+      // surface is session-less by construction. The external count not moving
+      // is what says so.
+      //
+      // 53 -> 55 for `browser_record_start` and `browser_record_stop` (spec
+      // `canvas-agent-seat` §3), in-session only for the same reason and one
+      // more: the frames live in one window's buffer, so only a surface that
+      // can address that window can start or finish a recording.
+      expect(registeredByServer['in-session']).toHaveLength(55);
       expect(registeredByServer.external).toHaveLength(40);
-      expect(declaredNames).toHaveLength(47);
+      expect(declaredNames).toHaveLength(55);
     });
 
     it('names exactly two tools destructive', () => {

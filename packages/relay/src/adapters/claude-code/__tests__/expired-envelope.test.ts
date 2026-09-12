@@ -89,7 +89,7 @@ function taskEnvelope(ttlOffsetMs: number): RelayEnvelope {
       permissionMode: 'default',
       taskName: 'Nightly',
       cron: null,
-      trigger: 'schedule',
+      trigger: 'scheduled',
     },
   };
 }

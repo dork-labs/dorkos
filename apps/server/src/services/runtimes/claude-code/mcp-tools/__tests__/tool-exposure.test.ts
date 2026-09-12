@@ -284,7 +284,7 @@ describe('in-session tool exposure', () => {
     await Promise.all([client.close(), server.instance.close()]);
   });
 
-  it('always-loads exactly the eight a turn cannot search for first', async () => {
+  it('always-loads exactly the nine a turn cannot search for first', async () => {
     const tools = await advertisedTools();
     const eager = tools
       .filter((t) => t._meta?.[ALWAYS_LOAD_META] === true)
@@ -370,8 +370,28 @@ describe('in-session tool exposure', () => {
     // tool the PROMPT names may not be deferred. `<room_tools>` does name it,
     // and that is exactly why it also joins `ALWAYS_LOADED_TOOLS` above — both
     // counts move by one, which is what says nothing else came with it.
-    expect(tools).toHaveLength(92);
-    expect(deferred).toHaveLength(83);
+    //
+    // 92 -> 98 for the six browser-driving verbs (spec `canvas-agent-seat`):
+    // click, type, press, scroll, wait_for and read_page. All six land in the
+    // DEFERRED column, and both counts moving by the same six is what says so.
+    // A turn that is about to drive a page can afford the ToolSearch hop — it is
+    // already several round trips into the preview — and always-loading six more
+    // schemas onto every turn of every session is the trade this file refuses.
+    // The rule that would force them the other way is the one
+    // `context-tool-names.test.ts` owns: a tool the PROMPT names may not be
+    // deferred. `<ui_tools>` does name them, in full and prefixed, which is the
+    // same shape `control_ui` and `get_ui_state` have always had there and which
+    // costs one search rather than a failed call.
+    //
+    // 98 -> 100 for `browser_record_start` and `browser_record_stop` (spec
+    // `canvas-agent-seat` §3), and both land DEFERRED beside the six. A turn
+    // that is about to record has already opened a preview and driven it, so it
+    // can afford the search; and `<ui_tools>` names them prefixed, which is the
+    // form the rule `context-tool-names.test.ts` owns accepts for a deferred
+    // tool. Both counts moving by the same two is what says nothing else came
+    // with them.
+    expect(tools).toHaveLength(100);
+    expect(deferred).toHaveLength(91);
     const retiredConnectorTools = [
       'connector_list_accounts',
       'connector_start_connect',

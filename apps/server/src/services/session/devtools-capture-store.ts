@@ -12,9 +12,15 @@
  * close (wired into `disposeProjector`). Cross-session isolation is structural:
  * the map is keyed by session id and no method ever reads across keys.
  *
+ * It also holds the session's **driver table** (spec `canvas-agent-seat` §2.2):
+ * which window is showing which browser document, so a driving command reaches
+ * exactly one preview instead of whichever answered first. See
+ * {@link DriverClaim}.
+ *
  * @module services/session/devtools-capture-store
  */
 import type {
+  DevtoolsActionResult,
   DevtoolsConsoleEntry,
   DevtoolsIngest,
   DevtoolsNetworkEntry,
@@ -50,6 +56,102 @@ export interface DevtoolsScreenshotEntry {
 export type ScreenshotOutcome =
   { ok: true; screenshot: DevtoolsScreenshotEntry } | { ok: false; error: string };
 
+/**
+ * One window's claim on one browser document — a row in the session's driver
+ * table (spec `canvas-agent-seat` §2.2).
+ *
+ * The **driver seat** is the row with the greatest `activeAt`, and a driving
+ * command with no `documentId` is addressed to it. The arbiter has to live
+ * somewhere there is exactly one of, and that is here: one session can be open
+ * in two windows at once, each with its own idea of which preview is in front,
+ * so resolving "the active one" in the client would give two windows the same
+ * answer and put the race back with `act` verbs in it.
+ */
+export interface DriverClaim {
+  /** The `X-Client-Id` of the window holding the page. */
+  clientId: string;
+  /** The canvas document id of the browser tab it is holding. */
+  documentId: string;
+  /** Epoch ms of the most recent claim. Greatest wins the seat. */
+  activeAt: number;
+  /**
+   * Whether the in-page shim ever handshook in that frame. False for a page
+   * framed straight from the internet and for a dev server framed by its own
+   * address: both render, and neither can be driven or read.
+   */
+  instrumented: boolean;
+}
+
+/**
+ * One recording in progress, for one session (spec `canvas-agent-seat` §3.1).
+ *
+ * The frames themselves are NOT here and never reach the server one at a time:
+ * they live in the window's own buffer until it encodes them. This is the state
+ * machine — which page is being filmed, by which window, how many frames have
+ * been asked for, and whether the ceiling has been reached.
+ */
+export interface RecordingState {
+  /** ULID. Names the file the server writes and the upload that carries it. */
+  id: string;
+  /** Which browser document is being recorded. Resolved at start. */
+  documentId: string;
+  /**
+   * The window holding the frames.
+   *
+   * Pinned, not re-resolved: the buffer lives in ONE window, so a recording
+   * that started in one window and stopped in another would encode nothing.
+   * A release from that window on that document ends the recording.
+   */
+  clientId: string;
+  /** Epoch ms the recording started. */
+  startedAt: number;
+  /** Frames asked for so far — the ceiling, and what the stop answer reports. */
+  frames: number;
+  /** True once the ceiling was hit; the verbs keep working, they stop filming. */
+  full: boolean;
+  /**
+   * Actions that ran somewhere this recording could not film.
+   *
+   * The frames live in ONE window's buffer, so an action the server addressed to
+   * a different window (the person activated a preview elsewhere mid-run) really
+   * happened and really is missing from the film. Counted rather than ignored,
+   * because a recording with an unexplained gap presented as `ok` is the one
+   * thing spec §10 names outright: nothing reports success for something that
+   * did not happen.
+   */
+  missed: number;
+}
+
+/** Where one finished recording's bytes belong, held while the upload is in flight. */
+export interface PendingRecordingUpload {
+  /** The recording being uploaded. Names the file; never taken from the caller. */
+  recordingId: string;
+  /** The session working directory the file lands under. */
+  cwd: string;
+  /** How many frames were asked for, so the answer can say the ceiling was hit. */
+  full: boolean;
+}
+
+/** What `browser_record_stop` awaits: a written file, or one plain sentence. */
+export type RecordingOutcome =
+  | {
+      ok: true;
+      /** Path relative to the session's working directory. */
+      path: string;
+      /** Size of the encoded GIF on disk. */
+      bytes: number;
+      /** Frames the window actually encoded. */
+      frames: number;
+      /** How long the recording covers, in milliseconds. */
+      durationMs: number;
+      /** The last frame, as an MCP image block's two fields. */
+      keyframe: { data: string; mimeType: string } | null;
+    }
+  | { ok: false; error: string };
+
+/** How many windows-and-pages one session remembers before evicting the oldest. */
+const MAX_DRIVER_CLAIMS = 8;
+
 /** An entry retained with its approximate serialized size (byte accounting). */
 interface Sized<T> {
   entry: T;
@@ -71,6 +173,40 @@ interface InternalBuffer {
   consoleEvicted: boolean;
   /** True once the network ring dropped an entry (count cap OR byte budget). */
   networkEvicted: boolean;
+  /**
+   * Which windows are showing which browser documents for this session, most
+   * recent claim last. Lives on the buffer rather than beside it so it moves
+   * across the first-turn canonical rekey for free ({@link
+   * DevtoolsCaptureStore.rekeySession}), which is the same reason the buffer
+   * itself has to move.
+   */
+  drivers: DriverClaim[];
+  /**
+   * Which window and page the SEAT is on, or `null` for none.
+   *
+   * **Explicit rather than positional, because a heartbeat is not a claim.**
+   * The seat used to be "the last row in {@link InternalBuffer.drivers}", and
+   * every mounted preview re-reports every 15 s — so with the app open in two
+   * windows the seat alternated on every beat, and half of a recording's
+   * actions were dispatched to a window that was not filming. Keeping the seat
+   * as its own fact is what lets a keep-alive refresh a row's clock without
+   * reordering anything (spec `canvas-agent-seat` §2.2: the seat moves when a
+   * window ACTIVATES a browser document, not when one says it is still there).
+   *
+   * It is a POINTER, not a row: the row it names may go stale or be released,
+   * and {@link DevtoolsCaptureStore.resolveDriver} falls back to the most recent
+   * live claim when it has, so a seat can never wedge the table.
+   */
+  seat: { clientId: string; documentId: string } | null;
+  /**
+   * The recording running on this session, or `null`.
+   *
+   * On the buffer rather than beside it for the same reason the driver table
+   * is: it moves across the first-turn canonical rekey for free, and it is
+   * dropped by the same eviction that drops everything else the session's
+   * preview produced — which is how an unstopped recording costs nothing.
+   */
+  recording: RecordingState | null;
 }
 
 /** One session's capture buffer, as read by callers. */
@@ -139,6 +275,26 @@ export class DevtoolsCaptureStore {
    * resolution or timeout, so the map never outgrows the in-flight captures.
    */
   private readonly screenshotWaiters = new Map<string, (outcome: ScreenshotOutcome) => void>();
+  /**
+   * Pending driving round-trips, keyed by requestId for exactly the reason the
+   * screenshot waiters are: a session rekey between the request and the answer
+   * must not strand a tool call.
+   */
+  private readonly actionWaiters = new Map<string, (result: DevtoolsActionResult) => void>();
+  /**
+   * Pending `browser_record_stop` round trips, keyed by requestId for the reason
+   * the other two waiter maps are: a rekey between the request and the upload
+   * must not strand the tool call.
+   */
+  private readonly recordingWaiters = new Map<string, (outcome: RecordingOutcome) => void>();
+  /**
+   * Where each in-flight recording upload belongs, keyed by the same requestId.
+   *
+   * The upload route reads the destination from HERE and from nothing the
+   * request carries, which is what makes "never a path the caller chose" a
+   * property of the design rather than a rule the route remembers to follow.
+   */
+  private readonly pendingRecordings = new Map<string, PendingRecordingUpload>();
 
   /**
    * Append an ingest batch to a session's buffer, creating it on first ingest.
@@ -149,8 +305,11 @@ export class DevtoolsCaptureStore {
    *
    * @param sessionId - The session the preview belongs to.
    * @param batch - The validated ingest payload.
+   * @param clientId - The `X-Client-Id` of the window that posted it. Required
+   *   to act on a seat claim (`batch.active`); a batch without one still
+   *   ingests its captures and simply claims nothing.
    */
-  ingest(sessionId: string, batch: DevtoolsIngest): void {
+  ingest(sessionId: string, batch: DevtoolsIngest, clientId?: string): void {
     let buffer = this.buffers.get(sessionId);
     if (!buffer) {
       this.evictIfFull();
@@ -163,6 +322,9 @@ export class DevtoolsCaptureStore {
         approxBytes: 0,
         consoleEvicted: false,
         networkEvicted: false,
+        drivers: [],
+        seat: null,
+        recording: null,
       };
       this.buffers.set(sessionId, buffer);
     }
@@ -214,8 +376,381 @@ export class DevtoolsCaptureStore {
       }
     }
 
+    if (batch.active !== undefined && clientId && batch.documentId) {
+      this.applyClaim(buffer, clientId, batch.documentId, batch.active, {
+        instrumented: batch.instrumented === true,
+        // Passed through as the THREE states it has, because absent is neither
+        // of the other two. Absent is what a client that predates the field
+        // sends on every report including its beat, so reading it as "yes, a
+        // person put this in front" let a tab left open across an upgrade take
+        // the seat back every 15 s from the window somebody had just activated.
+        // {@link applyClaim} spends it where it is safe — on a window nobody
+        // has heard from — and nowhere else.
+        activation: batch.activation,
+      });
+    }
+
     buffer.lastSeq = Math.max(buffer.lastSeq, batch.seq);
     buffer.updatedAt = Date.now();
+  }
+
+  /**
+   * Take, refresh, or release one window's claim on one browser document.
+   *
+   * Three different things arrive on this one route, and telling them apart is
+   * what the seat depends on:
+   *
+   * - an **activation** — a person brought this browser document to the front
+   *   in this window (it mounted, the window took focus, the tab came back, the
+   *   page finished handshaking). It takes the seat, and it has to SAY it is one
+   *   (`activation: true`).
+   * - a **keep-alive** — the same window saying it is still showing the same
+   *   page, on a 15 s beat. It refreshes the row's clock and NOTHING else. Every
+   *   mounted preview sends one, so a keep-alive that reordered the table made
+   *   the seat alternate between two open windows forever, and a recording
+   *   pinned to one of them missed every action dispatched to the other.
+   * - a **release** — the window stopped showing it. The row goes, and the seat
+   *   with it if it was there.
+   *
+   * Anything a window says about a page it is ALREADY holding is a keep-alive
+   * unless it says otherwise, which is what a client older than the field can
+   * never do — so its beat refreshes and nothing more. The one thing absent
+   * still buys is a first appearance: a window nobody has heard from takes the
+   * seat whether or not it can name what it is doing, because that is what every
+   * claim meant before the field existed and it is the claim that matters.
+   *
+   * Capped oldest-first, so a person who opens twenty previews over an afternoon
+   * does not accumulate twenty rows.
+   *
+   * @param buffer - The session's buffer.
+   * @param clientId - The window reporting.
+   * @param documentId - The browser document it is reporting about.
+   * @param active - False for a release.
+   * @param opts.instrumented - Whether the shim handshook in that frame.
+   * @param opts.activation - True for an activation, false for a keep-alive,
+   *   absent for a client too old to tell them apart.
+   */
+  private applyClaim(
+    buffer: InternalBuffer,
+    clientId: string,
+    documentId: string,
+    active: boolean,
+    opts: { instrumented: boolean; activation: boolean | undefined }
+  ): void {
+    const index = buffer.drivers.findIndex(
+      (claim) => claim.clientId === clientId && claim.documentId === documentId
+    );
+    if (!active) {
+      if (index >= 0) buffer.drivers.splice(index, 1);
+      if (buffer.seat?.clientId === clientId && buffer.seat.documentId === documentId) {
+        // The seat falls to whatever is left, which `resolveDriver` works out
+        // from the table rather than from a guess made here.
+        buffer.seat = null;
+      }
+      // The window that was holding the frames let the page go, so the frames
+      // went with it. Dropping the state here is what keeps `browser_record_stop`
+      // able to say "nothing is being recorded" instead of waiting out thirty
+      // seconds for a buffer nobody has any more.
+      const recording = buffer.recording;
+      if (recording && recording.clientId === clientId && recording.documentId === documentId) {
+        buffer.recording = null;
+      }
+      return;
+    }
+
+    const held = index >= 0 ? buffer.drivers[index] : undefined;
+    if (held && held.activeAt >= Date.now() - WORKBENCH.DEVTOOLS_SEAT_STALE_MS) {
+      if (opts.activation !== true) {
+        // Anything but an explicit activation, about a page this window is
+        // already holding and still answering for: the clock moves, the order
+        // does not, and the seat is not touched. This is the whole fix, and it
+        // has to cover the ABSENT case too — a bundle that predates the field
+        // sends the same body on its beat as on an activation, so trusting
+        // absent here let a stale tab take the seat every 15 s and never give
+        // it back.
+        held.activeAt = Date.now();
+        held.instrumented = opts.instrumented;
+        return;
+      }
+    }
+    // Everything below is a window arriving: a first claim, an explicit
+    // activation, or a row so old it had stopped counting as open at all.
+
+    if (index >= 0) buffer.drivers.splice(index, 1);
+    buffer.drivers.push({
+      clientId,
+      documentId,
+      activeAt: Date.now(),
+      instrumented: opts.instrumented,
+    });
+    if (buffer.drivers.length > MAX_DRIVER_CLAIMS) {
+      buffer.drivers.splice(0, buffer.drivers.length - MAX_DRIVER_CLAIMS);
+    }
+    // An activation takes the seat, and so does a first claim from a client too
+    // old to call it one. A KEEP-ALIVE that got this far — a window whose first
+    // word was a beat — takes it only when nothing live holds it: it still has
+    // to be reachable, and "nothing is open" would be the wrong answer about a
+    // window that plainly is, but it has announced nothing worth displacing
+    // somebody's live seat for.
+    if (opts.activation !== false || !this.seatIsLive(buffer)) {
+      buffer.seat = { clientId, documentId };
+    }
+  }
+
+  /** Whether the seat points at a row that is still in the table and fresh. */
+  private seatIsLive(buffer: InternalBuffer): boolean {
+    const seat = buffer.seat;
+    if (!seat) return false;
+    const floor = Date.now() - WORKBENCH.DEVTOOLS_SEAT_STALE_MS;
+    return buffer.drivers.some(
+      (claim) =>
+        claim.clientId === seat.clientId &&
+        claim.documentId === seat.documentId &&
+        claim.activeAt >= floor
+    );
+  }
+
+  /**
+   * Which window a request should be addressed to, and for which page.
+   *
+   * With no `documentId` the answer is the **seat**: the window whose preview
+   * came to the front last. With one, it is the seat again when the seat is
+   * showing that page, and otherwise the most recent live claim on exactly that
+   * document — so an agent that holds three previews can say which, and naming
+   * the page it is already being driven in cannot quietly move it elsewhere.
+   * `undefined` means nothing matched, and the caller answers in a sentence
+   * rather than minting a request nobody will ever reply to.
+   *
+   * @param sessionId - The session whose table to read.
+   * @param documentId - The browser tab to address, or `undefined` for the seat.
+   */
+  resolveDriver(sessionId: string, documentId?: string): DriverClaim | undefined {
+    const buffer = this.buffers.get(sessionId);
+    const claims = buffer?.drivers;
+    if (!buffer || !claims || claims.length === 0) return undefined;
+    // Stale rows are skipped, never returned. A window that is killed, suspended
+    // or loses its network sends no release, and a seat nobody is sitting in
+    // would make every verb address a client that no longer answers and wait out
+    // its whole timeout — for the life of the session. A live window re-reports
+    // every `DEVTOOLS_SEAT_REFRESH_MS`, so a row this old has missed six; the
+    // constant says why six rather than three.
+    const floor = Date.now() - WORKBENCH.DEVTOOLS_SEAT_STALE_MS;
+
+    // The SEAT answers first — the window that last brought a browser document
+    // to the front — read off `buffer.seat` rather than off the end of the list.
+    // Position stopped meaning "most recently activated" the moment keep-alives
+    // stopped reordering, which is the point.
+    //
+    // It answers a NAMED page too, when the seat is showing that page. Two
+    // windows can show the same document (canvas documents are session-wide),
+    // and `browser_record_start` pins to the seat and hands the agent that
+    // `documentId` back — so a named page resolved positionally could address a
+    // different window from the one the recording is in, action after action,
+    // while every answer said `ok`.
+    const seat = buffer.seat;
+    if (seat && (documentId === undefined || seat.documentId === documentId)) {
+      const held = claims.find(
+        (claim) =>
+          claim.clientId === seat.clientId &&
+          claim.documentId === seat.documentId &&
+          claim.activeAt >= floor
+      );
+      if (held) return { ...held };
+    }
+
+    // No live seat, or a page named by id: fall back to the most recent live
+    // claim, which is what the seat itself degrades to when its window goes.
+    for (let i = claims.length - 1; i >= 0; i--) {
+      const claim = claims[i];
+      if (claim.activeAt < floor) continue;
+      if (documentId === undefined || claim.documentId === documentId) return { ...claim };
+    }
+    return undefined;
+  }
+
+  /**
+   * Whether any window is holding a browser document for this session at all.
+   *
+   * Separates "nothing is open" (open one) from "that page is not open any more"
+   * (list what is), which are two different things for an agent to do next.
+   *
+   * @param sessionId - The session whose table to read.
+   */
+  hasDrivers(sessionId: string): boolean {
+    const claims = this.buffers.get(sessionId)?.drivers;
+    if (!claims) return false;
+    // Live rows only, to stay the exact complement of {@link resolveDriver}: a
+    // session whose only claim is stale has nothing open, and telling the agent
+    // "no window has THAT page" when nothing is open at all would point it at
+    // the wrong fix.
+    const floor = Date.now() - WORKBENCH.DEVTOOLS_SEAT_STALE_MS;
+    return claims.some((claim) => claim.activeAt >= floor);
+  }
+
+  /**
+   * Await one driving round-trip's result. Resolves when the addressed window
+   * posts an `act-result` for this `requestId`, or with `undefined` after
+   * `timeoutMs` — never hangs, so a page that stopped answering costs a wait and
+   * a plain sentence rather than a turn.
+   *
+   * @param requestId - The round-trip id the tool stamped on its request.
+   * @param timeoutMs - How long to wait before giving up.
+   */
+  awaitAction(requestId: string, timeoutMs: number): Promise<DevtoolsActionResult | undefined> {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.actionWaiters.delete(requestId);
+        resolve(undefined);
+      }, timeoutMs);
+      this.actionWaiters.set(requestId, (result) => {
+        clearTimeout(timer);
+        resolve(result);
+      });
+    });
+  }
+
+  /**
+   * Deliver one driving result to whatever is awaiting it. Keyed by requestId
+   * alone, like the screenshot path and for the same rekey reason. A result for
+   * a request nobody is awaiting (the tool already timed out, the turn ended) is
+   * dropped, which is why exactly one result per requestId is the shim's rule
+   * rather than a thing this has to police.
+   *
+   * @param result - The validated result relayed from the in-page shim.
+   */
+  resolveAction(result: DevtoolsActionResult): void {
+    const resolve = this.actionWaiters.get(result.requestId);
+    if (!resolve) return;
+    this.actionWaiters.delete(result.requestId);
+    resolve(result);
+  }
+
+  /**
+   * Begin recording one page, if nothing else is being recorded here.
+   *
+   * @param sessionId - The session that is recording.
+   * @param state - The recording to start; `frames` and `full` start at zero.
+   * @returns `false` when a recording is already running for this session, which
+   *   is the refusal the tool turns into a sentence. One per session, always.
+   */
+  startRecording(
+    sessionId: string,
+    state: Pick<RecordingState, 'id' | 'documentId' | 'clientId'>
+  ): boolean {
+    const buffer = this.buffers.get(sessionId);
+    if (!buffer) return false;
+    if (buffer.recording) return false;
+    buffer.recording = { ...state, startedAt: Date.now(), frames: 0, full: false, missed: 0 };
+    return true;
+  }
+
+  /**
+   * The recording running for a session, or `undefined`.
+   *
+   * Read by the driving verbs before every action: a live recording is what
+   * puts `capture` on the request, and a full one is what takes it off again.
+   *
+   * @param sessionId - The session to read.
+   */
+  recordingFor(sessionId: string): RecordingState | undefined {
+    const recording = this.buffers.get(sessionId)?.recording;
+    return recording ? { ...recording } : undefined;
+  }
+
+  /**
+   * Count one frame the window said it kept, and close the ceiling behind it.
+   *
+   * Counted from the window's own report rather than from the request, because
+   * only the window knows whether the page could be rasterized at all.
+   *
+   * @param sessionId - The session that is recording.
+   * @param max - The frame ceiling; at it, the recording is marked full.
+   */
+  noteRecordedFrame(sessionId: string, max: number): void {
+    const recording = this.buffers.get(sessionId)?.recording;
+    if (!recording) return;
+    recording.frames += 1;
+    if (recording.frames >= max) recording.full = true;
+  }
+
+  /**
+   * Record that one action ran somewhere this recording could not film.
+   *
+   * @param sessionId - The session that is recording.
+   */
+  noteMissedFrame(sessionId: string): void {
+    const recording = this.buffers.get(sessionId)?.recording;
+    if (recording) recording.missed += 1;
+  }
+
+  /**
+   * End a recording and hand back what it was, or `undefined` when none was
+   * running. Idempotent: a second stop finds nothing and says so.
+   *
+   * @param sessionId - The session that was recording.
+   */
+  endRecording(sessionId: string): RecordingState | undefined {
+    const buffer = this.buffers.get(sessionId);
+    const recording = buffer?.recording;
+    if (!buffer || !recording) return undefined;
+    buffer.recording = null;
+    return recording;
+  }
+
+  /**
+   * Register where one finished recording's bytes belong, and await them.
+   *
+   * The destination is registered BEFORE the stop request goes out, so an
+   * upload that arrives before this call could not have been answered — and so
+   * the route never has to trust a path from the wire.
+   *
+   * @param requestId - The round trip id stamped on the stop request.
+   * @param pending - The recording id and working directory to write under.
+   * @param timeoutMs - How long to wait before giving up on the window.
+   */
+  awaitRecording(
+    requestId: string,
+    pending: PendingRecordingUpload,
+    timeoutMs: number
+  ): Promise<RecordingOutcome | undefined> {
+    this.pendingRecordings.set(requestId, pending);
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.recordingWaiters.delete(requestId);
+        this.pendingRecordings.delete(requestId);
+        resolve(undefined);
+      }, timeoutMs);
+      this.recordingWaiters.set(requestId, (outcome) => {
+        clearTimeout(timer);
+        this.pendingRecordings.delete(requestId);
+        resolve(outcome);
+      });
+    });
+  }
+
+  /**
+   * Where the upload for one round trip belongs, or `undefined` when nothing is
+   * awaiting it — an upload that arrived after the tool gave up.
+   *
+   * @param requestId - The round trip id the upload carries.
+   */
+  pendingRecording(requestId: string): PendingRecordingUpload | undefined {
+    const pending = this.pendingRecordings.get(requestId);
+    return pending ? { ...pending } : undefined;
+  }
+
+  /**
+   * Deliver one recording outcome to whatever is awaiting it. An outcome nobody
+   * is waiting for is dropped, exactly as a late driving result is.
+   *
+   * @param requestId - The round trip id the upload carried.
+   * @param outcome - The written file, or the sentence that says why not.
+   */
+  resolveRecording(requestId: string, outcome: RecordingOutcome): void {
+    const resolve = this.recordingWaiters.get(requestId);
+    if (!resolve) return;
+    this.recordingWaiters.delete(requestId);
+    resolve(outcome);
   }
 
   /**
@@ -293,9 +828,13 @@ export class DevtoolsCaptureStore {
     return this.buffers.size;
   }
 
-  /** Drop every buffer (test isolation). */
+  /** Drop every buffer and every pending waiter (test isolation). */
   clear(): void {
     this.buffers.clear();
+    this.screenshotWaiters.clear();
+    this.actionWaiters.clear();
+    this.recordingWaiters.clear();
+    this.pendingRecordings.clear();
   }
 
   /**

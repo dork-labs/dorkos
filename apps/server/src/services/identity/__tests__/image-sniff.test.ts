@@ -35,6 +35,8 @@ describe('sniffImageContentType', () => {
     ['png', PNG, 'image/png'],
     ['jpeg', JPEG, 'image/jpeg'],
     ['webp', WEBP, 'image/webp'],
+    ['gif', GIF, 'image/gif'],
+    ['gif87a', Buffer.from('GIF87a-older-but-still-a-gif'), 'image/gif'],
   ])('recognises a %s by its magic bytes', (_name, bytes, expected) => {
     expect(sniffImageContentType(bytes)).toBe(expected);
   });
@@ -43,8 +45,10 @@ describe('sniffImageContentType', () => {
     expect(sniffImageContentType(SVG)).toBeNull();
   });
 
-  it('refuses a GIF, whatever it was uploaded as', () => {
-    expect(sniffImageContentType(GIF)).toBeNull();
+  it('is not fooled by a file that only CLAIMS to be a GIF', () => {
+    // GIF joined the previewable set for an agent's recording, and the rule it
+    // joined under is the one every other type answers to: the bytes decide.
+    expect(sniffImageContentType(Buffer.from('GIF but not really'))).toBeNull();
   });
 
   it('refuses high-bit bytes that only DECODE to RIFF/WEBP', () => {

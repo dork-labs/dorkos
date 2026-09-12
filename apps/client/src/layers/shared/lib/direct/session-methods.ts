@@ -351,6 +351,21 @@ export function createDirectSessionMethods(
       /* web-only surface — nothing to relay in-process */
     },
 
+    async postDevtoolsAction(): Promise<void> {
+      /* web-only surface — the embed has no browser tab to drive */
+    },
+
+    /**
+     * Refuses: the embed has no browser tab, so there is nothing to record.
+     *
+     * A rejection rather than a no-op, unlike the two above — a tool call is
+     * blocked on this one, and answering it with silent success would tell an
+     * agent a file exists that nobody ever wrote.
+     */
+    async uploadDevtoolsRecording(): Promise<void> {
+      throw new Error('The embedded app has no browser tab, so there is nothing to record.');
+    },
+
     // ── Tool Approval ───────────────────────────────────────────────────────
 
     /**

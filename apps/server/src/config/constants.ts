@@ -122,6 +122,95 @@ export const WORKBENCH = {
    * relays then vanishes) by evicting the least-recently-updated buffer.
    */
   DEVTOOLS_MAX_SESSIONS: 50,
+  /**
+   * How long a driving verb waits (ms) for the addressed window to answer
+   * (stream → client → frame → act → result route). Matches the screenshot
+   * round trip: the work in the page is a click, not a render, so the budget is
+   * almost all delivery.
+   */
+  DEVTOOLS_ACT_TIMEOUT_MS: 8_000,
+  /**
+   * Extra time (ms) `browser_wait_for` is given on top of the wait it was asked
+   * for. The page is deliberately busy for that whole wait, so the server's own
+   * timeout has to sit past it or it would report a failure while the page was
+   * still doing exactly what it was told.
+   */
+  DEVTOOLS_ACT_ROUND_TRIP_GRACE_MS: 2_000,
+  /** Default wait (ms) for `browser_wait_for` when the caller names none. */
+  DEVTOOLS_WAIT_DEFAULT_MS: 5_000,
+  /** The longest wait (ms) `browser_wait_for` accepts. Every wait is bounded. */
+  DEVTOOLS_WAIT_MAX_MS: 10_000,
+  /**
+   * Default character budget for one `browser_read_page` outline — half the
+   * budget the console reads already use, because a page outline is a thing an
+   * agent reads several times in a turn and a console read is not.
+   */
+  DEVTOOLS_OUTLINE_BUDGET_CHARS: 32_768,
+  /**
+   * How often a window re-reports that it is still showing its browser page.
+   *
+   * The same cadence the session stream already proves liveness at
+   * (`SSE.HEARTBEAT_INTERVAL_MS`), and for the same reason: it is the interval
+   * this app has already decided is often enough to notice a window that went
+   * away and rare enough to cost nothing. One small POST per open browser
+   * document.
+   */
+  DEVTOOLS_SEAT_REFRESH_MS: 15_000,
+  /**
+   * How long a seat outlives its window's last word before it yields.
+   *
+   * A browser that is killed, loses its network, or is suspended by the
+   * operating system never sends the `pagehide` release, and without a floor the
+   * seat would stay in the table forever: every driving verb would address a
+   * window that no longer exists and wait out its whole timeout, for the life of
+   * the session.
+   *
+   * **Ninety seconds, and the number is set by Chrome rather than by taste.** A
+   * page hidden for more than five minutes has its timers aligned to ONE wake
+   * per minute, so a window that is open, healthy and simply behind another tab
+   * cannot beat any floor at or below 60 s however often it asks to. At 45 s a
+   * single hidden window lost its seat and every verb answered "bring the window
+   * with the preview to the front" — about a window that was open the whole
+   * time. Ninety seconds is six beats of the refresh above, and clears the
+   * one-minute alignment with room for the wake to be late.
+   */
+  DEVTOOLS_SEAT_STALE_MS: 90_000,
+  /**
+   * How many frames one recording keeps (spec `canvas-agent-seat` §3.3).
+   *
+   * Sixty actions is a long run at the keyboard, and past it the recording
+   * stops FILMING rather than stopping the run: the driving verbs keep working
+   * and the stop answer says the ceiling was reached. A recording that killed
+   * the work it was recording would be a worse trade than a short film.
+   */
+  MAX_RECORDING_FRAMES: 60,
+  /**
+   * Long edge, in pixels, each recorded frame is drawn to before encoding.
+   *
+   * Downscaled from the 1568 px the page rasterizes at, which is the size a
+   * model reads a screenshot best at. A quarter of the pixels, still readable
+   * as a picture of what happened.
+   */
+  RECORDING_LONG_EDGE_PX: 800,
+  /** How long each recorded frame is shown, in milliseconds. Two a second. */
+  RECORDING_FRAME_MS: 500,
+  /**
+   * The biggest encoded recording a window may upload, in bytes.
+   *
+   * Under the `uploads.maxFileSize` ceiling the upload route itself enforces,
+   * so the window gives up with a sentence before multer refuses with a 413.
+   */
+  MAX_RECORDING_BYTES: 8 * 1024 * 1024,
+  /**
+   * How long `browser_record_stop` waits (ms) for the window to encode and
+   * upload.
+   *
+   * Long, because the window is doing real work — sixty frames of quantize and
+   * encode, then a multi-megabyte POST — and because the alternative to waiting
+   * is telling an agent a recording failed while the file is still on its way.
+   * Past it, a plain failure that claims no file and leaves no state behind.
+   */
+  RECORDING_STOP_TIMEOUT_MS: 30_000,
 } as const;
 
 export const WATCHER = {

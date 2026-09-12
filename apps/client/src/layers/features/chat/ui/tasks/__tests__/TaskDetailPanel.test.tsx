@@ -15,6 +15,7 @@ function makeTask(overrides: Partial<VisibleBackgroundTask> = {}): VisibleBackgr
   return {
     taskId: `task-${Math.random().toString(36).slice(2)}`,
     taskType: 'agent',
+    ambient: false,
     status: 'running',
     color: TASK_COLORS[0],
     startedAt: Date.now() - 30_000,
@@ -141,5 +142,42 @@ describe('TaskDetailPanel', () => {
 
     render(<TaskDetailPanel tasks={tasks} onStopTask={vi.fn()} />);
     expect(screen.queryByText(/^Last:/)).not.toBeInTheDocument();
+  });
+
+  // Spec `ambient-background-tasks`: this panel is the only place housekeeping
+  // tasks are named, and the only place their number is ever stated.
+  it('lists housekeeping tasks under a line saying how many there are', () => {
+    render(
+      <TaskDetailPanel
+        tasks={[makeTask({ taskId: 'work', description: 'Refactoring auth' })]}
+        ambientTasks={[
+          makeTask({ taskId: 'amb-1', ambient: true, description: 'Watching the docs folder' }),
+          makeTask({ taskId: 'amb-2', ambient: true, description: 'Refreshing the file index' }),
+        ]}
+        onStopTask={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('2 housekeeping tasks the agent runs for itself')).toBeInTheDocument();
+    expect(screen.getByText('Watching the docs folder')).toBeInTheDocument();
+    expect(screen.getByText('Refreshing the file index')).toBeInTheDocument();
+  });
+
+  it('says "task" when exactly one housekeeping task is hidden', () => {
+    render(
+      <TaskDetailPanel
+        tasks={[]}
+        ambientTasks={[makeTask({ taskId: 'amb-1', ambient: true })]}
+        onStopTask={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('1 housekeeping task the agent runs for itself')).toBeInTheDocument();
+  });
+
+  it('says nothing about housekeeping when there is none', () => {
+    render(<TaskDetailPanel tasks={[makeTask({ taskId: 'work' })]} onStopTask={vi.fn()} />);
+
+    expect(screen.queryByText(/housekeeping/)).not.toBeInTheDocument();
   });
 });

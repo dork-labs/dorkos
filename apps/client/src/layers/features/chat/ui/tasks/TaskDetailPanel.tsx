@@ -4,7 +4,10 @@ import type { VisibleBackgroundTask } from '../../model/use-background-tasks';
 import { TaskDetailRow } from './TaskDetailRow';
 
 interface TaskDetailPanelProps {
+  /** Tasks the collapsed bar already counts and draws. */
   tasks: VisibleBackgroundTask[];
+  /** Housekeeping tasks the bar hides. This panel is the only place they appear. */
+  ambientTasks?: VisibleBackgroundTask[];
   onStopTask: (taskId: string) => void;
 }
 
@@ -13,8 +16,12 @@ interface TaskDetailPanelProps {
  *
  * Animates open/closed with a height transition. Each task is rendered
  * as a compact chip row via `TaskDetailRow`.
+ *
+ * Housekeeping tasks follow the ordinary ones under a line saying how many
+ * there are. That line is the only place the hidden count is ever stated — the
+ * collapsed bar stays quiet about them, which is the whole point of hiding them.
  */
-export function TaskDetailPanel({ tasks, onStopTask }: TaskDetailPanelProps) {
+export function TaskDetailPanel({ tasks, ambientTasks = [], onStopTask }: TaskDetailPanelProps) {
   return (
     <motion.div
       variants={COLLAPSE_VARIANTS}
@@ -28,6 +35,18 @@ export function TaskDetailPanel({ tasks, onStopTask }: TaskDetailPanelProps) {
         {tasks.map((task) => (
           <TaskDetailRow key={task.taskId} task={task} onStop={() => onStopTask(task.taskId)} />
         ))}
+
+        {ambientTasks.length > 0 && (
+          <>
+            <p className="text-muted-foreground/60 text-3xs mt-1 px-2">
+              {ambientTasks.length} housekeeping task{ambientTasks.length !== 1 ? 's' : ''} the
+              agent runs for itself
+            </p>
+            {ambientTasks.map((task) => (
+              <TaskDetailRow key={task.taskId} task={task} onStop={() => onStopTask(task.taskId)} />
+            ))}
+          </>
+        )}
       </div>
     </motion.div>
   );

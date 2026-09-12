@@ -41,7 +41,7 @@
  * @module shared/model/app-store-room-canvas
  */
 import type { StateCreator } from 'zustand';
-import type { CanvasDocument, RoomCanvasEvent } from '@dorkos/shared/room-schemas';
+import type { CanvasDocument, RoomCanvasEvent, RoomSignalEvent } from '@dorkos/shared/room-schemas';
 import { canvasViewForContent, type CanvasView } from '@/layers/shared/lib/canvas-view';
 import type { AppState } from './app-store-types';
 
@@ -104,6 +104,33 @@ export interface RoomCanvasSlice {
    * tab that resolved a room would take both of those down with it.
    */
   roomCanvasLiveRoomId: string | null;
+  /**
+   * Who is looking at what, per room — author id to the document they are on.
+   *
+   * **Live only, and nobody's history.** It is built from `presence` signals,
+   * which carry no `seq` and are never replayed, so this holds exactly what has
+   * arrived since the stream connected and nothing older. That is the honest
+   * shape for the fact: a face left on a document somebody walked away from ten
+   * minutes ago is worse than no face.
+   *
+   * The failure modes fall out of that and are deliberately asymmetric. A reader
+   * who joins mid-session sees no faces until people move, which costs nothing.
+   * A reader whose browser died leaves a face until the people still looking
+   * reconnect — which is what {@link RoomCanvasSlice.roomCanvasPresenceEpoch}
+   * bounds.
+   */
+  roomCanvasPresence: Readonly<Record<string, Readonly<Record<string, string>>>>;
+  /**
+   * How many times each room's stream has cycled — the tick that makes tab
+   * presence self-correcting without a heartbeat.
+   *
+   * A cycle wipes the room's faces, because nothing replays them and every one
+   * of them may be stale. The surface that publishes this viewer's own face
+   * watches this number, so the wipe is immediately followed by every connected
+   * viewer re-stating where they are: one frame per viewer per reconnect, and no
+   * traffic at all while nothing is happening.
+   */
+  roomCanvasPresenceEpoch: Readonly<Record<string, number>>;
 
   /**
    * A subscription cycle is starting: every row this room holds is now
@@ -152,6 +179,18 @@ export interface RoomCanvasSlice {
     event: RoomCanvasEvent,
     viewerAuthorId: string | null
   ) => void;
+
+  /**
+   * Take in one `presence` signal off a room's stream.
+   *
+   * A frame naming a document says that author is looking at it; one with no
+   * document says they are looking at none. Signals that are not `presence` are
+   * not this store's business and are dropped.
+   *
+   * @param roomId - The room the signal arrived on.
+   * @param event - The signal.
+   */
+  applyRoomCanvasPresence: (roomId: string, event: RoomSignalEvent) => void;
 
   /**
    * Show a document in its own view, and mark it looked at.
@@ -299,12 +338,27 @@ export const createRoomCanvasSlice: StateCreator<
   roomCanvasEditing: {},
   roomCanvasStale: {},
   roomCanvasLiveRoomId: null,
+  roomCanvasPresence: {},
+  roomCanvasPresenceEpoch: {},
 
   beginRoomCanvasCycle: (roomId) =>
     set((s) => ({
       roomCanvasStale: {
         ...s.roomCanvasStale,
         [roomId]: (s.roomCanvasDocuments[roomId] ?? []).map((d) => d.id),
+      },
+      // **Faces are emptied where documents are only MARKED**, and the
+      // difference is which way each one fails. A document that is still on the
+      // server's table is re-sent by the resync, so keeping it costs nothing and
+      // dropping it would take a half-typed edit with it. A face is re-sent by
+      // nothing at all — signals never replay — so keeping one means showing a
+      // person on a tab they may have left before the network went away. The
+      // epoch below is how the faces come back: every connected viewer re-states
+      // where it is looking as soon as its own stream is live again.
+      roomCanvasPresence: { ...s.roomCanvasPresence, [roomId]: {} },
+      roomCanvasPresenceEpoch: {
+        ...s.roomCanvasPresenceEpoch,
+        [roomId]: (s.roomCanvasPresenceEpoch[roomId] ?? 0) + 1,
       },
     })),
 
@@ -422,6 +476,25 @@ export const createRoomCanvasSlice: StateCreator<
                 : unread,
             documents
           ),
+        },
+      };
+    }),
+
+  applyRoomCanvasPresence: (roomId, event) =>
+    set((s) => {
+      if (event.signal !== 'presence') return {};
+      const held = s.roomCanvasPresence[roomId] ?? {};
+      const documentId = event.documentId;
+      if (documentId === undefined) {
+        if (held[event.authorId] === undefined) return {};
+        const { [event.authorId]: _gone, ...rest } = held;
+        return { roomCanvasPresence: { ...s.roomCanvasPresence, [roomId]: rest } };
+      }
+      if (held[event.authorId] === documentId) return {};
+      return {
+        roomCanvasPresence: {
+          ...s.roomCanvasPresence,
+          [roomId]: { ...held, [event.authorId]: documentId },
         },
       };
     }),

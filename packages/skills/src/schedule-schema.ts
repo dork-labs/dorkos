@@ -150,17 +150,19 @@ export const ScheduleBlockSchema = z.object({
    * - `bypassPermissions`: nothing asks. The run does whatever it decides to.
    * - `auto`, `dontAsk`: the remaining runtime modes, carried through as-is.
    *
-   * A scheduled run is unattended, so nobody answers an approval it raises. It
-   * is **refused** after `SESSIONS.INTERACTION_TIMEOUT_MS` (10 minutes) and the
-   * turn carries on without it — it does not stall until `max-runtime`. A long
-   * run under a strict mode therefore finishes, having quietly spent ten
-   * minutes per ask and skipped the work behind each one. The stricter modes
-   * trade throughput for safety, deliberately; budget `max-runtime` for the
-   * asks you expect.
+   * A run the timer starts is unattended, so nobody answers an approval it
+   * raises. It is **refused the moment it is raised** and the turn carries on
+   * without that tool — no wait, no stall against `max-runtime`. A long run
+   * under a strict mode therefore finishes, having skipped the work behind each
+   * ask; the run's own result names every tool it could not use, and so does the
+   * activity feed. The stricter modes trade throughput for safety, deliberately.
    *
-   * A scheduled run is the ONE exception to parking: an interactive session
-   * holds an unanswered prompt for four hours so a person can come back to it,
-   * and a run nobody is watching has nobody to come back.
+   * That instant refusal is the ONE exception to waiting: a session a person can
+   * reach holds an unanswered prompt for four hours so they can come back to it,
+   * and a run nobody is watching has nobody to come back. Clicking **Run now**
+   * on the same schedule is NOT the exception — somebody is watching that one,
+   * so its cards are answerable and wait exactly as any other session's do (spec
+   * `unattended-session-permission-prompts`).
    */
   permissions: z.enum(TASK_PERMISSION_MODES).default(DEFAULT_PERMISSIONS),
 

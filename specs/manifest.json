@@ -14,7 +14,7 @@
       "slug": "room-canvas",
       "title": "Canvas and Browser in rooms",
       "created": "2026-09-11",
-      "status": "specified",
+      "status": "implemented",
       "project": "Canvas and Browser in Rooms"
     },
     {
@@ -29,28 +29,28 @@
       "slug": "ambient-background-tasks",
       "title": "Housekeeping tasks stay quiet",
       "created": "2026-09-11",
-      "status": "ideation"
+      "status": "specified"
     },
     {
       "id": "260911-191245",
       "slug": "auto-mode-classifier-context",
       "title": "Telling auto mode what it cannot see",
       "created": "2026-09-11",
-      "status": "ideation"
+      "status": "specified"
     },
     {
       "id": "260911-191243",
       "slug": "unattended-session-permission-prompts",
       "title": "Sessions with nobody to answer",
       "created": "2026-09-11",
-      "status": "ideation"
+      "status": "specified"
     },
     {
       "id": "260911-191240",
       "slug": "plugin-reload-cache-cost",
       "title": "Plugin reloads that respect the prompt cache",
       "created": "2026-09-11",
-      "status": "ideation"
+      "status": "specified"
     },
     {
       "id": "260910-001729",

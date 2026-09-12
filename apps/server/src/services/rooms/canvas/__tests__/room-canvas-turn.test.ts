@@ -28,7 +28,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { mockInterruptReceipt } from '@dorkos/test-utils';
 import { USER_CONFIG_DEFAULTS, type UserConfig } from '@dorkos/shared/config-schema';
-import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
+import type { RoomEntry, RoomEvent, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { RoomTurnRequest } from '../../room-trigger.js';
 
 /** The runtime capabilities the stub registry declares. Enough to take a turn. */
@@ -283,6 +283,77 @@ describe('a room turn’s canvas commands', () => {
     expect(canvasLines[0].authorId).toBe(harness.authors.system().id);
     expect(canvasLines[0].mentions).toEqual([]);
     expect(entries.length).toBeGreaterThan(before);
+  });
+
+  describe('the face the turn leaves behind', () => {
+    /** Start listening to the room's stream; answer with its presence frames. */
+    function watchPresence() {
+      const abort = new AbortController();
+      const seen: RoomEvent[] = [];
+      const reading = (async () => {
+        for await (const event of harness.service.stream.subscribe(room.id, abort.signal)) {
+          seen.push(event);
+        }
+      })();
+      return async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        abort.abort();
+        await reading;
+        return seen.filter((e) => e.type === 'signal' && e.signal === 'presence');
+      };
+    }
+
+    it('takes it off at the end, whatever the turn did', async () => {
+      // The agent looked at something mid-turn, as `read_canvas` records it.
+      const document = harness.service.canvas.open(room.id, ana, {
+        type: 'json',
+        data: {},
+        title: 'the plan',
+      });
+      harness.service.canvas.noteAgentRead(room.id, ana, document.id);
+
+      const frames = watchPresence();
+      turnBehaviour = (opts) => {
+        openTurn(opts);
+        opts.projector.ingest({ type: 'turn_end' });
+        return { accepted: true, canonicalId: opts.sessionId };
+      };
+      await createSessionRoomTurnRunner().run(turnRequest());
+
+      const released = await frames();
+      expect(released).toMatchObject([{ authorId: ana }]);
+      expect(released[0]).not.toHaveProperty('documentId');
+    });
+
+    it('takes it off even when posting the turn’s line throws', async () => {
+      // **Why the two are in separate `try` blocks.** Posting can fail — a room
+      // archived mid-turn, a busy database — and a shared `try` would mean the
+      // very endings that go wrong are the ones that leave an agent's face on a
+      // tab for a turn that has stopped.
+      const document = harness.service.canvas.open(room.id, ana, {
+        type: 'json',
+        data: {},
+        title: 'the plan',
+      });
+      harness.service.canvas.noteAgentRead(room.id, ana, document.id);
+      vi.spyOn(harness.service.canvas, 'finishTurn').mockImplementation(() => {
+        throw new Error('the database is locked');
+      });
+
+      const frames = watchPresence();
+      turnBehaviour = (opts) => {
+        openTurn(opts);
+        opts.projector.ingest({ type: 'ui_command', command: jsonCommand('the plan') });
+        opts.projector.ingest({ type: 'turn_end' });
+        return { accepted: true, canonicalId: opts.sessionId };
+      };
+      // And the failure stays inside: `collectReply`'s `closed` promise is
+      // documented as never rejecting.
+      await expect(createSessionRoomTurnRunner().run(turnRequest())).resolves.toBeDefined();
+
+      const released = await frames();
+      expect(released).toMatchObject([{ authorId: ana }]);
+    });
   });
 
   it('triggers no turn for anybody', async () => {

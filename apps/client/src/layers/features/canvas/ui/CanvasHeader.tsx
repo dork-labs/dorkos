@@ -121,6 +121,76 @@ export interface CanvasHeaderDocument {
   pinned?: boolean;
   /** True when this document arrived and this viewer has not looked at it yet. */
   unread?: boolean;
+  /**
+   * Who else is looking at this document right now, never including the reader.
+   *
+   * Live and ephemeral: it is whatever the room's stream has said since this
+   * browser connected, so it is empty far more often than it is wrong. Absent on
+   * a private session canvas, where the answer is always nobody.
+   */
+  watchers?: readonly CanvasDocumentAuthor[];
+}
+
+/** How many faces a tab draws before the rest become a number. */
+const WATCHER_FACE_LIMIT = 3;
+
+/**
+ * What a screen reader hears about who else is on a tab.
+ *
+ * Names, not a count, up to the point where a list stops being useful — "Ana is
+ * looking at this" tells you something a bare "2 people" does not.
+ *
+ * @param watchers - The people and agents looking at this document.
+ * @returns One sentence, or null when nobody else is here.
+ */
+function watchingSentence(watchers: readonly CanvasDocumentAuthor[]): string | null {
+  const names = watchers.map((w) => w.displayName);
+  if (names.length === 0) return null;
+  if (names.length === 1) return `${names[0]} is looking at this.`;
+  if (names.length === 2) return `${names[0]} and ${names[1]} are looking at this.`;
+  const rest = names.length - 2;
+  return `${names[0]}, ${names[1]} and ${rest} ${rest === 1 ? 'other' : 'others'} are looking at this.`;
+}
+
+/**
+ * The stack of small faces a tab draws for the people looking at it.
+ *
+ * Its own component so the sentence and the discs stay together: the faces are
+ * `aria-hidden` and the sentence is what a screen reader gets, and splitting
+ * those apart is how one of them ends up drifting from the other.
+ */
+function CanvasTabWatchers({ watchers }: { watchers: readonly CanvasDocumentAuthor[] }) {
+  const sentence = watchingSentence(watchers);
+  if (sentence === null) return null;
+  const shown = watchers.slice(0, WATCHER_FACE_LIMIT);
+  const extra = watchers.length - shown.length;
+  return (
+    <>
+      <span data-slot="canvas-tab-watchers" aria-hidden className="flex shrink-0 -space-x-1">
+        {shown.map((watcher) => (
+          <IdentityAvatar
+            key={watcher.id}
+            size="xs"
+            // A ring in the strip's own background colour is what keeps two
+            // overlapping discs readable as two faces rather than one blob.
+            className="ring-background size-3.5 text-[8px] ring-1"
+            kind={watcher.kind}
+            color={watcher.color ?? hashToHslColor(watcher.id)}
+            emoji={watcher.emoji}
+            imageUrl={watcher.imageUrl}
+            badge={null}
+            fallback={initialOf(watcher.displayName)}
+          />
+        ))}
+        {extra > 0 && (
+          <span className="bg-muted text-muted-foreground ring-background flex size-3.5 shrink-0 items-center justify-center rounded-full text-[8px] ring-1">
+            +{extra}
+          </span>
+        )}
+      </span>
+      <span className="sr-only">{sentence}</span>
+    </>
+  );
 }
 
 interface CanvasHeaderProps {
@@ -226,6 +296,9 @@ export function CanvasHeader({
               )}
               <Icon className="size-3.5 shrink-0" />
               <span className="max-w-40 truncate font-medium">{doc.sourceLabel}</span>
+              {doc.watchers && doc.watchers.length > 0 && (
+                <CanvasTabWatchers watchers={doc.watchers} />
+              )}
               {doc.unread && (
                 <span
                   data-slot="canvas-tab-unread"

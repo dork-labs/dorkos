@@ -17,6 +17,7 @@ const MOCK_VISIBLE_TASKS: Record<string, VisibleBackgroundTask> = {
   agent_running: {
     taskId: 'vis-agent-1',
     taskType: 'agent',
+    ambient: false,
     status: 'running',
     color: TASK_COLORS[0],
     startedAt: Date.now() - 23000,
@@ -28,6 +29,7 @@ const MOCK_VISIBLE_TASKS: Record<string, VisibleBackgroundTask> = {
   agent_running_2: {
     taskId: 'vis-agent-2',
     taskType: 'agent',
+    ambient: false,
     status: 'running',
     color: TASK_COLORS[1],
     startedAt: Date.now() - 45000,
@@ -39,6 +41,7 @@ const MOCK_VISIBLE_TASKS: Record<string, VisibleBackgroundTask> = {
   bash_dev_server: {
     taskId: 'vis-bash-1',
     taskType: 'bash',
+    ambient: false,
     status: 'running',
     color: TASK_COLORS[2],
     startedAt: Date.now() - 120000,
@@ -48,6 +51,7 @@ const MOCK_VISIBLE_TASKS: Record<string, VisibleBackgroundTask> = {
   bash_build: {
     taskId: 'vis-bash-2',
     taskType: 'bash',
+    ambient: false,
     status: 'running',
     color: TASK_COLORS[3],
     startedAt: Date.now() - 15000,
@@ -57,6 +61,7 @@ const MOCK_VISIBLE_TASKS: Record<string, VisibleBackgroundTask> = {
   bash_complete: {
     taskId: 'vis-bash-3',
     taskType: 'bash',
+    ambient: false,
     status: 'complete',
     color: TASK_COLORS[4],
     startedAt: Date.now() - 45000,
@@ -66,6 +71,7 @@ const MOCK_VISIBLE_TASKS: Record<string, VisibleBackgroundTask> = {
   agent_stopped: {
     taskId: 'vis-agent-3',
     taskType: 'agent',
+    ambient: false,
     status: 'stopped',
     color: TASK_COLORS[0],
     startedAt: Date.now() - 30000,
@@ -79,11 +85,56 @@ const MOCK_VISIBLE_TASKS: Record<string, VisibleBackgroundTask> = {
   agent_untracked: {
     taskId: 'vis-agent-4',
     taskType: 'agent',
+    ambient: false,
     status: 'untracked',
     color: TASK_COLORS[3],
     startedAt: Date.now() - 240000,
     description: 'Run the dev server in the background',
     durationMs: 240000,
+  },
+};
+
+/**
+ * Housekeeping the agent runs for itself. The runtime marks these and asks
+ * hosts to keep them out of activity indicators, so no bar, no figure, no
+ * count — only the expanded panel, and only a failure brings one back
+ * (spec `ambient-background-tasks`).
+ */
+const MOCK_AMBIENT_TASKS: Record<string, VisibleBackgroundTask> = {
+  watcher: {
+    taskId: 'vis-ambient-1',
+    taskType: 'agent',
+    ambient: true,
+    status: 'running',
+    color: TASK_COLORS[2],
+    startedAt: Date.now() - 90000,
+    description: 'Watching the docs folder for changes',
+    toolUses: 3,
+    durationMs: 90000,
+  },
+  indexer: {
+    taskId: 'vis-ambient-2',
+    taskType: 'bash',
+    ambient: true,
+    status: 'running',
+    color: TASK_COLORS[3],
+    startedAt: Date.now() - 30000,
+    command: 'git status --porcelain',
+    durationMs: 30000,
+  },
+  // `ambient: false` although the runtime marked it: `useBackgroundTasks`
+  // resolves the promotion rule before the bar ever sees the task, so a failed
+  // housekeeping task arrives here as ordinary work and draws like one.
+  failed_watcher: {
+    taskId: 'vis-ambient-3',
+    taskType: 'agent',
+    ambient: false,
+    status: 'error',
+    color: TASK_COLORS[4],
+    startedAt: Date.now() - 12000,
+    description: 'Watching the docs folder for changes',
+    durationMs: 12000,
+    summary: 'The watcher could not read the folder.',
   },
 };
 
@@ -101,6 +152,8 @@ export function BackgroundTaskShowcases() {
   const agentTasks = allTasks.filter((t) => t.taskType === 'agent' && t.status === 'running');
   const bashTasks = allTasks.filter((t) => t.taskType === 'bash' && t.status === 'running');
   const mixedRunning = [...agentTasks.slice(0, 2), ...bashTasks.slice(0, 2)];
+  const ambientTasks = [MOCK_AMBIENT_TASKS.watcher!, MOCK_AMBIENT_TASKS.indexer!];
+  const failedAmbient = MOCK_AMBIENT_TASKS.failed_watcher!;
 
   return (
     <>
@@ -126,6 +179,38 @@ export function BackgroundTaskShowcases() {
         <ShowcaseDemo>
           <div className="max-w-md">
             <BackgroundTaskBar tasks={bashTasks.slice(0, 2)} onStopTask={logStop} />
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Housekeeping only (the row empties to the chevron)</ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="max-w-md">
+            <BackgroundTaskBar tasks={ambientTasks} onStopTask={logStop} />
+            <p className="text-muted-foreground mt-2 text-xs">
+              (Two housekeeping tasks are running and the bar counts none of them — no figure, no
+              dot, no tally. The chevron is left as the way into the panel that lists them)
+            </p>
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>1 agent + 2 housekeeping (expand to see them)</ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="max-w-md">
+            <BackgroundTaskBar tasks={[agentTasks[0]!, ...ambientTasks]} onStopTask={logStop} />
+            <p className="text-muted-foreground mt-2 text-xs">
+              (Reads &ldquo;1 task running&rdquo;; the chevron reveals the two hidden ones)
+            </p>
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Housekeeping that failed (promoted into the bar)</ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="max-w-md">
+            <BackgroundTaskBar tasks={[failedAmbient, ...ambientTasks]} onStopTask={logStop} />
+            <p className="text-muted-foreground mt-2 text-xs">
+              (A housekeeping task that breaks is shown like any other failure — hiding it is the
+              one thing this feature must never do)
+            </p>
           </div>
         </ShowcaseDemo>
 
@@ -187,6 +272,17 @@ export function BackgroundTaskShowcases() {
         <ShowcaseDemo>
           <div className="bg-card max-w-md rounded-lg border">
             <TaskDetailPanel tasks={mixedRunning} onStopTask={logStop} />
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>With housekeeping tasks (the only place they appear)</ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="bg-card max-w-md rounded-lg border">
+            <TaskDetailPanel
+              tasks={mixedRunning.slice(0, 1)}
+              ambientTasks={ambientTasks}
+              onStopTask={logStop}
+            />
           </div>
         </ShowcaseDemo>
       </PlaygroundSection>

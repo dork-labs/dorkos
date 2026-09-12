@@ -44,6 +44,26 @@ export function storedExtension(name: string): string {
 }
 
 /**
+ * Turn a filename into one a room can store.
+ *
+ * `path.basename` first, then the same allowlist `upload-handler.ts` applies, so
+ * a name can carry no directory and no character that means anything to a shell
+ * or a filesystem. Truncated last, because truncating before sanitizing could
+ * leave a partial escape at the end.
+ *
+ * **Two callers, one expression**: the person's upload route and the agent's
+ * `post_to_room` (spec `canvas-agent-seat` §4). A second copy would drift, and
+ * the drift would be one door accepting a name the other refuses.
+ *
+ * @param original - The filename as it arrived.
+ * @param nameMax - The longest stored name this install keeps.
+ */
+export function sanitizeAttachmentName(original: string, nameMax: number): string {
+  const base = path.basename(original).replace(/[^a-zA-Z0-9._-]/g, '_');
+  return base.slice(0, nameMax) || 'file';
+}
+
+/**
  * The directory every projection of one entry lands in, relative to the agent's
  * working directory.
  *

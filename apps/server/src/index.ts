@@ -279,6 +279,7 @@ import {
 } from './services/marketplace-mcp/confirmation-provider.js';
 import type { MarketplaceMcpDeps } from './services/marketplace-mcp/marketplace-mcp-tools.js';
 import { ActivityService } from './services/activity/activity-service.js';
+import { createPluginReloadActivityWriter } from './services/activity/plugin-reload-activity.js';
 import { sweepStaleInstallBackups } from './services/marketplace/backup-janitor.js';
 import { createActivityRouter } from './routes/activity.js';
 import { createExtensionRoutesMiddleware } from './middleware/extension-routes.js';
@@ -362,6 +363,7 @@ import {
   readRoomRepoConfig,
   RoomFileEditor,
   RoomFilesService,
+  ROOM_MD_FILENAME,
   RoomMergeService,
   RoomRepoMutex,
   RoomRepoReconciler,
@@ -1385,6 +1387,19 @@ async function start() {
     // What may be SENT, as against what `caps` froze onto a room's sidecar
     // for what may be merged IN. Read per turn, like every other value here.
     maxRoomMdBytes: () => readRoomRepoConfig().maxRoomMdBytes,
+    // The room's shared notes land on its canvas the moment it has any, pinned
+    // so the twelve-document ceiling can never push them off. The path is
+    // RELATIVE, exactly as the Room tab's Files section opens one: a document
+    // with no working directory recorded is read back through the room's own
+    // files route, which is the one route every member already has.
+    pinRoomMd: (roomId, authorId) => {
+      roomService.canvas.open(
+        roomId,
+        authorId,
+        { type: 'file', sourcePath: ROOM_MD_FILENAME },
+        { pinned: true }
+      );
+    },
   });
   setRoomRepoService(roomRepoService);
   // Reading those files back (spec §3.9). It shares the store and nothing
@@ -2725,6 +2740,13 @@ async function start() {
   // request id are not stranded on the pre-remap id (mirrors the projector +
   // DevTools-store rekeys).
   onProjectorRekey((oldId, newId) => sessionConnectorAttachmentStore.rekey(oldId, newId));
+  // A plugin reload that threw a conversation's prompt cache away leaves a line
+  // in the feed — with what it cost and whether it waited first. Free reloads
+  // stay silent (spec `plugin-reload-cache-cost`). Outside the mesh block below
+  // on purpose: plugins reload on a host with no mesh too.
+  if (claudeRuntime) {
+    claudeRuntime.setPluginReloadActivity(createPluginReloadActivityWriter(activityService));
+  }
   // Managed per-agent MCP servers (spec `mcp-server-management`). Constructed
   // once meshCore exists — the service resolves an agent id to its workspace
   // path through the mesh registry (the single instance, shared, ADR-0043) and

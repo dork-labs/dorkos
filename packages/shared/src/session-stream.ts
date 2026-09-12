@@ -43,6 +43,7 @@ import {
   SystemStatusEventSchema,
   OperationProgressEventShapeSchema,
   UiCommandEventSchema,
+  BrowserActCommandSchema,
   ErrorEventSchema,
   UsageStatusSchema,
   McpSigninRequiredEventSchema,
@@ -450,6 +451,12 @@ export const SessionEventSchema = z
       toolUses: z.number().int().optional(),
       lastToolName: z.string().optional(),
       summary: z.string().optional(),
+      /**
+       * Housekeeping work the runtime asked hosts to keep out of activity
+       * indicators. Absent means ordinary work — the only runtime that sets it
+       * today is claude-code.
+       */
+      ambient: z.boolean().optional(),
     }),
     // A hook lifecycle update, collapsing the adapter's started/progress/response
     // phases into one member keyed by `hookId` (the `subagent_update` precedent).
@@ -750,6 +757,81 @@ export const SessionEventSchema = z
       ...seqShape,
       type: z.literal('devtools_capture_request'),
       requestId: z.string(),
+      /**
+       * Which window is being asked, and for which page. Resolved server-side
+       * from the driver seat (`DevtoolsCaptureStore`), so exactly one of several
+       * open previews answers instead of whichever posted first.
+       *
+       * Optional on the wire, and deliberately: a window that has claimed no
+       * seat still gets the request the way it always did, so a client that
+       * predates the seat keeps working. A window that HAS been addressed
+       * answers only when both fields are its own.
+       */
+      targetClientId: z.string().optional(),
+      documentId: z.string().optional(),
+    }),
+    // A server→client request to DO something in the preview — click, type,
+    // press, scroll, wait for, or read back (spec `canvas-agent-seat` §2). Same
+    // shape and same one-shot life as the capture request above: the addressed
+    // client forwards it into its preview frame, the in-page shim performs it
+    // and posts one result, and the result returns through
+    // `POST /api/sessions/:id/devtools/action` tagged with this `requestId`.
+    // Never re-projected from a cold snapshot — replaying a click would be a
+    // second click nobody asked for.
+    z.object({
+      ...seqShape,
+      type: z.literal('devtools_action_request'),
+      requestId: z.string(),
+      /** The window holding the page, and the page. Both required: the server
+       * mints this event only once it has resolved a driver row, so there is
+       * always exactly one right answer to "who should do this". */
+      targetClientId: z.string(),
+      documentId: z.string(),
+      command: BrowserActCommandSchema,
+      /**
+       * Keep a recording frame of what this action left behind (spec
+       * `canvas-agent-seat` §3.2).
+       *
+       * Set only while a recording is running on this page and has not hit its
+       * frame ceiling. The frame rides the SAME round trip rather than a second
+       * one: one message, one result, one frame, and no second timeout to reason
+       * about. The window keeps the picture and reports only that it kept it.
+       */
+      capture: z.boolean().optional(),
+    }),
+    // Start or stop recording the page a driving window is holding (spec
+    // `canvas-agent-seat` §3). Addressed exactly like a driving request, and
+    // for the same reason: the frames live in ONE window's buffer, so the
+    // window that started a recording is the window that must finish it.
+    //
+    // A `stop` is answered by `POST /api/sessions/:id/devtools/recording`,
+    // which carries the encoded GIF, rather than by an event — the bytes are
+    // megabytes and the wire this rides is a text stream.
+    z.object({
+      ...seqShape,
+      type: z.literal('devtools_recording_request'),
+      requestId: z.string(),
+      /** The window holding the page, and the page. Resolved server-side. */
+      targetClientId: z.string(),
+      documentId: z.string(),
+      /** Begin a recording, or end one and hand the file back. */
+      action: z.enum(['start', 'stop']),
+      /** The recording this is about. Names the file the server writes. */
+      recordingId: z.string(),
+      /**
+       * The bounds the window encodes to, carried rather than duplicated.
+       *
+       * The server owns these numbers (`WORKBENCH`), and a client that had its
+       * own copy of them would be a second place for them to drift.
+       */
+      bounds: z.object({
+        /** Long edge, in pixels, each frame is drawn to before encoding. */
+        longEdgePx: z.number().int().positive(),
+        /** How long each frame is shown, in milliseconds. */
+        frameMs: z.number().int().positive(),
+        /** The biggest encoded GIF the window may upload. */
+        maxBytes: z.number().int().positive(),
+      }),
     }),
     // The session's message queue changed — a message was accepted, dispatched,
     // edited, reordered, removed, or cleared (spec `persistent-session-runtime`).

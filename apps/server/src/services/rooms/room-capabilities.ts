@@ -183,8 +183,16 @@ import { logger } from '../../lib/logger.js';
 import {
   directMessageTitle,
   MERGE_SUMMARY_MAX_CHARS,
+  ROOM_ATTACHMENT_MAX_PER_ENTRY,
+  ROOM_ATTACHMENT_NAME_MAX,
   type RoomEntry,
 } from '@dorkos/shared/room-schemas';
+import {
+  discardStagedAttachments,
+  stageAgentAttachments,
+} from './attachments/agent-attachments.js';
+import { sweepUnboundAttachments } from './attachments/unbound-sweep.js';
+import { getAttachmentRowStore, getRoomAttachmentStore } from './attachments/attachment-stores.js';
 
 import {
   CapabilityToolError,
@@ -491,6 +499,30 @@ function projectDetail(detail: RoomDetail): Record<string, unknown> {
  * @returns Whatever the verb returned.
  * @throws {CapabilityToolError} Carrying `{ error, code }` for a typed refusal.
  */
+/**
+ * The agent's own working directory, or a refusal it can act on.
+ *
+ * The one place a `post_to_room` attachment may point, and it is read off the
+ * VERIFIED in-session surface rather than off the arguments — a cwd a caller
+ * could name would be the confused-deputy shape this whole path exists to
+ * avoid. A surface with no working directory (external `/mcp`) can attach
+ * nothing, and says so instead of silently attaching from somewhere else.
+ *
+ * @param context - The capability invocation context.
+ * @returns The session's working directory.
+ * @throws {RoomError} `ATTACHMENT_PATH_REFUSED` when the surface carries none.
+ */
+function requireAgentCwd(context: CapabilityHandlerContext): string {
+  if (!context.cwd) {
+    throw new RoomError(
+      'ATTACHMENT_PATH_REFUSED',
+      'Attaching a file needs a working directory to read it from, and this surface has none. ' +
+        'Post the message without attachments.'
+    );
+  }
+  return context.cwd;
+}
+
 function answering<T>(body: () => T): T {
   try {
     return body();
@@ -684,6 +716,8 @@ export const roomsDomain: CapabilityDomain = {
         'something in a room other than the one you were just triggered from. ' +
         'Posting into the room that triggered your turn is how you answer it; posting into a ' +
         'different room leaves your answer here untouched. ' +
+        'You can show a file with it — a screenshot or a recording you made — by naming its ' +
+        'path in attachments; it has to be a file in your own working directory. ' +
         'Everyone in the room sees it, so post like a colleague: one clear message, not a running commentary.',
       tier: 'act',
       input: z.object({
@@ -698,6 +732,16 @@ export const roomsDomain: CapabilityDomain = {
           .string()
           .optional()
           .describe('Reply inside a thread: the entryId the thread hangs off.'),
+        attachments: z
+          .array(z.string())
+          .max(ROOM_ATTACHMENT_MAX_PER_ENTRY)
+          .optional()
+          .describe(
+            'Files to show with this message, by path. Relative paths are from your own ' +
+              'working directory, and only files inside it can be attached. Screenshots and ' +
+              'recordings you made are the usual case. Everyone in the room sees them, and the ' +
+              'other agents get their own copy.'
+          ),
       }),
       output: z.unknown(),
       surfaces: {
@@ -707,24 +751,85 @@ export const roomsDomain: CapabilityDomain = {
           annotations: { idempotentHint: false },
         },
       },
-      invoke: (deps, input, context) => {
+      invoke: async (deps, input, context) => {
         const rooms = requireRoomDeps(deps);
         // Inside `answering`, because resolving WHO is calling can itself refuse
         // — a login-on install that could name nobody — and a refusal a model
         // gets as a stack trace is a refusal it cannot act on.
-        const entry = answering(() =>
-          rooms.postFromTool(input.roomId, {
-            authorId: callerAuthor(rooms, context).id,
-            text: input.text,
-            ...(input.replyTo !== undefined ? { replyTo: input.replyTo } : {}),
-          })
-        );
-        return Promise.resolve({
+        const authorId = answering(() => callerAuthor(rooms, context).id);
+        // Staged BEFORE the entry, and bound inside its transaction below, so
+        // the message and its files land together or neither does. A refusal
+        // here leaves no bytes, no rows and no entry (spec §4).
+        //
+        // Only reached when the post NAMES files: every other `post_to_room`
+        // must keep working on a surface that has no working directory at all,
+        // and must not pay for the attachment stores to exist.
+        const named = input.attachments ?? [];
+        const attachmentIds =
+          named.length === 0
+            ? []
+            : await answeringAsync(() =>
+                stageAgentAttachments({
+                  roomId: input.roomId,
+                  authorId,
+                  cwd: requireAgentCwd(context),
+                  paths: named,
+                  store: getRoomAttachmentStore(),
+                  rows: getAttachmentRowStore(),
+                  limits: configManager.get('uploads'),
+                  nameMax: ROOM_ATTACHMENT_NAME_MAX,
+                })
+              );
+        // **The write can still refuse after the bytes are on disk**, and a
+        // refusal is the ordinary case rather than the exotic one: a mistyped
+        // `roomId`, the per-turn post ceiling, a stopped turn, an archived room,
+        // a direct message. The rules that decide those live inside
+        // `postFromTool` and must stay there — a dry run here would be the
+        // second write path that file exists to refuse — so the files are taken
+        // back instead, with the same cleanup the staging failure uses.
+        let entry;
+        try {
+          entry = answering(() =>
+            rooms.postFromTool(input.roomId, {
+              authorId,
+              text: input.text,
+              ...(input.replyTo !== undefined ? { replyTo: input.replyTo } : {}),
+              ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
+            })
+          );
+        } catch (err) {
+          if (attachmentIds.length > 0) {
+            await discardStagedAttachments({
+              roomId: input.roomId,
+              ids: attachmentIds,
+              store: getRoomAttachmentStore(),
+              rows: getAttachmentRowStore(),
+            });
+          }
+          throw err;
+        }
+
+        // Housekeeping on the path that creates the mess, exactly as the
+        // person's upload route does it. Without a call here the 24-hour sweep
+        // had ONE site — inside the `PEOPLE_ONLY` route — so a room only agents
+        // post in never swept at all, and the spec's reason for tolerating an
+        // orphan ("the sweep reclaims it") was not true there. Awaited but never
+        // fatal: it swallows its own errors, so a post cannot fail because a
+        // sweep did.
+        if (attachmentIds.length > 0) {
+          void (await sweepUnboundAttachments({
+            rows: getAttachmentRowStore(),
+            store: getRoomAttachmentStore(),
+            roomId: input.roomId,
+          }));
+        }
+        return {
           posted: true,
           entryId: entry.id,
           seq: entry.seq,
+          ...(attachmentIds.length > 0 ? { attached: attachmentIds.length } : {}),
           ...(entry.threadRootEntryId ? { threadRootEntryId: entry.threadRootEntryId } : {}),
-        });
+        };
       },
     }),
     defineCapability({
@@ -1564,6 +1669,15 @@ async function readRoomCanvas(
   const document = canvas.get(input.roomId, input.documentId);
   if (!document) {
     throw new RoomError('CANVAS_DOCUMENT_NOT_FOUND', 'No such document on this room’s canvas');
+  }
+  // **The agent's face goes on the tab here, and only from here** (§9.4, E16a).
+  // It is a consequence of a turn that is really running really reading this
+  // document — not of anything the model chose to say — so it is gated on a live
+  // claim, and it is taken off again when that turn ends. An agent reading the
+  // canvas with no turn in hand (a person driving it from a shell, an external
+  // MCP client) shows nothing, which is right: nobody is waiting on it.
+  if (rooms.isWorkingHere(input.roomId, callerAuthorId)) {
+    canvas.noteAgentRead(input.roomId, callerAuthorId, document.id);
   }
   const metadata = {
     note: UNTRUSTED_NOTE,

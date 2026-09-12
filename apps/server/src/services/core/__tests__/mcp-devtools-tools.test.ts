@@ -435,6 +435,49 @@ describe('browser_screenshot handler', () => {
     await pending; // times out quickly; this test only asserts the enqueue
   });
 
+  it('addresses the capture to the driver seat when a window has claimed one', async () => {
+    // The race `use-devtools-bridge.ts` used to carry as a known limitation: with
+    // several previews open, an untargeted request reached every bridge and the
+    // first answer won. Now the server names the window and the page, and every
+    // other bridge ignores it.
+    const store = seededStore([]);
+    store.ingest(
+      SESSION_ID,
+      { documentId: 'doc-a', seq: 1, console: [], network: [], active: true, instrumented: true },
+      'window-a'
+    );
+    store.ingest(
+      SESSION_ID,
+      { documentId: 'doc-b', seq: 1, console: [], network: [], active: true, instrumented: true },
+      'window-b'
+    );
+    const session = makeSession();
+    const handler = createBrowserScreenshotHandler(resolveSession, store, session, 10);
+    const pending = handler();
+
+    const event = session.eventQueue[0] as unknown as {
+      data: { targetClientId?: string; documentId?: string };
+    };
+    expect(event.data.targetClientId).toBe('window-b');
+    expect(event.data.documentId).toBe('doc-b');
+    await pending;
+  });
+
+  it('sends an untargeted capture when no window has claimed a seat', async () => {
+    // A client that predates the seat never claims, and must keep working.
+    const store = seededStore([]);
+    const session = makeSession();
+    const handler = createBrowserScreenshotHandler(resolveSession, store, session, 10);
+    const pending = handler();
+
+    const event = session.eventQueue[0] as unknown as {
+      data: { targetClientId?: string; documentId?: string };
+    };
+    expect(event.data.targetClientId).toBeUndefined();
+    expect(event.data.documentId).toBeUndefined();
+    await pending;
+  });
+
   it('resolves with MCP image content when the matching ingest arrives', async () => {
     const store = seededStore([]);
     const session = makeSession();

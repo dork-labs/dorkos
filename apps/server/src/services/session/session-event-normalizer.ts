@@ -134,6 +134,9 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
         taskId: String(data.taskId ?? ''),
         status: 'running',
         ...(data.description !== undefined ? { description: String(data.description) } : {}),
+        // Carried onto the durable event so a client that reconnects mid-turn
+        // still knows this one is housekeeping. Absent stays absent.
+        ...(data.ambient !== undefined ? { ambient: Boolean(data.ambient) } : {}),
       };
       return update;
     }
@@ -155,6 +158,7 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
         status: mapDoneStatus(data.status),
         ...(data.summary !== undefined ? { summary: String(data.summary) } : {}),
         ...(data.toolUses !== undefined ? { toolUses: Number(data.toolUses) } : {}),
+        ...(data.ambient !== undefined ? { ambient: Boolean(data.ambient) } : {}),
       };
       return update;
     }
@@ -351,8 +355,73 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
       const captureRequest: RawOf<'devtools_capture_request'> = {
         type: 'devtools_capture_request',
         requestId: String(requestId),
+        ...(data.targetClientId !== undefined
+          ? { targetClientId: String(data.targetClientId) }
+          : {}),
+        ...(data.documentId !== undefined ? { documentId: String(data.documentId) } : {}),
       };
       return captureRequest;
+    }
+
+    // A server→client request to act in the preview (spec `canvas-agent-seat`
+    // §2): the driving sibling of the capture request above, and transient for
+    // the same reason — replaying a click from a snapshot would be a second
+    // click nobody asked for. The command is forwarded whole; it was composed
+    // server-side from a tool call and validated on the way out.
+    case 'devtools_action_request': {
+      const requestId = data.requestId;
+      const targetClientId = data.targetClientId;
+      const documentId = data.documentId;
+      const command = data.command;
+      if (
+        requestId === undefined ||
+        targetClientId === undefined ||
+        documentId === undefined ||
+        command === undefined
+      ) {
+        return null;
+      }
+      const actionRequest: RawOf<'devtools_action_request'> = {
+        type: 'devtools_action_request',
+        requestId: String(requestId),
+        targetClientId: String(targetClientId),
+        documentId: String(documentId),
+        command: command as RawOf<'devtools_action_request'>['command'],
+        // Forwarded only when set, and it is set only while a recording is
+        // running on this page (spec `canvas-agent-seat` §3.2). Dropping it here
+        // would leave the recording running and every frame missing, with no
+        // failure anywhere to say so.
+        ...(data.capture === true ? { capture: true } : {}),
+      };
+      return actionRequest;
+    }
+
+    // Start or stop recording the page a driving window holds (spec
+    // `canvas-agent-seat` §3). Transient for the same reason its two siblings
+    // above are: replaying a `stop` from a snapshot would ask a window to encode
+    // and upload a recording that finished long ago.
+    case 'devtools_recording_request': {
+      const { requestId, targetClientId, documentId, action, recordingId, bounds } = data;
+      if (
+        requestId === undefined ||
+        targetClientId === undefined ||
+        documentId === undefined ||
+        recordingId === undefined ||
+        (action !== 'start' && action !== 'stop') ||
+        bounds === undefined
+      ) {
+        return null;
+      }
+      const recordingRequest: RawOf<'devtools_recording_request'> = {
+        type: 'devtools_recording_request',
+        requestId: String(requestId),
+        targetClientId: String(targetClientId),
+        documentId: String(documentId),
+        action,
+        recordingId: String(recordingId),
+        bounds: bounds as RawOf<'devtools_recording_request'>['bounds'],
+      };
+      return recordingRequest;
     }
 
     // A typed turn error, adapter-yielded or server-injected (guardTurnErrors

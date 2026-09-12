@@ -199,6 +199,8 @@ export const StreamEventTypeSchema = z
     'hook_response',
     'ui_command',
     'devtools_capture_request',
+    'devtools_action_request',
+    'devtools_recording_request',
     'session_state_changed',
     'context_usage',
     'elicitation_prompt',
@@ -1864,6 +1866,14 @@ export const BackgroundTaskStartedEventSchema = z
     toolUseId: z.string().optional(),
     description: z.string().optional(),
     command: z.string().optional(),
+    /**
+     * Housekeeping work the runtime asked hosts to keep out of activity
+     * indicators — a watcher it started to stay oriented, not work anybody
+     * requested. **Absent means not housekeeping**, which is also what every
+     * runtime that does not report this says: only claude-code sets it today
+     * (SDK 0.3.247+), so an OpenCode or Codex task reads as ordinary work.
+     */
+    ambient: z.boolean().optional(),
   })
   .openapi('BackgroundTaskStartedEvent');
 
@@ -1888,6 +1898,14 @@ export const BackgroundTaskDoneEventSchema = z
     summary: z.string().optional(),
     toolUses: z.number().int().optional(),
     durationMs: z.number().int().optional(),
+    /**
+     * Housekeeping work the runtime asked hosts to keep out of activity
+     * indicators. Repeated on the terminal event, not only on the start, so a
+     * client that joined mid-turn and never saw the start still knows not to
+     * mark this one finished. Absent means not housekeeping; only claude-code
+     * sets it today.
+     */
+    ambient: z.boolean().optional(),
   })
   .openapi('BackgroundTaskDoneEvent');
 
@@ -2661,6 +2679,13 @@ export const BackgroundTaskPartSchema = z
     command: z.string().optional(),
     // Shared
     durationMs: z.number().int().optional(),
+    /**
+     * Housekeeping work the runtime asked hosts to keep out of activity
+     * indicators (SDK 0.3.247+, claude-code only). Absent means ordinary work.
+     * Indicators exclude these; a housekeeping task that FAILS is shown like
+     * any other failure, so the exclusion is never allowed to hide breakage.
+     */
+    ambient: z.boolean().optional(),
   })
   .openapi('BackgroundTaskPart');
 
@@ -5756,7 +5781,194 @@ export const DevtoolsIngestSchema = z
     console: z.array(DevtoolsConsoleEntrySchema).max(DEVTOOLS_CONSOLE_BATCH_MAX),
     network: z.array(DevtoolsNetworkEntrySchema).max(DEVTOOLS_NETWORK_BATCH_MAX),
     screenshot: DevtoolsScreenshotResultSchema.optional(),
+    /**
+     * The window claiming, or releasing, the driver seat for `documentId`.
+     *
+     * `true` means "this window is showing this page right now"; `false` means it
+     * stopped. The server pairs it with the caller's `X-Client-Id` and keeps one
+     * row per (window, page), so exactly one window is ever addressed by a
+     * driving command. Absent on an ordinary capture batch, which claims nothing.
+     */
+    active: z.boolean().optional(),
+    /**
+     * Whether this claim is an ACTIVATION or a keep-alive (spec
+     * `canvas-agent-seat` §2.2).
+     *
+     * `true` means a person brought this browser document to the front in this
+     * window, and the seat moves here. `false` means the window is saying it is
+     * still showing the same page on its refresh beat, which refreshes the row's
+     * clock and moves nothing. Every window running this bundle sends one or the
+     * other.
+     *
+     * **Absent is neither**, and the server spends it in exactly one place: a
+     * window it has not heard from takes the seat on its first claim, because
+     * that is what every claim meant before this field existed. Anything a
+     * window says about a page it is already holding is read as a keep-alive —
+     * a bundle too old to have the field sends an identical body on its beat and
+     * on an activation, so believing it would let a tab left open across an
+     * upgrade take the seat back every 15 s from the window somebody had just
+     * activated, and never give it back.
+     */
+    activation: z.boolean().optional(),
+    /**
+     * Whether the in-page shim ever handshook with this window for `documentId`.
+     *
+     * A page DorkOS serves or proxies carries the shim and answers `hello`; a
+     * page framed straight from the internet does not. Carried on the claim so a
+     * driving tool can say "that page is open but DorkOS is not instrumenting it"
+     * at once, instead of waiting out a timeout nothing was ever going to answer.
+     */
+    instrumented: z.boolean().optional(),
   })
   .openapi('DevtoolsIngest');
 
 export type DevtoolsIngest = z.infer<typeof DevtoolsIngestSchema>;
+
+/**
+ * How one driving command names the single element it acts on.
+ *
+ * Exactly one of the three routes must be given, which is a rule the tool layer
+ * enforces with a sentence rather than a schema: a union here would answer a
+ * two-route call with a parser dump instead of "name the element one way".
+ * `nth` disambiguates several matches; without it, several matches is a refusal.
+ */
+export const BrowserTargetSchema = z
+  .object({
+    role: z.string().max(64).optional(),
+    name: z.string().max(512).optional(),
+    text: z.string().max(512).optional(),
+    selector: z.string().max(512).optional(),
+    nth: z.number().int().min(0).max(999).optional(),
+  })
+  .openapi('BrowserTarget');
+
+export type BrowserTarget = z.infer<typeof BrowserTargetSchema>;
+
+/**
+ * One action for the in-page shim to perform, discriminated on `action`.
+ *
+ * The server composes it from a tool call and the client hands it to the shim
+ * verbatim; the shim answers exactly one {@link DevtoolsActionResultSchema} for
+ * the request id it came with. Every verb is bounded: the waits carry their own
+ * `timeoutMs`, and the reads carry their own character budget.
+ */
+export const BrowserActCommandSchema = z
+  .discriminatedUnion('action', [
+    z.object({ action: z.literal('click'), target: BrowserTargetSchema }),
+    z.object({
+      action: z.literal('type'),
+      target: BrowserTargetSchema.optional(),
+      text: z.string().max(10_000),
+      clear: z.boolean().optional(),
+      submit: z.boolean().optional(),
+    }),
+    z.object({ action: z.literal('press'), key: z.string().max(64) }),
+    z.object({
+      action: z.literal('scroll'),
+      target: BrowserTargetSchema.optional(),
+      by: z.number().optional(),
+      to: z.enum(['top', 'bottom']).optional(),
+    }),
+    z.object({
+      action: z.literal('wait_for'),
+      text: z.string().max(512).optional(),
+      selector: z.string().max(512).optional(),
+      gone: z.boolean().optional(),
+      fetchIdle: z.boolean().optional(),
+      timeoutMs: z.number().int().positive().max(10_000),
+    }),
+    z.object({
+      action: z.literal('read_page'),
+      selector: z.string().max(512).optional(),
+      maxChars: z.number().int().positive().max(65_536),
+    }),
+  ])
+  .openapi('BrowserActCommand');
+
+export type BrowserActCommand = z.infer<typeof BrowserActCommandSchema>;
+
+/**
+ * What the page reports about itself alongside every driving result: enough for
+ * an agent to know where it is without reading the whole document back.
+ */
+export const BrowserPageSummarySchema = z
+  .object({
+    title: z.string().max(512),
+    url: z.string().max(2_048),
+    focused: z.string().max(256).nullable(),
+  })
+  .openapi('BrowserPageSummary');
+
+export type BrowserPageSummary = z.infer<typeof BrowserPageSummarySchema>;
+
+/** Cap on one `browser_read_page` outline as it crosses the wire. */
+export const DEVTOOLS_OUTLINE_MAX_CHARS = 65_536;
+
+/**
+ * The outcome of one driving round trip, relayed by the client from the in-page
+ * shim to `POST /api/sessions/:id/devtools/action`.
+ *
+ * Exactly one result ever arrives per `requestId`, and `ok` decides which half
+ * is filled: `did`/`page` on success, one plain `error` sentence on failure.
+ */
+export const DevtoolsActionResultSchema = z
+  .object({
+    requestId: z.string().max(128),
+    ok: z.boolean(),
+    did: z.string().max(2_048).optional(),
+    matched: z.number().int().min(0).optional(),
+    documentId: z.string().max(256).optional(),
+    page: BrowserPageSummarySchema.optional(),
+    outline: z.string().max(DEVTOOLS_OUTLINE_MAX_CHARS).optional(),
+    truncated: z.boolean().optional(),
+    waitedMs: z.number().int().min(0).optional(),
+    /**
+     * Whether the window kept a recording frame from this action.
+     *
+     * The frame itself never travels: the client holds it until the recording
+     * is stopped and encoded there (spec `canvas-agent-seat` §3.2). This flag is
+     * all the server needs, and it is the only honest way to count — the server
+     * asked for a frame, and only the window can say whether one came back.
+     */
+    captured: z.boolean().optional(),
+    error: z.string().max(2_048).optional(),
+  })
+  .openapi('DevtoolsActionResult');
+
+export type DevtoolsActionResult = z.infer<typeof DevtoolsActionResultSchema>;
+
+/**
+ * The multipart form fields that accompany one finished recording on
+ * `POST /api/sessions/:id/devtools/recording` (spec `canvas-agent-seat` §3.4).
+ *
+ * The two FILE parts — `recording` (the GIF) and `keyframe` (the last frame as
+ * a PNG) — are read by multer and never appear here. Nothing in this body names
+ * a destination: `requestId` identifies the round trip the server is already
+ * awaiting, and the server takes the filename from its own recording state, so
+ * a caller can never choose where the bytes land.
+ */
+export const DevtoolsRecordingUploadSchema = z
+  .object({
+    requestId: z.string().min(1).max(128),
+    /** How many frames the window actually encoded, which is what the tool reports. */
+    frames: z.coerce.number().int().min(1).max(1_000).optional(),
+    /** Wall-clock length of the recording in milliseconds, as the window measured it. */
+    durationMs: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(24 * 60 * 60 * 1_000)
+      .optional(),
+    /**
+     * Why there is no file, in one sentence the agent can act on.
+     *
+     * Sent INSTEAD of the two file parts when the window cannot produce a
+     * recording — it came out over the size cap, the page went away mid-run, or
+     * the encoder failed. Without it the tool call would sit out its whole
+     * thirty-second wait to say something less true than this.
+     */
+    error: z.string().min(1).max(500).optional(),
+  })
+  .openapi('DevtoolsRecordingUpload');
+
+export type DevtoolsRecordingUpload = z.infer<typeof DevtoolsRecordingUploadSchema>;

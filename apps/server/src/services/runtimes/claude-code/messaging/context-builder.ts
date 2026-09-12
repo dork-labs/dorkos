@@ -23,6 +23,7 @@ import { formatSeedContext } from '../../shared/seed-context-block.js';
 import { formatStagedContext } from '../../shared/staged-context-block.js';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
 import { IN_SESSION_TOOL_PREFIX } from '../mcp-tools/tool-exposure.js';
+import { WORKBENCH } from '../../../../config/constants.js';
 import type { BindingRouter } from '../../../relay/binding-router.js';
 import type { BindingStore } from '../../../relay/binding-store.js';
 import type { AdapterManager } from '../../../relay/adapter-manager.js';
@@ -367,6 +368,31 @@ ${buildCanvasContentCatalog({ indent: '    ', sentences: false })}
 Each action's full description is on the ${T}control_ui tool itself — read it there before a first call.
 Use ${T}get_ui_state() before making layout decisions to avoid redundant commands. It reflects the state the client reported at turn start plus the commands you issued this turn — not a live read.
 UI commands only take visible effect when an interactive client is attached (headless/scheduled runs accept them but show nothing), and a canvas push to a document somebody is editing is held rather than applied — a success result means "accepted", not "displayed".
+
+THE BROWSER TAB. A page you opened with browser_navigate is one DorkOS is serving, so you can use it
+and not only look at it -- click it, type into it, and read it back:
+  ${T}browser_read_page(documentId?, selector?) -- what is on the page, one line per thing.
+  ${T}browser_click(role?, name?, text?, selector?, nth?, documentId?) -- click one of them.
+  ${T}browser_type(text, role?, name?, clear?, submit?, documentId?) -- put text in a field.
+  ${T}browser_press(key, documentId?) -- one key or chord at whatever has focus.
+  ${T}browser_scroll(by?, to?, role?, name?, documentId?) -- move the page.
+  ${T}browser_wait_for(text?, selector?, fetchIdle?, timeoutMs?, documentId?) -- let the page catch up.
+Read the page first: the names it prints are the names the other five take. This works only on a
+preview DorkOS serves or proxies -- a page loaded straight from the internet is shown, not driven,
+and says so in a sentence rather than making you wait. With more than one browser tab open, leave
+documentId out to act in the one whose window last brought a preview to the front -- almost always
+the one you want. Every one of these six answers with the tab it acted on and that tab's id, so to
+stay on one tab, pass back the id the last answer gave you. In a room, ${T}get_ui_state lists the
+open tabs with their ids as well; in a one-on-one session it does not.
+
+RECORDING WHAT YOU DID. When showing somebody what happens is clearer than describing it, record it:
+  ${T}browser_record_start(documentId?) -- start filming; every action after this takes a frame.
+  ${T}browser_record_stop() -- stop, save the file, and get its path back.
+It is a slideshow of the steps you took, not a video, and it saves into your own working directory.
+The stop gives you the last frame as a picture and the path to the file; post the file to a room
+with ${T}post_to_room to show it to somebody, rather than describing it in prose. One recording at a
+time, and it keeps the first ${WORKBENCH.MAX_RECORDING_FRAMES} frames -- past that it stops filming and
+everything else keeps working.
 </ui_tools>`;
 
 /**
