@@ -193,16 +193,17 @@ const RECORD_START_DESCRIPTION =
   'Start recording what you do in the preview page, as a small animated picture — one frame ' +
   'per action. Use it when showing somebody what happens is clearer than describing it: a form ' +
   'that fails, a layout that breaks, a flow that works. Every browser action after this takes a ' +
-  'frame until you call browser_record_stop, which saves the file and gives you the path. Only ' +
-  `one recording runs at a time, and it keeps at most ${WORKBENCH.MAX_RECORDING_FRAMES} frames — ` +
-  'past that it stops filming and everything else keeps working. ' +
+  'frame until you stop the recording with the tool whose name ends in `record_stop`, which ' +
+  'saves the file and gives you the path. Only one recording runs at a time, and it keeps at ' +
+  `most ${WORKBENCH.MAX_RECORDING_FRAMES} frames — past that it stops filming and everything ` +
+  'else keeps working. ' +
   DRIVING_SAFETY_SENTENCE;
 
 const RECORD_STOP_DESCRIPTION =
   'Stop the recording and save it. You get back where the file is, how many frames it has, and ' +
   'the last frame as a picture — not the whole recording, which is a thing a person watches ' +
-  'rather than something you can read. The file lives in your own working directory, so you can ' +
-  'post it to a room with post_to_room to show it to somebody.';
+  'rather than something you can read. The file lives in your own working directory, so the ' +
+  'tool whose name ends in `post_to_room` can put it in front of somebody.';
 
 /** Answer given on a surface with no session — the same shape as a refusal. */
 const SESSIONLESS_ANSWER: DrivingAnswer = {

@@ -40,7 +40,7 @@ const RECORDING_FIELD = 'recording';
 const KEYFRAME_FIELD = 'keyframe';
 
 /** Where a session's recordings live, under the directory `.gitignore` covers. */
-export const RECORDINGS_DIR = path.join('.dork', '.temp', 'recordings');
+const RECORDINGS_DIR = path.join('.dork', '.temp', 'recordings');
 
 /**
  * Express handler for `POST /api/sessions/:id/devtools/recording`.

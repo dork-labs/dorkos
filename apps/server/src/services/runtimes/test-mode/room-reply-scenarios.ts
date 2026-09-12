@@ -169,15 +169,23 @@ function roomReadsCanvas(finishRequested: FinishRequested): ScenarioFn {
 }
 
 /**
- * A one-pixel PNG, written into the turn's own working directory.
+ * A small striped PNG, written into the turn's own working directory.
  *
  * Real bytes rather than a placeholder because the whole path decides what a
- * file IS by sniffing it: a fake would store as an opaque stream and the chip
- * would render as a chip rather than as a picture, so the case would pass while
- * proving the opposite of what it claims.
+ * file IS by sniffing it: a fake would store as an opaque stream and render as
+ * a chip rather than as a picture, so the case would pass while proving the
+ * opposite of what it claims. Big enough to SEE, so a browser proof of the
+ * inline preview is a picture of something rather than of one pixel.
  */
-const ONE_PIXEL_PNG = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+const STRIPED_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAPAAAACgCAIAAAC9uXYyAAAB0UlEQVR4nO3bsQnAMBAEwa/A/Tfg4hwqcOBMTRgEy8AU' +
+    'cMGmN9f9QMYcXwA/EjQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZl1vtBhqBJETQp' +
+    'giZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgibFSZYUQZMiaFIETYqgSRE0KYImRdCkCJoU' +
+    'QZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqTLCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2K' +
+    'oEkRNCmCJkXQpAiaFCdZUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpTrKk' +
+    'CJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFKcZEkRNCmCJkXQpAiaFEGTImhS' +
+    'BE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpDjJkiJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQp' +
+    'giZF0KQImhRBkyJoUgRNiqBJ2cNvHLHPIfVCAAAAAElFTkSuQmCC',
   'base64'
 );
 
@@ -210,7 +218,7 @@ function roomPostsAttachment(finishRequested: FinishRequested): ScenarioFn {
         roomDeps: { rooms },
       });
       try {
-        await fs.writeFile(path.join(cwd, 'shot.png'), ONE_PIXEL_PNG);
+        await fs.writeFile(path.join(cwd, 'shot.png'), STRIPED_PNG);
         await registry.invoke(
           'rooms.post',
           { roomId: roomTurn.roomId, text: 'Here is what I saw.', attachments: ['shot.png'] },
