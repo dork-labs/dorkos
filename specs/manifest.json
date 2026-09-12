@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "260912-023441",
+      "slug": "canvas-agent-seat",
+      "title": "The canvas agent seat",
+      "created": "2026-09-12",
+      "status": "specified",
+      "project": "Canvas and Browser in Rooms"
+    },
+    {
       "id": "260911-195750",
       "slug": "room-canvas",
       "title": "Canvas and Browser in rooms",
