@@ -21,7 +21,7 @@ import {
   APPROVAL_EXPIRY_SWEEP_MAX_MS,
   MIN_APPROVAL_TTL_MS,
 } from '../approval-service.js';
-import { startApprovalExpirySweep } from '../approval-expiry-sweep.js';
+import { runApprovalExpiryTick, startApprovalExpirySweep } from '../approval-expiry-sweep.js';
 import { hashApprovalInput } from '../approval-input-hash.js';
 import { eventFanOut } from '../../event-fan-out.js';
 
@@ -265,16 +265,61 @@ describe('an approval nobody answers stops being invisible', () => {
     });
   });
 
+  describe('one tick settles before it purges', () => {
+    it('announces a row that lapsed while the server was down past retention', () => {
+      // The ordering is load-bearing exactly once: after the server has been DOWN
+      // for longer than the 24h retention window. Purge first and the row is
+      // DELETED by the very pass that should have announced it, so the one
+      // approval whose agent most needs telling is the one silently dropped.
+      //
+      // Driven through `runApprovalExpiryTick` rather than two calls in a test,
+      // because that function existing IS the fix: boot and the interval both run
+      // it, so neither can get the order wrong on its own.
+      const { approvalId } = ask();
+      expire(approvalId, 25 * 60 * 60 * 1000);
+
+      const result = runApprovalExpiryTick(service);
+
+      expect(result.settled).toBe(1);
+      expect(result.purged).toBe(1);
+      expect(
+        resolved.map((r) => r.approvalId),
+        'a long-dead approval was deleted before anything announced it'
+      ).toEqual([approvalId]);
+    });
+
+    it('purges even when settling throws', () => {
+      const throwing = {
+        sweepExpired: vi.fn(() => {
+          throw new Error('database is locked');
+        }),
+        purgeExpired: vi.fn(() => 4),
+      };
+
+      expect(runApprovalExpiryTick(throwing)).toEqual({ settled: 0, purged: 4 });
+    });
+
+    it('settles even when purging throws', () => {
+      const throwing = {
+        sweepExpired: vi.fn(() => 2),
+        purgeExpired: vi.fn(() => {
+          throw new Error('database is locked');
+        }),
+      };
+
+      expect(runApprovalExpiryTick(throwing)).toEqual({ settled: 2, purged: 0 });
+    });
+  });
+
   describe('the timer that drives it', () => {
     it('settles and purges on every tick, not only at boot', () => {
       vi.useFakeTimers();
       const source = {
         sweepExpired: vi.fn(() => 0),
         purgeExpired: vi.fn(() => 0),
-        expirySweepIntervalMs: 1_000,
       };
 
-      const stop = startApprovalExpirySweep(source);
+      const stop = startApprovalExpirySweep(source, 1_000);
       vi.advanceTimersByTime(3_000);
       stop();
 
@@ -296,11 +341,7 @@ describe('an approval nobody answers stops being invisible', () => {
         .mockImplementation(() => 0);
       const purgeExpired = vi.fn(() => 0);
 
-      const stop = startApprovalExpirySweep({
-        sweepExpired,
-        purgeExpired,
-        expirySweepIntervalMs: 1_000,
-      });
+      const stop = startApprovalExpirySweep({ sweepExpired, purgeExpired }, 1_000);
       expect(() => vi.advanceTimersByTime(2_000)).not.toThrow();
       stop();
 
@@ -314,10 +355,9 @@ describe('an approval nobody answers stops being invisible', () => {
       const source = {
         sweepExpired: vi.fn(() => 0),
         purgeExpired: vi.fn(() => 0),
-        expirySweepIntervalMs: 1_000,
       };
 
-      const stop = startApprovalExpirySweep(source);
+      const stop = startApprovalExpirySweep(source, 1_000);
       stop();
       vi.advanceTimersByTime(5_000);
 

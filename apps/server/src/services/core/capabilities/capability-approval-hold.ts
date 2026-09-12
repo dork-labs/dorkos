@@ -179,6 +179,66 @@ function pushHoldResolved(
 }
 
 /**
+ * What a held call returns when its approval stopped being answerable while it
+ * waited (spec `approval-expiry-notice`, DOR-1932).
+ *
+ * Deliberately NOT an `approval_required` payload with a different sentence: it
+ * carries no `approvalToken` and no `retry` block, because there is nothing left
+ * to retry with. Handing back the original payload — which is what a held call
+ * did for this ending until DOR-1932 — told the agent to call again with a token
+ * the sweep had just written off, and pointed it at a card that had already
+ * disappeared from the person's list. Every one of those three claims was false
+ * at the moment it was made.
+ */
+export interface ApprovalNoLongerValidPayload {
+  /** Discriminator. Always `approval_no_longer_valid`. */
+  status: 'approval_no_longer_valid';
+  /** The capability that did NOT run. */
+  capabilityId: string;
+  /** Its human-facing title, as the operator's card showed it. */
+  capabilityTitle: string;
+  /** The approval that is now past answering. Safe to show or log. */
+  approvalId: string;
+  /** When the decision window closed. ISO 8601 UTC. */
+  expiresAt: string;
+  /** One plain sentence the model can act on. */
+  message: string;
+}
+
+/**
+ * Turn a held call's fresh ask into the answer for an approval that can no
+ * longer be answered.
+ *
+ * **The wording covers two endings on purpose.** `awaitDecision` reports
+ * `expired` both for a window that genuinely closed and for a token somebody
+ * spent elsewhere while this hold waited (`toDecisionOutcome` folds `consumed`
+ * into `expired`, because neither leaves the caller anything to resume on).
+ * Naming only expiry would be a guess that is wrong half the time; what is true
+ * in both cases, and is the only part the agent has to act on, is that this
+ * request is finished and its token is dead.
+ *
+ * @param payload - The gate's fresh `approval_required` payload for this call.
+ * @returns The payload to hand the model instead.
+ */
+export function approvalNoLongerValid(
+  payload: ApprovalRequiredPayload
+): ApprovalNoLongerValidPayload {
+  return {
+    status: 'approval_no_longer_valid',
+    capabilityId: payload.capabilityId,
+    capabilityTitle: payload.capabilityTitle,
+    approvalId: payload.approvalId,
+    expiresAt: payload.expiresAt,
+    message:
+      `The approval for "${payload.capabilityTitle}" is no longer open: nobody answered it in ` +
+      'time, or it was already used. The token you were given will not work now, and there is ' +
+      'no card left for anyone to answer. Do not retry with it and do not look for another way ' +
+      'around it. If this still needs doing, say so plainly and ask for approval again; ' +
+      'otherwise tell the person what you could not finish.',
+  };
+}
+
+/**
  * Render the inline card, wait for the operator's decision (bounded by the hold
  * cap), then retire the card — whatever the outcome.
  *
@@ -234,9 +294,18 @@ export async function awaitCapabilityApproval(
     });
     return outcome;
   } finally {
-    // A decision was delivered by this call's return value, so the claim stays
-    // spent. Anything else means nobody was told, and the answer is still owed.
-    if (claimed && outcome !== 'granted' && outcome !== 'denied') {
+    // An ending this call REPORTS is delivered by its own return value, so the
+    // claim stays spent. Only `timeout` leaves the answer still owed: the window
+    // is still open, the card is still on the dashboard, and whoever answers
+    // later must reach the agent through the out-of-band deliverer.
+    //
+    // `expired` moved out of that set with DOR-1932. It used to be released
+    // here, which was pointless AND wrong: the sweep that settled the row had
+    // already broadcast, the deliverer had already lost the claim to this hold
+    // and dropped the notice, and no second broadcast was ever coming — so
+    // releasing invited a delivery nothing would trigger, while the caller went
+    // on to report the ending itself.
+    if (claimed && outcome === 'timeout') {
       hold.approvals.releaseVerdictDelivery(payload.approvalId);
     }
     if (emitted) pushHoldResolved(hold.session, payload.approvalId, outcome);

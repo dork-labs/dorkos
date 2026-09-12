@@ -1156,14 +1156,30 @@ export const AccountsAccessDataSchema = z.object({
   changed: z.boolean(),
 });
 
-/** Zod schema for {@link ApprovalVerdictData}. */
-export const ApprovalVerdictDataSchema = z.object({
-  approvalId: z.string().min(1),
-  capabilityTitle: z.string().min(1),
-  outcome: z.enum(['granted', 'denied', 'expired']),
-  endedAt: z.string().min(1),
-  denyReason: z.string().min(1).optional(),
-});
+/**
+ * Zod schema for {@link ApprovalVerdictData}.
+ *
+ * The refusal reason is bound to the refusal, rather than merely being optional
+ * on all three outcomes. A reason exists because a person typed one, and only a
+ * denial has one to type — so `{ outcome: 'expired', denyReason: '…' }` would
+ * render an "UNTRUSTED REFUSAL REASON" fence underneath a preamble stating that
+ * nobody answered, which is a block contradicting itself. Nothing produces that
+ * shape today (`verdictDelivery` attaches the reason only on a denial); the
+ * constraint is here so the payload's own documentation stays true by
+ * construction rather than by the good behaviour of its one caller.
+ */
+export const ApprovalVerdictDataSchema = z
+  .object({
+    approvalId: z.string().min(1),
+    capabilityTitle: z.string().min(1),
+    outcome: z.enum(['granted', 'denied', 'expired']),
+    endedAt: z.string().min(1),
+    denyReason: z.string().min(1).optional(),
+  })
+  .refine((v) => v.denyReason === undefined || v.outcome === 'denied', {
+    message: 'denyReason belongs only to a denial — nobody types a reason for any other ending',
+    path: ['denyReason'],
+  });
 
 /** Zod schema for {@link AdditionalContextEntry} (discriminated on `kind`). */
 export const AdditionalContextEntrySchema = z.discriminatedUnion('kind', [

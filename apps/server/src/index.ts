@@ -316,6 +316,7 @@ import {
 } from './services/core/capabilities/index.js';
 import {
   initApprovalSubjectResolvers,
+  runApprovalExpiryTick,
   startApprovalExpirySweep,
   startApprovalVerdictDelivery,
 } from './services/core/approvals/index.js';
@@ -2261,24 +2262,28 @@ async function start() {
       error: err instanceof Error ? err.message : String(err),
     });
   }
-  try {
-    const purged = approvalService.purgeExpired();
-    if (purged > 0) {
-      logger.info(`[Approvals] Purged ${purged} long-expired approval records`);
-    }
-  } catch (err) {
-    logger.warn('[Approvals] Failed to purge expired approvals (non-fatal)', {
-      error: err instanceof Error ? err.message : String(err),
-    });
+  // One expiry tick right now, then the same tick on a timer. Settling lapsed
+  // approvals is what stops expiry being the one ending nothing announces: until
+  // this ran, an unanswered approval emitted no event at all, and the agent that
+  // asked was never told its request had lapsed (spec `approval-expiry-notice`,
+  // DOR-1932).
+  //
+  // Run once HERE as well as on the interval, because the tick's settle-before-
+  // purge order only matters after the server has been DOWN past the retention
+  // window — and the interval's first tick is up to a minute away. The retention
+  // purge rides along, which is also the fix for it having only ever run at boot:
+  // a server up for a month never trimmed the table after its first second.
+  const firstTick = runApprovalExpiryTick(approvalService);
+  if (firstTick.settled > 0) {
+    logger.info(`[Approvals] Settled ${firstTick.settled} approval(s) that expired unanswered`);
   }
-  // Settle approvals that run out of time with nobody looking, so expiry stops
-  // being the one ending nothing announces: until this ran, an unanswered
-  // approval emitted no event at all, and the agent that asked was never told
-  // its request had lapsed (spec `approval-expiry-notice`, DOR-1932). The same
-  // interval carries the retention purge above, which had only ever run here at
-  // boot — so a server up for a month never trimmed the table after its first
-  // second.
-  stopApprovalExpirySweep = startApprovalExpirySweep(approvalService);
+  if (firstTick.purged > 0) {
+    logger.info(`[Approvals] Purged ${firstTick.purged} long-expired approval records`);
+  }
+  stopApprovalExpirySweep = startApprovalExpirySweep(
+    approvalService,
+    approvalService.expirySweepIntervalMs
+  );
   // Catch the escalation ladder up on approvals that were already waiting when
   // this process started (DOR-1570) — the second standing condition that
   // outlives a restart, and the more dangerous one: an approval is an agent

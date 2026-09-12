@@ -66,7 +66,9 @@ export { readOnlyCarveOutToolNames } from './mcp-projection.js';
 // readers import it by path and adding it here would assert a consumer that does
 // not exist.
 export {
+  approvalNoLongerValid,
   awaitCapabilityApproval,
+  type ApprovalNoLongerValidPayload,
   type CapabilityApprovalHold,
 } from './capability-approval-hold.js';
 export { abortSignalOf } from './abort-signal.js';

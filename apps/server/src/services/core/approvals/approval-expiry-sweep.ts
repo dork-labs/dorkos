@@ -34,6 +34,13 @@
  * nothing. A notice for a very old approval reaches a session that is long gone
  * and declines with a log line, which is the cheap, correct ending.
  *
+ * **`index.ts` repeats that order at boot, deliberately.** The very scenario the
+ * ordering protects — the server having been DOWN past the retention window —
+ * can only be discovered at startup, and this interval's first tick is up to a
+ * minute after it. So boot settles and purges once itself before arming the
+ * timer; without that, the invariant held everywhere except the one place it was
+ * written for.
+ *
  * ## Why there is no scheduler to register with
  *
  * This server has no cron abstraction or interval registry; every periodic job
@@ -47,53 +54,75 @@
 import { logger } from '../../../lib/logger.js';
 import type { ApprovalService } from './approval-service.js';
 
-/** The approval primitive this module needs — no more of it than that. */
-type ExpirySource = Pick<
-  ApprovalService,
-  'sweepExpired' | 'purgeExpired' | 'expirySweepIntervalMs'
->;
+/** The approval primitive one tick needs — no more of it than that. */
+type ExpirySource = Pick<ApprovalService, 'sweepExpired' | 'purgeExpired'>;
+
+/** What one tick did. Both counts are `0` when that half of it failed. */
+export interface ApprovalExpiryTickResult {
+  /** Approvals that had run out of time and were settled by this tick. */
+  settled: number;
+  /** Rows deleted because they aged past the retention window. */
+  purged: number;
+}
+
+/**
+ * Do one pass: settle what lapsed, then trim what aged out.
+ *
+ * **This function exists so the ORDER lives in one place.** Both the interval
+ * below and `index.ts`'s boot call run a tick, and the settle-before-purge
+ * ordering is load-bearing exactly once — at boot, after the server was down
+ * past the retention window. Written as two statements at each call site, that
+ * ordering was correct inside the interval and wrong at boot, which is the only
+ * place it mattered. Written here, there is one order and a test can pin it.
+ *
+ * Each half has its own try/catch. A thrown error inside a `setInterval`
+ * callback escapes to the process, and an approval store that is momentarily
+ * unreadable must not take the server down or — worse — silently kill the timer
+ * and return expiry to being unobservable. The halves are independent: a failure
+ * to settle must not cost the purge its turn, or the reverse. They share a tick
+ * for cheapness, not because either depends on the other.
+ *
+ * @param approvals - The approval store to sweep.
+ * @returns How much this tick settled and purged.
+ */
+export function runApprovalExpiryTick(approvals: ExpirySource): ApprovalExpiryTickResult {
+  let settled = 0;
+  try {
+    settled = approvals.sweepExpired();
+    if (settled > 0) {
+      logger.info('[approvals] settled approvals nobody answered', { settled });
+    }
+  } catch (err) {
+    logger.warn('[approvals] expiry sweep failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  let purged = 0;
+  try {
+    purged = approvals.purgeExpired();
+  } catch (err) {
+    logger.warn('[approvals] retention purge failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  return { settled, purged };
+}
 
 /**
  * Start settling expired approvals on a timer, and keep the table trimmed.
  *
- * Idempotent from the caller's side only in the sense that the returned stop
- * function is safe to call more than once; starting twice arms two intervals, so
- * the caller owns exactly one.
+ * The returned stop function is safe to call more than once; starting twice arms
+ * two intervals, so the caller owns exactly one.
  *
  * @param approvals - The approval store to sweep.
+ * @param intervalMs - How often to tick, from
+ *   `ApprovalService.expirySweepIntervalMs`.
  * @returns A function that stops the sweep. Safe to call repeatedly.
  */
-export function startApprovalExpirySweep(approvals: ExpirySource): () => void {
-  const intervalMs = approvals.expirySweepIntervalMs;
-
-  const tick = (): void => {
-    // Wrapped per tick rather than per interval: a thrown error inside a
-    // `setInterval` callback escapes to the process, and an approval store that
-    // is momentarily unreadable must not take the server down or — worse —
-    // silently kill the timer and return expiry to being unobservable.
-    try {
-      const settled = approvals.sweepExpired();
-      if (settled > 0) {
-        logger.info('[approvals] settled approvals nobody answered', { settled });
-      }
-    } catch (err) {
-      logger.warn('[approvals] expiry sweep failed', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-
-    // Separate try, so a failure to settle never costs the purge and vice versa.
-    // They share a timer for cheapness, not because either depends on the other.
-    try {
-      approvals.purgeExpired();
-    } catch (err) {
-      logger.warn('[approvals] retention purge failed', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  };
-
-  const timer = setInterval(tick, intervalMs);
+export function startApprovalExpirySweep(approvals: ExpirySource, intervalMs: number): () => void {
+  const timer = setInterval(() => runApprovalExpiryTick(approvals), intervalMs);
   // An expiry sweep must never be the reason a CLI app refuses to exit — the same
   // reasoning `awaitDecision` and `EscalationService` both apply to their timers.
   timer.unref?.();

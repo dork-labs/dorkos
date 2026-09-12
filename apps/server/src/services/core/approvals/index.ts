@@ -29,7 +29,11 @@ export {
   type ApprovalVerdictDelivery,
 } from './approval-service.js';
 export { startApprovalVerdictDelivery } from './approval-verdict-delivery.js';
-export { startApprovalExpirySweep } from './approval-expiry-sweep.js';
+export {
+  runApprovalExpiryTick,
+  startApprovalExpirySweep,
+  type ApprovalExpiryTickResult,
+} from './approval-expiry-sweep.js';
 export {
   ApprovalGrantService,
   type ApprovalGrantInput,
