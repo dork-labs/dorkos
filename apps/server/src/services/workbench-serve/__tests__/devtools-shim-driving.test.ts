@@ -434,6 +434,11 @@ describe('browser_read_page returns an outline of what is on the page', () => {
     const outline = result.outline as string;
     expect(outline.split('\n')[0]).toBe('document "Checkout — Acme"');
     expect(outline).toContain('banner');
+    // A landmark is named by what somebody CALLED it, never by everything
+    // inside it: `<header>` and `<main>` carry no aria-label here, so they
+    // print bare rather than repeating the page.
+    expect(outline).toContain('\n  banner\n');
+    expect(outline).toMatch(/\n {2}main\n/);
     expect(outline).toContain('link "Acme"');
     expect(outline).toContain('navigation');
     expect(outline).toContain('heading "Checkout" level=1');

@@ -738,6 +738,9 @@ export default defineConfig({
         '**/home-surface/team-room.spec.ts',
         // Runs against the test-mode leg in `chromium-streams` below.
         '**/streams/**',
+        // Runs against the test-mode leg in `chromium-browser-driving` below.
+        // It drives a turn, so on this leg that turn would be real and billable.
+        '**/workbench/browser-driving.spec.ts',
         // Both run against the test-mode leg in `chromium-rooms-agents` below,
         // and both must NEVER run here. They are the only rooms specs that
         // un-silence an agent, so on this leg every turn they start would be a
@@ -849,6 +852,25 @@ export default defineConfig({
         baseURL: `http://localhost:${MOCK_VITE_PORT}`,
       },
       testMatch: ['**/streams/*.spec.ts'],
+    },
+    {
+      // An agent using the preview page (spec `canvas-agent-seat` §2) — against
+      // the test-mode leg, and that is a safety property rather than a
+      // convenience: the spec drives a turn, and on the ordinary leg every turn
+      // it starts would be a real, billable one against the machine's own
+      // `claude` sign-in. The turn it runs is the `browser-driving` scenario,
+      // which exists only under `DORKOS_TEST_RUNTIME`.
+      //
+      // A separate project rather than a chat-mock suite because it opens a
+      // second browser CONTEXT — a second window on one conversation is the
+      // thing under test — which chat-mock's single-worker choreography has no
+      // room for.
+      name: 'chromium-browser-driving',
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: `http://localhost:${MOCK_VITE_PORT}`,
+      },
+      testMatch: ['**/workbench/browser-driving.spec.ts'],
     },
     {
       // Home is the #team room (spec `team-room-home` Phase 2) — against the

@@ -6,6 +6,7 @@ import { interactionGate, type ScenarioContext } from './interaction-gate.js';
 import { INTERACTIVE_SCENARIOS } from './interactive-scenarios.js';
 import { Q3_SCENARIOS } from './q3-contention-scenarios.js';
 import { roomReplyScenarios, TOOL_CAPABLE_SCENARIOS } from './room-reply-scenarios.js';
+import { browserDrivingScenarios } from './browser-driving-scenarios.js';
 
 /**
  * One scripted turn.
@@ -275,6 +276,11 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
   // exercise `rooms.toolOnlyReplies` without any existing scenario changing
   // behaviour (spec `tool-only-room-replies` §D14).
   ...roomReplyScenarios(() => finishRequested),
+  // A turn that really drives the preview: reads the page, clicks a button,
+  // waits for what the click produced, and reads it back (spec
+  // `canvas-agent-seat` §2). It calls the production handlers rather than
+  // composing an answer, because the round trip IS the thing under test.
+  ...browserDrivingScenarios(),
   /**
    * A turn that stays busy until `POST /api/test/finish-turn` says otherwise,
    * and gives up after three minutes regardless — see {@link workingTurn}.

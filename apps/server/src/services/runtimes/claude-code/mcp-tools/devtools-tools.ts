@@ -93,7 +93,10 @@ const FIELD_ELIDE_CHARS = 2_048;
 export type DevtoolsSessionResolver = () => string | undefined;
 
 /** The subset of {@link DevtoolsCaptureStore} these tools depend on. */
-export type DevtoolsReadStore = Pick<DevtoolsCaptureStore, 'read' | 'awaitScreenshot'>;
+export type DevtoolsReadStore = Pick<
+  DevtoolsCaptureStore,
+  'read' | 'awaitScreenshot' | 'resolveDriver'
+>;
 
 /**
  * The subset of the live session `browser_screenshot` needs to reach the
@@ -512,9 +515,20 @@ export function createBrowserScreenshotHandler(
     }
 
     const requestId = randomUUID();
+    // Address the driver seat when there is one (spec `canvas-agent-seat`
+    // §2.2). Before it existed this request carried no target at all, so with
+    // several previews open EVERY window forwarded it into its own frame and
+    // the first answer won nondeterministically — a screenshot of whichever
+    // page happened to rasterize fastest. A window that has claimed nothing
+    // still gets the untargeted request, which is what keeps a client that
+    // predates the seat working.
+    const claim = store.resolveDriver(sessionId);
     session.eventQueue.push({
       type: 'devtools_capture_request',
-      data: { requestId },
+      data: {
+        requestId,
+        ...(claim ? { targetClientId: claim.clientId, documentId: claim.documentId } : {}),
+      },
     } as StreamEvent);
     session.eventQueueNotify?.();
 

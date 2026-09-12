@@ -153,6 +153,31 @@ export function installBrowserDriving(ctx: DrivingContext): (request: DrivingReq
     url: 'textbox',
   };
 
+  /**
+   * Roles whose accessible name may NOT fall back to their own text.
+   *
+   * A landmark or a container is named by what somebody CALLED it, never by
+   * everything inside it. Without this, `<main>` printed the whole page's text
+   * as its name — measured on a real page in `apps/e2e`: `main "Inbox Nothing
+   * done yet Mark as done Archive"` sat above the very lines it was repeating,
+   * eating the outline's budget to say nothing new.
+   */
+  const NO_TEXT_NAME_ROLES = new Set([
+    'article',
+    'banner',
+    'complementary',
+    'contentinfo',
+    'dialog',
+    'form',
+    'list',
+    'main',
+    'navigation',
+    'region',
+    'rowgroup',
+    'search',
+    'table',
+  ]);
+
   /** Roles that earn an outline line even with no accessible name of their own. */
   const LANDMARK_ROLES = new Set([
     'banner',
@@ -196,6 +221,14 @@ export function installBrowserDriving(ctx: DrivingContext): (request: DrivingReq
    * Deliberately not the accname algorithm — see the module doc.
    */
   function nameOf(el: Element): string {
+    return nameOfWithRole(el, roleOf(el));
+  }
+
+  /**
+   * {@link nameOf} with the role already in hand, for the outline walk — which
+   * computes the role first anyway and must not compute it twice per node.
+   */
+  function nameOfWithRole(el: Element, role: string): string {
     const label = el.getAttribute('aria-label');
     if (label && label.trim()) return trim(label);
     const labelledBy = el.getAttribute('aria-labelledby');
@@ -217,6 +250,7 @@ export function installBrowserDriving(ctx: DrivingContext): (request: DrivingReq
       const value = el.getAttribute(attribute);
       if (value && value.trim()) return trim(value);
     }
+    if (NO_TEXT_NAME_ROLES.has(role)) return '';
     return trim(el.textContent);
   }
 
@@ -419,7 +453,7 @@ export function installBrowserDriving(ctx: DrivingContext): (request: DrivingReq
       if (SKIPPED_TAGS.has(el.tagName.toLowerCase())) return false;
       if (!isVisible(el)) return false;
       const role = roleOf(el);
-      const name = role ? nameOf(el) : '';
+      const name = role ? nameOfWithRole(el, role) : '';
       const keep = Boolean(role) && (Boolean(name) || LANDMARK_ROLES.has(role));
       const at = lines.length;
       if (keep) {
