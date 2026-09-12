@@ -367,6 +367,22 @@ ${buildCanvasContentCatalog({ indent: '    ', sentences: false })}
 Each action's full description is on the ${T}control_ui tool itself — read it there before a first call.
 Use ${T}get_ui_state() before making layout decisions to avoid redundant commands. It reflects the state the client reported at turn start plus the commands you issued this turn — not a live read.
 UI commands only take visible effect when an interactive client is attached (headless/scheduled runs accept them but show nothing), and a canvas push to a document somebody is editing is held rather than applied — a success result means "accepted", not "displayed".
+
+THE BROWSER TAB. A page you opened with browser_navigate is one DorkOS is serving, so you can use it
+and not only look at it -- click it, type into it, and read it back:
+  ${T}browser_read_page(documentId?, selector?) -- what is on the page, one line per thing.
+  ${T}browser_click(role?, name?, text?, selector?, nth?, documentId?) -- click one of them.
+  ${T}browser_type(text, role?, name?, clear?, submit?, documentId?) -- put text in a field.
+  ${T}browser_press(key, documentId?) -- one key or chord at whatever has focus.
+  ${T}browser_scroll(by?, to?, role?, name?, documentId?) -- move the page.
+  ${T}browser_wait_for(text?, selector?, fetchIdle?, timeoutMs?, documentId?) -- let the page catch up.
+Read the page first: the names it prints are the names the other five take. This works only on a
+preview DorkOS serves or proxies -- a page loaded straight from the internet is shown, not driven,
+and says so in a sentence rather than making you wait. With more than one browser tab open, leave
+documentId out to act in the one whose window last brought a preview to the front -- almost always
+the one you want. Every one of these six answers with the tab it acted on and that tab's id, so to
+stay on one tab, pass back the id the last answer gave you. In a room, ${T}get_ui_state lists the
+open tabs with their ids as well; in a one-on-one session it does not.
 </ui_tools>`;
 
 /**

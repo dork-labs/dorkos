@@ -406,6 +406,20 @@ export class RoomsPage {
     return this.page.getByRole('tab', { name: new RegExp(label) });
   }
 
+  /**
+   * The faces on one document's tab saying who else is looking at it.
+   *
+   * Decorative discs with a visually-hidden sentence beside them, so the SLOT is
+   * what a locator can reach; the sentence is what
+   * {@link RoomsPage.canvasDocumentTab} already reads through its accessible
+   * name.
+   *
+   * @param label - The document's title, as the strip shows it.
+   */
+  canvasDocumentWatchers(label: string): Locator {
+    return this.canvasDocumentTab(label).locator('[data-slot="canvas-tab-watchers"]');
+  }
+
   /** The empty state's own affordance for putting agents in the room. */
   get emptyStateAddAgents(): Locator {
     return this.page.getByRole('button', { name: /^Add (more )?agents$/ });

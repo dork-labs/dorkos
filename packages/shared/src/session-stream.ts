@@ -43,6 +43,7 @@ import {
   SystemStatusEventSchema,
   OperationProgressEventShapeSchema,
   UiCommandEventSchema,
+  BrowserActCommandSchema,
   ErrorEventSchema,
   UsageStatusSchema,
   McpSigninRequiredEventSchema,
@@ -750,6 +751,37 @@ export const SessionEventSchema = z
       ...seqShape,
       type: z.literal('devtools_capture_request'),
       requestId: z.string(),
+      /**
+       * Which window is being asked, and for which page. Resolved server-side
+       * from the driver seat (`DevtoolsCaptureStore`), so exactly one of several
+       * open previews answers instead of whichever posted first.
+       *
+       * Optional on the wire, and deliberately: a window that has claimed no
+       * seat still gets the request the way it always did, so a client that
+       * predates the seat keeps working. A window that HAS been addressed
+       * answers only when both fields are its own.
+       */
+      targetClientId: z.string().optional(),
+      documentId: z.string().optional(),
+    }),
+    // A server→client request to DO something in the preview — click, type,
+    // press, scroll, wait for, or read back (spec `canvas-agent-seat` §2). Same
+    // shape and same one-shot life as the capture request above: the addressed
+    // client forwards it into its preview frame, the in-page shim performs it
+    // and posts one result, and the result returns through
+    // `POST /api/sessions/:id/devtools/action` tagged with this `requestId`.
+    // Never re-projected from a cold snapshot — replaying a click would be a
+    // second click nobody asked for.
+    z.object({
+      ...seqShape,
+      type: z.literal('devtools_action_request'),
+      requestId: z.string(),
+      /** The window holding the page, and the page. Both required: the server
+       * mints this event only once it has resolved a driver row, so there is
+       * always exactly one right answer to "who should do this". */
+      targetClientId: z.string(),
+      documentId: z.string(),
+      command: BrowserActCommandSchema,
     }),
     // The session's message queue changed — a message was accepted, dispatched,
     // edited, reordered, removed, or cleared (spec `persistent-session-runtime`).

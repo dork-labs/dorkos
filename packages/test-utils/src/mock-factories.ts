@@ -383,6 +383,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // `supportsWorkbenchServe: false`.
     supportsWorkbenchServe: true,
     ingestDevtoolsCapture: vi.fn(async () => {}),
+    postDevtoolsAction: vi.fn(async () => {}),
     // Embedded terminal — the default mock behaves like the HTTP transport
     // (supported); tests that need the DirectTransport path override
     // `supportsTerminal: false`.
@@ -509,6 +510,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     updateRoomCanvasDocument: vi.fn().mockResolvedValue(mockCanvasDocument()),
     closeRoomCanvasDocument: vi.fn().mockResolvedValue(undefined),
     setRoomCanvasEditing: vi.fn().mockResolvedValue({ editingBy: null, expiresAt: null }),
+    setRoomCanvasViewing: vi.fn().mockResolvedValue(undefined),
     subscribeRoom: vi.fn(emptyAsyncIterable),
     // Read state (team-room-home D4) — one cursor for every kind of thread a
     // person reads, rooms included. The default read is `null`: a test that says

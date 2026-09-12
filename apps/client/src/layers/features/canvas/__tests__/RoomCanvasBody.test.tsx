@@ -101,12 +101,16 @@ beforeEach(() => {
     roomCanvasUnread: {},
     roomCanvasEditing: {},
     roomCanvasStale: {},
+    roomCanvasPresence: {},
+    roomCanvasPresenceEpoch: {},
     roomCanvasLiveRoomId: ROOM,
   });
+  vi.useFakeTimers({ shouldAdvanceTime: true });
 });
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   useAppStore.setState({ roomCanvasLiveRoomId: null });
 });
 
@@ -196,6 +200,95 @@ describe('the room canvas — two views over one table', () => {
         pinned: true,
       });
     });
+  });
+
+  it('draws a small face on the tab another member is looking at', async () => {
+    seed({ id: 'note', title: 'Notes' });
+    seed({ id: 'plan', title: 'Plan' });
+    act(() => {
+      useAppStore.getState().applyRoomCanvasPresence(ROOM, {
+        type: 'signal',
+        signal: 'presence',
+        authorId: ANA,
+        at: '2026-09-12T00:00:00.000Z',
+        documentId: 'plan',
+      });
+    });
+
+    renderTab('canvas');
+
+    // Named, not merely drawn: the faces are decorative and the sentence is what
+    // a screen reader gets, so the sentence is what the test reads.
+    const plan = screen.getAllByRole('tab').find((t) => t.textContent?.includes('Plan'));
+    expect(plan).toHaveTextContent('Ana is looking at this.');
+    const notes = screen.getAllByRole('tab').find((t) => t.textContent?.includes('Notes'));
+    expect(notes).not.toHaveTextContent('looking at this');
+
+    // …and it goes when they look away.
+    act(() => {
+      useAppStore.getState().applyRoomCanvasPresence(ROOM, {
+        type: 'signal',
+        signal: 'presence',
+        authorId: ANA,
+        at: '2026-09-12T00:00:05.000Z',
+      });
+    });
+    await waitFor(() => expect(screen.queryByText(/looking at this/)).toBeNull());
+  });
+
+  it('never draws the reader their own face', () => {
+    seed({ id: 'note', title: 'Notes' });
+    act(() => {
+      useAppStore.getState().applyRoomCanvasPresence(ROOM, {
+        type: 'signal',
+        signal: 'presence',
+        authorId: VIEWER,
+        at: '2026-09-12T00:00:00.000Z',
+        documentId: 'note',
+      });
+    });
+
+    renderTab('canvas');
+    // A face telling you where you already are is noise, and it would sit on the
+    // one tab that needs no explaining.
+    expect(screen.queryByText(/looking at this/)).toBeNull();
+  });
+
+  it('tells the room which document this viewer is on, and that they have left', async () => {
+    seed({ id: 'note', title: 'Notes' });
+    const view = renderTab('canvas');
+
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(transport.setRoomCanvasViewing).toHaveBeenCalledWith(ROOM, 'note');
+
+    view.unmount();
+    // Switching tabs, closing the panel and leaving the room are all this same
+    // unmount, which is why looking away needs no separate door.
+    await waitFor(() => {
+      expect(transport.setRoomCanvasViewing).toHaveBeenCalledWith(ROOM, null);
+    });
+  });
+
+  it('says nothing at all for a tab the reader only passed through', async () => {
+    // Arrow-keying along a strip is one decision, not eight. A cleanup that
+    // cleared unconditionally would send the other seven requests anyway — one
+    // per tab passed through — which is the fan-out the debounce exists to stop.
+    seed({ id: 'note', title: 'Notes' });
+    seed({ id: 'plan', title: 'Plan' });
+    renderTab('canvas');
+
+    act(() => {
+      useAppStore.getState().activateRoomCanvasDocument(ROOM, 'plan');
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+
+    // One statement, about where they landed — never one about where they were.
+    expect(transport.setRoomCanvasViewing).toHaveBeenCalledTimes(1);
+    expect(transport.setRoomCanvasViewing).toHaveBeenCalledWith(ROOM, 'plan');
   });
 
   it('never writes the table locally — the frame the server sends is what moves', () => {

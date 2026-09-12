@@ -199,6 +199,7 @@ export const StreamEventTypeSchema = z
     'hook_response',
     'ui_command',
     'devtools_capture_request',
+    'devtools_action_request',
     'session_state_changed',
     'context_usage',
     'elicitation_prompt',
@@ -5756,7 +5757,129 @@ export const DevtoolsIngestSchema = z
     console: z.array(DevtoolsConsoleEntrySchema).max(DEVTOOLS_CONSOLE_BATCH_MAX),
     network: z.array(DevtoolsNetworkEntrySchema).max(DEVTOOLS_NETWORK_BATCH_MAX),
     screenshot: DevtoolsScreenshotResultSchema.optional(),
+    /**
+     * The window claiming, or releasing, the driver seat for `documentId`.
+     *
+     * `true` means "this window is showing this page right now"; `false` means it
+     * stopped. The server pairs it with the caller's `X-Client-Id` and keeps one
+     * row per (window, page), so exactly one window is ever addressed by a
+     * driving command. Absent on an ordinary capture batch, which claims nothing.
+     */
+    active: z.boolean().optional(),
+    /**
+     * Whether the in-page shim ever handshook with this window for `documentId`.
+     *
+     * A page DorkOS serves or proxies carries the shim and answers `hello`; a
+     * page framed straight from the internet does not. Carried on the claim so a
+     * driving tool can say "that page is open but DorkOS is not instrumenting it"
+     * at once, instead of waiting out a timeout nothing was ever going to answer.
+     */
+    instrumented: z.boolean().optional(),
   })
   .openapi('DevtoolsIngest');
 
 export type DevtoolsIngest = z.infer<typeof DevtoolsIngestSchema>;
+
+/**
+ * How one driving command names the single element it acts on.
+ *
+ * Exactly one of the three routes must be given, which is a rule the tool layer
+ * enforces with a sentence rather than a schema: a union here would answer a
+ * two-route call with a parser dump instead of "name the element one way".
+ * `nth` disambiguates several matches; without it, several matches is a refusal.
+ */
+export const BrowserTargetSchema = z
+  .object({
+    role: z.string().max(64).optional(),
+    name: z.string().max(512).optional(),
+    text: z.string().max(512).optional(),
+    selector: z.string().max(512).optional(),
+    nth: z.number().int().min(0).max(999).optional(),
+  })
+  .openapi('BrowserTarget');
+
+export type BrowserTarget = z.infer<typeof BrowserTargetSchema>;
+
+/**
+ * One action for the in-page shim to perform, discriminated on `action`.
+ *
+ * The server composes it from a tool call and the client hands it to the shim
+ * verbatim; the shim answers exactly one {@link DevtoolsActionResultSchema} for
+ * the request id it came with. Every verb is bounded: the waits carry their own
+ * `timeoutMs`, and the reads carry their own character budget.
+ */
+export const BrowserActCommandSchema = z
+  .discriminatedUnion('action', [
+    z.object({ action: z.literal('click'), target: BrowserTargetSchema }),
+    z.object({
+      action: z.literal('type'),
+      target: BrowserTargetSchema.optional(),
+      text: z.string().max(10_000),
+      clear: z.boolean().optional(),
+      submit: z.boolean().optional(),
+    }),
+    z.object({ action: z.literal('press'), key: z.string().max(64) }),
+    z.object({
+      action: z.literal('scroll'),
+      target: BrowserTargetSchema.optional(),
+      by: z.number().optional(),
+      to: z.enum(['top', 'bottom']).optional(),
+    }),
+    z.object({
+      action: z.literal('wait_for'),
+      text: z.string().max(512).optional(),
+      selector: z.string().max(512).optional(),
+      gone: z.boolean().optional(),
+      fetchIdle: z.boolean().optional(),
+      timeoutMs: z.number().int().positive().max(10_000),
+    }),
+    z.object({
+      action: z.literal('read_page'),
+      selector: z.string().max(512).optional(),
+      maxChars: z.number().int().positive().max(65_536),
+    }),
+  ])
+  .openapi('BrowserActCommand');
+
+export type BrowserActCommand = z.infer<typeof BrowserActCommandSchema>;
+
+/**
+ * What the page reports about itself alongside every driving result: enough for
+ * an agent to know where it is without reading the whole document back.
+ */
+export const BrowserPageSummarySchema = z
+  .object({
+    title: z.string().max(512),
+    url: z.string().max(2_048),
+    focused: z.string().max(256).nullable(),
+  })
+  .openapi('BrowserPageSummary');
+
+export type BrowserPageSummary = z.infer<typeof BrowserPageSummarySchema>;
+
+/** Cap on one `browser_read_page` outline as it crosses the wire. */
+export const DEVTOOLS_OUTLINE_MAX_CHARS = 65_536;
+
+/**
+ * The outcome of one driving round trip, relayed by the client from the in-page
+ * shim to `POST /api/sessions/:id/devtools/action`.
+ *
+ * Exactly one result ever arrives per `requestId`, and `ok` decides which half
+ * is filled: `did`/`page` on success, one plain `error` sentence on failure.
+ */
+export const DevtoolsActionResultSchema = z
+  .object({
+    requestId: z.string().max(128),
+    ok: z.boolean(),
+    did: z.string().max(2_048).optional(),
+    matched: z.number().int().min(0).optional(),
+    documentId: z.string().max(256).optional(),
+    page: BrowserPageSummarySchema.optional(),
+    outline: z.string().max(DEVTOOLS_OUTLINE_MAX_CHARS).optional(),
+    truncated: z.boolean().optional(),
+    waitedMs: z.number().int().min(0).optional(),
+    error: z.string().max(2_048).optional(),
+  })
+  .openapi('DevtoolsActionResult');
+
+export type DevtoolsActionResult = z.infer<typeof DevtoolsActionResultSchema>;

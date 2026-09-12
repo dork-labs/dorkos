@@ -27,6 +27,9 @@ import { BasePage } from '../../../pages/BasePage';
 /** The scenario that puts one markdown document on the room's canvas. */
 const OPENS_CANVAS = 'rooms-open-canvas';
 
+/** The scenario that reads the room's canvas from inside a turn, then holds it open. */
+const READS_CANVAS = 'rooms-read-canvas';
+
 /** What {@link OPENS_CANVAS} calls the document it opens. */
 const AGENT_DOCUMENT = 'The plan';
 
@@ -145,6 +148,9 @@ test.describe('A room has a canvas everybody shares @smoke', () => {
   });
 
   test.afterEach(async ({ request }) => {
+    // A held turn this case never released would outlive it, so the flag is
+    // raised unconditionally — it is sticky until the next reset either way.
+    await request.post('/api/test/finish-turn').catch(() => {});
     await useScenario(request, 'simple-text').catch(() => {});
   });
 
@@ -247,6 +253,109 @@ test.describe('A room has a canvas everybody shares @smoke', () => {
     } finally {
       await second.close();
     }
+  });
+
+  test('a pinned document sorts first and survives a reload', async ({
+    page,
+    basePage,
+    roomsApi,
+    roomsPage,
+    request,
+  }) => {
+    const tag = roomsApi.runId;
+    const room = await roomsApi.createChannel(`canvas-pin-${tag}`, `Pin ${tag}`, []);
+
+    // Two documents, opened in this order, so "pinned first" is a real reorder
+    // rather than the order they already had.
+    const first = `Older ${tag}`;
+    await putOnCanvas(request, room.id, first);
+    const second = `Newer ${tag}`;
+    await putOnCanvas(request, room.id, second);
+
+    await openRoom(page, basePage, roomsPage, room.id);
+    await roomsPage.openCanvasTab();
+    await expect(roomsPage.canvasDocuments).toContainText(second, {
+      timeout: SERVER_ROUND_TRIP_MS,
+    });
+    const tabs = () => roomsPage.canvasDocuments.getByRole('tab');
+    await expect(tabs().first()).toContainText(first);
+
+    // Pinned from the tab's own control, as a member — nothing here is
+    // owner-only.
+    await roomsPage.canvasDocumentTab(second).hover();
+    await page.getByRole('button', { name: `Pin ${second}` }).click();
+
+    await expect(tabs().first()).toContainText(second, { timeout: SERVER_ROUND_TRIP_MS });
+    // The control now offers the way back, which is how the tab says it is
+    // pinned without a tooltip nobody opens.
+    await expect(page.getByRole('button', { name: `Unpin ${second}` })).toBeVisible();
+
+    // **A pin is a row.** This window has stored nothing, so a reload that still
+    // draws it first can only have got it from the server.
+    await page.reload();
+    await basePage.waitForAppReady();
+    await roomsPage.openCanvasTab();
+    await expect(tabs().first()).toContainText(second, { timeout: SERVER_ROUND_TRIP_MS });
+    await expect(page.getByRole('button', { name: `Unpin ${second}` })).toBeVisible();
+  });
+
+  test('an agent’s face appears while its turn is reading, and goes when the turn ends', async ({
+    page,
+    basePage,
+    roomsApi,
+    roomsPage,
+    request,
+  }) => {
+    // **Not two browser windows, and the reason is the product's.** This install
+    // has exactly one person, so two windows are the SAME member — and a face
+    // telling you where you already are is noise, so the strip never draws your
+    // own. The other members of a room are its agents, so an agent's face is the
+    // only one a single-identity install can show.
+    //
+    // **And it is driven by a real turn rather than by a request**, because that
+    // is the whole rule: a face means the dispatcher holds a claim for a turn
+    // that really called `read_canvas` (etiquette E16a). The route a person uses
+    // refuses an agent outright, so there is no shortcut here — the scenario
+    // reads the canvas from inside the turn and then HOLDS it open, which is the
+    // only way the middle of a turn is a state a browser can look at.
+    const tag = roomsApi.runId;
+    const name = `Reader${tag}`;
+    const agent = await roomsApi.registerAgent(name, '👀', '#7c3aed');
+    const room = await roomsApi.createChannel(`canvas-face-${tag}`, `Face ${tag}`, [agent]);
+    const seat = await seatThatAnswers(roomsApi, room, name);
+    await useScenario(request, READS_CANVAS);
+
+    const watched = `Watched ${tag}`;
+    await putOnCanvas(request, room.id, watched);
+
+    await openRoom(page, basePage, roomsPage, room.id);
+    await roomsPage.openCanvasTab();
+    await expect(roomsPage.canvasDocuments).toContainText(watched, {
+      timeout: SERVER_ROUND_TRIP_MS,
+    });
+    // Nobody is reading yet, so nothing is on the tab.
+    await expect(roomsPage.canvasDocumentWatchers(watched)).toHaveCount(0);
+
+    await roomsApi.postEntries(room.id, [`@${name} what is on the canvas?`]);
+
+    // Mid-turn: the claim is held, the read happened, and the face arrived over
+    // this window's own stream with no reload.
+    await expect(roomsPage.canvasDocumentWatchers(watched)).toBeVisible({
+      timeout: SERVER_ROUND_TRIP_MS,
+    });
+    await expect(roomsPage.canvasDocumentTab(watched)).toContainText(`${name} is looking at this.`);
+
+    // The turn ends, and the face goes with it — from the one block every ending
+    // reaches, rather than from anything the agent chose to say.
+    await request.post('/api/test/finish-turn');
+    await roomsApi.waitForEntry(
+      room.id,
+      (entry) => entry.authorId === seat,
+      `an answer from ${name}`
+    );
+    await expect(roomsPage.canvasDocumentWatchers(watched)).toHaveCount(0, {
+      timeout: SERVER_ROUND_TRIP_MS,
+    });
   });
 
   test('a person types an address and the page lands on the room’s table', async ({
