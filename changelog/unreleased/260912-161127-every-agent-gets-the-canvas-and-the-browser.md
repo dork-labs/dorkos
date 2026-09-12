@@ -3,6 +3,7 @@ covers:
   - 'feat(ui): move the canvas and browser verbs onto the capability registry (DOR-2009)'
   - 'test(ui): prove the seat on every runtime, and pin what each verb advertises (DOR-2009)'
   - 'docs(ui): say that Codex and OpenCode get the canvas and the browser too (DOR-2009)'
+  - 'fix(ui): keep the `ui` domain off the session barrels, and retire the guards that named the bridge'
 ---
 
 ### Added
