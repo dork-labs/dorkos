@@ -5,6 +5,7 @@ covers:
   - 'feat(canvas): one window answers when an agent drives the browser'
   - 'test(workbench): drive a real page in a real browser, in two windows'
   - "fix(canvas): type the bridge test's batch helpers as real ingest batches"
+  - 'refactor(session): one no-preview sentence, and a barrel that names its callers'
 ---
 
 ### Added
