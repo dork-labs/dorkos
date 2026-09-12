@@ -1,11 +1,12 @@
 /**
  * App store — global Zustand store for the DorkOS client.
  *
- * Composed from six slices, each responsible for a distinct domain:
+ * Composed from seven slices, each responsible for a distinct domain:
  *   - CoreSlice        : sidebar, session, navigation, streaming status, context files
  *   - PanelsSlice      : transient dialog / panel open-close state
  *   - PreferencesSlice : persisted boolean settings, font, and promo
  *   - CanvasSlice      : per-session canvas UI state
+ *   - RoomCanvasSlice  : a room's shared canvas, live off its stream (never persisted)
  *   - RightPanelSlice  : shell-level right panel open/tab state
  *   - PipSlice         : floating picture-in-picture panel content + persisted geometry
  *
@@ -27,6 +28,7 @@ import {
 import { createPanelsSlice } from './app-store-panels';
 import { createPreferencesSlice } from './app-store-preferences';
 import { createCanvasSlice } from './app-store-canvas';
+import { createRoomCanvasSlice } from './app-store-room-canvas';
 import { createRightPanelSlice } from './app-store-right-panel';
 import { createPipSlice } from './app-store-pip';
 import type { AppState } from './app-store-types';
@@ -246,6 +248,7 @@ export const useAppStore = create<AppState>()(
         ...createPanelsSlice(...a),
         ...createPreferencesSlice(...a),
         ...createCanvasSlice(...a),
+        ...createRoomCanvasSlice(...a),
         ...createRightPanelSlice(...a),
         ...createPipSlice(...a),
       };

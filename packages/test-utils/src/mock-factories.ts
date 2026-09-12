@@ -12,7 +12,7 @@ import type {
 } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
 import type { HarnessStatusResponse } from '@dorkos/shared/harness-schemas';
-import type { RoomEntry, RoomEntryListResponse } from '@dorkos/shared/room-schemas';
+import type { CanvasDocument, RoomEntry, RoomEntryListResponse } from '@dorkos/shared/room-schemas';
 import type { WorktreeScanResult } from '@dorkos/shared/workspace';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { BUILTIN_MEMORY_PROVIDER_ID } from '@dorkos/shared/memory-provider';
@@ -194,6 +194,36 @@ export function mockRoomEntryPage(
   threadRoots: RoomEntry[] = []
 ): RoomEntryListResponse {
   return { entries, threadRoots };
+}
+
+/**
+ * One document on a room's shared canvas, as every reader is handed it (spec
+ * `room-canvas` §2).
+ *
+ * A `markdown` document by default, because markdown is the one shape whose
+ * bytes travel in the row itself — so a test that says nothing about content
+ * gets a document that actually renders, rather than one whose viewer would go
+ * looking for a file that is not there.
+ *
+ * @param overrides - Fields to change.
+ */
+export function mockCanvasDocument(overrides: Partial<CanvasDocument> = {}): CanvasDocument {
+  return {
+    id: 'canvas-doc-1',
+    scope: 'room:room-1',
+    roomId: 'room-1',
+    content: { type: 'markdown', content: '# Notes', title: 'Notes' },
+    title: 'Notes',
+    contentType: 'markdown',
+    authorId: 'author-agent',
+    pinned: false,
+    rev: 1,
+    lastTouchedBy: 'author-agent',
+    lastTouchedAt: '2026-09-11T00:00:00.000Z',
+    openedAt: '2026-09-11T00:00:00.000Z',
+    lastActiveAt: '2026-09-11T00:00:00.000Z',
+    ...overrides,
+  };
 }
 
 /**
@@ -472,6 +502,13 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     addRoomMember: vi.fn(),
     updateRoomMember: vi.fn(),
     removeRoomMember: vi.fn().mockResolvedValue(undefined),
+    // The room canvas: every write answers with the row it wrote, and the screen
+    // is drawn from the `canvas` frame rather than from these answers — so a
+    // test that is not about the canvas needs them only to resolve.
+    openRoomCanvasDocument: vi.fn().mockResolvedValue(mockCanvasDocument()),
+    updateRoomCanvasDocument: vi.fn().mockResolvedValue(mockCanvasDocument()),
+    closeRoomCanvasDocument: vi.fn().mockResolvedValue(undefined),
+    setRoomCanvasEditing: vi.fn().mockResolvedValue({ editingBy: null, expiresAt: null }),
     subscribeRoom: vi.fn(emptyAsyncIterable),
     // Read state (team-room-home D4) — one cursor for every kind of thread a
     // person reads, rooms included. The default read is `null`: a test that says

@@ -20,6 +20,9 @@ interface BrowserHistoryEntry {
 // real store and is covered by the store unit tests).
 const mockState = {
   selectedCwd: '/work' as string | null,
+  // Null by default: every test below the room describe is about the PRIVATE
+  // canvas, where an address bar navigates this frame and nothing else.
+  roomCanvasLiveRoomId: null as string | null,
   browserHistories: {} as Record<string, BrowserHistoryEntry>,
   writeBrowserHistory: vi.fn((documentId: string, entry: BrowserHistoryEntry) => {
     mockState.browserHistories[documentId] = entry;
@@ -33,6 +36,8 @@ const createProxyUrl = vi.fn(
   async () => ({ url: PREVIEW_BOOTSTRAP }) as { url: string | null; unavailable?: string }
 );
 const probeLoopbackPort = vi.fn(async () => ({ listening: true }) as { listening: boolean } | null);
+/** The room write the address bar makes on a room route. */
+const openRoomCanvasDocument = vi.fn(async () => ({}));
 
 vi.mock('@/layers/shared/model', () => {
   const useAppStore = (selector: (s: typeof mockState) => unknown) => selector(mockState);
@@ -44,7 +49,12 @@ vi.mock('@/layers/shared/model', () => {
   // asserting a single mint below are what catch it).
   return {
     useAppStore,
-    useTransport: () => ({ createServeUrl, createProxyUrl, probeLoopbackPort }),
+    useTransport: () => ({
+      createServeUrl,
+      createProxyUrl,
+      probeLoopbackPort,
+      openRoomCanvasDocument,
+    }),
     // The DevTools bridge this component mounts asks `useSessionId` which
     // conversation is open, and that reads the route's search params. No
     // conversation is open in these tests, which is what an empty search means —
@@ -75,6 +85,9 @@ function iframeSrc(): string | null {
 
 beforeEach(() => {
   mockState.selectedCwd = '/work';
+  mockState.roomCanvasLiveRoomId = null;
+  openRoomCanvasDocument.mockClear();
+  openRoomCanvasDocument.mockResolvedValue({});
   mockState.browserHistories = {};
   mockState.writeBrowserHistory.mockClear();
   createServeUrl.mockClear();
@@ -715,5 +728,56 @@ describe('CanvasBrowserContent — per-document history across tab switches (DOR
     await waitFor(() => expect(iframeSrc()).toBe('https://c2.test/'));
     expect(screen.getByLabelText('Forward')).toBeDisabled();
     expect(screen.getByLabelText('Back')).not.toBeDisabled();
+  });
+});
+
+describe('CanvasBrowserContent — the address bar on a room route', () => {
+  /** A page on a room's table, so the bar has something to be at rest on. */
+  const roomPage = { type: 'url' as const, url: 'https://dorkos.ai' };
+
+  beforeEach(() => {
+    mockState.roomCanvasLiveRoomId = 'room-1';
+  });
+
+  /** Type an address and commit it, the two steps a person actually takes. */
+  async function typeAddress(value: string): Promise<void> {
+    fireEvent.click(screen.getByRole('button', { name: /^Address:/ }));
+    const field = screen.getByRole('textbox', { name: 'Address' });
+    fireEvent.change(field, { target: { value } });
+    fireEvent.submit(field.closest('form')!);
+  }
+
+  it('puts the page on the room rather than navigating this frame', async () => {
+    render(<CanvasBrowserContent documentId="d1" content={roomPage} />);
+    await typeAddress('https://example.com');
+
+    await waitFor(() => {
+      expect(openRoomCanvasDocument).toHaveBeenCalledWith('room-1', {
+        type: 'browser',
+        url: 'https://example.com',
+      });
+    });
+  });
+
+  it('says why the room refused it, and keeps what was typed', async () => {
+    // Losing what somebody just typed is the worst thing a text field can do,
+    // and posting-and-forgetting did exactly that: the bar reverted to the page
+    // already on screen and nothing said why.
+    openRoomCanvasDocument.mockRejectedValue(
+      Object.assign(new Error('No such room'), { status: 404 })
+    );
+    render(<CanvasBrowserContent documentId="d1" content={roomPage} />);
+    await typeAddress('https://example.com');
+
+    expect(await screen.findByRole('status')).toHaveTextContent('No such room');
+    expect(screen.getByRole('textbox', { name: 'Address' })).toHaveValue('https://example.com');
+  });
+
+  it('falls back to a sentence of its own when the failure has nothing to say', async () => {
+    openRoomCanvasDocument.mockRejectedValue(new Error(''));
+    render(<CanvasBrowserContent documentId="d1" content={roomPage} />);
+    await typeAddress('https://example.com');
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/couldn’t reach the server/i);
   });
 });
