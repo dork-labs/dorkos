@@ -949,7 +949,7 @@ export class PersistentDispatch {
       // The map's raw SIZE was the wrong answer, for the same reason it is
       // wrong in the projector: an entry CAN strand, and a stranded one would
       // decline every reap and refuse every message into this session forever.
-      // {@link isWaitingOnPerson} bounds it by the wait this session actually
+      // {@link isWaitingOnPerson} bounds it by the wait a prompt actually
       // allows, so all three answers to "is somebody still expected back"
       // agree (spec `ask-parks-on-timeout`).
       hasPendingInteraction: () => isWaitingOnPerson(session, Date.now()),

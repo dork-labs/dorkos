@@ -55,8 +55,8 @@ describe('a hand-registered destructive tool waits for the operator', () => {
   }
 
   /** The live session the hold renders its inline card into. */
-  function session() {
-    return { eventQueue: queue, eventQueueNotify: vi.fn() };
+  function session(extra: Record<string, unknown> = {}) {
+    return { eventQueue: queue, eventQueueNotify: vi.fn(), ...extra };
   }
 
   beforeEach(() => {
@@ -77,8 +77,11 @@ describe('a hand-registered destructive tool waits for the operator', () => {
   }
 
   /** The hold seam the in-session server builds. */
-  function hold() {
-    return { approvals, session: session() } as Parameters<typeof gateHandRegisteredMcpTools>[2];
+  function hold(sessionExtra: Record<string, unknown> = {}) {
+    return {
+      approvals,
+      session: session(sessionExtra),
+    } as Parameters<typeof gateHandRegisteredMcpTools>[2];
   }
 
   /** Answer the one pending approval once the card has been pushed. */
@@ -170,6 +173,44 @@ describe('a hand-registered destructive tool waits for the operator', () => {
       'capability_approval_resolved',
     ]);
     expect(queue[1]?.data).toMatchObject({ outcome: 'timeout' });
+  });
+
+  // On a scheduled run the RUNTIME's own prompts are refused the instant they are
+  // raised, inside `canUseTool` (spec
+  // `unattended-session-permission-prompts`). DorkOS's own capability approvals
+  // are a different path entirely and were deliberately left alone: they never
+  // travelled through `canUseTool`, they are answerable from the dashboard long
+  // after the turn, and a late verdict wakes the session that asked
+  // (ADR `260909-123910`). These two pin that the gate cannot tell an unattended
+  // session from any other — the moment it starts refusing one on sight, both go
+  // red.
+  it('still puts the card in front of a person on a session nobody is watching', async () => {
+    const pending = call(hold({ unattended: true }));
+    await decide('grant');
+
+    expect(payloadOf(await pending)).toEqual({ success: true });
+    expect(ran).toEqual([{ agentId: TARGET }]);
+    expect(queue.map((e) => e.type)).toEqual([
+      'capability_approval_required',
+      'capability_approval_resolved',
+    ]);
+  });
+
+  it('still parks for a late answer on a session nobody is watching', async () => {
+    const [gated] = gateHandRegisteredMcpTools([tool()], undefined, {
+      ...hold({ unattended: true })!,
+      capMs: 10,
+    });
+
+    const payload = payloadOf(
+      await gated!.handler({ agentId: TARGET } as Record<string, unknown>, undefined)
+    );
+
+    // Not a denial: the approval is still pending on the dashboard and the agent
+    // still holds a usable token, exactly as it does for an attended session.
+    expect(payload.status).toBe('approval_required');
+    expect(payload.approvalToken).toEqual(expect.any(String));
+    expect(ran).toEqual([]);
   });
 
   it('gives up early, and retires its card, when the turn is interrupted', async () => {

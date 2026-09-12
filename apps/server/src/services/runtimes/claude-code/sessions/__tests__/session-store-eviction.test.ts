@@ -69,16 +69,23 @@ describe('checkSessionHealth exempts a session waiting on a person', () => {
     expect(store.findSession(SESSION_ID)).toBeUndefined();
   });
 
-  it('gives an UNATTENDED session only the wait it can actually use', () => {
-    // A scheduled run's prompt is refused at the countdown and never parks, so a
-    // four-hour reprieve for a stranded entry is time the session could never
-    // have spent waiting (spec `ask-parks-on-timeout` §7).
+  it('needs no shorter bound for an unattended session, which holds nothing', () => {
+    // A scheduled run's asks are refused before a pending entry is ever made
+    // (spec `unattended-session-permission-prompts`), so there is no stranded
+    // entry to age out early and the flag changes nothing here. The bound that
+    // used to read it is gone; this pins that its absence is the right answer
+    // rather than an oversight.
     const store = storeHoldingPrompt(11 * 60_000);
     const session = store.findSession(SESSION_ID)!;
     const now = Date.now();
 
     expect(isWaitingOnPerson(session, now)).toBe(true);
     session.unattended = true;
+    expect(isWaitingOnPerson(session, now)).toBe(true);
+
+    // What DOES answer false is an empty map — the state such a session is
+    // actually in, because nothing was ever pended.
+    session.pendingInteractions.clear();
     expect(isWaitingOnPerson(session, now)).toBe(false);
   });
 
