@@ -143,6 +143,9 @@ function postFrom(source: Window | null, data: unknown, origin = 'null'): void {
   window.dispatchEvent(new MessageEvent('message', { data, source, origin }));
 }
 
+/** The bridge's seat-refresh beat, mirrored so a reload test can advance past one. */
+const SEAT_REFRESH_BEAT_MS = 15_000;
+
 const consoleEntry = { level: 'error' as const, text: 'boom', timestamp: 1 };
 const networkEntry = {
   method: 'GET',
@@ -825,6 +828,89 @@ describe('useDevtoolsBridge — the driver seat (spec `canvas-agent-seat` §2.2)
     postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' });
     await vi.advanceTimersByTimeAsync(0);
     expect(claimCalls()).toHaveLength(0);
+  });
+
+  it('stops reporting a page as instrumented once it navigates away', async () => {
+    // A frame outlives its page. Before this, `instrumented` was a plain boolean
+    // set once by `hello` and never reset — so after a same-tab navigation from
+    // an instrumented preview to a page carrying no shim (an external site, a
+    // directly framed dev server), the seat still said the page could be driven.
+    // Every driving verb then minted a real request and waited out the whole
+    // timeout instead of refusing in a sentence.
+    await mountAndSettle();
+    postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(claimCalls().at(-1)![1]).toMatchObject({ active: true, instrumented: true });
+
+    ingestDevtoolsCapture.mockClear();
+    // The shim's own last word before its document is replaced.
+    postFrom(iframe.contentWindow, { __dorkosDevtools: 'navigated' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(claimCalls().at(-1)![1]).toMatchObject({ active: true, instrumented: false });
+
+    // And the new page says hello, so it is drivable again.
+    ingestDevtoolsCapture.mockClear();
+    postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(claimCalls().at(-1)![1]).toMatchObject({ instrumented: true });
+  });
+
+  it('reports the new page honestly when the address changes before the shim says so', async () => {
+    // The other order the two signals can arrive in: the parent re-points the
+    // frame and the old page's `navigated` is still in flight, or never comes at
+    // all. Keying the handshake to the document rather than resetting a flag is
+    // what covers this — the old answer simply stops matching.
+    const { rerender } = renderHook(
+      ({ url }: { url: string }) => {
+        const ref = useRef<HTMLIFrameElement | null>(iframe) as RefObject<HTMLIFrameElement | null>;
+        useDevtoolsBridge({
+          iframeRef: ref,
+          documentId: 'doc',
+          logicalUrl: url,
+          reloadNonce: 0,
+          previewOrigin: null,
+        });
+        return ref;
+      },
+      { initialProps: { url: 'preview.html' } }
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(claimCalls().at(-1)![1]).toMatchObject({ instrumented: true });
+
+    ingestDevtoolsCapture.mockClear();
+    rerender({ url: 'https://example.com/' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(claimCalls().at(-1)![1]).toMatchObject({ instrumented: false });
+  });
+
+  it('treats a reload of the same address as a new page it has not heard from', async () => {
+    const { rerender } = renderHook(
+      ({ nonce }: { nonce: number }) => {
+        const ref = useRef<HTMLIFrameElement | null>(iframe) as RefObject<HTMLIFrameElement | null>;
+        useDevtoolsBridge({
+          iframeRef: ref,
+          documentId: 'doc',
+          logicalUrl: 'preview.html',
+          reloadNonce: nonce,
+          previewOrigin: null,
+        });
+        return ref;
+      },
+      { initialProps: { nonce: 0 } }
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(claimCalls().at(-1)![1]).toMatchObject({ instrumented: true });
+
+    // A reload leaves the URL alone, so only the nonce says the document
+    // changed. The next claim — the refresh beat — must report the truth.
+    ingestDevtoolsCapture.mockClear();
+    rerender({ nonce: 1 });
+    await vi.advanceTimersByTimeAsync(SEAT_REFRESH_BEAT_MS);
+    expect(claimCalls().at(-1)![1]).toMatchObject({ instrumented: false });
   });
 
   it('holds a release until the claim before it has actually gone out', async () => {

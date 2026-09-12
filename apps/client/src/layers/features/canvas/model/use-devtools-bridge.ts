@@ -215,6 +215,9 @@ export function useDevtoolsBridge({
   const documentIdRef = useRef(documentId);
   const logicalUrlRef = useRef(logicalUrl);
   const previewOriginRef = useRef(previewOrigin);
+  // Which page is in the frame right now — the URL AND the reload counter, so a
+  // reload of the same address counts as a new document, which it is.
+  const documentKeyRef = useRef(documentKey);
   // Keep the refs current for the long-lived listener without re-adding it. Synced
   // in an effect (not during render) so a stale batch never posts under old ids.
   useEffect(() => {
@@ -222,6 +225,7 @@ export function useDevtoolsBridge({
     documentIdRef.current = documentId;
     logicalUrlRef.current = logicalUrl;
     previewOriginRef.current = previewOrigin;
+    documentKeyRef.current = documentKey;
   });
 
   const pendingConsole = useRef<DevtoolsConsoleEntry[]>([]);
@@ -241,15 +245,23 @@ export function useDevtoolsBridge({
    */
   const pendingSessionId = useRef<string | null>(null);
   /**
-   * Whether the shim in THIS frame ever said hello.
+   * Which DOCUMENT the shim last said hello for, or `null` for none.
    *
    * Carried on the seat claim so a driving tool can answer "that page is open
    * but DorkOS is not instrumenting it" at once. An external site and a dev
    * server framed by its own address both render and neither carries the shim,
    * so without this the tool would wait out a whole timeout to say nothing
    * useful.
+   *
+   * **Keyed rather than a boolean, because a frame outlives its page.** A plain
+   * `true` survived a same-tab navigation from an instrumented preview to a page
+   * that carries no shim: the seat kept reporting `instrumented: true`, so every
+   * driving verb minted a real request and waited out the whole timeout instead
+   * of refusing in a sentence. Keying it to the document also settles the order
+   * the two signals can arrive in — a `logicalUrl` change that beats the shim's
+   * `navigated` message stops matching by itself, with nothing to reset.
    */
-  const handshook = useRef(false);
+  const handshookFor = useRef<string | null>(null);
   /**
    * Claims for this page, serialised. See the claim effect for why the ORDER of
    * two fire-and-forget POSTs is load-bearing.
@@ -338,7 +350,7 @@ export function useDevtoolsBridge({
           // And tell the server this page can be driven. The first claim goes
           // out on mount, before any handshake could have happened, so without
           // this upgrade every page would look un-instrumented forever.
-          handshook.current = true;
+          handshookFor.current = documentKeyRef.current;
           // Through the same chain as every other claim, so the upgrade cannot
           // overtake the mount claim and then be overwritten by it.
           claimSeat.current?.(true);
@@ -350,6 +362,17 @@ export function useDevtoolsBridge({
           // their page is broken does not.
           setResourceErrorCount((n) => n + 1);
           return;
+      }
+
+      // The page in the frame is being replaced, so whatever handshook is going
+      // with it. Handled ABOVE the attached-session gate on purpose: telling the
+      // server this page can no longer be driven is not about relaying captures,
+      // and a window with no conversation attached still has to stop claiming a
+      // page it can drive. Re-reporting here rather than waiting for the next
+      // beat is what makes the refusal instant.
+      if (data.__dorkosDevtools === 'navigated') {
+        handshookFor.current = null;
+        claimSeat.current?.(true);
       }
 
       // Relay captures only for the attached session — never feed another's
@@ -476,7 +499,10 @@ export function useDevtoolsBridge({
               console: [],
               network: [],
               active,
-              instrumented: handshook.current,
+              // True only for the page the frame is showing NOW. A handshake
+              // that belonged to the page before a navigation is not an answer
+              // about this one.
+              instrumented: handshookFor.current === documentKeyRef.current,
             },
             keepalive ? { keepalive: true } : undefined
           )

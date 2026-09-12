@@ -73,7 +73,10 @@ export const DOCUMENT_INPUT = {
     .optional()
     .describe(
       'Which browser tab to act in. Leave it out for the one whose window last brought a ' +
-        'preview to the front. Ids come from get_ui_state.'
+        'preview to the front, which is almost always the one you want. Every result from the ' +
+        'verbs that act on a page — click, type, press, scroll, wait for, read page — names the ' +
+        'tab it acted on and its id, so pass that id back to keep acting on the same tab. In a ' +
+        'room, the UI-state read lists the open tabs with their ids as well.'
     ),
 };
 
