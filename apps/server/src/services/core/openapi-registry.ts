@@ -5038,6 +5038,36 @@ const sessionCanvasDocumentNotFound = {
   content: { 'application/json': { schema: ErrorResponseSchema } },
 };
 
+/** 400 for an `:id` that is not a session id. Every route here answers it. */
+const sessionCanvasInvalidId = {
+  description: 'That is not a session id',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
+
+/** 400 on the routes that also carry a body, which can be refused for either reason. */
+const sessionCanvasBadRequest = {
+  description: 'That is not a session id, or the body is not a valid request',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
+
+/** 401 for an agent identity this machine cannot verify. */
+const sessionCanvasIdentityUnverified = {
+  description: 'That agent identity could not be verified — its token may be revoked or expired',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
+
+/**
+ * 503 for a process that stood no canvas up.
+ *
+ * A real answer, not a theoretical one: a host reading somebody else's database
+ * read-only registers no canvas writer on purpose, and an honest refusal beats
+ * a fabricated empty table.
+ */
+const sessionCanvasUnavailable = {
+  description: 'This server has no canvas',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
+
 registry.registerPath({
   method: 'get',
   path: '/api/sessions/{id}/canvas',
@@ -5051,7 +5081,10 @@ registry.registerPath({
       description: 'The session’s canvas, pinned first then most recently active',
       content: { 'application/json': { schema: CanvasDocumentListResponseSchema } },
     },
+    400: sessionCanvasInvalidId,
+    401: sessionCanvasIdentityUnverified,
     403: sessionCanvasPeopleOnly,
+    503: sessionCanvasUnavailable,
   },
 });
 
@@ -5068,7 +5101,10 @@ registry.registerPath({
       description: 'The document',
       content: { 'application/json': { schema: CanvasDocumentSchema } },
     },
+    400: sessionCanvasInvalidId,
+    401: sessionCanvasIdentityUnverified,
     403: sessionCanvasPeopleOnly,
+    503: sessionCanvasUnavailable,
     404: sessionCanvasDocumentNotFound,
   },
 });
@@ -5089,12 +5125,18 @@ registry.registerPath({
       description: 'The document, as every window now has it',
       content: { 'application/json': { schema: CanvasDocumentSchema } },
     },
-    400: roomValidationError,
+    400: sessionCanvasBadRequest,
+    401: sessionCanvasIdentityUnverified,
     403: sessionCanvasPeopleOnly,
+    404: {
+      description: 'That id names no session this server knows',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
     409: {
       description: 'Somebody is editing the document this would have refreshed',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
+    503: sessionCanvasUnavailable,
   },
 });
 
@@ -5114,8 +5156,10 @@ registry.registerPath({
       description: 'The document, as every window now has it',
       content: { 'application/json': { schema: CanvasDocumentSchema } },
     },
-    400: roomValidationError,
+    400: sessionCanvasBadRequest,
+    401: sessionCanvasIdentityUnverified,
     403: sessionCanvasPeopleOnly,
+    503: sessionCanvasUnavailable,
     404: sessionCanvasDocumentNotFound,
   },
 });
@@ -5130,7 +5174,10 @@ registry.registerPath({
   request: { params: SessionCanvasParams },
   responses: {
     204: { description: 'Closed' },
+    400: sessionCanvasInvalidId,
+    401: sessionCanvasIdentityUnverified,
     403: sessionCanvasPeopleOnly,
+    503: sessionCanvasUnavailable,
     404: sessionCanvasDocumentNotFound,
   },
 });
@@ -5151,8 +5198,10 @@ registry.registerPath({
       description: 'Who holds the lock now, and when it lapses',
       content: { 'application/json': { schema: CanvasEditingResponseSchema } },
     },
-    400: roomValidationError,
+    400: sessionCanvasBadRequest,
+    401: sessionCanvasIdentityUnverified,
     403: sessionCanvasPeopleOnly,
+    503: sessionCanvasUnavailable,
     404: sessionCanvasDocumentNotFound,
   },
 });

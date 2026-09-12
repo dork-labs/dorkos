@@ -3,6 +3,7 @@ import {
   resolveViewerForPath,
   isCanvasViewerType,
   diffMediaKindForPath,
+  canvasContentForFile,
   CANVAS_VIEWER_TYPES,
 } from '../viewer-registry.js';
 
@@ -106,5 +107,61 @@ describe('diffMediaKindForPath', () => {
   it('honors a viewer override when picking the diff surface', () => {
     // Force a normally-image extension onto the text viewer → text diff.
     expect(diffMediaKindForPath('logo.png', { png: 'file' })).toBe('text');
+  });
+});
+
+/**
+ * The half of viewer resolution that used to live in the client's dispatcher
+ * (DOR-2006).
+ *
+ * It moved here because a second writer appeared: since the session canvas is
+ * written by the SERVER, `open_file` is resolved on both sides, and two answers
+ * to "what does opening `chart.png` mean" give two `canvasSourceKey`s for one
+ * file — one file, two tabs, and the agent's one a text editor loading a PNG.
+ * These cases are the ones that were wrong: every non-text viewer.
+ */
+describe('canvasContentForFile', () => {
+  it.each([
+    ['assets/logo.png', { type: 'image', src: 'assets/logo.png' }],
+    ['report.pdf', { type: 'pdf', src: 'report.pdf' }],
+    ['model.glb', { type: 'model3d', src: 'model.glb' }],
+    ['tone.mp3', { type: 'audio', src: 'tone.mp3' }],
+    ['clip.mp4', { type: 'video', src: 'clip.mp4' }],
+    ['data/rows.csv', { type: 'csv', src: 'data/rows.csv' }],
+    ['README.md', { type: 'file', sourcePath: 'README.md', language: 'markdown' }],
+    ['src/index.ts', { type: 'file', sourcePath: 'src/index.ts' }],
+  ])('opens %s as its own viewer, not as text', (path, expected) => {
+    expect(canvasContentForFile(path)).toEqual(expected);
+  });
+
+  it('honors a viewer override, which is the part a server-only answer dropped', () => {
+    // `workbench.defaultViewers` (DOR-219) lives in config the client used to
+    // apply alone. Both sides read it now, so both agree.
+    expect(canvasContentForFile('logo.png', { png: 'file' })).toEqual({
+      type: 'file',
+      sourcePath: 'logo.png',
+    });
+  });
+
+  it('produces one content shape per registered viewer — no viewer falls through', () => {
+    // Exhaustiveness the type checker cannot state: every viewer id in the
+    // registry must be reachable as a distinct content shape, so a viewer added
+    // to the table without an arm here is a compile error, and one added with a
+    // wrong arm is this test.
+    const byViewer = new Map<string, string>();
+    for (const [path, viewer] of [
+      ['a.png', 'image'],
+      ['a.pdf', 'pdf'],
+      ['a.glb', 'model3d'],
+      ['a.mp3', 'audio'],
+      ['a.mp4', 'video'],
+      ['a.csv', 'csv'],
+      ['a.md', 'markdown'],
+      ['a.ts', 'file'],
+    ] as const) {
+      expect(resolveViewerForPath(path)).toBe(viewer);
+      byViewer.set(viewer, canvasContentForFile(path).type);
+    }
+    expect([...byViewer.keys()].sort()).toEqual([...CANVAS_VIEWER_TYPES].sort());
   });
 });

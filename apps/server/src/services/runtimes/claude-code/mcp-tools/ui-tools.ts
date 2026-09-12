@@ -22,20 +22,13 @@
  */
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { UiCommandSchema } from '@dorkos/shared/schemas';
-import type {
-  UiState,
-  UiStateReport,
-  UiCommand,
-  StreamEvent,
-  UiCanvasContent,
-} from '@dorkos/shared/types';
-import { canvasViewForContent } from '@dorkos/shared/canvas-view';
+import type { UiState, UiStateReport, UiCommand, StreamEvent } from '@dorkos/shared/types';
 import { CONTROL_UI_DESCRIPTION, CONTROL_UI_INPUT } from '../../shared/ui-tool-contract.js';
 import { getRoomService, RoomError } from '../../../rooms/index.js';
 import {
   CANVAS_VERBS,
   SESSION_AGENT_AUTHOR,
-  contentFor,
+  frontOfViewIds,
   peekCanvasService,
   sessionScope,
   type CanvasApplyResult,
@@ -225,7 +218,7 @@ export function createControlUiHandler(session: UiToolSession) {
     // the `canvas` event the service published, in every window of the session
     // rather than just the one that asked.
     if (isSessionCanvasWrite(command)) {
-      const applied = applyToSessionCanvas(session, command);
+      const applied = applyToSessionCanvasSafely(session, command);
       if (applied !== null) {
         if (!applied.applied) {
           return jsonContent({ success: false, target: 'session', reason: applied.reason }, true);
@@ -305,8 +298,11 @@ function applyToSessionCanvas(
 ): CanvasApplyResult | null {
   const canvas = peekCanvasService();
   const sessionId = session.sdkSessionId;
+  // No canvas service in this process — an embedded host reading somebody
+  // else's database, or a boot that has not reached the rooms subsystem. `null`
+  // means "fall through", not "failed".
   if (!canvas || sessionId === undefined) return null;
-  const content = contentFor(command);
+  const content = canvas.contentForCommand(command);
   return canvas.apply({
     scope: sessionScope(sessionId),
     authorId: SESSION_AGENT_AUTHOR,
@@ -329,6 +325,41 @@ function applyToSessionCanvas(
     // looking at in the view this content belongs to.
     defaultTarget: 'active-in-view',
   });
+}
+
+/**
+ * Run {@link applyToSessionCanvas} and turn a thrown fault into a sentence.
+ *
+ * **The exact shape {@link applyToRoomCanvas} has had since it shipped**, for the
+ * same reason: a database that is busy, locked or read-only is a thing that
+ * happens, and the model must read a refusal it can act on rather than have its
+ * turn die on a stack trace. The read-only embed is the case that proved it —
+ * `apply` over a read-only database threw `SqliteError: attempt to write a
+ * readonly database` straight through the tool.
+ *
+ * `ROOM_NOT_FOUND` is the sibling's code and is carried here for the same
+ * reason: `CanvasApplyResult` types its code as a `RoomErrorCode`, none of which
+ * means "the writer faulted", and the code never leaves this file — the handler
+ * answers the model with `reason` alone. A raw driver message is NOT passed on:
+ * it names internals the model cannot do anything about.
+ *
+ * @param session - The session taking the turn.
+ * @param command - The validated command.
+ * @returns What was written, why nothing was, or `null` to fall through.
+ */
+function applyToSessionCanvasSafely(
+  session: UiToolSession,
+  command: UiCommand
+): CanvasApplyResult | null {
+  try {
+    return applyToSessionCanvas(session, command);
+  } catch (err) {
+    return {
+      applied: false,
+      code: 'ROOM_NOT_FOUND',
+      reason: err instanceof RoomError ? err.message : 'Your canvas could not be reached just now.',
+    };
+  }
 }
 
 /**
@@ -395,17 +426,9 @@ function sessionUiStateReport(session: UiToolSession): UiStateReport {
   const canvas = peekCanvasService();
   const sessionId = session.sdkSessionId;
   const documents = canvas && sessionId !== undefined ? canvas.list(sessionScope(sessionId)) : [];
-  // At most one document per view is the front one, and it is the most recently
-  // active of that view — the same rule the window draws by. Pinning sorts a
-  // document first; it does not make it the one on screen.
-  const frontOfView = new Set(
-    (['canvas', 'browser'] as const).map((view) => {
-      const inView = documents
-        .filter((d) => canvasViewForContent(d.content as UiCanvasContent) === view)
-        .sort((a, b) => Date.parse(b.lastActiveAt) - Date.parse(a.lastActiveAt));
-      return inView[0]?.id;
-    })
-  );
+  // The same helper the writer's LRU reads, so "the front document of this
+  // view" is one rule over one table rather than two copies that can disagree.
+  const frontOfView = frontOfViewIds(documents);
   return {
     canvas: {
       open: documents.length > 0,

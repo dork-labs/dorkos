@@ -63,23 +63,35 @@ function requireRegistry(deps: CapabilityDeps): CapabilityRegistry {
  * The tool families that are NOT on the capability registry, named in the
  * `list_capabilities` description so a model knows what the catalog omits.
  *
- * Exported, and written as the DOMAIN PREFIX a migrated capability id would carry
- * (`tasks.*`, not `task.*`), because the drift guard in
- * `__tests__/capabilities-domain.test.ts` asserts each entry is genuinely absent
- * from the composed registry. That is what makes the caveat self-retiring: migrate
- * one of these onto the registry and the guard fails, forcing the family out of
- * this list and out of the description rather than leaving a now-false sentence in
- * the highest-traffic model-facing text in the product.
+ * Exported, and read by the drift guard in
+ * `__tests__/capabilities-domain.test.ts`, which asserts that no MCP TOOL the
+ * composed registry projects belongs to a family named here. That is what makes
+ * the caveat self-retiring: migrate one of these families onto the registry and
+ * the catalog starts projecting a tool whose name carries the family, the guard
+ * fails, and the family has to leave this list and the description rather than
+ * leaving a now-false sentence in the highest-traffic model-facing text in the
+ * product.
+ *
+ * The guard compares TOOL NAMES rather than capability-id prefixes, because the
+ * sentence is about the reader's own tool list: what an agent notices is that
+ * `tasks_create` is callable but absent from the catalog. An id-prefix guard
+ * answers a different question and gets `ui` wrong in both directions — see
+ * below.
  *
  * `agent` is deliberately NOT here. Agent *creation* is a hand-registered tool
  * (`create_agent`), but `operator.update_agent` and
  * `operator.agents_recent_activity` are real catalog entries with tiers, so
  * naming `agent` wholesale as absent would be its own overclaim.
  *
- * `ui` left this list when the domain opened (spec `canvas-agent-seat` §5): it
- * is a real registry domain now, so naming it as absent would be the same
- * overclaim in the other direction. It is the guard below retiring an entry
- * exactly as intended, rather than a number somebody patched.
+ * `ui` STAYS here even though `ui.read_canvas_document` opened a real registry
+ * domain (spec `canvas-agent-seat` §5). One capability is not the family: the two
+ * tools an agent actually reaches for when it wants to drive the app,
+ * `control_ui` and `get_ui_state`, are still hand-registered on the in-session
+ * server and still absent from the catalog, and a model told the `ui` family is
+ * catalogued will look for them there and conclude it cannot drive the window at
+ * all. That is the exact defect this list exists to prevent, pointed the other
+ * way. The entry retires when Q4 catalogues those two — at which point the
+ * registry projects a tool whose name carries `ui` and the guard says so.
  */
 export const UNREGISTERED_TOOL_FAMILIES: readonly string[] = [
   'tasks',
@@ -89,6 +101,7 @@ export const UNREGISTERED_TOOL_FAMILIES: readonly string[] = [
   'trace',
   'extension',
   'devtools',
+  'ui',
 ];
 
 /**

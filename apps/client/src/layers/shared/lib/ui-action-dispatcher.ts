@@ -1,5 +1,5 @@
 import type { UiCommand, UiCanvasContent, UiPanelId, UiSidebarTab } from '@dorkos/shared/types';
-import { resolveViewerForPath, type CanvasViewerType } from '@dorkos/shared/viewer-registry';
+import { canvasContentForFile } from '@dorkos/shared/viewer-registry';
 import { toast } from 'sonner';
 import type { PipContent } from '@/layers/shared/model';
 import { canvasViewForContent } from '@dorkos/shared/canvas-view';
@@ -360,8 +360,11 @@ export function executeUiCommand(
       // cwd-confined URLs by the renderers at render time, so no cwd is needed
       // here. This is the client seam the file explorer and the agent's
       // `open_file` tool both drive.
-      const viewer = resolveViewerForPath(command.sourcePath, ctx.workbenchViewerOverrides);
-      const content = buildOpenFileContent(viewer, command.sourcePath);
+      // The SAME function the server calls when it writes an agent's
+      // `open_file` (spec `canvas-agent-seat` §1.2). Two answers to "what does
+      // opening this file mean" gave two `sourceKey`s for one file, so one file
+      // grew two tabs and the agent's one opened a text editor on a PNG.
+      const content = canvasContentForFile(command.sourcePath, ctx.workbenchViewerOverrides);
       if (!ctx.serverAppliedCanvas) store.openCanvasDocument(content);
       // No viewer resolves to the embedded browser today, so every opened file
       // reveals Canvas — and the day one does, this line routes it to Browser
@@ -586,30 +589,6 @@ export function revealForContent(
 ): void {
   if (canvasViewForContent(content) === 'browser') revealBrowser(store, origin);
   else revealCanvas(store, origin);
-}
-
-/** Build the canvas content for an `open_file` command from its resolved viewer. */
-function buildOpenFileContent(viewer: CanvasViewerType, sourcePath: string): UiCanvasContent {
-  switch (viewer) {
-    case 'image':
-      return { type: 'image', src: sourcePath };
-    case 'pdf':
-      return { type: 'pdf', src: sourcePath };
-    case 'model3d':
-      return { type: 'model3d', src: sourcePath };
-    case 'audio':
-      return { type: 'audio', src: sourcePath };
-    case 'video':
-      return { type: 'video', src: sourcePath };
-    case 'csv':
-      return { type: 'csv', src: sourcePath };
-    case 'markdown':
-      // Rendered by the file viewer, which loads the bytes and routes markdown
-      // to the rich Blintz editor (the `language` hint flags it).
-      return { type: 'file', sourcePath, language: 'markdown' };
-    case 'file':
-      return { type: 'file', sourcePath };
-  }
 }
 
 function setPanelOpen(

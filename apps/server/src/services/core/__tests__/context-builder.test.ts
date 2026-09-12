@@ -475,14 +475,20 @@ describe('renderContextEntry', () => {
   });
 
   it('renders ui_state as a pretty-printed <ui_state> JSON block', () => {
+    // The shape a client really sends since the canvas moved to the server: no
+    // `canvas` key at all (spec `canvas-agent-seat` §1.7). The fixture carried
+    // one until DOR-2006's review, and the `"open": true` assertion below was
+    // satisfied by `sidebar.open` — so it passed while rendering a block
+    // production never emits.
     const uiState = {
-      canvas: { open: false, contentType: null },
       panels: { settings: false, tasks: false, relay: false, picker: false },
       sidebar: { open: true, activeTab: 'sessions' as const },
       agent: { id: null, cwd: null },
     };
     const result = renderContextEntry({ kind: 'ui_state', scope: 'per-turn', data: uiState });
     expect(result).toContain('<ui_state>');
+    expect(result).not.toContain('"canvas"');
+    expect(result).toContain('"sidebar"');
     expect(result).toContain('"open": true');
     expect(result).toContain('</ui_state>');
   });

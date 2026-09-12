@@ -86,6 +86,17 @@ export interface RoomSubsystem {
    * than a tab that happens to be open, says somebody is at the keyboard.
    */
   welcomeBack: WelcomeBackGreeter;
+  /**
+   * The one canvas writer built over this database, handed back rather than only
+   * registered.
+   *
+   * A READ-ONLY subsystem does not register it (see the construction below), so
+   * a host that wants the read half — the Obsidian embed showing this machine's
+   * session canvas — has to be given it explicitly. That is the point: the thing
+   * you can be handed is the thing you can read through, and the thing nobody
+   * registered is the thing no agent path can write through.
+   */
+  canvas: CanvasService;
 }
 
 /**
@@ -205,6 +216,22 @@ function readRoomMinutesMs(field: 'replyWaitMinutes' | 'lateReplyCeilingMinutes'
     return configManager.get('rooms')[field] * 60_000;
   } catch {
     return USER_CONFIG_DEFAULTS.rooms[field] * 60_000;
+  }
+}
+
+/**
+ * This install's extension → viewer overrides, or `undefined` when it has none.
+ *
+ * Read through the same tolerant path the room limits use: a config store that
+ * cannot be read must not stop somebody opening a file, so an unreadable config
+ * means the built-in viewer table, which is what every install without an
+ * override already gets.
+ */
+function readViewerOverrides(): Record<string, string> | undefined {
+  try {
+    return configManager.get('workbench')?.defaultViewers;
+  } catch {
+    return undefined;
   }
 }
 
@@ -432,9 +459,20 @@ export function createRoomSubsystem(opts: {
       },
     },
     displayNameFor: (authorId) => authors.getById(authorId)?.displayName ?? 'Somebody',
+    // Read per call, never captured: a person who tells DorkOS in Settings to
+    // open CSVs in the plain editor must get that answer from the agent's next
+    // open too, and both sides resolve through `canvasContentForFile`.
+    viewerOverrides: () => readViewerOverrides(),
     ...(opts.canvasNow ? { now: opts.canvasNow } : {}),
   });
-  setCanvasService(canvas);
+  // **A read-only subsystem registers NO writer.** `readOnly` means this process
+  // is pointed at somebody else's live database (the Obsidian embed, ADR
+  // `260825-194924`), and a registered service is one `control_ui` will call —
+  // which threw `SqliteError: attempt to write a readonly database` instead of
+  // refusing. With none registered, every reader degrades: `control_ui` falls
+  // through to the event it always pushed, the routes answer 503, and the embed
+  // reads through the seam it is handed instead.
+  if (opts.readOnly !== true) setCanvasService(canvas);
   const bridges = new BridgeStore(opts.db);
   const readCursors = opts.readCursors ?? new ReadCursorService(new ReadCursorStore(opts.db));
   const service = new RoomService({
@@ -587,7 +625,17 @@ export function createRoomSubsystem(opts: {
     offers: { ask: (input) => service.askAside(input) },
     lastSeenAt: (userId) => lastPersonSignalAt(opts.db, userId),
   });
-  return { service, store, attachments, authors, broadcaster, bridges, readCursors, welcomeBack };
+  return {
+    service,
+    store,
+    attachments,
+    authors,
+    broadcaster,
+    bridges,
+    readCursors,
+    welcomeBack,
+    canvas,
+  };
 }
 
 let active: RoomService | null = null;

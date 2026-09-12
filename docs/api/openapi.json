@@ -51460,8 +51460,38 @@
               }
             }
           },
+          "400": {
+            "description": "That is not a session id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "That agent identity could not be verified — its token may be revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "A session’s canvas is the person’s own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This server has no canvas",
             "content": {
               "application/json": {
                 "schema": {
@@ -51510,7 +51540,17 @@
             }
           },
           "400": {
-            "description": "Validation error",
+            "description": "That is not a session id, or the body is not a valid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "That agent identity could not be verified — its token may be revoked or expired",
             "content": {
               "application/json": {
                 "schema": {
@@ -51529,8 +51569,28 @@
               }
             }
           },
+          "404": {
+            "description": "That id names no session this server knows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "409": {
             "description": "Somebody is editing the document this would have refreshed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This server has no canvas",
             "content": {
               "application/json": {
                 "schema": {
@@ -51580,6 +51640,26 @@
               }
             }
           },
+          "400": {
+            "description": "That is not a session id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "That agent identity could not be verified — its token may be revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "A session’s canvas is the person’s own",
             "content": {
@@ -51592,6 +51672,16 @@
           },
           "404": {
             "description": "No such document on this canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This server has no canvas",
             "content": {
               "application/json": {
                 "schema": {
@@ -51649,7 +51739,17 @@
             }
           },
           "400": {
-            "description": "Validation error",
+            "description": "That is not a session id, or the body is not a valid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "That agent identity could not be verified — its token may be revoked or expired",
             "content": {
               "application/json": {
                 "schema": {
@@ -51670,6 +51770,16 @@
           },
           "404": {
             "description": "No such document on this canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This server has no canvas",
             "content": {
               "application/json": {
                 "schema": {
@@ -51710,6 +51820,26 @@
           "204": {
             "description": "Closed"
           },
+          "400": {
+            "description": "That is not a session id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "That agent identity could not be verified — its token may be revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "A session’s canvas is the person’s own",
             "content": {
@@ -51722,6 +51852,16 @@
           },
           "404": {
             "description": "No such document on this canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This server has no canvas",
             "content": {
               "application/json": {
                 "schema": {
@@ -51781,7 +51921,17 @@
             }
           },
           "400": {
-            "description": "Validation error",
+            "description": "That is not a session id, or the body is not a valid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "That agent identity could not be verified — its token may be revoked or expired",
             "content": {
               "application/json": {
                 "schema": {
@@ -51802,6 +51952,16 @@
           },
           "404": {
             "description": "No such document on this canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This server has no canvas",
             "content": {
               "application/json": {
                 "schema": {
@@ -55259,7 +55419,7 @@
           "Capabilities"
         ],
         "summary": "List capabilities",
-        "description": "List the DorkOS capabilities you can invoke by id: the live, versioned catalog of every entry on the capability registry, each with its id, title, description, permission tier (observe/act/destructive), input/output JSON Schema, and the surfaces (MCP tool, CLI verb, HTTP route) it projects onto. Run any of them with `dorkos call <id> [--input '<json>']`. This is NOT the full list of DorkOS tools: the tasks, relay, mesh, binding, trace, extension, devtools tools are registered directly on the MCP server, so they appear in your own tool list rather than in this catalog and cannot be reached by `dorkos call`. They carry a permission tier all the same and answer to the same approval gate, so a tool being absent here is not a tool that runs unasked: deleting a schedule and unregistering an agent are destructive and stop for a person. A destructive tool advertises an `approvalToken` argument, which is how you can tell one from its own schema. Call this to find out what is invocable by capability id and at what tier; look at your tool list for the rest. By default a call returns a compact entry per capability (id, title, tier, and a one line summary), bounded to a page, so discovery does not flood your context. Pass `detail:'full'` for the input and output JSON Schema, `domain` to keep one id prefix (for example `domain:'mcp'`), `query` for a case insensitive substring over id, title, and description, and `limit` with `cursor` to page. When a page is capped it says how many were left out and how to narrow.",
+        "description": "List the DorkOS capabilities you can invoke by id: the live, versioned catalog of every entry on the capability registry, each with its id, title, description, permission tier (observe/act/destructive), input/output JSON Schema, and the surfaces (MCP tool, CLI verb, HTTP route) it projects onto. Run any of them with `dorkos call <id> [--input '<json>']`. This is NOT the full list of DorkOS tools: the tasks, relay, mesh, binding, trace, extension, devtools, ui tools are registered directly on the MCP server, so they appear in your own tool list rather than in this catalog and cannot be reached by `dorkos call`. They carry a permission tier all the same and answer to the same approval gate, so a tool being absent here is not a tool that runs unasked: deleting a schedule and unregistering an agent are destructive and stop for a person. A destructive tool advertises an `approvalToken` argument, which is how you can tell one from its own schema. Call this to find out what is invocable by capability id and at what tier; look at your tool list for the rest. By default a call returns a compact entry per capability (id, title, tier, and a one line summary), bounded to a page, so discovery does not flood your context. Pass `detail:'full'` for the input and output JSON Schema, `domain` to keep one id prefix (for example `domain:'mcp'`), `query` for a case insensitive substring over id, title, and description, and `limit` with `cursor` to page. When a page is capped it says how many were left out and how to narrow.",
         "parameters": [
           {
             "schema": {

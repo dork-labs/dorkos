@@ -113,4 +113,29 @@ describe('CoreSlice — resets', () => {
       expect(s.pipGeometry).toBeNull();
     });
   });
+
+  /**
+   * The one key that is NOT a preference, asserted rather than removed from the
+   * list (DOR-2006 review nit).
+   *
+   * `dorkos-canvas-sessions` stopped being local state when the canvas moved to
+   * the server: what is left is a one-time migration payload holding documents
+   * that may exist NOWHERE else yet. Dropping it from `CROSS_SLICE_KEYS` made
+   * the suite silent about it; sweeping it would throw away somebody's canvas
+   * because they reset their preferences before opening that session again.
+   */
+  describe('the retired canvas key', () => {
+    const LEGACY_CANVAS_KEY = 'dorkos-canvas-sessions';
+
+    it('survives both resets, because it is a migration payload and not a preference', () => {
+      seed();
+      localStorage.setItem(LEGACY_CANVAS_KEY, '{"s1":{"documents":[]}}');
+
+      useAppStore.getState().resetAppearance();
+      expect(localStorage.getItem(LEGACY_CANVAS_KEY)).not.toBeNull();
+
+      useAppStore.getState().resetAllSettings();
+      expect(localStorage.getItem(LEGACY_CANVAS_KEY)).not.toBeNull();
+    });
+  });
 });

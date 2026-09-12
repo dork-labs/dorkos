@@ -448,19 +448,35 @@ describe('UiStateReportSchema — what get_ui_state ANSWERS with', () => {
     expect(UiStateReportSchema.parse(report)).toEqual(report);
   });
 
-  it('agrees with the room arm on the five shared document keys, and adds one', () => {
-    // `rooms.read_canvas` answers with id/type/title/author/pinned for every
-    // document. The session arm adds `active` and nothing else — a room has no
-    // shared active document by design, so the difference is in the world
-    // rather than in the schema.
-    expect(Object.keys(UiStateReportDocumentSchema.shape).sort()).toEqual([
-      'active',
-      'author',
-      'id',
-      'pinned',
-      'title',
-      'type',
-    ]);
+  it('composes the client’s own three parts rather than copying them', () => {
+    // The report is the client's panels, sidebar and agent PLUS the server's
+    // canvas. Those three are the same schema objects `UiStateSchema` declares —
+    // asserted by identity, so a second copy of `sidebar` that drifts from the
+    // one a client sends cannot pass.
+    expect(UiStateReportSchema.shape.panels).toBe(UiStateSchema.shape.panels);
+    expect(UiStateReportSchema.shape.sidebar).toBe(UiStateSchema.shape.sidebar);
+    expect(UiStateReportSchema.shape.agent).toBe(UiStateSchema.shape.agent);
+  });
+
+  it('declares `active`, the one key the room arm does not answer with', () => {
+    // Whether the two arms AGREE on the other five is not a question this
+    // package can ask — the room arm is composed in the server's `ui-tools.ts`.
+    // It is asked where both handlers can be driven, in
+    // `services/rooms/canvas/__tests__/room-canvas-routing.test.ts`; an earlier
+    // version of this test compared a hardcoded six-name literal against the
+    // schema it was copied from and could never have caught a rename on either
+    // arm. What IS this package's to state is that `active` is the difference,
+    // and that it is required rather than optional.
+    expect(UiStateReportDocumentSchema.shape).toHaveProperty('active');
+    expect(() =>
+      UiStateReportDocumentSchema.parse({
+        id: 'doc-1',
+        type: 'diff',
+        title: 'src/router.ts',
+        author: 'Kai',
+        pinned: false,
+      })
+    ).toThrow();
   });
 });
 

@@ -138,6 +138,70 @@ describe('CanvasService on a session scope', () => {
       );
       expect(published.some((p) => p.frame.closed === true)).toBe(true);
     });
+
+    /**
+     * Pinned rows are EXEMPT, not counted (DOR-2006 review, finding 9/10a).
+     *
+     * The cap is over unpinned documents, on both sides of the wire: the window
+     * counts the same set this does. When it counted all of them, thirteen
+     * documents with two pinned had the window evict locally what the server
+     * keeps, and the next hydrate simply put it back.
+     */
+    it('holds more than the cap when the extra documents are pinned', () => {
+      for (let n = 0; n < MAX_CANVAS_DOCUMENTS; n += 1) {
+        canvas.open(SCOPE, SESSION_OWNER_AUTHOR, { type: 'url', url: `https://example.test/${n}` });
+      }
+      const pinned = [0, 1].map((n) =>
+        canvas.open(SCOPE, SESSION_OWNER_AUTHOR, {
+          type: 'json',
+          data: { n },
+          title: `pinned ${n}`,
+        })
+      );
+      for (const document of pinned) canvas.pin(SCOPE, document.id, true);
+
+      // Two more unpinned opens: the table is at the cap on unpinned rows, so
+      // each evicts one unpinned row and neither touches a pin.
+      canvas.open(SCOPE, SESSION_OWNER_AUTHOR, {
+        type: 'url',
+        url: 'https://example.test/extra-1',
+      });
+      canvas.open(SCOPE, SESSION_OWNER_AUTHOR, {
+        type: 'url',
+        url: 'https://example.test/extra-2',
+      });
+
+      const live = canvas.list(SCOPE);
+      expect(live.filter((d) => !d.pinned)).toHaveLength(MAX_CANVAS_DOCUMENTS);
+      expect(
+        live
+          .filter((d) => d.pinned)
+          .map((d) => d.id)
+          .sort()
+      ).toEqual(pinned.map((d) => d.id).sort());
+      expect(live).toHaveLength(MAX_CANVAS_DOCUMENTS + 2);
+    });
+
+    it('never evicts the document the OTHER view is showing', () => {
+      // The page somebody is sitting on in Browser, opened first and never
+      // touched again: `lastActiveAt` does not move when the reader switches
+      // tabs, so a plain LRU takes the one document on screen the moment twelve
+      // documents open in Canvas.
+      const onScreen = canvas.open(SCOPE, SESSION_OWNER_AUTHOR, {
+        type: 'url',
+        url: 'https://example.test/reading-this',
+      });
+      for (let n = 0; n <= MAX_CANVAS_DOCUMENTS; n += 1) {
+        canvas.open(SCOPE, SESSION_OWNER_AUTHOR, {
+          type: 'json',
+          data: { n },
+          title: `doc ${n}`,
+        });
+      }
+
+      expect(canvas.get(SCOPE, onScreen.id)).not.toBeNull();
+      expect(canvas.list(SCOPE)).toHaveLength(MAX_CANVAS_DOCUMENTS);
+    });
   });
 
   describe('dedupe', () => {
@@ -158,6 +222,86 @@ describe('CanvasService on a session scope', () => {
       canvas.open(SCOPE, SESSION_OWNER_AUTHOR, jsonContent('a'));
       canvas.open(SCOPE, SESSION_OWNER_AUTHOR, jsonContent('b'));
       expect(canvas.list(SCOPE)).toHaveLength(2);
+    });
+
+    /**
+     * The writer resolves the VIEWER, so an agent's `open_file` and a person's
+     * land on one document (DOR-2006 review, blocker 1).
+     *
+     * Viewer resolution used to happen only in the client's dispatcher. Once the
+     * server started writing an agent's `open_file` it wrote a bare
+     * `{type:'file'}` for everything, which is two defects at once: a PNG opened
+     * in a text editor ("This file isn't text and can't be shown"), and a
+     * different `canvasSourceKey` from the person's `{type:'image'}` — so one
+     * file grew two tabs, the exact divergence this phase exists to remove.
+     */
+    it('opens an agent’s chart.png as an IMAGE, and on the person’s row', () => {
+      // The person opens it first, through the same content the client builds.
+      const byPerson = canvas.open(SCOPE, SESSION_OWNER_AUTHOR, {
+        type: 'image',
+        src: '/assets/chart.png',
+      });
+
+      const result = applyAsAgent({ action: 'open_file', sourcePath: '/assets/chart.png' });
+
+      expect(result.applied).toBe(true);
+      expect(result.applied === true && result.documentId).toBe(byPerson.id);
+      expect(canvas.list(SCOPE)).toHaveLength(1);
+      expect(canvas.list(SCOPE)[0]?.content).toEqual({ type: 'image', src: '/assets/chart.png' });
+    });
+
+    it('applies this install’s viewer overrides, read per call', () => {
+      // `workbench.defaultViewers` (DOR-219) lives in config the client used to
+      // apply alone, so a server-side answer that ignored it disagreed with the
+      // window that asked for it. Read per call, never captured: a change in
+      // Settings binds the next open.
+      const settings: { defaultViewers?: Record<string, string> } = {};
+      const configured = new CanvasService({
+        documents,
+        channels: { publish: () => {}, viewers: () => 0 },
+        viewerOverrides: () => settings.defaultViewers,
+      });
+
+      configured.apply({
+        scope: SCOPE,
+        authorId: SESSION_AGENT_AUTHOR,
+        command: { action: 'open_file', sourcePath: '/assets/logo.png' },
+        defaultTarget: 'active-in-view',
+      });
+      expect(configured.list(SCOPE)[0]?.contentType).toBe('image');
+
+      settings.defaultViewers = { png: 'file' };
+      configured.apply({
+        scope: SCOPE,
+        authorId: SESSION_AGENT_AUTHOR,
+        command: { action: 'open_file', sourcePath: '/assets/other.png' },
+        defaultTarget: 'active-in-view',
+      });
+      const other = configured.list(SCOPE).find((d) => d.title.includes('other'));
+      expect(other?.contentType).toBe('file');
+    });
+
+    it('answers contentForCommand with the same content it would write', () => {
+      // The two callers that look at the content before delegating — the room
+      // flavour resolving which tree a file came from, and the claude-code
+      // handler — must ask the WRITER, not the pure helper, or they see a
+      // different shape for the same file than the row ends up holding.
+      const configured = new CanvasService({
+        documents,
+        channels: { publish: () => {}, viewers: () => 0 },
+        viewerOverrides: () => ({ png: 'file' }),
+      });
+      const peeked = configured.contentForCommand({
+        action: 'open_file',
+        sourcePath: '/assets/logo.png',
+      });
+      configured.apply({
+        scope: SCOPE,
+        authorId: SESSION_AGENT_AUTHOR,
+        command: { action: 'open_file', sourcePath: '/assets/logo.png' },
+        defaultTarget: 'active-in-view',
+      });
+      expect(configured.list(SCOPE)[0]?.content).toEqual(peeked);
     });
   });
 

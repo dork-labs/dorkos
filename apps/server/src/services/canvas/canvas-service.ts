@@ -40,6 +40,7 @@
 import type { DbTransaction } from '@dorkos/db';
 import type { CanvasDocument } from '@dorkos/shared/room-schemas';
 import { canvasViewForContent } from '@dorkos/shared/canvas-view';
+import { canvasContentForFile } from '@dorkos/shared/viewer-registry';
 import type { UiCanvasContent, UiCommand } from '@dorkos/shared/schemas';
 import { logger } from '../../lib/logger.js';
 // The typed refusals, imported from the rooms domain's LEAF error module rather
@@ -217,6 +218,15 @@ export interface CanvasDeps {
   channels: CanvasChannels;
   /** How the holder of an edit lock is named in the sentence an agent reads. */
   displayNameFor?: (authorId: string) => string;
+  /**
+   * Extension → viewer overrides, read PER CALL so a change in Settings binds
+   * the next open (`workbench.defaultViewers`).
+   *
+   * The client is handed the same map, and both sides resolve through
+   * `canvasContentForFile` — which is what keeps an agent's `open_file` and a
+   * person's landing on one document rather than two.
+   */
+  viewerOverrides?: () => Record<string, string> | undefined;
   /** The clock, so a lock's TTL is testable without waiting 45 seconds. */
   now?: () => number;
 }
@@ -234,6 +244,7 @@ export class CanvasService {
   private readonly documents: CanvasDocumentStore;
   private readonly channels: CanvasChannels;
   private readonly displayNameFor: (authorId: string) => string;
+  private readonly viewerOverrides: () => Record<string, string> | undefined;
   private readonly now: () => number;
 
   /**
@@ -254,6 +265,7 @@ export class CanvasService {
     this.documents = deps.documents;
     this.channels = deps.channels;
     this.displayNameFor = deps.displayNameFor ?? (() => 'Somebody');
+    this.viewerOverrides = deps.viewerOverrides ?? (() => undefined);
     this.now = deps.now ?? Date.now;
   }
 
@@ -361,6 +373,23 @@ export class CanvasService {
       rev: document.rev,
       viewers: this.viewers(scope),
     };
+  }
+
+  /**
+   * The content one canvas verb implies, with this install's viewer overrides
+   * applied — the same answer `apply` will reach.
+   *
+   * Exposed so a CALLER that has to look at the content before delegating (the
+   * room flavour resolves which tree a file came out of; the claude-code handler
+   * decides whether to record a directory at all) asks the same question the
+   * writer will, rather than calling the pure helper without the overrides and
+   * getting a different shape for the same file.
+   *
+   * @param command - The validated command.
+   * @returns The content, or `null` for a verb that names a document instead.
+   */
+  contentForCommand(command: UiCommand): UiCanvasContent | null {
+    return contentFor(command, this.viewerOverrides());
   }
 
   // -------------------------------------------------------------------------
@@ -852,7 +881,7 @@ export class CanvasService {
     // The four OPENING verbs resolve by dedupe key: two agents opening one file
     // land on one row, which is what makes the table a table.
     if (command.action !== 'update_canvas' && command.action !== 'close_canvas') {
-      const content = contentFor(command);
+      const content = contentFor(command, this.viewerOverrides());
       if (content === null) return { reason: OPEN_CANVAS_NEEDS_CONTENT_MESSAGE };
       const sourceKey = canvasSourceKey(content);
       const existing = this.documents.findBySourceKey(scope, sourceKey);
@@ -1003,9 +1032,20 @@ export class CanvasService {
   private evict(scope: string, protectedId: string): void {
     const over = this.documents.unpinnedCount(scope) - MAX_CANVAS_DOCUMENTS;
     if (over <= 0) return;
+    // The front document of each view is never evictable (DOR-2006 review,
+    // finding 10a). `lastActiveAt` moves when a document is opened or activated
+    // and NOT when the reader switches tabs, so the page somebody is sitting on
+    // in Browser goes stale the moment twelve documents open in Canvas — and a
+    // plain LRU takes the one document on screen. The window's own optimistic
+    // bound has protected those two ids since the canvas was client-side; the
+    // rule belongs HERE now, over the table, so the two sides drop the same row
+    // rather than each dropping a different one.
+    const onScreen = frontOfViewIds(this.documents.list(scope));
     const candidates = this.documents
       .evictionCandidates(scope)
-      .filter((row) => row.id !== protectedId && this.lockHolder(row) === null);
+      .filter(
+        (row) => row.id !== protectedId && !onScreen.has(row.id) && this.lockHolder(row) === null
+      );
     for (const row of candidates.slice(0, over)) {
       this.documents.remove(scope, row.id);
       this.publish(scope, { type: 'canvas', documentId: row.id, closed: true });
@@ -1038,6 +1078,36 @@ interface CanvasWritePlan extends CanvasTreePlacement {
   pinned: boolean;
 }
 
+/**
+ * The id of the front document of each view — at most one per view.
+ *
+ * **One rule, read by both the LRU and the report.** `get_ui_state`'s `active`
+ * flag and the eviction's "never take the tab somebody is looking at" are the
+ * same question, and they used to be two copies of it: the window protected the
+ * two on-screen ids and the server protected none, so a thirteenth open had
+ * each side drop a different row and left the window missing one until the next
+ * hydrate.
+ *
+ * "Front" is the most recently ACTIVE document of that view, which is the rule
+ * the window draws by. Pinning sorts a document first; it does not make it the
+ * one on screen.
+ *
+ * @param rows - Every document in one scope.
+ * @returns The front id of each view that has one.
+ */
+export function frontOfViewIds(
+  rows: readonly { id: string; content: UiCanvasContent; lastActiveAt: string }[]
+): Set<string> {
+  const ids = new Set<string>();
+  for (const view of ['canvas', 'browser'] as const) {
+    const front = rows
+      .filter((row) => canvasViewForContent(row.content) === view)
+      .sort((a, b) => Date.parse(b.lastActiveAt) - Date.parse(a.lastActiveAt))[0];
+    if (front) ids.add(front.id);
+  }
+  return ids;
+}
+
 /** A close this command implies, with the row it resolved to. */
 interface CanvasClosePlan {
   kind: 'close';
@@ -1052,17 +1122,30 @@ interface CanvasClosePlan {
  * is one shape of `UiCanvasContent` with the fields spelled differently, and
  * turning them into it here is what lets one writer serve all six verbs.
  *
+ * **`open_file` resolves its VIEWER here**, through the same shared function the
+ * client's dispatcher calls. It used to resolve on the client alone, so once the
+ * server started writing an agent's `open_file` the two disagreed: the agent's
+ * `chart.png` became a bare `file` document that loads a PNG into a text editor,
+ * and a person opening the same file wrote `{type:'image'}` — a different
+ * `sourceKey`, so one file grew two tabs.
+ *
  * @param command - The validated command.
+ * @param viewerOverrides - Extension → viewer overrides from
+ *   `workbench.defaultViewers`, so a person who told DorkOS to open CSVs
+ *   differently gets that answer from the agent's opens too.
  * @returns The content to write, or `null`.
  */
-export function contentFor(command: UiCommand): UiCanvasContent | null {
+export function contentFor(
+  command: UiCommand,
+  viewerOverrides?: Record<string, string>
+): UiCanvasContent | null {
   switch (command.action) {
     case 'open_canvas':
       return command.content ?? null;
     case 'update_canvas':
       return command.content;
     case 'open_file':
-      return { type: 'file', sourcePath: command.sourcePath };
+      return canvasContentForFile(command.sourcePath, viewerOverrides);
     case 'open_diff':
       return { type: 'diff', sourcePath: command.sourcePath };
     case 'browser_navigate':

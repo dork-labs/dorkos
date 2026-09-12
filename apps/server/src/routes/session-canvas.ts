@@ -12,10 +12,14 @@
  * is `control_ui` and `read_canvas_document`, neither of which can name a
  * session that is not its own.
  *
- * **The id is the session's canonical one.** The client learns it from the 202
- * its message POST answered with, and the store defers every write until it
- * has it — a row written under the pre-rekey UUID would be renamed out from
- * under the window that wrote it.
+ * **The id is whatever the window currently knows the session as**, and these
+ * routes do not wait for the canonical one. A canvas opened on a brand-new
+ * session lands under the request UUID, and the rekey listener in
+ * `services/canvas/index.ts` moves the whole scope when the runtime renames the
+ * session mid-first-turn — which is the acceptance criterion this phase is
+ * written against ("a document opened on a fresh, un-canonical session survives
+ * the first-turn rekey"), and the reason the move is the writer's job rather
+ * than the caller's.
  *
  * @module routes/session-canvas
  */
@@ -32,6 +36,8 @@ import {
   type CanvasService,
 } from '../services/canvas/index.js';
 import { RoomError } from '../services/rooms/index.js';
+import { peekProjector } from '../services/session/session-state-projector.js';
+import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { resolveCaller } from './room-caller.js';
 import { sendRoomError } from './room-error-response.js';
 import { parseBody, parseSessionId, sendError } from '../lib/route-utils.js';
@@ -101,6 +107,44 @@ function requireCanvasAccess(
   return { canvas, scope: sessionScope(sessionId) };
 }
 
+/**
+ * Whether this server knows the id names a session, cheaply and without a
+ * runtime round trip.
+ *
+ * **Asked on the POST alone**, because a POST is the only verb here that can
+ * MINT a scope. Every other route acts on a document that already exists and
+ * 404s when it does not, so none of them can leave rows behind; a list of a
+ * scope that holds nothing is an empty list, which creates nothing to reclaim.
+ * And a canvas written under an id that never was a session would never BE
+ * reclaimed: `sweepOrphanedCanvasDocuments` only deletes scopes that
+ * `onSessionRemoved` marked, and nothing removes a session that never existed.
+ *
+ * Two facts, either of which is enough, and both cheap:
+ *
+ * - **A projector under that id.** Every window that has a session on screen
+ *   has its durable stream attached, and attaching one creates the projector —
+ *   so this is true before the window can write anything, including for a
+ *   brand-new session that has not taken its first turn.
+ * - **A runtime binding row.** Any session that has ever taken a turn has one,
+ *   and it survives a restart, so a canvas opened on an old session the moment
+ *   it is reopened is covered even if the read raced the stream attach.
+ *
+ * A database this process cannot read makes the question UNANSWERABLE, which is
+ * not the same as absent: it says yes, because refusing a real write is worse
+ * than an orphaned row a person can close.
+ *
+ * @param sessionId - The validated session id.
+ * @returns Whether a write may mint this scope.
+ */
+function namesAKnownSession(sessionId: string): boolean {
+  if (peekProjector(sessionId) !== undefined) return true;
+  try {
+    return runtimeRegistry.getSessionBindings([sessionId]).size > 0;
+  } catch {
+    return true;
+  }
+}
+
 /** GET / — everything on this session's canvas, pinned first then most recent. */
 router.get<SessionCanvasParams>('/', (req, res) => {
   const access = requireCanvasAccess(req, res);
@@ -125,6 +169,9 @@ router.post<SessionCanvasParams>('/', (req, res) => {
   if (!body) return;
   const access = requireCanvasAccess(req, res);
   if (!access) return;
+  if (!namesAKnownSession(req.params.id)) {
+    return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
+  }
   try {
     const document = access.canvas.open(access.scope, SESSION_OWNER_AUTHOR, body.content, {
       ...(body.pinned !== undefined ? { pinned: body.pinned } : {}),

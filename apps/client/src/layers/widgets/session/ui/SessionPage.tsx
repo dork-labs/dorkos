@@ -2,15 +2,16 @@ import { useCallback } from 'react';
 import { ChatPanel } from './ChatPanel';
 import { useSessionCanvas } from '@/layers/features/canvas';
 import { useRightPanelLayoutPersistence } from '@/layers/features/right-panel';
-import { useSessionId, useSessionSearch } from '@/layers/entities/session';
+import { useSessionId, useSessionRekeyTarget, useSessionSearch } from '@/layers/entities/session';
 import { useInPlaceNavigate } from '@/layers/shared/model';
 import { useMessageLanding } from '../model/use-message-landing';
 
 /**
  * Session route page — wraps ChatPanel with route-derived session ID.
  *
- * Canvas state (open/closed, content) is persisted per-session in localStorage
- * and bound on mount or session change via `useSessionCanvas`. The
+ * The canvas is the SERVER's table (spec `canvas-agent-seat` §1.5): this page
+ * binds the slice to the session on screen via `useSessionCanvas`, which also
+ * carries a canvas still sitting in `localStorage` up to the server once. The
  * canvas panel itself is rendered at the shell level via the extension registry.
  *
  * The right panel's layout (open state + active tab) is persisted per-agent and
@@ -39,7 +40,16 @@ export function SessionPage() {
   const { runtime, prompt, send, seed, message } = useSessionSearch();
   const inPlaceNavigate = useInPlaceNavigate();
   const landOnRow = useMessageLanding(activeSessionId, message);
-  useSessionCanvas(activeSessionId);
+  // **Whether the id in the URL is the session's canonical one.** A brand-new
+  // session streams under the request UUID this client minted and is renamed
+  // mid-first-turn; while that rename is known and the URL has not moved yet,
+  // `useSessionRekeyTarget` answers with the id it is about to become. The
+  // one-time `localStorage` import waits for that to settle, because deleting
+  // the only local copy while writing into a scope about to be renamed is the
+  // one ordering with no way back. It is the same fact the URL redirect
+  // subscribes to, not a third path.
+  const rekeyTarget = useSessionRekeyTarget(activeSessionId);
+  useSessionCanvas(activeSessionId, { canonical: rekeyTarget === null });
   useRightPanelLayoutPersistence();
 
   /**

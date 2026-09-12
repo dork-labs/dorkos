@@ -34,8 +34,10 @@
  * a session service, and every `ui` verb is session-scoped by construction. (The
  * canvas itself is the opposite case and has its own domain: it serves two scopes
  * and belongs to neither.) In `browser-seat/` inside it because the handlers for
- * the driving verbs land beside this file, and because `services/session/` is
- * already at the directory-size guard's ceiling.
+ * the driving verbs land beside this file, and because a file added to
+ * `services/session/` itself would fail the pre-commit growth check in
+ * `scripts/check-dir-size.sh`: that directory holds 33 source files against the
+ * script's `ERROR_THRESHOLD` of 25, so the guard refuses the 34th.
  *
  * @module server/services/session/browser-seat/ui-capabilities
  */

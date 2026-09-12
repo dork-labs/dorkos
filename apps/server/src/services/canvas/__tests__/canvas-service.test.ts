@@ -210,6 +210,47 @@ describe('RoomCanvasService.apply', () => {
       expect(canvas.list(room.id)).toHaveLength(3);
     });
 
+    /**
+     * The one case the `>=` in `chargeCeiling` exists for (DOR-2006 review, 10b).
+     *
+     * The resolver reads the ceiling live and a host that has configured none
+     * answers `undefined`. `spent >= undefined` is false, so the operation
+     * proceeds — which is right. The inversion that ships as `!(spent < limit)`
+     * reads the same for every real number and flips exactly here: `spent <
+     * undefined` is false too, so its negation refuses. Every canvas command in
+     * every room then fails with "already changed the canvas undefined times",
+     * and re-seeding it left 2033 of 2034 server tests green.
+     */
+    it('lets everything through when the host has configured no ceiling', () => {
+      const {
+        service: unlimited,
+        authors: theirAuthors,
+        human: owner,
+      } = createRoomHarness({
+        agents,
+        runner: scriptedRunner(() => null),
+        // Exactly what `configManager.get('rooms').maxCanvasOpsPerTurn` answers
+        // on a config that has no such key.
+        maxCanvasOpsPerTurn: () => undefined as unknown as number,
+      });
+      const theirRoom = unlimited.createRoom(
+        { kind: 'channel', title: 'Unbounded', members: [], agentPaths: [ANA] },
+        owner
+      );
+      const theirAna = theirAuthors.resolveAgent(ANA, 'Ana').id;
+
+      for (const n of [1, 2, 3, 4, 5] as const) {
+        const result = unlimited.canvas.apply({
+          roomId: theirRoom.id,
+          authorId: theirAna,
+          turnId: 'turn-1',
+          command: { action: 'open_canvas', content: jsonContent(`doc ${n}`) },
+        });
+        expect(result.applied, `open ${n}`).toBe(true);
+      }
+      expect(unlimited.canvas.list(theirRoom.id)).toHaveLength(5);
+    });
+
     it('survives a turn that is closed more than once', () => {
       // `finishTurn` runs from the collector's `finally`, and a room turn can
       // reach one more than once — an abort and a settle, a retry, a second

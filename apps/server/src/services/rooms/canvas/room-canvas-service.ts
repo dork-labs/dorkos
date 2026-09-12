@@ -61,7 +61,6 @@ import {
   OPEN_CANVAS_NEEDS_CONTENT_MESSAGE,
   NO_DEFAULT_DOCUMENT_MESSAGE,
   canvasSourcePath,
-  contentFor,
   documentBeingEditedMessage,
   roomScope,
   type CanvasApplyResult,
@@ -332,7 +331,10 @@ export class RoomCanvasService {
       };
     }
 
-    const content = contentFor(command);
+    // Asked of the WRITER, so the tree this resolves is the tree the content it
+    // is about to write actually names (a `chart.png` resolves to an `image`,
+    // which names no file path at all).
+    const content = this.canvas.contentForCommand(command);
     return this.canvas.apply({
       scope: roomScope(roomId),
       authorId,

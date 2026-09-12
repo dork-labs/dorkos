@@ -5656,7 +5656,14 @@ export type UiStateReportDocument = z.infer<typeof UiStateReportDocumentSchema>;
 export const UiStateReportSchema = z
   .object({
     canvas: z.object({
-      /** Whether the person has the canvas pane open — the client's own report. */
+      /**
+       * Whether there is anything on the canvas at all — `documents.length > 0`.
+       *
+       * **Not "is the pane open in the window"**, which is what the retired
+       * `UiState.canvas.open` meant: that was one browser's report of its own
+       * layout, and the answer changed depending on which window had spoken
+       * last. The table is the same for every window, so this one is too.
+       */
       open: z.boolean(),
       /**
        * Live readers of this session's stream right now.

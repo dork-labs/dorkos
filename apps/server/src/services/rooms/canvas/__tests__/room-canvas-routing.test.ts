@@ -28,7 +28,7 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { StreamEvent, UiState } from '@dorkos/shared/types';
-import type { UiCommand } from '@dorkos/shared/schemas';
+import { UiStateReportDocumentSchema, type UiCommand } from '@dorkos/shared/schemas';
 import { toRawSessionEvent } from '../../../session/session-event-normalizer.js';
 import {
   createControlUiHandler,
@@ -40,6 +40,7 @@ import {
   isUiActionRefusedOnCodex,
 } from '../../../runtimes/codex/ui-command-consent.js';
 import { setRoomService } from '../../index.js';
+import { peekCanvasService, sessionScope, SESSION_OWNER_AUTHOR } from '../../../canvas/index.js';
 import { NOT_IN_A_ROOM_MESSAGE, tooManyCanvasOpsMessage } from '../room-canvas-service.js';
 import {
   agentLookupFor,
@@ -190,6 +191,53 @@ describe('the claude-code handler, inside a room turn', () => {
       yourLastDocumentId: opened.documentId,
     });
     expect(state.canvas).toMatchObject({ count: 1 });
+  });
+
+  /**
+   * Spec §1.7's "the two arms agree on the five shared keys", asserted by
+   * READING BOTH ARMS (DOR-2006 review, finding 6).
+   *
+   * The guard that claimed this compared a hardcoded six-name literal to the
+   * schema it was copied from, and never touched the room arm at all: renaming
+   * the room arm's `title:` to `titleText:` left three files and 109 tests
+   * green. Here both handlers are driven for real and both key sets come from
+   * the schema, so a rename on either side fails.
+   */
+  it('answers both arms with the same document keys, and `active` only on the session', async () => {
+    await controlUi({
+      action: 'open_canvas',
+      content: { type: 'json', data: {}, title: 'notes' },
+    });
+    const roomState = resultOf(
+      (await createGetUiStateHandler(session)()) as {
+        content: Array<{ type: string; text?: string }>;
+      }
+    );
+
+    // The session arm, over the same registered writer the harness stood up.
+    const canvas = peekCanvasService();
+    if (!canvas) throw new Error('the harness registers a canvas service');
+    canvas.open(sessionScope('sess-own'), SESSION_OWNER_AUTHOR, {
+      type: 'json',
+      data: {},
+      title: 'notes',
+    });
+    const sessionState = resultOf(
+      (await createGetUiStateHandler({ eventQueue: [], sdkSessionId: 'sess-own' })()) as {
+        content: Array<{ type: string; text?: string }>;
+      }
+    );
+
+    const documentsOf = (state: Record<string, unknown>) =>
+      (state.canvas as { documents: Record<string, unknown>[] }).documents;
+    const shared = Object.keys(UiStateReportDocumentSchema.shape)
+      .filter((key) => key !== 'active')
+      .sort();
+
+    expect(Object.keys(documentsOf(roomState)[0]!).sort()).toEqual(shared);
+    expect(Object.keys(documentsOf(sessionState)[0]!).sort()).toEqual(
+      Object.keys(UiStateReportDocumentSchema.shape).sort()
+    );
   });
 
   it('answers `get_ui_state` about the SESSION’s own canvas outside a room turn', async () => {
