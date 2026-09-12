@@ -75,10 +75,14 @@ const STRUCTURAL_EXCLUDES = ['node_modules', 'dist', 'src/core-extensions/**'];
  * DOR-508 opened the quarantine at 109 and immediately removed one inert entry.
  * DOR-635 freed `permission-preview.test.ts` (its single error was a
  * `as ShapePackageManifest` cast papering over an incomplete `layout` fixture).
+ * DOR-2009 freed `mcp-devtools-tools.test.ts` — not by fixing its seven errors
+ * but by rewriting it onto the `ui` capability handlers, under a new name and in
+ * a new place (`session/browser-seat/__tests__/devtools-reads.test.ts`), where it
+ * type-checks like everything else.
  * **Only ever lower this.** Lowering it means a file was fixed and freed; raising
  * it means a test file was given up on, which needs a reason in review.
  */
-const QUARANTINE_BASELINE = 105;
+const QUARANTINE_BASELINE = 104;
 
 /**
  * The `exclude` array from the server tsconfig.

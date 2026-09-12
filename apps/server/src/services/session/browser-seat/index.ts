@@ -40,7 +40,14 @@ export {
 export { parseScreenshotDataUrl, type DevtoolsReadStore } from './devtools-reads.js';
 export { emitToSession } from './session-reach.js';
 export { reachesPastTheScreen, uiActionRefusalMessage } from './ui-surface-consent.js';
-export { uiDomain } from './ui-capabilities.js';
+// **`uiDomain` is deliberately NOT re-exported here.** It is reached by its own
+// path, from the one place that composes it (`core/self-description/dorkos-registry.ts`).
+// Putting it on this barrel widens the graph of everything that imports this
+// barrel — and `services/session/index.ts` re-exports from here, which
+// `core/approvals/approval-verdict-delivery.ts` imports, which the harness's
+// auto-projection reaches. That pulled `lib/version.ts` (a module-scope
+// `readFileSync`) into a suite that mocks `node:fs`, and the whole file failed
+// to load. One domain, one import path.
 export {
   uiTurnFacts,
   UiTurnFactStore,

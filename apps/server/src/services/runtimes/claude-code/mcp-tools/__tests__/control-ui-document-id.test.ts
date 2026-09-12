@@ -30,7 +30,8 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { noopLogger } from '@dorkos/shared/logger';
 import { capabilityMcpTools } from '../capability-mcp-tools.js';
 import { composeRegistry } from '../../../../core/capabilities/index.js';
-import { uiDomain, uiTurnFacts } from '../../../../session/index.js';
+import { uiTurnFacts } from '../../../../session/index.js';
+import { uiDomain } from '../../../../session/browser-seat/ui-capabilities.js';
 import { setRoomService } from '../../../../rooms/index.js';
 import {
   agentLookupFor,
