@@ -4,6 +4,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+import type { UiCanvasContent } from '@dorkos/shared/types';
+import { canvasViewForContent } from '@/layers/shared/lib/canvas-view';
 
 // Mock streamdown to avoid CSS import issues in jsdom
 vi.mock('streamdown', () => ({
@@ -35,7 +37,8 @@ interface MockDoc {
 
 const mockState = {
   openDocuments: [] as MockDoc[],
-  activeDocumentId: null as string | null,
+  activeCanvasDocumentId: null as string | null,
+  activeBrowserDocumentId: null as string | null,
   selectedCwd: null as string | null,
   canvasSessionId: null as string | null,
   browserHistories: {} as Record<string, { contentUrl: string; stack: string[]; cursor: number }>,
@@ -43,12 +46,12 @@ const mockState = {
   openCanvasDocument: vi.fn(),
   activateCanvasDocument: vi.fn(),
   closeCanvasDocument: vi.fn(),
-  setActiveDocumentContent: vi.fn(),
+  setDocumentContent: vi.fn(),
   setDocumentEditing: vi.fn(),
   writeBrowserHistory: vi.fn(),
 };
 
-/** Set a single active document from its content, deriving a tab label from the title. */
+/** Set a single active document in its own view, labelled from its title. */
 function setActiveDoc(content: MockContent): void {
   mockState.openDocuments = [
     {
@@ -60,14 +63,23 @@ function setActiveDoc(content: MockContent): void {
       editing: false,
     },
   ];
-  mockState.activeDocumentId = 'd1';
+  if (canvasViewForContent(content as UiCanvasContent) === 'browser') {
+    mockState.activeBrowserDocumentId = 'd1';
+  } else {
+    mockState.activeCanvasDocumentId = 'd1';
+  }
 }
 
-vi.mock('@/layers/shared/model', () => {
+vi.mock('@/layers/shared/model', async () => {
+  // The real split rule, not a copy of it: one definition of which tab renders
+  // a document, so a component test can never pass while the app disagrees.
+  const { canvasViewForContent: viewFor } = await import('@/layers/shared/lib/canvas-view');
   const useAppStore = (selector: (s: typeof mockState) => unknown) => selector(mockState);
   (useAppStore as unknown as { getState: () => typeof mockState }).getState = () => mockState;
   return {
     useAppStore,
+    documentsInView: (docs: MockDoc[], view: string) =>
+      docs.filter((d) => viewFor(d.content as UiCanvasContent) === view),
     useIsMobile: () => false,
     useTheme: () => ({ theme: 'light', setTheme: vi.fn() }),
     useTransport: () => ({ writeFile: async () => ({ ok: true, hash: 'x' }) }),
@@ -79,7 +91,7 @@ vi.mock('@/layers/shared/model', () => {
 });
 
 import { setPrefersReducedMotion } from '@/test-setup';
-import { CanvasContent } from '../ui/AgentCanvas';
+import { CanvasContent, BrowserContent } from '../ui/CanvasViews';
 
 // The suite's own local `motion/react` shadow used to answer
 // `useReducedMotion: () => true`; deleting it (DOR-1416) silently flipped
@@ -92,7 +104,8 @@ describe('CanvasContent', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockState.openDocuments = [];
-    mockState.activeDocumentId = null;
+    mockState.activeCanvasDocumentId = null;
+    mockState.activeBrowserDocumentId = null;
   });
 
   it('renders canvas body without Panel or Sheet wrappers', () => {
@@ -108,11 +121,12 @@ describe('CanvasContent', () => {
   });
 });
 
-describe('CanvasContent — browser remount on content/document change (DOR-233 review)', () => {
+describe('BrowserContent — remount on content/document change (DOR-233 review)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockState.openDocuments = [];
-    mockState.activeDocumentId = null;
+    mockState.activeCanvasDocumentId = null;
+    mockState.activeBrowserDocumentId = null;
   });
 
   /** The framed page currently rendered, or null. */
@@ -124,11 +138,11 @@ describe('CanvasContent — browser remount on content/document change (DOR-233 
     // The browser snapshots content.url into its history on mount — without a
     // content-keyed remount, an in-place update would keep showing the old page.
     setActiveDoc({ type: 'url', url: 'https://one.test/' });
-    const { rerender } = render(<CanvasContent />);
+    const { rerender } = render(<BrowserContent />);
     await waitFor(() => expect(iframeSrc()).toBe('https://one.test/'));
 
     setActiveDoc({ type: 'url', url: 'https://two.test/' });
-    rerender(<CanvasContent />);
+    rerender(<BrowserContent />);
     await waitFor(() => expect(iframeSrc()).toBe('https://two.test/'));
   });
 
@@ -152,19 +166,19 @@ describe('CanvasContent — browser remount on content/document change (DOR-233 
       },
     ];
     mockState.openDocuments = docs;
-    mockState.activeDocumentId = 'd1';
+    mockState.activeBrowserDocumentId = 'd1';
 
-    const { rerender } = render(<CanvasContent />);
+    const { rerender } = render(<BrowserContent />);
     await waitFor(() => expect(iframeSrc()).toBe('https://one.test/'));
 
     // Same tree position — without a document-keyed remount the browser would
     // keep the first document's history and page.
-    mockState.activeDocumentId = 'd2';
-    rerender(<CanvasContent />);
+    mockState.activeBrowserDocumentId = 'd2';
+    rerender(<BrowserContent />);
     await waitFor(() => expect(iframeSrc()).toBe('https://two.test/'));
 
-    mockState.activeDocumentId = 'd1';
-    rerender(<CanvasContent />);
+    mockState.activeBrowserDocumentId = 'd1';
+    rerender(<BrowserContent />);
     await waitFor(() => expect(iframeSrc()).toBe('https://one.test/'));
   });
 });

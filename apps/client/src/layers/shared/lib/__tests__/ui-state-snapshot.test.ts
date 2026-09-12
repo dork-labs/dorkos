@@ -13,7 +13,7 @@ import {
 const baseSource: UiStateSource = {
   canvasOpen: false,
   openDocuments: [],
-  activeDocumentId: null,
+  activeCanvasDocumentId: null,
   settingsOpen: false,
   tasksOpen: false,
   relayOpen: false,
@@ -42,7 +42,7 @@ describe('buildUiStateSnapshot', () => {
         tasksOpen: true,
         canvasOpen: true,
         openDocuments: [{ id: 'doc-1', content: { type: 'markdown', content: '# hi' } }],
-        activeDocumentId: 'doc-1',
+        activeCanvasDocumentId: 'doc-1',
         sidebarActiveTab: 'connections',
       },
       '/projects/app'

@@ -102,7 +102,8 @@ describe('McpAppBlock pop-out (PIP) affordance', () => {
     // (DOR-97, DOR-829). All three writes, or nothing happened.
     useAppStore.setState({
       openDocuments: [],
-      activeDocumentId: null,
+      activeCanvasDocumentId: null,
+      activeBrowserDocumentId: null,
       canvasOpen: false,
       rightPanelOpen: false,
       activeRightPanelTab: null,

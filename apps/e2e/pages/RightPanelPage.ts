@@ -35,6 +35,10 @@ export class RightPanelPage {
   readonly pulseTab: Locator;
   /** The Room contextual tab (visible on the two routes that show a room). */
   readonly roomTab: Locator;
+  /** The Canvas contextual tab — documents, data, diffs, widgets and apps. */
+  readonly canvasTab: Locator;
+  /** The Browser contextual tab — the pages the embedded browser renders. */
+  readonly browserTab: Locator;
   /** The tab strip's scroll container — the box the edge fades are measured against. */
   readonly tabScroller: Locator;
   /** The fade over the strip's left edge, drawn only when tabs are behind it. */
@@ -59,6 +63,8 @@ export class RightPanelPage {
     this.profileTab = this.header.getByRole('tab', { name: 'Profile' });
     this.pulseTab = this.header.getByRole('tab', { name: 'Pulse' });
     this.roomTab = this.header.getByRole('tab', { name: 'Room' });
+    this.canvasTab = this.header.getByRole('tab', { name: 'Canvas' });
+    this.browserTab = this.header.getByRole('tab', { name: 'Browser' });
     // The scroller is the tablist's parent; there is no test id on it, and adding
     // one would put a test hook in the shell header for a box the DOM already
     // identifies unambiguously.

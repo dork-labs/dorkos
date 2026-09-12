@@ -22,10 +22,19 @@ import { getPlatform } from './platform';
 /** The app-store slice values the UI-state snapshot reads. */
 export interface UiStateSource {
   canvasOpen: boolean;
-  /** Open canvas documents; the active one supplies the reported content type. */
+  /** Open documents of both views; the Canvas view's active one supplies the reported type. */
   openDocuments: { id: string; content: UiCanvasContent }[];
-  /** Id of the active canvas document, or null when none are open. */
-  activeDocumentId: string | null;
+  /**
+   * Id of the Canvas view's active document, or null when it holds none.
+   *
+   * `UiState.canvas` is one object with one `contentType`, and since the panel
+   * split into a Canvas tab and a Browser tab (ADR 260911-200304) "the canvas"
+   * is the Canvas tab. So a page open in the Browser tab is not reported here,
+   * and a session whose only open document is a page reports `contentType:
+   * null` — honest under this schema rather than describing the wrong tab. The
+   * room work that lets an agent read the whole table is what widens the shape.
+   */
+  activeCanvasDocumentId: string | null;
   settingsOpen: boolean;
   tasksOpen: boolean;
   relayOpen: boolean;
@@ -51,7 +60,7 @@ export function buildUiStateSnapshot(source: UiStateSource, cwd: string | null):
   // Tolerate a partial source (test mocks pass a subset of the store) — an
   // absent document list reads as "no active content", never a throw.
   const activeContent = (source.openDocuments ?? []).find(
-    (d) => d.id === source.activeDocumentId
+    (d) => d.id === source.activeCanvasDocumentId
   )?.content;
   return {
     canvas: { open: source.canvasOpen, contentType: activeContent?.type ?? null },

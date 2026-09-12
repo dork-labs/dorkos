@@ -6,11 +6,17 @@ import type { Transport } from '@dorkos/shared/transport';
 import { useExtensionRegistry } from '@/layers/shared/model';
 import { registerRightPanelTabs } from '../init-extensions';
 
-/** A `visibleWhen` context stub — the embed's `/session` surface. */
-function ctx(supportsTerminal: boolean) {
+/**
+ * A `visibleWhen` context stub — the embed's `/session` surface.
+ *
+ * One argument for both web-only capabilities, because the two shells answer
+ * them together: HttpTransport can do both, the in-process Obsidian transport
+ * neither.
+ */
+function ctx(webCapable: boolean) {
   return {
     pathname: '/session',
-    transport: { supportsTerminal } as Transport,
+    transport: { supportsTerminal: webCapable, supportsWorkbenchServe: webCapable } as Transport,
     agentId: null,
     cwd: null,
     explicitAgentPath: null,
@@ -32,7 +38,7 @@ describe('registerRightPanelTabs', () => {
       .getState()
       .getContributions('right-panel')
       .map((c) => c.id);
-    for (const id of ['pulse', 'profile', 'session', 'files', 'canvas', 'terminal']) {
+    for (const id of ['pulse', 'profile', 'session', 'files', 'canvas', 'browser', 'terminal']) {
       expect(ids).toContain(id);
     }
   });
@@ -77,6 +83,18 @@ describe('registerRightPanelTabs', () => {
       .find((c) => c.id === 'terminal');
     expect(terminal?.visibleWhen?.(ctx(false))).toBe(false); // in-process (Obsidian) transport
     expect(terminal?.visibleWhen?.(ctx(true))).toBe(true); // web transport with a PTY
+  });
+
+  it('gates the browser tab on transport.supportsWorkbenchServe (hidden under the embed transport)', () => {
+    const { register } = useExtensionRegistry.getState();
+    registerRightPanelTabs(register);
+
+    const browser = useExtensionRegistry
+      .getState()
+      .getContributions('right-panel')
+      .find((c) => c.id === 'browser');
+    expect(browser?.visibleWhen?.(ctx(false))).toBe(false); // in-process (Obsidian) transport
+    expect(browser?.visibleWhen?.(ctx(true))).toBe(true); // web transport with the serve route
   });
 
   it('offers the Room tab on the two routes that show a room, and nowhere else', () => {

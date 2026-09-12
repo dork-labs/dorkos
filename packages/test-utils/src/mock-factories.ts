@@ -348,6 +348,10 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // Default: the port answers. Tests covering the dead-port message override
     // this with `{ listening: false }`, and DirectTransport tests with `null`.
     probeLoopbackPort: vi.fn(async () => ({ listening: true })),
+    // Embedded browser — the default mock behaves like the HTTP transport (it
+    // can serve a page); tests covering the DirectTransport path override
+    // `supportsWorkbenchServe: false`.
+    supportsWorkbenchServe: true,
     ingestDevtoolsCapture: vi.fn(async () => {}),
     // Embedded terminal — the default mock behaves like the HTTP transport
     // (supported); tests that need the DirectTransport path override

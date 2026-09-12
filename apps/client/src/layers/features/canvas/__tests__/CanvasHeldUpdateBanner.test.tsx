@@ -44,7 +44,7 @@ vi.mock('../model/use-canvas-file-save', () => ({
 }));
 
 import { useAppStore } from '@/layers/shared/model';
-import { CanvasContent } from '../ui/AgentCanvas';
+import { CanvasContent } from '../ui/CanvasViews';
 
 const MINE: UiCanvasContent = { type: 'markdown', content: 'my draft', sourcePath: 'notes.md' };
 const THEIRS: UiCanvasContent = {
@@ -56,7 +56,7 @@ const THEIRS: UiCanvasContent = {
 /** The active document as the store currently holds it. */
 function activeDoc() {
   const s = useAppStore.getState();
-  return s.openDocuments.find((d) => d.id === s.activeDocumentId)!;
+  return s.openDocuments.find((d) => d.id === s.activeCanvasDocumentId)!;
 }
 
 /** Open one file-backed markdown document and start editing it. */
@@ -84,7 +84,8 @@ describe('an agent update that arrives while a person is editing', () => {
     useAppStore.setState({
       canvasOpen: false,
       openDocuments: [],
-      activeDocumentId: null,
+      activeCanvasDocumentId: null,
+      activeBrowserDocumentId: null,
       canvasSessionId: 'sess-1',
       selectedCwd: null,
     });

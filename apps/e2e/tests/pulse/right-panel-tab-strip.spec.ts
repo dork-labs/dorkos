@@ -2,12 +2,16 @@ import { test, expect } from '../../fixtures';
 import type { RightPanelPage } from '../../pages/RightPanelPage';
 
 /**
- * The right panel's tab strip when six tabs do not fit.
+ * The right panel's tab strip when seven tabs do not fit.
  *
- * `/session` registers six contributions (Pulse, Profile, Session, Files,
- * Canvas, Terminal), which is wider than the strip at the 45% split this was filed
- * at — so the strip scrolls, and two things have to hold once it does: the
- * selected tab is on screen, and an edge with tabs behind it says so.
+ * `/session` registers seven contributions (Pulse, Profile, Session, Files,
+ * Canvas, Browser, Terminal). Measured: they are ~530px of tabs, and a 45% panel
+ * at this window width gives the strip ~370px — so the strip overflows by ~160px
+ * and scrolls, and two things have to hold once it does: the selected tab is on
+ * screen, and an edge with tabs behind it says so. (Figures to the nearest ten:
+ * the panel settles a few pixels either way depending on when the per-agent
+ * layout restore lands, and nothing here turns on the exact number — the
+ * assertions measure the strip themselves.)
  *
  * Clicking a tab got the first one for free, because the browser scrolls what it
  * focuses — which is why nothing a person did by hand ever showed the bug.
@@ -30,7 +34,18 @@ const RIGHT_PANEL_PCT = 45;
 /** The capture pipeline's viewport, which is where the bug was found. */
 const WINDOW = { width: 1280, height: 800 } as const;
 
-/** A window wide enough that the same split fits all six tabs. */
+/**
+ * A window wide enough that the same split fits all seven tabs.
+ *
+ * Re-measured when the Browser tab arrived (ADR 260911-200304), because a
+ * seventh tab changes the arithmetic under BOTH halves of this file: a width
+ * that only ever fit six would fail here for a reason that is not the bug this
+ * was filed for. Seven tabs are ~530px of content and the strip gets roughly
+ * `0.45 × window − 200` px, so the overflow ends near 1620px and this width
+ * leaves the strip ~610px — about 80px of slack. Deliberately not the narrowest
+ * width that fits: the assertion below is "no fade when nothing is hidden", and
+ * a value sitting on the boundary would go red on a pixel of rounding.
+ */
 const ROOMY_WINDOW_WIDTH = 1800;
 
 /** The tab at the far end of the strip — the one a 45% split cannot show at rest. */
@@ -86,14 +101,14 @@ test.describe('Right panel — a tab strip that never hides the tab you are on @
     await rightPanel.seedSplit(RIGHT_PANEL_PCT);
     await rightPanel.goto('/session');
     await rightPanel.ensureTabStripOpen();
-    await expect(rightPanel.header.getByRole('tab')).toHaveCount(6);
+    await expect(rightPanel.header.getByRole('tab')).toHaveCount(7);
 
     // Precondition, not decoration: with room for every tab nothing below could
     // fail, and the test would be passing on an empty claim.
     const atRest = await rightPanel.measureTabStrip();
     expect(
       atRest.deficit,
-      `six tabs must not fit a ${RIGHT_PANEL_PCT}% panel at ${WINDOW.width}px`
+      `seven tabs must not fit a ${RIGHT_PANEL_PCT}% panel at ${WINDOW.width}px`
     ).toBeGreaterThan(0);
 
     // Before the fix this never converged: the strip stayed where it was and the
@@ -135,13 +150,13 @@ test.describe('Right panel — a tab strip that never hides the tab you are on @
   });
 
   test('advertises nothing when every tab fits', async ({ rightPanel, page }) => {
-    // The same split on a wide window, so the six tabs have room to spare: no
+    // The same split on a wide window, so the seven tabs have room to spare: no
     // scroll, and therefore no fade on either edge.
     await page.setViewportSize({ width: ROOMY_WINDOW_WIDTH, height: WINDOW.height });
     await rightPanel.seedSplit(RIGHT_PANEL_PCT);
     await rightPanel.goto('/session');
     await rightPanel.ensureTabStripOpen();
-    await expect(rightPanel.header.getByRole('tab')).toHaveCount(6);
+    await expect(rightPanel.header.getByRole('tab')).toHaveCount(7);
 
     let fades = '';
     await expect

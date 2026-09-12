@@ -8,6 +8,7 @@
  * @module shared/lib
  */
 export { cn } from './utils';
+export { canvasViewForContent, type CanvasView } from './canvas-view';
 export { resolveApiBaseUrl } from './api-base-url';
 export { getDesktopAdmin, unwrapDesktopAdminResult } from './desktop-admin';
 export {
@@ -261,6 +262,8 @@ export {
   executeUiCommand,
   isLocalUiOnlyCommand,
   revealCanvas,
+  revealBrowser,
+  revealForContent,
   type DispatcherContext,
   type DispatcherStore,
   type UiCommandOrigin,

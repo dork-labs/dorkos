@@ -5,7 +5,7 @@ import type { RightPanelPage } from './RightPanelPage';
 
 /**
  * A dev server shaped like every real one, and the clicks that frame it in the
- * canvas browser.
+ * embedded browser.
  *
  * Shared by the two specs that drive this surface, which need the SAME fixture
  * for different reasons: `tests/workbench/dev-server-preview.spec.ts` proves the
@@ -71,8 +71,12 @@ export async function reserveClosedPort(): Promise<number> {
 }
 
 /**
- * Open the canvas browser on `url`, the way a person does: open the right panel,
- * pick Canvas, start a web page from the splash, then type the address.
+ * Open the embedded browser on `url`, the way a person does: open the right
+ * panel, pick Browser, start a page from its empty state, then type the address.
+ *
+ * Browser rather than Canvas since the panel split into two views over one
+ * document store (ADR 260911-200304): a page is a Browser-tab document, and the
+ * Canvas tab no longer offers to open one.
  *
  * @param page - The page under test.
  * @param rightPanel - The right-panel page object, for the tab strip.
@@ -88,10 +92,10 @@ export async function openInCanvasBrowser(
 ): Promise<void> {
   await rightPanel.goto(sessionId ? `/session?session=${sessionId}` : '/session');
   await rightPanel.ensureTabStripOpen();
-  await rightPanel.header.getByRole('tab', { name: 'Canvas' }).click();
+  await rightPanel.browserTab.click();
 
-  // The splash's web-page action opens a browser document; its address bar is
-  // how any page after the first one is reached.
+  // The empty state's web-page action opens a browser document; its address bar
+  // is how any page after the first one is reached.
   await page.getByRole('button', { name: /Web Page/i }).click();
   await page.getByRole('button', { name: /^Address:/ }).click();
   const address = page.getByRole('textbox', { name: 'Address' });

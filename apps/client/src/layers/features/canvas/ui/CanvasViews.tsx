@@ -1,9 +1,20 @@
+/**
+ * The right panel's two document views, over one store (ADR 260911-200304).
+ *
+ * {@link CanvasContent} is the Canvas tab and {@link BrowserContent} the Browser
+ * tab; both render the same {@link CanvasBody} over the documents their own view
+ * holds, with their own active document. {@link CanvasRenderer} is the viewer
+ * dispatch those views are DEFINED by — `url` and `browser` go to
+ * `CanvasBrowserContent`, so they are the Browser view, and everything else is
+ * the Canvas view (`canvasViewForContent`).
+ *
+ * @module features/canvas/ui/CanvasViews
+ */
 import { lazy, Suspense } from 'react';
-import { Panel, PanelResizeHandle } from 'react-resizable-panels';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/layers/shared/ui';
-import { useAppStore, useIsMobile } from '@/layers/shared/model';
+import { useAppStore, documentsInView } from '@/layers/shared/model';
+import type { CanvasView } from '@/layers/shared/lib';
 import type { UiCanvasContent } from '@dorkos/shared/types';
-import { CanvasHeader, CANVAS_PANEL_ID, canvasTabDomId } from './CanvasHeader';
+import { CanvasHeader, canvasPanelId, canvasTabDomId } from './CanvasHeader';
 import { CanvasErrorBoundary } from './CanvasErrorBoundary';
 import { CanvasBrowserContent } from './CanvasBrowserContent';
 import { CanvasMarkdownContent } from './CanvasMarkdownContent';
@@ -122,27 +133,39 @@ function CanvasLoading() {
   return <div className="text-muted-foreground p-4 text-sm">Loading…</div>;
 }
 
-/** Shared canvas body — rendered in both desktop Panel and mobile Sheet. */
-function CanvasBody() {
+/**
+ * Shared body for one of the two document views — rendered in the right panel's
+ * Canvas and Browser tabs, and in the desktop Panel / mobile Sheet below.
+ *
+ * One store, two views (ADR 260911-200304): the documents are filtered to this
+ * view and the active id read from this view's own slot, so switching tabs
+ * returns the reader to the document they left there.
+ */
+function CanvasBody({ view }: { view: CanvasView }) {
   const openDocuments = useAppStore((s) => s.openDocuments);
-  const activeDocumentId = useAppStore((s) => s.activeDocumentId);
+  const activeDocumentId = useAppStore((s) =>
+    view === 'browser' ? s.activeBrowserDocumentId : s.activeCanvasDocumentId
+  );
   const activate = useAppStore((s) => s.activateCanvasDocument);
   const close = useAppStore((s) => s.closeCanvasDocument);
-  const setActiveContent = useAppStore((s) => s.setActiveDocumentContent);
+  const setDocumentContent = useAppStore((s) => s.setDocumentContent);
   const openDocument = useAppStore((s) => s.openCanvasDocument);
   const applyHeldUpdate = useAppStore((s) => s.applyHeldUpdate);
   const discardHeldUpdate = useAppStore((s) => s.discardHeldUpdate);
 
-  const active = openDocuments.find((d) => d.id === activeDocumentId) ?? null;
-  const headerDocs = openDocuments.map((d) => ({
+  const documents = documentsInView(openDocuments, view);
+  const active = documents.find((d) => d.id === activeDocumentId) ?? null;
+  const headerDocs = documents.map((d) => ({
     id: d.id,
     sourceLabel: d.sourceLabel,
     contentType: d.content.type,
   }));
+  const panelId = canvasPanelId(view);
 
   return (
     <>
       <CanvasHeader
+        view={view}
         documents={headerDocs}
         activeDocumentId={activeDocumentId}
         onActivate={activate}
@@ -165,7 +188,7 @@ function CanvasBody() {
           synchronously (before the splash re-render), so it must always be a
           resolvable, focusable target. */}
       <div
-        id={CANVAS_PANEL_ID}
+        id={panelId}
         tabIndex={-1}
         className="min-h-0 flex-1 overflow-auto focus-visible:outline-none"
         {...(active ? { role: 'tabpanel', 'aria-labelledby': canvasTabDomId(active.id) } : {})}
@@ -180,11 +203,11 @@ function CanvasBody() {
             <CanvasRenderer
               documentId={active.id}
               content={active.content}
-              onContentChange={setActiveContent}
+              onContentChange={(content) => setDocumentContent(active.id, content)}
             />
           </CanvasErrorBoundary>
         ) : (
-          <CanvasSplash onAction={openDocument} />
+          <CanvasSplash view={view} onAction={openDocument} />
         )}
       </div>
     </>
@@ -202,64 +225,23 @@ function CanvasBody() {
 export function CanvasContent() {
   return (
     <div data-slot="canvas" className="flex h-full flex-col overflow-hidden">
-      <CanvasBody />
+      <CanvasBody view="canvas" />
     </div>
   );
 }
 
 /**
- * Resizable right-side canvas pane for agent-driven content.
+ * The Browser tab's body — the same surface over the documents the embedded
+ * browser renders (`url` and `browser`), with its own active document.
  *
- * Desktop: renders inside a `PanelGroup` alongside the `ChatPanel` with a
- * thin resize handle. Mobile: renders as a full-width Sheet from the right.
- * Returns null when the canvas is closed — no DOM footprint.
+ * Registered only under a transport that can serve or proxy a page, so the
+ * Obsidian shell drops the tab rather than showing one that could only error
+ * (ADR 260911-200304).
  */
-export function AgentCanvas() {
-  const canvasOpen = useAppStore((s) => s.canvasOpen);
-  const setCanvasOpen = useAppStore((s) => s.setCanvasOpen);
-  const isMobile = useIsMobile();
-
-  if (!canvasOpen) return null;
-
-  const handleClose = () => setCanvasOpen(false);
-
-  // Mobile: full-width Sheet from the right (mirrors sidebar mobile pattern)
-  if (isMobile) {
-    return (
-      <Sheet open onOpenChange={(open) => !open && handleClose()}>
-        <SheetContent
-          side="right"
-          showCloseButton={false}
-          className="bg-sidebar text-sidebar-foreground flex w-full flex-col gap-0 p-0 sm:max-w-full"
-        >
-          <SheetHeader className="sr-only">
-            <SheetTitle>Canvas</SheetTitle>
-            <SheetDescription>Agent-driven content pane.</SheetDescription>
-          </SheetHeader>
-          <CanvasBody />
-        </SheetContent>
-      </Sheet>
-    );
-  }
-
-  // Desktop: resizable panel with thin separator
+export function BrowserContent() {
   return (
-    <>
-      <PanelResizeHandle className="group relative flex w-2 items-center justify-center">
-        <div className="bg-border group-hover:bg-ring h-full w-px transition-colors" />
-      </PanelResizeHandle>
-      <Panel
-        id="agent-canvas"
-        order={2}
-        defaultSize={50}
-        minSize={20}
-        collapsible
-        onCollapse={handleClose}
-      >
-        <div className="bg-sidebar text-sidebar-foreground flex h-full flex-col overflow-hidden rounded-lg border">
-          <CanvasBody />
-        </div>
-      </Panel>
-    </>
+    <div data-slot="browser" className="flex h-full flex-col overflow-hidden">
+      <CanvasBody view="browser" />
+    </div>
   );
 }

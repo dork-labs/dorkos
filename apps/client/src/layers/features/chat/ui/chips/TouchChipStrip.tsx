@@ -6,8 +6,8 @@
  */
 import { Fragment, useCallback, useId, useMemo } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import type { MessagePart } from '@dorkos/shared/types';
-import { cn, getPlatform, openExternalLink, revealCanvas } from '@/layers/shared/lib';
+import type { MessagePart, UiCanvasContent } from '@dorkos/shared/types';
+import { cn, getPlatform, openExternalLink, revealForContent } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { accumulateTouchChips, type TouchChip as TouchChipData } from '../../lib/touch-chips';
 import { trayExpansionKey, useTrayExpansion } from '../../model/view/use-tray-expansion';
@@ -171,12 +171,13 @@ export function TouchChipStrip({ parts, sessionId, turnActive = false }: TouchCh
     if (chip.pattern === true) return;
 
     // Opening a document and SHOWING it are two different acts, and a chip owes
-    // the reader both: the canvas lives in the right panel, which stays shut at
-    // width zero unless something opens it (DOR-97). `revealCanvas` is the one
-    // path that does all of it, shared with every agent-driven open — a chip
+    // the reader both: the views live in the right panel, which stays shut at
+    // width zero unless something opens it (DOR-97). `revealForContent` is the
+    // one path that does all of it, shared with every agent-driven open — a chip
     // that wrote `canvasOpen` alone put the document somewhere nobody could see
-    // it (DOR-829). `'user'` because a person pressed the chip, so the canvas
-    // tab is their choice and is remembered as one.
+    // it (DOR-829), and one that named a tab by hand would show the Canvas tab
+    // for a page that opened in Browser. `'user'` because a person pressed the
+    // chip, so the tab is their choice and is remembered as one.
     const store = useAppStore.getState();
 
     if (chip.kind === 'url') {
@@ -203,8 +204,9 @@ export function TouchChipStrip({ parts, sessionId, turnActive = false }: TouchCh
       // branch through the link seam instead would swap that sentence for a chip
       // that does nothing, and would refuse the `file:` targets the canvas
       // serves on purpose — so the canvas keeps its own gate.
-      store.openCanvasDocument({ type: 'url', url: chip.fullTarget });
-      revealCanvas(store, 'user');
+      const page: UiCanvasContent = { type: 'url', url: chip.fullTarget };
+      store.openCanvasDocument(page);
+      revealForContent(store, 'user', page);
       return;
     }
 
@@ -212,8 +214,9 @@ export function TouchChipStrip({ parts, sessionId, turnActive = false }: TouchCh
       // A file chip in the plugin is a record with a tooltip and nothing more —
       // there is no pane to open it into. Revisit when that surface is verified.
       if (embedded) return;
-      store.openCanvasDocument({ type: 'file', sourcePath: chip.fullTarget });
-      revealCanvas(store, 'user');
+      const file: UiCanvasContent = { type: 'file', sourcePath: chip.fullTarget };
+      store.openCanvasDocument(file);
+      revealForContent(store, 'user', file);
     }
 
     // A bare command or a search pattern has no target to open.

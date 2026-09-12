@@ -141,6 +141,9 @@ export function createSystemMethods(baseUrl: string) {
 
     // ── Workbench embedded browser (signed serve/proxy URLs) ──────────────
 
+    /** Whether a page can be handed to the embedded browser — always true over HTTP. */
+    supportsWorkbenchServe: true as const,
+
     /** Mint a signed static-serve URL for a local HTML file (DOR-216). */
     async createServeUrl(cwd: string, filePath?: string): Promise<string | null> {
       const body: WorkbenchSignRequest =

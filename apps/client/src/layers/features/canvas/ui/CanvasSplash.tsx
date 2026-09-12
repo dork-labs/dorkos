@@ -2,44 +2,79 @@ import { useId, useMemo } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { FileText, Braces, Globe, Sparkles } from 'lucide-react';
 import type { UiCanvasContent } from '@dorkos/shared/types';
+import type { CanvasView } from '@/layers/shared/lib';
 
 interface CanvasSplashProps {
+  /** Which view is empty — decides what the panel says it is for, and what it offers. */
+  view: CanvasView;
   /** Called when the user picks a quick-start action. */
   onAction: (content: UiCanvasContent) => void;
 }
 
-const QUICK_ACTIONS = [
-  {
-    icon: FileText,
-    label: 'Markdown',
-    description: 'Render a document',
-    action: (): UiCanvasContent => ({
-      type: 'markdown',
-      content: '# Untitled\n\nStart writing…',
-      title: 'Document',
-    }),
+interface SplashCopy {
+  heading: string;
+  /** One sentence saying what this tab is for. */
+  blurb: string;
+  actions: readonly {
+    icon: typeof FileText;
+    label: string;
+    description: string;
+    action: () => UiCanvasContent;
+  }[];
+}
+
+/**
+ * What each empty view says and offers.
+ *
+ * Every action opens a document of the view it is offered in — a web page from
+ * the Canvas tab would land in the Browser tab, one tab away from the person who
+ * just asked for it.
+ */
+const SPLASH: Record<CanvasView, SplashCopy> = {
+  canvas: {
+    heading: 'A blank canvas',
+    blurb: 'Your agent can render documents, data, and files here.',
+    actions: [
+      {
+        icon: FileText,
+        label: 'Markdown',
+        description: 'Render a document',
+        action: (): UiCanvasContent => ({
+          type: 'markdown',
+          content: '# Untitled\n\nStart writing…',
+          title: 'Document',
+        }),
+      },
+      {
+        icon: Braces,
+        label: 'JSON',
+        description: 'Inspect structured data',
+        action: (): UiCanvasContent => ({
+          type: 'json',
+          data: { message: 'Your data here' },
+          title: 'JSON Data',
+        }),
+      },
+    ],
   },
-  {
-    icon: Braces,
-    label: 'JSON',
-    description: 'Inspect structured data',
-    action: (): UiCanvasContent => ({
-      type: 'json',
-      data: { message: 'Your data here' },
-      title: 'JSON Data',
-    }),
+  browser: {
+    heading: 'No page open',
+    blurb:
+      'This tab shows web pages: a file you are building, a dev server you are running, or a site your agent wants you to see.',
+    actions: [
+      {
+        icon: Globe,
+        label: 'Web Page',
+        description: 'Open a page, then type any address',
+        action: (): UiCanvasContent => ({
+          type: 'url',
+          url: 'https://dorkos.ai',
+          title: 'Web Page',
+        }),
+      },
+    ],
   },
-  {
-    icon: Globe,
-    label: 'Web Page',
-    description: 'Embed a URL',
-    action: (): UiCanvasContent => ({
-      type: 'url',
-      url: 'https://dorkos.ai',
-      title: 'Web Page',
-    }),
-  },
-] as const;
+};
 
 /** Deterministic pseudo-random number from a seed string, mapped to [min, max]. */
 function seededValue(seed: string, index: number, min: number, max: number): number {
@@ -48,14 +83,15 @@ function seededValue(seed: string, index: number, min: number, max: number): num
 }
 
 /**
- * Animated splash screen for the canvas when opened without content.
+ * Animated splash screen for an empty Canvas or Browser view.
  *
- * Shows floating shapes suggesting a blank canvas, a heading, and
- * quick-start action cards for the three content types.
+ * Shows floating shapes suggesting a blank surface, a heading, a sentence saying
+ * what the tab is for, and quick-start cards for the documents that tab holds.
  */
-export function CanvasSplash({ onAction }: CanvasSplashProps) {
+export function CanvasSplash({ view, onAction }: CanvasSplashProps) {
   const reducedMotion = useReducedMotion();
   const id = useId();
+  const copy = SPLASH[view];
 
   // Generate deterministic floating shape positions from the component ID
   const shapes = useMemo(() => {
@@ -111,14 +147,14 @@ export function CanvasSplash({ onAction }: CanvasSplashProps) {
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.3, delay: 0.1 }}
         >
-          <Sparkles className="size-7" />
+          {view === 'browser' ? <Globe className="size-7" /> : <Sparkles className="size-7" />}
         </motion.div>
 
         {/* Heading */}
         <div className="space-y-2">
-          <h2 className="text-lg font-semibold tracking-tight">A blank canvas</h2>
+          <h2 className="text-lg font-semibold tracking-tight">{copy.heading}</h2>
           <p className="text-muted-foreground text-sm leading-relaxed">
-            Your agent can render documents, data, and web pages here.
+            {copy.blurb}
             <br />
             Or pick a starting point below.
           </p>
@@ -135,7 +171,7 @@ export function CanvasSplash({ onAction }: CanvasSplashProps) {
               : { visible: { transition: { staggerChildren: 0.08, delayChildren: 0.25 } } }
           }
         >
-          {QUICK_ACTIONS.map(({ icon: Icon, label, description, action }) => (
+          {copy.actions.map(({ icon: Icon, label, description, action }) => (
             <motion.button
               key={label}
               variants={
