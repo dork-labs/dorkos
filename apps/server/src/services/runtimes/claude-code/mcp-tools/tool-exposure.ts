@@ -68,10 +68,14 @@
  * session shapes, so a record added to any of them reds there immediately rather
  * than shipping — but read that as broad coverage, not as a proof over the whole
  * surface. Its plain and agent shapes build from
- * `composeCapabilityRegistryForDocs()`, whose docstring claims every domain and
- * in fact omits `connectorExecutionDomain`; the connector execute tools are
- * reached only by the third shape, which builds its own registry. A domain that
- * neither path composes would carry a record unseen.
+ * `composeCapabilityRegistryForDocs()`, which does now compose every domain (it
+ * omitted `connectorExecutionDomain` until that was fixed, and
+ * `self-description/__tests__/dorkos-registry.test.ts` pins it). Listing is
+ * surface-gated regardless: the connector execute capabilities declare
+ * `surfaces: {}`, so no registry composition puts them on these two shapes, and
+ * they are reached only by the third — the connector-turn shape, which registers
+ * those ids directly. A capability that declares no MCP surface anywhere would
+ * still carry a record unseen.
  *
  * The aliases for `@dorkos/shared/{mesh,connector}-schemas` in
  * `apps/server/vitest.config.ts` are the other half of that guard: four of these

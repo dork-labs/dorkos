@@ -13,7 +13,10 @@
  * runtime that cannot observe its own running state must be able to say so and
  * pass, or the suite would push adapters into inventing a value.
  */
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import type { PresenceObservation } from '../runtime-conformance.js';
 import { validatePresenceReport } from '../runtime-conformance.js';
 
@@ -187,6 +190,79 @@ describe('validatePresenceReport', () => {
         })
       );
       expect(failures).toHaveLength(3);
+    });
+  });
+
+  describe('the same directory reached by two paths', () => {
+    // The regression that stopped the live OpenCode arm (2026-09-11): a real
+    // sidecar reports the cwd it resolved, and on macOS that is
+    // `/private/var/folders/...` for a session created under `/var/folders/...`.
+    // Nothing was fabricated — the two strings name one directory — so the
+    // comparison has to collapse both sides before it decides.
+    let root: string;
+    let target: string;
+    let link: string;
+    let sibling: string;
+
+    beforeAll(() => {
+      root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-presence-')));
+      target = path.join(root, 'target');
+      link = path.join(root, 'link');
+      sibling = path.join(root, 'sibling');
+      fs.mkdirSync(target);
+      fs.mkdirSync(sibling);
+      fs.symlinkSync(target, link);
+    });
+
+    afterAll(() => {
+      fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    it('accepts a binding reported through a symlink to the directory it was bound to', () => {
+      expect(validatePresenceReport(reading({ boundTo: link, reportedBinding: target }))).toEqual(
+        []
+      );
+      // And the other direction: bound through the real path, reported through
+      // the link.
+      expect(validatePresenceReport(reading({ boundTo: target, reportedBinding: link }))).toEqual(
+        []
+      );
+    });
+
+    it("accepts the unresolved/resolved tmpdir pair the suite's own live arm produces", () => {
+      // On macOS these two strings differ (`/var/...` vs `/private/var/...`);
+      // on Linux they are already equal. Either way the honest answer is the
+      // same, which is the point.
+      const unresolved = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-presence-live-'));
+      try {
+        const resolved = fs.realpathSync.native(unresolved);
+        expect(
+          validatePresenceReport(reading({ boundTo: unresolved, reportedBinding: resolved }))
+        ).toEqual([]);
+      } finally {
+        fs.rmSync(unresolved, { recursive: true, force: true });
+      }
+    });
+
+    it('still rejects a real directory that is genuinely not the one it was bound to', () => {
+      // Both paths exist and both resolve, so this is the case the normalization
+      // could have quietly waved through. It must not.
+      const failures = validatePresenceReport(
+        reading({ boundTo: target, reportedBinding: sibling })
+      );
+      expect(failures).toHaveLength(1);
+      expect(failures[0]).toContain(`bound to '${target}'`);
+    });
+
+    it('still rejects two paths that exist nowhere and name different places', () => {
+      // The fallback path: neither resolves, so each collapses to itself and the
+      // comparison is the raw one it always was. Every other case in this file
+      // relies on that.
+      const failures = validatePresenceReport(
+        reading({ boundTo: '/nowhere/one', reportedBinding: '/nowhere/two' })
+      );
+      expect(failures).toHaveLength(1);
+      expect(failures[0]).toContain("bound to '/nowhere/one'");
     });
   });
 });

@@ -6,7 +6,7 @@ import type {
   Part,
   OpencodeClient,
 } from '@opencode-ai/sdk';
-import { DIRECTORY_MEMBERSHIP_VECTORS } from '@dorkos/test-utils';
+import { DIRECTORY_MEMBERSHIP_VECTORS } from '@dorkos/test-utils/directory-membership-vectors';
 import { describeAuthError } from '@dorkos/shared/runtime-error-classification';
 import { OpenCodeSessionMapper, type OpenCodeClientProvider } from '../sessions/session-mapper.js';
 import { SESSION_LIST_LIMIT, SESSION_REBUILD_LIMIT } from '../runtime-constants.js';
@@ -15,6 +15,12 @@ import { SESSION_LIST_LIMIT, SESSION_REBUILD_LIMIT } from '../runtime-constants.
 // The mapper must reach session data exclusively through the SDK client — if it
 // (or anything in its runtime import graph) ever imports the filesystem, these
 // throwing factories fail the suite at module load.
+//
+// A `vi.mock` reaches the WHOLE module graph, not just the mapper's, so the
+// vectors above come from their own subpath rather than the `@dorkos/test-utils`
+// barrel. The barrel re-exports the runtime conformance suite, which legitimately
+// resolves real paths, and pulling it in here would fail this file for something
+// that is not the mapper and not in the mapper's graph at all.
 vi.mock('node:fs', () => {
   throw new Error('session-mapper must not touch the filesystem (ADR-0308)');
 });
