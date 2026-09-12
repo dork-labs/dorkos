@@ -383,15 +383,23 @@ describe('in-session tool exposure', () => {
     // same shape `control_ui` and `get_ui_state` have always had there and which
     // costs one search rather than a failed call.
     //
-    // 98 -> 99 for `read_canvas_document`, the first verb of the `ui` capability
-    // DOMAIN (spec `canvas-agent-seat` §5). Deferred for the same reason, and it
-    // stays deferred: the eager slot is the scarcest thing in the prompt, and
-    // nothing names this tool before an agent has decided to look at its own
-    // canvas — `get_ui_state` is where an agent learns there is anything to
-    // read, and that is a tool call too. Both counts move by exactly one, which
-    // is what says nothing else came with it.
-    expect(tools).toHaveLength(99);
-    expect(deferred).toHaveLength(90);
+    // 98 -> 100 for `browser_record_start` and `browser_record_stop` (spec
+    // `canvas-agent-seat` §3), and both land DEFERRED beside the six. A turn
+    // that is about to record has already opened a preview and driven it, so it
+    // can afford the search; and `<ui_tools>` names them prefixed, which is the
+    // form the rule `context-tool-names.test.ts` owns accepts for a deferred
+    // tool. Both counts moving by the same two is what says nothing else came
+    // with them.
+    //
+    // 100 -> 101 for `read_canvas_document`, the first verb of the `ui`
+    // capability DOMAIN (spec `canvas-agent-seat` §5). Deferred for the same
+    // reason, and it stays deferred: the eager slot is the scarcest thing in the
+    // prompt, and nothing names this tool before an agent has decided to look at
+    // its own canvas — `get_ui_state` is where an agent learns there is anything
+    // to read, and that is a tool call too. Both counts move by exactly one,
+    // which is what says nothing else came with it.
+    expect(tools).toHaveLength(101);
+    expect(deferred).toHaveLength(92);
     const retiredConnectorTools = [
       'connector_list_accounts',
       'connector_start_connect',

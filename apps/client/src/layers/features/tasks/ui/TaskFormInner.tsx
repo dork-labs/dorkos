@@ -421,18 +421,22 @@ export function ScheduleForm({
                           a stop that asks has nobody to ask. Read from what the
                           runtime declared, never from a mode id.
 
-                          What happens next is NOT a stall until `maxRuntime`:
-                          `interactive-handlers.ts` refuses the ask at
-                          `SESSIONS.INTERACTION_TIMEOUT_MS` and the turn carries
-                          on, so a long task with three asks quietly loses half an
-                          hour of work and still finishes. */}
+                          What happens next is NOT a stall until `maxRuntime`,
+                          and since spec `unattended-session-permission-prompts`
+                          it is not a ten-minute wait either:
+                          `interactive-handlers.ts` refuses the ask the moment it
+                          is raised and the turn carries straight on, recording
+                          each one so the run's result can name it. The note says
+                          "Run now" too, because that trigger does NOT carry the
+                          flag and its cards stay answerable. */}
                       {current !== undefined && current.asks !== 'never' && (
                         <p
                           data-testid="task-unattended-note"
                           className="text-muted-foreground px-1 text-xs leading-relaxed"
                         >
-                          Nobody is watching a scheduled run. Anything it stops to ask about is
-                          refused after 10 minutes, and the run carries on without it.
+                          Nobody is watching a scheduled run, so anything it stops to ask about is
+                          turned down right away. The run carries on without that tool and tells you
+                          what it skipped. “Run now” is different: you are watching, so it asks you.
                         </p>
                       )}
                       <PermissionModeScopeNote

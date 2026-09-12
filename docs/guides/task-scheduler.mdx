@@ -191,6 +191,23 @@ Short answer: yes, once it's live in a real DorkOS install. Scheduled tasks alwa
 
 If you're following this guide in a normal DorkOS install, you're already in the environment where they fire. Nothing extra to do.
 
+## When a run needs your permission
+
+A task on a timer runs while you are somewhere else, so there is nobody to answer if the agent asks for permission to do something. DorkOS does not make it wait. The request is turned down right away, and the agent keeps going without that one tool.
+
+You are told twice over. The run's own line in the run history names the tools it could not use, and each one lands in your activity feed on its own. Nothing pings your phone about it.
+
+The agent knows this before it starts, so a well-written task tells you at the end what it skipped. If the same task keeps getting turned down, you have two ways to fix it: change the task so it does not need that tool, or give the agent a higher setting in **Control Center** so the tool no longer needs asking about.
+
+Clicking **Run now** is different. You are watching, so its cards work normally and you can answer them.
+
+<Callout type="info">
+  This is only about requests that were waiting on **you**. A tool your agent is not allowed to use
+  at all — because you wrote a rule against it, or because the safety check turned it down — is
+  refused the same way it would be in any other session, and raising your Control Center setting
+  will not change that.
+</Callout>
+
 ## Get a message when one finishes
 
 DorkOS can message you the moment a scheduled task wraps up, so you do not have to sit and watch it. The message names the task, how long it took, and the first line of what it produced. This works on its own. The agent does not have to do anything.

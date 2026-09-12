@@ -30,13 +30,15 @@ vi.mock('../TaskDotSection', () => ({
 vi.mock('../TaskDetailPanel', () => ({
   TaskDetailPanel: ({
     tasks,
+    ambientTasks = [],
     onStopTask,
   }: {
     tasks: VisibleBackgroundTask[];
+    ambientTasks?: VisibleBackgroundTask[];
     onStopTask: (id: string) => void;
   }) => (
-    <div data-testid="task-detail-panel">
-      {tasks.map((t) => (
+    <div data-testid="task-detail-panel" data-ambient-count={ambientTasks.length}>
+      {[...tasks, ...ambientTasks].map((t) => (
         <button key={t.taskId} onClick={() => onStopTask(t.taskId)}>
           Stop {t.taskId}
         </button>
@@ -55,6 +57,7 @@ function makeTask(overrides: Partial<VisibleBackgroundTask> = {}): VisibleBackgr
   return {
     taskId: `task-${Math.random().toString(36).slice(2, 8)}`,
     taskType: 'agent',
+    ambient: false,
     status: 'running',
     color: TASK_COLORS[0],
     startedAt: Date.now() - 30_000,
@@ -243,5 +246,94 @@ describe('BackgroundTaskBar', () => {
     render(<BackgroundTaskBar tasks={[agentTask, bashTask]} onStopTask={vi.fn()} />);
 
     expect(screen.getByRole('status')).toHaveAttribute('aria-label', '2 background tasks running');
+  });
+
+  // === Housekeeping (ambient) tasks ===
+  //
+  // Spec `ambient-background-tasks`: the runtime marks work it started on its
+  // own behalf, and asks hosts to keep it out of activity indicators. The bar is
+  // one, so it counts none of them — and when they are all there is, it is not
+  // drawn at all. The session still reads as working, because that follows the
+  // turn in flight rather than this bar.
+
+  it('empties the row down to the chevron when every running task is housekeeping', () => {
+    const tasks = [
+      makeTask({ taskId: 'amb-1', ambient: true }),
+      makeTask({ taskId: 'amb-2', ambient: true, taskType: 'bash', command: 'git status' }),
+    ];
+
+    render(<BackgroundTaskBar tasks={tasks} onStopTask={vi.fn()} />);
+
+    // Nothing that counts as an indicator: no figure, no dot, no tally, no
+    // number beside the chevron, and no `role="status"` to announce itself.
+    expect(screen.queryByTestId('agent-runner-amb-1')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('task-dot-section')).not.toBeInTheDocument();
+    expect(screen.queryByText(/task[s]? running/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByText('0')).not.toBeInTheDocument();
+
+    // But still a way in — the panel is the only place these can be seen, and a
+    // bar that vanished would make them unreachable rather than merely quiet.
+    expect(screen.getByLabelText('Expand task details')).toBeInTheDocument();
+  });
+
+  it('reaches the housekeeping list through the chevron with nothing else running', async () => {
+    const user = userEvent.setup();
+    const tasks = [
+      makeTask({ taskId: 'amb-1', ambient: true }),
+      makeTask({ taskId: 'amb-2', ambient: true }),
+    ];
+
+    render(<BackgroundTaskBar tasks={tasks} onStopTask={vi.fn()} />);
+    await user.click(screen.getByLabelText('Expand task details'));
+
+    const panel = screen.getByTestId('task-detail-panel');
+    expect(panel).toHaveAttribute('data-ambient-count', '2');
+    expect(screen.getByRole('button', { name: 'Stop amb-1' })).toBeInTheDocument();
+  });
+
+  it('renders nothing when there is no task at all', () => {
+    const { container } = render(<BackgroundTaskBar tasks={[]} onStopTask={vi.fn()} />);
+
+    expect(container.innerHTML).toBe('');
+  });
+
+  it('leaves housekeeping tasks out of the count, the figures and the dots', async () => {
+    const user = userEvent.setup();
+    const tasks = [
+      makeTask({ taskId: 'work', taskType: 'agent', toolUses: 4 }),
+      makeTask({ taskId: 'amb-agent', ambient: true, taskType: 'agent', toolUses: 99 }),
+      makeTask({ taskId: 'amb-bash', ambient: true, taskType: 'bash', command: 'git status' }),
+    ];
+
+    render(<BackgroundTaskBar tasks={tasks} onStopTask={vi.fn()} />);
+
+    expect(screen.getByRole('status')).toHaveAttribute('aria-label', '1 background task running');
+    expect(screen.getByTestId('agent-runner-work')).toBeInTheDocument();
+    expect(screen.queryByTestId('agent-runner-amb-agent')).not.toBeInTheDocument();
+    // No bash task is visible, so the dot section is not drawn at all.
+    expect(screen.queryByTestId('task-dot-section')).not.toBeInTheDocument();
+    // The stats line counts the same tasks the figures do.
+    expect(screen.getByText(/4 tools/)).toBeInTheDocument();
+
+    // The count of hidden tasks is stated in the expanded panel and nowhere else.
+    await user.click(screen.getByLabelText('Expand task details'));
+    expect(screen.getByTestId('task-detail-panel')).toHaveAttribute('data-ambient-count', '2');
+  });
+
+  it('keeps housekeeping tasks out of the overflow badge', () => {
+    const tasks = [
+      ...Array.from({ length: 4 }, (_, i) => makeTask({ taskId: `ov-${i}`, taskType: 'agent' })),
+      ...Array.from({ length: 3 }, (_, i) =>
+        makeTask({ taskId: `ov-amb-${i}`, ambient: true, taskType: 'agent' })
+      ),
+    ];
+
+    render(<BackgroundTaskBar tasks={tasks} onStopTask={vi.fn()} />);
+
+    // Four ordinary agents fill the row exactly; the three hidden ones must not
+    // push a "+3" badge onto a bar that has nothing more to show.
+    expect(screen.queryByText('+3')).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveAttribute('aria-label', '4 background tasks running');
   });
 });

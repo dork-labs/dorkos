@@ -656,12 +656,13 @@ describe('MCP Tool Handlers', () => {
       expect(server.version).toBe('1.0.0');
     });
 
-    it('registers 40 tools (30 legacy + 7 operator + list_capabilities + memory_write + read_canvas_document)', () => {
+    it('registers 42 tools (32 legacy + 7 operator + list_capabilities + memory_write + read_canvas_document)', () => {
       // Purpose: regression guard against accidental tool omissions or additions.
-      // This count changes intentionally when new MCP tools are added. 30 legacy
+      // This count changes intentionally when new MCP tools are added. 32 legacy
       // (4 core + 5 tasks + 8 relay + 1 agent + 2 ui + 3 devtools + 6 browser
-      // driving + 1 extension) plus the 7 operator capabilities,
-      // `list_capabilities` and `memory_write`, all projected from the registry.
+      // driving + 2 browser recording + 1 extension) plus the 7 operator
+      // capabilities, `list_capabilities` and `memory_write`, all projected from
+      // the registry.
       //
       // 32 -> 33 for `update_agent_boundaries`, the NOPE.md write split out of
       // `update_agent` so it can be tier `destructive` (DOR-1698).
@@ -670,13 +671,16 @@ describe('MCP Tool Handlers', () => {
       // click, type, press, scroll, wait_for and read_page, registered beside
       // the three DevTools reads they extend.
       //
-      // 39 -> 40 for `read_canvas_document`, the first verb of the `ui`
+      // 39 -> 41 for the two recording verbs (spec `canvas-agent-seat` §3),
+      // registered beside the six they film.
+      //
+      // 41 -> 42 for `read_canvas_document`, the first verb of the `ui`
       // capability DOMAIN (spec `canvas-agent-seat` §5). It declares
       // `servers: ['in-session']`, so it reaches THIS server — the loopback one
       // every runtime is injected with, which is the whole point of the domain
       // — and not the external `/mcp` one.
       const server = createDorkOsToolServer(makeMockDeps()) as unknown as MockServer;
-      expect(server.tools).toHaveLength(40);
+      expect(server.tools).toHaveLength(42);
     });
 
     it('registers tools with correct names', () => {

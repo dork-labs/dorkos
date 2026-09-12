@@ -196,6 +196,9 @@ export const MCP_TOOL_GATE_GROUPS = {
   browser_scroll: 'devtools',
   browser_wait_for: 'devtools',
   browser_read_page: 'devtools',
+  // A recording of the preview is the same frame under the same toggle.
+  browser_record_start: 'devtools',
+  browser_record_stop: 'devtools',
   create_agent: 'agents',
   get_extension_api: 'extensions',
   list_extensions: 'extensions',

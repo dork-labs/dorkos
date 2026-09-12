@@ -24,6 +24,7 @@
 import type { StreamEvent } from '@dorkos/shared/types';
 import {
   createBrowserSeatHandlers,
+  createRecordingHandlers,
   devtoolsCaptureStore,
   type DrivingAnswer,
 } from '../../session/index.js';
@@ -93,5 +94,62 @@ export function browserDrivingScenarios(): Record<string, ScenarioFn> {
     yield { type: 'done', data: { sessionId: ctx.sessionId } } as StreamEvent;
   };
 
-  return { 'browser-driving': drive };
+  /**
+   * The recording turn: start filming, do two things, stop, and report the file.
+   *
+   * Built the same way {@link drive} is and for the same reason — these are the
+   * production handlers, over a real page, in a real window. What it adds is the
+   * half that lives in the CLIENT: the window keeps a frame per action, encodes
+   * them with `gifenc`, and uploads the result, none of which any server test
+   * can reach.
+   */
+  const record: ScenarioFn = async function* (_content, ctx, opts) {
+    const eventQueue: StreamEvent[] = [];
+    const deps = {
+      resolveSessionId: () => ctx.sessionId,
+      store: devtoolsCaptureStore,
+      session: { eventQueue },
+    };
+    const handlers = createBrowserSeatHandlers(deps);
+    const recording = createRecordingHandlers({ ...deps, resolveCwd: () => opts?.cwd });
+
+    yield {
+      type: 'session_status',
+      data: { sessionId: ctx.sessionId, model: 'claude-haiku-4-5' },
+    } as StreamEvent;
+
+    const answers: string[] = [];
+
+    /** Run one verb, forwarding its request before awaiting its answer. */
+    async function* step(
+      label: string,
+      run: () => Promise<DrivingAnswer>
+    ): AsyncGenerator<StreamEvent> {
+      const pending = run();
+      while (eventQueue.length > 0) yield eventQueue.shift() as StreamEvent;
+      const answer = await pending;
+      answers.push(line(label, answer));
+      const payload = answer.payload as { path?: string; frames?: number; bytes?: number };
+      if (payload.path !== undefined) {
+        answers.push(
+          `stop-path: ${payload.path}`,
+          `stop-frames: ${payload.frames}`,
+          `stop-bytes: ${payload.bytes}`,
+          `stop-keyframe: ${answer.image ? answer.image.mimeType : 'none'}`
+        );
+      }
+    }
+
+    yield* step('start', () => recording.start({}));
+    yield* step('click', () => handlers.click({ role: 'button', name: DRIVING_FIXTURE_BUTTON }));
+    yield* step('wait', () =>
+      handlers.waitFor({ text: DRIVING_FIXTURE_DONE_TEXT, timeoutMs: 4_000 })
+    );
+    yield* step('stop', () => recording.stop());
+
+    yield { type: 'text_delta', data: { text: answers.join('\n') } } as StreamEvent;
+    yield { type: 'done', data: { sessionId: ctx.sessionId } } as StreamEvent;
+  };
+
+  return { 'browser-driving': drive, 'browser-recording': record };
 }

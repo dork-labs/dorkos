@@ -135,8 +135,13 @@ describe('canvasContentForFile', () => {
   });
 
   it('honors a viewer override, which is the part a server-only answer dropped', () => {
-    // `workbench.defaultViewers` (DOR-219) lives in config the client used to
-    // apply alone. Both sides read it now, so both agree.
+    // `workbench.defaultViewers` (DOR-219). This states what the RESOLVER does
+    // with an override, which is all this package can state: whether each side
+    // actually reads the config is a fact about the two callers, and it is
+    // asserted where they live — `ui-action-dispatcher.test.ts` ("reads the
+    // overrides off the config cache…") and `session-canvas.test.ts` ("applies
+    // this install's viewer overrides, read per call"). An earlier version of
+    // this comment claimed the symmetry, which this test cannot see.
     expect(canvasContentForFile('logo.png', { png: 'file' })).toEqual({
       type: 'file',
       sourcePath: 'logo.png',

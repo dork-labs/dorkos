@@ -168,6 +168,30 @@ To add the package to another scope (for example, you have it globally and want 
   caveat applies.
 </Callout>
 
+## When a new plugin switches on in a chat that's already open
+
+Installing a plugin doesn't interrupt anything. Chats that aren't open pick it up the next time you send a message. Chats that are already running usually pick it up right away, and you'll see the new commands without doing anything.
+
+Sometimes a chat takes a few minutes longer, and there's a good reason for it.
+
+An agent keeps a copy of your conversation ready so it doesn't have to re-read the whole thing every time you speak. Adding a plugin can change the tools it has, and when that happens the copy is thrown away — so your next message makes it read the entire conversation again. You pay for that reading, and you wait for it. On a long chat it's the most expensive moment of the day, and one install can trigger it in every chat you have open at once.
+
+So DorkOS asks first, and keeps asking. If the chat is short, or switching the plugin on wouldn't disturb anything, it happens immediately. If it would be expensive, DorkOS waits and checks back every few minutes: the agent's ready copy expires on its own after a while, and once it has, switching the plugin on costs nothing at all. How long that takes isn't something DorkOS guesses at — it asks the agent each time, because the answer depends on how you're signed in. If the copy never expires, DorkOS stops waiting after fifteen minutes and switches the plugin on anyway, so nothing runs on yesterday's plugins for long.
+
+Two things you can always do:
+
+- **Don't want to wait?** Reload the plugins for that chat by hand. A reload you ask for happens straight away, whatever it costs.
+- **Want to know what happened?** Every reload that cost something shows up in your Activity feed, with how big the conversation was, whether it waited, and whether it ended up being free.
+
+<Callout type="info">
+  The line DorkOS draws between "cheap enough to do now" and "worth waiting for" is a fixed number
+  in the code — `PLUGIN_RELOAD_SILENT_TOKENS` in
+  `apps/server/src/services/runtimes/claude-code/messaging/plugin-reload-policy.ts` — not a setting.
+  It's a starting guess, so every one of these checks is written to the debug log (`[plugin-reload]
+  cache-impact check`) with the conversation's size and what the reload would change. Turn debug
+  logging on for a week and those lines say what the number should really be.
+</Callout>
+
 ## Sharing an all-projects package with your other agent tools
 
 A package you install for all your projects starts out visible to one thing: the Claude Code sessions DorkOS runs. Codex, Cursor, Gemini CLI, Copilot, OpenCode and the `claude` you type into a terminal yourself cannot see it.

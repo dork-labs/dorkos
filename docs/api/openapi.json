@@ -1649,6 +1649,9 @@
           },
           "durationMs": {
             "type": "integer"
+          },
+          "ambient": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -2658,6 +2661,9 @@
               },
               "summary": {
                 "type": "string"
+              },
+              "ambient": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -3402,6 +3408,9 @@
               },
               "command": {
                 "$ref": "#/components/schemas/BrowserActCommand"
+              },
+              "capture": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -3411,6 +3420,72 @@
               "targetClientId",
               "documentId",
               "command"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "devtools_recording_request"
+                ]
+              },
+              "requestId": {
+                "type": "string"
+              },
+              "targetClientId": {
+                "type": "string"
+              },
+              "documentId": {
+                "type": "string"
+              },
+              "action": {
+                "type": "string",
+                "enum": [
+                  "start",
+                  "stop"
+                ]
+              },
+              "recordingId": {
+                "type": "string"
+              },
+              "bounds": {
+                "type": "object",
+                "properties": {
+                  "longEdgePx": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "frameMs": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "maxBytes": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "longEdgePx",
+                  "frameMs",
+                  "maxBytes"
+                ]
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "requestId",
+              "targetClientId",
+              "documentId",
+              "action",
+              "recordingId",
+              "bounds"
             ]
           },
           {
@@ -13393,6 +13468,9 @@
                         },
                         "summary": {
                           "type": "string"
+                        },
+                        "ambient": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -14137,6 +14215,9 @@
                         },
                         "command": {
                           "$ref": "#/components/schemas/BrowserActCommand"
+                        },
+                        "capture": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -14146,6 +14227,72 @@
                         "targetClientId",
                         "documentId",
                         "command"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "devtools_recording_request"
+                          ]
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "targetClientId": {
+                          "type": "string"
+                        },
+                        "documentId": {
+                          "type": "string"
+                        },
+                        "action": {
+                          "type": "string",
+                          "enum": [
+                            "start",
+                            "stop"
+                          ]
+                        },
+                        "recordingId": {
+                          "type": "string"
+                        },
+                        "bounds": {
+                          "type": "object",
+                          "properties": {
+                            "longEdgePx": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0
+                            },
+                            "frameMs": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0
+                            },
+                            "maxBytes": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0
+                            }
+                          },
+                          "required": [
+                            "longEdgePx",
+                            "frameMs",
+                            "maxBytes"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "requestId",
+                        "targetClientId",
+                        "documentId",
+                        "action",
+                        "recordingId",
+                        "bounds"
                       ]
                     },
                     {

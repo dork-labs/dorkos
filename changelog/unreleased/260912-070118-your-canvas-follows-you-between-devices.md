@@ -4,9 +4,8 @@ covers:
   - 'feat(canvas): the session canvas gets routes, a reader, and a way to be reclaimed (DOR-2006)'
   - 'feat(canvas): your canvas follows you between devices (DOR-2006)'
   - 'fix(canvas): let a canvas frame reach the other window, and say so in the docs (DOR-2006)'
-  - 'test(canvas): cover the canvas the Obsidian embed can read (DOR-2006)'
   - 'fix(canvas): resolve the viewer where the row is written, and let the embed read (DOR-2006)'
-  - 'test(canvas): pin the six routes, the bounds, and the one LRU rule (DOR-2006)'
+  - 'fix(canvas): the client reads the viewer overrides too, and a failed write says so (DOR-2006)'
 ---
 
 ### Changed

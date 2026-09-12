@@ -23,10 +23,16 @@
 import { logger } from '../../../../lib/logger.js';
 import {
   awaitControlAck,
+  requestWithinBound,
   LIVE_SETTING_ACK_TIMEOUT_MS,
   PLUGIN_RELOAD_ACK_TIMEOUT_MS,
   type ControlAck,
 } from './bounded-control.js';
+import {
+  logCacheImpactMeasurement,
+  readCacheImpact,
+  type PluginReloadCacheImpact,
+} from '../messaging/plugin-reload-policy.js';
 import {
   AccountPinViolationError,
   accountsMatch,
@@ -59,12 +65,62 @@ export function prepareDispatch(
   return compareLaunchFingerprints(live, wanted);
 }
 
+/** Why a live pin stayed where it was. */
+export type UnappliedReason =
+  /** The CLI said no. */
+  | 'refused'
+  /** Nothing came back inside the bound. */
+  | 'unacked'
+  /**
+   * The CLI declined to apply a plugin reload because the conversation's prompt
+   * cache depends on the tool list, and this dispatch chose to wait rather than
+   * rebuild it (spec `plugin-reload-cache-cost`).
+   *
+   * Unlike the other two, this one is a DorkOS decision rather than a failure.
+   * Leaving the pin stale is what makes the next dispatch ask again, and the
+   * first ask the runtime answers `held: false` applies the reload for free.
+   * That alone would never end on a session that dispatches all afternoon, so
+   * the hold is also REPORTED
+   * ({@link LiveChangeOptions.onPluginReloadHeld}) and joins the same ceiling
+   * every other hold is under (`messaging/plugin-reload-policy.ts`).
+   */
+  | 'held';
+
 /** One live pin the CLI did not move onto, and which kind of no it was. */
 export interface UnappliedPin {
   /** The pin that stayed where it was. */
   readonly pin: LivePin;
-  /** `refused` — the CLI said no. `unacked` — nothing came back inside the bound. */
-  readonly ack: Exclude<ControlAck, 'acked'>;
+  /** Which kind of no it was. */
+  readonly ack: UnappliedReason;
+}
+
+/** Extra decisions a dispatch can hand {@link applyLiveChanges}. */
+export interface LiveChangeOptions {
+  /**
+   * Ask the CLI what a plugin reload would disturb, and wait rather than pay
+   * when it says the cache depends on the tool list.
+   *
+   * The caller decides this, because only it knows how big the conversation is
+   * — `pluginReloadIsWorthHolding` reads that number. Left off, the reload is
+   * applied unconditionally, which is what every path did before the check
+   * existed.
+   */
+  readonly holdPluginReloadWhenCacheWarm?: boolean;
+  /** The session this dispatch belongs to, so the measurement log names it. */
+  readonly sessionId?: string;
+  /** How big the conversation is, for the same log — the number the threshold read. */
+  readonly contextTokens?: number;
+  /**
+   * Told when a plugin reload was held, so somebody can put a ceiling on the
+   * waiting.
+   *
+   * This path's own recovery is only "the next dispatch asks again", which
+   * never ends on a session that dispatches all afternoon — and the `plugins`
+   * pin moves without an install behind it (a scope change, an agent change, an
+   * uninstall), so there is not always a fan-out hold already running to bound
+   * it. Reporting the hold is how it joins one.
+   */
+  readonly onPluginReloadHeld?: (impact: PluginReloadCacheImpact) => void;
 }
 
 /** What {@link applyLiveChanges} managed to do to a warm process. */
@@ -81,6 +137,61 @@ export interface LiveChangeOutcome {
    * relaunches) instead of riding a process it wrongly believes it moved.
    */
   readonly fingerprint: LaunchFingerprint;
+}
+
+/** How one pin's setter came out: an ack, or a reason it stayed put. */
+type PinOutcome = ControlAck | UnappliedReason;
+
+/**
+ * Move the `plugins` pin, asking what it would cost first when the caller said
+ * to.
+ *
+ * The plain path is unchanged: one bounded `reloadPlugins()`, applied whatever
+ * the conversation costs. The asking path needs the ANSWER and not just an ack,
+ * so it goes through {@link requestWithinBound} rather than
+ * {@link awaitControlAck}, and reports a hold as its own kind of no.
+ *
+ * The check is logged whichever way it goes, because measuring how often a
+ * reload is free is how the threshold behind it stops being a guess.
+ *
+ * @param query - The live process's control channel
+ * @param options - Whether this dispatch may wait rather than pay
+ * @returns `acked` when the process took the new plugin set, `held` when it
+ *   chose to wait, or the failure that stopped it
+ */
+async function reloadPluginsPin(
+  query: PumpControlQuery,
+  options: LiveChangeOptions | undefined
+): Promise<PinOutcome> {
+  if (!options?.holdPluginReloadWhenCacheWarm) {
+    return awaitControlAck(() => query.reloadPlugins(), PLUGIN_RELOAD_ACK_TIMEOUT_MS);
+  }
+  try {
+    const result = await requestWithinBound(
+      () => query.reloadPlugins({ holdOnCacheImpact: true }),
+      PLUGIN_RELOAD_ACK_TIMEOUT_MS,
+      'reloadPlugins'
+    );
+    const held = result.held === true;
+    const impact = held ? readCacheImpact(result.cache_impact) : undefined;
+    logCacheImpactMeasurement({
+      sessionId: options.sessionId ?? 'unknown-session',
+      held,
+      contextTokens: options.contextTokens,
+      impact,
+    });
+    if (held && impact) options.onPluginReloadHeld?.(impact);
+    return held ? 'held' : 'acked';
+  } catch {
+    // An ask nobody answered is reported as unacked, NOT retried with a plain
+    // reload. A second bounded call here would stack a second 8 s budget onto a
+    // path a person is already waiting on with their message unsent — sixteen
+    // seconds of a send that looks like it did nothing. It costs nothing to
+    // decline: an unapplied pin is left stale, which is exactly what brings the
+    // next dispatch back to try again, and the CLI that did not answer this
+    // round trip would not have answered the next one either.
+    return 'unacked';
+  }
 }
 
 /** A `LiveSettings` under construction. */
@@ -135,17 +246,21 @@ function fingerprintAfter(
  * between pressing send and the turn opening. The four run concurrently, so the
  * worst case is the largest bound and not their sum — today 8 s
  * (`PLUGIN_RELOAD_ACK_TIMEOUT_MS`), which is how long a message can appear to do
- * nothing before it starts. Anyone raising that number is spending it here.
+ * nothing before it starts. Anyone raising that number is spending it here, and
+ * that is also why the plugin pin's cost check does not retry: one round trip
+ * per pin per dispatch, whatever it answers ({@link reloadPluginsPin}).
  *
  * @param query - The live process's control channel (`SessionPump.controlQuery`)
  * @param decision - A reuse decision from {@link prepareDispatch}
+ * @param options - Whether a plugin reload may wait for a cheaper moment
  * @returns Which pins moved, which did not, and the fingerprint the process now holds
  * @throws AccountPinViolationError When the decision spans two Claude accounts.
  *   Nothing is set: the process is left exactly as it was.
  */
 export async function applyLiveChanges(
   query: PumpControlQuery,
-  decision: ReuseDecision
+  decision: ReuseDecision,
+  options?: LiveChangeOptions
 ): Promise<LiveChangeOutcome> {
   if (!accountsMatch(decision.from.account, decision.to.account)) {
     throw new AccountPinViolationError(decision.from.account, decision.to.account);
@@ -154,7 +269,7 @@ export async function applyLiveChanges(
     return { applied: [], unapplied: [], fingerprint: decision.to };
   }
   const results = await Promise.all(
-    decision.liveChanges.map(async (change): Promise<{ pin: LivePin; ack: ControlAck }> => {
+    decision.liveChanges.map(async (change): Promise<{ pin: LivePin; ack: PinOutcome }> => {
       switch (change.pin) {
         case 'model':
           return {
@@ -184,21 +299,27 @@ export async function applyLiveChanges(
           // `reloadPlugins` re-reads the plugin set from disk rather than taking
           // a list, which is why the marketplace's install pipeline already
           // drives it this way (`claude-code-runtime.ts`).
-          return {
-            pin: change.pin,
-            ack: await awaitControlAck(() => query.reloadPlugins(), PLUGIN_RELOAD_ACK_TIMEOUT_MS),
-          };
+          return { pin: change.pin, ack: await reloadPluginsPin(query, options) };
       }
     })
   );
   const applied = results.filter((r) => r.ack === 'acked').map((r) => r.pin);
   const unapplied = results
-    .filter((r): r is { pin: LivePin; ack: Exclude<ControlAck, 'acked'> } => r.ack !== 'acked')
+    .filter((r): r is { pin: LivePin; ack: UnappliedReason } => r.ack !== 'acked')
     .map(({ pin, ack }) => ({ pin, ack }));
-  if (unapplied.length > 0) {
+  // A hold is a DECISION, not a failure — DorkOS asked the CLI to wait — so an
+  // outcome whose only unapplied pin was held says so at debug. Warning about
+  // it would train a reader to ignore the line that means a setter really did
+  // go missing.
+  const failures = unapplied.filter((u) => u.ack !== 'held');
+  if (failures.length > 0) {
     logger.warn('[launch-fingerprint] a warm process did not take every new setting', {
       applied,
       unapplied,
+    });
+  } else if (unapplied.length > 0) {
+    logger.debug('[launch-fingerprint] a warm process is waiting to take its new plugins', {
+      applied,
     });
   } else {
     logger.debug('[launch-fingerprint] moved a warm process onto new settings', {

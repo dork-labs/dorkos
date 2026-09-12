@@ -11,11 +11,24 @@
 /**
  * What an image DorkOS will render inline may be.
  *
- * Three raster formats every browser renders, and nothing else. SVG is absent
+ * Four raster formats every browser renders, and nothing else. SVG is absent
  * on purpose: it is a script vector, and `routes/files.ts` needs a bespoke CSP
  * sandbox to serve one safely — a thing a profile photo has no reason to need.
+ *
+ * **GIF is here because an agent's recording is one** (spec `canvas-agent-seat`
+ * §3). Without it the file this product tells an agent to post into a room was
+ * the one kind of picture that came back a download chip, and on an install
+ * whose `uploads.allowedTypes` is narrowed it was refused outright while a
+ * person uploading the same bytes was accepted. It is a raster format with no
+ * script in it, so it earns inline rendering on exactly the grounds the other
+ * three do.
  */
-export const PREVIEWABLE_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const;
+export const PREVIEWABLE_IMAGE_TYPES = [
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/gif',
+] as const;
 
 /** One of {@link PREVIEWABLE_IMAGE_TYPES}. */
 export type PreviewableImageType = (typeof PREVIEWABLE_IMAGE_TYPES)[number];
@@ -25,6 +38,9 @@ const JPEG_MAGIC = Buffer.from([0xff, 0xd8, 0xff]);
 /** The two halves of a WebP's RIFF header, as bytes. `RIFF` … `WEBP`. */
 const RIFF_MAGIC = Buffer.from('RIFF', 'latin1');
 const WEBP_MAGIC = Buffer.from('WEBP', 'latin1');
+/** Both GIF versions in the wild. The bytes differ only in the last two. */
+const GIF87A_MAGIC = Buffer.from('GIF87a', 'latin1');
+const GIF89A_MAGIC = Buffer.from('GIF89a', 'latin1');
 /** Where the second half sits: after the four-byte tag and the four-byte length. */
 const WEBP_FORM_OFFSET = 8;
 
@@ -59,6 +75,12 @@ export function sniffImageContentType(bytes: Buffer): PreviewableImageType | nul
     bytes.subarray(WEBP_FORM_OFFSET, WEBP_FORM_OFFSET + WEBP_MAGIC.length).equals(WEBP_MAGIC)
   ) {
     return 'image/webp';
+  }
+  if (
+    bytes.subarray(0, GIF89A_MAGIC.length).equals(GIF89A_MAGIC) ||
+    bytes.subarray(0, GIF87A_MAGIC.length).equals(GIF87A_MAGIC)
+  ) {
+    return 'image/gif';
   }
   return null;
 }

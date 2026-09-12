@@ -642,14 +642,20 @@ describe('CreateTaskDialog', () => {
       await openAdvanced();
 
       // `acceptEdits` still asks before commands, and nobody is there to answer.
-      // The runtime refuses it after ten minutes and the turn CARRIES ON — it
-      // does not park until the run's time limit, which is what this said first
-      // and is not what `interactive-handlers.ts` does.
+      // The runtime turns the ask down AT ONCE and the turn CARRIES ON. It does
+      // not park until the run's time limit (what this note said first), and it
+      // no longer waits ten minutes either (spec
+      // `unattended-session-permission-prompts`).
       const note = await screen.findByTestId('task-unattended-note');
       expect(note).toHaveTextContent(/nobody is watching/i);
-      expect(note).toHaveTextContent(/refused after 10 minutes/);
+      expect(note).toHaveTextContent(/turned down right away/);
       expect(note).toHaveTextContent(/carries on/);
+      expect(note).toHaveTextContent(/tells you what it skipped/);
+      // A "Run now" is answerable, and the note has to say so or the person
+      // reads the whole schedule as one that never asks.
+      expect(note).toHaveTextContent(/Run now/);
       expect(note).not.toHaveTextContent(/time limit/);
+      expect(note).not.toHaveTextContent(/10 minutes/);
     });
 
     it('speaks the vocabulary of the runtime the task will actually run on', async () => {

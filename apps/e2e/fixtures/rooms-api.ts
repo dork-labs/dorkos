@@ -94,6 +94,22 @@ export interface SeededEntry {
     answersEntryId?: string;
   };
   mentions: string[];
+  /**
+   * The files this message carries, in render order.
+   *
+   * Absent on a message that carries none, which is most of them. An AGENT can
+   * put files here too (spec `canvas-agent-seat` §4), so `preview` is what says
+   * whether the bytes sniffed as a picture rather than what the sender claimed.
+   */
+  attachments?: {
+    id: string;
+    name: string;
+    mimeType: string;
+    size: number;
+    preview: 'image' | null;
+    /** Where the bytes are served from, ready to fetch. */
+    url: string;
+  }[];
 }
 
 /** One person or agent on a room's roster, as `GET /api/rooms/:id` returns it. */

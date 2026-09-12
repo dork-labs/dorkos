@@ -257,6 +257,10 @@ describe('the retirement', () => {
       // The appearance reset's own test, which seeds the key to prove that
       // narrow reset does NOT touch it. It reads no canvas state.
       'layers/features/settings/__tests__/AppearanceResetAction.test.tsx',
+      // The resets suite, which asserts the key SURVIVES both of them — it is a
+      // migration payload holding documents that may exist nowhere else yet,
+      // not a preference a clean slate may take.
+      'layers/shared/model/app-store/__tests__/app-store-resets.test.ts',
       // One comment, in `resetAllSettings`, saying why the key is deliberately
       // NOT swept there any more: it is a migration payload now, and the
       // importer is the only thing that may delete it.

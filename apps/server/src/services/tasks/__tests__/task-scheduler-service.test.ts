@@ -578,6 +578,173 @@ describe('TaskSchedulerService', () => {
     });
   });
 
+  describe('the asks a run could not get answered', () => {
+    // A run the timer starts has nobody to answer a permission prompt, so the
+    // runtime refuses one the moment it is raised instead of waiting ten minutes
+    // for an answer that cannot arrive (spec
+    // `unattended-session-permission-prompts`). The whole reason that is an
+    // improvement rather than a quieter failure is that the person is told which
+    // tools the agent never got to use — so these pin the telling, and the one
+    // trigger that must keep its cards.
+
+    /** DorkOS's own refusal record, as the interactive handlers push it. */
+    function nobodyThere(toolName: string, id: string): StreamEvent {
+      return {
+        type: 'permission_denied',
+        data: {
+          toolCallId: id,
+          toolName,
+          reasonType: 'no_approval_surface',
+          reason: 'nobody was available to approve this tool',
+          message: 'Nobody is available to approve this on a scheduled run.',
+        },
+      } as StreamEvent;
+    }
+
+    it('marks a run the timer started as one nobody is watching', async () => {
+      const task = store.createTask(
+        taskInput({ name: 'Nightly', prompt: 'test', cron: '0 * * * *' })
+      );
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+
+      // The cron's own callback, called directly rather than waited for — the
+      // same door the other dispatch cases in this file use.
+      await (service as unknown as { dispatch(t: typeof task): Promise<void> }).dispatch(task);
+
+      expect(vi.mocked(mockAgent.ensureSession).mock.calls[0]?.[1]).toMatchObject({
+        unattended: true,
+      });
+
+      await service.stop();
+    });
+
+    it('leaves a "Run now" answerable, because somebody is sitting in front of it', async () => {
+      // The defect this pins: the flag used to be passed unconditionally, so a
+      // person who clicked Run now and stayed to watch lost every approval card
+      // the run would have raised.
+      const task = store.createTask(
+        taskInput({ name: 'By hand', prompt: 'test', cron: '0 * * * *' })
+      );
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+
+      await service.triggerManualRun(task.id);
+      await vi.waitFor(() => expect(mockAgent.ensureSession).toHaveBeenCalledOnce());
+
+      expect(vi.mocked(mockAgent.ensureSession).mock.calls[0]?.[1]).toMatchObject({
+        unattended: false,
+      });
+
+      await service.stop();
+    });
+
+    it('leads the run summary with the tools it could not use', async () => {
+      vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
+        yield nobodyThere('Bash', 't1');
+        yield { type: 'text_delta', data: { text: 'Checked what I could.' } } as StreamEvent;
+      });
+      const task = store.createTask(
+        taskInput({ name: 'Refused', prompt: 'test', cron: '0 * * * *' })
+      );
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+
+      const run = await service.triggerManualRun(task.id);
+      await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true));
+
+      const finished = store.getRun(run!.id)!;
+      // First line, because the run-history row and the finished-run message
+      // both quote only the first line of the summary.
+      expect(finished.outputSummary?.split('\n')[0]).toBe(
+        'Skipped Bash — nobody was there to approve it on a scheduled run.'
+      );
+      expect(finished.outputSummary).toContain('Checked what I could.');
+      // Being refused a tool is not the run failing: it carried on without it.
+      expect(finished.status).toBe('completed');
+
+      await service.stop();
+    });
+
+    it('says nothing extra when the run was refused nothing', async () => {
+      vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
+        yield { type: 'text_delta', data: { text: 'All good.' } } as StreamEvent;
+      });
+      const task = store.createTask(
+        taskInput({ name: 'Clean', prompt: 'test', cron: '0 * * * *' })
+      );
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+
+      const run = await service.triggerManualRun(task.id);
+      await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true));
+
+      expect(store.getRun(run!.id)!.outputSummary).toBe('All good.');
+
+      await service.stop();
+    });
+
+    it('writes one activity entry per refusal, naming the tool', async () => {
+      const activityService = { emit: vi.fn() };
+      vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
+        yield nobodyThere('Bash', 't1');
+        yield nobodyThere('mcp__dorkos__control_ui', 't2');
+      });
+      const task = store.createTask(
+        taskInput({ name: 'Noted', prompt: 'test', cron: '0 * * * *' })
+      );
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: singleRuntimeSource(mockAgent),
+        config: DEFAULT_CONFIG,
+        activityService: activityService as unknown as ActivityService,
+      });
+
+      const run = await service.triggerManualRun(task.id);
+      await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true));
+
+      const refusals = activityService.emit.mock.calls
+        .map(([event]) => event as { eventType: string; summary: string })
+        .filter((event) => event.eventType === 'tasks.ask_refused');
+      // One entry each: the operator's morning question is WHICH tools, and the
+      // run row's own line already answers "were there any".
+      expect(refusals.map((event) => event.summary)).toEqual([
+        'Noted could not use Bash — nobody was there to approve it',
+        'Noted could not use control_ui — nobody was there to approve it',
+      ]);
+
+      await service.stop();
+    });
+
+    it('writes one entry for a tool the agent retried thirty times', async () => {
+      // A retry loop produces one refusal per attempt. Thirty identical rows
+      // report the same fact thirty times and bury everything else in the feed.
+      const activityService = { emit: vi.fn() };
+      vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
+        for (let i = 0; i < 30; i++) yield nobodyThere('Bash', `t-${i}`);
+      });
+      const task = store.createTask(
+        taskInput({ name: 'Loopy', prompt: 'test', cron: '0 * * * *' })
+      );
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: singleRuntimeSource(mockAgent),
+        config: DEFAULT_CONFIG,
+        activityService: activityService as unknown as ActivityService,
+      });
+
+      const run = await service.triggerManualRun(task.id);
+      await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true));
+
+      const refusals = activityService.emit.mock.calls
+        .map(([event]) => event as { eventType: string })
+        .filter((event) => event.eventType === 'tasks.ask_refused');
+      expect(refusals).toHaveLength(1);
+      // And the summary names it once, not thirty times.
+      expect(store.getRun(run!.id)!.outputSummary).toBe(
+        'Skipped Bash — nobody was there to approve it on a scheduled run.'
+      );
+
+      await service.stop();
+    });
+  });
+
   describe('cancelRun()', () => {
     it('says not_found when no run has that id', async () => {
       const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
@@ -2203,12 +2370,14 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
         expect.objectContaining({ cwd: agentDir })
       )
     );
-    // A scheduled run is UNATTENDED, and the runtime reads that: an unanswered
-    // prompt is refused at the ten-minute countdown instead of waiting four
-    // hours for somebody who is not coming (spec `ask-parks-on-timeout` §7).
+    // This run came from `triggerManualRun`, so it is NOT unattended: somebody
+    // clicked Run now and is sitting in front of it, and their approval cards
+    // stay answerable. Only a fire the timer started carries the flag — see "the
+    // asks a run could not get answered" above (spec
+    // `unattended-session-permission-prompts`).
     expect(mockAgent.ensureSession).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ unattended: true })
+      expect.objectContaining({ unattended: false })
     );
     expect(mockAgent.sendMessage).toHaveBeenCalledWith(
       expect.any(String),
@@ -2946,4 +3115,77 @@ describe('buildTaskAppend', () => {
     expect(result).toContain('scheduled');
     expect(result).toContain('unattended');
   });
+
+  it('warns a timer-started run that nobody can approve anything', () => {
+    const result = buildTaskAppend(schedulableTask(), runWith('scheduled'));
+
+    expect(result).toContain('Nobody is here to approve a tool that needs permission');
+    expect(result).toContain('plainly what you could not do');
+  });
+
+  it('says no such thing on a "Run now", where the cards ARE answerable', () => {
+    // Telling a hand-started agent its asks are refused straight away would be
+    // false, and would teach it not to ask at all — the exact failure the text
+    // exists to prevent, pointed the wrong way (spec
+    // `unattended-session-permission-prompts`).
+    const result = buildTaskAppend(schedulableTask(), runWith('manual'));
+
+    expect(result).not.toContain('Nobody is here to approve');
+    expect(result).not.toContain('refused straight away');
+    // Everything else it is told is unchanged.
+    expect(result).toContain('TASK SCHEDULER CONTEXT');
+    expect(result).toContain('Do not ask questions');
+  });
+
+  /** The same task shape the case above builds, without repeating 25 fields. */
+  function schedulableTask(): Task {
+    return {
+      id: 'task-1',
+      name: 'Daily Cleanup',
+      displayName: null,
+      description: 'Clean temp files',
+      prompt: 'Clean temp files',
+      cron: '0 2 * * *',
+      timezone: null,
+      agentId: null,
+      enabled: true,
+      sticky: false,
+      maxRuntime: null,
+      permissionMode: 'acceptEdits',
+      runtime: null,
+      model: null,
+      effort: null,
+      status: 'active',
+      filePath: '/tmp/tasks/daily-cleanup/SKILL.md',
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+      reason: null,
+      proposedBySessionId: null,
+      proposedByAgentPath: null,
+      proposedByName: null,
+      origin: null,
+      reasonSource: null,
+      nextRun: null,
+      nextRuns: [],
+    };
+  }
+
+  /** A run of {@link schedulableTask}, started the given way. */
+  function runWith(trigger: TaskRun['trigger']): TaskRun {
+    return {
+      id: 'run-1',
+      scheduleId: 'task-1',
+      status: 'running',
+      startedAt: '2026-01-01T02:00:00Z',
+      finishedAt: null,
+      durationMs: null,
+      outputSummary: null,
+      error: null,
+      sessionId: null,
+      trigger,
+      resolvedRuntime: null,
+      resolvedModel: null,
+      createdAt: '2026-01-01T02:00:00Z',
+    };
+  }
 });

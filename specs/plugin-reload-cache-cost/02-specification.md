@@ -211,3 +211,83 @@ Written as behavior somebody can observe.
   exist below 0.3.268.
 - ADR-0239 — plugin activation through the SDK's own plugin option, the reason
   the reload handshake exists.
+
+## Addendum (2026-09-12, at implementation)
+
+The decisions above stand as taken and are left unedited. Two of them could not
+be implemented as written, and a third kept its outcome while changing its
+mechanism. Recorded here because the shipped code cites this spec as ground
+truth.
+
+### Decision 1 — the dollar cap became a token threshold
+
+**The runtime does not report a dollar figure for a plugin reload.**
+`SDKControlReloadPluginsResponse` (`sdk.d.ts`, `@anthropic-ai/claude-agent-sdk`
+0.3.268) declares `cache_impact` with exactly three fields —
+`mcp_servers_added`, `mcp_servers_removed`, `lsp_tool_change` — and no
+`estimated_cache_write_usd`. That field belongs to the `PreModelSwitch` and
+`PostModelSwitch` hook inputs and to `SessionStart`, not to this response.
+Verified against the SDK's type declaration, against `sdk.mjs` (zero
+occurrences), and against the CLI binary's own schema for the held response. The
+claim in the ideation and in the upgrade impact assessment was mistaken, and
+this spec inherited it.
+
+The three fields it does report cannot grade cost either: every held reload sets
+them by definition, so they separate "would disturb something" from "would
+not" — which is what `held` already says — and never "cheap" from "expensive".
+
+What drives the cost is the size of the conversation being re-read, which DorkOS
+already knows for free from the last main-thread request's usage
+(`AgentSession.lastRequestUsage`, summed by `sumContextTokens`). So the cap
+shipped as a token count: `PLUGIN_RELOAD_SILENT_TOKENS = 25_000`, a placeholder
+until the measurement from decision 9 replaces it. Converting tokens to dollars
+would need a model price list DorkOS does not ship and would have to keep
+current — the false precision this spec's own risk list rules out. Cost is
+monotone in tokens, so the threshold orders reloads exactly as a dollar cap
+would. Decisions 2, 8 and 9 are unaffected: the constant is still a documented
+named export, the activity record still carries the estimate, and every hold
+check is still logged.
+
+### Decisions 5 and 6 — there is no quiet line in the session
+
+**No durable per-session notice channel exists for a background code path to
+write to.** A held reload is decided by a timer, often with no turn open and no
+client attached, and the session must still say something when the person next
+looks. Nothing in the codebase can do that today:
+
+- `system_status` on the session's event queue — the channel the
+  interaction-timeout notice uses — is absent from `RECORDED_EVENT_TYPES`
+  (`services/session/projector-persistence.ts`), so it is never persisted, and
+  the client renders it only as a transient strip inside an in-progress turn,
+  cleared by the next turn event.
+- Every durable notice mechanism that does exist — `RoomService.postNotice`,
+  `postMoment`, the welcome-back greeter — writes a room entry and requires a
+  `roomId`. A plain chat is not a room and has none.
+- The durable session event log records only turn-shaped kinds and offers no
+  free-text notice type, nor any append API reachable from outside a turn.
+
+Rather than push a line that would be written and never read, the implementation
+emits none. The fact lands in the activity feed instead (decision 8), which
+carries what the reload disturbed, how large the conversation was, how long it
+waited and how it ended. Decision 5's substance holds in full: no dollar amount
+reaches the session, because nothing reaches the session. Decision 6 is **not
+implemented**; giving a plain session a durable notice kind is a change to the
+session event store and belongs to its own piece of work.
+
+### Decision 3 — same moment, asked for rather than assumed
+
+Decision 3 is implemented, and its outcome is unchanged: a held reload is applied
+when the cache is cold. How that moment is found changed. The spec's "idle past
+the prompt cache lifetime" assumes DorkOS knows the lifetime, and it does not:
+`Options.promptCacheTtl` is `'5m' | '1h'`, DorkOS sets neither it nor
+`CLAUDE_CODE_PROMPT_CACHE_TTL`, and unset means automatic — **one hour on a
+Claude subscription inside its usage limits**, five minutes on an API key,
+Bedrock, Vertex or Foundry. On the signed-in path, which is the main one, an
+idle-for-five-minutes rule would pay for a rebuild during the other fifty-five
+and record it as free.
+
+So the implementation asks instead of assuming: it re-issues
+`reloadPlugins({ holdOnCacheImpact: true })` on an interval, and `held: false`
+means the runtime has just applied the reload because nothing was left to
+disturb. The interval is five minutes because that is the shortest lifetime the
+runtime ever chooses; decision 9's ceiling still bounds the waiting.

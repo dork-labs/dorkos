@@ -175,6 +175,42 @@ export const WORKBENCH = {
    * one-minute alignment with room for the wake to be late.
    */
   DEVTOOLS_SEAT_STALE_MS: 90_000,
+  /**
+   * How many frames one recording keeps (spec `canvas-agent-seat` §3.3).
+   *
+   * Sixty actions is a long run at the keyboard, and past it the recording
+   * stops FILMING rather than stopping the run: the driving verbs keep working
+   * and the stop answer says the ceiling was reached. A recording that killed
+   * the work it was recording would be a worse trade than a short film.
+   */
+  MAX_RECORDING_FRAMES: 60,
+  /**
+   * Long edge, in pixels, each recorded frame is drawn to before encoding.
+   *
+   * Downscaled from the 1568 px the page rasterizes at, which is the size a
+   * model reads a screenshot best at. A quarter of the pixels, still readable
+   * as a picture of what happened.
+   */
+  RECORDING_LONG_EDGE_PX: 800,
+  /** How long each recorded frame is shown, in milliseconds. Two a second. */
+  RECORDING_FRAME_MS: 500,
+  /**
+   * The biggest encoded recording a window may upload, in bytes.
+   *
+   * Under the `uploads.maxFileSize` ceiling the upload route itself enforces,
+   * so the window gives up with a sentence before multer refuses with a 413.
+   */
+  MAX_RECORDING_BYTES: 8 * 1024 * 1024,
+  /**
+   * How long `browser_record_stop` waits (ms) for the window to encode and
+   * upload.
+   *
+   * Long, because the window is doing real work — sixty frames of quantize and
+   * encode, then a multi-megabyte POST — and because the alternative to waiting
+   * is telling an agent a recording failed while the file is still on its way.
+   * Past it, a plain failure that claims no file and leaves no state behind.
+   */
+  RECORDING_STOP_TIMEOUT_MS: 30_000,
 } as const;
 
 export const WATCHER = {

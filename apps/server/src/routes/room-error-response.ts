@@ -79,6 +79,12 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // the room is the wrong surface for it; both MCP-only today, mapped because
   // this table is total by type.
   CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM: 400,
+  // The writer faulted or is absent. 503, not 404: nothing was missing, the
+  // server could not do it — and a retry is a reasonable thing for a caller to
+  // do, which is the difference this code exists to state. The session-canvas
+  // routes answer the same status from their own `CANVAS_UNAVAILABLE` check
+  // before they reach the writer at all.
+  CANVAS_UNAVAILABLE: 503,
   // Same story: an MCP-only verb, mapped because the table is total by type. A
   // 409 rather than a 400 — the request is well formed and the room is right,
   // but somebody stopped this turn while it was being written.
@@ -116,6 +122,13 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   ATTACHMENT_NOT_FOUND: 404,
   ATTACHMENT_ALREADY_POSTED: 409,
   TOO_MANY_ATTACHMENTS: 400,
+  // The three an agent's `post_to_room` can raise. No route reaches them today
+  // — the field is on the capability and the upload route stays people-only —
+  // but the table is exhaustive over the code union on purpose, so a code
+  // without a status cannot exist.
+  ATTACHMENT_PATH_REFUSED: 403,
+  ATTACHMENT_UNREADABLE: 400,
+  ATTACHMENT_TOO_LARGE: 413,
   // A 409 for both room-repo refusals: the request is well formed and the room
   // is right, but the install (or the room's own unmerged work) says not now.
   ROOM_REPOS_DISABLED: 409,

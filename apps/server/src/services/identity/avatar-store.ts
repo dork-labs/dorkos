@@ -20,15 +20,38 @@ import type { Readable } from 'stream';
  * ({@link ./image-sniff.js}). Re-exported under the avatar names its callers
  * already use, so moving the reader changed no call site.
  */
-export {
-  PREVIEWABLE_IMAGE_TYPES as AVATAR_CONTENT_TYPES,
-  sniffImageContentType as sniffAvatarContentType,
-  type PreviewableImageType as AvatarContentType,
-} from './image-sniff.js';
+export { sniffImageContentType as sniffAvatarContentType } from './image-sniff.js';
 
 // The re-export above is the module's own view of the sniffer; this import is
 // what the type annotations below need.
-import type { PreviewableImageType as AvatarContentType } from './image-sniff.js';
+import type { PreviewableImageType } from './image-sniff.js';
+
+/**
+ * What a profile photo may be — NARROWER than what the sniffer recognises, and
+ * deliberately so.
+ *
+ * The shared list gained `image/gif` for room attachments (an agent's recording
+ * is a GIF, spec `canvas-agent-seat` §3). A profile photo has no such need, and
+ * widening it here would be a product change nobody asked for — an animated
+ * avatar looping in every roster row — arriving as a side effect of a fix to
+ * something else. So the two lists part company here, with this sentence saying
+ * why rather than leaving the next reader to wonder which is the mistake.
+ */
+export const AVATAR_CONTENT_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const;
+
+/** One of {@link AVATAR_CONTENT_TYPES}. */
+export type AvatarContentType = (typeof AVATAR_CONTENT_TYPES)[number];
+
+/**
+ * Whether these bytes are a kind of picture a profile photo may be.
+ *
+ * @param sniffed - What {@link sniffAvatarContentType} made of the bytes.
+ */
+export function isAvatarContentType(
+  sniffed: PreviewableImageType | null
+): sniffed is AvatarContentType {
+  return sniffed !== null && (AVATAR_CONTENT_TYPES as readonly string[]).includes(sniffed);
+}
 
 /**
  * The most a photo may weigh, in bytes.
