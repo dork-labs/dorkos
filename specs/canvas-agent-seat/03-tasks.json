@@ -18,7 +18,7 @@
       "parallelWith": [
         "1.2"
       ],
-      "issue": null,
+      "issue": "DOR-2006",
       "parentIssue": "DOR-2004"
     },
     {
@@ -34,7 +34,7 @@
       "parallelWith": [
         "1.1"
       ],
-      "issue": null,
+      "issue": "DOR-2007",
       "parentIssue": "DOR-2004"
     },
     {
@@ -52,7 +52,7 @@
       "parallelWith": [
         "2.2"
       ],
-      "issue": null,
+      "issue": "DOR-2008",
       "parentIssue": "DOR-2004"
     },
     {
@@ -71,7 +71,7 @@
       "parallelWith": [
         "2.1"
       ],
-      "issue": null,
+      "issue": "DOR-2009",
       "parentIssue": "DOR-2004"
     },
     {
@@ -87,7 +87,7 @@
       "parallelWith": [
         "3.2"
       ],
-      "issue": null,
+      "issue": "DOR-2010",
       "parentIssue": "DOR-2004",
       "note": "Blocked outside this spec, not by a task in it: needs room-canvas P2b (DOR-2000) and P3 (DOR-2002) merged to main. Verify the shapes against the landed P2b/P3 code before building."
     },
@@ -104,7 +104,7 @@
       "parallelWith": [
         "3.1"
       ],
-      "issue": null,
+      "issue": "DOR-2011",
       "parentIssue": "DOR-2004",
       "note": "Blocked outside this spec, not by a task in it: needs room-canvas P2b (DOR-2000) merged to main. Verify the shapes against the landed P2b code before building."
     }
