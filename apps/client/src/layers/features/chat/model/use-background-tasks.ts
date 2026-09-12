@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, useEffect, useLayoutEffect } from 'react';
 import type { BackgroundTaskPart, BackgroundTaskStatus } from '@dorkos/shared/types';
-import { useRenderSlot } from '@/layers/shared/lib';
+import { isAmbientTask, useRenderSlot } from '@/layers/shared/lib';
 import type { ChatMessage } from './chat-types';
 
 /** A background task with a stable color assignment, ready for display. */
@@ -10,6 +10,16 @@ export interface VisibleBackgroundTask {
   status: BackgroundTaskStatus;
   color: string;
   startedAt: number;
+  /**
+   * Housekeeping the agent runs for itself, which no activity indicator may
+   * count — not the runner figures, not the task count, not a future one.
+   *
+   * Already resolved, so every surface reads the same answer from one place: a
+   * housekeeping task that FAILED is `false` here, because a failure is never
+   * hidden. Split a list with `partitionAmbientTasks` from `shared/lib` rather than
+   * testing this field twice in two components and letting them disagree.
+   */
+  ambient: boolean;
   // Agent-specific
   description?: string;
   toolUses?: number;
@@ -53,10 +63,19 @@ const NO_CELEBRATIONS: ReadonlySet<string> = new Set();
  *
  * Agent tasks appear immediately when running. Bash tasks are suppressed until
  * they have been running for at least 5 seconds, preventing UI churn from
- * short-lived commands. All tasks remain visible for 1500ms after completion
- * (celebration window). Colors are pinned per task from a stable 5-color pool,
- * the first time a task is drawn — a task keeps its color for as long as it
- * exists, and one nobody ever sees never takes a slot out of the pool.
+ * short-lived commands. That rule is DorkOS's own answer to "was this worth
+ * drawing", and it stays: too fast to matter and housekeeping are different
+ * questions. All tasks remain visible for 1500ms after completion (celebration
+ * window) — except housekeeping ones, which get no completion mark at all,
+ * because a mark for work nobody asked about is exactly the noise this hides.
+ * Colors are pinned per task from a stable 5-color pool, the first time a task
+ * is drawn — a task keeps its color for as long as it exists, and one nobody
+ * ever sees never takes a slot out of the pool.
+ *
+ * Housekeeping tasks are returned with `ambient: true` rather than dropped, so
+ * the expanded detail panel can still list them; callers that draw an indicator
+ * split the list with `partitionAmbientTasks` (`shared/lib`) and show only
+ * `shown`.
  *
  * @param messages - The current chat message list to scan for BackgroundTaskPart entries.
  */
@@ -120,7 +139,7 @@ export function useBackgroundTasks(messages: ChatMessage[]): VisibleBackgroundTa
       // A negative check on purpose: `running` is the only status still in flight,
       // so enumerating the terminal ones would silently stop celebrating the day a
       // new one lands (`untracked` did exactly that, DOR-1108).
-      if (prevStatus === 'running' && part.status !== 'running') {
+      if (prevStatus === 'running' && part.status !== 'running' && !isAmbientTask(part)) {
         setCelebrating((prev) => (prev.has(taskId) ? prev : new Set(prev).add(taskId)));
       }
       prevStatusRef.current.set(taskId, part.status);
@@ -197,6 +216,7 @@ export function useBackgroundTasks(messages: ChatMessage[]): VisibleBackgroundTa
         durationMs: part.durationMs,
         summary: part.summary,
         command: part.command,
+        ambient: isAmbientTask(part),
       });
     }
 

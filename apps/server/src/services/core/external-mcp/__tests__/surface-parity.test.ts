@@ -159,7 +159,7 @@ describe('in-session and external MCP surface parity', () => {
   });
 
   it('keeps the in-session-only tools off the external server', async () => {
-    // Thirteen tools are deliberately in-session-only, and nothing external-only
+    // Fifteen tools are deliberately in-session-only, and nothing external-only
     // exists. Pinned so neither half of that changes by accident.
     //
     // Seven -> thirteen for the six browser-driving verbs (spec
@@ -167,6 +167,10 @@ describe('in-session and external MCP surface parity', () => {
     // three DevTools reads do, one step further: they act inside the preview a
     // live session has open in somebody's window, and a session-less external
     // caller has no window to name.
+    //
+    // Thirteen -> fifteen for the two recording verbs. Same reason again, plus
+    // one of its own: a recording's frames live in ONE window's buffer, so the
+    // surface that starts one must be the surface that can address that window.
     const external = new Set((await fetchExternalTools()).map((tool) => tool.name));
     const inSession = handRegisteredInSessionTools(createFullDeps()).map((tool) => tool.name);
 
@@ -177,6 +181,8 @@ describe('in-session and external MCP surface parity', () => {
       'browser_read_console',
       'browser_read_network',
       'browser_read_page',
+      'browser_record_start',
+      'browser_record_stop',
       'browser_screenshot',
       'browser_scroll',
       'browser_type',

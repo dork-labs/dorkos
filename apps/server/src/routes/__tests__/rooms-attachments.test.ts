@@ -4,10 +4,11 @@
  * Four things are pinned here, and "the file round-trips" is only the first.
  *
  * The second is that **what a file IS is decided by its bytes**: a `.png` full
- * of GIF stores with no preview and comes back as an octet-stream attachment,
- * never as an image the browser will render on the cockpit's own origin. That
- * one line is the whole safety property of this feature, and the mutation it
- * survives is written down beside it.
+ * of markup stores with no preview and comes back as an octet-stream
+ * attachment, never as a document the browser will render on this app's own
+ * origin — and a `.png` full of GIF is served as the GIF it is rather than as
+ * the PNG it claimed. That one line is the whole safety property of this
+ * feature, and the mutation it survives is written down beside it.
  *
  * The third is that **an agent is refused before its bytes are read** — asserted
  * by the absence of a directory rather than by the status code alone, because a
@@ -266,14 +267,36 @@ describe('/api/rooms/:id/attachments', () => {
       expect(got.headers['x-content-type-options']).toBe('nosniff');
     });
 
-    it('refuses to preview GIF bytes wearing a .png name and an image/png header', async () => {
+    it('serves GIF bytes wearing a .png name as the GIF they are', async () => {
       const posted = await upload(GIF, 'sneaky.png', 'image/png');
 
-      // Neither the filename nor the declared Content-Type is evidence. Setting
-      // `preview` from `file.mimetype.startsWith('image/')` turns this red —
-      // witnessed, and it is the mutation this test exists for.
+      // Neither the filename nor the declared Content-Type is evidence. GIF is a
+      // previewable raster type since an agent's recording became one (spec
+      // `canvas-agent-seat` §3), so these bytes DO preview — but as what they
+      // are, never as what they claimed. Setting `mimeType` from
+      // `file.mimetype` turns this red: it would serve a GIF as `image/png`.
+      expect(posted.body.attachments[0].preview).toBe('image');
+      expect(posted.body.attachments[0].mimeType).toBe('image/gif');
+
+      const got = await request(fixtureServer).get(posted.body.attachments[0].url);
+
+      expect(got.headers['content-type']).toContain('image/gif');
+      expect(got.headers['x-content-type-options']).toBe('nosniff');
+    });
+
+    it('refuses to preview bytes that are no image at all, however they are dressed', async () => {
+      // The half the case above no longer covers, and the one that carries the
+      // safety property: a file announced as an image, named as an image, and
+      // full of markup is an attachment. Setting `preview` from
+      // `file.mimetype.startsWith('image/')` turns this red — witnessed, and it
+      // is the mutation this pair exists for.
+      const posted = await upload(
+        Buffer.from('<html><script>alert(1)</script></html>'),
+        'sneaky.png',
+        'image/png'
+      );
+
       expect(posted.body.attachments[0].preview).toBeNull();
-      expect(posted.body.attachments[0].mimeType).toBe('image/png');
 
       const got = await request(fixtureServer).get(posted.body.attachments[0].url);
 
