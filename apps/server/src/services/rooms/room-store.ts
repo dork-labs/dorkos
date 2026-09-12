@@ -1192,10 +1192,17 @@ export class RoomStore {
    * **Posts only, and that is a budget decision.** The whole read is five rows,
    * so one machine notice — the room narrating that somebody was busy — would
    * eat a fifth of an agent's entire awareness of the channel. It also subsumes
-   * the subject filter {@link RoomStore.listUnreadEntries} needs:
-   * `subjectAuthorId` is written exactly when `kind === 'notice'`, so a notice
-   * about the reader cannot reach this read either, and a second predicate
-   * saying so would be SQL that can never match.
+   * the subject filter {@link RoomStore.listUnreadEntries} needs: every NOTICE
+   * carries a `subjectAuthorId`, so filtering notices out already filters out
+   * every notice about the reader, and a second predicate saying so would be
+   * SQL that can never match.
+   *
+   * **A subject is not a notice, though — it is only that every notice has
+   * one.** Posts written in the room's own voice carry a subject too: a merge
+   * line, a canvas line, and the line that opens a document's discussion all
+   * name the member they are about, which is what the feed draws their face
+   * from (`displayAuthorIdOf`). Those ARE posts and DO reach this read, exactly
+   * as they should — they are things that happened in the channel.
    *
    * **`afterSeq` is the caller's floor, and it carries two different jobs.**
    * The unread-first read passes `max(lastReadSeq, joinedSeq)`; the fallback

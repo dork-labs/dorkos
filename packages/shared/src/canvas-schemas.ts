@@ -98,6 +98,19 @@ export const CanvasDocumentSchema = z
     aheadOfMain: z.number().int().nonnegative().nullable().optional(),
     openedAt: z.string().min(1),
     lastActiveAt: z.string().min(1),
+    /**
+     * The room entry that heads this document's discussion thread, when somebody
+     * has opened one (spec `canvas-agent-seat` §7).
+     *
+     * Absent until the first "Discuss", and never cleared afterwards: a second
+     * Discuss on the same document opens the thread that is already there rather
+     * than starting a second one, and this field is what makes that true across
+     * restarts and for every member.
+     *
+     * Always absent on a session's own canvas, which has no room to hold a
+     * thread.
+     */
+    threadRootEntryId: z.string().min(1).optional(),
   })
   .openapi('CanvasDocument');
 

@@ -37,6 +37,7 @@
  *
  * @module server/services/canvas/canvas-service
  */
+import type { DbTransaction } from '@dorkos/db';
 import type { CanvasDocument } from '@dorkos/shared/room-schemas';
 import { canvasViewForContent } from '@dorkos/shared/canvas-view';
 import { canvasContentForFile } from '@dorkos/shared/viewer-registry';
@@ -624,6 +625,33 @@ export class CanvasService {
   }
 
   /**
+   * Record which room entry heads this document's discussion, inside the
+   * transaction that is writing the entry (spec `canvas-agent-seat` §7).
+   *
+   * **Takes the transaction, so the column and the entry land together.** A
+   * thread root in the log with no column beside it means the next "Discuss"
+   * starts a second thread on the same document; a column pointing at an entry
+   * that was never written opens an empty panel. Neither half is allowed to
+   * exist alone, and one transaction is what makes that structural rather than
+   * a thing two code paths have to remember.
+   *
+   * **No frame, and no `rev` bump.** Nothing on anybody's screen is drawn from
+   * this column: whether a second Discuss opens the existing thread is decided
+   * by the SERVER reading the row, so a viewer holding a copy that predates the
+   * thread still lands in the right place. Publishing here would be a frame
+   * that changes no pixel, at the cost of a revision every stale reader has to
+   * catch up to.
+   *
+   * @param tx - The transaction the root entry is being appended in.
+   * @param scope - Whose canvas.
+   * @param documentId - The document being discussed.
+   * @param entryId - The entry heading the thread.
+   */
+  attachThreadRoot(tx: DbTransaction, scope: string, documentId: string, entryId: string): void {
+    this.documents.setThreadRoot(tx, scope, documentId, entryId);
+  }
+
+  /**
    * This author's own most recently opened-or-updated document here.
    *
    * @param scope - Whose canvas.
@@ -1006,6 +1034,8 @@ export class CanvasService {
       editingHeartbeatAt: null,
       openedAt: at,
       lastActiveAt: at,
+      // A document is born without a discussion; the first Discuss writes this.
+      threadRootEntryId: null,
     };
     this.documents.insert(row);
     this.evict(scope, row.id);

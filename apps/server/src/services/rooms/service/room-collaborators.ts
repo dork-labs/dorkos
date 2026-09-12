@@ -36,6 +36,7 @@ import { RoomSystemPosts } from '../messages/room-system-posts.js';
 import { RoomTurnControl } from '../manage/room-turn-control.js';
 import { RoomUpdates } from '../manage/room-updates.js';
 import { RoomCanvasService } from '../canvas/room-canvas-service.js';
+import { RoomFollowService } from '../follow/room-follow-service.js';
 import { RoomVisibility } from './room-visibility.js';
 
 /** Every part of one room service, and the state they all share. */
@@ -82,6 +83,8 @@ export interface RoomCollaborators {
   readonly turnControl: RoomTurnControl;
   /** The room's shared canvas — the table, and the one writer that changes it. */
   readonly canvas: RoomCanvasService;
+  /** Who is following whose browser here, and the two frames that carry it. */
+  readonly follow: RoomFollowService;
 }
 
 /**
@@ -125,11 +128,17 @@ export function createRoomCollaborators(
     visibility,
     broadcaster: core.broadcaster,
     maxOpsPerTurn: core.maxCanvasOpsPerTurn,
-    postCanvasEvent: (roomId, input) => {
-      systemPosts.postCanvasEvent(roomId, input);
-    },
+    postCanvasEvent: (roomId, input, bind) => systemPosts.postCanvasEvent(roomId, input, bind),
     displayNameFor: (authorId) => core.authors.getById(authorId)?.displayName ?? 'Somebody',
     roomRepoPath: core.roomRepoPath,
+    ...(core.canvasNow ? { now: core.canvasNow } : {}),
+  });
+  // Follow claims are memory-only and never persisted, so this is built last and
+  // reaches for nothing the rest of the wiring does not already hold.
+  const follow = new RoomFollowService({
+    visibility,
+    publisher,
+    authors: core.authors,
     ...(core.canvasNow ? { now: core.canvasNow } : {}),
   });
   return {
@@ -147,6 +156,7 @@ export function createRoomCollaborators(
     bridgeCreation,
     bridgeLifecycle,
     membership,
+    follow,
     directory: new RoomDirectory(core, visibility, projection),
     memberDirectory: new RoomMemberDirectory(core, visibility),
     reads: new RoomReads(core, visibility, projection, canvas),

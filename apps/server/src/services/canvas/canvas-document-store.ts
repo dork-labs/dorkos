@@ -15,7 +15,18 @@
  *
  * @module server/services/canvas/canvas-document-store
  */
-import { canvasDocuments, and, asc, desc, eq, isNull, like, sql, type Db } from '@dorkos/db';
+import {
+  canvasDocuments,
+  and,
+  asc,
+  desc,
+  eq,
+  isNull,
+  like,
+  sql,
+  type Db,
+  type DbTransaction,
+} from '@dorkos/db';
 import { UiCanvasContentSchema, type UiCanvasContent } from '@dorkos/shared/schemas';
 import type { CanvasDocument } from '@dorkos/shared/room-schemas';
 import { logger } from '../../lib/logger.js';
@@ -47,6 +58,15 @@ export interface CanvasDocumentInsert {
 export interface CanvasDocumentRow extends CanvasDocumentInsert {
   editingBy: string | null;
   editingHeartbeatAt: string | null;
+  /**
+   * The room entry heading this document's discussion, or `null` for a document
+   * nobody has opened one on (spec `canvas-agent-seat` §7).
+   *
+   * On the ROW rather than on the insert: a document is never created with a
+   * thread. The column is written once, by the first Discuss, in the same
+   * transaction as the entry it names.
+   */
+  threadRootEntryId: string | null;
 }
 
 /**
@@ -85,6 +105,7 @@ function project(row: {
   editingHeartbeatAt: string | null;
   openedAt: string;
   lastActiveAt: string;
+  threadRootEntryId: string | null;
 }): CanvasDocumentRow | null {
   const content = UiCanvasContentSchema.safeParse(row.content);
   if (!content.success) {
@@ -196,7 +217,14 @@ export class CanvasDocumentStore {
   insert(input: CanvasDocumentInsert): void {
     this.db
       .insert(canvasDocuments)
-      .values({ ...input, editingBy: null, editingHeartbeatAt: null })
+      .values({
+        ...input,
+        editingBy: null,
+        editingHeartbeatAt: null,
+        // A fresh document has no discussion. The column is the first Discuss's
+        // to write, and only ever once.
+        threadRootEntryId: null,
+      })
       .run();
   }
 
@@ -230,6 +258,32 @@ export class CanvasDocumentStore {
     this.db
       .update(canvasDocuments)
       .set(patch)
+      .where(and(eq(canvasDocuments.scope, scope), eq(canvasDocuments.id, documentId)))
+      .run();
+  }
+
+  /**
+   * Record which room entry heads this document's discussion (spec
+   * `canvas-agent-seat` §7).
+   *
+   * **Takes the transaction rather than opening one**, because the entry and
+   * this column have to land together: a thread root the log holds and the row
+   * does not means the next Discuss starts a second thread, and a column
+   * pointing at an entry that was never written is a tab that opens an empty
+   * panel. The caller passes the transaction the entry is being appended in, so
+   * both write or neither does.
+   *
+   * Written once. It is never cleared and never repointed: the thread a
+   * document has is the thread it keeps.
+   *
+   * @param tx - The transaction the root entry is being written in.
+   * @param scope - The table.
+   * @param documentId - The document being discussed.
+   * @param entryId - The entry heading the thread.
+   */
+  setThreadRoot(tx: DbTransaction, scope: string, documentId: string, entryId: string): void {
+    tx.update(canvasDocuments)
+      .set({ threadRootEntryId: entryId })
       .where(and(eq(canvasDocuments.scope, scope), eq(canvasDocuments.id, documentId)))
       .run();
   }
@@ -448,5 +502,9 @@ export function toCanvasDocument(
     ...(row.treeKind !== null ? { treeKind: row.treeKind, aheadOfMain: row.aheadOfMain } : {}),
     openedAt: row.openedAt,
     lastActiveAt: row.lastActiveAt,
+    // Spread rather than sent as `null`, so a document nobody has discussed
+    // renders exactly the shape it did before threads existed — and so a reader
+    // asking "does this have a thread" asks one question rather than two.
+    ...(row.threadRootEntryId !== null ? { threadRootEntryId: row.threadRootEntryId } : {}),
   };
 }

@@ -65,6 +65,9 @@ import type {
   AddRoomMemberRequest,
   CanvasDocument,
   CanvasEditingResponse,
+  CanvasThreadResponse,
+  PublishRoomViewResponse,
+  RoomSignalView,
   CreateRoomRequest,
   HaltRoomResponse,
   PromoteHoldResponse,
@@ -1091,6 +1094,22 @@ export const roomStubs = {
     _documentId: string,
     _editing: boolean
   ): Promise<CanvasEditingResponse> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
+  async discussCanvasDocument(_id: string, _documentId: string): Promise<CanvasThreadResponse> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
+  async followRoomMember(_id: string, _memberId: string): Promise<void> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
+  async unfollowRoomMember(_id: string): Promise<void> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
+  async publishRoomView(_id: string, _view: RoomSignalView): Promise<PublishRoomViewResponse> {
     throw new Error('Rooms are not supported in embedded mode');
   },
 

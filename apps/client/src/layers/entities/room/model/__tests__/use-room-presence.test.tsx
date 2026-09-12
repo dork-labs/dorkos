@@ -19,7 +19,7 @@ import {
   useRoomPresenceClaims,
   useRoomPresenceStore,
   useRoomSilentFinish,
-} from '../use-room-presence';
+} from '../live/use-room-presence';
 
 const ROOM = 'room-1';
 

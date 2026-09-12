@@ -2,6 +2,7 @@ import { useCallback, useLayoutEffect, useMemo, useRef, type ReactNode } from 'r
 import { AnimatePresence, motion } from 'motion/react';
 import { useIsMobile, useVisualViewportBottomInset } from '@/layers/shared/model';
 import {
+  useForgetRoomFollowOnLeave,
   useLoadOlderRoomEntries,
   useMarkRoomRead,
   useRoom,
@@ -152,6 +153,13 @@ export function RoomSurface({
   const roomQuery = useRoom(roomId);
   const entriesQuery = useRoomEntries(roomId);
   const stream = useRoomStream(roomId, entriesQuery.isSuccess);
+  // Following somebody is a choice about THIS room and this visit to it, never
+  // persisted and never resumed (spec `canvas-agent-seat` §6). Leaving the room
+  // — switching to another one, or leaving the route — forgets it here, because
+  // this is the component whose life is exactly one room on screen. The Browser
+  // tab's own hook cannot do it: it unmounts on a tab switch, which is not
+  // leaving.
+  useForgetRoomFollowOnLeave(roomId);
   const room = roomQuery.data;
   const entries = useMemo(() => entriesQuery.data ?? [], [entriesQuery.data]);
   // Where this room's words go, and the chip bar the send shares with the

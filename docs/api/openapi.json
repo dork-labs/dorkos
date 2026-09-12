@@ -4638,6 +4638,10 @@
           "lastActiveAt": {
             "type": "string",
             "minLength": 1
+          },
+          "threadRootEntryId": {
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [
@@ -10242,6 +10246,68 @@
           "editing"
         ]
       },
+      "CanvasThreadResponse": {
+        "type": "object",
+        "properties": {
+          "threadRootEntryId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The entry heading the document’s discussion."
+          },
+          "created": {
+            "type": "boolean",
+            "description": "True when this call started the thread; false when it was already there."
+          }
+        },
+        "required": [
+          "threadRootEntryId",
+          "created"
+        ]
+      },
+      "FollowRoomMemberRequest": {
+        "type": "object",
+        "properties": {
+          "memberId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The person to follow. People only — an agent has no view to share."
+          }
+        },
+        "required": [
+          "memberId"
+        ]
+      },
+      "PublishRoomViewResponse": {
+        "type": "object",
+        "properties": {
+          "followed": {
+            "type": "boolean",
+            "description": "True when somebody is following you and the position went out. False means stop sending."
+          }
+        },
+        "required": [
+          "followed"
+        ]
+      },
+      "PublishRoomViewRequest": {
+        "type": "object",
+        "properties": {
+          "documentId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "url": {
+            "type": "string"
+          },
+          "scrollY": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "documentId"
+        ]
+      },
       "CanvasViewingRequest": {
         "type": "object",
         "properties": {
@@ -10350,6 +10416,16 @@
               "silent"
             ]
           },
+          "view": {
+            "$ref": "#/components/schemas/RoomSignalView"
+          },
+          "follows": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
           "documentId": {
             "type": "string"
           }
@@ -10397,6 +10473,25 @@
         "required": [
           "roomId",
           "othersWaiting"
+        ]
+      },
+      "RoomSignalView": {
+        "type": "object",
+        "properties": {
+          "documentId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "url": {
+            "type": "string"
+          },
+          "scrollY": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "documentId"
         ]
       },
       "RoomReactionEvent": {
@@ -51488,6 +51583,305 @@
           },
           "409": {
             "description": "The room is archived, or somebody else already holds this lock",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{id}/canvas/{documentId}/thread": {
+      "post": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Open a canvas document’s discussion, or re-open it",
+        "description": "The first call posts one message from the room naming the document and records which message heads the discussion; every call after that hands back the discussion that is already there and posts nothing. So two people pressing \"Discuss\" at the same moment — or the same person pressing it next week, on another device — all end up in one conversation. It wakes nobody: the message addresses no one and starts no agent’s turn, exactly as putting the document on the table did. Replies are ordinary thread replies.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "documentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The discussion was already open",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasThreadResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The discussion was opened by this call",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasThreadResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`AGENT_IDENTITY_UNVERIFIED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, the caller may not see it, or no such document on its canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The room is archived",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{id}/follow": {
+      "put": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Follow somebody’s browser in this room, or say you still are",
+        "description": "While you follow somebody, your Browser tab goes where theirs goes. Call this again about every ten seconds to say you are still there: a claim nobody restates lapses after thirty, which is what makes a closed tab, a crashed browser and a lost connection the same event. Following somebody new replaces whoever you were following — a panel can only be in one place. The person you follow is told, and starts sharing their position only then, so a room where nobody follows anybody carries nothing extra at all.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FollowRoomMemberRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Following"
+          },
+          "400": {
+            "description": "The request named you (`CANNOT_FOLLOW_YOURSELF`), or was malformed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`AGENT_IDENTITY_UNVERIFIED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is an agent, which cannot follow or be followed (`PEOPLE_ONLY`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, or the caller may not see it (an agent sees only its own rooms)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "This machine is already holding as many claims as it will (`TOO_MANY_FOLLOWERS`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Stop following whoever you were following here",
+        "description": "Answers the same way whether or not there was anything to stop, so pressing the toggle off twice — or a page closing after its claim already lapsed — is not an error. The person you were following is told, and goes quiet unless somebody else is still following them.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Stopped"
+          },
+          "401": {
+            "description": "The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`AGENT_IDENTITY_UNVERIFIED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is an agent, which cannot follow or be followed (`PEOPLE_ONLY`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, or the caller may not see it (an agent sees only its own rooms)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{id}/follow/view": {
+      "post": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Say where you are looking, for whoever is following you",
+        "description": "Send at most once every 250 ms, and only while somebody is following you. It carries which document you are on, the page your browser is showing and how far down you have scrolled — never anything that is IN the page. The answer says whether anybody was following: `false` means stop sending, which is how a tab that missed the \"nobody is following you any more\" message goes quiet on its own.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishRoomViewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Whether anybody was following, and the position therefore passed on",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishRoomViewResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`AGENT_IDENTITY_UNVERIFIED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is an agent, which cannot follow or be followed (`PEOPLE_ONLY`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, or the caller may not see it (an agent sees only its own rooms)",
             "content": {
               "application/json": {
                 "schema": {

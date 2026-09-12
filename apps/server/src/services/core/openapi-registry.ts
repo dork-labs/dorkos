@@ -132,6 +132,10 @@ import {
   CanvasEditingRequestSchema,
   CanvasViewingRequestSchema,
   CanvasEditingResponseSchema,
+  CanvasThreadResponseSchema,
+  FollowRoomMemberRequestSchema,
+  PublishRoomViewRequestSchema,
+  PublishRoomViewResponseSchema,
   OpenCanvasDocumentRequestSchema,
   UpdateCanvasDocumentRequestSchema,
   RoomSnapshotSchema,
@@ -4901,6 +4905,45 @@ registry.registerPath({
   },
 });
 
+registry.registerPath({
+  method: 'post',
+  path: '/api/rooms/{id}/canvas/{documentId}/thread',
+  tags: ['Rooms'],
+  summary: 'Open a canvas document’s discussion, or re-open it',
+  description:
+    'The first call posts one message from the room naming the document and records which message heads the discussion; every call after that hands back the discussion that is already there and posts nothing. So two people pressing "Discuss" at the same moment — or the same person pressing it next week, on another device — all end up in one conversation. It wakes nobody: the message addresses no one and starts no agent’s turn, exactly as putting the document on the table did. Replies are ordinary thread replies.',
+  request: { params: RoomCanvasParams },
+  responses: {
+    200: {
+      description: 'The discussion was already open',
+      content: { 'application/json': { schema: CanvasThreadResponseSchema } },
+    },
+    201: {
+      description: 'The discussion was opened by this call',
+      content: { 'application/json': { schema: CanvasThreadResponseSchema } },
+    },
+    401: roomAgentUnverified,
+    404: canvasDocumentNotFound,
+    409: {
+      description: 'The room is archived',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+// === Following somebody's browser (spec `canvas-agent-seat` §6) ===
+//
+// People only, both ends: an agent has no view to share and nothing to follow
+// with, and it reads a room's table with `read_canvas` instead. Nothing here is
+// written down — a claim lives in this process, lapses thirty seconds after the
+// last refresh, and is gone when the server restarts.
+
+/** 403 shared by the follow routes, which no agent may call. */
+const followPeopleOnly = {
+  description: 'The caller is an agent, which cannot follow or be followed (`PEOPLE_ONLY`)',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
+
 /**
  * 403 on both review routes: reading or changing somebody ELSE's working copy is
  * a person's, on the same instrument `PUT /:id/files/content` uses.
@@ -4945,6 +4988,73 @@ const canvasDiffNoRoomFiles = {
   description: 'This room has no files of its own (`NOT_A_PROJECT_ROOM`)',
   content: { 'application/json': { schema: ErrorResponseSchema } },
 };
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/rooms/{id}/follow',
+  tags: ['Rooms'],
+  summary: 'Follow somebody’s browser in this room, or say you still are',
+  description:
+    'While you follow somebody, your Browser tab goes where theirs goes. Call this again about every ten seconds to say you are still there: a claim nobody restates lapses after thirty, which is what makes a closed tab, a crashed browser and a lost connection the same event. Following somebody new replaces whoever you were following — a panel can only be in one place. The person you follow is told, and starts sharing their position only then, so a room where nobody follows anybody carries nothing extra at all.',
+  request: {
+    params: RoomIdParams,
+    body: { content: { 'application/json': { schema: FollowRoomMemberRequestSchema } } },
+  },
+  responses: {
+    204: { description: 'Following' },
+    400: {
+      description: 'The request named you (`CANNOT_FOLLOW_YOURSELF`), or was malformed',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    401: roomAgentUnverified,
+    403: followPeopleOnly,
+    404: roomNotFound,
+    429: {
+      description:
+        'This machine is already holding as many claims as it will (`TOO_MANY_FOLLOWERS`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/rooms/{id}/follow',
+  tags: ['Rooms'],
+  summary: 'Stop following whoever you were following here',
+  description:
+    'Answers the same way whether or not there was anything to stop, so pressing the toggle off twice — or a page closing after its claim already lapsed — is not an error. The person you were following is told, and goes quiet unless somebody else is still following them.',
+  request: { params: RoomIdParams },
+  responses: {
+    204: { description: 'Stopped' },
+    401: roomAgentUnverified,
+    403: followPeopleOnly,
+    404: roomNotFound,
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/rooms/{id}/follow/view',
+  tags: ['Rooms'],
+  summary: 'Say where you are looking, for whoever is following you',
+  description:
+    'Send at most once every 250 ms, and only while somebody is following you. It carries which document you are on, the page your browser is showing and how far down you have scrolled — never anything that is IN the page. The answer says whether anybody was following: `false` means stop sending, which is how a tab that missed the "nobody is following you any more" message goes quiet on its own.',
+  request: {
+    params: RoomIdParams,
+    body: { content: { 'application/json': { schema: PublishRoomViewRequestSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'Whether anybody was following, and the position therefore passed on',
+      content: { 'application/json': { schema: PublishRoomViewResponseSchema } },
+    },
+    400: roomValidationError,
+    401: roomAgentUnverified,
+    403: followPeopleOnly,
+    404: roomNotFound,
+  },
+});
 
 registry.registerPath({
   method: 'get',

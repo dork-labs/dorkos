@@ -32,6 +32,7 @@ import type {
   AddRoomMemberRequest,
   CanvasDocument,
   CanvasEditingResponse,
+  CanvasThreadResponse,
   CreateRoomRequest,
   HaltRoomResponse,
   PromoteHoldResponse,
@@ -41,11 +42,13 @@ import type {
   PostThreadReplyRequest,
   PostToRoomRequest,
   PostToRoomResponse,
+  PublishRoomViewResponse,
   RoomAttachment,
   RoomEntry,
   RoomEntryListResponse,
   RoomEvent,
   RoomMember,
+  RoomSignalView,
   RoomRosterEntry,
   RoomSessionsResponse,
   RoomSummary,
@@ -531,6 +534,61 @@ export interface RoomTransport {
     documentId: string,
     editing: boolean
   ): Promise<CanvasEditingResponse>;
+
+  /**
+   * Open this document's discussion, or re-open the one that is already there.
+   *
+   * The first call posts one message from the room naming the document; every
+   * call after that hands back the same thread and posts nothing, so two people
+   * pressing "Discuss" at once end up in one conversation. It wakes nobody.
+   *
+   * @param id - The room.
+   * @param documentId - The document to discuss.
+   * @returns The message heading the discussion, and whether this call started it.
+   */
+  discussCanvasDocument(id: string, documentId: string): Promise<CanvasThreadResponse>;
+
+  // --- Following somebody's browser (spec `canvas-agent-seat` §6) ---
+
+  /**
+   * Follow somebody's browser in a room, or say you are still following them.
+   *
+   * Called again on a beat — the claim lapses on its own thirty seconds after
+   * the last call, which is what makes a closed tab, a crashed browser and a
+   * lost connection the same event. Following somebody new replaces whoever you
+   * were following.
+   *
+   * People only. An agent has no view to share, and the server refuses a claim
+   * on one.
+   *
+   * @param id - The room.
+   * @param memberId - The person to follow.
+   */
+  followRoomMember(id: string, memberId: string): Promise<void>;
+
+  /**
+   * Stop following whoever you were following in a room.
+   *
+   * Resolves the same way whether or not there was anything to stop, so an
+   * unload handler and a second press of the toggle are both safe.
+   *
+   * @param id - The room.
+   */
+  unfollowRoomMember(id: string): Promise<void>;
+
+  /**
+   * Say where you are looking, for whoever is following you.
+   *
+   * Sent at most once every 250 ms, and only once the room has said somebody is
+   * following. It carries the document, the page and the scroll offset — never
+   * anything that is IN the page.
+   *
+   * @param id - The room.
+   * @param view - The document, page and scroll offset you are on.
+   * @returns Whether anybody was following, so the position went out. `false`
+   *   means stop sending.
+   */
+  publishRoomView(id: string, view: RoomSignalView): Promise<PublishRoomViewResponse>;
 
   /**
    * Say which document on a room's canvas you are looking at, or that you have

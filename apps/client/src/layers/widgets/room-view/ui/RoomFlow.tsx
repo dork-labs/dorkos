@@ -45,6 +45,7 @@ import {
   groupByThread,
   threadRowId,
   threadRowKey,
+  displayAuthorIdOf,
   toMessageAuthor,
 } from '../lib/room-timeline';
 import { AgentInfoProvider, useRoomAgentDirectory } from '../model/agent-info-context';
@@ -372,7 +373,7 @@ export function RoomFlow({
           id: row.id,
           payload: row.entry,
           grouping: row.grouping,
-          author: toMessageAuthor(row.entry.authorId, authors, agents.faces),
+          author: toMessageAuthor(displayAuthorIdOf(row.entry, authors), authors, agents.faces),
           at: row.entry.createdAt,
         };
       }),
@@ -408,12 +409,17 @@ export function RoomFlow({
           />
         );
       }
+      // One id for the face and for the row's own actions. They used to be two
+      // — the face resolved through `displayAuthorIdOf` and the ref straight off
+      // `entry.authorId` — so a line the room wrote about somebody drew that
+      // person and then resolved nobody behind them.
+      const rowAuthorId = displayAuthorIdOf(row.entry, authors);
       return (
         <RoomMessage
           roomId={roomId}
           entry={row.entry}
-          author={toMessageAuthor(row.entry.authorId, authors, agents.faces)}
-          authorRef={authors.get(row.entry.authorId)}
+          author={toMessageAuthor(rowAuthorId, authors, agents.faces)}
+          authorRef={authors.get(rowAuthorId)}
           authors={authors}
           viewerAuthorId={viewerAuthorId}
           authorNames={authorNames}

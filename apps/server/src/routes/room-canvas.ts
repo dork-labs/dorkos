@@ -282,6 +282,27 @@ router.delete<CanvasParams>('/:documentId', (req, res) => {
 });
 
 /**
+ * POST /:documentId/thread — open this document's discussion, or re-open it.
+ *
+ * The first call posts one system entry naming the document and writes its id
+ * onto the row in the same transaction; every call after that hands back the
+ * thread that is already there and posts nothing. So pressing "Discuss" twice —
+ * or two members pressing it at once — lands everybody in one conversation.
+ *
+ * It wakes nobody. The entry addresses no one and is never dispatched, exactly
+ * as the line a canvas change already writes (ADR `260911-200302`).
+ */
+router.post<CanvasParams>('/:documentId/thread', (req, res) => {
+  try {
+    const caller = requireCanvasAccess(req, res, { write: true });
+    const thread = getRoomService().canvas.discuss(req.params.id, caller, req.params.documentId);
+    res.status(thread.created ? 201 : 200).json(thread);
+  } catch (err) {
+    sendRoomError(res, err, 'POST /:id/canvas/:documentId/thread');
+  }
+});
+
+/**
  * POST /:documentId/editing — say you are editing this document, or that you
  * have stopped.
  *

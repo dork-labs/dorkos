@@ -125,6 +125,7 @@
  * @module server/services/rooms/room-trigger
  */
 import { randomUUID } from 'node:crypto';
+import { ROOM_LIVE_BEAT_MS } from '@dorkos/shared/room-schemas';
 import type {
   AuthorKind,
   AuthorRef,
@@ -405,7 +406,7 @@ export interface RoomTriggerDeps {
    * What is on this room's shared canvas, as LABELS. Read only by
    * `buildRoomContext`, for the same reason as {@link RoomTriggerDeps.bridgedFraming}.
    */
-  canvasFor(roomId: string): RoomContextCanvas | null;
+  canvasFor(roomId: string, threadRootEntryId?: string): RoomContextCanvas | null;
   runner: RoomTurnRunner;
   /**
    * The install's room-worktree manager, for placing a turn in a project room
@@ -514,8 +515,13 @@ export interface RoomTriggerDeps {
  * honest guidance (room-presence spec §10). If dogfooding shows it wants tuning,
  * that is evidence it was behaviour after all, and it graduates with the
  * `adding-config-fields` lifecycle.
+ *
+ * **Not a literal any more.** Follow mode beats on the same lane and had its own
+ * copy of 10 000; two numbers that must agree and are written down twice are one
+ * edit away from disagreeing, and the symptom is an indicator that goes out a
+ * third of the time. {@link ROOM_LIVE_BEAT_MS} is the one place it lives.
  */
-const PRESENCE_REPUBLISH_MS = 10_000;
+const PRESENCE_REPUBLISH_MS = ROOM_LIVE_BEAT_MS;
 
 /**
  * Whether two readings say the same thing about a turn.

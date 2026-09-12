@@ -10,7 +10,12 @@
  *
  * @module server/services/rooms/service/room-publisher
  */
-import type { RoomAttachment, RoomEntry, RoomPresencePayload } from '@dorkos/shared/room-schemas';
+import type {
+  RoomAttachment,
+  RoomEntry,
+  RoomPresencePayload,
+  RoomSignalView,
+} from '@dorkos/shared/room-schemas';
 import { withoutActivityTarget } from '@dorkos/shared/room-schemas';
 import type { SignalType } from '@dorkos/shared/relay-schemas';
 import { logger } from '../../../lib/logger.js';
@@ -203,13 +208,72 @@ export class RoomPublisher {
   }
 
   /**
-   * Register the chat bridge's presence forwarder (chats-as-channels §6.8),
-   * called for every ephemeral signal this service fans out. At most one is
-   * set; the binding subsystem wires it once the bridge presence forwarder
-   * exists — the same one-listener shape as
+   * Tell a room that somebody has started — or stopped — following a member
+   * (spec `canvas-agent-seat` §6).
+   *
+   * **A `presence` signal, because that is the member that already means "where
+   * this person is".** `specs/rooms/02-specification.md:229` forbids minting a
+   * new signal name, and follow mode keeps that rule the way room presence kept
+   * it before: the payload discriminates, not the verb.
+   *
+   * The frame goes to the room's own readers and **not** to
+   * {@link RoomPublisher.setSignalListener}'s bridge forwarder. A bridged
+   * Telegram or Slack chat is other people's surface, and "Ana is following Kai"
+   * describes a panel in this app that nobody over there has.
+   *
+   * @param roomId - The room.
+   * @param followerId - The person following.
+   * @param leaderId - Who they are following, or `null` when they have stopped.
+   */
+  publishFollowClaim(roomId: string, followerId: string, leaderId: string | null): void {
+    this.broadcaster.publish(roomId, {
+      type: 'signal',
+      signal: 'presence',
+      authorId: followerId,
+      at: new Date().toISOString(),
+      follows: leaderId,
+    });
+  }
+
+  /**
+   * Fan out where a followed person is looking (spec `canvas-agent-seat` §6).
+   *
+   * Published only while somebody is following them — {@link RoomFollowService}
+   * is what decides that, and this method is what carries it. Like every other
+   * signal it is live only: never logged, never replayed, and gone the moment
+   * nobody is reading.
+   *
+   * Off the bridge forwarder for the same reason the claim is: a scroll offset
+   * in this app's panel is not something to say in somebody's Telegram.
+   *
+   * @param roomId - The room.
+   * @param leaderId - The person whose view this is.
+   * @param view - The document, page and scroll offset they are on.
+   */
+  publishFollowView(roomId: string, leaderId: string, view: RoomSignalView): void {
+    this.broadcaster.publish(roomId, {
+      type: 'signal',
+      signal: 'presence',
+      authorId: leaderId,
+      at: new Date().toISOString(),
+      view,
+    });
+  }
+
+  /**
+   * Register the chat bridge's presence forwarder (chats-as-channels §6.8). At
+   * most one is set; the binding subsystem wires it once the bridge presence
+   * forwarder exists — the same one-listener shape as
    * {@link RoomService.setEntryCommitListener}.
    *
-   * @param listener - Called with each published signal, or `undefined` to clear.
+   * **It hears every signal {@link RoomPublisher.publishSignal} fans out, and no
+   * other.** The two follow frames above go to this room's own readers and stop
+   * there, deliberately: a bridged Telegram or Slack chat is other people's
+   * surface, and "Ana is following Kai", or how far down a panel she has
+   * scrolled, describes a window nobody over there has.
+   *
+   * @param listener - Called with each signal `publishSignal` published, or
+   *   `undefined` to clear.
    */
   setSignalListener(listener: RoomSignalListener | undefined): void {
     this.onSignalPublished = listener;

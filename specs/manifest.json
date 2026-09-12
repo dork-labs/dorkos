@@ -2977,6 +2977,15 @@
       "status": "implemented",
       "project": "Sessions & Runtimes",
       "linearIssue": "DOR-1925"
+    },
+    {
+      "id": "260912-190726",
+      "slug": "approval-expiry-notice",
+      "title": "Telling an agent nobody ever answered",
+      "created": "2026-09-12",
+      "status": "specified",
+      "project": "Agents as First-Class Operators",
+      "linearIssue": "DOR-1932"
     }
   ]
 }

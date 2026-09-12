@@ -147,6 +147,27 @@ function renderPanel(overrides: Partial<Parameters<typeof RoomThreadPanel>[0]> =
   );
 }
 
+describe('a discussion the room opened about a document', () => {
+  it('heads the panel with the person who started it, not "Unknown"', () => {
+    // This is the heading of the panel the Discuss button opens, so it is the
+    // most-read instance of a room-voiced post. The room's own author is on no
+    // roster; `subjectAuthorId` names who it is about.
+    renderPanel({
+      entries: [
+        entry(1, {
+          authorId: 'system-author',
+          body: { text: 'Ana started a discussion about The plan.', subjectAuthorId: 'ana' },
+        }),
+      ],
+    });
+
+    const panel = screen.getByTestId('room-thread-panel');
+    const root = within(panel).getAllByTestId('room-entry')[0]!;
+    expect(within(root).getByText('Ana')).toBeInTheDocument();
+    expect(within(root).queryByText('Unknown')).not.toBeInTheDocument();
+  });
+});
+
 describe('RoomThreadPanel', () => {
   it('shows the root at the top and its replies beneath it', () => {
     renderPanel();
