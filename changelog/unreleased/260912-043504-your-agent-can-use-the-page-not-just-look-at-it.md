@@ -9,6 +9,8 @@ covers:
   - 'fix(workbench): never submit a form the page told the browser not to'
   - 'fix(session): a seat nobody is sitting in yields, and cannot be taken by nobody'
   - 'fix(session): a tab behind another tab keeps its seat'
+  - 'fix(canvas): a page that navigated away stops claiming it can be driven'
+  - 'fix(session): stop sending a private session to a tab list that only rooms have'
 ---
 
 ### Added
@@ -22,5 +24,5 @@ covers:
 
 ### Changed
 
-- A page that is open but cannot be driven now says so in one sentence, straight away. A page loaded straight from the internet is shown, not driven — and until now asking an agent to look at one meant an eight-second pause followed by a note about opening a preview that was already open.
+- A page that is open but cannot be driven now says so in one sentence, straight away — including a preview you navigated away from, to a page DorkOS is not serving. A page loaded straight from the internet is shown, not driven — and until now asking an agent to look at one meant an eight-second pause followed by a note about opening a preview that was already open.
 - With the same conversation open in two windows, only one of them acts: the one that most recently brought a preview to the front. The other sees nothing, and a window you close hands the page back right away, and a window that stops responding hands it back after about a minute and a half. Screenshots follow the same rule, which settles a long-standing surprise where whichever window answered first won.
