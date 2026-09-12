@@ -3,12 +3,13 @@
  *
  * A scheduled run has to be stoppable at any moment — an operator cancels it,
  * it outlives its `maxRuntime`, or the server is shutting down. The agent's
- * stream is the wrong place to learn that: a turn parked on a tool-approval
- * prompt yields nothing for up to `SESSIONS.INTERACTION_TIMEOUT_MS` — which is
- * still the bound here, because a scheduled run is unattended and its prompts
- * are refused at the countdown rather than parked (spec `ask-parks-on-timeout`
- * §7) — so any
- * check that lives inside the consumer's loop body simply never runs again.
+ * stream is the wrong place to learn that: a turn can go a long time without
+ * yielding anything, so a check that lives inside the consumer's loop body
+ * simply never runs again. A scheduled run is no longer held by a prompt at all
+ * — its asks are refused the moment they are raised (spec
+ * `unattended-session-permission-prompts`) — but a long tool call, a slow model
+ * or a MANUAL run holding an answerable card produces the same silence, and this
+ * is what makes a stop reach the runtime through it.
  * This module owns the two mechanics that make a stop real, kept together
  * because neither is sufficient alone.
  *

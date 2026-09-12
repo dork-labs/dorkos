@@ -162,6 +162,22 @@ export interface SessionStreamState {
    */
   runningSubagentIds: string[];
   /**
+   * Children the runtime marked as housekeeping, which no count may include.
+   *
+   * Remembered rather than re-read from each event, because only the START and
+   * the terminal update carry the mark — a progress report does not. Testing the
+   * event's own field alone let a marked child's progress report push it INTO
+   * {@link runningSubagentIds} while its marked terminal update was skipped, so
+   * the count sat at one for the rest of the turn with nothing left to retire it.
+   *
+   * An array rather than a `Set` to match the list above, and because this state
+   * is drafted by immer, which needs its MapSet plugin for either of those.
+   *
+   * Bounded the same way: an id enters when the mark first arrives and leaves on
+   * the child's terminal update.
+   */
+  ambientSubagentIds: string[];
+  /**
    * Children the SERVER counted at hydration that this projection cannot name.
    *
    * A cold snapshot carries the count but not the ids of children started in an
@@ -221,6 +237,7 @@ export const DEFAULT_SESSION_STREAM_STATE: SessionStreamState = {
   hydrationGeneration: 0,
   carriedSigninFlowIds: [],
   runningSubagentIds: [],
+  ambientSubagentIds: [],
   unnamedRunningSubagents: 0,
   turnOrigin: 'user',
   userTurnCount: 0,
@@ -763,12 +780,35 @@ function syncRunningSubagentCount(session: SessionStreamState): void {
  *   Written as a negative check on the whole enum rather than a list of terminal
  *   values, so a status added later (`untracked`, DOR-1108) drains the count
  *   instead of silently pinning it.
+ * @param ambient - Whether THIS event carried the housekeeping mark. Only the
+ *   start and the terminal update do, so the answer is remembered in
+ *   {@link SessionStreamState.ambientSubagentIds} and every arm below reads the
+ *   remembered answer, never the argument alone. Housekeeping children are
+ *   excluded from the count outright, failed ones included: this is a count of
+ *   what is RUNNING, and a failure is not running, so the promotion rule that
+ *   puts a broken housekeeping task back on screen changes nothing here.
  */
 function applyRunningSubagent(
   session: SessionStreamState,
   taskId: string,
-  status: BackgroundTaskStatus
+  status: BackgroundTaskStatus,
+  ambient: boolean | undefined
 ): void {
+  if (ambient === true || session.ambientSubagentIds.includes(taskId)) {
+    if (status === 'running') {
+      if (!session.ambientSubagentIds.includes(taskId)) session.ambientSubagentIds.push(taskId);
+    } else {
+      // Terminal: forget it, so the list stays bounded by the live children.
+      session.ambientSubagentIds = session.ambientSubagentIds.filter((id) => id !== taskId);
+    }
+    // A child DorkOS had already counted before the mark arrived has to leave
+    // the count now: after this it is skipped, so nothing else ever would.
+    if (session.runningSubagentIds.includes(taskId)) {
+      session.runningSubagentIds = session.runningSubagentIds.filter((id) => id !== taskId);
+      syncRunningSubagentCount(session);
+    }
+    return;
+  }
   const known = session.runningSubagentIds.includes(taskId);
   if (status === 'running') {
     // Progress reports repeat `running` for a child already counted — adding it
@@ -791,13 +831,26 @@ function applyRunningSubagent(
  *
  * @param events - The snapshot's `inProgressTurn`, in seq order.
  */
-function nameRunningSubagents(events: readonly SessionEvent[]): string[] {
+function nameRunningSubagents(events: readonly SessionEvent[]): {
+  running: string[];
+  ambient: string[];
+} {
   const byTask = new Map<string, boolean>();
+  // Housekeeping children never enter the count, so the mark has to survive the
+  // fold: it rides the start and the terminal update but not progress reports.
+  // It is handed back as well as applied, because the live events that follow
+  // the snapshot carry it no more reliably than the ones inside it did.
+  const ambient = new Set<string>();
   for (const event of events) {
     if (event.type !== 'subagent_update') continue;
+    if (event.ambient) ambient.add(event.taskId);
     byTask.set(event.taskId, event.status === 'running');
   }
-  return [...byTask].filter(([, running]) => running).map(([taskId]) => taskId);
+  const stillRunning = [...byTask].filter(([, running]) => running).map(([taskId]) => taskId);
+  return {
+    running: stillRunning.filter((taskId) => !ambient.has(taskId)),
+    ambient: stillRunning.filter((taskId) => ambient.has(taskId)),
+  };
 }
 
 /** Fold a single event into a session's projection (assumes seq already gated). */
@@ -928,7 +981,7 @@ function projectEvent(session: SessionStreamState, event: SessionEvent): void {
       // turn it started in (DOR-1100). Server-projector parity: the same
       // add-on-running / drop-on-terminal rule `applySubagentUpdate` applies.
       session.inProgressTurn.push(event);
-      applyRunningSubagent(session, event.taskId, event.status);
+      applyRunningSubagent(session, event.taskId, event.status, event.ambient);
       break;
     default:
       if (TURN_EVENT_TYPES.has(event.type)) session.inProgressTurn.push(event);
@@ -1006,7 +1059,9 @@ export const useSessionStreamStore: SessionStreamStore = create<
             // counts all of them, so anything the count covers and the events do
             // not is a child from an earlier turn — still running, still worth
             // reporting, just not nameable from here.
-            session.runningSubagentIds = nameRunningSubagents(session.inProgressTurn);
+            const named = nameRunningSubagents(session.inProgressTurn);
+            session.runningSubagentIds = named.running;
+            session.ambientSubagentIds = named.ambient;
             session.unnamedRunningSubagents = Math.max(
               0,
               snapshot.status.runningSubagentCount - session.runningSubagentIds.length

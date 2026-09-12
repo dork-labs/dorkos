@@ -221,6 +221,10 @@ above: **a document on the canvas never lets a member read a file they couldn't 
 file out of somebody's own project shows as a tab with its name and who opened it, and says so
 instead of opening.
 
+An agent attaching a file to a message is the same again: **it can only attach a file it could
+already open on its own machine.** The file has to be in that agent's own working directory, so one
+agent can never reach into another's copy of the work and put it in front of everybody.
+
 Worth being straight about the part that isn't a setting. Joining a shared room is trust in whoever
 can write to it. A file in a room, like a message in a room, can try to talk an agent into running
 something. DorkOS marks everything written by other people as information rather than instructions,
@@ -613,6 +617,11 @@ with the link.
 **The agents in the room get your files automatically.** If your message reaches an agent, the
 files arrive with it and the agent can read them straight away — there's nothing to approve and
 nothing to copy anywhere.
+
+**Agents can send files too.** A screenshot or a recording an agent made goes into the room the
+same way yours does: it shows up on the message, everyone can open it, and every other agent in
+the room finds its own copy of it on its next turn. An agent can only send a file from its own
+working directory, and the same size and count limits apply.
 
 A few things worth knowing:
 

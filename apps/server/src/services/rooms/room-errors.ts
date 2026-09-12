@@ -257,6 +257,18 @@ export type RoomErrorCode =
    */
   | 'TOO_MANY_FOLLOWERS'
   /**
+   * The canvas writer faulted, or is not reachable from this process at all.
+   *
+   * **Not a 404 and not the caller's fault.** It used to answer `ROOM_NOT_FOUND`,
+   * which says "that thing does not exist" to every surface that turns a code
+   * into a status — and the thing did exist; the write failed. The two real
+   * causes are a database that says no (busy, locked, or opened read-only by a
+   * host reading somebody else's file) and a process that stood no canvas up.
+   * Both are conditions of the SERVER, so this is a 503: the request was fine
+   * and may well work on the next try.
+   */
+  | 'CANVAS_UNAVAILABLE'
+  /**
    * `post_to_room` was called by an agent whose turn in that room was STOPPED
    * (DOR-1313).
    *
@@ -405,6 +417,21 @@ export type RoomErrorCode =
   | 'ATTACHMENT_ALREADY_POSTED'
   /** A post named more attachments than `uploads.maxFiles` allows, or named one twice. */
   | 'TOO_MANY_ATTACHMENTS'
+  /**
+   * An agent's `post_to_room` named a file outside its OWN working directory
+   * (spec `canvas-agent-seat` §4).
+   *
+   * **Its own code because it is its own mistake.** The global boundary in a
+   * project room contains every member's working copy, so "that file exists and
+   * you may read it" and "that file is yours to attach" are different questions
+   * — and this is the second one answering no. The fix is to copy the file in,
+   * which the message says.
+   */
+  | 'ATTACHMENT_PATH_REFUSED'
+  /** An agent named a path that is missing, is a folder, or is a kind of file this install does not accept. */
+  | 'ATTACHMENT_UNREADABLE'
+  /** An agent named a file bigger than `uploads.maxFileSize`. */
+  | 'ATTACHMENT_TOO_LARGE'
   | 'NOT_A_BRIDGED_ROOM'
   /**
    * `RoomService.rebridge` was asked to re-bridge a `(adapterId, chatId)` that

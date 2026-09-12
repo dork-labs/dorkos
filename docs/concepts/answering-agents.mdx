@@ -61,8 +61,14 @@ Four hours later, the agent gives up. The request is refused, the agent carries 
 and it tells you how long it waited. Nothing is lost when that happens. It just means the agent
 didn't get to do that one thing.
 
-A scheduled task is the one exception. Nobody is sitting there watching it, so there is nobody to
-wait for: its questions are refused after ten minutes and the run carries on.
+A task running on its timer is the one exception, and it does not wait at all. Nobody is sitting
+there watching it, so there is nobody to wait for: a request for permission is turned down the
+moment it comes up, and the run carries straight on without that one tool. When it finishes, the
+run says which tools it could not use, and each one also shows up in your activity feed. Nothing
+pings your phone about it — you find it where you find the rest of the run.
+
+Clicking **Run now** on that same task is not the exception. You are right there waiting for it, so
+its cards behave like any other and you can answer them.
 
 If you've set up a way for DorkOS to reach you elsewhere, it doesn't just wait quietly in the
 meantime. After a short delay you choose, it can also ping your phone's browser and any chat apps

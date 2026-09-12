@@ -121,6 +121,18 @@ export const REFUSAL_REASONS = {
   runtime_gone: 'the runtime this conversation started on is not running here',
   /** A prompt only a person can answer expired, and was denied by the clock. */
   interaction_expired: 'nobody answered the prompt in time',
+  /**
+   * A prompt only a person can answer was raised on a session nobody is
+   * watching — a scheduled run — so it was refused on the spot rather than
+   * waiting for an answer that cannot arrive.
+   *
+   * Distinct from {@link interaction_expired}, and the distinction is the point:
+   * that one is a clock running out on a question somebody COULD have answered,
+   * this one is a question that never had anywhere to go. A
+   * `group_by(.reason)` that folded them together would hide which unattended
+   * jobs keep reaching for tools they cannot have.
+   */
+  no_approval_surface: 'the run had nobody to approve it',
   /** An inbound chat message resolved to no binding at all. */
   no_binding: 'nothing connects this chat to an agent',
   /**

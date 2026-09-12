@@ -2,6 +2,14 @@ import type { UiCommand, UiCanvasContent, UiPanelId, UiSidebarTab } from '@dorko
 import { canvasContentForFile } from '@dorkos/shared/viewer-registry';
 import { toast } from 'sonner';
 import type { PipContent } from '@/layers/shared/model';
+// The key factory by its own path, NOT through `shared/model`'s barrel: this
+// module is on `shared/lib`'s barrel, and a VALUE import of that barrel pulls a
+// Transport into every `import { cn } from '@/layers/shared/lib'` (DOR-1809,
+// pinned by `__tests__/barrel-transport-isolation.test.ts`). `query-persister`
+// reaches the same factory the same way, and `one-config-query-key.test.ts`
+// keeps it the only spelling of the key.
+import { configKeys } from '@/layers/shared/model/server-config/query-keys';
+import { queryClient } from './query-client';
 import { canvasViewForContent } from '@dorkos/shared/canvas-view';
 import { getPlatform } from './platform';
 import { fireCelebration, type CelebrationOrigin } from './celebrations/celebration-effects';
@@ -189,9 +197,18 @@ export interface DispatcherContext {
    */
   applyShape?: (shape: string) => void;
   /**
-   * Optional extension → viewer overrides (config `workbench.defaultViewers`)
-   * consulted when resolving an `open_file` command's viewer. Omit to use only
-   * the built-in registry defaults.
+   * Extension → viewer overrides (config `workbench.defaultViewers`) consulted
+   * when resolving an `open_file` command's viewer.
+   *
+   * **Omit it in production.** Four places build a context and any of them can
+   * carry an `open_file`, so plumbing the value through each was four chances to
+   * forget one — and forgetting one is not a missing feature, it is a SECOND
+   * answer to "what does opening this file mean": the server resolves
+   * `chart.png` to `{type:'file'}` under `{png:'file'}` while a blind client
+   * resolves it to `{type:'image'}`, and the two `canvasSourceKey`s give one
+   * file two tabs. So the default comes from {@link workbenchViewerOverrides},
+   * which reads the same config the server reads, and this field exists for a
+   * test that wants to state the overrides inline.
    */
   workbenchViewerOverrides?: Record<string, string>;
   /**
@@ -364,7 +381,10 @@ export function executeUiCommand(
       // `open_file` (spec `canvas-agent-seat` §1.2). Two answers to "what does
       // opening this file mean" gave two `sourceKey`s for one file, so one file
       // grew two tabs and the agent's one opened a text editor on a PNG.
-      const content = canvasContentForFile(command.sourcePath, ctx.workbenchViewerOverrides);
+      const content = canvasContentForFile(
+        command.sourcePath,
+        ctx.workbenchViewerOverrides ?? workbenchViewerOverrides()
+      );
       if (!ctx.serverAppliedCanvas) store.openCanvasDocument(content);
       // No viewer resolves to the embedded browser today, so every opened file
       // reveals Canvas — and the day one does, this line routes it to Browser
@@ -589,6 +609,32 @@ export function revealForContent(
 ): void {
   if (canvasViewForContent(content) === 'browser') revealBrowser(store, origin);
   else revealCanvas(store, origin);
+}
+
+/**
+ * This install's extension → viewer overrides, read live from the config cache.
+ *
+ * **The client half of the server's `readViewerOverrides`** (`rooms/index.ts`).
+ * Both sides resolve an `open_file` through `canvasContentForFile` and both must
+ * consult the same `workbench.defaultViewers`, or an agent's open and a person's
+ * open of one file produce two documents — which is the divergence the canvas
+ * moved to the server to remove.
+ *
+ * Read per dispatch and off the CACHE rather than passed in, for the same reason
+ * `getStore` is a getter: this runs outside React on a context built once at
+ * boot, and a value captured then would still be boot-time config on every later
+ * dispatch. `configKeys.current()` is the one key the whole cockpit reads
+ * `GET /api/config` under, so this is the answer every other reader has. An
+ * empty cache (a dispatch before the first config fetch settles) means the
+ * built-in table, which is what every install without an override already gets.
+ *
+ * @returns The overrides, or `undefined` when there are none to apply.
+ */
+function workbenchViewerOverrides(): Record<string, string> | undefined {
+  const config = queryClient.getQueryData<{
+    workbench?: { defaultViewers?: Record<string, string> };
+  }>(configKeys.current());
+  return config?.workbench?.defaultViewers;
 }
 
 function setPanelOpen(

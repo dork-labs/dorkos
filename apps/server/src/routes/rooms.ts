@@ -67,7 +67,10 @@ import { readRoomRepoConfig, ROOM_REPO_EXISTS_CODE } from '../services/rooms/rep
 import { listRoomsAcrossCommunities } from '../services/communities/index.js';
 import { InvalidRoomAttachmentIdError } from '../services/rooms/attachments/room-attachment-store.js';
 import { sniffImageContentType } from '../services/identity/image-sniff.js';
-import { storedExtension } from '../services/rooms/attachments/attachment-paths.js';
+import {
+  sanitizeAttachmentName,
+  storedExtension,
+} from '../services/rooms/attachments/attachment-paths.js';
 import { sweepUnboundAttachments } from '../services/rooms/attachments/unbound-sweep.js';
 import { configManager } from '../services/core/config-manager.js';
 import { parseBody, sendError, discardStream } from '../lib/route-utils.js';
@@ -395,21 +398,6 @@ router.post('/:id/entries', (req, res) => {
 const ATTACHMENT_FIELD = 'files';
 
 /**
- * Turn an uploaded filename into one a room can store.
- *
- * `path.basename` first, then the same allowlist `upload-handler.ts` applies, so
- * a name can carry no directory and no character that means anything to a shell
- * or a filesystem. Truncated last, because truncating before sanitizing could
- * leave a partial escape at the end.
- *
- * @param original - The filename the client sent.
- */
-function sanitizeAttachmentName(original: string): string {
-  const base = path.basename(original).replace(/[^a-zA-Z0-9._-]/g, '_');
-  return base.slice(0, ROOM_ATTACHMENT_NAME_MAX) || 'file';
-}
-
-/**
  * POST /:id/attachments — upload files into a room, before the message that
  * carries them.
  *
@@ -495,7 +483,7 @@ router.post('/:id/attachments', (req, res) => {
     try {
       const stored: RoomAttachment[] = [];
       for (const file of files) {
-        const name = sanitizeAttachmentName(file.originalname);
+        const name = sanitizeAttachmentName(file.originalname, ROOM_ATTACHMENT_NAME_MAX);
         const extension = storedExtension(name);
         // THE safety line. `preview` is set from the BYTES and never from
         // `file.mimetype`, which is whatever the uploader typed.

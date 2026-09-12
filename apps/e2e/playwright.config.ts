@@ -741,6 +741,9 @@ export default defineConfig({
         // Runs against the test-mode leg in `chromium-browser-driving` below.
         // It drives a turn, so on this leg that turn would be real and billable.
         '**/workbench/browser-driving.spec.ts',
+        // The recording half (spec `canvas-agent-seat` §3), same leg and same
+        // reason: it drives a turn.
+        '**/workbench/browser-recording.spec.ts',
         // Both run against the test-mode leg in `chromium-rooms-agents` below,
         // and both must NEVER run here. They are the only rooms specs that
         // un-silence an agent, so on this leg every turn they start would be a
@@ -752,6 +755,9 @@ export default defineConfig({
         // a real room turn puts a real document on the table, which on this leg
         // would be a billable claude-code turn.
         '**/rooms/canvas/*.spec.ts',
+        // An agent posting a file it made (spec `canvas-agent-seat` §4), for the
+        // same reason: it un-silences an agent to run a real room turn.
+        '**/rooms/attachments/agent-attachment.spec.ts',
         // Needs the test-mode server's `/api/test/seed-bridge` seam, so it runs
         // in `chromium-bridge` below, never against the real cockpit leg.
         '**/relay/bridged-channel.spec.ts',
@@ -874,7 +880,7 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         baseURL: `http://localhost:${MOCK_VITE_PORT}`,
       },
-      testMatch: ['**/workbench/browser-driving.spec.ts'],
+      testMatch: ['**/workbench/browser-driving.spec.ts', '**/workbench/browser-recording.spec.ts'],
     },
     {
       // Home is the #team room (spec `team-room-home` Phase 2) — against the
@@ -930,6 +936,9 @@ export default defineConfig({
         '**/rooms/room-tool-only-replies.spec.ts',
         // The room canvas (DOR-2000), here for the same reason.
         '**/rooms/canvas/*.spec.ts',
+        // An agent showing the room a file it made (spec `canvas-agent-seat`
+        // §4), here for the same reason again.
+        '**/rooms/attachments/agent-attachment.spec.ts',
       ],
     },
     {

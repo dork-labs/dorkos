@@ -48,7 +48,13 @@ export type BrowserSeatSessionResolver = () => string | undefined;
 /** The subset of the capture store the driving verbs depend on. */
 export type BrowserSeatStore = Pick<
   DevtoolsCaptureStore,
-  'read' | 'hasDrivers' | 'resolveDriver' | 'awaitAction'
+  | 'read'
+  | 'hasDrivers'
+  | 'resolveDriver'
+  | 'awaitAction'
+  | 'recordingFor'
+  | 'noteRecordedFrame'
+  | 'noteMissedFrame'
 >;
 
 /** What a driving verb hands back: a JSON payload, and whether it is an error. */
@@ -57,6 +63,13 @@ export interface DrivingAnswer {
   payload: Record<string, unknown>;
   /** True when this should surface to the model as a tool error. */
   isError?: boolean;
+  /**
+   * A picture to return beside the body, as an MCP image block.
+   *
+   * Only `browser_record_stop` fills it, with the recording's LAST frame — not
+   * the GIF, which no model can watch animate (spec `canvas-agent-seat` §3.4).
+   */
+  image?: { data: string; mimeType: string };
 }
 
 /** Error payload for a surface with no session — there is no window to reach. */
@@ -163,14 +176,47 @@ async function dispatch(
     return { payload: { ok: false, documentId: claim.documentId, note: NOT_INSTRUMENTED_NOTE } };
   }
 
+  // A recording running on THIS window and THIS page turns every action into a
+  // frame as well (spec `canvas-agent-seat` §3.2). It rides the same round trip
+  // rather than a second one, so there is one message, one result, one frame and
+  // no second timeout. A recording that has hit its ceiling keeps driving and
+  // stops filming — which is the whole reason `full` is a flag and not a stop.
+  const recording = deps.store.recordingFor(sessionId);
+  const onTheRecordedPage =
+    recording !== undefined &&
+    recording.documentId === claim.documentId &&
+    recording.clientId === claim.clientId;
+  const capture = onTheRecordedPage && !recording.full;
+  const outOfShot = recording !== undefined && !onTheRecordedPage;
+
   const requestId = randomUUID();
   deps.session.eventQueue.push({
     type: 'devtools_action_request',
-    data: { requestId, targetClientId: claim.clientId, documentId: claim.documentId, command },
+    data: {
+      requestId,
+      targetClientId: claim.clientId,
+      documentId: claim.documentId,
+      command,
+      ...(capture ? { capture: true } : {}),
+    },
   } as StreamEvent);
   deps.session.eventQueueNotify?.();
 
   const result = await deps.store.awaitAction(requestId, timeoutMs);
+  // Counted from what the WINDOW said came back, never from what was asked for:
+  // a page whose CSP blocks the rasterizer answers the action and keeps no
+  // frame, and counting the request would make the stop answer claim a picture
+  // nobody has.
+  if (capture && result?.captured === true) {
+    deps.store.noteRecordedFrame(sessionId, WORKBENCH.MAX_RECORDING_FRAMES);
+  }
+  // And the same rule for the gap: counted only once the OTHER window has
+  // answered. This action went somewhere the recording cannot reach — a person
+  // activated a preview elsewhere mid-run — so it is missing from the film, and
+  // the stop answer has to say so rather than hand back a gap it calls a record
+  // (spec §10). But an action that timed out is not something that happened, and
+  // reporting it as one would make the count claim more than the run did.
+  if (outOfShot && result !== undefined) deps.store.noteMissedFrame(sessionId);
   if (result === undefined) {
     return {
       payload: {

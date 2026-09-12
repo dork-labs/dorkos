@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
 import type { StreamEvent, UiState } from '@dorkos/shared/types';
 import { CanvasDocumentStore, CanvasService, setCanvasService } from '../../canvas/index.js';
+import { logger } from '../../../lib/logger.js';
+import { STATUS_BY_CODE } from '../../../routes/room-error-response.js';
 import {
   createControlUiHandler,
   createGetUiStateHandler,
@@ -393,5 +395,33 @@ describe('control_ui when the canvas writer faults', () => {
     expect(parsed.reason).not.toMatch(/readonly/i);
     // And a write that did not happen pushes no event, so no window is told it did.
     expect(session.eventQueue).toHaveLength(0);
+  });
+
+  it('puts the fault in the log, where the operator can act on it', async () => {
+    // The half the model never sees. A silent catch left an operator whose agent
+    // said "your canvas could not be reached" with nothing to work from, while
+    // every sibling catch in this area logs (DOR-2006 review round 2, N2).
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const session: UiToolSession = { ...createMockSession(), sdkSessionId: 'sess-faulting' };
+
+    await createControlUiHandler(session)({ action: 'open_file', sourcePath: '/notes/a.md' });
+
+    const said = warn.mock.calls.find(([message]) => String(message).includes('[canvas]'));
+    expect(said).toBeDefined();
+    expect(said?.[1]).toMatchObject({
+      sessionId: 'sess-faulting',
+      action: 'open_file',
+      // The driver's message, kept HERE rather than sent to the model.
+      error: expect.stringContaining('readonly'),
+    });
+  });
+
+  it('codes the refusal 503, not the 404 `ROOM_NOT_FOUND` maps to', () => {
+    // `CanvasApplyResult.code` exists so a surface turning it into an HTTP
+    // status does not have to match on prose — so the code has to mean what
+    // happened. `ROOM_NOT_FOUND` said "that thing does not exist" about a write
+    // that failed on a canvas that does.
+    expect(STATUS_BY_CODE.CANVAS_UNAVAILABLE).toBe(503);
+    expect(STATUS_BY_CODE.ROOM_NOT_FOUND).toBe(404);
   });
 });

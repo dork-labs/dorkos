@@ -35,6 +35,8 @@
  *
  * @module services/runtimes/test-mode/room-reply-scenarios
  */
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import { getRoomService } from '../../rooms/index.js';
@@ -167,6 +169,84 @@ function roomReadsCanvas(finishRequested: FinishRequested): ScenarioFn {
 }
 
 /**
+ * A small striped PNG, written into the turn's own working directory.
+ *
+ * Real bytes rather than a placeholder because the whole path decides what a
+ * file IS by sniffing it: a fake would store as an opaque stream and render as
+ * a chip rather than as a picture, so the case would pass while proving the
+ * opposite of what it claims. Big enough to SEE, so a browser proof of the
+ * inline preview is a picture of something rather than of one pixel.
+ */
+const STRIPED_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAPAAAACgCAIAAAC9uXYyAAAB0UlEQVR4nO3bsQnAMBAEwa/A/Tfg4hwqcOBMTRgEy8AU' +
+    'cMGmN9f9QMYcXwA/EjQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZl1vtBhqBJETQp' +
+    'giZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgibFSZYUQZMiaFIETYqgSRE0KYImRdCkCJoU' +
+    'QZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqTLCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2K' +
+    'oEkRNCmCJkXQpAiaFCdZUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpTrKk' +
+    'CJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFKcZEkRNCmCJkXQpAiaFEGTImhS' +
+    'BE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpDjJkiJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQp' +
+    'giZF0KQImhRBkyJoUgRNiqBJ2cNvHLHPIfVCAAAAAElFTkSuQmCC',
+  'base64'
+);
+
+/**
+ * Write a file into this turn's working directory and post it to the room.
+ *
+ * The one scenario that attaches, and it calls the capability itself for the
+ * same reason `roomReadsCanvas` does: what it proves is that an agent can show
+ * a file it MADE, so the file has to be made inside the turn, in the directory
+ * that turn runs in. A driver doing it from outside would be attaching
+ * somebody else's file, which is the case the feature refuses.
+ *
+ * @param finishRequested - Reads the store's finish flag.
+ */
+function roomPostsAttachment(finishRequested: FinishRequested): ScenarioFn {
+  return async function* (_content, ctx, opts) {
+    yield {
+      type: 'session_status',
+      data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
+    } as StreamEvent;
+
+    const roomTurn = opts?.roomTurn;
+    const cwd = opts?.cwd;
+    let said = 'NO-ROOM-TURN';
+    if (roomTurn && cwd) {
+      const rooms = getRoomService();
+      const author = rooms.authorRegistry.getById(roomTurn.authorId);
+      const registry = composeRegistry([roomsDomain], {
+        logger: { debug() {}, info() {}, warn() {}, error() {} },
+        roomDeps: { rooms },
+      });
+      try {
+        await fs.writeFile(path.join(cwd, 'shot.png'), STRIPED_PNG);
+        await registry.invoke(
+          'rooms.post',
+          { roomId: roomTurn.roomId, text: 'Here is what I saw.', attachments: ['shot.png'] },
+          {
+            identity: {
+              agentPath: author?.naturalKey ?? '',
+              displayName: author?.displayName ?? '',
+              tierCeiling: 'act',
+              createdAt: new Date().toISOString(),
+            },
+            cwd,
+          }
+        );
+        said = 'POSTED-ATTACHMENT';
+      } catch (err) {
+        said = `POST-ATTACHMENT-FAILED: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+    yield { type: 'text_delta', data: { text: said } } as StreamEvent;
+
+    for (let tick = 0; tick < HOLD_TICKS && !finishRequested() && !ctx.signal.aborted; tick += 1) {
+      await ctx.delay(HOLD_TICK_MS);
+    }
+    yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
+  };
+}
+
+/**
  * The scripted room turns that declare themselves tool-capable.
  *
  * @param finishRequested - Reads the store's finish flag.
@@ -239,6 +319,10 @@ export function roomReplyScenarios(finishRequested: FinishRequested): Record<str
     // Reads the canvas from inside a live turn and holds, so a browser can see
     // the face that read put on the tab while the claim is still held.
     'rooms-read-canvas': roomReadsCanvas(finishRequested),
+    // Makes a file in its own working directory and posts it to the room, so a
+    // browser can see the chip and a second agent's copy can be looked for on
+    // disk (spec `canvas-agent-seat` §4).
+    'rooms-post-attachment': roomPostsAttachment(finishRequested),
   };
 }
 
@@ -252,4 +336,7 @@ export function roomReplyScenarios(finishRequested: FinishRequested): Record<str
 export const TOOL_CAPABLE_SCENARIOS: ReadonlySet<string> = new Set([
   'rooms-hold-then-narrate',
   'rooms-hold-then-quiet',
+  // It posts through the real capability, so its session genuinely carries the
+  // room tools; reporting otherwise would make the room post its narration too.
+  'rooms-post-attachment',
 ]);

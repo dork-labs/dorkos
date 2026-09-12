@@ -133,13 +133,23 @@ function installDevtoolsShim(
   serialize: (value: unknown) => unknown,
   describeResource: (target: unknown) => { tag: string; url: string } | null,
   installDriving: (
-    ctx: { post: (message: unknown) => void; inFlight: () => number },
+    ctx: {
+      post: (message: unknown) => void;
+      inFlight: () => number;
+      rasterize: (lib: unknown) => Promise<string>;
+    },
     truncate: (
       header: string,
       lines: { depth: number; text: string }[],
       maxChars: number
     ) => { outline: string; truncated: boolean }
-  ) => (request: { requestId: string; documentId?: string; command: unknown }) => void,
+  ) => (request: {
+    requestId: string;
+    documentId?: string;
+    command: unknown;
+    capture?: boolean;
+    lib?: unknown;
+  }) => void,
   truncateOutline: (
     header: string,
     lines: { depth: number; text: string }[],
@@ -476,6 +486,48 @@ function installDevtoolsShim(
       }
       return g.htmlToImage && typeof g.htmlToImage.toPng === 'function' ? g.htmlToImage : null;
     }
+    /**
+     * Rasterize this document once, at the capture size, or reject.
+     *
+     * One function for both callers — the on-demand screenshot and the frame a
+     * recording keeps after an action (spec `canvas-agent-seat` §3.2) — because
+     * a keyframe IS a screenshot, and two copies of the downscale retry would be
+     * two places for the size cap to drift.
+     */
+    function rasterize(lib: unknown): Promise<string> {
+      const hti = ensureRasterizer(lib);
+      if (!hti) {
+        return Promise.reject(
+          new Error('the rasterizer failed to load — the page CSP may block injected scripts')
+        );
+      }
+      const el = document.documentElement;
+      const w = Math.max(el.scrollWidth, el.clientWidth, 1);
+      const h = Math.max(el.scrollHeight, el.clientHeight, 1);
+      const render = (scale: number): Promise<string> =>
+        hti.toPng(el, {
+          canvasWidth: Math.max(1, Math.round(w * scale)),
+          canvasHeight: Math.max(1, Math.round(h * scale)),
+          pixelRatio: 1,
+        });
+      const scale = Math.min(1, SCREENSHOT_MAX_EDGE / Math.max(w, h));
+      return (
+        render(scale)
+          // One downscale retry when a graphics-heavy page renders over the
+          // ingest cap; a second miss is reported honestly instead of looping.
+          .then((dataUrl) =>
+            dataUrl.length <= SCREENSHOT_MAX_CHARS ? dataUrl : render(scale * 0.6)
+          )
+          .then((dataUrl) => {
+            if (dataUrl.length > SCREENSHOT_MAX_CHARS) {
+              throw new Error(
+                'the rendered screenshot exceeds the size cap even after downscaling'
+              );
+            }
+            return dataUrl;
+          })
+      );
+    }
     function captureScreenshot(requestId: string, lib: unknown): void {
       function fail(error: unknown): void {
         post({
@@ -485,33 +537,9 @@ function installDevtoolsShim(
         });
       }
       try {
-        const hti = ensureRasterizer(lib);
-        if (!hti) {
-          fail('the rasterizer failed to load — the page CSP may block injected scripts');
-          return;
-        }
-        const el = document.documentElement;
-        const w = Math.max(el.scrollWidth, el.clientWidth, 1);
-        const h = Math.max(el.scrollHeight, el.clientHeight, 1);
-        const render = (scale: number): Promise<string> =>
-          hti.toPng(el, {
-            canvasWidth: Math.max(1, Math.round(w * scale)),
-            canvasHeight: Math.max(1, Math.round(h * scale)),
-            pixelRatio: 1,
-          });
-        const scale = Math.min(1, SCREENSHOT_MAX_EDGE / Math.max(w, h));
-        render(scale)
-          // One downscale retry when a graphics-heavy page renders over the
-          // ingest cap; a second miss is reported honestly instead of looping.
-          .then((dataUrl) =>
-            dataUrl.length <= SCREENSHOT_MAX_CHARS ? dataUrl : render(scale * 0.6)
-          )
+        rasterize(lib)
           .then((dataUrl) => {
-            if (dataUrl.length > SCREENSHOT_MAX_CHARS) {
-              fail('the rendered screenshot exceeds the size cap even after downscaling');
-            } else {
-              post({ __dorkosDevtools: 'capture-result', requestId, dataUrl });
-            }
+            post({ __dorkosDevtools: 'capture-result', requestId, dataUrl });
           })
           .catch(fail);
       } catch (err) {
@@ -523,7 +551,7 @@ function installDevtoolsShim(
     // `canvas-agent-seat` §2). Built here rather than inside the listener so the
     // handler and its element tables are constructed once per page, not once per
     // click.
-    const drive = installDriving({ post, inFlight: () => inFlight }, truncateOutline);
+    const drive = installDriving({ post, inFlight: () => inFlight, rasterize }, truncateOutline);
 
     // --- Handshake + parent requests: ack starts delivery; capture-request
     // rasterizes on demand; act-request drives the page. Source identity
@@ -536,6 +564,7 @@ function installDevtoolsShim(
         lib?: unknown;
         documentId?: unknown;
         command?: unknown;
+        capture?: unknown;
       } | null;
       if (!d || typeof d.__dorkosDevtools !== 'string') return;
       if (d.__dorkosDevtools === 'ack') {
@@ -554,6 +583,11 @@ function installDevtoolsShim(
           requestId: d.requestId,
           documentId: typeof d.documentId === 'string' ? d.documentId : undefined,
           command: d.command,
+          // A recording is running, so this action answers with a picture of
+          // what it left behind as well as a sentence about what it did. The
+          // rasterizer source rides along exactly as it does for a screenshot.
+          capture: d.capture === true,
+          lib: d.lib,
         });
       }
     });
