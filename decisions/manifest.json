@@ -5651,6 +5651,24 @@
         "apps/server/src/services/runtimes/shared/approval-verdict-block.ts",
         "apps/server/src/services/session/context-assembler.ts"
       ]
+    },
+    {
+      "id": "260912-190915",
+      "slug": "an-approval-expires-on-a-sweep-and-the-agent-is-told",
+      "title": "An approval expires on a sweep, and the only party told is the agent that asked",
+      "status": "accepted",
+      "created": "2026-09-12",
+      "extractedFrom": "spec",
+      "specSlug": "approval-expiry-notice",
+      "amends": null,
+      "supersedes": null,
+      "affects": [
+        "packages/shared/src/additional-context.ts",
+        "apps/server/src/services/core/approvals/approval-service.ts",
+        "apps/server/src/services/core/approvals/approval-verdict-delivery.ts",
+        "apps/server/src/services/runtimes/shared/approval-verdict-block.ts",
+        "apps/server/src/index.ts"
+      ]
     }
   ]
 }
