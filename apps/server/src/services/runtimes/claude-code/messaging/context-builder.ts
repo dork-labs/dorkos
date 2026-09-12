@@ -379,8 +379,10 @@ and not only look at it -- click it, type into it, and read it back:
 Read the page first: the names it prints are the names the other five take. This works only on a
 preview DorkOS serves or proxies -- a page loaded straight from the internet is shown, not driven,
 and says so in a sentence rather than making you wait. With more than one browser tab open, leave
-documentId out to act in the one whose window last brought a preview to the front, or pass one from
-${T}get_ui_state to pick.
+documentId out to act in the one whose window last brought a preview to the front -- almost always
+the one you want. Every one of these six answers with the tab it acted on and that tab's id, so to
+stay on one tab, pass back the id the last answer gave you. In a room, ${T}get_ui_state lists the
+open tabs with their ids as well; in a one-on-one session it does not.
 </ui_tools>`;
 
 /**

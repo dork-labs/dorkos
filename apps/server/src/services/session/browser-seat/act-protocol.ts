@@ -41,9 +41,17 @@ export const NO_DRIVER_NOTE =
   'No window is showing a browser preview for this session right now, so there is nothing ' +
   'to drive. Open one with browser_navigate, or bring the window with the preview to the front.';
 
-/** A page was named by id, and no window is holding it any more. */
+/**
+ * A page was named by id, and no window is holding it any more.
+ *
+ * It points at the answer that always works rather than at a listing: outside a
+ * room nothing lists the open tabs with their ids, so telling an agent to go and
+ * look one up would send it somewhere that cannot answer. Every driving result
+ * names the tab it acted on, which is where an id worth passing comes from.
+ */
 export const UNKNOWN_DOCUMENT_NOTE =
-  'No window has that page open any more. Call get_ui_state to see which browser tabs are open.';
+  'No window has that page open any more. Leave documentId out to act on whichever page the ' +
+  'driving window has in front, and the answer will say which page that was.';
 
 /**
  * The page is open and rendering, and DorkOS put nothing in it — an external
@@ -77,7 +85,7 @@ export const DRIVING_SAFETY_SENTENCE =
 export function drivingTimeoutNote(verb: string, timeoutMs: number): string {
   return (
     `${verb} waited ${Math.round(timeoutMs / 1000)}s and the page never answered. The window ` +
-    'showing it may have been closed or reloaded. Call get_ui_state to see what is open, then ' +
-    'try again.'
+    'showing it may have been closed or reloaded. Try again without documentId to act on ' +
+    'whatever that window has in front now.'
   );
 }
