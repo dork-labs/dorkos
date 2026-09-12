@@ -3,6 +3,7 @@ covers:
   - 'fix(connections): remove disconnected accounts without erasing history'
   - 'fix(connections): close legacy disconnect authority before provider calls'
   - 'fix(connections): reconnect and remove disconnected accounts safely'
+  - 'fix(connections): a reconnected account works again instead of reading as paused'
 ---
 
 ### Fixed

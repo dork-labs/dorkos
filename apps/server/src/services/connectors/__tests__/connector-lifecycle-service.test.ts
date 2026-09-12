@@ -98,6 +98,56 @@ describe('ConnectorLifecycleService', () => {
     expect(db.select().from(connections).get()?.removedAt).toBe(row?.removedAt);
   });
 
+  // Disconnecting clears `enabled` as well as the lifecycle state, so signing the
+  // same identity in again has to restore both. Restoring only the lifecycle state
+  // leaves a row that reads `connected` in every listing and is still refused by
+  // the executability gate in execution/authorization-service.ts — a reconnected
+  // account no agent can use, which the browser suite caught as a 409.
+  it('brings a disconnected account back usable when the owner signs in again', async () => {
+    const service = new ConnectorLifecycleService({
+      db,
+      registry,
+      authenticationFlows,
+      authorityCleanup,
+    });
+    await service.disconnect(OWNER, CONNECTION_ID, new AbortController().signal);
+    expect(db.select().from(connections).get()).toMatchObject({
+      lifecycleState: 'disconnected',
+      enabled: false,
+    });
+
+    const restored = registry.recordConnect(provider, {
+      externalAccountRef: 'provider-account-a' as never,
+      toolkit: 'gmail',
+      label: 'Work Gmail',
+      status: 'active',
+      custody: 'self-host',
+    });
+    expect(restored).toMatchObject({ id: CONNECTION_ID, status: 'active' });
+    expect(db.select().from(connections).get()).toMatchObject({
+      lifecycleState: 'connected',
+      enabled: true,
+    });
+  });
+
+  // The other half of the same rule: pausing is an explicit owner choice about a
+  // connected account, and a later sign-in must not quietly undo it.
+  it('leaves a paused account paused when the owner signs in again', () => {
+    registry.setPaused(CONNECTION_ID, true);
+    const again = registry.recordConnect(provider, {
+      externalAccountRef: 'provider-account-a' as never,
+      toolkit: 'gmail',
+      label: 'Work Gmail',
+      status: 'active',
+      custody: 'self-host',
+    });
+    expect(again).toMatchObject({ id: CONNECTION_ID, status: 'paused' });
+    expect(db.select().from(connections).get()).toMatchObject({
+      lifecycleState: 'connected',
+      enabled: false,
+    });
+  });
+
   it('closes local authority and durable reconnects before provider disconnect settles', async () => {
     db.insert(connectorAuthenticationFlows)
       .values({

@@ -255,6 +255,15 @@ export class ConnectionStore {
     }
     const now = new Date().toISOString();
     const id = existing?.id ?? ulid();
+    // Closing an account clears `enabled` as well as the lifecycle state
+    // (`ConnectorLifecycleService.disconnect`), so bringing one back has to
+    // restore BOTH. Restoring only the lifecycle state lands a row that reads
+    // `connected` everywhere and is still refused by every executability check,
+    // which is a reconnected account no agent can use. A merely PAUSED row is
+    // deliberately left alone: pausing is an explicit owner choice, and a
+    // sign-in does not overrule it.
+    const restoringDisconnected =
+      Boolean(options.restoreDisconnected) && existing?.lifecycle_state === 'disconnected';
     this.db
       .insert(connections)
       .values({
@@ -277,6 +286,7 @@ export class ConnectionStore {
           label: account.label,
           status: account.status,
           ...(options.restoreDisconnected && { lifecycleState: 'connected' as const }),
+          ...(restoringDisconnected && { enabled: true }),
           updatedAt: now,
           lastVerifiedAt: now,
         },
@@ -290,7 +300,7 @@ export class ConnectionStore {
       status:
         existing?.lifecycle_state === 'disconnected' && !options.restoreDisconnected
           ? 'revoked'
-          : existing?.enabled === 0
+          : !restoringDisconnected && existing?.enabled === 0
             ? 'paused'
             : account.status,
       custody: account.custody,
