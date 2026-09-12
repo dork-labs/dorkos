@@ -136,8 +136,19 @@ describe('a room turn’s canvas commands', () => {
     ana = harness.authors.resolveAgent(ANA, 'Ana').id;
   });
 
-  /** A trigger for the real room this harness holds. */
-  function turnRequest(): RoomTurnRequest {
+  /**
+   * A trigger for the real room this harness holds.
+   *
+   * @param files - What the dispatcher measured about this agent's working
+   *   copy for this turn, when it measured anything.
+   */
+  function turnRequest(files?: {
+    worktreePath: string;
+    branch: string;
+    repoPath: string;
+    ahead: number | null;
+    behind: number | null;
+  }): RoomTurnRequest {
     const entry: RoomEntry = {
       roomId: room.id,
       seq: 1,
@@ -185,6 +196,7 @@ describe('a room turn’s canvas commands', () => {
           automaticRepliesLeftInTotalThisHour: 99,
           repliesLeftInThisChain: 3,
         },
+        ...(files ? { files } : {}),
       },
       attachmentProjection: [],
       onWaiting: () => undefined,
@@ -283,6 +295,76 @@ describe('a room turn’s canvas commands', () => {
     expect(canvasLines[0].authorId).toBe(harness.authors.system().id);
     expect(canvasLines[0].mentions).toEqual([]);
     expect(entries.length).toBeGreaterThan(before);
+  });
+
+  describe('a room that has files of its own', () => {
+    beforeEach(() => {
+      // Rebuilt with a repo, because that is what makes a file document record
+      // WHICH tree it came from. The shared harness above is a room with no
+      // files of its own — the ordinary case, and the one every other case here
+      // is about.
+      harness = createRoomHarness({
+        agents,
+        runner: scriptedRunner(() => null),
+        roomRepoPath: () => '/rooms/backend/repo',
+      });
+      setRoomService(harness.service);
+      room = harness.service.createRoom(
+        { kind: 'channel', title: 'Backend', members: [], agentPaths: [ANA] },
+        harness.human
+      );
+      ana = harness.authors.resolveAgent(ANA, 'Ana').id;
+    });
+
+    it('records how far ahead of the room the turn’s copy was', async () => {
+      // **The tap's own carry, not the handler's.** A claude-code turn goes
+      // through `control_ui`, which has always passed this; every OTHER runtime —
+      // codex, opencode, the scripted one — reaches the table through this tap,
+      // and without the carry each of their documents records "not measured".
+      // The review surface (spec `canvas-agent-seat` §8) appears only for a copy
+      // that is measurably ahead, so the whole of it was unreachable from three
+      // of the four runtimes.
+      turnBehaviour = (opts) => {
+        openTurn(opts);
+        opts.projector.ingest({
+          type: 'ui_command',
+          command: { action: 'open_diff', sourcePath: 'app.txt' },
+        });
+        opts.projector.ingest({ type: 'turn_end' });
+        return { accepted: true, canonicalId: opts.sessionId };
+      };
+      await createSessionRoomTurnRunner().run(
+        turnRequest({
+          worktreePath: ANA,
+          branch: 'room/ana',
+          repoPath: '/rooms/backend/repo',
+          ahead: 3,
+          behind: 0,
+        })
+      );
+
+      const [document] = harness.service.canvas.list(room.id);
+      expect(document?.treeKind).toBe('worktree');
+      expect(document?.aheadOfMain).toBe(3);
+    });
+
+    it('records “not measured” when the dispatcher measured nothing', async () => {
+      turnBehaviour = (opts) => {
+        openTurn(opts);
+        opts.projector.ingest({
+          type: 'ui_command',
+          command: { action: 'open_diff', sourcePath: 'app.txt' },
+        });
+        opts.projector.ingest({ type: 'turn_end' });
+        return { accepted: true, canonicalId: opts.sessionId };
+      };
+      await createSessionRoomTurnRunner().run(turnRequest());
+
+      const [document] = harness.service.canvas.list(room.id);
+      // `null`, never `0`: nobody asked, which is a different claim from "level
+      // with the room" and must not be shown as one.
+      expect(document?.aheadOfMain).toBeNull();
+    });
   });
 
   describe('the face the turn leaves behind', () => {

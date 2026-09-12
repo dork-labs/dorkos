@@ -91,6 +91,9 @@ import type {
   UpdateRoomRequest,
 } from '@dorkos/shared/room-schemas';
 import type {
+  RoomCanvasDiffReview,
+  RoomCanvasDiffWriteRequest,
+  RoomCanvasDiffWriteResult,
   RoomFileContentResponse,
   RoomFileListResponse,
   RoomFileSaveRequest,
@@ -99,6 +102,7 @@ import type {
 import type {
   RoomMainRepairRequest,
   RoomMainRepairResult,
+  RoomMergeResult,
   RoomRepoStatus,
 } from '@dorkos/shared/room-repo';
 import type { Workspace, WorktreeScanResult } from '@dorkos/shared/workspace';
@@ -1043,6 +1047,13 @@ export const roomStubs = {
     throw new Error('Rooms are not supported in embedded mode');
   },
 
+  async mergeRoomMain(
+    _id: string,
+    _input: { summary: string; worktree: string }
+  ): Promise<RoomMergeResult> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
   async openRoomCanvasDocument(_id: string, _content: UiCanvasContent): Promise<CanvasDocument> {
     throw new Error('Rooms are not supported in embedded mode');
   },
@@ -1056,6 +1067,18 @@ export const roomStubs = {
   },
 
   async closeRoomCanvasDocument(_id: string, _documentId: string): Promise<void> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
+  async readRoomCanvasDiff(_id: string, _documentId: string): Promise<RoomCanvasDiffReview> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
+  async writeRoomCanvasDiff(
+    _id: string,
+    _documentId: string,
+    _req: RoomCanvasDiffWriteRequest
+  ): Promise<RoomCanvasDiffWriteResult> {
     throw new Error('Rooms are not supported in embedded mode');
   },
 
