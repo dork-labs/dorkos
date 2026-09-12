@@ -77,6 +77,12 @@ Widgets aren't limited to chat. An agent can open the same widget in the canvas 
   normally.
 </Callout>
 
+In a [room](/docs/concepts/rooms), the canvas is the room's rather than yours: a widget an agent
+opens there lands in front of every member at once, with the face of whoever opened it on its tab,
+and it's still there after a reload. That's a different thing from a widget in a room **message** —
+that one renders where it was posted, read-only, because a message isn't a session for a button to
+answer into.
+
 For the deeper tour of everything the canvas can hold, see the [Workbench guide](/docs/guides/workbench).
 
 ## Reference
@@ -241,7 +247,13 @@ An agent can call `control_ui` with `open_canvas` (or `update_canvas`) and a `wi
 { "type": "widget", "definition": { "version": 1, "root": { "...": "..." } }, "title": "Weather" }
 ```
 
-The canvas is a tabbed, multi-document surface (each `open_canvas` call appends a tab and activates it, deduping by source so reopening the same file re-activates its existing tab instead of duplicating it), and `widget` is one of thirteen content types it can render: `widget`, `image`, `pdf`, `file` (CodeMirror, for arbitrary text/code), `markdown` (the rich Blintz editor), `model3d` (glTF/GLB/STL/OBJ/3MF/PLY/FBX/DAE), `audio` (HTML5 player), `video` (HTML5 player), `csv`, `browser` (an embedded, sandboxed page), `mcp_app` (a UI resource an MCP server hosts), `url`, and `json`. The two content-heavy ones worth knowing up front:
+The canvas is a tabbed, multi-document surface (each `open_canvas` call appends a tab and activates it, deduping by source so reopening the same file re-activates its existing tab instead of duplicating it), and `widget` is one of fourteen content types it can render: `widget`, `image`, `pdf`, `file` (CodeMirror, for arbitrary text/code), `markdown` (the rich Blintz editor), `diff` (a hunk-by-hunk review of what changed in a file; `open_diff` is the easier way to open one), `model3d` (glTF/GLB/STL/OBJ/3MF/PLY/FBX/DAE), `audio` (HTML5 player), `video` (HTML5 player), `csv`, `browser` (an embedded, sandboxed page), `mcp_app` (a UI resource an MCP server hosts), `url`, and `json`.
+
+Two of those fourteen — `url` and `browser` — are pages, and pages live one tab along, in **Browser**. The other twelve open in **Canvas**. `mcp_app` stays in Canvas despite being served over HTTP: it's an app, not a page.
+
+`update_canvas` and `close_canvas` also take an optional `documentId`, and every verb that opens something (`open_canvas`, `open_file`, `open_diff`, `browser_navigate`) hands one back. Leave it out in a one-on-one session and the call acts on the active document, exactly as it always has. Leave it out in a **room**, where there is no shared active document on purpose, and it means "the last document you opened in this room" — so acting on a document somebody else put up takes naming it.
+
+The two content-heavy types worth knowing up front:
 
 - **`image`**: `{ type: "image", src, title?, alt? }`. Click the image to open it full size in a new tab (skipped for SVG data URIs, which are excluded from click-through as defense in depth against a scripting context).
 - **`pdf`**: `{ type: "pdf", src, title? }`. Renders through the browser's native PDF viewer; if the browser can't render it inline, a fallback link opens the PDF in a new tab.
