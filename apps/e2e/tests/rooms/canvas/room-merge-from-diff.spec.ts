@@ -30,8 +30,13 @@ import { BasePage } from '../../../pages/BasePage';
 /** The scenario that opens a review of one of the room's files from inside a turn. */
 const OPENS_DIFF = 'rooms-open-diff';
 
-/** The file the scenario reviews. Must match `ROOM_DIFF_PATH` in the scenario. */
-const DIFF_PATH = 'src/app.txt';
+/**
+ * The file the scenario reviews. Must match `ROOM_DIFF_PATH` in the scenario.
+ *
+ * At the root of the repo rather than in a folder, because a person's save into
+ * a room's files refuses to create one: "saving does not make new folders".
+ */
+const DIFF_PATH = 'app.txt';
 
 /** What the room's own copy holds. */
 const ROOM_TEXT = 'one\ntwo\nthree\n';
@@ -162,6 +167,9 @@ test.describe('Reviewing an agent’s work from the room’s canvas', () => {
 
     await openRoom(page, basePage, roomsPage, room.id);
     await roomsPage.openCanvasTab();
+    // Nothing steals a tab on a room's table, so the review is not the document
+    // in front — asking for it is what a person does next.
+    await roomsPage.canvasDocumentTab(DIFF_PATH).click();
 
     // The review surface, not the "this file is somewhere you cannot read" card.
     const merge = page.getByRole('button', { name: /merge into the room/i });

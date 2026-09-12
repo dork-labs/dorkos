@@ -173,7 +173,7 @@ function roomReadsCanvas(finishRequested: FinishRequested): ScenarioFn {
  * spec that drives it writes this same path into the agent's working copy first,
  * so the two have to agree on one string.
  */
-export const ROOM_DIFF_PATH = 'src/app.txt';
+export const ROOM_DIFF_PATH = 'app.txt';
 
 /**
  * The scripted room turns that declare themselves tool-capable.

@@ -96,28 +96,6 @@ export const CanvasDocumentSchema = z
      * act on.
      */
     aheadOfMain: z.number().int().nonnegative().nullable().optional(),
-    /**
-     * The directory a `worktree` document's path was resolved against — and
-     * ONLY a `worktree` one (spec `canvas-agent-seat` §8).
-     *
-     * The review surface needs it: a worktree-backed diff is read and its
-     * rejected hunks are written against the tree the document was opened
-     * against, never a re-derived one, which is what makes a reject land where
-     * the work is.
-     *
-     * **Withheld for every other tree kind**, because a room's working copies
-     * are the ROOM's — DorkOS made them, under the room's own home, and every
-     * member can already read their slugs off the repo status — whereas
-     * `agent-cwd` is somebody's own project directory, which is not the room's
-     * to publish and which nothing in the app could open anyway.
-     */
-    resolvedCwd: z
-      .string()
-      .min(1)
-      .optional()
-      .describe(
-        'The working copy a `worktree` document\u2019s path was resolved against \u2014 and only a `worktree` one. The review surface reads and writes there, so a rejected hunk lands in the tree the document was opened against rather than a re-derived one. Withheld for every other tree kind: a room\u2019s working copies are the room\u2019s own, while an `agent-cwd` is somebody\u2019s own project directory.'
-      ),
     openedAt: z.string().min(1),
     lastActiveAt: z.string().min(1),
   })

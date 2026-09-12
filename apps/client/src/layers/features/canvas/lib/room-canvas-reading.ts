@@ -44,7 +44,6 @@ export type RoomDocumentReading =
   | {
       kind: 'worktree-diff';
       sourcePath: string;
-      cwd: string;
       content: Extract<UiCanvasContent, { type: 'diff' }>;
     }
   /** Somewhere this app has no route to: draw the card and say this. */
@@ -131,24 +130,18 @@ export function roomDocumentReading(document: CanvasDocument): RoomDocumentReadi
 
   // **A diff from a working copy that is ahead of the room is a review, not a
   // card** (spec `canvas-agent-seat` §8). Three things have to be true together
-  // and each rules something out: the tree is a room worktree, so DorkOS made it
-  // and the row carries the directory; the copy is measurably ahead, so there is
-  // something to decide (`null` means nobody asked, which is not the same as
-  // level and must not be shown as one); and the row actually recorded the
-  // directory, which only a `worktree` row does.
+  // and each rules one out: it is a `diff` rather than a file somebody opened to
+  // read; the tree is a room WORKTREE, so DorkOS made it and the server can find
+  // it from the row; and the copy is measurably ahead, so there is something to
+  // decide — `null` means nobody asked, which is not the same as level with the
+  // room and must never be drawn as one.
   if (
     document.content.type === 'diff' &&
     document.treeKind === 'worktree' &&
     typeof document.aheadOfMain === 'number' &&
-    document.aheadOfMain > 0 &&
-    document.resolvedCwd !== undefined
+    document.aheadOfMain > 0
   ) {
-    return {
-      kind: 'worktree-diff',
-      sourcePath,
-      cwd: document.resolvedCwd,
-      content: document.content,
-    };
+    return { kind: 'worktree-diff', sourcePath, content: document.content };
   }
 
   // Markdown's text came with the row, so it still draws for everybody. What it

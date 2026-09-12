@@ -77,7 +77,7 @@ function RoomCanvasDocumentBody({
       <RoomWorktreeDiff
         roomId={roomId}
         content={reading.content}
-        cwd={reading.cwd}
+        documentId={document.id}
         authorId={document.authorId}
       />
     );

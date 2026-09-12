@@ -43,11 +43,10 @@ function diffDocument(tree: Partial<CanvasDocument>): CanvasDocument {
   };
 }
 
-/** The shape a worktree row really has: a directory and a measured count. */
+/** The shape a worktree row really has: a tree kind and a measured count. */
 const AHEAD = {
   treeKind: 'worktree' as const,
   aheadOfMain: 3,
-  resolvedCwd: '/dork/rooms/room-1/worktrees/ana',
   sourceLabel: 'Ana’s copy · 3 ahead of main',
 };
 
@@ -56,10 +55,7 @@ describe('roomDocumentReading for a worktree diff', () => {
     const reading = roomDocumentReading(diffDocument(AHEAD));
 
     expect(reading.kind).toBe('worktree-diff');
-    expect(reading).toMatchObject({
-      sourcePath: 'src/App.tsx',
-      cwd: '/dork/rooms/room-1/worktrees/ana',
-    });
+    expect(reading).toMatchObject({ sourcePath: 'src/App.tsx' });
   });
 
   it('leaves a copy that is level with the room as a card', () => {
@@ -86,11 +82,6 @@ describe('roomDocumentReading for a worktree diff', () => {
         diffDocument({ treeKind: 'room-main', aheadOfMain: null, sourceLabel: undefined })
       ).kind
     ).toBe('room-file');
-  });
-
-  it('leaves a worktree row that recorded no directory as a card', () => {
-    const { resolvedCwd: _dropped, ...withoutCwd } = AHEAD;
-    expect(roomDocumentReading(diffDocument(withoutCwd)).kind).toBe('elsewhere');
   });
 
   it('leaves a FILE somebody opened from the same copy as a card', () => {

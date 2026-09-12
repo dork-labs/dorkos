@@ -27,7 +27,18 @@ import {
   OpenCanvasDocumentRequestSchema,
   UpdateCanvasDocumentRequestSchema,
 } from '@dorkos/shared/room-schemas';
-import { getRoomService, RoomError } from '../services/rooms/index.js';
+import { RoomCanvasDiffWriteRequestSchema } from '@dorkos/shared/room-files';
+import {
+  getRoomFilesService,
+  getRoomService,
+  RoomError,
+  tryGetRoomRepoService,
+} from '../services/rooms/index.js';
+import {
+  readCanvasDiffReview,
+  writeCanvasDiffReview,
+  type CanvasDiffReviewDeps,
+} from '../services/rooms/canvas/canvas-diff-review.js';
 import { resolveCaller } from './room-caller.js';
 import { sendRoomError } from './room-error-response.js';
 import { parseBody, sendError } from '../lib/route-utils.js';
@@ -251,6 +262,87 @@ router.post<CanvasParams>('/:documentId/editing', (req, res) => {
   } catch (err) {
     sendRoomError(res, err, 'POST /:id/canvas/:documentId/editing');
   }
+});
+
+/**
+ * The seams the review reads and writes through, resolved per call.
+ *
+ * Late rather than captured, for the reason every other late resolution in this
+ * domain gives: the repo and files services are registered further into boot
+ * than this router is, and an install with no repo machinery answers `null`
+ * forever — which is exactly right, because then no room has working copies and
+ * there is nothing to review.
+ */
+function reviewDeps(): CanvasDiffReviewDeps {
+  return {
+    document: (roomId, documentId) => {
+      const document = getRoomService().canvas.get(roomId, documentId);
+      if (!document || document.content.type !== 'diff') return null;
+      return { contentType: document.content.type, sourcePath: document.content.sourcePath };
+    },
+    resolvedTree: (roomId, documentId) =>
+      getRoomService().canvas.resolvedTreeOf(roomId, documentId),
+    worktreesPath: (roomId) => tryGetRoomRepoService()?.worktreesPathFor(roomId) ?? null,
+    mainCopy: async (roomId, sourcePath) => {
+      try {
+        const file = await getRoomFilesService().read(roomId, sourcePath);
+        return file.body.kind === 'text' ? file.body.text : null;
+      } catch {
+        // `main` does not have this file, which is the ordinary case for work
+        // that ADDS one. The caller draws it against an empty base.
+        return null;
+      }
+    },
+  };
+}
+
+/**
+ * GET /:documentId/diff — the two copies of the file behind a worktree diff
+ * (spec `canvas-agent-seat` §8).
+ *
+ * The room's own copy and the member's, so the review can be drawn. **Not the
+ * ordinary file API**, and the module doc of `canvas-diff-review.ts` says why:
+ * a working copy lives under the DorkOS data directory, which the raw file
+ * surfaces are deliberately confined out of. Nothing here takes a directory or
+ * a path — both come off the document's own row.
+ *
+ * A member may read it, like every other room read; whether they may MERGE what
+ * they see is a separate question, answered by the merge route.
+ */
+router.get<CanvasParams>('/:documentId/diff', (req, res) => {
+  void (async () => {
+    try {
+      requireCanvasAccess(req, res, false);
+      res.json(await readCanvasDiffReview(reviewDeps(), req.params.id, req.params.documentId));
+    } catch (err) {
+      sendRoomError(res, err, 'GET /:id/canvas/:documentId/diff');
+    }
+  })();
+});
+
+/**
+ * PUT /:documentId/diff — put a reviewed file back in the member's working copy.
+ *
+ * How turning a hunk down lands: the whole file, conditional on the hash the
+ * diff was computed against. A file the agent changed in between comes back
+ * `ok: false` with what it holds now — a conflict is control flow, and the
+ * screen recomputes rather than clobbering work that carried on.
+ *
+ * Archived rooms refuse it, like every other canvas write.
+ */
+router.put<CanvasParams>('/:documentId/diff', (req, res) => {
+  const body = parseBody(RoomCanvasDiffWriteRequestSchema, req.body, res);
+  if (!body) return;
+  void (async () => {
+    try {
+      requireCanvasAccess(req, res, true);
+      res.json(
+        await writeCanvasDiffReview(reviewDeps(), req.params.id, req.params.documentId, body)
+      );
+    } catch (err) {
+      sendRoomError(res, err, 'PUT /:id/canvas/:documentId/diff');
+    }
+  })();
 });
 
 export default router;

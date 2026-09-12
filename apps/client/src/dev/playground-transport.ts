@@ -256,7 +256,9 @@ export function createPlaygroundTransport(): Transport {
         prop === 'readRoomRepoStatus' ||
         prop === 'saveRoomFile' ||
         prop === 'repairRoomMain' ||
-        prop === 'mergeRoomMain'
+        prop === 'mergeRoomMain' ||
+        prop === 'readRoomCanvasDiff' ||
+        prop === 'writeRoomCanvasDiff'
       ) {
         return async () => {
           throw Object.assign(new Error('This room does not have files of its own.'), {

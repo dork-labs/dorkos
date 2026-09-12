@@ -45,6 +45,9 @@ import {
   type UpdateRoomRequest,
 } from '@dorkos/shared/room-schemas';
 import type {
+  RoomCanvasDiffReview,
+  RoomCanvasDiffWriteRequest,
+  RoomCanvasDiffWriteResult,
   RoomFileContentResponse,
   RoomFileListResponse,
   RoomFileSaveRequest,
@@ -438,6 +441,27 @@ export function createRoomMethods(baseUrl: string) {
     },
 
     /** Say which canvas document you are looking at, or that you have looked away. */
+    /** The two copies of the file behind a room's worktree diff. */
+    readRoomCanvasDiff(id: string, documentId: string): Promise<RoomCanvasDiffReview> {
+      return fetchJSON<RoomCanvasDiffReview>(
+        baseUrl,
+        `/rooms/${encodeURIComponent(id)}/canvas/${encodeURIComponent(documentId)}/diff`
+      );
+    },
+
+    /** Put a reviewed file back in the member's working copy. */
+    writeRoomCanvasDiff(
+      id: string,
+      documentId: string,
+      req: RoomCanvasDiffWriteRequest
+    ): Promise<RoomCanvasDiffWriteResult> {
+      return fetchJSON<RoomCanvasDiffWriteResult>(
+        baseUrl,
+        `/rooms/${encodeURIComponent(id)}/canvas/${encodeURIComponent(documentId)}/diff`,
+        { method: 'PUT', body: JSON.stringify(req) }
+      );
+    },
+
     setRoomCanvasViewing(id: string, documentId: string | null): Promise<void> {
       return fetchNoContent(baseUrl, `/rooms/${encodeURIComponent(id)}/canvas/viewing`, {
         method: 'POST',

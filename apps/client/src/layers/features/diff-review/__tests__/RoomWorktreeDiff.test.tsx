@@ -89,12 +89,7 @@ const diff: Extract<UiCanvasContent, { type: 'diff' }> = {
 /** Render the surface with whatever the case has set up. */
 function draw() {
   return render(
-    <RoomWorktreeDiff
-      roomId="room-1"
-      content={diff}
-      cwd="/dork/rooms/room-1/worktrees/ana"
-      authorId="author-ana"
-    />
+    <RoomWorktreeDiff roomId="room-1" content={diff} documentId="doc-1" authorId="author-ana" />
   );
 }
 
@@ -176,6 +171,19 @@ describe('RoomWorktreeDiff', () => {
     await user.click(screen.getByRole('button', { name: /^merge$/i }));
 
     expect(review.merge).toHaveBeenCalledWith('Add the signup form');
+  });
+
+  it('does not tell the operator to catch up on a merge that just worked', () => {
+    // The merge commit moves `main` past the branch that produced it, so a
+    // freshly merged copy IS behind — and answering a merge that worked with
+    // "the room has moved on, ask them to catch up" is nonsense. Measured in the
+    // browser, stacked under the line saying the work had landed.
+    review.merged = true;
+    review.branch = { ...(review.branch as Record<string, unknown>), behind: 1, ahead: 0 };
+    draw();
+
+    expect(screen.getByText(/This work is in the room now/i)).toBeInTheDocument();
+    expect(screen.queryByText(/The room has moved on/i)).not.toBeInTheDocument();
   });
 
   it('shows the room’s own words for a merge it refused', () => {

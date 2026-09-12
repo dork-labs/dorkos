@@ -151,6 +151,9 @@ import {
   RoomStrayChangeSchema as SharedRoomStrayChangeSchema,
 } from '@dorkos/shared/room-repo';
 import {
+  RoomCanvasDiffReviewSchema,
+  RoomCanvasDiffWriteRequestSchema,
+  RoomCanvasDiffWriteResultSchema,
   RoomFileConflictResponseSchema,
   RoomFileContentQuerySchema,
   RoomFileContentResponseSchema,
@@ -4893,6 +4896,56 @@ registry.registerPath({
     404: canvasDocumentNotFound,
     409: {
       description: 'The room is archived, or somebody else already holds this lock',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/rooms/{id}/canvas/{documentId}/diff',
+  tags: ['Rooms'],
+  summary: 'Read the two copies of the file behind a worktree diff',
+  description:
+    'The room’s own copy of the file and the member’s working copy, so the review can be drawn side by side. **Not the ordinary file API**: a member’s working copy lives under the DorkOS data directory, which the raw file surfaces are deliberately confined out of — so this names a room and a DOCUMENT, and the tree and the path both come off that row rather than being chosen by the caller. `base` is the empty string for a file this work ADDS, which is ordinary rather than an error. Membership-gated like every other room read: a caller who is not on the roster gets the same 404 an unknown room gets.',
+  request: { params: RoomCanvasParams },
+  responses: {
+    200: {
+      description: 'Both copies, and the fingerprint a later write must carry back',
+      content: { 'application/json': { schema: RoomCanvasDiffReviewSchema } },
+    },
+    401: roomAgentUnverified,
+    404: canvasDocumentNotFound,
+    409: {
+      description:
+        'The document is not a review of somebody’s working copy, the room has no files of its own, or the file is not in that copy any more',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/rooms/{id}/canvas/{documentId}/diff',
+  tags: ['Rooms'],
+  summary: 'Put a reviewed file back in the member’s working copy',
+  description:
+    'How turning a hunk down lands: the whole file, conditional on the hash the diff was computed against. A file the agent changed in between answers `ok: false` carrying what it holds now — a conflict is control flow, and the screen recomputes rather than clobbering work that carried on. Archived rooms refuse it, like every other canvas write.',
+  request: {
+    params: RoomCanvasParams,
+    body: { content: { 'application/json': { schema: RoomCanvasDiffWriteRequestSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'What was written, or what the file holds now',
+      content: { 'application/json': { schema: RoomCanvasDiffWriteResultSchema } },
+    },
+    400: roomValidationError,
+    401: roomAgentUnverified,
+    404: canvasDocumentNotFound,
+    409: {
+      description:
+        'The room is archived, the document is not a review, or the file is not in that copy any more',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

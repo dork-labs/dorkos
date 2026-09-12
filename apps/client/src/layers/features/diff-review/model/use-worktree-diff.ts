@@ -10,13 +10,20 @@
  * has: the same merge view, the same per-hunk gutter, and the same
  * optimistically-concurrent write for a hunk that is turned down.
  *
- * **Two of the three reads are the row's, not a re-derivation.** The tree comes
- * from the document's stored `resolvedCwd`, so a reject lands in the tree the
- * document was opened against; the path comes from its content. The third — how
- * far ahead and behind that copy is, and which working copy it is by slug — is
- * a LIVE read of the room's repo status, because the `aheadOfMain` on the row is
- * a snapshot taken when the document was opened and a merge decision must not be
- * made on one.
+ * **It goes through the ROOM, not the file API**, and that is not a shortcut. A
+ * member's working copy lives under the DorkOS data directory, which the raw
+ * file surfaces are deliberately confined out of (`lib/boundary.ts`) — so
+ * `transport.readFileContent` on a worktree is refused on any install whose
+ * boundary is a project directory, which is every install that sets one. It was
+ * refused in the browser before this hook was changed. The room routes name a
+ * DOCUMENT instead, and the tree and the path both come off that row, so a
+ * reject lands in the tree the document was opened against and no directory is
+ * ever a caller's to choose.
+ *
+ * The third read is a LIVE one: how far ahead and behind that copy is, and which
+ * working copy it is by slug, come from the room's repo status — the
+ * `aheadOfMain` on the row is a snapshot taken when the document was opened, and
+ * a merge decision must not be made on one.
  *
  * @module features/diff-review/model/use-worktree-diff
  */
@@ -28,29 +35,17 @@ import { roomRepoStatusQueryOptions } from '@/layers/features/file-explorer';
 import { useTransport } from '@/layers/shared/model';
 import type { DiffWriteOutcome } from './use-diff-review';
 
-/** React-query key for one worktree file read against the room's own copy. */
-function worktreeDiffQueryKey(roomId: string, cwd: string, sourcePath: string) {
-  return ['worktree-diff', roomId, cwd, sourcePath] as const;
-}
-
-/** The two copies of one file, and the fingerprint a reject is conditional on. */
-export interface WorktreeDiffPair {
-  /** The room's own `main` copy — empty for a file the branch adds. */
-  base: string;
-  /** The agent's working copy, as it is on disk right now. */
-  current: string;
-  /** SHA-256 of `current`, so a reject refuses a file that moved underneath it. */
-  currentHash: string;
+/** React-query key for one worktree diff, by the document it is about. */
+function worktreeDiffQueryKey(roomId: string, documentId: string) {
+  return ['worktree-diff', roomId, documentId] as const;
 }
 
 /** What {@link useWorktreeDiff} is asked about. */
 export interface UseWorktreeDiffArgs {
   /** The room whose `main` is the comparison. */
   roomId: string;
-  /** The working copy the document was opened against — the row's own. */
-  cwd: string;
-  /** The file, relative to both trees. */
-  sourcePath: string;
+  /** The `diff` document on its canvas; the tree and the path come off its row. */
+  documentId: string;
   /** The agent whose copy it is, so the right branch row is found. */
   authorId: string;
 }
@@ -59,10 +54,10 @@ export interface UseWorktreeDiffArgs {
  * Read one file out of both trees, and offer the two things a reviewer does
  * with it: turn a hunk down, or merge the whole branch.
  *
- * @param args - The room, the working copy, the file and whose copy it is.
+ * @param args - The room, the document and whose copy it is.
  * @returns The pair, the branch's live position, and the review actions.
  */
-export function useWorktreeDiff({ roomId, cwd, sourcePath, authorId }: UseWorktreeDiffArgs) {
+export function useWorktreeDiff({ roomId, documentId, authorId }: UseWorktreeDiffArgs) {
   const transport = useTransport();
   const queryClient = useQueryClient();
   // A reject hit a file that had changed underneath it — the banner owns
@@ -75,42 +70,11 @@ export function useWorktreeDiff({ roomId, cwd, sourcePath, authorId }: UseWorktr
   const [mergeRefusal, setMergeRefusal] = useState<string | null>(null);
 
   const pair = useQuery({
-    queryKey: worktreeDiffQueryKey(roomId, cwd, sourcePath),
-    queryFn: async (): Promise<WorktreeDiffPair> => {
-      const [worktree, main] = await Promise.all([
-        transport.readFileContent(cwd, sourcePath),
-        readRoomMainCopy(),
-      ]);
-      return { base: main, current: worktree.content, currentHash: worktree.hash };
-    },
+    queryKey: worktreeDiffQueryKey(roomId, documentId),
+    queryFn: () => transport.readRoomCanvasDiff(roomId, documentId),
     staleTime: 5_000,
     retry: false,
   });
-
-  /**
-   * The room's own copy of the file, or the empty string when `main` does not
-   * have it.
-   *
-   * A file the branch ADDS is the ordinary case for a new feature, and it is not
-   * an error: the honest comparison is "nothing, then this". A file that is
-   * there but cannot be sent as text — a picture, something over the room's read
-   * ceiling — is a different answer and is thrown, because showing it as an
-   * empty base would report every byte of it as added.
-   */
-  async function readRoomMainCopy(): Promise<string> {
-    let answer;
-    try {
-      answer = await transport.readRoomFileContent(roomId, sourcePath);
-    } catch {
-      return '';
-    }
-    if (answer.body.kind !== 'text') {
-      throw Object.assign(new Error('The room’s copy of this file is not text.'), {
-        code: 'BINARY_FILE',
-      });
-    }
-    return answer.body.text;
-  }
 
   const status = useQuery(roomRepoStatusQueryOptions(transport, roomId));
   const branch: RoomBranchStatus | null =
@@ -119,10 +83,8 @@ export function useWorktreeDiff({ roomId, cwd, sourcePath, authorId }: UseWorktr
       : null;
 
   const revalidate = useCallback(() => {
-    void queryClient.invalidateQueries({
-      queryKey: worktreeDiffQueryKey(roomId, cwd, sourcePath),
-    });
-  }, [queryClient, roomId, cwd, sourcePath]);
+    void queryClient.invalidateQueries({ queryKey: worktreeDiffQueryKey(roomId, documentId) });
+  }, [queryClient, roomId, documentId]);
 
   /** The banners' "Refresh"/"Dismiss": clear the notices and read both trees again. */
   const refresh = useCallback(() => {
@@ -145,7 +107,8 @@ export function useWorktreeDiff({ roomId, cwd, sourcePath, authorId }: UseWorktr
       if (!held) return 'idle';
       setWriting(true);
       try {
-        const result = await transport.writeFile(cwd, sourcePath, revertedContent, {
+        const result = await transport.writeRoomCanvasDiff(roomId, documentId, {
+          content: revertedContent,
           expectedHash: held.currentHash,
         });
         if (result.ok) {
@@ -165,7 +128,7 @@ export function useWorktreeDiff({ roomId, cwd, sourcePath, authorId }: UseWorktr
         setWriting(false);
       }
     },
-    [transport, pair.data, cwd, sourcePath, revalidate]
+    [transport, pair.data, roomId, documentId, revalidate]
   );
 
   /**

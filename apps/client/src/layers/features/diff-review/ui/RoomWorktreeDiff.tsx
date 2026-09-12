@@ -52,10 +52,10 @@ function baseName(pathLike: string): string {
 export interface RoomWorktreeDiffProps {
   /** The room whose `main` this is compared against. */
   roomId: string;
-  /** The diff document's content. */
+  /** The diff document's content, for the file name and the syntax. */
   content: Extract<UiCanvasContent, { type: 'diff' }>;
-  /** The working copy the document was opened against — the row's own. */
-  cwd: string;
+  /** The document on the room's canvas; the tree and the path come off its row. */
+  documentId: string;
   /** The member whose copy it is, so the right branch row is found. */
   authorId: string;
 }
@@ -63,14 +63,14 @@ export interface RoomWorktreeDiffProps {
 /**
  * The review surface for one file in an agent's working copy.
  *
- * @param props - The room, the document, the tree and whose copy it is.
+ * @param props - The room, the document and whose copy it is.
  */
-export function RoomWorktreeDiff({ roomId, content, cwd, authorId }: RoomWorktreeDiffProps) {
+export function RoomWorktreeDiff({ roomId, content, documentId, authorId }: RoomWorktreeDiffProps) {
   const resolvedTheme = useResolvedTheme();
   const isMobile = useIsMobile();
   const reduceMotion = useReducedMotion();
   const room = useRoom(roomId);
-  const review = useWorktreeDiff({ roomId, cwd, sourcePath: content.sourcePath, authorId });
+  const review = useWorktreeDiff({ roomId, documentId, authorId });
 
   const [sideBySide, setSideBySide] = useState(false);
   const [hunkCount, setHunkCount] = useState<number | null>(null);
@@ -213,7 +213,13 @@ function WorktreeDiffHeader({
 
   // Behind first: a copy the room has moved past cannot be merged whatever else
   // is true of it, and saying so is more useful than a button that refuses.
-  const behind = branch !== null && branch.behind > 0;
+  //
+  // **Except straight after a merge**, which is what puts it behind: the merge
+  // commit moves the room's `main` past the branch that produced it, so leaving
+  // this on would answer a merge that just worked with "the room has moved on,
+  // ask them to catch up". Measured in the browser, stacked under the line
+  // saying the work had landed.
+  const behind = !merged && branch !== null && branch.behind > 0;
   const canMerge = isOperator && branch !== null && !behind && branch.ahead > 0 && !merged;
 
   return (
