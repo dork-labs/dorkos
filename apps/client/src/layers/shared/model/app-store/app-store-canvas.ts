@@ -16,14 +16,41 @@
  * (ADR-0292) for the canvas to offer back as Reload / Keep mine, but other
  * documents stay agent-writable. A held push is kept, never dropped — dropping
  * it in silence, with neither side told, is the half of ADR-0292 that was
- * deferred when it was written. The document array is persisted per-session via
- * localStorage (see the canvas session helpers in app-store-helpers.ts). See ADR
- * 260708-185518 (multi-document canvas model).
+ * deferred when it was written. See ADR 260708-185518 (multi-document canvas
+ * model).
+ *
+ * ## The canvas is the SERVER's (spec `canvas-agent-seat` §1.5)
+ *
+ * This slice used to be the truth, persisted per session into `localStorage`. So
+ * two tabs on one session held two different tables, a phone saw none of it,
+ * clearing browser data lost it, and no agent could read it. Now:
+ *
+ * - It is **filled from `snapshot.canvas`** on the session stream's cold connect
+ *   and kept current by the `canvas` event, exactly as the room slice is.
+ * - Every mutator **writes through the transport** — an optimistic local apply,
+ *   then the request, then the `canvas` event that comes back. A failed write
+ *   reverts the optimistic apply and says so; it never leaves the two
+ *   disagreeing, which is today's whole problem in a new place.
+ * - A document's `id` is the SERVER's. A local open holds a `pending:` id only
+ *   until the POST answers, and the answer replaces it.
+ * - **`rev` is the tiebreak.** An event whose `rev` is not greater than the row
+ *   this slice already holds is dropped, which makes the echo of your own write
+ *   harmless and makes a second device's write win in order.
+ *
+ * What is NOT the server's stays here and is never sent: which document each of
+ * the two views is showing, the transient `editing` flag, the held push, and
+ * `browserHistories` — a back/forward stack is what THIS window did.
  *
  * @module shared/model/app-store-canvas
  */
 import type { StateCreator } from 'zustand';
+import { toast } from 'sonner';
 import type { UiCanvasContent } from '@dorkos/shared/types';
+import type {
+  CanvasDocument as ServerCanvasDocument,
+  UpdateCanvasDocumentRequest,
+} from '@dorkos/shared/room-schemas';
+import type { Transport } from '@dorkos/shared/transport';
 // The dedupe rule, shared with the server's room canvas rather than copied
 // beside it (spec `room-canvas` §3.2). Two implementations of "is this the same
 // document" drift silently into one room holding two tabs for one file.
@@ -35,8 +62,6 @@ import type { UiCanvasContent } from '@dorkos/shared/types';
 import { canvasSourceKey as sourceKey } from '@dorkos/shared/canvas-source-key';
 import { MAX_CANVAS_DOCUMENTS } from '@/layers/shared/lib/constants';
 import { canvasViewForContent, type CanvasView } from '@dorkos/shared/canvas-view';
-import { readCanvasSession, writeCanvasSession } from './app-store-helpers';
-import type { PersistedCanvasDocument } from './app-store-helpers';
 import type { AppState } from './app-store-types';
 
 // ---------------------------------------------------------------------------
@@ -45,8 +70,20 @@ import type { AppState } from './app-store-types';
 
 /** A single open canvas document. */
 export interface CanvasDocument {
-  /** Stable client-generated id (tab key + activation target). */
+  /**
+   * The SERVER's document id — the tab key, the activation target, and the id
+   * `read_canvas_document` takes.
+   *
+   * A document this window has just opened and not yet heard back about holds a
+   * `pending:` id instead, for exactly as long as the POST is in flight.
+   */
   id: string;
+  /**
+   * The row's revision, monotonic per session. What orders two frames racing
+   * for one document: a lower `rev` never overwrites a higher one. `0` on a row
+   * this window minted optimistically and the server has not answered for.
+   */
+  rev: number;
   /** The rendered content for this document. */
   content: UiCanvasContent;
   /** Epoch ms the document was first opened (tab order). */
@@ -200,10 +237,53 @@ export interface CanvasSlice {
 
   canvasPreferredWidth: number | null;
   setCanvasPreferredWidth: (width: number | null) => void;
-  /** Active session ID for canvas persistence; null until `loadCanvasForSession` is called. */
+  /**
+   * The session whose canvas this slice is holding, or null before one is
+   * bound. Every write-through names it, so a write can never land on the
+   * session the reader has just left.
+   */
   canvasSessionId: string | null;
-  /** Load canvas state for a session (or reset to defaults if no prior state exists). */
+  /**
+   * Bind the slice to a session and empty it, ready for the snapshot to fill.
+   *
+   * A RESET rather than a read: the table comes from `snapshot.canvas` on the
+   * session stream's cold connect, the same place messages and status come from
+   * (spec `canvas-agent-seat` §1.5).
+   */
   loadCanvasForSession: (sessionId: string) => void;
+  /**
+   * Fill the slice from the session stream's cold snapshot.
+   *
+   * Authoritative as a SET: it REPLACES what this window holds rather than
+   * merging, which is what makes a close it missed while disconnected
+   * self-correct. The two view-active ids are re-derived rather than dropped —
+   * a reconnect is not a reason to forget which tab somebody was on.
+   *
+   * @param sessionId - The session the snapshot belongs to. A snapshot for any
+   *   other session is ignored: a window that has moved on must not be filled
+   *   with the table it just left.
+   * @param documents - The server's rows, pinned first then most recent.
+   */
+  hydrateCanvasFromSnapshot: (
+    sessionId: string,
+    documents: readonly ServerCanvasDocument[]
+  ) => void;
+  /**
+   * Apply one `canvas` event from the session's stream.
+   *
+   * @param sessionId - The session the STREAM belongs to. An event for any other
+   *   session is ignored.
+   * @param event - The frame: a whole document, or an id and `closed`.
+   */
+  applyCanvasEvent: (
+    sessionId: string,
+    event: {
+      documentId: string;
+      document?: ServerCanvasDocument;
+      closed?: boolean;
+      change?: 'opened' | 'updated' | 'activated' | 'pinned';
+    }
+  ) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -359,275 +439,549 @@ function pruneBrowserHistories(
   return Object.fromEntries(survivors);
 }
 
-/** The durable projection of the in-memory documents (drops the transient `editing` flag). */
-function toPersisted(documents: CanvasDocument[]): PersistedCanvasDocument[] {
-  return documents.map(({ id, content, openedAt, lastActiveAt, sourceLabel: label }) => ({
-    id,
-    content,
-    openedAt,
-    lastActiveAt,
-    sourceLabel: label,
-  }));
+// ---------------------------------------------------------------------------
+// The write-through seam
+// ---------------------------------------------------------------------------
+
+/** The six transport methods this slice needs, and nothing else. */
+export type SessionCanvasTransport = Pick<
+  Transport,
+  | 'listSessionCanvas'
+  | 'getSessionCanvasDocument'
+  | 'openSessionCanvasDocument'
+  | 'updateSessionCanvasDocument'
+  | 'closeSessionCanvasDocument'
+  | 'setSessionCanvasEditing'
+>;
+
+/** How this slice reaches the server. Set by `TransportProvider`. */
+let canvasTransport: SessionCanvasTransport | null = null;
+
+/**
+ * Tell the canvas slice how to reach the server.
+ *
+ * **Set from `TransportProvider`, which both shells pass through**, rather than
+ * from each app entry — the same reasoning `CanvasService` uses for wiring its
+ * listeners at module scope: one root owns it, and a third shell cannot forget.
+ * A zustand store is not a React consumer, so it cannot read the context itself.
+ *
+ * @param transport - The transport, or `null` to unbind (tests).
+ */
+export function setSessionCanvasTransport(transport: SessionCanvasTransport | null): void {
+  canvasTransport = transport;
 }
 
-/** Persist the given canvas state for the active session (no-op without a session). */
-function persist(
-  sessionId: string | null,
-  state: { canvasOpen: boolean; openDocuments: CanvasDocument[] } & ActiveIds
-): void {
-  if (!sessionId) return;
-  writeCanvasSession(sessionId, {
-    open: state.canvasOpen,
-    documents: toPersisted(state.openDocuments),
-    activeCanvasDocumentId: state.activeCanvasDocumentId,
-    activeBrowserDocumentId: state.activeBrowserDocumentId,
-    accessedAt: Date.now(),
-  });
+/**
+ * The transport, or `null` when nothing has been bound.
+ *
+ * @internal Exported for testing only. A slice with no transport behaves as a
+ * purely local one, which is what an unbound test gets.
+ */
+export function peekSessionCanvasTransport(): SessionCanvasTransport | null {
+  return canvasTransport;
+}
+
+/** How often a focused editor refreshes its claim on a document (server TTL is 45s). */
+const EDIT_HEARTBEAT_MS = 15_000;
+
+/** The live edit-lock heartbeats, keyed by document id. */
+const editHeartbeats = new Map<string, ReturnType<typeof setInterval>>();
+
+/** Stop refreshing a document's edit lock, if this window was. */
+function stopHeartbeat(documentId: string): void {
+  const timer = editHeartbeats.get(documentId);
+  if (timer === undefined) return;
+  clearInterval(timer);
+  editHeartbeats.delete(documentId);
+}
+
+/**
+ * Say out loud that a canvas change did not land.
+ *
+ * A write that failed and said nothing would leave this window showing a
+ * document the server does not have — which is the divergence the whole move to
+ * the server removes, reappearing one layer up.
+ */
+function reportWriteFailure(err: unknown): void {
+  const message = err instanceof Error ? err.message : 'The canvas could not be changed.';
+  toast.error('That did not reach your canvas', { description: message });
+}
+
+/** A `pending:` id belongs to a row this window minted and has not heard back about. */
+function isPendingId(id: string): boolean {
+  return id.startsWith('pending:');
+}
+
+/**
+ * Fold one of the server's rows into the shape this slice holds, keeping the
+ * per-viewer fields of the row it replaces.
+ *
+ * `editing` and `heldUpdate` are this window's own and never the server's, so
+ * they survive every arrival — a document somebody is typing in must not lose
+ * their draft because a frame landed.
+ */
+function fromServer(row: ServerCanvasDocument, previous?: CanvasDocument): CanvasDocument {
+  return {
+    id: row.id,
+    rev: row.rev,
+    content: row.content,
+    openedAt: Date.parse(row.openedAt),
+    lastActiveAt: Date.parse(row.lastActiveAt),
+    sourceLabel: row.title || sourceLabel(row.content),
+    editing: previous?.editing ?? false,
+    heldUpdate: previous?.heldUpdate ?? null,
+  };
 }
 
 // ---------------------------------------------------------------------------
 // Slice creator
 // ---------------------------------------------------------------------------
 
-/** Creates the canvas slice (persisted per-session multi-document canvas state). */
+/** Creates the canvas slice — the server's table, as this window holds it. */
 export const createCanvasSlice: StateCreator<
   AppState,
   [['zustand/devtools', never]],
   [],
   CanvasSlice
-> = (set) => ({
-  canvasOpen: false,
-  setCanvasOpen: (open) =>
-    set((s) => {
-      persist(s.canvasSessionId, { ...s, canvasOpen: open });
-      return { canvasOpen: open };
-    }),
+> = (set, get) => {
+  /**
+   * Run one write against the session this slice is bound to, and put the local
+   * table back the way it was if it fails.
+   *
+   * Bound to the session id captured at the moment the write STARTED: a write
+   * that answers after the reader has moved to another session must not be
+   * applied to the table they are now looking at.
+   */
+  function writeThrough(
+    sessionId: string | null,
+    write: (transport: SessionCanvasTransport, sessionId: string) => Promise<unknown>,
+    revert: () => void
+  ): void {
+    const transport = canvasTransport;
+    // No transport bound — a test, or a shell with no server. The optimistic
+    // apply stands on its own, which is exactly what this slice used to do.
+    if (!transport || sessionId === null) return;
+    void write(transport, sessionId).catch((err: unknown) => {
+      if (get().canvasSessionId === sessionId) revert();
+      reportWriteFailure(err);
+    });
+  }
 
-  openDocuments: [],
-  activeCanvasDocumentId: null,
-  activeBrowserDocumentId: null,
-
-  browserHistories: {},
-  writeBrowserHistory: (documentId, entry) =>
+  /**
+   * Replace a pending row with the row the server answered with.
+   *
+   * Matched on the pending id this window minted rather than on the source key:
+   * `json` and `widget` have no key, and two of them opened in the same tick
+   * would otherwise adopt each other's rows.
+   */
+  function settlePending(pendingId: string, row: ServerCanvasDocument): void {
     set((s) => {
-      // Guard against resurrecting a removed document's history: a late
-      // write-through (a nav committed the same tick the document closed) must
-      // not re-add an entry that a removal path already pruned.
-      if (!s.openDocuments.some((d) => d.id === documentId)) return {};
-      return { browserHistories: { ...s.browserHistories, [documentId]: entry } };
-    }),
+      const previous = s.openDocuments.find((d) => d.id === pendingId);
+      if (!previous) return {};
+      // Another window may already have delivered this row through the stream.
+      // Adopt rather than duplicate: drop the pending row and keep the real one.
+      const already = s.openDocuments.find((d) => d.id === row.id && d.id !== pendingId);
+      const documents = already
+        ? s.openDocuments.filter((d) => d.id !== pendingId)
+        : s.openDocuments.map((d) => (d.id === pendingId ? fromServer(row, previous) : d));
+      const swapId = (id: string | null) => (id === pendingId ? row.id : id);
+      return {
+        openDocuments: documents,
+        activeCanvasDocumentId: swapId(s.activeCanvasDocumentId),
+        activeBrowserDocumentId: swapId(s.activeBrowserDocumentId),
+        browserHistories: renameBrowserHistory(s.browserHistories, pendingId, row.id),
+      };
+    });
+  }
 
-  openCanvasDocument: (content) =>
-    set((s) => {
+  return {
+    canvasOpen: false,
+    setCanvasOpen: (open) => set({ canvasOpen: open }),
+
+    openDocuments: [],
+    activeCanvasDocumentId: null,
+    activeBrowserDocumentId: null,
+
+    browserHistories: {},
+    writeBrowserHistory: (documentId, entry) =>
+      set((s) => {
+        // Guard against resurrecting a removed document's history: a late
+        // write-through (a nav committed the same tick the document closed) must
+        // not re-add an entry that a removal path already pruned.
+        if (!s.openDocuments.some((d) => d.id === documentId)) return {};
+        return { browserHistories: { ...s.browserHistories, [documentId]: entry } };
+      }),
+
+    openCanvasDocument: (content) => {
+      const before = get();
+      const sessionId = before.canvasSessionId;
       const key = sourceKey(content);
-      const existingIdx = key ? s.openDocuments.findIndex((d) => sourceKey(d.content) === key) : -1;
-      const now = Date.now();
+      const existingIdx = key
+        ? before.openDocuments.findIndex((d) => sourceKey(d.content) === key)
+        : -1;
+      const existing = existingIdx >= 0 ? before.openDocuments[existingIdx] : undefined;
+      const pendingId = existing ? existing.id : `pending:${makeDocumentId()}`;
 
-      let documents: CanvasDocument[];
-      let activeId: string;
-
-      if (existingIdx >= 0) {
-        const existing = s.openDocuments[existingIdx];
-        activeId = existing.id;
-        // Re-activate; refresh content + label unless the doc is being edited,
-        // in which case hold the push for the banner instead of losing it. A
-        // push that LANDS clears any hold — the same rule `updateActiveDocument`
-        // follows, and for the same reason: an older version left on offer would
-        // let Reload replace what is on screen with something staler than it.
-        const refreshed: CanvasDocument = existing.editing
-          ? { ...existing, heldUpdate: content, lastActiveAt: now }
-          : {
-              ...existing,
-              content,
-              sourceLabel: sourceLabel(content),
-              heldUpdate: null,
-              lastActiveAt: now,
-            };
-        documents = s.openDocuments.map((d, i) => (i === existingIdx ? refreshed : d));
-      } else {
-        const doc: CanvasDocument = {
-          id: makeDocumentId(),
-          content,
-          openedAt: now,
-          lastActiveAt: now,
-          sourceLabel: sourceLabel(content),
-          editing: false,
-          heldUpdate: null,
+      set((s) => {
+        const now = Date.now();
+        let documents: CanvasDocument[];
+        if (existing) {
+          // Re-activate; refresh content + label unless the doc is being edited,
+          // in which case hold the push for the banner instead of losing it. A
+          // push that LANDS clears any hold — the same rule
+          // `updateActiveDocument` follows, and for the same reason: an older
+          // version left on offer would let Reload replace what is on screen
+          // with something staler than it.
+          const refreshed: CanvasDocument = existing.editing
+            ? { ...existing, heldUpdate: content, lastActiveAt: now }
+            : {
+                ...existing,
+                content,
+                sourceLabel: sourceLabel(content),
+                heldUpdate: null,
+                lastActiveAt: now,
+              };
+          documents = s.openDocuments.map((d) => (d.id === existing.id ? refreshed : d));
+        } else {
+          const doc: CanvasDocument = {
+            id: pendingId,
+            rev: 0,
+            content,
+            openedAt: now,
+            lastActiveAt: now,
+            sourceLabel: sourceLabel(content),
+            editing: false,
+            heldUpdate: null,
+          };
+          // Neither view may lose the document it is showing to make room for
+          // this one, so both active ids are protected alongside it.
+          documents = evictToCapacity(
+            [...s.openDocuments, doc],
+            [pendingId, s.activeCanvasDocumentId, s.activeBrowserDocumentId]
+          );
+        }
+        // Only the view this content belongs to changes what it is showing; the
+        // other view stays on whatever the reader left there, and eviction
+        // cannot have taken it.
+        const activeIds =
+          canvasViewForContent(content) === 'browser'
+            ? {
+                activeCanvasDocumentId: s.activeCanvasDocumentId,
+                activeBrowserDocumentId: pendingId,
+              }
+            : {
+                activeCanvasDocumentId: pendingId,
+                activeBrowserDocumentId: s.activeBrowserDocumentId,
+              };
+        return {
+          openDocuments: documents,
+          ...activeIds,
+          // LRU eviction may have dropped documents — prune their histories too.
+          browserHistories: pruneBrowserHistories(s.browserHistories, documents),
         };
-        activeId = doc.id;
-        // Neither view may lose the document it is showing to make room for this
-        // one, so both active ids are protected alongside it.
-        documents = evictToCapacity(
-          [...s.openDocuments, doc],
-          [activeId, s.activeCanvasDocumentId, s.activeBrowserDocumentId]
-        );
-      }
+      });
 
-      // Only the view this content belongs to changes what it is showing; the
-      // other view stays on whatever the reader left there, and eviction cannot
-      // have taken it.
-      const activeIds =
-        canvasViewForContent(content) === 'browser'
-          ? { activeCanvasDocumentId: s.activeCanvasDocumentId, activeBrowserDocumentId: activeId }
-          : {
-              activeCanvasDocumentId: activeId,
-              activeBrowserDocumentId: s.activeBrowserDocumentId,
+      writeThrough(
+        sessionId,
+        async (transport, id) => {
+          const row = await transport.openSessionCanvasDocument(id, content);
+          settlePending(pendingId, row);
+        },
+        () =>
+          set((s) => {
+            const documents = s.openDocuments.filter((d) => d.id !== pendingId);
+            return {
+              openDocuments: documents,
+              ...reconcileActiveIds(documents, s),
+              browserHistories: pruneBrowserHistories(s.browserHistories, documents),
             };
-      // LRU eviction may have dropped documents — prune their histories too.
-      const browserHistories = pruneBrowserHistories(s.browserHistories, documents);
-      const next = { openDocuments: documents, ...activeIds, browserHistories };
-      persist(s.canvasSessionId, { ...s, ...next });
-      return next;
-    }),
+          })
+      );
+    },
 
-  updateActiveDocument: (content) =>
-    set((s) => {
+    updateActiveDocument: (content) => {
+      const before = get();
       // The push lands in the view its content belongs to, so a `url` update
       // never overwrites the document somebody is reading in the Canvas tab.
       const targetId =
         canvasViewForContent(content) === 'browser'
-          ? s.activeBrowserDocumentId
-          : s.activeCanvasDocumentId;
-      if (!s.openDocuments.some((d) => d.id === targetId)) return {};
+          ? before.activeBrowserDocumentId
+          : before.activeCanvasDocumentId;
+      const target = before.openDocuments.find((d) => d.id === targetId);
+      if (!target) return;
 
-      const applied = (d: CanvasDocument): CanvasDocument => {
-        // Protect the edit (ADR-0292) — but HOLD the push for the banner
-        // instead of dropping it, which is what this did in silence until
-        // notify-and-reconcile landed.
-        if (d.editing) return { ...d, heldUpdate: content };
-        // Not editing: the push lands, and a hold left over from an earlier
-        // edit is stale — a newer version is the document's content now.
-        return { ...d, content, sourceLabel: sourceLabel(content), heldUpdate: null };
-      };
-
-      const documents = s.openDocuments.map((d) => (d.id === targetId ? applied(d) : d));
-      persist(s.canvasSessionId, { ...s, openDocuments: documents });
-      return { openDocuments: documents };
-    }),
-
-  applyHeldUpdate: (id) =>
-    set((s) => {
-      const target = s.openDocuments.find((d) => d.id === id);
-      if (!target?.heldUpdate) return {};
-      const content = target.heldUpdate;
-      const documents = s.openDocuments.map((d) =>
-        d.id === id
-          ? {
-              ...d,
-              content,
-              sourceLabel: sourceLabel(content),
-              heldUpdate: null,
-              editing: false,
-            }
-          : d
-      );
-      persist(s.canvasSessionId, { ...s, openDocuments: documents });
-      return { openDocuments: documents };
-    }),
-
-  discardHeldUpdate: (id) =>
-    set((s) => {
-      if (!s.openDocuments.some((d) => d.id === id && d.heldUpdate)) return {};
-      // `heldUpdate` is transient, so nothing to persist — the draft the person
-      // kept is the editor's, and the editor owns writing it.
-      return {
-        openDocuments: s.openDocuments.map((d) => (d.id === id ? { ...d, heldUpdate: null } : d)),
-      };
-    }),
-
-  setDocumentContent: (id, content) =>
-    set((s) => {
-      if (!s.openDocuments.some((d) => d.id === id)) return {};
-      // A content write never moves a document between views: `openCanvasDocument`
-      // only ever refreshes a document from a source key of its own view, and
-      // `updateActiveDocument` picks its target by the content's view.
-      const documents = s.openDocuments.map((d) =>
-        d.id === id ? { ...d, content, sourceLabel: sourceLabel(content) } : d
-      );
-      persist(s.canvasSessionId, { ...s, openDocuments: documents });
-      return { openDocuments: documents };
-    }),
-
-  closeCanvasDocument: (id) =>
-    set((s) => {
-      const documents = s.openDocuments.filter((d) => d.id !== id);
-      // Closing the active document hands that view its most-recently-active
-      // survivor; the other view is untouched.
-      const activeIds = reconcileActiveIds(documents, s);
-      const browserHistories = pruneBrowserHistories(s.browserHistories, documents);
-      const nextState = { openDocuments: documents, ...activeIds, browserHistories };
-      persist(s.canvasSessionId, { ...s, ...nextState });
-      return nextState;
-    }),
-
-  activateCanvasDocument: (id) =>
-    set((s) => {
-      const target = s.openDocuments.find((d) => d.id === id);
-      if (!target) return {};
-      const documents = s.openDocuments.map((d) =>
-        d.id === id ? { ...d, lastActiveAt: Date.now() } : d
-      );
-      const activeIds =
-        canvasViewForContent(target.content) === 'browser'
-          ? { activeCanvasDocumentId: s.activeCanvasDocumentId, activeBrowserDocumentId: id }
-          : { activeCanvasDocumentId: id, activeBrowserDocumentId: s.activeBrowserDocumentId };
-      const nextState = { openDocuments: documents, ...activeIds };
-      persist(s.canvasSessionId, { ...s, ...nextState });
-      return nextState;
-    }),
-
-  setDocumentEditing: (id, editing) =>
-    set((s) => {
-      if (!s.openDocuments.some((d) => d.id === id)) return {};
-      const documents = s.openDocuments.map((d) => (d.id === id ? { ...d, editing } : d));
-      // `editing` is transient — not persisted.
-      return { openDocuments: documents };
-    }),
-
-  canvasPreferredWidth: null,
-  setCanvasPreferredWidth: (width) => set({ canvasPreferredWidth: width }),
-
-  canvasSessionId: null,
-  loadCanvasForSession: (sessionId) => {
-    const entry = readCanvasSession(sessionId);
-    // Hydrate documents fresh (transient `editing` always starts false) so a new
-    // session never inherits the previous one's edit mode.
-    if (entry) {
-      // Hydrate fresh: `editing` and `heldUpdate` always start empty — a held
-      // push belongs to an edit that is over — and any doc with an empty label
-      // (e.g. a legacy pre-DOR-219 doc migrated on read) gets one derived from
-      // its content so its tab never renders blank.
-      const openDocuments = entry.documents.map((d) => ({
-        ...d,
-        editing: false,
-        heldUpdate: null,
-        sourceLabel: d.sourceLabel || sourceLabel(d.content),
-      }));
-      set({
-        canvasOpen: entry.open,
-        openDocuments,
-        // An entry written before the two-view split carries one active id, which
-        // the read helper routes into the view it belongs to; the reconcile gives
-        // the other view its most-recently-active document rather than leaving it
-        // showing a splash above a full tab strip.
-        ...reconcileActiveIds(openDocuments, {
-          activeCanvasDocumentId: entry.activeCanvasDocumentId,
-          activeBrowserDocumentId: entry.activeBrowserDocumentId,
+      set((s) => ({
+        openDocuments: s.openDocuments.map((d) => {
+          if (d.id !== target.id) return d;
+          // Protect the edit (ADR-0292) — but HOLD the push for the banner
+          // instead of dropping it, which is what this did in silence until
+          // notify-and-reconcile landed.
+          if (d.editing) return { ...d, heldUpdate: content };
+          // Not editing: the push lands, and a hold left over from an earlier
+          // edit is stale — a newer version is the document's content now.
+          return { ...d, content, sourceLabel: sourceLabel(content), heldUpdate: null };
         }),
-        canvasSessionId: sessionId,
-        // Browser history is in-memory only; a session switch starts fresh so it
-        // never carries the previous session's histories (and never unbounded).
-        browserHistories: {},
+      }));
+
+      // A held push is this window's own offer and was never applied, so there
+      // is nothing to write through for it.
+      if (target.editing || isPendingId(target.id)) return;
+      const previous = target.content;
+      writeThrough(
+        before.canvasSessionId,
+        (transport, id) => transport.updateSessionCanvasDocument(id, target.id, { content }),
+        () => restoreContent(set, target.id, previous)
+      );
+    },
+
+    applyHeldUpdate: (id) => {
+      const before = get();
+      const target = before.openDocuments.find((d) => d.id === id);
+      if (!target?.heldUpdate) return;
+      const content = target.heldUpdate;
+      const previous = target.content;
+      set((s) => ({
+        openDocuments: s.openDocuments.map((d) =>
+          d.id === id
+            ? { ...d, content, sourceLabel: sourceLabel(content), heldUpdate: null, editing: false }
+            : d
+        ),
+      }));
+      stopHeartbeat(id);
+      if (isPendingId(id)) return;
+      writeThrough(
+        before.canvasSessionId,
+        (transport, sessionId) => transport.updateSessionCanvasDocument(sessionId, id, { content }),
+        () => restoreContent(set, id, previous)
+      );
+    },
+
+    discardHeldUpdate: (id) =>
+      set((s) => {
+        if (!s.openDocuments.some((d) => d.id === id && d.heldUpdate)) return {};
+        // `heldUpdate` is this window's own and never the server's, so there is
+        // nothing to write: the draft the person kept is the editor's, and the
+        // editor owns writing it.
+        return {
+          openDocuments: s.openDocuments.map((d) => (d.id === id ? { ...d, heldUpdate: null } : d)),
+        };
+      }),
+
+    setDocumentContent: (id, content) => {
+      const before = get();
+      const target = before.openDocuments.find((d) => d.id === id);
+      if (!target) return;
+      const previous = target.content;
+      // A content write never moves a document between views:
+      // `openCanvasDocument` only ever refreshes from a source key of its own
+      // view, and `updateActiveDocument` picks its target by the content's view.
+      set((s) => ({
+        openDocuments: s.openDocuments.map((d) =>
+          d.id === id ? { ...d, content, sourceLabel: sourceLabel(content) } : d
+        ),
+      }));
+      if (isPendingId(id)) return;
+      writeThrough(
+        before.canvasSessionId,
+        (transport, sessionId) => transport.updateSessionCanvasDocument(sessionId, id, { content }),
+        () => restoreContent(set, id, previous)
+      );
+    },
+
+    closeCanvasDocument: (id) => {
+      const before = get();
+      const closed = before.openDocuments.find((d) => d.id === id);
+      if (!closed) return;
+      stopHeartbeat(id);
+      set((s) => {
+        const documents = s.openDocuments.filter((d) => d.id !== id);
+        // Closing the active document hands that view its most-recently-active
+        // survivor; the other view is untouched.
+        return {
+          openDocuments: documents,
+          ...reconcileActiveIds(documents, s),
+          browserHistories: pruneBrowserHistories(s.browserHistories, documents),
+        };
       });
-    } else {
+      if (isPendingId(id)) return;
+      writeThrough(
+        before.canvasSessionId,
+        (transport, sessionId) => transport.closeSessionCanvasDocument(sessionId, id),
+        () =>
+          set((s) => {
+            if (s.openDocuments.some((d) => d.id === id)) return {};
+            const documents = [...s.openDocuments, closed];
+            return { openDocuments: documents, ...reconcileActiveIds(documents, s) };
+          })
+      );
+    },
+
+    activateCanvasDocument: (id) => {
+      const before = get();
+      const target = before.openDocuments.find((d) => d.id === id);
+      if (!target) return;
+      set((s) => {
+        const documents = s.openDocuments.map((d) =>
+          d.id === id ? { ...d, lastActiveAt: Date.now() } : d
+        );
+        const activeIds =
+          canvasViewForContent(target.content) === 'browser'
+            ? { activeCanvasDocumentId: s.activeCanvasDocumentId, activeBrowserDocumentId: id }
+            : { activeCanvasDocumentId: id, activeBrowserDocumentId: s.activeBrowserDocumentId };
+        return { openDocuments: documents, ...activeIds };
+      });
+      if (isPendingId(id)) return;
+      // Written through because recency is what the SERVER's LRU evicts on: a
+      // document somebody keeps coming back to on one device must not be dropped
+      // because another device opened twelve things. It changes the order and
+      // nobody else's open tab — which view each window is showing stays here.
+      writeThrough(
+        before.canvasSessionId,
+        (transport, sessionId) =>
+          transport.updateSessionCanvasDocument(sessionId, id, {
+            activate: true,
+          } satisfies UpdateCanvasDocumentRequest),
+        () => undefined
+      );
+    },
+
+    setDocumentEditing: (id, editing) => {
+      const before = get();
+      if (!before.openDocuments.some((d) => d.id === id)) return;
+      // `editing` is this window's own: transient, never hydrated, never sent as
+      // state. What IS sent is the edit LOCK, which is what holds the agent's
+      // push back while somebody is typing.
+      set((s) => ({
+        openDocuments: s.openDocuments.map((d) => (d.id === id ? { ...d, editing } : d)),
+      }));
+      stopHeartbeat(id);
+      if (isPendingId(id)) return;
+      const sessionId = before.canvasSessionId;
+      const transport = canvasTransport;
+      if (!transport || sessionId === null) return;
+      const beat = (): void => {
+        void transport.setSessionCanvasEditing(sessionId, id, editing).catch(() => {
+          // A dropped heartbeat is not worth a toast: the lock lapses on its own
+          // 45 seconds after the last one that landed, which is the whole point
+          // of evaluating it lazily. Stop refreshing rather than keep failing.
+          stopHeartbeat(id);
+        });
+      };
+      beat();
+      // Refreshed while the editor stays focused; the server's TTL is three
+      // times this, so one dropped request never drops a lock mid-sentence.
+      if (editing) editHeartbeats.set(id, setInterval(beat, EDIT_HEARTBEAT_MS));
+    },
+
+    canvasPreferredWidth: null,
+    setCanvasPreferredWidth: (width) => set({ canvasPreferredWidth: width }),
+
+    canvasSessionId: null,
+
+    loadCanvasForSession: (sessionId) => {
+      for (const documentId of [...editHeartbeats.keys()]) stopHeartbeat(documentId);
       set({
         canvasOpen: false,
         openDocuments: [],
         activeCanvasDocumentId: null,
         activeBrowserDocumentId: null,
         canvasSessionId: sessionId,
+        // Browser history is in-memory only; a session switch starts fresh so it
+        // never carries the previous session's histories (and never unbounded).
         browserHistories: {},
       });
-    }
-  },
-});
+    },
+
+    hydrateCanvasFromSnapshot: (sessionId, documents) =>
+      set((s) => {
+        if (s.canvasSessionId !== sessionId) return {};
+        const previous = new Map(s.openDocuments.map((d) => [d.id, d]));
+        const hydrated = documents.map((row) => fromServer(row, previous.get(row.id)));
+        return {
+          openDocuments: hydrated,
+          // Re-derived rather than dropped: a reconnect is not a reason to
+          // forget which tab somebody was on, and a stranded id would render a
+          // tab strip above the empty-state splash.
+          ...reconcileActiveIds(hydrated, s),
+          canvasOpen: s.canvasOpen || hydrated.length > 0,
+          browserHistories: pruneBrowserHistories(s.browserHistories, hydrated),
+        };
+      }),
+
+    applyCanvasEvent: (sessionId, event) =>
+      set((s) => {
+        if (s.canvasSessionId !== sessionId) return {};
+        if (event.closed === true || !event.document) {
+          if (!s.openDocuments.some((d) => d.id === event.documentId)) return {};
+          const documents = s.openDocuments.filter((d) => d.id !== event.documentId);
+          return {
+            openDocuments: documents,
+            ...reconcileActiveIds(documents, s),
+            browserHistories: pruneBrowserHistories(s.browserHistories, documents),
+          };
+        }
+        const row = event.document;
+        const held = s.openDocuments.find((d) => d.id === row.id);
+        if (held) {
+          // **A lower `rev` never overwrites a higher one.** This is what makes
+          // the echo of this window's own write harmless and makes a second
+          // device's write win in order.
+          if (row.rev <= held.rev) return {};
+          // The edit lock's job: while somebody is typing in this document, an
+          // arrival is HELD for the banner rather than landing underneath them.
+          if (held.editing) {
+            return {
+              openDocuments: s.openDocuments.map((d) =>
+                d.id === row.id ? { ...d, rev: row.rev, heldUpdate: row.content } : d
+              ),
+            };
+          }
+          return {
+            openDocuments: s.openDocuments.map((d) => (d.id === row.id ? fromServer(row, d) : d)),
+          };
+        }
+        // A document another window opened. It appears in its own view without
+        // moving what THIS window is looking at — a shared table that yanked
+        // somebody's tab would be over-participation one layer down.
+        const documents = evictToCapacity(
+          [...s.openDocuments, fromServer(row)],
+          [s.activeCanvasDocumentId, s.activeBrowserDocumentId]
+        );
+        return {
+          openDocuments: documents,
+          ...reconcileActiveIds(documents, s),
+          browserHistories: pruneBrowserHistories(s.browserHistories, documents),
+        };
+      }),
+  };
+};
+
+/** Put one document's content back after a write the server refused. */
+function restoreContent(
+  set: (updater: (state: AppState) => Partial<AppState>) => void,
+  id: string,
+  content: UiCanvasContent
+): void {
+  set((s) => ({
+    openDocuments: s.openDocuments.map((d) =>
+      d.id === id ? { ...d, content, sourceLabel: sourceLabel(content) } : d
+    ),
+  }));
+}
+
+/**
+ * Move a browser history entry from a pending id onto the id the server gave.
+ *
+ * Returns the SAME reference when there is nothing to move, so a settle that
+ * touches no history does not churn the map.
+ */
+function renameBrowserHistory(
+  histories: Record<string, BrowserHistoryState>,
+  from: string,
+  to: string
+): Record<string, BrowserHistoryState> {
+  const entry = histories[from];
+  if (entry === undefined) return histories;
+  const { [from]: _moved, ...rest } = histories;
+  return { ...rest, [to]: entry };
+}

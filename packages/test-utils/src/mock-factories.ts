@@ -9,10 +9,17 @@ import type {
   InterruptReceipt,
   Task,
   TaskRun,
+  UiCanvasContent,
 } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
 import type { HarnessStatusResponse } from '@dorkos/shared/harness-schemas';
-import type { CanvasDocument, RoomEntry, RoomEntryListResponse } from '@dorkos/shared/room-schemas';
+import type {
+  CanvasDocument,
+  RoomEntry,
+  RoomEntryListResponse,
+  UpdateCanvasDocumentRequest,
+} from '@dorkos/shared/room-schemas';
+import { canvasSourceKey } from '@dorkos/shared/canvas-source-key';
 import type { WorktreeScanResult } from '@dorkos/shared/workspace';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { BUILTIN_MEMORY_PROVIDER_ID } from '@dorkos/shared/memory-provider';
@@ -223,6 +230,38 @@ export function mockCanvasDocument(overrides: Partial<CanvasDocument> = {}): Can
     openedAt: '2026-09-11T00:00:00.000Z',
     lastActiveAt: '2026-09-11T00:00:00.000Z',
     ...overrides,
+  };
+}
+
+/**
+ * One row of a session's canvas, built from the content a write was given.
+ *
+ * The id is deterministic from the content's source key where it has one, so a
+ * test that opens the same file twice gets one row — the dedupe the server does.
+ * Content with no key (`json`, `widget`) gets a fresh id every time, which is
+ * also what the server does.
+ *
+ * @param sessionId - The session the row belongs to.
+ * @param content - What was opened.
+ * @returns The row, as the server would have answered.
+ */
+export function sessionCanvasRow(sessionId: string, content: UiCanvasContent): CanvasDocument {
+  const key = canvasSourceKey(content);
+  const at = '2026-09-12T00:00:00.000Z';
+  return {
+    id: key === null ? `canvas-${Math.random().toString(36).slice(2, 10)}` : `canvas-${key}`,
+    scope: `session:${sessionId}`,
+    roomId: null,
+    content,
+    title: content.title ?? 'Document',
+    contentType: content.type,
+    authorId: 'owner',
+    pinned: false,
+    rev: 1,
+    lastTouchedBy: 'owner',
+    lastTouchedAt: at,
+    openedAt: at,
+    lastActiveAt: at,
   };
 }
 
@@ -510,18 +549,32 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     closeRoomCanvasDocument: vi.fn().mockResolvedValue(undefined),
     setRoomCanvasEditing: vi.fn().mockResolvedValue({ editingBy: null, expiresAt: null }),
     subscribeRoom: vi.fn(emptyAsyncIterable),
-    // The session canvas (spec `canvas-agent-seat` §1.6). Honest-empty reads:
-    // a test that has said nothing about the canvas gets a session with nothing
-    // on it, which is what a fresh session really has. The writes answer with
-    // the row they wrote, exactly as the room's do.
+    // The session canvas (spec `canvas-agent-seat` §1.6). Honest-empty reads: a
+    // test that has said nothing about the canvas gets a session with nothing on
+    // it, which is what a fresh session really has.
+    //
+    // **The writes ECHO what they were given**, rather than answering with a
+    // fixed fixture. The client adopts the row a write answers with — that is
+    // how a pending id becomes the server's — so a fixed answer would replace
+    // every document a test opened with the same unrelated one, and the test
+    // would be measuring the fixture.
     listSessionCanvas: vi.fn().mockResolvedValue([]),
     getSessionCanvasDocument: vi.fn().mockResolvedValue(null),
     openSessionCanvasDocument: vi
       .fn()
-      .mockResolvedValue(mockCanvasDocument({ scope: 'session:session-1', roomId: null })),
+      .mockImplementation((sessionId: string, content: UiCanvasContent) =>
+        Promise.resolve(sessionCanvasRow(sessionId, content))
+      ),
     updateSessionCanvasDocument: vi
       .fn()
-      .mockResolvedValue(mockCanvasDocument({ scope: 'session:session-1', roomId: null })),
+      .mockImplementation(
+        (sessionId: string, documentId: string, patch: UpdateCanvasDocumentRequest) =>
+          Promise.resolve({
+            ...sessionCanvasRow(sessionId, patch.content ?? { type: 'json', data: {} }),
+            id: documentId,
+            ...(patch.pinned !== undefined ? { pinned: patch.pinned } : {}),
+          })
+      ),
     closeSessionCanvasDocument: vi.fn().mockResolvedValue(undefined),
     setSessionCanvasEditing: vi.fn().mockResolvedValue({ editingBy: null, expiresAt: null }),
     // Read state (team-room-home D4) — one cursor for every kind of thread a

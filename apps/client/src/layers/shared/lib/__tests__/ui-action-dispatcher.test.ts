@@ -34,6 +34,7 @@ function makeMockStore(overrides: Partial<DispatcherStore> = {}): DispatcherStor
     setGlobalPaletteOpen: vi.fn(),
     setCanvasOpen: vi.fn(),
     openCanvasDocument: vi.fn(),
+    closeCanvasDocument: vi.fn(),
     updateActiveDocument: vi.fn(),
     setCanvasPreferredWidth: vi.fn(),
     setRightPanelOpen: vi.fn(),

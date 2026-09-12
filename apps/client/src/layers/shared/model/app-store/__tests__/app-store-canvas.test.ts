@@ -3,7 +3,8 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { UiCanvasContent } from '@dorkos/shared/types';
-import { MAX_CANVAS_DOCUMENTS, STORAGE_KEYS } from '@/layers/shared/lib/constants';
+import type { CanvasDocument as ServerCanvasDocument } from '@dorkos/shared/room-schemas';
+import { MAX_CANVAS_DOCUMENTS } from '@/layers/shared/lib/constants';
 import { useAppStore } from '../app-store';
 
 /** Reset the canvas slice to an empty, session-bound state before each test. */
@@ -19,6 +20,30 @@ function resetCanvas(sessionId: string | null = 'sess-1') {
 }
 
 const fileDoc = (path: string): UiCanvasContent => ({ type: 'file', sourcePath: path });
+
+/** One of the server's rows, with everything a test does not care about filled in. */
+function serverDocument(overrides: {
+  id: string;
+  content: UiCanvasContent;
+  rev?: number;
+  lastActiveAt?: string;
+}): ServerCanvasDocument {
+  return {
+    id: overrides.id,
+    scope: 'session:sess-1',
+    roomId: null,
+    content: overrides.content,
+    title: overrides.id,
+    contentType: overrides.content.type,
+    authorId: 'owner',
+    pinned: false,
+    rev: overrides.rev ?? 1,
+    lastTouchedBy: 'owner',
+    lastTouchedAt: overrides.lastActiveAt ?? '2026-09-12T10:00:00.000Z',
+    openedAt: '2026-09-12T09:00:00.000Z',
+    lastActiveAt: overrides.lastActiveAt ?? '2026-09-12T10:00:00.000Z',
+  };
+}
 
 describe('CanvasSlice — multi-document reducer', () => {
   beforeEach(() => resetCanvas());
@@ -294,18 +319,19 @@ describe('CanvasSlice — multi-document reducer', () => {
     expect(docs.every((d) => d.editing === false)).toBe(true);
   });
 
-  it('persists the document array per session and rehydrates it', () => {
-    const { openCanvasDocument, setCanvasOpen } = useAppStore.getState();
-    setCanvasOpen(true);
+  it('loadCanvasForSession empties the slice, ready for the snapshot to fill it', () => {
+    // A RESET rather than a read. The table is the server's now (spec
+    // `canvas-agent-seat` §1.5) and arrives on the session stream's cold
+    // connect — so a switch that left the previous session's documents on
+    // screen would be showing one session's canvas under another's name.
+    const { openCanvasDocument } = useAppStore.getState();
     openCanvasDocument(fileDoc('a.ts'));
     openCanvasDocument(fileDoc('b.ts'));
+    expect(useAppStore.getState().openDocuments).toHaveLength(2);
 
-    // Switch away and back — the documents rehydrate from localStorage.
     useAppStore.getState().loadCanvasForSession('sess-other');
     expect(useAppStore.getState().openDocuments).toHaveLength(0);
-    useAppStore.getState().loadCanvasForSession('sess-1');
-    expect(useAppStore.getState().openDocuments).toHaveLength(2);
-    expect(useAppStore.getState().canvasOpen).toBe(true);
+    expect(useAppStore.getState().canvasSessionId).toBe('sess-other');
   });
 });
 
@@ -511,59 +537,20 @@ describe('CanvasSlice — two views over one store (ADR 260911-200304)', () => {
     expect(openDocuments.some((d) => d.id === activeCanvasDocumentId)).toBe(true);
   });
 
-  it('hydrates a legacy entry whose single active id named a page', () => {
-    // Exactly what a browser that last ran before the split has on disk: one
-    // `activeDocumentId`, pointing at a `url` document.
-    localStorage.setItem(
-      STORAGE_KEYS.CANVAS_SESSIONS,
-      JSON.stringify({
-        'sess-legacy': {
-          open: true,
-          documents: [
-            {
-              id: 'doc-md',
-              content: { type: 'markdown', content: 'notes' },
-              openedAt: 1,
-              lastActiveAt: 1,
-              sourceLabel: 'Document',
-            },
-            {
-              id: 'doc-page',
-              content: { type: 'url', url: 'https://a.test/' },
-              openedAt: 2,
-              lastActiveAt: 2,
-              sourceLabel: 'a.test',
-            },
-          ],
-          activeDocumentId: 'doc-page',
-          accessedAt: 2,
-        },
-      })
-    );
-
-    useAppStore.getState().loadCanvasForSession('sess-legacy');
-
-    const { openDocuments, activeBrowserDocumentId, activeCanvasDocumentId, canvasOpen } =
-      useAppStore.getState();
-    expect(canvasOpen).toBe(true);
-    expect(openDocuments).toHaveLength(2);
-    // The old active id belonged to the Browser view, and the Canvas view still
-    // gets its own document rather than a splash above a full tab strip.
-    expect(activeBrowserDocumentId).toBe('doc-page');
-    expect(activeCanvasDocumentId).toBe('doc-md');
-  });
-
-  it('round-trips both active ids through localStorage', () => {
-    const { openCanvasDocument } = useAppStore.getState();
-    openCanvasDocument(fileDoc('a.ts'));
-    const file = useAppStore.getState().activeCanvasDocumentId!;
-    openCanvasDocument(browserDoc('https://a.test/'));
-    const page = useAppStore.getState().activeBrowserDocumentId!;
-
-    useAppStore.getState().loadCanvasForSession('sess-other');
+  it('re-derives both active ids when a snapshot hydrates the table', () => {
+    // The pair used to round-trip through `localStorage`. They are re-derived
+    // from the server's rows instead, and the property that matters is the same
+    // one: neither view is left pointing at a document that is gone while it
+    // still holds tabs (spec `canvas-agent-seat` §1.5).
     useAppStore.getState().loadCanvasForSession('sess-1');
+    useAppStore
+      .getState()
+      .hydrateCanvasFromSnapshot('sess-1', [
+        serverDocument({ id: 'doc-file', content: fileDoc('a.ts') }),
+        serverDocument({ id: 'doc-page', content: browserDoc('https://a.test/') }),
+      ]);
 
-    expect(useAppStore.getState().activeCanvasDocumentId).toBe(file);
-    expect(useAppStore.getState().activeBrowserDocumentId).toBe(page);
+    expect(useAppStore.getState().activeCanvasDocumentId).toBe('doc-file');
+    expect(useAppStore.getState().activeBrowserDocumentId).toBe('doc-page');
   });
 });

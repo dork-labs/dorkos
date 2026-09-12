@@ -14,7 +14,6 @@ const CROSS_SLICE_KEYS = [
   'dorkos-auto-hide-tool-calls',
   'dorkos-promo-enabled',
   'dorkos-sidebar-active-tab',
-  'dorkos-canvas-sessions',
   'dorkos-right-panel-state',
   'dorkos-right-panel-layouts',
   'dorkos-pip-panel-state',
@@ -29,7 +28,6 @@ function seed() {
   s.setPromoEnabled(false);
   s.setSidebarActiveTab('connections');
   s.setPipGeometry({ x: 1, y: 2, width: 300, height: 200 });
-  localStorage.setItem('dorkos-canvas-sessions', '{"s1":{"open":true}}');
   localStorage.setItem('dorkos-right-panel-state', '{"open":true,"activeTab":"profile"}');
   localStorage.setItem('dorkos-right-panel-layouts', '{"a1":{"open":true}}');
   localStorage.setItem('dorkos-dismissed-promo-ids', '["welcome"]');

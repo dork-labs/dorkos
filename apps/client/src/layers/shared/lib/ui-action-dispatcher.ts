@@ -39,6 +39,8 @@ export interface DispatcherStore {
    * is being edited keeps its content (ADR-0292).
    */
   openCanvasDocument: (content: UiCanvasContent) => void;
+  /** Take one document off the canvas by id (the `close_canvas` documentId arm). */
+  closeCanvasDocument: (id: string) => void;
   /**
    * Mutate the active document of the view this content belongs to. A no-op
    * while that document is being edited, so the in-canvas editor stays the sole
@@ -216,6 +218,22 @@ export interface DispatcherContext {
    */
   sessionId?: string;
   /**
+   * Whether the SERVER has already applied this command's canvas effect (spec
+   * `canvas-agent-seat` §1.5).
+   *
+   * True on exactly one path: the `ui_command` events arriving on a session's
+   * own stream. A session's canvas is the server's now, so `control_ui` writes
+   * the row itself and the change reaches every window as a `canvas` event —
+   * what is left for the dispatcher is the REVEAL, which is what a `ui_command`
+   * has always been for on a session.
+   *
+   * Absent everywhere else, and that is not an oversight: a click in the file
+   * tree, a widget button, an extension calling `api.ui.dispatch` — none of
+   * those has been applied by anybody, so each still opens the document through
+   * the store, which writes it through.
+   */
+  serverAppliedCanvas?: boolean;
+  /**
    * Optional: the URL half of the dual dialog open signal (DOR-839).
    *
    * Settings and Tasks can be held open by a search param as well as by the
@@ -309,7 +327,7 @@ export function executeUiCommand(
       // Edit-protection (ADR-0292) is enforced inside `openCanvasDocument`: a
       // re-activated document that is being edited keeps its content. The
       // panel-reveal side effects below run regardless so the canvas surfaces.
-      if (command.content != null) {
+      if (command.content != null && !ctx.serverAppliedCanvas) {
         store.openCanvasDocument(command.content);
       }
       if (command.preferredWidth != null) {
@@ -334,7 +352,7 @@ export function executeUiCommand(
       // Deliberately does NOT reveal anything: an update is not an open, and a
       // tab that selects itself because an agent refreshed a document is the
       // pixel version of a turn that triggers itself (spec `room-canvas` §9.3).
-      store.updateActiveDocument(command.content);
+      if (!ctx.serverAppliedCanvas) store.updateActiveDocument(command.content);
       break;
     case 'open_file': {
       // Resolve the viewer from the mime→viewer registry and open the file as a
@@ -344,7 +362,7 @@ export function executeUiCommand(
       // `open_file` tool both drive.
       const viewer = resolveViewerForPath(command.sourcePath, ctx.workbenchViewerOverrides);
       const content = buildOpenFileContent(viewer, command.sourcePath);
-      store.openCanvasDocument(content);
+      if (!ctx.serverAppliedCanvas) store.openCanvasDocument(content);
       // No viewer resolves to the embedded browser today, so every opened file
       // reveals Canvas — and the day one does, this line routes it to Browser
       // without an edit, because it asks the content rather than the extension.
@@ -359,7 +377,9 @@ export function executeUiCommand(
       // loads baseline + current itself, so no bytes travel here (mirrors
       // `open_file`). `mediaKind` is left unset; the viewer resolves text vs
       // image from the registry.
-      store.openCanvasDocument({ type: 'diff', sourcePath: command.sourcePath });
+      if (!ctx.serverAppliedCanvas) {
+        store.openCanvasDocument({ type: 'diff', sourcePath: command.sourcePath });
+      }
       revealCanvas(store, origin);
       break;
     case 'open_terminal': {
@@ -383,13 +403,21 @@ export function executeUiCommand(
       // Append-and-activate a `browser` canvas document (dedup by URL inside the
       // store), then reveal the canvas. Appending never clobbers a document the
       // user is editing (edit-protection is per-doc; ADR-0292).
-      store.openCanvasDocument({ type: 'browser', url: command.url });
+      if (!ctx.serverAppliedCanvas) {
+        store.openCanvasDocument({ type: 'browser', url: command.url });
+      }
       revealBrowser(store, origin);
       break;
     case 'close_canvas':
-      // Closes the whole panel, both views with it — the verb names the surface,
-      // not a document. (Naming one document is the `documentId` the room canvas
-      // adds to this command later.)
+      // **Naming a document closes THAT document; naming none closes the whole
+      // panel, both views with it.** The verb names the surface unless it names
+      // a row — which is what `documentId` has meant on it since the room canvas
+      // added the field. A document close on a session is a write the server has
+      // already made, so the `canvas` event is what drops it here.
+      if (command.documentId !== undefined) {
+        if (!ctx.serverAppliedCanvas) store.closeCanvasDocument(command.documentId);
+        break;
+      }
       store.setCanvasOpen(false);
       store.setRightPanelOpen(false);
       break;

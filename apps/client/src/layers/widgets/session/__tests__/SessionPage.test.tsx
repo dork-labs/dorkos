@@ -47,7 +47,7 @@ vi.mock('../ui/ChatPanel', () => ({
 }));
 
 vi.mock('@/layers/features/canvas', () => ({
-  useCanvasPersistence: () => {},
+  useSessionCanvas: () => {},
 }));
 
 vi.mock('@/layers/features/right-panel', () => ({

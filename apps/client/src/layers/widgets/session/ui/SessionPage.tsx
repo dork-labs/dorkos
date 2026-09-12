@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { ChatPanel } from './ChatPanel';
-import { useCanvasPersistence } from '@/layers/features/canvas';
+import { useSessionCanvas } from '@/layers/features/canvas';
 import { useRightPanelLayoutPersistence } from '@/layers/features/right-panel';
 import { useSessionId, useSessionSearch } from '@/layers/entities/session';
 import { useInPlaceNavigate } from '@/layers/shared/model';
@@ -10,7 +10,7 @@ import { useMessageLanding } from '../model/use-message-landing';
  * Session route page — wraps ChatPanel with route-derived session ID.
  *
  * Canvas state (open/closed, content) is persisted per-session in localStorage
- * and hydrated on mount or session change via `useCanvasPersistence`. The
+ * and bound on mount or session change via `useSessionCanvas`. The
  * canvas panel itself is rendered at the shell level via the extension registry.
  *
  * The right panel's layout (open state + active tab) is persisted per-agent and
@@ -39,7 +39,7 @@ export function SessionPage() {
   const { runtime, prompt, send, seed, message } = useSessionSearch();
   const inPlaceNavigate = useInPlaceNavigate();
   const landOnRow = useMessageLanding(activeSessionId, message);
-  useCanvasPersistence(activeSessionId);
+  useSessionCanvas(activeSessionId);
   useRightPanelLayoutPersistence();
 
   /**

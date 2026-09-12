@@ -224,7 +224,13 @@ export const useAppStore = create<AppState>()(
             // The dismissals themselves are config now, and resetting LOCAL
             // preferences deliberately does not reach them.
             localStorage.removeItem('dorkos-dismissed-promo-ids');
-            localStorage.removeItem(STORAGE_KEYS.CANVAS_SESSIONS);
+            // `dorkos-canvas-sessions` is deliberately NOT swept here any more.
+            // It stopped being a preference when the canvas moved to the server
+            // (spec `canvas-agent-seat` §1.5): what is left of it is a one-time
+            // migration payload, and the importer is the only thing that may
+            // delete it — after every document in it has reached the server.
+            // Sweeping it here would throw away somebody's canvas because they
+            // reset their local preferences first.
             localStorage.removeItem(STORAGE_KEYS.RIGHT_PANEL_STATE);
             localStorage.removeItem(STORAGE_KEYS.RIGHT_PANEL_LAYOUTS);
             localStorage.removeItem(STORAGE_KEYS.PIP_PANEL_STATE);
