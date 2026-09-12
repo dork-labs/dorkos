@@ -70,6 +70,7 @@ export type {
   CaptureBuffer,
   CaptureBufferView,
   DevtoolsScreenshotEntry,
+  DriverClaim,
 } from './devtools-capture-store.js';
 export {
   triggerTurn,

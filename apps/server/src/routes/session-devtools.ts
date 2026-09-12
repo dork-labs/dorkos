@@ -11,10 +11,18 @@
  * bounded capture buffer. It is a sink (204), never a read surface — the agent
  * reads the buffer through an MCP tool, which lands in a follow-up phase.
  *
+ * The same file answers `POST /api/sessions/:id/devtools/action`, the sink for
+ * one driving round trip's result (spec `canvas-agent-seat` §2.1). Same posture,
+ * same 204, and the same reason it is a separate route rather than another
+ * optional field on the ingest batch: a result is awaited by a tool call and is
+ * posted the moment it exists, while a capture batch is coalesced on a 300 ms
+ * debounce.
+ *
  * @module routes/session-devtools
  */
+import { randomUUID } from 'node:crypto';
 import type { Request, Response } from 'express';
-import { DevtoolsIngestSchema } from '@dorkos/shared/schemas';
+import { DevtoolsActionResultSchema, DevtoolsIngestSchema } from '@dorkos/shared/schemas';
 import { devtoolsCaptureStore } from '../services/session/index.js';
 import { parseSessionId, sendError } from '../lib/route-utils.js';
 
@@ -62,6 +70,42 @@ export async function sessionDevtoolsIngestHandler(req: Request, res: Response):
   // because the store already bounds abuse: a ~1 MB per-session byte budget and
   // a 50-session LRU cap limit what any made-up id can retain, and buffers are
   // in-memory only. A malformed id is still rejected (400) above.
-  devtoolsCaptureStore.ingest(sessionId, parsed.data);
+  // The window's own id, read the way every other handler that needs one reads
+  // it (`routes/sessions.ts`, `session-ui-action-handler.ts`): the header, or a
+  // per-request UUID when a client sends none. A client with no id simply never
+  // wins a seat it did not claim — the fallback is stable for this request and
+  // nothing else, so it can never collide with a real window's claim.
+  const clientId = (req.headers['x-client-id'] as string) || randomUUID();
+
+  devtoolsCaptureStore.ingest(sessionId, parsed.data, clientId);
+  res.status(204).end();
+}
+
+/**
+ * Express handler for `POST /api/sessions/:id/devtools/action` — the sink for
+ * one driving round trip's result.
+ *
+ * Zod-validated and capped the same way the ingest route is; a result that
+ * nothing is awaiting (the tool already timed out) is accepted and dropped,
+ * because the alternative is an error the client could do nothing about. Accepts
+ * any well-formed session id without an existence check, for the reason the
+ * ingest handler states below.
+ *
+ * @param req - The Express request (`:id` route param + `DevtoolsActionResult` body).
+ * @param res - The Express response (204 sink / 400).
+ */
+export async function sessionDevtoolsActionHandler(req: Request, res: Response): Promise<void> {
+  const sessionId = parseSessionId(req.params.id);
+  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
+
+  const parsed = DevtoolsActionResultSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return sendError(res, 400, 'Invalid DevTools action result', 'VALIDATION_ERROR');
+  }
+
+  // Keyed by `requestId` alone, never by session id — a first-turn canonical
+  // rekey between the request and the answer must not strand the tool call that
+  // is awaiting it. `devtools-capture-store.ts` says why at greater length.
+  devtoolsCaptureStore.resolveAction(parsed.data);
   res.status(204).end();
 }
