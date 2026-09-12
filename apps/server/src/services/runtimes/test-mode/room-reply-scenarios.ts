@@ -167,6 +167,15 @@ function roomReadsCanvas(finishRequested: FinishRequested): ScenarioFn {
 }
 
 /**
+ * The file `rooms-open-diff` reviews.
+ *
+ * Named here rather than passed in, because a scenario takes no arguments: the
+ * spec that drives it writes this same path into the agent's working copy first,
+ * so the two have to agree on one string.
+ */
+export const ROOM_DIFF_PATH = 'src/app.txt';
+
+/**
  * The scripted room turns that declare themselves tool-capable.
  *
  * @param finishRequested - Reads the store's finish flag.
@@ -225,6 +234,23 @@ export function roomReplyScenarios(finishRequested: FinishRequested): Record<str
         },
       } as StreamEvent;
       yield { type: 'text_delta', data: { text: 'Put the plan on the canvas.' } } as StreamEvent;
+      yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
+    },
+    // Opens a REVIEW of one of the room's files, from inside the turn — so the
+    // document lands labelled with the tree that turn was standing in, which for
+    // a project room is the agent's own working copy. It is the only way a
+    // browser test can produce the one document a room's table treats as work
+    // waiting for a decision (spec `canvas-agent-seat` §8).
+    'rooms-open-diff': async function* () {
+      yield {
+        type: 'session_status',
+        data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
+      } as StreamEvent;
+      yield {
+        type: 'ui_command',
+        data: { command: { action: 'open_diff', sourcePath: ROOM_DIFF_PATH } },
+      } as StreamEvent;
+      yield { type: 'text_delta', data: { text: 'Put the diff on the canvas.' } } as StreamEvent;
       yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
     },
     // Holds, then narrates. With the flip on, this text is the thing that must
