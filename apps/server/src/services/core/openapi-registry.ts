@@ -146,6 +146,7 @@ import { ROOM_EXPORT_CONTENT_TYPE, RoomExportLineSchema } from '@dorkos/shared/r
 import {
   RoomBranchStatusSchema as SharedRoomBranchStatusSchema,
   RoomMainStatusSchema as SharedRoomMainStatusSchema,
+  RoomMergeResultSchema as SharedRoomMergeResultSchema,
   RoomRepoStatusSchema as SharedRoomRepoStatusSchema,
   RoomStrayChangeSchema as SharedRoomStrayChangeSchema,
 } from '@dorkos/shared/room-repo';
@@ -4498,6 +4499,14 @@ const RoomMainStatusSchema = z
   })
   .openapi('RoomMainStatus');
 
+/**
+ * What a completed merge answers — derived from the shared schema exactly as
+ * the rows above are, and for the reasons their doc gives.
+ */
+const RoomMergeResultSchema = z
+  .object(SharedRoomMergeResultSchema.shape)
+  .openapi('RoomMergeResult');
+
 /** What `GET /api/rooms/{id}/repo/status` answers. */
 const RoomRepoStatusSchema = z
   .object({
@@ -4509,18 +4518,6 @@ const RoomRepoStatusSchema = z
     main: RoomMainStatusSchema,
   })
   .openapi('RoomRepoStatus');
-
-/** What a completed merge answers. */
-const RoomMergeResultSchema = z
-  .object({
-    branch: z.string(),
-    commit: z.string().describe('The merge commit now on the room’s `main`.'),
-    files: z.number().int(),
-    insertions: z.number().int(),
-    deletions: z.number().int(),
-    seq: z.number().int().describe('The `seq` of the room entry announcing the merge.'),
-  })
-  .openapi('RoomMergeResult');
 
 registry.registerPath({
   method: 'get',

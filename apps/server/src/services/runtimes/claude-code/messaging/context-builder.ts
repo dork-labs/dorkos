@@ -368,6 +368,12 @@ Each action's full description is on the ${T}control_ui tool itself — read it 
 Use ${T}get_ui_state() before making layout decisions to avoid redundant commands. It reflects the state the client reported at turn start plus the commands you issued this turn — not a live read.
 UI commands only take visible effect when an interactive client is attached (headless/scheduled runs accept them but show nothing), and a canvas push to a document somebody is editing is held rather than applied — a success result means "accepted", not "displayed".
 
+PUTTING SOMETHING ON A ROOM. The six canvas actions take an optional target with a room id, which
+puts the document on that room's shared canvas instead of this window. You have to be a member of
+the room: one you are not in answers "No such room", the same answer a room that does not exist
+gives. Everyone in the room sees it, and one line saying what you put there is posted when your
+turn ends -- it starts nobody's turn. Three per room per turn; the other actions ignore a target.
+
 THE BROWSER TAB. A page you opened with browser_navigate is one DorkOS is serving, so you can use it
 and not only look at it -- click it, type into it, and read it back:
   ${T}browser_read_page(documentId?, selector?) -- what is on the page, one line per thing.

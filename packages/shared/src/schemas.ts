@@ -5295,6 +5295,30 @@ export type CelebrationKind = z.infer<typeof CelebrationKindSchema>;
  * PIP, file/terminal/browser opening, notifications, theme, scroll, agent
  * switching, shape switching, command palette, and celebration.
  */
+/**
+ * Where a canvas verb lands, when that is not the window the agent is talking
+ * through (spec `canvas-agent-seat` §9).
+ *
+ * **Optional everywhere and additive by construction**: absent means exactly
+ * what it always meant — a room turn writes to the room it is answering in, and
+ * a one-on-one turn writes to that session's own canvas. Naming a room puts the
+ * document on THAT room's shared table instead, and the agent has to be a
+ * member of it: a room it is not in answers the same "no such room" a room that
+ * does not exist answers, so a room id is never something to probe with.
+ *
+ * It rides the six CANVAS verbs and nothing else. The other sixteen actions are
+ * imperatives to one window — a toast, a panel, the command palette — and a
+ * room has no window to push them to.
+ */
+export const UiCommandTargetSchema = z
+  .object({
+    roomId: z.string().min(1).describe('The room id to put this on. You must be a member of it.'),
+  })
+  .openapi('UiCommandTarget');
+
+/** Where a canvas verb lands. See {@link UiCommandTargetSchema}. */
+export type UiCommandTarget = z.infer<typeof UiCommandTargetSchema>;
+
 export const UiCommandSchema = z
   .discriminatedUnion('action', [
     // Panel commands
@@ -5312,6 +5336,7 @@ export const UiCommandSchema = z
       action: z.literal('open_canvas'),
       content: UiCanvasContentSchema.optional(),
       preferredWidth: z.number().min(20).max(80).optional(),
+      target: UiCommandTargetSchema.optional(),
     }),
     z.object({
       action: z.literal('update_canvas'),
@@ -5330,11 +5355,13 @@ export const UiCommandSchema = z
        * you act on it (spec `room-canvas` §5.6).
        */
       documentId: z.string().optional(),
+      target: UiCommandTargetSchema.optional(),
     }),
     z.object({
       action: z.literal('close_canvas'),
       /** Which document to close. Same rule as `update_canvas`'s. */
       documentId: z.string().optional(),
+      target: UiCommandTargetSchema.optional(),
     }),
 
     // PIP (floating panel)
@@ -5360,6 +5387,7 @@ export const UiCommandSchema = z
        * mime→viewer registry and opens it as a new canvas document.
        */
       sourcePath: z.string().min(1),
+      target: UiCommandTargetSchema.optional(),
     }),
     z.object({
       action: z.literal('open_diff'),
@@ -5371,6 +5399,7 @@ export const UiCommandSchema = z
        * — a repeated open re-activates the existing diff document.
        */
       sourcePath: z.string().min(1),
+      target: UiCommandTargetSchema.optional(),
     }),
     z.object({
       action: z.literal('open_terminal'),
@@ -5391,6 +5420,7 @@ export const UiCommandSchema = z
        * resolution and origin isolation are handled by the browser renderer.
        */
       url: z.string().min(1),
+      target: UiCommandTargetSchema.optional(),
     }),
 
     // Notification

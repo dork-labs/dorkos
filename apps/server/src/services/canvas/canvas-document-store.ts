@@ -446,6 +446,15 @@ export function toCanvasDocument(
     // travels on purpose — it means "not measured", which is a different claim
     // from "level with the room" and must not collapse into it.
     ...(row.treeKind !== null ? { treeKind: row.treeKind, aheadOfMain: row.aheadOfMain } : {}),
+    // **Only a worktree's**, and the asymmetry is the rule rather than an
+    // oversight (spec `canvas-agent-seat` §8): a room's working copies are the
+    // room's own, DorkOS made them under the room's home, and every member can
+    // already read their slugs off the repo status — so the review surface may
+    // be told which one to read and write. An `agent-cwd` is somebody's own
+    // project directory, which is not the room's to publish.
+    ...(row.treeKind === 'worktree' && row.resolvedCwd !== null
+      ? { resolvedCwd: row.resolvedCwd }
+      : {}),
     openedAt: row.openedAt,
     lastActiveAt: row.lastActiveAt,
   };

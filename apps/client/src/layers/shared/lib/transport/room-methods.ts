@@ -53,6 +53,7 @@ import type {
 import type {
   RoomMainRepairRequest,
   RoomMainRepairResult,
+  RoomMergeResult,
   RoomRepoStatus,
 } from '@dorkos/shared/room-repo';
 import type { UiCanvasContent, UploadProgress } from '@dorkos/shared/types';
@@ -243,6 +244,23 @@ export function createRoomMethods(baseUrl: string) {
         `/rooms/${encodeURIComponent(id)}/repo/main/repair`,
         { method: 'POST', body: JSON.stringify(req) }
       );
+    },
+
+    /**
+     * Merge one agent's working copy into the room's `main`.
+     *
+     * The operator's door to the same server-mediated merge an agent reaches
+     * through `merge_to_room_main` — same queue, same refusals, same single
+     * line in the room's log.
+     */
+    mergeRoomMain(
+      id: string,
+      input: { summary: string; worktree: string }
+    ): Promise<RoomMergeResult> {
+      return fetchJSON<RoomMergeResult>(baseUrl, `/rooms/${encodeURIComponent(id)}/repo/merge`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      });
     },
 
     /**

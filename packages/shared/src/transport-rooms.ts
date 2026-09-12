@@ -18,7 +18,12 @@ import type {
   RoomFileSaveRequest,
   RoomFileSaveResponse,
 } from './room-files.js';
-import type { RoomMainRepairRequest, RoomMainRepairResult, RoomRepoStatus } from './room-repo.js';
+import type {
+  RoomMainRepairRequest,
+  RoomMainRepairResult,
+  RoomMergeResult,
+  RoomRepoStatus,
+} from './room-repo.js';
 import type {
   AuthorRef,
   AddRoomMemberRequest,
@@ -227,6 +232,34 @@ export interface RoomTransport {
    * @param req - Keep everything, or discard exactly these files.
    */
   repairRoomMain(id: string, req: RoomMainRepairRequest): Promise<RoomMainRepairResult>;
+  /**
+   * Bring one agent's working copy into the room's `main` (spec
+   * `canvas-agent-seat` §8).
+   *
+   * The merge has only ever been reachable by an AGENT, through
+   * `merge_to_room_main` — so reviewing an agent's diff and then merging it
+   * meant leaving the panel. This is the person's door to the same
+   * server-mediated merge: the room's own queue, the room's own refusals, and
+   * the one line it posts, which wakes nobody.
+   *
+   * **The operator's alone** (403 `OPERATOR_ONLY`). Naming somebody else's
+   * working copy is publishing a decision that was not theirs to make, and
+   * `worktree` is always somebody else's here: the operator has no branch in a
+   * room. A room the caller is not in answers 404 `ROOM_NOT_FOUND`, the same
+   * answer a room that does not exist gives.
+   *
+   * Every other refusal is a 409 naming what to do about it — `BEHIND_MAIN`
+   * (the working copy has to catch up first), `UNCOMMITTED_WORK`,
+   * `NOTHING_TO_MERGE`, `MAIN_CHECKOUT_DIRTY`, `MERGE_CONFLICT` — except
+   * `MERGE_IN_FLIGHT`, which is a 429 because waiting really is the remedy.
+   *
+   * @param id - The room whose `main` gains the work.
+   * @param input.summary - What the work does, in one line. It becomes the
+   *   merge commit's subject and the sentence the room reads.
+   * @param input.worktree - Which working copy to merge, by the slug
+   *   {@link readRoomRepoStatus} reports.
+   */
+  mergeRoomMain(id: string, input: { summary: string; worktree: string }): Promise<RoomMergeResult>;
   /**
    * Post to a room. Trigger-only, exactly as {@link postMessage} is: the 202
    * carries the new entry's identity, while the entry itself reaches every

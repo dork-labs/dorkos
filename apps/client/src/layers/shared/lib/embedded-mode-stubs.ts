@@ -99,6 +99,7 @@ import type {
 import type {
   RoomMainRepairRequest,
   RoomMainRepairResult,
+  RoomMergeResult,
   RoomRepoStatus,
 } from '@dorkos/shared/room-repo';
 import type { Workspace, WorktreeScanResult } from '@dorkos/shared/workspace';
@@ -1040,6 +1041,13 @@ export const roomStubs = {
   },
 
   async repairRoomMain(_id: string, _req: RoomMainRepairRequest): Promise<RoomMainRepairResult> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
+  async mergeRoomMain(
+    _id: string,
+    _input: { summary: string; worktree: string }
+  ): Promise<RoomMergeResult> {
     throw new Error('Rooms are not supported in embedded mode');
   },
 
