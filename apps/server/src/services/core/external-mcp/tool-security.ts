@@ -184,7 +184,7 @@ export const READ_ONLY_MCP_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
     ...connectorDomain.capabilities,
     ...mcpDomain.capabilities,
     // The rooms domain contributes NOTHING today, and is listed anyway. All
-    // SEVEN of its reads are `observe` and deliberately withhold
+    // EIGHT of its reads are `observe` and deliberately withhold
     // `readOnlyCarveOut`, because what they return is other people's messages —
     // or, for the three lookups, the shape of somebody's install, and for
     // `room_repo_status`, the shape of somebody's unfinished work; naming the
