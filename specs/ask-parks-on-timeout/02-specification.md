@@ -464,6 +464,20 @@ worse.
 `packages/skills/src/task-schema.ts:77-83`'s TSDoc gains one sentence saying an
 unattended run is the exception, and why.
 
+> **Superseded 2026-09-12** — the countdown arm this section describes is gone,
+> along with the wait itself. Spec `unattended-session-permission-prompts`
+> replaced it: all three handlers now refuse an ask outright when
+> `session.unattended` is set, before any prompt event is pushed and before any
+> timer is armed, so a scheduled run's approvals, questions and MCP elicitations
+> are all answered at once rather than after ten minutes. The
+> `unattended?: boolean` field and the places that set it are unchanged — only
+> what reading it does. Everything else in this spec, including the two-stage
+> wait for a session a person can reach, still holds.
+>
+> One correction while it is being noted: the flag is now set only for
+> `trigger === 'scheduled'`. A "Run now" a person clicked reaches the same
+> scheduler code with `trigger: 'manual'` and keeps the ordinary answerable card.
+
 ### 8. Session-record eviction
 
 `services/runtimes/claude-code/sessions/session-store.ts`, `checkSessionHealth`

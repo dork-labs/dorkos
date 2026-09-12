@@ -87,11 +87,20 @@ export interface AgentSession {
   /** True once the first SDK query has been sent (JSONL file exists) */
   hasStarted: boolean;
   /**
-   * True when nobody is watching this session — a scheduled task run.
+   * True when nobody is watching this session — a run the SCHEDULER started on
+   * its own timer.
    *
-   * Read by the interactive handlers: an unattended prompt is refused at the
-   * ten-minute countdown and never parks, because a park is a promise that
-   * somebody will come back (spec `ask-parks-on-timeout` §7).
+   * Read by the three interactive handlers
+   * (`messaging/interactive-handlers.ts`): a tool approval, a question or an MCP
+   * elicitation raised in such a session is refused the moment it is raised,
+   * with a constant reason telling the model nobody is there and to report what
+   * it skipped. No card is pushed and no wait is armed, because a wait is a
+   * promise that somebody will come back (spec
+   * `unattended-session-permission-prompts`, superseding the ten-minute arm of
+   * `ask-parks-on-timeout` §7).
+   *
+   * A "Run now" a person clicked is NOT this — see the same field on
+   * `InteractiveSession` in `messaging/interaction-wait.ts` for the full rule.
    */
   unattended?: boolean;
   /** True when auto-created by updateSession — sendMessage should check transcript before first query. */

@@ -279,6 +279,7 @@ import {
 } from './services/marketplace-mcp/confirmation-provider.js';
 import type { MarketplaceMcpDeps } from './services/marketplace-mcp/marketplace-mcp-tools.js';
 import { ActivityService } from './services/activity/activity-service.js';
+import { createPluginReloadActivityWriter } from './services/activity/plugin-reload-activity.js';
 import { sweepStaleInstallBackups } from './services/marketplace/backup-janitor.js';
 import { createActivityRouter } from './routes/activity.js';
 import { createExtensionRoutesMiddleware } from './middleware/extension-routes.js';
@@ -2740,6 +2741,13 @@ async function start() {
   // request id are not stranded on the pre-remap id (mirrors the projector +
   // DevTools-store rekeys).
   onProjectorRekey((oldId, newId) => sessionConnectorAttachmentStore.rekey(oldId, newId));
+  // A plugin reload that threw a conversation's prompt cache away leaves a line
+  // in the feed — with what it cost and whether it waited first. Free reloads
+  // stay silent (spec `plugin-reload-cache-cost`). Outside the mesh block below
+  // on purpose: plugins reload on a host with no mesh too.
+  if (claudeRuntime) {
+    claudeRuntime.setPluginReloadActivity(createPluginReloadActivityWriter(activityService));
+  }
   // Managed per-agent MCP servers (spec `mcp-server-management`). Constructed
   // once meshCore exists — the service resolves an agent id to its workspace
   // path through the mesh registry (the single instance, shared, ADR-0043) and

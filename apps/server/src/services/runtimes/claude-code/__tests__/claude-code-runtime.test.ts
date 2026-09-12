@@ -5,6 +5,12 @@ import type { ConnectorRuntimePrincipalPort } from '../../../connectors/runtime-
 import type { ServerPrincipalProof } from '../../../connectors/principal/server-principal.js';
 import { wrapSdkQuery, sdkSimpleText, sdkToolCall } from './sdk-scenarios.js';
 import { DEFAULT_CWD } from '../../../../lib/resolve-root.js';
+import { SESSIONS } from '../../../../config/constants.js';
+import {
+  PLUGIN_RELOAD_CEILING_MS,
+  PLUGIN_RELOAD_RECHECK_MS,
+  PLUGIN_RELOAD_SILENT_TOKENS,
+} from '../messaging/plugin-reload-policy.js';
 
 // Hoist shared mock functions so the test and ClaudeCodeRuntime share the same
 // vi.fn() instances for context-builder and tool-filter.
@@ -1670,6 +1676,322 @@ describe('ClaudeCodeRuntime', () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+  });
+
+  // ===========================================================================
+  // What a plugin reload costs, and when it is worth waiting for
+  // (spec `plugin-reload-cache-cost`)
+  // ===========================================================================
+
+  describe('reloads that respect the prompt cache', () => {
+    /** A live session with a query the reload paths will find. */
+    async function liveSession(sessionId: string) {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const queryResult = wrapSdkQuery(sdkSimpleText(''));
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(queryResult);
+      agentManager.ensureSession(sessionId, { permissionMode: 'default' });
+      for await (const _ of agentManager.sendMessage(sessionId, 'hello')) {
+        // drain
+      }
+      return queryResult;
+    }
+
+    /** Say how big this session's conversation is, the way a real turn would. */
+    function setContextTokens(sessionId: string, cacheReadTokens: number): void {
+      const store = (
+        agentManager as unknown as {
+          sessionStore: {
+            findSession(id: string): { lastRequestUsage?: unknown } | undefined;
+          };
+        }
+      ).sessionStore;
+      const session = store.findSession(sessionId);
+      if (!session) throw new Error(`no session ${sessionId}`);
+      session.lastRequestUsage = { inputTokens: 0, cacheReadTokens, cacheCreationTokens: 0 };
+    }
+
+    /** The reload response the CLI sends when it refuses to disturb the cache. */
+    const HELD = {
+      commands: [],
+      agents: null,
+      plugins: [],
+      mcpServers: [],
+      error_count: 0,
+      held: true,
+      cache_impact: {
+        mcp_servers_added: ['plugin:flow:linear'],
+        mcp_servers_removed: [],
+        lsp_tool_change: null,
+      },
+    };
+
+    beforeEach(() => {
+      _mockBroadcast.mockClear();
+      _mockListEnabledPluginNames.mockResolvedValue([]);
+      _mockBuildPluginsArray.mockResolvedValue([]);
+    });
+
+    it('asks what the fan-out reload would cost before applying it', async () => {
+      const queryResult = await liveSession('reload-ask');
+
+      await agentManager.refreshActivatedPlugins();
+
+      expect(queryResult.reloadPlugins).toHaveBeenCalledWith({ holdOnCacheImpact: true });
+    });
+
+    it('leaves an unheld reload exactly as it was: one call, nothing recorded', async () => {
+      const paid = vi.fn();
+      agentManager.setPluginReloadActivity(paid);
+      const queryResult = await liveSession('reload-free');
+      setContextTokens('reload-free', 500_000);
+
+      await agentManager.refreshActivatedPlugins();
+
+      // The CLI waved it through, so there is no second call and no feed entry:
+      // a free reload is nobody's business.
+      expect(queryResult.reloadPlugins).toHaveBeenCalledTimes(1);
+      expect(paid).not.toHaveBeenCalled();
+    });
+
+    it('pays a held reload at once on a conversation too small to be worth waiting for', async () => {
+      const paid = vi.fn();
+      agentManager.setPluginReloadActivity(paid);
+      const queryResult = await liveSession('reload-small');
+      setContextTokens('reload-small', PLUGIN_RELOAD_SILENT_TOKENS - 1);
+      queryResult.reloadPlugins.mockResolvedValue(HELD);
+
+      await agentManager.refreshActivatedPlugins();
+
+      expect(queryResult.reloadPlugins).toHaveBeenCalledTimes(2);
+      expect(queryResult.reloadPlugins).toHaveBeenLastCalledWith();
+      expect(paid).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: 'reload-small',
+          deferred: false,
+          contextTokens: PLUGIN_RELOAD_SILENT_TOKENS - 1,
+        })
+      );
+    });
+
+    it('holds a big conversation instead of paying for it', async () => {
+      const paid = vi.fn();
+      agentManager.setPluginReloadActivity(paid);
+      const queryResult = await liveSession('reload-big');
+      setContextTokens('reload-big', PLUGIN_RELOAD_SILENT_TOKENS);
+      queryResult.reloadPlugins.mockResolvedValue(HELD);
+
+      await agentManager.refreshActivatedPlugins();
+
+      // Asked, and NOT applied. Nothing is recorded until something is paid.
+      expect(queryResult.reloadPlugins).toHaveBeenCalledTimes(1);
+      expect(paid).not.toHaveBeenCalled();
+    });
+
+    it('asks again on a recheck, and records a free reload when the runtime applies one', async () => {
+      const paid = vi.fn();
+      agentManager.setPluginReloadActivity(paid);
+      const queryResult = await liveSession('reload-recheck');
+      setContextTokens('reload-recheck', 400_000);
+      queryResult.reloadPlugins.mockResolvedValue(HELD);
+
+      vi.useFakeTimers();
+      try {
+        await agentManager.refreshActivatedPlugins();
+        expect(queryResult.reloadPlugins).toHaveBeenCalledTimes(1);
+
+        // Still warm at the first recheck: asked again, nothing applied.
+        await vi.advanceTimersByTimeAsync(PLUGIN_RELOAD_RECHECK_MS);
+        expect(queryResult.reloadPlugins).toHaveBeenCalledTimes(2);
+        expect(queryResult.reloadPlugins).toHaveBeenLastCalledWith({ holdOnCacheImpact: true });
+        expect(paid).not.toHaveBeenCalled();
+
+        // Now the runtime says it applied it, which is what "free" looks like.
+        queryResult.reloadPlugins.mockResolvedValue({
+          commands: [],
+          agents: null,
+          plugins: [],
+          mcpServers: [],
+          error_count: 0,
+          held: false,
+        });
+        await vi.advanceTimersByTimeAsync(PLUGIN_RELOAD_RECHECK_MS);
+      } finally {
+        vi.useRealTimers();
+      }
+
+      expect(paid).toHaveBeenCalledWith(
+        expect.objectContaining({ deferred: true, release: 'cache-cold', contextTokens: 400_000 })
+      );
+    });
+
+    it('pays at the ceiling when the runtime never says the reload is free', async () => {
+      const paid = vi.fn();
+      agentManager.setPluginReloadActivity(paid);
+      const queryResult = await liveSession('reload-ceiling');
+      setContextTokens('reload-ceiling', 400_000);
+      queryResult.reloadPlugins.mockResolvedValue(HELD);
+
+      vi.useFakeTimers();
+      try {
+        await agentManager.refreshActivatedPlugins();
+        await vi.advanceTimersByTimeAsync(PLUGIN_RELOAD_CEILING_MS + 1_000);
+      } finally {
+        vi.useRealTimers();
+      }
+
+      // The last call is the plain one: the ceiling pays rather than asks.
+      expect(queryResult.reloadPlugins).toHaveBeenLastCalledWith();
+      expect(paid).toHaveBeenCalledWith(
+        expect.objectContaining({ deferred: true, release: 'ceiling' })
+      );
+    });
+
+    it('applies a hand-triggered reload at once however big the conversation is', async () => {
+      const paid = vi.fn();
+      agentManager.setPluginReloadActivity(paid);
+      const queryResult = await liveSession('reload-hand');
+      setContextTokens('reload-hand', 400_000);
+      queryResult.reloadPlugins.mockResolvedValue(HELD);
+      await agentManager.refreshActivatedPlugins();
+
+      const result = await agentManager.reloadPlugins('reload-hand');
+
+      // Applied unconditionally — no hold option on the hand-triggered call.
+      expect(queryResult.reloadPlugins).toHaveBeenLastCalledWith();
+      // And the route never learns what it cost.
+      expect(result).toEqual({ commandCount: 0, pluginCount: 0, errorCount: 0 });
+      expect(paid).toHaveBeenCalledWith(
+        expect.objectContaining({ deferred: true, release: 'hand-triggered' })
+      );
+    });
+
+    it('records an expensive hand-triggered reload even when nothing was holding', async () => {
+      // The reload the person asks for on a busy session the fan-out never
+      // reached: no wait to settle, but the cache rebuild is paid all the same,
+      // and decision 8 records a reload that was held OR above the threshold.
+      const paid = vi.fn();
+      agentManager.setPluginReloadActivity(paid);
+      const queryResult = await liveSession('reload-hand-cold');
+      setContextTokens('reload-hand-cold', PLUGIN_RELOAD_SILENT_TOKENS);
+
+      await agentManager.reloadPlugins('reload-hand-cold');
+
+      expect(queryResult.reloadPlugins).toHaveBeenLastCalledWith();
+      expect(paid).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: 'reload-hand-cold',
+          deferred: false,
+          release: 'hand-triggered',
+          contextTokens: PLUGIN_RELOAD_SILENT_TOKENS,
+        })
+      );
+    });
+
+    it('stays silent about a cheap hand-triggered reload', async () => {
+      const paid = vi.fn();
+      agentManager.setPluginReloadActivity(paid);
+      await liveSession('reload-hand-cheap');
+      setContextTokens('reload-hand-cheap', PLUGIN_RELOAD_SILENT_TOKENS - 1);
+
+      await agentManager.reloadPlugins('reload-hand-cheap');
+
+      expect(paid).not.toHaveBeenCalled();
+    });
+
+    it('records a hand-triggered reload once, not twice, when a wait was running', async () => {
+      const paid = vi.fn();
+      agentManager.setPluginReloadActivity(paid);
+      const queryResult = await liveSession('reload-hand-both');
+      setContextTokens('reload-hand-both', 400_000);
+      queryResult.reloadPlugins.mockResolvedValue(HELD);
+      await agentManager.refreshActivatedPlugins();
+
+      await agentManager.reloadPlugins('reload-hand-both');
+
+      expect(paid).toHaveBeenCalledTimes(1);
+      expect(paid).toHaveBeenCalledWith(
+        expect.objectContaining({ deferred: true, release: 'hand-triggered' })
+      );
+    });
+
+    it('does not apply a held reload twice after a hand trigger ended the wait', async () => {
+      const queryResult = await liveSession('reload-hand-once');
+      setContextTokens('reload-hand-once', 400_000);
+      queryResult.reloadPlugins.mockResolvedValue(HELD);
+
+      vi.useFakeTimers();
+      let callsAfterHandTrigger: number;
+      try {
+        await agentManager.refreshActivatedPlugins();
+        await agentManager.reloadPlugins('reload-hand-once');
+        callsAfterHandTrigger = queryResult.reloadPlugins.mock.calls.length;
+        await vi.advanceTimersByTimeAsync(PLUGIN_RELOAD_CEILING_MS * 2);
+      } finally {
+        vi.useRealTimers();
+      }
+
+      expect(callsAfterHandTrigger).toBe(2);
+      expect(queryResult.reloadPlugins).toHaveBeenCalledTimes(callsAfterHandTrigger);
+    });
+
+    it('drops a held reload when the session is evicted, applying nothing', async () => {
+      const paid = vi.fn();
+      agentManager.setPluginReloadActivity(paid);
+      const queryResult = await liveSession('reload-evicted');
+      setContextTokens('reload-evicted', 400_000);
+      queryResult.reloadPlugins.mockResolvedValue(HELD);
+
+      vi.useFakeTimers();
+      let callsWhileHolding: number;
+      try {
+        await agentManager.refreshActivatedPlugins();
+        callsWhileHolding = queryResult.reloadPlugins.mock.calls.length;
+
+        // Age the record past the eviction window and run the sweep that
+        // retires it, then let every clock the hold could have been waiting on
+        // run out.
+        const store = (
+          agentManager as unknown as {
+            sessionStore: { findSession(id: string): { lastActivity: number } | undefined };
+          }
+        ).sessionStore;
+        const session = store.findSession('reload-evicted');
+        if (!session) throw new Error('no session to evict');
+        session.lastActivity = Date.now() - SESSIONS.TIMEOUT_MS - 60_000;
+        agentManager.checkSessionHealth();
+
+        await vi.advanceTimersByTimeAsync(PLUGIN_RELOAD_CEILING_MS * 2);
+      } finally {
+        vi.useRealTimers();
+      }
+
+      expect(callsWhileHolding).toBe(1);
+      expect(queryResult.reloadPlugins).toHaveBeenCalledTimes(callsWhileHolding);
+      expect(paid).not.toHaveBeenCalled();
+    });
+
+    it('reloads anyway when the cost check itself goes unanswered', async () => {
+      // The ask is a SECOND control round trip on a channel with a documented
+      // habit of going silent. A reload nobody applied is worse than a reload
+      // nobody costed, so an unanswered ask must fall back to today's behaviour.
+      const { PLUGIN_RELOAD_ACK_TIMEOUT_MS } = await import('../sessions/bounded-control.js');
+      const queryResult = await liveSession('reload-deaf-check');
+      setContextTokens('reload-deaf-check', 400_000);
+      queryResult.reloadPlugins.mockImplementationOnce(() => new Promise<never>(() => {}));
+
+      vi.useFakeTimers();
+      try {
+        const refreshing = agentManager.refreshActivatedPlugins();
+        await vi.advanceTimersByTimeAsync(PLUGIN_RELOAD_ACK_TIMEOUT_MS + 1_000);
+        await refreshing;
+      } finally {
+        vi.useRealTimers();
+      }
+
+      // Asked once (never answered), then reloaded plainly.
+      expect(queryResult.reloadPlugins).toHaveBeenCalledTimes(2);
+      expect(queryResult.reloadPlugins).toHaveBeenLastCalledWith();
     });
   });
 

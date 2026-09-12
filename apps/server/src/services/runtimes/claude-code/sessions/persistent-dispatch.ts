@@ -150,6 +150,11 @@ import {
   type LaunchFingerprint,
 } from './launch-fingerprint.js';
 import { createPumpLauncher, decideProcessReuse, type PumpLaunchPlan } from './pump-launch.js';
+import {
+  conversationTokens,
+  pluginReloadIsWorthHolding,
+  type PluginReloadCacheImpact,
+} from '../messaging/plugin-reload-policy.js';
 import { streamTurnWindow } from './pump-turn-stream.js';
 import { SessionCrashLoopError, SessionCrashRecovery } from './session-crash-recovery.js';
 import { isWaitingOnPerson } from './session-store.js';
@@ -258,9 +263,31 @@ export class PersistentDispatch {
    * @param sessionKeyOf - The single answer to "which key is this session's
    *   pump filed under" — `SessionStore.sessionKeyOf` in production.
    */
-  constructor(registry: SessionPumpRegistry, sessionKeyOf: (sessionId: string) => string) {
+  /**
+   * Told when the warm-process pin held a plugin reload, so the runtime can put
+   * the same ceiling on it as on every other hold (spec
+   * `plugin-reload-cache-cost`).
+   */
+  private readonly onPluginReloadHeld:
+    | ((
+        sessionId: string,
+        impact: PluginReloadCacheImpact,
+        contextTokens: number | undefined
+      ) => void)
+    | undefined;
+
+  constructor(
+    registry: SessionPumpRegistry,
+    sessionKeyOf: (sessionId: string) => string,
+    onPluginReloadHeld?: (
+      sessionId: string,
+      impact: PluginReloadCacheImpact,
+      contextTokens: number | undefined
+    ) => void
+  ) {
     this.registry = registry;
     this.sessionKeyOf = sessionKeyOf;
+    this.onPluginReloadHeld = onPluginReloadHeld;
   }
 
   /**
@@ -418,7 +445,19 @@ export class PersistentDispatch {
     // Nothing pinned to the live process may be stale by the time the turn
     // opens. A pin the SDK cannot set live replaces the process outright; the
     // four it can are awaited, never fired blind (`launch-live-settings.ts`).
-    const reuse = decideProcessReuse(bundle.fingerprint, plan.fingerprint);
+    // A plugin set that moved may wait for a cheaper moment rather than throw
+    // away this conversation's prompt cache on the way into a turn (spec
+    // `plugin-reload-cache-cost`). Only worth waiting for on a conversation big
+    // enough that re-reading it costs something; a stale pin is what brings the
+    // dispatch back to ask again, and `onPluginReloadHeld` is what stops that
+    // asking going on for ever.
+    const contextTokens = conversationTokens(session);
+    const reuse = decideProcessReuse(bundle.fingerprint, plan.fingerprint, {
+      holdPluginReloadWhenCacheWarm: pluginReloadIsWorthHolding(contextTokens),
+      sessionId,
+      ...(contextTokens !== undefined ? { contextTokens } : {}),
+      onPluginReloadHeld: (impact) => this.onPluginReloadHeld?.(sessionId, impact, contextTokens),
+    });
     if (reuse.action === 'replace') {
       logger.info('[persistent-dispatch] replacing a warm process', {
         session: sessionId,
@@ -949,7 +988,7 @@ export class PersistentDispatch {
       // The map's raw SIZE was the wrong answer, for the same reason it is
       // wrong in the projector: an entry CAN strand, and a stranded one would
       // decline every reap and refuse every message into this session forever.
-      // {@link isWaitingOnPerson} bounds it by the wait this session actually
+      // {@link isWaitingOnPerson} bounds it by the wait a prompt actually
       // allows, so all three answers to "is somebody still expected back"
       // agree (spec `ask-parks-on-timeout`).
       hasPendingInteraction: () => isWaitingOnPerson(session, Date.now()),

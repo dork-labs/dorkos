@@ -944,6 +944,8 @@ describe('RuntimeCache', () => {
         commandCount: 1,
         pluginCount: 2,
         errorCount: 1,
+        // A reload that never asked what it would cost was never held.
+        held: false,
       });
     });
 
@@ -1151,6 +1153,77 @@ describe('RuntimeCache', () => {
       expect(cache.getMcpStatus('/projectB')![0].name).toBe('mcp-b');
       expect(cache.getSupportedSubagents('/projectA')[0].name).toBe('agent-a');
       expect(cache.getSupportedSubagents('/projectB')[0].name).toBe('agent-b');
+    });
+  });
+
+  // =========================================================================
+  // Asking what a reload would cost (spec `plugin-reload-cache-cost`)
+  // =========================================================================
+
+  describe('reloadPlugins asks before it spends', () => {
+    /** The response shape the CLI sends when it refuses to disturb the cache. */
+    const heldResponse = {
+      commands: [{ name: 'old', description: 'd', argumentHint: '' }],
+      agents: null,
+      plugins: [{}],
+      mcpServers: [],
+      error_count: 0,
+      held: true,
+      cache_impact: {
+        mcp_servers_added: ['plugin:flow:linear'],
+        mcp_servers_removed: [],
+        lsp_tool_change: 'may-add',
+      },
+    };
+
+    it('passes the hold option through only when asked to', async () => {
+      const mockQuery = { reloadPlugins: vi.fn().mockResolvedValue(heldResponse) };
+
+      await cache.reloadPlugins(mockQuery as never, '/project', '/default', {
+        holdOnCacheImpact: true,
+      });
+      await cache.reloadPlugins(mockQuery as never, '/project', '/default');
+
+      expect(mockQuery.reloadPlugins).toHaveBeenNthCalledWith(1, { holdOnCacheImpact: true });
+      expect(mockQuery.reloadPlugins).toHaveBeenNthCalledWith(2);
+    });
+
+    it('reports the hold and what applying would change', async () => {
+      const mockQuery = { reloadPlugins: vi.fn().mockResolvedValue(heldResponse) };
+
+      const outcome = await cache.reloadPlugins(mockQuery as never, '/project', '/default', {
+        holdOnCacheImpact: true,
+      });
+
+      expect(outcome.held).toBe(true);
+      expect(outcome.cacheImpact).toEqual({
+        mcpServersAdded: ['plugin:flow:linear'],
+        mcpServersRemoved: [],
+        lspToolChange: 'may-add',
+      });
+    });
+
+    it('reads a `held: true` from a call that never asked as applied', async () => {
+      // The SDK documents `held` as present only when the request asked. A CLI
+      // that sent it anyway did not act on a decision DorkOS never made.
+      const mockQuery = { reloadPlugins: vi.fn().mockResolvedValue(heldResponse) };
+
+      const outcome = await cache.reloadPlugins(mockQuery as never, '/project', '/default');
+
+      expect(outcome.held).toBe(false);
+      expect(outcome.cacheImpact).toBeUndefined();
+    });
+
+    it('refreshes the caches from a held answer, which describes the session as it still is', async () => {
+      const mockQuery = { reloadPlugins: vi.fn().mockResolvedValue(heldResponse) };
+      const registry = createMockRegistryService(makeRegistry([]));
+
+      await cache.reloadPlugins(mockQuery as never, '/project', '/default', {
+        holdOnCacheImpact: true,
+      });
+
+      const result = await cache.getCommands(registry, '/project');
+      expect(result.commands.map((c) => c.fullCommand)).toContain('/old');
     });
   });
 
