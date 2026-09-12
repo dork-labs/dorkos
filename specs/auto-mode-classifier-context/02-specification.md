@@ -2,7 +2,7 @@
 slug: auto-mode-classifier-context
 id: 260911-191245
 created: 2026-09-12
-status: specified
+status: implemented
 ---
 
 # Telling auto mode what it cannot see
