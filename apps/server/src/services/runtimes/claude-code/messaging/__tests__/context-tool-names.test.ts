@@ -440,7 +440,11 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // the same shape `control_ui` and `get_ui_state` have carried there since
     // that block was written. A prefixed name costs one ToolSearch hop; a bare
     // one costs the turn, which is the DOR-1292 defect this file exists for.
-    expect(advertised.size).toBe(98);
+    //
+    // 98 -> 100 for the two recording verbs (spec `canvas-agent-seat` §3). Both
+    // stay DEFERRED and both ARE named in `<ui_tools>`, prefixed, which is the
+    // form that costs one ToolSearch hop rather than the turn.
+    expect(advertised.size).toBe(100);
     expect(advertised.has('react_to_room_entry')).toBe(true);
     expect(
       [

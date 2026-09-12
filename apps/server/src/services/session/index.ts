@@ -77,9 +77,12 @@ export {
   TARGET_INPUT,
   TARGET_INPUT_NO_TEXT,
   createBrowserSeatHandlers,
+  createRecordingHandlers,
 } from './browser-seat/index.js';
 export type {
   BrowserSeatStore,
+  DocumentInput,
+  RecordingStore,
   ClickInput,
   DrivingAnswer,
   PressInput,
@@ -94,6 +97,9 @@ export type {
   CaptureBufferView,
   DevtoolsScreenshotEntry,
   DriverClaim,
+  PendingRecordingUpload,
+  RecordingOutcome,
+  RecordingState,
 } from './devtools-capture-store.js';
 export {
   triggerTurn,

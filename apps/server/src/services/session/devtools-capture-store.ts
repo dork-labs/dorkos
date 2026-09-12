@@ -82,6 +82,62 @@ export interface DriverClaim {
   instrumented: boolean;
 }
 
+/**
+ * One recording in progress, for one session (spec `canvas-agent-seat` §3.1).
+ *
+ * The frames themselves are NOT here and never reach the server one at a time:
+ * they live in the window's own buffer until it encodes them. This is the state
+ * machine — which page is being filmed, by which window, how many frames have
+ * been asked for, and whether the ceiling has been reached.
+ */
+export interface RecordingState {
+  /** ULID. Names the file the server writes and the upload that carries it. */
+  id: string;
+  /** Which browser document is being recorded. Resolved at start. */
+  documentId: string;
+  /**
+   * The window holding the frames.
+   *
+   * Pinned, not re-resolved: the buffer lives in ONE window, so a recording
+   * that started in one window and stopped in another would encode nothing.
+   * A release from that window on that document ends the recording.
+   */
+  clientId: string;
+  /** Epoch ms the recording started. */
+  startedAt: number;
+  /** Frames asked for so far — the ceiling, and what the stop answer reports. */
+  frames: number;
+  /** True once the ceiling was hit; the verbs keep working, they stop filming. */
+  full: boolean;
+}
+
+/** Where one finished recording's bytes belong, held while the upload is in flight. */
+export interface PendingRecordingUpload {
+  /** The recording being uploaded. Names the file; never taken from the caller. */
+  recordingId: string;
+  /** The session working directory the file lands under. */
+  cwd: string;
+  /** How many frames were asked for, so the answer can say the ceiling was hit. */
+  full: boolean;
+}
+
+/** What `browser_record_stop` awaits: a written file, or one plain sentence. */
+export type RecordingOutcome =
+  | {
+      ok: true;
+      /** Path relative to the session's working directory. */
+      path: string;
+      /** Size of the encoded GIF on disk. */
+      bytes: number;
+      /** Frames the window actually encoded. */
+      frames: number;
+      /** How long the recording covers, in milliseconds. */
+      durationMs: number;
+      /** The last frame, as an MCP image block's two fields. */
+      keyframe: { data: string; mimeType: string } | null;
+    }
+  | { ok: false; error: string };
+
 /** How many windows-and-pages one session remembers before evicting the oldest. */
 const MAX_DRIVER_CLAIMS = 8;
 
@@ -114,6 +170,15 @@ interface InternalBuffer {
    * itself has to move.
    */
   drivers: DriverClaim[];
+  /**
+   * The recording running on this session, or `null`.
+   *
+   * On the buffer rather than beside it for the same reason the driver table
+   * is: it moves across the first-turn canonical rekey for free, and it is
+   * dropped by the same eviction that drops everything else the session's
+   * preview produced — which is how an unstopped recording costs nothing.
+   */
+  recording: RecordingState | null;
 }
 
 /** One session's capture buffer, as read by callers. */
@@ -188,6 +253,20 @@ export class DevtoolsCaptureStore {
    * must not strand a tool call.
    */
   private readonly actionWaiters = new Map<string, (result: DevtoolsActionResult) => void>();
+  /**
+   * Pending `browser_record_stop` round trips, keyed by requestId for the reason
+   * the other two waiter maps are: a rekey between the request and the upload
+   * must not strand the tool call.
+   */
+  private readonly recordingWaiters = new Map<string, (outcome: RecordingOutcome) => void>();
+  /**
+   * Where each in-flight recording upload belongs, keyed by the same requestId.
+   *
+   * The upload route reads the destination from HERE and from nothing the
+   * request carries, which is what makes "never a path the caller chose" a
+   * property of the design rather than a rule the route remembers to follow.
+   */
+  private readonly pendingRecordings = new Map<string, PendingRecordingUpload>();
 
   /**
    * Append an ingest batch to a session's buffer, creating it on first ingest.
@@ -216,6 +295,7 @@ export class DevtoolsCaptureStore {
         consoleEvicted: false,
         networkEvicted: false,
         drivers: [],
+        recording: null,
       };
       this.buffers.set(sessionId, buffer);
     }
@@ -302,6 +382,14 @@ export class DevtoolsCaptureStore {
     );
     if (!active) {
       if (index >= 0) buffer.drivers.splice(index, 1);
+      // The window that was holding the frames let the page go, so the frames
+      // went with it. Dropping the state here is what keeps `browser_record_stop`
+      // able to say "nothing is being recorded" instead of waiting out thirty
+      // seconds for a buffer nobody has any more.
+      const recording = buffer.recording;
+      if (recording && recording.clientId === clientId && recording.documentId === documentId) {
+        buffer.recording = null;
+      }
       return;
     }
     if (index >= 0) buffer.drivers.splice(index, 1);
@@ -399,6 +487,124 @@ export class DevtoolsCaptureStore {
   }
 
   /**
+   * Begin recording one page, if nothing else is being recorded here.
+   *
+   * @param sessionId - The session that is recording.
+   * @param state - The recording to start; `frames` and `full` start at zero.
+   * @returns `false` when a recording is already running for this session, which
+   *   is the refusal the tool turns into a sentence. One per session, always.
+   */
+  startRecording(
+    sessionId: string,
+    state: Pick<RecordingState, 'id' | 'documentId' | 'clientId'>
+  ): boolean {
+    const buffer = this.buffers.get(sessionId);
+    if (!buffer) return false;
+    if (buffer.recording) return false;
+    buffer.recording = { ...state, startedAt: Date.now(), frames: 0, full: false };
+    return true;
+  }
+
+  /**
+   * The recording running for a session, or `undefined`.
+   *
+   * Read by the driving verbs before every action: a live recording is what
+   * puts `capture` on the request, and a full one is what takes it off again.
+   *
+   * @param sessionId - The session to read.
+   */
+  recordingFor(sessionId: string): RecordingState | undefined {
+    const recording = this.buffers.get(sessionId)?.recording;
+    return recording ? { ...recording } : undefined;
+  }
+
+  /**
+   * Count one frame the window said it kept, and close the ceiling behind it.
+   *
+   * Counted from the window's own report rather than from the request, because
+   * only the window knows whether the page could be rasterized at all.
+   *
+   * @param sessionId - The session that is recording.
+   * @param max - The frame ceiling; at it, the recording is marked full.
+   */
+  noteRecordedFrame(sessionId: string, max: number): void {
+    const recording = this.buffers.get(sessionId)?.recording;
+    if (!recording) return;
+    recording.frames += 1;
+    if (recording.frames >= max) recording.full = true;
+  }
+
+  /**
+   * End a recording and hand back what it was, or `undefined` when none was
+   * running. Idempotent: a second stop finds nothing and says so.
+   *
+   * @param sessionId - The session that was recording.
+   */
+  endRecording(sessionId: string): RecordingState | undefined {
+    const buffer = this.buffers.get(sessionId);
+    const recording = buffer?.recording;
+    if (!buffer || !recording) return undefined;
+    buffer.recording = null;
+    return recording;
+  }
+
+  /**
+   * Register where one finished recording's bytes belong, and await them.
+   *
+   * The destination is registered BEFORE the stop request goes out, so an
+   * upload that arrives before this call could not have been answered — and so
+   * the route never has to trust a path from the wire.
+   *
+   * @param requestId - The round trip id stamped on the stop request.
+   * @param pending - The recording id and working directory to write under.
+   * @param timeoutMs - How long to wait before giving up on the window.
+   */
+  awaitRecording(
+    requestId: string,
+    pending: PendingRecordingUpload,
+    timeoutMs: number
+  ): Promise<RecordingOutcome | undefined> {
+    this.pendingRecordings.set(requestId, pending);
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.recordingWaiters.delete(requestId);
+        this.pendingRecordings.delete(requestId);
+        resolve(undefined);
+      }, timeoutMs);
+      this.recordingWaiters.set(requestId, (outcome) => {
+        clearTimeout(timer);
+        this.pendingRecordings.delete(requestId);
+        resolve(outcome);
+      });
+    });
+  }
+
+  /**
+   * Where the upload for one round trip belongs, or `undefined` when nothing is
+   * awaiting it — an upload that arrived after the tool gave up.
+   *
+   * @param requestId - The round trip id the upload carries.
+   */
+  pendingRecording(requestId: string): PendingRecordingUpload | undefined {
+    const pending = this.pendingRecordings.get(requestId);
+    return pending ? { ...pending } : undefined;
+  }
+
+  /**
+   * Deliver one recording outcome to whatever is awaiting it. An outcome nobody
+   * is waiting for is dropped, exactly as a late driving result is.
+   *
+   * @param requestId - The round trip id the upload carried.
+   * @param outcome - The written file, or the sentence that says why not.
+   */
+  resolveRecording(requestId: string, outcome: RecordingOutcome): void {
+    const resolve = this.recordingWaiters.get(requestId);
+    if (!resolve) return;
+    this.recordingWaiters.delete(requestId);
+    resolve(outcome);
+  }
+
+  /**
    * Await the capture outcome for one `browser_screenshot` round-trip. Resolves
    * when an ingest batch carrying `screenshot.requestId === requestId` arrives
    * (success or shim-side error), or with `undefined` after `timeoutMs` —
@@ -478,6 +684,8 @@ export class DevtoolsCaptureStore {
     this.buffers.clear();
     this.screenshotWaiters.clear();
     this.actionWaiters.clear();
+    this.recordingWaiters.clear();
+    this.pendingRecordings.clear();
   }
 
   /**

@@ -384,6 +384,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     supportsWorkbenchServe: true,
     ingestDevtoolsCapture: vi.fn(async () => {}),
     postDevtoolsAction: vi.fn(async () => {}),
+    uploadDevtoolsRecording: vi.fn(async () => {}),
     // Embedded terminal — the default mock behaves like the HTTP transport
     // (supported); tests that need the DirectTransport path override
     // `supportsTerminal: false`.

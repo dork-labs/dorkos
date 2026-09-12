@@ -21,7 +21,13 @@ const ingestDevtoolsCapture = vi.fn(async () => {});
  * changes. The flush-window session bleed lived in that blind spot.
  */
 const postDevtoolsAction = vi.fn(async () => {});
-const transport = { ingestDevtoolsCapture, postDevtoolsAction, clientId: 'web-this-window' };
+const uploadDevtoolsRecording = vi.fn(async () => {});
+const transport = {
+  ingestDevtoolsCapture,
+  postDevtoolsAction,
+  uploadDevtoolsRecording,
+  clientId: 'web-this-window',
+};
 
 /**
  * The CAPTURE relays only — the seat claims filtered out.
@@ -83,6 +89,24 @@ vi.mock('@/layers/shared/lib/transport', async (importOriginal) => ({
 const loadRasterizerSource = vi.fn(async () => 'RASTERIZER_SRC');
 vi.mock('../lib/load-rasterizer', () => ({
   loadRasterizerSource: () => loadRasterizerSource(),
+}));
+
+// The encoder is stubbed because jsdom has no canvas and never decodes an
+// image, so the real `drawFrames` cannot run here at all. What these tests are
+// about is the ROUTING — which frames reach the buffer, which never reach the
+// server, and what is uploaded — and the encoder itself is proved against its
+// own output in `lib/__tests__/encode-recording.test.ts`.
+const drawFrames = vi.fn(async (dataUrls: readonly string[]) =>
+  dataUrls.map(() => ({ data: new Uint8ClampedArray(4), width: 1, height: 1 }))
+);
+let encodeResult: { ok: true; bytes: Uint8Array } | { ok: false; error: string } = {
+  ok: true,
+  bytes: new Uint8Array([0x47, 0x49, 0x46]),
+};
+const encodeGif = vi.fn(async () => encodeResult);
+vi.mock('../lib/encode-recording', () => ({
+  drawFrames: (dataUrls: readonly string[]) => drawFrames(dataUrls),
+  encodeGif: () => encodeGif(),
 }));
 
 import { setPlatformAdapter } from '@/layers/shared/lib';
@@ -165,6 +189,10 @@ beforeEach(() => {
   attachInUrl('session-1');
   ingestDevtoolsCapture.mockClear();
   postDevtoolsAction.mockClear();
+  uploadDevtoolsRecording.mockClear();
+  drawFrames.mockClear();
+  encodeGif.mockClear();
+  encodeResult = { ok: true, bytes: new Uint8Array([0x47, 0x49, 0x46]) };
   loadRasterizerSource.mockClear();
   sessionEventListeners.clear();
   iframe = document.createElement('iframe');
@@ -1078,5 +1106,229 @@ describe('useDevtoolsBridge — the driver seat (spec `canvas-agent-seat` §2.2)
     mount();
     postFrom(iframe.contentWindow, { __dorkosDevtools: 'act-result', requestId: 'a1', ok: true });
     expect(postDevtoolsAction).not.toHaveBeenCalled();
+  });
+});
+
+describe('useDevtoolsBridge — recording a run', () => {
+  /** Deliver one server→client event to every mounted bridge. */
+  function emit(event: unknown): void {
+    for (const handler of sessionEventListeners) handler('session-1', event);
+  }
+
+  /** The start/stop event the server sends, with this window's address on it. */
+  function recordingEvent(action: 'start' | 'stop', requestId: string) {
+    return {
+      type: 'devtools_recording_request',
+      seq: 1,
+      requestId,
+      targetClientId: 'web-this-window',
+      documentId: 'doc',
+      action,
+      recordingId: 'rec-1',
+      bounds: { longEdgePx: 800, frameMs: 500, maxBytes: 8 * 1024 * 1024 },
+    };
+  }
+
+  /** The id of the keyframe round trip this window just asked the page for. */
+  function lastFrameRequestId(postSpy: Mock): string {
+    const calls = postSpy.mock.calls.filter(
+      ([message]) =>
+        (message as { __dorkosDevtools?: string }).__dorkosDevtools === 'capture-request'
+    );
+    return (calls.at(-1)?.[0] as { requestId: string }).requestId;
+  }
+
+  it('asks the page for a frame on start, and keeps it out of the screenshot slot', async () => {
+    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage') as unknown as Mock;
+    mount();
+
+    emit(recordingEvent('start', 'r1'));
+    await vi.advanceTimersByTimeAsync(0);
+    const frameId = lastFrameRequestId(postSpy);
+    postFrom(iframe.contentWindow, {
+      __dorkosDevtools: 'capture-result',
+      requestId: frameId,
+      dataUrl: 'data:image/png;base64,AAAA',
+    });
+    await vi.advanceTimersByTimeAsync(500);
+
+    // A recording frame is NOT a `browser_screenshot` answer: relaying it would
+    // overwrite the screenshot slot an agent may be about to read.
+    expect(captureCalls()).toHaveLength(0);
+  });
+
+  it('sends the rasterizer with a capturing action, and nothing extra without one', async () => {
+    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage') as unknown as Mock;
+    mount();
+
+    emit({
+      type: 'devtools_action_request',
+      seq: 1,
+      requestId: 'a1',
+      targetClientId: 'web-this-window',
+      documentId: 'doc',
+      command: { action: 'click', target: { text: 'Pay' } },
+      capture: true,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(postSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        __dorkosDevtools: 'act-request',
+        requestId: 'a1',
+        capture: true,
+        lib: 'RASTERIZER_SRC',
+      }),
+      '*'
+    );
+
+    postSpy.mockClear();
+    loadRasterizerSource.mockClear();
+    emit({
+      type: 'devtools_action_request',
+      seq: 2,
+      requestId: 'a2',
+      targetClientId: 'web-this-window',
+      documentId: 'doc',
+      command: { action: 'click', target: { text: 'Pay' } },
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    // No recording, no rasterizer chunk: an ordinary click costs no download.
+    expect(loadRasterizerSource).not.toHaveBeenCalled();
+    expect(postSpy).toHaveBeenCalledWith(expect.not.objectContaining({ capture: true }), '*');
+  });
+
+  it('keeps an action frame here and tells the server only that it kept one', async () => {
+    mount();
+    emit(recordingEvent('start', 'r1'));
+    await vi.advanceTimersByTimeAsync(0);
+
+    postFrom(iframe.contentWindow, {
+      __dorkosDevtools: 'act-result',
+      requestId: 'a1',
+      ok: true,
+      did: 'Clicked Pay.',
+      dataUrl: 'data:image/png;base64,FRAME',
+    });
+
+    const relayed = (postDevtoolsAction as Mock).mock.calls.at(-1)?.[1] as Record<string, unknown>;
+    expect(relayed.captured).toBe(true);
+    // The picture itself never crosses the wire.
+    expect(relayed).not.toHaveProperty('dataUrl');
+  });
+
+  it('does not claim a frame it was never given', () => {
+    mount();
+    emit(recordingEvent('start', 'r1'));
+
+    postFrom(iframe.contentWindow, {
+      __dorkosDevtools: 'act-result',
+      requestId: 'a1',
+      ok: true,
+      did: 'Clicked Pay.',
+    });
+
+    const relayed = (postDevtoolsAction as Mock).mock.calls.at(-1)?.[1] as Record<string, unknown>;
+    expect(relayed.captured).toBeUndefined();
+  });
+
+  it('encodes and uploads the run on stop, with the last frame beside it', async () => {
+    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage') as unknown as Mock;
+    mount();
+    emit(recordingEvent('start', 'r1'));
+    await vi.advanceTimersByTimeAsync(0);
+    postFrom(iframe.contentWindow, {
+      __dorkosDevtools: 'capture-result',
+      requestId: lastFrameRequestId(postSpy),
+      dataUrl: 'data:image/png;base64,AAAA',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    postFrom(iframe.contentWindow, {
+      __dorkosDevtools: 'act-result',
+      requestId: 'a1',
+      ok: true,
+      dataUrl: 'data:image/png;base64,BBBB',
+    });
+
+    emit(recordingEvent('stop', 'r2'));
+    await vi.advanceTimersByTimeAsync(0);
+    postFrom(iframe.contentWindow, {
+      __dorkosDevtools: 'capture-result',
+      requestId: lastFrameRequestId(postSpy),
+      dataUrl: 'data:image/png;base64,CCCC',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Three frames: the one on start, the one the action produced, the one on stop.
+    expect(drawFrames).toHaveBeenCalledWith([
+      'data:image/png;base64,AAAA',
+      'data:image/png;base64,BBBB',
+      'data:image/png;base64,CCCC',
+    ]);
+    const [sid, upload] = (uploadDevtoolsRecording as Mock).mock.calls.at(-1) as [
+      string,
+      Record<string, { name: string; type: string }> & { requestId: string; frames: number },
+    ];
+    expect(sid).toBe('session-1');
+    expect(upload.requestId).toBe('r2');
+    expect(upload.frames).toBe(3);
+    expect(upload.recording.type).toBe('image/gif');
+    expect(upload.keyframe.type).toBe('image/png');
+  });
+
+  it('reports the encoder`s refusal instead of leaving the tool to time out', async () => {
+    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage') as unknown as Mock;
+    mount();
+    emit(recordingEvent('start', 'r1'));
+    await vi.advanceTimersByTimeAsync(0);
+    postFrom(iframe.contentWindow, {
+      __dorkosDevtools: 'capture-result',
+      requestId: lastFrameRequestId(postSpy),
+      dataUrl: 'data:image/png;base64,AAAA',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    encodeResult = { ok: false, error: 'The recording came out bigger than 8 MB.' };
+
+    emit(recordingEvent('stop', 'r2'));
+    await vi.advanceTimersByTimeAsync(0);
+    postFrom(iframe.contentWindow, {
+      __dorkosDevtools: 'capture-result',
+      requestId: lastFrameRequestId(postSpy),
+      dataUrl: 'data:image/png;base64,CCCC',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect((uploadDevtoolsRecording as Mock).mock.calls.at(-1)?.[1]).toEqual({
+      requestId: 'r2',
+      error: 'The recording came out bigger than 8 MB.',
+    });
+  });
+
+  it('reports a stop for a recording this window is not holding', async () => {
+    mount();
+
+    emit(recordingEvent('stop', 'r2'));
+    await vi.advanceTimersByTimeAsync(0);
+
+    const upload = (uploadDevtoolsRecording as Mock).mock.calls.at(-1)?.[1] as {
+      requestId: string;
+      error: string;
+    };
+    expect(upload.requestId).toBe('r2');
+    expect(upload.error).toContain('stopped recording');
+  });
+
+  it('ignores a recording request addressed to another window', async () => {
+    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage') as unknown as Mock;
+    mount();
+
+    emit({ ...recordingEvent('start', 'r1'), targetClientId: 'some-other-window' });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(
+      postSpy.mock.calls.filter(
+        ([message]) =>
+          (message as { __dorkosDevtools?: string }).__dorkosDevtools === 'capture-request'
+      )
+    ).toHaveLength(0);
   });
 });

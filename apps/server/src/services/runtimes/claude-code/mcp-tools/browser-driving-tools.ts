@@ -26,6 +26,7 @@ import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import {
   createBrowserSeatHandlers,
+  createRecordingHandlers,
   devtoolsCaptureStore,
   DOCUMENT_INPUT,
   DRIVING_SAFETY_SENTENCE,
@@ -33,9 +34,11 @@ import {
   TARGET_INPUT_NO_TEXT,
   type BrowserSeatStore,
   type ClickInput,
+  type DocumentInput,
   type DrivingAnswer,
   type PressInput,
   type ReadPageInput,
+  type RecordingStore,
   type ScrollInput,
   type SessionEventSink,
   type TypeInput,
@@ -175,9 +178,31 @@ const READ_PAGE_DESCRIPTION =
 
 /**
  * The subset of the live session these verbs need: the event queue that reaches
- * the window holding the preview.
+ * the window holding the preview, and the working directory a recording lands
+ * in. Both optional-by-absence — a surface with no session has neither.
  */
-export type BrowserDrivingSession = SessionEventSink;
+export type BrowserDrivingSession = SessionEventSink & {
+  /** The session's working directory. Where `browser_record_stop` saves. */
+  cwd?: string;
+};
+
+/** Input shape for `browser_record_start`. */
+const RECORD_START_INPUT = { ...DOCUMENT_INPUT };
+
+const RECORD_START_DESCRIPTION =
+  'Start recording what you do in the preview page, as a small animated picture — one frame ' +
+  'per action. Use it when showing somebody what happens is clearer than describing it: a form ' +
+  'that fails, a layout that breaks, a flow that works. Every browser action after this takes a ' +
+  'frame until you call browser_record_stop, which saves the file and gives you the path. Only ' +
+  `one recording runs at a time, and it keeps at most ${WORKBENCH.MAX_RECORDING_FRAMES} frames — ` +
+  'past that it stops filming and everything else keeps working. ' +
+  DRIVING_SAFETY_SENTENCE;
+
+const RECORD_STOP_DESCRIPTION =
+  'Stop the recording and save it. You get back where the file is, how many frames it has, and ' +
+  'the last frame as a picture — not the whole recording, which is a thing a person watches ' +
+  'rather than something you can read. The file lives in your own working directory, so you can ' +
+  'post it to a room with post_to_room to show it to somebody.';
 
 /** Answer given on a surface with no session — the same shape as a refusal. */
 const SESSIONLESS_ANSWER: DrivingAnswer = {
@@ -207,15 +232,34 @@ const SESSIONLESS_ANSWER: DrivingAnswer = {
 export function getBrowserDrivingTools(
   _deps: McpToolDeps,
   resolveSessionId?: BrowserDrivingSessionResolver,
-  store: BrowserSeatStore = devtoolsCaptureStore,
+  store: BrowserSeatStore & RecordingStore = devtoolsCaptureStore,
   session?: BrowserDrivingSession
 ) {
   const handlers =
     resolveSessionId && session
       ? createBrowserSeatHandlers({ resolveSessionId, store, session })
       : null;
+  const recording =
+    resolveSessionId && session
+      ? createRecordingHandlers({
+          resolveSessionId,
+          // Read per call, never captured: a session's working directory is
+          // resolved by the same live object the event queue comes from.
+          resolveCwd: () => session.cwd,
+          store,
+          session,
+        })
+      : null;
 
-  const answer = (result: DrivingAnswer) => jsonContent(result.payload, result.isError);
+  const answer = (result: DrivingAnswer) =>
+    result.image
+      ? {
+          content: [
+            { type: 'image' as const, data: result.image.data, mimeType: result.image.mimeType },
+            { type: 'text' as const, text: JSON.stringify(result.payload, null, 2) },
+          ],
+        }
+      : jsonContent(result.payload, result.isError);
   const sessionless = () => jsonContent(SESSIONLESS_ANSWER.payload, true);
 
   return [
@@ -236,6 +280,12 @@ export function getBrowserDrivingTools(
     ),
     tool('browser_read_page', READ_PAGE_DESCRIPTION, READ_PAGE_INPUT, async (input) =>
       handlers ? answer(await handlers.readPage(input as ReadPageInput)) : sessionless()
+    ),
+    tool('browser_record_start', RECORD_START_DESCRIPTION, RECORD_START_INPUT, async (input) =>
+      recording ? answer(await recording.start(input as DocumentInput)) : sessionless()
+    ),
+    tool('browser_record_stop', RECORD_STOP_DESCRIPTION, {}, async () =>
+      recording ? answer(await recording.stop()) : sessionless()
     ),
   ];
 }

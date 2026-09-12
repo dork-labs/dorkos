@@ -64,11 +64,13 @@ import type {
   DevtoolsIngest,
   DevtoolsNetworkEntry,
 } from '@dorkos/shared/schemas';
+import type { UploadFile } from '@dorkos/shared/transport';
 import { DEVTOOLS_CONSOLE_BATCH_MAX, DEVTOOLS_NETWORK_BATCH_MAX } from '@dorkos/shared/schemas';
 import { useSessionId } from '@/layers/entities/session';
 import { streamManager } from '@/layers/shared/lib/transport';
 import { useTransport } from '@/layers/shared/model';
 import { loadRasterizerSource } from '../lib/load-rasterizer';
+import { drawFrames, encodeGif } from '../lib/encode-recording';
 
 /** How long to coalesce shim batches before one ingest POST. */
 const FLUSH_DEBOUNCE_MS = 300;
@@ -83,6 +85,15 @@ const FLUSH_DEBOUNCE_MS = 300;
  * throttled one-wake-per-minute can miss; the server constant says why.
  */
 const SEAT_REFRESH_MS = 15_000;
+
+/**
+ * How long a recording waits for one keyframe before going on without it.
+ *
+ * Matches the round trip `browser_screenshot` allows, because it is the same
+ * work: a frame is a screenshot asked for by a recording instead of by an agent.
+ * A frame that never arrives costs the recording one picture, never the run.
+ */
+const RECORDING_FRAME_TIMEOUT_MS = 8_000;
 
 /** A message the shim posts to the parent. */
 interface DevtoolsMessage {
@@ -170,6 +181,39 @@ function isPageSummary(
     typeof page.url === 'string' &&
     (page.focused === null || typeof page.focused === 'string')
   );
+}
+
+/**
+ * Wrap bytes as the {@link UploadFile} the transport's multipart call takes.
+ *
+ * @param name - The filename the part carries.
+ * @param type - The media type the part declares.
+ * @param bytes - The file itself.
+ */
+function bytesFile(name: string, type: string, bytes: Uint8Array): UploadFile {
+  // Copied into its own ArrayBuffer: a typed array from an encoder may be a
+  // VIEW onto a larger buffer, and handing that buffer over would upload
+  // whatever else is in it.
+  const buffer = bytes.slice().buffer;
+  return { name, type, size: bytes.byteLength, arrayBuffer: async () => buffer };
+}
+
+/**
+ * Decode a base64 `data:` URL into bytes.
+ *
+ * @param dataUrl - The data URL to decode. A malformed one yields no bytes,
+ *   which the upload route treats as no keyframe rather than as a failure.
+ */
+function decodeDataUrl(dataUrl: string): Uint8Array {
+  const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+  try {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  } catch {
+    return new Uint8Array(0);
+  }
 }
 
 /** Drop the oldest entries in place so `arr` holds at most `cap`. */
@@ -275,6 +319,35 @@ export function useDevtoolsBridge({
    * old closure captured. `null` means "there is no session to claim for".
    */
   const claimSeat = useRef<((active: boolean, keepalive?: boolean) => void) | null>(null);
+  /**
+   * The recording this window is filling, or `null`.
+   *
+   * Frames live HERE and nowhere else until the recording is stopped (spec
+   * `canvas-agent-seat` §3.2): sending them to the server one at a time would
+   * push megabytes up the wire for pictures the server has no use for, and
+   * would overwrite the screenshot slot an agent may be about to read.
+   *
+   * A window that closes mid-recording takes the buffer with it, which is the
+   * whole reason an unstopped recording costs nothing.
+   */
+  const recording = useRef<{
+    id: string;
+    documentId: string;
+    startedAt: number;
+    frames: string[];
+    bounds: { longEdgePx: number; frameMs: number; maxBytes: number };
+  } | null>(null);
+  /**
+   * Keyframe round trips THIS window started, by request id.
+   *
+   * A recording's frames use the shim's screenshot path, so their results come
+   * back as ordinary `capture-result` messages — and without this they would be
+   * ingested as `browser_screenshot` answers, quietly overwriting the screenshot
+   * slot with a frame nobody asked for.
+   */
+  const frameWaiters = useRef(new Map<string, (dataUrl: string | null) => void>());
+  /** Monotonic counter making each keyframe round trip's id unique to this window. */
+  const frameSeq = useRef(0);
 
   useEffect(() => {
     /** Relay whatever is pending to the session it was captured under. */
@@ -410,6 +483,14 @@ export function useDevtoolsBridge({
           // no debounce: a tool call is awaiting this requestId server-side, and
           // a coalesced answer is an answer that arrives after the timeout.
           if (typeof data.requestId !== 'string') return;
+          // A recording frame rode along with the answer. It is KEPT here and
+          // never relayed: the server counts frames, it does not hold them.
+          const live = recording.current;
+          const captured =
+            typeof data.dataUrl === 'string' &&
+            live !== null &&
+            live.documentId === documentIdRef.current;
+          if (captured) live.frames.push(data.dataUrl as string);
           const result: DevtoolsActionResult = {
             requestId: data.requestId,
             ok: data.ok === true,
@@ -420,6 +501,7 @@ export function useDevtoolsBridge({
             ...(typeof data.outline === 'string' ? { outline: data.outline } : {}),
             ...(typeof data.truncated === 'boolean' ? { truncated: data.truncated } : {}),
             ...(typeof data.waitedMs === 'number' ? { waitedMs: data.waitedMs } : {}),
+            ...(captured ? { captured: true } : {}),
             ...(typeof data.error === 'string' ? { error: data.error } : {}),
           };
           void transport.postDevtoolsAction(sid, result);
@@ -429,6 +511,14 @@ export function useDevtoolsBridge({
           // A `browser_screenshot` round-trip result. Ingested IMMEDIATELY (no
           // debounce) — the tool call is awaiting this requestId server-side.
           if (typeof data.requestId !== 'string') return;
+          // Unless THIS window asked for it as a recording frame, in which case
+          // it belongs in the buffer and must not touch the screenshot slot.
+          const waiter = frameWaiters.current.get(data.requestId);
+          if (waiter) {
+            frameWaiters.current.delete(data.requestId);
+            waiter(typeof data.dataUrl === 'string' ? data.dataUrl : null);
+            return;
+          }
           const batch: DevtoolsIngest = {
             documentId: documentIdRef.current,
             logicalUrl: logicalUrlRef.current,
@@ -586,17 +676,130 @@ export function useDevtoolsBridge({
       }
       if (event.type === 'devtools_action_request') {
         if (!addressedTo(event.targetClientId, event.documentId)) return;
-        iframeRef.current?.contentWindow?.postMessage(
-          {
-            __dorkosDevtools: 'act-request',
-            requestId: event.requestId,
+        const forward = (lib?: string): void => {
+          iframeRef.current?.contentWindow?.postMessage(
+            {
+              __dorkosDevtools: 'act-request',
+              requestId: event.requestId,
+              documentId: event.documentId,
+              command: event.command,
+              ...(event.capture ? { capture: true, lib } : {}),
+            },
+            '*'
+          );
+        };
+        // The rasterizer rides along only when a frame was asked for, so an
+        // ordinary click still costs no chunk download.
+        if (event.capture) loadRasterizerSource().then(forward, () => forward(undefined));
+        else forward(undefined);
+        return;
+      }
+      if (event.type === 'devtools_recording_request') {
+        if (!addressedTo(event.targetClientId, event.documentId)) return;
+        if (event.action === 'start') {
+          // A start always replaces whatever was here: the server refuses a
+          // second recording, so anything left behind is from a window that
+          // already lost its page.
+          recording.current = {
+            id: event.recordingId,
             documentId: event.documentId,
-            command: event.command,
-          },
-          '*'
-        );
+            startedAt: Date.now(),
+            frames: [],
+            bounds: event.bounds,
+          };
+          void captureFrame().then((dataUrl) => {
+            if (dataUrl && recording.current?.id === event.recordingId) {
+              recording.current.frames.push(dataUrl);
+            }
+          });
+          return;
+        }
+        void finishRecording(event.requestId, event.recordingId);
       }
     });
+
+    /**
+     * Ask the page for one frame, through the shim's own screenshot path.
+     *
+     * Resolves with `null` rather than rejecting when the page cannot be
+     * rasterized or does not answer: a missing frame costs the recording a
+     * picture, and losing the whole run over one would be the worse trade.
+     */
+    function captureFrame(): Promise<string | null> {
+      const frame = iframeRef.current?.contentWindow;
+      if (!frame) return Promise.resolve(null);
+      frameSeq.current += 1;
+      const requestId = `recording-frame-${Date.now()}-${frameSeq.current}`;
+      return new Promise<string | null>((resolve) => {
+        let settled = false;
+        const once = (dataUrl: string | null): void => {
+          if (settled) return;
+          settled = true;
+          frameWaiters.current.delete(requestId);
+          resolve(dataUrl);
+        };
+        frameWaiters.current.set(requestId, once);
+        setTimeout(() => once(null), RECORDING_FRAME_TIMEOUT_MS);
+        loadRasterizerSource().then(
+          (lib) => frame.postMessage({ __dorkosDevtools: 'capture-request', requestId, lib }, '*'),
+          () => once(null)
+        );
+      });
+    }
+
+    /**
+     * Take the last frame, encode the run, and hand the file to the server.
+     *
+     * Every failure path posts a SENTENCE rather than staying silent: a
+     * `browser_record_stop` is blocked on this, and silence would cost the agent
+     * a thirty-second wait and a vaguer answer than the truth.
+     */
+    async function finishRecording(requestId: string, recordingId: string): Promise<void> {
+      const sid = sessionIdRef.current;
+      const live = recording.current;
+      recording.current = null;
+      if (!sid) return;
+      const fail = (error: string): Promise<void> =>
+        transport.uploadDevtoolsRecording(sid, { requestId, error }).catch(() => {
+          /* the tool's own timeout is the backstop for a report that cannot go */
+        });
+
+      if (!live || live.id !== recordingId) {
+        await fail('The window showing that page stopped recording before it could be saved.');
+        return;
+      }
+      const last = await captureFrame();
+      if (last) live.frames.push(last);
+      if (live.frames.length === 0) {
+        await fail('Nothing could be captured from that page, so the recording is empty.');
+        return;
+      }
+
+      try {
+        const drawn = await drawFrames(live.frames, live.bounds.longEdgePx);
+        const encoded = await encodeGif(drawn, {
+          frameMs: live.bounds.frameMs,
+          maxBytes: live.bounds.maxBytes,
+        });
+        if (!encoded.ok) {
+          await fail(encoded.error);
+          return;
+        }
+        await transport.uploadDevtoolsRecording(sid, {
+          requestId,
+          frames: drawn.length,
+          durationMs: Date.now() - live.startedAt,
+          recording: bytesFile(`${recordingId}.gif`, 'image/gif', encoded.bytes),
+          keyframe: bytesFile(
+            `${recordingId}.png`,
+            'image/png',
+            decodeDataUrl(live.frames[live.frames.length - 1])
+          ),
+        });
+      } catch {
+        await fail('This window could not turn that recording into a file.');
+      }
+    }
 
     /**
      * Whether the server addressed THIS window and THIS page.
