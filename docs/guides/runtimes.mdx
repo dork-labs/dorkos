@@ -182,12 +182,14 @@ The runtimes are not identical, and DorkOS doesn't pretend they are. Surfaces th
 | Plugins and marketplace commands        | Yes         | No            | No       |
 | DorkOS agent tools (Relay, Mesh, Tasks) | Yes         | No            | No       |
 | Local / open-source models              | No          | No            | Yes      |
+| Auto mode is told about DorkOS's tools  | Yes         | No            | No       |
 
 Known limitations, stated plainly:
 
 - **Runtime is fixed per session.** A session's runtime is chosen when it starts and never changes. To switch runtimes, start a new session.
 - **Codex has no interactive approvals.** Instead of pausing on each tool call, Codex gates everything upfront through a sandbox: a restricted environment that limits what the agent can touch. The permission mode picker maps directly onto Codex's sandbox levels: **Read only** (default), **Workspace write**, and **Full access**. You choose the sandbox before the work starts, not the tool call while it's running.
 - **Codex sessions don't survive a server restart in the session list.** Codex has no way to list its own past sessions. After a DorkOS server restart, earlier Codex sessions no longer show up in the list. Resuming a known session still works, for example by opening its URL directly.
+- **Only Claude Code's auto mode knows about DorkOS's own tools.** When an agent calls a DorkOS tool, DorkOS tells Claude Code which safety level that tool sits at and that the call already passed DorkOS's own check, so auto mode stops asking about things that were already decided. Codex and OpenCode have no way to be told, so they keep asking as they always have. The note never lets an agent do anything it could not do already.
 - **OpenCode starts lazily.** DorkOS manages a small local OpenCode server behind the scenes and starts it on first use. The first OpenCode turn after a server start can take a couple of seconds. Every turn after that is immediate.
 
 ## Next Steps
