@@ -97,7 +97,14 @@ export function roomDocumentReading(document: CanvasDocument): RoomDocumentReadi
   const sourcePath = pathOf(document.content);
   if (sourcePath === null) return { kind: 'inline' };
 
-  if (document.treeKind === 'room-main') {
+  // No tree recorded means nobody was standing anywhere when it was opened,
+  // which is exactly what a PERSON's open through the Room tab's Files section
+  // produces: that request carries no working directory, and the only files a
+  // person browses in a room are the room's own. Reading it that way is also the
+  // safe way round — the room's files route is membership-gated and confined to
+  // the room's own checkout, so the worst a wrong guess can do is fail to find
+  // the file.
+  if (document.treeKind === 'room-main' || document.treeKind === undefined) {
     if (isTextDocument(document.content)) return { kind: 'room-file', sourcePath };
     return {
       kind: 'elsewhere',
