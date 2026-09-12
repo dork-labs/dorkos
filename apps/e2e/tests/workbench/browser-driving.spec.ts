@@ -151,6 +151,12 @@ test.describe('Browser — an agent uses the page @smoke', () => {
 
     // Window one opens the page first, then window two — so window two holds the
     // seat, and window one must see nothing at all.
+    //
+    // Since the canvas became the server's table, window two does not open a
+    // second page: it INHERITS this one and types the address into the page it
+    // already has (`openInCanvasBrowser` takes whichever path the window is in).
+    // That is what makes it the driver — a person acting in that window — rather
+    // than the mere fact of mounting, which claims only a keep-alive now.
     await openFixture(page, sessionId);
     const second = await browser.newContext();
     const secondPage = await second.newPage();
@@ -163,7 +169,7 @@ test.describe('Browser — an agent uses the page @smoke', () => {
 
     await runDrivingTurn(page);
 
-    // The seat is the later claim, so the SECOND window is the one that acted —
+    // The seat is the later PERSON, so the SECOND window is the one that acted —
     // even though the turn was sent from the first.
     await expect(secondFrame.getByText(DRIVING_DONE_TEXT)).toBeVisible({ timeout: 15_000 });
     // And the first window's page is untouched. This is the whole point: before
