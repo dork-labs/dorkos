@@ -71,4 +71,9 @@ export {
 } from './capability-approval-hold.js';
 export { abortSignalOf } from './abort-signal.js';
 export { registerCapabilitiesInOpenApi } from './openapi-projection.js';
-export { CapabilityToolError, unwrapMcpEnvelope, type McpTextEnvelope } from './mcp-envelope.js';
+export {
+  CapabilityImageResult,
+  CapabilityToolError,
+  unwrapMcpEnvelope,
+  type McpTextEnvelope,
+} from './mcp-envelope.js';

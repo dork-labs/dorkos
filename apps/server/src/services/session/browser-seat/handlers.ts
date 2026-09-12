@@ -29,8 +29,8 @@ import type {
   DevtoolsActionResult,
 } from '@dorkos/shared/schemas';
 import { DEVTOOLS_OUTLINE_MAX_CHARS } from '@dorkos/shared/schemas';
-import type { StreamEvent } from '@dorkos/shared/types';
 import { WORKBENCH } from '../../../config/constants.js';
+import type { RawSessionEvent } from '../session-state-projector.js';
 import type { DevtoolsCaptureStore } from '../devtools-capture-store.js';
 import {
   drivingTimeoutNote,
@@ -38,12 +38,9 @@ import {
   NO_DRIVER_NOTE,
   NO_PREVIEW_NOTE,
   UNKNOWN_DOCUMENT_NOTE,
-  type SessionEventSink,
+  type SessionEventEmitter,
 } from './act-protocol.js';
 import { resolveTargetInput, targetIsEmpty, type TargetInput } from './target.js';
-
-/** Resolves the session whose windows a driving verb should reach, per call. */
-export type BrowserSeatSessionResolver = () => string | undefined;
 
 /** The subset of the capture store the driving verbs depend on. */
 export type BrowserSeatStore = Pick<
@@ -58,17 +55,6 @@ export interface DrivingAnswer {
   /** True when this should surface to the model as a tool error. */
   isError?: boolean;
 }
-
-/** Error payload for a surface with no session — there is no window to reach. */
-const SESSIONLESS_ANSWER: DrivingAnswer = {
-  payload: {
-    error: 'The browser verbs require an attached interactive session',
-    detail:
-      "They act inside the preview a live session has open in somebody's window. The current " +
-      'MCP surface has no session attached, so there is no preview to reach.',
-  },
-  isError: true,
-};
 
 /** Fields a driving verb takes beyond its own arguments. */
 export interface DocumentInput {
@@ -122,18 +108,18 @@ export interface ReadPageInput extends DocumentInput {
 
 /** Everything the six handlers need to reach a window. */
 export interface BrowserSeatDeps {
-  /** Read-time resolver for the session whose windows to address. */
-  resolveSessionId: BrowserSeatSessionResolver;
+  /** The session whose windows to address, resolved by the caller for this call. */
+  sessionId: string;
   /** The capture store holding the driver table and the pending waiters. */
   store: BrowserSeatStore;
-  /** The live session whose event queue reaches the addressed window. */
-  session: SessionEventSink;
+  /** Puts one event on the calling session's stream, for its windows to read. */
+  emit: SessionEventEmitter;
 }
 
 /**
  * Send one command to whichever window is holding the page, and answer.
  *
- * @param deps - Session resolver, capture store, and the event sink.
+ * @param deps - The calling session, the capture store, and the event emitter.
  * @param documentId - The page to act in, or `undefined` for the driver seat.
  * @param command - The command, already composed and bounded.
  * @param verb - The tool's own name, for the timeout sentence.
@@ -146,8 +132,7 @@ async function dispatch(
   verb: string,
   timeoutMs: number
 ): Promise<DrivingAnswer> {
-  const sessionId = deps.resolveSessionId();
-  if (!sessionId) return SESSIONLESS_ANSWER;
+  const sessionId = deps.sessionId;
 
   // Nothing has ever captured for this session: no preview was ever opened.
   if (!deps.store.read(sessionId)) return { payload: { ok: false, note: NO_PREVIEW_NOTE } };
@@ -164,11 +149,17 @@ async function dispatch(
   }
 
   const requestId = randomUUID();
-  deps.session.eventQueue.push({
+  const reached = deps.emit({
     type: 'devtools_action_request',
-    data: { requestId, targetClientId: claim.clientId, documentId: claim.documentId, command },
-  } as StreamEvent);
-  deps.session.eventQueueNotify?.();
+    requestId,
+    targetClientId: claim.clientId,
+    documentId: claim.documentId,
+    command,
+  } as RawSessionEvent);
+  // No live stream means no window is reading, so nothing was ever going to
+  // answer. Saying so at once beats waiting out the round-trip timeout and then
+  // blaming the page.
+  if (!reached) return { payload: { ok: false, note: NO_DRIVER_NOTE } };
 
   const result = await deps.store.awaitAction(requestId, timeoutMs);
   if (result === undefined) {
@@ -221,11 +212,12 @@ function refusal(error: string): DrivingAnswer {
 /**
  * Build the six driving handlers, bound to one session's windows.
  *
- * Every handler resolves its session on each call, never at build time: a
- * brand-new session is rekeyed to its canonical id mid-first-turn, and an id
- * captured earlier would address a window that no longer answers.
+ * Built PER CALL rather than per session: which session is calling is a fact of
+ * the call, resolved from the verified capability context, and a set built
+ * earlier would address a window that no longer answers — a brand-new session is
+ * rekeyed to its canonical id mid-first-turn.
  *
- * @param deps - Session resolver, capture store, and the event sink.
+ * @param deps - The calling session, the capture store, and the event emitter.
  * @param timeoutMs - Round-trip timeout for the verbs that do not carry their
  *   own wait. Injectable so a test does not spend it.
  */

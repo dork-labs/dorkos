@@ -39,7 +39,6 @@ import type {
   McpAppServerConnection,
   ManagedMcpServerResolver,
 } from '@dorkos/shared/agent-runtime';
-import { CODEX_UI_MCP_SERVER } from './codex-ui-mcp-server.js';
 import { DORKOS_MCP_SERVER_NAME } from '../shared/dorkos-tool-names.js';
 import { logger } from '../../../lib/logger.js';
 
@@ -202,10 +201,11 @@ export interface CodexMcpConversion {
    * `dorkos` or `dorkos_ui`.
    *
    * Reported rather than merely dropped, and that is the whole reason this field
-   * exists. The drop used to be silent, which was survivable while `dorkos_ui`
-   * was the only reserved name (nobody names a server that). `dorkos` is a name
-   * a person plausibly gave their own server, and watching their tools vanish
-   * with no diagnostic anywhere is the failure this closes (DOR-1613).
+   * exists. The drop used to be silent, which was survivable while the retired
+   * `dorkos_ui` bridge was the only reserved name (nobody names a server that).
+   * `dorkos` is a name a person plausibly gave their own server, and watching
+   * their tools vanish with no diagnostic anywhere is the failure this closes
+   * (DOR-1613).
    */
   reserved: string[];
 }
@@ -216,9 +216,9 @@ export interface CodexMcpConversion {
  * record.
  *
  * A `reservedNames` set is dropped so a managed server can never occupy a name
- * DorkOS owns (the `dorkos_ui` UI bridge, and the injected `dorkos` tool server);
- * the caller also writes the reserved entries LAST when merging, so shadowing is
- * impossible on either count. Dropped names are REPORTED in
+ * DorkOS owns (today just the injected `dorkos` tool server); the caller also
+ * writes the reserved entries LAST when merging, so shadowing is impossible on
+ * either count. Dropped names are REPORTED in
  * {@link CodexMcpConversion.reserved} so the caller can say so — see that field
  * for why silence was not good enough. `sse` servers land in
  * {@link CodexMcpConversion.skipped} rather than the output — absence withholds
@@ -288,9 +288,10 @@ export function resolveManagedMcpServers(
 ): CodexManagedMcpServers {
   if (!resolver) return { servers: {}, env: {} };
   const neutral = resolver.injectableServersForCwd(cwd);
-  // `dorkos_ui` is always ours — it is injected on every turn. `dorkos` is
-  // ours only on the turns we actually inject it, which is why the set is
-  // built per turn rather than being a constant.
+  // `dorkos` is ours only on the turns we actually inject it, which is why the
+  // set is built per turn rather than being a constant. (It used to have a
+  // companion, the always-injected `dorkos_ui` bridge; that is retired —
+  // `control_ui` rides the `dorkos` server now, spec `canvas-agent-seat` §5.)
   //
   // Reserving it unconditionally was a REGRESSION on the default path: with
   // the experiment off DorkOS wants nothing called `dorkos`, so dropping a
@@ -300,7 +301,7 @@ export function resolveManagedMcpServers(
   // desired set simply has no `dorkos` entry when the experiment is off and a
   // user's server of that name is therefore never touched. Same experiment,
   // same name, two runtimes: they have to answer this the same way.
-  const reservedNames = new Set([CODEX_UI_MCP_SERVER]);
+  const reservedNames = new Set<string>();
   if (injectingDorkosTools) reservedNames.add(DORKOS_MCP_SERVER_NAME);
   const { servers, env, skipped, reserved } = toCodexMcpServers(neutral, reservedNames);
   if (skipped.length > 0) {

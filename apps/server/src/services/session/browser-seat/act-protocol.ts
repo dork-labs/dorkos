@@ -9,19 +9,22 @@
  *
  * @module services/session/browser-seat/act-protocol
  */
-import type { StreamEvent } from '@dorkos/shared/types';
+import type { RawSessionEvent } from '../session-state-projector.js';
 
 /**
- * The per-turn event queue a driving request is pushed onto — the same seam
- * `control_ui` uses for `ui_command`, drained into the session's durable stream
- * and from there to the window that was addressed.
+ * How a driving request reaches the window holding the page: one event on the
+ * calling session's durable stream, which every window open on that session is
+ * already reading.
+ *
+ * A function rather than an object with a queue on it, because the queue was a
+ * runtime's own — claude-code handed its tool server a live session with an
+ * array on it, and Codex and OpenCode are separate programs with no such object.
+ * See {@link ./session-reach}.
+ *
+ * @param event - The transient event to push.
+ * @returns `true` when a live stream took it, `false` when the session has none.
  */
-export interface SessionEventSink {
-  /** The per-turn StreamEvent queue drained into the durable session stream. */
-  eventQueue: StreamEvent[];
-  /** Wakes the queue drainer after a push. */
-  eventQueueNotify?: () => void;
-}
+export type SessionEventEmitter = (event: RawSessionEvent) => boolean;
 
 /**
  * Nothing is open to drive. Verbatim what `browser_screenshot` has always said,

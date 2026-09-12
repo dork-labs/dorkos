@@ -123,17 +123,7 @@ export type CapabilityToolGroupKey = 'roomsManage';
  * Finer-grained than {@link ToolDomainKey} — see the module TSDoc for why.
  */
 export type ToolGateGroup =
-  | 'core'
-  | 'ui'
-  | 'devtools'
-  | 'agents'
-  | 'extensions'
-  | 'tasks'
-  | 'relay'
-  | 'trace'
-  | 'mesh'
-  | 'adapter'
-  | 'binding';
+  'core' | 'agents' | 'extensions' | 'tasks' | 'relay' | 'trace' | 'mesh' | 'adapter' | 'binding';
 
 /**
  * The toggle that covers each group, or `null` when no toggle names it.
@@ -151,8 +141,6 @@ export type ToolGateGroup =
  */
 const TOOL_GATE_GROUP_DOMAIN: Readonly<Record<ToolGateGroup, ToolDomainKey | null>> = {
   core: null,
-  ui: null,
-  devtools: null,
   agents: null,
   extensions: null,
   tasks: 'tasks',
@@ -180,22 +168,11 @@ export const MCP_TOOL_GATE_GROUPS = {
   get_server_info: 'core',
   get_session_count: 'core',
   get_agent: 'core',
-  // Drive the cockpit's own screen. They change what a person is looking at,
-  // never the system underneath.
-  control_ui: 'ui',
-  get_ui_state: 'ui',
-  // Views of the session's own preview pane, never the system (DOR-213).
-  browser_read_console: 'devtools',
-  browser_read_network: 'devtools',
-  browser_screenshot: 'devtools',
-  // Using the session's own preview rather than only looking at it: the same
-  // frame, the same toggle (spec `canvas-agent-seat`).
-  browser_click: 'devtools',
-  browser_type: 'devtools',
-  browser_press: 'devtools',
-  browser_scroll: 'devtools',
-  browser_wait_for: 'devtools',
-  browser_read_page: 'devtools',
+  // The tools that drive the app's own screen and its preview pane used to sit
+  // here in two groups of their own, `ui` and `devtools`. They are `ui`
+  // capabilities now (spec `canvas-agent-seat` §5), so no toggle gates them and
+  // no group names them — which is why both groups are gone from the union
+  // above rather than left behind empty.
   create_agent: 'agents',
   get_extension_api: 'extensions',
   list_extensions: 'extensions',
@@ -265,21 +242,27 @@ export function toolNamesForDomain(domain: ToolDomainKey): McpToolGroupName[] {
 /**
  * The tool groups no toggle names.
  *
- * Server identity and agent lookup (`core`), the tools that drive the cockpit's
- * own screen rather than the system underneath (`ui`), and the reads of the
- * session's own preview pane (`devtools`, DOR-213). The cockpit's "always enabled"
- * row reads this constant, so the screen cannot drift from the table above it.
+ * Server identity and agent lookup (`core`), and nothing else today. The app's
+ * "always enabled" row reads this constant, so the screen cannot drift from the
+ * table above it.
+ *
+ * It used to carry `ui` and `devtools` beside it — the tools that drive the
+ * app's own screen and read its preview pane. Those are `ui` capabilities now
+ * (spec `canvas-agent-seat` §5), gated by tier rather than by group, so there is
+ * no group left to list. They are no less available for it: a capability that no
+ * toggle names is one every agent is told about, which is exactly what those two
+ * groups mapping to `null` already meant.
  *
  * It is narrower than the full set of groups that map to `null`: `agents` and
  * `extensions` do too and are not listed here. That gap dates from when this
  * constant fed the SDK's `allowedTools`, where every name added widened an approval
  * bypass, so the list was kept as short as it could be. Nothing feeds `allowedTools`
- * any more (DOR-519), so the only thing the omission costs today is that the cockpit
+ * any more (DOR-519), so the only thing the omission costs today is that the app
  * does not show those two groups in its always-enabled row. Widening it is a display
  * change — safe, but visible to the person using it, so it is deliberately not
  * bundled with the security fix.
  */
-export const SESSION_CORE_TOOL_GROUPS: readonly ToolGateGroup[] = ['core', 'ui', 'devtools'];
+export const SESSION_CORE_TOOL_GROUPS: readonly ToolGateGroup[] = ['core'];
 
 /** The tools in {@link SESSION_CORE_TOOL_GROUPS}, in declaration order. */
 export const SESSION_CORE_TOOL_NAMES: readonly McpToolGroupName[] = (

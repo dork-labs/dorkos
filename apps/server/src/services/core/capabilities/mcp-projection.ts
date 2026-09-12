@@ -30,7 +30,7 @@ import type { McpServerId } from '@dorkos/shared/capabilities';
 
 import type { CapabilityDefinition } from './capability-definition.js';
 import type { CapabilityInvocationContext, CapabilityRegistry } from './registry.js';
-import { CapabilityToolError } from './mcp-envelope.js';
+import { CapabilityImageResult, CapabilityToolError } from './mcp-envelope.js';
 import {
   APPROVAL_TOKEN_ARGUMENT,
   CapabilityGateRefusal,
@@ -192,8 +192,27 @@ export function readOnlyCarveOutToolNames(
   return names;
 }
 
-/** Wrap a plain payload into the MCP text envelope both servers return. */
+/**
+ * Wrap a plain payload into the MCP envelope both servers return.
+ *
+ * Text, unless the capability handed back a {@link CapabilityImageResult} — in
+ * which case the picture leads and the JSON follows it, which is the two-block
+ * shape a model can actually look at.
+ *
+ * @param payload - What the handler returned.
+ * @param isError - Whether this is the handler's failure path.
+ * @returns The MCP result.
+ */
 function textResult(payload: unknown, isError = false): CallToolResult {
+  if (payload instanceof CapabilityImageResult) {
+    return {
+      content: [
+        { type: 'image' as const, data: payload.image.data, mimeType: payload.image.mimeType },
+        { type: 'text' as const, text: JSON.stringify(payload.payload, null, 2) },
+      ],
+      ...(isError ? { isError: true } : {}),
+    };
+  }
   return {
     content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
     ...(isError ? { isError: true } : {}),

@@ -212,7 +212,6 @@ describe('the dorkos tool server on a Codex turn', () => {
       threadMap: new CodexThreadMap(db),
       resolveBinary: async () => '/bin/codex',
       defaultCwd: agentDir,
-      mcpUiUrl: 'http://localhost:4242/codex-ui-mcp',
     });
     runtime.setMeshCore(meshWithAgent(agentDir));
     if (opts.runtimeTools !== false) {
@@ -742,7 +741,6 @@ describe('the dorkos tool server on a Codex turn', () => {
         threadMap: new CodexThreadMap(db),
         resolveBinary: async () => '/bin/codex',
         defaultCwd: agentDir,
-        mcpUiUrl: 'http://localhost:4242/codex-ui-mcp',
       });
       await drain(runtime.sendMessage('s1', 'hello', { cwd: agentDir }));
 

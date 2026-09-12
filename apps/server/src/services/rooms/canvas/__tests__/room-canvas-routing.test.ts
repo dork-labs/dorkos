@@ -14,31 +14,27 @@
  *   exactly what would erase the stamp. Erased, every claude-code canvas
  *   operation applies twice — and silently, because the second write looks like
  *   an ordinary one.
- * - **The tap applies the unstamped ones.** That is how codex and the scripted
- *   test-mode runtime reach the same writer with the same ceiling.
- * - **The marker clears.** `session.roomTurn` is assigned on every turn,
- *   `undefined` included, so a session that ran one room turn writes to no room
- *   on its next direct turn.
+ * - **The tap applies the unstamped ones.** That is how the scripted test-mode
+ *   runtime reaches the same writer with the same ceiling.
+ * - **The marker clears.** The room this turn answers in is bound per TURN and
+ *   dropped when the turn ends, so a session that ran one room turn writes to no
+ *   room on its next direct turn.
  *
  * @module server/services/rooms/canvas/tests/room-canvas-routing
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { StreamEvent, UiState } from '@dorkos/shared/types';
 import { UiStateReportDocumentSchema, type UiCommand } from '@dorkos/shared/schemas';
+import type { RawSessionEvent } from '../../../session/session-state-projector.js';
 import { toRawSessionEvent } from '../../../session/session-event-normalizer.js';
-import {
-  createControlUiHandler,
-  createGetUiStateHandler,
-  type UiToolSession,
-} from '../../../runtimes/claude-code/mcp-tools/ui-tools.js';
-import {
-  isUiActionRefusedInRoom,
-  isUiActionRefusedOnCodex,
-} from '../../../runtimes/codex/ui-command-consent.js';
+import { CapabilityToolError } from '../../../core/capabilities/index.js';
+import { controlUi, getUiState } from '../../../session/browser-seat/ui-control.js';
+import { uiTurnFacts } from '../../../session/browser-seat/ui-turn-facts.js';
+import { reachesPastTheScreen } from '../../../session/browser-seat/ui-surface-consent.js';
 import { setRoomService } from '../../index.js';
 import { peekCanvasService, sessionScope, SESSION_OWNER_AUTHOR } from '../../../canvas/index.js';
 import { NOT_IN_A_ROOM_MESSAGE, tooManyCanvasOpsMessage } from '../room-canvas-service.js';
@@ -49,7 +45,19 @@ import {
   type RoomHarness,
 } from '../../__tests__/room-test-harness.js';
 
+// The window a `ui_command` reaches is a session's durable stream. Captured
+// rather than stood up: every assertion here is about WHICH event the handler
+// decided to push and what it stamped on it.
+const reach = vi.hoisted(() => ({ emitted: [] as RawSessionEvent[] }));
+vi.mock('../../../session/browser-seat/session-reach.js', () => ({
+  emitToSession: (_sessionId: string, event: RawSessionEvent) => {
+    reach.emitted.push(event);
+    return true;
+  },
+}));
+
 const ANA = '/agents/ana';
+const SESSION = 'sess-room-turn';
 const agents = agentLookupFor({
   [ANA]: { name: 'ana', displayName: 'Ana', responseMode: 'always' },
 });
@@ -68,21 +76,24 @@ function grep(args: string[]): string {
   }
 }
 
-/** Read one MCP tool result back as the object the model would see. */
-function resultOf(result: {
-  content: Array<{ type: string; text?: string }>;
-}): Record<string, unknown> {
-  const text = result.content.find((block) => block.type === 'text')?.text ?? '{}';
-  return JSON.parse(text) as Record<string, unknown>;
+/** Run `control_ui` for the room turn under test, refusal included. */
+async function control(command: UiCommand): Promise<Record<string, unknown>> {
+  try {
+    return await controlUi(command as unknown as Record<string, unknown>, { sessionId: SESSION });
+  } catch (err) {
+    if (err instanceof CapabilityToolError) return err.payload as Record<string, unknown>;
+    throw err;
+  }
 }
 
-describe('the claude-code handler, inside a room turn', () => {
+describe('the `ui.control` handler, inside a room turn', () => {
   let harness: RoomHarness;
   let roomId: string;
   let ana: string;
-  let session: UiToolSession;
 
   beforeEach(() => {
+    reach.emitted.length = 0;
+    uiTurnFacts.clear();
     harness = createRoomHarness({ agents, runner: scriptedRunner(() => null) });
     setRoomService(harness.service);
     roomId = harness.service.createRoom(
@@ -90,22 +101,11 @@ describe('the claude-code handler, inside a room turn', () => {
       harness.human
     ).id;
     ana = harness.authors.resolveAgent(ANA, 'Ana').id;
-    session = {
-      eventQueue: [],
-      roomTurn: { roomId, authorId: ana, turnId: 'turn-1' },
-    };
+    uiTurnFacts.bindTurn(SESSION, { roomTurn: { roomId, authorId: ana, turnId: 'turn-1' } });
   });
 
-  /** Call `control_ui` the way the SDK does: loose arguments in, JSON out. */
-  const controlUi = async (command: UiCommand) =>
-    resultOf(
-      (await createControlUiHandler(session)(command as unknown as Record<string, unknown>)) as {
-        content: Array<{ type: string; text?: string }>;
-      }
-    );
-
   it('returns the real write — the document, its revision and who is looking', async () => {
-    const result = await controlUi({
+    const result = await control({
       action: 'open_canvas',
       content: { type: 'json', data: { hello: 'room' }, title: 'notes' },
     });
@@ -119,35 +119,35 @@ describe('the claude-code handler, inside a room turn', () => {
   });
 
   it('stamps the event it pushes with what it wrote', async () => {
-    const result = await controlUi({
+    const result = await control({
       action: 'open_canvas',
       content: { type: 'json', data: {}, title: 'notes' },
     });
-    expect(session.eventQueue).toHaveLength(1);
-    const pushed = session.eventQueue[0] as StreamEvent & {
-      data: { applied?: { documentId: string; rev: number } };
+    expect(reach.emitted).toHaveLength(1);
+    const pushed = reach.emitted[0] as RawSessionEvent & {
+      applied?: { documentId: string; rev: number };
     };
-    expect(pushed.data.applied).toEqual({ documentId: result.documentId, rev: result.rev });
+    expect(pushed.applied).toEqual({ documentId: result.documentId, rev: result.rev });
   });
 
   it('returns the REFUSAL, and pushes no event at all', async () => {
     // The defect this catches is a handler that reports success and lets the
     // tap refuse later: by then the model has been told it worked, and the
     // command has already gone out on a private stream.
-    const result = await controlUi({ action: 'show_toast', message: 'hi', level: 'info' });
+    const result = await control({ action: 'show_toast', message: 'hi', level: 'info' });
     expect(result).toEqual({ success: false, target: 'room', reason: NOT_IN_A_ROOM_MESSAGE });
-    expect(session.eventQueue).toEqual([]);
+    expect(reach.emitted).toEqual([]);
     expect(harness.service.canvas.list(roomId)).toEqual([]);
   });
 
   it('refuses the fourth change of a turn in the result the model reads', async () => {
     for (const n of [1, 2, 3]) {
-      await controlUi({
+      await control({
         action: 'open_canvas',
         content: { type: 'json', data: { n }, title: `doc ${n}` },
       });
     }
-    const fourth = await controlUi({
+    const fourth = await control({
       action: 'open_canvas',
       content: { type: 'json', data: { n: 4 }, title: 'doc 4' },
     });
@@ -158,32 +158,24 @@ describe('the claude-code handler, inside a room turn', () => {
     });
     // Three rows and three events, not four of either.
     expect(harness.service.canvas.list(roomId)).toHaveLength(3);
-    expect(session.eventQueue).toHaveLength(3);
+    expect(reach.emitted).toHaveLength(3);
   });
 
   it('is byte-identical to today outside a room turn', async () => {
-    const direct: UiToolSession = { eventQueue: [] };
-    const result = resultOf(
-      (await createControlUiHandler(direct)({
-        action: 'show_toast',
-        message: 'hi',
-        level: 'info',
-      })) as { content: Array<{ type: string; text?: string }> }
+    const result = await controlUi(
+      { action: 'show_toast', message: 'hi', level: 'info' },
+      { sessionId: 'sess-direct' }
     );
     expect(result).toEqual({ success: true, action: 'show_toast' });
-    expect(direct.eventQueue).toHaveLength(1);
+    expect(reach.emitted).toHaveLength(1);
   });
 
   it('answers `get_ui_state` with the room’s table, naming the default target', async () => {
-    const opened = await controlUi({
+    const opened = await control({
       action: 'open_canvas',
       content: { type: 'json', data: {}, title: 'notes' },
     });
-    const state = resultOf(
-      (await createGetUiStateHandler(session)()) as {
-        content: Array<{ type: string; text?: string }>;
-      }
-    );
+    const state = (await getUiState({ sessionId: SESSION })) as Record<string, unknown>;
     expect(state).toMatchObject({
       surface: 'room',
       roomId,
@@ -204,15 +196,11 @@ describe('the claude-code handler, inside a room turn', () => {
    * the schema, so a rename on either side fails.
    */
   it('answers both arms with the same document keys, and `active` only on the session', async () => {
-    await controlUi({
+    await control({
       action: 'open_canvas',
       content: { type: 'json', data: {}, title: 'notes' },
     });
-    const roomState = resultOf(
-      (await createGetUiStateHandler(session)()) as {
-        content: Array<{ type: string; text?: string }>;
-      }
-    );
+    const roomState = (await getUiState({ sessionId: SESSION })) as Record<string, unknown>;
 
     // The session arm, over the same registered writer the harness stood up.
     const canvas = peekCanvasService();
@@ -222,11 +210,7 @@ describe('the claude-code handler, inside a room turn', () => {
       data: {},
       title: 'notes',
     });
-    const sessionState = resultOf(
-      (await createGetUiStateHandler({ eventQueue: [], sdkSessionId: 'sess-own' })()) as {
-        content: Array<{ type: string; text?: string }>;
-      }
-    );
+    const sessionState = (await getUiState({ sessionId: 'sess-own' })) as Record<string, unknown>;
 
     const documentsOf = (state: Record<string, unknown>) =>
       (state.canvas as { documents: Record<string, unknown>[] }).documents;
@@ -249,11 +233,8 @@ describe('the claude-code handler, inside a room turn', () => {
       sidebar: { open: true, activeTab: null },
       agent: { id: null, cwd: null },
     };
-    const state = resultOf(
-      (await createGetUiStateHandler({ eventQueue: [], uiState })()) as {
-        content: Array<{ type: string; text?: string }>;
-      }
-    );
+    uiTurnFacts.bindTurn('sess-own-direct', { uiState });
+    const state = (await getUiState({ sessionId: 'sess-own-direct' })) as Record<string, unknown>;
     expect(state).toMatchObject({
       panels: uiState.panels,
       sidebar: uiState.sidebar,
@@ -265,52 +246,87 @@ describe('the claude-code handler, inside a room turn', () => {
 
 describe('the sixteen window actions', () => {
   /** Everything `control_ui` accepts that a room does not. */
-  const WINDOW_ACTIONS = [
-    'show_toast',
-    'open_panel',
-    'close_panel',
-    'toggle_panel',
-    'open_sidebar',
-    'close_sidebar',
-    'switch_sidebar_tab',
-    'set_theme',
-    'scroll_to_message',
-    'switch_agent',
-    'open_pip',
-    'close_pip',
-    'open_terminal',
-    'open_command_palette',
-    'celebrate',
-    'apply_layout',
+  const WINDOW_ACTIONS: UiCommand[] = [
+    { action: 'show_toast', message: 'hi', level: 'info' },
+    { action: 'open_panel', panel: 'tasks' },
+    { action: 'close_panel', panel: 'tasks' },
+    { action: 'toggle_panel', panel: 'tasks' },
+    { action: 'open_sidebar' },
+    { action: 'close_sidebar' },
+    { action: 'switch_sidebar_tab', tab: 'overview' },
+    { action: 'set_theme', theme: 'dark' },
+    { action: 'scroll_to_message', messageId: 'm1' },
+    { action: 'switch_agent', cwd: '/projects/x' },
+    { action: 'open_pip' },
+    { action: 'close_pip' },
+    { action: 'open_terminal' },
+    { action: 'open_command_palette' },
+    { action: 'celebrate' },
+    { action: 'apply_layout', shape: 'focus' },
   ];
 
-  it('is exactly the set codex refuses in a room', () => {
-    for (const action of WINDOW_ACTIONS) {
-      expect(isUiActionRefusedInRoom(action), action).toBe(true);
-    }
-    for (const action of [
-      'open_canvas',
-      'update_canvas',
-      'close_canvas',
-      'open_file',
-      'open_diff',
-      'browser_navigate',
-    ]) {
-      expect(isUiActionRefusedInRoom(action), action).toBe(false);
-    }
+  let harness: RoomHarness;
+  let roomId: string;
+
+  beforeEach(() => {
+    reach.emitted.length = 0;
+    uiTurnFacts.clear();
+    harness = createRoomHarness({ agents, runner: scriptedRunner(() => null) });
+    setRoomService(harness.service);
+    roomId = harness.service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: [ANA] },
+      harness.human
+    ).id;
+    const ana = harness.authors.resolveAgent(ANA, 'Ana').id;
+    uiTurnFacts.bindTurn(SESSION, { roomTurn: { roomId, authorId: ana, turnId: 'turn-1' } });
   });
 
-  it('refuses an action nobody has written yet, because it is an allow-list', () => {
+  /**
+   * Asserted by DRIVING the handler, not by asking a predicate (spec
+   * `canvas-agent-seat` §5).
+   *
+   * There used to be a second mechanism here — a codex-only `isUiActionRefusedInRoom`
+   * the event-mapper consulted — and keeping two lists of the same sixteen
+   * actions in step was its own standing cost. The writer's own allow-list is
+   * the single enforcement point now, so this reads the answer the model would
+   * really get.
+   */
+  it('are every one of them refused in a room, and change nothing', async () => {
+    for (const command of WINDOW_ACTIONS) {
+      const result = await control(command);
+      expect(result, command.action).toEqual({
+        success: false,
+        target: 'room',
+        reason: NOT_IN_A_ROOM_MESSAGE,
+      });
+    }
+    expect(reach.emitted).toEqual([]);
+    expect(harness.service.canvas.list(roomId)).toEqual([]);
+  });
+
+  it('leaves the six canvas verbs alone', async () => {
+    const opened = await control({
+      action: 'open_canvas',
+      content: { type: 'json', data: {}, title: 'notes' },
+    });
+    expect(opened).toMatchObject({ success: true, target: 'room' });
+  });
+
+  it('refuses an action nobody has written yet, because it is an allow-list', async () => {
     // The direction the list has to fail in: a twenty-third action reaches a
-    // room refused rather than leaking onto somebody's private stream.
-    expect(isUiActionRefusedInRoom('open_holodeck')).toBe(true);
+    // room refused rather than leaking onto somebody's private stream. It does
+    // not even parse, which is the outer half of the same fail-closed rule.
+    const result = await control({ action: 'open_holodeck' } as unknown as UiCommand);
+    expect(result.error).toBe('Invalid UI command');
+    expect(reach.emitted).toEqual([]);
   });
 
-  it('leaves codex’s OWN consent rule alone', () => {
-    // The two are different questions. `apply_layout` is refused on codex
-    // everywhere; `show_toast` is refused only in a room.
-    expect(isUiActionRefusedOnCodex('apply_layout')).toBe(true);
-    expect(isUiActionRefusedOnCodex('show_toast')).toBe(false);
+  it('leaves the OUTSIDE-the-app consent rule alone', async () => {
+    // The two are different questions. `apply_layout` is refused for an agent
+    // reaching in from outside the DorkOS app wherever it is; `show_toast` is
+    // refused only in a room.
+    expect(reachesPastTheScreen('apply_layout')).toBe(true);
+    expect(reachesPastTheScreen('show_toast')).toBe(false);
   });
 });
 
@@ -385,19 +401,44 @@ describe('the client never reads the stamp', () => {
 });
 
 describe('the marker clears', () => {
-  it('is assigned unconditionally on every turn, `undefined` included', () => {
-    // Read off the adapter's source rather than asserted through a mocked SDK
-    // turn: the whole claim is about ONE line, and what makes it correct is that
-    // it is an unconditional assignment rather than a guarded one. The `ui_state`
-    // lift immediately above it is the shape this must not be copied from — it
-    // sets and never clears, which is harmless for a snapshot and would leave a
+  it('is bound per turn and dropped when the turn ends', () => {
+    uiTurnFacts.clear();
+    uiTurnFacts.bindTurn('s', { roomTurn: { roomId: 'r', authorId: 'a', turnId: 't' } });
+    expect(uiTurnFacts.read('s').roomTurn).toBeDefined();
+
+    // The turn ended: the next one, whatever starts it, writes to no room.
+    uiTurnFacts.endTurn('s');
+    expect(uiTurnFacts.read('s').roomTurn).toBeUndefined();
+  });
+
+  it('is cleared by a turn that carries no room, not merely left alone', () => {
+    // The `uiState` half is the shape this must not be copied from — it sets and
+    // never clears, which is harmless for a window snapshot and would leave a
     // session writing to a channel forever.
+    uiTurnFacts.clear();
+    uiTurnFacts.bindTurn('s', {
+      uiState: {
+        panels: { settings: false, tasks: false, relay: false, picker: false },
+        sidebar: { open: true, activeTab: null },
+        agent: { id: null, cwd: null },
+      },
+      roomTurn: { roomId: 'r', authorId: 'a', turnId: 't' },
+    });
+
+    uiTurnFacts.bindTurn('s', {});
+
+    expect(uiTurnFacts.read('s').roomTurn).toBeUndefined();
+    // …and the window snapshot survives, because no client re-sent one.
+    expect(uiTurnFacts.read('s').uiState).toBeDefined();
+  });
+
+  it('is bound by the trigger, for every runtime rather than for one', () => {
+    // Read off the trigger's source rather than asserted through a mocked turn:
+    // the whole claim is that ONE runtime-neutral line binds it, which is what
+    // makes Codex and OpenCode able to answer "which room am I in" at all.
     const serverSrc = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
-    const source = readFileSync(
-      path.join(serverSrc, 'services/runtimes/claude-code/claude-code-runtime.ts'),
-      'utf-8'
-    );
-    expect(source).toContain('session.roomTurn = opts?.roomTurn;');
-    expect(source).not.toMatch(/if \([^)]*roomTurn[^)]*\) session\.roomTurn/);
+    const source = readFileSync(path.join(serverSrc, 'services/session/trigger-turn.ts'), 'utf-8');
+    expect(source).toContain('uiTurnFacts.bindTurn(turnKey, {');
+    expect(source).toContain('uiTurnFacts.endTurn(turnKey);');
   });
 });

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { runtimeConformance } from '@dorkos/test-utils';
-import { createControlUiHandler } from '../mcp-tools/ui-tools.js';
+import { controlUi } from '../../../session/browser-seat/ui-control.js';
 import { driveRoomCanvasTurn } from '../../../session/__tests__/durable-turn-harness.js';
 import {
   wrapSdkQuery,
@@ -544,16 +544,16 @@ runtimeConformance(
     presenceTurn: (runtime, sessionId, content, probes) =>
       drivePresenceTurn(runtime, sessionId, content, '/projects/conformance', probes),
     // A room turn that puts a document on the room's shared canvas (spec
-    // `room-canvas` §5.5). Claude-code reaches the table by a different route
-    // from every other runtime — its `control_ui` handler calls the writer
-    // SYNCHRONOUSLY and stamps the event it then pushes, rather than leaving the
-    // work to the room turn's collector — so this wiring drives that handler,
-    // which is the code production binds to the session.
+    // `room-canvas` §5.5). `control_ui` reaches the table by calling the writer
+    // SYNCHRONOUSLY and stamping the event it then pushes, rather than leaving
+    // the work to the room turn's collector — so this wiring drives the real
+    // capability handler, which is the code every runtime now binds to.
     //
-    // The `roomTurn` marker is the one the RUNNER minted, handed over by the
-    // harness rather than rebuilt here: it keys the per-turn ledger, and a
-    // command applied under an invented turn id would write a row that no line
-    // in the room's log names.
+    // It is handed ONLY the session id, which is the point: which room this turn
+    // answers in is the runtime-neutral fact the trigger bound, and a handler
+    // that could not read it from the session id alone is a handler Codex and
+    // OpenCode could not have (spec `canvas-agent-seat` §5). Driving it with the
+    // real binding is what proves the binding is really there.
     roomCanvasTurn: () =>
       driveRoomCanvasTurn(
         new ClaudeCodeRuntime(
@@ -564,11 +564,14 @@ runtimeConformance(
         {
           agentPath: '/agents/ana',
           otherAgentPath: '/agents/ben',
-          produce: async (_sessionId, roomTurn) => {
-            await createControlUiHandler({ eventQueue: [], roomTurn })({
-              action: 'open_canvas',
-              content: { type: 'markdown', title: 'The plan', content: '# The plan' },
-            });
+          produce: async (sessionId) => {
+            await controlUi(
+              {
+                action: 'open_canvas',
+                content: { type: 'markdown', title: 'The plan', content: '# The plan' },
+              },
+              { sessionId }
+            );
           },
         }
       ),

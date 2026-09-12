@@ -12,10 +12,9 @@
  * hand-written `act-result` would prove none of that — it would be the
  * hypothesis, written down.
  *
- * So it builds the production handlers over a local event queue, drains what
- * they push onto the turn's own stream, and awaits the real answer. The only
- * piece not exercised is the MCP tool wrapper around them, which the unit tests
- * own.
+ * So it builds the production handlers over the production seam — the calling
+ * session's own durable stream — and awaits the real answer. The only piece not
+ * exercised is the capability wrapper around them, which the unit tests own.
  *
  * Inert unless a test selects it with `POST /api/test/scenario`.
  *
@@ -25,6 +24,7 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import {
   createBrowserSeatHandlers,
   devtoolsCaptureStore,
+  emitToSession,
   type DrivingAnswer,
 } from '../../session/index.js';
 import type { ScenarioFn } from './scenario-store.js';
@@ -49,11 +49,10 @@ function line(label: string, answer: DrivingAnswer): string {
  */
 export function browserDrivingScenarios(): Record<string, ScenarioFn> {
   const drive: ScenarioFn = async function* (_content, ctx) {
-    const eventQueue: StreamEvent[] = [];
     const handlers = createBrowserSeatHandlers({
-      resolveSessionId: () => ctx.sessionId,
+      sessionId: ctx.sessionId,
       store: devtoolsCaptureStore,
-      session: { eventQueue },
+      emit: (event) => emitToSession(ctx.sessionId, event),
     });
 
     yield {
@@ -64,30 +63,26 @@ export function browserDrivingScenarios(): Record<string, ScenarioFn> {
     const answers: string[] = [];
 
     /**
-     * Run one verb: the handler pushes its request synchronously, the generator
-     * forwards it onto the turn's stream, and only then does it await the
-     * answer. Forwarding after the await would leave the request sitting in a
-     * local array while the handler waited for a reply nobody was ever asked
-     * for.
+     * Run one verb and record what came back.
+     *
+     * The handler puts its request straight onto this session's durable stream —
+     * the production path, which every window open on the session is already
+     * reading — so there is nothing for this generator to forward. It waits for
+     * the one real answer.
      */
-    async function* step(
-      label: string,
-      run: () => Promise<DrivingAnswer>
-    ): AsyncGenerator<StreamEvent> {
-      const pending = run();
-      while (eventQueue.length > 0) yield eventQueue.shift() as StreamEvent;
-      const answer = await pending;
+    async function step(label: string, run: () => Promise<DrivingAnswer>): Promise<void> {
+      const answer = await run();
       answers.push(line(label, answer));
       const outline = (answer.payload as { outline?: string }).outline;
       if (outline) answers.push(`${label}-outline: ${outline.replace(/\n/g, ' | ')}`);
     }
 
-    yield* step('read', () => handlers.readPage({}));
-    yield* step('click', () => handlers.click({ role: 'button', name: DRIVING_FIXTURE_BUTTON }));
-    yield* step('wait', () =>
+    await step('read', () => handlers.readPage({}));
+    await step('click', () => handlers.click({ role: 'button', name: DRIVING_FIXTURE_BUTTON }));
+    await step('wait', () =>
       handlers.waitFor({ text: DRIVING_FIXTURE_DONE_TEXT, timeoutMs: 4_000 })
     );
-    yield* step('read-again', () => handlers.readPage({}));
+    await step('read-again', () => handlers.readPage({}));
 
     yield { type: 'text_delta', data: { text: answers.join('\n') } } as StreamEvent;
     yield { type: 'done', data: { sessionId: ctx.sessionId } } as StreamEvent;
