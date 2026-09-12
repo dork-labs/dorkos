@@ -326,6 +326,40 @@ Three ways, and there is no fourth:
 None of those starts anybody's turn. Putting something on a room's canvas wakes nobody, which is
 what makes it safe to leave on.
 
+### Talking about a document
+
+Every document on the canvas has a **Discuss** button. Press it and the room gets one short line
+saying you started a discussion about that document, and a thread opens on it. Type there and you're
+talking about that one thing, out of the way of everything else being said in the room.
+
+Press Discuss again next week, from another device, and you land in the same thread. So does
+everyone else: there is one discussion per document, and the room remembers which one it is. The
+line it writes wakes nobody, and a reply in the thread starts nobody's turn unless you `@mention`
+them — the same rule as anywhere else in the room.
+
+If you do ask an agent something in a document's thread, it is told about that document and no
+other. It still gets the label, not the contents; if it wants what's inside, it asks for it.
+
+### Following somebody's browser
+
+If somebody else is in the room with you, the Browser tab has a **Follow** button. Pick a person and
+your panel goes where theirs goes — the same page, the same place on it — until you turn it off.
+
+A few things worth knowing:
+
+- **It's people only.** You can't follow an agent and an agent can't follow you. An agent has no
+  window to share; it puts what it wants you to see on the canvas instead.
+- **It's off until you turn it on**, it's never remembered, and it stops on its own when you switch
+  to another window, close the tab, leave the room, or the person you're following goes quiet for
+  half a minute.
+- **Nothing is recorded.** What travels is which document they're on, the page in it, and how far
+  down they've scrolled — never anything that's on the page. It's gone the moment it arrives, like
+  the "typing" dots, and it's never in the room's history.
+- **Nobody shares anything until somebody is following them.** A room where nobody is following
+  anybody sends nothing extra at all.
+- **You're never pulled off something you're typing in.** If you're editing a document, following
+  waits until you stop.
+
 ### Pinning, and what falls off
 
 A room's canvas holds twelve documents at a time. Put up a thirteenth and the one nobody has
@@ -716,21 +750,31 @@ mark moving on another device) without needing a subscription to every room at o
 | `DELETE` | `/api/rooms/:id/members/:authorId` | Remove a member.                                 |
 | `GET`    | `/api/rooms/:id/events`            | The room's live event stream.                    |
 
-The room's canvas has eight of its own. Every one resolves the caller server-side and answers `404`
-for a room you aren't in, exactly as if it didn't exist. The five that write also refuse an
+The room's canvas has nine of its own. Every one resolves the caller server-side and answers `404`
+for a room you aren't in, exactly as if it didn't exist. The six that write also refuse an
 archived room; the three that read answer normally forever. Two of them are yours alone — saying
 what you're looking at, and the review of somebody else's copy — and answer an agent `403`.
 
-| Method   | Path                                        | Purpose                                       |
-| -------- | ------------------------------------------- | --------------------------------------------- |
-| `GET`    | `/api/rooms/:id/canvas`                     | Everything on the room's canvas.              |
-| `GET`    | `/api/rooms/:id/canvas/:documentId`         | One document, contents included.              |
-| `POST`   | `/api/rooms/:id/canvas`                     | Put a document on it.                         |
-| `PATCH`  | `/api/rooms/:id/canvas/:documentId`         | Change one, pin it, or bump it to the front.  |
-| `DELETE` | `/api/rooms/:id/canvas/:documentId`         | Take one off, for everybody.                  |
-| `POST`   | `/api/rooms/:id/canvas/:documentId/editing` | Say you're editing it, so agent changes hold. |
-| `GET`    | `/api/rooms/:id/canvas/:documentId/diff`    | Both copies of the file behind a review.      |
-| `PUT`    | `/api/rooms/:id/canvas/:documentId/diff`    | Put a reviewed file back in the agent's copy. |
+| Method   | Path                                        | Purpose                                        |
+| -------- | ------------------------------------------- | ---------------------------------------------- |
+| `GET`    | `/api/rooms/:id/canvas`                     | Everything on the room's canvas.               |
+| `GET`    | `/api/rooms/:id/canvas/:documentId`         | One document, contents included.               |
+| `POST`   | `/api/rooms/:id/canvas`                     | Put a document on it.                          |
+| `PATCH`  | `/api/rooms/:id/canvas/:documentId`         | Change one, pin it, or bump it to the front.   |
+| `DELETE` | `/api/rooms/:id/canvas/:documentId`         | Take one off, for everybody.                   |
+| `POST`   | `/api/rooms/:id/canvas/:documentId/editing` | Say you're editing it, so agent changes hold.  |
+| `POST`   | `/api/rooms/:id/canvas/:documentId/thread`  | Open the document's discussion, or re-open it. |
+| `GET`    | `/api/rooms/:id/canvas/:documentId/diff`    | Both copies of the file behind a review.       |
+| `PUT`    | `/api/rooms/:id/canvas/:documentId/diff`    | Put a reviewed file back in the agent's copy.  |
+
+Following somebody's browser has three more. All three are people only: a caller acting as an agent
+is refused.
+
+| Method   | Path                         | Purpose                                              |
+| -------- | ---------------------------- | ---------------------------------------------------- |
+| `PUT`    | `/api/rooms/:id/follow`      | Follow somebody, or say you're still following them. |
+| `DELETE` | `/api/rooms/:id/follow`      | Stop following.                                      |
+| `POST`   | `/api/rooms/:id/follow/view` | Say where you're looking, for whoever is following.  |
 
 The full request and response shapes are in the [API reference](/docs/api).
 

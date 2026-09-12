@@ -77,6 +77,7 @@ import { parseBody, sendError, discardStream } from '../lib/route-utils.js';
 import { roomEventsHandler } from './room-events-handler.js';
 import { resolveCaller } from './room-caller.js';
 import roomCanvasRouter from './room-canvas.js';
+import roomFollowRouter from './room-follow.js';
 import { sendRoomError } from './room-error-response.js';
 import { logger } from '../lib/logger.js';
 
@@ -1167,5 +1168,6 @@ router.get('/:id/events', roomEventsHandler);
  * earlier pattern can swallow a canvas path.
  */
 router.use('/:id/canvas', roomCanvasRouter);
+router.use('/:id/follow', roomFollowRouter);
 
 export default router;

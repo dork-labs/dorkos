@@ -252,44 +252,61 @@ export class RoomSystemPosts {
    * face beside a sentence the room wrote — the same job the field does for a
    * notice, a moment and a merge.
    *
+   * **`bind` is how a canvas ROW is written in the same transaction as this
+   * entry** (spec `canvas-agent-seat` §7). The one caller that needs it is
+   * "Discuss": the thread root and the column naming it have to land together or
+   * neither does, and the id is minted here, so the hook is handed the id and
+   * runs inside `appendEntry`'s own transaction. Every other caller omits it and
+   * writes exactly what it wrote before.
+   *
    * @param roomId - The room whose canvas changed.
    * @param input.text - The sentence a person reads.
    * @param input.canvas - The machine-readable half, for a client that draws it.
    * @param input.subjectAuthorId - The member whose turn changed the canvas.
+   * @param bind - Optional write that must commit with this entry, handed the
+   *   transaction and the entry's id.
    * @returns The committed entry.
    * @throws {RoomError} `ROOM_ARCHIVED` — an archived room gains no entries, in
    *   its own voice least of all.
    */
   postCanvasEvent(
     roomId: string,
-    input: { text: string; canvas: RoomCanvasChange; subjectAuthorId: string }
+    input: { text: string; canvas: RoomCanvasChange; subjectAuthorId: string },
+    bind?: (tx: DbTransaction, entryId: string) => void
   ): RoomEntry {
     const room = this.visibility.requireRoom(roomId);
     if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
     const id = ulid();
-    const entry = this.store.appendEntry({
-      roomId,
-      id,
-      authorId: this.authors.system().id,
-      kind: 'post',
-      body: {
-        text: input.text,
-        canvas: input.canvas,
-        subjectAuthorId: input.subjectAuthorId,
+    const entry = this.store.appendEntry(
+      {
+        roomId,
+        id,
+        authorId: this.authors.system().id,
+        kind: 'post',
+        body: {
+          text: input.text,
+          canvas: input.canvas,
+          subjectAuthorId: input.subjectAuthorId,
+        },
+        // Addresses nobody — the emptiness is the mechanism, exactly as it is on a
+        // merge entry, rather than a consequence of the text happening to carry no
+        // `@`. This is what makes "a canvas change wakes nobody" structural.
+        mentions: [],
+        mentionSpans: [],
+        sessionId: null,
+        ...threadPointers(this.store, roomId, undefined),
+        ...deriveCascade(id, {
+          authorKind: 'system',
+          maxAgentDepth: this.limitsFor(roomId).maxAgentDepth,
+        }),
+        createdAt: new Date().toISOString(),
       },
-      // Addresses nobody — the emptiness is the mechanism, exactly as it is on a
-      // merge entry, rather than a consequence of the text happening to carry no
-      // `@`. This is what makes "a canvas change wakes nobody" structural.
-      mentions: [],
-      mentionSpans: [],
-      sessionId: null,
-      ...threadPointers(this.store, roomId, undefined),
-      ...deriveCascade(id, {
-        authorKind: 'system',
-        maxAgentDepth: this.limitsFor(roomId).maxAgentDepth,
-      }),
-      createdAt: new Date().toISOString(),
-    });
+      undefined,
+      // `bind` rather than `within`: the hook points AT this entry, so it may
+      // only run once the row exists. `appendEntry` runs it after the insert and
+      // inside the same transaction, so a throw here takes the entry with it.
+      bind && ((tx) => bind(tx, id))
+    );
     this.publisher.publishEntry(entry);
     return entry;
   }

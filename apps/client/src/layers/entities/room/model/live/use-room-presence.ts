@@ -48,7 +48,7 @@
  * that one fact is kept, past tense and briefly, so the lane can say the pill
  * released into something rather than nothing — see {@link useRoomSilentFinish}.
  *
- * @module entities/room/model/use-room-presence
+ * @module entities/room/model/live/use-room-presence
  */
 import { useEffect, useMemo, useReducer } from 'react';
 import { create } from 'zustand';

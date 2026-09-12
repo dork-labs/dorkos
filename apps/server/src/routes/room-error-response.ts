@@ -79,6 +79,12 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // the room is the wrong surface for it; both MCP-only today, mapped because
   // this table is total by type.
   CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM: 400,
+  // 400: a follow claim on yourself. The request is well formed and the room is
+  // right; the two author ids are the same, and no retry changes that.
+  CANNOT_FOLLOW_YOURSELF: 400,
+  // 429: this process already holds as many follow claims as it will. A retry
+  // is exactly the right thing to do once some of them lapse.
+  TOO_MANY_FOLLOWERS: 429,
   // The writer faulted or is absent. 503, not 404: nothing was missing, the
   // server could not do it — and a retry is a reasonable thing for a caller to
   // do, which is the difference this code exists to state. The session-canvas

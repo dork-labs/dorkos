@@ -33,7 +33,8 @@ import { useAppStore, useTransport } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
 import { mergeRoomReactions } from '../lib/reactions';
 import { usePendingPostStore } from './pending-posts';
-import { useRoomPresenceStore } from './use-room-presence';
+import { useRoomPresenceStore } from './live/use-room-presence';
+import { isFollowSignal, useRoomFollowStore } from './live/use-room-follow';
 
 /**
  * Insert an entry into a room's cached history, keeping it ordered by `seq` and
@@ -471,14 +472,25 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
             // they never enter the history — they go to the presence store,
             // which expires them rather than keeping them.
             if (event.type === 'signal') {
-              useRoomPresenceStore.getState().observe(roomId, event);
-              // The same lane also carries who is looking at which canvas
-              // document (spec `room-canvas` §9.4). A different store, because
-              // it is a different fact with a different life: the one above is
-              // about work being done and is keyed by claim, this one is about
-              // attention and is keyed by author. Both stores ignore the
-              // other's frames, so the two can never be confused for each other.
-              useAppStore.getState().applyRoomCanvasPresence(roomId, event);
+              // THREE readers, one lane, and each says which frames are its
+              // own. A `presence` signal carrying a follow claim or a follow
+              // position is the follow store's; anything else is read by the
+              // other two — the presence store, which is about work being done
+              // and is keyed by claim, and the canvas slice, which is about
+              // attention and is keyed by author (spec `room-canvas` §9.4).
+              //
+              // **The `else` is load-bearing.** `applyRoomCanvasPresence` reads
+              // a `presence` frame with no `documentId` as "this author is
+              // looking at no document" and drops their face. Every follow frame
+              // is such a frame, so routing one to it would clear a tab face on
+              // every scroll of whoever is being followed. The schema refuses a
+              // frame carrying two payloads, so one branch is always right.
+              if (isFollowSignal(event)) {
+                useRoomFollowStore.getState().observe(roomId, event);
+              } else {
+                useRoomPresenceStore.getState().observe(roomId, event);
+                useAppStore.getState().applyRoomCanvasPresence(roomId, event);
+              }
               continue;
             }
             // Reactions are durable state ON an entry rather than a place in

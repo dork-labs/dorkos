@@ -19,6 +19,7 @@ import {
   answeredReference,
   authorsById,
   threadPanelRowId,
+  displayAuthorIdOf,
   toMessageAuthor,
 } from '../lib/room-timeline';
 import { ROOM_CAPABILITIES } from '../model/room-capabilities';
@@ -270,7 +271,7 @@ export function RoomThreadPanel({
         id: root.id,
         payload: root,
         grouping: { position: 'only' },
-        author: toMessageAuthor(root.authorId, authors, agents.faces),
+        author: toMessageAuthor(displayAuthorIdOf(root, authors), authors, agents.faces),
         at: root.createdAt,
       });
     }
@@ -280,7 +281,7 @@ export function RoomThreadPanel({
         id: reply.id,
         payload: reply,
         grouping: { position: 'only' },
-        author: toMessageAuthor(reply.authorId, authors, agents.faces),
+        author: toMessageAuthor(displayAuthorIdOf(reply, authors), authors, agents.faces),
         at: reply.createdAt,
       });
     }

@@ -13,8 +13,12 @@ import { act, renderHook } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { useOpenRoomWorking, useRoomWorking, useRoomWorkingStore } from '../model/use-room-working';
-import { PRESENCE_TTL_MS } from '../model/use-room-presence';
+import {
+  useOpenRoomWorking,
+  useRoomWorking,
+  useRoomWorkingStore,
+} from '../model/live/use-room-working';
+import { PRESENCE_TTL_MS } from '../model/live/use-room-presence';
 import { roomKeys } from '../api/query-keys';
 
 /** Put the store back to an empty cockpit between cases. */

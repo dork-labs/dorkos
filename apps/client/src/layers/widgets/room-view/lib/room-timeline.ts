@@ -82,6 +82,39 @@ export function authorsById(members: readonly RoomRosterEntry[]): Map<string, Ro
 }
 
 /**
+ * Which author a row draws a face and a name for.
+ *
+ * Almost always the entry's own author, and the one case where it is not is the
+ * room speaking about somebody: a merge line, a canvas line, the line that opens
+ * a document's discussion. Those are written by the SYSTEM author, which is on
+ * no room's roster, and they carry `body.subjectAuthorId` — which
+ * `RoomSystemPosts.postCanvasEvent` documents as being there "so the feed draws
+ * their face beside a sentence the room wrote".
+ *
+ * The feed did not. `toMessageAuthor` fell back to "Unknown" for an author it
+ * could not find, so "You started a discussion about The plan" was signed by
+ * nobody, twice — once in the room and once as the heading of the thread panel
+ * it opens. Every one of those sentences names a person in its own words, so a
+ * row that cannot say who is contradicting itself.
+ *
+ * **The roster decides, not the entry's `kind`.** An entry whose own author IS
+ * on the roster keeps them, subject or no subject — which is what leaves a
+ * moment, written by the agent it is about, exactly as it was.
+ *
+ * @param entry - One entry from the room's log.
+ * @param authors - The room's roster, keyed by author id.
+ * @returns The author id to draw.
+ */
+export function displayAuthorIdOf(
+  entry: RoomEntry,
+  authors: ReadonlyMap<string, RosterAuthor>
+): string {
+  const subject = entry.body.subjectAuthorId;
+  if (subject === undefined || authors.has(entry.authorId)) return entry.authorId;
+  return subject;
+}
+
+/**
  * The view model the shared message primitives render an author from.
  *
  * **The face comes off the one ladder** (`resolveIdentityFace`), the same one
