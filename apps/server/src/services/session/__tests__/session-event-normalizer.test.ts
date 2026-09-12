@@ -327,6 +327,38 @@ describe('toRawSessionEvent', () => {
       input: { type: 'background_task_done', data: { taskId: 'bt1', status: 'failed' } },
       expected: { type: 'subagent_update', taskId: 'bt1', status: 'error' },
     },
+    // Housekeeping tasks (spec `ambient-background-tasks`): the runtime's mark
+    // has to survive the hop onto the durable stream, or a client that
+    // reconnects mid-turn draws work the runtime asked it to hide. Absent stays
+    // absent — that is what every other runtime sends.
+    {
+      name: 'background_task_started carries the housekeeping mark',
+      input: {
+        type: 'background_task_started',
+        data: {
+          taskId: 'bt2',
+          taskType: 'agent',
+          startedAt: 1,
+          description: 'watch',
+          ambient: true,
+        },
+      },
+      expected: {
+        type: 'subagent_update',
+        taskId: 'bt2',
+        status: 'running',
+        description: 'watch',
+        ambient: true,
+      },
+    },
+    {
+      name: 'background_task_done carries the housekeeping mark',
+      input: {
+        type: 'background_task_done',
+        data: { taskId: 'bt2', status: 'completed', ambient: true },
+      },
+      expected: { type: 'subagent_update', taskId: 'bt2', status: 'complete', ambient: true },
+    },
     // The four fidelity members (spec task #19): a live turn renders thinking,
     // tool progress, hooks, and memory recall with the same fidelity the
     // post-turn history reload provides.
@@ -630,6 +662,88 @@ describe('toRawSessionEvent', () => {
     {
       name: 'devtools_capture_request with no requestId → null (defensive)',
       input: { type: 'devtools_capture_request', data: {} } as unknown as StreamEvent,
+      expected: null,
+    },
+    {
+      // The `capture` flag is what makes an action keep a recording frame (spec
+      // `canvas-agent-seat` §3.2), and this hop is where it would be lost: the
+      // recording would keep running with every frame missing, and nothing
+      // anywhere would fail to say so.
+      name: 'devtools_action_request carries the recording capture flag through',
+      input: {
+        type: 'devtools_action_request',
+        data: {
+          requestId: 'req-1',
+          targetClientId: 'win-1',
+          documentId: 'doc-1',
+          command: { action: 'click', target: { text: 'Pay' } },
+          capture: true,
+        },
+      } as unknown as StreamEvent,
+      expected: {
+        type: 'devtools_action_request',
+        requestId: 'req-1',
+        targetClientId: 'win-1',
+        documentId: 'doc-1',
+        command: { action: 'click', target: { text: 'Pay' } },
+        capture: true,
+      },
+    },
+    {
+      name: 'devtools_action_request leaves the capture flag off when nothing is recording',
+      input: {
+        type: 'devtools_action_request',
+        data: {
+          requestId: 'req-2',
+          targetClientId: 'win-1',
+          documentId: 'doc-1',
+          command: { action: 'click', target: { text: 'Pay' } },
+        },
+      } as unknown as StreamEvent,
+      expected: {
+        type: 'devtools_action_request',
+        requestId: 'req-2',
+        targetClientId: 'win-1',
+        documentId: 'doc-1',
+        command: { action: 'click', target: { text: 'Pay' } },
+      },
+    },
+    {
+      name: 'devtools_recording_request → devtools_recording_request (carries the bounds)',
+      input: {
+        type: 'devtools_recording_request',
+        data: {
+          requestId: 'rec-req-1',
+          targetClientId: 'win-1',
+          documentId: 'doc-1',
+          action: 'start',
+          recordingId: '01JRECORDING',
+          bounds: { longEdgePx: 800, frameMs: 500, maxBytes: 8_388_608 },
+        },
+      } as unknown as StreamEvent,
+      expected: {
+        type: 'devtools_recording_request',
+        requestId: 'rec-req-1',
+        targetClientId: 'win-1',
+        documentId: 'doc-1',
+        action: 'start',
+        recordingId: '01JRECORDING',
+        bounds: { longEdgePx: 800, frameMs: 500, maxBytes: 8_388_608 },
+      },
+    },
+    {
+      name: 'devtools_recording_request with an unknown action → null (defensive)',
+      input: {
+        type: 'devtools_recording_request',
+        data: {
+          requestId: 'rec-req-2',
+          targetClientId: 'win-1',
+          documentId: 'doc-1',
+          action: 'rewind',
+          recordingId: '01JRECORDING',
+          bounds: { longEdgePx: 800, frameMs: 500, maxBytes: 8_388_608 },
+        },
+      } as unknown as StreamEvent,
       expected: null,
     },
     {

@@ -641,7 +641,8 @@ const SUBAGENT_UUID =
 export function sdkTaskStarted(
   taskId: string,
   description: string,
-  toolUseId?: string
+  toolUseId?: string,
+  runtimeFields?: SdkTaskRuntimeFields
 ): SDKMessage {
   return {
     type: 'system',
@@ -649,9 +650,25 @@ export function sdkTaskStarted(
     task_id: taskId,
     description,
     ...(toolUseId ? { tool_use_id: toolUseId } : {}),
+    ...runtimeFields,
     session_id: `subagent-${taskId}`,
     uuid: SUBAGENT_UUID,
   } as SDKMessage;
+}
+
+/**
+ * The task-lifecycle fields the SDK added for background work (0.3.238/0.3.247).
+ *
+ * Every one is optional on the wire, so a fixture that omits them is the
+ * every-other-runtime case, not a malformed message.
+ */
+export interface SdkTaskRuntimeFields {
+  /** Housekeeping the runtime asks hosts to keep out of activity indicators. */
+  ambient?: boolean;
+  /** Whether the spawning tool call blocked on this task. */
+  is_backgrounded?: boolean;
+  /** Nesting depth of a spawned subagent. */
+  spawn_depth?: number;
 }
 
 /**
@@ -719,7 +736,8 @@ export function sdkTaskProgress(
 export function sdkTaskNotification(
   taskId: string,
   status: 'completed' | 'failed' | 'stopped',
-  summary: string
+  summary: string,
+  runtimeFields?: SdkTaskRuntimeFields
 ): SDKMessage {
   return {
     type: 'system',
@@ -728,6 +746,7 @@ export function sdkTaskNotification(
     status,
     output_file: '/tmp/output.txt',
     summary,
+    ...runtimeFields,
     usage: { total_tokens: 2000, tool_uses: 5, duration_ms: 3000 },
     session_id: `subagent-${taskId}`,
     uuid: SUBAGENT_UUID,

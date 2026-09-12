@@ -398,6 +398,21 @@ export type RoomErrorCode =
   | 'ATTACHMENT_ALREADY_POSTED'
   /** A post named more attachments than `uploads.maxFiles` allows, or named one twice. */
   | 'TOO_MANY_ATTACHMENTS'
+  /**
+   * An agent's `post_to_room` named a file outside its OWN working directory
+   * (spec `canvas-agent-seat` §4).
+   *
+   * **Its own code because it is its own mistake.** The global boundary in a
+   * project room contains every member's working copy, so "that file exists and
+   * you may read it" and "that file is yours to attach" are different questions
+   * — and this is the second one answering no. The fix is to copy the file in,
+   * which the message says.
+   */
+  | 'ATTACHMENT_PATH_REFUSED'
+  /** An agent named a path that is missing, is a folder, or is a kind of file this install does not accept. */
+  | 'ATTACHMENT_UNREADABLE'
+  /** An agent named a file bigger than `uploads.maxFileSize`. */
+  | 'ATTACHMENT_TOO_LARGE'
   | 'NOT_A_BRIDGED_ROOM'
   /**
    * `RoomService.rebridge` was asked to re-bridge a `(adapterId, chatId)` that

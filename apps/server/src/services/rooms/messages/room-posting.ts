@@ -201,7 +201,18 @@ export class RoomPosting {
    */
   postFromTool(
     roomId: string,
-    input: { authorId: string; text: string; replyTo?: string }
+    input: {
+      authorId: string;
+      text: string;
+      replyTo?: string;
+      /**
+       * Files this agent already staged into the room, unbound, in render
+       * order (spec `canvas-agent-seat` §4). Bound inside the entry's own
+       * transaction by {@link RoomPosting.post}, so the message and its files
+       * land together or neither does.
+       */
+      attachmentIds?: readonly string[];
+    }
   ): PostedEntry {
     const room = this.visibility.requireVisibleRoom(roomId, input.authorId);
     // The turn this post is being made from inside, when there is one. Read

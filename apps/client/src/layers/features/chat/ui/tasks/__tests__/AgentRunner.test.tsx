@@ -27,6 +27,7 @@ function makeTask(overrides: Partial<VisibleBackgroundTask> = {}): VisibleBackgr
   return {
     taskId: 'bar-task',
     taskType: 'agent',
+    ambient: false,
     status: 'running',
     color: TASK_COLORS[0],
     startedAt: Date.now() - 30_000,

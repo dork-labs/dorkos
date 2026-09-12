@@ -16,6 +16,8 @@
  * | `ui.scroll`               | `browser_scroll`       | `act`     | Scroll it. |
  * | `ui.wait_for`             | `browser_wait_for`     | `observe` | Wait, bounded, for it to catch up. |
  * | `ui.read_page`            | `browser_read_page`    | `observe` | Read it back as an outline. |
+ * | `ui.record_start`         | `browser_record_start` | `act`     | Start filming what you do in it. |
+ * | `ui.record_stop`          | `browser_record_stop`  | `act`     | Stop filming, and save the file. |
  *
  * ## Why the domain exists
  *
@@ -62,6 +64,7 @@ import {
   CONTROL_UI_INPUT,
 } from '../../runtimes/shared/ui-tool-contract.js';
 import {
+  CapabilityImageResult,
   defineCapability,
   type CapabilityDomain,
   type CapabilityHandlerContext,
@@ -88,6 +91,9 @@ import {
   READ_PAGE_INPUT,
   SCROLL_DESCRIPTION,
   SCROLL_INPUT,
+  RECORD_START_DESCRIPTION,
+  RECORD_START_INPUT,
+  RECORD_STOP_DESCRIPTION,
   TYPE_DESCRIPTION,
   TYPE_INPUT,
   WAIT_FOR_DESCRIPTION,
@@ -97,6 +103,7 @@ import {
   createBrowserSeatHandlers,
   type BrowserSeatHandlers,
   type ClickInput,
+  type DocumentInput,
   type DrivingAnswer,
   type PressInput,
   type ReadPageInput,
@@ -104,6 +111,7 @@ import {
   type TypeInput,
   type WaitForInput,
 } from './handlers.js';
+import { createRecordingHandlers, type RecordingHandlers } from './recording.js';
 import { readSessionCanvasDocument } from './read-canvas-document.js';
 import { emitToSession } from './session-reach.js';
 import { controlUi, getUiState, type UiCallerContext } from './ui-control.js';
@@ -151,20 +159,45 @@ function seatFor(sessionId: string): BrowserSeatHandlers {
 }
 
 /**
- * Run one driving verb for the calling session, or refuse a surface that has
+ * Build the two recording handlers for one call, bound to the session that made
+ * it and to the directory the file will land in.
+ *
+ * @param context - What the registry handed the handler.
+ * @param sessionId - The calling session.
+ * @returns The handlers, bound to that session's windows.
+ */
+function recorderFor(
+  context: CapabilityHandlerContext,
+  sessionId: string
+): RecordingHandlers {
+  return createRecordingHandlers({
+    sessionId,
+    ...(context.cwd !== undefined ? { cwd: context.cwd } : {}),
+    store: devtoolsCaptureStore,
+    emit: (event) => emitToSession(sessionId, event),
+  });
+}
+
+/**
+ * Run one browser verb for the calling session, or refuse a surface that has
  * none.
+ *
+ * A verb that hands back a PICTURE — only `browser_record_stop` does — returns
+ * it beside its JSON, so the MCP adapters emit an image block the model can
+ * actually look at rather than base64 buried in a string.
  *
  * @param context - What the registry handed the handler.
  * @param run - The verb, given a seat bound to the calling session.
- * @returns The verb's answer, as plain data.
+ * @returns The verb's answer, as plain data or as a picture plus its JSON.
  */
 async function drive(
   context: CapabilityHandlerContext,
-  run: (seat: BrowserSeatHandlers) => Promise<DrivingAnswer>
-): Promise<Record<string, unknown>> {
+  run: (sessionId: string) => Promise<DrivingAnswer>
+): Promise<unknown> {
   const sessionId = context.sessionId;
   if (sessionId === undefined) return SESSIONLESS_DRIVING_ANSWER;
-  const answer = await run(seatFor(sessionId));
+  const answer = await run(sessionId);
+  if (answer.image) return new CapabilityImageResult(answer.image, answer.payload);
   return answer.payload;
 }
 
@@ -310,7 +343,7 @@ export const uiDomain: CapabilityDomain = {
       input: z.object(CLICK_INPUT),
       output: z.unknown(),
       surfaces: { mcp: { toolName: 'browser_click', servers: ['in-session'] } },
-      invoke: (_deps, input, context) => drive(context, (seat) => seat.click(input as ClickInput)),
+      invoke: (_deps, input, context) => drive(context, (sessionId) => seatFor(sessionId).click(input as ClickInput)),
     }),
     defineCapability({
       id: 'ui.type',
@@ -320,7 +353,7 @@ export const uiDomain: CapabilityDomain = {
       input: z.object(TYPE_INPUT),
       output: z.unknown(),
       surfaces: { mcp: { toolName: 'browser_type', servers: ['in-session'] } },
-      invoke: (_deps, input, context) => drive(context, (seat) => seat.type(input as TypeInput)),
+      invoke: (_deps, input, context) => drive(context, (sessionId) => seatFor(sessionId).type(input as TypeInput)),
     }),
     defineCapability({
       id: 'ui.press',
@@ -330,7 +363,7 @@ export const uiDomain: CapabilityDomain = {
       input: z.object(PRESS_INPUT),
       output: z.unknown(),
       surfaces: { mcp: { toolName: 'browser_press', servers: ['in-session'] } },
-      invoke: (_deps, input, context) => drive(context, (seat) => seat.press(input as PressInput)),
+      invoke: (_deps, input, context) => drive(context, (sessionId) => seatFor(sessionId).press(input as PressInput)),
     }),
     defineCapability({
       id: 'ui.scroll',
@@ -341,7 +374,7 @@ export const uiDomain: CapabilityDomain = {
       output: z.unknown(),
       surfaces: { mcp: { toolName: 'browser_scroll', servers: ['in-session'] } },
       invoke: (_deps, input, context) =>
-        drive(context, (seat) => seat.scroll(input as ScrollInput)),
+        drive(context, (sessionId) => seatFor(sessionId).scroll(input as ScrollInput)),
     }),
     defineCapability({
       id: 'ui.wait_for',
@@ -352,7 +385,7 @@ export const uiDomain: CapabilityDomain = {
       output: z.unknown(),
       surfaces: { mcp: { toolName: 'browser_wait_for', servers: ['in-session'] } },
       invoke: (_deps, input, context) =>
-        drive(context, (seat) => seat.waitFor(input as WaitForInput)),
+        drive(context, (sessionId) => seatFor(sessionId).waitFor(input as WaitForInput)),
     }),
     defineCapability({
       id: 'ui.read_page',
@@ -369,7 +402,31 @@ export const uiDomain: CapabilityDomain = {
         },
       },
       invoke: (_deps, input, context) =>
-        drive(context, (seat) => seat.readPage(input as ReadPageInput)),
+        drive(context, (sessionId) => seatFor(sessionId).readPage(input as ReadPageInput)),
+    }),
+    defineCapability({
+      id: 'ui.record_start',
+      title: 'Start recording the preview',
+      description: RECORD_START_DESCRIPTION,
+      tier: 'act',
+      input: z.object(RECORD_START_INPUT),
+      output: z.unknown(),
+      surfaces: { mcp: { toolName: 'browser_record_start', servers: ['in-session'] } },
+      invoke: (_deps, input, context) =>
+        drive(context, (sessionId) =>
+          recorderFor(context, sessionId).start(input as DocumentInput)
+        ),
+    }),
+    defineCapability({
+      id: 'ui.record_stop',
+      title: 'Stop recording the preview',
+      description: RECORD_STOP_DESCRIPTION,
+      tier: 'act',
+      input: z.object({}),
+      output: z.unknown(),
+      surfaces: { mcp: { toolName: 'browser_record_stop', servers: ['in-session'] } },
+      invoke: (_deps, _input, context) =>
+        drive(context, (sessionId) => recorderFor(context, sessionId).stop()),
     }),
   ],
 };

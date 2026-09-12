@@ -63,6 +63,13 @@ export interface DrivingRequest {
   requestId: string;
   documentId?: string;
   command: DrivingCommand;
+  /**
+   * Keep a picture of what this action left behind (spec `canvas-agent-seat`
+   * §3.2). Set only while a recording is running on this page.
+   */
+  capture?: boolean;
+  /** The rasterizer source, delivered by the parent when `capture` is set. */
+  lib?: unknown;
 }
 
 /** One outline line, before it is joined into the answer. */
@@ -137,6 +144,11 @@ export interface DrivingContext {
   post: (message: unknown) => void;
   /** How many `fetch`/XHR calls the shim has started and not yet seen settle. */
   inFlight: () => number;
+  /**
+   * Rasterize this document once, at the capture size — the shim's own
+   * screenshot path, reused for a recording's keyframes.
+   */
+  rasterize: (lib: unknown) => Promise<string>;
 }
 
 /**
@@ -172,6 +184,10 @@ export function installBrowserDriving(
   // page ended up. Long enough for a client-side router to paint, short enough
   // that six actions in a row are not a wasted minute.
   const SETTLE_MS = 150;
+  // How long a recording frame may hold up the answer it rides on. Rasterizing
+  // a page is 1-3 s of real work, and the round trip it is part of gives up at
+  // eight; past this the answer goes without a picture rather than late.
+  const CAPTURE_BUDGET_MS = 5_000;
 
   /** Tags that are never part of what a person sees. */
   const SKIPPED_TAGS = new Set(['script', 'style', 'noscript', 'template', 'head', 'meta', 'link']);
@@ -810,23 +826,63 @@ export function installBrowserDriving(
    * awaiting tool call would wait out its whole timeout for a click that
    * actually worked.
    */
-  function answer(requestId: string, documentId: string | undefined) {
+  function answer(
+    requestId: string,
+    documentId: string | undefined,
+    capture: boolean,
+    lib: unknown
+  ) {
     let sent = false;
     return function send(payload: Record<string, unknown>): void {
       if (sent) return;
       sent = true;
-      ctx.post({
-        __dorkosDevtools: 'act-result',
-        requestId,
-        documentId,
-        page: pageSummary(),
-        ...payload,
-      });
+      const emit = (dataUrl: string | undefined): void => {
+        ctx.post({
+          __dorkosDevtools: 'act-result',
+          requestId,
+          documentId,
+          page: pageSummary(),
+          ...(dataUrl ? { dataUrl } : {}),
+          ...payload,
+        });
+      };
+      if (!capture) {
+        emit(undefined);
+        return;
+      }
+      // A frame is a nice-to-have on an answer the tool is waiting for, so it
+      // may never delay or replace it: a page that cannot be rasterized, or is
+      // on its way out, answers WITHOUT a picture rather than not at all. Three
+      // races settle to the same single `emit`.
+      let framed = false;
+      const once = (dataUrl: string | undefined): void => {
+        if (framed) return;
+        framed = true;
+        emit(dataUrl);
+      };
+      const onHide = (): void => once(undefined);
+      window.addEventListener('pagehide', onHide);
+      setTimeout(() => once(undefined), CAPTURE_BUDGET_MS);
+      ctx.rasterize(lib).then(
+        (dataUrl) => {
+          window.removeEventListener('pagehide', onHide);
+          once(dataUrl);
+        },
+        () => {
+          window.removeEventListener('pagehide', onHide);
+          once(undefined);
+        }
+      );
     };
   }
 
   return function handle(request: DrivingRequest): void {
-    const send = answer(request.requestId, request.documentId);
+    const send = answer(
+      request.requestId,
+      request.documentId,
+      request.capture === true,
+      request.lib
+    );
     try {
       const command = request.command;
       // Anything that can move the page reports where the page ended up, and

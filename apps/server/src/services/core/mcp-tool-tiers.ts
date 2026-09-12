@@ -247,14 +247,14 @@ export const MCP_TOOL_TIERS = {
 
   // ── The app and its preview ─────────────────────────────────────────────
   // Nothing here any more. `control_ui`, `get_ui_state` and every `browser_*`
-  // verb were hand-registered on claude-code's in-session server
-  // and nowhere else, which is why a Codex or OpenCode member of a room could
-  // not see a console error. They are `ui` capabilities now (spec
-  // `canvas-agent-seat` §5), so their tiers are declared on the capability and
-  // enforced inside `registry.invoke` — the same gate this table feeds, reached
-  // from the inside instead of from a wrapper. Their tiers did not change: the
-  // two reads and the three that only look at a page stayed `observe`, and
-  // everything that acts stayed `act`.
+  // verb — the reads, the six driving verbs and the two recording verbs — were
+  // hand-registered on claude-code's in-session server and nowhere else, which
+  // is why a Codex or OpenCode member of a room could not see a console error.
+  // They are `ui` capabilities now (spec `canvas-agent-seat` §5), so their tiers
+  // are declared on the capability and enforced inside `registry.invoke` — the
+  // same gate this table feeds, reached from the inside instead of from a
+  // wrapper. No tier changed in the move: the reads and the two verbs that only
+  // look at a page stayed `observe`, and everything that acts stayed `act`.
 } as const satisfies Record<string, McpToolTier>;
 
 /** The name of a hand-registered MCP tool that carries a tier. */

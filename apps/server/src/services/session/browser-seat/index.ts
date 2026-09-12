@@ -48,3 +48,12 @@ export {
   type UiTurnBinding,
   type UiTurnFacts,
 } from './ui-turn-facts.js';
+export {
+  createRecordingHandlers,
+  NOTHING_RECORDING_NOTE,
+  RECORDING_ALREADY_RUNNING_NOTE,
+  RECORDING_STOP_TIMEOUT_NOTE,
+  type RecordingDeps,
+  type RecordingHandlers,
+  type RecordingStore,
+} from './recording.js';

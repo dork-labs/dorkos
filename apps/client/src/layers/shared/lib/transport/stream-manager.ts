@@ -193,6 +193,11 @@ const SESSION_EVENT_TYPES = [
   // same reason its sibling is — a dropped frame leaves a tool call waiting out
   // its whole timeout for an answer nobody was ever asked to give.
   'devtools_action_request',
+  // Start or stop recording the page (spec `canvas-agent-seat` §3). Registered
+  // with the contract for the third time and the same reason: a dropped `stop`
+  // leaves a `browser_record_stop` waiting out thirty seconds for a file the
+  // window was never asked to make.
+  'devtools_recording_request',
   // The session's message queue, whole, on every change (spec
   // `persistent-session-runtime`). Registered with the contract rather than
   // with the UI that will read it: a queue frame that never arrives is exactly

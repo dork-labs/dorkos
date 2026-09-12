@@ -18,16 +18,29 @@
  * @module features/status/lib/fold-active-subagents
  */
 import type { SessionEvent } from '@dorkos/shared/session-stream';
+import { isAmbientTask } from '@/layers/shared/lib';
 import type { ActiveSubagent } from '../model/session-diagnostics';
+
+/** One folded row plus the housekeeping mark, which the returned rows do not carry. */
+type FoldedSubagent = ActiveSubagent & { ambient?: boolean };
 
 /**
  * Project the turn's events onto one {@link ActiveSubagent} per task, in the
  * order each first appeared — running and finished alike.
  *
+ * Housekeeping children are folded and then dropped: the status line's subagent
+ * count and the session inspector are activity indicators, and the runtime asked
+ * for those to leave its own bookkeeping out. The mark rides forward across
+ * partial updates (`ambient` arrives with the start and the terminal update, and
+ * the projector stamps it onto the retirement it synthesizes for a stranded
+ * child — but a progress report carries it no more than it carries the
+ * description), so a later update cannot accidentally reveal a child an earlier
+ * one hid. One that FAILS comes back — see {@link isAmbientTask}.
+ *
  * @param events - The store's `inProgressTurn` events, in seq order.
  */
 export function foldActiveSubagents(events: readonly SessionEvent[]): ActiveSubagent[] {
-  const byTask = new Map<string, ActiveSubagent>();
+  const byTask = new Map<string, FoldedSubagent>();
   for (const event of events) {
     if (event.type !== 'subagent_update') continue;
     const existing = byTask.get(event.taskId);
@@ -38,9 +51,15 @@ export function foldActiveSubagents(events: readonly SessionEvent[]): ActiveSuba
       toolUses: event.toolUses ?? existing?.toolUses,
       lastToolName: event.lastToolName ?? existing?.lastToolName,
       summary: event.summary ?? existing?.summary,
+      ambient: event.ambient ?? existing?.ambient,
     });
   }
-  return [...byTask.values()];
+  const rows: ActiveSubagent[] = [];
+  for (const { ambient, ...row } of byTask.values()) {
+    if (isAmbientTask({ ambient, status: row.status })) continue;
+    rows.push(row);
+  }
+  return rows;
 }
 
 /** A fold split by whether each subagent is still in flight. */

@@ -153,6 +153,10 @@ Once an agent has a preview open in the Browser tab, it isn't flying blind: it c
 
 It can also use the page. Ask it to "sign up as test@example.com and tell me what happens" and it reads the page to see what's on it, types the address into the email field, clicks **Create account**, waits for the page to settle, and tells you what it saw — including the 500 in the console, if there was one. It never pastes the page's HTML at you, and it doesn't guess: when several things on the page match what it asked for, it says so and asks which one rather than picking one.
 
+It can also record what it did. Ask for a recording and it starts one, redoes the steps, and stops — and you get back one line saying how many frames it kept, how long it covers, and where the file is. The file is a small animated picture: one frame per action, a slideshow of the steps rather than a video of them. It saves into the agent's own working directory, under `.dork/.temp/recordings/`, so you can open it and watch the form fail for yourself. The agent gets the last frame back as a picture, and it can put the file itself into a room so other people — and other agents — can open it.
+
+A recording keeps at most 60 frames. Past that it stops filming, and everything else keeps working.
+
 Both halves work on local previews DorkOS renders directly: a local HTML file or a localhost dev server. External sites, and pages with a strict security policy, aren't instrumented — they're shown, not driven.
 
 In the permission mode DorkOS ships with, your agent does this without stopping to ask. If you've set a mode that asks first, you'll see a card the first time it clicks something, the same as for any other action.

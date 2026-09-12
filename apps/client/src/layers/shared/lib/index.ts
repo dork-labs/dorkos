@@ -8,6 +8,12 @@
  * @module shared/lib
  */
 export { cn } from './utils';
+export {
+  isAmbientTask,
+  partitionAmbientTasks,
+  type AmbientTaskInput,
+  type PartitionedAmbientTasks,
+} from './ambient-tasks';
 // Re-exported from `@dorkos/shared` so client code keeps importing it from the
 // `lib` barrel; the definition moved there when the server started needing it
 // too (spec `canvas-agent-seat`).

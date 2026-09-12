@@ -23,10 +23,12 @@
 import type { StreamEvent } from '@dorkos/shared/types';
 import {
   createBrowserSeatHandlers,
+  createRecordingHandlers,
   devtoolsCaptureStore,
   emitToSession,
   type DrivingAnswer,
 } from '../../session/index.js';
+import type { RawSessionEvent } from '../../session/session-state-projector.js';
 import type { ScenarioFn } from './scenario-store.js';
 
 /** The button this scenario clicks, and the text the fixture page shows after. */
@@ -88,5 +90,64 @@ export function browserDrivingScenarios(): Record<string, ScenarioFn> {
     yield { type: 'done', data: { sessionId: ctx.sessionId } } as StreamEvent;
   };
 
-  return { 'browser-driving': drive };
+  /**
+   * The recording turn: start filming, do two things, stop, and report the file.
+   *
+   * Built the same way {@link drive} is and for the same reason — these are the
+   * production handlers, over a real page, in a real window. What it adds is the
+   * half that lives in the CLIENT: the window keeps a frame per action, encodes
+   * them with `gifenc`, and uploads the result, none of which any server test
+   * can reach.
+   */
+  const record: ScenarioFn = async function* (_content, ctx, opts) {
+    const deps = {
+      sessionId: ctx.sessionId,
+      store: devtoolsCaptureStore,
+      emit: (event: RawSessionEvent) => emitToSession(ctx.sessionId, event),
+    };
+    const handlers = createBrowserSeatHandlers(deps);
+    const recording = createRecordingHandlers({
+      ...deps,
+      ...(opts?.cwd !== undefined ? { cwd: opts.cwd } : {}),
+    });
+
+    yield {
+      type: 'session_status',
+      data: { sessionId: ctx.sessionId, model: 'claude-haiku-4-5' },
+    } as StreamEvent;
+
+    const answers: string[] = [];
+
+    /**
+     * Run one verb and record what came back.
+     *
+     * The handler puts its request straight onto this session's durable stream,
+     * so there is nothing for this generator to forward.
+     */
+    async function step(label: string, run: () => Promise<DrivingAnswer>): Promise<void> {
+      const answer = await run();
+      answers.push(line(label, answer));
+      const payload = answer.payload as { path?: string; frames?: number; bytes?: number };
+      if (payload.path !== undefined) {
+        answers.push(
+          `stop-path: ${payload.path}`,
+          `stop-frames: ${payload.frames}`,
+          `stop-bytes: ${payload.bytes}`,
+          `stop-keyframe: ${answer.image ? answer.image.mimeType : 'none'}`
+        );
+      }
+    }
+
+    await step('start', () => recording.start({}));
+    await step('click', () => handlers.click({ role: 'button', name: DRIVING_FIXTURE_BUTTON }));
+    await step('wait', () =>
+      handlers.waitFor({ text: DRIVING_FIXTURE_DONE_TEXT, timeoutMs: 4_000 })
+    );
+    await step('stop', () => recording.stop());
+
+    yield { type: 'text_delta', data: { text: answers.join('\n') } } as StreamEvent;
+    yield { type: 'done', data: { sessionId: ctx.sessionId } } as StreamEvent;
+  };
+
+  return { 'browser-driving': drive, 'browser-recording': record };
 }
