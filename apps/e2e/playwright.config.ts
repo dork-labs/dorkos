@@ -748,6 +748,10 @@ export default defineConfig({
         '**/rooms/room-autonomy.spec.ts',
         '**/rooms/agent-reactions.spec.ts',
         '**/rooms/room-tool-only-replies.spec.ts',
+        // The room canvas (DOR-2000). One of its tests un-silences an agent so
+        // a real room turn puts a real document on the table, which on this leg
+        // would be a billable claude-code turn.
+        '**/rooms/canvas/*.spec.ts',
         // Needs the test-mode server's `/api/test/seed-bridge` seam, so it runs
         // in `chromium-bridge` below, never against the real cockpit leg.
         '**/relay/bridged-channel.spec.ts',
@@ -924,6 +928,8 @@ export default defineConfig({
         // it un-silences an agent, so on the cockpit leg every test in it would
         // start a real, billable claude-code turn.
         '**/rooms/room-tool-only-replies.spec.ts',
+        // The room canvas (DOR-2000), here for the same reason.
+        '**/rooms/canvas/*.spec.ts',
       ],
     },
     {

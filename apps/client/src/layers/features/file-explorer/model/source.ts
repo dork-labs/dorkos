@@ -206,6 +206,22 @@ export interface FileExplorerSource {
    */
   readonly preview: 'canvas' | 'inline';
   /**
+   * Put one file where every member of this place can see it, when the place
+   * has such a surface (spec `room-canvas` §9.5).
+   *
+   * A room does: its canvas is a table the whole room shares, so showing a file
+   * on it is a thing one member does FOR the others. A session directory does
+   * not — its canvas is already this browser's own, and opening a file there is
+   * what clicking it already does.
+   *
+   * Absent means there is nowhere to put it, and the control is not drawn.
+   *
+   * **It REJECTS when the place refused**, because a write everybody else can
+   * see is exactly the kind a person must not be told succeeded when it did
+   * not. The caller owns what they are told.
+   */
+  readonly showToEveryone?: (path: string) => Promise<void>;
+  /**
    * Whether a file opened from this source may be changed and saved back
    * (spec `project-rooms` §3.10).
    *

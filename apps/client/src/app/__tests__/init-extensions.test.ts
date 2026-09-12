@@ -118,9 +118,13 @@ describe('initializeExtensions — right-panel contributions', () => {
     expect(getRightPanelContribution('files')?.priority).toBe(15);
   });
 
-  it('keeps the Canvas contribution scoped to the session route', () => {
+  it('shows the Canvas contribution on the session route and on both room routes', () => {
+    // A room owns a canvas of its own now (spec `room-canvas` §9): the same tab,
+    // over the room's shared table rather than this session's private one.
     const canvas = getRightPanelContribution('canvas');
     expect(canvas?.visibleWhen?.({ pathname: '/session' })).toBe(true);
+    expect(canvas?.visibleWhen?.({ pathname: '/channels' })).toBe(true);
+    expect(canvas?.visibleWhen?.({ pathname: '/' })).toBe(true);
     expect(canvas?.visibleWhen?.({ pathname: '/marketplace' })).toBe(false);
   });
 
@@ -141,12 +145,29 @@ describe('initializeExtensions — right-panel contributions', () => {
     );
   });
 
-  it('hides the Browser tab off the session route even when supported', () => {
+  it('shows the Browser tab on a room route too, and nowhere else', () => {
+    // A room's Browser tab shows the pages on that room's table, and its
+    // address bar puts one there as the person who typed it (§9.5). Everywhere
+    // that is neither a session nor a room, there is nothing for it to show.
     const browser = getRightPanelContribution('browser');
     const httpTransport = createMockTransport({ supportsWorkbenchServe: true });
-    for (const pathname of ['/', '/team', '/tasks', '/marketplace']) {
+    for (const pathname of ['/', '/channels']) {
+      expect(browser?.visibleWhen?.({ pathname, transport: httpTransport })).toBe(true);
+    }
+    for (const pathname of ['/team', '/tasks', '/marketplace']) {
       expect(browser?.visibleWhen?.({ pathname, transport: httpTransport })).toBe(false);
     }
+  });
+
+  it('still hides the Browser tab on a room route under a transport that cannot serve a page', () => {
+    // The capability gate outranks the route: the Obsidian shell has neither
+    // the serve route nor the preview listener, so the tab is absent there on
+    // every route rather than present and broken on one.
+    const browser = getRightPanelContribution('browser');
+    const directTransport = createMockTransport({ supportsWorkbenchServe: false });
+    expect(browser?.visibleWhen?.({ pathname: '/channels', transport: directTransport })).toBe(
+      false
+    );
   });
 
   it('orders Browser (22) between Canvas (20) and Terminal (25)', () => {

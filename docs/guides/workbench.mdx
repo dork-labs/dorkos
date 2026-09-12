@@ -56,6 +56,8 @@ Click a file and DorkOS picks the viewer that fits it:
 
 Code and markdown files open read-only by default. Click the pencil icon to start editing; it turns into a checkmark you click to stop and save. While you're editing, DorkOS holds back any agent update to that specific file, so your keystrokes and the agent's writes never collide. Every other open file keeps updating live.
 
+When the agent does try to change what you're editing, a short notice appears above the document: "Your agent changed this while you were editing, so nothing here moved." **Reload** shows their version and ends your edit; **Keep mine** throws theirs away. Agents are told up front that this is how it works, so "I've updated that" from your agent is never a claim that it replaced what's on your screen.
+
 If the file changed on disk while you had it open (say, the agent edited it too), DorkOS tells you before your save could clobber it, with a choice to reload the new version or overwrite it with yours.
 
 <Callout type="warn">
@@ -135,6 +137,12 @@ Using a page works on a preview DorkOS is serving for you — a local HTML file,
 
 With the same conversation open in two windows, an agent acts in the one that most recently brought a preview to the front, and only that one. The other window sees nothing. Your agent can also name a specific tab when it has several open.
 
+### In a room, the canvas belongs to everyone
+
+Open a [room](/docs/concepts/rooms) and the same two tabs are there, showing the room's own set instead of your private one. When an agent in that room opens a document or a page, it lands on the room's canvas, and every member sees the same thing at the same time — still there after a reload, and gone for everyone when somebody closes it.
+
+Nobody is interrupted by it. The room's log gets one quiet line per turn saying what that agent opened, the tab grows a small dot so you can find it when you're ready, and the tab you're on doesn't move. An agent that actually wants you to look now `@mentions` you, like anyone else would.
+
 ## Agents Can Check Their Own Work, and Act on It
 
 Once an agent has a preview open in the Browser tab, it isn't flying blind: it can read the same signals you'd check yourself. It can read the console for errors and warnings, check for network requests that failed (a missing asset, a broken API call), and take a screenshot to see exactly how the page rendered. That lets it catch a mistake and fix it before telling you it's done, instead of you having to open dev tools and relay the error back.
@@ -151,11 +159,13 @@ The Obsidian plugin has no Browser tab, so none of this is there.
 
 ## For the Curious
 
-Two settings live under `workbench` in your [config file](/docs/getting-started/configuration):
+Three settings live under `workbench` in your [config file](/docs/getting-started/configuration):
 
 - `workbench.defaultViewers`: an object mapping a file extension to the viewer that should open it (for example, forcing `.csv` files into the plain code editor instead of the table view). Empty by default, which means every file type above uses its standard viewer.
 - `workbench.terminalGraceTtlMinutes`: how long a terminal's shell stays alive after every browser tab pointed at it disconnects, so a refresh can reattach instead of losing the shell. Defaults to 10 minutes.
 - `workbench.autoOpenDiff`: whether a diff opens automatically when the agent edits a file. On by default; set it to `false` to keep the canvas on whatever you last had open.
+
+One more sits outside `workbench`, because it's about rooms rather than your own panel: `rooms.maxCanvasOpsPerTurn` is how many times one agent may change a room's shared canvas in a single turn. It defaults to 3, and the fourth change is refused with a note telling the agent to put the rest in one change next turn.
 
 None of these are something most people ever need to touch.
 

@@ -29,7 +29,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileWarning, Pencil } from 'lucide-react';
+import { FileWarning, Pencil, Share2 } from 'lucide-react';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import {
   Button,
@@ -112,6 +112,39 @@ export function FilePreviewDialog({ source, path, onClose }: FilePreviewDialogPr
   });
 
   const file = query.data;
+
+  /**
+   * Putting this file where the whole room can see it: whether it is in flight,
+   * and what the room said if it turned it down.
+   *
+   * **It used to fire and close in the same breath**, over a source that only
+   * logged its failures — so a refused write looked exactly like a done one and
+   * the person walked away believing the room had the file.
+   */
+  const [sharing, setSharing] = useState(false);
+  const [shareRefusal, setShareRefusal] = useState<string | null>(null);
+
+  const showToEveryone = source.showToEveryone;
+  const share = useCallback(
+    async (target: string) => {
+      if (showToEveryone === undefined) return;
+      setSharing(true);
+      setShareRefusal(null);
+      try {
+        await showToEveryone(target);
+        onClose();
+      } catch (error) {
+        setShareRefusal(
+          error instanceof Error && error.message.trim().length > 0
+            ? error.message
+            : 'DorkOS couldn’t reach the server. Check your connection and try again.'
+        );
+      } finally {
+        setSharing(false);
+      }
+    },
+    [showToEveryone, onClose]
+  );
 
   /** Whether the person is editing, and what they have typed so far. */
   const [editing, setEditing] = useState(false);
@@ -331,20 +364,48 @@ export function FilePreviewDialog({ source, path, onClose }: FilePreviewDialogPr
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 
-        {editable && !editing && (
-          <div className="flex justify-end px-4">
-            <Button
-              ref={pencilRef}
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground hover:text-foreground gap-1.5"
-              onClick={enterEdit}
-            >
-              <Pencil className="size-(--size-icon-xs)" />
-              Edit
-            </Button>
+        {!editing && (source.showToEveryone !== undefined || editable) && (
+          <div className="flex justify-end gap-1 px-4">
+            {/* A room's canvas is a table everybody can see, so this is a thing
+                one member does FOR the others. It is not offered where there is
+                no such place. */}
+            {source.showToEveryone !== undefined && path !== null && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={sharing}
+                className="text-muted-foreground hover:text-foreground gap-1.5"
+                onClick={() => void share(path)}
+              >
+                <Share2 className="size-(--size-icon-xs)" />
+                {sharing ? 'Putting it there…' : 'Put on the canvas'}
+              </Button>
+            )}
+            {editable && (
+              <Button
+                ref={pencilRef}
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground hover:text-foreground gap-1.5"
+                onClick={enterEdit}
+              >
+                <Pencil className="size-(--size-icon-xs)" />
+                Edit
+              </Button>
+            )}
           </div>
+        )}
+
+        {/* Where the button is, because that is where the person pressed. The
+            dialog STAYS OPEN on a refusal: closing it would leave them looking
+            at a room whose canvas does not have the file they just asked for,
+            with nothing on screen saying why. */}
+        {shareRefusal !== null && (
+          <p role="status" className="text-destructive px-4 pb-1 text-xs">
+            {shareRefusal}
+          </p>
         )}
 
         {conflict !== null && (
