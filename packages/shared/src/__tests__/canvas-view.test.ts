@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import type { UiCanvasContent } from '@dorkos/shared/types';
-import { canvasViewForContent, type CanvasView } from '../canvas-view';
+import type { UiCanvasContent } from '../schemas.js';
+import { canvasViewForContent, type CanvasView } from '../canvas-view.js';
 
 /**
  * The view every content type belongs to, stated once.

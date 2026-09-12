@@ -2,7 +2,7 @@ import type { UiCommand, UiCanvasContent, UiPanelId, UiSidebarTab } from '@dorko
 import { resolveViewerForPath, type CanvasViewerType } from '@dorkos/shared/viewer-registry';
 import { toast } from 'sonner';
 import type { PipContent } from '@/layers/shared/model';
-import { canvasViewForContent } from './canvas-view';
+import { canvasViewForContent } from '@dorkos/shared/canvas-view';
 import { getPlatform } from './platform';
 import { fireCelebration, type CelebrationOrigin } from './celebrations/celebration-effects';
 

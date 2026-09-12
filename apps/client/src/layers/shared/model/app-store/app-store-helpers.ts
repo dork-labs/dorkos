@@ -9,7 +9,7 @@ import {
   MAX_CANVAS_SESSIONS,
   MAX_RIGHT_PANEL_LAYOUTS,
 } from '@/layers/shared/lib/constants';
-import { canvasViewForContent } from '@/layers/shared/lib/canvas-view';
+import { canvasViewForContent } from '@dorkos/shared/canvas-view';
 import type { FloatingPanelGeometry } from '@/layers/shared/ui';
 
 /** Read a boolean from localStorage with try/catch safety. */

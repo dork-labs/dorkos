@@ -4,6 +4,8 @@ import {
   type UiCommand,
   UiCanvasContentSchema,
   UiStateSchema,
+  UiStateReportSchema,
+  UiStateReportDocumentSchema,
   UiPanelIdSchema,
   UiSidebarTabSchema,
   UiCommandEventSchema,
@@ -394,29 +396,71 @@ describe('UiCanvasContentSchema', () => {
   });
 });
 
-describe('UiStateSchema', () => {
+describe('UiStateSchema — what the client SENDS', () => {
+  const state = {
+    panels: { settings: false, tasks: false, relay: false, picker: false },
+    sidebar: { open: true, activeTab: 'sessions' },
+    agent: { id: null, cwd: '/home/user/project' },
+  };
+
   it('parses a complete UI state', () => {
-    const state = {
-      canvas: { open: false, contentType: null },
-      panels: { settings: false, tasks: false, relay: false, picker: false },
-      sidebar: { open: true, activeTab: 'sessions' },
-      agent: { id: null, cwd: '/home/user/project' },
-    };
     expect(UiStateSchema.parse(state)).toEqual(state);
   });
 
   it('rejects missing fields', () => {
-    expect(() => UiStateSchema.parse({ canvas: { open: false } })).toThrow();
+    expect(() => UiStateSchema.parse({ panels: { settings: false } })).toThrow();
   });
 
-  it.each(['audio', 'video'] as const)('accepts %s as a canvas contentType', (contentType) => {
-    const state = {
-      canvas: { open: true, contentType },
-      panels: { settings: false, tasks: false, relay: false, picker: false },
-      sidebar: { open: true, activeTab: 'sessions' },
-      agent: { id: null, cwd: '/home/user/project' },
-    };
-    expect(UiStateSchema.parse(state).canvas.contentType).toBe(contentType);
+  it('no longer declares canvas, and an OLDER client still parses', () => {
+    // The one non-additive schema change in `canvas-agent-seat`, and the half
+    // that makes it safe: a client built before this release still sends its
+    // view of the canvas, and Zod strips it rather than refusing the whole
+    // context bag. Without the strip, every older client's first turn breaks.
+    expect(UiStateSchema.shape).not.toHaveProperty('canvas');
+    const fromAnOlderClient = { ...state, canvas: { open: true, contentType: 'markdown' } };
+    expect(UiStateSchema.parse(fromAnOlderClient)).toEqual(state);
+  });
+});
+
+describe('UiStateReportSchema — what get_ui_state ANSWERS with', () => {
+  const report = {
+    canvas: {
+      open: true,
+      viewers: 2,
+      documents: [
+        {
+          id: 'doc-1',
+          type: 'diff',
+          title: 'src/router.ts',
+          author: 'Kai',
+          pinned: false,
+          active: true,
+        },
+      ],
+      count: 1,
+    },
+    panels: { settings: false, tasks: false, relay: false, picker: false },
+    sidebar: { open: true, activeTab: 'sessions' },
+    agent: { id: null, cwd: '/home/user/project' },
+  };
+
+  it('carries the documents, the count and the viewer count', () => {
+    expect(UiStateReportSchema.parse(report)).toEqual(report);
+  });
+
+  it('agrees with the room arm on the five shared document keys, and adds one', () => {
+    // `rooms.read_canvas` answers with id/type/title/author/pinned for every
+    // document. The session arm adds `active` and nothing else — a room has no
+    // shared active document by design, so the difference is in the world
+    // rather than in the schema.
+    expect(Object.keys(UiStateReportDocumentSchema.shape).sort()).toEqual([
+      'active',
+      'author',
+      'id',
+      'pinned',
+      'title',
+      'type',
+    ]);
   });
 });
 

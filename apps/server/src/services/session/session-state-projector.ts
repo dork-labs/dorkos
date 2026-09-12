@@ -199,6 +199,12 @@ const EVENTS_OUTSIDE_THE_TURN: ReadonlySet<SessionEvent['type']> = new Set([
   'turn_end',
   'queue_update',
   'context_staged',
+  // - **`canvas`** is a change to the session's own table (spec
+  //   `canvas-agent-seat` §1.3), and a person opening a document while nothing
+  //   is running must not open a turn. A document opened MID-turn must not be
+  //   replayed as part of that turn's content either: it is state, durable in
+  //   SQLite, and a reader hydrates it from the snapshot.
+  'canvas',
 ]);
 
 /**
@@ -1759,6 +1765,12 @@ export class SessionStateProjector {
       status: this.getStatus(),
       pendingInteractions: this.getPendingInteractions(),
       queuedMessages: this.readQueue(),
+      // Empty here, and filled by whoever DELIVERS the snapshot (spec
+      // `canvas-agent-seat` §1.4). The canvas is the server's, not a runtime's,
+      // so it is decorated once in `deliverSessionStream` — and once in
+      // `DirectTransport` — rather than reached for from inside a projector that
+      // has no business importing a service.
+      canvas: [],
       cursor: this.counter,
     };
   }
@@ -2010,6 +2022,25 @@ export class SessionStateProjector {
    */
   getWaiterCount(): number {
     return this.waiters.length;
+  }
+
+  /**
+   * How many windows are reading this session's stream right now.
+   *
+   * The session parallel of `RoomBroadcaster.subscriberCount`, and what
+   * `get_ui_state` reports as `viewers` (spec `canvas-agent-seat` §1.7). It
+   * counts live `subscribe()` iterators rather than the PARKED waiters
+   * {@link SessionStateProjector.getWaiterCount} reports: a subscriber that is
+   * mid-delivery is still a viewer, and a count that said otherwise would be
+   * wrong in exactly the busy moment somebody would check it.
+   *
+   * Windows, not people — one person with two tabs counts twice — and an agent
+   * counts zero, because agents do not subscribe. The tool's own words say so.
+   *
+   * @returns The live subscriber count.
+   */
+  liveSubscriberCount(): number {
+    return this.subscriberCount;
   }
 
   /**

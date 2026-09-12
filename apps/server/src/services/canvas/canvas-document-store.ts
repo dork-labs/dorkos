@@ -1,30 +1,31 @@
 /**
- * Persistence for a room's shared canvas — rows in, rows out, and no rule of its
- * own (spec `room-canvas` §1).
+ * Persistence for every canvas — rows in, rows out, and no rule of its own
+ * (specs `room-canvas` §1 and `canvas-agent-seat` §1.2).
  *
- * It sits beside {@link RoomStore} for the reason {@link ReactionStore} does:
- * this is a different key shape, a different ordering rule and a capacity rule
- * that has nothing to do with a room's log. Synchronous throughout, like every
- * other store in this domain (`better-sqlite3`), so applying one canvas command
- * is one transaction with no await inside it.
+ * **Keyed on SCOPE, never on a room.** One table serves a room's shared table
+ * and one person's session canvas, and the scope is what tells them apart —
+ * `room:<id>` or `session:<id>`. Every query here takes one, which is why the
+ * indexes lead with it. Synchronous throughout (`better-sqlite3`), so applying
+ * one canvas command is one transaction with no await inside it.
  *
  * Two things this module deliberately does NOT own. It never decides **who** may
- * write — that is conduct, and it lives in {@link RoomCanvasService}. And it
- * never publishes: the stream is the service's, so a store that fanned out would
- * be a second place a canvas change could be announced from.
+ * write — that is conduct, and it lives in `CanvasService` and its room flavour.
+ * And it never publishes: the stream is the service's, so a store that fanned
+ * out would be a second place a canvas change could be announced from.
  *
- * @module server/services/rooms/canvas/canvas-document-store
+ * @module server/services/canvas/canvas-document-store
  */
-import { canvasDocuments, and, asc, desc, eq, isNull, sql, type Db } from '@dorkos/db';
+import { canvasDocuments, and, asc, desc, eq, isNull, like, sql, type Db } from '@dorkos/db';
 import { UiCanvasContentSchema, type UiCanvasContent } from '@dorkos/shared/schemas';
 import type { CanvasDocument } from '@dorkos/shared/room-schemas';
-import { logger } from '../../../lib/logger.js';
+import { logger } from '../../lib/logger.js';
 
 /** Everything a fresh row is written from. */
 export interface CanvasDocumentInsert {
   id: string;
   scope: string;
-  roomId: string;
+  /** The room, or `null` for a `session:` row. See `roomIdForScope`. */
+  roomId: string | null;
   content: UiCanvasContent;
   title: string;
   contentType: string;
@@ -64,7 +65,7 @@ export interface CanvasDocumentRow extends CanvasDocumentInsert {
 function project(row: {
   id: string;
   scope: string;
-  roomId: string;
+  roomId: string | null;
   content: unknown;
   title: string;
   contentType: string;
@@ -87,8 +88,8 @@ function project(row: {
 }): CanvasDocumentRow | null {
   const content = UiCanvasContentSchema.safeParse(row.content);
   if (!content.success) {
-    logger.warn('[rooms] dropped a canvas document whose content no longer parses', {
-      roomId: row.roomId,
+    logger.warn('[canvas] dropped a document whose content no longer parses', {
+      scope: row.scope,
       documentId: row.id,
       contentType: row.contentType,
     });
@@ -126,20 +127,21 @@ export class CanvasDocumentStore {
   constructor(private readonly db: Db) {}
 
   /**
-   * Every live document in one room — pinned first, then most recently active.
+   * Every live document in one scope — pinned first, then most recently active.
    *
-   * That is the order every reader sees: the tab strip, the room context block,
-   * and `read_canvas`. One ordering rule in one place, so a person and an agent
-   * looking at the same room agree about what is at the front of it.
+   * That is the order every reader sees: the tab strip, a room's context block,
+   * `read_canvas`, and a session's cold snapshot. One ordering rule in one
+   * place, so a person and an agent looking at the same table agree about what
+   * is at the front of it.
    *
-   * @param roomId - The room.
-   * @returns The room's documents, pinned first then newest-active first.
+   * @param scope - The table — `room:<id>` or `session:<id>`.
+   * @returns The scope's documents, pinned first then newest-active first.
    */
-  list(roomId: string): CanvasDocumentRow[] {
+  list(scope: string): CanvasDocumentRow[] {
     return this.db
       .select()
       .from(canvasDocuments)
-      .where(eq(canvasDocuments.roomId, roomId))
+      .where(eq(canvasDocuments.scope, scope))
       .orderBy(desc(canvasDocuments.pinned), desc(canvasDocuments.lastActiveAt))
       .all()
       .map(project)
@@ -147,39 +149,41 @@ export class CanvasDocumentStore {
   }
 
   /**
-   * One document by id, scoped to its room.
+   * One document by id, scoped to its table.
    *
    * Scoped rather than looked up by the primary key alone: an id from another
-   * room must not resolve here, or a caller holding one would be able to read a
-   * document out of a room they are not in.
+   * room — or another person's session — must not resolve here, or a caller
+   * holding one would be able to read a document out of a table that is not
+   * theirs.
    *
-   * @param roomId - The room.
+   * @param scope - The table.
    * @param documentId - The document.
    * @returns The row, or `null`.
    */
-  get(roomId: string, documentId: string): CanvasDocumentRow | null {
+  get(scope: string, documentId: string): CanvasDocumentRow | null {
     const row = this.db
       .select()
       .from(canvasDocuments)
-      .where(and(eq(canvasDocuments.roomId, roomId), eq(canvasDocuments.id, documentId)))
+      .where(and(eq(canvasDocuments.scope, scope), eq(canvasDocuments.id, documentId)))
       .get();
     return row ? project(row) : null;
   }
 
   /**
-   * The highest `rev` this room has issued, or 0 when its canvas is empty.
+   * The highest `rev` this scope has issued, or 0 when its canvas is empty.
    *
-   * Monotonic per ROOM rather than per document, so two frames for two different
-   * documents still order against each other in a client that holds both.
+   * Monotonic per SCOPE rather than per document, so two frames for two
+   * different documents still order against each other in a client that holds
+   * both.
    *
-   * @param roomId - The room.
+   * @param scope - The table.
    * @returns The highest revision, or 0.
    */
-  maxRev(roomId: string): number {
+  maxRev(scope: string): number {
     const row = this.db
       .select({ rev: sql<number>`coalesce(max(${canvasDocuments.rev}), 0)` })
       .from(canvasDocuments)
-      .where(eq(canvasDocuments.roomId, roomId))
+      .where(eq(canvasDocuments.scope, scope))
       .get();
     return row?.rev ?? 0;
   }
@@ -199,12 +203,12 @@ export class CanvasDocumentStore {
   /**
    * Change an existing document's mutable columns.
    *
-   * @param roomId - The room.
+   * @param scope - The table.
    * @param documentId - The document.
    * @param patch - The columns to write.
    */
   update(
-    roomId: string,
+    scope: string,
     documentId: string,
     patch: Partial<{
       content: UiCanvasContent;
@@ -226,42 +230,42 @@ export class CanvasDocumentStore {
     this.db
       .update(canvasDocuments)
       .set(patch)
-      .where(and(eq(canvasDocuments.roomId, roomId), eq(canvasDocuments.id, documentId)))
+      .where(and(eq(canvasDocuments.scope, scope), eq(canvasDocuments.id, documentId)))
       .run();
   }
 
   /**
    * Remove one document.
    *
-   * @param roomId - The room.
+   * @param scope - The table.
    * @param documentId - The document.
    * @returns Whether a row was there to remove.
    */
-  remove(roomId: string, documentId: string): boolean {
+  remove(scope: string, documentId: string): boolean {
     const result = this.db
       .delete(canvasDocuments)
-      .where(and(eq(canvasDocuments.roomId, roomId), eq(canvasDocuments.id, documentId)))
+      .where(and(eq(canvasDocuments.scope, scope), eq(canvasDocuments.id, documentId)))
       .run();
     return result.changes > 0;
   }
 
   /**
-   * This author's own most recently opened-or-updated document in one room.
+   * This author's own most recently opened-or-updated document in one scope.
    *
    * The honest default for a bare `update_canvas` or `close_canvas` (§5.6): it is
    * the only default that cannot act on somebody else's work by accident. Read
    * off the row rather than a process map, so it survives a restart mid
    * conversation.
    *
-   * @param roomId - The room.
+   * @param scope - The table.
    * @param authorId - The member asking.
    * @returns The document, or `null` when they have opened nothing here.
    */
-  lastTouchedBy(roomId: string, authorId: string): CanvasDocumentRow | null {
+  lastTouchedBy(scope: string, authorId: string): CanvasDocumentRow | null {
     const row = this.db
       .select()
       .from(canvasDocuments)
-      .where(and(eq(canvasDocuments.roomId, roomId), eq(canvasDocuments.lastTouchedBy, authorId)))
+      .where(and(eq(canvasDocuments.scope, scope), eq(canvasDocuments.lastTouchedBy, authorId)))
       .orderBy(desc(canvasDocuments.lastTouchedAt))
       .limit(1)
       .get();
@@ -269,20 +273,20 @@ export class CanvasDocumentStore {
   }
 
   /**
-   * Unpinned documents in one room, least recently active first — the eviction
+   * Unpinned documents in one scope, least recently active first — the eviction
    * order.
    *
    * Pinned rows are excluded rather than sorted last, because they are not
    * candidates at all and are not counted against the capacity either.
    *
-   * @param roomId - The room.
+   * @param scope - The table.
    * @returns Unpinned documents, oldest-active first.
    */
-  evictionCandidates(roomId: string): CanvasDocumentRow[] {
+  evictionCandidates(scope: string): CanvasDocumentRow[] {
     return this.db
       .select()
       .from(canvasDocuments)
-      .where(and(eq(canvasDocuments.roomId, roomId), eq(canvasDocuments.pinned, false)))
+      .where(and(eq(canvasDocuments.scope, scope), eq(canvasDocuments.pinned, false)))
       .orderBy(asc(canvasDocuments.lastActiveAt))
       .all()
       .map(project)
@@ -290,16 +294,16 @@ export class CanvasDocumentStore {
   }
 
   /**
-   * Every document in a room that nobody has pinned, as a count.
+   * Every document in a scope that nobody has pinned, as a count.
    *
-   * @param roomId - The room.
-   * @returns How many unpinned documents the room holds.
+   * @param scope - The table.
+   * @returns How many unpinned documents it holds.
    */
-  unpinnedCount(roomId: string): number {
+  unpinnedCount(scope: string): number {
     const row = this.db
       .select({ n: sql<number>`count(*)` })
       .from(canvasDocuments)
-      .where(and(eq(canvasDocuments.roomId, roomId), eq(canvasDocuments.pinned, false)))
+      .where(and(eq(canvasDocuments.scope, scope), eq(canvasDocuments.pinned, false)))
       .get();
     return row?.n ?? 0;
   }
@@ -310,7 +314,7 @@ export class CanvasDocumentStore {
    * The `(scope, source_key)` unique index is what this reads, and it is why two
    * agents opening one file land on one row: the second open finds the first.
    *
-   * @param scope - The table — `room:<roomId>`.
+   * @param scope - The table — `room:<id>` or `session:<id>`.
    * @param sourceKey - The dedupe key. A `null` key matches nothing by design.
    * @returns The row, or `null`.
    */
@@ -325,22 +329,81 @@ export class CanvasDocumentStore {
   }
 
   /**
-   * Documents in a room with no dedupe key at all — `json` and `widget`.
+   * Documents in a scope with no dedupe key at all — `json` and `widget`.
    *
    * Exists so a test can say something about the one class of content the unique
    * index deliberately does not constrain.
    *
-   * @param roomId - The room.
+   * @param scope - The table.
    * @returns Every keyless document there.
    */
-  keyless(roomId: string): CanvasDocumentRow[] {
+  keyless(scope: string): CanvasDocumentRow[] {
     return this.db
       .select()
       .from(canvasDocuments)
-      .where(and(eq(canvasDocuments.roomId, roomId), isNull(canvasDocuments.sourceKey)))
+      .where(and(eq(canvasDocuments.scope, scope), isNull(canvasDocuments.sourceKey)))
       .all()
       .map(project)
       .filter((row): row is CanvasDocumentRow => row !== null);
+  }
+
+  /**
+   * Move every row of one scope to another, in ONE statement.
+   *
+   * What a canonical-id rekey needs (spec `canvas-agent-seat` §1.1): a
+   * brand-new session's canvas is written under the request UUID the client
+   * minted, and the SDK renames the session mid-first-turn. One statement inside
+   * one implicit transaction means a concurrent reader sees every row under the
+   * old scope or every row under the new one, never a split table.
+   *
+   * **It rewrites `scope` only, and leaves `id` alone.** A document id is a hash
+   * of the scope it was opened under, so recomputing it would change every id
+   * already handed to the model in this turn's tool results. The id is opaque,
+   * the unique index is on `(scope, source_key)`, and that is still unique after
+   * the rewrite — so re-opening the same source afterwards finds the same row
+   * rather than inserting a second.
+   *
+   * @param from - The scope to move out of.
+   * @param to - The scope to move into.
+   * @returns How many rows moved. `0` is the common case and not an error.
+   */
+  rekeyScope(from: string, to: string): number {
+    return this.db
+      .update(canvasDocuments)
+      .set({ scope: to })
+      .where(eq(canvasDocuments.scope, from))
+      .run().changes;
+  }
+
+  /**
+   * Every distinct `session:` scope this table holds.
+   *
+   * Read by the orphan sweep, which has to know what is there before it can ask
+   * which of it is still real (spec `canvas-agent-seat` §Data model 6).
+   *
+   * @returns The scope strings, unordered.
+   */
+  sessionScopes(): string[] {
+    return this.db
+      .selectDistinct({ scope: canvasDocuments.scope })
+      .from(canvasDocuments)
+      .where(like(canvasDocuments.scope, 'session:%'))
+      .all()
+      .map((row) => row.scope);
+  }
+
+  /**
+   * Delete every row of one scope.
+   *
+   * The sweep's hand. A `room:` row is reclaimed by its room's `ON DELETE
+   * cascade`; a `session:` row has nothing to hang off, because DorkOS has no
+   * session deletion at all — only a runtime reporting one gone.
+   *
+   * @param scope - The table to empty.
+   * @returns How many rows went.
+   */
+  removeScope(scope: string): number {
+    return this.db.delete(canvasDocuments).where(eq(canvasDocuments.scope, scope)).run().changes;
   }
 }
 

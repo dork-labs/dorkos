@@ -163,6 +163,8 @@ export type {
   UiCommand,
   UiCanvasContent,
   UiState,
+  UiStateReport,
+  UiStateReportDocument,
   UiPanelId,
   UiSidebarTab,
   UiToastLevel,

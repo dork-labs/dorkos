@@ -281,6 +281,10 @@
       "types": "./src/canvas-source-key.ts",
       "default": "./dist/canvas-source-key.js"
     },
+    "./canvas-view": {
+      "types": "./src/canvas-view.ts",
+      "default": "./dist/canvas-view.js"
+    },
     "./room-schemas": {
       "types": "./src/room-schemas.ts",
       "default": "./dist/room-schemas.js"

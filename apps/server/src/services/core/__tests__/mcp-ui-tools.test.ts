@@ -100,8 +100,13 @@ describe('control_ui handler', () => {
     expect(parsed.success).toBe(true);
     expect(parsed.action).toBe('open_pip');
     // The PIP panel has no member in the UiState snapshot, so the projection is
-    // a no-op: the canvas stays closed.
-    expect(session.uiState?.canvas).toEqual({ open: false, contentType: null });
+    // a no-op: nothing about the panels or the sidebar moved.
+    expect(session.uiState?.panels).toEqual({
+      settings: false,
+      tasks: false,
+      relay: false,
+      picker: false,
+    });
   });
 
   it('returns success for close_pip', async () => {
@@ -157,19 +162,29 @@ describe('control_ui handler', () => {
     expect(session.uiState?.sidebar.open).toBe(true);
   });
 
-  it('a follow-up get_ui_state reflects the command issued this turn', async () => {
+  it('a follow-up get_ui_state reflects the panel command issued this turn', async () => {
+    await createControlUiHandler(session)({ action: 'open_panel', panel: 'tasks' });
+
+    const state = JSON.parse((await createGetUiStateHandler(session)()).content[0].text);
+    expect(state.panels.tasks).toBe(true);
+  });
+
+  it('no longer projects a CANVAS command onto uiState — the table answers instead', async () => {
+    // The canvas arms of `applyUiCommandToState` are gone (spec
+    // `canvas-agent-seat` §1.7). They existed to keep one nullable contentType
+    // plausible for a surface that has held twelve documents since DOR-219, and
+    // `get_ui_state` reads the real table now. If they came back, `uiState`
+    // would grow a `canvas` key the schema no longer declares.
     await createControlUiHandler(session)({
       action: 'open_canvas',
       content: { type: 'markdown', content: '# Hi' },
     });
 
-    const state = JSON.parse((await createGetUiStateHandler(session)()).content[0].text);
-    expect(state.canvas).toEqual({ open: true, contentType: 'markdown' });
+    expect(session.uiState).not.toHaveProperty('canvas');
   });
 
   it('projects switch_sidebar_tab (opens sidebar + sets tab) over prior client state', async () => {
     const seeded = createMockSession({
-      canvas: { open: false, contentType: null },
       panels: { settings: false, tasks: false, relay: false, picker: false },
       sidebar: { open: false, activeTab: 'overview' },
       agent: { id: null, cwd: null },
@@ -181,7 +196,6 @@ describe('control_ui handler', () => {
 
   it('toggle_panel flips the current value', async () => {
     const seeded = createMockSession({
-      canvas: { open: false, contentType: null },
       panels: { settings: false, tasks: true, relay: false, picker: false },
       sidebar: { open: true, activeTab: 'overview' },
       agent: { id: null, cwd: null },
@@ -198,36 +212,31 @@ describe('control_ui handler', () => {
     expect(session.uiState).toBeUndefined();
   });
 
-  it('projects open_file as an open canvas with the file viewer active', async () => {
-    // A file opens as a canvas document, so a same-turn get_ui_state must show
-    // the canvas open with contentType 'file'.
+  it('still pushes the event for open_file and browser_navigate, projecting no canvas', async () => {
+    // Both are canvas writes on the SERVER now. With no canvas service standing
+    // in this unit test, the handler falls through to the event push — which is
+    // what the client needs either way, because the event is the reveal.
     await createControlUiHandler(session)({ action: 'open_file', sourcePath: 'src/index.ts' });
-
-    expect(session.uiState?.canvas).toEqual({ open: true, contentType: 'file' });
-  });
-
-  it('projects browser_navigate as an open canvas with the browser viewer active', async () => {
-    // Opening a URL adds a browser canvas document and reveals the canvas.
     await createControlUiHandler(session)({
       action: 'browser_navigate',
       url: 'http://localhost:3000',
     });
 
-    expect(session.uiState?.canvas).toEqual({ open: true, contentType: 'browser' });
+    expect(session.eventQueue).toHaveLength(2);
+    expect(session.uiState).not.toHaveProperty('canvas');
   });
 
-  it('leaves canvas state untouched for open_terminal (terminal is a panel tab, not a canvas doc)', async () => {
+  it('leaves panel state untouched for open_terminal (terminal is a panel tab)', async () => {
     // The terminal is a right-panel tab with no server-projected field, so the
-    // deterministic projection is a no-op — the canvas stays as it was.
+    // deterministic projection is a no-op.
     const seeded = createMockSession({
-      canvas: { open: false, contentType: null },
       panels: { settings: false, tasks: false, relay: false, picker: false },
       sidebar: { open: true, activeTab: 'overview' },
       agent: { id: null, cwd: null },
     });
     await createControlUiHandler(seeded)({ action: 'open_terminal' });
 
-    expect(seeded.uiState?.canvas).toEqual({ open: false, contentType: null });
+    expect(seeded.uiState?.sidebar).toEqual({ open: true, activeTab: 'overview' });
   });
 });
 
@@ -239,7 +248,9 @@ describe('get_ui_state handler', () => {
 
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed).toEqual({
-      canvas: { open: false, contentType: null },
+      // An empty table, honestly reported: this process has no canvas service,
+      // so there is nothing on it and nobody watching.
+      canvas: { open: false, viewers: 0, documents: [], count: 0 },
       panels: { settings: false, tasks: false, relay: false, picker: false },
       // Default sidebar tab is null — the tab strip is an embedded-only surface.
       sidebar: { open: true, activeTab: null },
@@ -249,7 +260,6 @@ describe('get_ui_state handler', () => {
 
   it('returns session state when provided', async () => {
     const sessionState: UiState = {
-      canvas: { open: true, contentType: 'markdown' },
       panels: { settings: false, tasks: true, relay: false, picker: false },
       sidebar: { open: true, activeTab: 'connections' },
       agent: { id: 'agent-1', cwd: '/projects/my-app' },
@@ -259,7 +269,12 @@ describe('get_ui_state handler', () => {
     const result = await handler();
 
     const parsed = JSON.parse(result.content[0].text);
-    expect(parsed).toEqual(sessionState);
+    // The three parts the CLIENT still owns come back verbatim; the canvas part
+    // is composed server-side and is never the client's opinion (§1.7).
+    expect(parsed).toEqual({
+      ...sessionState,
+      canvas: { open: false, viewers: 0, documents: [], count: 0 },
+    });
   });
 
   it('returns default state when uiState is undefined', async () => {

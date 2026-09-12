@@ -988,14 +988,15 @@ export const roomRepos = sqliteTable('room_repos', {
 });
 
 /**
- * The documents a room has put on its shared canvas (spec `room-canvas` §1).
+ * Every canvas document on this machine — a room's shared table and a person's
+ * own session canvas, in one table keyed by {@link canvasDocuments.scope}
+ * (specs `room-canvas` §1 and `canvas-agent-seat` §1.1).
  *
- * **Server-owned, unlike the session canvas it is modelled on.** A session's
- * canvas lives in one browser's `localStorage` keyed by session id, which is why
- * registering that surface on room routes would have shown every viewer their
- * own private documents and called them shared. A room's table is a table: one
- * set of rows every member — person or agent — reads the same way, that survives
- * a reload, and that an agent can read as well as write to.
+ * **Server-owned, both of them.** A session's canvas used to live in one
+ * browser's `localStorage`, so two tabs on one session held two different
+ * tables, a phone saw none of it, and no agent could read any of it. Both
+ * scopes are now a table: one set of rows every reader sees the same way, that
+ * survives a reload, and that an agent can read as well as write to.
  *
  * **Rows are closed, not tombstoned.** `close_canvas` deletes the row and the
  * `canvas` frame that announces it carries the id and `closed: true`, so every
@@ -1028,14 +1029,27 @@ export const canvasDocuments = sqliteTable(
      */
     id: text('id').primaryKey(),
     /**
-     * `room:<roomId>`. `session:<id>` is RESERVED for the follow-on spec that
-     * migrates the session canvas here, and nothing in this build writes it.
+     * Who owns this document: `room:<roomId>` or `session:<sessionId>`.
+     *
+     * The owning key for every query and every index on this table, and for a
+     * session it is the CANONICAL session id — a brand-new session is rekeyed
+     * mid-first-turn, and `CanvasService.rekeyScope` renames the scope of every
+     * row in one statement when that happens (spec `canvas-agent-seat` §1.1).
      */
     scope: text('scope').notNull(),
-    /** The room this document belongs to. Cascades, so deleting a room deletes its table. */
-    roomId: text('room_id')
-      .notNull()
-      .references(() => rooms.id, { onDelete: 'cascade' }),
+    /**
+     * The room this document belongs to, or `null` for a `session:` document.
+     *
+     * Nullable since the session canvas moved here (spec `canvas-agent-seat`
+     * §1.1): a session belongs to no room, so it stores `null` and the cascade
+     * keeps protecting only the rows that do have one. The invariant — a
+     * `room:` row's `room_id` equals its scope's id, a `session:` row's is
+     * `null` — is enforced in `CanvasService` rather than by a CHECK
+     * constraint, which is not something this schema uses anywhere. It matters:
+     * a session row carrying a `room_id` would be deleted by an unrelated room
+     * deletion.
+     */
+    roomId: text('room_id').references(() => rooms.id, { onDelete: 'cascade' }),
     /** The `UiCanvasContent` union, JSON-encoded. Validated with its schema on read. */
     content: text('content', { mode: 'json' }).notNull(),
     /** Cached `content.title` (or the derived label) so a list does not parse every blob. */
@@ -1102,13 +1116,28 @@ export const canvasDocuments = sqliteTable(
     editingHeartbeatAt: text('editing_heartbeat_at'),
     openedAt: text('opened_at').notNull(),
     lastActiveAt: text('last_active_at').notNull(),
+    /**
+     * The room entry that roots this document's discussion thread, or null.
+     *
+     * Reserved by spec `canvas-agent-seat` §7 and written by no code in this
+     * build. It lands in the same migration as the nullability change above
+     * because SQLite recreates the table for either one, and two recreates of a
+     * table this size — for two changes decided at once — is a cost nobody is
+     * buying anything with.
+     */
+    threadRootEntryId: text('thread_root_entry_id'),
   },
+  // **Keyed on `scope`, not `room_id`** (spec `canvas-agent-seat` §1.1). Every
+  // query in `CanvasDocumentStore` keys on the owner, and the owner is the
+  // scope: `room:<id>` for a room's table, `session:<id>` for one person's. A
+  // `session:` row has no `room_id` at all, so an index on it would leave every
+  // session query scanning the table.
   (table) => [
-    index('idx_canvas_documents_room').on(table.roomId, table.lastActiveAt),
+    index('idx_canvas_documents_scope').on(table.scope, table.lastActiveAt),
     uniqueIndex('canvas_documents_source_unique').on(table.scope, table.sourceKey),
-    index('idx_canvas_documents_type').on(table.roomId, table.contentType),
+    index('idx_canvas_documents_scope_type').on(table.scope, table.contentType),
     index('idx_canvas_documents_last_touched').on(
-      table.roomId,
+      table.scope,
       table.lastTouchedBy,
       table.lastTouchedAt
     ),

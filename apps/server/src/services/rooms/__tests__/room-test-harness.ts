@@ -26,7 +26,14 @@ import type { ResponseGateMode } from '../response-gate/routing-rules.js';
 import type { CollectWindow } from '../room-collect.js';
 import { ReactionBudget } from '../reactions/reaction-budget.js';
 import { ReactionStore } from '../reactions/reaction-store.js';
-import { CanvasDocumentStore } from '../canvas/canvas-document-store.js';
+import {
+  CanvasDocumentStore,
+  CanvasService,
+  parseScope,
+  publishSessionCanvas,
+  sessionCanvasViewers,
+  setCanvasService,
+} from '../../canvas/index.js';
 import { AttachmentRowStore } from '../attachments/attachment-row-store.js';
 import type { RoomAgent, RoomAgentLookup } from '../room-errors.js';
 import { RoomService, type RoomEntryIndexer, type RoomMessageFinder } from '../room-service.js';
@@ -670,10 +677,32 @@ export function createRoomHarness(opts: {
       maxAutomaticTurnsPerRoomPerHour: perRoom,
     });
   const broadcaster = new RoomBroadcaster();
+  // The REAL writer, composed the way `createRoomSubsystem` composes it, so the
+  // room suites exercise the shared service rather than a stand-in.
+  const canvas = new CanvasService({
+    documents: canvasDocuments,
+    channels: {
+      publish: (scope, frame) => {
+        const parsed = parseScope(scope);
+        if (parsed.kind === 'room') broadcaster.publish(parsed.id, frame);
+        else if (parsed.kind === 'session') publishSessionCanvas(parsed.id, frame);
+      },
+      viewers: (scope) => {
+        const parsed = parseScope(scope);
+        if (parsed.kind === 'room') return broadcaster.subscriberCount(parsed.id);
+        if (parsed.kind === 'session') return sessionCanvasViewers(parsed.id);
+        return 0;
+      },
+    },
+    displayNameFor: (authorId) => authors.getById(authorId)?.displayName ?? 'Somebody',
+    ...(opts.canvasNow ? { now: opts.canvasNow } : {}),
+  });
+  setCanvasService(canvas);
   const service = new RoomService({
     store,
     reactions,
     canvasDocuments,
+    canvas,
     attachments,
     authors,
     broadcaster,

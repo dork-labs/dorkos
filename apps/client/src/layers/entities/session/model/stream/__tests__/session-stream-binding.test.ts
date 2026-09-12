@@ -43,9 +43,6 @@ class FakeConnection implements DurableStreamConnection {
 
 const UI_SNAPSHOT = buildUiStateSnapshot(
   {
-    canvasOpen: false,
-    openDocuments: [],
-    activeCanvasDocumentId: null,
     settingsOpen: false,
     tasksOpen: false,
     relayOpen: false,
@@ -75,6 +72,7 @@ const SNAPSHOT: SessionSnapshot = {
   status: STATUS,
   pendingInteractions: [],
   queuedMessages: [],
+  canvas: [],
   cursor: 0,
 };
 

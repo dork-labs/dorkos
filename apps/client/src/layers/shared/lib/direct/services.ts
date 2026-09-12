@@ -13,6 +13,7 @@ import type {
   SessionUpdateResult,
 } from '@dorkos/shared/agent-runtime';
 import type { ClientContext } from '@dorkos/shared/additional-context';
+import type { CanvasDocument } from '@dorkos/shared/room-schemas';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import type { SearchAnswer, SearchQuery } from '@dorkos/shared/search-schemas';
 import type {
@@ -203,6 +204,27 @@ export interface DirectTransportServices {
       mode: 'session' | 'head'
     ): Promise<DiffBaselineResponse>;
     advanceDiffBaseline(cwd: string, filePath: string, sessionId: string): Promise<void>;
+  };
+  /**
+   * Optional read-only view of this machine's session canvases (spec
+   * `canvas-agent-seat` §1.6).
+   *
+   * The embedding host wires the server's `services/canvas` domain over the
+   * database it already opened READ-ONLY for the message index — so the embed
+   * shows the same table the DorkOS app is drawing from, and changes none of it
+   * (ADR `260825-194924`'s reasoning: the database belongs to whoever installed
+   * DorkOS, and two programs on different versions writing it is not worth
+   * carrying to keep a tab open).
+   *
+   * Absent means the host has no database to read: the canvas answers empty and
+   * every write refuses in a sentence, which is honest. It never falls back to a
+   * local copy — that is the divergence this whole phase removes.
+   */
+  canvas?: {
+    /** Everything on one session's canvas, pinned first then most recent. */
+    list(sessionId: string): CanvasDocument[];
+    /** One document, content included, or `null` when the session lacks it. */
+    get(sessionId: string, documentId: string): CanvasDocument | null;
   };
   vaultRoot: string;
 }

@@ -11,9 +11,6 @@ import {
 } from '../ui-state-snapshot';
 
 const baseSource: UiStateSource = {
-  canvasOpen: false,
-  openDocuments: [],
-  activeCanvasDocumentId: null,
   settingsOpen: false,
   tasksOpen: false,
   relayOpen: false,
@@ -40,20 +37,26 @@ describe('buildUiStateSnapshot', () => {
         ...baseSource,
         pickerOpen: true,
         tasksOpen: true,
-        canvasOpen: true,
-        openDocuments: [{ id: 'doc-1', content: { type: 'markdown', content: '# hi' } }],
-        activeCanvasDocumentId: 'doc-1',
         sidebarActiveTab: 'connections',
       },
       '/projects/app'
     );
 
     expect(snapshot).toEqual<UiState>({
-      canvas: { open: true, contentType: 'markdown' },
       panels: { settings: false, tasks: true, relay: false, picker: true },
       sidebar: { open: true, activeTab: 'connections' },
       agent: { id: null, cwd: '/projects/app' },
     });
+  });
+
+  it('no longer reports the canvas at all — the server owns it', () => {
+    // The one non-additive schema change in `canvas-agent-seat` (§1.7), from the
+    // sending side: this window's view of the canvas is not something the server
+    // needs, and the field it used to carry described one of two tabs. If it came
+    // back, the composed object would carry a key `UiStateSchema` strips, which
+    // is exactly the kind of dead payload the split exists to remove.
+    const snapshot = buildUiStateSnapshot(baseSource, '/projects/app');
+    expect(snapshot).not.toHaveProperty('canvas');
   });
 
   it('reports sidebar.activeTab as null on the web cockpit (no sidebar tab strip)', () => {
@@ -65,9 +68,8 @@ describe('buildUiStateSnapshot', () => {
     expect(snapshot.sidebar).toEqual({ open: true, activeTab: null });
   });
 
-  it('reports null contentType when the canvas has no content, and null cwd when unknown', () => {
+  it('reports a null cwd when it is unknown', () => {
     const snapshot = buildUiStateSnapshot(baseSource, null);
-    expect(snapshot.canvas.contentType).toBeNull();
     expect(snapshot.agent.cwd).toBeNull();
   });
 });

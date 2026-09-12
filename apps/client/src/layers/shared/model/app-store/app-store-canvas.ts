@@ -34,7 +34,7 @@ import type { UiCanvasContent } from '@dorkos/shared/types';
 // other.
 import { canvasSourceKey as sourceKey } from '@dorkos/shared/canvas-source-key';
 import { MAX_CANVAS_DOCUMENTS } from '@/layers/shared/lib/constants';
-import { canvasViewForContent, type CanvasView } from '@/layers/shared/lib/canvas-view';
+import { canvasViewForContent, type CanvasView } from '@dorkos/shared/canvas-view';
 import { readCanvasSession, writeCanvasSession } from './app-store-helpers';
 import type { PersistedCanvasDocument } from './app-store-helpers';
 import type { AppState } from './app-store-types';

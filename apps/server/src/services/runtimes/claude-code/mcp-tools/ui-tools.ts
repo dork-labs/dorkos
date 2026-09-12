@@ -1,23 +1,45 @@
 /**
  * MCP tools for agent-driven UI control and UI state queries.
  *
- * `control_ui` validates a UiCommand via Zod, emits a `ui_command` SSE event to
- * the active session's event queue, and optimistically folds the command's
- * deterministic effect into `session.uiState` so a same-turn `get_ui_state`
- * reflects it.
+ * `control_ui` validates a UiCommand via Zod and then splits three ways:
  *
- * `get_ui_state` returns the session's stored UI state (or a default when none is
- * set): the last client-reported snapshot merged with the commands issued this
- * turn.
+ * - **In a room**, the room's canvas verbs go through `RoomCanvasService.apply`
+ *   and the tool answers the model with what really happened (spec
+ *   `room-canvas` §5.2).
+ * - **In a session, a canvas verb** now goes through the same writer under a
+ *   `session:` scope (spec `canvas-agent-seat` §1.2) and answers with the
+ *   document id. The canvas is the server's, so the effect is a row and a
+ *   `canvas` event, not a hope about one browser.
+ * - **Everything else** is still an imperative pushed to the client as a
+ *   `ui_command` event: panels, the sidebar, a toast, the palette.
+ *
+ * `get_ui_state` answers with a {@link UiStateReport}: the panel, sidebar and
+ * agent parts the CLIENT reported, plus the canvas read straight off the table.
+ * It used to answer with the client's last-sent snapshot, which made "what is on
+ * the canvas" a guess about a copy in one window.
  *
  * @module services/runtimes/claude-code/mcp-tools/ui-tools
  */
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { UiCommandSchema } from '@dorkos/shared/schemas';
-import type { UiState, UiCommand, StreamEvent } from '@dorkos/shared/types';
+import type {
+  UiState,
+  UiStateReport,
+  UiCommand,
+  StreamEvent,
+  UiCanvasContent,
+} from '@dorkos/shared/types';
+import { canvasViewForContent } from '@dorkos/shared/canvas-view';
 import { CONTROL_UI_DESCRIPTION, CONTROL_UI_INPUT } from '../../shared/ui-tool-contract.js';
 import { getRoomService, RoomError } from '../../../rooms/index.js';
-import type { CanvasApplyResult } from '../../../rooms/canvas/index.js';
+import {
+  CANVAS_VERBS,
+  SESSION_AGENT_AUTHOR,
+  contentFor,
+  peekCanvasService,
+  sessionScope,
+  type CanvasApplyResult,
+} from '../../../canvas/index.js';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 
@@ -28,7 +50,6 @@ import { jsonContent } from './types.js';
  * is "no addressable tab", not a fabricated `overview`.
  */
 const DEFAULT_UI_STATE: UiState = {
-  canvas: { open: false, contentType: null },
   panels: { settings: false, tasks: false, relay: false, picker: false },
   sidebar: { open: true, activeTab: null },
   agent: { id: null, cwd: null },
@@ -59,9 +80,9 @@ function cloneDefaultUiState(): UiState {
  * commands with no lasting state effect (toast, theme, scroll, command palette)
  * return the state unchanged.
  *
- * This is a best-effort projection: the client can still diverge (edit-protection
- * deferral, or no client attached — see the tool description), so the result is
- * "what the command asked for", not a guaranteed read of the live client.
+ * This is a best-effort projection of PANELS, the sidebar and the agent — the
+ * three things the client still owns. The canvas is not among them any more: it
+ * is a table on the server, and `get_ui_state` reads it rather than guessing.
  *
  * @param state - The current UI-state snapshot.
  * @param command - The validated command to apply.
@@ -88,35 +109,21 @@ function applyUiCommandToState(state: UiState, command: UiCommand): UiState {
       // is a no-op, and that client reports `activeTab: null`, which corrects this
       // projection on its next snapshot (get_ui_state is intent, not a live read).
       return { ...state, sidebar: { open: true, activeTab: command.tab } };
-    case 'open_canvas':
-      return {
-        ...state,
-        canvas: { open: true, contentType: command.content?.type ?? state.canvas.contentType },
-      };
-    case 'update_canvas':
-      return { ...state, canvas: { ...state.canvas, contentType: command.content.type } };
-    case 'open_file':
-      // Opening a file surfaces it as a canvas document, so the canvas opens
-      // with a file viewer active — mirrors the client dispatcher's revealCanvas.
-      return { ...state, canvas: { open: true, contentType: 'file' } };
     case 'open_terminal':
       // The terminal is a right-panel tab, not a canvas document; it has no
       // canvas contentType. There is no server-projected panel/tab field beyond
       // canvas today, so the deterministic effect is a no-op on this snapshot —
       // the client reveals and focuses the Terminal tab (best-effort, web-only).
       return state;
-    case 'browser_navigate':
-      // Opening a URL adds a `browser` canvas document and reveals the canvas.
-      return { ...state, canvas: { open: true, contentType: 'browser' } };
-    case 'close_canvas':
-      return { ...state, canvas: { ...state.canvas, open: false } };
     case 'switch_agent':
       return { ...state, agent: { ...state.agent, cwd: command.cwd } };
     default:
       // show_toast, set_theme, scroll_to_message, open_command_palette,
-      // celebrate, open_pip, close_pip — no server-projected UI-state field, so
-      // no deterministic effect to fold in (the floating PIP panel has no member
-      // in the UiState snapshot).
+      // celebrate, open_pip, close_pip — and every CANVAS verb. The canvas arms
+      // were removed here when the canvas moved to the server (spec
+      // `canvas-agent-seat` §1.7): they existed to keep one nullable
+      // `contentType` plausible for a surface that has held twelve documents
+      // since DOR-219, and `get_ui_state` now reads the real table instead.
       return state;
   }
 }
@@ -208,6 +215,37 @@ export function createControlUiHandler(session: UiToolSession) {
       });
     }
 
+    // **A canvas verb in a SESSION is a write too** (spec `canvas-agent-seat`
+    // §1.2). It goes through the same writer the room path uses, under a
+    // `session:` scope, and answers with the document id — so the agent knows
+    // WHICH document it just put on the table and can read it back.
+    //
+    // The `ui_command` event still goes out afterwards, unchanged: its job on a
+    // session is to reveal the pane. The effect itself arrives separately, as
+    // the `canvas` event the service published, in every window of the session
+    // rather than just the one that asked.
+    if (isSessionCanvasWrite(command)) {
+      const applied = applyToSessionCanvas(session, command);
+      if (applied !== null) {
+        if (!applied.applied) {
+          return jsonContent({ success: false, target: 'session', reason: applied.reason }, true);
+        }
+        session.eventQueue.push({ type: 'ui_command', data: { command } } as StreamEvent);
+        session.eventQueueNotify?.();
+        return jsonContent({
+          success: true,
+          target: 'session',
+          action: command.action,
+          documentId: applied.documentId,
+          rev: applied.rev,
+          viewers: applied.viewers,
+        });
+      }
+      // No canvas service in this process — an embedded host, or a boot that has
+      // not reached the rooms subsystem. Fall through: the command still reaches
+      // the client, which is exactly what it did before the table existed.
+    }
+
     // Emit the command as a ui_command StreamEvent to the SSE stream
     session.eventQueue.push({
       type: 'ui_command',
@@ -228,11 +266,82 @@ export function createControlUiHandler(session: UiToolSession) {
 }
 
 /**
- * Create the `get_ui_state` tool handler.
- * Returns the client-reported UI state stored on the session (merged with any
- * commands issued this turn), or defaults when the client has reported nothing.
+ * Whether this command, in a SESSION, is a write to the canvas table rather than
+ * an imperative to the window.
  *
- * @param session - The active session whose uiState to read (bound at tool creation)
+ * Two carve-outs, and both keep behaviour a person already relies on:
+ *
+ * - **`open_canvas` with no content** asks for the PANE, not a document. There
+ *   is nothing to write, and there never was.
+ * - **`close_canvas` with no `documentId`** closes the whole panel, both views
+ *   with it — the verb names the surface (`UiCommandSchema`'s own words). Naming
+ *   a document closes that document; leaving it out is unchanged.
+ *
+ * @param command - The validated command.
+ * @returns Whether it should reach the writer.
+ */
+function isSessionCanvasWrite(command: UiCommand): boolean {
+  if (!CANVAS_VERBS.has(command.action)) return false;
+  if (command.action === 'open_canvas') return command.content !== undefined;
+  if (command.action === 'close_canvas') return command.documentId !== undefined;
+  return true;
+}
+
+/**
+ * Put one canvas command on this session's own table, through the single
+ * writer.
+ *
+ * The scope names the session's CANONICAL id, resolved at call time from
+ * `sdkSessionId` for the same reason the DevTools read tools resolve theirs
+ * there: a first-turn rekey must not strand a write on the request UUID.
+ *
+ * @param session - The session taking the turn.
+ * @param command - The validated command.
+ * @returns What was written, or `null` when this process has no canvas service.
+ */
+function applyToSessionCanvas(
+  session: UiToolSession,
+  command: UiCommand
+): CanvasApplyResult | null {
+  const canvas = peekCanvasService();
+  const sessionId = session.sdkSessionId;
+  if (!canvas || sessionId === undefined) return null;
+  const content = contentFor(command);
+  return canvas.apply({
+    scope: sessionScope(sessionId),
+    authorId: SESSION_AGENT_AUTHOR,
+    command,
+    // A session has one directory, and a file document records it so the agent
+    // can read the document back through the same boundary check the file route
+    // makes. No labels: there is only one tree and one reader.
+    ...(content !== null && session.cwd !== undefined
+      ? {
+          tree: {
+            resolvedCwd: session.cwd,
+            sourceLabel: null,
+            treeKind: null,
+            aheadOfMain: null,
+          },
+        }
+      : {}),
+    // A session HAS a front document per view, unlike a room — so a bare
+    // `update_canvas` lands where it always has: on the document the person is
+    // looking at in the view this content belongs to.
+    defaultTarget: 'active-in-view',
+  });
+}
+
+/**
+ * Create the `get_ui_state` tool handler.
+ *
+ * In a room it answers about the room's shared table. In a session it answers
+ * with a {@link UiStateReport}: the panel, sidebar and agent parts the CLIENT
+ * reported, plus the canvas read straight off the table (spec
+ * `canvas-agent-seat` §1.7). It used to answer with the client's last-sent
+ * snapshot for the canvas too, which made this tool's answer a guess about a
+ * copy in one window.
+ *
+ * @param session - The active session whose state to read (bound at tool creation)
  */
 export function createGetUiStateHandler(session: UiToolSession) {
   return async () => {
@@ -265,7 +374,55 @@ export function createGetUiStateHandler(session: UiToolSession) {
         },
       });
     }
-    return jsonContent(session.uiState ?? DEFAULT_UI_STATE);
+    return jsonContent(sessionUiStateReport(session));
+  };
+}
+
+/**
+ * Compose what `get_ui_state` answers with for a one-on-one session.
+ *
+ * Three of the four parts are the client's own last report; the fourth is a read
+ * of the table. A process with no canvas service — an embedded host, or a boot
+ * that never stood the rooms subsystem up — answers with an empty canvas and
+ * `viewers: 0`, which is the honest reading of "there is no table here" rather
+ * than a fabricated one.
+ *
+ * @param session - The session being asked about.
+ * @returns The report.
+ */
+function sessionUiStateReport(session: UiToolSession): UiStateReport {
+  const state = session.uiState ?? DEFAULT_UI_STATE;
+  const canvas = peekCanvasService();
+  const sessionId = session.sdkSessionId;
+  const documents = canvas && sessionId !== undefined ? canvas.list(sessionScope(sessionId)) : [];
+  // At most one document per view is the front one, and it is the most recently
+  // active of that view — the same rule the window draws by. Pinning sorts a
+  // document first; it does not make it the one on screen.
+  const frontOfView = new Set(
+    (['canvas', 'browser'] as const).map((view) => {
+      const inView = documents
+        .filter((d) => canvasViewForContent(d.content as UiCanvasContent) === view)
+        .sort((a, b) => Date.parse(b.lastActiveAt) - Date.parse(a.lastActiveAt));
+      return inView[0]?.id;
+    })
+  );
+  return {
+    canvas: {
+      open: documents.length > 0,
+      viewers: canvas && sessionId !== undefined ? canvas.viewers(sessionScope(sessionId)) : 0,
+      documents: documents.map((document) => ({
+        id: document.id,
+        type: document.contentType,
+        title: document.title,
+        author: document.authorId,
+        pinned: document.pinned,
+        active: frontOfView.has(document.id),
+      })),
+      count: documents.length,
+    },
+    panels: state.panels,
+    sidebar: state.sidebar,
+    agent: state.agent,
   };
 }
 
@@ -340,7 +497,7 @@ export function getUiTools(_deps: McpToolDeps, session?: UiToolSession) {
     ),
     tool(
       'get_ui_state',
-      'Get the current DorkOS UI state — which panels are open, canvas state, active agent, and (embedded app only) the sidebar tab. Reflects the last state the client reported (at the start of this turn) merged with the UI commands issued this turn; it is not a live read of the client. Note: sidebar.activeTab is null on the web cockpit, which has no sidebar tab strip — it is reported only by the embedded (Obsidian) app. Use it after issuing a UI command to confirm intent, or to make UI decisions.',
+      'Get the current DorkOS UI state — what is on the canvas right now, which panels are open, the active agent, and (embedded app only) the sidebar tab. The canvas part is a LIVE read of the table: every document on it, what each one is, what it is called, whether you or the person put it there ("agent" or "owner"), which one is at the front of its view, and how many windows are open on this session (windows, not people — 0 means nobody is looking). Pass a documentId from it to read_canvas_document to read one back. The panels, sidebar and agent parts reflect the last state the client reported at the start of this turn, merged with the UI commands issued this turn, so they are intent rather than a live read; sidebar.activeTab is null in the web app, which has no sidebar tab strip.',
       {},
       async () => getUiStateHandler()
     ),

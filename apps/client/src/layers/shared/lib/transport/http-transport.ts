@@ -21,6 +21,7 @@ import { createHarnessMethods } from './harness-methods';
 import { createShapeMethods } from './shape-methods';
 import { createWorkspaceMethods } from './workspace-methods';
 import { createRoomMethods } from './room-methods';
+import { createSessionCanvasMethods } from './session-canvas-methods';
 import { createReadCursorMethods } from './read-cursor-methods';
 import { createCloudMethods } from './cloud-methods';
 import { createTerminalMethods } from './terminal-methods';
@@ -57,6 +58,7 @@ export interface HttpTransport
     ReturnType<typeof createShapeMethods>,
     ReturnType<typeof createWorkspaceMethods>,
     ReturnType<typeof createRoomMethods>,
+    ReturnType<typeof createSessionCanvasMethods>,
     ReturnType<typeof createReadCursorMethods>,
     ReturnType<typeof createCloudMethods>,
     ReturnType<typeof createTerminalMethods>,
@@ -96,6 +98,7 @@ export class HttpTransport implements Transport {
       createShapeMethods(baseUrl),
       createWorkspaceMethods(baseUrl),
       createRoomMethods(baseUrl),
+      createSessionCanvasMethods(baseUrl),
       createReadCursorMethods(baseUrl),
       createCloudMethods(baseUrl),
       createTerminalMethods(baseUrl),

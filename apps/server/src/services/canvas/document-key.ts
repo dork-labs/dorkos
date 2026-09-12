@@ -8,12 +8,12 @@
  * no identity).
  *
  * The dedupe key itself is NOT declared here. It lives in
- * `@dorkos/shared/canvas-source-key` and is re-exported, because the browser's
- * session canvas dedupes with the same rule — two implementations of "is this
- * the same document" would drift silently into a room with two tabs for one
- * file, and one function cannot.
+ * `@dorkos/shared/canvas-source-key` and is re-exported, because the client's
+ * own store dedupes with the same rule — two implementations of "is this the
+ * same document" would drift silently into a table with two tabs for one file,
+ * and one function cannot.
  *
- * @module server/services/rooms/canvas/document-key
+ * @module server/services/canvas/document-key
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { canvasSourceKey } from '@dorkos/shared/canvas-source-key';
@@ -25,17 +25,19 @@ export { canvasSourceKey };
  * The id a document gets: deterministic from its scope and source key, or random
  * when it has no key.
  *
- * **Deterministic is what makes the table shared.** Two agents opening
- * `src/router.ts` in one room compute the same id, so the second open finds the
- * first's row and refreshes it instead of adding a second tab beside it. It is a
- * hash rather than the key itself so the id is opaque and a fixed length — a
- * document id travels into tool results and prompts, and a raw absolute path
- * there would leak a directory layout into a room.
+ * **Deterministic is what makes the table a table.** Two agents opening
+ * `src/router.ts` in one room — or two windows of one session opening it —
+ * compute the same id, so the second open finds the first's row and refreshes it
+ * instead of adding a second tab beside it. It is a hash rather than the key
+ * itself so the id is opaque and a fixed length — a document id travels into
+ * tool results and prompts, and a raw absolute path there would leak a directory
+ * layout into a room.
  *
  * **Random is what makes `json` and `widget` behave.** They have no key, so every
- * open is a fresh document, exactly as the session store already treats them.
+ * open is a fresh document, which is how the client's store has always treated
+ * them.
  *
- * @param scope - The table this document belongs to — `room:<roomId>`.
+ * @param scope - The table this document belongs to — `room:<id>` or `session:<id>`.
  * @param sourceKey - The dedupe key, or `null` for content with no identity.
  * @returns The document id.
  */

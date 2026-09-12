@@ -175,7 +175,7 @@
 import { z } from 'zod';
 import { promises as fs } from 'node:fs';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
-import { canvasSourcePath } from './canvas/document-key.js';
+import { canvasSourcePath } from '../canvas/index.js';
 import type { CanvasDocument } from '@dorkos/shared/room-schemas';
 import { FILE_LIMITS } from '../../config/constants.js';
 import { resolveWithinCwd } from '../../lib/file-route-guards.js';
@@ -1620,8 +1620,11 @@ async function readFileBacked(
   filePath: string
 ): Promise<{ content: string | null; reason?: string }> {
   // The directory the ROW recorded, never one derived here: the same boundary
-  // the check ran against at open time is the one it runs against now.
-  const cwd = rooms.canvas.resolvedTreeOf(document.roomId, document.id);
+  // the check ran against at open time is the one it runs against now. A
+  // `session:` document cannot reach this path — `read_canvas` resolves its room
+  // first — so a null room id is a wiring fault answered as a plain sentence.
+  const cwd =
+    document.roomId === null ? null : rooms.canvas.resolvedTreeOf(document.roomId, document.id);
   if (cwd === null) {
     return {
       content: null,

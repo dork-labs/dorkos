@@ -1,7 +1,13 @@
 /**
- * The one writer: everything that can say no about a room's shared canvas, and
- * the ledger the turn's single log line is composed from (spec `room-canvas`
- * §3, §5.1, §6.2).
+ * The one writer: everything that can say no about a canvas, in BOTH scopes
+ * (specs `room-canvas` §3, §5.1, §6.2 and `canvas-agent-seat` §1.2).
+ *
+ * **The room half is the moved suite, passing unchanged.** That is the
+ * regression bar for generalising `RoomCanvasService` over a scope: a room's
+ * ceiling, its ledger, its coalesced line and its reader rule all still behave
+ * exactly as they did, over a writer that now also serves a session. The
+ * session half at the bottom is what is new, and every one of its assertions is
+ * about a difference the spec decided on purpose.
  *
  * Everything here runs against a REAL rooms subsystem over a real SQLite
  * database (`createRoomHarness`) — never a mocked `RoomCanvasService`. A mock
@@ -20,22 +26,23 @@
  * - Dropping the `lastTouchedBy` columns for a process map reddens "survives a
  *   restart" — the second service reads the same rows and finds the pointer.
  *
- * @module server/services/rooms/canvas/tests/room-canvas-service
+ * @module server/services/canvas/tests/canvas-service
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { RoomEntry, RoomEvent, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { UiCommand } from '@dorkos/shared/schemas';
-import type { AuthorRegistry } from '../../author-registry.js';
-import { RoomError } from '../../room-errors.js';
-import type { RoomService } from '../../room-service.js';
-import type { RoomCanvasService } from '../room-canvas-service.js';
+import type { AuthorRegistry } from '../../rooms/author-registry.js';
+import { RoomError } from '../../rooms/room-errors.js';
+import type { RoomService } from '../../rooms/room-service.js';
+import type { RoomCanvasService } from '../../rooms/canvas/room-canvas-service.js';
 import type { CanvasDocumentStore } from '../canvas-document-store.js';
-import type { RoomBroadcaster } from '../../room-stream.js';
+import { roomScope } from '../scopes.js';
+import type { RoomBroadcaster } from '../../rooms/room-stream.js';
 import {
   agentLookupFor,
   createRoomHarness,
   scriptedRunner,
-} from '../../__tests__/room-test-harness.js';
+} from '../../rooms/__tests__/room-test-harness.js';
 import {
   MAX_ROOM_CANVAS_DOCUMENTS,
   NOT_IN_A_ROOM_MESSAGE,
@@ -43,7 +50,7 @@ import {
   OPEN_CANVAS_NEEDS_CONTENT_MESSAGE,
   canvasChangeSentence,
   tooManyCanvasOpsMessage,
-} from '../room-canvas-service.js';
+} from '../../rooms/canvas/room-canvas-service.js';
 
 const ANA = '/agents/ana';
 const BEN = '/agents/ben';
@@ -335,8 +342,8 @@ describe('RoomCanvasService.apply', () => {
       // Read straight off the table rather than out of the service: what makes
       // the default survive a restart is that it is a COLUMN, and a process map
       // would pass every assertion above this one.
-      expect(canvasDocuments.lastTouchedBy(room.id, ana)?.id).toBe(id);
-      expect(canvasDocuments.lastTouchedBy(room.id, ben)).toBeNull();
+      expect(canvasDocuments.lastTouchedBy(roomScope(room.id), ana)?.id).toBe(id);
+      expect(canvasDocuments.lastTouchedBy(roomScope(room.id), ben)).toBeNull();
     });
   });
 

@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { UiCanvasContent } from '@dorkos/shared/types';
-import { canvasViewForContent } from '@/layers/shared/lib/canvas-view';
+import { canvasViewForContent } from '@dorkos/shared/canvas-view';
 
 // Mock streamdown to avoid CSS import issues in jsdom
 vi.mock('streamdown', () => ({
@@ -85,7 +85,7 @@ vi.mock('@/layers/shared/model', async () => {
   // The real split rule, not a copy of it: the view a document belongs to has
   // exactly one definition, and a component test restating it would pass while
   // the app disagreed.
-  const { canvasViewForContent: viewFor } = await import('@/layers/shared/lib/canvas-view');
+  const { canvasViewForContent: viewFor } = await import('@dorkos/shared/canvas-view');
   const useAppStore = (selector: (s: typeof mockState) => unknown) => selector(mockState);
   (useAppStore as unknown as { getState: () => typeof mockState }).getState = () => mockState;
   return {

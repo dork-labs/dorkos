@@ -510,6 +510,20 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     closeRoomCanvasDocument: vi.fn().mockResolvedValue(undefined),
     setRoomCanvasEditing: vi.fn().mockResolvedValue({ editingBy: null, expiresAt: null }),
     subscribeRoom: vi.fn(emptyAsyncIterable),
+    // The session canvas (spec `canvas-agent-seat` §1.6). Honest-empty reads:
+    // a test that has said nothing about the canvas gets a session with nothing
+    // on it, which is what a fresh session really has. The writes answer with
+    // the row they wrote, exactly as the room's do.
+    listSessionCanvas: vi.fn().mockResolvedValue([]),
+    getSessionCanvasDocument: vi.fn().mockResolvedValue(null),
+    openSessionCanvasDocument: vi
+      .fn()
+      .mockResolvedValue(mockCanvasDocument({ scope: 'session:session-1', roomId: null })),
+    updateSessionCanvasDocument: vi
+      .fn()
+      .mockResolvedValue(mockCanvasDocument({ scope: 'session:session-1', roomId: null })),
+    closeSessionCanvasDocument: vi.fn().mockResolvedValue(undefined),
+    setSessionCanvasEditing: vi.fn().mockResolvedValue({ editingBy: null, expiresAt: null }),
     // Read state (team-room-home D4) — one cursor for every kind of thread a
     // person reads, rooms included. The default read is `null`: a test that says
     // nothing about read state gets a thread nobody has read, which draws no

@@ -192,9 +192,11 @@ describe('the claude-code handler, inside a room turn', () => {
     expect(state.canvas).toMatchObject({ count: 1 });
   });
 
-  it('answers `get_ui_state` with the session’s own state outside a room turn', async () => {
+  it('answers `get_ui_state` about the SESSION’s own canvas outside a room turn', async () => {
+    // The panel, sidebar and agent parts are still the client's own report; the
+    // canvas part is the server's table, which is what this whole phase exists
+    // to make true (spec `canvas-agent-seat` §1.7).
     const uiState: UiState = {
-      canvas: { open: true, contentType: 'json' },
       panels: { settings: false, tasks: false, relay: false, picker: false },
       sidebar: { open: true, activeTab: null },
       agent: { id: null, cwd: null },
@@ -204,7 +206,12 @@ describe('the claude-code handler, inside a room turn', () => {
         content: Array<{ type: string; text?: string }>;
       }
     );
-    expect(state).toEqual(uiState);
+    expect(state).toMatchObject({
+      panels: uiState.panels,
+      sidebar: uiState.sidebar,
+      agent: uiState.agent,
+      canvas: { open: false, viewers: 0, documents: [], count: 0 },
+    });
   });
 });
 

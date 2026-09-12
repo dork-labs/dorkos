@@ -1,22 +1,25 @@
 /**
- * A room's shared canvas — the table its members put documents on, the one
- * writer that changes it, and the pure key functions that decide when two opens
- * are the same document (spec `room-canvas`).
+ * A room's shared canvas — the room's own policy over the one writer that
+ * changes every canvas on this machine (specs `room-canvas`,
+ * `canvas-agent-seat` §1.2).
+ *
+ * The table, the dedupe rule and the pure key functions live in
+ * `services/canvas/`, because a canvas that serves two scopes is not a rooms
+ * concern. What is here is what a ROOM adds: membership, the archived refusal,
+ * the per-turn ceiling and the coalesced line.
  *
  * @module server/services/rooms/canvas
  */
 export {
   CanvasDocumentStore,
   toCanvasDocument,
-  type CanvasDocumentInsert,
-  type CanvasDocumentRow,
-} from './canvas-document-store.js';
-export {
   canvasDocumentId,
   canvasSourceKey,
   canvasSourcePath,
   canvasTitle,
-} from './document-key.js';
+  type CanvasDocumentInsert,
+  type CanvasDocumentRow,
+} from '../../canvas/index.js';
 export {
   CANVAS_EDIT_HEARTBEAT_MS,
   CANVAS_EDIT_TTL_MS,

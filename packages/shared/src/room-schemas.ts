@@ -871,76 +871,12 @@ export const RoomCanvasChangeSchema = z
 /** What one turn did to a room's canvas. See {@link RoomCanvasChangeSchema}. */
 export type RoomCanvasChange = z.infer<typeof RoomCanvasChangeSchema>;
 
-/**
- * One document on a room's shared canvas, as every reader is handed it.
- *
- * **Content travels with it**, because a viewer that has the row has to be able
- * to draw the document, and the ceiling on how many rows a room holds is what
- * keeps that affordable. The one thing that does NOT travel is a file's
- * contents: a file-backed document carries the path it resolved to and nothing
- * more, and each viewer reads the bytes through the route it already uses.
- *
- * **`rev` orders two frames racing for one document** — a lower `rev` never
- * overwrites a higher one — and is deliberately not a stream cursor. The room
- * stream has exactly one cursor and it is the highest durable entry a reader
- * holds (see {@link RoomCanvasEventSchema}).
- */
-export const CanvasDocumentSchema = z
-  .object({
-    id: z.string().min(1),
-    /** `room:<roomId>`. Carried so a client can tell one table from another. */
-    scope: z.string().min(1),
-    roomId: z.string().min(1),
-    content: UiCanvasContentSchema,
-    title: z.string(),
-    contentType: z.string().min(1),
-    /** The member who put it here — a person's author id or an agent's. */
-    authorId: z.string().min(1),
-    /** Pinned documents sort first and are never evicted to make room. */
-    pinned: z.boolean(),
-    rev: z.number().int().nonnegative(),
-    /** Who last opened or updated it. */
-    lastTouchedBy: z.string().min(1),
-    /** When they did, ISO 8601. */
-    lastTouchedAt: z.string().min(1),
-    /**
-     * The member holding the edit lock right now, or absent when nobody is.
-     *
-     * Evaluated lazily against the lock's own TTL, so a browser that crashed
-     * mid-edit simply stops being a lock rather than wedging the document.
-     */
-    editingBy: z.string().min(1).optional(),
-    /** Where a file document came from, for the reader: `Ana's copy · 3 ahead of main`. */
-    sourceLabel: z.string().optional(),
-    /**
-     * WHICH tree a file document's path was resolved against, so a reader can be
-     * told whose copy they are looking at.
-     *
-     * - `room-main` — the room's own shared copy. Every member can read it.
-     * - `worktree` — one member's working copy of the room's files.
-     * - `agent-cwd` — somebody's own project, in a room with no files of its own.
-     *
-     * Absent for a document that names no file. Recorded at OPEN time, so a room
-     * that gains or loses a repo later never relabels what is already on the
-     * table.
-     */
-    treeKind: z.enum(['room-main', 'worktree', 'agent-cwd']).optional(),
-    /**
-     * Commits that member's copy had which the room's `main` did not, when the
-     * document was opened — a snapshot, never a live number.
-     *
-     * `null` means "not measured" rather than "level with the room". A label
-     * that said a copy was up to date when nothing checked is one somebody would
-     * act on.
-     */
-    aheadOfMain: z.number().int().nonnegative().nullable().optional(),
-    openedAt: z.string().min(1),
-    lastActiveAt: z.string().min(1),
-  })
-  .openapi('CanvasDocument');
-
-/** One document on a room's canvas. See {@link CanvasDocumentSchema}. */
-export type CanvasDocument = z.infer<typeof CanvasDocumentSchema>;
+// The document shape lives in its own leaf module so `session-stream.ts` can
+// have it too without closing a cycle back through this file; re-exported here
+// because every existing importer names `room-schemas` (spec
+// `canvas-agent-seat` §1.3).
+export { CanvasDocumentSchema, type CanvasDocument } from './canvas-schemas.js';
+import { CanvasDocumentSchema } from './canvas-schemas.js';
 
 /** Everything on one room's canvas (`GET /api/rooms/{id}/canvas`). */
 export const CanvasDocumentListResponseSchema = z
