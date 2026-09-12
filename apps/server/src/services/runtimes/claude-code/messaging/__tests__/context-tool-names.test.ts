@@ -427,7 +427,14 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // capabilities. Principal-bound connector discovery and execution live on
     // the private runtime listener, so the ordinary prompt must not advertise
     // or teach these retired authority surfaces.
-    expect(advertised.size).toBe(91);
+    //
+    // 91 → 92 for `read_canvas`, the one verb a room's shared canvas adds
+    // (DOR-1999). It lands in the DEFERRED column with the rest of the room
+    // verbs that are not the per-turn conversation path — except that the
+    // `<room_tools>` block DOES name it, which is what makes it prefixed below
+    // and is deliberate: an agent told a room has a canvas and not told how to
+    // read it spends a turn finding out.
+    expect(advertised.size).toBe(92);
     expect(advertised.has('react_to_room_entry')).toBe(true);
     expect(
       [
@@ -478,7 +485,12 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // The reverse guard on the guard: if nothing were prefixed at all, the check
     // above would pass while teaching nothing callable. Counted exactly, so the
     // day a block stops rendering the number moves rather than the bound holding.
-    expect(prefixed.length).toBe(84);
+    //
+    // 84 → 86 for the room canvas (DOR-1999): `<room_tools>` names `control_ui`
+    // once and `read_canvas` once, in each of its two variants, and only one
+    // variant renders per session — so the whole rendered corpus this case walks
+    // gains exactly two prefixed names on top of whatever main already had.
+    expect(prefixed.length).toBe(86);
   });
 
   it('names only advertised tools in the agent-session variant of the prompt too', async () => {

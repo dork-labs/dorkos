@@ -309,6 +309,11 @@ describe('in-session tool exposure', () => {
         // beside it — so both are prompt-named tools and neither may be deferred.
         'list_member_rooms',
         'search_member_rooms',
+        // DOR-1999, the same rule again. `<room_tools>` names `read_canvas`
+        // callably, and the turn that reaches for it is a room reply somebody is
+        // waiting on: the context says WHAT is on the canvas and never what a
+        // document says.
+        'read_canvas',
       ].sort()
     );
     // The declared set and the served surface are the same set, in both
@@ -355,7 +360,17 @@ describe('in-session tool exposure', () => {
     // server. Their replacements live only on principal-bound runtime
     // projections; they must never reappear as deferred tools an ordinary
     // session or external projection can call.
-    expect(tools).toHaveLength(91);
+    //
+    // 91 → 92 for `read_canvas`, the one verb a room's shared canvas adds
+    // (DOR-1999), and it lands in the DEFERRED column: reading the table is
+    // something an agent does when it wants to, not the per-turn path a room
+    // REPLY takes — and the room's own context block already tells every turn
+    // what is on the canvas without any tool call at all. The rule that would
+    // force it the other way is the one `context-tool-names.test.ts` owns: a
+    // tool the PROMPT names may not be deferred. `<room_tools>` does name it,
+    // and that is exactly why it also joins `ALWAYS_LOADED_TOOLS` above — both
+    // counts move by one, which is what says nothing else came with it.
+    expect(tools).toHaveLength(92);
     expect(deferred).toHaveLength(83);
     const retiredConnectorTools = [
       'connector_list_accounts',
@@ -401,6 +416,7 @@ describe('in-session tool exposure', () => {
         'search_room_history',
         'list_member_rooms',
         'search_member_rooms',
+        'read_canvas',
         'memory_write',
         'mesh_list',
         'mesh_inspect',

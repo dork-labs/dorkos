@@ -277,6 +277,10 @@
       "types": "./src/smart-groups.ts",
       "default": "./dist/smart-groups.js"
     },
+    "./canvas-source-key": {
+      "types": "./src/canvas-source-key.ts",
+      "default": "./dist/canvas-source-key.js"
+    },
     "./room-schemas": {
       "types": "./src/room-schemas.ts",
       "default": "./dist/room-schemas.js"

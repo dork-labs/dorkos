@@ -986,3 +986,131 @@ export const roomRepos = sqliteTable('room_repos', {
    */
   lastMergeSeq: integer('last_merge_seq'),
 });
+
+/**
+ * The documents a room has put on its shared canvas (spec `room-canvas` §1).
+ *
+ * **Server-owned, unlike the session canvas it is modelled on.** A session's
+ * canvas lives in one browser's `localStorage` keyed by session id, which is why
+ * registering that surface on room routes would have shown every viewer their
+ * own private documents and called them shared. A room's table is a table: one
+ * set of rows every member — person or agent — reads the same way, that survives
+ * a reload, and that an agent can read as well as write to.
+ *
+ * **Rows are closed, not tombstoned.** `close_canvas` deletes the row and the
+ * `canvas` frame that announces it carries the id and `closed: true`, so every
+ * viewer drops it. Nothing needs a tombstone, because a reconnecting viewer
+ * hydrates from the room snapshot and the canvas resync rather than from a delta
+ * log (§2).
+ *
+ * **Archiving keeps the rows and freezes them; deleting the room drops them.**
+ * Archive is a flag on `rooms`, so the cascade never fires: a dormant room keeps
+ * its whole table and shows it read-only. Every WRITE refuses on an archived
+ * room before touching this table (§3.7), on the precedent `postMergeEvent`
+ * sets; every READ still answers, which is the whole asymmetry of archiving —
+ * the record survives, the activity stops.
+ *
+ * **Every timestamp here is ISO-8601 `text`, not an integer**, because that is
+ * what every other table in this file already does (`rooms.created_at` and its
+ * siblings), with the caller supplying the value. A `{ mode: 'timestamp_ms' }`
+ * column would be the only one of its kind in the rooms schema and would read
+ * back as a `Date` where every sibling reads back as a string.
+ */
+export const canvasDocuments = sqliteTable(
+  'canvas_documents',
+  {
+    /**
+     * The document's id. Deterministic per `(scope, sourceKey)` when the content
+     * has a natural identity — a file path, a URL — so two agents opening the
+     * same file land on one document rather than two, which is what makes the
+     * table a table. Content with no natural identity (`json`, `widget`) gets a
+     * random ULID, so every open of one is a fresh document.
+     */
+    id: text('id').primaryKey(),
+    /**
+     * `room:<roomId>`. `session:<id>` is RESERVED for the follow-on spec that
+     * migrates the session canvas here, and nothing in this build writes it.
+     */
+    scope: text('scope').notNull(),
+    /** The room this document belongs to. Cascades, so deleting a room deletes its table. */
+    roomId: text('room_id')
+      .notNull()
+      .references(() => rooms.id, { onDelete: 'cascade' }),
+    /** The `UiCanvasContent` union, JSON-encoded. Validated with its schema on read. */
+    content: text('content', { mode: 'json' }).notNull(),
+    /** Cached `content.title` (or the derived label) so a list does not parse every blob. */
+    title: text('title').notNull(),
+    /** `content.type` — one of the fourteen. Indexed: the Browser view is a query on it. */
+    contentType: text('content_type').notNull(),
+    /** The room author who put it here. A person's author id or an agent's. Never null. */
+    authorId: text('author_id').notNull(),
+    /** Dedupe key, or null for content with no natural identity (`json`, `widget`). */
+    sourceKey: text('source_key'),
+    /** Human label for where a file came from: `Ana's copy · 3 ahead of main`. */
+    sourceLabel: text('source_label'),
+    /** Absolute directory this document's `sourcePath` was resolved against, or null. */
+    resolvedCwd: text('resolved_cwd'),
+    /**
+     * WHICH tree that directory is, for the label a reader is shown: the room's
+     * own shared copy, one member's working copy of it, or somebody's own
+     * project. Null for a document that names no file.
+     *
+     * Stored rather than re-derived, because the answer depends on what the room
+     * held at OPEN time — a room that gains or loses a repo later must not
+     * silently relabel documents opened before it did.
+     */
+    treeKind: text('tree_kind'),
+    /**
+     * Commits this member's working copy had that the room's `main` did not, at
+     * open time — a snapshot with a timestamp, never a live number.
+     *
+     * Null means "not measured", never "level with the room". The two must not
+     * collapse: a label saying a copy is up to date when nothing checked is one
+     * somebody will act on.
+     */
+    aheadOfMain: integer('ahead_of_main'),
+    /** Pinned documents sort first and are never evicted. */
+    pinned: integer('pinned', { mode: 'boolean' }).notNull().default(false),
+    /**
+     * Monotonic per room, bumped on every write. It is what orders two frames
+     * racing for one document inside a client — a lower `rev` never overwrites a
+     * higher one — and it is deliberately NOT a stream cursor. The room stream
+     * has exactly one cursor and it is the highest durable ENTRY a reader holds.
+     */
+    rev: integer('rev').notNull(),
+    /**
+     * Who last opened or updated this document.
+     *
+     * On the ROW rather than in a process map, because it is what a bare
+     * `update_canvas` with no `documentId` acts on — the author's own last
+     * document — and a default that lived in memory would change meaning after a
+     * restart, mid-conversation.
+     */
+    lastTouchedBy: text('last_touched_by').notNull(),
+    /** When they did, ISO 8601. `(room, author)` ordered by this is that default. */
+    lastTouchedAt: text('last_touched_at').notNull(),
+    /** The room author currently holding the edit lock, or null. */
+    editingBy: text('editing_by'),
+    /**
+     * When that lock was last refreshed, ISO 8601.
+     *
+     * **Read lazily; a stale lock is simply not a lock.** No timer sweeps this
+     * table — a timer that expires locks is one that has to be cancelled on every
+     * close, restart and room deletion, and the failure mode of getting that
+     * wrong is a document nobody can ever edit again.
+     */
+    editingHeartbeatAt: text('editing_heartbeat_at'),
+    openedAt: text('opened_at').notNull(),
+    lastActiveAt: text('last_active_at').notNull(),
+  },
+  (table) => [
+    index('idx_canvas_documents_room').on(table.roomId, table.lastActiveAt),
+    uniqueIndex('canvas_documents_source_unique').on(table.scope, table.sourceKey),
+    index('idx_canvas_documents_type').on(table.roomId, table.contentType),
+    index('idx_canvas_documents_last_touched').on(
+      table.roomId,
+      table.lastTouchedBy,
+      table.lastTouchedAt
+    ),
+  ]
+);

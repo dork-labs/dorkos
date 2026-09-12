@@ -127,6 +127,12 @@ import {
   RoomListResponseSchema,
   ThreadListResponseSchema,
   RoomRosterEntrySchema,
+  CanvasDocumentSchema,
+  CanvasDocumentListResponseSchema,
+  CanvasEditingRequestSchema,
+  CanvasEditingResponseSchema,
+  OpenCanvasDocumentRequestSchema,
+  UpdateCanvasDocumentRequestSchema,
   RoomSnapshotSchema,
   RoomWithRosterSchema,
   SetAuthorHandleRequestSchema,
@@ -4746,6 +4752,149 @@ registry.registerPath({
     409: {
       description:
         'The room has no files of its own, or room files are switched off on this install (`ROOM_HAS_NO_REPO`); or this machine has no git (`ROOM_REPO_GIT_UNAVAILABLE`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+/** `:id` plus the `:documentId` a canvas route addresses. */
+const RoomCanvasParams = RoomIdParams.extend({ documentId: z.string().min(1) });
+
+/** 404 shared by the canvas routes that name a document. */
+const canvasDocumentNotFound = {
+  description: 'No such room, the caller may not see it, or no such document on its canvas',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/rooms/{id}/canvas',
+  tags: ['Rooms'],
+  summary: "Read everything on a room's shared canvas",
+  description:
+    "The room's own table: the documents its members — people and agents alike — have put in front of each other. Pinned first, then most recently active. Content travels with each document, because a viewer that holds the row has to be able to draw it; what does NOT travel is a file's contents, which each viewer reads through the file route it already uses. **The stream is how an app stays current, not this route**: a cold `GET /api/rooms/{id}/events` carries the whole table in its snapshot and every later change arrives as a `canvas` frame. This exists for agents, for tests, and for a cold read without a stream. It still answers for an ARCHIVED room — reads always do; it is writes that stop.",
+  request: { params: RoomIdParams },
+  responses: {
+    200: {
+      description: "The room's canvas, pinned first then most recently active",
+      content: { 'application/json': { schema: CanvasDocumentListResponseSchema } },
+    },
+    401: roomAgentUnverified,
+    404: roomNotFound,
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/rooms/{id}/canvas/{documentId}',
+  tags: ['Rooms'],
+  summary: 'Read one document on a room’s canvas',
+  description:
+    'One row, content included. A document id from ANOTHER room answers exactly as one that never existed, so an id is never a way to read across rooms.',
+  request: { params: RoomCanvasParams },
+  responses: {
+    200: {
+      description: 'The document',
+      content: { 'application/json': { schema: CanvasDocumentSchema } },
+    },
+    401: roomAgentUnverified,
+    404: canvasDocumentNotFound,
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/rooms/{id}/canvas',
+  tags: ['Rooms'],
+  summary: "Put something on a room's canvas",
+  description:
+    'Opens a document as YOU — the author is resolved from the request and never sent. Content with a natural identity (a file path, a URL) DEDUPES: opening something that is already on the table refreshes that document rather than adding a second tab beside it, which is what makes the canvas a table rather than a pile. `json` and `widget` have no such identity, so every open of one is a fresh document. Past twelve unpinned documents the least recently active is dropped to make room, and every viewer is told. Refused on an archived room.',
+  request: {
+    params: RoomIdParams,
+    body: { content: { 'application/json': { schema: OpenCanvasDocumentRequestSchema } } },
+  },
+  responses: {
+    201: {
+      description: 'The document, as every viewer now has it',
+      content: { 'application/json': { schema: CanvasDocumentSchema } },
+    },
+    400: roomValidationError,
+    401: roomAgentUnverified,
+    404: roomNotFound,
+    409: {
+      description:
+        'The room is archived, or somebody else is editing the document this would have refreshed',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/rooms/{id}/canvas/{documentId}',
+  tags: ['Rooms'],
+  summary: 'Change one document on a room’s canvas',
+  description:
+    "Three independent changes, any of which may be omitted: replace what the document shows, pin or unpin it, and move it to the front of the list. **`activate` changes the ORDER and nobody's open tab.** A shared canvas that yanked everyone's view when somebody clicked would be the pixel version of interrupting, so ordering on the server is not a remote-control verb. Refused on an archived room, and refused while another member is editing the document.",
+  request: {
+    params: RoomCanvasParams,
+    body: { content: { 'application/json': { schema: UpdateCanvasDocumentRequestSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'The document, as every viewer now has it',
+      content: { 'application/json': { schema: CanvasDocumentSchema } },
+    },
+    400: roomValidationError,
+    401: roomAgentUnverified,
+    404: canvasDocumentNotFound,
+    409: {
+      description: 'The room is archived, or somebody else is editing this document',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/rooms/{id}/canvas/{documentId}',
+  tags: ['Rooms'],
+  summary: 'Take a document off a room’s canvas',
+  description:
+    'The row is deleted rather than marked closed, and every viewer is told to drop it. Nothing needs a tombstone: a viewer that reconnects hydrates the whole table from the room snapshot, so a close it missed corrects itself. Refused on an archived room.',
+  request: { params: RoomCanvasParams },
+  responses: {
+    204: { description: 'Closed' },
+    401: roomAgentUnverified,
+    404: canvasDocumentNotFound,
+    409: {
+      description: 'The room is archived',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/rooms/{id}/canvas/{documentId}/editing',
+  tags: ['Rooms'],
+  summary: 'Say you are editing a canvas document, or that you have stopped',
+  description:
+    'While you hold this, an agent\'s change to the same document is HELD rather than applied, and the agent is told it was held instead of being told it succeeded. Refresh it about every fifteen seconds while an editor is focused; it lapses on its own about forty-five seconds after the last refresh, so a browser that crashed mid-edit cannot leave a document nobody can touch. Send `{"editing": false}` on save, on close, and when you look away without changing anything.',
+  request: {
+    params: RoomCanvasParams,
+    body: { content: { 'application/json': { schema: CanvasEditingRequestSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'Who holds the lock now, and when it lapses',
+      content: { 'application/json': { schema: CanvasEditingResponseSchema } },
+    },
+    400: roomValidationError,
+    401: roomAgentUnverified,
+    404: canvasDocumentNotFound,
+    409: {
+      description: 'The room is archived, or somebody else already holds this lock',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

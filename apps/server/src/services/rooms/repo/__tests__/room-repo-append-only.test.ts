@@ -147,6 +147,10 @@ describe('a room’s repo is append-only', () => {
       'remove_room_members',
       'update_room',
       'leave_room',
+      // The room's shared canvas, read-only (DOR-1999). It touches no repo and
+      // writes nothing: the four verbs that CHANGE a canvas are `control_ui`
+      // actions on the runtime side, not capabilities here.
+      'read_canvas',
     ]);
     // And nothing in the domain offers to give a room files: enabling a repo is
     // operator-only over HTTP (spec §3.2), because an agent that could hand

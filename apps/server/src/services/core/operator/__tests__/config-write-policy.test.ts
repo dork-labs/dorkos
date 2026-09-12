@@ -119,6 +119,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'rooms.maxAgentDepth',
       'rooms.maxAutomaticTurnsPerRoomPerHour',
       'rooms.maxAutomaticTurnsTotalPerHour',
+      'rooms.maxCanvasOpsPerTurn',
       'rooms.maxPostsPerTurn',
       'rooms.maxTurnsPerAgentPerCascade',
       // A room's own files: whether they exist at all, and the bounds a merge

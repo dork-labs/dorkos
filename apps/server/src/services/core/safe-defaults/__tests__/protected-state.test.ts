@@ -318,6 +318,7 @@ describe('applyProtectedState', () => {
       responseGate: 'routing',
       toolOnlyReplies: false,
       maxPostsPerTurn: 3,
+      maxCanvasOpsPerTurn: 3,
       repo: {
         enabled: true,
         worktreeReapDays: 14,

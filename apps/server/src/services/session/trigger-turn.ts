@@ -427,6 +427,16 @@ export interface TriggerTurnOpts {
    */
   roomContext?: RoomContextData;
   /**
+   * Where this turn is happening, when a ROOM triggered it — routing metadata,
+   * never prompt context (spec `room-canvas` §5.3).
+   *
+   * Deliberately NOT folded into `additionalContext` below: it carries an opaque
+   * dispatch id and a member id, and neither belongs in front of a model. It is
+   * handed to the runtime beside the bag instead, which is what lets a
+   * `control_ui` taken inside a room turn land on the room's shared canvas.
+   */
+  roomTurn?: MessageOpts['roomTurn'];
+  /**
    * Background the caller attached to this turn — the agent reads it, the person
    * never sees it. Passed straight to the assembler, which renders it into the
    * neutral bag as a `seed_context` entry; `content` is untouched.
@@ -609,6 +619,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     cwd,
     context,
     roomContext,
+    roomTurn,
     seedContext,
     approvalVerdict,
     systemPromptAppend,
@@ -783,6 +794,14 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
         // this as `!== undefined`, so nothing downstream changes behavior.
         ...(cwd !== undefined ? { cwd } : {}),
         additionalContext,
+        // **Unconditional, `undefined` included.** A runtime that honours this
+        // has to be able to CLEAR it: a marker set on a room turn and never
+        // cleared would make every later direct turn in that session write to a
+        // channel, so a person's own `open_canvas` would land in a room they are
+        // not looking at. Absent-versus-undefined is not a distinction any
+        // runtime draws here, and passing it always is what makes the clearing
+        // path exist at all.
+        roomTurn,
         ...(systemPromptAppend !== undefined ? { systemPromptAppend } : {}),
         ...(accountHint !== undefined ? { accountHint } : {}),
         ...(opts.messageId !== undefined ? { messageId: opts.messageId } : {}),

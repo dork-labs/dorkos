@@ -47,9 +47,11 @@ import {
 import { CODEX_UI_MCP_SERVER } from './codex-ui-mcp-server.js';
 import {
   UI_COMMAND_REFUSED_CODE,
+  isUiActionRefusedInRoom,
   isUiActionRefusedOnCodex,
   uiActionRefusalMessage,
 } from './ui-command-consent.js';
+import { NOT_IN_A_ROOM_MESSAGE } from '../../rooms/canvas/index.js';
 import { recordCodexMedia, type CodexMediaState } from './media-capture.js';
 import { readCodexTurnContextUsage, type CodexTurnContextUsage } from './turn-context-usage.js';
 
@@ -75,6 +77,8 @@ export interface CodexEventContextOptions {
   turnContextUsageTimeoutMs?: number;
   /** Clock seam for deterministic turn-boundary tests. */
   now?: () => number;
+  /** Whether this turn is answering in a room. See {@link CodexEventContext.inRoomTurn}. */
+  inRoomTurn?: boolean;
 }
 
 /**
@@ -126,6 +130,17 @@ export interface CodexEventContext extends CodexMediaState {
   threadId?: string;
   /** Local observation time for the current `turn.started` event. */
   turnStartedAtMs?: number;
+  /**
+   * True when this turn is answering in a ROOM rather than in a one-on-one
+   * session (spec `room-canvas` §5.3).
+   *
+   * All the mapper needs to know: a room shares a canvas, not a whole window, so
+   * every `control_ui` action that is not one of the six canvas verbs is refused
+   * here exactly as a reaching action already is. What it does NOT need is the
+   * room id or the acting member — Codex's canvas commands reach the table
+   * through the room turn's own collector, which holds both.
+   */
+  readonly inRoomTurn?: boolean;
   /** Native context reader; optional metadata failures never fail the turn. */
   readonly readTurnContextUsage: ReadTurnContextUsage;
   /** Maximum wait for the native context reader. */
@@ -172,6 +187,7 @@ export function createCodexEventContext(
         readCodexTurnContextUsage({ threadId, turnStartedAtMs, signal })),
     turnContextUsageTimeoutMs: options.turnContextUsageTimeoutMs ?? TURN_CONTEXT_USAGE_TIMEOUT_MS,
     now: options.now ?? Date.now,
+    ...(options.inRoomTurn === true ? { inRoomTurn: true } : {}),
     lastTextById: new Map(),
     lastOutputById: new Map(),
     startedToolIds: new Set(),
@@ -636,6 +652,19 @@ function mapControlUi(
           message: uiActionRefusalMessage(parsed.data.action),
           code: UI_COMMAND_REFUSED_CODE,
         },
+      },
+    ];
+  }
+  // The ROOM rule, through the same seam and for the same reason: this mapper is
+  // the enforcement point, because it reads the raw arguments Codex recorded and
+  // never sees what the MCP stub told the agent. An action a room does not
+  // accept therefore produces a typed error and NO `ui_command` — so nothing
+  // downstream, the room turn's collector included, can act on it.
+  if (ctx.inRoomTurn === true && isUiActionRefusedInRoom(parsed.data.action)) {
+    return [
+      {
+        type: 'error',
+        data: { message: NOT_IN_A_ROOM_MESSAGE, code: UI_COMMAND_REFUSED_CODE },
       },
     ];
   }

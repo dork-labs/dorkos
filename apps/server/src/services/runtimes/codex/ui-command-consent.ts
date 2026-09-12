@@ -74,6 +74,38 @@ export function isUiActionRefusedOnCodex(action: string): boolean {
 }
 
 /**
+ * Whether this `control_ui` action is refused because the turn is happening in a
+ * ROOM rather than in a one-on-one session (spec `room-canvas` §5.4).
+ *
+ * **An allow-list, and that is the point.** A room shares a canvas, not a whole
+ * window, so the six canvas verbs are what it accepts and everything else is
+ * refused — including a twenty-third action nobody has written yet, which is the
+ * direction a list of the refused sixteen would have failed in.
+ *
+ * It lives here beside {@link isUiActionRefusedOnCodex} because the two answer
+ * the same shape of question through the same seam: the scoped `dorkos_ui` MCP
+ * stub tells the AGENT, and the event-mapper is what actually withholds the
+ * effect. A second mechanism for the room rule would be a second place to keep
+ * in step.
+ *
+ * @param action - The `action` field of the `control_ui` call.
+ * @returns `true` when the call must be refused because it is in a room.
+ */
+export function isUiActionRefusedInRoom(action: string): boolean {
+  return !ROOM_CANVAS_ACTIONS.has(action);
+}
+
+/** The six `control_ui` verbs that put something on a room's shared canvas. */
+const ROOM_CANVAS_ACTIONS: ReadonlySet<string> = new Set([
+  'open_canvas',
+  'update_canvas',
+  'close_canvas',
+  'open_file',
+  'open_diff',
+  'browser_navigate',
+]);
+
+/**
  * The sentence an agent reads when Codex refuses its `control_ui` call.
  *
  * Says what was refused and what to do instead, because a refusal an agent

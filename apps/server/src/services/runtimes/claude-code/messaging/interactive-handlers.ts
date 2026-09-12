@@ -132,6 +132,12 @@ export const DORKOS_AGENT_TOOLS = new Set(
     // answer from the caller's own roster rows and nothing else.
     'get_room',
     'find_room',
+    // Reading the room's shared canvas (DOR-1999). Same membership bound and the
+    // same identity qualifier as every read above it: it answers from the
+    // caller's own roster rows and nothing else, and its one file-backed answer
+    // is narrowed further still — a document whose tree this reader could not
+    // already read comes back as its name and nothing more.
+    'read_canvas',
     // The five that ARRANGE rooms (DOR-1611). They carry everything above them
     // plus one bound none of the others has: the `roomsManage` grant, which is
     // off until a person turns it on for THIS agent. See IDENTITY_SCOPED_TOOLS.
@@ -373,6 +379,7 @@ export const IDENTITY_SCOPED_TOOLS = new Set(
     'search_member_rooms',
     'get_room',
     'find_room',
+    'read_canvas',
     'create_room',
     'add_room_members',
     'remove_room_members',

@@ -732,7 +732,13 @@ export class CodexRuntime implements AgentRuntime {
       const turnOpts = accessContext
         ? { ...opts, additionalContext: [...(opts?.additionalContext ?? []), accessContext.entry] }
         : opts;
-      const ctx = createCodexEventContext(sessionId);
+      // The room marker the mapper refuses window actions against. A boolean is
+      // everything it needs: Codex's canvas commands reach the room's table
+      // through the room turn's own collector, which holds the room and the
+      // acting member already (spec `room-canvas` §5.4).
+      const ctx = createCodexEventContext(sessionId, {
+        ...(opts?.roomTurn !== undefined ? { inRoomTurn: true } : {}),
+      });
       let bound = boundThreadId !== undefined;
       connectorRevokeReason = 'runtime_failed';
       const { events } = await thread.runStreamed(

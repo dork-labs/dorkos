@@ -151,6 +151,23 @@ export interface AgentSession {
   /** Client-reported UI state, updated with each message. Used by `get_ui_state` tool. */
   uiState?: UiState;
   /**
+   * The room this session's CURRENT turn is answering in, or absent when it is
+   * an ordinary one-on-one turn (spec `room-canvas` §5.3).
+   *
+   * Set from `MessageOpts.roomTurn` on every turn — **including to `undefined`**,
+   * which is the half that matters: a marker that was set and never cleared
+   * would make every later direct turn in this session write to a channel.
+   *
+   * Read by the `control_ui` and `get_ui_state` handlers, and by nothing else.
+   */
+  roomTurn?: {
+    roomId: string;
+    authorId: string;
+    turnId: string;
+    cwd?: string;
+    aheadOfMain?: number | null;
+  };
+  /**
    * Memory file paths surfaced by the SDK for this session (SDK 0.2.105+).
    * Populated when `system/memory_recall` events arrive; aggregated across the session.
    */

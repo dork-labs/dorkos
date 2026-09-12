@@ -320,6 +320,10 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // bound — there was none before it — and the tightest a person might want is
   // lower, which is why it carries.
   'rooms.maxPostsPerTurn': 3,
+  // How many times one agent may change a room's shared canvas inside one turn.
+  // A real bound of the same kind, and the tightest a person might want is
+  // lower, which is why it carries.
+  'rooms.maxCanvasOpsPerTurn': 3,
   // The two welcome-back bounds (spec `team-room-home`, D5.2). Both bound the
   // noise a return can produce: four hours before an absence counts at all, and
   // at most three posts when it does. Both carry across a wipe, in opposite

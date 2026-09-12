@@ -73,6 +73,7 @@ import { configManager } from '../services/core/config-manager.js';
 import { parseBody, sendError, discardStream } from '../lib/route-utils.js';
 import { roomEventsHandler } from './room-events-handler.js';
 import { resolveCaller } from './room-caller.js';
+import roomCanvasRouter from './room-canvas.js';
 import { sendRoomError } from './room-error-response.js';
 import { logger } from '../lib/logger.js';
 
@@ -1164,5 +1165,19 @@ router.post('/:id/repo/merge', (req, res) => {
  * `services/rooms/room-stream-delivery.ts`.
  */
 router.get('/:id/events', roomEventsHandler);
+
+/**
+ * `/:id/canvas` — the room's shared canvas, in its own router.
+ *
+ * Mounted rather than inlined because six more handlers here would push this
+ * file past the point where a reader can find anything, and because the canvas
+ * is a surface of its own: it has its own service, its own refusal codes and its
+ * own rule about who may write. `mergeParams` on that router is what keeps `:id`
+ * meaning the room.
+ *
+ * Registered LAST, after `/:id/events` and every other `/:id/...` route, so no
+ * earlier pattern can swallow a canvas path.
+ */
+router.use('/:id/canvas', roomCanvasRouter);
 
 export default router;

@@ -87,6 +87,59 @@ function heldRoomTurn(say: string | null, finishRequested: FinishRequested): Sce
  */
 export function roomReplyScenarios(finishRequested: FinishRequested): Record<string, ScenarioFn> {
   return {
+    // Puts one document on the room's shared canvas and says so, through the
+    // same `ui_command` path a real runtime produces one on (spec
+    // `room-canvas`). It needs no room id and no token: the room turn's own
+    // collector applies every UNSTAMPED `ui_command` it sees, which is exactly
+    // what makes a deterministic, credential-free end-to-end test of the canvas
+    // possible at all.
+    // Answers with what the ROOM told it is on the canvas — the one channel a
+    // canvas change reaches another member by (spec `room-canvas` §6.1). It
+    // reads the same `room_context` bag every runtime is handed, so "the next
+    // turn is told" becomes something a browser or a curl can see rather than
+    // something only a unit test can.
+    'rooms-report-canvas': async function* (_content, _ctx, opts) {
+      const room = (opts?.additionalContext ?? []).find((entry) => entry.kind === 'room_context');
+      const titles =
+        room?.kind === 'room_context'
+          ? (room.data.canvas?.documents ?? []).map((document) => document.title)
+          : [];
+      yield {
+        type: 'session_status',
+        data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
+      } as StreamEvent;
+      yield {
+        type: 'text_delta',
+        data: {
+          text:
+            titles.length === 0
+              ? 'CANVAS-IN-MY-CONTEXT: nothing'
+              : `CANVAS-IN-MY-CONTEXT: ${titles.join(' | ')}`,
+        },
+      } as StreamEvent;
+      yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
+    },
+    'rooms-open-canvas': async function* () {
+      yield {
+        type: 'session_status',
+        data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
+      } as StreamEvent;
+      yield {
+        type: 'ui_command',
+        data: {
+          command: {
+            action: 'open_canvas',
+            content: {
+              type: 'markdown',
+              title: 'The plan',
+              content: '# The plan\n\nOne: measure. Two: decide.',
+            },
+          },
+        },
+      } as StreamEvent;
+      yield { type: 'text_delta', data: { text: 'Put the plan on the canvas.' } } as StreamEvent;
+      yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
+    },
     // Holds, then narrates. With the flip on, this text is the thing that must
     // NOT appear in the room; with it off, it is the answer.
     'rooms-hold-then-narrate': heldRoomTurn(

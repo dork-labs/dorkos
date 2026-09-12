@@ -9,7 +9,12 @@
  *
  * @module server/services/rooms/messages/room-reads
  */
-import type { RoomEntry, RoomEntryListResponse, RoomWithRoster } from '@dorkos/shared/room-schemas';
+import type {
+  CanvasDocument,
+  RoomEntry,
+  RoomEntryListResponse,
+  RoomWithRoster,
+} from '@dorkos/shared/room-schemas';
 import type { RoomExportLine } from '@dorkos/shared/room-export-schemas';
 import { SERVER_VERSION } from '../../../lib/version.js';
 import type { AuthorRegistry } from '../author-registry.js';
@@ -19,6 +24,7 @@ import type { RoomProjection } from '../service/room-projection.js';
 import type { RoomRoster } from '../room-roster.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomVisibility } from '../service/room-visibility.js';
+import type { RoomCanvasService } from '../canvas/room-canvas-service.js';
 
 /**
  * The most entries either history tool will return in one page
@@ -54,7 +60,13 @@ export class RoomReads {
   constructor(
     core: RoomCore,
     private readonly visibility: RoomVisibility,
-    private readonly projection: RoomProjection
+    private readonly projection: RoomProjection,
+    /**
+     * The room's shared canvas, for the one read that carries it: the snapshot a
+     * cold stream connect opens with. Handed in rather than reached for, so this
+     * module still owns no rule about the table it is reporting.
+     */
+    private readonly canvas: RoomCanvasService
   ) {
     this.store = core.store;
     this.authors = core.authors;
@@ -275,7 +287,7 @@ export class RoomReads {
     roomId: string,
     viewerAuthorId: string,
     historyLimit: number
-  ): { room: RoomWithRoster; entries: RoomEntry[]; cursor: number } {
+  ): { room: RoomWithRoster; entries: RoomEntry[]; cursor: number; canvas: CanvasDocument[] } {
     const room = this.visibility.requireVisibleRoom(roomId, viewerAuthorId);
     const entries = this.projection.withRollups(
       roomId,
@@ -285,6 +297,10 @@ export class RoomReads {
       room: this.projection.withRoster(room, viewerAuthorId),
       entries,
       cursor: entries.length > 0 ? entries[entries.length - 1].seq : 0,
+      // The room's shared canvas, whole, in the SAME frame — so a cold connect
+      // draws the table on its first paint rather than waiting for the next
+      // change. It is state, not history, so it does not touch the cursor.
+      canvas: this.canvas.list(roomId),
     };
   }
 

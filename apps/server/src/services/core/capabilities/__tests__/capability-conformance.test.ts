@@ -570,6 +570,12 @@ capabilityConformance(registry, {
     'rooms.remove_members': { roomId: CONFORMANCE_ROOM_ID, members: ['@conformance'] },
     'rooms.update': { roomId: CONFORMANCE_ROOM_ID, topic: 'what this room is for' },
     'rooms.leave': { roomId: CONFORMANCE_ROOM_ID },
+    // The canvas read (DOR-1999), against the same harness room. With no
+    // `documentId` it LISTS what is on the table, which is the arm that needs no
+    // document to exist — so the verb really runs and answers `{ documents: [] }`
+    // rather than a structured refusal that would read as "wired" without ever
+    // reaching the service.
+    'rooms.read_canvas': { roomId: CONFORMANCE_ROOM_ID },
   },
 });
 

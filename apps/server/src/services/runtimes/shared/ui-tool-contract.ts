@@ -221,10 +221,16 @@ const UI_ACTION_CATALOG: Record<UiCommand['action'], UiActionEntry> = {
       'Put something on the canvas and reveal the pane. Leave content out to reveal the pane without changing what is on it.',
   },
   update_canvas: {
-    args: '{ content: <canvas> }',
-    sentence: 'Replace what the canvas is showing right now.',
+    args: '{ content: <canvas>, documentId?: string }',
+    sentence:
+      'Replace what a canvas document is showing. In a session, omitting documentId acts on ' +
+      'the active document; in a ROOM there is no shared active document, so omitting it means ' +
+      '"the last document YOU opened there" and passing one acts on somebody else’s.',
   },
-  close_canvas: { args: '', sentence: 'Close the canvas pane.' },
+  close_canvas: {
+    args: '{ documentId?: string }',
+    sentence: 'Close a canvas document. Same targeting rule as update_canvas.',
+  },
   open_pip: {
     args: '{ title?: string }',
     sentence:
@@ -385,6 +391,13 @@ Notes:
  * in-process tool and the Codex scoped `dorkos_ui` MCP server so each exposes an
  * identical tool contract without duplicating the schema.
  *
+ * **It is the whole advertised surface, not a hint.** The SDK builds the tool's
+ * JSON Schema from exactly these keys and validates a call against it, so a
+ * field that is missing HERE is a field the MCP layer strips before any handler
+ * runs — the argument arrives, the tool succeeds, and the value is simply gone.
+ * Adding a member to `UiCommandSchema` therefore means adding it here too, or
+ * the union grows a field nothing can ever send.
+ *
  * The `content` hint is generated from the same catalog the description is, so
  * the two can never name different sets of content types — they did, at 6 and 6
  * against a schema of 14, until the catalog replaced both lists.
@@ -407,6 +420,16 @@ export const CONTROL_UI_INPUT = {
     .describe(
       'Canvas content for open_canvas/update_canvas. EXACTLY ONE of:\n' +
         buildCanvasContentCatalog({ indent: '  ', sentences: false })
+    ),
+  documentId: z
+    .string()
+    .optional()
+    .describe(
+      'Which canvas document update_canvas / close_canvas should act on. In a one-on-one ' +
+        'session, omit it to act on the active document (today’s behaviour). In a ROOM there is ' +
+        'no shared active document, so omitting it means "the last document YOU opened in this ' +
+        'room" — pass one to act on a document somebody else put there. Every verb that opens ' +
+        'something gives you back the id to pass.'
     ),
   sourcePath: z
     .string()

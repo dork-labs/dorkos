@@ -124,6 +124,7 @@ describe('UserConfigSchema', () => {
         responseGate: 'routing',
         toolOnlyReplies: false,
         maxPostsPerTurn: 3,
+        maxCanvasOpsPerTurn: 3,
         repo: {
           enabled: true,
           worktreeReapDays: 14,
@@ -517,6 +518,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         responseGate: 'routing',
         toolOnlyReplies: false,
         maxPostsPerTurn: 3,
+        maxCanvasOpsPerTurn: 3,
         repo: {
           enabled: true,
           worktreeReapDays: 14,
