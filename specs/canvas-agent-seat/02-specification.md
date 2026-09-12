@@ -1995,7 +1995,7 @@ reach `/api/*`, asserted by a test that tries.
 - `apps/server/src/config/constants.ts` — the five recording bounds, `RECORDING_STOP_TIMEOUT_MS`
   included
 - `apps/client/package.json` — `gifenc`
-- `mcp-tool-gate.test.ts` (+2 reasons), `tool-exposure.test.ts` (99→101, 90→92)
+- `tool-exposure.test.ts` (99→101, 90→92); `mcp-tool-gate.test.ts` is NOT edited — driving verbs are not on `DORKOS_AGENT_TOOLS`, so `AUTO_ALLOW_ACT_REASONS` keeps its 22 entries (§2.5)
 - `docs/guides/workbench.mdx`, `docs/concepts/rooms.mdx`; a changelog fragment
 
 **Acceptance:** a recorded run of four actions produces a GIF whose bytes parse as a GIF with six
