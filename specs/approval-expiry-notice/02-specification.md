@@ -222,6 +222,26 @@ still needed.
 The sweep starts beside the existing approval boot blocks (`:2244-2264`) and is torn down with the other
 intervals.
 
+## Found during implementation: the hold had to learn the third ending too
+
+Adversarial review of the implementation turned up a case this spec had reasoned past. It is recorded
+here rather than quietly fixed, because the spec's own claim — that the notice "rides the DOR-1931 seam"
+— is only true for a session that is NOT currently holding.
+
+A hold takes the single-delivery claim when it starts waiting, so whenever one is waiting the out-of-band
+deliverer loses the race and drops the notice. That is deliberate, and for a grant or a denial it is
+correct: the hold delivers the answer as the tool call's own return value. For an expiry it was not. The
+hold returned the original `approval_required` payload, which by then pointed at a card that had been
+filtered out of `listPending` and a token the sweep had just written off.
+
+That overlap is not exotic: it is every decision window shorter than the ten-minute hold cap, which is
+exactly what `DORKOS_APPROVAL_TTL_MS` exists to configure, and the repo's governance eval sets it to five
+seconds.
+
+So both hold sites return a distinct `approval_no_longer_valid` payload on `expired` — no token, no retry
+block — and keep the delivery claim, having reported the ending themselves. `timeout` is untouched: the
+cap running out is not the window closing, and there the poll payload is still true in every word.
+
 ## What this deliberately does not do
 
 - **It does not guarantee delivery across a restart mid-delivery.** If the process dies between the claim

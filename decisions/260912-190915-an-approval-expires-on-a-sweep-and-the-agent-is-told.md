@@ -64,6 +64,25 @@ timeout.
 delivery receipt off an expiry notice that was correctly delivered — the boot sweep's own documented
 invariant, that a claim on a pending row can only belong to a live hold, is made false by this feature.
 
+**And a held call reports the expiry itself, rather than replaying the poll payload.** This one was found
+by adversarial review of the implementation rather than at sizing, and it is a decision rather than a
+patch, so it belongs here. A hold takes the single-delivery claim when it STARTS waiting, which means the
+out-of-band deliverer necessarily loses that race and drops the notice — by design, because "a hold that
+is waiting WILL deliver, through its own return value". For a grant and a denial it did. For an expiry it
+did not: it returned the original `approval_required` payload, which by then advertised a token the sweep
+had just written off and a card `listPending` had already filtered away. So the one configuration where a
+live hold and the sweep overlap — any window shorter than the ten-minute hold cap, which is every window
+`DORKOS_APPROVAL_TTL_MS` exists to set, and the governance eval sets five seconds — was the configuration
+where the agent was actively misled rather than merely uninformed.
+
+Both hold sites therefore return a distinct `approval_no_longer_valid` payload for that ending, carrying
+no token and no retry block because there are none, and the hold KEEPS its delivery claim, since it
+reported the ending itself. `timeout` keeps the old behaviour unchanged: there the CAP ran out rather than
+the window, so every word of the poll payload is still true. The wording covers "spent elsewhere" as well
+as "expired", because `awaitDecision` folds `consumed` into `expired` and naming only expiry would be a
+guess that is wrong half the time — what is true in both cases, and all the agent must act on, is that the
+request is finished and its token is dead.
+
 ## Alternatives considered
 
 - **A timer per approval.** Promptest, and it dies on restart — which immediately owes a re-arming pass
@@ -97,5 +116,9 @@ invariant, that a claim on a pending row can only belong to a live hold, is made
   rather than on its own strength.
 - One more periodic interval in a server that has no scheduler to register it with, so it is another bare
   `setInterval` to own and tear down.
+- A fourth payload shape on the held-call path (`approval_no_longer_valid` beside `approval_required`, the
+  refusal, and the real result). A held destructive call now has four things it can hand back, and an
+  agent-facing contract is the kind of surface where a fourth shape is a real cost rather than a tidy
+  enumeration.
 - Worst-case lateness of one sweep interval between the deadline and the event. Nothing waits on that
   precision today, but a future consumer that needs exact timing would not get it here.
