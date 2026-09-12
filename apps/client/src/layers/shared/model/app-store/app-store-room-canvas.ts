@@ -73,6 +73,18 @@ export interface RoomCanvasSlice {
    * lock heartbeat is about, and the one thing no arrival may move them off.
    */
   roomCanvasEditing: Readonly<Record<string, string | null>>;
+  /**
+   * The room whose table is live in this browser right now, or null off a room
+   * route.
+   *
+   * Written by the room stream, which is the one thing that knows — it is opened
+   * for exactly the room on screen and closed when that screen goes away. The
+   * right panel's tab strip reads it to decide whose unread dot to draw, and
+   * reads it from HERE rather than resolving the route itself: the strip renders
+   * in the embed and in tests with no transport and no router behind it, and a
+   * tab that resolved a room would take both of those down with it.
+   */
+  roomCanvasLiveRoomId: string | null;
 
   /**
    * A subscription cycle is starting: forget this room's table, because what is
@@ -134,6 +146,13 @@ export interface RoomCanvasSlice {
    * @param documentId - The document being edited, or null when the edit ended.
    */
   setRoomCanvasEditing: (roomId: string, documentId: string | null) => void;
+
+  /**
+   * Say which room's table is live in this browser, or that none is.
+   *
+   * @param roomId - The room on screen, or null when the reader has left one.
+   */
+  setRoomCanvasLiveRoom: (roomId: string | null) => void;
 }
 
 /** The documents of one room's table that belong to one view, pinned first. */
@@ -226,6 +245,7 @@ export const createRoomCanvasSlice: StateCreator<
   roomCanvasActive: {},
   roomCanvasUnread: {},
   roomCanvasEditing: {},
+  roomCanvasLiveRoomId: null,
 
   beginRoomCanvasCycle: (roomId) =>
     set((s) => {
@@ -330,4 +350,7 @@ export const createRoomCanvasSlice: StateCreator<
       if ((s.roomCanvasEditing[roomId] ?? null) === documentId) return {};
       return { roomCanvasEditing: { ...s.roomCanvasEditing, [roomId]: documentId } };
     }),
+
+  setRoomCanvasLiveRoom: (roomId) =>
+    set((s) => (s.roomCanvasLiveRoomId === roomId ? {} : { roomCanvasLiveRoomId: roomId })),
 });

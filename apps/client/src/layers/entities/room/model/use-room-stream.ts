@@ -325,6 +325,14 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
     };
   }, [roomId, wake]);
 
+  // Which room's table is live in this browser — the one fact the right panel's
+  // tab strip needs and cannot work out for itself (it draws in the embed and in
+  // tests with neither router nor transport behind it).
+  useEffect(() => {
+    useAppStore.getState().setRoomCanvasLiveRoom(roomId);
+    return () => useAppStore.getState().setRoomCanvasLiveRoom(null);
+  }, [roomId]);
+
   useEffect(() => {
     if (roomId === null || !hydrated) return;
 
