@@ -330,7 +330,8 @@ export class DevtoolsCaptureStore {
     // or loses its network sends no release, and a seat nobody is sitting in
     // would make every verb address a client that no longer answers and wait out
     // its whole timeout — for the life of the session. A live window re-reports
-    // every `DEVTOOLS_SEAT_REFRESH_MS`, so a row this old has missed three.
+    // every `DEVTOOLS_SEAT_REFRESH_MS`, so a row this old has missed six; the
+    // constant says why six rather than three.
     const floor = Date.now() - WORKBENCH.DEVTOOLS_SEAT_STALE_MS;
     for (let i = claims.length - 1; i >= 0; i--) {
       const claim = claims[i];

@@ -79,7 +79,8 @@ const FLUSH_DEBOUNCE_MS = 300;
  * Matches the server's `WORKBENCH.DEVTOOLS_SEAT_REFRESH_MS`, which is itself the
  * session stream's heartbeat cadence — the interval this app has already decided
  * is often enough to notice a window that went away. The server yields a seat
- * that has missed three of these.
+ * that has missed six of these, which is deliberately more than a hidden tab's
+ * throttled one-wake-per-minute can miss; the server constant says why.
  */
 const SEAT_REFRESH_MS = 15_000;
 
@@ -254,7 +255,13 @@ export function useDevtoolsBridge({
    * two fire-and-forget POSTs is load-bearing.
    */
   const claimChain = useRef<Promise<void>>(Promise.resolve());
-  /** Post one claim or release. Set by the claim effect; unset before it runs. */
+  /**
+   * Post one claim or release for the CURRENT session.
+   *
+   * Set by the claim effect and nulled when that effect tears down, so a `hello`
+   * arriving after the session changed cannot re-claim a seat under the id the
+   * old closure captured. `null` means "there is no session to claim for".
+   */
   const claimSeat = useRef<((active: boolean, keepalive?: boolean) => void) | null>(null);
 
   useEffect(() => {
@@ -485,19 +492,39 @@ export function useDevtoolsBridge({
     // Re-report on a beat, because a window that is killed, suspended or loses
     // its network never sends a release — and a seat nobody is sitting in makes
     // every verb address a window that no longer answers. The server yields a
-    // seat that has missed three of these.
+    // seat that has missed six of these.
     const refresh = setInterval(() => claim(true), SEAT_REFRESH_MS);
     // The one release a vanishing window CAN still send. `keepalive` is what
     // makes it survive the unload; it is best effort, and the staleness rule
     // above is what makes it not have to work.
     const onPageHide = (): void => claimSeat.current?.(false, true);
+    // And the two moments a window comes BACK, where the beat alone is not
+    // enough. A tab hidden for more than five minutes has its timers aligned to
+    // one wake per minute (Chrome), and a tab restored from the back/forward
+    // cache ran no timers at all while it was away — so in both cases the beat
+    // that should have reported is late or never happened, and the seat may
+    // already have yielded. Re-reporting the instant the page is visible again
+    // is what takes it straight back.
+    const onVisible = (): void => {
+      if (document.visibilityState === 'visible') claim(true);
+    };
+    const onPageShow = (): void => claim(true);
     window.addEventListener('focus', onFocus);
     window.addEventListener('pagehide', onPageHide);
+    window.addEventListener('pageshow', onPageShow);
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       window.removeEventListener('focus', onFocus);
       window.removeEventListener('pagehide', onPageHide);
+      window.removeEventListener('pageshow', onPageShow);
+      document.removeEventListener('visibilitychange', onVisible);
       clearInterval(refresh);
       claim(false);
+      // Unset LAST, so the release above still goes out. A late `hello` from a
+      // frame that outlives this effect — the session changed while the preview
+      // stayed mounted — would otherwise re-claim the seat under the session id
+      // this closure captured, which is no longer the one on screen.
+      claimSeat.current = null;
     };
   }, [transport, sessionId, documentId, logicalUrl]);
 

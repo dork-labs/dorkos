@@ -8,6 +8,7 @@ covers:
   - 'refactor(session): one no-preview sentence, and a barrel that names its callers'
   - 'fix(workbench): never submit a form the page told the browser not to'
   - 'fix(session): a seat nobody is sitting in yields, and cannot be taken by nobody'
+  - 'fix(session): a tab behind another tab keeps its seat'
 ---
 
 ### Added

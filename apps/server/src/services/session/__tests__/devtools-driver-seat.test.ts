@@ -142,10 +142,12 @@ describe('one session, two windows, one driver seat', () => {
       // A second window claims, then keeps reporting while the first goes quiet.
       vi.setSystemTime(new Date('2026-09-12T00:00:05Z'));
       store.ingest('s1', claim('doc-b', true), 'window-b');
-      vi.setSystemTime(new Date('2026-09-12T00:00:50Z'));
+      vi.setSystemTime(new Date('2026-09-12T00:01:40Z'));
       store.ingest('s1', claim('doc-b', true), 'window-b');
 
-      // `window-a` is 50s stale — past three missed 15s refreshes.
+      // `window-a` is 100s stale — past six missed 15s refreshes, which is the
+      // floor chosen so a tab hidden behind another (one timer wake per minute)
+      // cannot lose a seat it is still holding.
       expect(store.resolveDriver('s1')).toMatchObject({ clientId: 'window-b' });
       expect(store.resolveDriver('s1', 'doc-a')).toBeUndefined();
     } finally {
@@ -160,7 +162,12 @@ describe('one session, two windows, one driver seat', () => {
       store.ingest('s1', claim('doc-a', true), 'window-a');
       expect(store.hasDrivers('s1')).toBe(true);
 
+      // A minute in, a hidden tab's slowest possible beat has not been missed
+      // six times over, so the seat is still its own.
       vi.setSystemTime(new Date('2026-09-12T00:01:00Z'));
+      expect(store.resolveDriver('s1')).toMatchObject({ clientId: 'window-a' });
+
+      vi.setSystemTime(new Date('2026-09-12T00:02:00Z'));
       expect(store.resolveDriver('s1')).toBeUndefined();
       // And `hasDrivers` agrees, so the tool says "nothing is open" rather than
       // "no window has THAT page" — two different things to do next.

@@ -742,6 +742,91 @@ describe('useDevtoolsBridge — the driver seat (spec `canvas-agent-seat` §2.2)
     for (const [, batch] of claimCalls()) expect(batch.active).toBe(true);
   });
 
+  it('re-reports the moment the tab becomes visible again', async () => {
+    // A tab hidden for more than five minutes has its timers aligned to one wake
+    // per minute (Chrome), so the 15s beat that should have reported is late and
+    // the seat may already have yielded. Coming back has to take it straight
+    // back rather than waiting for the next beat.
+    //
+    // The THROTTLING itself is not reproducible here, and not in Playwright
+    // either — the browser is launched with `--disable-background-timer-throttling`,
+    // which is what makes the rest of the suite deterministic. What is asserted
+    // is the half this code owns: the event fires, the claim goes out.
+    await mountAndSettle();
+    ingestDevtoolsCapture.mockClear();
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => 'visible',
+    });
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(claimCalls()).toHaveLength(1);
+    expect(claimCalls()[0][1]).toMatchObject({ active: true });
+  });
+
+  it('does not re-report when the tab is going AWAY, only when it comes back', async () => {
+    await mountAndSettle();
+    ingestDevtoolsCapture.mockClear();
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => 'hidden',
+    });
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Hiding a tab is not closing it: the preview is still there, and claiming
+    // on the way out would be a claim about nothing while `pagehide` already
+    // covers the real departure.
+    expect(claimCalls()).toHaveLength(0);
+  });
+
+  it('re-reports when the page is restored from the back/forward cache', async () => {
+    // A restored page ran no timers at all while it was away, so the beat did
+    // not merely run late — it never happened.
+    await mountAndSettle();
+    ingestDevtoolsCapture.mockClear();
+    window.dispatchEvent(new Event('pageshow'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(claimCalls()).toHaveLength(1);
+    expect(claimCalls()[0][1]).toMatchObject({ active: true });
+  });
+
+  it('stops claiming for a session it is no longer attached to', async () => {
+    // The frame OUTLIVES the conversation: the session goes away while the
+    // preview stays mounted, so the claim effect tears down and the message
+    // listener — keyed on the transport and the ref, not the session — does not.
+    // A `hello` arriving after that must not re-claim a seat under the id the
+    // torn-down closure captured, because that is not the session on screen.
+    //
+    // Unmounting instead would prove nothing: it takes the listener with it, so
+    // the `hello` would reach nothing whether or not the claim was nulled.
+    const { rerender } = renderHook(() => {
+      const ref = useRef<HTMLIFrameElement | null>(iframe) as RefObject<HTMLIFrameElement | null>;
+      useDevtoolsBridge({
+        iframeRef: ref,
+        documentId: 'doc',
+        logicalUrl: 'preview.html',
+        reloadNonce: 0,
+        previewOrigin: null,
+      });
+      return ref;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(claimCalls()).toHaveLength(1);
+
+    detachSession();
+    rerender();
+    await vi.advanceTimersByTimeAsync(0);
+    ingestDevtoolsCapture.mockClear();
+
+    postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(claimCalls()).toHaveLength(0);
+  });
+
   it('holds a release until the claim before it has actually gone out', async () => {
     // Two fire-and-forget POSTs can arrive either way round. On an in-preview
     // navigation the pair is a release then a claim, and arriving swapped the

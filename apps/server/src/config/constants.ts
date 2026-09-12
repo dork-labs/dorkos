@@ -159,17 +159,22 @@ export const WORKBENCH = {
   /**
    * How long a seat outlives its window's last word before it yields.
    *
-   * Three missed refreshes on the beat above. A browser that is killed, loses
-   * its network, or is suspended by the operating system never sends the
-   * `pagehide` release, and without this the seat would stay in the table
-   * forever: every driving verb would address a window that no longer exists
-   * and wait out its whole timeout, for the life of the session.
+   * A browser that is killed, loses its network, or is suspended by the
+   * operating system never sends the `pagehide` release, and without a floor the
+   * seat would stay in the table forever: every driving verb would address a
+   * window that no longer exists and wait out its whole timeout, for the life of
+   * the session.
    *
-   * Three rather than one because a single missed beat is an ordinary hiccup on
-   * a busy machine, and yielding the seat on one would hand it to a background
-   * window while the person watches the foreground one.
+   * **Ninety seconds, and the number is set by Chrome rather than by taste.** A
+   * page hidden for more than five minutes has its timers aligned to ONE wake
+   * per minute, so a window that is open, healthy and simply behind another tab
+   * cannot beat any floor at or below 60 s however often it asks to. At 45 s a
+   * single hidden window lost its seat and every verb answered "bring the window
+   * with the preview to the front" — about a window that was open the whole
+   * time. Ninety seconds is six beats of the refresh above, and clears the
+   * one-minute alignment with room for the wake to be late.
    */
-  DEVTOOLS_SEAT_STALE_MS: 45_000,
+  DEVTOOLS_SEAT_STALE_MS: 90_000,
 } as const;
 
 export const WATCHER = {
