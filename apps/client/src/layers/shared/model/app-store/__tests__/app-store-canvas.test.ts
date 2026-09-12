@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { UiCanvasContent } from '@dorkos/shared/types';
-import { MAX_CANVAS_DOCUMENTS } from '@/layers/shared/lib/constants';
+import { MAX_CANVAS_DOCUMENTS, STORAGE_KEYS } from '@/layers/shared/lib/constants';
 import { useAppStore } from '../app-store';
 
 /** Reset the canvas slice to an empty, session-bound state before each test. */
@@ -12,7 +12,8 @@ function resetCanvas(sessionId: string | null = 'sess-1') {
   useAppStore.setState({
     canvasOpen: false,
     openDocuments: [],
-    activeDocumentId: null,
+    activeCanvasDocumentId: null,
+    activeBrowserDocumentId: null,
     canvasSessionId: sessionId,
   });
 }
@@ -27,10 +28,10 @@ describe('CanvasSlice — multi-document reducer', () => {
     openCanvasDocument(fileDoc('a.ts'));
     openCanvasDocument(fileDoc('b.ts'));
 
-    const { openDocuments, activeDocumentId } = useAppStore.getState();
+    const { openDocuments, activeCanvasDocumentId } = useAppStore.getState();
     expect(openDocuments).toHaveLength(2);
     // The most-recently opened document is active.
-    expect(openDocuments[1].id).toBe(activeDocumentId);
+    expect(openDocuments[1].id).toBe(activeCanvasDocumentId);
     expect(openDocuments.map((d) => (d.content as { sourcePath: string }).sourcePath)).toEqual([
       'a.ts',
       'b.ts',
@@ -43,12 +44,15 @@ describe('CanvasSlice — multi-document reducer', () => {
     openCanvasDocument(fileDoc('b.ts'));
     openCanvasDocument(fileDoc('a.ts'));
 
-    const { openDocuments, activeDocumentId } = useAppStore.getState();
+    const { openDocuments, activeCanvasDocumentId } = useAppStore.getState();
     expect(openDocuments).toHaveLength(2);
     // The existing 'a.ts' document is re-activated, not appended.
     expect(
-      (openDocuments.find((d) => d.id === activeDocumentId)!.content as { sourcePath: string })
-        .sourcePath
+      (
+        openDocuments.find((d) => d.id === activeCanvasDocumentId)!.content as {
+          sourcePath: string;
+        }
+      ).sourcePath
     ).toBe('a.ts');
   });
 
@@ -58,10 +62,10 @@ describe('CanvasSlice — multi-document reducer', () => {
     openCanvasDocument(diffDoc('src/App.tsx'));
     openCanvasDocument(diffDoc('src/App.tsx'));
 
-    const { openDocuments, activeDocumentId } = useAppStore.getState();
+    const { openDocuments, activeCanvasDocumentId } = useAppStore.getState();
     // A second edit to the same file refreshes the existing diff, no new tab.
     expect(openDocuments.filter((d) => d.content.type === 'diff')).toHaveLength(1);
-    expect(openDocuments.find((d) => d.id === activeDocumentId)!.sourceLabel).toBe('App.tsx');
+    expect(openDocuments.find((d) => d.id === activeCanvasDocumentId)!.sourceLabel).toBe('App.tsx');
   });
 
   it('keeps a file document and its diff document separate (distinct source keys)', () => {
@@ -106,7 +110,7 @@ describe('CanvasSlice — multi-document reducer', () => {
 
     const active = useAppStore
       .getState()
-      .openDocuments.find((d) => d.id === useAppStore.getState().activeDocumentId)!;
+      .openDocuments.find((d) => d.id === useAppStore.getState().activeCanvasDocumentId)!;
     expect((active.content as { content: string }).content).toBe('v2');
   });
 
@@ -115,9 +119,9 @@ describe('CanvasSlice — multi-document reducer', () => {
       useAppStore.getState();
 
     openCanvasDocument({ type: 'markdown', content: 'A1' });
-    const docA = useAppStore.getState().activeDocumentId!;
+    const docA = useAppStore.getState().activeCanvasDocumentId!;
     openCanvasDocument({ type: 'markdown', content: 'B1' });
-    const docB = useAppStore.getState().activeDocumentId!;
+    const docB = useAppStore.getState().activeCanvasDocumentId!;
 
     // Edit doc B; an agent push to B is ignored.
     setDocumentEditing(docB, true);
@@ -146,7 +150,7 @@ describe('CanvasSlice — multi-document reducer', () => {
   it('a held push survives, then Reload applies it and Keep mine discards it (ADR-0292)', () => {
     const { openCanvasDocument, setDocumentEditing, updateActiveDocument } = useAppStore.getState();
     openCanvasDocument({ type: 'markdown', content: 'mine' });
-    const doc = useAppStore.getState().activeDocumentId!;
+    const doc = useAppStore.getState().activeCanvasDocumentId!;
     setDocumentEditing(doc, true);
 
     const read = () => useAppStore.getState().openDocuments.find((d) => d.id === doc)!;
@@ -174,7 +178,7 @@ describe('CanvasSlice — multi-document reducer', () => {
   it('drops a stale hold once a newer push lands on a document nobody is editing', () => {
     const { openCanvasDocument, setDocumentEditing, updateActiveDocument } = useAppStore.getState();
     openCanvasDocument({ type: 'markdown', content: 'v1' });
-    const doc = useAppStore.getState().activeDocumentId!;
+    const doc = useAppStore.getState().activeCanvasDocumentId!;
     const read = () => useAppStore.getState().openDocuments.find((d) => d.id === doc)!;
 
     setDocumentEditing(doc, true);
@@ -199,7 +203,7 @@ describe('CanvasSlice — multi-document reducer', () => {
       ({ type: 'markdown', content: n, sourcePath: 'notes.md' }) as UiCanvasContent;
 
     openCanvasDocument(version('v1'));
-    const doc = useAppStore.getState().activeDocumentId!;
+    const doc = useAppStore.getState().activeCanvasDocumentId!;
     const read = () => useAppStore.getState().openDocuments.find((d) => d.id === doc)!;
 
     setDocumentEditing(doc, true);
@@ -220,7 +224,7 @@ describe('CanvasSlice — multi-document reducer', () => {
   it('holds an open_canvas that re-opens a document being edited', () => {
     const { openCanvasDocument, setDocumentEditing } = useAppStore.getState();
     openCanvasDocument({ type: 'markdown', content: 'mine', sourcePath: 'notes.md' });
-    const doc = useAppStore.getState().activeDocumentId!;
+    const doc = useAppStore.getState().activeCanvasDocumentId!;
     setDocumentEditing(doc, true);
 
     // Same source key, so this re-opens the SAME document rather than adding one.
@@ -240,9 +244,9 @@ describe('CanvasSlice — multi-document reducer', () => {
     const { openCanvasDocument, setDocumentEditing, activateCanvasDocument } =
       useAppStore.getState();
     openCanvasDocument({ type: 'markdown', content: 'A1' });
-    const docA = useAppStore.getState().activeDocumentId!;
+    const docA = useAppStore.getState().activeCanvasDocumentId!;
     openCanvasDocument({ type: 'markdown', content: 'B1' });
-    const docB = useAppStore.getState().activeDocumentId!;
+    const docB = useAppStore.getState().activeCanvasDocumentId!;
 
     // Edit B, then switch to A (B is no longer active) — simulating B's editor
     // unmounting on tab switch and clearing its own flag by id.
@@ -254,36 +258,36 @@ describe('CanvasSlice — multi-document reducer', () => {
     expect(b.editing).toBe(false);
   });
 
-  it('setActiveDocumentContent writes unconditionally (the editor is the sole writer)', () => {
-    const { openCanvasDocument, setDocumentEditing, setActiveDocumentContent } =
-      useAppStore.getState();
+  it('setDocumentContent writes unconditionally (the editor is the sole writer)', () => {
+    const { openCanvasDocument, setDocumentEditing, setDocumentContent } = useAppStore.getState();
     openCanvasDocument({ type: 'markdown', content: 'v1' });
-    setDocumentEditing(useAppStore.getState().activeDocumentId!, true);
+    const id = useAppStore.getState().activeCanvasDocumentId!;
+    setDocumentEditing(id, true);
     // Even while editing, the editor's own write lands.
-    setActiveDocumentContent({ type: 'markdown', content: 'edited' });
+    setDocumentContent(id, { type: 'markdown', content: 'edited' });
     const active = useAppStore
       .getState()
-      .openDocuments.find((d) => d.id === useAppStore.getState().activeDocumentId)!;
+      .openDocuments.find((d) => d.id === useAppStore.getState().activeCanvasDocumentId)!;
     expect((active.content as { content: string }).content).toBe('edited');
   });
 
   it('closeCanvasDocument removes the doc and activates a remaining one', () => {
     const { openCanvasDocument, closeCanvasDocument } = useAppStore.getState();
     openCanvasDocument(fileDoc('a.ts'));
-    const docA = useAppStore.getState().activeDocumentId!;
+    const docA = useAppStore.getState().activeCanvasDocumentId!;
     openCanvasDocument(fileDoc('b.ts'));
-    const docB = useAppStore.getState().activeDocumentId!;
+    const docB = useAppStore.getState().activeCanvasDocumentId!;
 
     closeCanvasDocument(docB);
-    const { openDocuments, activeDocumentId } = useAppStore.getState();
+    const { openDocuments, activeCanvasDocumentId } = useAppStore.getState();
     expect(openDocuments).toHaveLength(1);
-    expect(activeDocumentId).toBe(docA);
+    expect(activeCanvasDocumentId).toBe(docA);
   });
 
   it('loadCanvasForSession clears edit mode so a new session never inherits it', () => {
     const { openCanvasDocument, setDocumentEditing } = useAppStore.getState();
     openCanvasDocument({ type: 'markdown', content: 'v1' });
-    setDocumentEditing(useAppStore.getState().activeDocumentId!, true);
+    setDocumentEditing(useAppStore.getState().activeCanvasDocumentId!, true);
 
     useAppStore.getState().loadCanvasForSession('sess-2');
     const docs = useAppStore.getState().openDocuments;
@@ -313,7 +317,7 @@ describe('CanvasSlice — per-document browser history (DOR-252)', () => {
   it('writeBrowserHistory round-trips an entry for an open document', () => {
     const { openCanvasDocument, writeBrowserHistory } = useAppStore.getState();
     openCanvasDocument(browserDoc('https://a.test/'));
-    const id = useAppStore.getState().activeDocumentId!;
+    const id = useAppStore.getState().activeBrowserDocumentId!;
 
     writeBrowserHistory(id, {
       contentUrl: 'https://a.test/',
@@ -342,9 +346,9 @@ describe('CanvasSlice — per-document browser history (DOR-252)', () => {
   it('closeCanvasDocument prunes the closed document’s history', () => {
     const { openCanvasDocument, writeBrowserHistory, closeCanvasDocument } = useAppStore.getState();
     openCanvasDocument(browserDoc('https://a.test/'));
-    const docA = useAppStore.getState().activeDocumentId!;
+    const docA = useAppStore.getState().activeBrowserDocumentId!;
     openCanvasDocument(browserDoc('https://b.test/'));
-    const docB = useAppStore.getState().activeDocumentId!;
+    const docB = useAppStore.getState().activeBrowserDocumentId!;
 
     writeBrowserHistory(docA, {
       contentUrl: 'https://a.test/',
@@ -367,12 +371,15 @@ describe('CanvasSlice — per-document browser history (DOR-252)', () => {
     const { openCanvasDocument, writeBrowserHistory } = useAppStore.getState();
     // Open the first browser doc and record history for it.
     openCanvasDocument(browserDoc('https://first.test/'));
-    const first = useAppStore.getState().activeDocumentId!;
+    const first = useAppStore.getState().activeBrowserDocumentId!;
     writeBrowserHistory(first, {
       contentUrl: 'https://first.test/',
       stack: ['https://first.test/'],
       cursor: 0,
     });
+    // A second page, so the first is no longer the one the Browser view is
+    // showing — a view's own document is never evicted (see the cap test below).
+    openCanvasDocument(browserDoc('https://second.test/'));
 
     // Open enough more documents to push the first past the cap and evict it.
     for (let i = 0; i < MAX_CANVAS_DOCUMENTS; i++) {
@@ -387,7 +394,7 @@ describe('CanvasSlice — per-document browser history (DOR-252)', () => {
   it('loadCanvasForSession clears browser histories (in-memory, per-session scope)', () => {
     const { openCanvasDocument, writeBrowserHistory } = useAppStore.getState();
     openCanvasDocument(browserDoc('https://a.test/'));
-    const id = useAppStore.getState().activeDocumentId!;
+    const id = useAppStore.getState().activeBrowserDocumentId!;
     writeBrowserHistory(id, {
       contentUrl: 'https://a.test/',
       stack: ['https://a.test/'],
@@ -397,5 +404,166 @@ describe('CanvasSlice — per-document browser history (DOR-252)', () => {
 
     useAppStore.getState().loadCanvasForSession('sess-2');
     expect(useAppStore.getState().browserHistories).toEqual({});
+  });
+});
+
+describe('CanvasSlice — two views over one store (ADR 260911-200304)', () => {
+  beforeEach(() => resetCanvas());
+
+  it('opening a browser document activates the Browser view and leaves the Canvas view alone', () => {
+    const { openCanvasDocument } = useAppStore.getState();
+    openCanvasDocument(fileDoc('a.ts'));
+    const canvasDoc = useAppStore.getState().activeCanvasDocumentId!;
+
+    openCanvasDocument(browserDoc('https://a.test/'));
+
+    const { activeCanvasDocumentId, activeBrowserDocumentId, openDocuments } =
+      useAppStore.getState();
+    // One list, two views: the page did not take over the Canvas tab.
+    expect(openDocuments).toHaveLength(2);
+    expect(activeCanvasDocumentId).toBe(canvasDoc);
+    expect(activeBrowserDocumentId).not.toBe(canvasDoc);
+    expect(
+      useAppStore.getState().openDocuments.find((d) => d.id === activeBrowserDocumentId)!.content
+        .type
+    ).toBe('browser');
+  });
+
+  it('each view remembers its own document across a switch back and forth', () => {
+    const { openCanvasDocument, activateCanvasDocument } = useAppStore.getState();
+    openCanvasDocument(fileDoc('a.ts'));
+    const fileA = useAppStore.getState().activeCanvasDocumentId!;
+    openCanvasDocument(browserDoc('https://a.test/'));
+    const pageA = useAppStore.getState().activeBrowserDocumentId!;
+    openCanvasDocument(fileDoc('b.ts'));
+    const fileB = useAppStore.getState().activeCanvasDocumentId!;
+    openCanvasDocument(browserDoc('https://b.test/'));
+    const pageB = useAppStore.getState().activeBrowserDocumentId!;
+
+    expect([fileA, pageA, fileB, pageB]).toHaveLength(new Set([fileA, pageA, fileB, pageB]).size);
+    expect(useAppStore.getState().activeCanvasDocumentId).toBe(fileB);
+    expect(useAppStore.getState().activeBrowserDocumentId).toBe(pageB);
+
+    // Re-activating a document in one view never touches the other's selection.
+    activateCanvasDocument(fileA);
+    expect(useAppStore.getState().activeCanvasDocumentId).toBe(fileA);
+    expect(useAppStore.getState().activeBrowserDocumentId).toBe(pageB);
+
+    activateCanvasDocument(pageA);
+    expect(useAppStore.getState().activeBrowserDocumentId).toBe(pageA);
+    expect(useAppStore.getState().activeCanvasDocumentId).toBe(fileA);
+  });
+
+  it('closing the active document picks the next one in ITS view, never the other view’s', () => {
+    const { openCanvasDocument, closeCanvasDocument } = useAppStore.getState();
+    openCanvasDocument(fileDoc('a.ts'));
+    const fileA = useAppStore.getState().activeCanvasDocumentId!;
+    openCanvasDocument(fileDoc('b.ts'));
+    const fileB = useAppStore.getState().activeCanvasDocumentId!;
+    openCanvasDocument(browserDoc('https://a.test/'));
+    const page = useAppStore.getState().activeBrowserDocumentId!;
+
+    closeCanvasDocument(fileB);
+    // The Canvas view falls back to its own survivor — not to the page, which is
+    // the most-recently-active document overall.
+    expect(useAppStore.getState().activeCanvasDocumentId).toBe(fileA);
+    expect(useAppStore.getState().activeBrowserDocumentId).toBe(page);
+
+    closeCanvasDocument(page);
+    expect(useAppStore.getState().activeBrowserDocumentId).toBeNull();
+    expect(useAppStore.getState().activeCanvasDocumentId).toBe(fileA);
+  });
+
+  it('updateActiveDocument routes a page push to the Browser view, leaving the Canvas document intact', () => {
+    const { openCanvasDocument, updateActiveDocument } = useAppStore.getState();
+    openCanvasDocument({ type: 'markdown', content: 'notes' });
+    const doc = useAppStore.getState().activeCanvasDocumentId!;
+    openCanvasDocument(browserDoc('https://a.test/'));
+
+    updateActiveDocument({ type: 'browser', url: 'https://b.test/' });
+
+    const byId = (id: string) => useAppStore.getState().openDocuments.find((d) => d.id === id)!;
+    // Before the split this overwrote whichever document was active — here, the
+    // markdown one — turning a document into a page under the reader.
+    expect(byId(doc).content).toEqual({ type: 'markdown', content: 'notes' });
+    expect(byId(useAppStore.getState().activeBrowserDocumentId!).content).toEqual({
+      type: 'browser',
+      url: 'https://b.test/',
+    });
+  });
+
+  it('never evicts the document a view is showing, however stale it is', () => {
+    const { openCanvasDocument } = useAppStore.getState();
+    openCanvasDocument(browserDoc('https://first.test/'));
+    const page = useAppStore.getState().activeBrowserDocumentId!;
+    // A burst of agent-opened Canvas documents fills the shared cap. The page is
+    // the least-recently-active of them all — `lastActiveAt` moves on open and
+    // activate, never on a tab switch — so a plain LRU takes the one document
+    // the reader is sitting on in the other tab.
+    for (let i = 0; i <= MAX_CANVAS_DOCUMENTS; i++) openCanvasDocument(fileDoc(`file-${i}.ts`));
+
+    const { openDocuments, activeBrowserDocumentId, activeCanvasDocumentId } =
+      useAppStore.getState();
+    expect(openDocuments).toHaveLength(MAX_CANVAS_DOCUMENTS);
+    expect(activeBrowserDocumentId).toBe(page);
+    expect(openDocuments.some((d) => d.id === page)).toBe(true);
+    // And both views still point at something that is open.
+    expect(openDocuments.some((d) => d.id === activeCanvasDocumentId)).toBe(true);
+  });
+
+  it('hydrates a legacy entry whose single active id named a page', () => {
+    // Exactly what a browser that last ran before the split has on disk: one
+    // `activeDocumentId`, pointing at a `url` document.
+    localStorage.setItem(
+      STORAGE_KEYS.CANVAS_SESSIONS,
+      JSON.stringify({
+        'sess-legacy': {
+          open: true,
+          documents: [
+            {
+              id: 'doc-md',
+              content: { type: 'markdown', content: 'notes' },
+              openedAt: 1,
+              lastActiveAt: 1,
+              sourceLabel: 'Document',
+            },
+            {
+              id: 'doc-page',
+              content: { type: 'url', url: 'https://a.test/' },
+              openedAt: 2,
+              lastActiveAt: 2,
+              sourceLabel: 'a.test',
+            },
+          ],
+          activeDocumentId: 'doc-page',
+          accessedAt: 2,
+        },
+      })
+    );
+
+    useAppStore.getState().loadCanvasForSession('sess-legacy');
+
+    const { openDocuments, activeBrowserDocumentId, activeCanvasDocumentId, canvasOpen } =
+      useAppStore.getState();
+    expect(canvasOpen).toBe(true);
+    expect(openDocuments).toHaveLength(2);
+    // The old active id belonged to the Browser view, and the Canvas view still
+    // gets its own document rather than a splash above a full tab strip.
+    expect(activeBrowserDocumentId).toBe('doc-page');
+    expect(activeCanvasDocumentId).toBe('doc-md');
+  });
+
+  it('round-trips both active ids through localStorage', () => {
+    const { openCanvasDocument } = useAppStore.getState();
+    openCanvasDocument(fileDoc('a.ts'));
+    const file = useAppStore.getState().activeCanvasDocumentId!;
+    openCanvasDocument(browserDoc('https://a.test/'));
+    const page = useAppStore.getState().activeBrowserDocumentId!;
+
+    useAppStore.getState().loadCanvasForSession('sess-other');
+    useAppStore.getState().loadCanvasForSession('sess-1');
+
+    expect(useAppStore.getState().activeCanvasDocumentId).toBe(file);
+    expect(useAppStore.getState().activeBrowserDocumentId).toBe(page);
   });
 });

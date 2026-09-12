@@ -1,16 +1,23 @@
 /**
  * Canvas slice — per-session multi-document canvas state for the app store.
  *
- * The canvas hosts several open documents at once (files, images, pages, agent
- * output) via `openDocuments` + `activeDocumentId`; agent `open_*` commands
- * append-and-activate (deduping by source), while `update_canvas` mutates the
- * active document. Edit-protection is per-document: while one document is being
- * edited, agent pushes to it are held on `heldUpdate` (ADR-0292) for the canvas
- * to offer back as Reload / Keep mine, but other documents stay agent-writable.
- * A held push is kept, never dropped — dropping it in silence, with neither side
- * told, is the half of ADR-0292 that was deferred when it was written. The
- * document array is persisted per-session via localStorage
- * (see the canvas session helpers in app-store-helpers.ts). See ADR
+ * ONE document list, TWO views (ADR 260911-200304). `openDocuments` holds every
+ * open document; the right panel shows them through two tabs, and
+ * {@link canvasViewForContent} says which tab a document belongs to — the
+ * Browser tab renders exactly what the embedded browser renders (`url` and
+ * `browser`), the Canvas tab renders the other twelve types. Each view keeps its
+ * own active document id, so switching tabs returns you to the document you left
+ * there.
+ *
+ * Agent `open_*` commands append-and-activate in the document's own view
+ * (deduping by source), while `update_canvas` mutates the active document of the
+ * view its content belongs to. Edit-protection is per-document: while one
+ * document is being edited, agent pushes to it are held on `heldUpdate`
+ * (ADR-0292) for the canvas to offer back as Reload / Keep mine, but other
+ * documents stay agent-writable. A held push is kept, never dropped — dropping
+ * it in silence, with neither side told, is the half of ADR-0292 that was
+ * deferred when it was written. The document array is persisted per-session via
+ * localStorage (see the canvas session helpers in app-store-helpers.ts). See ADR
  * 260708-185518 (multi-document canvas model).
  *
  * @module shared/model/app-store-canvas
@@ -20,8 +27,14 @@ import type { UiCanvasContent } from '@dorkos/shared/types';
 // The dedupe rule, shared with the server's room canvas rather than copied
 // beside it (spec `room-canvas` §3.2). Two implementations of "is this the same
 // document" drift silently into one room holding two tabs for one file.
+//
+// It keeps the property this file's two views depend on: every prefix it can
+// return belongs to exactly one view (`url:`/`browser:` to Browser, the rest to
+// Canvas), so a dedupe hit can never move a document from one tab strip to the
+// other.
 import { canvasSourceKey as sourceKey } from '@dorkos/shared/canvas-source-key';
 import { MAX_CANVAS_DOCUMENTS } from '@/layers/shared/lib/constants';
+import { canvasViewForContent, type CanvasView } from '@/layers/shared/lib/canvas-view';
 import { readCanvasSession, writeCanvasSession } from './app-store-helpers';
 import type { PersistedCanvasDocument } from './app-store-helpers';
 import type { AppState } from './app-store-types';
@@ -107,13 +120,22 @@ export interface CanvasSlice {
   canvasOpen: boolean;
   setCanvasOpen: (open: boolean) => void;
 
-  /** All open documents, in open order (tab order). */
+  /** All open documents of BOTH views, in open order (tab order within a view). */
   openDocuments: CanvasDocument[];
-  /** Id of the active document, or null when none are open. */
-  activeDocumentId: string | null;
+  /**
+   * Id of the Canvas view's active document, or null when that view holds none.
+   * Non-null whenever the Canvas view has at least one document.
+   */
+  activeCanvasDocumentId: string | null;
+  /**
+   * Id of the Browser view's active document, or null when that view holds none.
+   * Non-null whenever the Browser view has at least one document.
+   */
+  activeBrowserDocumentId: string | null;
 
   /**
-   * Append a document for `content` and activate it. Dedups by source key
+   * Append a document for `content` and activate it IN ITS OWN VIEW, leaving the
+   * other view's active document exactly where it was. Dedups by source key
    * (`sourcePath`/`src`/`url`/`uri`): re-activates and refreshes an existing
    * document rather than opening a duplicate — but preserves the existing
    * document's content while it is being edited, holding the push on
@@ -122,10 +144,12 @@ export interface CanvasSlice {
    */
   openCanvasDocument: (content: UiCanvasContent) => void;
   /**
-   * Mutate the active document's content (the agent `update_canvas` path). A
-   * no-op when no document is active; while the active one is being edited the
-   * push is HELD on {@link CanvasDocument.heldUpdate} rather than dropped, so
-   * the canvas can offer it (ADR-0292).
+   * Mutate the active document of the view `content` belongs to (the agent
+   * `update_canvas` path) — a `url` push acts on the Browser tab, a markdown
+   * push on the Canvas tab. A no-op when that view has none open; while that
+   * document is being edited the push is HELD on
+   * {@link CanvasDocument.heldUpdate} rather than dropped, so the canvas can
+   * offer it (ADR-0292).
    */
   updateActiveDocument: (content: UiCanvasContent) => void;
   /**
@@ -140,14 +164,16 @@ export interface CanvasSlice {
    */
   discardHeldUpdate: (id: string) => void;
   /**
-   * Write the active document's content unconditionally (the in-canvas editor's
+   * Write one document's content unconditionally, by id (the in-canvas editor's
    * own write + conflict-reload path). Unlike {@link updateActiveDocument} this
-   * ignores edit-protection because the editor IS the protected writer.
+   * ignores edit-protection because the editor IS the protected writer, and it
+   * is id-scoped rather than active-scoped so the caller names the document it
+   * is rendering instead of whichever view happens to be in front.
    */
-  setActiveDocumentContent: (content: UiCanvasContent) => void;
-  /** Close a document by id, activating the most-recently-active remaining one. */
+  setDocumentContent: (id: string, content: UiCanvasContent) => void;
+  /** Close a document by id, activating the most-recently-active one left in ITS view. */
   closeCanvasDocument: (id: string) => void;
-  /** Activate an already-open document by id. */
+  /** Activate an already-open document by id, within its own view. */
   activateCanvasDocument: (id: string) => void;
   /**
    * Set a specific document's edit-protection flag by id. Id-scoped (not
@@ -251,14 +277,66 @@ function makeDocumentId(): string {
   return crypto.randomUUID();
 }
 
+/** The open documents belonging to one view, in tab order. */
+export function documentsInView(documents: CanvasDocument[], view: CanvasView): CanvasDocument[] {
+  return documents.filter((d) => canvasViewForContent(d.content) === view);
+}
+
+/** The two per-view active document ids, as the store holds them. */
+interface ActiveIds {
+  activeCanvasDocumentId: string | null;
+  activeBrowserDocumentId: string | null;
+}
+
+/**
+ * Re-derive both active ids against a document list, so neither view is ever
+ * left pointing at a document that is gone while still holding tabs.
+ *
+ * An id that still names an open document of its own view is kept; otherwise the
+ * view falls back to its most-recently-active remaining document, and to null
+ * only when it has none. Called on close and on hydration — a stranded id would
+ * render a tab strip above the empty-state splash. The open path needs no such
+ * repair because {@link evictToCapacity} never drops a document a view is
+ * showing.
+ */
+function reconcileActiveIds(documents: CanvasDocument[], current: ActiveIds): ActiveIds {
+  const resolve = (view: CanvasView, id: string | null): string | null => {
+    const inView = documentsInView(documents, view);
+    if (id && inView.some((d) => d.id === id)) return id;
+    const mostRecent = [...inView].sort((a, b) => b.lastActiveAt - a.lastActiveAt)[0];
+    return mostRecent?.id ?? null;
+  };
+  return {
+    activeCanvasDocumentId: resolve('canvas', current.activeCanvasDocumentId),
+    activeBrowserDocumentId: resolve('browser', current.activeBrowserDocumentId),
+  };
+}
+
 /**
  * Enforce the open-document cap by dropping the least-recently-active documents,
- * never evicting the just-activated one or a document being edited.
+ * never evicting a document being edited and never one a view is showing.
+ *
+ * The cap is over BOTH views together: twelve open documents is twelve, however
+ * they are split between the tabs. That is exactly why **both** active ids are
+ * protected rather than only the just-opened one. `lastActiveAt` moves when a
+ * document is opened or activated, not when the reader switches tabs, so the
+ * page somebody is sitting on in Browser goes stale the moment an agent opens
+ * twelve documents in Canvas — and the LRU would take the one document on
+ * screen. Before the split that could not happen: there was one active id and it
+ * was always the just-opened one.
+ *
+ * @param documents - The open set, including the document just added.
+ * @param protectedIds - Ids that may never be evicted: the just-opened document
+ *   and each view's active one. Nulls are ignored.
  */
-function evictToCapacity(documents: CanvasDocument[], protectedId: string): CanvasDocument[] {
+function evictToCapacity(
+  documents: CanvasDocument[],
+  protectedIds: readonly (string | null)[]
+): CanvasDocument[] {
   if (documents.length <= MAX_CANVAS_DOCUMENTS) return documents;
+  const keep = new Set(protectedIds.filter((id): id is string => id !== null));
   const evictable = documents
-    .filter((d) => d.id !== protectedId && !d.editing)
+    .filter((d) => !keep.has(d.id) && !d.editing)
     .sort((a, b) => a.lastActiveAt - b.lastActiveAt);
   const dropCount = documents.length - MAX_CANVAS_DOCUMENTS;
   const dropIds = new Set(evictable.slice(0, dropCount).map((d) => d.id));
@@ -295,13 +373,14 @@ function toPersisted(documents: CanvasDocument[]): PersistedCanvasDocument[] {
 /** Persist the given canvas state for the active session (no-op without a session). */
 function persist(
   sessionId: string | null,
-  state: { canvasOpen: boolean; openDocuments: CanvasDocument[]; activeDocumentId: string | null }
+  state: { canvasOpen: boolean; openDocuments: CanvasDocument[] } & ActiveIds
 ): void {
   if (!sessionId) return;
   writeCanvasSession(sessionId, {
     open: state.canvasOpen,
     documents: toPersisted(state.openDocuments),
-    activeDocumentId: state.activeDocumentId,
+    activeCanvasDocumentId: state.activeCanvasDocumentId,
+    activeBrowserDocumentId: state.activeBrowserDocumentId,
     accessedAt: Date.now(),
   });
 }
@@ -325,7 +404,8 @@ export const createCanvasSlice: StateCreator<
     }),
 
   openDocuments: [],
-  activeDocumentId: null,
+  activeCanvasDocumentId: null,
+  activeBrowserDocumentId: null,
 
   browserHistories: {},
   writeBrowserHistory: (documentId, entry) =>
@@ -375,20 +455,40 @@ export const createCanvasSlice: StateCreator<
           heldUpdate: null,
         };
         activeId = doc.id;
-        documents = evictToCapacity([...s.openDocuments, doc], activeId);
+        // Neither view may lose the document it is showing to make room for this
+        // one, so both active ids are protected alongside it.
+        documents = evictToCapacity(
+          [...s.openDocuments, doc],
+          [activeId, s.activeCanvasDocumentId, s.activeBrowserDocumentId]
+        );
       }
 
+      // Only the view this content belongs to changes what it is showing; the
+      // other view stays on whatever the reader left there, and eviction cannot
+      // have taken it.
+      const activeIds =
+        canvasViewForContent(content) === 'browser'
+          ? { activeCanvasDocumentId: s.activeCanvasDocumentId, activeBrowserDocumentId: activeId }
+          : {
+              activeCanvasDocumentId: activeId,
+              activeBrowserDocumentId: s.activeBrowserDocumentId,
+            };
       // LRU eviction may have dropped documents — prune their histories too.
       const browserHistories = pruneBrowserHistories(s.browserHistories, documents);
-      const next = { openDocuments: documents, activeDocumentId: activeId, browserHistories };
+      const next = { openDocuments: documents, ...activeIds, browserHistories };
       persist(s.canvasSessionId, { ...s, ...next });
       return next;
     }),
 
   updateActiveDocument: (content) =>
     set((s) => {
-      const activeId = s.activeDocumentId;
-      if (!s.openDocuments.some((d) => d.id === activeId)) return {};
+      // The push lands in the view its content belongs to, so a `url` update
+      // never overwrites the document somebody is reading in the Canvas tab.
+      const targetId =
+        canvasViewForContent(content) === 'browser'
+          ? s.activeBrowserDocumentId
+          : s.activeCanvasDocumentId;
+      if (!s.openDocuments.some((d) => d.id === targetId)) return {};
 
       const applied = (d: CanvasDocument): CanvasDocument => {
         // Protect the edit (ADR-0292) — but HOLD the push for the banner
@@ -400,7 +500,7 @@ export const createCanvasSlice: StateCreator<
         return { ...d, content, sourceLabel: sourceLabel(content), heldUpdate: null };
       };
 
-      const documents = s.openDocuments.map((d) => (d.id === activeId ? applied(d) : d));
+      const documents = s.openDocuments.map((d) => (d.id === targetId ? applied(d) : d));
       persist(s.canvasSessionId, { ...s, openDocuments: documents });
       return { openDocuments: documents };
     }),
@@ -435,11 +535,14 @@ export const createCanvasSlice: StateCreator<
       };
     }),
 
-  setActiveDocumentContent: (content) =>
+  setDocumentContent: (id, content) =>
     set((s) => {
-      if (!s.activeDocumentId) return {};
+      if (!s.openDocuments.some((d) => d.id === id)) return {};
+      // A content write never moves a document between views: `openCanvasDocument`
+      // only ever refreshes a document from a source key of its own view, and
+      // `updateActiveDocument` picks its target by the content's view.
       const documents = s.openDocuments.map((d) =>
-        d.id === s.activeDocumentId ? { ...d, content, sourceLabel: sourceLabel(content) } : d
+        d.id === id ? { ...d, content, sourceLabel: sourceLabel(content) } : d
       );
       persist(s.canvasSessionId, { ...s, openDocuments: documents });
       return { openDocuments: documents };
@@ -448,25 +551,27 @@ export const createCanvasSlice: StateCreator<
   closeCanvasDocument: (id) =>
     set((s) => {
       const documents = s.openDocuments.filter((d) => d.id !== id);
-      let activeId = s.activeDocumentId;
-      if (activeId === id) {
-        // Activate the most-recently-active remaining document.
-        const next = [...documents].sort((a, b) => b.lastActiveAt - a.lastActiveAt)[0];
-        activeId = next?.id ?? null;
-      }
+      // Closing the active document hands that view its most-recently-active
+      // survivor; the other view is untouched.
+      const activeIds = reconcileActiveIds(documents, s);
       const browserHistories = pruneBrowserHistories(s.browserHistories, documents);
-      const nextState = { openDocuments: documents, activeDocumentId: activeId, browserHistories };
+      const nextState = { openDocuments: documents, ...activeIds, browserHistories };
       persist(s.canvasSessionId, { ...s, ...nextState });
       return nextState;
     }),
 
   activateCanvasDocument: (id) =>
     set((s) => {
-      if (!s.openDocuments.some((d) => d.id === id)) return {};
+      const target = s.openDocuments.find((d) => d.id === id);
+      if (!target) return {};
       const documents = s.openDocuments.map((d) =>
         d.id === id ? { ...d, lastActiveAt: Date.now() } : d
       );
-      const nextState = { openDocuments: documents, activeDocumentId: id };
+      const activeIds =
+        canvasViewForContent(target.content) === 'browser'
+          ? { activeCanvasDocumentId: s.activeCanvasDocumentId, activeBrowserDocumentId: id }
+          : { activeCanvasDocumentId: id, activeBrowserDocumentId: s.activeBrowserDocumentId };
+      const nextState = { openDocuments: documents, ...activeIds };
       persist(s.canvasSessionId, { ...s, ...nextState });
       return nextState;
     }),
@@ -488,19 +593,27 @@ export const createCanvasSlice: StateCreator<
     // Hydrate documents fresh (transient `editing` always starts false) so a new
     // session never inherits the previous one's edit mode.
     if (entry) {
+      // Hydrate fresh: `editing` and `heldUpdate` always start empty — a held
+      // push belongs to an edit that is over — and any doc with an empty label
+      // (e.g. a legacy pre-DOR-219 doc migrated on read) gets one derived from
+      // its content so its tab never renders blank.
+      const openDocuments = entry.documents.map((d) => ({
+        ...d,
+        editing: false,
+        heldUpdate: null,
+        sourceLabel: d.sourceLabel || sourceLabel(d.content),
+      }));
       set({
         canvasOpen: entry.open,
-        // Hydrate fresh: `editing` and `heldUpdate` always start empty — a held
-        // push belongs to an edit that is over — and any doc with an empty
-        // label (e.g. a legacy pre-DOR-219 doc migrated on read) gets one
-        // derived from its content so its tab never renders blank.
-        openDocuments: entry.documents.map((d) => ({
-          ...d,
-          editing: false,
-          heldUpdate: null,
-          sourceLabel: d.sourceLabel || sourceLabel(d.content),
-        })),
-        activeDocumentId: entry.activeDocumentId,
+        openDocuments,
+        // An entry written before the two-view split carries one active id, which
+        // the read helper routes into the view it belongs to; the reconcile gives
+        // the other view its most-recently-active document rather than leaving it
+        // showing a splash above a full tab strip.
+        ...reconcileActiveIds(openDocuments, {
+          activeCanvasDocumentId: entry.activeCanvasDocumentId,
+          activeBrowserDocumentId: entry.activeBrowserDocumentId,
+        }),
         canvasSessionId: sessionId,
         // Browser history is in-memory only; a session switch starts fresh so it
         // never carries the previous session's histories (and never unbounded).
@@ -510,7 +623,8 @@ export const createCanvasSlice: StateCreator<
       set({
         canvasOpen: false,
         openDocuments: [],
-        activeDocumentId: null,
+        activeCanvasDocumentId: null,
+        activeBrowserDocumentId: null,
         canvasSessionId: sessionId,
         browserHistories: {},
       });

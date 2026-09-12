@@ -3,6 +3,7 @@ import {
   Activity,
   FolderTree,
   Gauge,
+  Globe,
   PanelRight,
   Puzzle,
   SquareTerminal,
@@ -272,7 +273,9 @@ export function registerRightPanelTabs(register: RegisterFn): void {
     priority: 15,
   });
 
-  // Canvas as right-panel contribution (lazy-loaded, only visible on /session)
+  // Canvas as right-panel contribution (lazy-loaded, only visible on /session).
+  // It holds every document the embedded browser does NOT render; pages live one
+  // tab along, in Browser (ADR 260911-200304).
   register('right-panel', {
     id: 'canvas',
     title: 'Canvas',
@@ -282,6 +285,28 @@ export function registerRightPanelTabs(register: RegisterFn): void {
     ),
     visibleWhen: ({ pathname }) => pathname === '/session',
     priority: 20,
+  });
+
+  // Browser as right-panel contribution (lazy-loaded) — the same document
+  // surface over the two content types the embedded browser renders, with its
+  // own active document, so a page and a diff stop competing for one tab strip.
+  //
+  // Priority 22 sits it between Canvas (20) and Terminal (25): documents, then
+  // pages, then a shell.
+  //
+  // Web-only, gated the way Terminal is: framing a page needs the serve and
+  // preview routes, which the in-process Obsidian transport has none of, so the
+  // tab is absent there rather than present and broken.
+  register('right-panel', {
+    id: 'browser',
+    title: 'Browser',
+    icon: Globe,
+    component: lazy(() =>
+      import('@/layers/features/canvas').then((m) => ({ default: m.BrowserContent }))
+    ),
+    visibleWhen: ({ pathname, transport }) =>
+      pathname === '/session' && transport?.supportsWorkbenchServe === true,
+    priority: 22,
   });
 
   // Terminal as right-panel contribution (lazy-loaded — @xterm/* lands in its

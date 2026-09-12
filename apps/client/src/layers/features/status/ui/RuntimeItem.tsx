@@ -60,9 +60,11 @@ interface RuntimeItemProps {
    */
   sessionId: string;
   /**
-   * Say it in as few pixels as possible — set below the status line's widest
-   * tier. Drops the `· <model>` half, which the line's own model item already
-   * spells out; the runtime name is what makes this item worth a slot.
+   * Say it in as few pixels as possible. Drops the `· <model>` half, which the
+   * line's own model item already spells out at every tier (DOR-1971) — the
+   * runtime name is what makes this item worth a slot. The composer's status
+   * line passes this `true` unconditionally for exactly that reason; a caller
+   * with no neighbouring model item of its own may still choose to show it.
    */
   compact?: boolean;
   /**

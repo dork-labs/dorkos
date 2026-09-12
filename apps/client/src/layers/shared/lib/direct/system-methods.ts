@@ -234,7 +234,9 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
 
     // The embedded browser's serve/proxy routes need an HTTP surface a webview
     // can reach; the in-process host has none, so the browser canvas falls back
-    // to an "unavailable here" state (same web-only posture as `mediaUrl`).
+    // to an "unavailable here" state (same web-only posture as `mediaUrl`) and
+    // the Browser right-panel tab hides itself on this flag.
+    supportsWorkbenchServe: false as const,
     async createServeUrl(_cwd: string, _filePath?: string): Promise<string | null> {
       return null;
     },

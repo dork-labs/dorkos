@@ -562,6 +562,17 @@ export interface Transport extends RoomTransport {
    */
   readonly supportsTerminal: boolean;
   /**
+   * Whether this transport can hand the embedded browser a page to frame —
+   * {@link createServeUrl} for a local file and {@link createProxyUrl} for a dev
+   * server. `true` for the HTTP transport, `false` for the in-process Obsidian
+   * transport, whose host has neither route nor preview listener.
+   *
+   * The Browser right-panel tab is gated on this flag, the same posture as
+   * {@link Transport.supportsTerminal}: a tab that could only ever show an error
+   * is worse than no tab (ADR 260911-200304).
+   */
+  readonly supportsWorkbenchServe: boolean;
+  /**
    * List sessions across all registered runtimes, optionally scoped to a
    * working directory. Returns the aggregation envelope (ADR-0310): `sessions`
    * merged and sorted by `updatedAt` descending, plus optional per-runtime

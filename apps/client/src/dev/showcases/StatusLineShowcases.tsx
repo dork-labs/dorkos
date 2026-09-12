@@ -47,7 +47,7 @@ import {
  * What each width affords, straight from `resolveStatusBudget`.
  *
  * The spec writes the widest tier's budget as "4+" because it grows with the
- * width above 640px, one slot per `FULL_SLOT_COST_PX`. That growth is the part a
+ * width above 648px, one slot per `FULL_SLOT_COST_PX`. That growth is the part a
  * rendered row cannot show inside a playground column, so it is reported as
  * numbers instead of faked with a scaled-down bar.
  */
@@ -202,7 +202,7 @@ export function StatusLineShowcases() {
           The same tier floor, holding the longest permission label DorkOS ships
         </ShowcaseLabel>
         <ShowcaseDemo className="overflow-x-auto">
-          <BudgetedLine scenario={DEGRADED_ON_DEFAULT} width={640} />
+          <BudgetedLine scenario={DEGRADED_ON_DEFAULT} width={648} />
         </ShowcaseDemo>
 
         <ShowcaseLabel>Delegating — twelve subagents, drawn as a whole number</ShowcaseLabel>
@@ -257,13 +257,13 @@ export function StatusLineShowcases() {
         </ShowcaseDemo>
 
         <p className="text-muted-foreground text-xs">
-          640px is the widest row drawn here, not the widest the tier goes: these boxes are a fixed
+          648px is the widest row drawn here, not the widest the tier goes: these boxes are a fixed
           pixel width and the playground column is narrower than a real desktop bar, so anything
           wider would scroll its own ⋯ out of view. The table above carries the rest, read from the
           same <code>resolveStatusBudget</code> the app measures with.
         </p>
         <p className="text-muted-foreground text-xs">
-          The 640px rows are the <code>full</code> tier at its floor holding everything that can
+          The 648px rows are the <code>full</code> tier at its floor holding everything that can
           promote — the tightest the widest tier ever gets. It used to be the tightest by more than
           it admitted: the agent chip rendered ~22px past its own box and the context item ~39px
           past its, each painting over the item beside it, because neither could shrink (DOR-461).
@@ -275,7 +275,7 @@ export function StatusLineShowcases() {
           when two items’ painted extents intersect.
         </p>
         <p className="text-muted-foreground text-xs">
-          The single row under the second heading is the same 640px carrying the longest permission
+          The single row under the second heading is the same 648px carrying the longest permission
           label DorkOS ships. A slot is priced at 13 characters (<code>STATUS_VALUE_MAX_CHARS</code>
           ) and this tier draws the label whole, so <code>Bypass permissions</code> at 18 takes a
           92px slot where Codex’s <code>Full access</code> takes 63 — which is why the floor sells
@@ -289,13 +289,13 @@ export function StatusLineShowcases() {
       >
         <ShowcaseLabel>At rest — clean tree, connected, default permissions</ShowcaseLabel>
         <ShowcaseDemo className="overflow-x-auto">
-          <BudgetedLine scenario={HEALTHY} width={640} />
-          <BudgetedLine scenario={WAITING_ON_BACKGROUND_TASKS} width={640} />
+          <BudgetedLine scenario={HEALTHY} width={648} />
+          <BudgetedLine scenario={WAITING_ON_BACKGROUND_TASKS} width={648} />
         </ShowcaseDemo>
 
         <ShowcaseLabel>Under stress — same width, everything wrong</ShowcaseLabel>
         <ShowcaseDemo className="overflow-x-auto">
-          <BudgetedLine scenario={DEGRADED} width={640} />
+          <BudgetedLine scenario={DEGRADED} width={648} />
         </ShowcaseDemo>
       </PlaygroundSection>
 
@@ -305,7 +305,7 @@ export function StatusLineShowcases() {
       >
         <ShowcaseLabel>Pinned — a clean branch with nothing to report, shown anyway</ShowcaseLabel>
         <ShowcaseDemo className="overflow-x-auto">
-          <BudgetedLine scenario={HEALTHY} width={640} pins={['git']} />
+          <BudgetedLine scenario={HEALTHY} width={648} pins={['git']} />
         </ShowcaseDemo>
 
         <ShowcaseLabel>The same pin at 340px — the tier drops it regardless</ShowcaseLabel>
@@ -317,7 +317,7 @@ export function StatusLineShowcases() {
           Pinned and outranked — it enters the line, then loses the slot
         </ShowcaseLabel>
         <ShowcaseDemo className="overflow-x-auto">
-          <BudgetedLine scenario={DEGRADED_ON_DEFAULT} width={640} pins={['runtime']} />
+          <BudgetedLine scenario={DEGRADED_ON_DEFAULT} width={648} pins={['runtime']} />
         </ShowcaseDemo>
 
         <p className="text-muted-foreground text-xs">

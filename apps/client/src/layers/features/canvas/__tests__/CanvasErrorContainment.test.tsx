@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
+import type { UiCanvasContent } from '@dorkos/shared/types';
 
 // A weaponized viewer for one content type: while `throws` is set it fails on
 // every render, so the canvas boundary (not React's own error recovery) shows
@@ -45,22 +46,28 @@ interface MockDoc {
 
 const mockState = {
   openDocuments: [] as MockDoc[],
-  activeDocumentId: null as string | null,
+  activeCanvasDocumentId: null as string | null,
+  activeBrowserDocumentId: null as string | null,
   selectedCwd: null as string | null,
   canvasSessionId: null as string | null,
   setCanvasOpen: vi.fn(),
   openCanvasDocument: vi.fn(),
   activateCanvasDocument: vi.fn(),
   closeCanvasDocument: vi.fn(),
-  setActiveDocumentContent: vi.fn(),
+  setDocumentContent: vi.fn(),
   setDocumentEditing: vi.fn(),
 };
 
-vi.mock('@/layers/shared/model', () => {
+vi.mock('@/layers/shared/model', async () => {
+  // The real split rule, not a copy of it: one definition of which tab renders
+  // a document, so a component test can never pass while the app disagrees.
+  const { canvasViewForContent: viewFor } = await import('@/layers/shared/lib/canvas-view');
   const useAppStore = (selector: (s: typeof mockState) => unknown) => selector(mockState);
   (useAppStore as unknown as { getState: () => typeof mockState }).getState = () => mockState;
   return {
     useAppStore,
+    documentsInView: (docs: MockDoc[], view: string) =>
+      docs.filter((d) => viewFor(d.content as UiCanvasContent) === view),
     useIsMobile: () => false,
     useTheme: () => ({ theme: 'light', setTheme: vi.fn() }),
     useTransport: () => ({ writeFile: async () => ({ ok: true, hash: 'x' }) }),
@@ -68,7 +75,7 @@ vi.mock('@/layers/shared/model', () => {
 });
 
 import { setPrefersReducedMotion } from '@/test-setup';
-import { CanvasContent } from '../ui/AgentCanvas';
+import { CanvasContent } from '../ui/CanvasViews';
 
 /** Two open documents: a broken JSON viewer (active) and a healthy markdown doc. */
 function setBrokenPlusHealthy(): void {
@@ -90,7 +97,7 @@ function setBrokenPlusHealthy(): void {
       editing: false,
     },
   ];
-  mockState.activeDocumentId = 'd1';
+  mockState.activeCanvasDocumentId = 'd1';
 }
 
 // The boundary logs every caught error — silence it so the suite output is honest.
@@ -99,7 +106,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   jsonControl.throws = true;
   mockState.openDocuments = [];
-  mockState.activeDocumentId = null;
+  mockState.activeCanvasDocumentId = null;
   errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   // The suite's own local `motion/react` shadow used to answer
   // `useReducedMotion: () => true`; deleting it (DOR-1416) silently flipped
@@ -143,7 +150,7 @@ describe('Canvas per-document error containment', () => {
     expect(screen.getByText('This tab hit a problem')).toBeInTheDocument();
 
     // The keyed boundary resets on a tab switch — the healthy document renders.
-    mockState.activeDocumentId = 'd2';
+    mockState.activeCanvasDocumentId = 'd2';
     rerender(<CanvasContent />);
     expect(screen.queryByText('This tab hit a problem')).not.toBeInTheDocument();
     expect(await screen.findByTestId('blintz-canvas')).toBeInTheDocument();

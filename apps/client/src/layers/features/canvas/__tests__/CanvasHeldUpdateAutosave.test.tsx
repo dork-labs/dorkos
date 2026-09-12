@@ -64,7 +64,7 @@ vi.mock('../ui/BlintzCanvas', () => ({
 }));
 
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
-import { CanvasContent } from '../ui/AgentCanvas';
+import { CanvasContent } from '../ui/CanvasViews';
 import { CanvasFileContent } from '../ui/CanvasFileContent';
 
 /** The autosave debounce the editors use, in ms. */
@@ -97,7 +97,7 @@ function renderCanvas() {
 /** The active document as the store currently holds it. */
 function activeDoc() {
   const s = useAppStore.getState();
-  return s.openDocuments.find((d) => d.id === s.activeDocumentId)!;
+  return s.openDocuments.find((d) => d.id === s.activeCanvasDocumentId)!;
 }
 
 /** Open the document, start editing, and arm the autosave with one keystroke. */
@@ -128,7 +128,8 @@ describe('a pending autosave when the edit ends from outside', () => {
     useAppStore.setState({
       canvasOpen: false,
       openDocuments: [],
-      activeDocumentId: null,
+      activeCanvasDocumentId: null,
+      activeBrowserDocumentId: null,
       canvasSessionId: 'sess-1',
       selectedCwd: null,
     });
@@ -197,7 +198,7 @@ describe('a pending autosave when the edit ends from outside', () => {
     // is owned by a parent rather than by the editor. Deleting either effect on
     // its own left every other canvas test green.
     //
-    // Mounted directly rather than through the canvas body: `AgentCanvas` loads
+    // Mounted directly rather than through the canvas body: `CanvasViews` loads
     // this viewer with `React.lazy`, and its Suspense boundary never resolves
     // under fake timers. The banner's own click is covered by the markdown
     // cases above; what this case owns is the effect, driven through the same
@@ -206,7 +207,7 @@ describe('a pending autosave when the edit ends from outside', () => {
       useAppStore.getState().openCanvasDocument(MY_FILE);
       useAppStore.setState({ canvasOpen: true, selectedCwd: '/work' });
     });
-    const documentId = useAppStore.getState().activeDocumentId!;
+    const documentId = useAppStore.getState().activeCanvasDocumentId!;
     renderWithProviders(<CanvasFileContent documentId={documentId} content={MY_FILE} />);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
