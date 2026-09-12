@@ -349,7 +349,12 @@ export class RoomService {
   /** Post because the agent decided to. See {@link RoomPosting.postFromTool}. */
   postFromTool(
     roomId: string,
-    input: { authorId: string; text: string; replyTo?: string }
+    input: {
+      authorId: string;
+      text: string;
+      replyTo?: string;
+      attachmentIds?: readonly string[];
+    }
   ): PostedEntry {
     return this.parts.posting.postFromTool(roomId, input);
   }

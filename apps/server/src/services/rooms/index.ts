@@ -596,41 +596,14 @@ export function getWelcomeBackGreeter(): WelcomeBackGreeter | null {
   return activeWelcomeBack;
 }
 
-let activeAttachmentStore: RoomAttachmentStore | null = null;
-let activeAttachmentRows: AttachmentRowStore | null = null;
-
-/**
- * Register the attachment seams at bootstrap, beside {@link setRoomService}.
- *
- * Two of them because a room attachment is two things that must be able to move
- * apart: the BYTES, behind {@link RoomAttachmentStore}, and the ROWS, in
- * SQLite. The upload route needs both — it writes the bytes, then records what
- * it wrote — and the serve route needs both to answer one GET. Registered here
- * rather than constructed here because WHERE the bytes live is a deployment
- * decision, made once in `index.ts`, and this module must not make it.
- *
- * @param stores.attachments - Where the bytes go.
- * @param stores.rows - Where the metadata goes.
- */
-export function setRoomAttachmentStores(stores: {
-  attachments: RoomAttachmentStore;
-  rows: AttachmentRowStore;
-}): void {
-  activeAttachmentStore = stores.attachments;
-  activeAttachmentRows = stores.rows;
-}
-
-/** The active attachment byte store (throws if bootstrap has not run). */
-export function getRoomAttachmentStore(): RoomAttachmentStore {
-  if (!activeAttachmentStore) throw new Error('RoomAttachmentStore not initialized');
-  return activeAttachmentStore;
-}
-
-/** The active attachment row store (throws if bootstrap has not run). */
-export function getAttachmentRowStore(): AttachmentRowStore {
-  if (!activeAttachmentRows) throw new Error('AttachmentRowStore not initialized');
-  return activeAttachmentRows;
-}
+// The two attachment seams live in their own module so the domain's own callers
+// can reach them without importing this barrel; re-exported here so every
+// existing caller is unchanged.
+export {
+  getAttachmentRowStore,
+  getRoomAttachmentStore,
+  setRoomAttachmentStores,
+} from './attachments/attachment-stores.js';
 
 let activeRepos: RoomRepoService | null = null;
 

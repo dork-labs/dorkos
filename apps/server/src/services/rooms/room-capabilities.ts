@@ -183,8 +183,12 @@ import { logger } from '../../lib/logger.js';
 import {
   directMessageTitle,
   MERGE_SUMMARY_MAX_CHARS,
+  ROOM_ATTACHMENT_MAX_PER_ENTRY,
+  ROOM_ATTACHMENT_NAME_MAX,
   type RoomEntry,
 } from '@dorkos/shared/room-schemas';
+import { stageAgentAttachments } from './attachments/agent-attachments.js';
+import { getAttachmentRowStore, getRoomAttachmentStore } from './attachments/attachment-stores.js';
 
 import {
   CapabilityToolError,
@@ -491,6 +495,30 @@ function projectDetail(detail: RoomDetail): Record<string, unknown> {
  * @returns Whatever the verb returned.
  * @throws {CapabilityToolError} Carrying `{ error, code }` for a typed refusal.
  */
+/**
+ * The agent's own working directory, or a refusal it can act on.
+ *
+ * The one place a `post_to_room` attachment may point, and it is read off the
+ * VERIFIED in-session surface rather than off the arguments — a cwd a caller
+ * could name would be the confused-deputy shape this whole path exists to
+ * avoid. A surface with no working directory (external `/mcp`) can attach
+ * nothing, and says so instead of silently attaching from somewhere else.
+ *
+ * @param context - The capability invocation context.
+ * @returns The session's working directory.
+ * @throws {RoomError} `ATTACHMENT_PATH_REFUSED` when the surface carries none.
+ */
+function requireAgentCwd(context: CapabilityHandlerContext): string {
+  if (!context.cwd) {
+    throw new RoomError(
+      'ATTACHMENT_PATH_REFUSED',
+      'Attaching a file needs a working directory to read it from, and this surface has none. ' +
+        'Post the message without attachments.'
+    );
+  }
+  return context.cwd;
+}
+
 function answering<T>(body: () => T): T {
   try {
     return body();
@@ -684,6 +712,8 @@ export const roomsDomain: CapabilityDomain = {
         'something in a room other than the one you were just triggered from. ' +
         'Posting into the room that triggered your turn is how you answer it; posting into a ' +
         'different room leaves your answer here untouched. ' +
+        'You can show a file with it — a screenshot or a recording you made — by naming its ' +
+        'path in attachments; it has to be a file in your own working directory. ' +
         'Everyone in the room sees it, so post like a colleague: one clear message, not a running commentary.',
       tier: 'act',
       input: z.object({
@@ -698,6 +728,16 @@ export const roomsDomain: CapabilityDomain = {
           .string()
           .optional()
           .describe('Reply inside a thread: the entryId the thread hangs off.'),
+        attachments: z
+          .array(z.string())
+          .max(ROOM_ATTACHMENT_MAX_PER_ENTRY)
+          .optional()
+          .describe(
+            'Files to show with this message, by path. Relative paths are from your own ' +
+              'working directory, and only files inside it can be attached. Screenshots and ' +
+              'recordings you made are the usual case. Everyone in the room sees them, and the ' +
+              'other agents get their own copy.'
+          ),
       }),
       output: z.unknown(),
       surfaces: {
@@ -707,24 +747,50 @@ export const roomsDomain: CapabilityDomain = {
           annotations: { idempotentHint: false },
         },
       },
-      invoke: (deps, input, context) => {
+      invoke: async (deps, input, context) => {
         const rooms = requireRoomDeps(deps);
         // Inside `answering`, because resolving WHO is calling can itself refuse
         // — a login-on install that could name nobody — and a refusal a model
         // gets as a stack trace is a refusal it cannot act on.
+        const authorId = answering(() => callerAuthor(rooms, context).id);
+        // Staged BEFORE the entry, and bound inside its transaction below, so
+        // the message and its files land together or neither does. A refusal
+        // here leaves no bytes, no rows and no entry (spec §4).
+        //
+        // Only reached when the post NAMES files: every other `post_to_room`
+        // must keep working on a surface that has no working directory at all,
+        // and must not pay for the attachment stores to exist.
+        const named = input.attachments ?? [];
+        const attachmentIds =
+          named.length === 0
+            ? []
+            : await answeringAsync(() =>
+                stageAgentAttachments({
+                  roomId: input.roomId,
+                  authorId,
+                  cwd: requireAgentCwd(context),
+                  paths: named,
+                  store: getRoomAttachmentStore(),
+                  rows: getAttachmentRowStore(),
+                  limits: configManager.get('uploads'),
+                  nameMax: ROOM_ATTACHMENT_NAME_MAX,
+                })
+              );
         const entry = answering(() =>
           rooms.postFromTool(input.roomId, {
-            authorId: callerAuthor(rooms, context).id,
+            authorId,
             text: input.text,
             ...(input.replyTo !== undefined ? { replyTo: input.replyTo } : {}),
+            ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
           })
         );
-        return Promise.resolve({
+        return {
           posted: true,
           entryId: entry.id,
           seq: entry.seq,
+          ...(attachmentIds.length > 0 ? { attached: attachmentIds.length } : {}),
           ...(entry.threadRootEntryId ? { threadRootEntryId: entry.threadRootEntryId } : {}),
-        });
+        };
       },
     }),
     defineCapability({
