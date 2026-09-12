@@ -319,7 +319,7 @@ describe('the rooms capability domain', () => {
           readOnly: false,
         },
         {
-          id: 'rooms.readCanvas',
+          id: 'rooms.read_canvas',
           group: null,
           tool: 'read_canvas',
           // `observe`, like every other read here — and, like every other read

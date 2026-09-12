@@ -143,6 +143,16 @@ const LEGACY_READ_ONLY_TOOL_NAMES: readonly string[] = [
  * somebody's WORK rather than their install — which agents hold a working copy
  * of a room's repo and what each of them has not merged yet.
  *
+ * **`read_canvas` is the eighth, and the first that is not a message read.** A
+ * room's shared canvas holds what its members put in front of each other — a
+ * plan, a page, a file somebody is pointing at — so it is third-party content by
+ * the same argument the six above make, and one of its answers goes further than
+ * any of them: a FILE document names a real path, and on the login-off surface a
+ * tokenless caller resolves to the install owner, whose working directory would
+ * satisfy the §8.1 reader rule for trees the asking session has no business in.
+ * The rule is what keeps that safe under a real identity; it is not what should
+ * be deciding it for no identity at all.
+ *
  * **Adding a name here needs an argument, and removing one needs a better one.**
  * The drift guard reads this list, so a tool that quietly acquires
  * `readOnlyCarveOut: true` still fails the build.
@@ -160,6 +170,10 @@ export const GUARDED_READ_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set<string>
   // login-off surface a tokenless caller resolves to the install owner, so it
   // would answer for them.
   'room_repo_status',
+  // The room's shared canvas (DOR-1999): what its members put in front of each
+  // other, and — for a file document — a path on this machine read as the caller.
+  // See the paragraph above.
+  'read_canvas',
 ]);
 
 export const READ_ONLY_MCP_TOOL_NAMES: ReadonlySet<string> = new Set<string>([

@@ -13,6 +13,7 @@ covers:
   - 'test(db): name canvas_documents in the table census (DOR-1999)'
   - 'fix(rooms): close the seven holes an adversarial read found in the canvas (DOR-1999)'
   - 'fix(rooms): keep the canvas ceiling a per-turn budget, not a per-line one (DOR-1999)'
+  - 'fix(rooms): put read_canvas through the guards every room read passes (DOR-1999)'
 ---
 
 ### Added

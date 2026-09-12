@@ -1473,7 +1473,7 @@ export const roomsDomain: CapabilityDomain = {
       },
     }),
     defineCapability({
-      id: 'rooms.readCanvas',
+      id: 'rooms.read_canvas',
       title: "Read the room's canvas",
       description:
         'See what is on the shared canvas of a room you are in — the documents its members, ' +

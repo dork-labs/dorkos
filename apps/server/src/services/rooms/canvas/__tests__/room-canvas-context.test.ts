@@ -238,7 +238,7 @@ describe('read_canvas', () => {
     harness.service.canvas.open(roomId, ana, { type: 'json', data: {}, title: 'the plan' });
     const registry = registryFor(harness);
     const result = (await registry.invoke(
-      'rooms.readCanvas',
+      'rooms.read_canvas',
       { roomId },
       { identity: identityFor(ANA, 'Ana') }
     )) as { documents: Array<{ title: string }>; viewers: number };
@@ -254,7 +254,7 @@ describe('read_canvas', () => {
       title: 'the plan',
     });
     const result = (await registryFor(harness).invoke(
-      'rooms.readCanvas',
+      'rooms.read_canvas',
       { roomId, documentId: document.id },
       { identity: identityFor(ANA, 'Ana') }
     )) as { content: unknown };
@@ -277,7 +277,7 @@ describe('read_canvas', () => {
     writeFileSync(path.join(tree, 'src', 'router.ts'), 'export const version = 3;\n');
 
     const result = (await registryFor(harness).invoke(
-      'rooms.readCanvas',
+      'rooms.read_canvas',
       { roomId, documentId: document.id },
       { identity: identityFor(ANA, 'Ana'), cwd: tree }
     )) as { content: string };
@@ -294,7 +294,7 @@ describe('read_canvas', () => {
     });
     const [document] = harness.service.canvas.list(roomId);
     const result = (await registryFor(harness).invoke(
-      'rooms.readCanvas',
+      'rooms.read_canvas',
       { roomId, documentId: document.id },
       { identity: identityFor(ANA, 'Ana'), cwd: tree }
     )) as { content: string | null; reason?: string };
@@ -333,7 +333,7 @@ describe('read_canvas', () => {
     });
     const [document] = harness.service.canvas.list(roomId);
     const result = (await registryFor(harness).invoke(
-      'rooms.readCanvas',
+      'rooms.read_canvas',
       { roomId, documentId: document.id },
       { identity: identityFor(BEN, 'Ben'), cwd: '/work/ben' }
     )) as { content: unknown; reason?: string; title: string };
@@ -354,7 +354,7 @@ describe('read_canvas', () => {
     });
     const [document] = harness.service.canvas.list(roomId);
     const result = (await registryFor(harness).invoke(
-      'rooms.readCanvas',
+      'rooms.read_canvas',
       { roomId, documentId: document.id },
       { identity: identityFor(ANA, 'Ana'), cwd: tree }
     )) as { content: string };
@@ -364,10 +364,10 @@ describe('read_canvas', () => {
   it('refuses a non-member exactly as it refuses a room that is not there', async () => {
     const registry = registryFor(harness);
     const outsider = { identity: identityFor('/agents/nobody', 'Nobody') };
-    await expect(registry.invoke('rooms.readCanvas', { roomId }, outsider)).rejects.toThrow();
+    await expect(registry.invoke('rooms.read_canvas', { roomId }, outsider)).rejects.toThrow();
     await expect(
       registry.invoke(
-        'rooms.readCanvas',
+        'rooms.read_canvas',
         { roomId: 'no-such-room' },
         {
           identity: identityFor(ANA, 'Ana'),
@@ -380,7 +380,7 @@ describe('read_canvas', () => {
     harness.service.canvas.open(roomId, ana, { type: 'json', data: {}, title: 'the plan' });
     harness.service.updateRoom(roomId, harness.human, { archived: true });
     const result = (await registryFor(harness).invoke(
-      'rooms.readCanvas',
+      'rooms.read_canvas',
       { roomId },
       { identity: identityFor(ANA, 'Ana') }
     )) as { documents: unknown[] };
