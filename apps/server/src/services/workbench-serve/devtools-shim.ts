@@ -29,7 +29,7 @@
  *
  * @module services/workbench-serve/devtools-shim
  */
-import { installBrowserDriving } from './devtools-driving.js';
+import { installBrowserDriving, truncateOutlineLines } from './devtools-driving.js';
 
 /**
  * Safely serialize an arbitrary console argument into a structured-clone-safe,
@@ -132,10 +132,19 @@ export function describeResourceError(target: unknown): { tag: string; url: stri
 function installDevtoolsShim(
   serialize: (value: unknown) => unknown,
   describeResource: (target: unknown) => { tag: string; url: string } | null,
-  installDriving: (ctx: {
-    post: (message: unknown) => void;
-    inFlight: () => number;
-  }) => (request: { requestId: string; documentId?: string; command: unknown }) => void
+  installDriving: (
+    ctx: { post: (message: unknown) => void; inFlight: () => number },
+    truncate: (
+      header: string,
+      lines: { depth: number; text: string }[],
+      maxChars: number
+    ) => { outline: string; truncated: boolean }
+  ) => (request: { requestId: string; documentId?: string; command: unknown }) => void,
+  truncateOutline: (
+    header: string,
+    lines: { depth: number; text: string }[],
+    maxChars: number
+  ) => { outline: string; truncated: boolean }
 ): void {
   try {
     const w = window as unknown as { __dorkosDevtoolsInstalled?: boolean };
@@ -514,7 +523,7 @@ function installDevtoolsShim(
     // `canvas-agent-seat` §2). Built here rather than inside the listener so the
     // handler and its element tables are constructed once per page, not once per
     // click.
-    const drive = installDriving({ post, inFlight: () => inFlight });
+    const drive = installDriving({ post, inFlight: () => inFlight }, truncateOutline);
 
     // --- Handshake + parent requests: ack starts delivery; capture-request
     // rasterizes on demand; act-request drives the page. Source identity
@@ -599,4 +608,4 @@ export const DEVTOOLS_SHIM_COMPILER_HELPERS = ['__name'] as const;
  * for why this survives bundling and stays free of `/api` and Node-only syntax,
  * and {@link COMPILER_HELPER_PROLOGUE} for why it carries its own prologue.
  */
-export const DEVTOOLS_AGENT_SCRIPT = `(function(){${COMPILER_HELPER_PROLOGUE}(${installDevtoolsShim.toString()})(${serializeConsoleArg.toString()}, ${describeResourceError.toString()}, ${installBrowserDriving.toString()});})();`;
+export const DEVTOOLS_AGENT_SCRIPT = `(function(){${COMPILER_HELPER_PROLOGUE}(${installDevtoolsShim.toString()})(${serializeConsoleArg.toString()}, ${describeResourceError.toString()}, ${installBrowserDriving.toString()}, ${truncateOutlineLines.toString()});})();`;

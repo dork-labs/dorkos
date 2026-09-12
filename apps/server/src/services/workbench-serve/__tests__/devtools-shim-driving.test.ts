@@ -22,6 +22,7 @@
 import { describe, it, expect } from 'vitest';
 import { JSDOM } from 'jsdom';
 import { DEVTOOLS_AGENT_SCRIPT } from '../devtools-shim.js';
+import { truncateOutlineLines, type OutlineLine } from '../devtools-driving.js';
 
 /** One message the shim posted to its parent. */
 type ShimMessage = Record<string, unknown>;
@@ -278,6 +279,109 @@ describe('the shim drives the page it was injected into', () => {
     const result = await page.result('focus-1');
     expect(result.ok).toBe(true);
     expect((page.document.getElementById('card') as HTMLInputElement).value).toBe('hello');
+    page.close();
+  });
+
+  it('submits the form when the page let Enter through', async () => {
+    const { result, page } = await drive(
+      `<form id="f"><input id="card" /><button type="submit">Pay</button></form>
+       <p id="out">not submitted</p>`,
+      { action: 'type', target: { selector: '#card' }, text: '4242', submit: true },
+      'r1',
+      `window.__submits = 0;
+       document.getElementById('f').addEventListener('submit', function (e) {
+         e.preventDefault();
+         window.__submits += 1;
+         document.getElementById('out').textContent = 'submitted ' + window.__submits;
+       });`
+    );
+    expect(result.ok).toBe(true);
+    expect(result.did).toContain('which submitted the form');
+    expect(page.document.getElementById('out')?.textContent).toBe('submitted 1');
+    page.close();
+  });
+
+  it('does NOT submit when the page cancelled the Enter keydown', async () => {
+    // How a page opts out of implicit submission: a keydown handler that calls
+    // preventDefault() is saying "I am handling this". Submitting anyway made
+    // one Enter into two signups — the exact flow the docs advertise.
+    const { result, page } = await drive(
+      `<form id="f"><input id="card" /><button type="submit">Pay</button></form>
+       <p id="out">not submitted</p>`,
+      { action: 'type', target: { selector: '#card' }, text: '4242', submit: true },
+      'r1',
+      `window.__submits = 0;
+       document.getElementById('card').addEventListener('keydown', function (e) {
+         if (e.key === 'Enter') e.preventDefault();
+       });
+       document.getElementById('f').addEventListener('submit', function (e) {
+         e.preventDefault();
+         window.__submits += 1;
+         document.getElementById('out').textContent = 'submitted ' + window.__submits;
+       });`
+    );
+    expect(result.ok).toBe(true);
+    expect(result.did).toContain('the page handled it itself');
+    // The page's own handler ran; nothing submitted on top of it.
+    expect(
+      (page.frame as unknown as { __submits: number }).__submits,
+      'the form was submitted despite the page cancelling Enter'
+    ).toBe(0);
+    expect(page.document.getElementById('out')?.textContent).toBe('not submitted');
+    page.close();
+  });
+
+  it('does NOT submit a form a browser would not implicitly submit', async () => {
+    // Two blocking fields and no submit button: pressing Enter in a real browser
+    // does nothing at all, so neither may this.
+    const { result, page } = await drive(
+      `<form id="f"><input id="a" /><input id="b" /></form><p id="out">not submitted</p>`,
+      { action: 'type', target: { selector: '#a' }, text: 'x', submit: true },
+      'r1',
+      `window.__submits = 0;
+       document.getElementById('f').addEventListener('submit', function (e) {
+         e.preventDefault();
+         window.__submits += 1;
+       });`
+    );
+    expect(result.ok).toBe(true);
+    expect(result.did).toContain('submitted nothing');
+    expect((page.frame as unknown as { __submits: number }).__submits).toBe(0);
+    page.close();
+  });
+
+  it('submits a single-field form with no button, which a browser does too', async () => {
+    const { result, page } = await drive(
+      `<form id="f"><input id="q" /></form>`,
+      { action: 'type', target: { selector: '#q' }, text: 'kittens', submit: true },
+      'r1',
+      `window.__submits = 0;
+       document.getElementById('f').addEventListener('submit', function (e) {
+         e.preventDefault();
+         window.__submits += 1;
+       });`
+    );
+    expect(result.did).toContain('which submitted the form');
+    expect((page.frame as unknown as { __submits: number }).__submits).toBe(1);
+    page.close();
+  });
+
+  it('says so when a plain press was handled by the page', async () => {
+    const page = installShim(
+      CHECKOUT,
+      `document.getElementById('card').addEventListener('keydown', function (e) {
+         e.preventDefault();
+       });`
+    );
+    (page.document.getElementById('card') as HTMLInputElement).focus();
+    page.send({
+      __dorkosDevtools: 'act-request',
+      requestId: 'press-cancel',
+      documentId: 'doc-1',
+      command: { action: 'press', key: 'Enter' },
+    });
+    const result = await page.result('press-cancel');
+    expect(result.did).toBe('Pressed Enter; the page handled it itself.');
     page.close();
   });
 
@@ -607,5 +711,64 @@ describe('the shim never reaches the API', () => {
     expect(DEVTOOLS_AGENT_SCRIPT).not.toContain('XMLHttpRequest()');
     // `postMessage` to the parent is the only outbound call the source makes.
     expect(DEVTOOLS_AGENT_SCRIPT).toContain('parent.postMessage');
+  });
+});
+
+describe('cutting an outline to its budget', () => {
+  /** `count` lines at `depth`, each about `width` characters wide. */
+  function lines(count: number, depth: number, width = 40): OutlineLine[] {
+    const text = 'button "' + 'x'.repeat(Math.max(1, width - 10)) + '"';
+    return Array.from({ length: count }, () => ({ depth, text }));
+  }
+
+  it('leaves an outline that fits exactly as it is', () => {
+    const cut = truncateOutlineLines('document "Small"', lines(3, 1), 10_000);
+    expect(cut.truncated).toBe(false);
+    expect(cut.outline.split('\n')).toHaveLength(4);
+  });
+
+  it('never drops the header, even at an absurd budget', () => {
+    const cut = truncateOutlineLines('document "Small"', lines(50, 1), 5);
+    expect(cut.truncated).toBe(true);
+    expect(cut.outline.length).toBeLessThanOrEqual(5);
+  });
+
+  it('loses the deepest lines first, and the last of them first', () => {
+    const mixed: OutlineLine[] = [
+      { depth: 1, text: 'main' },
+      { depth: 2, text: 'heading "One"' },
+      { depth: 3, text: 'button "Deep A"' },
+      { depth: 3, text: 'button "Deep B"' },
+    ];
+    const cut = truncateOutlineLines('document "T"', mixed, 45);
+    expect(cut.truncated).toBe(true);
+    // Structure survives; the deepest leaf, from the end, is what went.
+    expect(cut.outline).toContain('main');
+    expect(cut.outline).not.toContain('Deep B');
+  });
+
+  it('cuts fifty thousand lines in one pass, not one pass per dropped line', () => {
+    // The defect this pins, at a scale no DOM fixture can reach: truncation used
+    // to re-render and re-join the WHOLE outline after every dropped line, which
+    // is quadratic in the line count. Measured on this machine by restoring the
+    // per-line re-render: 92 SECONDS, against ~15ms here. The bound below is a
+    // duration budget with three orders of magnitude of headroom, not a number
+    // tuned to one machine's speed.
+    const many = lines(50_000, 1);
+    const started = Date.now();
+    const cut = truncateOutlineLines('document "Huge"', many, 32_768);
+    const spentMs = Date.now() - started;
+
+    expect(cut.truncated).toBe(true);
+    expect(cut.outline.length).toBeLessThanOrEqual(32_768);
+    expect(spentMs, `cutting 50 000 lines to budget took ${spentMs}ms`).toBeLessThan(2_000);
+  });
+
+  it('drops nothing when the budget is exactly the size of the outline', () => {
+    const some = lines(10, 1);
+    const exact = truncateOutlineLines('document "T"', some, 1_000_000);
+    const cut = truncateOutlineLines('document "T"', some, exact.outline.length);
+    expect(cut.truncated).toBe(false);
+    expect(cut.outline).toBe(exact.outline);
   });
 });

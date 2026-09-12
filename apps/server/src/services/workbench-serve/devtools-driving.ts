@@ -65,6 +65,72 @@ export interface DrivingRequest {
   command: DrivingCommand;
 }
 
+/** One outline line, before it is joined into the answer. */
+export interface OutlineLine {
+  /** Indent level, one for a child of the read's root. */
+  depth: number;
+  /** `role "name" [state]`, already rendered. */
+  text: string;
+}
+
+/**
+ * Join an outline into a budget, losing leaves before structure.
+ *
+ * Over budget, the DEEPEST lines go first, from the end — so what survives is
+ * the shape of the page, and its leaves are what an agent can ask for again
+ * with a selector.
+ *
+ * **One pass, deliberately.** The obvious version drops one line and re-renders
+ * the whole outline to measure it again, which is quadratic in the line count:
+ * a page a few thousand lines over budget spent longer inside the page than the
+ * round trip's own timeout, so the preview froze and the tool reported a
+ * timeout that was really this loop. Here every line is measured once and
+ * dropped at most once.
+ *
+ * Exported as a standalone function for two reasons: the shim embeds it by
+ * `toString()` like every other piece of itself, and a cost this shape has to
+ * be provable at a scale no DOM fixture can reach. Self-contained: it
+ * references no module-scope binding.
+ *
+ * @param header - The `document "…"` line, never dropped.
+ * @param lines - Every candidate line, in document order.
+ * @param maxChars - The character budget for the whole outline.
+ * @returns The joined outline, and whether anything was cut.
+ */
+export function truncateOutlineLines(
+  header: string,
+  lines: OutlineLine[],
+  maxChars: number
+): { outline: string; truncated: boolean } {
+  const rendered: string[] = [];
+  const lengths: number[] = [];
+  let total = header.length;
+  let deepest = 0;
+  for (const line of lines) {
+    const text = '  '.repeat(line.depth) + line.text;
+    rendered.push(text);
+    lengths.push(text.length + 1); // the newline that joins it on
+    total += text.length + 1;
+    if (line.depth > deepest) deepest = line.depth;
+  }
+  if (total <= maxChars) {
+    return { outline: [header, ...rendered].join('\n'), truncated: false };
+  }
+  const dropped: boolean[] = [];
+  for (let i = 0; i < rendered.length; i++) dropped.push(false);
+  for (let depth = deepest; depth >= 1 && total > maxChars; depth--) {
+    for (let i = rendered.length - 1; i >= 0 && total > maxChars; i--) {
+      if (dropped[i] || lines[i].depth !== depth) continue;
+      dropped[i] = true;
+      total -= lengths[i];
+    }
+  }
+  const kept: string[] = [];
+  for (let i = 0; i < rendered.length; i++) if (!dropped[i]) kept.push(rendered[i]);
+  const text = [header, ...kept].join('\n');
+  return { outline: text.length > maxChars ? text.slice(0, maxChars) : text, truncated: true };
+}
+
 /** What {@link installBrowserDriving} needs from the shim around it. */
 export interface DrivingContext {
   /** Post one message to `window.parent`, swallowing its own failures. */
@@ -86,9 +152,19 @@ export interface DrivingContext {
  * and so a page test can execute it.
  *
  * @param ctx - The shim's `post` and its in-flight request counter.
+ * @param truncate - {@link truncateOutlineLines}, passed in as a local binding
+ *   for the same reason every other helper is: a stringified function carries no
+ *   module scope with it.
  * @returns A handler for one parsed `act-request` message.
  */
-export function installBrowserDriving(ctx: DrivingContext): (request: DrivingRequest) => void {
+export function installBrowserDriving(
+  ctx: DrivingContext,
+  truncate: (
+    header: string,
+    lines: OutlineLine[],
+    maxChars: number
+  ) => { outline: string; truncated: boolean }
+): (request: DrivingRequest) => void {
   const MAX_NAME_CHARS = 120;
   const POLL_MS = 50;
   const FETCH_QUIET_MS = 500;
@@ -152,6 +228,17 @@ export function installBrowserDriving(ctx: DrivingContext): (request: DrivingReq
     text: 'textbox',
     url: 'textbox',
   };
+
+  /** The tags an HTML `<label>` can be attached to; nothing else has `labels`. */
+  const LABELABLE_TAGS = new Set([
+    'button',
+    'input',
+    'meter',
+    'output',
+    'progress',
+    'select',
+    'textarea',
+  ]);
 
   /**
    * Roles whose accessible name may NOT fall back to their own text.
@@ -241,12 +328,22 @@ export function installBrowserDriving(ctx: DrivingContext): (request: DrivingReq
       const joined = trim(parts.join(' '));
       if (joined) return joined;
     }
-    const labels = (el as HTMLInputElement).labels;
-    if (labels && labels.length > 0) {
-      const joined = trim(Array.from(labels, (one) => one.textContent || '').join(' '));
-      if (joined) return joined;
+    // Only of elements that can HAVE labels. `labels` is a live search of the
+    // whole document for a matching `<label for>`, so asking every node for it
+    // is quadratic in the page size — 30 000 nodes took minutes, inside a page
+    // whose round trip gives it eight seconds. A `<td>` has no labels anyway.
+    if (LABELABLE_TAGS.has(el.tagName.toLowerCase())) {
+      const labels = (el as HTMLInputElement).labels;
+      if (labels && labels.length > 0) {
+        const joined = trim(Array.from(labels, (one) => one.textContent || '').join(' '));
+        if (joined) return joined;
+      }
     }
-    for (const attribute of ['alt', 'title', 'placeholder', 'value']) {
+    // `value` is deliberately NOT in this chain. A prefilled field would be named
+    // by whatever is typed in it, so the name an agent read a moment ago stops
+    // matching the moment it types — and two prefilled fields with the same
+    // contents would be indistinguishable. A field is named by its label.
+    for (const attribute of ['alt', 'title', 'placeholder']) {
       const value = el.getAttribute(attribute);
       if (value && value.trim()) return trim(value);
     }
@@ -274,15 +371,38 @@ export function installBrowserDriving(ctx: DrivingContext): (request: DrivingReq
         /* fall through to the style walk */
       }
     }
-    const view = el.ownerDocument.defaultView;
     let node: Element | null = el;
     while (node) {
-      if (node.hasAttribute('hidden') || node.getAttribute('aria-hidden') === 'true') return false;
-      const style = view && view.getComputedStyle ? view.getComputedStyle(node) : null;
-      if (style && (style.display === 'none' || style.visibility === 'hidden')) return false;
+      if (!isSelfVisible(node)) return false;
       node = node.parentElement;
     }
     return true;
+  }
+
+  /**
+   * Whether this element hides ITSELF, ignoring its ancestors.
+   *
+   * The half the outline walk needs. That walk descends parent-to-child and
+   * prunes a hidden subtree, so every ancestor has already been asked — and
+   * re-walking the chain per node turns a 10 000-row table into 10 000 chains of
+   * `getComputedStyle` calls, which is minutes rather than milliseconds where
+   * there is no layout engine to make them cheap.
+   */
+  function isSelfVisible(el: Element): boolean {
+    if (el.hasAttribute('hidden') || el.getAttribute('aria-hidden') === 'true') return false;
+    const withCheck = el as Element & {
+      checkVisibility?: (options: Record<string, boolean>) => boolean;
+    };
+    if (typeof withCheck.checkVisibility === 'function') {
+      try {
+        return withCheck.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
+      } catch {
+        /* fall through to the style read */
+      }
+    }
+    const view = el.ownerDocument.defaultView;
+    const style = view && view.getComputedStyle ? view.getComputedStyle(el) : null;
+    return !style || (style.display !== 'none' && style.visibility !== 'hidden');
   }
 
   function isDisabled(el: Element): boolean {
@@ -417,12 +537,6 @@ export function installBrowserDriving(ctx: DrivingContext): (request: DrivingReq
     return { ok: true, el: visible[0], matched: 1 };
   }
 
-  /** One outline node, before it is rendered into lines. */
-  interface OutlineNode {
-    depth: number;
-    text: string;
-  }
-
   function statesOf(el: Element): string {
     const states: string[] = [];
     if (isDisabled(el)) states.push('disabled');
@@ -447,11 +561,25 @@ export function installBrowserDriving(ctx: DrivingContext): (request: DrivingReq
    * per level. Nodes with no name, no landmark role and nothing under them are
    * dropped, which is what keeps a real page inside the budget.
    */
-  function buildOutline(root: Element): OutlineNode[] {
-    const lines: OutlineNode[] = [];
+  function buildOutline(
+    root: Element,
+    maxNodes: number
+  ): { lines: OutlineLine[]; capped: boolean } {
+    const lines: OutlineLine[] = [];
+    let capped = false;
     function walk(el: Element, depth: number): boolean {
+      // A line is never shorter than one character plus its newline, so a budget
+      // of N characters can never render more than N lines. Past that, every
+      // node walked is work whose output is guaranteed to be thrown away — and
+      // on a 10 000-row table that work is the whole round trip.
+      if (lines.length >= maxNodes) {
+        capped = true;
+        return false;
+      }
       if (SKIPPED_TAGS.has(el.tagName.toLowerCase())) return false;
-      if (!isVisible(el)) return false;
+      // SELF only: this walk descends from the root, so every ancestor was
+      // already asked and a hidden one pruned the whole subtree before us.
+      if (!isSelfVisible(el)) return false;
       const role = roleOf(el);
       const name = role ? nameOfWithRole(el, role) : '';
       const keep = Boolean(role) && (Boolean(name) || LANDMARK_ROLES.has(role));
@@ -477,7 +605,7 @@ export function installBrowserDriving(ctx: DrivingContext): (request: DrivingReq
       return keep || anyChild;
     }
     walk(root, 1);
-    return lines;
+    return { lines, capped };
   }
 
   /**
@@ -488,32 +616,11 @@ export function installBrowserDriving(ctx: DrivingContext): (request: DrivingReq
    */
   function renderOutline(root: Element, maxChars: number): { outline: string; truncated: boolean } {
     const header = 'document "' + trim(document.title, 512) + '"';
-    const nodes = buildOutline(root);
-    let truncated = false;
-    const render = (kept: OutlineNode[]): string =>
-      [header, ...kept.map((node) => '  '.repeat(node.depth) + node.text)].join('\n');
-    let kept = nodes;
-    let text = render(kept);
-    while (text.length > maxChars && kept.length > 0) {
-      truncated = true;
-      let deepest = 0;
-      for (const node of kept) if (node.depth > deepest) deepest = node.depth;
-      let last = -1;
-      for (let i = kept.length - 1; i >= 0; i--) {
-        if (kept[i].depth === deepest) {
-          last = i;
-          break;
-        }
-      }
-      if (last < 0) break;
-      kept = kept.slice(0, last).concat(kept.slice(last + 1));
-      text = render(kept);
-    }
-    if (text.length > maxChars) {
-      truncated = true;
-      text = text.slice(0, maxChars);
-    }
-    return { outline: text, truncated };
+    const built = buildOutline(root, maxChars);
+    const cut = truncate(header, built.lines, maxChars);
+    // A walk stopped at its node ceiling lost lines too, whatever the budget
+    // then did with the rest.
+    return { outline: cut.outline, truncated: cut.truncated || built.capped };
   }
 
   /** Set a field's value the way a person typing into it would. */
@@ -526,8 +633,16 @@ export function installBrowserDriving(ctx: DrivingContext): (request: DrivingReq
     el.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
-  /** Dispatch one key, chord and all, at whatever has focus. */
-  function pressKey(key: string): string {
+  /**
+   * Dispatch one key, chord and all, at whatever has focus.
+   *
+   * Reports whether the page CANCELLED the keydown, because that is how a page
+   * opts out of the browser's implicit form submission: a handler that calls
+   * `preventDefault()` on Enter is saying "I am handling this, do not submit".
+   * Ignoring the answer and submitting anyway is how one Enter becomes two
+   * signups.
+   */
+  function pressKey(key: string): { key: string; cancelled: boolean } {
     const parts = key.split('+');
     const main = parts[parts.length - 1];
     const modifiers = parts.slice(0, -1).map((one) => one.toLowerCase());
@@ -541,9 +656,49 @@ export function installBrowserDriving(ctx: DrivingContext): (request: DrivingReq
       metaKey: modifiers.includes('meta') || modifiers.includes('cmd'),
     };
     const target = (document.activeElement as HTMLElement) || document.body;
-    target.dispatchEvent(new KeyboardEvent('keydown', init));
+    // `dispatchEvent` answers false when a handler called `preventDefault()`.
+    const delivered = target.dispatchEvent(new KeyboardEvent('keydown', init));
     target.dispatchEvent(new KeyboardEvent('keyup', init));
-    return main;
+    return { key: main, cancelled: !delivered };
+  }
+
+  /** Input types that block implicit submission when there is more than one. */
+  const IMPLICIT_SUBMIT_BLOCKERS = new Set([
+    'text',
+    'search',
+    'url',
+    'tel',
+    'email',
+    'password',
+    'date',
+    'month',
+    'week',
+    'time',
+    'datetime-local',
+    'number',
+  ]);
+
+  /**
+   * Whether pressing Enter in this form would submit it, the way a browser
+   * decides.
+   *
+   * The HTML implicit-submission rule, not an approximation of it: a form with a
+   * submit button submits; a form without one submits only when exactly one
+   * field blocks implicit submission. Two bare text inputs and no button is a
+   * form Enter does nothing to — and calling `requestSubmit()` there would
+   * submit something a person never could.
+   */
+  function wouldImplicitlySubmit(form: HTMLFormElement): boolean {
+    const submitter = form.querySelector(
+      'button:not([type]), button[type="submit"], input[type="submit"], input[type="image"]'
+    );
+    if (submitter) return true;
+    let blocking = 0;
+    for (const field of Array.from(form.querySelectorAll('input'))) {
+      const type = ((field as HTMLInputElement).getAttribute('type') || 'text').toLowerCase();
+      if (IMPLICIT_SUBMIT_BLOCKERS.has(type)) blocking += 1;
+    }
+    return blocking === 1;
   }
 
   /**
@@ -566,7 +721,9 @@ export function installBrowserDriving(ctx: DrivingContext): (request: DrivingReq
       }
       if (child.nodeType !== 1) continue;
       const el = child as Element;
-      if (SKIPPED_TAGS.has(el.tagName.toLowerCase()) || !isVisible(el)) continue;
+      // Self only, for the reason the outline walk gives: this recursion has
+      // already passed every ancestor.
+      if (SKIPPED_TAGS.has(el.tagName.toLowerCase()) || !isSelfVisible(el)) continue;
       text += ' ' + visibleText(el);
     }
     return text;
@@ -714,7 +871,13 @@ export function installBrowserDriving(ctx: DrivingContext): (request: DrivingReq
 
       if (command.action === 'press') {
         const pressed = pressKey(command.key ?? 'Enter');
-        settleThen({ ok: true, did: 'Pressed ' + (command.key ?? pressed) + '.' });
+        const named = command.key ?? pressed.key;
+        settleThen({
+          ok: true,
+          did: pressed.cancelled
+            ? 'Pressed ' + named + '; the page handled it itself.'
+            : 'Pressed ' + named + '.',
+        });
         return;
       }
 
@@ -831,10 +994,29 @@ export function installBrowserDriving(ctx: DrivingContext): (request: DrivingReq
         }
         let did = 'Typed "' + trim(text, 200) + '" into ' + describe(el) + '.';
         if (command.submit) {
-          pressKey('Enter');
+          const pressed = pressKey('Enter');
           const form = (el as HTMLInputElement).form;
-          if (form && typeof form.requestSubmit === 'function') form.requestSubmit();
-          did += ' Then pressed Enter to submit it.';
+          // Submit ONLY what a person pressing Enter would have submitted. A
+          // page that cancels the keydown is opting out of implicit submission,
+          // and a form the browser would not implicitly submit is not one to
+          // submit on its behalf. Calling `requestSubmit()` past either of those
+          // is a second signup the person never asked for.
+          const canSubmit =
+            !pressed.cancelled &&
+            form !== null &&
+            form !== undefined &&
+            typeof form.requestSubmit === 'function' &&
+            wouldImplicitlySubmit(form);
+          if (canSubmit) {
+            form.requestSubmit();
+            did += ' Then pressed Enter, which submitted the form.';
+          } else if (pressed.cancelled) {
+            did += ' Then pressed Enter; the page handled it itself.';
+          } else {
+            did +=
+              ' Then pressed Enter. It submitted nothing: the page has no form here that ' +
+              'Enter would submit.';
+          }
           settleThen({ ok: true, matched, did });
           return;
         }
