@@ -105,6 +105,27 @@ the original bearer and changes only the durable expiry.
 | Codex         | The same `AbortController` occupies the session's active-turn slot | Headers in the child's initial environment |
 | OpenCode      | The same active-turn object owns the canonical-directory lease     | Directory-scoped sidecar registration      |
 
+### The `ui` domain comes free with that binding
+
+Once your adapter opens a turn binding and injects the loopback `dorkos` server, its sessions have
+the whole canvas-and-browser seat and you write no code for it: `control_ui`, `get_ui_state`,
+`read_canvas_document`, the console and network reads, the screenshot, the six driving verbs and the
+two recording verbs are all `ui` capabilities (`services/session/browser-seat/ui-capabilities.ts`,
+spec `canvas-agent-seat` §5). Every one of them keys on
+`principal.claims.canonicalSessionId`, which the listener derives from your verified binding — never
+from a tool argument — so a new runtime inherits the session isolation with the tools.
+
+That is the point of the domain, and it is the reason the thing it replaced is worth knowing about:
+Codex used to carry a scoped `dorkos_ui` server with one STUBBED copy of `control_ui` on it, because
+that server had no session in scope and could produce no effect; the real write happened downstream
+in the event-mapper. OpenCode had nothing at all. Do not build either shape again — if a verb needs
+the calling session, declare it as a capability and let the loopback binding supply the session.
+
+One rule rides along, and it is about consent rather than capability: a `ui.control` call arriving
+with a `runtime` principal refuses any action whose reach is not `client-only`, because an agent
+reaching in from outside the DorkOS app has no channel on which to ask the person first
+(`browser-seat/ui-surface-consent.ts`). You inherit that too.
+
 Every runtime must follow the same lifecycle:
 
 1. Open a binding with an adapter-owned `isCurrent()` guard.
