@@ -261,6 +261,12 @@ You do not have to edit the file for these. **Settings → Rooms** has the switc
       type: 'integer (1--10)',
       default: '3',
     },
+    'rooms.maxCanvasOpsPerTurn': {
+      description:
+        "How many times one agent may change a room's shared canvas during a single turn — putting a document on it, changing one, taking one off. Three is room for the thing it meant to show you, a second thing beside it, and a correction; the fourth is refused and the agent is told to put the rest in one change next turn. Nothing you do yourself is ever counted. Only you can change this.",
+      type: 'integer (1--10)',
+      default: '3',
+    },
     'rooms.repo.enabled': {
       description:
         'Whether a room may have files of its own: a git repo your agents can read, write, and run commands in together. Off, every room behaves the way it always has, and nothing already saved is deleted — turn it back on and everything is still there. Only you can change this.',

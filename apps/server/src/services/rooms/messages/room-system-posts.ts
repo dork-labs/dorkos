@@ -13,6 +13,7 @@
 import { ulid } from 'ulidx';
 import type { DbTransaction } from '@dorkos/db';
 import type {
+  RoomCanvasChange,
   RoomEntry,
   RoomEntryBody,
   RoomMergeEvent,
@@ -214,6 +215,71 @@ export class RoomSystemPosts {
       // Addresses nobody. See the TSDoc — this is the whole no-cascade claim,
       // and the emptiness is the mechanism rather than a consequence of the
       // text happening not to contain an `@`.
+      mentions: [],
+      mentionSpans: [],
+      sessionId: null,
+      ...threadPointers(this.store, roomId, undefined),
+      ...deriveCascade(id, {
+        authorKind: 'system',
+        maxAgentDepth: this.limitsFor(roomId).maxAgentDepth,
+      }),
+      createdAt: new Date().toISOString(),
+    });
+    this.publisher.publishEntry(entry);
+    return entry;
+  }
+
+  /**
+   * Announce what one turn put on, changed or took off the room's canvas (spec
+   * `room-canvas` §6.2).
+   *
+   * **The merge shape, deliberately, and for the reasons {@link postMergeEvent}
+   * spells out at length.** It is a POST rather than a notice — notices are
+   * refusal-shaped and damped on `(room, agent, reason)`, and two canvas changes
+   * a minute apart collapsing into one line would be the room hiding exactly the
+   * content this feature exists to surface. It addresses NOBODY, its cascade is
+   * spent at the ceiling, and it is never dispatched, so a room where somebody
+   * put a document on the table does not start three agents talking. Agents
+   * learn the table moved at their next turn, from the `canvas` section of the
+   * room context they were going to be handed anyway.
+   *
+   * **One of these per TURN, not per operation** (etiquette E17). The caller —
+   * `RoomCanvasService.finishTurn` — composes it from that turn's ledger, so a
+   * turn that opened three documents writes one line naming all three, and a
+   * turn that applied nothing writes nothing at all.
+   *
+   * `subjectAuthorId` names the member whose turn it was, so the feed draws their
+   * face beside a sentence the room wrote — the same job the field does for a
+   * notice, a moment and a merge.
+   *
+   * @param roomId - The room whose canvas changed.
+   * @param input.text - The sentence a person reads.
+   * @param input.canvas - The machine-readable half, for a client that draws it.
+   * @param input.subjectAuthorId - The member whose turn changed the canvas.
+   * @returns The committed entry.
+   * @throws {RoomError} `ROOM_ARCHIVED` — an archived room gains no entries, in
+   *   its own voice least of all.
+   */
+  postCanvasEvent(
+    roomId: string,
+    input: { text: string; canvas: RoomCanvasChange; subjectAuthorId: string }
+  ): RoomEntry {
+    const room = this.visibility.requireRoom(roomId);
+    if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
+    const id = ulid();
+    const entry = this.store.appendEntry({
+      roomId,
+      id,
+      authorId: this.authors.system().id,
+      kind: 'post',
+      body: {
+        text: input.text,
+        canvas: input.canvas,
+        subjectAuthorId: input.subjectAuthorId,
+      },
+      // Addresses nobody — the emptiness is the mechanism, exactly as it is on a
+      // merge entry, rather than a consequence of the text happening to carry no
+      // `@`. This is what makes "a canvas change wakes nobody" structural.
       mentions: [],
       mentionSpans: [],
       sessionId: null,

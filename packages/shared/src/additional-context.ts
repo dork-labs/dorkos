@@ -397,6 +397,44 @@ export interface RoomContextFiles {
 }
 
 /**
+ * What is on a room's shared canvas, as the turn's context reports it.
+ *
+ * **Everything here is a label, and two of the labels are somebody else's
+ * words.** A `title` and a browser document's `url` are strings another member
+ * chose — in a bridged room, possibly a stranger who found a public bot — so
+ * both render INSIDE the untrusted fence and are defused exactly as a message
+ * body is. The id, type, author handle, `pinned` flag and timestamp are
+ * server-generated and render outside it, the id as a nonced label so a title
+ * cannot forge one (spec `room-canvas` §Security).
+ */
+export interface RoomContextCanvas {
+  /**
+   * Live readers of this room's stream right now.
+   *
+   * It counts STREAM SUBSCRIBERS, so one person with two tabs open counts twice
+   * and an agent counts zero — agents do not subscribe. `0` means nobody is
+   * looking at the moment, which is why the teaching says to put anything that
+   * matters in words as well as on the canvas.
+   */
+  viewers: number;
+  /** Pinned first, then most recently touched. Bounded by the room's own ceiling. */
+  documents: Array<{
+    id: string;
+    /** The `UiCanvasContent` type — `diff`, `browser`, `markdown`, and so on. */
+    type: string;
+    /** The document's label. Another member's words: rendered INSIDE the fence. */
+    title: string;
+    /** A browser document's page. Another member's words: rendered INSIDE the fence. */
+    url?: string;
+    /** Handle of whoever put it there. */
+    author: string;
+    pinned: boolean;
+    /** When it last changed, ISO 8601. */
+    lastChangedAt: string;
+  }>;
+}
+
+/**
  * Where a room turn is happening, who is in it, and what it missed.
  *
  * Structured data only — never pre-formatted prose. Each runtime adapter renders
@@ -627,6 +665,23 @@ export interface RoomContextData {
    * room has none — see {@link RoomContextFiles}.
    */
   files?: RoomContextFiles;
+  /**
+   * The room's shared canvas, or absent when the room has nothing on it — which
+   * is most rooms, and a section explaining an absence on every turn is a
+   * section spent for nothing (spec `room-canvas` §6.1).
+   *
+   * **One of exactly three ways a canvas change reaches anybody, and none of
+   * them triggers a turn** (ADR `260911-200302`). This is the free one: an agent
+   * reads it in the context block it was going to be handed anyway, one turn
+   * later, and never a moment sooner.
+   *
+   * **Content is never inlined.** Titles, types, authors and timestamps — that
+   * is all. An agent that wants a document's contents calls `read_canvas`, which
+   * keeps the per-turn cost of a room having a canvas near zero and removes the
+   * largest prompt-injection surface in the feature by construction rather than
+   * by escaping.
+   */
+  canvas?: RoomContextCanvas;
   /** How this agent is addressed here, and whether it was addressed now. */
   addressing: {
     /** This room's stored override, not the agent's manifest default. */

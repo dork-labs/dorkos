@@ -1926,6 +1926,23 @@ export const UserConfigSchema = z.object({
        */
       maxPostsPerTurn: z.number().int().min(1).max(10).default(3),
       /**
+       * How many times one agent may change a room's shared canvas inside a
+       * single turn — opening a document, updating one, closing one.
+       *
+       * Three is the same judgement `maxPostsPerTurn` above makes, for the same
+       * reason: room for the thing you meant to show, a second thing beside it,
+       * and a correction — and a refusal after that, so one turn cannot bury the
+       * table under a dozen tabs nobody asked for. The refusal reaches the agent
+       * in the tool result, so it can put the rest in one change next turn.
+       *
+       * Nothing you do yourself is counted; this bounds agents only.
+       *
+       * Every declaration of this value has to agree — here and in the `rooms`
+       * section literal below — because `conf` merges top-level defaults
+       * shallowly.
+       */
+      maxCanvasOpsPerTurn: z.number().int().min(1).max(10).default(3),
+      /**
        * A room's own files — its git repo, the standing worktree each agent
        * works in, and the merges that bring that work back (spec
        * `project-rooms`).
@@ -2018,6 +2035,9 @@ export const UserConfigSchema = z.object({
       // somebody on the other value.
       toolOnlyReplies: false,
       maxPostsPerTurn: 3,
+      // How many canvas changes one agent may make in one turn, same judgement
+      // and same both-sites rule as the line above it.
+      maxCanvasOpsPerTurn: 3,
       repo: {
         enabled: true,
         worktreeReapDays: 14,

@@ -60,6 +60,25 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // been accepted a moment earlier, and the remedy is to say less rather than to
   // say it differently, which is exactly what a rate answer means.
   TOO_MANY_POSTS_THIS_TURN: 429,
+  // The canvas twin of the line above, and the same 429 for the same reason: the
+  // request is well formed and would have been accepted a moment earlier, and
+  // the remedy is to change less rather than to ask differently.
+  TOO_MANY_CANVAS_OPS_THIS_TURN: 429,
+  // A document this room's canvas does not hold. 404 beside `ENTRY_NOT_FOUND`,
+  // and scoped to the room for the same reason: an id from elsewhere must not
+  // answer differently from an id that never existed.
+  CANVAS_DOCUMENT_NOT_FOUND: 404,
+  // Somebody is editing it. 409 rather than 403 — the request is allowed and the
+  // document is right; it is the moment that is wrong, and it passes.
+  CANVAS_BEING_EDITED: 409,
+  // A bare update or close from somebody with nothing of their own on the table.
+  // 400: the request named no document and there is none to infer, which no
+  // retry fixes without naming one.
+  CANVAS_NO_DEFAULT_DOCUMENT: 400,
+  // A window action asked for inside a room. 400 because the action is real and
+  // the room is the wrong surface for it; both MCP-only today, mapped because
+  // this table is total by type.
+  CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM: 400,
   // Same story: an MCP-only verb, mapped because the table is total by type. A
   // 409 rather than a 400 — the request is well formed and the room is right,
   // but somebody stopped this turn while it was being written.

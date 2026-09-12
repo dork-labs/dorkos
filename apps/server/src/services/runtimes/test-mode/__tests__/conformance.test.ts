@@ -7,6 +7,7 @@ import { TestModeRuntime } from '../test-mode-runtime.js';
 import {
   driveDurableTurn,
   driveExpiredQuestionTurn,
+  driveRoomCanvasTurn,
   drivePresenceTurn,
   driveDispositionTurn,
   driveTerminalOnce,
@@ -66,6 +67,22 @@ runtimeConformance(() => new TestModeRuntime(), {
   makeCompactingRuntime: () => {
     scenarioStore.setDefault('compacting');
     return new TestModeRuntime();
+  },
+  // A room turn that puts a document on the room's shared canvas (spec
+  // `room-canvas`). Test-mode is the runtime that makes this case FREE: the
+  // scenario yields an ordinary, unstamped `ui_command`, which is exactly the
+  // set the room turn's collector owns — so the whole path from a turn's event
+  // to a row, a frame and one line in the log runs with no model and no
+  // credential.
+  roomCanvasTurn: () => {
+    scenarioStore.setDefault('rooms-open-canvas');
+    return driveRoomCanvasTurn(new TestModeRuntime(), {
+      agentPath: '/agents/ana',
+      otherAgentPath: '/agents/ben',
+      // Nothing to do: the scenario itself is how this adapter emits the
+      // command, which is the whole reason it is the cheap wiring.
+      produce: () => undefined,
+    });
   },
   // DOR-189: a completed turn must survive a restart via the durable store.
   durableHistory: (runtime, sessionId, content) =>

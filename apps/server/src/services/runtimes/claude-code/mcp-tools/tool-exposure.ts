@@ -25,7 +25,7 @@
  * two escapes and this module uses both, deliberately unevenly:
  *
  * - **`alwaysLoad`** puts a tool in the prompt from turn 1. Granted to the
- *   {@link ALWAYS_LOADED_TOOLS} eight on every session. A room turn is the case that
+ *   {@link ALWAYS_LOADED_TOOLS} nine on every session. A room turn is the case that
  *   cannot afford a lookup: the agent is answering a person in a shared room, and a
  *   search step before it can react is a turn spent on plumbing. `list_capabilities`
  *   joins them as the discovery entry point — the one name that leads to the other
@@ -130,7 +130,7 @@ export function inSessionToolName(bare: string): string {
  * attached at registration, before Claude Code qualifies anything.
  *
  * Kept deliberately short — see the module note on why the server as a whole stays
- * deferred. Each of these eight earns it by being needed in a turn that has no
+ * deferred. Each of these nine earns it by being needed in a turn that has no
  * room for a lookup first:
  *
  * - the four room verbs, because a room turn is a person waiting in a shared
@@ -153,7 +153,7 @@ export function inSessionToolName(bare: string): string {
  *
  * **`get_room` and `find_room` are deliberately NOT here** (DOR-1610), and the
  * omission is written down because this list otherwise reads as "the room tools"
- * and now names six of the domain's eight. The rule that admits a tool is not
+ * and now names seven of the domain's sixteen. The rule that admits a tool is not
  * "it is a room verb" but "the prompt already tells an agent to reach for it":
  * every entry above is named in a prompt block, rides with one that is (the
  * listing pair, for the reason the bullet above gives), or is the entry point to
@@ -175,6 +175,17 @@ export function inSessionToolName(bare: string): string {
  * commands it is already running. The cost the other way is a schema in the
  * turn-1 prompt of EVERY session on the install, including the majority with no
  * project room at all.
+ *
+ * **`read_canvas` IS here, and the difference from merging is the turn it lands
+ * in** (DOR-1999). `<room_tools>` names it callably, in the same breath as the
+ * four conversation verbs and under the same prefix — a deferred name inside
+ * THAT block is the DOR-1292 shape this file warns about twice, because the
+ * block's whole contract is "these are the tools you have". And the turn is the
+ * one this list exists for: the room's context block tells every turn what is on
+ * the canvas but never what a document SAYS, so an agent answering "what does
+ * that say?" needs it inside the reply somebody is waiting on. Merging is the
+ * opposite turn — it follows work already committed, so its lookup lands among
+ * the git commands the agent is already running.
  */
 export const ALWAYS_LOADED_TOOLS: ReadonlySet<string> = new Set([
   'post_to_room',
@@ -183,6 +194,7 @@ export const ALWAYS_LOADED_TOOLS: ReadonlySet<string> = new Set([
   'search_room_history',
   'list_member_rooms',
   'search_member_rooms',
+  'read_canvas',
   'list_capabilities',
   'memory_write',
 ]);
@@ -192,7 +204,7 @@ export const ALWAYS_LOADED_TOOLS: ReadonlySet<string> = new Set([
  *
  * Granted eagerly only to sessions that ARE a registered mesh agent with Relay
  * on — never to a plain session, which is most of them. The trade is the same
- * one the eight above make and it is paid by a different set of turns: reaching
+ * one the nine above make and it is paid by a different set of turns: reaching
  * a peer means finding it (`mesh_list`), reading its address
  * (`mesh_inspect`), and sending (`relay_send`, `relay_send_async`,
  * `relay_send_and_wait`, `relay_inbox`), and DorkOS's own tester watched an

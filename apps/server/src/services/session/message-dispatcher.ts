@@ -113,6 +113,7 @@
  */
 import type {
   AgentRuntime,
+  MessageOpts,
   RuntimeCapabilities,
   RuntimeDeliveryResult,
 } from '@dorkos/shared/agent-runtime';
@@ -707,6 +708,11 @@ export interface DispatchMessageOpts {
   context?: ClientContext;
   /** Where this turn is happening, when a room triggered it. */
   roomContext?: RoomContextData;
+  /**
+   * The room, the acting member and the turn id, when a room triggered it —
+   * routing metadata that never reaches a prompt (spec `room-canvas` §5.3).
+   */
+  roomTurn?: MessageOpts['roomTurn'];
   /** Background the caller attached to this turn; the person never sees it. */
   seedContext?: string;
   /**
@@ -933,6 +939,7 @@ interface DispatchPlan {
     | 'cwd'
     | 'context'
     | 'roomContext'
+    | 'roomTurn'
     | 'seedContext'
     | 'approvalVerdict'
     | 'systemPromptAppend'
@@ -1212,6 +1219,7 @@ function launchDispatch(
       ...(turn.cwd !== undefined ? { cwd: turn.cwd } : {}),
       ...(turn.context ? { context: turn.context } : {}),
       ...(turn.roomContext ? { roomContext: turn.roomContext } : {}),
+      ...(turn.roomTurn ? { roomTurn: turn.roomTurn } : {}),
       ...(turn.seedContext ? { seedContext: turn.seedContext } : {}),
       ...(turn.approvalVerdict ? { approvalVerdict: turn.approvalVerdict } : {}),
       ...(turn.systemPromptAppend !== undefined

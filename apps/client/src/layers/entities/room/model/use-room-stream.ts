@@ -381,6 +381,18 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
               );
               continue;
             }
+            // The room's shared canvas changed. Durable state like a reaction —
+            // whole document, no `seq`, re-sent in full on a resume — and, like a
+            // reaction, it never moves the cursor and never enters the history.
+            //
+            // **Dropped here on purpose, for now.** The server owns the table
+            // (spec `room-canvas` §3) and this frame is how a viewer's screen
+            // stays current with it; the slice that holds it and the two right-
+            // panel tabs that draw it are P2b's. Until then a reader ignores the
+            // frame rather than failing on it, which is the behaviour an older
+            // client would have had anyway — every addition on this union is
+            // additive for exactly that reason.
+            if (event.type === 'canvas') continue;
             // An author's own entry retires that author's indicators here. It
             // has to happen on the way in, beside the merge: the entry replays
             // on a reconnect and the `done` beside it does not, so a client that

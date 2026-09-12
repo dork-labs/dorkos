@@ -323,6 +323,21 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
         type: 'ui_command',
         command: command as RawOf<'ui_command'>['command'],
       };
+      // **The stamp has to survive this function, and it is the one edit that
+      // makes the two-caller canvas design safe** (spec `room-canvas` §5.2).
+      //
+      // This arm REBUILDS the event field by field and drops everything else on
+      // `data` — which is exactly what it is for, and exactly what would erase
+      // `applied` between the event queue and the projector. A room turn's
+      // collector applies every `ui_command` carrying no stamp, so an erased
+      // stamp means every claude-code canvas operation applies TWICE: two rows
+      // for content with no dedupe key, two counts against the per-turn ceiling,
+      // and two mentions in the turn's one line. Invisible until it is missing,
+      // which is why a round-trip test pins it rather than this comment.
+      const applied = data.applied;
+      if (applied !== undefined) {
+        uiCommand.applied = applied as RawOf<'ui_command'>['applied'];
+      }
       return uiCommand;
     }
 

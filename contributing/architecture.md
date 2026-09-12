@@ -538,6 +538,16 @@ Tools are implemented in `apps/server/src/services/runtimes/claude-code/mcp-tool
 
 The agent iteration loop: `create_extension` -> `test_extension` (smoke) -> `reload_extensions` (visual) -> iterate.
 
+## A room's shared canvas
+
+`RoomCanvasService` (`apps/server/src/services/rooms/canvas/`) owns the `canvas_documents` table — the documents a room's members, people and agents alike, have put in front of each other. It hangs off the room service (`getRoomService().canvas`) because the one line a turn writes about it is a room entry, and that class owns the single write path into a room's log.
+
+**`apply` is the single writer and the single enforcement point**, and it is synchronous. Everything that can say no lives in it: an archived room, an action that is not one of the six canvas verbs, a verb with nothing to act on, the per-turn ceiling (`rooms.maxCanvasOpsPerTurn`), and another member's live edit lock. Synchronous, because the claude-code `control_ui` handler answers the model on the same call stack — a ceiling enforced later would be refusing something the tool had already called a success.
+
+**Two callers reach it, and a stamp keeps them from doubling** (ADR `260911-200303`). The claude-code handler calls it itself and stamps the `ui_command` event it then pushes; the room turn's collector (`collectReply` in `room-turn-runner.ts`) calls it for every `ui_command` carrying NO stamp, which is how codex and the scripted test-mode runtime reach the same writer. The stamp survives `session-event-normalizer.ts`, which rebuilds that event field by field — without that one edit every claude-code operation applies twice. Where a room turn is happening travels as `MessageOpts.roomTurn`, routing metadata rather than prompt context, and claude-code assigns it unconditionally so a session that ran a room turn writes to no room on its next direct turn.
+
+**A change wakes nobody** (ADR `260911-200302`). Three channels and no fourth: a `canvas` section in every turn's room context, one coalesced entry per turn composed from the service's own per-turn ledger, and an ordinary `@mention` when an agent wants eyes. The `canvas` stream frame is modelled on `reaction` rather than on `entry` — whole-document state, no `seq`, re-sent in full on a resume — so the room stream keeps exactly one cursor.
+
 ## Community Registry (the fourth seam)
 
 `CommunityAdapter` (`packages/shared/src/community-adapter.ts`) is the fourth swappable seam beside `AgentRuntime`, `Transport` and `ConnectorProvider`. It lets one local server read and write rooms in more than one place — this machine's SQLite rooms, a foreign relay, a hosted community — without the cockpit, the router or the session spine learning that more than one place exists. **The client's `Transport` is unchanged**: the seam is entirely server-side, so keys never touch the browser and there is one render path and one streaming model.

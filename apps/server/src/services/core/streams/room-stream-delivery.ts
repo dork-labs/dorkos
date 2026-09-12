@@ -115,6 +115,17 @@ export async function deliverRoomStream(
         if (sink.closed) return;
         await send(event);
       }
+      // And the room's shared canvas, whole, for the same reason and in the same
+      // shape — the exact parallel of the resync above (spec `room-canvas` §2).
+      // A document that was CLOSED while this reader was away leaves no trace on
+      // the log to replay, because a close is a deletion, so nothing but a
+      // re-send of everything that is still there can correct it. That is what
+      // makes this authoritative as a SET: a client replaces its table from
+      // these frames rather than merging them in.
+      for (const event of service.canvasResync(roomId)) {
+        if (sink.closed) return;
+        await send(event);
+      }
     } else {
       const snapshot = service.snapshot(roomId, viewerAuthorId, ROOMS.SNAPSHOT_HISTORY_LIMIT);
       if (sink.closed) return;
