@@ -1874,7 +1874,7 @@ assertion without reading its comment trail.
 - **`capability-conformance.test.ts:472-580` `sampleInputs`** gains a realistic input per new
   capability id, or the conformance run cannot invoke it.
 
-**One conflict inside this spec, to resolve before editing that guard.** This phase's create/modify list says `mcp-tool-gate.test.ts` (+2 reasons), and §2.5 and the table above say `AUTO_ALLOW_ACT_REASONS` keeps its 22 entries through every phase because no phase edits `DORKOS_AGENT_TOOLS`. §2.5 is the half that carries the reasoning and the two-way pin (`:555-579`), so the "+2 reasons" in the create/modify list reads as stale. Do not change either assertion without reading its comment trail; if the recording verbs genuinely need auto-allow entries, that is a decision to raise at review, not a number to edit.
+**Settled (2026-09-12): `mcp-tool-gate.test.ts` is not edited in this phase.** An earlier draft of the create/modify list said `mcp-tool-gate.test.ts` (+2 reasons); the list is corrected, and §2.5 and the table above say `AUTO_ALLOW_ACT_REASONS` keeps its 22 entries through every phase because no phase edits `DORKOS_AGENT_TOOLS`. §2.5 is the half that carries the reasoning and the two-way pin (`:555-579`), so the "+2 reasons" in the create/modify list reads as stale. Do not change either assertion without reading its comment trail; if the recording verbs genuinely need auto-allow entries, that is a decision to raise at review, not a number to edit.
 
 #### Data model changes — item 2, the sub-bullet this phase lands
 
