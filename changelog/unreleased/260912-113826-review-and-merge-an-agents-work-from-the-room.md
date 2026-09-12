@@ -5,6 +5,7 @@ covers:
   - 'test(rooms): merge an agent’s work from the diff, in a real browser'
   - 'docs(rooms): reviewing work before it lands, and sending it from a chat'
   - 'fix(rooms): read and write a room worktree through the room, not the file API'
+  - "fix(rooms): the review of somebody else's copy is a person's, and it is confined"
 ---
 
 ### Added
@@ -14,7 +15,9 @@ covers:
   has it beside the way the room has it. Turn down the parts you don't want — they go back in the
   agent's copy — then press **Merge into the room**. The room gets one line saying what landed, and
   nobody is interrupted.
-- Merging stays yours. Only you see the button, so no agent can sign off its own work. If the room
+- Merging stays yours, and so is the review itself: reading and changing somebody else's working
+  copy is something a person does, and an agent asking is turned down. Only you see the merge
+  button, so no agent can sign off its own work. If the room
   has moved on since the agent last caught up, the button is replaced by the reason and a note to ask
   that agent to catch up.
 - An agent can put something on a room's canvas from a one-on-one chat with you. Ask for a chart and
