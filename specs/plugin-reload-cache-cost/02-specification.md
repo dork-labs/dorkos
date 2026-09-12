@@ -2,7 +2,7 @@
 slug: plugin-reload-cache-cost
 id: 260911-191240
 created: 2026-09-12
-status: specified
+status: implemented
 ---
 
 # Plugin reloads that respect the prompt cache

@@ -2,7 +2,7 @@
 slug: ambient-background-tasks
 id: 260911-191248
 created: 2026-09-12
-status: specified
+status: implemented
 ---
 
 # Housekeeping tasks stay quiet
