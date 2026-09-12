@@ -83,22 +83,13 @@ export function setCanvasService(service: CanvasService): void {
 }
 
 /**
- * The active canvas service.
- *
- * @returns The service.
- * @throws {Error} When nothing has registered one — a wiring fault, caught at boot.
- */
-export function getCanvasService(): CanvasService {
-  if (!active) throw new Error('CanvasService not initialized');
-  return active;
-}
-
-/**
  * The active canvas service, or `undefined` when this process has none.
  *
- * For the callers that must degrade rather than throw: a snapshot decoration on
- * a host that never stood a canvas up should answer with an empty table, not
- * take the session stream down.
+ * There is no throwing twin, deliberately. Every reader here is one that must
+ * DEGRADE rather than fail: a snapshot decoration on a host that never stood a
+ * canvas up answers with an empty table, and `control_ui` falls through to the
+ * event it always pushed. A getter that threw would turn "no canvas here" into
+ * a broken session stream.
  *
  * @returns The service, or `undefined`.
  */

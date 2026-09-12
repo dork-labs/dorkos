@@ -471,16 +471,6 @@ export function setSessionCanvasTransport(transport: SessionCanvasTransport | nu
   canvasTransport = transport;
 }
 
-/**
- * The transport, or `null` when nothing has been bound.
- *
- * @internal Exported for testing only. A slice with no transport behaves as a
- * purely local one, which is what an unbound test gets.
- */
-export function peekSessionCanvasTransport(): SessionCanvasTransport | null {
-  return canvasTransport;
-}
-
 /** How often a focused editor refreshes its claim on a document (server TTL is 45s). */
 const EDIT_HEARTBEAT_MS = 15_000;
 
