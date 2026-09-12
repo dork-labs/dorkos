@@ -121,6 +121,26 @@ describe('starting a recording', () => {
     expect(store.recordingFor('s1')).toBeUndefined();
   });
 
+  it('ends the recording before refusing a stop with nowhere to save', async () => {
+    // The one path that could leave dangling state: a stop that returns without
+    // clearing it makes every later start refuse "already running" and every
+    // later stop refuse again, with nothing able to break the loop.
+    const store = storeWithDriver();
+    const { session } = makeSession();
+    const deps = { resolveSessionId: () => 's1', store, session };
+    const withCwd = createRecordingHandlers({ ...deps, resolveCwd: () => '/tmp/cwd' });
+    const withoutCwd = createRecordingHandlers({ ...deps, resolveCwd: () => undefined });
+    await withCwd.start({});
+
+    const answer = await withoutCwd.stop();
+
+    expect(answer.payload.ok).toBe(false);
+    expect(String(answer.payload.note)).toContain('nowhere to save');
+    expect(store.recordingFor('s1')).toBeUndefined();
+    // And the session is not wedged: the very next start works.
+    expect((await withCwd.start({})).payload.ok).toBe(true);
+  });
+
   it('refuses a session with nowhere to save, before anything is filmed', async () => {
     const store = storeWithDriver();
     const { session } = makeSession();
@@ -200,6 +220,70 @@ describe('a running recording turns every action into a frame', () => {
       did: 'Clicked.',
     });
     expect((await after).payload).toMatchObject({ ok: true, did: 'Clicked.' });
+  });
+
+  it('counts an action the recording could not film, and says so on stop', async () => {
+    const store = storeWithDriver();
+    const { recording, driving, eventQueue } = seat(store, 500);
+    await recording.start({});
+
+    // A person brought a preview to the front in ANOTHER window. The action is
+    // addressed there, really runs, and is not in the film.
+    store.ingest(
+      's1',
+      { documentId: 'doc-b', seq: 2, console: [], network: [], active: true, instrumented: true },
+      'client-b'
+    );
+    const acted = driving.click({ text: 'Pay' });
+    const request = pushed(eventQueue);
+    expect(request.data.targetClientId).toBe('client-b');
+    // Never asked for a frame from a window that is not holding the buffer.
+    expect(request.data.capture).toBeUndefined();
+    store.resolveAction({ requestId: request.data.requestId, ok: true, did: 'Clicked.' });
+    // The action itself still succeeds — the run is not what went wrong.
+    expect((await acted).payload).toMatchObject({ ok: true, did: 'Clicked.' });
+
+    const stopping = recording.stop();
+    const stopEvent = pushed(eventQueue);
+    store.resolveRecording(stopEvent.data.requestId, {
+      ok: true,
+      path: '.dork/.temp/recordings/rec.gif',
+      bytes: 10,
+      frames: 2,
+      durationMs: 1_000,
+      keyframe: null,
+    });
+
+    const answer = await stopping;
+    // `ok: true` with an unexplained gap is the one thing §10 forbids.
+    expect(answer.payload).toMatchObject({ ok: true, missed: 1 });
+    expect(String(answer.payload.note)).toContain('another window');
+  });
+
+  it('says nothing about missed frames when the whole run was filmed', async () => {
+    const { recording, driving, eventQueue, store } = seat(storeWithDriver(), 500);
+    await recording.start({});
+    const answer = driving.click({ text: 'Pay' });
+    store.resolveAction({
+      requestId: pushed(eventQueue).data.requestId,
+      ok: true,
+      captured: true,
+    });
+    await answer;
+
+    const stopping = recording.stop();
+    store.resolveRecording(pushed(eventQueue).data.requestId, {
+      ok: true,
+      path: '.dork/.temp/recordings/rec.gif',
+      bytes: 10,
+      frames: 3,
+      durationMs: 1_000,
+      keyframe: null,
+    });
+
+    const stopped = await stopping;
+    expect(stopped.payload.missed).toBeUndefined();
+    expect(String(stopped.payload.note)).not.toContain('another window');
   });
 
   it('drops the buffer when the window lets that page go', async () => {

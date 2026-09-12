@@ -54,6 +54,12 @@ const RECORDINGS_DIR = path.join('.dork', '.temp', 'recordings');
  * @param res - The Express response (204 / 400 / 404 / 413 / 500).
  */
 export async function sessionDevtoolsRecordingHandler(req: Request, res: Response): Promise<void> {
+  // Parsed to REFUSE a malformed id, and then deliberately unused — the same
+  // requestId-only keying `sessionDevtoolsActionHandler` explains beside it. A
+  // brand-new session is rekeyed to its canonical id mid-first-turn, so an
+  // upload matched on the id in this URL could arrive under one id for a waiter
+  // registered under the other and strand the tool call. The `requestId` below
+  // is single-use and server-minted, which is what actually addresses this.
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
 

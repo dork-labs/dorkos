@@ -318,7 +318,9 @@ export function useDevtoolsBridge({
    * arriving after the session changed cannot re-claim a seat under the id the
    * old closure captured. `null` means "there is no session to claim for".
    */
-  const claimSeat = useRef<((active: boolean, keepalive?: boolean) => void) | null>(null);
+  const claimSeat = useRef<
+    ((active: boolean, opts?: { keepalive?: boolean; activation?: boolean }) => void) | null
+  >(null);
   /**
    * The recording this window is filling, or `null`.
    *
@@ -571,7 +573,10 @@ export function useDevtoolsBridge({
   useEffect(() => {
     const sid = sessionId;
     if (!sid) return;
-    claimSeat.current = (active: boolean, keepalive = false): void => {
+    claimSeat.current = (
+      active: boolean,
+      { keepalive = false, activation = true }: { keepalive?: boolean; activation?: boolean } = {}
+    ): void => {
       // Claims for one page go out in ORDER, chained on the previous one. Two
       // fire-and-forget POSTs can arrive either way round, and on an in-preview
       // navigation the pair is a release followed by a claim: arriving swapped,
@@ -589,6 +594,11 @@ export function useDevtoolsBridge({
               console: [],
               network: [],
               active,
+              // Says whether this is a person bringing the page to the front or
+              // the beat below saying nothing changed (spec `canvas-agent-seat`
+              // §2.2). Sent only when it is FALSE: absent means activation, so
+              // every other caller here reads as one without saying so.
+              ...(activation ? {} : { activation: false }),
               // True only for the page the frame is showing NOW. A handshake
               // that belonged to the page before a navigation is not an answer
               // about this one.
@@ -609,11 +619,20 @@ export function useDevtoolsBridge({
     // its network never sends a release — and a seat nobody is sitting in makes
     // every verb address a window that no longer answers. The server yields a
     // seat that has missed six of these.
-    const refresh = setInterval(() => claim(true), SEAT_REFRESH_MS);
+    //
+    // **The ONE caller that is not an activation**, and the reason the field
+    // exists: this fires in every window with a preview mounted, so a beat that
+    // claimed the seat made two open windows trade it every 15 s — and every
+    // action dispatched to the window that was not filming went unrecorded while
+    // `browser_record_stop` still answered `ok`.
+    const refresh = setInterval(
+      () => claimSeat.current?.(true, { activation: false }),
+      SEAT_REFRESH_MS
+    );
     // The one release a vanishing window CAN still send. `keepalive` is what
     // makes it survive the unload; it is best effort, and the staleness rule
     // above is what makes it not have to work.
-    const onPageHide = (): void => claimSeat.current?.(false, true);
+    const onPageHide = (): void => claimSeat.current?.(false, { keepalive: true });
     // And the two moments a window comes BACK, where the beat alone is not
     // enough. A tab hidden for more than five minutes has its timers aligned to
     // one wake per minute (Chrome), and a tab restored from the back/forward
@@ -776,13 +795,32 @@ export function useDevtoolsBridge({
       }
 
       try {
-        const drawn = await drawFrames(live.frames, live.bounds.longEdgePx);
-        const encoded = await encodeGif(drawn, {
-          frameMs: live.bounds.frameMs,
-          maxBytes: live.bounds.maxBytes,
-        });
+        const bounds = { frameMs: live.bounds.frameMs, maxBytes: live.bounds.maxBytes };
+        let drawn = await drawFrames(live.frames, live.bounds.longEdgePx);
+        let encoded = await encodeGif(drawn, bounds);
+        let halved = false;
+        if (!encoded.ok && drawn.length > 0) {
+          // ONE retry at half the long edge (spec §3.3). A graphics-heavy run of
+          // sixty frames goes over 8 MiB at full size and comes in comfortably
+          // at a quarter of the pixels, so the choice is between a smaller film
+          // and no film — and a second miss is reported honestly rather than
+          // looped on, exactly as the page's own rasterizer does.
+          drawn = await drawFrames(
+            live.frames,
+            Math.max(1, Math.round(live.bounds.longEdgePx / 2))
+          );
+          encoded = await encodeGif(drawn, bounds);
+          halved = true;
+        }
         if (!encoded.ok) {
-          await fail(encoded.error);
+          // Says what was actually tried. Before the retry existed the agent was
+          // told the recording had been shrunk and still failed, which had not
+          // happened — the kind of sentence this feature is least able to afford.
+          await fail(
+            halved
+              ? `${encoded.error} It was redrawn at half the size and was still too big, so it was not saved.`
+              : `${encoded.error} It was not saved.`
+          );
           return;
         }
         await transport.uploadDevtoolsRecording(sid, {

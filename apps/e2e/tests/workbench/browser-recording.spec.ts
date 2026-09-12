@@ -120,8 +120,11 @@ test.describe('Browser — an agent records what it did @smoke', () => {
     // already covers — never a path the agent or the page chose.
     expect(path!.startsWith('.dork/.temp/recordings/')).toBe(true);
     expect(path!.endsWith('.gif')).toBe(true);
-    // A frame on start, one per action that captured, one on stop.
-    expect(frames).toBeGreaterThanOrEqual(2);
+    // EXACTLY four: one on start, one for the click, one for the wait, one on
+    // stop. Per-action capture is the half no server or jsdom test can reach, so
+    // a `>=` bound here would pass with both action frames silently dropped —
+    // which is precisely the failure the seat fix exists to prevent.
+    expect(frames, `the run did not film every action:\n${text}`).toBe(4);
     // The picture that came back is the LAST FRAME as a PNG, never the GIF.
     expect(text).toContain('stop-keyframe: image/png');
 

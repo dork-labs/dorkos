@@ -5768,6 +5768,22 @@ export const DevtoolsIngestSchema = z
      */
     active: z.boolean().optional(),
     /**
+     * Whether this claim is an ACTIVATION or a keep-alive (spec
+     * `canvas-agent-seat` §2.2).
+     *
+     * `true` — or absent — means a person brought this browser document to the
+     * front in this window, and the seat moves here. `false` means the window is
+     * saying it is still showing the same page on its refresh beat, which
+     * refreshes the row's clock and moves nothing.
+     *
+     * **Absent means activation on purpose**: every claim sent before this field
+     * existed was one, so a client that predates it keeps exactly the behaviour
+     * it shipped with. The defect it closes is specific to the beat — two open
+     * windows re-reporting every 15 s made the seat alternate between them, and
+     * a recording pinned to one missed every action dispatched to the other.
+     */
+    activation: z.boolean().optional(),
+    /**
      * Whether the in-page shim ever handshook with this window for `documentId`.
      *
      * A page DorkOS serves or proxies carries the shim and answers `hello`; a

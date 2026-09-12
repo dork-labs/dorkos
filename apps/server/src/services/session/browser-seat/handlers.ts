@@ -48,7 +48,13 @@ export type BrowserSeatSessionResolver = () => string | undefined;
 /** The subset of the capture store the driving verbs depend on. */
 export type BrowserSeatStore = Pick<
   DevtoolsCaptureStore,
-  'read' | 'hasDrivers' | 'resolveDriver' | 'awaitAction' | 'recordingFor' | 'noteRecordedFrame'
+  | 'read'
+  | 'hasDrivers'
+  | 'resolveDriver'
+  | 'awaitAction'
+  | 'recordingFor'
+  | 'noteRecordedFrame'
+  | 'noteMissedFrame'
 >;
 
 /** What a driving verb hands back: a JSON payload, and whether it is an error. */
@@ -176,11 +182,16 @@ async function dispatch(
   // no second timeout. A recording that has hit its ceiling keeps driving and
   // stops filming — which is the whole reason `full` is a flag and not a stop.
   const recording = deps.store.recordingFor(sessionId);
-  const capture =
+  const onTheRecordedPage =
     recording !== undefined &&
     recording.documentId === claim.documentId &&
-    recording.clientId === claim.clientId &&
-    !recording.full;
+    recording.clientId === claim.clientId;
+  const capture = onTheRecordedPage && !recording.full;
+  // This action is going somewhere the recording cannot reach — a person
+  // activated a preview in another window mid-run. It still happens, and it is
+  // still missing from the film, so the stop answer has to say so rather than
+  // hand back a gap it calls a record (spec §10).
+  if (recording !== undefined && !onTheRecordedPage) deps.store.noteMissedFrame(sessionId);
 
   const requestId = randomUUID();
   deps.session.eventQueue.push({

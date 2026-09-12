@@ -248,3 +248,104 @@ describe('awaiting one driving round trip', () => {
     ).not.toThrow();
   });
 });
+
+describe('a keep-alive is not a claim', () => {
+  let store: DevtoolsCaptureStore;
+
+  beforeEach(() => {
+    store = new DevtoolsCaptureStore();
+  });
+
+  /** The 15 s beat: same window, same page, nothing changed. */
+  function beat(documentId: string): DevtoolsIngest {
+    return {
+      documentId,
+      seq: 1,
+      console: [],
+      network: [],
+      active: true,
+      activation: false,
+      instrumented: true,
+    };
+  }
+
+  it('leaves the seat where it is however long two windows both beat', () => {
+    store.ingest('s1', claim('doc-a', true), 'client-a');
+    store.ingest('s1', claim('doc-b', true), 'client-b');
+    expect(store.resolveDriver('s1')).toMatchObject({ clientId: 'client-b' });
+
+    // THE defect this closes. Every mounted preview re-reports every 15 s, so
+    // with the app open in two windows the seat used to alternate on every beat
+    // — and a recording pinned to one window missed every action dispatched to
+    // the other while still answering `ok`. Six beats is a minute and a half of
+    // two windows sitting there, which is the ordinary case, not an edge one.
+    for (let round = 0; round < 6; round += 1) {
+      store.ingest('s1', beat('doc-a'), 'client-a');
+      expect(store.resolveDriver('s1')).toMatchObject({ clientId: 'client-b' });
+      store.ingest('s1', beat('doc-b'), 'client-b');
+      expect(store.resolveDriver('s1')).toMatchObject({ clientId: 'client-b' });
+    }
+  });
+
+  it('still moves the seat when the other window really activates a page', () => {
+    store.ingest('s1', claim('doc-a', true), 'client-a');
+    store.ingest('s1', claim('doc-b', true), 'client-b');
+    store.ingest('s1', beat('doc-a'), 'client-a');
+    expect(store.resolveDriver('s1')).toMatchObject({ clientId: 'client-b' });
+
+    // A person brought window A's preview to the front: focus, a tab click, a
+    // page that just handshook. That is what the seat is FOR.
+    store.ingest('s1', claim('doc-a', true), 'client-a');
+    expect(store.resolveDriver('s1')).toMatchObject({ clientId: 'client-a' });
+  });
+
+  it('hands the seat over when its holder releases, even with beats in between', () => {
+    store.ingest('s1', claim('doc-a', true), 'client-a');
+    store.ingest('s1', claim('doc-b', true), 'client-b');
+    store.ingest('s1', beat('doc-a'), 'client-a');
+
+    store.ingest('s1', claim('doc-b', false), 'client-b');
+
+    expect(store.resolveDriver('s1')).toMatchObject({ clientId: 'client-a' });
+  });
+
+  it('hands the seat over when its holder goes stale, even while the other beats', () => {
+    vi.useFakeTimers();
+    try {
+      store.ingest('s1', claim('doc-a', true), 'client-a');
+      store.ingest('s1', claim('doc-b', true), 'client-b');
+
+      // B holds the seat and then stops answering; A keeps beating. Past the
+      // stale floor the seat has to fall to A, or every verb addresses a window
+      // that is gone for the life of the session.
+      for (let round = 0; round < 7; round += 1) {
+        vi.advanceTimersByTime(15_000);
+        store.ingest('s1', beat('doc-a'), 'client-a');
+      }
+
+      expect(store.resolveDriver('s1')).toMatchObject({ clientId: 'client-a' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('treats a claim with no `activation` field as an activation', () => {
+    // A client that predates the field keeps exactly the behaviour it shipped
+    // with: absent means a person put this page in front.
+    store.ingest('s1', claim('doc-a', true), 'client-a');
+    store.ingest('s1', claim('doc-b', true), 'client-b');
+    store.ingest('s1', claim('doc-a', true), 'client-a');
+
+    expect(store.resolveDriver('s1')).toMatchObject({ clientId: 'client-a' });
+  });
+
+  it('makes a window reachable even if its first word is a keep-alive', () => {
+    // Nothing holds the seat, so a beat from a window nobody has heard from is
+    // still an answer to "which window is showing a preview" — "nothing is
+    // open" would be false about a window that plainly is.
+    store.ingest('s1', beat('doc-a'), 'client-a');
+
+    expect(store.hasDrivers('s1')).toBe(true);
+    expect(store.resolveDriver('s1')).toMatchObject({ clientId: 'client-a' });
+  });
+});

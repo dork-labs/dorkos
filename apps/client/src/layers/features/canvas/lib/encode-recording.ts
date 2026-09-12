@@ -51,7 +51,8 @@ export type EncodeResult = { ok: true; bytes: Uint8Array } | { ok: false; error:
  * closely.
  *
  * Over the byte cap it answers with a sentence rather than an enormous file —
- * the caller re-draws smaller and asks again, which is a decision that belongs
+ * the caller re-draws smaller and asks again (spec §3.3's one retry at half the
+ * long edge), which is a decision that belongs
  * where the canvas is, not here.
  *
  * @param frames - The frames, in order, all the same size.

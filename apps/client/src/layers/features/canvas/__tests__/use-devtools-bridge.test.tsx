@@ -96,16 +96,22 @@ vi.mock('../lib/load-rasterizer', () => ({
 // about is the ROUTING — which frames reach the buffer, which never reach the
 // server, and what is uploaded — and the encoder itself is proved against its
 // own output in `lib/__tests__/encode-recording.test.ts`.
-const drawFrames = vi.fn(async (dataUrls: readonly string[]) =>
+type EncodeOutcome = { ok: true; bytes: Uint8Array } | { ok: false; error: string };
+const OK_GIF: EncodeOutcome = { ok: true, bytes: new Uint8Array([0x47, 0x49, 0x46]) };
+const drawFrames = vi.fn(async (dataUrls: readonly string[], _longEdgePx: number) =>
   dataUrls.map(() => ({ data: new Uint8ClampedArray(4), width: 1, height: 1 }))
 );
-let encodeResult: { ok: true; bytes: Uint8Array } | { ok: false; error: string } = {
-  ok: true,
-  bytes: new Uint8Array([0x47, 0x49, 0x46]),
-};
-const encodeGif = vi.fn(async () => encodeResult);
+/**
+ * What the next `encodeGif` calls answer, in order.
+ *
+ * A QUEUE rather than one value, because the retry at half the long edge (spec
+ * §3.3) is a second call whose answer has to differ from the first's — a single
+ * value cannot tell "it fitted on the retry" from "it never fitted".
+ */
+let encodeResults: EncodeOutcome[] = [OK_GIF];
+const encodeGif = vi.fn(async () => encodeResults.shift() ?? OK_GIF);
 vi.mock('../lib/encode-recording', () => ({
-  drawFrames: (dataUrls: readonly string[]) => drawFrames(dataUrls),
+  drawFrames: (dataUrls: readonly string[], longEdgePx: number) => drawFrames(dataUrls, longEdgePx),
   encodeGif: () => encodeGif(),
 }));
 
@@ -192,7 +198,7 @@ beforeEach(() => {
   uploadDevtoolsRecording.mockClear();
   drawFrames.mockClear();
   encodeGif.mockClear();
-  encodeResult = { ok: true, bytes: new Uint8Array([0x47, 0x49, 0x46]) };
+  encodeResults = [OK_GIF];
   loadRasterizerSource.mockClear();
   sessionEventListeners.clear();
   iframe = document.createElement('iframe');
@@ -1259,11 +1265,10 @@ describe('useDevtoolsBridge — recording a run', () => {
     await vi.advanceTimersByTimeAsync(0);
 
     // Three frames: the one on start, the one the action produced, the one on stop.
-    expect(drawFrames).toHaveBeenCalledWith([
-      'data:image/png;base64,AAAA',
-      'data:image/png;base64,BBBB',
-      'data:image/png;base64,CCCC',
-    ]);
+    expect(drawFrames).toHaveBeenCalledWith(
+      ['data:image/png;base64,AAAA', 'data:image/png;base64,BBBB', 'data:image/png;base64,CCCC'],
+      800
+    );
     const [sid, upload] = (uploadDevtoolsRecording as Mock).mock.calls.at(-1) as [
       string,
       Record<string, { name: string; type: string }> & { requestId: string; frames: number },
@@ -1273,6 +1278,42 @@ describe('useDevtoolsBridge — recording a run', () => {
     expect(upload.frames).toBe(3);
     expect(upload.recording.type).toBe('image/gif');
     expect(upload.keyframe.type).toBe('image/png');
+  });
+
+  it('redraws once at half the size before giving up, and says which happened', async () => {
+    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage') as unknown as Mock;
+    mount();
+    emit(recordingEvent('start', 'r1'));
+    await vi.advanceTimersByTimeAsync(0);
+    postFrom(iframe.contentWindow, {
+      __dorkosDevtools: 'capture-result',
+      requestId: lastFrameRequestId(postSpy),
+      dataUrl: 'data:image/png;base64,AAAA',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    // Over the cap at full size, under it at half — the case the spec's one
+    // retry exists for, and the one that used to lose the run outright.
+    encodeResults = [{ ok: false, error: 'The recording came out bigger than 8 MB.' }, OK_GIF];
+
+    emit(recordingEvent('stop', 'r2'));
+    await vi.advanceTimersByTimeAsync(0);
+    postFrom(iframe.contentWindow, {
+      __dorkosDevtools: 'capture-result',
+      requestId: lastFrameRequestId(postSpy),
+      dataUrl: 'data:image/png;base64,CCCC',
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Drawn twice: once at the recording size the server set, once at half it.
+    const sizes = drawFrames.mock.calls.map(([, longEdgePx]) => longEdgePx);
+    expect(sizes).toEqual([800, 400]);
+    // And the file really went, rather than the run being lost with a sentence.
+    const upload = (uploadDevtoolsRecording as Mock).mock.calls.at(-1)?.[1] as {
+      requestId: string;
+      error?: string;
+    };
+    expect(upload.requestId).toBe('r2');
+    expect(upload.error).toBeUndefined();
   });
 
   it('reports the encoder`s refusal instead of leaving the tool to time out', async () => {
@@ -1286,7 +1327,8 @@ describe('useDevtoolsBridge — recording a run', () => {
       dataUrl: 'data:image/png;base64,AAAA',
     });
     await vi.advanceTimersByTimeAsync(0);
-    encodeResult = { ok: false, error: 'The recording came out bigger than 8 MB.' };
+    const tooBig = { ok: false as const, error: 'The recording came out bigger than 8 MB.' };
+    encodeResults = [tooBig, tooBig];
 
     emit(recordingEvent('stop', 'r2'));
     await vi.advanceTimersByTimeAsync(0);
@@ -1297,9 +1339,14 @@ describe('useDevtoolsBridge — recording a run', () => {
     });
     await vi.advanceTimersByTimeAsync(0);
 
+    // The sentence names what was actually tried. Saying "it was not saved"
+    // without the redraw would describe a retry that had not happened; saying it
+    // here would describe one that had not, before the retry existed.
     expect((uploadDevtoolsRecording as Mock).mock.calls.at(-1)?.[1]).toEqual({
       requestId: 'r2',
-      error: 'The recording came out bigger than 8 MB.',
+      error:
+        'The recording came out bigger than 8 MB. It was redrawn at half the size and was ' +
+        'still too big, so it was not saved.',
     });
   });
 

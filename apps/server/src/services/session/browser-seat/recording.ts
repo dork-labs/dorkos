@@ -61,6 +61,25 @@ const RECORDING_FULL_NOTE =
   `The recording filled up at ${WORKBENCH.MAX_RECORDING_FRAMES} frames, so anything you did ` +
   'after that is not in it. Everything you did still happened.';
 
+/**
+ * What the stop answer adds when some of the run happened out of shot.
+ *
+ * A recording's frames live in the ONE window that started it, so an action the
+ * server sent to a different window — somebody brought another preview to the
+ * front mid-run — really ran and really is missing. Said in the same shape the
+ * ceiling is said in, because it is the same kind of fact: the work happened,
+ * the film is short of it.
+ *
+ * @param missed - How many actions ran somewhere this recording could not film.
+ */
+function recordingMissedNote(missed: number): string {
+  const actions = missed === 1 ? '1 thing you did' : `${missed} things you did`;
+  return (
+    `${actions} happened in another window while this was recording, so they are not in the ` +
+    'file. Everything you did still happened. Keep one window in front to film a whole run.'
+  );
+}
+
 /** The subset of the capture store the two recording verbs depend on. */
 export type RecordingStore = Pick<
   DevtoolsCaptureStore,
@@ -173,11 +192,16 @@ export function createRecordingHandlers(
     async stop(): Promise<DrivingAnswer> {
       const sessionId = deps.resolveSessionId();
       if (!sessionId) return SESSIONLESS_ANSWER;
-      const cwd = deps.resolveCwd();
-      if (!cwd) return { payload: { ok: false, note: NO_CWD_NOTE } };
-
+      // Ended FIRST, before anything else can refuse. A stop that returns
+      // without clearing the state leaves a recording nothing can ever finish:
+      // every later start is refused "already running" and every later stop
+      // refuses again. Nothing about this phase is allowed to leave dangling
+      // state, and this is the one path that could.
       const recording = deps.store.endRecording(sessionId);
       if (!recording) return { payload: { ok: false, note: NOTHING_RECORDING_NOTE } };
+
+      const cwd = deps.resolveCwd();
+      if (!cwd) return { payload: { ok: false, note: NO_CWD_NOTE } };
 
       const requestId = randomUUID();
       // Registered BEFORE the request goes out, so the upload route can never
@@ -204,6 +228,12 @@ export function createRecordingHandlers(
         return { payload: { ok: false, documentId: recording.documentId, note: outcome.error } };
       }
 
+      // Every true thing about the film, in the order it matters: what is
+      // missing first, then where to find what is there.
+      const caveats = [
+        ...(recording.full ? [RECORDING_FULL_NOTE] : []),
+        ...(recording.missed > 0 ? [recordingMissedNote(recording.missed)] : []),
+      ];
       const body = {
         ok: true,
         documentId: recording.documentId,
@@ -211,7 +241,8 @@ export function createRecordingHandlers(
         frames: outcome.frames,
         bytes: outcome.bytes,
         seconds: Math.max(1, Math.round(outcome.durationMs / 1000)),
-        note: recording.full ? `${RECORDING_FULL_NOTE} ${RECORDING_NOTE}` : RECORDING_NOTE,
+        ...(recording.missed > 0 ? { missed: recording.missed } : {}),
+        note: [...caveats, RECORDING_NOTE].join(' '),
       };
       // The GIF itself is never a tool result. Megabytes of base64 that no model
       // can watch animate buys nothing; the LAST frame is the state the page
