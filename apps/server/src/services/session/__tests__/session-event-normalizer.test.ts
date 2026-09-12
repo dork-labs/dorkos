@@ -633,6 +633,88 @@ describe('toRawSessionEvent', () => {
       expected: null,
     },
     {
+      // The `capture` flag is what makes an action keep a recording frame (spec
+      // `canvas-agent-seat` §3.2), and this hop is where it would be lost: the
+      // recording would keep running with every frame missing, and nothing
+      // anywhere would fail to say so.
+      name: 'devtools_action_request carries the recording capture flag through',
+      input: {
+        type: 'devtools_action_request',
+        data: {
+          requestId: 'req-1',
+          targetClientId: 'win-1',
+          documentId: 'doc-1',
+          command: { action: 'click', target: { text: 'Pay' } },
+          capture: true,
+        },
+      } as unknown as StreamEvent,
+      expected: {
+        type: 'devtools_action_request',
+        requestId: 'req-1',
+        targetClientId: 'win-1',
+        documentId: 'doc-1',
+        command: { action: 'click', target: { text: 'Pay' } },
+        capture: true,
+      },
+    },
+    {
+      name: 'devtools_action_request leaves the capture flag off when nothing is recording',
+      input: {
+        type: 'devtools_action_request',
+        data: {
+          requestId: 'req-2',
+          targetClientId: 'win-1',
+          documentId: 'doc-1',
+          command: { action: 'click', target: { text: 'Pay' } },
+        },
+      } as unknown as StreamEvent,
+      expected: {
+        type: 'devtools_action_request',
+        requestId: 'req-2',
+        targetClientId: 'win-1',
+        documentId: 'doc-1',
+        command: { action: 'click', target: { text: 'Pay' } },
+      },
+    },
+    {
+      name: 'devtools_recording_request → devtools_recording_request (carries the bounds)',
+      input: {
+        type: 'devtools_recording_request',
+        data: {
+          requestId: 'rec-req-1',
+          targetClientId: 'win-1',
+          documentId: 'doc-1',
+          action: 'start',
+          recordingId: '01JRECORDING',
+          bounds: { longEdgePx: 800, frameMs: 500, maxBytes: 8_388_608 },
+        },
+      } as unknown as StreamEvent,
+      expected: {
+        type: 'devtools_recording_request',
+        requestId: 'rec-req-1',
+        targetClientId: 'win-1',
+        documentId: 'doc-1',
+        action: 'start',
+        recordingId: '01JRECORDING',
+        bounds: { longEdgePx: 800, frameMs: 500, maxBytes: 8_388_608 },
+      },
+    },
+    {
+      name: 'devtools_recording_request with an unknown action → null (defensive)',
+      input: {
+        type: 'devtools_recording_request',
+        data: {
+          requestId: 'rec-req-2',
+          targetClientId: 'win-1',
+          documentId: 'doc-1',
+          action: 'rewind',
+          recordingId: '01JRECORDING',
+          bounds: { longEdgePx: 800, frameMs: 500, maxBytes: 8_388_608 },
+        },
+      } as unknown as StreamEvent,
+      expected: null,
+    },
+    {
       // The scope drives the sentence beside "Always Allow", so it has to
       // survive the lossy hop the way the SDK's other card context does
       // (DOR-1462).

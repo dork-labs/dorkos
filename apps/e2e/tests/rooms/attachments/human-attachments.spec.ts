@@ -1,10 +1,10 @@
 import { join } from 'node:path';
-import { test, expect } from '../../fixtures';
-import { SERVER_ROUND_TRIP_MS } from '../../fixtures/rooms-api';
-import { BasePage } from '../../pages/BasePage';
-import { RoomsPage } from '../../pages/RoomsPage';
-import { openCockpit } from './open-cockpit';
-import { expectComposerText } from '../../pages/composer-probe';
+import { test, expect } from '../../../fixtures';
+import { SERVER_ROUND_TRIP_MS } from '../../../fixtures/rooms-api';
+import { BasePage } from '../../../pages/BasePage';
+import { RoomsPage } from '../../../pages/RoomsPage';
+import { openCockpit } from '../open-cockpit';
+import { expectComposerText } from '../../../pages/composer-probe';
 
 // Same budget and same scheduling as `room-conversation.spec.ts`, for the same
 // reason: these tests seed a room, load a whole cockpit, and — here — a second
@@ -13,7 +13,7 @@ import { expectComposerText } from '../../pages/composer-probe';
 test.describe.configure({ mode: 'default', timeout: 90_000 });
 
 /** The two committed fixtures, one verifiable image and one thing that is not. */
-const FIXTURES = join(import.meta.dirname, '..', '..', 'fixtures', 'attachments');
+const FIXTURES = join(import.meta.dirname, '..', '..', '..', 'fixtures', 'attachments');
 const IMAGE_PATH = join(FIXTURES, 'room-mark.png');
 const IMAGE_NAME = 'room-mark.png';
 const LOG_PATH = join(FIXTURES, 'agent-run.log');

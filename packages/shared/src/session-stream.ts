@@ -782,6 +782,50 @@ export const SessionEventSchema = z
       targetClientId: z.string(),
       documentId: z.string(),
       command: BrowserActCommandSchema,
+      /**
+       * Keep a recording frame of what this action left behind (spec
+       * `canvas-agent-seat` §3.2).
+       *
+       * Set only while a recording is running on this page and has not hit its
+       * frame ceiling. The frame rides the SAME round trip rather than a second
+       * one: one message, one result, one frame, and no second timeout to reason
+       * about. The window keeps the picture and reports only that it kept it.
+       */
+      capture: z.boolean().optional(),
+    }),
+    // Start or stop recording the page a driving window is holding (spec
+    // `canvas-agent-seat` §3). Addressed exactly like a driving request, and
+    // for the same reason: the frames live in ONE window's buffer, so the
+    // window that started a recording is the window that must finish it.
+    //
+    // A `stop` is answered by `POST /api/sessions/:id/devtools/recording`,
+    // which carries the encoded GIF, rather than by an event — the bytes are
+    // megabytes and the wire this rides is a text stream.
+    z.object({
+      ...seqShape,
+      type: z.literal('devtools_recording_request'),
+      requestId: z.string(),
+      /** The window holding the page, and the page. Resolved server-side. */
+      targetClientId: z.string(),
+      documentId: z.string(),
+      /** Begin a recording, or end one and hand the file back. */
+      action: z.enum(['start', 'stop']),
+      /** The recording this is about. Names the file the server writes. */
+      recordingId: z.string(),
+      /**
+       * The bounds the window encodes to, carried rather than duplicated.
+       *
+       * The server owns these numbers (`WORKBENCH`), and a client that had its
+       * own copy of them would be a second place for them to drift.
+       */
+      bounds: z.object({
+        /** Long edge, in pixels, each frame is drawn to before encoding. */
+        longEdgePx: z.number().int().positive(),
+        /** How long each frame is shown, in milliseconds. */
+        frameMs: z.number().int().positive(),
+        /** The biggest encoded GIF the window may upload. */
+        maxBytes: z.number().int().positive(),
+      }),
     }),
     // The session's message queue changed — a message was accepted, dispatched,
     // edited, reordered, removed, or cleared (spec `persistent-session-runtime`).

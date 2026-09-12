@@ -200,6 +200,7 @@ export const StreamEventTypeSchema = z
     'ui_command',
     'devtools_capture_request',
     'devtools_action_request',
+    'devtools_recording_request',
     'session_state_changed',
     'context_usage',
     'elicitation_prompt',
@@ -5767,6 +5768,26 @@ export const DevtoolsIngestSchema = z
      */
     active: z.boolean().optional(),
     /**
+     * Whether this claim is an ACTIVATION or a keep-alive (spec
+     * `canvas-agent-seat` §2.2).
+     *
+     * `true` means a person brought this browser document to the front in this
+     * window, and the seat moves here. `false` means the window is saying it is
+     * still showing the same page on its refresh beat, which refreshes the row's
+     * clock and moves nothing. Every window running this bundle sends one or the
+     * other.
+     *
+     * **Absent is neither**, and the server spends it in exactly one place: a
+     * window it has not heard from takes the seat on its first claim, because
+     * that is what every claim meant before this field existed. Anything a
+     * window says about a page it is already holding is read as a keep-alive —
+     * a bundle too old to have the field sends an identical body on its beat and
+     * on an activation, so believing it would let a tab left open across an
+     * upgrade take the seat back every 15 s from the window somebody had just
+     * activated, and never give it back.
+     */
+    activation: z.boolean().optional(),
+    /**
      * Whether the in-page shim ever handshook with this window for `documentId`.
      *
      * A page DorkOS serves or proxies carries the shim and answers `hello`; a
@@ -5878,8 +5899,53 @@ export const DevtoolsActionResultSchema = z
     outline: z.string().max(DEVTOOLS_OUTLINE_MAX_CHARS).optional(),
     truncated: z.boolean().optional(),
     waitedMs: z.number().int().min(0).optional(),
+    /**
+     * Whether the window kept a recording frame from this action.
+     *
+     * The frame itself never travels: the client holds it until the recording
+     * is stopped and encoded there (spec `canvas-agent-seat` §3.2). This flag is
+     * all the server needs, and it is the only honest way to count — the server
+     * asked for a frame, and only the window can say whether one came back.
+     */
+    captured: z.boolean().optional(),
     error: z.string().max(2_048).optional(),
   })
   .openapi('DevtoolsActionResult');
 
 export type DevtoolsActionResult = z.infer<typeof DevtoolsActionResultSchema>;
+
+/**
+ * The multipart form fields that accompany one finished recording on
+ * `POST /api/sessions/:id/devtools/recording` (spec `canvas-agent-seat` §3.4).
+ *
+ * The two FILE parts — `recording` (the GIF) and `keyframe` (the last frame as
+ * a PNG) — are read by multer and never appear here. Nothing in this body names
+ * a destination: `requestId` identifies the round trip the server is already
+ * awaiting, and the server takes the filename from its own recording state, so
+ * a caller can never choose where the bytes land.
+ */
+export const DevtoolsRecordingUploadSchema = z
+  .object({
+    requestId: z.string().min(1).max(128),
+    /** How many frames the window actually encoded, which is what the tool reports. */
+    frames: z.coerce.number().int().min(1).max(1_000).optional(),
+    /** Wall-clock length of the recording in milliseconds, as the window measured it. */
+    durationMs: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(24 * 60 * 60 * 1_000)
+      .optional(),
+    /**
+     * Why there is no file, in one sentence the agent can act on.
+     *
+     * Sent INSTEAD of the two file parts when the window cannot produce a
+     * recording — it came out over the size cap, the page went away mid-run, or
+     * the encoder failed. Without it the tool call would sit out its whole
+     * thirty-second wait to say something less true than this.
+     */
+    error: z.string().min(1).max(500).optional(),
+  })
+  .openapi('DevtoolsRecordingUpload');
+
+export type DevtoolsRecordingUpload = z.infer<typeof DevtoolsRecordingUploadSchema>;

@@ -23,6 +23,7 @@ import { formatSeedContext } from '../../shared/seed-context-block.js';
 import { formatStagedContext } from '../../shared/staged-context-block.js';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
 import { IN_SESSION_TOOL_PREFIX } from '../mcp-tools/tool-exposure.js';
+import { WORKBENCH } from '../../../../config/constants.js';
 import type { BindingRouter } from '../../../relay/binding-router.js';
 import type { BindingStore } from '../../../relay/binding-store.js';
 import type { AdapterManager } from '../../../relay/adapter-manager.js';
@@ -383,6 +384,15 @@ documentId out to act in the one whose window last brought a preview to the fron
 the one you want. Every one of these six answers with the tab it acted on and that tab's id, so to
 stay on one tab, pass back the id the last answer gave you. In a room, ${T}get_ui_state lists the
 open tabs with their ids as well; in a one-on-one session it does not.
+
+RECORDING WHAT YOU DID. When showing somebody what happens is clearer than describing it, record it:
+  ${T}browser_record_start(documentId?) -- start filming; every action after this takes a frame.
+  ${T}browser_record_stop() -- stop, save the file, and get its path back.
+It is a slideshow of the steps you took, not a video, and it saves into your own working directory.
+The stop gives you the last frame as a picture and the path to the file; post the file to a room
+with ${T}post_to_room to show it to somebody, rather than describing it in prose. One recording at a
+time, and it keeps the first ${WORKBENCH.MAX_RECORDING_FRAMES} frames -- past that it stops filming and
+everything else keeps working.
 </ui_tools>`;
 
 /**

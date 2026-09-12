@@ -70,6 +70,7 @@
     "cronstrue": "^3.24.0",
     "elkjs": "^0.12.0",
     "fuse.js": "^7.5.0",
+    "gifenc": "^1.0.3",
     "html-to-image": "1.11.13",
     "immer": "^11.1.18",
     "lexical": "~0.49.0",

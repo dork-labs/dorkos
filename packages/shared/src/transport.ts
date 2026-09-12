@@ -444,6 +444,35 @@ export interface AdapterEvent {
  * Using a custom interface (rather than the DOM `File` type) keeps the shared
  * package free of DOM lib dependencies so it can be used in Node.js contexts.
  */
+/**
+ * What one finished browser recording hands the server: the file, or the reason
+ * there is not one (spec `canvas-agent-seat` §3.4).
+ *
+ * A failure is REPORTED rather than left silent, because a `browser_record_stop`
+ * is blocked on this — silence costs the agent a thirty-second wait and a
+ * vaguer answer than the truth.
+ */
+export type DevtoolsRecordingPayload =
+  | {
+      /** The round trip id the stop request carried. */
+      requestId: string;
+      /** How many frames the encoded recording holds. */
+      frames: number;
+      /** How long the recording covers, in milliseconds. */
+      durationMs: number;
+      /** The encoded GIF. */
+      recording: UploadFile;
+      /** The last frame, as a PNG. */
+      keyframe: UploadFile;
+      error?: undefined;
+    }
+  | {
+      /** The round trip id the stop request carried. */
+      requestId: string;
+      /** Why there is no file, in one sentence the agent can act on. */
+      error: string;
+    };
+
 export interface UploadFile {
   /** Original filename as provided by the user. */
   name: string;
@@ -1054,6 +1083,25 @@ export interface Transport extends RoomTransport {
    * @param result - The validated result relayed from the in-page shim.
    */
   postDevtoolsAction(sessionId: string, result: DevtoolsActionResult): Promise<void>;
+
+  /**
+   * Hand one finished browser recording to
+   * `POST /sessions/:id/devtools/recording` (spec `canvas-agent-seat` §3.4).
+   *
+   * Multipart with two file parts, because the encoded GIF is megabytes of
+   * binary and the wire the rest of this seam rides is JSON. The second part is
+   * the recording's last frame, which is what the agent's tool result shows —
+   * a GIF in a tool result is base64 no model can watch animate.
+   *
+   * Unlike the two calls above this one is NOT fire-and-forget: a tool call is
+   * blocked on it, and a failure here has to become the sentence that tool
+   * answers with. `DirectTransport` rejects (the embedded browser is web-only).
+   *
+   * @param sessionId - The session whose preview was recorded.
+   * @param upload - The round trip id, the frame count, the length, and the two
+   *   files.
+   */
+  uploadDevtoolsRecording(sessionId: string, upload: DevtoolsRecordingPayload): Promise<void>;
 
   // --- Workbench file service (explorer + viewers; DOR-217) ---
 

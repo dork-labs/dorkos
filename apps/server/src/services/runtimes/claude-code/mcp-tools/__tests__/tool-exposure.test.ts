@@ -382,8 +382,16 @@ describe('in-session tool exposure', () => {
     // deferred. `<ui_tools>` does name them, in full and prefixed, which is the
     // same shape `control_ui` and `get_ui_state` have always had there and which
     // costs one search rather than a failed call.
-    expect(tools).toHaveLength(98);
-    expect(deferred).toHaveLength(89);
+    //
+    // 98 -> 100 for `browser_record_start` and `browser_record_stop` (spec
+    // `canvas-agent-seat` §3), and both land DEFERRED beside the six. A turn
+    // that is about to record has already opened a preview and driven it, so it
+    // can afford the search; and `<ui_tools>` names them prefixed, which is the
+    // form the rule `context-tool-names.test.ts` owns accepts for a deferred
+    // tool. Both counts moving by the same two is what says nothing else came
+    // with them.
+    expect(tools).toHaveLength(100);
+    expect(deferred).toHaveLength(91);
     const retiredConnectorTools = [
       'connector_list_accounts',
       'connector_start_connect',

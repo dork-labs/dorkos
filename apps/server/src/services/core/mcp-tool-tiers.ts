@@ -270,6 +270,12 @@ export const MCP_TOOL_TIERS = {
   browser_scroll: { tier: 'act', title: 'Scroll the preview' },
   browser_wait_for: { tier: 'observe', title: 'Wait for the preview to catch up' },
   browser_read_page: { tier: 'observe', title: "Read the preview's page outline" },
+  // Recording the preview (spec `canvas-agent-seat` §3). Both are `act` for the
+  // reason `browser_screenshot` is: taking a frame injects a rasterizer into the
+  // live page, and the stop writes a file into the session's working directory.
+  // Neither is auto-allowed, for the same reason none of the driving verbs is.
+  browser_record_start: { tier: 'act', title: 'Start recording the preview' },
+  browser_record_stop: { tier: 'act', title: 'Stop recording the preview' },
 } as const satisfies Record<string, McpToolTier>;
 
 /** The name of a hand-registered MCP tool that carries a tier. */
