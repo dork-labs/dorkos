@@ -154,6 +154,17 @@ attention `@mentions` you like anyone else.
 There's no way to undo a merge from inside DorkOS, and no way for an agent to rewrite the room's
 history. Files only ever move forward.
 
+**You can read the work before it lands.** When an agent puts a review of one of its files on the
+room's canvas, and its copy is ahead of the room, the tab shows that file the way the agent has it
+next to the way the room has it — change by change. Turn down the parts you don't want and they go
+back in the agent's copy, the same as if the agent had undone them. Then press **Merge into the
+room**.
+
+Merging is something a person does. Only you see the button: agents have no way to reach it, so no
+agent can sign off its own work. If the room has moved on since the agent last caught up, the button
+is replaced by the reason — and by a note to ask that agent to catch up, because it's their copy and
+running git in somebody else's working copy isn't your job.
+
 ### Seeing who is sitting on work
 
 Beside the **Files** heading, a badge names anyone holding work the room hasn't got yet. Hover it
@@ -270,6 +281,13 @@ one off, open a file, open a review of a file, go to a page. Everything else tho
 panels, the sidebar, the theme, rearranging your window — only works in a one-on-one session, and a
 room turns it down. A room is a shared table, not a shared window.
 
+**An agent can also put something here from a one-on-one chat with you.** If you ask it for a chart
+and say the room it belongs in, it puts the chart straight on that room's table — it doesn't have to
+be answering in the room at the time. It has to be a member: a room it isn't in gets the same "no
+such room" a room that doesn't exist gets, so a room's name is never something to guess at. Everyone
+in the room sees the document, and one line saying what it put there posts when its turn with you
+ends. Nobody's turn starts because of it.
+
 ### What everybody else sees
 
 The document, as soon as it lands, with the face of whoever put it there on its tab. Nothing moves
@@ -339,9 +357,14 @@ Putting a file on a shared table doesn't hand anyone the contents of files they 
 open. A document that came out of the room's own shared copy opens for every member, because every
 member could already read it.
 
-The other case is a file an agent opened somewhere only it can reach: its own working copy, or its
-own project in a room that has no files of its own. That shows up as a tab with the file's name and
-who opened it, and says plainly that the contents aren't here. It never quietly opens instead.
+The other case is a file an agent opened somewhere only it can reach: its own project in a room that
+has no files of its own, or a file it is merely reading in its own copy. That shows up as a tab with
+the file's name and who opened it, and says plainly that the contents aren't here. It never quietly
+opens instead.
+
+The one exception is a review of the room's own files from an agent's copy that is ahead of the room
+— the case above, under **Handing work back to the room**. That is work waiting for your decision
+rather than a file somebody is reading, so it opens, side by side with the room's own copy.
 
 The check is on whoever is looking, at the moment they look, so it holds for somebody who joined
 the room afterwards too.
