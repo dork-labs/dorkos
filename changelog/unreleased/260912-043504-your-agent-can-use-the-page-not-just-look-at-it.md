@@ -23,4 +23,4 @@ covers:
 ### Changed
 
 - A page that is open but cannot be driven now says so in one sentence, straight away. A page loaded straight from the internet is shown, not driven — and until now asking an agent to look at one meant an eight-second pause followed by a note about opening a preview that was already open.
-- With the same conversation open in two windows, only one of them acts: the one that most recently brought a preview to the front. The other sees nothing, and a window you close or that stops responding hands the page back to one that is still there. Screenshots follow the same rule, which settles a long-standing surprise where whichever window answered first won.
+- With the same conversation open in two windows, only one of them acts: the one that most recently brought a preview to the front. The other sees nothing, and a window you close hands the page back right away, and a window that stops responding hands it back after about a minute and a half. Screenshots follow the same rule, which settles a long-standing surprise where whichever window answered first won.
