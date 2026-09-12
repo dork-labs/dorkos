@@ -30,7 +30,27 @@ import {
   requestWithinBound,
 } from '../sessions/bounded-control.js';
 import { CLAUDE_SDK_VERSION } from '../tooling/provision.js';
+import {
+  logCacheImpactMeasurement,
+  readCacheImpact,
+  type PluginReloadCacheImpact,
+} from './plugin-reload-policy.js';
 import { logger } from '../../../../lib/logger.js';
+
+/**
+ * What one reload attempt did, and what it would have cost.
+ *
+ * The counts every caller already reads, plus the two things a caller that
+ * asked `holdOnCacheImpact` needs to decide what happens next. `held` is false
+ * on every path that did not ask, so a caller that does not care about the cost
+ * reads this exactly as it read {@link ReloadPluginsResult} before.
+ */
+export interface PluginReloadOutcome extends ReloadPluginsResult {
+  /** True when the CLI applied nothing because the cache depends on the tool list. */
+  readonly held: boolean;
+  /** What applying would change. Present only on a hold. */
+  readonly cacheImpact?: PluginReloadCacheImpact;
+}
 
 /** Subset of MessageSenderOpts that RuntimeCache populates. */
 type CacheCallbacks = Pick<
@@ -665,21 +685,55 @@ export class RuntimeCache {
    * that could not hear it. A request that outlives the bound throws, into the
    * best-effort catch every caller already has.
    *
+   * ## Asking before applying
+   *
+   * With `holdOnCacheImpact`, the CLI runs its own check first and applies
+   * NOTHING when the reload would change the tool list while the conversation's
+   * prompt cache depends on it — the answer then carries `held: true` and says
+   * what applying would have disturbed. The caches below are still refreshed
+   * from that answer, because a held response describes the session exactly as
+   * it still is. Deciding what to do about a hold belongs to
+   * `plugin-reload-policy.ts`; this method reports and forgets, so every reload
+   * in the runtime keeps going through one place.
+   *
    * @param queryObj - Active or last-completed SDK query
    * @param sessionCwd - Session working directory (cache key for MCP status)
    * @param defaultCwd - Fallback working directory
+   * @param opts.holdOnCacheImpact - Ask what the reload would cost instead of
+   *   applying it outright
+   * @param opts.sessionId - Named in the measurement log
+   * @param opts.contextTokens - Size of the conversation, for the same log —
+   *   the number the threshold is read against
+   * @returns The refreshed counts, plus whether the CLI held the reload and what
+   *   it said applying would change
    * @throws ControlRequestTimeoutError When the CLI does not answer in time.
    */
   async reloadPlugins(
     queryObj: Query,
     sessionCwd: string | undefined,
-    defaultCwd: string
-  ): Promise<ReloadPluginsResult> {
+    defaultCwd: string,
+    opts?: { holdOnCacheImpact?: boolean; sessionId?: string; contextTokens?: number }
+  ): Promise<PluginReloadOutcome> {
     const result = await requestWithinBound(
-      () => queryObj.reloadPlugins(),
+      () =>
+        opts?.holdOnCacheImpact
+          ? queryObj.reloadPlugins({ holdOnCacheImpact: true })
+          : queryObj.reloadPlugins(),
       PLUGIN_RELOAD_ACK_TIMEOUT_MS,
       'reloadPlugins'
     );
+    // `held` is absent when the request did not ask, and also when a CLI that
+    // predates the option applied the reload unchecked — both mean "applied".
+    const held = opts?.holdOnCacheImpact === true && result.held === true;
+    const cacheImpact = held ? readCacheImpact(result.cache_impact) : undefined;
+    if (opts?.holdOnCacheImpact) {
+      logCacheImpactMeasurement({
+        sessionId: opts.sessionId ?? sessionCwd ?? defaultCwd,
+        held,
+        contextTokens: opts.contextTokens,
+        impact: cacheImpact,
+      });
+    }
 
     const cwd = sessionCwd ?? defaultCwd;
     this.cachedSdkCommands.set(
@@ -722,6 +776,8 @@ export class RuntimeCache {
       commandCount: result.commands.length,
       pluginCount: result.plugins.length,
       errorCount: result.error_count,
+      held,
+      ...(cacheImpact ? { cacheImpact } : {}),
     };
   }
 }

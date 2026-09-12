@@ -37,7 +37,11 @@ import type { AgentSession } from '../agent-types.js';
 import { fireLaunchProbes } from '../messaging/launch-probes.js';
 import type { MessageSenderOpts } from '../messaging/message-sender-shared.js';
 import type { DispatchDecision, LaunchFingerprint } from './launch-fingerprint.js';
-import { applyLiveChanges, prepareDispatch } from './launch-live-settings.js';
+import {
+  applyLiveChanges,
+  prepareDispatch,
+  type LiveChangeOptions,
+} from './launch-live-settings.js';
 import type { PumpControlQuery, PumpLauncher, PumpQuery } from './session-pump-contract.js';
 import { createTrackedSpawn } from './tracked-spawn.js';
 import { sharedWarmProcessLedger } from './warm-process-ledger.js';
@@ -143,10 +147,13 @@ export type ProcessReuse =
  * @param live - What the running process was launched with, or `undefined` when
  *   this session holds no process yet
  * @param wanted - What this dispatch would launch with today
+ * @param options - Whether a plugin reload on this dispatch may wait for a
+ *   cheaper moment rather than rebuild the conversation's prompt cache
  */
 export function decideProcessReuse(
   live: LaunchFingerprint | undefined,
-  wanted: LaunchFingerprint
+  wanted: LaunchFingerprint,
+  options?: LiveChangeOptions
 ): ProcessReuse {
   // Nothing is running, so nothing can be stale. The launch that follows IS the
   // pinning event, and its fingerprint becomes the baseline.
@@ -156,6 +163,6 @@ export function decideProcessReuse(
   if (decision.liveChanges.length === 0) return { action: 'ride' };
   return {
     action: 'adjust',
-    apply: async (control) => (await applyLiveChanges(control, decision)).fingerprint,
+    apply: async (control) => (await applyLiveChanges(control, decision, options)).fingerprint,
   };
 }
