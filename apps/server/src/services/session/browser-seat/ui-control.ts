@@ -302,8 +302,38 @@ export async function getUiState(caller: UiCallerContext): Promise<unknown> {
   // In a room, the private session UI state is not what the agent is looking at
   // — the room's shared table is (spec `room-canvas` §5.8).
   const roomTurn = uiTurnFacts.read(sessionId).roomTurn;
-  if (roomTurn !== undefined) {
-    const canvas = getRoomService().canvas;
+  if (roomTurn !== undefined) return roomUiStateReport(roomTurn);
+  return sessionUiStateReport(sessionId);
+}
+
+/**
+ * What `get_ui_state` answers with inside a room turn: the room's shared table.
+ *
+ * Wrapped the way {@link applyToRoomCanvas} is, and for the same reason the
+ * domain states as a property — a rooms subsystem this process never stood up
+ * degrades to a sentence the model can read rather than a stack trace that ends
+ * its turn. That case is practically unreachable in a booted server and was the
+ * one place the claim was false.
+ *
+ * @param roomTurn - Where this turn is happening.
+ * @returns The room's table, or a refusal saying it could not be reached.
+ */
+function roomUiStateReport(roomTurn: UiRoomTurn): unknown {
+  let canvas;
+  try {
+    canvas = getRoomService().canvas;
+  } catch (err) {
+    logger.warn('[canvas] a room’s table could not be read for get_ui_state', {
+      roomId: roomTurn.roomId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw new CapabilityToolError({
+      surface: 'room',
+      roomId: roomTurn.roomId,
+      error: 'That room’s canvas could not be reached just now.',
+    });
+  }
+  {
     const documents = canvas.list(roomTurn.roomId);
     return {
       surface: 'room',
@@ -327,7 +357,6 @@ export async function getUiState(caller: UiCallerContext): Promise<unknown> {
       },
     };
   }
-  return sessionUiStateReport(sessionId);
 }
 
 /**

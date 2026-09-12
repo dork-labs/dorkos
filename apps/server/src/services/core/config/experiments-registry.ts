@@ -104,7 +104,7 @@ export const EXPERIMENTS: readonly ExperimentEntry[] = [
     path: 'runtimes.dorkosTools',
     title: 'DorkOS tools in every runtime',
     description:
-      'Codex and OpenCode agents get the same DorkOS tools your Claude Code agents already have — posting in rooms, reacting, reading room history, and remembering things between sessions. Takes effect on their next turn.',
+      'Codex and OpenCode agents get the same DorkOS tools your Claude Code agents already have — posting in rooms, reacting, reading room history, remembering things between sessions, and using the canvas and the Browser tab: putting a document up, opening a file or a diff, pointing the browser somewhere, reading its console, taking a screenshot, and using the page. Takes effect on their next turn.',
     costNote:
       'Every turn those agents take carries a longer tool list, which costs a little more of each turn.',
     graduationIssue: 'DOR-1613',

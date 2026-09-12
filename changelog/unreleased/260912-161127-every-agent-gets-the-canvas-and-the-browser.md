@@ -8,7 +8,7 @@ covers:
 
 ### Added
 
-- Your Codex and OpenCode agents can now use the canvas and the browser the same way your Claude Code agents always have. They can put a document up, open a file or a diff beside your chat, point the Browser tab at a page, read its console and its network log, take a screenshot, use the page — click, type, scroll, wait for something — and record what they did. Turn on **DorkOS tools for Codex and OpenCode** in Settings under Experiments, and their next turn has all of it. Until now a Codex agent in a room could not see a console error while the Claude Code agent beside it could (DOR-2009).
+- Your Codex and OpenCode agents can now use the canvas and the browser the same way your Claude Code agents always have. They can put a document up, open a file or a diff beside your chat, point the Browser tab at a page, read its console and its network log, take a screenshot, use the page — click, type, scroll, wait for something — and record what they did. Turn on **DorkOS tools in every runtime** in Settings under Experiments, and their next turn has all of it. Until now a Codex agent in a room could not see a console error while the Claude Code agent beside it could (DOR-2009).
 
 ### Fixed
 

@@ -48,13 +48,7 @@ export { reachesPastTheScreen, uiActionRefusalMessage } from './ui-surface-conse
 // auto-projection reaches. That pulled `lib/version.ts` (a module-scope
 // `readFileSync`) into a suite that mocks `node:fs`, and the whole file failed
 // to load. One domain, one import path.
-export {
-  uiTurnFacts,
-  UiTurnFactStore,
-  type UiRoomTurn,
-  type UiTurnBinding,
-  type UiTurnFacts,
-} from './ui-turn-facts.js';
+export { uiTurnFacts, type UiRoomTurn } from './ui-turn-facts.js';
 export {
   createRecordingHandlers,
   NOTHING_RECORDING_NOTE,

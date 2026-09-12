@@ -3,17 +3,27 @@
  * it, the surface it reaches, and the tier that gates it (spec
  * `canvas-agent-seat` §5).
  *
- * ## Why the argument names are pinned, and not just the verb names
+ * ## Two different guards live here, and they catch different things
  *
  * A capability's `input` is read at MODULE scope, and this domain reads its
  * schemas out of sibling modules. When one of those siblings imported the
  * `core/capabilities` barrel it closed an import cycle, `z.object(undefined)`
- * produced an EMPTY shape, and `browser_read_console` and
- * `browser_read_network` advertised no arguments at all — so `level`, `status`
- * and `limit` were stripped on the way in and every read answered with the
- * default. Nothing threw; nothing was red. The only thing that could have
- * caught it is a test that says which arguments each verb is supposed to have,
- * which is this one.
+ * produced an EMPTY shape, and `browser_read_console` and `browser_read_network`
+ * advertised no arguments at all — so `level`, `status` and `limit` were
+ * stripped on the way in and every read answered with the default. Nothing
+ * threw; nothing was red.
+ *
+ * **The structural check is what pins that**, and it is the one to keep: a cycle
+ * only empties a schema for SOME entry orders, so a value-based assertion that
+ * reds today can go quiet tomorrow because an unrelated file changed which
+ * module initializes first. Measured, twice, on this very file: re-seeding the
+ * barrel import reddened the argument table in one arrangement of this domain's
+ * modules and left it green in the next. Do not read the argument table as the
+ * cycle's guard.
+ *
+ * **The argument table is worth having for its own sake**: it is what the model
+ * is told it may send, and nothing else states it. A verb that loses or gains an
+ * argument — for any reason, cycle or not — is a line to look at here.
  *
  * @vitest-environment node
  */
@@ -111,9 +121,9 @@ describe('the `ui` capability domain', () => {
   });
 
   it('advertises the SAME arguments the schema modules declare', () => {
-    // The other half of the case above, and the half that catches an initialization
-    // order that emptied one: compared against the sibling's own constant rather
-    // than against a copy of its key list.
+    // The other half of the case above: compared against the sibling's own
+    // constant rather than against a copy of its key list, so a rename in the
+    // schema module is caught without editing the table above.
     const shapeOf = (id: string) =>
       Object.keys((registry.get(id)!.input as z.ZodObject<z.ZodRawShape>).shape);
     expect(shapeOf('ui.read_console')).toEqual(Object.keys(READ_CONSOLE_INPUT));
@@ -122,10 +132,12 @@ describe('the `ui` capability domain', () => {
   });
 
   it('reads no schema through the `core/capabilities` barrel', () => {
-    // The structural half, so the rule survives a file whose import order nobody
-    // is watching: a module this domain reads a schema out of must not pull the
-    // barrel, which closes a cycle back here. The leaf modules under
-    // `core/capabilities/` are fine — it is the barrel that is the loop.
+    // **The pin for the cycle**, and the only one that holds whatever order the
+    // modules happen to initialize in: a module this domain reads a schema out
+    // of must not pull the barrel, which closes a loop back here. The leaf
+    // modules under `core/capabilities/` are fine — it is the barrel that is the
+    // loop. Re-seed that import and this reds; the argument table above may or
+    // may not, which is exactly why the rule is stated structurally.
     const here = path.dirname(fileURLToPath(import.meta.url));
     const seat = path.resolve(here, '..');
     const offenders = readdirSync(seat)

@@ -21,6 +21,7 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
+import { SESSION_CORE_TOOL_NAMES } from '@dorkos/shared/mcp-tool-groups';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 
@@ -399,6 +400,66 @@ describe('ToolsTab — background system switches', () => {
  * global twin would be a second and weaker path to the same permission. What it
  * shows instead is what the group is and where to turn it on.
  */
+/**
+ * The always-enabled row, after the canvas and browser verbs left it (spec
+ * `canvas-agent-seat` §5 Q4: "a test asserts the row still renders and that no
+ * `ui.*` tool is missing from the session's advertised set" — this is the row
+ * half).
+ *
+ * `SESSION_CORE_TOOL_GROUPS` went from `['core','ui','devtools']` to `['core']`,
+ * so the badge went 17 → 4. That is correct — those tools are capabilities now
+ * and no toggle names them — but it is also exactly the shape of an accidental
+ * deletion, and the row's own sentence went false with it ("read what you're
+ * previewing", about tools the badge no longer lists). So the row is asserted by
+ * what it actually holds rather than by a count nobody reads.
+ */
+describe('ToolsTab — the always-enabled Core tools row', () => {
+  it('still renders, and says it cannot be switched off', async () => {
+    const { Wrapper } = setup();
+    render(<ToolsTab />, { wrapper: Wrapper });
+
+    await settled();
+    expect(screen.getByText('Core tools')).toBeInTheDocument();
+    expect(screen.getByText('Always enabled')).toBeInTheDocument();
+    // No switch, because there is nothing to turn off.
+    expect(screen.queryByLabelText('Toggle Core tools')).not.toBeInTheDocument();
+  });
+
+  it('names exactly the tools no toggle covers, from the shared table', async () => {
+    // Read off `SESSION_CORE_TOOL_NAMES` rather than restated, so a name added
+    // to or removed from that table is a change this row shows rather than one
+    // it hides. The badge's tooltip carries the list.
+    const { Wrapper } = setup();
+    render(<ToolsTab />, { wrapper: Wrapper });
+
+    await settled();
+    expect(SESSION_CORE_TOOL_NAMES.length).toBeGreaterThan(0);
+    const badge = screen.getByText(String(SESSION_CORE_TOOL_NAMES.length));
+    expect(badge).toBeInTheDocument();
+  });
+
+  it('claims nothing about the preview, which this group no longer covers', async () => {
+    // The sentence that went false: the browser reads left this group for the
+    // `ui` capability domain. A row still promising them would send somebody to
+    // a switch that has nothing to do with what they are looking for.
+    const { Wrapper } = setup();
+    render(<ToolsTab />, { wrapper: Wrapper });
+
+    await settled();
+    expect(screen.queryByText(/read what you’re previewing/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/read what you're previewing/)).not.toBeInTheDocument();
+    // …and no browser or canvas verb is in the list it hands out. Widened to
+    // `string[]` on purpose: `McpToolGroupName` no longer HAS `control_ui`, so
+    // `tsc` already refuses that half — this is the runtime half, which is what
+    // would catch one being added back to the group table.
+    expect(
+      (SESSION_CORE_TOOL_NAMES as readonly string[]).filter(
+        (name) => name.startsWith('browser_') || name === 'control_ui' || name === 'get_ui_state'
+      )
+    ).toEqual([]);
+  });
+});
+
 describe('ToolsTab — the Manage rooms row', () => {
   it('shows the group with no switch of its own', async () => {
     const { Wrapper } = setup();

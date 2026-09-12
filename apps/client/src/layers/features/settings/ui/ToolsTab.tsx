@@ -149,7 +149,7 @@ export function ToolsTab() {
         <FieldCardContent>
           <SettingRow
             label="Core tools"
-            description="Let agents check the app, know who they are, and read what you’re previewing."
+            description="Let agents check the app and know who they are. The canvas and the Browser tab are no longer in this group — no switch takes them away, so every agent is told about them."
           >
             <div className="flex items-center gap-2">
               <ToolCountBadge tools={TOOL_INVENTORY.core} />

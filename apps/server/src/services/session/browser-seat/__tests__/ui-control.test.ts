@@ -317,6 +317,23 @@ describe('an action that reaches past the screen, over the runtime surface', () 
   });
 });
 
+describe('get_ui_state when the room service is not there', () => {
+  it('answers a sentence rather than throwing a stack trace through the tool', async () => {
+    // The property the domain claims for itself: "their absence degrades to a
+    // sentence rather than a stack trace". `control_ui`'s room branch has always
+    // held it; this one did not until it was asked to (round-1 review, finding 6).
+    uiTurnFacts.bindTurn(SESSION, { roomTurn: { roomId: 'r', authorId: 'a', turnId: 't' } });
+
+    await expect(getUiState(CALLER)).rejects.toBeInstanceOf(CapabilityToolError);
+    await getUiState(CALLER).catch((err: unknown) => {
+      const payload = (err as CapabilityToolError).payload as Record<string, unknown>;
+      expect(payload.surface).toBe('room');
+      expect(payload.roomId).toBe('r');
+      expect(String(payload.error)).toMatch(/could not be reached/i);
+    });
+  });
+});
+
 /**
  * What `control_ui` does about a canvas writer it cannot reach (DOR-2006 review,
  * blocker 3 and finding 4).
