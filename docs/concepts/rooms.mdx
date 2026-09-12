@@ -216,6 +216,11 @@ A room can't widen what an agent is allowed to do. Permission settings, what an 
 it needs to ask you about: all of that is yours, and nothing in a room's files or messages can
 reach it. Nothing in a room's files runs on its own when an agent catches up or merges, either.
 
+The room's canvas is the same. It's a place to show each other things, not a way around any of the
+above: **a document on the canvas never lets a member read a file they couldn't already read.** A
+file out of somebody's own project shows as a tab with its name and who opened it, and says so
+instead of opening.
+
 Worth being straight about the part that isn't a setting. Joining a shared room is trust in whoever
 can write to it. A file in a room, like a message in a room, can try to talk an agent into running
 something. DorkOS marks everything written by other people as information rather than instructions,
@@ -233,6 +238,94 @@ Once a room has files, everything above works normally.
 
 The settings that go with all of this are in
 [Configuration](/docs/getting-started/configuration#room-files).
+
+## The room's canvas and browser
+
+Every room has a table everyone can put something on. Open a room and the right panel has a
+**Canvas** tab and a **Browser** tab beside **Room**. Canvas holds documents — a file, a review of
+what changed in one, a write-up, a picture, a widget. Browser holds pages. Both belong to the room,
+not to your browser: everyone sees the same set, a reload gets it back, and closing something takes
+it off everybody's screen.
+
+This is the same panel the [Workbench guide](/docs/guides/workbench) describes in a one-on-one
+session. What changes in a room is who the documents belong to.
+
+### Putting something on it
+
+Anyone in the room can, person or agent. There's no owner-only half: if you're in the room, the
+table is yours too.
+
+You have three ways in:
+
+- **Type an address** in the Browser tab. The page lands on the table with your name on it.
+- **Open a file** from the Room tab's Files section and press **Put on the canvas**.
+- **Close or pin** anything already there, from the tab itself.
+
+An agent uses the tools it already has for your own workbench: put a document up, change one, take
+one off, open a file, open a review of a file, go to a page. Everything else those tools can do —
+panels, the sidebar, the theme, rearranging your window — only works in a one-on-one session, and a
+room turns it down. A room is a shared table, not a shared window.
+
+### What everybody else sees
+
+The document, as soon as it lands, with the face of whoever put it there on its tab. Nothing moves
+the tab you're on and nothing moves you off what you're reading — a tab that jumped because
+somebody else acted would be the same rudeness as an agent that speaks when it wasn't asked. The
+Canvas or Browser tab grows a small dot instead, so you can find what arrived when you're ready.
+
+Markdown an agent wrote is yours to edit in place, and your save changes it for everyone. While
+you're editing, an agent's change to that same document is held rather than applied, and the agent
+is told so instead of being told it worked. Every other document on the table keeps updating
+normally.
+
+### How agents find out
+
+Three ways, and there is no fourth:
+
+- **The next time they do anything in the room**, agents are told what's on the table — what each
+  document is, what it's called, who put it there, and how many windows are open on the room right
+  now. They aren't given the contents; an agent that wants those asks for them.
+- **One quiet line in the room's log per turn**, saying what that agent opened or changed. It
+  interrupts nobody, exactly like the line a merge writes.
+- **An `@mention`**, when an agent actually wants eyes on something now.
+
+None of those starts anybody's turn. Putting something on a room's canvas wakes nobody, which is
+what makes it safe to leave on.
+
+### Pinning, and what falls off
+
+A room's canvas holds twelve documents at a time. Put up a thirteenth and the one nobody has
+touched for longest drops off to make space. Pin a document from its tab and it sorts to the front,
+never drops off however long it sits there, and doesn't count toward the twelve. Pins belong to the
+room like everything else here: you pin it, everyone sees it pinned.
+
+### How much one turn can change
+
+One agent may change a room's canvas three times in a single turn. The fourth is refused, and the
+agent is told to put the rest in one change next turn — the same shape of limit that stops one turn
+becoming nine messages. Nothing you do yourself is ever counted.
+
+You can move the number with `rooms.maxCanvasOpsPerTurn` in
+[Configuration](/docs/getting-started/configuration). Only you can change it.
+
+### A file on the canvas is still where it was
+
+Putting a file on a shared table doesn't hand anyone the contents of files they couldn't already
+open. A document that came out of the room's own shared copy opens for every member, because every
+member could already read it. A document an agent opened in its own working copy, or in its own
+project in a room with no files of its own, shows as a tab with its name and who opened it, and
+says plainly that the contents aren't here — it never quietly opens.
+
+The check is on whoever is looking, at the moment they look, so it holds for somebody who joined
+the room afterwards too.
+
+### Archived rooms, and phones
+
+Archiving a room freezes its canvas the way it freezes everything else: the documents stay, anyone
+can still read them, and nothing new can be put up. Deleting the room deletes them with it.
+
+On a phone the panel is the same full-height sheet the Room tab uses, with the same tabs across the
+top.
 
 ## #team, the room Home opens on
 
@@ -563,6 +656,19 @@ mark moving on another device) without needing a subscription to every room at o
 | `DELETE` | `/api/rooms/:id/members/:authorId` | Remove a member.                                 |
 | `GET`    | `/api/rooms/:id/events`            | The room's live event stream.                    |
 
+The room's canvas has six of its own. Every one resolves the caller server-side and answers `404`
+for a room you aren't in, exactly as if it didn't exist. The four that write also refuse an
+archived room; the two that read answer normally forever.
+
+| Method   | Path                                        | Purpose                                       |
+| -------- | ------------------------------------------- | --------------------------------------------- |
+| `GET`    | `/api/rooms/:id/canvas`                     | Everything on the room's canvas.              |
+| `GET`    | `/api/rooms/:id/canvas/:documentId`         | One document, contents included.              |
+| `POST`   | `/api/rooms/:id/canvas`                     | Put a document on it.                         |
+| `PATCH`  | `/api/rooms/:id/canvas/:documentId`         | Change one, pin it, or bump it to the front.  |
+| `DELETE` | `/api/rooms/:id/canvas/:documentId`         | Take one off, for everybody.                  |
+| `POST`   | `/api/rooms/:id/canvas/:documentId/editing` | Say you're editing it, so agent changes hold. |
+
 The full request and response shapes are in the [API reference](/docs/api).
 
 ### Marking a room read
@@ -677,6 +783,10 @@ where it is and who it is talking to:
   is not a queue, and nothing waits its turn.
 - Messages it hasn't read yet, and the last few things it said here, so a second reply doesn't
   repeat the first.
+- What's on the room's canvas: each document's name, what it is, who put it there, and how many
+  windows are open on the room right now. Never the contents — an agent that wants those asks for
+  them, which keeps a room with a busy canvas from costing anything extra on a turn that ignores
+  it.
 - How many automatic replies are left, in this room and across DorkOS.
 
 Everything other people wrote arrives in a clearly marked block that tells the agent it is
