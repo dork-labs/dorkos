@@ -807,7 +807,7 @@ The companion `get_ui_state` tool returns the current client UI state -- which p
 
 ### DevTools Bridge Tools
 
-Three more in-process MCP tools (DOR-213) give the agent read access to what the embedded browser preview captured, so it can check its own work without a human relaying an error message. They live alongside `control_ui`/`get_ui_state` in `apps/server/src/services/runtimes/claude-code/mcp-tools/devtools-tools.ts`.
+Three more tools (DOR-213) give the agent read access to what the embedded browser preview captured, so it can check its own work without a human relaying an error message. They live alongside `control_ui`/`get_ui_state` in the `ui` capability domain, at `apps/server/src/services/session/browser-seat/devtools-reads.ts`.
 
 | Tool                   | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -819,20 +819,22 @@ All three resolve their session id at call time (not registration time) and requ
 
 The capture buffer is fed by an injected in-page shim that posts the preview's `console.*` and `fetch`/XHR activity to `window.parent`, which the client relays to `POST /api/sessions/:id/devtools/ingest`; the per-session `DevtoolsCaptureStore` rings retain it. These three tools only **read** that store — they never touch the page or the injection path.
 
-**Claude Code only.** Codex reaches DorkOS through an external, session-less MCP server, so a tool there can't resolve which session's buffer to read — unlike the fire-and-forget `control_ui` write, a read tool must return the captured data in its result, which a session-less stub can't produce. These tools are registered only on the in-process claude-code tool server and are structurally absent from the Codex `dorkos_ui` server.
+**Every runtime, one implementation** (spec `canvas-agent-seat` §5). These were Claude Code only for one reason: Codex reached DorkOS through an external, session-less server, so a tool there could not resolve WHICH session's buffer to read — and unlike the fire-and-forget `control_ui` write, a read has to return the captured data in its result, which a session-less stub cannot produce. That premise is gone. Codex and OpenCode reach the loopback `dorkos` server, which takes the session from `principal.claims.canonicalSessionId` on a verified turn binding, so these are `ui` capabilities declaring `servers: ['in-session']` and every runtime gets the same three.
+
+The scoped `dorkos_ui` server they used to be absent from is retired with its stub. Do not build another: a verb that needs the calling session is a capability, and the loopback binding supplies the session.
 
 ### Data Flow
 
 ```
-Agent calls control_ui MCP tool
+Agent calls control_ui (a `ui` capability, on any runtime)
   |
   |  1. Server validates command against UiCommandSchema
-  |  2. Pushes StreamEvent { type: 'ui_command', data: { command } } to session.eventQueue
-  |  3. Calls session.eventQueueNotify() to wake the generator
-  |  4. Returns { success: true, action } to the agent immediately (no blocking)
+  |  2. Ingests { type: 'ui_command', command } onto the CALLING session's
+  |     durable stream (browser-seat/session-reach.ts -> peekProjector().ingest)
+  |  3. Returns { success: true, action } to the agent immediately (no blocking)
   |
   v
-sendMessage() generator drains queue, yields ui_command event
+The session's /events stream carries it to every window on that session
   |
   v
 Client stream-event-handler.ts receives 'ui_command' event
@@ -875,19 +877,20 @@ This two-way channel -- `uiState` in (client tells agent what is visible) and `u
 | --------------- | -------------------------------------------------- | ------------------------------------------ |
 | Direction       | Agent asks user, waits for response                | Agent commands UI, no response expected    |
 | SDK blocking    | Blocks via deferred promise until user responds    | Non-blocking, returns immediately          |
-| Event queue     | Uses same `session.eventQueue` mechanism           | Uses same `session.eventQueue` mechanism   |
+| Event path      | Pushes onto `session.eventQueue`                   | Ingests onto the session's durable stream  |
 | Promise.race    | Yields event while SDK is blocked                  | Yields event alongside normal SDK messages |
 | Transport layer | Requires resolve endpoint (POST)                   | No resolve endpoint needed                 |
 | Timeout         | 10-minute timeout per interaction                  | No timeout (fire-and-forget)               |
 
 ### Implementation Files
 
-| File                                                                  | Purpose                                                                  |
-| --------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `packages/shared/src/schemas.ts`                                      | `UiCommandSchema`, `UiStateSchema`, `UiCanvasContentSchema` definitions  |
-| `apps/server/src/services/runtimes/claude-code/mcp-tools/ui-tools.ts` | `control_ui` and `get_ui_state` MCP tool handlers                        |
-| `apps/client/src/layers/shared/lib/ui-action-dispatcher.ts`           | `executeUiCommand()` -- pure dispatcher, no React dependencies           |
-| `apps/client/src/layers/features/chat/model/stream-event-handler.ts`  | Processes `ui_command` SSE events and dispatches to `executeUiCommand()` |
+| File                                                                 | Purpose                                                                  |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `packages/shared/src/schemas.ts`                                     | `UiCommandSchema`, `UiStateSchema`, `UiCanvasContentSchema` definitions  |
+| `apps/server/src/services/session/browser-seat/ui-control.ts`        | `control_ui` and `get_ui_state` handlers, shared by every runtime        |
+| `apps/server/src/services/session/browser-seat/ui-capabilities.ts`   | The `ui` domain: every verb's name, tier, schema and description         |
+| `apps/client/src/layers/shared/lib/ui-action-dispatcher.ts`          | `executeUiCommand()` -- pure dispatcher, no React dependencies           |
+| `apps/client/src/layers/features/chat/model/stream-event-handler.ts` | Processes `ui_command` SSE events and dispatches to `executeUiCommand()` |
 
 ## Capability Approval Holds
 

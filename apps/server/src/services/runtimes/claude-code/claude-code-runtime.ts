@@ -10,7 +10,7 @@ import { AccountsAccessContext } from '../shared/accounts-access-context.js';
 import { runtimeEnvironment } from '../shared/runtime-environment-config.js';
 import path from 'path';
 import { renameSession as sdkRenameSession, query } from '@anthropic-ai/claude-agent-sdk';
-import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
+import type { McpServerConfig, Query } from '@anthropic-ai/claude-agent-sdk';
 import type { McpServerEntry } from '@dorkos/shared/transport';
 import type {
   StreamEvent,
@@ -53,6 +53,15 @@ import { CLAUDE_CODE_CAPABILITIES, narrowToClaudeCodeMode } from './runtime-cons
 import { ControlRequestTimeoutError } from './sessions/bounded-control.js';
 import { SessionStore } from './sessions/session-store.js';
 import { RuntimeCache } from './messaging/runtime-cache.js';
+import {
+  PluginReloadScheduler,
+  PluginReloadSessionGoneError,
+  conversationTokens,
+  pluginReloadIsWorthHolding,
+  readCacheImpact,
+  type PaidPluginReload,
+  type PluginReloadCacheImpact,
+} from './messaging/plugin-reload-policy.js';
 import { SessionLockManager } from '../../session/session-lock.js';
 import type { AgentSession } from './agent-types.js';
 import {
@@ -90,6 +99,14 @@ import {
 } from '../../session/index.js';
 import { mcpAuthEvidenceFrom } from '../../mesh/mcp-revocation.js';
 import type { McpAuthEvidencePort } from '../../mesh/mcp-revocation.js';
+
+/**
+ * Where a plugin reload that cost something goes to be remembered.
+ *
+ * Best-effort by contract: it is handed a fact and must never throw one back —
+ * a feed that cannot be written is not a reason for a reload to fail.
+ */
+export type PluginReloadActivityPort = (entry: PaidPluginReload) => void;
 import { editBaselineStore } from '../../diff/index.js';
 import type { SessionStateProjector } from '../../session/index.js';
 import type { ConnectorRuntimeTools } from '../connector-tools.js';
@@ -132,9 +149,25 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * {@link pumps}'s SAME resolver, so the two structures can never learn about
    * a rekey at different times.
    */
-  private readonly persistent = new PersistentDispatch(this.pumps, (id) =>
-    this.sessionStore.sessionKeyOf(id)
+  private readonly persistent = new PersistentDispatch(
+    this.pumps,
+    (id) => this.sessionStore.sessionKeyOf(id),
+    (sessionId, impact, contextTokens) =>
+      this.notePluginReloadHeld(sessionId, impact, contextTokens)
   );
+  /**
+   * Plugin reloads this runtime asked for and the CLI held back, waiting for a
+   * moment when applying them is free (spec `plugin-reload-cache-cost`).
+   *
+   * Given the runtime's own session store to read a session's clock from, and
+   * this runtime's plain reload to apply with — so a held reload lands through
+   * exactly the same call as an unheld one.
+   */
+  private readonly pluginReloads = new PluginReloadScheduler({
+    recheck: (sessionId) => this.recheckHeldPluginReload(sessionId),
+    applyNow: (sessionId) => this.applyHeldPluginReload(sessionId),
+    recordPaidReload: (entry) => this.recordPaidPluginReload(entry),
+  });
   private commandRegistries = new Map<string, CommandRegistryService>();
   private static readonly MAX_COMMAND_REGISTRIES = 50;
 
@@ -156,6 +189,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   private connectorRuntimeTools: ConnectorRuntimeTools | undefined;
   private readonly accountsAccess = new AccountsAccessContext();
   private mcpAuthEvidence: McpAuthEvidencePort | undefined;
+  private pluginReloadActivity: PluginReloadActivityPort | undefined;
   private bindingRouter: import('../../relay/binding-router.js').BindingRouter | undefined;
   private bindingStore: import('../../relay/binding-store.js').BindingStore | undefined;
   private adapterManager: import('../../relay/adapter-manager.js').AdapterManager | undefined;
@@ -311,6 +345,45 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    */
   setMcpAuthEvidence(port: McpAuthEvidencePort | undefined): void {
     this.mcpAuthEvidence = port;
+  }
+
+  /**
+   * Bound a plugin reload the warm-process pin held on the way into a turn
+   * (spec `plugin-reload-cache-cost`).
+   *
+   * That path holds without an install behind it — a scope change, an agent
+   * change, an uninstall all move the `plugins` pin — and its own recovery is
+   * only "the next dispatch asks again", which on a session that dispatches all
+   * afternoon never ends. Reporting the hold here puts it under the same
+   * ceiling as every other one, so it is applied and paid for eventually
+   * instead of re-asked for ever.
+   *
+   * Idempotent, and it never restarts a wait already running: the scheduler
+   * folds a repeat hold into the first record.
+   *
+   * @param sessionId - The session whose pin stayed put
+   * @param impact - What the CLI said applying would change
+   * @param contextTokens - Size of the conversation at that moment
+   */
+  private notePluginReloadHeld(
+    sessionId: string,
+    impact: PluginReloadCacheImpact,
+    contextTokens: number | undefined
+  ): void {
+    this.pluginReloads.hold({ sessionId, impact, contextTokens });
+  }
+
+  /**
+   * Inject the port that writes a paid plugin reload to the activity feed.
+   *
+   * A port rather than a direct dependency for the same reason as the one above:
+   * this runtime knows what a reload disturbed and what it waited for, and
+   * nothing about where such a fact is kept. Without the port the reloads still
+   * happen and still reach the debug log; only the feed entry is missing, which
+   * is the right degradation for a record nothing depends on.
+   */
+  setPluginReloadActivity(port: PluginReloadActivityPort | undefined): void {
+    this.pluginReloadActivity = port;
   }
 
   /**
@@ -473,11 +546,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       opts
     );
 
-    // The `get_ui_state` MCP tool reads `session.uiState`. UI state now arrives
-    // as a `ui_state` entry inside the neutral additional-context bag (ADR-0273);
-    // lift it onto the session so the tool keeps answering with the latest snapshot.
-    const uiStateEntry = opts?.additionalContext?.find((e) => e.kind === 'ui_state');
-    if (uiStateEntry?.kind === 'ui_state') session.uiState = uiStateEntry.data;
+    // Neither the window snapshot nor the room marker is lifted onto the session
+    // any more: the `ui` verbs are capabilities, and both facts are bound
+    // runtime-neutrally by the trigger (spec `canvas-agent-seat` §5). That is the
+    // whole of what made Codex and OpenCode unable to answer "what is on the
+    // canvas" — the answer lived on this object, which only this runtime has.
 
     const cwdKey = opts?.cwd || session.cwd || this.cwd;
 
@@ -657,6 +730,13 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * Per-session failures are swallowed (logged at debug) so one dead
    * subprocess never blocks the others. Sessions that never ran a query expose
    * no query and are skipped — their commands populate on the next message.
+   *
+   * **This is the install fan-out, and it asks before it spends** (spec
+   * `plugin-reload-cache-cost`). Nobody asked for this reload — somebody
+   * installed a plugin, and one click reaches every open session at once — so
+   * each session's reload goes through the cost check rather than paying a
+   * cache rebuild on all of them at the same moment. A reload the person
+   * triggered by hand does not come through here; see {@link reloadPlugins}.
    */
   private async reloadCommandsForLiveSessions(): Promise<void> {
     const reloadable = this.sessionStore.getReloadableSessions();
@@ -665,21 +745,142 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       reloadable.map(async ({ sessionId, session }) => {
         const queryObj = session.activeQuery ?? session.lastQuery;
         if (!queryObj) return;
+        const contextTokens = conversationTokens(session);
         try {
-          const result = await this.cache.reloadPlugins(queryObj, session.cwd, this.cwd);
-          logger.debug('[refreshActivatedPlugins] hot-reloaded session commands', {
+          const asked = await this.cache.reloadPlugins(queryObj, session.cwd, this.cwd, {
+            holdOnCacheImpact: true,
             sessionId,
-            commands: result.commandCount,
-            plugins: result.pluginCount,
+            ...(contextTokens !== undefined ? { contextTokens } : {}),
+          });
+          if (!asked.held) {
+            logger.debug('[refreshActivatedPlugins] hot-reloaded session commands', {
+              sessionId,
+              commands: asked.commandCount,
+              plugins: asked.pluginCount,
+            });
+            return;
+          }
+          const impact = asked.cacheImpact ?? readCacheImpact(undefined);
+          if (pluginReloadIsWorthHolding(contextTokens)) {
+            this.pluginReloads.hold({ sessionId, impact, contextTokens });
+            logger.debug('[refreshActivatedPlugins] holding a session reload', {
+              sessionId,
+              contextTokens,
+            });
+            return;
+          }
+          // Small enough that waiting would cost more in staleness than it
+          // saves. Pay it now and say nothing.
+          await this.cache.reloadPlugins(queryObj, session.cwd, this.cwd);
+          this.recordPaidPluginReload({
+            sessionId,
+            deferred: false,
+            heldMs: 0,
+            release: undefined,
+            contextTokens,
+            impact,
           });
         } catch (err) {
-          logger.debug('[refreshActivatedPlugins] session hot-reload failed', {
+          // Never strand a reload (spec §risks). The ask is a SECOND control
+          // round trip on a channel with a documented habit of going unanswered,
+          // and a reload nobody applied is worse than a reload nobody costed —
+          // so an unanswered ask falls back to exactly what this path did before
+          // the check existed: one plain reload, best-effort.
+          logger.debug('[refreshActivatedPlugins] cost check failed, reloading anyway', {
             sessionId,
             error: err instanceof Error ? err.message : String(err),
           });
+          try {
+            await this.cache.reloadPlugins(queryObj, session.cwd, this.cwd);
+          } catch (fallbackErr) {
+            logger.debug('[refreshActivatedPlugins] session hot-reload failed', {
+              sessionId,
+              error: fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr),
+            });
+          }
         }
       })
     );
+  }
+
+  /**
+   * Ask again whether a held reload has become free, letting the runtime apply
+   * it if it has.
+   *
+   * The SAME asking call that held it. DorkOS cannot work out when a prompt
+   * cache goes cold — the lifetime is an hour on a Claude subscription and five
+   * minutes on an API key, and DorkOS chooses neither
+   * (`messaging/plugin-reload-policy.ts`) — so the runtime is asked rather than
+   * second-guessed, and `held: false` means it has already applied the reload
+   * for nothing.
+   *
+   * @param sessionId - The session to ask about
+   * @returns True when the runtime applied the reload
+   * @throws PluginReloadSessionGoneError When the session or its query is gone,
+   *   which the scheduler reads as "no longer worth applying". A control request
+   *   that goes unanswered throws something else, and keeps the wait alive.
+   */
+  private async recheckHeldPluginReload(sessionId: string): Promise<boolean> {
+    const { session, queryObj } = this.reloadableSession(sessionId);
+    const contextTokens = conversationTokens(session);
+    const asked = await this.cache.reloadPlugins(queryObj, session.cwd, this.cwd, {
+      holdOnCacheImpact: true,
+      sessionId,
+      ...(contextTokens !== undefined ? { contextTokens } : {}),
+    });
+    return !asked.held;
+  }
+
+  /**
+   * Apply a held reload unconditionally, paying for the cache rebuild.
+   *
+   * The plain reload with no options, for the ceiling: the wait has gone on
+   * long enough that running a plugin set the disk no longer matches costs more
+   * than the rebuild does.
+   *
+   * @param sessionId - The session whose reload is being paid for
+   * @throws PluginReloadSessionGoneError When the session or its query is gone
+   */
+  private async applyHeldPluginReload(sessionId: string): Promise<void> {
+    const { session, queryObj } = this.reloadableSession(sessionId);
+    await this.cache.reloadPlugins(queryObj, session.cwd, this.cwd);
+  }
+
+  /**
+   * The session and the query a held reload has to be spoken to through.
+   *
+   * @param sessionId - The session to resolve
+   * @returns The session record and its live or last query
+   * @throws PluginReloadSessionGoneError When either is gone — the reload is
+   *   moot, because the next launch reads the plugin set off disk
+   */
+  private reloadableSession(sessionId: string): { session: AgentSession; queryObj: Query } {
+    const session = this.sessionStore.findSession(sessionId);
+    const queryObj = session?.activeQuery ?? session?.lastQuery;
+    if (!session || !queryObj) {
+      // Its own error type, because the scheduler drops a wait on THIS and
+      // keeps one on a control request that merely went unanswered.
+      throw new PluginReloadSessionGoneError(sessionId);
+    }
+    return { session, queryObj };
+  }
+
+  /**
+   * Write one reload that changed a live session's tool list to the activity
+   * feed.
+   *
+   * Only reloads that cost something get an entry: a reload the CLI waved
+   * through disturbed no cached conversation and is nobody's business. The
+   * estimate the session is never shown — how big the conversation was, and what
+   * the reload disturbed — lives here and in the debug log, which is where
+   * somebody auditing a day's spend would go looking.
+   *
+   * @param entry - What was paid, and whether it waited first
+   */
+  private recordPaidPluginReload(entry: PaidPluginReload): void {
+    const port = this.pluginReloadActivity;
+    if (!port) return;
+    port(entry);
   }
 
   /**
@@ -1477,6 +1678,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       // message arriving in that window must not find a bundle whose pump is
       // already on its way out.
       this.persistent.forget(sessionId);
+      // A reload waiting for this session's cache to go cold has nothing left to
+      // apply: the process is going, and the next launch reads the plugin set
+      // off disk. Dropped rather than paid — nothing was spent, so nothing is
+      // recorded (spec `plugin-reload-cache-cost`).
+      this.pluginReloads.cancel(sessionId);
       this.pumps.evict(sessionId).catch((err: unknown) => {
         logger.warn('[ClaudeCodeRuntime] evicted session failed to give back its process', {
           sessionId,
@@ -1554,7 +1760,20 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     port({ sessionId, cwd, serverNames });
   }
 
-  /** @inheritdoc */
+  /**
+   * @inheritdoc
+   *
+   * **Never held, whatever it costs** (spec `plugin-reload-cache-cost`). This is
+   * the reload somebody asked for — `POST /api/sessions/:id/reload-plugins`, a
+   * person who wants the new plugin in this session now — and a request answered
+   * with "in a few minutes" is not an answer. The cost check exists to keep
+   * reloads NOBODY asked for from spending quietly; it has no business
+   * overruling one somebody did.
+   *
+   * It also ends any wait already running on this session: the plugins are live
+   * either way, so the held reload has been paid, and the activity feed records
+   * it as such.
+   */
   async reloadPlugins(sessionId: string): Promise<ReloadPluginsResult | null> {
     const session = this.sessionStore.findSession(sessionId);
     const queryObj = session?.activeQuery ?? session?.lastQuery;
@@ -1563,14 +1782,39 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       return null;
     }
     try {
+      const contextTokens = conversationTokens(session!);
       const result = await this.cache.reloadPlugins(queryObj, session!.cwd, this.cwd);
+      // Settled AFTER the apply landed: a reload that threw leaves the wait
+      // armed, so a failed hand trigger never strands the held reload.
+      const settled = this.pluginReloads.settle(sessionId, 'hand-triggered');
+      // An expensive reload is recorded whether or not a wait was running
+      // (decision 8: held OR above threshold). Nothing was holding when the
+      // person reloads a busy session the fan-out never reached — and that is
+      // exactly the reload worth a line in the feed. Below the threshold this
+      // stays silent, like every other cheap reload.
+      if (!settled && pluginReloadIsWorthHolding(contextTokens)) {
+        this.recordPaidPluginReload({
+          sessionId,
+          deferred: false,
+          heldMs: 0,
+          release: 'hand-triggered',
+          contextTokens,
+          // Nothing asked what this reload would disturb — it was applied
+          // outright — so there is nothing honest to put here.
+          impact: readCacheImpact(undefined),
+        });
+      }
       logger.info('[reloadPlugins] plugins reloaded', {
         sessionId,
         commands: result.commandCount,
         plugins: result.pluginCount,
         errorCount: result.errorCount,
       });
-      return result;
+      return {
+        commandCount: result.commandCount,
+        pluginCount: result.pluginCount,
+        errorCount: result.errorCount,
+      };
     } catch (err) {
       logger.error('[reloadPlugins] reload failed', {
         sessionId,
@@ -1594,7 +1838,6 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     if (!this.mcpServerFactory) return {};
     const stubSession = {
       eventQueue: [],
-      uiState: undefined,
       pendingInteractions: new Map(),
       permissionMode: 'default',
       lastActivity: Date.now(),

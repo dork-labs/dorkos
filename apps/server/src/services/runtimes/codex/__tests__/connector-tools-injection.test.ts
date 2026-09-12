@@ -19,14 +19,7 @@ describe('Codex connector runtime MCP injection', () => {
       headers: connectorRuntimeHeaders({ bearer: secret, runtime: 'codex', canonicalCwd: cwd }),
     };
 
-    const options = buildCodexOptions(
-      '/bin/codex',
-      undefined,
-      undefined,
-      undefined,
-      null,
-      injection
-    );
+    const options = buildCodexOptions('/bin/codex', undefined, undefined, null, injection);
     const configText = JSON.stringify(options.config);
     const server = (
       options.config?.mcp_servers as Record<
@@ -54,7 +47,7 @@ describe('Codex connector runtime MCP injection', () => {
 
   it('fails closed instead of putting an unmapped header into config', () => {
     expect(() =>
-      buildCodexOptions('/bin/codex', undefined, undefined, undefined, null, {
+      buildCodexOptions('/bin/codex', undefined, undefined, null, {
         url: 'http://127.0.0.1:4341/mcp',
         agentToolsUrl: 'http://127.0.0.1:4341/agent-mcp',
         headers: { 'X-Unmapped-Secret': 'secret' },

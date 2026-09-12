@@ -789,6 +789,46 @@ export interface MessageOpts extends SessionSettings {
    */
   additionalContext?: AdditionalContext;
   /**
+   * Where this turn is happening, when a ROOM triggered it — routing metadata,
+   * never prompt context (spec `room-canvas` §5.3).
+   *
+   * It is what lets a `control_ui` call taken inside a room turn land on the
+   * ROOM's shared canvas instead of on one agent's private session stream, and
+   * all three of its fields have to be server-derived: `roomContext` carries the
+   * room id but deliberately no member ids (a member is addressed by handle), and
+   * an opaque routing id has no business in a prompt at all.
+   *
+   * **A runtime that honours this must assign it UNCONDITIONALLY, `undefined`
+   * included.** A marker that is set and never cleared would make every later
+   * direct turn in that session write to a channel — a person's own
+   * `open_canvas` landing in a room they are not looking at.
+   *
+   * Absent on every turn a room did not trigger, which is most of them.
+   */
+  roomTurn?: {
+    /** The room the turn is answering in. */
+    roomId: string;
+    /** The acting agent's author id IN THAT ROOM — what a document is attributed to. */
+    authorId: string;
+    /** The room turn's dispatch id. The per-turn canvas ceiling is counted against it. */
+    turnId: string;
+    /**
+     * Where the turn is standing, so a canvas document that names a FILE records
+     * the tree its path was resolved against.
+     */
+    cwd?: string;
+    /**
+     * Commits this agent's working copy has that the room's `main` does not, as
+     * the dispatcher measured them for THIS turn.
+     *
+     * Carried on the marker rather than measured again where it is used, because
+     * the measurement is a `git` call and the one place that can take it has
+     * already taken it. `null` — or absent — means NOT MEASURED, which is a
+     * different claim from "level with the room" and must not collapse into it.
+     */
+    aheadOfMain?: number | null;
+  };
+  /**
    * Title to assign the session on its first turn, skipping auto-generation.
    * Useful for sessions with a known purpose (e.g. Tasks- or relay-initiated runs).
    * Only honored on the first turn — ignored once the session has started.

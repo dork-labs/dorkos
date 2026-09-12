@@ -382,6 +382,7 @@ describe('the production wiring', () => {
       getRoom: () => room,
       isOwnerAuthor: (authorId) => authorId === 'author-operator',
       operatorGitName: () => 'Dorian',
+      pinRoomMd: () => {},
       caps: () => ({ ...ROOM_REPO_CAP_DEFAULTS }),
       maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
     });

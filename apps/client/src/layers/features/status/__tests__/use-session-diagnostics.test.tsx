@@ -104,6 +104,7 @@ function snapshot(cursor = 400, queuedMessages: QueuedMessage[] = []): SessionSn
       lastError: null,
     },
     pendingInteractions: [],
+    canvas: [],
     queuedMessages,
     cursor,
   };

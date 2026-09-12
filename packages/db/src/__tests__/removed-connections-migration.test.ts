@@ -14,7 +14,7 @@ describe('removed connections migration', () => {
         INSERT INTO connector_authentication_flows VALUES ('legacy-flow');
         INSERT INTO connections VALUES ('old','provider','account','disconnected'), ('active','provider','other','connected');`);
       sqlite.exec(
-        readFileSync(new URL('../../drizzle/0096_removed_connections.sql', import.meta.url), 'utf8')
+        readFileSync(new URL('../../drizzle/0098_removed_connections.sql', import.meta.url), 'utf8')
       );
       expect(
         sqlite

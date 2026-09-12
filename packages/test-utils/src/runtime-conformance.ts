@@ -18,6 +18,8 @@
  * @module test-utils/runtime-conformance
  */
 import { randomUUID } from 'node:crypto';
+import { realpathSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import type {
   AgentRuntime,
@@ -236,6 +238,35 @@ export interface RuntimeConformanceOpts {
    * differently-scripted backend than the suite's default runtime carries.
    */
   mediaTurn?: () => Promise<StreamEvent[]>;
+
+  /**
+   * Drives ONE ROOM turn that puts a document on the room's shared canvas, and
+   * reports what the room holds afterwards (spec `room-canvas` §5.5).
+   *
+   * Written against what the TURN produced rather than against any one
+   * runtime's tool handler, which is what makes it satisfiable by every adapter:
+   * claude-code applies its own canvas command synchronously from `control_ui`,
+   * and codex and the scripted test-mode runtime reach the same writer through
+   * the room turn's collector. Both ends have to land in the same place.
+   *
+   * Wire it to `driveRoomCanvasTurn`
+   * (`apps/server/src/services/session/__tests__/durable-turn-harness.ts`),
+   * which owns the room, the runner and the registry; what a wiring supplies is
+   * the one runtime-specific part — how ITS adapter comes to emit the command.
+   *
+   * Omit it and the case SKIPs by name rather than passing on an absence the
+   * suite manufactured, exactly as every other driver here does.
+   */
+  roomCanvasTurn?: () => Promise<{
+    /** Every document on the room's canvas afterwards. */
+    documents: Array<{ id: string; title: string; authorId: string }>;
+    /** Titles a SECOND member's next turn context carries. */
+    nextTurnContextTitles: string[];
+    /** How many turns the room dispatched before anybody asked a second question. */
+    turnsDispatchedByTheCanvasChange: number;
+    /** How many coalesced canvas lines the room's log holds. */
+    canvasEntries: number;
+  }>;
 
   /**
    * Drives ONE turn that ASKS a question nobody answers, lets the ask expire,
@@ -998,6 +1029,46 @@ export interface PresenceObservation {
 }
 
 /**
+ * A directory path collapsed to the location it actually names, for comparing
+ * one binding against another.
+ *
+ * The rule this serves is "the strip omits rather than lies", and naming the
+ * same directory by a path that leads to it is not a lie. macOS is where that
+ * distinction stops being academic: `os.tmpdir()` hands out `/var/folders/...`,
+ * `/var` is a symlink to `/private/var`, and a runtime that resolves the cwd it
+ * was handed — as a real sidecar booted in that directory does — reports
+ * `/private/var/folders/...` for a session created with `/var/folders/...`. A
+ * raw string comparison calls that a fabricated binding and false-reds the live
+ * OpenCode arm on both presence cases, on every sidecar version (measured on
+ * 1.18.15 and 1.18.30, identically — the check, not the runtime).
+ *
+ * Only ABSOLUTE paths are resolved. `realpathSync` resolves a relative one
+ * against whatever `process.cwd()` happens to be, which would make two readings
+ * compare equal for a reason that has nothing to do with either of them — and a
+ * session binding is an absolute directory in every runtime, so a relative one
+ * is already a reading worth failing on its own terms.
+ *
+ * Resolution failure falls back to the path as given, which is the safe
+ * direction: a path that does not exist collapses to itself, so two genuinely
+ * different directories stay different and the assertion keeps its teeth. That
+ * fallback is also what keeps the fabricated readings in
+ * `__tests__/runtime-conformance-presence.test.ts` red — none of their paths is
+ * on disk.
+ *
+ * @param candidate - A directory path as a runtime or a test reported it.
+ * @returns The real path it resolves to, or `candidate` when it is relative or
+ *   cannot resolve.
+ */
+function realBindingPath(candidate: string): string {
+  if (!isAbsolute(candidate)) return candidate;
+  try {
+    return realpathSync.native(candidate);
+  } catch {
+    return candidate;
+  }
+}
+
+/**
  * Check one {@link PresenceObservation} against the presence-truthfulness
  * contract: returns one message per violation, empty when the reading is honest.
  *
@@ -1096,7 +1167,7 @@ export function validatePresenceReport(observation: PresenceObservation): string
           `reports the binding '${reportedBinding}' for a session created bound to nothing — ` +
             'an unattributable session must report no binding rather than borrow one'
         );
-      } else if (reportedBinding !== boundTo) {
+      } else if (realBindingPath(reportedBinding) !== realBindingPath(boundTo)) {
         failures.push(
           `reports the binding '${reportedBinding}' for a session bound to '${boundTo}'`
         );
@@ -1147,6 +1218,7 @@ export function runtimeConformance(
     authFailure,
     makeCompactingRuntime,
     mediaTurn,
+    roomCanvasTurn,
     durableHistory,
     expiredQuestionHistory,
     presenceTurn,
@@ -2812,6 +2884,55 @@ export function runtimeConformance(
           expect(question.approvalOutcome).toBeUndefined();
         }
       });
+    });
+
+    describe('a room turn puts a document on the room’s canvas (spec `room-canvas`)', () => {
+      const drives = roomCanvasTurn ? it : it.skip;
+
+      drives(
+        'lands on the room canvas, reaches the next turn’s context, and wakes nobody',
+        async () => {
+          const outcome = await roomCanvasTurn!();
+
+          // (a) The table holds it, ONCE. Every wiring here produces exactly one
+          // `open_canvas`, so the count is the assertion rather than a floor —
+          // and the two failures it separates are opposite ones. Zero is a
+          // command nothing applied, which is the failure every runtime reached
+          // differently before there was one writer. TWO is the failure the
+          // other side of the same seam produces: a handler that applies the
+          // command itself and does not STAMP the event it pushes, so the room
+          // turn's runtime-neutral tap applies it a second time (spec
+          // `canvas-agent-seat` §5). The documents here carry no dedupe key, so
+          // a double really does land twice.
+          expect(
+            outcome.documents.length,
+            'the turn produced ONE canvas command; zero means nothing applied it, two means ' +
+              'something applied it twice (an unstamped `ui_command` the room tap picked up)'
+          ).toBe(1);
+
+          // (b) A SECOND member's next turn is told about it, by name. This is
+          // the channel the whole feature rests on: nothing is pushed at
+          // anybody, so a document nobody's context mentions is a document
+          // nobody learns about.
+          for (const document of outcome.documents) {
+            expect(
+              outcome.nextTurnContextTitles,
+              `the next turn's context does not mention "${document.title}"`
+            ).toContain(document.title);
+          }
+
+          // (c) It woke nobody. Read off the DISPATCHER — the count of turns the
+          // room asked for — rather than off a sleep, so this says "no turn was
+          // started" rather than "none had started yet".
+          expect(
+            outcome.turnsDispatchedByTheCanvasChange,
+            'putting something on the canvas started a turn; a canvas change wakes nobody'
+          ).toBe(1);
+
+          // …and the room said so exactly once, in its own voice.
+          expect(outcome.canvasEntries).toBe(1);
+        }
+      );
     });
 
     if (durableHistory) {

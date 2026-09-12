@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { logger } from '../../../../../lib/logger.js';
 import {
   createCanUseTool,
@@ -9,6 +9,10 @@ import {
   type ToolApprovalContext,
 } from '../interactive-handlers.js';
 import type { InteractiveSession, PendingInteraction } from '../interaction-wait.js';
+import {
+  autoModeStopStats,
+  resetAutoModeStops,
+} from '../../../../observability/auto-mode-stops.js';
 import { resolveApprovalDecision } from '../../../opencode/messaging/approvals.js';
 import { toRawSessionEvent } from '../../../../session/session-event-normalizer.js';
 import type { StreamEvent, QuestionItem } from '@dorkos/shared/types';
@@ -1327,39 +1331,6 @@ describe('a prompt nobody answers parks, then is refused', () => {
     }
   });
 
-  it('refuses an unattended run at ten minutes and never parks it', async () => {
-    // A scheduled task has nobody coming back to it, so a park is a promise
-    // nothing can keep: it would stall the run for four hours per ask instead
-    // of ten minutes (spec §7).
-    vi.useFakeTimers();
-    try {
-      const session = makeBareSession({ unattended: true });
-      const result = handleToolApproval(session, 'park-6', 'Bash', { command: 'ls' }, {
-        signal: new AbortController().signal,
-        toolUseID: 'park-6',
-      } as ToolApprovalContext);
-
-      vi.advanceTimersByTime(COUNTDOWN_MS);
-
-      await expect(result).resolves.toEqual({
-        behavior: 'deny',
-        message: 'Tool approval timed out after 10 minutes',
-      });
-      // No park notice: the queue goes straight from the ask to the refusal.
-      expect(session.eventQueue.map((e) => e.type)).toEqual([
-        'approval_required',
-        'interaction_cancelled',
-        'system_status',
-      ]);
-      const notice = session.eventQueue[2].data as { message: string };
-      expect(notice.message).toBe(
-        'I waited 10 minutes for an answer about Bash and nobody came, so I treated it as declined.'
-      );
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
   it('parks a question and an elicitation on the same two stages', async () => {
     // Both share `armInteractionWait`, so this pins that they reach it: the
     // park notice at ten minutes, the refusal four hours later.
@@ -1492,5 +1463,204 @@ describe('the scope an "Always Allow" card names (DOR-1462)', () => {
     } finally {
       info.mockRestore();
     }
+  });
+});
+
+describe('counting the stops auto mode makes on DorkOS tools', () => {
+  /**
+   * The measurement half of spec `auto-mode-classifier-context`.
+   *
+   * Reaching the approval card in AUTO mode with a DorkOS tool means the
+   * runtime's own classifier decided the call deserved a person, and DorkOS's
+   * auto-allow list did not cover it — the exact stop the host-context note
+   * exists to remove. Counting it here, rather than off a log grep afterwards,
+   * is what makes "did it work" answerable at all.
+   */
+  const DORKOS_TOOL = 'mcp__dorkos__tasks_delete';
+
+  beforeEach(() => {
+    resetAutoModeStops();
+  });
+
+  it('counts a DorkOS tool that auto mode stopped on', () => {
+    const session = makeSession('auto');
+    void createCanUseTool(session, noopLog)(DORKOS_TOOL, { id: 'x' }, makeContext('tool-a'));
+
+    const stats = autoModeStopStats();
+    expect(stats.stops).toBe(1);
+    expect(stats.stopsByTool).toEqual({ [DORKOS_TOOL]: 1 });
+  });
+
+  it('ignores a stop on a tool DorkOS does not own', () => {
+    const session = makeSession('auto');
+    void createCanUseTool(session, noopLog)('Bash', { command: 'ls' }, makeContext('tool-b'));
+
+    expect(autoModeStopStats().stops).toBe(0);
+  });
+
+  it('ignores modes that ask about everything by design', () => {
+    // `default` raises a card for every non-safe tool, so counting its cards
+    // would bury the auto-mode signal under the mode that is supposed to
+    // produce them.
+    for (const mode of ['default', 'acceptEdits', 'plan'] as const) {
+      const session = makeSession(mode);
+      void createCanUseTool(session, noopLog)(DORKOS_TOOL, { id: 'x' }, makeContext(`t-${mode}`));
+    }
+
+    expect(autoModeStopStats().stops).toBe(0);
+  });
+
+  it('ignores a DorkOS tool auto mode did not stop on', async () => {
+    // `mesh_list` is on the auto-allow list, so it never reaches the card — and
+    // an auto-allow is not a stop.
+    const session = makeSession('auto');
+    await createCanUseTool(session, noopLog)('mcp__dorkos__mesh_list', {}, makeContext('tool-c'));
+
+    expect(autoModeStopStats().stops).toBe(0);
+  });
+});
+
+describe('an ask nobody can answer is refused the moment it is raised', () => {
+  const DENIAL =
+    'Nobody is available to approve this on a scheduled run. ' +
+    'Do what you can without it and say what you skipped.';
+
+  /** The refusal record a handler pushed, if it pushed one. */
+  function deniedEvent(session: InteractiveSession): Record<string, unknown> | undefined {
+    const event = session.eventQueue.find((e) => e.type === 'permission_denied');
+    return event?.data as Record<string, unknown> | undefined;
+  }
+
+  it('refuses a tool approval without arming any wait', async () => {
+    // The ten minutes this replaces bought a chance that somebody answers, on
+    // the one surface where by construction nobody is there — and held a run
+    // slot for the whole of it. Fake timers with NOTHING advanced is the proof:
+    // a refusal that still went through a timer would never resolve here, and
+    // the test would time out rather than pass.
+    vi.useFakeTimers();
+    try {
+      const session = makeBareSession({ unattended: true });
+      const result = handleToolApproval(session, 'deny-1', 'Bash', { command: 'ls' }, {
+        signal: new AbortController().signal,
+        toolUseID: 'deny-1',
+      } as ToolApprovalContext);
+
+      await expect(result).resolves.toEqual({ behavior: 'deny', message: DENIAL });
+      // No card was ever pushed, so there is nothing to cancel and nothing for a
+      // client to render as answerable.
+      expect(session.eventQueue.map((e) => e.type)).toEqual(['permission_denied']);
+      expect(session.pendingInteractions.size).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('records the refusal under a reason only DorkOS writes', async () => {
+    // The stamp is what lets a run summary say "nobody was there to approve it"
+    // without qualifying it: the SDK's own denials (classifier, rule,
+    // asyncAgent) describe decisions that would have gone the same way with a
+    // person present, and they carry other discriminators.
+    const session = makeBareSession({ unattended: true });
+    await handleToolApproval(session, 'deny-2', 'Bash', { command: 'ls' }, {
+      signal: new AbortController().signal,
+      toolUseID: 'deny-2',
+    } as ToolApprovalContext);
+
+    expect(deniedEvent(session)).toEqual({
+      toolCallId: 'deny-2',
+      toolName: 'Bash',
+      reasonType: 'no_approval_surface',
+      reason: 'nobody was available to approve this tool',
+      message: DENIAL,
+    });
+    // Nothing from the prompt's INPUT: a tool's arguments are paths, commands
+    // and occasionally secrets, and this record reaches the transcript.
+    expect(JSON.stringify(deniedEvent(session))).not.toContain('ls');
+  });
+
+  it('refuses a question and an elicitation the same way', async () => {
+    const session = makeBareSession({ unattended: true });
+
+    const question = handleAskUserQuestion(session, 'deny-q', {
+      questions: [{ question: 'which branch?', header: 'Branch', options: [] }],
+    });
+    const elicitation = handleElicitation(
+      session,
+      { serverName: 'stripe-mcp', message: 'sign in', mode: 'url' } as ElicitationRequest,
+      new AbortController().signal
+    );
+
+    await expect(question).resolves.toEqual({ behavior: 'deny', message: DENIAL });
+    // An MCP server's request declines rather than denies — that is the shape
+    // its own protocol takes — but it settles just as immediately.
+    await expect(elicitation).resolves.toEqual({ action: 'decline' });
+    expect(session.eventQueue.map((e) => e.type)).toEqual([
+      'permission_denied',
+      'permission_denied',
+    ]);
+    // The MCP server is named where a tool name would go, because it is what the
+    // person reading the run has to recognise.
+    expect(session.eventQueue.map((e) => (e.data as { toolName: string }).toolName)).toEqual([
+      'AskUserQuestion',
+      'stripe-mcp',
+    ]);
+    expect(session.pendingInteractions.size).toBe(0);
+  });
+
+  it('leaves an ordinary session waiting exactly as before', async () => {
+    // The flag is the whole difference. A session a person can reach keeps the
+    // two-stage wait, which is what stops this from being a change to every
+    // approval card in the app.
+    vi.useFakeTimers();
+    try {
+      const session = makeBareSession();
+      const result = handleToolApproval(session, 'wait-1', 'Bash', { command: 'ls' }, {
+        signal: new AbortController().signal,
+        toolUseID: 'wait-1',
+      } as ToolApprovalContext);
+
+      expect(await settlementOf(result)).toBe('pending');
+      expect(session.eventQueue.map((e) => e.type)).toEqual(['approval_required']);
+
+      session.pendingInteractions.get('wait-1')?.reject('done');
+      await result;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('still auto-allows what it always auto-allowed, without a card or a refusal', async () => {
+    // The refusal sits BEHIND the gate, not in front of it: `isAutoAllowedCall`,
+    // the safe lists and `resolveModeDecision` all run first and are untouched,
+    // so a scheduled run keeps every tool it never had to ask about (DOR-1229).
+    const session = {
+      ...makeBareSession({ unattended: true }),
+      permissionMode: 'default' as const,
+    };
+    const canUseTool = createCanUseTool(session, noopLog);
+
+    const read = await canUseTool('Read', { file_path: '/tmp/x' }, makeContext('allow-1'));
+
+    expect(read).toEqual({ behavior: 'allow', updatedInput: { file_path: '/tmp/x' } });
+    expect(session.eventQueue).toEqual([]);
+  });
+
+  it('still allows what bypassPermissions allows, rather than refusing it', async () => {
+    // A schedule can hold `bypassPermissions`, and under it `resolveModeDecision`
+    // answers `allow` for the few calls the CLI escalates anyway. Refusing those
+    // would have narrowed a mode the operator deliberately chose.
+    const session = {
+      ...makeBareSession({ unattended: true }),
+      permissionMode: 'bypassPermissions' as const,
+    };
+    const canUseTool = createCanUseTool(session, noopLog);
+
+    const result = await canUseTool('Bash', { command: 'rm -rf build' }, makeContext('bypass-1'));
+
+    expect(result).toEqual({
+      behavior: 'allow',
+      updatedInput: { command: 'rm -rf build' },
+    });
+    expect(session.eventQueue).toEqual([]);
   });
 });

@@ -25,7 +25,7 @@
  * two escapes and this module uses both, deliberately unevenly:
  *
  * - **`alwaysLoad`** puts a tool in the prompt from turn 1. Granted to the
- *   {@link ALWAYS_LOADED_TOOLS} eight on every session. A room turn is the case that
+ *   {@link ALWAYS_LOADED_TOOLS} nine on every session. A room turn is the case that
  *   cannot afford a lookup: the agent is answering a person in a shared room, and a
  *   search step before it can react is a turn spent on plumbing. `list_capabilities`
  *   joins them as the discovery entry point — the one name that leads to the other
@@ -39,6 +39,49 @@
  * **Always-loading the whole server would be the wrong trade**, which is why these
  * are sets and not a flag: eighty-odd tool schemas would ride every turn's prompt,
  * on every session, to save a lookup that only a few turns genuinely cannot afford.
+ *
+ * ## Schemas: no `z.record()` in an in-session tool's input
+ *
+ * An in-session tool's input schema must not contain `z.record(...)` at ANY depth,
+ * `z.json()` included — it builds its object branch from a record. This is a hard
+ * constraint rather than a style note, and one tool breaking it takes down all
+ * ninety.
+ *
+ * `claude-agent-sdk` 0.3.257+ converts tool schemas to JSON Schema through the
+ * installed zod's own per-schema processor, but builds the conversion context
+ * itself, and that context carries no `deferred` array. zod 4.5.3+ is the first
+ * version whose record processor pushes onto `ctx.deferred` (its only user, for
+ * rewriting key names), so a record throws `Cannot read properties of undefined`
+ * INSIDE the `tools/list` handler. `tools/list` answers for the whole server, so
+ * the model is handed zero DorkOS tools — no error card, no log line, nothing to
+ * debug from. Bisected on the 0.3.224 → 0.3.268 bump: SDK 0.3.252 + zod 4.5.4 is
+ * fine and 0.3.257 is not; SDK 0.3.268 + zod 4.5.2 is fine and 4.5.3 is not. Both
+ * halves are the vendors' to fix; until one of them does, this constraint stands.
+ *
+ * `z.object({}).catchall(valueType)` is the drop-in: it accepts the same values,
+ * and its JSON Schema (`additionalProperties`) says the same thing without the
+ * `propertyNames` clause a record adds. Four schemas were converted for this reason,
+ * each carrying a pointer back here — `CONTROL_UI_INPUT.content`,
+ * `operator.config_patch`'s `patch`, `McpServerTransportSchema`'s `env`/`headers`,
+ * and `ConnectorJsonValueSchema` (which `z.json()` no longer builds).
+ * `__tests__/tool-exposure.test.ts` lists tools off the live server on all three
+ * session shapes, so a record added to any of them reds there immediately rather
+ * than shipping — but read that as broad coverage, not as a proof over the whole
+ * surface. Its plain and agent shapes build from
+ * `composeCapabilityRegistryForDocs()`, which does now compose every domain (it
+ * omitted `connectorExecutionDomain` until that was fixed, and
+ * `self-description/__tests__/dorkos-registry.test.ts` pins it). Listing is
+ * surface-gated regardless: the connector execute capabilities declare
+ * `surfaces: {}`, so no registry composition puts them on these two shapes, and
+ * they are reached only by the third — the connector-turn shape, which registers
+ * those ids directly. A capability that declares no MCP surface anywhere would
+ * still carry a record unseen.
+ *
+ * The aliases for `@dorkos/shared/{mesh,connector}-schemas` in
+ * `apps/server/vitest.config.ts` are the other half of that guard: four of these
+ * schemas live in `@dorkos/shared`, and against a stale `dist/` the test reads the
+ * old ones and passes. Measured — a record put back on
+ * `McpServerTransportSchema.env` reds 0 of 17 without those aliases and 7 with.
  *
  * Nothing here is runtime-neutral. Codex and OpenCode reach the same tools through
  * the external `/mcp` server — under `dorkos_ui` for the UI server Codex spawns
@@ -87,7 +130,7 @@ export function inSessionToolName(bare: string): string {
  * attached at registration, before Claude Code qualifies anything.
  *
  * Kept deliberately short — see the module note on why the server as a whole stays
- * deferred. Each of these eight earns it by being needed in a turn that has no
+ * deferred. Each of these nine earns it by being needed in a turn that has no
  * room for a lookup first:
  *
  * - the four room verbs, because a room turn is a person waiting in a shared
@@ -110,7 +153,7 @@ export function inSessionToolName(bare: string): string {
  *
  * **`get_room` and `find_room` are deliberately NOT here** (DOR-1610), and the
  * omission is written down because this list otherwise reads as "the room tools"
- * and now names six of the domain's eight. The rule that admits a tool is not
+ * and now names seven of the domain's sixteen. The rule that admits a tool is not
  * "it is a room verb" but "the prompt already tells an agent to reach for it":
  * every entry above is named in a prompt block, rides with one that is (the
  * listing pair, for the reason the bullet above gives), or is the entry point to
@@ -132,6 +175,17 @@ export function inSessionToolName(bare: string): string {
  * commands it is already running. The cost the other way is a schema in the
  * turn-1 prompt of EVERY session on the install, including the majority with no
  * project room at all.
+ *
+ * **`read_canvas` IS here, and the difference from merging is the turn it lands
+ * in** (DOR-1999). `<room_tools>` names it callably, in the same breath as the
+ * four conversation verbs and under the same prefix — a deferred name inside
+ * THAT block is the DOR-1292 shape this file warns about twice, because the
+ * block's whole contract is "these are the tools you have". And the turn is the
+ * one this list exists for: the room's context block tells every turn what is on
+ * the canvas but never what a document SAYS, so an agent answering "what does
+ * that say?" needs it inside the reply somebody is waiting on. Merging is the
+ * opposite turn — it follows work already committed, so its lookup lands among
+ * the git commands the agent is already running.
  */
 export const ALWAYS_LOADED_TOOLS: ReadonlySet<string> = new Set([
   'post_to_room',
@@ -140,6 +194,7 @@ export const ALWAYS_LOADED_TOOLS: ReadonlySet<string> = new Set([
   'search_room_history',
   'list_member_rooms',
   'search_member_rooms',
+  'read_canvas',
   'list_capabilities',
   'memory_write',
 ]);
@@ -149,7 +204,7 @@ export const ALWAYS_LOADED_TOOLS: ReadonlySet<string> = new Set([
  *
  * Granted eagerly only to sessions that ARE a registered mesh agent with Relay
  * on — never to a plain session, which is most of them. The trade is the same
- * one the eight above make and it is paid by a different set of turns: reaching
+ * one the nine above make and it is paid by a different set of turns: reaching
  * a peer means finding it (`mesh_list`), reading its address
  * (`mesh_inspect`), and sending (`relay_send`, `relay_send_async`,
  * `relay_send_and_wait`, `relay_inbox`), and DorkOS's own tester watched an

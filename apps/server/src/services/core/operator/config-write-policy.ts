@@ -450,6 +450,11 @@ export const CONFIG_WRITE_POLICY = {
   // for the plainest reason in this list: it is a bound on the agent itself, and
   // an agent that could raise it is voting itself more of the room.
   'rooms.maxPostsPerTurn': 'operator-only',
+  // How many times one agent may change a room's shared canvas in one turn.
+  // Operator-only for exactly the reason above it: it is a bound on the agent
+  // itself, and an agent that could raise it is voting itself more of the table
+  // everybody else in the room is looking at.
+  'rooms.maxCanvasOpsPerTurn': 'operator-only',
 
   // Whether a room may have files at all. Operator-only in the plainest sense of
   // this list: an agent that turned it back on would be re-opening a surface the
@@ -1061,6 +1066,9 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       // their own, which is this stake exactly.
       'rooms.toolOnlyReplies',
       'rooms.maxPostsPerTurn',
+      // And how much of the room's shared canvas one turn may rearrange. Same
+      // stake: how much your agents do on their own in front of everybody else.
+      'rooms.maxCanvasOpsPerTurn',
       'welcomeBack.enabled',
       'welcomeBack.absenceThresholdMinutes',
       'welcomeBack.maxPosts',

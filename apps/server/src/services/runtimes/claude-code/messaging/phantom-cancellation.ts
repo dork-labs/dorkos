@@ -81,11 +81,13 @@ import type { AgentSession } from '../agent-types.js';
 
 /**
  * The CLI's interrupt sentinel, verbatim as extracted from the bundled binary
- * of `@anthropic-ai/claude-agent-sdk` 0.3.224 (CLI 2.1.224, constant `Uj`).
- * Re-verified against that same bundle on 2026-08-11 (DOR-1149): still present
- * verbatim, and still the `content` of the `{type:'tool_result', is_error:true}`
- * the CLI synthesizes for a cancelled call. It lives only in the native binary —
- * grepping `sdk.mjs` for it finds nothing.
+ * of `@anthropic-ai/claude-agent-sdk` 0.3.224 (CLI 2.1.224). Re-verified against
+ * that bundle on 2026-08-11 (DOR-1149) and against the **0.3.268** bundle on
+ * 2026-09-11: still present verbatim, and still the `content` of the
+ * `{type:'tool_result', is_error:true}` the CLI synthesizes for a cancelled
+ * call. It lives only in the native binary — grepping `sdk.mjs` for it finds
+ * nothing. The 0.3.224 note named the minified constant that holds it; that name
+ * had moved by 0.3.268, so grep the string, never the symbol.
  *
  * Written as a tool_result when a pending tool call is cancelled by the CLI
  * itself — never by a DorkOS-mediated operator decision, which always carries

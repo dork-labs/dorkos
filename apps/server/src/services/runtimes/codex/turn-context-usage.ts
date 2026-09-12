@@ -251,10 +251,10 @@ async function readWithinDeadline(
 /**
  * Read the latest current-context measurement written by this completed turn.
  *
- * Codex 0.153.4 defines `last_token_usage.total_tokens` as the latest active
+ * Codex 0.154.0 defines `last_token_usage.total_tokens` as the latest active
  * context size and `total_token_usage` as the accumulated session total. Its
  * own context gauge uses the former:
- * https://github.com/openai/codex/blob/rust-v0.153.4/codex-rs/tui/src/token_usage.rs
+ * https://github.com/openai/codex/blob/rust-v0.154.0/codex-rs/tui/src/token_usage.rs
  *
  * The thread UUID encodes its creation time, which bounds discovery to three
  * adjacent daily directories plus the flat archive. Each directory and the

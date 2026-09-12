@@ -76,6 +76,7 @@
  * @module services/core/approvals/approval-verdict-delivery
  */
 import type { ApprovalOutcome } from '@dorkos/shared/approval-schemas';
+import type { ApprovalVerdictData } from '@dorkos/shared/additional-context';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 
 import { logger } from '../../../lib/logger.js';
@@ -111,12 +112,33 @@ type VerdictSource = Pick<
  * NOT in `CONTEXT_TAG` — so it gets neither. That is a precedent to understand,
  * not to copy.)
  */
-const TRIGGER_CONTENT = [
+const DECIDED_TRIGGER = [
   `<${CONTEXT_TAG.approval_verdict}>`,
   'A person answered an approval you asked for, after you had stopped waiting for it.',
   'The decision is in this turn’s approval_verdict context. Act on it.',
   `</${CONTEXT_TAG.approval_verdict}>`,
 ].join('\n');
+
+/**
+ * The same envelope for the ending nobody chose (spec `approval-expiry-notice`).
+ *
+ * Separate prose rather than a parameter, because {@link DECIDED_TRIGGER} states
+ * as fact that a person answered — and an expiry is precisely the case where
+ * nobody did. The turn's reason for being has to be true.
+ */
+const EXPIRED_TRIGGER = [
+  `<${CONTEXT_TAG.approval_verdict}>`,
+  'An approval you asked for ran out of time. Nobody answered it, and it can no longer be',
+  'answered. The details are in this turn’s approval_verdict context. Act on it.',
+  `</${CONTEXT_TAG.approval_verdict}>`,
+].join('\n');
+
+/** The turn content for one outcome. */
+const TRIGGER_CONTENT: Record<ApprovalVerdictData['outcome'], string> = {
+  granted: DECIDED_TRIGGER,
+  denied: DECIDED_TRIGGER,
+  expired: EXPIRED_TRIGGER,
+};
 
 /**
  * Deliver one approval's verdict to the session that asked for it.
@@ -192,7 +214,7 @@ export async function deliverApprovalVerdict(
     await dispatchMessage({
       sessionId,
       clientId: `approval-verdict-${approvalId}`,
-      content: TRIGGER_CONTENT,
+      content: TRIGGER_CONTENT[verdict.outcome],
       cwd: workingDir,
       projector,
       runtime,
@@ -213,9 +235,11 @@ export async function deliverApprovalVerdict(
   } catch (err) {
     // Nothing reached the agent, so the answer is still owed: hand the claim
     // back rather than leaving the row saying somebody was told. Releasing here
-    // cannot buy a double delivery — a granted approval is never re-decided
-    // (`decide` refuses a non-pending row), so there is no second broadcast for
-    // a second claimant to win.
+    // cannot buy a double delivery, on any outcome — a decided approval is never
+    // re-decided (`decide` refuses a non-pending row), and an expired one is
+    // spent by the sweep that settled it (`sweepExpired` skips rows with a
+    // `consumedAt`), so in neither case is there a second broadcast for a second
+    // claimant to win.
     if (claimed) approvals.releaseVerdictDelivery(approvalId);
     logger.warn('[approval-verdict] could not deliver the verdict', {
       approvalId,
@@ -231,10 +255,15 @@ export async function deliverApprovalVerdict(
  * The listener itself does nothing but hand off — see the module doc for why
  * that is a contract of `eventFanOut.subscribe` rather than a style choice.
  *
- * Only a real DECISION is delivered. `settle` also fires for `consumed` (the
- * ordinary grant flow settles twice for one subject) and for `expired`, and
- * neither is an answer a person gave; making expiry observable at all is
- * DOR-1932's subject, and this seam is what would carry its notice.
+ * Three of the four outcomes are delivered: the two decisions, and `expired` —
+ * an approval whose window closed with nobody answering, which is an ending the
+ * agent is just as blocked on (spec `approval-expiry-notice`, DOR-1932).
+ *
+ * `consumed` is the one that is deliberately dropped, and it is not an oversight:
+ * the ordinary grant flow settles TWICE for one subject — once when the operator
+ * decides and again when the agent spends the token — so honoring `consumed`
+ * would wake a session about a decision it had already been told about, or had
+ * just acted on itself.
  *
  * @param approvals - The approval store to read verdicts and claims from.
  * @returns An unsubscribe function. Idempotent.
@@ -243,7 +272,13 @@ export function startApprovalVerdictDelivery(approvals: VerdictSource): () => vo
   return eventFanOut.subscribe((eventName, data) => {
     if (eventName !== 'approval_resolved') return;
     const payload = data as { approvalId?: string; outcome?: ApprovalOutcome };
-    if (payload.outcome !== 'granted' && payload.outcome !== 'denied') return;
+    if (
+      payload.outcome !== 'granted' &&
+      payload.outcome !== 'denied' &&
+      payload.outcome !== 'expired'
+    ) {
+      return;
+    }
     const approvalId = payload.approvalId;
     if (!approvalId) return;
     // Detached on purpose: everything below this line is a database read, a

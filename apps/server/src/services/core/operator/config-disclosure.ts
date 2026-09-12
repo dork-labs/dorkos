@@ -234,6 +234,10 @@ export const CONFIG_DISCLOSURE = {
   // stayed quiet or why its fourth post in one turn was refused.
   'rooms.toolOnlyReplies': 'expose',
   'rooms.maxPostsPerTurn': 'expose',
+  // The same reasoning one line further: an agent that can read its canvas
+  // ceiling can say why its fourth change to the room's table was refused,
+  // instead of retrying into the same wall.
+  'rooms.maxCanvasOpsPerTurn': 'expose',
 
   // A room's own files: whether they are available at all, and the bounds a
   // merge is measured against. Plain numbers and a boolean about the person's

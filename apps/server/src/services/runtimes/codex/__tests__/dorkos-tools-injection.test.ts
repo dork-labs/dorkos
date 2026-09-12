@@ -212,7 +212,6 @@ describe('the dorkos tool server on a Codex turn', () => {
       threadMap: new CodexThreadMap(db),
       resolveBinary: async () => '/bin/codex',
       defaultCwd: agentDir,
-      mcpUiUrl: 'http://localhost:4242/codex-ui-mcp',
     });
     runtime.setMeshCore(meshWithAgent(agentDir));
     if (opts.runtimeTools !== false) {
@@ -289,13 +288,13 @@ describe('the dorkos tool server on a Codex turn', () => {
       expect(lastMcpServers()['dorkos']?.['url']).toBe('http://127.0.0.1:4341/agent-mcp');
     });
 
-    it('leaves the dorkos_ui bridge alongside it, not replaced by it', async () => {
+    it('sits beside the connections server and nothing else', async () => {
+      // There used to be a third, `dorkos_ui`, injected on every turn to carry
+      // one stubbed copy of `control_ui`. It is retired (spec
+      // `canvas-agent-seat` §5): `control_ui` is a `ui` capability on the
+      // `dorkos` server now, with a real session behind it.
       await drain(makeRuntime().sendMessage('s1', 'hello', { cwd: agentDir }));
-      expect(Object.keys(lastMcpServers()).sort()).toEqual([
-        'dorkos',
-        'dorkos_connections',
-        'dorkos_ui',
-      ]);
+      expect(Object.keys(lastMcpServers()).sort()).toEqual(['dorkos', 'dorkos_connections']);
     });
 
     it('uses a fresh turn-bound bearer on every turn', async () => {
@@ -665,7 +664,9 @@ describe('the dorkos tool server on a Codex turn', () => {
 
       expect(withFlagOff).toEqual({
         codexPathOverride: '/bin/codex',
-        config: { mcp_servers: { dorkos_ui: { url: 'http://localhost:4242/codex-ui-mcp' } } },
+        // No `config` at all: with the flag off and no managed servers, DorkOS
+        // injects nothing. It used to inject the `dorkos_ui` bridge here on every
+        // turn regardless; that is retired (spec `canvas-agent-seat` §5).
         env: expect.any(Object),
       });
       expect(lastMcpServers()['dorkos']).toBeUndefined();
@@ -742,7 +743,6 @@ describe('the dorkos tool server on a Codex turn', () => {
         threadMap: new CodexThreadMap(db),
         resolveBinary: async () => '/bin/codex',
         defaultCwd: agentDir,
-        mcpUiUrl: 'http://localhost:4242/codex-ui-mcp',
       });
       await drain(runtime.sendMessage('s1', 'hello', { cwd: agentDir }));
 

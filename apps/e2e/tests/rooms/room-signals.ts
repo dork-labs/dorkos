@@ -165,6 +165,54 @@ export async function publishPresence(page: Page, signal: PresenceSignal): Promi
 }
 
 /**
+ * Say that somebody has started — or stopped — following a member, on the room's
+ * own stream (spec `canvas-agent-seat` §6).
+ *
+ * What the server publishes when a follow claim opens or closes. The shape is
+ * the same `presence` signal room presence already uses; only the payload is
+ * different, which is the whole design: no new signal name was minted.
+ *
+ * @param page - The page holding the room stream, already tapped.
+ * @param claim.followerId - Who is following.
+ * @param claim.leaderId - Who they are following, or `null` when they stopped.
+ */
+export async function publishFollowClaim(
+  page: Page,
+  claim: { followerId: string; leaderId: string | null }
+): Promise<void> {
+  await pushFrame(page, '__roomStream', 'signal', {
+    type: 'signal',
+    signal: 'presence',
+    authorId: claim.followerId,
+    at: new Date().toISOString(),
+    follows: claim.leaderId,
+  });
+}
+
+/**
+ * Say where a followed person is looking, on the room's own stream.
+ *
+ * @param page - The page holding the room stream, already tapped.
+ * @param position.authorId - Whose view this is.
+ * @param position.view - The document, page and scroll offset they are on.
+ */
+export async function publishFollowView(
+  page: Page,
+  position: {
+    authorId: string;
+    view: { documentId: string; url?: string; scrollY?: number };
+  }
+): Promise<void> {
+  await pushFrame(page, '__roomStream', 'signal', {
+    type: 'signal',
+    signal: 'presence',
+    authorId: position.authorId,
+    at: new Date().toISOString(),
+    view: position.view,
+  });
+}
+
+/**
  * Say how many agents are working in a room, on the global stream.
  *
  * What the dispatcher broadcasts at every claim transition and again on its

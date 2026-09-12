@@ -1,0 +1,176 @@
+/**
+ * @vitest-environment jsdom
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, cleanup } from '@testing-library/react';
+import '@testing-library/jest-dom/vitest';
+import type { UiCanvasContent } from '@dorkos/shared/types';
+import { canvasViewForContent } from '@dorkos/shared/canvas-view';
+
+// Mock streamdown to avoid CSS import issues in jsdom
+vi.mock('streamdown', () => ({
+  Streamdown: ({ children }: { children: string }) => (
+    <div data-testid="streamdown">{children}</div>
+  ),
+}));
+
+vi.mock('streamdown/styles.css', () => ({}));
+
+// Mock the heavy Blintz wrapper (markdown canvas) so jsdom never loads the real editor.
+vi.mock('../ui/BlintzCanvas', () => ({
+  BlintzCanvas: ({ value }: { value: string }) => <div data-testid="blintz-canvas">{value}</div>,
+}));
+
+type MockContent =
+  | { type: 'markdown'; content: string; title?: string }
+  | { type: 'json'; data: unknown; title?: string }
+  | { type: 'url'; url: string; title?: string }
+  | { type: 'audio'; src: string; title?: string }
+  | { type: 'video'; src: string; title?: string };
+
+interface MockDoc {
+  id: string;
+  content: MockContent;
+  openedAt: number;
+  lastActiveAt: number;
+  sourceLabel: string;
+  editing: boolean;
+}
+
+const mockState = {
+  openDocuments: [] as MockDoc[],
+  activeCanvasDocumentId: null as string | null,
+  activeBrowserDocumentId: null as string | null,
+  selectedCwd: null as string | null,
+  canvasSessionId: null as string | null,
+  browserHistories: {} as Record<string, { contentUrl: string; stack: string[]; cursor: number }>,
+  setCanvasOpen: vi.fn(),
+  openCanvasDocument: vi.fn(),
+  activateCanvasDocument: vi.fn(),
+  closeCanvasDocument: vi.fn(),
+  setDocumentContent: vi.fn(),
+  setDocumentEditing: vi.fn(),
+  writeBrowserHistory: vi.fn(),
+};
+
+/** Tab-label fallbacks mirroring the store's derivation for label-based assertions. */
+const FALLBACK_LABELS: Record<string, string> = {
+  markdown: 'Document',
+  json: 'JSON Data',
+  url: 'Web Page',
+  audio: 'Audio',
+  video: 'Video',
+};
+
+/** Open a single active document in its own view, labelled like the real store. */
+function setActiveDoc(content: MockContent): void {
+  mockState.openDocuments = [
+    {
+      id: 'd1',
+      content,
+      openedAt: 1,
+      lastActiveAt: 1,
+      sourceLabel: content.title ?? FALLBACK_LABELS[content.type],
+      editing: false,
+    },
+  ];
+  if (canvasViewForContent(content as UiCanvasContent) === 'browser') {
+    mockState.activeBrowserDocumentId = 'd1';
+  } else {
+    mockState.activeCanvasDocumentId = 'd1';
+  }
+}
+
+vi.mock('@/layers/shared/model', async () => {
+  // The real split rule, not a copy of it: the view a document belongs to has
+  // exactly one definition, and a component test restating it would pass while
+  // the app disagreed.
+  const { canvasViewForContent: viewFor } = await import('@dorkos/shared/canvas-view');
+  const useAppStore = (selector: (s: typeof mockState) => unknown) => selector(mockState);
+  (useAppStore as unknown as { getState: () => typeof mockState }).getState = () => mockState;
+  return {
+    useAppStore,
+    documentsInView: (docs: MockDoc[], view: string) =>
+      docs.filter((d) => viewFor(d.content as UiCanvasContent) === view),
+    useIsMobile: () => false,
+    useTheme: () => ({ theme: 'light', setTheme: vi.fn() }),
+    useTransport: () => ({ writeFile: async () => ({ ok: true, hash: 'x' }) }),
+  };
+});
+
+import { setPrefersReducedMotion } from '@/test-setup';
+import { CanvasContent, BrowserContent } from '../ui/CanvasViews';
+
+// The suite's own local `motion/react` shadow used to answer
+// `useReducedMotion: () => true`; deleting it (DOR-1416) silently flipped
+// every case here to "no preference" instead. Restored via the shared
+// toggle so the branch under test doesn't move out from under it.
+beforeEach(() => setPrefersReducedMotion(true));
+afterEach(cleanup);
+
+describe('the Canvas and Browser views', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockState.openDocuments = [];
+    mockState.activeCanvasDocumentId = null;
+    mockState.activeBrowserDocumentId = null;
+  });
+
+  it('renders the splash when the Canvas view holds no documents', () => {
+    render(<CanvasContent />);
+    expect(screen.getByText('A blank canvas')).toBeInTheDocument();
+    expect(screen.getByText('Markdown')).toBeInTheDocument();
+    expect(screen.getByText('JSON')).toBeInTheDocument();
+    // Pages live in the Browser tab now, so offering one from here would open a
+    // document into a tab the reader is not looking at.
+    expect(screen.queryByText('Web Page')).not.toBeInTheDocument();
+  });
+
+  it('renders the document’s tab label from its title', () => {
+    setActiveDoc({ type: 'markdown', content: '# Hello', title: 'Test Doc' });
+    render(<CanvasContent />);
+    expect(screen.getByText('Test Doc')).toBeInTheDocument();
+  });
+
+  it('renders the JSON fallback tab label when no title', () => {
+    setActiveDoc({ type: 'json', data: {} });
+    render(<CanvasContent />);
+    expect(screen.getByText('JSON Data')).toBeInTheDocument();
+  });
+
+  it('leaves a page to the Browser view rather than showing it in the canvas', () => {
+    setActiveDoc({ type: 'url', url: 'https://example.com' });
+    render(<CanvasContent />);
+    // The canvas holds no page tab, and falls back to its own empty state.
+    expect(screen.queryByRole('tab', { name: 'Web Page' })).not.toBeInTheDocument();
+    expect(screen.getByText('A blank canvas')).toBeInTheDocument();
+  });
+
+  it('renders that same page in the Browser view, with its fallback tab label', () => {
+    setActiveDoc({ type: 'url', url: 'https://example.com' });
+    render(<BrowserContent />);
+    expect(screen.getByRole('tab', { name: 'Web Page' })).toBeInTheDocument();
+  });
+
+  it('tells an empty Browser view what it is for', () => {
+    render(<BrowserContent />);
+    expect(screen.getByText('No page open')).toBeInTheDocument();
+    expect(screen.getByText(/This tab shows web pages/)).toBeInTheDocument();
+  });
+
+  it('dispatches an audio document to the native audio viewer', () => {
+    setActiveDoc({ type: 'audio', src: 'https://x/theme.mp3', title: 'Theme' });
+    render(<CanvasContent />);
+    const audio = document.querySelector('audio');
+    expect(audio).toHaveAttribute('src', 'https://x/theme.mp3');
+    expect(audio).toHaveAttribute('controls');
+  });
+
+  it('dispatches a video document to the native video viewer', () => {
+    setActiveDoc({ type: 'video', src: 'https://x/demo.mp4', title: 'Demo' });
+    render(<CanvasContent />);
+    const video = document.querySelector('video');
+    expect(video).toHaveAttribute('src', 'https://x/demo.mp4');
+    expect(video).toHaveAttribute('controls');
+  });
+});

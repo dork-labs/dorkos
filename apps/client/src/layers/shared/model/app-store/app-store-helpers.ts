@@ -3,12 +3,7 @@
  *
  * @module shared/model/app-store-helpers
  */
-import type { UiCanvasContent } from '@dorkos/shared/types';
-import {
-  STORAGE_KEYS,
-  MAX_CANVAS_SESSIONS,
-  MAX_RIGHT_PANEL_LAYOUTS,
-} from '@/layers/shared/lib/constants';
+import { STORAGE_KEYS, MAX_RIGHT_PANEL_LAYOUTS } from '@/layers/shared/lib/constants';
 import type { FloatingPanelGeometry } from '@/layers/shared/ui';
 
 /** Read a boolean from localStorage with try/catch safety. */
@@ -122,109 +117,6 @@ export const BOOL_DEFAULTS: Record<keyof typeof BOOL_KEYS, boolean> = {
   enableMessagePolling: false,
   promoEnabled: true,
 };
-
-// ---------------------------------------------------------------------------
-// Canvas session persistence (per-session localStorage map)
-// ---------------------------------------------------------------------------
-
-/**
- * A persisted canvas document (the durable subset of the in-memory
- * `CanvasDocument` — the transient `editing` flag is never persisted, so a
- * reload never resurrects edit mode).
- */
-export interface PersistedCanvasDocument {
-  id: string;
-  content: UiCanvasContent;
-  openedAt: number;
-  lastActiveAt: number;
-  sourceLabel: string;
-}
-
-/** Persisted canvas state for a single session (multi-document, DOR-219). */
-export interface CanvasSessionEntry {
-  open: boolean;
-  documents: PersistedCanvasDocument[];
-  activeDocumentId: string | null;
-  accessedAt: number;
-}
-
-type CanvasSessionMap = Record<string, CanvasSessionEntry>;
-
-/**
- * Read a single session's canvas state from the persisted map.
- *
- * Tolerates the pre-multi-document shape (`{ open, content }`) by wrapping a
- * legacy single `content` into a one-document array, so a canvas persisted
- * before DOR-219 restores as a single open document instead of being dropped.
- */
-export function readCanvasSession(sessionId: string): CanvasSessionEntry | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.CANVAS_SESSIONS);
-    if (!raw) return null;
-    const map: Record<string, unknown> = JSON.parse(raw);
-    const entry = map[sessionId];
-    if (entry == null || typeof entry !== 'object') return null;
-    return normalizeCanvasEntry(entry as Record<string, unknown>);
-  } catch {
-    return null;
-  }
-}
-
-/** Coerce a stored entry (current or legacy single-content shape) into a {@link CanvasSessionEntry}. */
-function normalizeCanvasEntry(entry: Record<string, unknown>): CanvasSessionEntry {
-  const open = entry.open === true;
-  const accessedAt = typeof entry.accessedAt === 'number' ? entry.accessedAt : Date.now();
-
-  if (Array.isArray(entry.documents)) {
-    return {
-      open,
-      documents: entry.documents as PersistedCanvasDocument[],
-      activeDocumentId: typeof entry.activeDocumentId === 'string' ? entry.activeDocumentId : null,
-      accessedAt,
-    };
-  }
-
-  // Legacy single-content shape (pre-DOR-219): wrap into one document.
-  const legacyContent = entry.content as UiCanvasContent | null | undefined;
-  if (legacyContent) {
-    const id = 'legacy-canvas-document';
-    return {
-      open,
-      documents: [
-        {
-          id,
-          content: legacyContent,
-          openedAt: accessedAt,
-          lastActiveAt: accessedAt,
-          sourceLabel: '',
-        },
-      ],
-      activeDocumentId: id,
-      accessedAt,
-    };
-  }
-
-  return { open, documents: [], activeDocumentId: null, accessedAt };
-}
-
-/** Write a session's canvas state to the persisted map, enforcing LRU eviction. */
-export function writeCanvasSession(sessionId: string, entry: CanvasSessionEntry): void {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.CANVAS_SESSIONS);
-    const map: CanvasSessionMap = raw ? JSON.parse(raw) : {};
-    map[sessionId] = { ...entry, accessedAt: Date.now() };
-
-    // LRU eviction: keep only the newest MAX_CANVAS_SESSIONS entries
-    const entries = Object.entries(map);
-    if (entries.length > MAX_CANVAS_SESSIONS) {
-      entries.sort((a, b) => b[1].accessedAt - a[1].accessedAt);
-      const trimmed = Object.fromEntries(entries.slice(0, MAX_CANVAS_SESSIONS));
-      localStorage.setItem(STORAGE_KEYS.CANVAS_SESSIONS, JSON.stringify(trimmed));
-    } else {
-      localStorage.setItem(STORAGE_KEYS.CANVAS_SESSIONS, JSON.stringify(map));
-    }
-  } catch {}
-}
 
 // ---------------------------------------------------------------------------
 // Right panel persistence

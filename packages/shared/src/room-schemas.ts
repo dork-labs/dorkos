@@ -23,6 +23,7 @@ import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 import { ROOM_TURN_LIMIT_BOUNDS } from './config-schema.js';
 import { ResponseModeSchema } from './mesh-schemas.js';
 import { SignalTypeSchema } from './relay-envelope-schemas.js';
+import { UiCanvasContentSchema } from './schemas.js';
 import { SessionActivitySchema, type SessionActivity } from './session-stream.js';
 
 extendZodWithOpenApiOnce();
@@ -651,6 +652,12 @@ export const RoomWithRosterSchema = RoomSchema.extend({
     .describe(
       'The author id the server resolved for THIS request — who the reader is. Match a roster member on it to find your own membership (your read cursor, your response mode); never match on `author.kind`. It is not necessarily on `members`: seeing a room and being in it are different things.'
     ),
+  viewerIsOperator: z
+    .boolean()
+    .optional()
+    .describe(
+      'Whether THIS reader is the person who owns this install — the one gate that is not a membership. It rides the room read for the same reason `viewerAuthorId` does: the reader is already resolved here, and nothing else on the wire tells a client, so every operator-only affordance in a room had to be drawn for everybody and refused afterwards. **Absent means "this source cannot say", never `false`** — a caller that predates it still parses, and a screen reading it as a denial would hide the action from the one person who can take it. Used by the merge action on a room worktree diff (spec `canvas-agent-seat` §8); the server still refuses a non-operator, so this only decides what is drawn.'
+    ),
   reactionFrequents: z
     .array(z.string())
     .describe(
@@ -837,6 +844,254 @@ export const RoomMergeEventSchema = z
 export type RoomMergeEvent = z.infer<typeof RoomMergeEventSchema>;
 
 /**
+ * What one turn put on, changed or took off a room's canvas, carried on the one
+ * entry that announces it (spec `room-canvas` §6.2).
+ *
+ * **A merge-shaped body, not a notice.** Notice codes are refusal-shaped and
+ * deliberately damped, and ADR `260829-115625` already worked out why per-change
+ * content must not ride a damper: a damped per-change event is a change nobody
+ * hears about. So this sits beside `moment` and `merge` on the body of an
+ * ordinary post that the room writes in its own voice, addresses to nobody, and
+ * triggers nothing from.
+ *
+ * **One of these per TURN, however many operations ran.** `ops` is the whole
+ * turn's list, so a turn that opened three documents produces one line in the
+ * log rather than three (etiquette E17). A turn that applied nothing writes no
+ * entry at all.
+ */
+export const RoomCanvasChangeSchema = z
+  .object({
+    ops: z
+      .array(
+        z.object({
+          change: z.enum(['opened', 'updated', 'closed']),
+          documentId: z.string().min(1),
+          type: z.string().min(1).describe('The canvas content type, e.g. `diff` or `browser`.'),
+          title: z.string().describe('The document’s label. Another member’s words.'),
+        })
+      )
+      .min(1),
+  })
+  .openapi('RoomCanvasChange');
+
+/** What one turn did to a room's canvas. See {@link RoomCanvasChangeSchema}. */
+export type RoomCanvasChange = z.infer<typeof RoomCanvasChangeSchema>;
+
+// The document shape lives in its own leaf module so `session-stream.ts` can
+// have it too without closing a cycle back through this file; re-exported here
+// because every existing importer names `room-schemas` (spec
+// `canvas-agent-seat` §1.3).
+export { CanvasDocumentSchema, type CanvasDocument } from './canvas-schemas.js';
+import { CanvasDocumentSchema } from './canvas-schemas.js';
+
+/** Everything on one room's canvas (`GET /api/rooms/{id}/canvas`). */
+export const CanvasDocumentListResponseSchema = z
+  .object({ documents: z.array(CanvasDocumentSchema) })
+  .openapi('CanvasDocumentListResponse');
+
+/** A room's whole canvas. See {@link CanvasDocumentListResponseSchema}. */
+export type CanvasDocumentListResponse = z.infer<typeof CanvasDocumentListResponseSchema>;
+
+/**
+ * Putting something on a room's canvas as yourself
+ * (`POST /api/rooms/{id}/canvas`).
+ *
+ * The author is resolved from the request, never sent: an author a caller could
+ * name is an author a caller could impersonate.
+ */
+export const OpenCanvasDocumentRequestSchema = z
+  .object({
+    content: UiCanvasContentSchema.describe('What to show. One of the fourteen canvas shapes.'),
+    pinned: z
+      .boolean()
+      .optional()
+      .describe('Pin it, so it sorts first and is never dropped to make room.'),
+  })
+  .openapi('OpenCanvasDocumentRequest');
+
+/** A request to put a document on a room's canvas. */
+export type OpenCanvasDocumentRequest = z.infer<typeof OpenCanvasDocumentRequestSchema>;
+
+/**
+ * Changing one document on a room's canvas
+ * (`PATCH /api/rooms/{id}/canvas/{documentId}`).
+ *
+ * Every field is optional and each does one thing, so a caller that only wants
+ * to pin something does not have to re-send its content.
+ */
+export const UpdateCanvasDocumentRequestSchema = z
+  .object({
+    content: UiCanvasContentSchema.optional().describe('Replace what the document shows.'),
+    pinned: z.boolean().optional().describe('Pin it, or unpin it.'),
+    activate: z
+      .boolean()
+      .optional()
+      .describe(
+        'Move it to the front of the list. It changes the ORDER and nobody’s open tab — a shared canvas does not steal anyone’s view.'
+      ),
+  })
+  .openapi('UpdateCanvasDocumentRequest');
+
+/** A request to change a canvas document. */
+export type UpdateCanvasDocumentRequest = z.infer<typeof UpdateCanvasDocumentRequestSchema>;
+
+/**
+ * Where a person looking at a room is, so somebody following them can be there
+ * too (spec `canvas-agent-seat` §6).
+ *
+ * **Labels and coordinates, never content.** A document id the follower can
+ * already see on the room's table, the page their browser is on, and how far
+ * down they have scrolled. Nothing about what is IN the page travels, which is
+ * what keeps a follow position safe to broadcast to a whole room.
+ *
+ * Declared HERE, beside the request that carries it, rather than down with the
+ * signal frame that also does: the request schema below is built from it, and a
+ * Zod schema read before its `const` is evaluated is a module-load error.
+ */
+export const RoomSignalViewSchema = z
+  .object({
+    /** The document on the room's table this person is looking at. */
+    documentId: z.string().min(1),
+    /** The page their browser is showing, when the document is a browser page. */
+    url: z.string().optional(),
+    /** How far down the document they have scrolled, in pixels. */
+    scrollY: z.number().int().nonnegative().optional(),
+  })
+  .openapi('RoomSignalView');
+
+/**
+ * How often anything live in a room re-states itself on the room's stream.
+ *
+ * **One number, three producers, because it is one fact about the room's
+ * ephemeral lane.** Signals never replay, so everything on that lane has to
+ * restate itself or stop being true: an agent's work claim
+ * (`RoomTriggerDispatcher`'s republisher), a follow claim (the follower's own
+ * client) and a followed person's position (the leader's). Three copies of
+ * 10 000 were three chances for two of them to drift apart, and the drift is
+ * invisible — the indicator simply goes out a third of the time.
+ *
+ * Deliberately a constant and not configuration: it changes how quickly a stale
+ * indicator heals, never what the room does. Tuning it would be a knob with no
+ * honest guidance (room-presence spec §10).
+ */
+export const ROOM_LIVE_BEAT_MS = 10_000;
+
+/**
+ * How long anything live in a room stays true without being restated.
+ *
+ * Three beats, so two missed ones are survivable and three are not. Every TTL in
+ * the ephemeral lane is this number — the presence indicator's, the follow
+ * claim's on the server, and the follow position's in the browser.
+ */
+export const ROOM_LIVE_TTL_MS = ROOM_LIVE_BEAT_MS * 3;
+
+/** Where a followed person is looking. See {@link RoomSignalViewSchema}. */
+export type RoomSignalView = z.infer<typeof RoomSignalViewSchema>;
+
+/**
+ * Starting to follow somebody's browser in a room
+ * (`PUT /api/rooms/{id}/follow`).
+ *
+ * The follower is resolved from the request, never sent — a follower a caller
+ * could name is a follow a caller could put on somebody else.
+ */
+export const FollowRoomMemberRequestSchema = z
+  .object({
+    memberId: z
+      .string()
+      .min(1)
+      .describe('The person to follow. People only — an agent has no view to share.'),
+  })
+  .openapi('FollowRoomMemberRequest');
+
+/** A request to follow a room member. See {@link FollowRoomMemberRequestSchema}. */
+export type FollowRoomMemberRequest = z.infer<typeof FollowRoomMemberRequestSchema>;
+
+/**
+ * Saying where you are looking, for whoever is following you
+ * (`POST /api/rooms/{id}/follow/view`).
+ *
+ * Sent at most once every 250 ms, and only while the server has said somebody is
+ * following. A position from somebody nobody follows is dropped.
+ */
+export const PublishRoomViewRequestSchema = RoomSignalViewSchema.openapi('PublishRoomViewRequest');
+
+/** A request to share where you are looking. See {@link PublishRoomViewRequestSchema}. */
+export type PublishRoomViewRequest = z.infer<typeof PublishRoomViewRequestSchema>;
+
+/** Whether anybody was following, so the position was passed on. */
+export const PublishRoomViewResponseSchema = z
+  .object({
+    followed: z
+      .boolean()
+      .describe(
+        'True when somebody is following you and the position went out. False means stop sending.'
+      ),
+  })
+  .openapi('PublishRoomViewResponse');
+
+/** The answer to sharing a view. See {@link PublishRoomViewResponseSchema}. */
+export type PublishRoomViewResponse = z.infer<typeof PublishRoomViewResponseSchema>;
+
+/**
+ * The thread a canvas document's discussion hangs off
+ * (`POST /api/rooms/{id}/canvas/{documentId}/thread`).
+ */
+export const CanvasThreadResponseSchema = z
+  .object({
+    threadRootEntryId: z.string().min(1).describe('The entry heading the document’s discussion.'),
+    created: z
+      .boolean()
+      .describe('True when this call started the thread; false when it was already there.'),
+  })
+  .openapi('CanvasThreadResponse');
+
+/** A canvas document's discussion thread. See {@link CanvasThreadResponseSchema}. */
+export type CanvasThreadResponse = z.infer<typeof CanvasThreadResponseSchema>;
+
+/**
+ * Saying you are editing a canvas document, or that you have stopped
+ * (`POST /api/rooms/{id}/canvas/{documentId}/editing`).
+ *
+ * While you hold this, an agent's update to the same document is held rather
+ * than applied, and the agent is told so. It lapses on its own when the
+ * heartbeats stop.
+ */
+export const CanvasEditingRequestSchema = z
+  .object({ editing: z.boolean() })
+  .openapi('CanvasEditingRequest');
+
+/** A request to take, refresh or release a canvas edit lock. */
+export type CanvasEditingRequest = z.infer<typeof CanvasEditingRequestSchema>;
+
+/** Who holds a canvas document's edit lock, and when it lapses. */
+export const CanvasEditingResponseSchema = z
+  .object({
+    editingBy: z.string().nullable(),
+    expiresAt: z.string().nullable(),
+  })
+  .openapi('CanvasEditingResponse');
+
+/** The state of one document's edit lock. */
+export type CanvasEditingResponse = z.infer<typeof CanvasEditingResponseSchema>;
+
+/**
+ * Saying which document on a room's canvas you are looking at, or that you are
+ * looking at none (`POST /api/rooms/{id}/canvas/viewing`).
+ *
+ * The whole effect is one ephemeral `signal` frame telling the room's other
+ * readers where your face goes. Nothing is written down, nothing is replayed,
+ * and `null` is a real answer rather than a missing one: it is what a reader who
+ * has left the canvas says on their way out.
+ */
+export const CanvasViewingRequestSchema = z
+  .object({ documentId: z.string().min(1).nullable() })
+  .openapi('CanvasViewingRequest');
+
+/** A request to say where on a room's canvas somebody is looking. */
+export type CanvasViewingRequest = z.infer<typeof CanvasViewingRequestSchema>;
+
+/**
  * The most of a merge summary that survives to the commit subject and the room.
  *
  * **Shared so the cap is asked once.** The server sanitizes and truncates at
@@ -901,9 +1156,14 @@ export type MergeRoomRepoRequest = z.infer<typeof MergeRoomRepoRequestSchema>;
  * `waitingKind` is the narrowest — see {@link RoomWaitingKindSchema}. It is set
  * only on an `awaiting_approval` notice, and has exactly one reader.
  *
- * `merge` is the newest, and follows `moment`'s pattern exactly: a post the
+ * `merge` follows `moment`'s pattern exactly: a post the
  * room writes in its own voice, ABOUT the agent named in `subjectAuthorId`, with
  * the machine-readable half beside the sentence a person reads.
+ *
+ * `canvas` is the newest and takes the SAME shape as `merge` for the same
+ * reasons — one entry per turn, system-voiced, addressed to nobody, triggering
+ * nothing. Optional like its two siblings, so every entry written before it
+ * existed still parses.
  */
 export const RoomEntryBodySchema = z
   .object({
@@ -912,6 +1172,7 @@ export const RoomEntryBodySchema = z
     subjectAuthorId: z.string().optional(),
     moment: RoomMomentSchema.optional(),
     merge: RoomMergeEventSchema.optional(),
+    canvas: RoomCanvasChangeSchema.optional(),
     waitingKind: RoomWaitingKindSchema.optional(),
     answersEntryId: z
       .string()
@@ -1779,6 +2040,15 @@ export const RoomSnapshotSchema = z
     room: RoomWithRosterSchema,
     entries: z.array(RoomEntrySchema),
     cursor: z.number().int().min(0),
+    /**
+     * Every document on the room's canvas right now, so a cold connect hydrates
+     * the whole table in one frame instead of waiting for the next change.
+     *
+     * Optional so a producer that predates the canvas — an older server, a test
+     * harness — still validates; absent means the same thing an empty array
+     * does, and a client treats it that way.
+     */
+    canvas: z.array(CanvasDocumentSchema).optional(),
   })
   .openapi('RoomSnapshot');
 
@@ -1923,6 +2193,96 @@ export const RoomSignalEventSchema = z
      * nothing to say about it.
      */
     outcome: z.enum(['answered', 'silent']).optional(),
+    /**
+     * Where this person is looking, on a `presence` signal about somebody
+     * another member is following (spec `canvas-agent-seat` §6).
+     *
+     * **The payload is the discriminator**, exactly as {@link
+     * RoomSignalEventSchema.shape.state} already discriminates an agent's work
+     * claim from a bare presence: a `presence` frame with `view` is a follow
+     * position, a `presence` frame with `state` is an agent working, and neither
+     * reads the other's field. The check below refuses a frame carrying both,
+     * so the two can never be confused by a reader that forgot to look.
+     *
+     * Published only while somebody is following, so a room where nobody
+     * follows anybody carries none of these at all.
+     */
+    view: RoomSignalViewSchema.optional(),
+    /**
+     * Who this person has just started, or stopped, following.
+     *
+     * The claim itself, on the wire, because "publish only while somebody is
+     * following" needs the person being followed to KNOW — and a room stream
+     * everybody already reads is where they find out. An author id says the
+     * follow began; `null` says it ended.
+     *
+     * **A second payload on the same signal rather than a second signal name.**
+     * `specs/rooms/02-specification.md:229` forbids minting one, and this is
+     * the same shape `view` is: a `presence` frame, discriminated by which
+     * payload it carries, refused when it carries more than one.
+     *
+     * People only. An agent has no viewport to share and nothing to follow
+     * with, so the server never mints one of these about an agent.
+     */
+    follows: z.string().min(1).nullable().optional(),
+    /**
+     * Which document on the room's canvas this author is looking at, on a
+     * `'presence'` signal — the fact a small face on a tab is drawn from.
+     *
+     * **Absent is a real answer, not a gap.** On a `'presence'` signal it means
+     * this author is looking at no document, which is what a reader says on the
+     * way out of the canvas and what a turn says when its claim is released. So
+     * a frame with it and a frame without it are the two halves of the same
+     * statement, and neither is ever replayed: signals carry no `seq`, and a
+     * face on a document somebody left ten minutes ago would be a worse answer
+     * than no face at all.
+     *
+     * **An optional field rather than a seventh signal name**, for the reason
+     * {@link RoomSignalEventSchema}'s `outcome` is one: the signal vocabulary is
+     * shared with the relay and with `CommunityAdapter.publishSignal`, and a
+     * client that cannot parse a new member drops the whole frame. `'presence'`
+     * already exists in that vocabulary and nothing else in a room produces it.
+     */
+    documentId: z.string().optional(),
+  })
+  .check((ctx) => {
+    const frame = ctx.value;
+    // FOUR payloads, one per frame. `state` is an agent's work claim, `view` a
+    // follow position, `follows` a claim opening or closing, `documentId` which
+    // tab this author is on — a frame carrying two of them describes two
+    // different things at once, and every reader downstream branches on exactly
+    // one field.
+    //
+    // `documentId` is in this list for a reason a reader of the stream cares
+    // about: absence of it is what tells the canvas slice that somebody LOOKED
+    // AWAY. A follow frame carries no `documentId`, so one that also carried a
+    // follow payload would be two statements at once, and the second of them
+    // would take a face off a tab on every scroll.
+    const carried = [
+      frame.state !== undefined ? 'state' : null,
+      frame.view !== undefined ? 'view' : null,
+      frame.follows !== undefined ? 'follows' : null,
+      frame.documentId !== undefined ? 'documentId' : null,
+    ].filter((name): name is string => name !== null);
+    if (carried.length > 1) {
+      ctx.issues.push({
+        code: 'custom',
+        input: frame,
+        message: `A presence signal carries one payload, not ${carried.join(' and ')}.`,
+      });
+    }
+    // `presence` is the verb both follow payloads hang off. On any other signal
+    // they would be a payload nothing knows how to read.
+    for (const name of ['view', 'follows'] as const) {
+      if (frame[name] !== undefined && frame.signal !== 'presence') {
+        ctx.issues.push({
+          code: 'custom',
+          input: frame,
+          path: [name],
+          message: `\`${name}\` rides a presence signal, never a ${frame.signal} one.`,
+        });
+      }
+    }
   })
   .openapi('RoomSignalEvent');
 
@@ -1986,12 +2346,51 @@ export const RoomReactionEventSchema = z
   })
   .openapi('RoomReactionEvent');
 
+/**
+ * The room's shared canvas changed — durable state, delivered live, replayed as
+ * a whole set (spec `room-canvas` §2).
+ *
+ * **Modelled on {@link RoomReactionEventSchema}, not on an entry**, and it takes
+ * that event's three properties for the same reasons:
+ *
+ * 1. **It is state, never a delta.** The frame carries the affected document's
+ *    WHOLE current row, or its id and `closed: true`. A reader that missed five
+ *    of these and caught the sixth is correct about that document again.
+ * 2. **It carries no `seq` and no `id:` line**, so it never moves the reader's
+ *    `Last-Event-ID`. The room stream has exactly one cursor — the highest
+ *    durable ENTRY this reader holds — and giving canvas changes their own
+ *    number would mean two numbers in one header, which a client that got the
+ *    packing wrong would silently skip real messages over.
+ * 3. **A resume re-sends the whole table**, one frame per live document, after
+ *    the entry replay and the reaction resync. Because a close is a DELETION,
+ *    that resync is authoritative as a SET: a client replaces its table from it
+ *    rather than merging, which is what makes a close missed while disconnected
+ *    self-correct.
+ *
+ * Ordering between two frames for one document is the row's own `rev`, which is
+ * explicitly not a stream cursor.
+ */
+export const RoomCanvasEventSchema = z
+  .object({
+    type: z.literal('canvas'),
+    /** The document this frame is about. */
+    documentId: z.string().min(1),
+    /** The document's WHOLE current state. Absent when `closed` — the row is gone. */
+    document: CanvasDocumentSchema.optional(),
+    /** True when the document was closed and every viewer should drop it. */
+    closed: z.boolean().optional(),
+    /** Which write produced it, for the unread dot and for tests. */
+    change: z.enum(['opened', 'updated', 'activated', 'pinned']).optional(),
+  })
+  .openapi('RoomCanvasEvent');
+
 /** Everything that travels on a room's SSE stream. */
 export const RoomEventSchema = z
   .discriminatedUnion('type', [
     RoomEntryEventSchema,
     RoomSignalEventSchema,
     RoomReactionEventSchema,
+    RoomCanvasEventSchema,
   ])
   .openapi('RoomEvent');
 
@@ -1999,6 +2398,8 @@ export type RoomEvent = z.infer<typeof RoomEventSchema>;
 export type RoomEntryEvent = z.infer<typeof RoomEntryEventSchema>;
 export type RoomSignalEvent = z.infer<typeof RoomSignalEventSchema>;
 export type RoomReactionEvent = z.infer<typeof RoomReactionEventSchema>;
+/** One change to a room's canvas, live. See {@link RoomCanvasEventSchema}. */
+export type RoomCanvasEvent = z.infer<typeof RoomCanvasEventSchema>;
 
 /**
  * The three required fields a `'progress'` signal carries on the rooms path,

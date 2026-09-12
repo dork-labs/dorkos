@@ -57,6 +57,7 @@ import { EventLog } from './replay/event-log.js';
 import { RingBuffer } from './replay/ring-buffer.js';
 import { guardEventSize } from './replay/event-size-guard.js';
 import { devtoolsCaptureStore } from './devtools-capture-store.js';
+import { uiTurnFacts } from './browser-seat/ui-turn-facts.js';
 import type { SessionEventStore } from './session-event-store.js';
 import { getMessageQueueStore, toQueuedMessage } from './message-queue-store.js';
 import { getStagedContextStore } from './staged-context-store.js';
@@ -199,6 +200,12 @@ const EVENTS_OUTSIDE_THE_TURN: ReadonlySet<SessionEvent['type']> = new Set([
   'turn_end',
   'queue_update',
   'context_staged',
+  // - **`canvas`** is a change to the session's own table (spec
+  //   `canvas-agent-seat` §1.3), and a person opening a document while nothing
+  //   is running must not open a turn. A document opened MID-turn must not be
+  //   replayed as part of that turn's content either: it is state, durable in
+  //   SQLite, and a reader hydrates it from the snapshot.
+  'canvas',
 ]);
 
 /**
@@ -538,6 +545,19 @@ export class SessionStateProjector {
    * is retired as `untracked`.
    */
   private readonly runningSubagents = new Map<string, number>();
+
+  /**
+   * The subset of {@link runningSubagents} the runtime marked as housekeeping —
+   * work it started on its own behalf, which it asks hosts to keep out of
+   * activity indicators (spec `ambient-background-tasks`).
+   *
+   * They stay in `runningSubagents` on purpose: the liveness bound and the
+   * stranding sweep must still retire them, or a client's task panel holds a
+   * dead watcher forever. Only `runningSubagentCount` looks away, and the
+   * retirements DorkOS synthesizes carry the mark forward so every client folds
+   * them the same way.
+   */
+  private readonly ambientSubagents = new Set<string>();
 
   /**
    * Armed liveness sweep for {@link runningSubagents}, or `undefined` when none
@@ -927,7 +947,7 @@ export class SessionStateProjector {
         this.applyTodoUpdate(event.tasks);
         break;
       case 'subagent_update':
-        this.applySubagentUpdate(event.taskId, event.status);
+        this.applySubagentUpdate(event.taskId, event.status, event.ambient);
         break;
       // Kept in sync with `BLOCKING_INTERACTION_EVENT_TYPES` — a switch cannot
       // be driven by the constant, but `trackInteraction` re-checks it.
@@ -1150,19 +1170,39 @@ export class SessionStateProjector {
   }
 
   /**
-   * Track running subagents; `runningSubagentCount` mirrors the live set size.
+   * Track running subagents; `runningSubagentCount` counts the reportable ones.
    *
    * A `running` update also refreshes the child's silence clock — progress
    * reports are the evidence the liveness bound (DOR-1104) waits for.
+   *
+   * `ambient` children are tracked like any other and simply not counted: the
+   * count is what an activity indicator draws, and the runtime asked for its own
+   * housekeeping to stay out of those. The mark arrives with the start and is
+   * remembered, because the progress reports that follow do not repeat it.
+   *
+   * @param taskId - The child's runtime-assigned id.
+   * @param status - Its reported lifecycle; only `running` is still in flight.
+   * @param ambient - Whether the runtime marked this child as housekeeping.
    */
-  private applySubagentUpdate(taskId: string, status: string): void {
+  private applySubagentUpdate(taskId: string, status: string, ambient?: boolean): void {
+    if (ambient) this.ambientSubagents.add(taskId);
     if (status === 'running') {
       this.runningSubagents.set(taskId, Date.now());
     } else {
       this.runningSubagents.delete(taskId);
+      this.ambientSubagents.delete(taskId);
     }
-    this.status.runningSubagentCount = this.runningSubagents.size;
+    this.status.runningSubagentCount = this.countReportableSubagents();
     this.scheduleSubagentExpiry();
+  }
+
+  /** Live children an activity indicator may count — everything but housekeeping. */
+  private countReportableSubagents(): number {
+    let count = 0;
+    for (const taskId of this.runningSubagents.keys()) {
+      if (!this.ambientSubagents.has(taskId)) count += 1;
+    }
+    return count;
   }
 
   /**
@@ -1214,6 +1254,10 @@ export class SessionStateProjector {
       .filter(([, lastSeenAt]) => lastSeenAt <= cutoff)
       .map(([taskId]) => taskId);
     if (stale.length === 0) return;
+    // Read the housekeeping marks BEFORE the map is emptied: the retirement has
+    // to carry the same mark the start did, or a client that hid this child
+    // counts its ending as one of the children it could not name.
+    const wasAmbient = new Set(stale.filter((taskId) => this.ambientSubagents.has(taskId)));
     // Empty the map, THEN tell anyone. See the recursion note above.
     for (const taskId of stale) this.runningSubagents.delete(taskId);
     for (const taskId of stale) {
@@ -1221,6 +1265,7 @@ export class SessionStateProjector {
         type: 'subagent_update',
         taskId,
         status: 'untracked',
+        ...(wasAmbient.has(taskId) ? { ambient: true } : {}),
       } as RawSessionEvent);
     }
     // The count moved without the lifecycle moving, so nothing else would tell
@@ -1388,13 +1433,16 @@ export class SessionStateProjector {
       // entered with `lifecycle === 'streaming'` and no turn open, and the safety
       // of the loop should not depend on a condition checked in another method.
       const stranded = this.listRunningSubagents();
+      const wasAmbient = new Set(stranded.filter((taskId) => this.ambientSubagents.has(taskId)));
       this.runningSubagents.clear();
+      this.ambientSubagents.clear();
       this.status.runningSubagentCount = 0;
       for (const taskId of stranded) {
         const untracked: RawSessionEvent = {
           type: 'subagent_update',
           taskId,
           status: 'untracked',
+          ...(wasAmbient.has(taskId) ? { ambient: true } : {}),
         } as RawSessionEvent;
         this.ingest(untracked);
       }
@@ -1759,6 +1807,12 @@ export class SessionStateProjector {
       status: this.getStatus(),
       pendingInteractions: this.getPendingInteractions(),
       queuedMessages: this.readQueue(),
+      // Empty here, and filled by whoever DELIVERS the snapshot (spec
+      // `canvas-agent-seat` §1.4). The canvas is the server's, not a runtime's,
+      // so it is decorated once in `deliverSessionStream` — and once in
+      // `DirectTransport` — rather than reached for from inside a projector that
+      // has no business importing a service.
+      canvas: [],
       cursor: this.counter,
     };
   }
@@ -2010,6 +2064,25 @@ export class SessionStateProjector {
    */
   getWaiterCount(): number {
     return this.waiters.length;
+  }
+
+  /**
+   * How many windows are reading this session's stream right now.
+   *
+   * The session parallel of `RoomBroadcaster.subscriberCount`, and what
+   * `get_ui_state` reports as `viewers` (spec `canvas-agent-seat` §1.7). It
+   * counts live `subscribe()` iterators rather than the PARKED waiters
+   * {@link SessionStateProjector.getWaiterCount} reports: a subscriber that is
+   * mid-delivery is still a viewer, and a count that said otherwise would be
+   * wrong in exactly the busy moment somebody would check it.
+   *
+   * Windows, not people — one person with two tabs counts twice — and an agent
+   * counts zero, because agents do not subscribe. The tool's own words say so.
+   *
+   * @returns The live subscriber count.
+   */
+  liveSubscriberCount(): number {
+    return this.subscriberCount;
   }
 
   /**
@@ -2335,6 +2408,9 @@ export function disposeProjector(sessionId: string): void {
   // preview is gone, and the buffer must not outlive the session (DOR-213). The
   // buffer moved to the canonical id on the rekey, so it is dropped by that id.
   devtoolsCaptureStore.dropSession(key);
+  // And the `ui` verbs' turn facts, for the same reason and by the same id: the
+  // window they describe is gone (spec `canvas-agent-seat` §5).
+  uiTurnFacts.dropSession(key);
 }
 
 /**
@@ -2428,6 +2504,11 @@ export function rekeyProjector(oldId: string, newId: string): void {
   // Carry any DevTools capture buffer across the same rekey so a preview opened
   // under the request UUID keeps feeding the canonical session (DOR-213).
   devtoolsCaptureStore.rekeySession(fromId, newId);
+  // And the `ui` verbs' turn facts, which the trigger bound under the id the
+  // turn started on: a `control_ui` taken later in that same first turn arrives
+  // with the CANONICAL id and would otherwise find no room marker and no window
+  // snapshot (spec `canvas-agent-seat` §5).
+  uiTurnFacts.rekeySession(fromId, newId);
   // Carry the DURABLE rows too, or every permission decision made before the
   // rename stops existing. Rows key by the id held at flush time and readers
   // ask one id, so a session renamed after it has turns behind it would leave

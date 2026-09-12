@@ -7,11 +7,7 @@ import { shutdownSessionPumps } from './services/runtimes/claude-code/sessions/s
 import { reapOrphanedWarmProcesses } from './services/runtimes/claude-code/sessions/warm-process-ledger.js';
 import { inventorySessionIds } from './services/runtimes/claude-code/sessions/session-inventory.js';
 import { previewListeners } from './services/workbench-serve/index.js';
-import {
-  CodexRuntime,
-  CodexThreadMap,
-  createCodexUiMcpServer,
-} from './services/runtimes/codex/index.js';
+import { CodexRuntime, CodexThreadMap } from './services/runtimes/codex/index.js';
 import {
   OpenCodeRuntime,
   OpenCodeSessionMap,
@@ -87,6 +83,7 @@ import type { NotifyDmDeps } from './services/relay/notify-dm.js';
 import type { ConnectorProviderInstanceId } from '@dorkos/shared/connector-schemas';
 import type { RelayChannelDeps } from './services/notifications/channels/relay.js';
 import { createRunTerminalListener } from './services/tasks/run-terminal-broadcaster.js';
+import { createRelayRefusedAskEmitter } from './services/tasks/run-activity.js';
 import { TaskSchedulerService } from './services/tasks/task-scheduler-service.js';
 import { resolveTasksFiring } from './services/tasks/resolve-firing.js';
 import { TaskFileWatcher } from './services/tasks/task-file-watcher.js';
@@ -279,6 +276,7 @@ import {
 } from './services/marketplace-mcp/confirmation-provider.js';
 import type { MarketplaceMcpDeps } from './services/marketplace-mcp/marketplace-mcp-tools.js';
 import { ActivityService } from './services/activity/activity-service.js';
+import { createPluginReloadActivityWriter } from './services/activity/plugin-reload-activity.js';
 import { sweepStaleInstallBackups } from './services/marketplace/backup-janitor.js';
 import { createActivityRouter } from './routes/activity.js';
 import { createExtensionRoutesMiddleware } from './middleware/extension-routes.js';
@@ -315,6 +313,8 @@ import {
 } from './services/core/capabilities/index.js';
 import {
   initApprovalSubjectResolvers,
+  runApprovalExpiryTick,
+  startApprovalExpirySweep,
   startApprovalVerdictDelivery,
 } from './services/core/approvals/index.js';
 import { createMcpRouter } from './routes/mcp.js';
@@ -362,6 +362,7 @@ import {
   readRoomRepoConfig,
   RoomFileEditor,
   RoomFilesService,
+  ROOM_MD_FILENAME,
   RoomMergeService,
   RoomRepoMutex,
   RoomRepoReconciler,
@@ -441,6 +442,7 @@ import {
   getOrCreateProjector,
 } from './services/session/index.js';
 import { aggregateSessionList } from './services/session/aggregate-session-list.js';
+import { peekCanvasService } from './services/canvas/index.js';
 import { env } from './env.js';
 
 // The live tunnel manager, re-exported for the CLI that started this server.
@@ -548,6 +550,9 @@ let dailySnapshotInterval: ReturnType<typeof setInterval> | undefined;
 let sessionAttachmentSweepInterval: ReturnType<typeof setInterval> | undefined;
 let managedAuthorityRecoveryInterval: ReturnType<typeof setInterval> | undefined;
 let managedUsageMirrorRecoveryInterval: ReturnType<typeof setInterval> | undefined;
+// Stops the approval expiry sweep (DOR-1932). A function rather than a timer
+// handle because the sweep owns its own interval and hands back a closer.
+let stopApprovalExpirySweep: (() => void) | undefined;
 // Embedded-terminal PTY manager (ADR 260708-185521). Always-on, boundary-confined;
 // the WebSocket byte channel is attached to the HTTP server after listen().
 let terminalManager: TerminalManager | undefined;
@@ -1158,21 +1163,6 @@ async function start() {
             // The thread map shares the consolidated Drizzle handle injected into
             // runtimeRegistry.setDb() above (one DB, one `codex_threads` table).
             threadMap: new CodexThreadMap(db),
-            // Loopback URL of the scoped `dorkos_ui` MCP server mounted below at
-            // /codex-ui-mcp. Codex's MCP client sends no Origin header, so it clears
-            // validateMcpOrigin via the non-browser early return (not the allowlist).
-            // Exposes `control_ui` to Codex for canvas parity (the event-mapper turns
-            // the resulting mcp_tool_call into a ui_command).
-            //
-            // Minted from the DIAL form of the bind host, never a hardcoded
-            // `127.0.0.1` (DOR-723): the server binds `env.DORKOS_HOST`, which
-            // Node resolves to ONE address family, so on a host where that is
-            // `::1` a `127.0.0.1` URL is connection-refused — and the shipped
-            // Docker image binds the wildcard `0.0.0.0`, which Windows refuses
-            // to dial at all. This was the last hardcoded mint site in the
-            // server; the sibling sites below already went through
-            // `localDialHost`.
-            mcpUiUrl: `http://${localDialHost(env.DORKOS_HOST)}:${PORT}/codex-ui-mcp`,
             // Where images a turn's MCP tools hand back are kept. Wiring it here
             // is what makes the runtime declare `mediaOutput: 'attachments'` —
             // the composition root owns the deployment decision, and the adapter
@@ -1385,6 +1375,19 @@ async function start() {
     // What may be SENT, as against what `caps` froze onto a room's sidecar
     // for what may be merged IN. Read per turn, like every other value here.
     maxRoomMdBytes: () => readRoomRepoConfig().maxRoomMdBytes,
+    // The room's shared notes land on its canvas the moment it has any, pinned
+    // so the twelve-document ceiling can never push them off. The path is
+    // RELATIVE, exactly as the Room tab's Files section opens one: a document
+    // with no working directory recorded is read back through the room's own
+    // files route, which is the one route every member already has.
+    pinRoomMd: (roomId, authorId) => {
+      roomService.canvas.open(
+        roomId,
+        authorId,
+        { type: 'file', sourcePath: ROOM_MD_FILENAME },
+        { pinned: true }
+      );
+    },
   });
   setRoomRepoService(roomRepoService);
   // Reading those files back (spec §3.9). It shares the store and nothing
@@ -1921,6 +1924,14 @@ async function start() {
         ]),
         traceStore,
         taskStore: taskStore,
+        // A scheduled run that took the relay path is the ordinary case once an
+        // adapter is connected, and until DOR-1580 it was the case where
+        // "could not use that tool, nobody was there to approve it" reached the
+        // run's summary and no further. Built here because this is the only
+        // place that holds the whole `TaskStore` and the activity feed at once.
+        ...(taskStore && {
+          onRefusedAsk: createRelayRefusedAskEmitter({ taskStore, activityService }),
+        }),
         relayCore,
         meshCore, // meshCore is now available
         eventRecorder: traceStore,
@@ -2241,16 +2252,28 @@ async function start() {
       error: err instanceof Error ? err.message : String(err),
     });
   }
-  try {
-    const purged = approvalService.purgeExpired();
-    if (purged > 0) {
-      logger.info(`[Approvals] Purged ${purged} long-expired approval records`);
-    }
-  } catch (err) {
-    logger.warn('[Approvals] Failed to purge expired approvals (non-fatal)', {
-      error: err instanceof Error ? err.message : String(err),
-    });
+  // One expiry tick right now, then the same tick on a timer. Settling lapsed
+  // approvals is what stops expiry being the one ending nothing announces: until
+  // this ran, an unanswered approval emitted no event at all, and the agent that
+  // asked was never told its request had lapsed (spec `approval-expiry-notice`,
+  // DOR-1932).
+  //
+  // Run once HERE as well as on the interval, because the tick's settle-before-
+  // purge order only matters after the server has been DOWN past the retention
+  // window — and the interval's first tick is up to a minute away. The retention
+  // purge rides along, which is also the fix for it having only ever run at boot:
+  // a server up for a month never trimmed the table after its first second.
+  const firstTick = runApprovalExpiryTick(approvalService);
+  if (firstTick.settled > 0) {
+    logger.info(`[Approvals] Settled ${firstTick.settled} approval(s) that expired unanswered`);
   }
+  if (firstTick.purged > 0) {
+    logger.info(`[Approvals] Purged ${firstTick.purged} long-expired approval records`);
+  }
+  stopApprovalExpirySweep = startApprovalExpirySweep(
+    approvalService,
+    approvalService.expirySweepIntervalMs
+  );
   // Catch the escalation ladder up on approvals that were already waiting when
   // this process started (DOR-1570) — the second standing condition that
   // outlives a restart, and the more dangerous one: an approval is an agent
@@ -2725,6 +2748,13 @@ async function start() {
   // request id are not stranded on the pre-remap id (mirrors the projector +
   // DevTools-store rekeys).
   onProjectorRekey((oldId, newId) => sessionConnectorAttachmentStore.rekey(oldId, newId));
+  // A plugin reload that threw a conversation's prompt cache away leaves a line
+  // in the feed — with what it cost and whether it waited first. Free reloads
+  // stay silent (spec `plugin-reload-cache-cost`). Outside the mesh block below
+  // on purpose: plugins reload on a host with no mesh too.
+  if (claudeRuntime) {
+    claudeRuntime.setPluginReloadActivity(createPluginReloadActivityWriter(activityService));
+  }
   // Managed per-agent MCP servers (spec `mcp-server-management`). Constructed
   // once meshCore exists — the service resolves an agent id to its workspace
   // path through the mesh registry (the single instance, shared, ADR-0043) and
@@ -2939,20 +2969,6 @@ async function start() {
     })
   );
   logger.info(`[MCP] External MCP server mounted at /mcp (stateless, ${mcpAuthMode})`);
-
-  // Scoped Codex UI MCP server — a top-level sibling of /mcp (NOT nested, to
-  // avoid app.use('/mcp') shadowing). Exposes ONLY `control_ui` so the Codex
-  // runtime can open the canvas (ADR: Codex canvas parity). Deliberately omits
-  // requireMcpEnabled (canvas must not depend on the external-MCP feature flag)
-  // and the MCP auth middleware (the stub holds no secrets and the loopback URL
-  // threads no bearer token). Origin validation + rate limiting still apply.
-  app.use(
-    '/codex-ui-mcp',
-    validateMcpOrigin,
-    mcpRateLimiter,
-    createMcpRouter(() => createCodexUiMcpServer())
-  );
-  logger.info('[MCP] Scoped Codex UI MCP server mounted at /codex-ui-mcp (control_ui only)');
 
   // Mount Tasks routes if enabled. The scheduler resolves a runtime PER RUN off
   // the registry (DOR-1615) — it no longer holds one agent manager bound at
@@ -4384,6 +4400,45 @@ async function start() {
     throw err;
   });
 
+  /**
+   * Delete the canvas of every session a runtime has reported gone for good
+   * (spec `canvas-agent-seat` §Data model 6).
+   *
+   * Two-phase, like the message-queue sweep beside it: `onSessionRemoved` marks,
+   * and this asks a second time before deleting anything, so a session that came
+   * back between the two is spared.
+   *
+   * **It hands the sweep the degraded runtimes, and that is the half the
+   * precedent does not need.** `GET /api/sessions` degrades per runtime
+   * (ADR-0310), and a runtime that failed to list is a runtime whose sessions
+   * ALL look absent — so without this, one flaky sidecar would delete every
+   * OpenCode canvas on the machine. A listing that failed outright sweeps
+   * nothing at all.
+   */
+  async function sweepOrphanedCanvases(): Promise<void> {
+    const canvas = peekCanvasService();
+    if (!canvas) return;
+    try {
+      const listing = await aggregateSessionList({
+        runtimes: runtimeRegistry.listRuntimes(),
+        projectDir: env.DORKOS_DEFAULT_CWD ?? DEFAULT_CWD,
+      });
+      canvas.sweepOrphanedCanvasDocuments({
+        sessions: listing.sessions.map((session) => ({
+          id: session.id,
+          runtime: session.runtime,
+        })),
+        degradedRuntimes: [...new Set(listing.warnings.map((w) => w.runtime))],
+      });
+    } catch (err) {
+      // The listing itself failed, which is exactly the case that must delete
+      // nothing. Told rather than assumed: `null` is the sweep's own "I could
+      // not ask" input.
+      canvas.sweepOrphanedCanvasDocuments(null);
+      logger.warn('[canvas] could not list sessions for the orphan sweep', logError(err));
+    }
+  }
+
   // Start Tasks scheduler after server is listening
   if (schedulerService) {
     await schedulerService.start();
@@ -4396,6 +4451,7 @@ async function start() {
   healthCheckInterval = setInterval(() => {
     claudeRuntime?.checkSessionHealth();
     sweepOrphanedMessageQueues();
+    void sweepOrphanedCanvases();
     void connectorAgentRequests?.reconcile().catch((error: unknown) => {
       logger.warn('[Connections] Agent request recovery failed', logError(error));
     });
@@ -4550,6 +4606,10 @@ async function shutdownServices() {
   }
   if (managedUsageMirrorRecoveryInterval) {
     clearInterval(managedUsageMirrorRecoveryInterval);
+  }
+  if (stopApprovalExpirySweep) {
+    stopApprovalExpirySweep();
+    stopApprovalExpirySweep = undefined;
   }
   // Kill any live PTYs so shutdown never leaves an orphaned shell.
   terminalManager?.destroyAll();

@@ -58,8 +58,9 @@
  * **It changes nothing about this module, and that is the answer to the
  * question.** `startup({ options })` takes the SAME `Options` object a launch
  * would, `resume` included, and awaits the subprocess's initialize before
- * handing back a handle (read from the shipped `sdk.mjs`, 0.3.224, not only the
- * types). Every value in the pin list is therefore still resolved once, at
+ * handing back a handle (read from the shipped `sdk.mjs` at 0.3.224, not only
+ * the types; re-checked at 0.3.268, where `startup({ options?, initializeTimeoutMs? })`
+ * still returns a `WarmQuery` on the same terms). Every value in the pin list is therefore still resolved once, at
  * launch, under either boot path — there is no version of `WarmQuery` in which
  * the account stops being pinned, so the fingerprint, its comparison and the
  * account rule are identical either way.

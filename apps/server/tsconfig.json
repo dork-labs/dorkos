@@ -67,7 +67,6 @@
     "src/services/core/__tests__/config-manager.test.ts", // 1
     "src/services/core/__tests__/context-builder.test.ts", // 5
     "src/services/core/__tests__/error-reporter.test.ts", // 2
-    "src/services/core/__tests__/mcp-devtools-tools.test.ts", // 7
     "src/services/core/__tests__/mcp-mesh-tools.test.ts", // 5
     "src/services/core/__tests__/mcp-relay-tools.test.ts", // 6
     "src/services/core/__tests__/mcp-resources.test.ts", // 8

@@ -10,12 +10,19 @@
  * the session via the Transport's `sendUiAction` — the generative-UI
  * interactivity return channel (spec gen-ui-tier1 §3).
  *
- * `agent` actions require a target session, so they are only enabled when the
- * widget is rendered with a `sessionId` (chat, canvas); off a session (e.g. the
- * dev playground) they render disabled. They are additionally inert once the
- * widget is SUPERSEDED (no longer the latest message — a stale board must not
- * accept a move) or LATCHED (a dispatch from this widget instance is in flight
- * or settled — one interaction per widget render).
+ * **A widget with no `sessionId` can only do local things.** `agent` actions
+ * need a session to POST into, so off a session (the dev playground, a room
+ * message) they render disabled. So do `ui` actions whose command is not
+ * local-UI-only ({@link isLocalUiOnlyCommand}) — a canvas, file, diff, browser,
+ * terminal, PiP, agent-switch or layout command is session-shaped, and fired
+ * from a room message it would land in whichever session the READER happens to
+ * have open, for a widget written by somebody they may not know (DOR-1997).
+ * Both render inert with the same "Interactions aren't available here". `url`
+ * actions are always live: they resolve through the link-safety modal, which
+ * shows the address and asks first. `agent` actions are additionally inert once
+ * the widget is SUPERSEDED (no longer the latest message — a stale board must
+ * not accept a move) or LATCHED (a dispatch from this widget instance is in
+ * flight or settled — one interaction per widget render).
  *
  * On an `agent` dispatch the provider also (a) latches the widget, (b) posts an
  * optimistic `<ui_action>` user message into the session stream so the person's
@@ -41,6 +48,7 @@ import {
 } from '@dorkos/shared/ui-widget';
 import {
   executeUiCommand,
+  isLocalUiOnlyCommand,
   openExternalLink,
   TIMING,
   type CelebrationOrigin,
@@ -82,8 +90,12 @@ export interface WidgetActionsValue {
    *   center), so confetti bursts out of the button rather than screen-center.
    */
   onAction: (action: WidgetAction, opts?: { origin?: CelebrationOrigin }) => Promise<void>;
-  /** Whether `agent`-kind actions can be dispatched (true when a target session exists). */
-  agentActionsEnabled: boolean;
+  /**
+   * Whether a session sits behind this widget. Gates BOTH `agent` actions (they
+   * POST into it) and session-shaped `ui` commands (they write into its canvas,
+   * workbench or terminal) — see the module doc.
+   */
+  hasSession: boolean;
   /**
    * Whether this widget is superseded — a later message exists, so its `agent`
    * actions are inert (readable, not clickable). `ui`/`url` actions stay live.
@@ -106,7 +118,7 @@ const noop = () => Promise.resolve();
 
 const WidgetActionsContext = createContext<WidgetActionsValue>({
   onAction: noop,
-  agentActionsEnabled: false,
+  hasSession: false,
   superseded: false,
   latched: false,
   dispatchedActionKey: null,
@@ -115,7 +127,12 @@ const WidgetActionsContext = createContext<WidgetActionsValue>({
 
 interface WidgetActionProviderProps {
   children: ReactNode;
-  /** The session that rendered the widget; required to dispatch `agent` actions. */
+  /**
+   * The session that rendered the widget. Required to dispatch `agent` actions,
+   * and to run a `ui` command that is not local-UI-only — omit it on a surface
+   * that has no session (a room message, the dev playground) and both render
+   * inert. See the module doc.
+   */
   sessionId?: string;
   /** The widget document title, forwarded to the agent so it knows which widget fired. */
   widgetTitle?: string;
@@ -162,6 +179,12 @@ export function WidgetActionProvider({
     async (action: WidgetAction, opts?: { origin?: CelebrationOrigin }): Promise<void> => {
       switch (action.kind) {
         case 'ui': {
+          // The node-level control is already inert for this case; this is the
+          // same guard the `agent` branch below keeps, one layer down, so a
+          // command cannot run by any other route into `onAction` (a widget
+          // node that forgets to ask, a future caller). Off a session, only
+          // local-UI-only commands run — see the module doc.
+          if (!sessionId && !isLocalUiOnlyCommand(action.command)) return;
           // The dispatcher is a pure side effect and reads the store itself.
           // `supportsTerminal` keeps `open_terminal` degrading gracefully on a
           // transport with no terminal (DirectTransport/Obsidian), matching the
@@ -243,7 +266,7 @@ export function WidgetActionProvider({
   const value = useMemo<WidgetActionsValue>(
     () => ({
       onAction,
-      agentActionsEnabled: Boolean(sessionId),
+      hasSession: Boolean(sessionId),
       superseded: !isLatestMessage,
       latched: dispatch !== null,
       dispatchedActionKey: dispatch?.key ?? null,
@@ -280,7 +303,11 @@ export function useWidgetActions(): WidgetActionsValue {
 export interface AgentActionState {
   /** Whether the action posts back to the agent (vs a local `ui`/`url` action). */
   isAgent: boolean;
-  /** No target session → cannot dispatch (e.g. the dev playground). */
+  /**
+   * No session behind the widget, and this action needs one — every `agent`
+   * action, plus a `ui` action carrying a session-shaped command. The control
+   * renders inert with "Interactions aren't available here".
+   */
   unavailable: boolean;
   /** A later message exists → this `agent` action is inert. */
   superseded: boolean;
@@ -297,22 +324,26 @@ export interface AgentActionState {
 /**
  * Resolve the interaction state for a single widget action against the current
  * widget-context latch/supersede state. `agent` actions gate on session
- * presence, supersede, and latch; `ui`/`url` actions are always interactive.
+ * presence, supersede, and latch; a `ui` action gates on session presence too
+ * when its command is session-shaped (see the module doc); `url` actions are
+ * always interactive.
  *
  * @param action - The action a node is about to render a control for.
  */
 export function useAgentActionState(action: WidgetAction): AgentActionState {
-  const { agentActionsEnabled, superseded, latched, dispatchedActionKey, dispatchStatus } =
+  const { hasSession, superseded, latched, dispatchedActionKey, dispatchStatus } =
     useWidgetActions();
   const isAgent = action.kind === 'agent';
   // Compare on the full dispatch key (id + payload), so a same-id sibling of the
   // fired control reads as latched-not-dispatched rather than dispatched.
   const actionKey = action.kind === 'agent' ? actionDispatchKey(action) : null;
   const isDispatched = actionKey !== null && actionKey === dispatchedActionKey;
-  const unavailable = isAgent && !agentActionsEnabled;
+  // Both kinds that can reach outside this render need a session behind them.
+  const needsSession = isAgent || (action.kind === 'ui' && !isLocalUiOnlyCommand(action.command));
+  const unavailable = needsSession && !hasSession;
   const isSuperseded = isAgent && superseded;
   const isLatchedOther = isAgent && latched && !isDispatched;
-  const interactive = isAgent ? !unavailable && !isSuperseded && !latched : true;
+  const interactive = isAgent ? !unavailable && !isSuperseded && !latched : !unavailable;
   return {
     isAgent,
     unavailable,

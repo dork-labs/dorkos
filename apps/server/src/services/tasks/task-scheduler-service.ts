@@ -21,6 +21,7 @@ import {
 import { taskDispatchSubject } from '@dorkos/shared/relay-schemas';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { createRunOutcomeTracker } from '@dorkos/shared/run-outcome';
+import { createRefusedAskLog, withRefusedAsks } from '@dorkos/shared/run-refusals';
 import { runTimeLimitError } from '@dorkos/shared/run-time-limit';
 import { createTaggedLogger, logError } from '../../lib/logger.js';
 import { runInDispatch } from '../../lib/dispatch-context.js';
@@ -31,7 +32,7 @@ import { withSpan, SPAN, ATTR } from '../observability/index.js';
 import { consumeRunStream, interruptRun } from './run-stream.js';
 import { publishRunStop, type CancelRunOutcome, type RunStopDelivery } from './run-cancel.js';
 import { RunAccounting } from './run-accounting.js';
-import { emitRunActivity } from './run-activity.js';
+import { emitRefusedAskActivity, emitRunActivity } from './run-activity.js';
 import { dispatchRunViaRelay } from './relay-dispatch.js';
 import { pruneRunHistory, PRUNE_INTERVAL_MS } from './run-retention.js';
 import { sweepInterruptedRuns } from './crash-recovery.js';
@@ -1211,6 +1212,12 @@ export class TaskSchedulerService {
     // consumes `sendMessage` itself and attaches no projector, so the settling
     // rule the session pipeline owns is applied here instead of inferred.
     const outcome = createRunOutcomeTracker();
+    // Which asks this run raised that nobody could answer. A scheduled run has
+    // no approval surface, so the runtime refuses such an ask the moment it is
+    // raised (spec `unattended-session-permission-prompts`) — and the only thing
+    // that makes that better than the ten-minute wait it replaced is that the
+    // result says which tools the agent never got to use.
+    const refusals = createRefusedAskLog();
     // Which session this run runs on. A non-sticky run is isolated on the run's
     // own id, exactly as before; a sticky run resumes the real SDK session of the
     // task's previous run, so context carries across runs (DOR-1571). Declared out
@@ -1270,10 +1277,20 @@ export class TaskSchedulerService {
         // the answer has to be carried here (DOR-1571). Always false for a
         // non-sticky run and a sticky task's first fire.
         hasStarted,
-        // Nobody is coming back to a scheduled run, so an unanswered prompt is
-        // refused at ten minutes instead of parking for four hours and stalling
-        // the run (spec `ask-parks-on-timeout` §7).
-        unattended: true,
+        // Nobody is coming back to a run the timer started, so an ask raised in
+        // it is refused the moment it is raised rather than waiting for an
+        // answer that cannot arrive (spec
+        // `unattended-session-permission-prompts`).
+        //
+        // **Only a scheduled fire.** A "Run now" a person clicked reaches this
+        // same function with `trigger: 'manual'`, and they are sitting in front
+        // of the app waiting for it — their approval card is answerable and must
+        // keep the ordinary wait. Passing `true` unconditionally would have
+        // taken the cards away from the one trigger that has somebody watching.
+        // A run an AGENT started (`trigger: 'agent'`) is treated the same as a
+        // manual one: it happens inside a live session a person can be looking
+        // at, and its card lands in the app like any other.
+        unattended: run.trigger === 'scheduled',
       });
 
       const taskAppend = buildTaskAppend(task, run);
@@ -1290,6 +1307,19 @@ export class TaskSchedulerService {
         () => void interruptRun(agentManager, sessionId),
         (event) => {
           outcome.observe(event);
+          // Emitted as it happens rather than at the end, so the feed shows the
+          // run losing a tool while the run is still going — the same live shape
+          // every other activity writer has. `observe` answers only on a tool's
+          // FIRST refusal: an agent that keeps reaching for the same blocked
+          // tool would otherwise write the same row dozens of times and bury
+          // everything else in the feed. The relay dispatch path writes the
+          // same entries: it cannot reach the activity service from
+          // `packages/relay`, so it reports each first refusal to the host
+          // instead and `createRelayRefusedAskEmitter` writes the row
+          // (DOR-1580). What is still asymmetric between the two paths is the
+          // deadline-cancel event, and only that.
+          const refused = refusals.observe(event);
+          if (refused) emitRefusedAskActivity(this.activityService, task, run, refused);
           // Collect first 500 chars of text output as summary
           if (event.type === 'text_delta' && outputChars < 500) {
             const data = event.data as { text: string };
@@ -1300,6 +1330,11 @@ export class TaskSchedulerService {
       );
 
       const durationMs = Date.now() - startTime;
+      // The refused asks lead the summary, so the run-history row and the
+      // finished-run message — both of which quote only its FIRST line — say
+      // what the run could not do before they say what it did.
+      const summaryForRow = (): string =>
+        withRefusedAsks(refusals.summaryLine(), outputSummary.slice(0, 500));
 
       if (stopped) {
         // Both stops record `cancelled` — the run-status vocabulary has no
@@ -1318,7 +1353,7 @@ export class TaskSchedulerService {
           status: 'cancelled',
           finishedAt: new Date().toISOString(),
           durationMs,
-          outputSummary: outputSummary.slice(0, 500),
+          outputSummary: summaryForRow(),
           error:
             timedOut && task.maxRuntime
               ? runTimeLimitError(formatDuration(task.maxRuntime))
@@ -1348,7 +1383,7 @@ export class TaskSchedulerService {
           status: failure ? 'failed' : 'completed',
           finishedAt: new Date().toISOString(),
           durationMs,
-          outputSummary: outputSummary.slice(0, 500),
+          outputSummary: summaryForRow(),
           ...(failure ? { error: failure } : {}),
           sessionId: persistedSessionId(),
         });
@@ -1367,7 +1402,7 @@ export class TaskSchedulerService {
         status: 'failed',
         finishedAt: new Date().toISOString(),
         durationMs,
-        outputSummary: outputSummary.slice(0, 500),
+        outputSummary: withRefusedAsks(refusals.summaryLine(), outputSummary.slice(0, 500)),
         error: errorMsg,
         sessionId: persistedSessionId(),
       });

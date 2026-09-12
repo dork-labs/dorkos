@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, ExternalLink, RotateCw } from 'lucide-react';
 import type { UiCanvasContent } from '@dorkos/shared/types';
+import { useFollowedView } from '@/layers/entities/room';
 import type { BrowserHistoryState } from '@/layers/shared/model';
 import { useAppStore } from '@/layers/shared/model';
 import { Input } from '@/layers/shared/ui';
 import { cn, openExternalLink } from '@/layers/shared/lib';
 import { useDevtoolsBridge } from '../model/use-devtools-bridge';
+import { roomCanvasRefusal, useRoomCanvasActions } from '../model/use-room-canvas';
 import {
   useResolvedFrame,
   type ResolveError,
@@ -135,13 +137,32 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
     cwd,
     reloadNonce,
   });
-  const { resourceErrorCount } = useDevtoolsBridge({
+  const { resourceErrorCount, notePersonNavigated } = useDevtoolsBridge({
     iframeRef,
     documentId,
     logicalUrl: currentUrl,
     reloadNonce,
     previewOrigin: resolved?.previewOrigin ?? null,
   });
+
+  // Which room this browser is showing a page FOR, or null where the canvas is
+  // this browser's own. Read from the store rather than the route: the room
+  // stream writes it for exactly the room on screen, and this component renders
+  // in shells and tests with no router behind them.
+  const roomId = useAppStore((s) => s.roomCanvasLiveRoomId);
+  const { open: openInRoom } = useRoomCanvasActions(roomId ?? '');
+  /**
+   * The address the room refused, and what it said — held so the typed URL
+   * survives the failure.
+   *
+   * Losing what somebody just typed is the worst thing a text field can do, and
+   * it is exactly what happened while this posted and forgot: the bar reverted
+   * to the page already on screen and nothing said why. The bar reopens on this
+   * value instead, so the fix is an edit rather than a retype.
+   */
+  const [refusedAddress, setRefusedAddress] = useState<{ url: string; message: string } | null>(
+    null
+  );
 
   const navigate = useCallback(
     (url: string) => {
@@ -151,18 +172,60 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
     [cursor]
   );
 
+  // Where the person this viewer is following has their browser, and whether
+  // this viewer is in the middle of typing in something.
+  const followedView = useFollowedView(roomId);
+  const editingDocumentId = useAppStore((s) =>
+    roomId ? (s.roomCanvasEditing[roomId] ?? null) : null
+  );
+
+  // Go where they went (spec `canvas-agent-seat` §6). Only for THIS document —
+  // the tab strip moves the viewer onto the right one — and never while this
+  // viewer is editing something, which is room-canvas §9.3 and outranks
+  // following: losing a draft is worse than losing the thread.
+  useEffect(() => {
+    if (followedView === null || editingDocumentId !== null) return;
+    if (followedView.documentId !== documentId) return;
+    const url = followedView.url;
+    if (url === undefined || url === currentUrl) return;
+    navigate(url);
+  }, [followedView, editingDocumentId, documentId, currentUrl, navigate]);
+
   const canBack = cursor > 0;
   const canForward = cursor < history.length - 1;
 
-  // Commit an address-bar entry: navigate to a genuinely new target, else reload
-  // the current one (re-minting its signed URL).
+  // Commit an address-bar entry.
+  //
+  // **On a room route it is a post, not a navigation** (spec `room-canvas`
+  // §9.5). The Browser tab there shows the room's table, so typing an address is
+  // putting a page on it as yourself: the server answers with a `canvas` frame
+  // that reaches every member, and this frame follows it like everybody else's
+  // does. Typing the same address again is a reload of the page in front of you,
+  // which is nobody else's business and stays local.
   const submitAddress = useCallback(
     (value: string) => {
       const next = normalizeAddressInput(value);
-      if (next && next !== currentUrl) navigate(next);
-      else setReloadNonce((n) => n + 1);
+      if (!next || next === currentUrl) {
+        setReloadNonce((n) => n + 1);
+        return;
+      }
+      if (roomId) {
+        setRefusedAddress(null);
+        void openInRoom({ type: 'browser', url: next }).catch((error: unknown) => {
+          setRefusedAddress({ url: next, message: roomCanvasRefusal(error) });
+        });
+        return;
+      }
+      // A person in THIS window typed an address, which is the plainest possible
+      // statement that they are the one using this page — so it claims the
+      // driver seat, exactly as opening the document here would (spec
+      // `canvas-agent-seat` §2.2). Told to the BRIDGE rather than written to the
+      // store: local navigation is this component's own state, and a store write
+      // here would remount the frame and throw the history stack away.
+      notePersonNavigated();
+      navigate(next);
     },
-    [currentUrl, navigate]
+    [currentUrl, navigate, roomId, openInRoom, notePersonNavigated]
   );
 
   // Always leaves the app, even for one of our own URLs — that is what the
@@ -185,11 +248,25 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
         <ChromeButton label="Reload" onClick={() => setReloadNonce((n) => n + 1)}>
           <RotateCw className="size-4" />
         </ChromeButton>
-        <AddressBar url={currentUrl} onSubmit={submitAddress} />
+        {/* Keyed on the refusal so a failed post remounts the bar in edit mode,
+            seeded with what was typed rather than with the page still on
+            screen. */}
+        <AddressBar
+          key={refusedAddress === null ? 'address' : `retry:${refusedAddress.url}`}
+          url={refusedAddress?.url ?? currentUrl}
+          startEditing={refusedAddress !== null}
+          onSubmit={submitAddress}
+        />
         <ChromeButton label="Open in system browser" onClick={openExternally}>
           <ExternalLink className="size-4" />
         </ChromeButton>
       </div>
+
+      {refusedAddress !== null && (
+        <p role="status" className="text-destructive border-border/60 border-b px-2 py-1 text-xs">
+          {refusedAddress.message}
+        </p>
+      )}
 
       <BrowserBody
         target={target}
@@ -216,8 +293,17 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
  * Enter commits (navigate or reload); Escape and blur revert without navigating,
  * so an accidental focus never changes the page.
  */
-function AddressBar({ url, onSubmit }: { url: string; onSubmit: (value: string) => void }) {
-  const [editing, setEditing] = useState(false);
+function AddressBar({
+  url,
+  startEditing = false,
+  onSubmit,
+}: {
+  url: string;
+  /** Open as a text box rather than at rest — how a refused address is offered back. */
+  startEditing?: boolean;
+  onSubmit: (value: string) => void;
+}) {
+  const [editing, setEditing] = useState(startEditing);
   const [draft, setDraft] = useState(url);
 
   if (!editing) {

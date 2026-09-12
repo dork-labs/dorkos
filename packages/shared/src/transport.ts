@@ -100,6 +100,7 @@ import type {
   UiActionRequest,
   McpAppResourceRequest,
   McpAppResourceResponse,
+  DevtoolsActionResult,
   DevtoolsIngest,
   WorkbenchProbeResponse,
   WorkbenchSignResponse,
@@ -108,6 +109,7 @@ import type {
   QueueMoveTarget,
   QueuedMessage,
   InterruptReceipt,
+  UiCanvasContent,
 } from './schemas.js';
 import type { TemplateEntry } from './template-catalog.js';
 import type { ClientContext } from './additional-context.js';
@@ -151,6 +153,8 @@ import type {
   HarnessSyncResponse,
 } from './harness-schemas.js';
 import type { RoomTransport } from './transport-rooms.js';
+import type { CanvasEditingResponse, UpdateCanvasDocumentRequest } from './room-schemas.js';
+import type { CanvasDocument } from './canvas-schemas.js';
 import type { ReadCursor, ReadCursorThreadKind } from './read-cursor-schemas.js';
 import type {
   MemberRoomsResponse,
@@ -443,6 +447,35 @@ export interface AdapterEvent {
  * Using a custom interface (rather than the DOM `File` type) keeps the shared
  * package free of DOM lib dependencies so it can be used in Node.js contexts.
  */
+/**
+ * What one finished browser recording hands the server: the file, or the reason
+ * there is not one (spec `canvas-agent-seat` §3.4).
+ *
+ * A failure is REPORTED rather than left silent, because a `browser_record_stop`
+ * is blocked on this — silence costs the agent a thirty-second wait and a
+ * vaguer answer than the truth.
+ */
+export type DevtoolsRecordingPayload =
+  | {
+      /** The round trip id the stop request carried. */
+      requestId: string;
+      /** How many frames the encoded recording holds. */
+      frames: number;
+      /** How long the recording covers, in milliseconds. */
+      durationMs: number;
+      /** The encoded GIF. */
+      recording: UploadFile;
+      /** The last frame, as a PNG. */
+      keyframe: UploadFile;
+      error?: undefined;
+    }
+  | {
+      /** The round trip id the stop request carried. */
+      requestId: string;
+      /** Why there is no file, in one sentence the agent can act on. */
+      error: string;
+    };
+
 export interface UploadFile {
   /** Original filename as provided by the user. */
   name: string;
@@ -561,6 +594,17 @@ export interface Transport extends RoomTransport {
    * the terminal tab is gated on this flag rather than attempted-and-failed.
    */
   readonly supportsTerminal: boolean;
+  /**
+   * Whether this transport can hand the embedded browser a page to frame —
+   * {@link createServeUrl} for a local file and {@link createProxyUrl} for a dev
+   * server. `true` for the HTTP transport, `false` for the in-process Obsidian
+   * transport, whose host has neither route nor preview listener.
+   *
+   * The Browser right-panel tab is gated on this flag, the same posture as
+   * {@link Transport.supportsTerminal}: a tab that could only ever show an error
+   * is worse than no tab (ADR 260911-200304).
+   */
+  readonly supportsWorkbenchServe: boolean;
   /**
    * List sessions across all registered runtimes, optionally scoped to a
    * working directory. Returns the aggregation envelope (ADR-0310): `sessions`
@@ -949,6 +993,92 @@ export interface Transport extends RoomTransport {
    */
   mediaUrl(cwd: string, filePath: string): string | null;
 
+  // --- Session canvas (server-owned; spec `canvas-agent-seat` §1.6) ---
+
+  /**
+   * Everything on this session's canvas, pinned first then most recently active.
+   *
+   * Rarely the hydration path — a window fills its canvas from the session
+   * stream's cold snapshot, which carries the same list — and here for the two
+   * cases that have no snapshot to read: the one-time import deciding whether
+   * the table is already filled, and a caller that wants the table without
+   * subscribing.
+   *
+   * @param sessionId - The session, by its canonical id.
+   * @returns The session's documents.
+   */
+  listSessionCanvas(sessionId: string): Promise<CanvasDocument[]>;
+
+  /**
+   * One document on this session's canvas, content included.
+   *
+   * @param sessionId - The session.
+   * @param documentId - The document.
+   * @returns The document, or `null` when this session does not hold it.
+   */
+  getSessionCanvasDocument(sessionId: string, documentId: string): Promise<CanvasDocument | null>;
+
+  /**
+   * Put something on this session's canvas, or refresh what is already there.
+   *
+   * Two windows of one session opening the same file land on one document, for
+   * the same reason two agents in one room do: the table dedupes on the source.
+   * The document it answers with also arrives on the session's own stream as a
+   * `canvas` event, for this window and every other one.
+   *
+   * @param sessionId - The session.
+   * @param content - What to show. One of the fourteen canvas shapes.
+   * @param opts - Pinning, and the directory a file path was resolved against.
+   * @returns The document as the table now holds it.
+   */
+  openSessionCanvasDocument(
+    sessionId: string,
+    content: UiCanvasContent,
+    opts?: { pinned?: boolean }
+  ): Promise<CanvasDocument>;
+
+  /**
+   * Change one document on this session's canvas — what it shows, whether it is
+   * pinned, where it sits in the order.
+   *
+   * @param sessionId - The session.
+   * @param documentId - The document.
+   * @param patch - What to change. Every field is optional and each does one thing.
+   * @returns The document as the table now holds it.
+   */
+  updateSessionCanvasDocument(
+    sessionId: string,
+    documentId: string,
+    patch: UpdateCanvasDocumentRequest
+  ): Promise<CanvasDocument>;
+
+  /**
+   * Take a document off this session's canvas, in every window of it.
+   *
+   * @param sessionId - The session.
+   * @param documentId - The document.
+   */
+  closeSessionCanvasDocument(sessionId: string, documentId: string): Promise<void>;
+
+  /**
+   * Say you are editing one of this session's canvas documents, or that you have
+   * stopped.
+   *
+   * It earns its keep here for the reason the session canvas moved to the server
+   * at all: two devices on one session is the point, and while one is typing the
+   * agent's push to that document is held rather than landing underneath them.
+   *
+   * @param sessionId - The session.
+   * @param documentId - The document.
+   * @param editing - True to take or refresh the lock, false to let it go.
+   * @returns Who holds the lock now, and when it lapses.
+   */
+  setSessionCanvasEditing(
+    sessionId: string,
+    documentId: string,
+    editing: boolean
+  ): Promise<CanvasEditingResponse>;
+
   // --- Workbench embedded browser (web-only; DOR-216, ADR 260708-185519) ---
 
   /**
@@ -1014,7 +1144,53 @@ export interface Transport extends RoomTransport {
    * @param sessionId - The session whose preview produced the batch.
    * @param batch - The validated console/network (and navigation) capture batch.
    */
-  ingestDevtoolsCapture(sessionId: string, batch: DevtoolsIngest): Promise<void>;
+  ingestDevtoolsCapture(
+    sessionId: string,
+    batch: DevtoolsIngest,
+    options?: {
+      /**
+       * Let the request outlive the page that started it. Set on the release a
+       * window sends as it closes, which is the one moment an ordinary `fetch`
+       * is cancelled before it leaves.
+       */
+      keepalive?: boolean;
+    }
+  ): Promise<void>;
+
+  /**
+   * Relay one driving round trip's result — what the click did, what the page
+   * says now — to `POST /sessions/:id/devtools/action` (spec
+   * `canvas-agent-seat` §2.1).
+   *
+   * Separate from {@link Transport.ingestDevtoolsCapture} because it is posted
+   * the moment it exists: an agent's tool call is awaiting this `requestId`
+   * server-side, and a result folded into the 300ms capture debounce is a
+   * result that can arrive after the tool gave up. `DirectTransport` no-ops
+   * (the embedded browser is web-only already).
+   *
+   * @param sessionId - The session whose preview was driven.
+   * @param result - The validated result relayed from the in-page shim.
+   */
+  postDevtoolsAction(sessionId: string, result: DevtoolsActionResult): Promise<void>;
+
+  /**
+   * Hand one finished browser recording to
+   * `POST /sessions/:id/devtools/recording` (spec `canvas-agent-seat` §3.4).
+   *
+   * Multipart with two file parts, because the encoded GIF is megabytes of
+   * binary and the wire the rest of this seam rides is JSON. The second part is
+   * the recording's last frame, which is what the agent's tool result shows —
+   * a GIF in a tool result is base64 no model can watch animate.
+   *
+   * Unlike the two calls above this one is NOT fire-and-forget: a tool call is
+   * blocked on it, and a failure here has to become the sentence that tool
+   * answers with. `DirectTransport` rejects (the embedded browser is web-only).
+   *
+   * @param sessionId - The session whose preview was recorded.
+   * @param upload - The round trip id, the frame count, the length, and the two
+   *   files.
+   */
+  uploadDevtoolsRecording(sessionId: string, upload: DevtoolsRecordingPayload): Promise<void>;
 
   // --- Workbench file service (explorer + viewers; DOR-217) ---
 

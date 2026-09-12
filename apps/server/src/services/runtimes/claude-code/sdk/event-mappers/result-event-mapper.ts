@@ -33,6 +33,38 @@ function formatLimitType(type?: string): string | undefined {
   }
 }
 
+/**
+ * The honest basis for a cost SUMMED over several models (SDK 0.3.246).
+ *
+ * `ModelUsage.costBasis` is per-model, and `total_cost_usd` is one number over
+ * all of them, so a turn that switched models can carry more than one basis
+ * behind a single figure. The weakest claim wins, because a total is only as
+ * trustworthy as its least-trustworthy part: any `unknown` makes the sum a
+ * guess, any `managed` makes it a non-list price, and only an all-list set can
+ * be shown plain.
+ *
+ * A model with no basis yet counts as `list` — the SDK's field doc says to read
+ * absence that way, and that is also what every DorkOS cost figure meant before
+ * the field existed. `undefined` comes back only when there are no models at
+ * all, so "the SDK told us nothing" never masquerades as "we checked".
+ *
+ * @param modelUsage - The result's `modelUsage` map, keyed by model string.
+ */
+function resolveCostBasis(
+  modelUsage: Record<string, Record<string, unknown>> | undefined
+): 'list' | 'managed' | 'unknown' | undefined {
+  if (!modelUsage) return undefined;
+  const entries = Object.values(modelUsage);
+  if (entries.length === 0) return undefined;
+  let sawManaged = false;
+  for (const usage of entries) {
+    const basis = usage.costBasis as 'list' | 'managed' | 'unknown' | undefined;
+    if (basis === 'unknown') return 'unknown';
+    if (basis === 'managed') sawManaged = true;
+  }
+  return sawManaged ? 'managed' : 'list';
+}
+
 /** Map a Claude rate-limit status to the runtime-neutral utilization health. */
 function toUsageState(status: 'allowed' | 'allowed_warning' | 'rejected'): UsageState {
   switch (status) {
@@ -148,17 +180,32 @@ export async function* mapResultEvent(
     // a turn that switched models still reports one honest total. Undefined when
     // the SDK reported no `modelUsage` — absent OR empty (older SDKs / error
     // results) — so "no data" never masquerades as a zero-token turn.
+    //
+    // `thinkingTokens` (SDK 0.3.257) rides the same sum with one difference: it
+    // is written ONLY when at least one model actually reported it. The field is
+    // absent on turns the CLI did not record it for, and a `0` there would read
+    // as "the model did not think" — a claim nobody made. Absent says "not
+    // reported", which is the only thing that is true.
     let turnInputTokens: number | undefined;
     let turnOutputTokens: number | undefined;
+    let turnThinkingTokens: number | undefined;
     if (modelUsageMap && Object.keys(modelUsageMap).length > 0) {
       let inSum = 0;
       let outSum = 0;
+      let thinkingSum = 0;
+      let sawThinking = false;
       for (const usage of Object.values(modelUsageMap)) {
         inSum += (usage.inputTokens as number | undefined) ?? 0;
         outSum += (usage.outputTokens as number | undefined) ?? 0;
+        const thinking = usage.thinkingTokens as number | undefined;
+        if (typeof thinking === 'number') {
+          thinkingSum += thinking;
+          sawThinking = true;
+        }
       }
       turnInputTokens = inSum;
       turnOutputTokens = outSum;
+      if (sawThinking) turnThinkingTokens = thinkingSum;
     }
 
     // Stamp `usage` onto the result status so the merged Usage & cost item has
@@ -167,11 +214,19 @@ export async function* mapResultEvent(
     // (`kind: 'subscription'` with window/reset/state) so the item does not
     // flicker to a cost-only render between turns. With no prior rate-limit
     // signal (e.g. an API-key session), the session reports `pay-as-you-go`.
+    //
+    // The cost travels with the price table it came from ({@link resolveCostBasis}),
+    // so a client can say which figures are the published price and which are a
+    // guess instead of rendering all of them with the same confidence. Attached
+    // only beside a cost, because a basis with no figure under it describes
+    // nothing.
     let usage: UsageStatus | undefined;
     if (costUsd !== undefined) {
+      const costBasis = resolveCostBasis(modelUsageMap);
+      const cost = { costUsd, ...(costBasis ? { costBasis } : {}) };
       usage = session.lastSubscriptionUsage
-        ? { ...session.lastSubscriptionUsage, costUsd }
-        : { kind: 'pay-as-you-go', costUsd };
+        ? { ...session.lastSubscriptionUsage, ...cost }
+        : { kind: 'pay-as-you-go', ...cost };
     } else {
       usage = session.lastSubscriptionUsage;
     }
@@ -211,6 +266,7 @@ export async function* mapResultEvent(
         cacheCreationTokens,
         ...(turnInputTokens !== undefined ? { turnInputTokens } : {}),
         ...(turnOutputTokens !== undefined ? { turnOutputTokens } : {}),
+        ...(turnThinkingTokens !== undefined ? { turnThinkingTokens } : {}),
         ...(terminalReason ? { terminalReason } : {}),
         // Attached only beside an ABORT reason, which is the only ending whose
         // settlement it changes. Every other terminal would carry a fact no

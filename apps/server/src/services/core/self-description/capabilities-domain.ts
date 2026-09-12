@@ -63,18 +63,33 @@ function requireRegistry(deps: CapabilityDeps): CapabilityRegistry {
  * The tool families that are NOT on the capability registry, named in the
  * `list_capabilities` description so a model knows what the catalog omits.
  *
- * Exported, and written as the DOMAIN PREFIX a migrated capability id would carry
- * (`tasks.*`, not `task.*`), because the drift guard in
- * `__tests__/capabilities-domain.test.ts` asserts each entry is genuinely absent
- * from the composed registry. That is what makes the caveat self-retiring: migrate
- * one of these onto the registry and the guard fails, forcing the family out of
- * this list and out of the description rather than leaving a now-false sentence in
- * the highest-traffic model-facing text in the product.
+ * Exported, and read by the drift guard in
+ * `__tests__/capabilities-domain.test.ts`, which asserts that no MCP TOOL the
+ * composed registry projects belongs to a family named here. That is what makes
+ * the caveat self-retiring: migrate one of these families onto the registry and
+ * the catalog starts projecting a tool whose name carries the family, the guard
+ * fails, and the family has to leave this list and the description rather than
+ * leaving a now-false sentence in the highest-traffic model-facing text in the
+ * product.
+ *
+ * The guard compares TOOL NAMES rather than capability-id prefixes, because the
+ * sentence is about the reader's own tool list: what an agent notices is that
+ * `tasks_create` is callable but absent from the catalog. An id-prefix guard
+ * answers a different question and gets `ui` wrong in both directions — see
+ * below.
  *
  * `agent` is deliberately NOT here. Agent *creation* is a hand-registered tool
  * (`create_agent`), but `operator.update_agent` and
  * `operator.agents_recent_activity` are real catalog entries with tiers, so
  * naming `agent` wholesale as absent would be its own overclaim.
+ *
+ * `ui` and `devtools` are GONE from this list, and the guard is what retired
+ * them (spec `canvas-agent-seat` §5). `control_ui`, `get_ui_state` and every
+ * `browser_*` verb are `ui` capabilities now, so the catalog projects
+ * `control_ui` — a tool whose name carries the `ui` segment — and the guard fails
+ * on any claim that the family is absent. `devtools` left with them for the
+ * other half of the same rule: its tools were the `browser_*` ones, and a family
+ * with nothing in it is not worth naming.
  */
 export const UNREGISTERED_TOOL_FAMILIES: readonly string[] = [
   'tasks',
@@ -83,8 +98,6 @@ export const UNREGISTERED_TOOL_FAMILIES: readonly string[] = [
   'binding',
   'trace',
   'extension',
-  'devtools',
-  'ui',
 ];
 
 /**

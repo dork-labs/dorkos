@@ -47,6 +47,7 @@ function hydrateStreamSession(lifecycle: SessionLifecycle, pendingCount = 0) {
       hasSuggestions: false,
     })),
     queuedMessages: [],
+    canvas: [],
     cursor: 1,
   });
 }

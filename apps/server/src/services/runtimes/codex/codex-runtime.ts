@@ -149,13 +149,6 @@ export interface CodexRuntimeOptions {
   /** Account-aware model catalog; injectable so runtime tests never spawn app-server. */
   modelCatalog?: Pick<CodexModelCatalog, 'getSupportedModels'>;
   /**
-   * Loopback URL of the scoped `dorkos_ui` MCP server
-   * ({@link ./codex-ui-mcp-server}) that exposes `control_ui` to Codex for
-   * canvas parity. Wired into `CodexOptions.config.mcp_servers` when present.
-   * Derived from the server port in the composition root — not user config.
-   */
-  mcpUiUrl?: string;
-  /**
    * Fallback working directory for a turn that arrives with no cwd from any
    * source (send opts, registry, persisted binding) — mirrors the Claude
    * adapter's default. Guarantees every bound thread persists a real cwd, so
@@ -192,8 +185,6 @@ export class CodexRuntime implements AgentRuntime {
   private readonly resolveBinary: () => Promise<string | null>;
   /** Models visible to the same binary and Codex account a real turn uses. */
   private readonly modelCatalog: Pick<CodexModelCatalog, 'getSupportedModels'>;
-  /** Kept so every turn's client is built with the same UI-bridge wiring. */
-  private readonly mcpUiUrl: string | undefined;
   /**
    * The agent registry, when the composition root injected it. Used only to
    * decide whether this turn's working directory hosts a registered agent: the
@@ -249,7 +240,6 @@ export class CodexRuntime implements AgentRuntime {
     this.resolveBinary = options.resolveBinary ?? resolveCodexBinaryPath;
     this.modelCatalog =
       options.modelCatalog ?? new CodexModelCatalog({ resolveBinary: this.resolveBinary });
-    this.mcpUiUrl = options.mcpUiUrl;
     // No SDK client is built here on purpose — see `sharedClient`.
   }
 
@@ -331,16 +321,14 @@ export class CodexRuntime implements AgentRuntime {
     const hasToken = Object.keys(tokenEnv).length > 0;
     const hasManaged = Object.keys(managed.servers).length > 0;
     if (hasToken || hasManaged || dorkosTools || connectorTools) {
-      return new Codex(
-        buildCodexOptions(binary, this.mcpUiUrl, tokenEnv, managed, dorkosTools, connectorTools)
-      );
+      return new Codex(buildCodexOptions(binary, tokenEnv, managed, dorkosTools, connectorTools));
     }
     const policy = JSON.stringify(runtimeInheritedNames('codex'));
     if (this.sharedClient?.binary !== binary || this.sharedClient.policy !== policy) {
       this.sharedClient = {
         binary,
         policy,
-        client: new Codex(buildCodexOptions(binary, this.mcpUiUrl)),
+        client: new Codex(buildCodexOptions(binary)),
       };
     }
     return this.sharedClient.client;
@@ -732,6 +720,10 @@ export class CodexRuntime implements AgentRuntime {
       const turnOpts = accessContext
         ? { ...opts, additionalContext: [...(opts?.additionalContext ?? []), accessContext.entry] }
         : opts;
+      // No room marker: `control_ui` is a `ui` capability now, and its handler
+      // reads the room this turn is answering in from the runtime-neutral turn
+      // facts the trigger bound (spec `canvas-agent-seat` §5). The mapper has
+      // nothing left to refuse.
       const ctx = createCodexEventContext(sessionId);
       let bound = boundThreadId !== undefined;
       connectorRevokeReason = 'runtime_failed';

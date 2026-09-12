@@ -40,7 +40,7 @@ const OVERLAP_SLACK_PX = 0.5;
  * this file green while it quietly stopped measuring the floors, which are the
  * only widths where an over-promising budget shows up at all.
  */
-const TIER_FLOOR_WIDTHS = [640, 440, 340, 320] as const;
+const TIER_FLOOR_WIDTHS = [648, 440, 340, 320] as const;
 
 /** The demo box draws a 1px border either side of the row it is sizing. */
 const ROW_WIDTH_SLACK_PX = 2;

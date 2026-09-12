@@ -19,7 +19,7 @@ import {
  * shell an `NODE_ENV=production` server serves — so until this file existed, a
  * directive that broke a real browser surface was invisible to the whole browser
  * suite and to CI. That is not hypothetical: DOR-560 shipped a `connect-src`
- * without `http:`, which makes the canvas report EVERY healthy dev server as
+ * without `http:`, which makes the embedded browser report EVERY healthy dev server as
  * unreachable, and `workbench/dev-server-preview.spec.ts` would have stayed
  * green through it forever. A human driving a production server in Chromium by
  * hand is what caught it.
@@ -36,7 +36,7 @@ import {
  * Its leg has to build the client before it can serve anything, so it costs more
  * than every other leg in the suite and is opt-in outside CI (`E2E_PROD`). What
  * belongs here is only what the policy can silently take away: the shell booting
- * at all, and the canvas — the one surface whose reachability probe (`connect-src`)
+ * at all, and the embedded browser — the one surface whose reachability probe (`connect-src`)
  * and preview frame (`frame-src`) both read a CSP refusal as an ordinary failure.
  * Feature coverage belongs on the cockpit leg, where it is cheap.
  *
@@ -101,7 +101,7 @@ test.describe('The shipped shell — served by Express under the production CSP 
     await openInCanvasBrowser(page, rightPanel, `http://localhost:${devPort}${DEEP_PATH}`);
 
     // Two directives are on trial here and both fail the same silent way. The
-    // canvas first asks the BROWSER whether it can reach the dev server
+    // browser tab first asks the BROWSER whether it can reach the dev server
     // (`canvas/lib/probe-direct.ts`, a plain-http fetch — `connect-src`), and a
     // policy refusal is indistinguishable there from a refused connection, so a
     // `connect-src` without `http:` reports the server below as absent and never
@@ -110,12 +110,12 @@ test.describe('The shipped shell — served by Express under the production CSP 
     //
     // Measured, by dropping `http:` from `connect-src` and rerunning: this is
     // the assertion that goes red, and its message is what says why. A blocked
-    // probe presents here as an empty canvas, never as a policy error — which
+    // probe presents here as an empty page, never as a policy error — which
     // is the whole reason DOR-560 was invisible in the first place.
     const frame = page.frameLocator('iframe[title="Web Page"]');
     await expect(
       frame.getByTestId(APP_READY),
-      'the canvas never framed a dev server that is definitely running — on this leg that is almost always the shipped policy refusing the reachability probe (connect-src) or the frame itself (frame-src)'
+      'the embedded browser never framed a dev server that is definitely running — on this leg that is almost always the shipped policy refusing the reachability probe (connect-src) or the frame itself (frame-src)'
     ).toBeVisible({ timeout: 15_000 });
     expect(refusals).toEqual([]);
   });

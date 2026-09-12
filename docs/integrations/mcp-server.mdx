@@ -128,6 +128,8 @@ The last four rows (operator, memory, self-description, marketplace: 17 tools) a
 
 Being off the registry does not mean running unasked. All 40 of them carry a permission tier too, and the same approval gate reads it: `tasks_delete` and `mesh_unregister` are `destructive` and answer with a pending approval instead of doing the work. A destructive tool advertises an `approvalToken` argument, so a client can tell one from its own schema without asking.
 
+Inside a DorkOS session, Claude Code is also told which tier a tool sits at and that the call already passed this check, so its auto mode stops asking about things DorkOS has already decided. This server gets no equivalent: it has no session, so there is nothing to tell. Your client makes its own decisions about when to ask you, exactly as it does today.
+
 <Callout type="info">
   The 8 `marketplace_*` tools only appear when Relay is enabled and extensions have initialized
   successfully. Without that, the marketplace branch is silently skipped and the server still boots

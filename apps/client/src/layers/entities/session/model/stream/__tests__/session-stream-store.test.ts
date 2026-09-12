@@ -36,6 +36,7 @@ function snapshot(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot {
     status: STATUS,
     pendingInteractions: [],
     queuedMessages: [],
+    canvas: [],
     cursor: 5,
     ...overrides,
   };
@@ -1297,6 +1298,11 @@ describe('useSessionStreamStore — live background children', () => {
     return { type: 'subagent_update', seq, taskId, status } as SessionEvent;
   }
 
+  /** The same, marked as housekeeping the runtime asked indicators to ignore. */
+  function ambientChild(seq: number, taskId: string, status: string): SessionEvent {
+    return { type: 'subagent_update', seq, taskId, status, ambient: true } as SessionEvent;
+  }
+
   beforeEach(() => {
     store.setState({ sessions: {}, sessionAccessOrder: [], pinnedSessionId: null });
   });
@@ -1315,6 +1321,92 @@ describe('useSessionStreamStore — live background children', () => {
     expect(store.getState().sessions[SID]?.inProgressTurn).toEqual([]);
     expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(2);
     expect(store.getState().sessions[SID]?.status?.lifecycle).toBe('idle');
+  });
+
+  // Spec `ambient-background-tasks`: the runtime marks work it started on its
+  // own behalf, and every indicator — this count included — leaves it out.
+  it('never counts a housekeeping child', () => {
+    store.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
+    store.getState().applyEvent(SID, child(1, 'real', 'running'));
+    store.getState().applyEvent(SID, ambientChild(2, 'chore', 'running'));
+    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(1);
+
+    // The terminal update carries the mark too, so the ending of a child that
+    // never entered the count cannot be booked against a child that did.
+    store.getState().applyEvent(SID, ambientChild(3, 'chore', 'complete'));
+    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(1);
+
+    store.getState().applyEvent(SID, child(4, 'real', 'complete'));
+    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(0);
+  });
+
+  // The bug this pins: only the START and the terminal update carry the mark.
+  // Reading the event's own field alone let the progress report in the middle —
+  // which carries no mark — push a housekeeping child INTO the count, while its
+  // marked terminal update was skipped as housekeeping and never took it out.
+  // The count then sat at one for the rest of the turn with nothing left to
+  // retire it, in the status line and the session inspector both.
+  it('does not let a progress report pull a housekeeping child into the count', () => {
+    store.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
+    store.getState().applyEvent(SID, ambientChild(1, 'chore', 'running'));
+    // The progress report: same status, no mark.
+    store.getState().applyEvent(SID, child(2, 'chore', 'running'));
+    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(0);
+
+    store.getState().applyEvent(SID, ambientChild(3, 'chore', 'complete'));
+    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(0);
+    expect(store.getState().sessions[SID]?.runningSubagentIds).toEqual([]);
+    // …and the id is forgotten, so the list stays bounded by live children.
+    expect(store.getState().sessions[SID]?.ambientSubagentIds).toEqual([]);
+  });
+
+  it('drains a housekeeping child the server retires as untracked', () => {
+    store.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
+    store.getState().applyEvent(SID, ambientChild(1, 'chore', 'running'));
+    store.getState().applyEvent(SID, child(2, 'chore', 'running'));
+    // Asserted here as well as at the end: the terminal arm below repairs a
+    // count that went wrong, so only a check while the child is still running
+    // can tell "never counted" from "counted, then quietly fixed".
+    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(0);
+
+    store.getState().applyEvent(SID, ambientChild(3, 'chore', 'untracked'));
+
+    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(0);
+    expect(store.getState().sessions[SID]?.ambientSubagentIds).toEqual([]);
+  });
+
+  // A snapshot's own events carry the mark, and the live events that follow it
+  // carry it no more reliably than the ones inside it did — so hydration has to
+  // seed the remembered set, not just filter the count once.
+  it('remembers the mark across hydration, so the next progress report is still skipped', () => {
+    store.getState().applySnapshot(
+      SID,
+      snapshot({
+        cursor: 10,
+        status: { ...STATUS, runningSubagentCount: 0 },
+        inProgressTurn: [ambientChild(9, 'chore', 'running')],
+      })
+    );
+    expect(store.getState().sessions[SID]?.ambientSubagentIds).toEqual(['chore']);
+
+    store.getState().applyEvent(SID, child(11, 'chore', 'running'));
+    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(0);
+  });
+
+  it('leaves a housekeeping child out when a snapshot re-baselines the count', () => {
+    store.getState().applySnapshot(
+      SID,
+      snapshot({
+        cursor: 10,
+        // The server's own count already excludes the housekeeping child.
+        status: { ...STATUS, runningSubagentCount: 1 },
+        inProgressTurn: [child(8, 'real', 'running'), ambientChild(9, 'chore', 'running')],
+      })
+    );
+
+    expect(store.getState().sessions[SID]?.runningSubagentIds).toEqual(['real']);
+    expect(store.getState().sessions[SID]?.unnamedRunningSubagents).toBe(0);
+    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(1);
   });
 
   it('does not double-count a child that keeps reporting progress', () => {

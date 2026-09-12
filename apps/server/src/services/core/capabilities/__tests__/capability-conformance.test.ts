@@ -570,6 +570,39 @@ capabilityConformance(registry, {
     'rooms.remove_members': { roomId: CONFORMANCE_ROOM_ID, members: ['@conformance'] },
     'rooms.update': { roomId: CONFORMANCE_ROOM_ID, topic: 'what this room is for' },
     'rooms.leave': { roomId: CONFORMANCE_ROOM_ID },
+    // The canvas read (DOR-1999), against the same harness room. With no
+    // `documentId` it LISTS what is on the table, which is the arm that needs no
+    // document to exist — so the verb really runs and answers `{ documents: [] }`
+    // rather than a structured refusal that would read as "wired" without ever
+    // reaching the service.
+    'rooms.read_canvas': { roomId: CONFORMANCE_ROOM_ID },
+    // The SESSION canvas read (spec `canvas-agent-seat` §1.8). Its input is a
+    // document id and nothing else — there is no session argument, which is the
+    // whole security property — so the conformance call runs the handler with no
+    // session in context and gets the sentence that says so. That is the verb
+    // really running: a wiring fault would throw instead.
+    'ui.read_canvas_document': { documentId: 'conformance-document' },
+    // The rest of the `ui` domain (spec `canvas-agent-seat` §5). None of them
+    // takes a session argument — the surface supplies that, which is the whole
+    // security property — so every one of these runs with no session in context
+    // and answers the sentence that says so. That IS the verb really running: a
+    // wiring fault would throw instead.
+    //
+    // Each fixture is a call that would really do something if a window were
+    // there, so a schema that stopped advertising an argument reds here too.
+    'ui.control': { action: 'show_toast', message: 'conformance', level: 'info' },
+    'ui.state': {},
+    'ui.read_console': { level: 'error', limit: 5 },
+    'ui.read_network': { status: 'failed', limit: 5 },
+    'ui.screenshot': {},
+    'ui.click': { role: 'button', name: 'Continue' },
+    'ui.type': { selector: '#email', text: 'conformance@example.test' },
+    'ui.press': { key: 'Enter' },
+    'ui.scroll': { to: 'bottom' },
+    'ui.wait_for': { text: 'Done', timeoutMs: 1_000 },
+    'ui.read_page': {},
+    'ui.record_start': {},
+    'ui.record_stop': {},
   },
 });
 

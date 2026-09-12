@@ -122,6 +122,7 @@ function snapshotWith(lifecycle: SessionStatus['lifecycle'], cursor: number): Se
     },
     pendingInteractions: [],
     queuedMessages: [],
+    canvas: [],
     cursor,
   };
 }

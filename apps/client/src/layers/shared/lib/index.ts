@@ -8,6 +8,16 @@
  * @module shared/lib
  */
 export { cn } from './utils';
+export {
+  isAmbientTask,
+  partitionAmbientTasks,
+  type AmbientTaskInput,
+  type PartitionedAmbientTasks,
+} from './ambient-tasks';
+// Re-exported from `@dorkos/shared` so client code keeps importing it from the
+// `lib` barrel; the definition moved there when the server started needing it
+// too (spec `canvas-agent-seat`).
+export { canvasViewForContent, type CanvasView } from '@dorkos/shared/canvas-view';
 export { resolveApiBaseUrl } from './api-base-url';
 export { getDesktopAdmin, unwrapDesktopAdminResult } from './desktop-admin';
 export {
@@ -194,7 +204,6 @@ export {
   STORAGE_KEYS,
   FONT_SCALE_MAP,
   MAX_RECENT_CWDS,
-  MAX_CANVAS_SESSIONS,
   MAX_CANVAS_DOCUMENTS,
   MAX_RIGHT_PANEL_LAYOUTS,
   TIMING,
@@ -259,7 +268,10 @@ export { createModalHandoff } from './modal-handoff';
 export { useRenderSlot, useLatest, type RenderSlot } from './use-render-slot';
 export {
   executeUiCommand,
+  isLocalUiOnlyCommand,
   revealCanvas,
+  revealBrowser,
+  revealForContent,
   type DispatcherContext,
   type DispatcherStore,
   type UiCommandOrigin,

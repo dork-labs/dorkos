@@ -127,6 +127,17 @@ import {
   RoomListResponseSchema,
   ThreadListResponseSchema,
   RoomRosterEntrySchema,
+  CanvasDocumentSchema,
+  CanvasDocumentListResponseSchema,
+  CanvasEditingRequestSchema,
+  CanvasViewingRequestSchema,
+  CanvasEditingResponseSchema,
+  CanvasThreadResponseSchema,
+  FollowRoomMemberRequestSchema,
+  PublishRoomViewRequestSchema,
+  PublishRoomViewResponseSchema,
+  OpenCanvasDocumentRequestSchema,
+  UpdateCanvasDocumentRequestSchema,
   RoomSnapshotSchema,
   RoomWithRosterSchema,
   SetAuthorHandleRequestSchema,
@@ -139,10 +150,14 @@ import { ROOM_EXPORT_CONTENT_TYPE, RoomExportLineSchema } from '@dorkos/shared/r
 import {
   RoomBranchStatusSchema as SharedRoomBranchStatusSchema,
   RoomMainStatusSchema as SharedRoomMainStatusSchema,
+  RoomMergeResultSchema as SharedRoomMergeResultSchema,
   RoomRepoStatusSchema as SharedRoomRepoStatusSchema,
   RoomStrayChangeSchema as SharedRoomStrayChangeSchema,
 } from '@dorkos/shared/room-repo';
 import {
+  RoomCanvasDiffReviewSchema,
+  RoomCanvasDiffWriteRequestSchema,
+  RoomCanvasDiffWriteResultSchema,
   RoomFileConflictResponseSchema,
   RoomFileContentQuerySchema,
   RoomFileContentResponseSchema,
@@ -4510,6 +4525,14 @@ const RoomMainStatusSchema = z
   })
   .openapi('RoomMainStatus');
 
+/**
+ * What a completed merge answers — derived from the shared schema exactly as
+ * the rows above are, and for the reasons their doc gives.
+ */
+const RoomMergeResultSchema = z
+  .object(SharedRoomMergeResultSchema.shape)
+  .openapi('RoomMergeResult');
+
 /** What `GET /api/rooms/{id}/repo/status` answers. */
 const RoomRepoStatusSchema = z
   .object({
@@ -4521,18 +4544,6 @@ const RoomRepoStatusSchema = z
     main: RoomMainStatusSchema,
   })
   .openapi('RoomRepoStatus');
-
-/** What a completed merge answers. */
-const RoomMergeResultSchema = z
-  .object({
-    branch: z.string(),
-    commit: z.string().describe('The merge commit now on the room’s `main`.'),
-    files: z.number().int(),
-    insertions: z.number().int(),
-    deletions: z.number().int(),
-    seq: z.number().int().describe('The `seq` of the room entry announcing the merge.'),
-  })
-  .openapi('RoomMergeResult');
 
 registry.registerPath({
   method: 'get',
@@ -4767,6 +4778,568 @@ registry.registerPath({
         'The room has no files of its own, or room files are switched off on this install (`ROOM_HAS_NO_REPO`); or this machine has no git (`ROOM_REPO_GIT_UNAVAILABLE`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
+  },
+});
+
+/** `:id` plus the `:documentId` a canvas route addresses. */
+const RoomCanvasParams = RoomIdParams.extend({ documentId: z.string().min(1) });
+
+/** 404 shared by the canvas routes that name a document. */
+const canvasDocumentNotFound = {
+  description: 'No such room, the caller may not see it, or no such document on its canvas',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/rooms/{id}/canvas',
+  tags: ['Rooms'],
+  summary: "Read everything on a room's shared canvas",
+  description:
+    "The room's own table: the documents its members — people and agents alike — have put in front of each other. Pinned first, then most recently active. Content travels with each document, because a viewer that holds the row has to be able to draw it; what does NOT travel is a file's contents, which each viewer reads through the file route it already uses. **The stream is how an app stays current, not this route**: a cold `GET /api/rooms/{id}/events` carries the whole table in its snapshot and every later change arrives as a `canvas` frame. This exists for agents, for tests, and for a cold read without a stream. It still answers for an ARCHIVED room — reads always do; it is writes that stop.",
+  request: { params: RoomIdParams },
+  responses: {
+    200: {
+      description: "The room's canvas, pinned first then most recently active",
+      content: { 'application/json': { schema: CanvasDocumentListResponseSchema } },
+    },
+    401: roomAgentUnverified,
+    404: roomNotFound,
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/rooms/{id}/canvas/{documentId}',
+  tags: ['Rooms'],
+  summary: 'Read one document on a room’s canvas',
+  description:
+    'One row, content included. A document id from ANOTHER room answers exactly as one that never existed, so an id is never a way to read across rooms.',
+  request: { params: RoomCanvasParams },
+  responses: {
+    200: {
+      description: 'The document',
+      content: { 'application/json': { schema: CanvasDocumentSchema } },
+    },
+    401: roomAgentUnverified,
+    404: canvasDocumentNotFound,
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/rooms/{id}/canvas',
+  tags: ['Rooms'],
+  summary: "Put something on a room's canvas",
+  description:
+    'Opens a document as YOU — the author is resolved from the request and never sent. Content with a natural identity (a file path, a URL) DEDUPES: opening something that is already on the table refreshes that document rather than adding a second tab beside it, which is what makes the canvas a table rather than a pile. `json` and `widget` have no such identity, so every open of one is a fresh document. Past twelve unpinned documents the least recently active is dropped to make room, and every viewer is told. Refused on an archived room.',
+  request: {
+    params: RoomIdParams,
+    body: { content: { 'application/json': { schema: OpenCanvasDocumentRequestSchema } } },
+  },
+  responses: {
+    201: {
+      description: 'The document, as every viewer now has it',
+      content: { 'application/json': { schema: CanvasDocumentSchema } },
+    },
+    400: roomValidationError,
+    401: roomAgentUnverified,
+    404: roomNotFound,
+    409: {
+      description:
+        'The room is archived, or somebody else is editing the document this would have refreshed',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/rooms/{id}/canvas/{documentId}',
+  tags: ['Rooms'],
+  summary: 'Change one document on a room’s canvas',
+  description:
+    "Three independent changes, any of which may be omitted: replace what the document shows, pin or unpin it, and move it to the front of the list. **`activate` changes the ORDER and nobody's open tab.** A shared canvas that yanked everyone's view when somebody clicked would be the pixel version of interrupting, so ordering on the server is not a remote-control verb. Refused on an archived room, and refused while another member is editing the document.",
+  request: {
+    params: RoomCanvasParams,
+    body: { content: { 'application/json': { schema: UpdateCanvasDocumentRequestSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'The document, as every viewer now has it',
+      content: { 'application/json': { schema: CanvasDocumentSchema } },
+    },
+    400: roomValidationError,
+    401: roomAgentUnverified,
+    404: canvasDocumentNotFound,
+    409: {
+      description: 'The room is archived, or somebody else is editing this document',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/rooms/{id}/canvas/{documentId}',
+  tags: ['Rooms'],
+  summary: 'Take a document off a room’s canvas',
+  description:
+    'The row is deleted rather than marked closed, and every viewer is told to drop it. Nothing needs a tombstone: a viewer that reconnects hydrates the whole table from the room snapshot, so a close it missed corrects itself. Refused on an archived room.',
+  request: { params: RoomCanvasParams },
+  responses: {
+    204: { description: 'Closed' },
+    401: roomAgentUnverified,
+    404: canvasDocumentNotFound,
+    409: {
+      description: 'The room is archived',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/rooms/{id}/canvas/{documentId}/editing',
+  tags: ['Rooms'],
+  summary: 'Say you are editing a canvas document, or that you have stopped',
+  description:
+    'While you hold this, an agent\'s change to the same document is HELD rather than applied, and the agent is told it was held instead of being told it succeeded. Refresh it about every fifteen seconds while an editor is focused; it lapses on its own about forty-five seconds after the last refresh, so a browser that crashed mid-edit cannot leave a document nobody can touch. Send `{"editing": false}` on save, on close, and when you look away without changing anything.',
+  request: {
+    params: RoomCanvasParams,
+    body: { content: { 'application/json': { schema: CanvasEditingRequestSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'Who holds the lock now, and when it lapses',
+      content: { 'application/json': { schema: CanvasEditingResponseSchema } },
+    },
+    400: roomValidationError,
+    401: roomAgentUnverified,
+    404: canvasDocumentNotFound,
+    409: {
+      description: 'The room is archived, or somebody else already holds this lock',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/rooms/{id}/canvas/{documentId}/thread',
+  tags: ['Rooms'],
+  summary: 'Open a canvas document’s discussion, or re-open it',
+  description:
+    'The first call posts one message from the room naming the document and records which message heads the discussion; every call after that hands back the discussion that is already there and posts nothing. So two people pressing "Discuss" at the same moment — or the same person pressing it next week, on another device — all end up in one conversation. It wakes nobody: the message addresses no one and starts no agent’s turn, exactly as putting the document on the table did. Replies are ordinary thread replies.',
+  request: { params: RoomCanvasParams },
+  responses: {
+    200: {
+      description: 'The discussion was already open',
+      content: { 'application/json': { schema: CanvasThreadResponseSchema } },
+    },
+    201: {
+      description: 'The discussion was opened by this call',
+      content: { 'application/json': { schema: CanvasThreadResponseSchema } },
+    },
+    401: roomAgentUnverified,
+    404: canvasDocumentNotFound,
+    409: {
+      description: 'The room is archived',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+// === Following somebody's browser (spec `canvas-agent-seat` §6) ===
+//
+// People only, both ends: an agent has no view to share and nothing to follow
+// with, and it reads a room's table with `read_canvas` instead. Nothing here is
+// written down — a claim lives in this process, lapses thirty seconds after the
+// last refresh, and is gone when the server restarts.
+
+/** 403 shared by the follow routes, which no agent may call. */
+const followPeopleOnly = {
+  description: 'The caller is an agent, which cannot follow or be followed (`PEOPLE_ONLY`)',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
+
+/**
+ * 403 on both review routes: reading or changing somebody ELSE's working copy is
+ * a person's, on the same instrument `PUT /:id/files/content` uses.
+ */
+const canvasDiffPeopleOnly = {
+  description:
+    'The caller is an agent; only people review somebody else’s working copy (`PEOPLE_ONLY`)',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
+
+/**
+ * 404 on both: a room the caller may not see, a room that is not there, and a
+ * document this canvas does not hold all answer alike.
+ *
+ * The last of those is why this is its own helper rather than
+ * `canvasDocumentNotFound`: the review can also answer 404 because the FILE is
+ * not in the working copy any more (`ROOM_FILE_NOT_FOUND`), which a client
+ * drawing "this file has moved on" needs named.
+ */
+const canvasDiffNotFound = {
+  description:
+    'No such room, or the caller is not a member of it (`ROOM_NOT_FOUND`) — the same answer for both — no such document on this room’s canvas (`CANVAS_DOCUMENT_NOT_FOUND`), or the file is not in that working copy any more (`ROOM_FILE_NOT_FOUND`)',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
+
+/**
+ * 400 on the read: the document is not a review, or its stored tree or path is
+ * not one this room keeps.
+ *
+ * A 400 rather than a 409 because `CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM` is
+ * what the room's error table maps it to — the request named something this
+ * surface has no answer for, rather than meeting a room state that will change.
+ */
+const canvasDiffNotReviewable = {
+  description:
+    'The document is not a review of somebody’s working copy, or its tree or path is not one this room keeps (`CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM`)',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
+
+/** 409 on the read: the one room-state refusal it can meet. */
+const canvasDiffNoRoomFiles = {
+  description: 'This room has no files of its own (`NOT_A_PROJECT_ROOM`)',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/rooms/{id}/follow',
+  tags: ['Rooms'],
+  summary: 'Follow somebody’s browser in this room, or say you still are',
+  description:
+    'While you follow somebody, your Browser tab goes where theirs goes. Call this again about every ten seconds to say you are still there: a claim nobody restates lapses after thirty, which is what makes a closed tab, a crashed browser and a lost connection the same event. Following somebody new replaces whoever you were following — a panel can only be in one place. The person you follow is told, and starts sharing their position only then, so a room where nobody follows anybody carries nothing extra at all.',
+  request: {
+    params: RoomIdParams,
+    body: { content: { 'application/json': { schema: FollowRoomMemberRequestSchema } } },
+  },
+  responses: {
+    204: { description: 'Following' },
+    400: {
+      description: 'The request named you (`CANNOT_FOLLOW_YOURSELF`), or was malformed',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    401: roomAgentUnverified,
+    403: followPeopleOnly,
+    404: roomNotFound,
+    429: {
+      description:
+        'This machine is already holding as many claims as it will (`TOO_MANY_FOLLOWERS`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/rooms/{id}/follow',
+  tags: ['Rooms'],
+  summary: 'Stop following whoever you were following here',
+  description:
+    'Answers the same way whether or not there was anything to stop, so pressing the toggle off twice — or a page closing after its claim already lapsed — is not an error. The person you were following is told, and goes quiet unless somebody else is still following them.',
+  request: { params: RoomIdParams },
+  responses: {
+    204: { description: 'Stopped' },
+    401: roomAgentUnverified,
+    403: followPeopleOnly,
+    404: roomNotFound,
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/rooms/{id}/follow/view',
+  tags: ['Rooms'],
+  summary: 'Say where you are looking, for whoever is following you',
+  description:
+    'Send at most once every 250 ms, and only while somebody is following you. It carries which document you are on, the page your browser is showing and how far down you have scrolled — never anything that is IN the page. The answer says whether anybody was following: `false` means stop sending, which is how a tab that missed the "nobody is following you any more" message goes quiet on its own.',
+  request: {
+    params: RoomIdParams,
+    body: { content: { 'application/json': { schema: PublishRoomViewRequestSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'Whether anybody was following, and the position therefore passed on',
+      content: { 'application/json': { schema: PublishRoomViewResponseSchema } },
+    },
+    400: roomValidationError,
+    401: roomAgentUnverified,
+    403: followPeopleOnly,
+    404: roomNotFound,
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/rooms/{id}/canvas/{documentId}/diff',
+  tags: ['Rooms'],
+  summary: 'Read the two copies of the file behind a worktree diff',
+  description:
+    'The room’s own copy of the file and the member’s working copy, so the review can be drawn side by side. **Not the ordinary file API**: a member’s working copy lives under the DorkOS data directory, which the raw file surfaces are deliberately confined out of — so this names a room and a DOCUMENT, and the tree and the path both come off that row rather than being chosen by the caller. `base` is the empty string for a file this work ADDS, which is ordinary rather than an error. **People only, unlike every other room read**: this hands back the contents of somebody ELSE’s working copy, which an agent is refused everywhere else, so a member agent is refused 403 `PEOPLE_ONLY` — the same instrument `PUT /:id/files/content` uses. Membership is asked FIRST, so a caller who is not on the roster gets the same 404 an unknown room gets and never learns the room exists. Any member who is a person may read it; whether they may MERGE what they see is a separate question, answered by `POST /:id/repo/merge`, which is the owner’s alone.',
+  request: { params: RoomCanvasParams },
+  responses: {
+    200: {
+      description: 'Both copies, and the fingerprint a later write must carry back',
+      content: { 'application/json': { schema: RoomCanvasDiffReviewSchema } },
+    },
+    400: canvasDiffNotReviewable,
+    401: roomAgentUnverified,
+    403: canvasDiffPeopleOnly,
+    404: canvasDiffNotFound,
+    409: canvasDiffNoRoomFiles,
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/rooms/{id}/canvas/{documentId}/diff',
+  tags: ['Rooms'],
+  summary: 'Put a reviewed file back in the member’s working copy',
+  description:
+    'How turning a hunk down lands: the whole file, conditional on the hash the diff was computed against. A file the agent changed in between answers `ok: false` carrying what it holds now — a conflict is control flow, and the screen recomputes rather than clobbering work that carried on. **People only** (403 `PEOPLE_ONLY`), on the same instrument `PUT /:id/files/content` uses: this writes into a colleague’s checkout, and an agent doing that leaves that colleague dirty — the state their own merge then refuses. Membership is asked first, so a non-member still gets 404. Any member who is a person may send a hunk back; only the owner may merge. Archived rooms refuse it 409, like every other canvas write.',
+  request: {
+    params: RoomCanvasParams,
+    body: { content: { 'application/json': { schema: RoomCanvasDiffWriteRequestSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'What was written, or what the file holds now',
+      content: { 'application/json': { schema: RoomCanvasDiffWriteResultSchema } },
+    },
+    400: {
+      description:
+        'The body is not a valid request, or the document is not a review of a working copy this room keeps (`CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    401: roomAgentUnverified,
+    403: canvasDiffPeopleOnly,
+    404: canvasDiffNotFound,
+    409: {
+      description:
+        'The room is archived (`ROOM_ARCHIVED`), or it has no files of its own (`NOT_A_PROJECT_ROOM`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+// === The session canvas (spec `canvas-agent-seat` §1.6) ===
+//
+// The same table the room canvas uses, under a `session:` scope. A person is the
+// gate: an agent is refused 403 `PEOPLE_ONLY` and reaches its own canvas through
+// `control_ui` and `read_canvas_document` instead, neither of which takes a
+// session id it could point somewhere else.
+
+/** Path params for a session-canvas route that names one document. */
+const SessionCanvasParams = z.object({
+  id: z.string().min(1),
+  documentId: z.string().min(1),
+});
+
+/** Path params for a session-canvas route that names only the session. */
+const SessionCanvasIdParams = z.object({ id: z.string().min(1) });
+
+/** 403 for an agent: a session's canvas belongs to the person whose session it is. */
+const sessionCanvasPeopleOnly = {
+  description: 'A session’s canvas is the person’s own',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
+
+/** 404 for a document this session's canvas does not hold. */
+const sessionCanvasDocumentNotFound = {
+  description: 'No such document on this canvas',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
+
+/** 400 for an `:id` that is not a session id. Every route here answers it. */
+const sessionCanvasInvalidId = {
+  description: 'That is not a session id',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
+
+/** 400 on the routes that also carry a body, which can be refused for either reason. */
+const sessionCanvasBadRequest = {
+  description: 'That is not a session id, or the body is not a valid request',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
+
+/** 401 for an agent identity this machine cannot verify. */
+const sessionCanvasIdentityUnverified = {
+  description: 'That agent identity could not be verified — its token may be revoked or expired',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
+
+/**
+ * 503 for a process that stood no canvas up.
+ *
+ * A real answer, not a theoretical one: a host reading somebody else's database
+ * read-only registers no canvas writer on purpose, and an honest refusal beats
+ * a fabricated empty table.
+ */
+const sessionCanvasUnavailable = {
+  description: 'This server has no canvas',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/sessions/{id}/canvas',
+  tags: ['Sessions'],
+  summary: 'Everything on this session’s canvas',
+  description:
+    "The documents open in this session's right panel, pinned first then most recently active — the same table on every device you open the session on. **The stream is how an app stays current, not this route**: a cold `GET /api/sessions/{id}/events` carries the whole canvas in its snapshot and every later change arrives as a `canvas` event. This exists for a cold read without a stream.",
+  request: { params: SessionCanvasIdParams },
+  responses: {
+    200: {
+      description: 'The session’s canvas, pinned first then most recently active',
+      content: { 'application/json': { schema: CanvasDocumentListResponseSchema } },
+    },
+    400: sessionCanvasInvalidId,
+    401: sessionCanvasIdentityUnverified,
+    403: sessionCanvasPeopleOnly,
+    503: sessionCanvasUnavailable,
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/sessions/{id}/canvas/{documentId}',
+  tags: ['Sessions'],
+  summary: 'Read one document on this session’s canvas',
+  description:
+    'One row, content included. A document id from another session answers exactly as one that never existed, so an id is never a way to read across sessions.',
+  request: { params: SessionCanvasParams },
+  responses: {
+    200: {
+      description: 'The document',
+      content: { 'application/json': { schema: CanvasDocumentSchema } },
+    },
+    400: sessionCanvasInvalidId,
+    401: sessionCanvasIdentityUnverified,
+    403: sessionCanvasPeopleOnly,
+    503: sessionCanvasUnavailable,
+    404: sessionCanvasDocumentNotFound,
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/sessions/{id}/canvas',
+  tags: ['Sessions'],
+  summary: 'Put something on this session’s canvas',
+  description:
+    'Content with a natural identity (a file path, a URL) DEDUPES: opening something already on the canvas refreshes that document rather than adding a second tab beside it, so two windows of one session land on one document. `json` and `widget` have no such identity, so every open of one is a fresh document. Past twelve unpinned documents the least recently active is dropped, and every window is told.',
+  request: {
+    params: SessionCanvasIdParams,
+    body: { content: { 'application/json': { schema: OpenCanvasDocumentRequestSchema } } },
+  },
+  responses: {
+    201: {
+      description: 'The document, as every window now has it',
+      content: { 'application/json': { schema: CanvasDocumentSchema } },
+    },
+    400: sessionCanvasBadRequest,
+    401: sessionCanvasIdentityUnverified,
+    403: sessionCanvasPeopleOnly,
+    404: {
+      description: 'That id names no session this server knows',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'Somebody is editing the document this would have refreshed',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    503: sessionCanvasUnavailable,
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/sessions/{id}/canvas/{documentId}',
+  tags: ['Sessions'],
+  summary: 'Change one document on this session’s canvas',
+  description:
+    'Three independent changes, any of which may be omitted: replace what the document shows, pin or unpin it, and move it to the front of the list.',
+  request: {
+    params: SessionCanvasParams,
+    body: { content: { 'application/json': { schema: UpdateCanvasDocumentRequestSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'The document, as every window now has it',
+      content: { 'application/json': { schema: CanvasDocumentSchema } },
+    },
+    400: sessionCanvasBadRequest,
+    401: sessionCanvasIdentityUnverified,
+    403: sessionCanvasPeopleOnly,
+    503: sessionCanvasUnavailable,
+    404: sessionCanvasDocumentNotFound,
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/sessions/{id}/canvas/{documentId}',
+  tags: ['Sessions'],
+  summary: 'Take a document off this session’s canvas',
+  description:
+    'The row is deleted and every window of this session is told to drop it. Nothing needs a tombstone: a window that reconnects hydrates the whole canvas from the session snapshot, so a close it missed corrects itself.',
+  request: { params: SessionCanvasParams },
+  responses: {
+    204: { description: 'Closed' },
+    400: sessionCanvasInvalidId,
+    401: sessionCanvasIdentityUnverified,
+    403: sessionCanvasPeopleOnly,
+    503: sessionCanvasUnavailable,
+    404: sessionCanvasDocumentNotFound,
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/sessions/{id}/canvas/{documentId}/editing',
+  tags: ['Sessions'],
+  summary: 'Say you are editing a canvas document, or that you have stopped',
+  description:
+    "While you hold this, the agent's change to the same document is HELD rather than applied, and the agent is told it was held instead of being told it succeeded. Refresh it about every fifteen seconds while an editor is focused; it lapses on its own about forty-five seconds after the last refresh, so a browser that crashed mid-edit cannot leave a document nobody can touch.",
+  request: {
+    params: SessionCanvasParams,
+    body: { content: { 'application/json': { schema: CanvasEditingRequestSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'Who holds the lock now, and when it lapses',
+      content: { 'application/json': { schema: CanvasEditingResponseSchema } },
+    },
+    400: sessionCanvasBadRequest,
+    401: sessionCanvasIdentityUnverified,
+    403: sessionCanvasPeopleOnly,
+    503: sessionCanvasUnavailable,
+    404: sessionCanvasDocumentNotFound,
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/rooms/{id}/canvas/viewing',
+  tags: ['Rooms'],
+  summary: 'Say which canvas document you are looking at',
+  description:
+    'Puts a small face on that document’s tab for everybody else looking at this room, and takes it off again when you send `{"documentId": null}`. **Nothing is written down.** The whole effect is one live-only frame on the room’s stream, so a reader who connects afterwards never learns it and a reconnect forgets it — a face left on a document somebody walked away from ten minutes ago would be worse than no face. Send it when the document you are looking at changes, and once with `null` on the way out. It answers for an archived room, because looking at one is allowed.',
+  request: {
+    params: RoomIdParams,
+    body: { content: { 'application/json': { schema: CanvasViewingRequestSchema } } },
+  },
+  responses: {
+    204: { description: 'Told the room' },
+    400: roomValidationError,
+    401: roomAgentUnverified,
+    404: canvasDocumentNotFound,
   },
 });
 

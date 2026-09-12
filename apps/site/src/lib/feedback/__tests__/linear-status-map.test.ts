@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { mapLinearStateToStatus, resolveShippedVersion } from '../linear-status-map';
 
 describe('mapLinearStateToStatus', () => {
-  it('maps every canonical Linear state type to a cockpit status', () => {
+  it('maps every Linear state type this pipeline handles to a public status', () => {
     expect(mapLinearStateToStatus({ type: 'triage' })).toBe('triaged');
     expect(mapLinearStateToStatus({ type: 'backlog' })).toBe('triaged');
     expect(mapLinearStateToStatus({ type: 'unstarted' })).toBe('triaged');
@@ -11,6 +11,15 @@ describe('mapLinearStateToStatus', () => {
     expect(mapLinearStateToStatus({ type: 'completed' })).toBe('shipped');
     expect(mapLinearStateToStatus({ type: 'canceled' })).toBe('closed');
     expect(mapLinearStateToStatus({ type: 'cancelled' })).toBe('closed');
+    expect(mapLinearStateToStatus({ type: 'duplicate' })).toBe('closed');
+  });
+
+  it('maps a "duplicate" type to closed by TYPE, surviving a renamed state', () => {
+    // The name fallback is deliberately bypassed: `name` here matches nothing
+    // in NAME_TO_STATUS, so only the `duplicate` key in TYPE_TO_STATUS can
+    // satisfy this. Without that key the reporter's public status page would
+    // freeze at "triaged" the moment a team renames its Duplicate state.
+    expect(mapLinearStateToStatus({ type: 'duplicate', name: 'anything-renamed' })).toBe('closed');
   });
 
   it('is not a 1:1 mirror — several Linear types collapse into "triaged"', () => {

@@ -18,6 +18,7 @@ import {
 import { TEAM_ROOM_WELL_KNOWN } from '@dorkos/shared/room-schemas';
 import { configManager } from '../core/config-manager.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
+import { onProjectorTurnBoundary } from '../session/session-state-projector.js';
 import { ReadCursorService } from '../core/read-cursor-service.js';
 import { ReadCursorStore } from '../core/read-cursor-store.js';
 import { readOwnerAccount } from '../core/auth/index.js';
@@ -30,6 +31,14 @@ import type { CollectWindow } from './room-collect.js';
 import type { ResponseGateMode } from './response-gate/routing-rules.js';
 import { ReactionBudget } from './reactions/reaction-budget.js';
 import { ReactionStore } from './reactions/reaction-store.js';
+import {
+  CanvasDocumentStore,
+  CanvasService,
+  parseScope,
+  publishSessionCanvas,
+  sessionCanvasViewers,
+  setCanvasService,
+} from '../canvas/index.js';
 import { AttachmentRowStore } from './attachments/attachment-row-store.js';
 import type { RoomAttachmentStore } from './attachments/room-attachment-store.js';
 import type { RoomRepoService } from './repo/room-repo-service.js';
@@ -78,6 +87,17 @@ export interface RoomSubsystem {
    * than a tab that happens to be open, says somebody is at the keyboard.
    */
   welcomeBack: WelcomeBackGreeter;
+  /**
+   * The one canvas writer built over this database, handed back rather than only
+   * registered.
+   *
+   * A READ-ONLY subsystem does not register it (see the construction below), so
+   * a host that wants the read half — the Obsidian embed showing this machine's
+   * session canvas — has to be given it explicitly. That is the point: the thing
+   * you can be handed is the thing you can read through, and the thing nobody
+   * registered is the thing no agent path can write through.
+   */
+  canvas: CanvasService;
 }
 
 /**
@@ -201,6 +221,22 @@ function readRoomMinutesMs(field: 'replyWaitMinutes' | 'lateReplyCeilingMinutes'
 }
 
 /**
+ * This install's extension → viewer overrides, or `undefined` when it has none.
+ *
+ * Read through the same tolerant path the room limits use: a config store that
+ * cannot be read must not stop somebody opening a file, so an unreadable config
+ * means the built-in viewer table, which is what every install without an
+ * override already gets.
+ */
+function readViewerOverrides(): Record<string, string> | undefined {
+  try {
+    return configManager.get('workbench')?.defaultViewers;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * The live engaged-window ceilings, degrading to the shipped defaults the same
  * way {@link readMaxAgentDepth} does.
  *
@@ -270,6 +306,24 @@ function readMaxAttachmentsPerEntry(): number {
     return configManager.get('uploads').maxFiles;
   } catch {
     return USER_CONFIG_DEFAULTS.uploads.maxFiles;
+  }
+}
+
+/**
+ * How many times one agent may change a room's shared canvas inside one turn,
+ * read live from `rooms.maxCanvasOpsPerTurn` and degrading to the shipped
+ * default the same way {@link readMaxPostsPerTurn} does (spec `room-canvas`
+ * §3.4).
+ *
+ * Failing to the default keeps the limit BOUNDED, which is the only safe
+ * direction here too: an unreadable config must never let one turn bury a room's
+ * table under tabs nobody asked for.
+ */
+function readMaxCanvasOpsPerTurn(): number {
+  try {
+    return configManager.get('rooms').maxCanvasOpsPerTurn;
+  } catch {
+    return USER_CONFIG_DEFAULTS.rooms.maxCanvasOpsPerTurn;
   }
 }
 
@@ -356,6 +410,8 @@ function safeJson(raw: string): unknown {
  *   one the rest of the server holds — a second instance over the same database
  *   behaves identically, so the default exists for tests and for the embedded
  *   transport, not as a second source of truth.
+ * @param opts.canvasNow - The clock the canvas judges an edit lock against, so a
+ *   test can move past its 45-second TTL without waiting.
  */
 export function createRoomSubsystem(opts: {
   db: Db;
@@ -363,6 +419,7 @@ export function createRoomSubsystem(opts: {
   turns?: RoomTurnRunner;
   budget?: RoomTurnBudget;
   readCursors?: ReadCursorService;
+  canvasNow?: () => number;
   /**
    * Whether this subsystem sits on a database it may not write (DOR-1563).
    *
@@ -376,15 +433,54 @@ export function createRoomSubsystem(opts: {
   const store = new RoomStore(opts.db);
   const limitsFor = createRoomLimitsResolver(store);
   const reactions = new ReactionStore(opts.db);
+  const canvasDocuments = new CanvasDocumentStore(opts.db);
   const attachments = new AttachmentRowStore(opts.db);
   const agentLookup = opts.agents ?? createAgentLookup(opts.db);
   const authors = new AuthorRegistry(opts.db, agentLookup);
   const broadcaster = new RoomBroadcaster();
+  // **One canvas service per process, built here and registered here.** It is
+  // the single writer for every scope (spec `canvas-agent-seat` §1.2), and this
+  // is the only place that holds both halves of what it needs: the rows, and the
+  // room broadcaster a room frame goes out on. Session frames ride the projector
+  // instead, which is what `publishSessionCanvas` reaches — so the routing
+  // decision lives in one function rather than inside the service.
+  const canvas = new CanvasService({
+    documents: canvasDocuments,
+    channels: {
+      publish: (scope, frame) => {
+        const parsed = parseScope(scope);
+        if (parsed.kind === 'room') broadcaster.publish(parsed.id, frame);
+        else if (parsed.kind === 'session') publishSessionCanvas(parsed.id, frame);
+      },
+      viewers: (scope) => {
+        const parsed = parseScope(scope);
+        if (parsed.kind === 'room') return broadcaster.subscriberCount(parsed.id);
+        if (parsed.kind === 'session') return sessionCanvasViewers(parsed.id);
+        return 0;
+      },
+    },
+    displayNameFor: (authorId) => authors.getById(authorId)?.displayName ?? 'Somebody',
+    // Read per call, never captured: a person who tells DorkOS in Settings to
+    // open CSVs in the plain editor must get that answer from the agent's next
+    // open too, and both sides resolve through `canvasContentForFile`.
+    viewerOverrides: () => readViewerOverrides(),
+    ...(opts.canvasNow ? { now: opts.canvasNow } : {}),
+  });
+  // **A read-only subsystem registers NO writer.** `readOnly` means this process
+  // is pointed at somebody else's live database (the Obsidian embed, ADR
+  // `260825-194924`), and a registered service is one `control_ui` will call —
+  // which threw `SqliteError: attempt to write a readonly database` instead of
+  // refusing. With none registered, every reader degrades: `control_ui` falls
+  // through to the event it always pushed, the routes answer 503, and the embed
+  // reads through the seam it is handed instead.
+  if (opts.readOnly !== true) setCanvasService(canvas);
   const bridges = new BridgeStore(opts.db);
   const readCursors = opts.readCursors ?? new ReadCursorService(new ReadCursorStore(opts.db));
   const service = new RoomService({
     store,
     reactions,
+    canvasDocuments,
+    canvas,
     attachments,
     authors,
     broadcaster,
@@ -458,6 +554,19 @@ export function createRoomSubsystem(opts: {
     // this number is wrong must be able to move it without waiting for anything
     // to restart.
     maxPostsPerTurn: readMaxPostsPerTurn,
+    // Read per operation, for the same reason and one more: a room's canvas is
+    // a shared surface, so an operator who feels one agent is taking too much of
+    // it must be able to narrow the bound without waiting for a restart.
+    maxCanvasOpsPerTurn: readMaxCanvasOpsPerTurn,
+    // Resolved per read rather than captured: the repo service is registered
+    // later in bootstrap, and an install with no repo machinery answers `null`
+    // forever — which is exactly right, because then no room has a shared tree
+    // and every file document belongs to whoever opened it.
+    roomRepoPath: (roomId) => {
+      const repos = tryGetRoomRepoService();
+      if (!repos) return null;
+      return repos.repoPathFor(roomId);
+    },
     // Read per check for the same reason, and for one more: an install becomes
     // owned partway through its life (the enable-login flow), so a value
     // captured at boot would leave the rooms domain believing forever that the
@@ -517,10 +626,41 @@ export function createRoomSubsystem(opts: {
     offers: { ask: (input) => service.askAside(input) },
     lastSeenAt: (userId) => lastPersonSignalAt(opts.db, userId),
   });
-  return { service, store, attachments, authors, broadcaster, bridges, readCursors, welcomeBack };
+  return {
+    service,
+    store,
+    attachments,
+    authors,
+    broadcaster,
+    bridges,
+    readCursors,
+    welcomeBack,
+    canvas,
+  };
 }
 
 let active: RoomService | null = null;
+
+// **The turn boundary is the only seam a targeted canvas write can close on**
+// (spec `canvas-agent-seat` §9). A ONE-ON-ONE session has no turn id — that
+// lives under `session.roomTurn`, threaded from the room runner — so the id a
+// targeted write is charged and ledgered against is derived, and this is what
+// ends it: one coalesced line per room it wrote to, and fresh allowances for the
+// next turn.
+//
+// Wired at module scope, beside the canvas domain's own two listeners and for
+// the reason its doc gives: both shells import this module and only one of them
+// runs `index.ts`. It is a no-op until a room service is registered, a no-op on
+// `interaction_resolved` (a person answering mid-turn is not a turn that ended),
+// and a no-op for a session that targeted nothing — which is nearly all of them.
+//
+// A ROOM turn is untouched: its own `turnId` is still finished by the runner's
+// collector, and `finishTargetedTurns` only ever closes ids in the `session:`
+// namespace.
+onProjectorTurnBoundary((sessionId, kind) => {
+  if (kind !== 'turn_end') return;
+  active?.canvas.finishTargetedTurns(sessionId);
+});
 
 /**
  * Register the active RoomService at bootstrap.
@@ -562,41 +702,14 @@ export function getWelcomeBackGreeter(): WelcomeBackGreeter | null {
   return activeWelcomeBack;
 }
 
-let activeAttachmentStore: RoomAttachmentStore | null = null;
-let activeAttachmentRows: AttachmentRowStore | null = null;
-
-/**
- * Register the attachment seams at bootstrap, beside {@link setRoomService}.
- *
- * Two of them because a room attachment is two things that must be able to move
- * apart: the BYTES, behind {@link RoomAttachmentStore}, and the ROWS, in
- * SQLite. The upload route needs both — it writes the bytes, then records what
- * it wrote — and the serve route needs both to answer one GET. Registered here
- * rather than constructed here because WHERE the bytes live is a deployment
- * decision, made once in `index.ts`, and this module must not make it.
- *
- * @param stores.attachments - Where the bytes go.
- * @param stores.rows - Where the metadata goes.
- */
-export function setRoomAttachmentStores(stores: {
-  attachments: RoomAttachmentStore;
-  rows: AttachmentRowStore;
-}): void {
-  activeAttachmentStore = stores.attachments;
-  activeAttachmentRows = stores.rows;
-}
-
-/** The active attachment byte store (throws if bootstrap has not run). */
-export function getRoomAttachmentStore(): RoomAttachmentStore {
-  if (!activeAttachmentStore) throw new Error('RoomAttachmentStore not initialized');
-  return activeAttachmentStore;
-}
-
-/** The active attachment row store (throws if bootstrap has not run). */
-export function getAttachmentRowStore(): AttachmentRowStore {
-  if (!activeAttachmentRows) throw new Error('AttachmentRowStore not initialized');
-  return activeAttachmentRows;
-}
+// The two attachment seams live in their own module so the domain's own callers
+// can reach them without importing this barrel; re-exported here so every
+// existing caller is unchanged.
+export {
+  getAttachmentRowStore,
+  getRoomAttachmentStore,
+  setRoomAttachmentStores,
+} from './attachments/attachment-stores.js';
 
 let activeRepos: RoomRepoService | null = null;
 

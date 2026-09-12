@@ -78,25 +78,26 @@ describe('dial URLs minted by the composition root', () => {
     ).toEqual([]);
   });
 
-  it('mints the codex dorkos_ui bridge through localDialHost', async () => {
-    // Named specifically, because it is the site DOR-723 was filed about and a
-    // blanket absence check would pass if the line were simply deleted.
+  it('mints no codex UI bridge, because there is no longer one to mint', async () => {
+    // The site DOR-723 was filed about, asserted from the other side now. The
+    // scoped `dorkos_ui` server it dialled is retired (spec `canvas-agent-seat`
+    // §5): `control_ui` is a `ui` capability on the loopback `dorkos` server,
+    // which the connector listener already mints its own URL for. A line that
+    // came back would be a second copy of a tool that has one.
     const source = stripComments(await readFile(INDEX_PATH, 'utf8'));
-    const line = source.split('\n').find((candidate) => candidate.includes('mcpUiUrl:'));
-    expect(line, 'the codex `mcpUiUrl` wiring is gone — has it moved?').toBeDefined();
-    expect(line).toContain('localDialHost(env.DORKOS_HOST)');
-    expect(line).toContain('/codex-ui-mcp');
+    expect(source).not.toContain('mcpUiUrl');
+    expect(source).not.toContain('/codex-ui-mcp');
   });
 
   it('still mints something for every site that used to, so nothing was fixed by deletion', async () => {
-    // The guard on the guard. Both checks above are satisfied by an `index.ts`
-    // that mints no URLs at all, which is the shape a careless "fix" takes.
+    // The guard on the guard. The check above is satisfied by an `index.ts` that
+    // mints no URLs at all, which is the shape a careless "fix" takes.
     const source = stripComments(await readFile(INDEX_PATH, 'utf8'));
-    // Three today: the local origin, the connector callback base, and the codex
-    // `dorkos_ui` bridge this change converted. Stated as a floor rather than an
-    // exact count so adding a fourth mint site is not a test edit — losing one
-    // is.
+    // Two today: the local origin and the connector callback base. It was three
+    // until the codex `dorkos_ui` bridge was retired with the stub it dialled.
+    // Stated as a floor rather than an exact count so adding a mint site is not
+    // a test edit — losing one is.
     const mints = [...source.matchAll(/localDialHost\(env\.DORKOS_HOST\)/g)];
-    expect(mints.length).toBeGreaterThanOrEqual(3);
+    expect(mints.length).toBeGreaterThanOrEqual(2);
   });
 });

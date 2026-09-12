@@ -18,6 +18,7 @@
  * @module server/services/rooms/service/room-core
  */
 import type { RoomPresencePayload } from '@dorkos/shared/room-schemas';
+import type { RoomContextCanvas } from '@dorkos/shared/additional-context';
 import type { ReadCursorService } from '../../core/read-cursor-service.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
 import type { BridgeStore } from '../../relay/chat-bridge/bridge-store.js';
@@ -29,6 +30,7 @@ import type { AuthorRecord, AuthorRegistry } from '../author-registry.js';
 import type { RoomLimitsResolver } from '../limits/room-limits.js';
 import type { ReactionBudget } from '../reactions/reaction-budget.js';
 import type { ReactionStore } from '../reactions/reaction-store.js';
+import { roomScope, type CanvasDocumentStore, type CanvasService } from '../../canvas/index.js';
 import type { AttachmentRowStore } from '../attachments/attachment-row-store.js';
 import type { RoomAgentLookup } from '../room-errors.js';
 import { RoomRoster } from '../room-roster.js';
@@ -42,6 +44,10 @@ export interface RoomCore {
   readonly store: RoomStore;
   /** Reactions on this room's entries — durable state, never a turn. */
   readonly reactions: ReactionStore;
+  /** The documents on this room's shared canvas. */
+  readonly canvasDocuments: CanvasDocumentStore;
+  /** The one writer every canvas on this machine goes through. */
+  readonly canvas: CanvasService;
   /** How many emoji an agent may still land in one room this hour. */
   readonly reactionBudget: ReactionBudget;
   /** Words in, entry coordinates out. The message index, behind its port. */
@@ -62,6 +68,12 @@ export interface RoomCore {
   /** The live `uploads.maxFiles`. Read per post, so a change takes effect. */
   readonly maxAttachmentsPerEntry: () => number;
   readonly maxPostsPerTurn: () => number;
+  /** The live `rooms.maxCanvasOpsPerTurn`. Read per operation, never captured. */
+  readonly maxCanvasOpsPerTurn: () => number;
+  /** The room's own shared checkout, or `null` when it has no files. */
+  readonly roomRepoPath: (roomId: string) => string | null;
+  /** The clock a canvas edit lock is judged against. Absent means `Date.now`. */
+  readonly canvasNow?: () => number;
   /** Whether an author is the install's owner. Read per check, never captured. */
   readonly isOwnerAuthor: (authorId: string) => boolean;
   /** The record-based twin of {@link RoomCore.isOwnerAuthor}. */
@@ -84,6 +96,62 @@ export interface RoomCore {
   readonly agents: RoomAgentLookup;
   /** Whether the operator has muted a room. Read per post, never captured. */
   readonly isRoomMuted: (roomId: string) => boolean;
+}
+
+/**
+ * The `canvas` section of one room's turn context, or `null` when the room has
+ * nothing on its table (spec `room-canvas` §6.1).
+ *
+ * Built here rather than in `RoomCanvasService` because what the context
+ * carries is a decision about the PROMPT — labels only, no content — and the
+ * service's job is the table. The handle it names each author by is the roster's
+ * own, so an agent reading this section can address whoever put something there
+ * with the same string the members line uses.
+ *
+ * **A turn inside a document's own thread is narrowed to that document** (spec
+ * `canvas-agent-seat` §7). A thread is a conversation ABOUT one thing, and the
+ * whole table would be eleven other things the agent was not asked about. It is
+ * still labels only — narrowing changes how many documents are named, never what
+ * is said about each one.
+ *
+ * A thread whose root is an ordinary message matches no document, and that turn
+ * reads the whole table exactly as a top-level turn does.
+ *
+ * @param deps - Everything the service was constructed from.
+ * @param roomId - The room taking a turn.
+ * @param threadRootEntryId - The thread this turn is answering in, when it is
+ *   answering in one.
+ * @returns The section, or `null`.
+ */
+function canvasContextFor(
+  deps: RoomServiceDeps,
+  roomId: string,
+  threadRootEntryId?: string
+): RoomContextCanvas | null {
+  const all = deps.canvasDocuments.list(roomScope(roomId));
+  const rooted =
+    threadRootEntryId === undefined
+      ? []
+      : all.filter((row) => row.threadRootEntryId === threadRootEntryId);
+  const documents = rooted.length > 0 ? rooted : all;
+  if (documents.length === 0) return null;
+  return {
+    viewers: deps.broadcaster.subscriberCount(roomId),
+    documents: documents.map((row) => {
+      const author = deps.authors.getById(row.authorId);
+      const url =
+        row.content.type === 'url' || row.content.type === 'browser' ? row.content.url : undefined;
+      return {
+        id: row.id,
+        type: row.contentType,
+        title: row.title,
+        ...(url !== undefined ? { url } : {}),
+        author: author?.handle ?? author?.displayName ?? 'Unknown',
+        pinned: row.pinned,
+        lastChangedAt: row.lastTouchedAt,
+      };
+    }),
+  };
 }
 
 /**
@@ -135,6 +203,11 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
     },
     topicNamesFor: (entryIds) => topicNamesForEntries(deps.bridges, entryIds),
     attachmentsFor: (roomId, entryIds) => deps.attachments.listFor(roomId, entryIds),
+    // What is on this room's table, as LABELS — never a document's contents.
+    // Resolved per turn, so an agent reads the table as it stands when its turn
+    // starts rather than as it stood when this service was built. `null` for a
+    // room with nothing on it, which renders no section at all.
+    canvasFor: (roomId, threadRootEntryId) => canvasContextFor(deps, roomId, threadRootEntryId),
     runner: deps.turns,
     ...(deps.worktrees ? { worktrees: deps.worktrees } : {}),
     budget: deps.budget,
@@ -162,6 +235,8 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
   return {
     store: deps.store,
     reactions: deps.reactions,
+    canvasDocuments: deps.canvasDocuments,
+    canvas: deps.canvas,
     reactionBudget: deps.reactionBudget,
     findMessages: deps.findMessages,
     indexEntry: deps.indexEntry,
@@ -173,6 +248,9 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
     limitsFor: deps.limitsFor,
     maxAttachmentsPerEntry: deps.maxAttachmentsPerEntry,
     maxPostsPerTurn: deps.maxPostsPerTurn,
+    maxCanvasOpsPerTurn: deps.maxCanvasOpsPerTurn,
+    roomRepoPath: deps.roomRepoPath,
+    ...(deps.canvasNow ? { canvasNow: deps.canvasNow } : {}),
     isOwnerAuthor: deps.isOwnerAuthor,
     isOwnerRecord: deps.isOwnerRecord,
     isOwnerVoice: deps.isOwnerVoice,

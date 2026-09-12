@@ -26,6 +26,14 @@ import type { ResponseGateMode } from '../response-gate/routing-rules.js';
 import type { CollectWindow } from '../room-collect.js';
 import { ReactionBudget } from '../reactions/reaction-budget.js';
 import { ReactionStore } from '../reactions/reaction-store.js';
+import {
+  CanvasDocumentStore,
+  CanvasService,
+  parseScope,
+  publishSessionCanvas,
+  sessionCanvasViewers,
+  setCanvasService,
+} from '../../canvas/index.js';
 import { AttachmentRowStore } from '../attachments/attachment-row-store.js';
 import type { RoomAgent, RoomAgentLookup } from '../room-errors.js';
 import { RoomService, type RoomEntryIndexer, type RoomMessageFinder } from '../room-service.js';
@@ -454,6 +462,10 @@ export interface RoomHarness {
    * which is what the ambient loop has shown an agent.
    */
   readCursors: ReadCursorService;
+  /** The canvas rows, for a test that seeds or reads them directly. */
+  canvasDocuments: CanvasDocumentStore;
+  /** The live stream, so a test can subscribe and read the frames a room fans out. */
+  broadcaster: RoomBroadcaster;
   runner: ScriptedTurnRunner;
   /** The owner's human author id — the `'local'` sentinel, or the bound account. */
   human: string;
@@ -564,6 +576,29 @@ export function createRoomHarness(opts: {
   maxAttachmentsPerEntry?: number;
   /** How many messages one agent may post into a room inside one turn. */
   maxPostsPerTurn?: number;
+  /**
+   * How many times one agent may change a room's canvas inside one turn.
+   *
+   * A FUNCTION as well as a number, because the shipped wiring reads it per
+   * operation: a test that has to prove "moving it in Settings binds the very
+   * next change" needs to move it mid-test, and a captured number could only
+   * ever prove the code agrees with itself.
+   */
+  maxCanvasOpsPerTurn?: number | (() => number);
+  /**
+   * The clock the canvas judges an edit lock against.
+   *
+   * Defaults to the real one. A test about the lock's lazy TTL passes its own,
+   * so the 45-second rule is measured rather than waited out.
+   */
+  canvasNow?: () => number;
+  /**
+   * The room's own shared checkout, for the canvas reader rule (§8.1).
+   *
+   * Defaults to "this install has no repo machinery", which is the state every
+   * other test in this suite runs in.
+   */
+  roomRepoPath?: (roomId: string) => string | null;
   ownerUserId?: string;
   budgetNow?: () => number;
   /**
@@ -625,6 +660,7 @@ export function createRoomHarness(opts: {
   let ownerUserId = opts.ownerUserId ?? null;
   const store = new RoomStore(db);
   const reactions = new ReactionStore(db);
+  const canvasDocuments = new CanvasDocumentStore(db);
   const attachments = new AttachmentRowStore(db);
   const bridges = new BridgeStore(db);
   const readCursors = new ReadCursorService(new ReadCursorStore(db));
@@ -640,12 +676,36 @@ export function createRoomHarness(opts: {
       maxTurnsPerAgentPerCascade,
       maxAutomaticTurnsPerRoomPerHour: perRoom,
     });
+  const broadcaster = new RoomBroadcaster();
+  // The REAL writer, composed the way `createRoomSubsystem` composes it, so the
+  // room suites exercise the shared service rather than a stand-in.
+  const canvas = new CanvasService({
+    documents: canvasDocuments,
+    channels: {
+      publish: (scope, frame) => {
+        const parsed = parseScope(scope);
+        if (parsed.kind === 'room') broadcaster.publish(parsed.id, frame);
+        else if (parsed.kind === 'session') publishSessionCanvas(parsed.id, frame);
+      },
+      viewers: (scope) => {
+        const parsed = parseScope(scope);
+        if (parsed.kind === 'room') return broadcaster.subscriberCount(parsed.id);
+        if (parsed.kind === 'session') return sessionCanvasViewers(parsed.id);
+        return 0;
+      },
+    },
+    displayNameFor: (authorId) => authors.getById(authorId)?.displayName ?? 'Somebody',
+    ...(opts.canvasNow ? { now: opts.canvasNow } : {}),
+  });
+  setCanvasService(canvas);
   const service = new RoomService({
     store,
     reactions,
+    canvasDocuments,
+    canvas,
     attachments,
     authors,
-    broadcaster: new RoomBroadcaster(),
+    broadcaster,
     bridges,
     agents: agentLookup,
     turns: runner,
@@ -706,6 +766,16 @@ export function createRoomHarness(opts: {
     holdCeilingMs: () => holdCeilingMs,
     maxAttachmentsPerEntry: () => maxAttachmentsPerEntry,
     maxPostsPerTurn: () => opts.maxPostsPerTurn ?? 3,
+    maxCanvasOpsPerTurn: () => {
+      const option = opts.maxCanvasOpsPerTurn;
+      if (typeof option === 'function') return option();
+      return option ?? 3;
+    },
+    // No repo machinery by default, which is an install where no room has a
+    // shared tree — so every file document on a canvas belongs to whoever opened
+    // it, and §8.1's reader rule is exercised in its narrow form.
+    roomRepoPath: opts.roomRepoPath ?? (() => null),
+    ...(opts.canvasNow ? { canvasNow: opts.canvasNow } : {}),
     isOwnerAuthor: (authorId) => authors.isOwner(authorId, ownerUserId),
     isOwnerRecord: (record) => isOwnerRecord(record, ownerUserId),
     isOwnerVoice: (authorId) => authors.isOwnerVoice(authorId, ownerUserId),
@@ -718,6 +788,8 @@ export function createRoomHarness(opts: {
     service,
     store,
     reactions,
+    canvasDocuments,
+    broadcaster,
     attachments,
     authors,
     bridges,

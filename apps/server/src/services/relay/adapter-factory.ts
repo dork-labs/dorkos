@@ -29,6 +29,7 @@ import type {
   TraceStoreLike,
   TasksStoreLike,
   AgentSessionStoreLike,
+  RefusedAskReporter,
 } from '@dorkos/relay';
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { logger, createTaggedLogger } from '../../lib/logger.js';
@@ -48,6 +49,12 @@ export interface AdapterFactoryDeps {
   agentRuntimes: Map<string, AgentRuntimeLike>;
   traceStore: TraceStoreLike;
   taskStore?: TasksStoreLike;
+  /**
+   * Where a relay-dispatched scheduled run reports a tool it was refused
+   * because nobody was there to approve it (DOR-1580). Without it the refusal
+   * still reaches the run's own summary, just not the activity feed.
+   */
+  onRefusedAsk?: RefusedAskReporter;
   /** Optional persistent store for agent key → SDK session UUID mappings. */
   agentSessionStore?: AgentSessionStoreLike;
   /**
@@ -157,6 +164,7 @@ export async function createAdapter(
         agentRuntimes: deps.agentRuntimes,
         traceStore: deps.traceStore,
         taskStore: deps.taskStore,
+        onRefusedAsk: deps.onRefusedAsk,
         agentSessionStore: deps.agentSessionStore,
         // What the turn runs on. One resolver for every runtime: the adapter
         // resolves which runtime a message belongs to and asks about THAT one,

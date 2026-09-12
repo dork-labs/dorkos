@@ -117,7 +117,7 @@ describe('AdditionalContextEntrySchema', () => {
         approvalId: '01KXQ3P7ADJY9DSXMZW1XGWCV4',
         capabilityTitle: 'Unregister an agent',
         outcome: 'granted',
-        decidedAt: '2026-09-09T12:34:56.000Z',
+        endedAt: '2026-09-09T12:34:56.000Z',
       },
     });
     expect(granted.success).toBe(true);
@@ -129,24 +129,44 @@ describe('AdditionalContextEntrySchema', () => {
         approvalId: '01KXQ3P7ADJY9DSXMZW1XGWCV4',
         capabilityTitle: 'Unregister an agent',
         outcome: 'denied',
-        decidedAt: '2026-09-09T12:34:56.000Z',
+        endedAt: '2026-09-09T12:34:56.000Z',
         denyReason: 'that agent is still running the nightly job',
       },
     });
     expect(denied.success).toBe(true);
   });
 
-  it('rejects an approval_verdict whose outcome is not a decision', () => {
-    // `expired` and `consumed` are endings, not answers a person gave. Letting
-    // one through would render "a person decided" over something nobody chose.
-    const result = AdditionalContextEntrySchema.safeParse({
+  it('validates an approval_verdict for an approval nobody answered', () => {
+    // `expired` became a real outcome in DOR-1932: an approval whose window
+    // closed unanswered is an ending the agent is just as blocked on, and it
+    // travels this same kind. It carries no `denyReason`, because there was
+    // nobody to type one — the block renders its own framing instead, which is
+    // why this is not "a person decided" dressed up (`approval-verdict-block.ts`).
+    const expired = AdditionalContextEntrySchema.safeParse({
       kind: 'approval_verdict',
       scope: 'per-turn',
       data: {
         approvalId: '01KXQ3P7ADJY9DSXMZW1XGWCV4',
         capabilityTitle: 'Unregister an agent',
         outcome: 'expired',
-        decidedAt: '2026-09-09T12:34:56.000Z',
+        endedAt: '2026-09-09T12:34:56.000Z',
+      },
+    });
+    expect(expired.success).toBe(true);
+  });
+
+  it('rejects an approval_verdict whose outcome is not one of the three endings', () => {
+    // `consumed` is the one `settle` fires that is NOT delivered: the ordinary
+    // grant flow settles twice for one subject, so honoring it would tell an
+    // agent about a decision it had already been told about.
+    const result = AdditionalContextEntrySchema.safeParse({
+      kind: 'approval_verdict',
+      scope: 'per-turn',
+      data: {
+        approvalId: '01KXQ3P7ADJY9DSXMZW1XGWCV4',
+        capabilityTitle: 'Unregister an agent',
+        outcome: 'consumed',
+        endedAt: '2026-09-09T12:34:56.000Z',
       },
     });
     expect(result.success).toBe(false);

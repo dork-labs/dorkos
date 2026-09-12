@@ -96,7 +96,7 @@ src/
 │   │   │   └── ui/adapter/  # AdapterCard, AdapterCardHeader, AdapterCardBindings, AdapterIcon
 │   │   ├── mesh/        # MeshPanel, TopologyGraph, AgentNode, BindingDialog
 │   │   ├── onboarding/  # OnboardingFlow, AgentDiscoveryStep, TaskPresetsStep
-│   │   ├── canvas/      # AgentCanvas split-view panel (JSON, Markdown, URL content renderers)
+│   │   ├── canvas/      # CanvasViews — the Canvas and Browser right-panel tabs over one document store
 │   │   ├── marketplace/ # Marketplace UI — Marketplace, PackageCard, PackageDetailSheet, InstallConfirmationDialog, etc.
 │   │   └── status/      # StatusLine, GitStatusItem, ModelItem
 │   └── widgets/         # Large UI compositions

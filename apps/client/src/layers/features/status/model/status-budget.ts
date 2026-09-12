@@ -74,7 +74,16 @@ export interface BudgetedStatusLine {
  * composer-status-redesign §6.1. A realistic degraded state needs ~568px of bar,
  * and a 375px phone offers ~343px — hence four tiers rather than one breakpoint.
  */
-const TIER_FULL_MIN_PX = 640;
+/*
+ * 648, not the 640 it was from DOR-461 to DOR-1971. The old floor was measured
+ * with the runtime chip still carrying its truncatable `· <model>` half at the
+ * `full` tier, and that half was silently absorbing a 3px over-promise: when
+ * DOR-1971 dropped it (the model item already says the name), the degraded
+ * fixture's right cluster bottomed out on its `min-w-10` floors 3px wider than
+ * the row, and `connection` painted into the `⋯` — caught by
+ * `status-line-fit.spec.ts` at the old floor, re-measured 2026-09-11.
+ */
+const TIER_FULL_MIN_PX = 648;
 const TIER_COMPACT_MIN_PX = 440;
 const TIER_IDENTITY_MIN_PX = 340;
 

@@ -6,14 +6,10 @@ export const STORAGE_KEYS = {
   RECENT_CWDS: 'dorkos-recent-cwds',
   PICKER_VIEW: 'dorkos-picker-view',
   PLACEHOLDER_HINT_CYCLES: 'dorkos-placeholder-hint-cycles',
-  CANVAS_SESSIONS: 'dorkos-canvas-sessions',
   RIGHT_PANEL_STATE: 'dorkos-right-panel-state',
   RIGHT_PANEL_LAYOUTS: 'dorkos-right-panel-layouts',
   PIP_PANEL_STATE: 'dorkos-pip-panel-state',
 } as const;
-
-/** Maximum number of per-session canvas entries stored in localStorage. */
-export const MAX_CANVAS_SESSIONS = 50;
 
 /**
  * Maximum number of per-agent right-panel layout entries kept in localStorage
@@ -24,8 +20,12 @@ export const MAX_RIGHT_PANEL_LAYOUTS = 50;
 
 /**
  * Maximum number of documents kept open in a single session's canvas before the
- * least-recently-active one is evicted (multi-document canvas, DOR-219). Bounds
- * the memory a long editing session can accumulate across many opened files.
+ * least-recently-active one is evicted (multi-document canvas, DOR-219).
+ *
+ * The SERVER enforces this now — it owns the table — and this is the window's
+ * matching bound, so an optimistic open evicts the same document the server is
+ * about to. The two numbers must agree: `MAX_CANVAS_DOCUMENTS` in
+ * `services/canvas/canvas-service.ts` is the other half.
  */
 export const MAX_CANVAS_DOCUMENTS = 12;
 

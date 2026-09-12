@@ -5,13 +5,14 @@
  * @module services/runtimes/claude-code/mcp-tools
  */
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
-import type { McpToolDeps } from './types.js';
+import type { McpToolDeps, McpToolSession } from './types.js';
 import {
   DORKOS_MCP_SERVER_NAME,
   toolExposure,
   alwaysLoadedToolsFor,
   loadsAgentToAgentTools,
 } from './tool-exposure.js';
+import { DORKOS_MCP_TOOL_TIMEOUT_MS } from './tool-timeout.js';
 import { getCoreTools } from './core-tools.js';
 import { getTasksTools } from './task-tools.js';
 import { getRelayTools } from './relay-tools.js';
@@ -21,8 +22,6 @@ import { getBindingTools } from './binding-tools.js';
 import { getTraceTools } from './trace-tools.js';
 import { getMeshTools } from './mesh-tools.js';
 import { getAgentTools } from './agent-tools.js';
-import { getUiTools } from './ui-tools.js';
-import { getDevtoolsTools } from './devtools-tools.js';
 import { getExtensionTools } from './extension-tools.js';
 import {
   capabilityMcpTools,
@@ -48,7 +47,7 @@ import { logger } from '../../../../lib/logger.js';
 // straight from the domain module instead, so the tool is described once for both
 // servers (DOR-499). Production reaches this barrel only for
 // `createDorkOsToolServer`, from `apps/server/src/index.ts`.
-export type { McpToolDeps } from './types.js';
+export type { McpToolDeps, McpToolSession } from './types.js';
 export {
   handlePing,
   handleGetServerInfo,
@@ -97,16 +96,6 @@ export {
   createMeshInspectHandler,
   createMeshQueryTopologyHandler,
 } from './mesh-tools.js';
-export { createControlUiHandler, createGetUiStateHandler, type UiToolSession } from './ui-tools.js';
-export {
-  createReadConsoleHandler,
-  createReadNetworkHandler,
-  createBrowserScreenshotHandler,
-  getDevtoolsTools,
-  type DevtoolsReadStore,
-  type DevtoolsSessionResolver,
-  type DevtoolsEventSession,
-} from './devtools-tools.js';
 export {
   createListExtensionsHandler,
   createGetExtensionErrorsHandler,
@@ -137,8 +126,8 @@ export {
 export function handRegisteredInSessionTools(
   deps: McpToolDeps,
   options: {
-    /** Per-query session for UI tool event emission and state access. */
-    session?: import('./ui-tools.js').UiToolSession;
+    /** Per-query session: its directory, its canonical id, and its event queue. */
+    session?: McpToolSession;
     /** Per-query trigger session id (DevTools read fallback). */
     sessionId?: string;
     /** Resolves the calling agent for this session; see `mcp-tool-gate.ts`. */
@@ -169,14 +158,6 @@ export function handRegisteredInSessionTools(
   const resolveInboundBudget = inboundBudgets
     ? () => inboundBudgets.get(sessionId, session?.sdkSessionId)
     : undefined;
-  // Read-time id resolution for the DevTools tools: prefer the live session's
-  // sdkSessionId (updated to the canonical id by the SDK init mid-first-turn,
-  // tracking the store's rekeySession) over the static trigger id. Absent both
-  // (external MCP surface / introspection stub), register the session-less
-  // error variants.
-  const resolveDevtoolsSessionId =
-    session || sessionId ? () => session?.sdkSessionId || sessionId || undefined : undefined;
-
   // Who is proposing a schedule, for `tasks_create` (DOR-1394). Resolved at CALL
   // time for the same first-turn rekey reason as the DevTools id above, and it
   // reads the SAME two sources — an approval card that named a session the
@@ -231,8 +212,6 @@ export function handRegisteredInSessionTools(
         ...getTraceTools(deps),
         ...getMeshTools(deps),
         ...getAgentTools(deps),
-        ...getUiTools(deps, session),
-        ...getDevtoolsTools(deps, resolveDevtoolsSessionId, undefined, session),
         ...getExtensionTools(deps),
       ],
       resolveContext,
@@ -312,8 +291,7 @@ function withToolExposure(tools: SdkMcpTool[], alwaysLoaded: ReadonlySet<string>
  */
 export function createDorkOsToolServer(
   deps: McpToolDeps,
-  session?: import('./ui-tools.js').UiToolSession &
-    Pick<import('../agent-types.js').AgentSession, 'connectorTurn'>,
+  session?: McpToolSession & Pick<import('../agent-types.js').AgentSession, 'connectorTurn'>,
   sessionId?: string,
   marketplaceDeps?: MarketplaceMcpDeps,
   registry?: CapabilityRegistry
@@ -363,6 +341,12 @@ export function createDorkOsToolServer(
     // from the same constant (DOR-1292).
     name: DORKOS_MCP_SERVER_NAME,
     version: '1.0.0',
+    // This server's OWN per-call ceiling (SDK 0.3.248), rather than whatever
+    // `MCP_TOOL_TIMEOUT` the subprocess happened to inherit. It is long because
+    // one call here legitimately waits on a person — see the constant's module,
+    // which derives it from the approval hold and explains why the old
+    // environment floor is gone rather than kept beside it.
+    timeout: DORKOS_MCP_TOOL_TIMEOUT_MS,
     tools: [
       ...handRegisteredInSessionTools(deps, {
         ...(session ? { session } : {}),

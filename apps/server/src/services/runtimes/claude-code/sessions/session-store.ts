@@ -68,23 +68,23 @@ function receipt(outcome: InterruptOutcome, reason?: InterruptReason): Interrupt
  * pending map's raw size and so would have refused messages into a session with
  * a STRANDED entry forever.
  *
- * The exemption's bound is the wait THIS session actually allows, measured from
- * when the prompt was raised: the park ceiling for a session a person may come
- * back to, and the plain countdown for an unattended run, whose prompts never
- * park (spec `ask-parks-on-timeout` §7, §8). So a stranded entry ages out on
- * exactly the clock its own runtime would have refused it on, and a scheduled
- * run gets no four-hour reprieve it could never have used.
+ * The exemption's bound is the wait a prompt actually allows, measured from when
+ * it was raised: the park ceiling, after which the runtime would have refused it
+ * anyway (spec `ask-parks-on-timeout` §7, §8). So a stranded entry ages out on
+ * exactly that clock.
+ *
+ * There is no shorter bound for an unattended run any more, and none is needed:
+ * such a session never holds a pending entry at all, because its asks are
+ * refused before one is made (`messaging/interactive-handlers.ts`, spec
+ * `unattended-session-permission-prompts`). An empty map answers `false` here on
+ * the first line of the loop.
  *
  * @param session - The session to weigh.
  * @param now - Server epoch ms.
  */
 export function isWaitingOnPerson(session: AgentSession, now: number): boolean {
-  const ceilingMs =
-    session.unattended === true
-      ? SESSIONS.INTERACTION_TIMEOUT_MS
-      : SESSIONS.INTERACTION_PARK_CEILING_MS;
   for (const pending of session.pendingInteractions.values()) {
-    if (now - pending.startedAt < ceilingMs) return true;
+    if (now - pending.startedAt < SESSIONS.INTERACTION_PARK_CEILING_MS) return true;
   }
   return false;
 }

@@ -809,6 +809,9 @@ export class ClaudeCodeAdapter implements RelayAdapter {
             agentManager,
             traceStore: this.deps.traceStore,
             taskStore: this.deps.taskStore,
+            // What tells the host a scheduled run was refused a tool nobody was
+            // there to approve (DOR-1580).
+            onRefusedAsk: this.deps.onRefusedAsk,
             runningTasks: this.runningTasks,
             inboundBudgets: this.deps.inboundBudgets,
             logger: this.deps.logger,

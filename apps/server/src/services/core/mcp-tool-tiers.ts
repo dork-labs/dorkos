@@ -245,19 +245,16 @@ export const MCP_TOOL_TIERS = {
   reload_extensions: { tier: 'act', title: 'Reload extensions' },
   test_extension: { tier: 'act', title: 'Compile and test an extension' },
 
-  // ── Cockpit and preview (in-session only) ───────────────────────────────
-  // A third copy of this tool is registered on the codex-scoped `dorkos_ui`
-  // server, which does NOT go through the gate. That is a runtime no-op for an
-  // `act` tool, and it is stated rather than glossed: if this tool were ever
-  // promoted, that server would need the gated registrar first.
-  control_ui: { tier: 'act', title: 'Drive the DorkOS app' },
-  get_ui_state: { tier: 'observe', title: "Read the app's state" },
-  browser_read_console: { tier: 'observe', title: "Read the preview's console log" },
-  browser_read_network: { tier: 'observe', title: "Read the preview's network log" },
-  // Not `observe`, even though the output is only a picture: taking it injects a
-  // script into the live preview page. Calling that "only reads" is a small lie,
-  // and `act` costs nothing because it never prompts.
-  browser_screenshot: { tier: 'act', title: 'Take a screenshot of the preview' },
+  // ── The app and its preview ─────────────────────────────────────────────
+  // Nothing here any more. `control_ui`, `get_ui_state` and every `browser_*`
+  // verb — the reads, the six driving verbs and the two recording verbs — were
+  // hand-registered on claude-code's in-session server and nowhere else, which
+  // is why a Codex or OpenCode member of a room could not see a console error.
+  // They are `ui` capabilities now (spec `canvas-agent-seat` §5), so their tiers
+  // are declared on the capability and enforced inside `registry.invoke` — the
+  // same gate this table feeds, reached from the inside instead of from a
+  // wrapper. No tier changed in the move: the reads and the two verbs that only
+  // look at a page stayed `observe`, and everything that acts stayed `act`.
 } as const satisfies Record<string, McpToolTier>;
 
 /** The name of a hand-registered MCP tool that carries a tier. */
@@ -267,7 +264,7 @@ export type McpToolName = keyof typeof MCP_TOOL_TIERS;
  * Compile-time proof that this table and the shared tool-GROUP table describe the
  * same set of tools (DOR-499).
  *
- * The two answer different questions about the same 47 tools — this one "does
+ * The two answer different questions about the same set of tools — this one "does
  * calling it need a person's approval", the other "which toggle takes it away" —
  * and both are keyed by tool name. Nothing but a check makes them stay the same
  * length. Before this, seven tools had a tier and no group, which is how the

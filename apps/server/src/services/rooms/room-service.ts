@@ -25,12 +25,14 @@ import type { DbTransaction } from '@dorkos/db';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { SignalType } from '@dorkos/shared/relay-schemas';
 import type {
+  CanvasDocument,
   CreateRoomRequest,
   Room,
   RoomEntry,
   RoomEntryBody,
   RoomEntryListResponse,
   RoomEntryReaction,
+  RoomEvent,
   RoomKind,
   RoomMember,
   RoomMergeEvent,
@@ -50,6 +52,8 @@ import type { CreateBridgedRoomRequest } from './manage/room-bridge-create.js';
 import type { RebridgeRequest } from './manage/room-bridge-lifecycle.js';
 import type { ActiveClaimView, HeldView } from './room-claims.js';
 import { createRoomCollaborators, type RoomCollaborators } from './service/room-collaborators.js';
+import type { RoomCanvasService } from './canvas/room-canvas-service.js';
+import type { RoomFollowService } from './follow/room-follow-service.js';
 import type { RoomExternalPostInput } from './messages/room-entry-writer.js';
 import type {
   MemberRoomMatch,
@@ -136,6 +140,27 @@ export class RoomService {
   get authorRegistry(): AuthorRegistry {
     return this.parts.core.authors;
   }
+  /**
+   * The room's shared canvas — the table, and the single writer that changes it.
+   *
+   * Reachable from the front door because the one coalesced entry a turn writes
+   * is a room entry, and this class owns the single write path into a room's log
+   * (spec `room-canvas` §3).
+   */
+  get canvas(): RoomCanvasService {
+    return this.parts.canvas;
+  }
+
+  /**
+   * Who is following whose browser in this room right now (spec
+   * `canvas-agent-seat` §6).
+   *
+   * Live, memory-only state with no store behind it — the one part of a room
+   * that is deliberately forgotten on restart.
+   */
+  get follow(): RoomFollowService {
+    return this.parts.follow;
+  }
   /** Every room turn in flight right now. See {@link RoomTurnControl.listActiveClaims}. */
   listActiveClaims(): ActiveClaimView[] {
     return this.parts.turnControl.listActiveClaims();
@@ -160,6 +185,21 @@ export class RoomService {
    */
   triggersIdle(): Promise<void> {
     return this.triggers.idle();
+  }
+  /**
+   * Whether this agent is mid-turn in this room right now.
+   *
+   * The claim map, asked as a yes-or-no. It is what makes a mechanical presence
+   * signal honest: a face only goes on a canvas tab because a turn that is
+   * really running read that document, never because an agent with no work in
+   * hand called a tool.
+   *
+   * @param roomId - The room.
+   * @param authorId - The agent.
+   * @returns True while a claim is held here.
+   */
+  isWorkingHere(roomId: string, authorId: string): boolean {
+    return this.triggers.activeTurnHere(roomId, authorId) !== undefined;
   }
   /** Stop everything running in one room. See {@link RoomTurnControl.haltRoom}. */
   haltRoom(roomId: string, viewerAuthorId: string): Promise<number> {
@@ -321,7 +361,12 @@ export class RoomService {
   /** Post because the agent decided to. See {@link RoomPosting.postFromTool}. */
   postFromTool(
     roomId: string,
-    input: { authorId: string; text: string; replyTo?: string }
+    input: {
+      authorId: string;
+      text: string;
+      replyTo?: string;
+      attachmentIds?: readonly string[];
+    }
   ): PostedEntry {
     return this.parts.posting.postFromTool(roomId, input);
   }
@@ -375,6 +420,10 @@ export class RoomService {
   /** A room's whole history as JSONL. See {@link RoomReads.exportRoom}. */
   *exportRoom(roomId: string, viewerAuthorId: string): Generator<RoomExportLine> {
     yield* this.parts.reads.exportRoom(roomId, viewerAuthorId);
+  }
+  /** Refuse a caller who is not a person. See {@link RoomVisibility.requirePersonAuthor}. */
+  requirePersonAuthor(authorId: string, what: string): void {
+    this.parts.visibility.requirePersonAuthor(authorId, what);
   }
   /** Refuse anyone who may not attach a file. See {@link RoomVisibility.assertCanAttach}. */
   assertCanAttach(roomId: string, authorId: string): void {
@@ -464,8 +513,18 @@ export class RoomService {
     roomId: string,
     viewerAuthorId: string,
     historyLimit: number
-  ): { room: RoomWithRoster; entries: RoomEntry[]; cursor: number } {
+  ): { room: RoomWithRoster; entries: RoomEntry[]; cursor: number; canvas: CanvasDocument[] } {
     return this.parts.reads.snapshot(roomId, viewerAuthorId, historyLimit);
+  }
+  /**
+   * Every live canvas document as its own frame — the resync a stream resume
+   * sends. See {@link RoomCanvasService.resync}.
+   *
+   * @param roomId - The room.
+   * @returns One `canvas` frame per live document.
+   */
+  canvasResync(roomId: string): RoomEvent[] {
+    return this.parts.canvas.resync(roomId);
   }
   /** The highest `seq` this room has issued. See {@link RoomReads.maxSeq}. */
   maxSeq(roomId: string): number {

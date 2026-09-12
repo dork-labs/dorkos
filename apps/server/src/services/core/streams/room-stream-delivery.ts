@@ -86,6 +86,11 @@ export async function deliverRoomStream(
   // read below lands in this reader's queue instead of falling between the two.
   // The dedupe on `highestSent` then drops whatever the read already covered.
   const iterator = service.stream.subscribe(roomId, sink.signal)[Symbol.asyncIterator]();
+  // **A stream ending is the one departure that always happens.** A reader who
+  // closes the browser, loses the network or shuts the lid runs no cleanup of
+  // their own, so without this the tab they were looking at would keep their
+  // face on it for everybody else (spec `room-canvas` §9.4).
+  service.canvas.readerArrived(roomId, viewerAuthorId);
 
   let highestSent: number;
 
@@ -115,6 +120,17 @@ export async function deliverRoomStream(
         if (sink.closed) return;
         await send(event);
       }
+      // And the room's shared canvas, whole, for the same reason and in the same
+      // shape — the exact parallel of the resync above (spec `room-canvas` §2).
+      // A document that was CLOSED while this reader was away leaves no trace on
+      // the log to replay, because a close is a deletion, so nothing but a
+      // re-send of everything that is still there can correct it. That is what
+      // makes this authoritative as a SET: a client replaces its table from
+      // these frames rather than merging them in.
+      for (const event of service.canvasResync(roomId)) {
+        if (sink.closed) return;
+        await send(event);
+      }
     } else {
       const snapshot = service.snapshot(roomId, viewerAuthorId, ROOMS.SNAPSHOT_HISTORY_LIMIT);
       if (sink.closed) return;
@@ -139,6 +155,7 @@ export async function deliverRoomStream(
       });
     }
   } finally {
+    service.canvas.readerLeft(roomId, viewerAuthorId);
     void iterator.return?.();
     sink.end();
   }

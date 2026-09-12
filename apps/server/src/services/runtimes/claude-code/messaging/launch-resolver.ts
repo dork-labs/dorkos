@@ -54,9 +54,14 @@ import type { AgentIdentityPin, LaunchParams } from '../sessions/launch-fingerpr
 import { narrowToClaudeCodeMode } from '../runtime-constants.js';
 import { resolveToolConfig } from '../tooling/tool-filter.js';
 import { loadsAgentToAgentTools } from '../mcp-tools/tool-exposure.js';
+import { env } from '../../../../env.js';
+import {
+  CLASSIFIER_CONTEXT_MATCHER,
+  createClassifierContextHook,
+  isClassifierContextEnabled,
+} from './classifier-context.js';
 import { buildSystemPromptAppend, renderContextEntry } from './context-builder.js';
 import { createCanUseTool, handleElicitation } from './interactive-handlers.js';
-import { mcpToolTimeoutFloorEnv } from './mcp-tool-timeout-env.js';
 import {
   AUTO_DOWNGRADE_STATUS,
   UNKNOWN_MODE_STATUS,
@@ -65,6 +70,22 @@ import {
 import { resolveThinkingOptions } from './thinking-config.js';
 import { createEditBaselineCapture, detectSlashCommandName } from './message-sender-shared.js';
 import type { MessageSenderOpts } from './message-sender-shared.js';
+
+/**
+ * Whether DorkOS attaches host context to auto mode's permission classifier,
+ * resolved ONCE for the life of the process (spec `auto-mode-classifier-context`
+ * §6).
+ *
+ * Once, not per launch, because it is the off switch for a mechanism rather than
+ * a per-session setting: an operator turning it off wants it off everywhere, and
+ * a value re-read per launch would leave half a machine's sessions on the other
+ * side of the change with nothing saying which. `env` is itself parsed once at
+ * boot, so this reads a snapshot either way; the constant makes that explicit.
+ *
+ * Global by design — no config field, nothing per-agent. See
+ * {@link isClassifierContextEnabled} for the spellings that turn it off.
+ */
+const CLASSIFIER_CONTEXT_ON = isClassifierContextEnabled(env.DORKOS_CLASSIFIER_CONTEXT);
 
 /** What one launch resolution produced, for the caller to boot or compare with. */
 export interface ResolvedLaunch {
@@ -295,13 +316,45 @@ export async function resolveLaunch(args: {
     toolConfig: {
       askUserQuestion: { previewFormat: 'html' },
     },
+    // Send the plugin list over stdin instead of on the command line (SDK
+    // 0.3.261). ADR-0239 activates every enabled marketplace plugin through
+    // `options.plugins`, and that array is an unbounded, person-controlled
+    // count of absolute paths under `<dorkHome>/plugins/`. Windows has a hard
+    // command-line length limit, so with enough plugins installed the CLI stops
+    // starting at all — on the one platform whose desktop build has no confirmed
+    // end-user install to notice. Loading is otherwise identical.
+    //
+    // `initializationResult().plugins_applied` is NOT a success signal, whatever
+    // its name suggests: it says the CLI read and acted on this list, not that
+    // every entry loaded. It was observed `true` beside a `plugin_errors` entry
+    // of `path-not-found`. Read `plugin_errors` for whether a plugin is actually
+    // there.
+    pluginDelivery: 'initialize',
     env: runtimeEnvironment('claude-code', 'turn', {
       CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1',
-      // An inherited MCP_TOOL_TIMEOUT shorter than the in-session approval hold
-      // would kill every held destructive call mid-wait, with an ERROR where the
-      // poll payload used to be. Floored, never erased — see the module TSDoc for
-      // the tradeoff (DOR-987).
-      ...mcpToolTimeoutFloorEnv(),
+      // Keeps the task and todo tools on the model's surface. SDK 0.3.233 took
+      // TodoWrite / TaskCreate / TaskUpdate / TaskGet / TaskList off the DEFAULT
+      // tool set on every newer model, and 0.3.268 restated that as a positive
+      // list ending at Opus 4.7 / Sonnet 4.6 / Haiku 4.5. DorkOS builds its whole
+      // task and todo surface by watching those exact tool names go past
+      // (`sdk/build-task-event.ts`, `sessions/task-reader.ts`), so without this
+      // the model simply never calls them, the todo panel and the Tasks surface
+      // stay empty forever, and nothing errors. The env var is the only lever
+      // that does not cost something else: `allowedTools` is an auto-approval
+      // list rather than an access list, so naming tools there widens
+      // auto-approval (DOR-519, argued at length in `tooling/tool-filter.ts`),
+      // and `tools` would mean declaring a whole base tool set DorkOS has never
+      // taken a position on. Fixture-fed tests cannot catch a regression here —
+      // fixtures keep supplying the blocks a real model would have stopped
+      // sending — so this is verified by one live turn per bump.
+      CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
+      // NOTE: an inherited MCP_TOOL_TIMEOUT is deliberately passed through
+      // untouched. DorkOS used to raise it to the approval hold's cap, because
+      // the variable governs every MCP server in the subprocess and a low value
+      // killed held destructive calls mid-wait (DOR-987). The `dorkos` server now
+      // declares its own per-call ceiling instead (`mcp-tools/tool-timeout.ts`),
+      // so the operator's value applies to the external server they lowered it
+      // for and to nothing else.
       // The account, ALWAYS spelled out (see `claudeConfigDirEnv`) so it is never
       // inherited from `process.env`. That is load-bearing for D8: rename and
       // fork point the in-process SDK at an account by mutating
@@ -492,6 +545,27 @@ export async function resolveLaunch(args: {
             return { continue: true };
           },
         ],
+      },
+    ],
+    // Tell auto mode's permission classifier which safety tier DorkOS's own
+    // gate put this tool at, and that the call passed that gate
+    // (spec `auto-mode-classifier-context`).
+    //
+    // An ASSERTION, never a grant: the note cannot allow anything, and the
+    // classifier is free to ignore it. That is the whole reason this shape is
+    // acceptable where an auto-approval list was not — ADR `260726-171347`
+    // (DOR-519) is the record of what a list of tool names did here.
+    //
+    // The matcher narrows the wire; `classifierContextFor` is the guard. It has
+    // to be shaped like a PATTERN, not like a prefix: the CLI reads a matcher of
+    // word characters alone as a list of exact tool names, so the bare
+    // `mcp__dorkos__` this shipped with matched nothing and the hook never fired
+    // at all. `CLASSIFIER_CONTEXT_MATCHER` carries the anchor that buys the
+    // regex reading, and its TSDoc has the whole rule.
+    PostToolUse: [
+      {
+        matcher: CLASSIFIER_CONTEXT_MATCHER,
+        hooks: [createClassifierContextHook({ sessionId, enabled: CLASSIFIER_CONTEXT_ON })],
       },
     ],
   };

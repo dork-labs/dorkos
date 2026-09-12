@@ -269,12 +269,16 @@ export class RoomsPage {
   /**
    * The right panel's body — the Room tab's content once it is the active one.
    *
-   * The container gives its body `role="tabpanel"` whenever more than one tab is
-   * visible, which on a room route is always: Pulse is global and the Room tab
-   * is contextual (spec `one-bar-header` §3.6).
+   * **Addressed by the container's own id, not by `role="tabpanel"`.** The
+   * container gives its body that role whenever more than one tab is visible,
+   * which on a room route is always — but the Canvas and Browser tabs put a
+   * SECOND document strip inside it, whose open document is a tabpanel too. A
+   * role match resolves to two elements the moment a room has anything on its
+   * canvas, and Playwright's strict mode turns that into a failure in whichever
+   * test happened to open one.
    */
   get roomPanel(): Locator {
-    return this.page.getByRole('tabpanel');
+    return this.page.locator('#right-panel-content');
   }
 
   /** The right panel's own tab for this room, whether or not it is showing. */
@@ -316,6 +320,104 @@ export class RoomsPage {
   /** The room's own mark at the top of the panel — a DM wears its agent's face. */
   get panelRoomMark(): Locator {
     return this.roomPanel.locator('[data-slot="room-avatar"]').first();
+  }
+
+  // --- The room's shared canvas (spec `room-canvas` §9) ---
+
+  /** The right panel's Canvas tab — the room's table of documents. */
+  get canvasTab(): Locator {
+    return this.page.getByRole('tab', { name: 'Canvas' });
+  }
+
+  /** The right panel's Browser tab — the pages on the room's table. */
+  get browserTab(): Locator {
+    return this.page.getByRole('tab', { name: 'Browser' });
+  }
+
+  /**
+   * The Canvas tab's document strip, once that tab is showing.
+   *
+   * Named by what a screen reader calls it, which is also what tells the two
+   * strips apart: the Browser tab draws its own over the pages.
+   */
+  get canvasDocuments(): Locator {
+    return this.page.getByRole('tablist', { name: 'Open canvas documents' });
+  }
+
+  /** The Browser tab's page strip, once that tab is showing. */
+  get browserDocuments(): Locator {
+    return this.page.getByRole('tablist', { name: 'Open browser pages' });
+  }
+
+  /**
+   * The dot on a right-panel tab saying something arrived there while the
+   * reader was looking somewhere else.
+   *
+   * Decorative, so it has no accessible name — the tab beside it is already
+   * named, and the dot is a cue rather than a fact of its own. Addressed by its
+   * slot for the same reason the sidebar's rows are.
+   */
+  get canvasTabUnreadDot(): Locator {
+    return this.canvasTab.locator('[data-slot="right-panel-tab-unread"]');
+  }
+
+  /**
+   * Open the room's Canvas tab and wait for it to be the one showing.
+   *
+   * Opens the panel first when it is shut — the right panel starts closed, and a
+   * tab inside a collapsed panel is reachable to a locator and unclickable to a
+   * pointer, which reads as a 120-second timeout on a product that is fine.
+   *
+   * The panel then opens on **Room** by auto-select and stays there when a
+   * document arrives (spec §9.3), so every test that wants the table has to ask
+   * for it — which is the behaviour, not a detour around it.
+   */
+  async openCanvasTab(): Promise<void> {
+    await this.ensureRoomPanelOpen();
+    await this.canvasTab.click();
+    await expect(this.canvasTab).toHaveAttribute('aria-selected', 'true');
+  }
+
+  /** Open the room's Browser tab and wait for it to be the one showing. */
+  async openBrowserTab(): Promise<void> {
+    await this.ensureRoomPanelOpen();
+    await this.browserTab.click();
+    await expect(this.browserTab).toHaveAttribute('aria-selected', 'true');
+  }
+
+  /**
+   * Make sure the right panel is open, without re-opening one that already is.
+   *
+   * Pressing the head count TOGGLES the panel, so a helper that pressed it
+   * unconditionally would shut the panel for any test that had already opened
+   * it — and the failure would land on whatever that test did next.
+   */
+  async ensureRoomPanelOpen(): Promise<void> {
+    if (await this.roomPanel.isVisible()) return;
+    await this.openRoomPanel();
+  }
+
+  /**
+   * One document's tab on the room's table, found by the label it prints.
+   *
+   * @param label - The document's title, as the strip shows it.
+   */
+  canvasDocumentTab(label: string): Locator {
+    return this.page.getByRole('tab', { name: new RegExp(label) });
+  }
+
+  /**
+   * The faces on one document's tab saying who else is looking at it.
+   *
+   * Decorative discs with a visually-hidden sentence beside them, so the SLOT is
+   * what a locator can reach; the sentence is what
+   * {@link RoomsPage.canvasDocumentTab} already reads through its accessible
+   * name.
+   *
+   * @param label - The document's title, as the strip shows it.
+   */
+  canvasDocumentWatchers(label: string): Locator {
+    return this.canvasDocumentTab(label).locator('[data-slot="canvas-tab-watchers"]');
   }
 
   /** The empty state's own affordance for putting agents in the room. */

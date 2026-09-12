@@ -26,14 +26,15 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
-import type { RoomEntry } from '@dorkos/shared/room-schemas';
+import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { SSE_RESILIENCE } from '@/layers/shared/lib';
 import { isFatalStreamError, streamManager } from '@/layers/shared/lib/transport';
-import { useTransport } from '@/layers/shared/model';
+import { useAppStore, useTransport } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
 import { mergeRoomReactions } from '../lib/reactions';
 import { usePendingPostStore } from './pending-posts';
-import { useRoomPresenceStore } from './use-room-presence';
+import { useRoomPresenceStore } from './live/use-room-presence';
+import { isFollowSignal, useRoomFollowStore } from './live/use-room-follow';
 
 /**
  * Insert an entry into a room's cached history, keeping it ordered by `seq` and
@@ -106,6 +107,82 @@ function clearNoticeSubject(roomId: string, entry: RoomEntry): void {
 function cursorFromCache(queryClient: QueryClient, roomId: string): number {
   const cached = queryClient.getQueryData<RoomEntry[]>(roomKeys.entries(roomId));
   return cached && cached.length > 0 ? cached[cached.length - 1]!.seq : 0;
+}
+
+/**
+ * Who is reading this room, as the room's own read already answered.
+ *
+ * `RoomWithRoster.viewerAuthorId` is the server's statement of which author this
+ * caller is, so nothing here has to work it out. `null` while that read has not
+ * landed — which is honest rather than a fallback: a viewer we cannot name is a
+ * viewer no arrival may be attributed to, and the canvas slice treats that as
+ * "not mine", leaving every tab where it was.
+ *
+ * @param queryClient - The cache the room read lives in.
+ * @param roomId - The room.
+ */
+function viewerAuthorIdFromCache(queryClient: QueryClient, roomId: string): string | null {
+  return queryClient.getQueryData<RoomWithRoster>(roomKeys.detail(roomId))?.viewerAuthorId ?? null;
+}
+
+/**
+ * How long the canvas resync may go quiet before the reader concludes it is
+ * over.
+ *
+ * Generous on purpose: the burst is written into the same response as the entry
+ * replay, so in practice it lands in one tick, and the whole cost of waiting is
+ * that a document closed while this reader was away lingers for another second
+ * or two. The cost of NOT waiting is sweeping rows whose frames were still in
+ * flight, which is the table flickering on every reconnect.
+ */
+const RESYNC_BURST_QUIET_MS = 2_000;
+
+/** What the stream uses to say when a room's resync burst has finished. */
+interface ResyncBurstEnd {
+  /** Start (or restart) the quiet countdown for this room. */
+  arm: (roomId: string) => void;
+  /** The burst is over now — sweep immediately. */
+  now: (roomId: string) => void;
+}
+
+/**
+ * A single quiet-period timer for the canvas resync, cleared when the hook goes
+ * away.
+ *
+ * One timer rather than one per frame: `arm` replaces whatever was pending, so a
+ * burst of twelve documents schedules one sweep rather than twelve.
+ */
+function useResyncBurstEnd(): ResyncBurstEnd {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clear = useCallback(() => {
+    if (timer.current === null) return;
+    clearTimeout(timer.current);
+    timer.current = null;
+  }, []);
+
+  const now = useCallback(
+    (roomId: string) => {
+      clear();
+      useAppStore.getState().endRoomCanvasCycle(roomId);
+    },
+    [clear]
+  );
+
+  const arm = useCallback(
+    (roomId: string) => {
+      clear();
+      timer.current = setTimeout(() => {
+        timer.current = null;
+        useAppStore.getState().endRoomCanvasCycle(roomId);
+      }, RESYNC_BURST_QUIET_MS);
+    },
+    [clear]
+  );
+
+  useEffect(() => clear, [clear]);
+
+  return { arm, now };
 }
 
 /**
@@ -234,6 +311,19 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
    */
   const betweenStreamsRef = useRef(false);
 
+  /**
+   * When to stop waiting for more of the canvas resync and sweep what nobody
+   * vouched for.
+   *
+   * A cycle arms it, every resync frame pushes it back, and the first frame
+   * carrying a `change` ends it outright — that frame is live traffic, so the
+   * re-send is over. The timer is the other half and it is the half that matters
+   * for an EMPTY table: a room whose canvas the server no longer holds sends no
+   * resync frames at all, and without a deadline the rows this reader is holding
+   * would never be swept.
+   */
+  const endBurst = useResyncBurstEnd();
+
   // Re-running the effect is the whole of a retry: the cycle below clears the
   // stall itself, so there is nothing to reset here.
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
@@ -309,6 +399,14 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
     };
   }, [roomId, wake]);
 
+  // Which room's table is live in this browser — the one fact the right panel's
+  // tab strip needs and cannot work out for itself (it draws in the embed and in
+  // tests with neither router nor transport behind it).
+  useEffect(() => {
+    useAppStore.getState().setRoomCanvasLiveRoom(roomId);
+    return () => useAppStore.getState().setRoomCanvasLiveRoom(null);
+  }, [roomId]);
+
   useEffect(() => {
     if (roomId === null || !hydrated) return;
 
@@ -345,6 +443,14 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
         // to the stability window and a live-but-unproven stream is not one the
         // wake-ups should be tearing down.
         betweenStreamsRef.current = false;
+        // Every row this reader holds is now unvouched-for: a document CLOSED
+        // while they were away leaves no frame to replay, so nothing but the
+        // canvas resync that follows this resume can correct it (spec
+        // `room-canvas` §2). The table is MARKED rather than emptied — an empty
+        // table would render, and what renders over it is a splash that unmounts
+        // whatever somebody was typing in.
+        useAppStore.getState().beginRoomCanvasCycle(roomId);
+        endBurst.arm(roomId);
         // A room can be healthy and completely silent, so "an event arrived" is
         // not the only proof of life — a stream still open after the stability
         // window is the other, and it is the one that takes the notice back down
@@ -366,7 +472,25 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
             // they never enter the history — they go to the presence store,
             // which expires them rather than keeping them.
             if (event.type === 'signal') {
-              useRoomPresenceStore.getState().observe(roomId, event);
+              // THREE readers, one lane, and each says which frames are its
+              // own. A `presence` signal carrying a follow claim or a follow
+              // position is the follow store's; anything else is read by the
+              // other two — the presence store, which is about work being done
+              // and is keyed by claim, and the canvas slice, which is about
+              // attention and is keyed by author (spec `room-canvas` §9.4).
+              //
+              // **The `else` is load-bearing.** `applyRoomCanvasPresence` reads
+              // a `presence` frame with no `documentId` as "this author is
+              // looking at no document" and drops their face. Every follow frame
+              // is such a frame, so routing one to it would clear a tab face on
+              // every scroll of whoever is being followed. The schema refuses a
+              // frame carrying two payloads, so one branch is always right.
+              if (isFollowSignal(event)) {
+                useRoomFollowStore.getState().observe(roomId, event);
+              } else {
+                useRoomPresenceStore.getState().observe(roomId, event);
+                useAppStore.getState().applyRoomCanvasPresence(roomId, event);
+              }
               continue;
             }
             // Reactions are durable state ON an entry rather than a place in
@@ -379,6 +503,26 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
               queryClient.setQueryData<RoomEntry[]>(roomKeys.entries(roomId), (cached) =>
                 mergeRoomReactions(cached, event.entryId, event.reactions)
               );
+              continue;
+            }
+            // The room's shared canvas changed. Durable state like a reaction —
+            // whole document, no `seq`, re-sent in full on a resume — and, like a
+            // reaction, it never moves the cursor and never enters the history.
+            //
+            // It lands in the app store rather than the query cache: the table is
+            // stream-hydrated state, like presence, not a fetched resource
+            // (spec `room-canvas` §9.2). The viewer's own author id decides
+            // whether an open follows — a document YOU opened lands in front of
+            // you, and one another member opened never moves your tab (§9.3).
+            if (event.type === 'canvas') {
+              useAppStore
+                .getState()
+                .applyRoomCanvasFrame(roomId, event, viewerAuthorIdFromCache(queryClient, roomId));
+              // A frame naming a `change` is something that just HAPPENED, so
+              // the re-send of what was already there is over; anything else is
+              // still the burst, and the sweep waits a little longer.
+              if (event.change !== undefined) endBurst.now(roomId);
+              else endBurst.arm(roomId);
               continue;
             }
             // An author's own entry retires that author's indicators here. It

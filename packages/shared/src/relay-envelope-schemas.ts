@@ -6,7 +6,7 @@
  */
 import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
-import { EffortLevelSchema, PermissionModeSchema } from './schemas.js';
+import { EffortLevelSchema, PermissionModeSchema, TaskRunTriggerSchema } from './schemas.js';
 
 extendZodWithOpenApiOnce();
 
@@ -337,7 +337,19 @@ export const TaskDispatchPayloadSchema = z
     permissionMode: PermissionModeSchema,
     taskName: z.string(),
     cron: z.string().nullable(),
-    trigger: z.string(),
+    /**
+     * How this run started, in the same closed vocabulary the run row uses.
+     *
+     * **Closed rather than `z.string()`, and the receiver is the reason.** It
+     * reads this field to decide whether the run is unattended — whether an ask
+     * it raises is refused on the spot or waits for the person who clicked Run
+     * now (`adapters/claude-code/task-handler.ts`, spec
+     * `unattended-session-permission-prompts`). An open string lets a typo, or a
+     * fixture inventing a word like `cron`, read as "not scheduled" and quietly
+     * restore the ten-minute wait to a run nobody is watching. Now such an
+     * envelope fails to parse instead, which is where a wire mistake belongs.
+     */
+    trigger: TaskRunTriggerSchema,
     /**
      * The unattended-run briefing the agent starts with — what job this is,
      * what schedule raised it, and that nobody is here to answer questions

@@ -8,9 +8,10 @@ import type { Transport } from '@dorkos/shared/transport';
 import type { RoomEntry, RoomEvent, RoomNoticeCode } from '@dorkos/shared/room-schemas';
 import { SSE_RESILIENCE } from '@/layers/shared/lib';
 import { RoomStreamHttpError } from '@/layers/shared/lib/transport';
-import { TransportProvider } from '@/layers/shared/model';
+import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
-import { useRoomPresenceStore } from '../model/use-room-presence';
+import { useRoomFollowStore } from '../model/live/use-room-follow';
+import { useRoomPresenceStore } from '../model/live/use-room-presence';
 import { useRoomStream } from '../model/use-room-stream';
 
 function entry(seq: number): RoomEntry {
@@ -168,6 +169,113 @@ describe('useRoomStream', () => {
     expect(
       queryClient.getQueryData<RoomEntry[]>(roomKeys.entries('room-1'))?.map((e) => e.seq)
     ).toEqual([4, 5]);
+  });
+
+  it('routes a tab-presence signal to the canvas, and a working signal past it', async () => {
+    // The two facts share the ephemeral lane and must never be read as each
+    // other: one says an agent is doing work, the other says where a member is
+    // looking. Driven through the real hook because the split lives in its
+    // dispatch, not in either store.
+    const transport = createMockTransport();
+    const queryClient = makeQueryClient();
+    transport.subscribeRoom = vi.fn().mockImplementation((_id: string, _cursor: number) =>
+      (async function* () {
+        yield {
+          type: 'signal',
+          signal: 'presence',
+          authorId: 'author-ana',
+          at: '2026-09-12T00:00:00.000Z',
+          documentId: 'doc-1',
+        } satisfies RoomEvent;
+        yield {
+          type: 'signal',
+          signal: 'progress',
+          authorId: 'author-ben',
+          at: '2026-09-12T00:00:01.000Z',
+          state: 'working',
+          entryId: 'entry-9',
+          since: '2026-09-12T00:00:01.000Z',
+        } satisfies RoomEvent;
+        await new Promise(() => {});
+      })()
+    );
+
+    const { unmount } = renderHook(() => useRoomStream('room-1', true), {
+      wrapper: wrapperFor(transport, queryClient),
+    });
+
+    try {
+      await waitFor(() =>
+        expect(useAppStore.getState().roomCanvasPresence['room-1']).toEqual({
+          'author-ana': 'doc-1',
+        })
+      );
+      // The working indicator went to the OTHER store, and put no face on a tab.
+      expect(Object.keys(useRoomPresenceStore.getState().rooms['room-1'] ?? {})).toHaveLength(1);
+      expect(useAppStore.getState().roomCanvasPresence['room-1']).not.toHaveProperty('author-ben');
+    } finally {
+      unmount();
+    }
+  });
+
+  it('keeps a follow frame off the tab-presence reader, so a face survives a scroll', async () => {
+    // `applyRoomCanvasPresence` reads a `presence` frame with no `documentId` as
+    // "this author is looking at no document" and takes their face off the tab.
+    // Every follow frame is such a frame, and a followed person sends one every
+    // quarter second — so routing them there would strip the face of whoever is
+    // being followed, continuously, for as long as somebody follows them.
+    const transport = createMockTransport();
+    const queryClient = makeQueryClient();
+    transport.subscribeRoom = vi.fn().mockImplementation((_id: string, _cursor: number) =>
+      (async function* () {
+        yield {
+          type: 'signal',
+          signal: 'presence',
+          authorId: 'author-ana',
+          at: '2026-09-12T00:00:00.000Z',
+          documentId: 'doc-1',
+        } satisfies RoomEvent;
+        yield {
+          type: 'signal',
+          signal: 'presence',
+          authorId: 'author-ana',
+          at: '2026-09-12T00:00:01.000Z',
+          view: { documentId: 'doc-1', scrollY: 120 },
+        } satisfies RoomEvent;
+        yield {
+          type: 'signal',
+          signal: 'presence',
+          authorId: 'author-kai',
+          at: '2026-09-12T00:00:02.000Z',
+          follows: 'author-ana',
+        } satisfies RoomEvent;
+        await new Promise(() => {});
+      })()
+    );
+
+    const { unmount } = renderHook(() => useRoomStream('room-1', true), {
+      wrapper: wrapperFor(transport, queryClient),
+    });
+
+    try {
+      await waitFor(() =>
+        expect(useRoomFollowStore.getState().positions['room-1']?.['author-ana']?.view).toEqual({
+          documentId: 'doc-1',
+          scrollY: 120,
+        })
+      );
+      await waitFor(() =>
+        expect(useRoomFollowStore.getState().claims['room-1']).toHaveProperty('author-kai')
+      );
+      // Ana's face is still on her tab, and neither follow frame reached the
+      // working-indicator store either.
+      expect(useAppStore.getState().roomCanvasPresence['room-1']).toEqual({
+        'author-ana': 'doc-1',
+      });
+      expect(Object.keys(useRoomPresenceStore.getState().rooms['room-1'] ?? {})).toHaveLength(0);
+    } finally {
+      unmount();
+    }
   });
 
   it('says the room has gone quiet once the retries stop landing', async () => {

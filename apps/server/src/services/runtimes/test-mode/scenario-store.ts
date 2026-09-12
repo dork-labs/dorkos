@@ -6,6 +6,7 @@ import { interactionGate, type ScenarioContext } from './interaction-gate.js';
 import { INTERACTIVE_SCENARIOS } from './interactive-scenarios.js';
 import { Q3_SCENARIOS } from './q3-contention-scenarios.js';
 import { roomReplyScenarios, TOOL_CAPABLE_SCENARIOS } from './room-reply-scenarios.js';
+import { browserDrivingScenarios } from './browser-driving-scenarios.js';
 
 /**
  * One scripted turn.
@@ -275,6 +276,11 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
   // exercise `rooms.toolOnlyReplies` without any existing scenario changing
   // behaviour (spec `tool-only-room-replies` §D14).
   ...roomReplyScenarios(() => finishRequested),
+  // A turn that really drives the preview: reads the page, clicks a button,
+  // waits for what the click produced, and reads it back (spec
+  // `canvas-agent-seat` §2). It calls the production handlers rather than
+  // composing an answer, because the round trip IS the thing under test.
+  ...browserDrivingScenarios(),
   /**
    * A turn that stays busy until `POST /api/test/finish-turn` says otherwise,
    * and gives up after three minutes regardless — see {@link workingTurn}.
@@ -363,6 +369,68 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
       data: { toolCallId: 'tc-1', toolName: 'Bash', status: 'complete' },
     } as StreamEvent;
     yield { type: 'text_delta', data: { text: 'Done.' } } as StreamEvent;
+    yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
+  },
+  /**
+   * One turn that reaches BOTH right-panel document views: it fetches a page,
+   * opens a markdown document, and navigates the embedded browser.
+   *
+   * The fixture for verifying the Canvas/Browser split in a real browser (ADR
+   * 260911-200304) without spending a model call. Three things it makes
+   * checkable: a page lands in the Browser tab, the Canvas tab's document stays
+   * exactly where it was, and the `WebFetch` leaves a "Fetched …" touch chip —
+   * the phone-width control whose own tap has to reveal the Browser tab rather
+   * than the Canvas one. Deliberately NOT advertised in
+   * `features.testModeScenarios`, the same choice the slow-close fixture above
+   * makes: it is named explicitly by whoever drives it, not picked off a list.
+   */
+  'ui-canvas-and-browser': async function* (_content) {
+    yield {
+      type: 'session_status',
+      data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
+    } as StreamEvent;
+    yield {
+      type: 'tool_call_start',
+      data: { toolCallId: 'wf-1', toolName: 'WebFetch', status: 'running' },
+    } as StreamEvent;
+    yield {
+      type: 'tool_call_delta',
+      data: {
+        toolCallId: 'wf-1',
+        toolName: 'WebFetch',
+        input: '{"url":"https://example.com/"}',
+        status: 'running',
+      },
+    } as StreamEvent;
+    yield {
+      type: 'tool_call_end',
+      data: { toolCallId: 'wf-1', toolName: 'WebFetch', status: 'complete' },
+    } as StreamEvent;
+    yield {
+      type: 'ui_command',
+      data: {
+        command: {
+          action: 'open_canvas',
+          content: {
+            type: 'markdown',
+            title: 'notes.md',
+            // File-backed so a second run of this scenario RE-OPENS the same
+            // document rather than adding one: that is the path a held update
+            // travels when somebody is editing it (ADR-0292).
+            sourcePath: 'notes.md',
+            content: '# Notes\n\nThis document belongs to the Canvas tab.',
+          },
+        },
+      },
+    } as StreamEvent;
+    yield {
+      type: 'ui_command',
+      data: { command: { action: 'browser_navigate', url: 'https://example.com/' } },
+    } as StreamEvent;
+    yield {
+      type: 'text_delta',
+      data: { text: 'Notes are on the Canvas tab; the page is on the Browser tab.' },
+    } as StreamEvent;
     yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
   },
   'todo-write': async function* (_content) {

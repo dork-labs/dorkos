@@ -123,7 +123,7 @@ describe('checkOpenCodeDependencies', () => {
   it('warns (but stays satisfied) when a PATH-resolved binary reports a version other than the pin — never blocks, the user owns this binary', async () => {
     mockRuntimesConfig({ enabled: true, binaryPath: null, port: 0 });
     vi.mocked(existsSync).mockImplementation((p) => p === PATH_OPENCODE);
-    pathProbes({ version: '1.17.13' }); // the pin is OPENCODE_PACKAGE_VERSION (1.18.15)
+    pathProbes({ version: '1.17.13' }); // the pin is OPENCODE_PACKAGE_VERSION (1.18.30)
 
     const [cli, auth] = await checkOpenCodeDependencies();
 

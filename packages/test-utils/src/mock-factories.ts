@@ -9,10 +9,17 @@ import type {
   InterruptReceipt,
   Task,
   TaskRun,
+  UiCanvasContent,
 } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
 import type { HarnessStatusResponse } from '@dorkos/shared/harness-schemas';
-import type { RoomEntry, RoomEntryListResponse } from '@dorkos/shared/room-schemas';
+import type {
+  CanvasDocument,
+  RoomEntry,
+  RoomEntryListResponse,
+  UpdateCanvasDocumentRequest,
+} from '@dorkos/shared/room-schemas';
+import { canvasSourceKey } from '@dorkos/shared/canvas-source-key';
 import type { WorktreeScanResult } from '@dorkos/shared/workspace';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { BUILTIN_MEMORY_PROVIDER_ID } from '@dorkos/shared/memory-provider';
@@ -197,6 +204,68 @@ export function mockRoomEntryPage(
 }
 
 /**
+ * One document on a room's shared canvas, as every reader is handed it (spec
+ * `room-canvas` §2).
+ *
+ * A `markdown` document by default, because markdown is the one shape whose
+ * bytes travel in the row itself — so a test that says nothing about content
+ * gets a document that actually renders, rather than one whose viewer would go
+ * looking for a file that is not there.
+ *
+ * @param overrides - Fields to change.
+ */
+export function mockCanvasDocument(overrides: Partial<CanvasDocument> = {}): CanvasDocument {
+  return {
+    id: 'canvas-doc-1',
+    scope: 'room:room-1',
+    roomId: 'room-1',
+    content: { type: 'markdown', content: '# Notes', title: 'Notes' },
+    title: 'Notes',
+    contentType: 'markdown',
+    authorId: 'author-agent',
+    pinned: false,
+    rev: 1,
+    lastTouchedBy: 'author-agent',
+    lastTouchedAt: '2026-09-11T00:00:00.000Z',
+    openedAt: '2026-09-11T00:00:00.000Z',
+    lastActiveAt: '2026-09-11T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+/**
+ * One row of a session's canvas, built from the content a write was given.
+ *
+ * The id is deterministic from the content's source key where it has one, so a
+ * test that opens the same file twice gets one row — the dedupe the server does.
+ * Content with no key (`json`, `widget`) gets a fresh id every time, which is
+ * also what the server does.
+ *
+ * @param sessionId - The session the row belongs to.
+ * @param content - What was opened.
+ * @returns The row, as the server would have answered.
+ */
+export function sessionCanvasRow(sessionId: string, content: UiCanvasContent): CanvasDocument {
+  const key = canvasSourceKey(content);
+  const at = '2026-09-12T00:00:00.000Z';
+  return {
+    id: key === null ? `canvas-${Math.random().toString(36).slice(2, 10)}` : `canvas-${key}`,
+    scope: `session:${sessionId}`,
+    roomId: null,
+    content,
+    title: content.title ?? 'Document',
+    contentType: content.type,
+    authorId: 'owner',
+    pinned: false,
+    rev: 1,
+    lastTouchedBy: 'owner',
+    lastTouchedAt: at,
+    openedAt: at,
+    lastActiveAt: at,
+  };
+}
+
+/**
  * The harness status a test sees when it has said nothing about harnesses:
  * `ready`, clean, and empty.
  *
@@ -348,7 +417,13 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // Default: the port answers. Tests covering the dead-port message override
     // this with `{ listening: false }`, and DirectTransport tests with `null`.
     probeLoopbackPort: vi.fn(async () => ({ listening: true })),
+    // Embedded browser — the default mock behaves like the HTTP transport (it
+    // can serve a page); tests covering the DirectTransport path override
+    // `supportsWorkbenchServe: false`.
+    supportsWorkbenchServe: true,
     ingestDevtoolsCapture: vi.fn(async () => {}),
+    postDevtoolsAction: vi.fn(async () => {}),
+    uploadDevtoolsRecording: vi.fn(async () => {}),
     // Embedded terminal — the default mock behaves like the HTTP transport
     // (supported); tests that need the DirectTransport path override
     // `supportsTerminal: false`.
@@ -439,6 +514,9 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     readRoomRepoStatus: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
     saveRoomFile: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
     repairRoomMain: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
+    mergeRoomMain: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
+    readRoomCanvasDiff: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
+    writeRoomCanvasDiff: vi.fn().mockRejectedValue(mockRoomHasNoRepoError()),
     postToRoom: vi.fn().mockResolvedValue({ accepted: true, entryId: 'entry-mock', seq: 1 }),
     // Nothing attached, by default: a test that is about attachments overrides
     // this, and every other test posts a message with no files the way a person
@@ -468,7 +546,55 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     addRoomMember: vi.fn(),
     updateRoomMember: vi.fn(),
     removeRoomMember: vi.fn().mockResolvedValue(undefined),
+    // The room canvas: every write answers with the row it wrote, and the screen
+    // is drawn from the `canvas` frame rather than from these answers — so a
+    // test that is not about the canvas needs them only to resolve.
+    openRoomCanvasDocument: vi.fn().mockResolvedValue(mockCanvasDocument()),
+    updateRoomCanvasDocument: vi.fn().mockResolvedValue(mockCanvasDocument()),
+    closeRoomCanvasDocument: vi.fn().mockResolvedValue(undefined),
+    setRoomCanvasEditing: vi.fn().mockResolvedValue({ editingBy: null, expiresAt: null }),
+    // Discuss answers with the thread it opened. A test that cares which one
+    // overrides it; one that does not needs only an id to open a panel on.
+    discussCanvasDocument: vi
+      .fn()
+      .mockResolvedValue({ threadRootEntryId: 'thread-root', created: true }),
+    // Following somebody. The claim and the position both come back on the room
+    // stream, so nothing here writes state; `publishRoomView` answers `true` by
+    // default because the only caller that reaches it is one the room has
+    // already said is being followed.
+    followRoomMember: vi.fn().mockResolvedValue(undefined),
+    unfollowRoomMember: vi.fn().mockResolvedValue(undefined),
+    publishRoomView: vi.fn().mockResolvedValue({ followed: true }),
+    setRoomCanvasViewing: vi.fn().mockResolvedValue(undefined),
     subscribeRoom: vi.fn(emptyAsyncIterable),
+    // The session canvas (spec `canvas-agent-seat` §1.6). Honest-empty reads: a
+    // test that has said nothing about the canvas gets a session with nothing on
+    // it, which is what a fresh session really has.
+    //
+    // **The writes ECHO what they were given**, rather than answering with a
+    // fixed fixture. The client adopts the row a write answers with — that is
+    // how a pending id becomes the server's — so a fixed answer would replace
+    // every document a test opened with the same unrelated one, and the test
+    // would be measuring the fixture.
+    listSessionCanvas: vi.fn().mockResolvedValue([]),
+    getSessionCanvasDocument: vi.fn().mockResolvedValue(null),
+    openSessionCanvasDocument: vi
+      .fn()
+      .mockImplementation((sessionId: string, content: UiCanvasContent) =>
+        Promise.resolve(sessionCanvasRow(sessionId, content))
+      ),
+    updateSessionCanvasDocument: vi
+      .fn()
+      .mockImplementation(
+        (sessionId: string, documentId: string, patch: UpdateCanvasDocumentRequest) =>
+          Promise.resolve({
+            ...sessionCanvasRow(sessionId, patch.content ?? { type: 'json', data: {} }),
+            id: documentId,
+            ...(patch.pinned !== undefined ? { pinned: patch.pinned } : {}),
+          })
+      ),
+    closeSessionCanvasDocument: vi.fn().mockResolvedValue(undefined),
+    setSessionCanvasEditing: vi.fn().mockResolvedValue({ editingBy: null, expiresAt: null }),
     // Read state (team-room-home D4) — one cursor for every kind of thread a
     // person reads, rooms included. The default read is `null`: a test that says
     // nothing about read state gets a thread nobody has read, which draws no

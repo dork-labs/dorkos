@@ -69,7 +69,9 @@ import {
 } from './session-queue-handler.js';
 import { sessionEventsHandler } from './session-events-handler.js';
 import { sessionCommandIntentHandler } from './session-command-intent-handler.js';
-import { sessionDevtoolsIngestHandler } from './session-devtools.js';
+import { sessionDevtoolsActionHandler, sessionDevtoolsIngestHandler } from './session-devtools.js';
+import sessionCanvasRouter from './session-canvas.js';
+import { sessionDevtoolsRecordingHandler } from './session-recording.js';
 import { sessionAttachmentHandler } from './session-attachments-handler.js';
 import { sessionMcpAppResourceHandler } from './session-mcp-app-resource-handler.js';
 import path from 'node:path';
@@ -1472,10 +1474,28 @@ router.post('/:id/ui-action', sessionUiActionHandler);
 // busy → 409 SESSION_LOCKED — see the handler's module doc.
 router.post('/:id/command-intents/:intent', sessionCommandIntentHandler);
 
+// /api/sessions/:id/canvas — this session's own canvas (spec
+// `canvas-agent-seat` §1.6). Six thin handlers over the one writer, in their own
+// file for the same reason the devtools sink is: this one stays under the size
+// rule. A person is the gate; an agent is refused `PEOPLE_ONLY` and reaches its
+// own canvas through `control_ui` and `read_canvas_document` instead.
+router.use('/:id/canvas', sessionCanvasRouter);
+
 // POST /api/sessions/:id/devtools/ingest — DevTools bridge capture sink (DOR-213).
 // Session-gated (credentialed same-origin client call), Zod-validated, batch-capped.
 // The handler lives in `session-devtools.ts` to keep this file under the size rule.
 router.post('/:id/devtools/ingest', sessionDevtoolsIngestHandler);
+
+// POST /api/sessions/:id/devtools/action — the result of one driving round trip
+// (spec `canvas-agent-seat` §2.1): what the click did, what the page says now.
+// Same posture as the ingest sink above; the handler lives beside it.
+router.post('/:id/devtools/action', sessionDevtoolsActionHandler);
+
+// POST /api/sessions/:id/devtools/recording — a finished browser recording, as
+// two file parts: the GIF and its last frame (spec `canvas-agent-seat` §3.4).
+// Multipart rather than JSON because the GIF is megabytes of binary, and the
+// destination is the server's own, never one this request names.
+router.post('/:id/devtools/recording', sessionDevtoolsRecordingHandler);
 
 /**
  * GET /:id/attachments/:file — an image this session's turn produced.

@@ -89,6 +89,17 @@ export const APPROVAL_TTL_MS = 2 * 60 * 60 * 1000;
 export const MIN_APPROVAL_TTL_MS = 1_000;
 
 /**
+ * Longest gap between two expiry sweeps, whatever the decision window is.
+ *
+ * A minute against the two-hour default window is 0.8% lateness on an ending
+ * nothing waits on to the second, bought for one wakeup a minute over an indexed
+ * query on a table that holds single digits of rows. Shorter would spend more for
+ * promptness nobody asked for; much longer would leave an agent waiting on an
+ * answer that already cannot come.
+ */
+export const APPROVAL_EXPIRY_SWEEP_MAX_MS = 60_000;
+
+/**
  * Resolve a configured decision window into a usable one: SHORTENABLE, never
  * lengthenable, never nonsensical.
  *
@@ -465,6 +476,25 @@ export class ApprovalService {
   }
 
   /**
+   * How often {@link sweepExpired} should run for THIS service's decision window.
+   *
+   * Never a flat constant, because {@link resolveApprovalTtlMs} exists so the
+   * window can be shortened to seconds — a sweep slower than the window it
+   * polices would make an approval configured to lapse in one second sit
+   * unobserved for a minute, which is the whole condition
+   * `DORKOS_APPROVAL_TTL_MS` was added to let a harness watch (DOR-498).
+   *
+   * Clamped at both ends. The ceiling is what keeps the cost at one wakeup a
+   * minute on the ordinary two-hour window. The floor is because
+   * {@link ApprovalServiceOptions.ttlMs} is constructor API that does NOT pass
+   * through `resolveApprovalTtlMs`, so a caller can hand over a window of `5` —
+   * and an interval of five milliseconds is a busy loop, not a sweep.
+   */
+  get expirySweepIntervalMs(): number {
+    return Math.max(MIN_APPROVAL_TTL_MS, Math.min(this.ttlMs, APPROVAL_EXPIRY_SWEEP_MAX_MS));
+  }
+
+  /**
    * Record a request for approval and announce it to the cockpit.
    *
    * The title and tier on the card come from the capability registry, never from
@@ -813,24 +843,49 @@ export class ApprovalService {
     const row = this.db.select().from(approvals).where(eq(approvals.id, approvalId)).get();
     if (!row) return undefined;
     if (!row.requestingSessionId) return undefined;
-    // Only a decision is a verdict. An expired or spent row has no answer in it,
-    // and `expired` is DOR-1932's subject, not this seam's.
+
+    // The column is `notNull` and `request` always writes the registry title or
+    // the capability id, so this can only be blank on a hand-edited row. Falling
+    // back beats rendering `Request: ` at a person's security decision — the id
+    // is always meaningful, an empty line never is.
+    const capabilityTitle = row.capabilityTitle.trim() || row.capabilityId;
+
+    // An approval nobody answered is a third ending, not a decision, and it is
+    // worth telling the agent about for the same reason a denial is: it is
+    // blocked on an answer it will now never get (spec `approval-expiry-notice`).
+    // Read off `state === 'pending'` rather than off `consumedAt`, because the
+    // expiry sweep spends the row without deciding it — a swept row stays
+    // `pending` — and because a row a person DID decide must render its decision
+    // even if the deadline has since passed.
+    if (row.state === 'pending') {
+      if (!this.isExpired(row)) return undefined;
+      return {
+        sessionId: row.requestingSessionId,
+        ...(row.requestingCwd ? { cwd: row.requestingCwd } : {}),
+        verdict: {
+          approvalId: row.id,
+          capabilityTitle,
+          outcome: 'expired',
+          // The deadline itself, not the moment the sweep noticed it: the sweep's
+          // cadence is an implementation detail and must not leak into what the
+          // agent is told happened.
+          endedAt: row.expiresAt,
+        },
+      };
+    }
+
     if (row.state !== 'granted' && row.state !== 'denied') return undefined;
     return {
       sessionId: row.requestingSessionId,
       ...(row.requestingCwd ? { cwd: row.requestingCwd } : {}),
       verdict: {
         approvalId: row.id,
-        // The column is `notNull` and `request` always writes the registry title
-        // or the capability id, so this can only be blank on a hand-edited row.
-        // Falling back beats rendering `Request: ` at a person's security
-        // decision — the id is always meaningful, an empty line never is.
-        capabilityTitle: row.capabilityTitle.trim() || row.capabilityId,
+        capabilityTitle,
         outcome: row.state,
         // `decidedAt` is written in the same statement that sets `state`, so a
         // decided row always has one; the fallback keeps a hand-edited row from
         // rendering the word `undefined` into a security block.
-        decidedAt: row.decidedAt ?? row.createdAt,
+        endedAt: row.decidedAt ?? row.createdAt,
         ...(row.state === 'denied' && row.denyReason ? { denyReason: row.denyReason } : {}),
       },
     };
@@ -839,12 +894,12 @@ export class ApprovalService {
   /**
    * Hand back every delivery claim that only a dead process could still hold.
    *
-   * Run once at boot. A claim on a PENDING approval can only belong to an
-   * in-session hold that is waiting right now — the out-of-band deliverer claims
-   * and delivers within one decided row, and never leaves a pending one claimed.
-   * A hold lives in process memory and holds a turn open, so no hold survives a
-   * restart: every claim on a pending row is therefore stranded by definition,
-   * and its release path (`awaitCapabilityApproval`'s `finally`) will never run.
+   * Run once at boot. A claim on a pending, UNSPENT approval can only belong to
+   * an in-session hold that is waiting right now — the out-of-band deliverer
+   * claims and delivers within one ended row, and never leaves an unspent one
+   * claimed. A hold lives in process memory and holds a turn open, so no hold
+   * survives a restart: every such claim is therefore stranded by definition, and
+   * its release path (`awaitCapabilityApproval`'s `finally`) will never run.
    *
    * Without this, a restart while somebody was deciding reproduced the exact bug
    * this feature exists to fix, one layer down: the person answers at minute
@@ -852,8 +907,20 @@ export class ApprovalService {
    * the agent is never told — with the column meant to guarantee delivery being
    * the thing that prevented it.
    *
-   * Decided rows are deliberately untouched: their claim means the answer was
-   * delivered (or the session was gone for good), which a restart does not undo.
+   * **`consumedAt IS NULL` is load-bearing, not belt-and-braces.** Until expiry
+   * became observable, "pending" alone implied "no ending has been delivered for
+   * this row", because the only ending that spent a row also decided it. The
+   * expiry sweep breaks that: {@link markConsumed} spends the row while leaving
+   * `state` at `pending` (see {@link sweepExpired}), so an expiry notice that WAS
+   * delivered sits in exactly the shape this query used to call stranded — and
+   * without the clause every restart would hand its claim back, re-opening a
+   * delivery that already happened and miscounting it as recovered. The clause
+   * restores the invariant rather than working around it: a live hold's row is
+   * unspent, an ended one is not.
+   *
+   * Decided and spent rows are deliberately untouched: their claim means the
+   * answer was delivered (or the session was gone for good), which a restart does
+   * not undo.
    *
    * @returns How many stranded claims were released.
    */
@@ -861,7 +928,13 @@ export class ApprovalService {
     const result = this.db
       .update(approvals)
       .set({ notifiedAt: null })
-      .where(and(eq(approvals.state, 'pending'), isNotNull(approvals.notifiedAt)))
+      .where(
+        and(
+          eq(approvals.state, 'pending'),
+          isNull(approvals.consumedAt),
+          isNotNull(approvals.notifiedAt)
+        )
+      )
       .run();
     return result.changes;
   }
@@ -926,11 +999,60 @@ export class ApprovalService {
   }
 
   /**
+   * Settle every approval whose window has closed with nobody having answered.
+   *
+   * This is what makes expiry OBSERVABLE (spec `approval-expiry-notice`). Until
+   * it existed, expiry was evaluated only when somebody presented a token
+   * ({@link consume}) or tried to decide a stale row ({@link decide}), so a
+   * request that ran out of time with nobody looking never reached
+   * {@link settle}: no `approval_resolved`, no escalation disarm, and no way for
+   * the agent that asked to learn its request was dead.
+   *
+   * **The write decides, not the read.** Each row goes through
+   * {@link markConsumed} — the same conditional update that makes a token
+   * single-use — so this sweep and a `consume` landing in the same millisecond
+   * cannot both settle one approval. The loser simply skips it.
+   *
+   * A swept row keeps `state: 'pending'`: nobody decided it, and writing a
+   * decision-shaped state for an ending nobody chose would put a lie in the
+   * audit trail. `consumedAt` is what marks it finished — which is why
+   * {@link releaseStaleVerdictClaims} has to know about it.
+   *
+   * @returns How many approvals this call settled.
+   */
+  sweepExpired(): number {
+    const rows = this.db
+      .select()
+      .from(approvals)
+      .where(
+        and(
+          eq(approvals.state, 'pending'),
+          isNull(approvals.consumedAt),
+          // Strictly past the deadline, matching `isExpired` exactly so the sweep
+          // and every other expiry check agree about the boundary instant.
+          lt(approvals.expiresAt, new Date().toISOString())
+        )
+      )
+      .all();
+
+    let settled = 0;
+    for (const row of rows) {
+      if (!this.markConsumed(row.id)) continue;
+      this.settle(row.id, 'expired');
+      settled += 1;
+    }
+    return settled;
+  }
+
+  /**
    * Delete approval rows whose window closed before `olderThan`.
    *
    * Retention is deliberately longer than the decision window so a spent or
-   * expired approval stays auditable for a while after it stops working; expiry
-   * itself is enforced in {@link consume}, never by this sweep.
+   * expired approval stays auditable for a while after it stops working.
+   *
+   * Expiry itself is settled by {@link sweepExpired}, which runs on the same
+   * interval this does and always runs FIRST on a tick — so a row is never
+   * deleted in the same pass that would have announced its expiry.
    *
    * @param olderThan - Cutoff; rows that expired before this are deleted.
    *   Defaults to one day ago.

@@ -273,3 +273,150 @@ describe('prepareDispatch', () => {
     expect(decision.action).toBe('relaunch');
   });
 });
+
+/**
+ * A control channel that answers `reloadPlugins` the way the CLI does when the
+ * conversation's prompt cache depends on the tool list (spec
+ * `plugin-reload-cache-cost`).
+ */
+function holdingControlQuery() {
+  const asked: Array<{ holdOnCacheImpact?: boolean } | undefined> = [];
+  const query = {
+    getContextUsage: vi.fn(),
+    usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: vi.fn(),
+    setModel: vi.fn(() => Promise.resolve()),
+    setPermissionMode: vi.fn(() => Promise.resolve()),
+    setMcpServers: vi.fn(() => Promise.resolve({})),
+    reloadPlugins: vi.fn((opts?: { holdOnCacheImpact?: boolean }) => {
+      asked.push(opts);
+      return Promise.resolve(
+        opts?.holdOnCacheImpact
+          ? {
+              commands: [],
+              agents: [],
+              plugins: [],
+              mcpServers: [],
+              error_count: 0,
+              held: true,
+              cache_impact: {
+                mcp_servers_added: ['plugin:flow:linear'],
+                mcp_servers_removed: [],
+                lsp_tool_change: null,
+              },
+            }
+          : { commands: [], agents: [], plugins: [], mcpServers: [], error_count: 0 }
+      );
+    }),
+  } as unknown as PumpControlQuery;
+  return { query, asked };
+}
+
+describe('a warm process taking a new plugin set (spec `plugin-reload-cache-cost`)', () => {
+  /** A dispatch whose only moved pin is the plugin set. */
+  function pluginsMoved() {
+    const decision = prepareDispatch(
+      capture(),
+      capture({ options: options({ plugins: [{ type: 'local', path: '/plugins/flow' }] }) })
+    );
+    if (decision.action !== 'reuse') throw new Error('expected a reuse');
+    return decision;
+  }
+
+  it('applies the reload unconditionally when the dispatch did not ask to wait', async () => {
+    const { query, asked } = holdingControlQuery();
+
+    const outcome = await applyLiveChanges(query, pluginsMoved());
+
+    expect(asked).toEqual([undefined]);
+    expect(outcome.applied).toEqual(['plugins']);
+    expect(outcome.unapplied).toEqual([]);
+  });
+
+  it('leaves the pin stale when the CLI holds the reload, so the next dispatch asks again', async () => {
+    const { query, asked } = holdingControlQuery();
+    const decision = pluginsMoved();
+
+    const outcome = await applyLiveChanges(query, decision, {
+      holdPluginReloadWhenCacheWarm: true,
+    });
+
+    expect(asked).toEqual([{ holdOnCacheImpact: true }]);
+    expect(outcome.applied).toEqual([]);
+    expect(outcome.unapplied).toEqual([{ pin: 'plugins', ack: 'held' }]);
+    // The stored fingerprint keeps the OLD plugin set, which is what brings the
+    // next dispatch back — and the first one after the cache goes cold is
+    // answered `held: false` and applies for free.
+    expect(outcome.fingerprint.live.plugins).toEqual(decision.from.live.plugins);
+    expect(decideProcessReuse(outcome.fingerprint, decision.to).action).toBe('adjust');
+  });
+
+  it('applies at once when the CLI says the cache does not depend on the tool list', async () => {
+    const { query } = holdingControlQuery();
+    // A CLI that answers `held: false` even to the asking form: nothing to save.
+    vi.mocked(query.reloadPlugins).mockResolvedValue({
+      commands: [],
+      agents: [],
+      plugins: [],
+      mcpServers: [],
+      error_count: 0,
+      held: false,
+    } as unknown as Awaited<ReturnType<PumpControlQuery['reloadPlugins']>>);
+
+    const outcome = await applyLiveChanges(query, pluginsMoved(), {
+      holdPluginReloadWhenCacheWarm: true,
+    });
+
+    expect(outcome.applied).toEqual(['plugins']);
+  });
+
+  it('reports the hold, so something can put a ceiling on the waiting', async () => {
+    // Re-asking every dispatch is this path's only recovery, and on a session
+    // that dispatches all afternoon it never ends. The `plugins` pin also moves
+    // with no install behind it, so there is not always a fan-out hold already
+    // running to bound it — hence the report.
+    const { query } = holdingControlQuery();
+    const onPluginReloadHeld = vi.fn();
+
+    await applyLiveChanges(query, pluginsMoved(), {
+      holdPluginReloadWhenCacheWarm: true,
+      onPluginReloadHeld,
+    });
+
+    expect(onPluginReloadHeld).toHaveBeenCalledWith({
+      mcpServersAdded: ['plugin:flow:linear'],
+      mcpServersRemoved: [],
+      lspToolChange: null,
+    });
+  });
+
+  it('reports nothing when the reload was applied rather than held', async () => {
+    const { query } = holdingControlQuery();
+    const onPluginReloadHeld = vi.fn();
+
+    await applyLiveChanges(query, pluginsMoved(), { onPluginReloadHeld });
+
+    expect(onPluginReloadHeld).not.toHaveBeenCalled();
+  });
+
+  it('reports an unanswered cost check as unacked rather than paying a second bound', async () => {
+    // Two stacked 8 s budgets on the path between pressing send and the turn
+    // opening is sixteen seconds of a message that looks like it did nothing.
+    // A stale pin already brings the next dispatch back to try again.
+    vi.useFakeTimers();
+    try {
+      const { query } = holdingControlQuery();
+      vi.mocked(query.reloadPlugins).mockImplementation(() => new Promise<never>(() => {}));
+
+      const applying = applyLiveChanges(query, pluginsMoved(), {
+        holdPluginReloadWhenCacheWarm: true,
+      });
+      await vi.advanceTimersByTimeAsync(PLUGIN_RELOAD_ACK_TIMEOUT_MS);
+      const outcome = await applying;
+
+      expect(query.reloadPlugins).toHaveBeenCalledTimes(1);
+      expect(outcome.unapplied).toEqual([{ pin: 'plugins', ack: 'unacked' }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

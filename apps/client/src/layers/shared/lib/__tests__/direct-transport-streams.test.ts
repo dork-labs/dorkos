@@ -28,6 +28,7 @@ const SNAPSHOT: SessionSnapshot = {
   status: STATUS,
   pendingInteractions: [],
   queuedMessages: [],
+  canvas: [],
   cursor: 3,
 };
 

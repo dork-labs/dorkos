@@ -330,6 +330,24 @@ describe('/api/rooms', () => {
 
       expect(asAgent.body.viewerAuthorId).not.toBe(asHuman.body.viewerAuthorId);
     });
+
+    it('tells the caller whether they are the person who owns this install', async () => {
+      // The one gate in a room that is not a membership, and nothing else on
+      // the wire said it — so every operator-only affordance had to be drawn
+      // for everybody and refused afterwards (spec `canvas-agent-seat` §8).
+      const room = await createChannel();
+      const identity = initAgentIdentityService(db);
+      const token = await identity.mint({ agentPath: ANA_PATH, displayName: 'Ana' });
+      await request(testServer).post(`/api/rooms/${room.id}/members`).send({ agentPath: ANA_PATH });
+
+      const asHuman = await request(testServer).get(`/api/rooms/${room.id}`);
+      const asAgent = await request(testServer)
+        .get(`/api/rooms/${room.id}`)
+        .set('X-DorkOS-Agent', token);
+
+      expect(asHuman.body.viewerIsOperator).toBe(true);
+      expect(asAgent.body.viewerIsOperator).toBe(false);
+    });
   });
 
   describe('PATCH /:id — deliverNotices (chats-as-channels spec §6.2)', () => {

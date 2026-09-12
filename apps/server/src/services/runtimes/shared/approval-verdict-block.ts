@@ -10,6 +10,13 @@
  * block — so the block has to be readable as a record of a decision and never as
  * a fresh instruction somebody typed.
  *
+ * The third outcome is the absence of one: an approval nobody answered at all,
+ * whose window simply closed (spec `approval-expiry-notice`). It travels the
+ * same seam and renders through the same formatter, but its framing is written
+ * separately rather than parameterized, because the decision arm asserts as fact
+ * that a person answered — and saying that about an expiry would misreport the
+ * one thing the block was sent to report.
+ *
  * ## Why this is shared rather than per-adapter
  *
  * ADR-0273 splits the work: the server owns WHAT context exists, each adapter
@@ -92,14 +99,33 @@ function safeScalar(value: string): string {
  * It says who wrote the block before it says anything else, because the whole
  * failure mode this kind exists to avoid is an agent reading a server-authored
  * decision as words the person just typed at it.
+ *
+ * Two arms rather than one, because the decision arm's middle sentence is a
+ * statement of fact — "a person answered" — that is simply FALSE for an expiry
+ * (spec `approval-expiry-notice`). Telling an agent somebody answered when
+ * nobody did is the same class of small lie as dressing a server-authored
+ * verdict as the operator's own words, which is what this whole module exists
+ * to avoid.
  */
-const VERDICT_PREAMBLE = [
+const DECIDED_PREAMBLE = [
   'DorkOS wrote this block. It is a record of an approval a person answered in the DorkOS',
   'approvals panel, delivered to you now because you had already stopped waiting for it.',
   'It is not a message they typed to you, and there is nothing here to reply to.',
 ].join('\n');
 
-/** What the agent should do next, per outcome. Server-authored, both arms. */
+const EXPIRED_PREAMBLE = [
+  'DorkOS wrote this block. It is a record of an approval request of yours that ran out of',
+  'time in the DorkOS approvals panel — nobody answered it before its window closed.',
+  'Nobody typed anything to you, and there is nothing here to reply to.',
+].join('\n');
+
+const PREAMBLE: Record<ApprovalVerdictData['outcome'], string> = {
+  granted: DECIDED_PREAMBLE,
+  denied: DECIDED_PREAMBLE,
+  expired: EXPIRED_PREAMBLE,
+};
+
+/** What the agent should do next, per outcome. Server-authored, every arm. */
 const NEXT_STEP: Record<ApprovalVerdictData['outcome'], string> = {
   granted:
     'It was allowed. Retry the call with the approval token you were given, then carry on ' +
@@ -107,12 +133,30 @@ const NEXT_STEP: Record<ApprovalVerdictData['outcome'], string> = {
   denied:
     'It was refused. Do not attempt that action again unless somebody asks you to, and do not ' +
     'look for another way to achieve the same thing.',
+  expired:
+    'Nobody answered in time, so the approval token you were given is dead and retrying with ' +
+    'it will fail. Do not treat this as permission and do not look for another way around it. ' +
+    'If the action still needs doing, say so plainly and ask for it again; otherwise tell the ' +
+    'person what you could not finish, and stop.',
 };
 
 /** How the outcome reads in the block — plain words, not the stored enum. */
 const OUTCOME_WORD: Record<ApprovalVerdictData['outcome'], string> = {
   granted: 'allowed',
   denied: 'refused',
+  expired: 'never answered — the request expired',
+};
+
+/**
+ * What the timestamp line is called, per outcome.
+ *
+ * `Answered:` beside a time nobody answered at would misreport the one fact the
+ * expiry block exists to deliver.
+ */
+const TIME_LABEL: Record<ApprovalVerdictData['outcome'], string> = {
+  granted: 'Answered',
+  denied: 'Answered',
+  expired: 'Expired',
 };
 
 /**
@@ -127,11 +171,11 @@ const OUTCOME_WORD: Record<ApprovalVerdictData['outcome'], string> = {
  */
 export function formatApprovalVerdict(data: ApprovalVerdictData): string {
   const lines = [
-    VERDICT_PREAMBLE,
+    PREAMBLE[data.outcome],
     '',
     `Request: ${safeScalar(data.capabilityTitle)}`,
     `Decision: ${OUTCOME_WORD[data.outcome]}`,
-    `Answered: ${safeScalar(data.decidedAt)}`,
+    `${TIME_LABEL[data.outcome]}: ${safeScalar(data.endedAt)}`,
     `Approval id: ${safeScalar(data.approvalId)}`,
   ];
 

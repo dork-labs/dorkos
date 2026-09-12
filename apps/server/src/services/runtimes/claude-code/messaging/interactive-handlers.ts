@@ -10,6 +10,8 @@ import { PermissionModeSchema, type PermissionModeId } from '@dorkos/shared/sche
 import { createInSessionContextResolver } from '../../../core/agent-identity/index.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
+import { logRefusal } from '../../../observability/refusals.js';
+import { NO_APPROVAL_SURFACE } from '@dorkos/shared/run-refusals';
 import { alwaysAllowScopeOf, suggestionDestinations } from './always-allow-scope.js';
 import {
   armInteractionWait,
@@ -21,15 +23,16 @@ import {
   notifyInteractionCancelled,
   questionParkedNotice,
   questionTimeoutNotice,
-  refusalDeadlineMs,
   toolLabelFor,
   type InteractiveSession,
 } from './interaction-wait.js';
 import { toSdkQuestionAnswers } from '../sessions/question-answers.js';
-import { inSessionToolName } from '../mcp-tools/tool-exposure.js';
+import { inSessionToolName, IN_SESSION_TOOL_PREFIX } from '../mcp-tools/tool-exposure.js';
+import { recordAutoModeStop } from '../../../observability/auto-mode-stops.js';
 import {
   approvalTimeoutDenial,
   describeWaited,
+  NO_APPROVAL_SURFACE_DENIAL,
   questionTimeoutDenial,
   toolDenial,
   WITHDRAWN_DENIALS,
@@ -132,6 +135,12 @@ export const DORKOS_AGENT_TOOLS = new Set(
     // answer from the caller's own roster rows and nothing else.
     'get_room',
     'find_room',
+    // Reading the room's shared canvas (DOR-1999). Same membership bound and the
+    // same identity qualifier as every read above it: it answers from the
+    // caller's own roster rows and nothing else, and its one file-backed answer
+    // is narrowed further still — a document whose tree this reader could not
+    // already read comes back as its name and nothing more.
+    'read_canvas',
     // The five that ARRANGE rooms (DOR-1611). They carry everything above them
     // plus one bound none of the others has: the `roomsManage` grant, which is
     // off until a person turns it on for THIS agent. See IDENTITY_SCOPED_TOOLS.
@@ -373,6 +382,7 @@ export const IDENTITY_SCOPED_TOOLS = new Set(
     'search_member_rooms',
     'get_room',
     'find_room',
+    'read_canvas',
     'create_room',
     'add_room_members',
     'remove_room_members',
@@ -385,6 +395,9 @@ export const IDENTITY_SCOPED_TOOLS = new Set(
 
 /** The multiplexer on {@link DORKOS_AGENT_TOOLS}: one name, 22 different effects. */
 const CONTROL_UI_TOOL = inSessionToolName('control_ui');
+
+/** The SDK's own ask-the-person tool, which is routed rather than approved. */
+const ASK_USER_QUESTION_TOOL = 'AskUserQuestion';
 
 /**
  * Whether one CALL to a safe-listed tool may skip the approval card, given its
@@ -520,6 +533,95 @@ export function resolveModeDecision(mode: PermissionModeId): ModeDecision {
 }
 
 /**
+ * What each kind of unanswerable ask is called in its own record. Constant
+ * strings, for the reason {@link NO_APPROVAL_SURFACE_DENIAL} gives.
+ */
+const NOBODY_TO_ASK_REASON = {
+  approval: 'nobody was available to approve this tool',
+  question: 'nobody was available to answer this question',
+  elicitation: 'nobody was available to answer this request',
+} as const satisfies Record<'approval' | 'question' | 'elicitation', string>;
+
+/**
+ * Refuse an ask that reached a session with nobody to answer it, and leave a
+ * record of it (spec `unattended-session-permission-prompts`).
+ *
+ * ## Why this is a refusal and not a shorter wait
+ *
+ * A scheduled run used to refuse an unanswered prompt after ten minutes instead
+ * of parking for four hours. Those ten minutes bought a chance that somebody
+ * answers on the one surface where, by construction, nobody is there — and the
+ * session declined reclaim for the whole of it, so one abandoned prompt at 3am
+ * could crowd out an agent a person actually launched. Refusing at the moment
+ * the ask is raised costs nothing that could have been saved.
+ *
+ * ## What it is deliberately NOT
+ *
+ * It is not a gate. Everything that decides whether an ask happens at all runs
+ * first and is untouched: the CLI's own permission engine, then the safe lists
+ * and {@link isAutoAllowedCall}, then {@link resolveModeDecision} — which means
+ * a `bypassPermissions` schedule still allows exactly what it always allowed,
+ * including the handful of calls the CLI escalates under that mode. Only an ask
+ * that would otherwise sit and WAIT reaches here.
+ *
+ * ## The record
+ *
+ * A `permission_denied` StreamEvent stamped {@link NO_APPROVAL_SURFACE} — the
+ * one `reasonType` DorkOS writes itself, and the reason a run summary may say
+ * "nobody was there to approve it" without qualifying it. The SDK's own
+ * denials (`classifier`, `rule`, `asyncAgent`) describe decisions that would
+ * have gone the same way with a person present, so they carry other
+ * discriminators and `@dorkos/shared/run-refusals` ignores them. The event rides
+ * the session's own queue, so it reaches the live client, the transcript, and
+ * the scheduler consuming the run's stream, with no new plumbing.
+ *
+ * Plus one log line, per the refusal rule (`observability/refusals.ts`), at
+ * `warn` and `visibility: 'silent'` — nothing was shown to anybody, because
+ * there was nobody to show it to.
+ *
+ * @param session - The session whose ask is being refused.
+ * @param ask.interactionId - The tool-use id, or the elicitation's own id.
+ * @param ask.kind - Which of the three kinds of prompt this was.
+ * @param ask.toolName - The tool, or the MCP server that asked.
+ */
+function refuseWithNobodyToAsk(
+  session: InteractiveSession,
+  ask: {
+    interactionId: string;
+    kind: 'approval' | 'question' | 'elicitation';
+    toolName: string;
+  }
+): void {
+  session.eventQueue.push({
+    type: 'permission_denied',
+    data: {
+      toolCallId: ask.interactionId,
+      toolName: ask.toolName,
+      reasonType: NO_APPROVAL_SURFACE,
+      reason: NOBODY_TO_ASK_REASON[ask.kind],
+      // The same words the model was handed, so the chip and the transcript
+      // cannot describe the refusal differently from the refusal itself.
+      message: NO_APPROVAL_SURFACE_DENIAL,
+    },
+  });
+  session.eventQueueNotify?.();
+
+  logRefusal('[claude-code] nobody could approve this on a scheduled run, so it was refused', {
+    reason: 'no_approval_surface',
+    // Nobody was shown anything: there is no client on an unattended run, which
+    // is the whole premise. The run's own summary and the activity feed are
+    // where a person finds this afterwards, built from the event above.
+    visibility: 'silent',
+    ...(session.sdkSessionId !== undefined ? { sessionId: session.sdkSessionId } : {}),
+    detail: {
+      interactionId: ask.interactionId,
+      kind: ask.kind,
+      toolName: ask.toolName,
+    },
+  });
+}
+
+/**
  * Handle an AskUserQuestion tool call — pause, collect answers, inject into input.
  *
  * `signal` is the SDK's per-tool-call abort signal: a mid-turn steered message
@@ -535,6 +637,14 @@ export function handleAskUserQuestion(
   signal?: AbortSignal
 ): Promise<PermissionResult> {
   const questions = input.questions as QuestionItem[];
+  if (session.unattended === true) {
+    refuseWithNobodyToAsk(session, {
+      interactionId: toolUseId,
+      kind: 'question',
+      toolName: ASK_USER_QUESTION_TOOL,
+    });
+    return Promise.resolve({ behavior: 'deny', message: NO_APPROVAL_SURFACE_DENIAL });
+  }
   const startedAt = Date.now();
   session.eventQueue.push({
     type: 'question_prompt',
@@ -567,7 +677,7 @@ export function handleAskUserQuestion(
     };
     signal?.addEventListener('abort', onAbort, { once: true });
 
-    const waitedMs = refusalDeadlineMs(session);
+    const waitedMs = SESSIONS.INTERACTION_PARK_CEILING_MS;
     const timeout = armInteractionWait(
       session,
       toolUseId,
@@ -624,6 +734,17 @@ export function handleElicitation(
   signal: AbortSignal
 ): Promise<ElicitationResult> {
   const interactionId = request.elicitationId ?? randomUUID();
+  if (session.unattended === true) {
+    // The MCP server is named where a tool name would go: it is what the person
+    // reading the run has to recognise, and this record's whole job is to say
+    // WHAT could not be answered.
+    refuseWithNobodyToAsk(session, {
+      interactionId,
+      kind: 'elicitation',
+      toolName: request.serverName,
+    });
+    return Promise.resolve({ action: 'decline' } as ElicitationResult);
+  }
   const startedAt = Date.now();
 
   session.eventQueue.push({
@@ -667,7 +788,7 @@ export function handleElicitation(
         parked: elicitationParkedNotice(request.serverName),
         expired: elicitationTimeoutNotice(
           request.serverName,
-          describeWaited(refusalDeadlineMs(session))
+          describeWaited(SESSIONS.INTERACTION_PARK_CEILING_MS)
         ),
       },
       { kind: 'elicitation' },
@@ -832,7 +953,7 @@ export function createCanUseTool(
 ) => Promise<PermissionResult> {
   return async (toolName, input, context) => {
     if (onToolPreflight) await onToolPreflight(toolName, input);
-    if (toolName === 'AskUserQuestion') {
+    if (toolName === ASK_USER_QUESTION_TOOL) {
       log.debug('[canUseTool] routing to question handler', {
         toolName,
         toolUseID: context.toolUseID,
@@ -860,6 +981,15 @@ export function createCanUseTool(
     }
 
     if (resolveModeDecision(session.permissionMode) === 'ask') {
+      // The measurement (spec `auto-mode-classifier-context`). Reaching here in
+      // AUTO mode with a DorkOS tool means the runtime's classifier decided this
+      // call deserved a person, and DorkOS's own auto-allow list did not cover
+      // it — which is exactly the stop the host-context note exists to remove.
+      // Only `auto`: every other mode asks by design, so counting its cards
+      // would bury the signal under the modes that are supposed to produce them.
+      if (session.permissionMode === 'auto' && toolName.startsWith(IN_SESSION_TOOL_PREFIX)) {
+        recordAutoModeStop({ sessionId: session.sdkSessionId ?? 'unknown', toolName });
+      }
       // info, not debug: from here the turn makes no progress until a person
       // answers, and this line is what tells a reader that (DOR-782).
       // `agentID` is present when the call came from inside a subagent, which is
@@ -898,6 +1028,10 @@ export function handleToolApproval(
   input: Record<string, unknown>,
   context: ToolApprovalContext
 ): Promise<PermissionResult> {
+  if (session.unattended === true) {
+    refuseWithNobodyToAsk(session, { interactionId: toolUseId, kind: 'approval', toolName });
+    return Promise.resolve({ behavior: 'deny', message: NO_APPROVAL_SURFACE_DENIAL });
+  }
   const startedAt = Date.now();
   // What "Always Allow" on this card would actually grant. Named on the card so
   // the click is informed, and logged in raw SDK terms so a week of real cards
@@ -946,7 +1080,7 @@ export function handleToolApproval(
     context.signal.addEventListener('abort', onAbort, { once: true });
 
     const toolLabel = toolLabelFor(context.displayName, toolName);
-    const waitedMs = refusalDeadlineMs(session);
+    const waitedMs = SESSIONS.INTERACTION_PARK_CEILING_MS;
     const timeout = armInteractionWait(
       session,
       toolUseId,

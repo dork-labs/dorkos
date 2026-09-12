@@ -6,7 +6,6 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import type { ThreadEvent } from '@openai/codex-sdk';
 import { CodexRuntime } from '../codex-runtime.js';
 import { buildCodexOptions } from '../codex-options.js';
-import { CODEX_UI_MCP_SERVER } from '../codex-ui-mcp-server.js';
 import { CodexThreadMap } from '../thread-map.js';
 import { checkCodexDependencies } from '../check-dependencies.js';
 import { enumerateCodexMcpServers } from '../enumerate-mcp-servers.js';
@@ -247,20 +246,10 @@ describe('CodexRuntime', () => {
   });
 
   describe('buildCodexOptions', () => {
-    it('includes codexPathOverride and the dorkos_ui MCP server when both args are given', () => {
-      const options = buildCodexOptions('/opt/custom/codex', 'http://127.0.0.1:4242/codex-ui-mcp');
-      expect(options).toEqual({
-        env: expect.any(Object),
-        codexPathOverride: '/opt/custom/codex',
-        config: {
-          mcp_servers: {
-            [CODEX_UI_MCP_SERVER]: { url: 'http://127.0.0.1:4242/codex-ui-mcp' },
-          },
-        },
-      });
-    });
-
-    it('omits config when no mcpUiUrl is provided', () => {
+    it('includes codexPathOverride and no config when nothing is injected', () => {
+      // DorkOS used to always inject a scoped `dorkos_ui` bridge here, so every
+      // launch carried a config. It is retired (spec `canvas-agent-seat` §5), so
+      // a launch with no managed servers and no turn-bound servers carries none.
       const options = buildCodexOptions('/opt/custom/codex');
       expect(options).toEqual({ codexPathOverride: '/opt/custom/codex', env: expect.any(Object) });
       expect(options).not.toHaveProperty('config');
@@ -268,27 +257,22 @@ describe('CodexRuntime', () => {
 
     it('omits codexPathOverride when binaryPath is falsy', () => {
       expect(buildCodexOptions(null)).toEqual({ env: expect.any(Object) });
-      expect(buildCodexOptions(undefined, 'http://127.0.0.1:4242/codex-ui-mcp')).toEqual({
-        env: expect.any(Object),
-        config: {
-          mcp_servers: { [CODEX_UI_MCP_SERVER]: { url: 'http://127.0.0.1:4242/codex-ui-mcp' } },
-        },
-      });
+      expect(buildCodexOptions(undefined)).toEqual({ env: expect.any(Object) });
     });
 
     it('supplies complete env even without extraEnv', () => {
-      expect(buildCodexOptions('/bin/codex', 'http://127.0.0.1:4242/codex-ui-mcp')).toHaveProperty(
-        'env'
-      );
-      expect(buildCodexOptions('/bin/codex', undefined, {})).toHaveProperty('env');
+      expect(buildCodexOptions('/bin/codex')).toHaveProperty('env');
+      expect(buildCodexOptions('/bin/codex', {})).toHaveProperty('env');
     });
 
     it('preserves OS inputs but withholds stale server identity when extraEnv is given', () => {
       // Only the freshly minted token may reach this launch.
       vi.stubEnv('DORKOS_BUILD_OPTIONS_PROBE', 'inherited');
       try {
-        const env = buildCodexOptions(null, undefined, { DORKOS_AGENT_TOKEN: 'deadbeef' })
-          .env as Record<string, string>;
+        const env = buildCodexOptions(null, { DORKOS_AGENT_TOKEN: 'deadbeef' }).env as Record<
+          string,
+          string
+        >;
         expect(env.DORKOS_AGENT_TOKEN).toBe('deadbeef');
         expect(env.DORKOS_BUILD_OPTIONS_PROBE).toBeUndefined();
         expect(env.PATH ?? env.Path).toBeDefined();
@@ -319,40 +303,37 @@ describe('CodexRuntime', () => {
   });
 
   describe('buildCodexOptions — managed MCP servers (DOR-892)', () => {
-    const UI_URL = 'http://127.0.0.1:4242/codex-ui-mcp';
     const servers = {
       files: { command: 'npx', args: ['-y', 'server-filesystem'] },
       remote: { url: 'https://example.com/mcp' },
     };
     const managed = { servers, env: {} };
 
-    it('folds enabled managed servers into config.mcp_servers alongside dorkos_ui', () => {
-      const options = buildCodexOptions(null, UI_URL, undefined, managed);
+    it('folds enabled managed servers into config.mcp_servers', () => {
+      const options = buildCodexOptions(null, undefined, managed);
       expect(options.config?.mcp_servers).toEqual({
         files: { command: 'npx', args: ['-y', 'server-filesystem'] },
         remote: { url: 'https://example.com/mcp' },
-        [CODEX_UI_MCP_SERVER]: { url: UI_URL },
       });
     });
 
-    it('writes dorkos_ui LAST so a managed server can never shadow it', () => {
-      // A managed server literally named `dorkos_ui` must still resolve to the
-      // real UI bridge URL, not the managed command.
-      const shadowing = { servers: { [CODEX_UI_MCP_SERVER]: { command: 'evil' } }, env: {} };
-      const options = buildCodexOptions(null, UI_URL, undefined, shadowing);
-      expect(options.config?.mcp_servers?.[CODEX_UI_MCP_SERVER]).toEqual({ url: UI_URL });
+    it('writes the DorkOS server LAST so a managed server can never shadow it', () => {
+      // A managed server literally named `dorkos` must still resolve to the real
+      // tool server, not the managed command.
+      const shadowing = { servers: { dorkos: { command: 'evil' } }, env: {} };
+      const options = buildCodexOptions(null, undefined, shadowing, {
+        url: 'http://127.0.0.1:4242/agent-mcp',
+        headers: {},
+      });
+      expect(options.config?.mcp_servers?.dorkos).toMatchObject({
+        url: 'http://127.0.0.1:4242/agent-mcp',
+      });
     });
 
-    it('injects managed servers even when no dorkos_ui URL is configured', () => {
-      const options = buildCodexOptions(null, undefined, undefined, managed);
-      expect(options.config?.mcp_servers).toEqual(servers);
-      expect(options.config?.mcp_servers).not.toHaveProperty(CODEX_UI_MCP_SERVER);
-    });
-
-    it('omits config entirely when there are no managed servers and no UI URL', () => {
-      expect(
-        buildCodexOptions(null, undefined, undefined, { servers: {}, env: {} })
-      ).not.toHaveProperty('config');
+    it('omits config entirely when there are no managed servers and nothing injected', () => {
+      expect(buildCodexOptions(null, undefined, { servers: {}, env: {} })).not.toHaveProperty(
+        'config'
+      );
       expect(buildCodexOptions(null)).not.toHaveProperty('config');
     });
 
@@ -362,7 +343,7 @@ describe('CodexRuntime', () => {
       // argv. Asserted by serialising the WHOLE config and searching it: the
       // flattening is recursive, so a value could reappear under any path.
       const bearer = 'Bearer ya29.a0-live-oauth-access-token';
-      const options = buildCodexOptions(null, UI_URL, undefined, {
+      const options = buildCodexOptions(null, undefined, {
         servers: {
           notion: {
             url: 'https://mcp.notion.com/mcp',

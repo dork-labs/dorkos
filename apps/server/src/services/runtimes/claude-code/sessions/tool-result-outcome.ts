@@ -62,14 +62,31 @@ import { mapSdkAnswersToIndices, parseQuestionAnswers } from './question-answers
 export type ToolResultOutcome = 'complete' | 'expired' | 'denied' | 'cancelled' | 'errored';
 
 /**
+ * What the model is told when it asks for something on a run nobody is watching.
+ *
+ * A constant, and not a sentence built from the ask: this is read by a model
+ * that then decides what to do with the rest of the run, so it has to say the
+ * same thing every time — the reason (nobody is here), and the instruction
+ * (finish what you can, and report what you skipped). Nothing from the ask
+ * itself is interpolated, so no tool name, argument or MCP server message can
+ * reach the model dressed as DorkOS's own words.
+ *
+ * Read back by {@link classifyToolResult} as `denied`, like every other refusal
+ * DorkOS hands over.
+ */
+export const NO_APPROVAL_SURFACE_DENIAL =
+  'Nobody is available to approve this on a scheduled run. Do what you can without it and say what you skipped.';
+
+/**
  * How long a refusal says it waited, in the unit that reads best: whole hours
  * from an hour up, whole minutes below it.
  *
  * One rule, one place, because three sentences quote it — the two denials below
- * and the log line the claude-code handlers write. A prompt normally waits four
- * hours (`SESSIONS.INTERACTION_PARK_CEILING_MS`), but an unattended run still
- * refuses at ten minutes because nobody is coming back to it (spec
- * `ask-parks-on-timeout` §7), so the unit cannot be fixed at either.
+ * and the log line the claude-code handlers write. A prompt waits four hours
+ * (`SESSIONS.INTERACTION_PARK_CEILING_MS`), and this stays a function of the
+ * measured wait rather than a fixed unit because what is measured is how long
+ * the prompt ACTUALLY went unanswered, which a cancelled or recovered wait can
+ * cut short.
  *
  * @param waitedMs - How long the prompt actually went unanswered.
  */

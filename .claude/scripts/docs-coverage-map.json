@@ -100,6 +100,16 @@
       ]
     },
     {
+      "guide": "feedback-pipeline-ops.md",
+      "description": "Feedback pipeline runbook: the write-scoped team-restricted Linear key, Vercel env inventory, webhook config, end-to-end verification, deploy gotchas, failure modes",
+      "patterns": [
+        "apps/site/src/lib/feedback/",
+        "apps/site/src/app/api/feedback/",
+        "apps/site/src/app/api/webhooks/linear/",
+        "feedback-reporter"
+      ]
+    },
+    {
       "guide": "data-fetching.md",
       "description": "TanStack Query patterns, Transport abstraction, SSE streaming",
       "patterns": [

@@ -56,6 +56,33 @@ export class CapabilityToolError extends Error {
 }
 
 /**
+ * A capability result that carries PIXELS beside its JSON.
+ *
+ * The plain-data contract is text-shaped by default, and for one verb that is a
+ * lie worth fixing rather than living with: a screenshot whose picture arrives
+ * as a base64 string inside a JSON blob is a picture the model cannot look at.
+ * A capability returns one of these and the MCP adapters emit an image content
+ * block followed by the ordinary text block, which is exactly the two-block
+ * result `browser_screenshot` has returned since it shipped.
+ *
+ * A class rather than a shape with a marker key, for the same reason
+ * {@link CapabilityToolError} is one: `instanceof` cannot be produced by a wire
+ * payload, so no argument a caller sends can make a result claim to be an image.
+ */
+export class CapabilityImageResult {
+  /**
+   * Pair one picture with the JSON that describes it.
+   *
+   * @param image - The picture: base64 bytes and the media type they are.
+   * @param payload - The JSON that goes in the text block beside it.
+   */
+  constructor(
+    readonly image: { readonly data: string; readonly mimeType: string },
+    readonly payload: unknown
+  ) {}
+}
+
+/**
  * Unwrap a phase-1 handler's MCP text envelope to its plain JSON payload.
  *
  * Parses the first text block back to the value the handler serialized. When

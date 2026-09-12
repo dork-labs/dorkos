@@ -112,7 +112,7 @@ describe('an operator answers late, and the agent is told', () => {
       approvalId,
       capabilityTitle: 'mesh.unregister',
       outcome: 'granted',
-      decidedAt: expect.any(String),
+      endedAt: expect.any(String),
     });
 
     // The same entry the live path produced, rendered by each adapter's own

@@ -32,9 +32,22 @@ export function createDirectSessionStreamMethods(services: DirectTransportServic
   }
 
   return {
-    /** Fetch the authoritative session snapshot via the in-process runtime. */
+    /**
+     * Fetch the authoritative session snapshot via the in-process runtime.
+     *
+     * **Decorated with the canvas here**, because `DirectTransport` does not go
+     * through `deliverSessionStream` — the one place the HTTP path makes the
+     * same decoration (spec `canvas-agent-seat` §1.4). A runtime's own snapshot
+     * always carries an empty canvas: storage a runtime owns lives in the
+     * runtime, and storage the server owns is not copied into four adapters.
+     *
+     * A host with no canvas seam answers the empty list, which is the honest
+     * reading of "there is no table here" — never a fall-back to a local copy.
+     */
     async getSessionSnapshot(sessionId: string, cwd?: string): Promise<SessionSnapshot> {
-      return services.runtime.getSessionSnapshot(sessionCtx(cwd), sessionId);
+      const snapshot = await services.runtime.getSessionSnapshot(sessionCtx(cwd), sessionId);
+      snapshot.canvas = services.canvas?.list(sessionId) ?? [];
+      return snapshot;
     },
 
     /**

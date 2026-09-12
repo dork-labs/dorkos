@@ -358,7 +358,7 @@ describe('a scheduled task turn is bound too (DOR-791)', () => {
         permissionMode: 'default',
         taskName: 'Nightly',
         cron: null,
-        trigger: 'schedule',
+        trigger: 'scheduled',
       },
     };
   }

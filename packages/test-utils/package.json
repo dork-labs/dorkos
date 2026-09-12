@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./db": "./src/db.ts",
+    "./directory-membership-vectors": "./src/directory-membership-vectors.ts",
     "./mock-factories": "./src/mock-factories.ts",
     "./react-helpers": "./src/react-helpers.tsx",
     "./sse-helpers": "./src/sse-helpers.ts",

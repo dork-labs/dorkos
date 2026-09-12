@@ -28,6 +28,12 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
         setRightPanelOpen: mockSetRightPanelOpen,
         activeRightPanelTab: mockActiveRightPanelTab,
         setActiveRightPanelTab: mockSetActiveRightPanelTab,
+        // The unread dot on a document tab reads these. They are part of the
+        // real store, so a stub that omits them is a stub that lies — and the
+        // strip renders OUTSIDE the panel error boundary, so a throw in here
+        // takes the whole header down rather than one tab.
+        roomCanvasLiveRoomId: null,
+        roomCanvasUnread: {},
       }),
   };
 });

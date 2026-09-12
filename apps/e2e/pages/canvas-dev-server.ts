@@ -1,11 +1,11 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import type { RightPanelPage } from './RightPanelPage';
 
 /**
  * A dev server shaped like every real one, and the clicks that frame it in the
- * canvas browser.
+ * embedded browser.
  *
  * Shared by the two specs that drive this surface, which need the SAME fixture
  * for different reasons: `tests/workbench/dev-server-preview.spec.ts` proves the
@@ -71,30 +71,123 @@ export async function reserveClosedPort(): Promise<number> {
 }
 
 /**
- * Open the canvas browser on `url`, the way a person does: open the right panel,
- * pick Canvas, start a web page from the splash, then type the address.
+ * Open the embedded browser on `url`, the way a person does: open the right
+ * panel, pick Browser, start a page if the tab is empty, then type the address.
+ *
+ * Browser rather than Canvas since the panel split into two views over one
+ * document store (ADR 260911-200304): a page is a Browser-tab document, and the
+ * Canvas tab no longer offers to open one.
+ *
+ * **The empty state is conditional now, because the canvas is the SERVER's**
+ * (spec `canvas-agent-seat` §1.5). A second window on the same conversation
+ * already holds the page the first one opened, so it has a tab strip and an
+ * address bar rather than the splash — and this used to click
+ * `button` named `/Web Page/i` unconditionally, which in that window resolved to
+ * the synced tab's **"Close Web Page"** button. It closed the first window's
+ * page, the close synced back, and both windows sat on the splash waiting for an
+ * address bar that could not appear (PR #1822, `browser-driving` shard red). The
+ * splash locator is anchored for the same reason.
+ *
+ * Typing the address is kept on BOTH paths on purpose: it is what makes the page
+ * this window is showing, and — since a navigation re-claims the driver seat —
+ * it is also what makes this window the one an agent drives.
  *
  * @param page - The page under test.
  * @param rightPanel - The right-panel page object, for the tab strip.
  * @param url - The address to type into the browser's address bar.
  * @param sessionId - Lands on a named conversation. The browser app keeps that
  *   in the URL, and it is what the capture relay reports captures under.
+ * @param dir - The working directory to open the conversation in. A spec that
+ *   goes on to SEND needs one from `POST /api/test/seed-agent`: a send into a
+ *   directory outside the boundary is refused with a 400 and the spec then waits
+ *   out its timeout on a message that was never accepted.
  */
 export async function openInCanvasBrowser(
   page: Page,
   rightPanel: RightPanelPage,
   url: string,
-  sessionId?: string
+  sessionId?: string,
+  dir?: string
 ): Promise<void> {
-  await rightPanel.goto(sessionId ? `/session?session=${sessionId}` : '/session');
+  const query = [
+    sessionId ? `session=${sessionId}` : '',
+    dir ? `dir=${encodeURIComponent(dir)}` : '',
+  ].filter(Boolean);
+  await rightPanel.goto(query.length > 0 ? `/session?${query.join('&')}` : '/session');
   await rightPanel.ensureTabStripOpen();
-  await rightPanel.header.getByRole('tab', { name: 'Canvas' }).click();
+  await rightPanel.browserTab.click();
 
-  // The splash's web-page action opens a browser document; its address bar is
-  // how any page after the first one is reached.
-  await page.getByRole('button', { name: /Web Page/i }).click();
-  await page.getByRole('button', { name: /^Address:/ }).click();
+  // The empty state's web-page action opens a browser document; its address bar
+  // is how any page after the first one is reached. `^Web Page` is anchored so
+  // it can never resolve to a tab's "Close Web Page" or "Pin Web Page" button —
+  // the splash names the document it opens "Web Page", so every tab of one is
+  // spelled that way too.
+  const splashAction = page.getByRole('button', { name: /^Web Page/ });
+  const addressButton = page.getByRole('button', { name: /^Address:/ });
+  // Whichever this window has: the splash when no page is open here, the address
+  // bar when one already is. POLLED rather than asked once, so a window still
+  // hydrating its synced table is waited for rather than measured mid-flight —
+  // asked too early it has neither, and the splash click would then land in a
+  // window that is about to grow a tab strip.
+  await expect
+    .poll(async () => (await splashAction.count()) > 0 || (await addressButton.count()) > 0, {
+      timeout: 15_000,
+    })
+    .toBe(true);
+  if ((await addressButton.count()) === 0) await splashAction.click();
+
+  await addressButton.click();
   const address = page.getByRole('textbox', { name: 'Address' });
   await address.fill(url);
   await address.press('Enter');
+}
+
+/** The button an agent clicks in the driving fixture, by its accessible name. */
+export const DRIVING_BUTTON = 'Mark as done';
+
+/** What the driving fixture shows once that button has been clicked. */
+export const DRIVING_DONE_TEXT = 'Done — 1 item';
+
+const DRIVING_HTML = `<!doctype html>
+<html>
+  <head><title>Driving fixture</title></head>
+  <body>
+    <main>
+      <h1>Inbox</h1>
+      <p id="status">Nothing done yet</p>
+      <button id="done" type="button">${DRIVING_BUTTON}</button>
+      <button type="button" disabled>Archive</button>
+    </main>
+    <script src="/main.js"></script>
+  </body>
+</html>`;
+
+const DRIVING_JS = `document.getElementById('done').addEventListener('click', function () {
+  document.getElementById('status').textContent = '${DRIVING_DONE_TEXT}';
+});`;
+
+/**
+ * A page an agent can actually use: one button that changes the page when it is
+ * clicked, one disabled button beside it, and text that is only there afterwards.
+ *
+ * Deliberately small and deliberately real. The point of the driving spec is
+ * that a click reaches a live document and changes it, so the fixture has to
+ * make "before" and "after" distinguishable by looking at the page — which a
+ * screenshot, an outline read and a human all do the same way.
+ *
+ * Served the way {@link startDevServer} serves its app, because the shim only
+ * reaches a page DorkOS is serving or proxying.
+ */
+export async function startDrivingFixtureServer(): Promise<{ port: number; server: Server }> {
+  const server = createServer((req, res) => {
+    if (req.url === '/main.js') {
+      res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
+      res.end(DRIVING_JS);
+      return;
+    }
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.end(DRIVING_HTML);
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return { port: (server.address() as AddressInfo).port, server };
 }

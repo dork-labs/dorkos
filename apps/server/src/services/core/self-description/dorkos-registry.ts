@@ -12,8 +12,8 @@
  *
  * A domain is included only when its service handles are present in `deps`:
  * `operatorDeps` gates the operator domain, `marketplaceDeps` the marketplace
- * domain, `roomDeps` the rooms domain, and the self-description domain is always
- * present. Every included
+ * domain, `roomDeps` the rooms domain, and the memory, `ui` and self-description
+ * domains are always present. Every included
  * domain's `assertDeps` runs inside `composeRegistry`, so a domain admitted
  * without its deps fails fast at boot.
  *
@@ -35,6 +35,7 @@ import { connectorExecutionDomain } from '../../connectors/execution/execution-c
 import { mcpDomain } from '../../mesh/mcp-capabilities.js';
 import { roomsDomain } from '../../rooms/room-capabilities.js';
 import { memoryDomain } from '../../memory/memory-capabilities.js';
+import { uiDomain } from '../../session/browser-seat/ui-capabilities.js';
 import { capabilitiesDomain } from './capabilities-domain.js';
 
 /**
@@ -68,6 +69,9 @@ export function composeDorkOsCapabilityRegistry(
   // this domain exists to fix — so there is no configuration under which the
   // right answer is to leave the verb out.
   domains.push(memoryDomain);
+  // Unconditional for the same reason: there is no handle to switch off. Every
+  // session has a window, and the canvas it reads is resolved per call.
+  domains.push(uiDomain);
   domains.push(capabilitiesDomain);
 
   const registry = composeRegistry(domains, deps, onInvocation);
@@ -91,6 +95,21 @@ export function composeDorkOsCapabilityRegistry(
  * only static capability metadata (`id`, `surfaces`, `input`/`output` schemas),
  * never `invoke`.
  *
+ * **Every** is literal, and it is load-bearing well beyond OpenAPI. Production
+ * has one caller — `core/openapi-registry.ts`, which projects this registry into
+ * the document — and the rest are guards that assert against it:
+ * `routes/__tests__/shapes.test.ts` proves no capability has claimed the
+ * `shapes.apply` id `routes/shapes.ts` reserves, `core/__tests__/mcp-tool-gate.test.ts`
+ * builds its tool-tier lookup from it, and the in-session tool-exposure and
+ * context-tool-names suites build their probe sessions from it. A domain missing
+ * from this list is a domain none of them can see. `connectorExecutionDomain` was
+ * missing from exactly here between #1635 — which added it to the boot composer
+ * forty lines up and not to this one — and its restoration; because every
+ * capability in that domain declares `surfaces: {}`, nothing projected changed
+ * when it came back, which is precisely why the gap went unseen.
+ * `__tests__/dorkos-registry.test.ts` pins this list against the boot composer
+ * with every domain enabled, so the two cannot drift again.
+ *
  * @returns The frozen registry over all domains, for documentation projection only.
  */
 export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
@@ -98,9 +117,11 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     operatorDomain,
     marketplaceDomain,
     connectorDomain,
+    connectorExecutionDomain,
     mcpDomain,
     roomsDomain,
     memoryDomain,
+    uiDomain,
     capabilitiesDomain,
   ];
   const deps: CapabilityDeps = {
@@ -108,6 +129,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     operatorDeps: {} as CapabilityDeps['operatorDeps'],
     marketplaceDeps: {} as CapabilityDeps['marketplaceDeps'],
     connectorDeps: {} as CapabilityDeps['connectorDeps'],
+    connectorExecutionDeps: {} as CapabilityDeps['connectorExecutionDeps'],
     mcpDeps: {} as CapabilityDeps['mcpDeps'],
     roomDeps: {} as CapabilityDeps['roomDeps'],
   };

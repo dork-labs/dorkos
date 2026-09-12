@@ -105,6 +105,27 @@ the original bearer and changes only the durable expiry.
 | Codex         | The same `AbortController` occupies the session's active-turn slot | Headers in the child's initial environment |
 | OpenCode      | The same active-turn object owns the canonical-directory lease     | Directory-scoped sidecar registration      |
 
+### The `ui` domain comes free with that binding
+
+Once your adapter opens a turn binding and injects the loopback `dorkos` server, its sessions have
+the whole canvas-and-browser seat and you write no code for it: `control_ui`, `get_ui_state`,
+`read_canvas_document`, the console and network reads, the screenshot, the six driving verbs and the
+two recording verbs are all `ui` capabilities (`services/session/browser-seat/ui-capabilities.ts`,
+spec `canvas-agent-seat` §5). Every one of them keys on
+`principal.claims.canonicalSessionId`, which the listener derives from your verified binding — never
+from a tool argument — so a new runtime inherits the session isolation with the tools.
+
+That is the point of the domain, and it is the reason the thing it replaced is worth knowing about:
+Codex used to carry a scoped `dorkos_ui` server with one STUBBED copy of `control_ui` on it, because
+that server had no session in scope and could produce no effect; the real write happened downstream
+in the event-mapper. OpenCode had nothing at all. Do not build either shape again — if a verb needs
+the calling session, declare it as a capability and let the loopback binding supply the session.
+
+One rule rides along, and it is about consent rather than capability: a `ui.control` call arriving
+with a `runtime` principal refuses any action whose reach is not `client-only`, because an agent
+reaching in from outside the DorkOS app has no channel on which to ask the person first
+(`browser-seat/ui-surface-consent.ts`). You inherit that too.
+
 Every runtime must follow the same lifecycle:
 
 1. Open a binding with an adapter-owned `isCurrent()` guard.
@@ -324,6 +345,12 @@ A bump also inherits behavior changes no compiler catches. Record the decision o
 
 **Subagent spawn depth (claude-agent-sdk 0.3.217, decided 2026-08-07 on the 0.3.177 → 0.3.224 bump).** Upstream dropped the default subagent nesting depth from 5 to 1 and added a cap of 20 concurrent subagents. **DorkOS accepts the new default.** Its documented orchestrator pattern (`claude-code/messaging/context-builder.ts`) is parent-driven and therefore depth-1, and its headline parallelism is multi-_session_ — each session gets its own CLI subprocess and its own depth budget, so only within-session `Task`-in-`Task` is capped at all. A runaway recursive agent tree is a worse failure for an operator than a refused nested spawn. The escape hatch, if a skill genuinely needs nesting: set `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` in the CLI subprocess env that `claude-code/messaging/message-sender.ts` already builds. Nothing in the repo sets it today.
 
+**Task and todo tools (claude-agent-sdk 0.3.233, restated 0.3.268; decided 2026-09-11 on the 0.3.224 → 0.3.268 bump).** Upstream took `TodoWrite`, `TaskCreate`, `TaskUpdate`, `TaskGet` and `TaskList` off the DEFAULT tool set for every model newer than Opus 4.7 / Sonnet 4.6 / Haiku 4.5. **DorkOS sets `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`** in the turn env (`claude-code/messaging/launch-resolver.ts`, allow-listed in `runtimes/shared/runtime-environment.ts`). It has to set something: DorkOS builds its whole task and todo surface by watching those exact tool names go past (`sdk/build-task-event.ts`, `sessions/task-reader.ts`, `sessions/transcript-reader.ts`), so with none of them on the surface the panel and the Tasks page stay empty forever and nothing errors. The env var is the only lever that costs nothing else. `allowedTools` is an auto-approval list rather than an access list, so naming tools there widens auto-approval — the finding DOR-519 is built on and `tooling/tool-filter.ts` argues at length. `tools` would mean declaring a whole base tool set DorkOS has never taken a position on, and re-centralising a name list in an SDK option is the shape `tool-filter.ts` exists to avoid. **No test can catch a regression here**: every fixture keeps feeding the tool_use blocks a real model would have stopped sending, so this is verified by one live turn on the default model per bump.
+
+**Multi-turn shell working directory (claude-agent-sdk 0.3.265, decided 2026-09-11 on the same bump).** Each user message used to reset the CLI's shell back to the `cwd` option; now an agent's `cd` persists for the life of the session. **DorkOS accepts the new behavior** — it is what the interactive app does, and it is what an operator who watched their agent `cd` somewhere expects the next command to do. The consequence worth writing down is that the per-dispatch boundary check in `sessions/persistent-dispatch.ts` validates the cwd DorkOS INTENDS, not where the shell currently sits; before 0.3.265 the two re-converged every turn for free. That grants no new access — `lib/boundary.ts` gates what a tool may touch, not where a shell stands — but the validated value stops describing the session, so do not read that check as the stronger claim.
+
+**Interrupt scope (claude-agent-sdk 0.3.246, decided 2026-09-11 on the same bump).** `interrupt()` stops the turn's background agents and workflows too, and the new `perTaskStopAffordance` option is the way to keep them running. **DorkOS keeps the default.** An operator who presses Stop and watches work continue is the single most damaging trust failure this product can have, and a background subagent that outlives the Stop is exactly that. Revisit only if background-agent workflows become a headline feature, and revisit it as a product decision rather than a flag flip.
+
 ### 2. Create the adapter directory
 
 ```
@@ -353,16 +380,20 @@ Any prose you write that tells an agent to call a tool must spell that tool the 
 
 The names differ per runtime because DorkOS's tools arrive by more than one route:
 
-| Runtime     | How it reaches DorkOS tools                                                                          | What the model must type                                                            |
-| ----------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| claude-code | in-session SDK MCP server (`createDorkOsToolServer`)                                                 | `mcp__dorkos__<verb>` — Claude Code qualifies every MCP tool                        |
-| codex       | the UI server it spawns is `dorkos_ui` (`codex/codex-ui-mcp-server.ts`); the rest is external `/mcp` | `mcp__dorkos_ui__<verb>`, or the `/mcp` server under whatever their config named it |
-| opencode    | external `/mcp`, wired by the person's own harness config                                            | `<verb>` under whatever prefix their config gave the server                         |
+| Runtime     | How it reaches DorkOS tools                                                        | What the model must type                                                    |
+| ----------- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| claude-code | in-session SDK MCP server (`createDorkOsToolServer`)                               | `mcp__dorkos__<verb>` — Claude Code qualifies every MCP tool                |
+| codex       | the loopback `dorkos` server, injected per turn (`shared/dorkos-mcp-injection.ts`) | `mcp__dorkos__<verb>` — Codex qualifies plugin MCP tools the same way       |
+| opencode    | the same loopback `dorkos` server                                                  | `dorkos_<verb>` — OpenCode builds `sanitize(server) + "_" + sanitize(tool)` |
+
+There used to be a fourth row: a scoped `dorkos_ui` server Codex spawned, whose tools a model had
+to type as `mcp__dorkos_ui__<verb>`. It is retired (spec `canvas-agent-seat` §5) and that prefix now
+resolves to nothing — so never write it, and never build its shape again.
 
 So:
 
 - **Runtime-specific blocks** (`claude-code/messaging/context-builder.ts` and the equivalent in your adapter) name tools in full. Render the prefix from one constant — claude-code's is `IN_SESSION_TOOL_PREFIX` in `mcp-tools/tool-exposure.ts`, which is also what the server is created with — never by typing it out per line. The same constant builds the auto-approval allow-lists in `interactive-handlers.ts`; hand-writing the prefix there meant a server rename would silently make every DorkOS tool raise an approval card.
-- **Runtime-neutral blocks** (`runtimes/shared/*.ts`), **capability descriptions** (`services/**/*-capabilities.ts`), **tool descriptions** (`claude-code/mcp-tools/*.ts`) and the **operating skills** (`packages/operating-skills/`) may spell no prefix AND no bare tool name. Descriptions are the easy one to miss: `register-from-definitions.ts` serves the same string to the external `/mcp` server, so "call `mcp_signin` first" is wrong on claude-code and unreliable everywhere else. Name the verb ("sign in with the MCP sign-in tool"); say "this same tool" for a two-call protocol; or, where the name really is the payload (a reference skill), present it as an ENDING — "its name ends in `list_capabilities`" — which is the one form true on every runtime.
+- **Runtime-neutral blocks** (`runtimes/shared/*.ts`), **capability descriptions** (`services/**/*-capabilities.ts`), **tool descriptions** (`claude-code/mcp-tools/*.ts`, `session/browser-seat/*.ts`) and the **operating skills** (`packages/operating-skills/`) may spell no prefix AND no bare tool name. Descriptions are the easy one to miss: `register-from-definitions.ts` serves the same string to the external `/mcp` server, so "call `mcp_signin` first" is wrong on claude-code and unreliable everywhere else. Name the verb ("sign in with the MCP sign-in tool"); say "this same tool" for a two-call protocol; or, where the name really is the payload (a reference skill), present it as an ENDING — "its name ends in `list_capabilities`" — which is the one form true on every runtime.
 - **Know which of your tools are deferred, and say so.** Claude Code's tool search is on by default, so an MCP server's tools are absent from the turn-1 prompt unless you opt out — and you CAN: `createSdkMcpServer` takes `alwaysLoad`, and `tool()`'s fifth argument takes `alwaysLoad` and `searchHint` per tool (both surface as `anthropic/*` `_meta` keys; verify against the real factory, not the `.d.ts`). DorkOS always-loads eight — six of the eight room verbs, `list_capabilities` and `memory_write` — and leaves the other 80 deferred, the two room lookups among them, because eighty-odd schemas on every prompt is a worse trade than one search — and a tool the prompt does not name can afford that search. Each of the eight is named by the system prompt itself, and a tool the prompt names must not need a lookup first. Everything deferred carries a `searchHint` derived from its own title, and `<dorkos_tools>` tells the model to run `ToolSearch(query="select:mcp__dorkos__…")` with the full name. A search for the short name returns nothing, which is how both evals dead-ended.
 
 Pin it the same way claude-code does: build your live tool server in a test, list its tools, and diff every name your prose writes against that list in both directions. A test that restates the names cannot catch the drift it exists for — and assert WHICH blocks the scan actually read. The first version of this guard mocked a manifest to `null`, which collapsed every block it meant to check down to one, and it passed while covering almost nothing.

@@ -64,7 +64,17 @@ export function CanvasMarkdownContent({
 
   const canvasSessionId = useAppStore((s) => s.canvasSessionId);
   const setDocumentEditing = useAppStore((s) => s.setDocumentEditing);
+  const documentEditing = useAppStore(
+    (s) => s.openDocuments.find((d) => d.id === documentId)?.editing ?? false
+  );
   const cwd = useAppStore((s) => s.selectedCwd);
+
+  // Edit mode is the AND of this editor's own state and the store's flag for
+  // this document, derived rather than mirrored. The store's flag can be cleared
+  // from outside — "Reload" on the held-update banner takes the agent's version
+  // and ends the edit — and deriving is what lets that land on the next render
+  // instead of through a state-sync effect.
+  const editing = isEditing && documentEditing;
 
   const fileSave = useCanvasFileSave({
     sourcePath: content.sourcePath,
@@ -134,7 +144,7 @@ export function CanvasMarkdownContent({
   // session switch mid-edit), so the editor remounts fresh for the new session
   // instead of showing a stale draft.
   useEffect(() => {
-    if (isEditing && canvasSessionId !== owningSessionRef.current) {
+    if (editing && canvasSessionId !== owningSessionRef.current) {
       if (timerRef.current) {
         clearTimeout(timerRef.current);
         timerRef.current = null;
@@ -144,7 +154,18 @@ export function CanvasMarkdownContent({
       setIsEditing(false);
       setDocumentEditing(documentId, false);
     }
-  }, [canvasSessionId, isEditing, documentId, setDocumentEditing]);
+  }, [canvasSessionId, editing, documentId, setDocumentEditing]);
+
+  // The edit can also end from OUTSIDE: "Reload" on the held-update banner takes
+  // the agent's version, and `applyHeldUpdate` clears this document's store flag
+  // to say so. Cancel the pending autosave when that happens rather than letting
+  // it flush a draft the person just gave up. Every other exit path has already
+  // nulled the timer, so this is a no-op on all of them.
+  useEffect(() => {
+    if (editing || !timerRef.current) return;
+    clearTimeout(timerRef.current);
+    timerRef.current = null;
+  }, [editing]);
 
   // Flush a pending save AND release this document's edit-protection on unmount
   // (e.g. the canvas closed or a tab switched mid-edit). The id-scoped clear
@@ -191,10 +212,10 @@ export function CanvasMarkdownContent({
             variant="ghost"
             size="icon-md"
             className="text-muted-foreground hover:text-foreground mt-2"
-            onClick={isEditing ? exitEdit : enterEdit}
-            aria-label={isEditing ? 'Finish editing' : 'Edit document'}
+            onClick={editing ? exitEdit : enterEdit}
+            aria-label={editing ? 'Finish editing' : 'Edit document'}
           >
-            {isEditing ? <Check className="size-4" /> : <Pencil className="size-4" />}
+            {editing ? <Check className="size-4" /> : <Pencil className="size-4" />}
           </Button>
         )}
       </div>
@@ -226,9 +247,9 @@ export function CanvasMarkdownContent({
               without losing scroll or selection. In edit mode `value` tracks the
               draft; in view mode it shows the document. */}
           <BlintzCanvas
-            value={isEditing ? draft : content.content}
-            editable={isEditing}
-            onChange={isEditing ? handleChange : undefined}
+            value={editing ? draft : content.content}
+            editable={editing}
+            onChange={editing ? handleChange : undefined}
           />
         </Suspense>
       </div>

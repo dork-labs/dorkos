@@ -60,6 +60,10 @@ describe('RoomRepoService', () => {
   let enabled: boolean;
   let visible: boolean;
   let operatorName: string | null;
+  /** Every call the repo service made to put this room's notes on its canvas. */
+  let pinned: { roomId: string; authorId: string }[];
+  /** Whether that call throws — a canvas that refused must not unwind a repo. */
+  let pinRefuses: boolean;
   /** The queue enable shares with merges — one instance, so a race is a real race. */
   let mutex: RoomRepoMutex;
 
@@ -107,6 +111,8 @@ describe('RoomRepoService', () => {
     enabled = true;
     visible = true;
     operatorName = 'Dorian';
+    pinned = [];
+    pinRefuses = false;
     db.insert(rooms)
       .values({
         id: ROOM_ID,
@@ -125,6 +131,10 @@ describe('RoomRepoService', () => {
       getRoom: () => (visible ? ROOM : null),
       isOwnerAuthor: (authorId) => authorId === OPERATOR,
       operatorGitName: () => operatorName,
+      pinRoomMd: (roomId, authorId) => {
+        if (pinRefuses) throw new Error('no room on the canvas');
+        pinned.push({ roomId, authorId });
+      },
       caps: () => ({ ...ROOM_REPO_CAP_DEFAULTS }),
       maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
     });
@@ -169,6 +179,35 @@ describe('RoomRepoService', () => {
       expect(body).toContain('# Release train');
       expect(body).toContain('Shipping 0.70');
       expect(body).toContain('never a replacement');
+    });
+
+    it('puts the room’s notes on its canvas, once, as the person who asked', async () => {
+      await service.enable(ROOM_ID, OPERATOR);
+      // A room with files starts with the one document everybody in it shares.
+      expect(pinned).toEqual([{ roomId: ROOM_ID, authorId: OPERATOR }]);
+
+      // …and the enable that finds a repo already there does not do it again:
+      // the notes are the room's now, and a second pin would put back a tab
+      // somebody may have closed on purpose.
+      await service.enable(ROOM_ID, OPERATOR);
+      expect(pinned).toHaveLength(1);
+    });
+
+    it('a repo that could not be made pins nothing, and a canvas that refused keeps the repo', async () => {
+      // Nothing is on the canvas for a room that never got files — a tab naming
+      // a file that does not exist is worse than no tab.
+      vi.stubEnv('PATH', '');
+      await expectRoomError(service.enable(ROOM_ID, OPERATOR), 'ROOM_REPO_GIT_UNAVAILABLE');
+      expect(pinned).toEqual([]);
+      vi.unstubAllEnvs();
+
+      // And the other direction: a canvas that throws is a missing tab, never a
+      // reason to tear a working repo back down.
+      pinRefuses = true;
+      const result = await service.enable(ROOM_ID, OPERATOR);
+      expect(result.created).toBe(true);
+      expect(existsSync(store.sidecarPath(ROOM_ID))).toBe(true);
+      expect(await git(['ls-files'], store.repoPath(ROOM_ID))).toBe(ROOM_MD_FILENAME);
     });
 
     it('writes the sidecar outside the repo, where the repo cannot rewrite it', async () => {

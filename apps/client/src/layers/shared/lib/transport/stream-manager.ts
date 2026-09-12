@@ -179,7 +179,25 @@ const SESSION_EVENT_TYPES = [
   // prevent, and it rides the turn like any other member once it is allowlisted.
   'turn_input',
   'ui_command',
+  // One document on this session's canvas changed (spec `canvas-agent-seat`
+  // §1.3). Registered with the CONTRACT rather than with the panel that draws
+  // it, for the reason every entry below gives: this is the only way a SECOND
+  // window of one session learns that the first opened or closed something, and
+  // a frame dropped here looks exactly like the private-per-browser canvas this
+  // whole feature replaced. It was missing once — the row was written, the
+  // frame reached the socket, and nothing on screen moved.
+  'canvas',
   'devtools_capture_request',
+  // The driving half of the same channel (spec `canvas-agent-seat` §2): a
+  // click, a keystroke, a wait, a read. Registered with the contract for the
+  // same reason its sibling is — a dropped frame leaves a tool call waiting out
+  // its whole timeout for an answer nobody was ever asked to give.
+  'devtools_action_request',
+  // Start or stop recording the page (spec `canvas-agent-seat` §3). Registered
+  // with the contract for the third time and the same reason: a dropped `stop`
+  // leaves a `browser_record_stop` waiting out thirty seconds for a file the
+  // window was never asked to make.
+  'devtools_recording_request',
   // The session's message queue, whole, on every change (spec
   // `persistent-session-runtime`). Registered with the contract rather than
   // with the UI that will read it: a queue frame that never arrives is exactly

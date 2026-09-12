@@ -34,6 +34,7 @@ import { OPERATOR_SAVE_SOURCE } from '../services/identity/display-name-provenan
 import {
   InvalidAvatarIdError,
   MAX_AVATAR_BYTES,
+  isAvatarContentType,
   sniffAvatarContentType,
   type AvatarStore,
 } from '../services/identity/avatar-store.js';
@@ -344,8 +345,11 @@ export function createProfileRouter(deps: ProfileRouterDeps): Router {
       }
 
       // The bytes decide, never the filename or the Content-Type the client
-      // claimed — both are written by whoever is uploading.
-      const contentType = sniffAvatarContentType(file.buffer);
+      // claimed — both are written by whoever is uploading. And a photo's
+      // accepted set is narrower than everything the sniffer can name: a GIF is
+      // a room attachment, not an avatar (see `AVATAR_CONTENT_TYPES`).
+      const sniffed = sniffAvatarContentType(file.buffer);
+      const contentType = isAvatarContentType(sniffed) ? sniffed : null;
       if (!contentType) {
         return sendError(
           res,

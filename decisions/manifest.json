@@ -2,6 +2,131 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260912-025249",
+      "slug": "the-session-canvas-is-server-owned",
+      "title": "The session canvas is server-owned, and the localStorage slice is retired",
+      "status": "proposed",
+      "created": "2026-09-12",
+      "extractedFrom": "spec",
+      "specSlug": "canvas-agent-seat",
+      "supersedes": null,
+      "affects": [
+        "packages/db/src/schema/rooms.ts",
+        "packages/shared/src/session-stream.ts",
+        "apps/server/src/services/canvas/canvas-service.ts",
+        "apps/client/src/layers/shared/model/app-store/app-store-canvas.ts"
+      ]
+    },
+    {
+      "id": "260912-025251",
+      "slug": "browser-driving-rides-the-in-page-shim",
+      "title": "The agent drives the browser through the in-page shim, never a server-side browser",
+      "status": "proposed",
+      "created": "2026-09-12",
+      "extractedFrom": "spec",
+      "specSlug": "canvas-agent-seat",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/workbench-serve/devtools-shim.ts",
+        "apps/server/src/services/session/devtools-capture-store.ts",
+        "apps/client/src/layers/features/canvas/model/use-devtools-bridge.ts"
+      ]
+    },
+    {
+      "id": "260912-025252",
+      "slug": "the-ui-capability-domain",
+      "title": "The ui capability domain gives every runtime the same canvas and browser seat",
+      "status": "proposed",
+      "created": "2026-09-12",
+      "extractedFrom": "spec",
+      "specSlug": "canvas-agent-seat",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/session/ui-capabilities.ts",
+        "apps/server/src/services/core/mcp-tool-tiers.ts",
+        "apps/server/src/services/core/external-mcp/register-from-definitions.ts",
+        "apps/server/src/services/runtimes/claude-code/mcp-tools/index.ts"
+      ]
+    },
+    {
+      "id": "260912-025253",
+      "slug": "merging-from-a-diff-stays-operator-initiated",
+      "title": "Merging from a diff stays operator-initiated and server-mediated",
+      "status": "proposed",
+      "created": "2026-09-12",
+      "extractedFrom": "spec",
+      "specSlug": "canvas-agent-seat",
+      "supersedes": null,
+      "affects": [
+        "apps/client/src/layers/features/diff-review/",
+        "apps/server/src/services/rooms/repo/room-merge-service.ts"
+      ]
+    },
+    {
+      "id": "260911-200301",
+      "slug": "a-rooms-canvas-is-server-owned-and-rides-the-room-stream",
+      "title": "A room's canvas is server-owned and rides the room stream as whole-document state",
+      "status": "proposed",
+      "created": "2026-09-11",
+      "extractedFrom": "spec",
+      "specSlug": "room-canvas",
+      "supersedes": null,
+      "affects": [
+        "packages/db/src/schema/rooms.ts",
+        "packages/shared/src/room-schemas.ts",
+        "apps/server/src/services/rooms/canvas/room-canvas-service.ts",
+        "apps/server/src/services/core/streams/room-stream-delivery.ts"
+      ]
+    },
+    {
+      "id": "260911-200302",
+      "slug": "a-canvas-change-never-triggers-a-turn",
+      "title": "A canvas change never triggers a turn",
+      "status": "proposed",
+      "created": "2026-09-11",
+      "extractedFrom": "spec",
+      "specSlug": "room-canvas",
+      "supersedes": null,
+      "affects": [
+        "packages/shared/src/additional-context.ts",
+        "apps/server/src/services/runtimes/shared/room-context-block.ts",
+        "apps/server/src/services/rooms/room-context.ts",
+        "apps/server/src/services/rooms/room-turn-runner.ts"
+      ]
+    },
+    {
+      "id": "260911-200303",
+      "slug": "room-canvas-commands-are-routed-by-turn-context-at-the-session-event-seam",
+      "title": "A room turn's canvas commands are routed by turn context, at the session-event seam",
+      "status": "proposed",
+      "created": "2026-09-11",
+      "extractedFrom": "spec",
+      "specSlug": "room-canvas",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/rooms/room-turn-runner.ts",
+        "apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts",
+        "apps/server/src/services/runtimes/claude-code/mcp-tools/ui-tools.ts",
+        "apps/server/src/services/rooms/room-capabilities.ts"
+      ]
+    },
+    {
+      "id": "260911-200304",
+      "slug": "the-browser-is-its-own-right-panel-tab-over-one-document-store",
+      "title": "The Browser is its own right-panel tab — two views over one document store",
+      "status": "proposed",
+      "created": "2026-09-11",
+      "extractedFrom": "spec",
+      "specSlug": "room-canvas",
+      "supersedes": null,
+      "affects": [
+        "apps/client/src/app/init-extensions.ts",
+        "apps/client/src/layers/shared/model/app-store/app-store-canvas.ts",
+        "apps/client/src/layers/shared/lib/ui-action-dispatcher.ts",
+        "apps/client/src/layers/features/canvas/ui/AgentCanvas.tsx"
+      ]
+    },
+    {
       "id": "260910-001730",
       "slug": "managed-sign-in-defaults-preserve-owner-bound-completion",
       "title": "Managed sign-in defaults preserve owner-bound completion",
@@ -484,7 +609,7 @@
     {
       "id": "260803-233420",
       "slug": "managed-mcp-server-trust-model",
-      "title": "Managed MCP server trust model \u2014 gated writes, marketplace rejection, absence withholds",
+      "title": "Managed MCP server trust model — gated writes, marketplace rejection, absence withholds",
       "status": "accepted",
       "created": "2026-08-03",
       "specSlug": "mcp-server-management",
@@ -547,7 +672,7 @@
     {
       "id": "260801-003051",
       "slug": "an-author-row-belongs-to-the-occupant-it-was-minted-for",
-      "title": "An author row belongs to the occupant it was minted for \u2014 a reused directory starts a fresh author",
+      "title": "An author row belongs to the occupant it was minted for — a reused directory starts a fresh author",
       "status": "accepted",
       "created": "2026-08-01",
       "specSlug": "mesh-identity-integrity",
@@ -560,7 +685,7 @@
     {
       "id": "260801-003050",
       "slug": "a-duplicate-manifest-never-registers",
-      "title": "A duplicate manifest never registers \u2014 relocation requires the incumbent path to give the manifest up",
+      "title": "A duplicate manifest never registers — relocation requires the incumbent path to give the manifest up",
       "status": "accepted",
       "created": "2026-08-01",
       "specSlug": "mesh-identity-integrity",
@@ -638,7 +763,7 @@
     {
       "id": "260718-045630",
       "slug": "connector-provider-custody-composio-nango-raw-mcp",
-      "title": "Connector custody stance: a ConnectorProvider abstraction \u2014 Composio (managed), Nango (self-host), raw MCP (baseline)",
+      "title": "Connector custody stance: a ConnectorProvider abstraction — Composio (managed), Nango (self-host), raw MCP (baseline)",
       "status": "accepted",
       "created": "2026-07-17",
       "lastVerified": "2026-08-06",
@@ -689,7 +814,7 @@
     {
       "id": "260717-125124",
       "slug": "fleet-context-health",
-      "title": "Fleet-level context health \u2014 best-effort list reading + live override, honest per-runtime degradation",
+      "title": "Fleet-level context health — best-effort list reading + live override, honest per-runtime degradation",
       "status": "accepted",
       "created": "2026-07-17",
       "extractedFrom": "fleet-context-health",
@@ -860,7 +985,7 @@
     {
       "id": "260707-231641",
       "slug": "changelog-fragments",
-      "title": "Changelog fragments \u2014 one file per change, compiled at release",
+      "title": "Changelog fragments — one file per change, compiled at release",
       "status": "accepted",
       "created": "2026-07-07",
       "lastVerified": "2026-08-06",
@@ -1116,7 +1241,7 @@
     {
       "number": 303,
       "slug": "harness-sync-multi-source-projection",
-      "title": "Harness Sync is a multi-source projector \u2014 marketplace plugins project automatically, agent-native assets adopt explicitly",
+      "title": "Harness Sync is a multi-source projector — marketplace plugins project automatically, agent-native assets adopt explicitly",
       "status": "accepted",
       "extractedFrom": "harness-sync",
       "created": "2026-06-29",
@@ -1293,7 +1418,7 @@
     {
       "number": 283,
       "slug": "workspace-provider-hexagonal-port",
-      "title": "WorkspaceProvider \u2014 a hexagonal port for server-managed isolated workspaces",
+      "title": "WorkspaceProvider — a hexagonal port for server-managed isolated workspaces",
       "status": "accepted",
       "created": "2026-06-16",
       "extractedFrom": "workspace-manager",
@@ -1601,7 +1726,7 @@
     {
       "number": 256,
       "slug": "runtime-capabilities-shape-booleans-plus-structured-plus-features",
-      "title": "RuntimeCapabilities Shape \u2014 Booleans + Structured Permission Modes + `features` Extension Point",
+      "title": "RuntimeCapabilities Shape — Booleans + Structured Permission Modes + `features` Extension Point",
       "status": "accepted",
       "created": "2026-04-16",
       "extractedFrom": "codex-runtime-adapter-prework",
@@ -1839,7 +1964,7 @@
     {
       "number": 233,
       "slug": "marketplace-update-is-advisory-by-default",
-      "title": "Marketplace Update Is Advisory by Default \u2014 Never Auto-Apply",
+      "title": "Marketplace Update Is Advisory by Default — Never Auto-Apply",
       "created": "2026-04-06",
       "status": "accepted",
       "extractedFrom": "marketplace-02-install",
@@ -2203,7 +2328,7 @@
     {
       "number": 198,
       "slug": "dual-mechanism-agent-ui-state-awareness",
-      "title": "Dual-Mechanism Agent UI State Awareness \u2014 Context Injection + Tool Query",
+      "title": "Dual-Mechanism Agent UI State Awareness — Context Injection + Tool Query",
       "created": "2026-03-26",
       "status": "accepted",
       "extractedFrom": "ext-platform-01-agent-ui-control",
@@ -2242,7 +2367,7 @@
     {
       "number": 195,
       "slug": "hybrid-agent-ui-control-pattern",
-      "title": "Hybrid Agent UI Control \u2014 Explicit Tool + Minimal Implicit Side-Effects",
+      "title": "Hybrid Agent UI Control — Explicit Tool + Minimal Implicit Side-Effects",
       "created": "2026-03-26",
       "status": "accepted",
       "extractedFrom": "ext-platform-01-agent-ui-control",
@@ -3238,7 +3363,7 @@
     {
       "number": 62,
       "slug": "remove-mesh-feature-flag-always-on",
-      "title": "Remove Mesh Feature Flag \u2014 Make Mesh Always-On",
+      "title": "Remove Mesh Feature Flag — Make Mesh Always-On",
       "status": "accepted",
       "created": "2026-03-03",
       "extractedFrom": "agent-centric-ux",
@@ -3308,7 +3433,7 @@
     {
       "number": 44,
       "slug": "configfield-descriptor-over-zod-serialization",
-      "title": "Adapter Metadata Contract \u2014 AdapterManifest Self-Declaration with ConfigField Descriptors",
+      "title": "Adapter Metadata Contract — AdapterManifest Self-Declaration with ConfigField Descriptors",
       "status": "accepted",
       "created": "2026-02-27",
       "extractedFrom": "adapter-catalog-management",
@@ -3477,7 +3602,7 @@
     {
       "number": 30,
       "slug": "dynamic-import-for-adapter-plugins",
-      "title": "Adapter Plugin Contract \u2014 Dynamic import() Loading and Factory Export Pattern",
+      "title": "Adapter Plugin Contract — Dynamic import() Loading and Factory Export Pattern",
       "status": "accepted",
       "created": "2026-02-25",
       "extractedFrom": "relay-runtime-adapters",
@@ -3832,7 +3957,7 @@
     {
       "id": "260708-111459",
       "slug": "two-tier-generative-ui",
-      "title": "Two-tier generative UI \u2014 declarative widget catalog plus MCP Apps",
+      "title": "Two-tier generative UI — declarative widget catalog plus MCP Apps",
       "status": "accepted",
       "created": "2026-07-08",
       "specSlug": "gen-ui-tier1",
@@ -3882,7 +4007,7 @@
     {
       "id": "260708-185518",
       "slug": "multi-document-canvas-model",
-      "title": "Multi-document canvas model \u2014 openDocuments[] + activeDocumentId replaces the single content slot",
+      "title": "Multi-document canvas model — openDocuments[] + activeDocumentId replaces the single content slot",
       "status": "accepted",
       "created": "2026-07-08",
       "extractedFrom": "right-panel-workbench",
@@ -3907,7 +4032,7 @@
     {
       "id": "260708-185521",
       "slug": "embedded-terminal-pty-architecture",
-      "title": "Embedded terminal \u2014 xterm.js + node-pty over WebSocket, web-only, confined to session cwd",
+      "title": "Embedded terminal — xterm.js + node-pty over WebSocket, web-only, confined to session cwd",
       "status": "accepted",
       "created": "2026-07-08",
       "extractedFrom": "right-panel-workbench",
@@ -3918,7 +4043,7 @@
     {
       "id": "260708-185522",
       "slug": "mime-viewer-registry-config-overrides",
-      "title": "First-party mime\u2192viewer registry with config-choosable defaults; third-party viewers route to MCP Apps",
+      "title": "First-party mime→viewer registry with config-choosable defaults; third-party viewers route to MCP Apps",
       "status": "accepted",
       "created": "2026-07-08",
       "extractedFrom": "right-panel-workbench",
@@ -4054,7 +4179,7 @@
     {
       "id": "260717-202153",
       "slug": "test-mode-cloud-transport-fake-fetch-behind-construction-seam",
-      "title": "Test-mode cloud transport \u2014 a DORKOS_TEST_RUNTIME-gated fake FetchLike behind a CloudLinkManager construction seam",
+      "title": "Test-mode cloud transport — a DORKOS_TEST_RUNTIME-gated fake FetchLike behind a CloudLinkManager construction seam",
       "status": "accepted",
       "created": "2026-07-17",
       "extractedFrom": "capture-cloud-link-stub",
@@ -4103,7 +4228,7 @@
     {
       "id": "260721-221810",
       "slug": "shape-is-fifth-package-type-composition-manifest-affinity-not-ownership",
-      "title": "The Shape is the fifth marketplace package type \u2014 a composition manifest that activates existing packages, holding agents by affinity, not ownership",
+      "title": "The Shape is the fifth marketplace package type — a composition manifest that activates existing packages, holding agents by affinity, not ownership",
       "status": "accepted",
       "created": "2026-07-21",
       "extractedFrom": "shapes",
@@ -4183,7 +4308,7 @@
     {
       "id": "260722-154341",
       "slug": "one-anchor-convention-data-testid-plus-a-typed-registry",
-      "title": "One stable-anchor convention \u2014 data-testid plus a typed registry",
+      "title": "One stable-anchor convention — data-testid plus a typed registry",
       "status": "accepted",
       "created": "2026-07-22",
       "extractedFrom": "dorkbot-living-tour",
@@ -5027,7 +5152,7 @@
     {
       "id": "260819-234830",
       "slug": "os-notifications-join-the-periphery",
-      "title": "OS-level notifications join DorkOS's periphery \u2014 superseding the ADR 0009 ban",
+      "title": "OS-level notifications join DorkOS's periphery — superseding the ADR 0009 ban",
       "status": "accepted",
       "created": "2026-08-19",
       "extractedFrom": "notification-system",
@@ -5038,7 +5163,7 @@
     {
       "id": "260821-190444",
       "slug": "a-proposed-schedule-carries-its-own-case",
-      "title": "A proposed schedule carries its own case \u2014 required reason, stamped provenance, and a test run that commits nothing",
+      "title": "A proposed schedule carries its own case — required reason, stamped provenance, and a test run that commits nothing",
       "status": "accepted",
       "created": "2026-08-21",
       "extractedFrom": "schedule-approval-experience",
@@ -5095,7 +5220,7 @@
     {
       "id": "260822-235759",
       "slug": "consent-led-default-flipping",
-      "title": "Full power by default is consent-led \u2014 the door's accept writes the flips, never a migration",
+      "title": "Full power by default is consent-led — the door's accept writes the flips, never a migration",
       "status": "accepted",
       "created": "2026-08-22",
       "extractedFrom": "full-power-defaults",
@@ -5117,7 +5242,7 @@
     {
       "id": "260822-235801",
       "slug": "green-means-full-power-red-means-alarm",
-      "title": "The color economy \u2014 green means full power, red is reserved for alarms",
+      "title": "The color economy — green means full power, red is reserved for alarms",
       "status": "accepted",
       "created": "2026-08-22",
       "extractedFrom": "full-power-defaults",
@@ -5256,7 +5381,7 @@
     {
       "id": "260829-025020",
       "slug": "a-room-turn-speaks-by-calling-a-tool",
-      "title": "A room turn speaks by calling a tool, in every room kind \u2014 including DMs",
+      "title": "A room turn speaks by calling a tool, in every room kind — including DMs",
       "status": "accepted",
       "created": "2026-08-29",
       "specSlug": "tool-only-room-replies",
@@ -5525,6 +5650,24 @@
         "apps/server/src/services/core/mcp-tool-gate.ts",
         "apps/server/src/services/runtimes/shared/approval-verdict-block.ts",
         "apps/server/src/services/session/context-assembler.ts"
+      ]
+    },
+    {
+      "id": "260912-190915",
+      "slug": "an-approval-expires-on-a-sweep-and-the-agent-is-told",
+      "title": "An approval expires on a sweep, and the only party told is the agent that asked",
+      "status": "accepted",
+      "created": "2026-09-12",
+      "extractedFrom": "spec",
+      "specSlug": "approval-expiry-notice",
+      "amends": null,
+      "supersedes": null,
+      "affects": [
+        "packages/shared/src/additional-context.ts",
+        "apps/server/src/services/core/approvals/approval-service.ts",
+        "apps/server/src/services/core/approvals/approval-verdict-delivery.ts",
+        "apps/server/src/services/runtimes/shared/approval-verdict-block.ts",
+        "apps/server/src/index.ts"
       ]
     }
   ]

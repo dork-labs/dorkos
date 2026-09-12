@@ -173,6 +173,10 @@
       "types": "./src/run-outcome.ts",
       "default": "./dist/run-outcome.js"
     },
+    "./run-refusals": {
+      "types": "./src/run-refusals.ts",
+      "default": "./dist/run-refusals.js"
+    },
     "./run-time-limit": {
       "types": "./src/run-time-limit.ts",
       "default": "./dist/run-time-limit.js"
@@ -276,6 +280,14 @@
     "./smart-groups": {
       "types": "./src/smart-groups.ts",
       "default": "./dist/smart-groups.js"
+    },
+    "./canvas-source-key": {
+      "types": "./src/canvas-source-key.ts",
+      "default": "./dist/canvas-source-key.js"
+    },
+    "./canvas-view": {
+      "types": "./src/canvas-view.ts",
+      "default": "./dist/canvas-view.js"
     },
     "./room-schemas": {
       "types": "./src/room-schemas.ts",

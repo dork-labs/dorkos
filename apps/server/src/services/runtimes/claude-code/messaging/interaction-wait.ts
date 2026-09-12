@@ -11,10 +11,25 @@
  * **The wait is two stages, and only the second one refuses.** A prompt counts
  * down for {@link SESSIONS.INTERACTION_TIMEOUT_MS} exactly as it always has. Past
  * that it PARKS: the promise stays unresolved, the tool call stays held, the SDK
- * holds its loop open (`sdk.d.ts:196-205`), and the person is told the agent is
+ * holds its loop open (`CanUseTool`, whose own doc says permission prompts have no park deadline), and the person is told the agent is
  * waiting. Only at {@link SESSIONS.INTERACTION_PARK_CEILING_MS} is the model
- * handed a refusal. An unattended run is the exception and refuses at the
- * countdown, because nobody is coming back to it.
+ * handed a refusal.
+ *
+ * ## One wait, because a session with nobody to answer never gets here (2026-09-12)
+ *
+ * This used to carry a second, shorter arm for an unattended run — a single
+ * timer at the countdown, no park. That arm is gone, and so is the wait it
+ * described: all three handlers in `interactive-handlers.ts` now refuse an ask
+ * on the spot when `session.unattended` is set, before any prompt event is
+ * pushed and before any timer is armed (spec
+ * `unattended-session-permission-prompts`). Ten minutes bought a chance that
+ * somebody answers on the one surface where nobody is there, and held a run slot
+ * to do it.
+ *
+ * So everything below describes a session a person can reach, and the wait is
+ * the same wait for every kind of prompt in it. `session.unattended` still
+ * exists here because the shapes in this file are what those handlers hold; it
+ * is READ in the handlers, never in this module's timers.
  *
  * @module runtimes/claude-code/messaging/interaction-wait
  */
@@ -153,14 +168,27 @@ export interface InteractiveSession {
    */
   cwd?: string;
   /**
-   * True when nobody is watching this session — a scheduled task run.
+   * True when nobody is watching this session — a run the SCHEDULER started on
+   * its own timer, and nothing else.
    *
-   * A prompt in such a session refuses at
-   * {@link SESSIONS.INTERACTION_TIMEOUT_MS} and never parks, because a park is
-   * a promise that somebody will come back and there is nobody here to keep it.
-   * Waiting four hours per ask would stall the run rather than protect anyone
-   * (spec `ask-parks-on-timeout` §7). Absent means a person may well be
-   * watching, which is the setting every interactive session runs under.
+   * Read by all three handlers in `interactive-handlers.ts`: an ask raised in
+   * such a session is refused the moment it is raised, never waited on, because
+   * a wait is a promise that somebody will come back and there is nobody here to
+   * keep it. Absent means a person may well be watching, which is the setting
+   * every other session runs under.
+   *
+   * **A "Run now" a person clicked is NOT this**, and the difference is the
+   * whole point: they are sitting in front of the app waiting for it, so their
+   * card is answerable and gets the ordinary wait. `task-scheduler-service.ts`
+   * sets the flag only for `trigger === 'scheduled'`.
+   *
+   * A relay-bound turn is not this either. `core/unattended-autonomy` counts two
+   * unattended drivers, a binding and a scheduled task, and only the scheduler
+   * passes this flag — because the question is not "is a person present" but
+   * "can anybody answer this", and a bridged agent's approval is published to
+   * the chat the room is talking to (DOR-1440, and see
+   * `relay/adapters/claude-code/publish.ts` and `chat-bridge/ask-card.ts` for
+   * the two shapes that takes).
    */
   unattended?: boolean;
 }
@@ -170,8 +198,8 @@ export interface InteractiveSession {
  *
  * **The only DURABLE trace an expired prompt leaves.** All three handlers in
  * `interactive-handlers.ts` hand the model a denial once the wait runs out —
- * four hours for a session somebody could come back to, ten minutes for an
- * unattended run — and, until DOR-1158, wrote nothing anywhere: the card vanished from any
+ * four hours for the session a card is raised in — and, until DOR-1158, wrote
+ * nothing anywhere: the card vanished from any
  * client that happened to be watching, the turn carried on as though a person
  * had refused, and there was no record that the refusal was a clock rather
  * than a decision. On 2026-07-31 two agents hit this twice each, invisibly,
@@ -375,63 +403,13 @@ export function elicitationTimeoutNotice(serverName: string, waited: string): st
 }
 
 /**
- * How long a prompt in this session goes unanswered before it is refused.
- *
- * Four hours for a session somebody could still come back to, and the plain
- * countdown for an unattended run, which never parks (spec
- * `ask-parks-on-timeout` §7). Every sentence that names the wait — the two
- * denials the model reads, the notice the operator sees, the log line — is
- * built from this number, so none of them can claim a wait that did not happen.
- *
- * **A relay-bound turn is NOT unattended here, and that is a decision.**
- * `core/unattended-autonomy` counts two unattended drivers, a binding and a
- * scheduled task, and only the scheduler passes this flag. The difference is
- * whether anybody can still answer: a scheduled run's prompt reaches nobody,
- * while a bridged agent's prompt is listed fleet-wide and is answerable from
- * the cockpit by the same person the room is talking to.
- *
- * **Many of them are answerable from the chat itself, and this used to claim
- * otherwise** (DOR-1440). There are two relay paths and they carry different
- * rules, which is what the old "cockpit only" sentence flattened away:
- *
- * - **Direct-bound** — an agent addressed over the relay. Its
- *   `approval_required` is published straight to the envelope's `replyTo`
- *   (`relay/adapters/claude-code/publish.ts`), enriched with the agent and
- *   session ids so the adapter can encode them in button values; Slack and
- *   Telegram render real Approve/Deny buttons for it. There is no chat-shape
- *   restriction at all — a group channel gets the card — and the approver
- *   allowlist is enforced at the CLICK (`mayApprove` in each adapter), not at
- *   the send.
- * - **Room-bound** — an agent answering for a room through a bridge.
- *   `chat-bridge/ask-card.ts` sends the same card, under much tighter rules,
- *   because that card carries the Ask's DETAIL into a chat DorkOS does not own
- *   the roster of: only an `approval`, only into a live one-to-one DM whose
- *   single outside member arrived through THIS adapter instance and is on its
- *   approver allowlist (`chat-bridge/ask-audience.ts`), and with `initiate`
- *   provenance so an operator who switched that off receives none. Everything
- *   else — a group chat, a question, an elicitation, a card the consent gate
- *   refuses — gets only the room's waiting sentence and is answered in the
- *   cockpit.
- *
- * Either way the wait is the same wait; what differs is how many places can end
- * it.
- *
- * @param session - The session holding the prompt.
- */
-export function refusalDeadlineMs(session: InteractiveSession): number {
-  return session.unattended === true
-    ? SESSIONS.INTERACTION_TIMEOUT_MS
-    : SESSIONS.INTERACTION_PARK_CEILING_MS;
-}
-
-/**
  * Arm the two-stage wait for one prompt: park at
  * {@link SESSIONS.INTERACTION_TIMEOUT_MS}, refuse at
  * {@link SESSIONS.INTERACTION_PARK_CEILING_MS}.
  *
  * Parking is not a resolution. Nothing is handed to the model, the tool call
  * stays held, and the SDK holds its loop open for as long as the promise stays
- * unresolved (`sdk.d.ts:196-205`). What happens at ten minutes is a sentence to
+ * unresolved (`CanUseTool`, whose own doc says permission prompts have no park deadline). What happens at ten minutes is a sentence to
  * the operator, a log line, and a second timer.
  *
  * **The returned timer is the FIRST one.** It is stored on the pending entry as
@@ -440,10 +418,6 @@ export function refusalDeadlineMs(session: InteractiveSession): number {
  * {@link clearInteractionTimer}. Closing over it was the shape that let a
  * cancelled prompt leave its ceiling timer armed to refuse an interaction that
  * had already been answered.
- *
- * **An unattended session never parks.** A scheduled run has nobody coming back
- * to it, so waiting four hours would only stall the run; it refuses at the
- * countdown exactly as it does today ({@link refusalDeadlineMs}).
  *
  * @param session - The session holding the prompt.
  * @param interactionId - The pending entry's key.
@@ -465,18 +439,12 @@ export function armInteractionWait(
     logInteractionTimeout(session, {
       id: interactionId,
       ...log,
-      waitedMs: refusalDeadlineMs(session),
+      waitedMs: SESSIONS.INTERACTION_PARK_CEILING_MS,
     });
     notifyInteractionCancelled(session, interactionId, 'timeout');
     notifyInteractionTimeoutNotice(session, notices.expired);
     refuse();
   };
-
-  if (session.unattended === true) {
-    const only = setTimeout(expire, SESSIONS.INTERACTION_TIMEOUT_MS);
-    only.unref?.();
-    return only;
-  }
 
   const park = (): void => {
     // Answered inside the same tick this timer fired: there is nothing left to

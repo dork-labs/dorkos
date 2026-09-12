@@ -77,6 +77,7 @@ describe('useAgentHottestStatus', () => {
         },
       ],
       queuedMessages: [],
+      canvas: [],
       cursor: 1,
     });
     const { result } = renderHook(() => useAgentHottestStatus([A, B], AGENT_PATH));

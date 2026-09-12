@@ -30,7 +30,7 @@ import type { McpServerId } from '@dorkos/shared/capabilities';
 
 import type { CapabilityDefinition } from './capability-definition.js';
 import type { CapabilityInvocationContext, CapabilityRegistry } from './registry.js';
-import { CapabilityToolError } from './mcp-envelope.js';
+import { CapabilityImageResult, CapabilityToolError } from './mcp-envelope.js';
 import {
   APPROVAL_TOKEN_ARGUMENT,
   CapabilityGateRefusal,
@@ -39,6 +39,7 @@ import {
   type ApprovalRequiredPayload,
 } from './tier-enforcement.js';
 import {
+  approvalNoLongerValid,
   awaitCapabilityApproval,
   type CapabilityApprovalHold,
   type CapabilityHoldSession,
@@ -192,8 +193,27 @@ export function readOnlyCarveOutToolNames(
   return names;
 }
 
-/** Wrap a plain payload into the MCP text envelope both servers return. */
+/**
+ * Wrap a plain payload into the MCP envelope both servers return.
+ *
+ * Text, unless the capability handed back a {@link CapabilityImageResult} — in
+ * which case the picture leads and the JSON follows it, which is the two-block
+ * shape a model can actually look at.
+ *
+ * @param payload - What the handler returned.
+ * @param isError - Whether this is the handler's failure path.
+ * @returns The MCP result.
+ */
 function textResult(payload: unknown, isError = false): CallToolResult {
+  if (payload instanceof CapabilityImageResult) {
+    return {
+      content: [
+        { type: 'image' as const, data: payload.image.data, mimeType: payload.image.mimeType },
+        { type: 'text' as const, text: JSON.stringify(payload.payload, null, 2) },
+      ],
+      ...(isError ? { isError: true } : {}),
+    };
+  }
   return {
     content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
     ...(isError ? { isError: true } : {}),
@@ -352,9 +372,12 @@ function invokeThroughRegistry(
  *
  * On `granted`/`denied` the call is re-invoked with the granted token: the gate
  * consumes it and returns the REAL result on a grant, or throws a
- * {@link CapabilityGateRefusal} carrying the `denied` payload on a refusal. On any
- * no-decision ending (`timeout` past the cap, `expired`) the held call degrades to
- * the EXACT `approval_required` payload today's poll flow returns — never worse.
+ * {@link CapabilityGateRefusal} carrying the `denied` payload on a refusal. On
+ * `timeout` — the cap ran out while the window stayed open — the held call
+ * degrades to the EXACT `approval_required` payload today's poll flow returns,
+ * never worse. On `expired` it returns `approval_no_longer_valid` instead, because
+ * by then that payload would be advertising a dead token and a card nobody can
+ * answer (DOR-1932).
  */
 async function holdAndResume(
   registry: CapabilityRegistry,
@@ -365,6 +388,13 @@ async function holdAndResume(
   hold: CapabilityApprovalHold
 ): Promise<CallToolResult> {
   const outcome = await awaitCapabilityApproval(hold, payload);
+  // The window closed (or the token was spent elsewhere) while this call waited,
+  // so the poll payload is no longer true: there is no live card to answer and
+  // the token is dead. Saying otherwise sent the agent to retry with it
+  // (DOR-1932).
+  if (outcome === 'expired') return textResult(approvalNoLongerValid(payload));
+  // `timeout` alone still degrades verbatim — the cap ran out, not the window, so
+  // the card really is still on the dashboard and the token really does still work.
   if (outcome !== 'granted' && outcome !== 'denied') return textResult(payload);
   try {
     return textResult(

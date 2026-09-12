@@ -3,6 +3,7 @@ import {
   Activity,
   FolderTree,
   Gauge,
+  Globe,
   PanelRight,
   Puzzle,
   SquareTerminal,
@@ -272,7 +273,19 @@ export function registerRightPanelTabs(register: RegisterFn): void {
     priority: 15,
   });
 
-  // Canvas as right-panel contribution (lazy-loaded, only visible on /session)
+  // Canvas as right-panel contribution (lazy-loaded). It holds every document the
+  // embedded browser does NOT render; pages live one tab along, in Browser
+  // (ADR 260911-200304).
+  //
+  // On `/session` it is that session's own canvas, private to this browser. On a
+  // room route it is the ROOM's shared table, live off the room's stream and the
+  // same for every member (spec `room-canvas` §9). Same tab, same strip, same
+  // viewers — what changes is who owns the documents.
+  //
+  // Room (priority 8) still wins the panel's auto-select on a room route, and
+  // that is deliberate: a tab that selected itself when another member put
+  // something on the table would be the pixel version of a turn that triggers
+  // itself. An arrival lights the unread dot here and moves nothing.
   register('right-panel', {
     id: 'canvas',
     title: 'Canvas',
@@ -280,8 +293,33 @@ export function registerRightPanelTabs(register: RegisterFn): void {
     component: lazy(() =>
       import('@/layers/features/canvas').then((m) => ({ default: m.CanvasContent }))
     ),
-    visibleWhen: ({ pathname }) => pathname === '/session',
+    visibleWhen: ({ pathname }) => pathname === '/session' || routeShowsRoom(pathname),
     priority: 20,
+  });
+
+  // Browser as right-panel contribution (lazy-loaded) — the same document
+  // surface over the two content types the embedded browser renders, with its
+  // own active document, so a page and a diff stop competing for one tab strip.
+  // On a room route it shows that room's pages, and its address bar puts one on
+  // the room's table as the person who typed it.
+  //
+  // Priority 22 sits it between Canvas (20) and Terminal (25): documents, then
+  // pages, then a shell.
+  //
+  // Web-only, gated the way Terminal is: framing a page needs the serve and
+  // preview routes, which the in-process Obsidian transport has none of, so the
+  // tab is absent there rather than present and broken.
+  register('right-panel', {
+    id: 'browser',
+    title: 'Browser',
+    icon: Globe,
+    component: lazy(() =>
+      import('@/layers/features/canvas').then((m) => ({ default: m.BrowserContent }))
+    ),
+    visibleWhen: ({ pathname, transport }) =>
+      (pathname === '/session' || routeShowsRoom(pathname)) &&
+      transport?.supportsWorkbenchServe === true,
+    priority: 22,
   });
 
   // Terminal as right-panel contribution (lazy-loaded — @xterm/* lands in its

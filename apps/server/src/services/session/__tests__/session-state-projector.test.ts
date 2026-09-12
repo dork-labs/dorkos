@@ -18,6 +18,7 @@ import type {
   ProjectorStatusUpdate,
   InteractionChange,
 } from '../session-state-projector.js';
+import { uiTurnFacts } from '../browser-seat/ui-turn-facts.js';
 import { EVENT_LOG_MAX_EVENTS } from '../replay/event-log.js';
 import {
   StaleResumeCursorError,
@@ -191,6 +192,62 @@ describe('SessionStateProjector', () => {
     p.ingest({ type: 'subagent_update', taskId: 'bt2', status: 'error' } as RawSessionEvent);
     expect(p.getStatus().runningSubagentCount).toBe(0);
     expect(p.getStatus().lifecycle).toBe('idle');
+  });
+
+  // Housekeeping children (spec `ambient-background-tasks`): the runtime marks
+  // work it started on its own behalf and asks hosts to keep it out of activity
+  // indicators. `runningSubagentCount` is exactly such an indicator — the status
+  // line's subagent item reads it — so it must not see them.
+  it('leaves housekeeping children out of runningSubagentCount', () => {
+    const p = new SessionStateProjector('amb-1');
+    p.ingest({ type: 'turn_start' } as RawSessionEvent);
+    p.ingest({ type: 'subagent_update', taskId: 'real', status: 'running' } as RawSessionEvent);
+    p.ingest({
+      type: 'subagent_update',
+      taskId: 'chore',
+      status: 'running',
+      ambient: true,
+    } as RawSessionEvent);
+
+    expect(p.getStatus().runningSubagentCount).toBe(1);
+    // Tracked all the same: the liveness bound and the stranding sweep still
+    // have to retire it, or a client's task panel holds a dead watcher forever.
+    expect(p.listRunningSubagents()).toEqual(['real', 'chore']);
+
+    // The progress reports that follow do not repeat the mark, and the count
+    // must not gain a member because of that.
+    p.ingest({
+      type: 'subagent_update',
+      taskId: 'chore',
+      status: 'running',
+    } as RawSessionEvent);
+    expect(p.getStatus().runningSubagentCount).toBe(1);
+
+    p.ingest({ type: 'subagent_update', taskId: 'real', status: 'complete' } as RawSessionEvent);
+    expect(p.getStatus().runningSubagentCount).toBe(0);
+  });
+
+  // The retirement DorkOS synthesizes has to carry the mark the start did, or a
+  // client that never counted the child books its ending against a different one.
+  it('stamps the housekeeping mark onto a stranded child it retires', () => {
+    const p = new SessionStateProjector('amb-2');
+    p.ingest({ type: 'turn_start' } as RawSessionEvent);
+    p.ingest({ type: 'subagent_update', taskId: 'real', status: 'running' } as RawSessionEvent);
+    p.ingest({
+      type: 'subagent_update',
+      taskId: 'chore',
+      status: 'running',
+      ambient: true,
+    } as RawSessionEvent);
+
+    const ingestSpy = vi.spyOn(p, 'ingest');
+    p.markInterrupted();
+
+    expect(ingestSpy.mock.calls.map((c) => c[0])).toEqual([
+      { type: 'subagent_update', taskId: 'real', status: 'untracked' },
+      { type: 'subagent_update', taskId: 'chore', status: 'untracked', ambient: true },
+    ]);
+    expect(p.getStatus().runningSubagentCount).toBe(0);
   });
 
   // Eviction tears a session down without ever running a stream's `finally`, so
@@ -1569,6 +1626,73 @@ describe('SessionStateProjector', () => {
 
     disposeProjector('never-rekeyed-id');
     disposeProjector('narrow-canonical');
+  });
+
+  /**
+   * The `ui` verbs' turn facts move with the session (spec `canvas-agent-seat`
+   * §5).
+   *
+   * `triggerTurn` binds the room marker and the window snapshot under the id the
+   * turn was DISPATCHED under — for a brand-new claude-code session, the request
+   * UUID. The SDK renames the session mid-first-turn, and a `control_ui` later in
+   * that same turn arrives carrying the CANONICAL id, because that is what the
+   * capability context resolves. Without this line the handler finds no room
+   * marker and writes the agent's PRIVATE session canvas instead of the room's
+   * shared table — on the first room turn of every new session, silently, with
+   * the model told it succeeded.
+   *
+   * Replacing the call with `void [fromId, newId];` leaves 3225 tests green, so
+   * this is the test that stands between that line and a no-op.
+   */
+  it('carries the `ui` verbs’ turn facts across the rename', () => {
+    const UUID = 'ui-facts-uuid';
+    const CANONICAL = 'ui-facts-canonical';
+    disposeProjector(UUID);
+    disposeProjector(CANONICAL);
+    uiTurnFacts.clear();
+
+    // What the trigger binds, under the id the turn started on.
+    getOrCreateProjector(UUID);
+    uiTurnFacts.bindTurn(UUID, {
+      roomTurn: { roomId: 'room-1', authorId: 'ana', turnId: 'turn-1' },
+      uiState: {
+        panels: { settings: false, tasks: true, relay: false, picker: false },
+        sidebar: { open: true, activeTab: null },
+        agent: { id: null, cwd: null },
+      },
+    });
+
+    rekeyProjector(UUID, CANONICAL);
+
+    // What a `control_ui` later in the same turn asks for, by the canonical id.
+    expect(uiTurnFacts.read(CANONICAL).roomTurn).toEqual({
+      roomId: 'room-1',
+      authorId: 'ana',
+      turnId: 'turn-1',
+    });
+    expect(uiTurnFacts.read(CANONICAL).uiState?.panels.tasks).toBe(true);
+    // …and nothing is left behind at the retired id, which would be a second
+    // session's worth of marker for the store to hand out later.
+    expect(uiTurnFacts.read(UUID)).toEqual({});
+
+    disposeProjector(CANONICAL);
+    uiTurnFacts.clear();
+  });
+
+  it('forgets a session’s turn facts when its projector is disposed', () => {
+    // The other half of the same ownership: the window those facts describe is
+    // gone, so the marker must not outlive it and be read by whatever id the
+    // store hands out next.
+    uiTurnFacts.clear();
+    getOrCreateProjector('ui-facts-dispose');
+    uiTurnFacts.bindTurn('ui-facts-dispose', {
+      roomTurn: { roomId: 'room-2', authorId: 'ben', turnId: 'turn-2' },
+    });
+    expect(uiTurnFacts.read('ui-facts-dispose').roomTurn).toBeDefined();
+
+    disposeProjector('ui-facts-dispose');
+
+    expect(uiTurnFacts.read('ui-facts-dispose')).toEqual({});
   });
 
   // Failure mode (C1 guards): rekey must be a no-op when the id is unchanged or

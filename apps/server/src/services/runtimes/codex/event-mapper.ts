@@ -38,18 +38,11 @@ import type {
   WebSearchItem,
 } from '@openai/codex-sdk';
 import type { StreamEvent, TaskItem } from '@dorkos/shared/types';
-import { UiCommandSchema } from '@dorkos/shared/schemas';
 import {
   describeCodexDiagnostic,
   describeRuntimeError,
   type RuntimeErrorCopy,
 } from '@dorkos/shared/runtime-error-classification';
-import { CODEX_UI_MCP_SERVER } from './codex-ui-mcp-server.js';
-import {
-  UI_COMMAND_REFUSED_CODE,
-  isUiActionRefusedOnCodex,
-  uiActionRefusalMessage,
-} from './ui-command-consent.js';
 import { recordCodexMedia, type CodexMediaState } from './media-capture.js';
 import { readCodexTurnContextUsage, type CodexTurnContextUsage } from './turn-context-usage.js';
 
@@ -380,12 +373,6 @@ function mapThreadItem(item: ThreadItem, phase: ItemPhase, ctx: CodexEventContex
     case 'file_change':
       return mapFileChange(item, phase, ctx);
     case 'mcp_tool_call':
-      // Canvas parity: a call to the scoped `dorkos_ui` `control_ui` server is
-      // translated into a runtime-neutral `ui_command` StreamEvent rather than
-      // rendered as a generic MCP tool call (its stub result is noise).
-      if (item.server === CODEX_UI_MCP_SERVER && item.tool === 'control_ui') {
-        return mapControlUi(item, phase, ctx);
-      }
       return mapMcpToolCall(item, phase, ctx);
     case 'web_search':
       return mapWebSearch(item, phase, ctx);
@@ -578,70 +565,6 @@ function extractMcpResultText(item: McpToolCallItem): string | undefined {
     .map((block) => block.text)
     .join('\n');
   return text || undefined;
-}
-
-/**
- * Translate a scoped `dorkos_ui` `control_ui` call into a runtime-neutral
- * `ui_command` StreamEvent — the Codex route to canvas parity.
- *
- * The scoped MCP server's handler is a side-effect-free stub
- * ({@link ./codex-ui-mcp-server}); the real UI effect is produced HERE, inside
- * the turn loop where the session is in scope. Fires exactly once — on the
- * terminal `completed` phase, where the arguments are present — and emits ONLY
- * the `ui_command` event, never the generic tool_call/tool_result pair (the
- * `{ success: true }` stub payload is noise and would clutter the transcript).
- *
- * A call that genuinely FAILED at the MCP-transport level (rate limit, timeout,
- * transient loopback error) also reaches the `completed` phase but with
- * `status: 'failed'`. Translating that into a `ui_command` would apply a
- * phantom UI effect client-side and mask the failure, so — like every sibling
- * completed-phase mapper — the failed case delegates to {@link mapMcpToolCall}
- * and renders as a normal failed tool call. control_ui's started/updated phases
- * return `[]` without recording a `startedToolIds` entry, so `mapMcpToolCall`'s
- * `ensureToolStart` correctly synthesizes the `tool_call_start`.
- *
- * THIS IS THE ENFORCEMENT POINT for Codex's consent gate (DOR-639). The scoped
- * MCP stub refuses a reaching action too, but it only tells the AGENT — this
- * mapper reads the raw `item.arguments` recorded by Codex and never sees the
- * stub's result, so a reaching action that got past the stub would still take
- * effect here. An action {@link isUiActionRefusedOnCodex} rejects therefore
- * produces a typed `error` event and no `ui_command`, the same shape the
- * `ui_command_invalid` branch below uses.
- *
- * @param item - The `control_ui` mcp_tool_call item from the `dorkos_ui` server
- * @param phase - Which item.* phase this item arrived under
- * @param ctx - Per-turn mapping context (forwarded to the failed-case fallback)
- */
-function mapControlUi(
-  item: McpToolCallItem,
-  phase: ItemPhase,
-  ctx: CodexEventContext
-): StreamEvent[] {
-  if (phase !== 'completed') return [];
-  if (item.status === 'failed') return mapMcpToolCall(item, phase, ctx);
-  const parsed = UiCommandSchema.safeParse(item.arguments);
-  if (!parsed.success) {
-    return [
-      {
-        type: 'error',
-        data: { message: 'Invalid control_ui command', code: 'ui_command_invalid' },
-      },
-    ];
-  }
-  if (isUiActionRefusedOnCodex(parsed.data.action)) {
-    return [
-      {
-        type: 'error',
-        data: {
-          message: uiActionRefusalMessage(parsed.data.action),
-          code: UI_COMMAND_REFUSED_CODE,
-        },
-      },
-    ];
-  }
-  // UiCommandEventSchema is not a member of the StreamEvent data union (only
-  // the runtime-neutral SessionEvent carries it), so cast as ui-tools.ts does.
-  return [{ type: 'ui_command', data: { command: parsed.data } } as StreamEvent];
 }
 
 /**

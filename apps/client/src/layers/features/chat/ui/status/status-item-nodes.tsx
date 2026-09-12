@@ -111,9 +111,12 @@ export interface StatusItemNodesInput {
   /**
    * How much the measured bar width lets each item say.
    *
-   * Every item below the `full` tier renders glyph + value: no runtime model half,
-   * no effort or Fast badges, bounded labels (spec composer-status-redesign §6.1).
-   * The narrowest tier goes further and drops the agent's name, keeping the avatar.
+   * Every item below the `full` tier renders glyph + value: no effort or Fast
+   * badges, bounded labels (spec composer-status-redesign §6.1). The runtime
+   * chip's own `· <model>` half stays dropped at every tier, `full` included —
+   * the model item already says it, so repeating it costs pixels for nothing
+   * (DOR-1971). The narrowest tier goes further and drops the agent's name,
+   * keeping the avatar.
    */
   density: StatusDensity;
 }
@@ -170,7 +173,14 @@ export function buildStatusItemNodes(
         onChangeRuntime={runtimeChip.onChangeRuntime}
         canSelect={runtimeChip.canSelect}
         account={runtimeChip.account}
-        compact={compactItems}
+        // Always compact here, never `compactItems`: `nodes.model` below draws
+        // the model's name unconditionally, at every density, so the runtime
+        // chip's own `· <model>` half is redundant at EVERY tier, not only
+        // below `full`. Gating it on density instead of hardcoding `true` was
+        // the bug (DOR-1971): at the widest tier `compactItems` is `false`, so
+        // this chip read "Claude Code · Opus" right next to the model item's
+        // own "Opus" — the model name rendered twice in the composer.
+        compact
       />
     );
   }

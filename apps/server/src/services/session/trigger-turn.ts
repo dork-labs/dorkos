@@ -102,6 +102,7 @@ import { feedProjector } from './session-event-normalizer.js';
 import { settleOpenTurnBefore } from './settle-open-turn.js';
 import { assembleAdditionalContext } from './context-assembler.js';
 import { takeStagedContext } from './staged-context-store.js';
+import { uiTurnFacts } from './browser-seat/ui-turn-facts.js';
 import { withStallGuard } from './stall-guard.js';
 import { SESSIONS } from '../../config/constants.js';
 import { startSpan, SPAN, ATTR } from '../observability/index.js';
@@ -427,6 +428,16 @@ export interface TriggerTurnOpts {
    */
   roomContext?: RoomContextData;
   /**
+   * Where this turn is happening, when a ROOM triggered it — routing metadata,
+   * never prompt context (spec `room-canvas` §5.3).
+   *
+   * Deliberately NOT folded into `additionalContext` below: it carries an opaque
+   * dispatch id and a member id, and neither belongs in front of a model. It is
+   * handed to the runtime beside the bag instead, which is what lets a
+   * `control_ui` taken inside a room turn land on the room's shared canvas.
+   */
+  roomTurn?: MessageOpts['roomTurn'];
+  /**
    * Background the caller attached to this turn — the agent reads it, the person
    * never sees it. Passed straight to the assembler, which renders it into the
    * neutral bag as a `seed_context` entry; `content` is untouched.
@@ -609,6 +620,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     cwd,
     context,
     roomContext,
+    roomTurn,
     seedContext,
     approvalVerdict,
     systemPromptAppend,
@@ -773,6 +785,21 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
       privateDispatchClaimed = true;
       dispatchContent = claimed.content;
     }
+    // **What the `ui` verbs need to know about this turn, bound runtime-neutrally**
+    // (spec `canvas-agent-seat` §5). `control_ui` and `get_ui_state` answer about
+    // the ROOM when a room triggered the turn and about the session otherwise,
+    // and they read the window snapshot the client sent with the message. Both
+    // facts used to live on claude-code's own session object, which is exactly
+    // why Codex and OpenCode had neither. Bound here, one line above the
+    // dispatch, so all three runtimes get the same answer.
+    //
+    // Keyed on `turnKey`, the id the runtime will resolve to, and carried across
+    // the first-turn canonical rename by `rekeyProjector`.
+    uiTurnFacts.bindTurn(turnKey, {
+      ...(context?.uiState !== undefined ? { uiState: context.uiState } : {}),
+      ...(roomTurn !== undefined ? { roomTurn } : {}),
+    });
+
     const tapped = tapEachEvent(
       deps.sendMessage(sessionId, dispatchContent, {
         // Conditional, on the same idiom as the three below it. A turn with no
@@ -783,6 +810,14 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
         // this as `!== undefined`, so nothing downstream changes behavior.
         ...(cwd !== undefined ? { cwd } : {}),
         additionalContext,
+        // **Unconditional, `undefined` included.** A runtime that honours this
+        // has to be able to CLEAR it: a marker set on a room turn and never
+        // cleared would make every later direct turn in that session write to a
+        // channel, so a person's own `open_canvas` would land in a room they are
+        // not looking at. Absent-versus-undefined is not a distinction any
+        // runtime draws here, and passing it always is what makes the clearing
+        // path exist at all.
+        roomTurn,
         ...(systemPromptAppend !== undefined ? { systemPromptAppend } : {}),
         ...(accountHint !== undefined ? { accountHint } : {}),
         ...(opts.messageId !== undefined ? { messageId: opts.messageId } : {}),
@@ -850,6 +885,12 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
         turnSpan.setAttr(ATTR.EVENT_COUNT, eventCount);
         turnSpan.end();
         releaseOnce();
+        // The room marker dies with the turn that carried it. A path that starts
+        // a turn WITHOUT the trigger — a scheduled run, a relay delivery — would
+        // otherwise inherit the last room turn's marker and write a person's own
+        // canvas into a channel they are not looking at. The window snapshot
+        // stays: it is the client's standing report about a window still open.
+        uiTurnFacts.endTurn(turnKey);
         // Contained: this is the turn's own settlement path, where a throw becomes
         // an unhandled rejection. An observability hook must be structurally
         // unable to kill a turn, so the guarantee is enforced here rather than

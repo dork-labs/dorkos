@@ -1649,6 +1649,9 @@
           },
           "durationMs": {
             "type": "integer"
+          },
+          "ambient": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -2152,6 +2155,12 @@
               "$ref": "#/components/schemas/QueuedMessage"
             }
           },
+          "canvas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CanvasDocument"
+            }
+          },
           "cursor": {
             "type": "integer",
             "minimum": 0
@@ -2163,6 +2172,7 @@
           "status",
           "pendingInteractions",
           "queuedMessages",
+          "canvas",
           "cursor"
         ]
       },
@@ -2651,6 +2661,9 @@
               },
               "summary": {
                 "type": "string"
+              },
+              "ambient": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -3278,6 +3291,23 @@
               },
               "command": {
                 "$ref": "#/components/schemas/UiCommand"
+              },
+              "applied": {
+                "type": "object",
+                "properties": {
+                  "documentId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "rev": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "documentId",
+                  "rev"
+                ]
               }
             },
             "required": [
@@ -3296,10 +3326,55 @@
               "type": {
                 "type": "string",
                 "enum": [
+                  "canvas"
+                ]
+              },
+              "documentId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "document": {
+                "$ref": "#/components/schemas/CanvasDocument"
+              },
+              "closed": {
+                "type": "boolean"
+              },
+              "change": {
+                "type": "string",
+                "enum": [
+                  "opened",
+                  "updated",
+                  "activated",
+                  "pinned"
+                ]
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "documentId"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
                   "devtools_capture_request"
                 ]
               },
               "requestId": {
+                "type": "string"
+              },
+              "targetClientId": {
+                "type": "string"
+              },
+              "documentId": {
                 "type": "string"
               }
             },
@@ -3307,6 +3382,110 @@
               "seq",
               "type",
               "requestId"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "devtools_action_request"
+                ]
+              },
+              "requestId": {
+                "type": "string"
+              },
+              "targetClientId": {
+                "type": "string"
+              },
+              "documentId": {
+                "type": "string"
+              },
+              "command": {
+                "$ref": "#/components/schemas/BrowserActCommand"
+              },
+              "capture": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "requestId",
+              "targetClientId",
+              "documentId",
+              "command"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "devtools_recording_request"
+                ]
+              },
+              "requestId": {
+                "type": "string"
+              },
+              "targetClientId": {
+                "type": "string"
+              },
+              "documentId": {
+                "type": "string"
+              },
+              "action": {
+                "type": "string",
+                "enum": [
+                  "start",
+                  "stop"
+                ]
+              },
+              "recordingId": {
+                "type": "string"
+              },
+              "bounds": {
+                "type": "object",
+                "properties": {
+                  "longEdgePx": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "frameMs": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "maxBytes": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "longEdgePx",
+                  "frameMs",
+                  "maxBytes"
+                ]
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "requestId",
+              "targetClientId",
+              "documentId",
+              "action",
+              "recordingId",
+              "bounds"
             ]
           },
           {
@@ -3393,6 +3572,14 @@
           "costUsd": {
             "type": "number",
             "minimum": 0
+          },
+          "costBasis": {
+            "type": "string",
+            "enum": [
+              "list",
+              "managed",
+              "unknown"
+            ]
           },
           "state": {
             "$ref": "#/components/schemas/UsageState"
@@ -3692,6 +3879,9 @@
                 "type": "number",
                 "minimum": 20,
                 "maximum": 80
+              },
+              "target": {
+                "$ref": "#/components/schemas/UiCommandTarget"
               }
             },
             "required": [
@@ -3709,6 +3899,12 @@
               },
               "content": {
                 "$ref": "#/components/schemas/UiCanvasContent"
+              },
+              "documentId": {
+                "type": "string"
+              },
+              "target": {
+                "$ref": "#/components/schemas/UiCommandTarget"
               }
             },
             "required": [
@@ -3724,6 +3920,12 @@
                 "enum": [
                   "close_canvas"
                 ]
+              },
+              "documentId": {
+                "type": "string"
+              },
+              "target": {
+                "$ref": "#/components/schemas/UiCommandTarget"
               }
             },
             "required": [
@@ -3773,6 +3975,9 @@
               "sourcePath": {
                 "type": "string",
                 "minLength": 1
+              },
+              "target": {
+                "$ref": "#/components/schemas/UiCommandTarget"
               }
             },
             "required": [
@@ -3792,6 +3997,9 @@
               "sourcePath": {
                 "type": "string",
                 "minLength": 1
+              },
+              "target": {
+                "$ref": "#/components/schemas/UiCommandTarget"
               }
             },
             "required": [
@@ -3828,6 +4036,9 @@
               "url": {
                 "type": "string",
                 "minLength": 1
+              },
+              "target": {
+                "$ref": "#/components/schemas/UiCommandTarget"
               }
             },
             "required": [
@@ -4317,6 +4528,19 @@
           }
         ]
       },
+      "UiCommandTarget": {
+        "type": "object",
+        "properties": {
+          "roomId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The room id to put this on. You must be a member of it."
+          }
+        },
+        "required": [
+          "roomId"
+        ]
+      },
       "UiToastLevel": {
         "type": "string",
         "enum": [
@@ -4337,6 +4561,284 @@
           "rain",
           "stars"
         ]
+      },
+      "CanvasDocument": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "scope": {
+            "type": "string",
+            "minLength": 1
+          },
+          "roomId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "content": {
+            "$ref": "#/components/schemas/UiCanvasContent"
+          },
+          "title": {
+            "type": "string"
+          },
+          "contentType": {
+            "type": "string",
+            "minLength": 1
+          },
+          "authorId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "rev": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "lastTouchedBy": {
+            "type": "string",
+            "minLength": 1
+          },
+          "lastTouchedAt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "editingBy": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sourceLabel": {
+            "type": "string"
+          },
+          "treeKind": {
+            "type": "string",
+            "enum": [
+              "room-main",
+              "worktree",
+              "agent-cwd"
+            ]
+          },
+          "aheadOfMain": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "openedAt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "lastActiveAt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "threadRootEntryId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id",
+          "scope",
+          "roomId",
+          "content",
+          "title",
+          "contentType",
+          "authorId",
+          "pinned",
+          "rev",
+          "lastTouchedBy",
+          "lastTouchedAt",
+          "openedAt",
+          "lastActiveAt"
+        ]
+      },
+      "BrowserActCommand": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "click"
+                ]
+              },
+              "target": {
+                "$ref": "#/components/schemas/BrowserTarget"
+              }
+            },
+            "required": [
+              "action",
+              "target"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "type"
+                ]
+              },
+              "target": {
+                "$ref": "#/components/schemas/BrowserTarget"
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 10000
+              },
+              "clear": {
+                "type": "boolean"
+              },
+              "submit": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "action",
+              "text"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "press"
+                ]
+              },
+              "key": {
+                "type": "string",
+                "maxLength": 64
+              }
+            },
+            "required": [
+              "action",
+              "key"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "scroll"
+                ]
+              },
+              "target": {
+                "$ref": "#/components/schemas/BrowserTarget"
+              },
+              "by": {
+                "type": "number"
+              },
+              "to": {
+                "type": "string",
+                "enum": [
+                  "top",
+                  "bottom"
+                ]
+              }
+            },
+            "required": [
+              "action"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "wait_for"
+                ]
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 512
+              },
+              "selector": {
+                "type": "string",
+                "maxLength": 512
+              },
+              "gone": {
+                "type": "boolean"
+              },
+              "fetchIdle": {
+                "type": "boolean"
+              },
+              "timeoutMs": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 10000
+              }
+            },
+            "required": [
+              "action",
+              "timeoutMs"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "read_page"
+                ]
+              },
+              "selector": {
+                "type": "string",
+                "maxLength": 512
+              },
+              "maxChars": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 65536
+              }
+            },
+            "required": [
+              "action",
+              "maxChars"
+            ]
+          }
+        ]
+      },
+      "BrowserTarget": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "selector": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "nth": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 999
+          }
+        }
       },
       "QueuedMessage": {
         "type": "object",
@@ -4650,41 +5152,6 @@
       "UiState": {
         "type": "object",
         "properties": {
-          "canvas": {
-            "type": "object",
-            "properties": {
-              "open": {
-                "type": "boolean"
-              },
-              "contentType": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "enum": [
-                  "url",
-                  "markdown",
-                  "json",
-                  "image",
-                  "pdf",
-                  "widget",
-                  "mcp_app",
-                  "file",
-                  "model3d",
-                  "audio",
-                  "video",
-                  "csv",
-                  "browser",
-                  "diff",
-                  null
-                ]
-              }
-            },
-            "required": [
-              "open",
-              "contentType"
-            ]
-          },
           "panels": {
             "type": "object",
             "properties": {
@@ -4756,7 +5223,6 @@
           }
         },
         "required": [
-          "canvas",
           "panels",
           "sidebar",
           "agent"
@@ -6309,10 +6775,11 @@
                   },
                   "env": {
                     "type": "object",
+                    "properties": {},
+                    "default": {},
                     "additionalProperties": {
                       "type": "string"
-                    },
-                    "default": {}
+                    }
                   }
                 },
                 "required": [
@@ -6335,10 +6802,11 @@
                   },
                   "headers": {
                     "type": "object",
+                    "properties": {},
+                    "default": {},
                     "additionalProperties": {
                       "type": "string"
-                    },
-                    "default": {}
+                    }
                   },
                   "authKind": {
                     "type": "string",
@@ -6367,10 +6835,11 @@
                   },
                   "headers": {
                     "type": "object",
+                    "properties": {},
+                    "default": {},
                     "additionalProperties": {
                       "type": "string"
-                    },
-                    "default": {}
+                    }
                   },
                   "authKind": {
                     "type": "string",
@@ -7972,6 +8441,10 @@
                 "minLength": 1,
                 "description": "The author id the server resolved for THIS request — who the reader is. Match a roster member on it to find your own membership (your read cursor, your response mode); never match on `author.kind`. It is not necessarily on `members`: seeing a room and being in it are different things."
               },
+              "viewerIsOperator": {
+                "type": "boolean",
+                "description": "Whether THIS reader is the person who owns this install — the one gate that is not a membership. It rides the room read for the same reason `viewerAuthorId` does: the reader is already resolved here, and nothing else on the wire tells a client, so every operator-only affordance in a room had to be drawn for everybody and refused afterwards. **Absent means \"this source cannot say\", never `false`** — a caller that predates it still parses, and a screen reading it as a denial would hide the action from the one person who can take it. Used by the merge action on a room worktree diff (spec `canvas-agent-seat` §8); the server still refuses a non-operator, so this only decides what is drawn."
+              },
               "reactionFrequents": {
                 "type": "array",
                 "items": {
@@ -8407,6 +8880,9 @@
           "merge": {
             "$ref": "#/components/schemas/RoomMergeEvent"
           },
+          "canvas": {
+            "$ref": "#/components/schemas/RoomCanvasChange"
+          },
           "waitingKind": {
             "$ref": "#/components/schemas/RoomWaitingKind"
           },
@@ -8550,6 +9026,50 @@
           "files",
           "insertions",
           "deletions"
+        ]
+      },
+      "RoomCanvasChange": {
+        "type": "object",
+        "properties": {
+          "ops": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "change": {
+                  "type": "string",
+                  "enum": [
+                    "opened",
+                    "updated",
+                    "closed"
+                  ]
+                },
+                "documentId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "type": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The canvas content type, e.g. `diff` or `browser`."
+                },
+                "title": {
+                  "type": "string",
+                  "description": "The document’s label. Another member’s words."
+                }
+              },
+              "required": [
+                "change",
+                "documentId",
+                "type",
+                "title"
+              ]
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "ops"
         ]
       },
       "RoomWaitingKind": {
@@ -9635,6 +10155,174 @@
           "summary"
         ]
       },
+      "CanvasDocumentListResponse": {
+        "type": "object",
+        "properties": {
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CanvasDocument"
+            }
+          }
+        },
+        "required": [
+          "documents"
+        ]
+      },
+      "OpenCanvasDocumentRequest": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UiCanvasContent"
+              },
+              {
+                "description": "What to show. One of the fourteen canvas shapes."
+              }
+            ]
+          },
+          "pinned": {
+            "type": "boolean",
+            "description": "Pin it, so it sorts first and is never dropped to make room."
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "UpdateCanvasDocumentRequest": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UiCanvasContent"
+              },
+              {
+                "description": "Replace what the document shows."
+              }
+            ]
+          },
+          "pinned": {
+            "type": "boolean",
+            "description": "Pin it, or unpin it."
+          },
+          "activate": {
+            "type": "boolean",
+            "description": "Move it to the front of the list. It changes the ORDER and nobody’s open tab — a shared canvas does not steal anyone’s view."
+          }
+        }
+      },
+      "CanvasEditingResponse": {
+        "type": "object",
+        "properties": {
+          "editingBy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "editingBy",
+          "expiresAt"
+        ]
+      },
+      "CanvasEditingRequest": {
+        "type": "object",
+        "properties": {
+          "editing": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "editing"
+        ]
+      },
+      "CanvasThreadResponse": {
+        "type": "object",
+        "properties": {
+          "threadRootEntryId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The entry heading the document’s discussion."
+          },
+          "created": {
+            "type": "boolean",
+            "description": "True when this call started the thread; false when it was already there."
+          }
+        },
+        "required": [
+          "threadRootEntryId",
+          "created"
+        ]
+      },
+      "FollowRoomMemberRequest": {
+        "type": "object",
+        "properties": {
+          "memberId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The person to follow. People only — an agent has no view to share."
+          }
+        },
+        "required": [
+          "memberId"
+        ]
+      },
+      "PublishRoomViewResponse": {
+        "type": "object",
+        "properties": {
+          "followed": {
+            "type": "boolean",
+            "description": "True when somebody is following you and the position went out. False means stop sending."
+          }
+        },
+        "required": [
+          "followed"
+        ]
+      },
+      "PublishRoomViewRequest": {
+        "type": "object",
+        "properties": {
+          "documentId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "url": {
+            "type": "string"
+          },
+          "scrollY": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "documentId"
+        ]
+      },
+      "CanvasViewingRequest": {
+        "type": "object",
+        "properties": {
+          "documentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          }
+        },
+        "required": [
+          "documentId"
+        ]
+      },
       "RoomSnapshot": {
         "type": "object",
         "properties": {
@@ -9650,6 +10338,12 @@
           "cursor": {
             "type": "integer",
             "minimum": 0
+          },
+          "canvas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CanvasDocument"
+            }
           }
         },
         "required": [
@@ -9721,6 +10415,19 @@
               "answered",
               "silent"
             ]
+          },
+          "view": {
+            "$ref": "#/components/schemas/RoomSignalView"
+          },
+          "follows": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "documentId": {
+            "type": "string"
           }
         },
         "required": [
@@ -9768,6 +10475,25 @@
           "othersWaiting"
         ]
       },
+      "RoomSignalView": {
+        "type": "object",
+        "properties": {
+          "documentId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "url": {
+            "type": "string"
+          },
+          "scrollY": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "documentId"
+        ]
+      },
       "RoomReactionEvent": {
         "type": "object",
         "properties": {
@@ -9794,6 +10520,40 @@
           "type",
           "entryId",
           "reactions"
+        ]
+      },
+      "RoomCanvasEvent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "canvas"
+            ]
+          },
+          "documentId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "document": {
+            "$ref": "#/components/schemas/CanvasDocument"
+          },
+          "closed": {
+            "type": "boolean"
+          },
+          "change": {
+            "type": "string",
+            "enum": [
+              "opened",
+              "updated",
+              "activated",
+              "pinned"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "documentId"
         ]
       },
       "ReadCursor": {
@@ -12803,6 +13563,9 @@
                         },
                         "summary": {
                           "type": "string"
+                        },
+                        "ambient": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -13430,6 +14193,23 @@
                         },
                         "command": {
                           "$ref": "#/components/schemas/UiCommand"
+                        },
+                        "applied": {
+                          "type": "object",
+                          "properties": {
+                            "documentId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "rev": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "documentId",
+                            "rev"
+                          ]
                         }
                       },
                       "required": [
@@ -13448,10 +14228,55 @@
                         "type": {
                           "type": "string",
                           "enum": [
+                            "canvas"
+                          ]
+                        },
+                        "documentId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "document": {
+                          "$ref": "#/components/schemas/CanvasDocument"
+                        },
+                        "closed": {
+                          "type": "boolean"
+                        },
+                        "change": {
+                          "type": "string",
+                          "enum": [
+                            "opened",
+                            "updated",
+                            "activated",
+                            "pinned"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "documentId"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
                             "devtools_capture_request"
                           ]
                         },
                         "requestId": {
+                          "type": "string"
+                        },
+                        "targetClientId": {
+                          "type": "string"
+                        },
+                        "documentId": {
                           "type": "string"
                         }
                       },
@@ -13459,6 +14284,110 @@
                         "seq",
                         "type",
                         "requestId"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "devtools_action_request"
+                          ]
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "targetClientId": {
+                          "type": "string"
+                        },
+                        "documentId": {
+                          "type": "string"
+                        },
+                        "command": {
+                          "$ref": "#/components/schemas/BrowserActCommand"
+                        },
+                        "capture": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "requestId",
+                        "targetClientId",
+                        "documentId",
+                        "command"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "devtools_recording_request"
+                          ]
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "targetClientId": {
+                          "type": "string"
+                        },
+                        "documentId": {
+                          "type": "string"
+                        },
+                        "action": {
+                          "type": "string",
+                          "enum": [
+                            "start",
+                            "stop"
+                          ]
+                        },
+                        "recordingId": {
+                          "type": "string"
+                        },
+                        "bounds": {
+                          "type": "object",
+                          "properties": {
+                            "longEdgePx": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0
+                            },
+                            "frameMs": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0
+                            },
+                            "maxBytes": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0
+                            }
+                          },
+                          "required": [
+                            "longEdgePx",
+                            "frameMs",
+                            "maxBytes"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "requestId",
+                        "targetClientId",
+                        "documentId",
+                        "action",
+                        "recordingId",
+                        "bounds"
                       ]
                     },
                     {
@@ -50297,6 +51226,1618 @@
         }
       }
     },
+    "/api/rooms/{id}/canvas": {
+      "get": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Read everything on a room's shared canvas",
+        "description": "The room's own table: the documents its members — people and agents alike — have put in front of each other. Pinned first, then most recently active. Content travels with each document, because a viewer that holds the row has to be able to draw it; what does NOT travel is a file's contents, which each viewer reads through the file route it already uses. **The stream is how an app stays current, not this route**: a cold `GET /api/rooms/{id}/events` carries the whole table in its snapshot and every later change arrives as a `canvas` frame. This exists for agents, for tests, and for a cold read without a stream. It still answers for an ARCHIVED room — reads always do; it is writes that stop.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The room's canvas, pinned first then most recently active",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasDocumentListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`AGENT_IDENTITY_UNVERIFIED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, or the caller may not see it (an agent sees only its own rooms)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Put something on a room's canvas",
+        "description": "Opens a document as YOU — the author is resolved from the request and never sent. Content with a natural identity (a file path, a URL) DEDUPES: opening something that is already on the table refreshes that document rather than adding a second tab beside it, which is what makes the canvas a table rather than a pile. `json` and `widget` have no such identity, so every open of one is a fresh document. Past twelve unpinned documents the least recently active is dropped to make room, and every viewer is told. Refused on an archived room.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenCanvasDocumentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The document, as every viewer now has it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`AGENT_IDENTITY_UNVERIFIED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, or the caller may not see it (an agent sees only its own rooms)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The room is archived, or somebody else is editing the document this would have refreshed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{id}/canvas/{documentId}": {
+      "get": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Read one document on a room’s canvas",
+        "description": "One row, content included. A document id from ANOTHER room answers exactly as one that never existed, so an id is never a way to read across rooms.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "documentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasDocument"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`AGENT_IDENTITY_UNVERIFIED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, the caller may not see it, or no such document on its canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Change one document on a room’s canvas",
+        "description": "Three independent changes, any of which may be omitted: replace what the document shows, pin or unpin it, and move it to the front of the list. **`activate` changes the ORDER and nobody's open tab.** A shared canvas that yanked everyone's view when somebody clicked would be the pixel version of interrupting, so ordering on the server is not a remote-control verb. Refused on an archived room, and refused while another member is editing the document.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "documentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCanvasDocumentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The document, as every viewer now has it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`AGENT_IDENTITY_UNVERIFIED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, the caller may not see it, or no such document on its canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The room is archived, or somebody else is editing this document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Take a document off a room’s canvas",
+        "description": "The row is deleted rather than marked closed, and every viewer is told to drop it. Nothing needs a tombstone: a viewer that reconnects hydrates the whole table from the room snapshot, so a close it missed corrects itself. Refused on an archived room.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "documentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Closed"
+          },
+          "401": {
+            "description": "The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`AGENT_IDENTITY_UNVERIFIED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, the caller may not see it, or no such document on its canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The room is archived",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{id}/canvas/{documentId}/editing": {
+      "post": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Say you are editing a canvas document, or that you have stopped",
+        "description": "While you hold this, an agent's change to the same document is HELD rather than applied, and the agent is told it was held instead of being told it succeeded. Refresh it about every fifteen seconds while an editor is focused; it lapses on its own about forty-five seconds after the last refresh, so a browser that crashed mid-edit cannot leave a document nobody can touch. Send `{\"editing\": false}` on save, on close, and when you look away without changing anything.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "documentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CanvasEditingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Who holds the lock now, and when it lapses",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasEditingResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`AGENT_IDENTITY_UNVERIFIED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, the caller may not see it, or no such document on its canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The room is archived, or somebody else already holds this lock",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{id}/canvas/{documentId}/thread": {
+      "post": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Open a canvas document’s discussion, or re-open it",
+        "description": "The first call posts one message from the room naming the document and records which message heads the discussion; every call after that hands back the discussion that is already there and posts nothing. So two people pressing \"Discuss\" at the same moment — or the same person pressing it next week, on another device — all end up in one conversation. It wakes nobody: the message addresses no one and starts no agent’s turn, exactly as putting the document on the table did. Replies are ordinary thread replies.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "documentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The discussion was already open",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasThreadResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The discussion was opened by this call",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasThreadResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`AGENT_IDENTITY_UNVERIFIED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, the caller may not see it, or no such document on its canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The room is archived",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{id}/follow": {
+      "put": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Follow somebody’s browser in this room, or say you still are",
+        "description": "While you follow somebody, your Browser tab goes where theirs goes. Call this again about every ten seconds to say you are still there: a claim nobody restates lapses after thirty, which is what makes a closed tab, a crashed browser and a lost connection the same event. Following somebody new replaces whoever you were following — a panel can only be in one place. The person you follow is told, and starts sharing their position only then, so a room where nobody follows anybody carries nothing extra at all.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FollowRoomMemberRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Following"
+          },
+          "400": {
+            "description": "The request named you (`CANNOT_FOLLOW_YOURSELF`), or was malformed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`AGENT_IDENTITY_UNVERIFIED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is an agent, which cannot follow or be followed (`PEOPLE_ONLY`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, or the caller may not see it (an agent sees only its own rooms)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "This machine is already holding as many claims as it will (`TOO_MANY_FOLLOWERS`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Stop following whoever you were following here",
+        "description": "Answers the same way whether or not there was anything to stop, so pressing the toggle off twice — or a page closing after its claim already lapsed — is not an error. The person you were following is told, and goes quiet unless somebody else is still following them.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Stopped"
+          },
+          "401": {
+            "description": "The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`AGENT_IDENTITY_UNVERIFIED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is an agent, which cannot follow or be followed (`PEOPLE_ONLY`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, or the caller may not see it (an agent sees only its own rooms)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{id}/follow/view": {
+      "post": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Say where you are looking, for whoever is following you",
+        "description": "Send at most once every 250 ms, and only while somebody is following you. It carries which document you are on, the page your browser is showing and how far down you have scrolled — never anything that is IN the page. The answer says whether anybody was following: `false` means stop sending, which is how a tab that missed the \"nobody is following you any more\" message goes quiet on its own.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishRoomViewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Whether anybody was following, and the position therefore passed on",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishRoomViewResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`AGENT_IDENTITY_UNVERIFIED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is an agent, which cannot follow or be followed (`PEOPLE_ONLY`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, or the caller may not see it (an agent sees only its own rooms)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{id}/canvas/{documentId}/diff": {
+      "get": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Read the two copies of the file behind a worktree diff",
+        "description": "The room’s own copy of the file and the member’s working copy, so the review can be drawn side by side. **Not the ordinary file API**: a member’s working copy lives under the DorkOS data directory, which the raw file surfaces are deliberately confined out of — so this names a room and a DOCUMENT, and the tree and the path both come off that row rather than being chosen by the caller. `base` is the empty string for a file this work ADDS, which is ordinary rather than an error. **People only, unlike every other room read**: this hands back the contents of somebody ELSE’s working copy, which an agent is refused everywhere else, so a member agent is refused 403 `PEOPLE_ONLY` — the same instrument `PUT /:id/files/content` uses. Membership is asked FIRST, so a caller who is not on the roster gets the same 404 an unknown room gets and never learns the room exists. Any member who is a person may read it; whether they may MERGE what they see is a separate question, answered by `POST /:id/repo/merge`, which is the owner’s alone.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "documentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Both copies, and the fingerprint a later write must carry back",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "description": "The file, relative to both copies."
+                    },
+                    "base": {
+                      "type": "string",
+                      "description": "The room’s own copy, or the empty string for a file this work adds."
+                    },
+                    "current": {
+                      "type": "string",
+                      "description": "The member’s working copy, as it is on disk right now."
+                    },
+                    "currentHash": {
+                      "type": "string",
+                      "description": "SHA-256 of `current`; a write must carry it back."
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "base",
+                    "current",
+                    "currentHash"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The document is not a review of somebody’s working copy, or its tree or path is not one this room keeps (`CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`AGENT_IDENTITY_UNVERIFIED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is an agent; only people review somebody else’s working copy (`PEOPLE_ONLY`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, or the caller is not a member of it (`ROOM_NOT_FOUND`) — the same answer for both — no such document on this room’s canvas (`CANVAS_DOCUMENT_NOT_FOUND`), or the file is not in that working copy any more (`ROOM_FILE_NOT_FOUND`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This room has no files of its own (`NOT_A_PROJECT_ROOM`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Put a reviewed file back in the member’s working copy",
+        "description": "How turning a hunk down lands: the whole file, conditional on the hash the diff was computed against. A file the agent changed in between answers `ok: false` carrying what it holds now — a conflict is control flow, and the screen recomputes rather than clobbering work that carried on. **People only** (403 `PEOPLE_ONLY`), on the same instrument `PUT /:id/files/content` uses: this writes into a colleague’s checkout, and an agent doing that leaves that colleague dirty — the state their own merge then refuses. Membership is asked first, so a non-member still gets 404. Any member who is a person may send a hunk back; only the owner may merge. Archived rooms refuse it 409, like every other canvas write.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "documentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "expectedHash": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "content",
+                  "expectedHash"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What was written, or what the file holds now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "hash": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "hash"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "conflict": {
+                          "type": "object",
+                          "properties": {
+                            "currentHash": {
+                              "type": "string"
+                            },
+                            "currentContent": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "currentHash",
+                            "currentContent"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "conflict"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not a valid request, or the document is not a review of a working copy this room keeps (`CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`AGENT_IDENTITY_UNVERIFIED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is an agent; only people review somebody else’s working copy (`PEOPLE_ONLY`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, or the caller is not a member of it (`ROOM_NOT_FOUND`) — the same answer for both — no such document on this room’s canvas (`CANVAS_DOCUMENT_NOT_FOUND`), or the file is not in that working copy any more (`ROOM_FILE_NOT_FOUND`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The room is archived (`ROOM_ARCHIVED`), or it has no files of its own (`NOT_A_PROJECT_ROOM`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/canvas": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Everything on this session’s canvas",
+        "description": "The documents open in this session's right panel, pinned first then most recently active — the same table on every device you open the session on. **The stream is how an app stays current, not this route**: a cold `GET /api/sessions/{id}/events` carries the whole canvas in its snapshot and every later change arrives as a `canvas` event. This exists for a cold read without a stream.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The session’s canvas, pinned first then most recently active",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasDocumentListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "That is not a session id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "That agent identity could not be verified — its token may be revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A session’s canvas is the person’s own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This server has no canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Put something on this session’s canvas",
+        "description": "Content with a natural identity (a file path, a URL) DEDUPES: opening something already on the canvas refreshes that document rather than adding a second tab beside it, so two windows of one session land on one document. `json` and `widget` have no such identity, so every open of one is a fresh document. Past twelve unpinned documents the least recently active is dropped, and every window is told.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenCanvasDocumentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The document, as every window now has it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "That is not a session id, or the body is not a valid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "That agent identity could not be verified — its token may be revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A session’s canvas is the person’s own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "That id names no session this server knows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Somebody is editing the document this would have refreshed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This server has no canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/canvas/{documentId}": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Read one document on this session’s canvas",
+        "description": "One row, content included. A document id from another session answers exactly as one that never existed, so an id is never a way to read across sessions.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "documentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "That is not a session id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "That agent identity could not be verified — its token may be revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A session’s canvas is the person’s own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such document on this canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This server has no canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Change one document on this session’s canvas",
+        "description": "Three independent changes, any of which may be omitted: replace what the document shows, pin or unpin it, and move it to the front of the list.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "documentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCanvasDocumentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The document, as every window now has it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "That is not a session id, or the body is not a valid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "That agent identity could not be verified — its token may be revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A session’s canvas is the person’s own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such document on this canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This server has no canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Take a document off this session’s canvas",
+        "description": "The row is deleted and every window of this session is told to drop it. Nothing needs a tombstone: a window that reconnects hydrates the whole canvas from the session snapshot, so a close it missed corrects itself.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "documentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Closed"
+          },
+          "400": {
+            "description": "That is not a session id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "That agent identity could not be verified — its token may be revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A session’s canvas is the person’s own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such document on this canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This server has no canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/canvas/{documentId}/editing": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Say you are editing a canvas document, or that you have stopped",
+        "description": "While you hold this, the agent's change to the same document is HELD rather than applied, and the agent is told it was held instead of being told it succeeded. Refresh it about every fifteen seconds while an editor is focused; it lapses on its own about forty-five seconds after the last refresh, so a browser that crashed mid-edit cannot leave a document nobody can touch.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "documentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CanvasEditingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Who holds the lock now, and when it lapses",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasEditingResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "That is not a session id, or the body is not a valid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "That agent identity could not be verified — its token may be revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A session’s canvas is the person’s own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such document on this canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This server has no canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{id}/canvas/viewing": {
+      "post": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Say which canvas document you are looking at",
+        "description": "Puts a small face on that document’s tab for everybody else looking at this room, and takes it off again when you send `{\"documentId\": null}`. **Nothing is written down.** The whole effect is one live-only frame on the room’s stream, so a reader who connects afterwards never learns it and a reconnect forgets it — a face left on a document somebody walked away from ten minutes ago would be worse than no face. Send it when the document you are looking at changes, and once with `null` on the way out. It answers for an archived room, because looking at one is allowed.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CanvasViewingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Told the room"
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`AGENT_IDENTITY_UNVERIFIED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, the caller may not see it, or no such document on its canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/rooms/{id}/events": {
       "get": {
         "tags": [
@@ -50357,6 +52898,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/RoomReactionEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RoomCanvasEvent"
                     }
                   ]
                 }
@@ -53121,10 +55665,11 @@
                           },
                           "env": {
                             "type": "object",
+                            "properties": {},
+                            "default": {},
                             "additionalProperties": {
                               "type": "string"
-                            },
-                            "default": {}
+                            }
                           }
                         },
                         "required": [
@@ -53147,10 +55692,11 @@
                           },
                           "headers": {
                             "type": "object",
+                            "properties": {},
+                            "default": {},
                             "additionalProperties": {
                               "type": "string"
-                            },
-                            "default": {}
+                            }
                           },
                           "authKind": {
                             "type": "string",
@@ -53179,10 +55725,11 @@
                           },
                           "headers": {
                             "type": "object",
+                            "properties": {},
+                            "default": {},
                             "additionalProperties": {
                               "type": "string"
-                            },
-                            "default": {}
+                            }
                           },
                           "authKind": {
                             "type": "string",
@@ -53330,10 +55877,11 @@
                           },
                           "env": {
                             "type": "object",
+                            "properties": {},
+                            "default": {},
                             "additionalProperties": {
                               "type": "string"
-                            },
-                            "default": {}
+                            }
                           }
                         },
                         "required": [
@@ -53356,10 +55904,11 @@
                           },
                           "headers": {
                             "type": "object",
+                            "properties": {},
+                            "default": {},
                             "additionalProperties": {
                               "type": "string"
-                            },
-                            "default": {}
+                            }
                           },
                           "authKind": {
                             "type": "string",
@@ -53388,10 +55937,11 @@
                           },
                           "headers": {
                             "type": "object",
+                            "properties": {},
+                            "default": {},
                             "additionalProperties": {
                               "type": "string"
-                            },
-                            "default": {}
+                            }
                           },
                           "authKind": {
                             "type": "string",
@@ -53734,7 +56284,7 @@
           "Capabilities"
         ],
         "summary": "List capabilities",
-        "description": "List the DorkOS capabilities you can invoke by id: the live, versioned catalog of every entry on the capability registry, each with its id, title, description, permission tier (observe/act/destructive), input/output JSON Schema, and the surfaces (MCP tool, CLI verb, HTTP route) it projects onto. Run any of them with `dorkos call <id> [--input '<json>']`. This is NOT the full list of DorkOS tools: the tasks, relay, mesh, binding, trace, extension, devtools, ui tools are registered directly on the MCP server, so they appear in your own tool list rather than in this catalog and cannot be reached by `dorkos call`. They carry a permission tier all the same and answer to the same approval gate, so a tool being absent here is not a tool that runs unasked: deleting a schedule and unregistering an agent are destructive and stop for a person. A destructive tool advertises an `approvalToken` argument, which is how you can tell one from its own schema. Call this to find out what is invocable by capability id and at what tier; look at your tool list for the rest. By default a call returns a compact entry per capability (id, title, tier, and a one line summary), bounded to a page, so discovery does not flood your context. Pass `detail:'full'` for the input and output JSON Schema, `domain` to keep one id prefix (for example `domain:'mcp'`), `query` for a case insensitive substring over id, title, and description, and `limit` with `cursor` to page. When a page is capped it says how many were left out and how to narrow.",
+        "description": "List the DorkOS capabilities you can invoke by id: the live, versioned catalog of every entry on the capability registry, each with its id, title, description, permission tier (observe/act/destructive), input/output JSON Schema, and the surfaces (MCP tool, CLI verb, HTTP route) it projects onto. Run any of them with `dorkos call <id> [--input '<json>']`. This is NOT the full list of DorkOS tools: the tasks, relay, mesh, binding, trace, extension tools are registered directly on the MCP server, so they appear in your own tool list rather than in this catalog and cannot be reached by `dorkos call`. They carry a permission tier all the same and answer to the same approval gate, so a tool being absent here is not a tool that runs unasked: deleting a schedule and unregistering an agent are destructive and stop for a person. A destructive tool advertises an `approvalToken` argument, which is how you can tell one from its own schema. Call this to find out what is invocable by capability id and at what tier; look at your tool list for the rest. By default a call returns a compact entry per capability (id, title, tier, and a one line summary), bounded to a page, so discovery does not flood your context. Pass `detail:'full'` for the input and output JSON Schema, `domain` to keep one id prefix (for example `domain:'mcp'`), `query` for a case insensitive substring over id, title, and description, and `limit` with `cursor` to page. When a page is capped it says how many were left out and how to narrow.",
         "parameters": [
           {
             "schema": {

@@ -14,14 +14,21 @@
  *   DORKOS_CODEX_LIVE=1 pnpm vitest run \
  *     src/services/runtimes/codex/__tests__/conformance.test.ts
  *
- * Requirements: a `codex` binary on PATH (or `runtimes.codex.binaryPath`
- * configured) and a logged-in state (`codex login`). Under the flag the
- * vi.mock factories below return `importOriginal()` — the real SDK and the
- * real dependency probe — so the identical conformance assertions run against
- * live turns. `projectDir` becomes a real temp directory (the CLI spawns with
- * `workingDirectory`, which must exist) and per-test timeouts are raised.
- * Turns run in the 'default' permission mode → read-only sandbox, so a live
- * run cannot write outside its temp cwd.
+ * Requirements: an installed SDK-vendored `codex` binary (or one on PATH) and a
+ * logged-in state (`codex login`). A configured `runtimes.codex.binaryPath` is
+ * deliberately NOT honoured here: the live leg boots the config manager against
+ * a throwaway temp directory, so `binaryPath` reads back unset and resolution
+ * falls to the SDK-vendored binary — the exact version the pin under test
+ * ships. Pointing this suite at whatever binary the operator happens to have
+ * configured would verify someone else's Codex, which is the one thing a pinned
+ * SDK's smoke test must never do.
+ *
+ * Under the flag the vi.mock factories below return `importOriginal()` — the
+ * real SDK and the real dependency probe — so the identical conformance
+ * assertions run against live turns. The project dir becomes a real temp
+ * directory (the CLI spawns with `workingDirectory`, which must exist) and
+ * per-test timeouts are raised. Turns run in the 'default' permission mode →
+ * read-only sandbox, so a live run cannot write outside its temp cwd.
  */
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
@@ -43,6 +50,7 @@ import {
   driveReloadedHistory,
   driveTerminalOnce,
   driveQueueDurability,
+  driveRoomCanvasTurn,
 } from '../../../session/__tests__/durable-turn-harness.js';
 
 /** Hoisted so the (also hoisted) vi.mock factories can branch on it. */
@@ -186,20 +194,49 @@ vi.mock('../check-dependencies.js', async (importOriginal) => {
 });
 
 import { CodexRuntime } from '../codex-runtime.js';
+import { controlUi } from '../../../session/browser-seat/ui-control.js';
 import { CodexThreadMap } from '../thread-map.js';
 import { LocalSessionAttachmentStore } from '../../../session/attachments/local-session-attachment-store.js';
+import { initConfigManager } from '../../../core/config-manager.js';
 
-// A real `codex exec` turn needs an EXISTING working directory; mocked turns
-// never touch the filesystem, so the fixed fake path keeps them hermetic.
-const projectDir = LIVE
-  ? fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-codex-live-'))
-  : '/projects/conformance';
+/**
+ * The LIVE leg's two throwaway temp directories, or `null` when mocked.
+ *
+ * Both live in ONE object so the narrowing below is enough to use either
+ * without a cast: `liveDirs` is the single thing that is null-or-not, rather
+ * than two constants that each have to re-prove they are set.
+ *
+ * `projectDir` exists because a real `codex exec` turn needs an EXISTING
+ * working directory. It is also the workspace-trust probe: a fresh `mkdtemp` is
+ * a directory the CLI has never been told to trust, which is where a trust
+ * regression would surface first.
+ *
+ * `configHome` exists because the real `check-dependencies.js` reads
+ * `configManager.get('runtimes').codex`, and `configManager` is a `let` that
+ * stays `undefined` until `initConfigManager()` runs at server startup — which
+ * no test file gets for free. Mocked runs never reach that line because the
+ * probe itself is mocked, so the gap stayed invisible until someone set
+ * `DORKOS_CODEX_LIVE=1`, at which point every binary-resolving assertion died
+ * on `Cannot read properties of undefined (reading 'get')`. A throwaway dir
+ * rather than the real `~/.dork` keeps `binaryPath` unset on purpose — see the
+ * module header.
+ */
+const liveDirs = LIVE
+  ? {
+      projectDir: fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-codex-live-')),
+      configHome: fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-codex-live-config-')),
+    }
+  : null;
 
-if (LIVE) {
+if (liveDirs) {
   // Real turns spawn a subprocess and round-trip to OpenAI — well beyond the
   // default 5s test timeout.
   vi.setConfig({ testTimeout: 180_000, hookTimeout: 180_000 });
+  initConfigManager(liveDirs.configHome);
 }
+
+// Mocked turns never touch the filesystem, so the fixed fake path keeps them hermetic.
+const projectDir = liveDirs?.projectDir ?? '/projects/conformance';
 
 /**
  * Where the conformance runtime keeps images, in mocked mode.
@@ -218,7 +255,10 @@ const ATTACHMENT_HOME = LIVE
   : fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-codex-conformance-media-'));
 
 afterAll(() => {
-  if (LIVE) fs.rmSync(projectDir, { recursive: true, force: true });
+  if (liveDirs) {
+    fs.rmSync(liveDirs.projectDir, { recursive: true, force: true });
+    fs.rmSync(liveDirs.configHome, { recursive: true, force: true });
+  }
   if (ATTACHMENT_HOME) fs.rmSync(ATTACHMENT_HOME, { recursive: true, force: true });
 });
 
@@ -279,6 +319,34 @@ runtimeConformance(
     // through the same projector the trigger path feeds.
     presenceTurn: (runtime, sessionId, content, probes) =>
       drivePresenceTurn(runtime, sessionId, content, projectDir, probes),
+    // **A Codex room turn's canvas command, applied exactly once** (spec
+    // `canvas-agent-seat` §5). This is the acceptance the `dorkos_ui` retirement
+    // turns on: Codex used to reach the table through the event-mapper, which
+    // produced an UNSTAMPED `ui_command` for the room turn's tap to apply.
+    // `control_ui` is a capability now — it calls the writer itself and STAMPS
+    // what it wrote, so the tap skips it. Miss the stamp and every Codex canvas
+    // operation lands twice.
+    //
+    // The document is a `json` one on purpose: it has no source key, so dedupe
+    // cannot hide a second write the way it would for a file. `documents.length`
+    // in the shared case is therefore a real count.
+    roomCanvasTurn: () =>
+      driveRoomCanvasTurn(
+        new CodexRuntime({
+          threadMap: new CodexThreadMap(createTestDb()),
+          resolveBinary: async () => '/bin/codex',
+        }),
+        {
+          agentPath: '/agents/ana',
+          otherAgentPath: '/agents/ben',
+          produce: async (sessionId) => {
+            await controlUi(
+              { action: 'open_canvas', content: { type: 'json', data: {}, title: 'The plan' } },
+              { sessionId }
+            );
+          },
+        }
+      ),
     // C2/C3 are server-owned invariants every runtime inherits by construction
     // (feedProjector collapses a multi-result window; the server owns the queue),
     // so both drivers exercise the shared machinery rather than the codex binary —

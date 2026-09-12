@@ -37,6 +37,7 @@ vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn().mockResolvedVa
 
 import { createExternalMcpServer } from '../../mcp-server.js';
 import { handRegisteredInSessionTools } from '../../../runtimes/claude-code/mcp-tools/index.js';
+import { uiDomain } from '../../../session/browser-seat/ui-capabilities.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
 import { NotifyBudget } from '../../../relay/notify-budget.js';
@@ -159,19 +160,33 @@ describe('in-session and external MCP surface parity', () => {
   });
 
   it('keeps the in-session-only tools off the external server', async () => {
-    // Seven tools are deliberately in-session-only, and nothing external-only
+    // Two tools are deliberately in-session-only, and nothing external-only
     // exists. Pinned so neither half of that changes by accident.
+    //
+    // It used to be fifteen. Thirteen of them — `control_ui`, `get_ui_state` and
+    // every `browser_*` verb — are `ui` CAPABILITIES now (spec
+    // `canvas-agent-seat` §5), so they are not hand-registered at all and this
+    // list cannot speak for them. The property they were on this list for is
+    // unchanged and is asserted where it now lives: the `ui` domain declares
+    // `servers: ['in-session']` and nothing else, pinned by
+    // `session/browser-seat/__tests__/ui-capabilities.test.ts`.
     const external = new Set((await fetchExternalTools()).map((tool) => tool.name));
     const inSession = handRegisteredInSessionTools(createFullDeps()).map((tool) => tool.name);
 
     expect([...inSession].filter((name) => !external.has(name)).sort()).toEqual([
       'binding_list_sessions',
-      'browser_read_console',
-      'browser_read_network',
-      'browser_screenshot',
-      'control_ui',
-      'get_ui_state',
       'relay_notify_user',
     ]);
+  });
+
+  it('keeps every `ui` verb off the external server too', async () => {
+    // The half the list above can no longer make. These reach the in-session
+    // `dorkos` server — the loopback one every runtime is injected with, which is
+    // the whole point of the domain — and never the public `/mcp` one.
+    const external = new Set((await fetchExternalTools()).map((tool) => tool.name));
+    const uiTools = uiDomain.capabilities.map((c) => c.surfaces.mcp!.toolName);
+
+    expect(uiTools.length).toBeGreaterThan(10);
+    expect(uiTools.filter((name) => external.has(name))).toEqual([]);
   });
 });

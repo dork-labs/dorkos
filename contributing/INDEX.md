@@ -25,6 +25,7 @@ Maps source code patterns to the guides that document them. Patterns use `grep -
 | `obsidian-plugin-development.md` | Plugin lifecycle, Vite build, Electron quirks | `apps/obsidian-plugin/` |
 | `desktop-app-development.md` | Electron packaging model, server bundling, localhost serving, signing/notarization, the Gatekeeper launch-QA gotcha and the Vitest/better-sqlite3 poisoning gotcha | `apps/desktop/` |
 | `link-dispatch-policy.md` | The client-wide link scheme allowlist (`classifyLink`/`DISPATCHABLE_PROTOCOLS`), why it's an allowlist, the surfaces it protects, the desktop shell's stricter layer, and the chat-markdown divergence (DOR-547) | `apps/client/src/layers/shared/lib/link-navigation.ts\|apps/desktop/src/main/window-manager.ts` |
+| `feedback-pipeline-ops.md` | Feedback pipeline runbook: the write-scoped team-restricted Linear key, Vercel env inventory, webhook config, end-to-end verification, deploy gotchas, failure modes | `apps/site/src/lib/feedback/\|apps/site/src/app/api/feedback/\|apps/site/src/app/api/webhooks/linear/\|feedback-reporter` |
 | `data-fetching.md` | TanStack Query patterns, Transport abstraction, SSE streaming | `apps/server/src/routes/\|apps/client/src/layers/entities/\|apps/client/src/layers/features/chat/` |
 | `state-management.md` | Zustand vs TanStack Query decision guide | `app-store\|apps/client/src/layers/entities/\|apps/client/src/layers/shared/model/` |
 | `animations.md` | Motion library patterns | `animation\|motion\|apps/client/src/index.css` |

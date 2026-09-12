@@ -37,6 +37,7 @@ import path from 'path';
 import type {
   RoomContextAcknowledgment,
   RoomContextAuthor,
+  RoomContextCanvas,
   RoomContextData,
   RoomContextEntry,
   RoomContextFiles,
@@ -143,6 +144,31 @@ export interface RoomContextDeps {
    * would be the wrong room on the second call.
    */
   attachmentsFor(roomId: string, entryIds: readonly string[]): Map<string, RoomAttachment[]>;
+  /**
+   * What is on this room's shared canvas right now, and how many people are
+   * looking at it — or `null` when the room has nothing on it (spec
+   * `room-canvas` §6.1).
+   *
+   * Injected as a function, in the same style as
+   * {@link RoomContextDeps.attachmentsFor}, so this module still reads no store
+   * it does not already own and knows nothing about how a canvas is kept.
+   *
+   * **It hands over labels only.** Titles, types, authors and timestamps — never
+   * a document's contents, which is what keeps the per-turn cost of a room
+   * HAVING a canvas near zero and removes the largest prompt-injection surface
+   * in the feature by construction rather than by escaping. An agent that wants
+   * a document's contents calls `read_canvas`.
+   *
+   * **A thread rooted on a document narrows it to that document** (spec
+   * `canvas-agent-seat` §7): a thread is a conversation about one thing, so the
+   * other eleven tabs are not what this turn was asked about. Still labels only
+   * — the narrowing changes how MANY documents are named, never what the section
+   * says about each.
+   *
+   * @param roomId - The room taking a turn.
+   * @param threadRootEntryId - The thread being answered in, when there is one.
+   */
+  canvasFor(roomId: string, threadRootEntryId?: string): RoomContextCanvas | null;
 }
 
 /** The one turn being described. */
@@ -630,6 +656,9 @@ export function buildRoomContext(
     return found;
   }
 
+  // The thread scope resolved above rides along, so a turn answering in a
+  // document's own thread is told about that document and no other.
+  const canvas = deps.canvasFor(input.room.id, threadRootEntryId);
   const context: RoomContextData = {
     room: frame.room,
     thread: frame.thread,
@@ -683,6 +712,10 @@ export function buildRoomContext(
     // Omitted rather than set to `undefined`, so a room without files renders a
     // context byte-identical to the one it rendered before this field existed.
     ...(input.files ? { files: input.files } : {}),
+    // The room's shared canvas, spread the same way `files` is: omitted rather
+    // than sent empty, so a room with nothing on its table renders a context
+    // byte-identical to the one it rendered before this field existed.
+    ...(canvas ? { canvas } : {}),
     addressing: {
       responseMode:
         self?.responseMode ?? fallbackResponseMode(deps, records.get(input.agentAuthorId)),

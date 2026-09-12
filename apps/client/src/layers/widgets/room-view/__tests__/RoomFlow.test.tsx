@@ -14,7 +14,12 @@ import { Conversation } from '@/layers/features/conversation';
 import { ROOM_CAPABILITIES } from '@/layers/widgets/room-view';
 import { RoomFlow } from '../ui/RoomFlow';
 import { unreadPlacement } from '@/layers/shared/lib';
-import { toMessageAuthor, authorsById, groupByThread } from '../lib/room-timeline';
+import {
+  displayAuthorIdOf,
+  toMessageAuthor,
+  authorsById,
+  groupByThread,
+} from '../lib/room-timeline';
 
 // Every row reads route state to decide where its author face leads
 // (`useProfileDeepLink`), and this file mounts the timeline with no router.
@@ -148,6 +153,49 @@ function FeedHarness(overrides: Partial<Parameters<typeof RoomFlow>[0]> = {}) {
 function renderTimeline(overrides: Partial<Parameters<typeof RoomFlow>[0]> = {}) {
   return render(<FeedHarness {...overrides} />, { wrapper: Wrapper });
 }
+
+describe('a line the room wrote about somebody', () => {
+  it('draws that somebody’s name in the feed, not "Unknown"', () => {
+    // The Discuss button turns a rare agent-written line into one everybody
+    // presses, so the row has to be signed. The room's own voice is on no
+    // roster; `subjectAuthorId` is who it is about.
+    renderTimeline({
+      members: [member('kai', 'Kai', 'human')],
+      entries: [
+        entry(1, {
+          authorId: 'system-author',
+          body: { text: 'Kai started a discussion about The plan.', subjectAuthorId: 'kai' },
+        }),
+      ],
+    });
+    const row = screen.getByTestId('room-entry');
+    expect(within(row).getByText('Kai')).toBeInTheDocument();
+    expect(within(row).queryByText('Unknown')).not.toBeInTheDocument();
+  });
+
+  it('resolves that somebody behind the row as well as in front of it', async () => {
+    // The face and the row's actions used to be resolved from two different
+    // ids, so the row drew Kai and then offered a profile for nobody. "View
+    // profile" is the observable half of `authorRef`: it exists only when the
+    // roster answered.
+    renderTimeline({
+      members: [member('kai', 'Kai', 'human')],
+      entries: [
+        entry(1, {
+          authorId: 'system-author',
+          body: { text: 'Kai started a discussion about The plan.', subjectAuthorId: 'kai' },
+        }),
+      ],
+    });
+    const row = screen.getByTestId('room-entry');
+    fireEvent.mouseEnter(row);
+    const bar = await within(row).findByRole('toolbar', { name: 'Message actions' });
+
+    // The action exists only when the roster answered for `authorRef`. Pointing
+    // it back at the system author takes it away, which is what this catches.
+    expect(within(bar).getByRole('button', { name: 'View profile' })).toBeInTheDocument();
+  });
+});
 
 describe('RoomFlow', () => {
   it('shows a loading state before any history arrives', () => {
@@ -864,6 +912,33 @@ describe('toMessageAuthor', () => {
       kind: 'agent',
       displayName: 'Ana',
     });
+  });
+
+  it('signs a line the room wrote about somebody WITH that somebody', () => {
+    // The room's own voice is on no roster, so the row used to read "Unknown"
+    // under a sentence that names a person — "You started a discussion about
+    // The plan". `postCanvasEvent` puts `subjectAuthorId` on the entry for
+    // exactly this, and the feed now reads it.
+    const authors = authorsById([member('kai', 'Kai', 'human')]);
+    const line = entry(1, {
+      authorId: 'system-author',
+      body: { text: 'Kai started a discussion about The plan.', subjectAuthorId: 'kai' },
+    });
+    expect(displayAuthorIdOf(line, authors)).toBe('kai');
+    expect(toMessageAuthor(displayAuthorIdOf(line, authors), authors)).toMatchObject({
+      displayName: 'Kai',
+    });
+  });
+
+  it('leaves an entry whose own author IS on the roster exactly as it was', () => {
+    // A moment is written BY the agent it is about, so the subject changes
+    // nothing — which is what keeps this fix off every row that was already
+    // right.
+    const authors = authorsById([member('ana', 'Ana')]);
+    const moment = entry(2, {
+      body: { text: 'shipped it', subjectAuthorId: 'kai' },
+    });
+    expect(displayAuthorIdOf(moment, authors)).toBe('ana');
   });
 
   it('keeps a departed member’s words rather than dropping them', () => {

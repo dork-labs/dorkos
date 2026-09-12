@@ -199,6 +199,8 @@ export const StreamEventTypeSchema = z
     'hook_response',
     'ui_command',
     'devtools_capture_request',
+    'devtools_action_request',
+    'devtools_recording_request',
     'session_state_changed',
     'context_usage',
     'elicitation_prompt',
@@ -1632,6 +1634,25 @@ export const UsageStatusSchema = z
      * `subscription`.
      */
     costUsd: z.number().min(0).optional(),
+    /**
+     * Which price table `costUsd` was computed from, when the runtime says:
+     *
+     * - `list` — the runtime's own published prices. The figure is as good as a
+     *   cost figure gets, and a client shows it plain.
+     * - `managed` — rates or a multiplier the operator's organization
+     *   configured. Real, but not the public price, so a client that renders
+     *   the number should say the rate is not the list one.
+     * - `unknown` — no price row matched the model at all and the runtime
+     *   priced it at some default's rate. This is a GUESS, and a client that
+     *   renders it without saying so is claiming precision nobody has.
+     *
+     * Absent means the runtime reports no basis (every runtime but claude-code
+     * today, and claude-code before it has priced its first request of a
+     * session). Absent is read as `list`, which is what the SDK's own field doc
+     * instructs and what every DorkOS cost figure meant before this field
+     * existed.
+     */
+    costBasis: z.enum(['list', 'managed', 'unknown']).optional(),
     /** Utilization health. Absent implies `ok`. Subscription only. */
     state: UsageStateSchema.optional(),
     /** One-line tooltip detail (e.g. "Using overage capacity", active provider). */
@@ -1667,6 +1688,21 @@ export const SessionStatusEventSchema = z
      * streaming `outputTokens` delta so the projector's merge is unaffected.
      */
     turnOutputTokens: z.number().int().optional(),
+    /**
+     * Turn-total thinking tokens, already counted inside
+     * {@link SessionStatusEventSchema}'s `turnOutputTokens` — a share of the
+     * output, never an addition to it. Summed across models on the terminal
+     * result status, like its two siblings.
+     *
+     * **Absent is not zero, and the difference matters.** A runtime reports this
+     * only for turns it actually recorded it on; a session resumed from an older
+     * transcript reports a PARTIAL count for the turns that predate the field.
+     * So a reader may say "the model spent this many tokens thinking" and may
+     * not say "the model did not think" — which is why nothing is written here
+     * unless a model reported the field, rather than a zero standing in for
+     * silence.
+     */
+    turnThinkingTokens: z.number().int().optional(),
     /** Tokens read from prompt cache (90% cost savings). */
     cacheReadTokens: z.number().int().optional(),
     /** Tokens written to prompt cache (slight write premium). */
@@ -1830,6 +1866,14 @@ export const BackgroundTaskStartedEventSchema = z
     toolUseId: z.string().optional(),
     description: z.string().optional(),
     command: z.string().optional(),
+    /**
+     * Housekeeping work the runtime asked hosts to keep out of activity
+     * indicators — a watcher it started to stay oriented, not work anybody
+     * requested. **Absent means not housekeeping**, which is also what every
+     * runtime that does not report this says: only claude-code sets it today
+     * (SDK 0.3.247+), so an OpenCode or Codex task reads as ordinary work.
+     */
+    ambient: z.boolean().optional(),
   })
   .openapi('BackgroundTaskStartedEvent');
 
@@ -1854,6 +1898,14 @@ export const BackgroundTaskDoneEventSchema = z
     summary: z.string().optional(),
     toolUses: z.number().int().optional(),
     durationMs: z.number().int().optional(),
+    /**
+     * Housekeeping work the runtime asked hosts to keep out of activity
+     * indicators. Repeated on the terminal event, not only on the start, so a
+     * client that joined mid-turn and never saw the start still knows not to
+     * mark this one finished. Absent means not housekeeping; only claude-code
+     * sets it today.
+     */
+    ambient: z.boolean().optional(),
   })
   .openapi('BackgroundTaskDoneEvent');
 
@@ -2627,6 +2679,13 @@ export const BackgroundTaskPartSchema = z
     command: z.string().optional(),
     // Shared
     durationMs: z.number().int().optional(),
+    /**
+     * Housekeeping work the runtime asked hosts to keep out of activity
+     * indicators (SDK 0.3.247+, claude-code only). Absent means ordinary work.
+     * Indicators exclude these; a housekeeping task that FAILS is shown like
+     * any other failure, so the exclusion is never allowed to hide breakage.
+     */
+    ambient: z.boolean().optional(),
   })
   .openapi('BackgroundTaskPart');
 
@@ -5255,10 +5314,37 @@ export const CelebrationKindSchema = z
 export type CelebrationKind = z.infer<typeof CelebrationKindSchema>;
 
 /**
+ * Where a canvas verb lands, when that is not the window the agent is talking
+ * through (spec `canvas-agent-seat` §9).
+ *
+ * **Optional everywhere and additive by construction**: absent means exactly
+ * what it always meant — a room turn writes to the room it is answering in, and
+ * a one-on-one turn writes to that session's own canvas. Naming a room puts the
+ * document on THAT room's shared table instead, and the agent has to be a
+ * member of it: a room it is not in answers the same "no such room" a room that
+ * does not exist answers, so a room id is never something to probe with.
+ *
+ * It rides the six CANVAS verbs and nothing else. The other sixteen actions are
+ * imperatives to one window — a toast, a panel, the command palette — and a
+ * room has no window to push them to.
+ */
+export const UiCommandTargetSchema = z
+  .object({
+    roomId: z.string().min(1).describe('The room id to put this on. You must be a member of it.'),
+  })
+  .openapi('UiCommandTarget');
+
+/** Where a canvas verb lands. See {@link UiCommandTargetSchema}. */
+export type UiCommandTarget = z.infer<typeof UiCommandTargetSchema>;
+
+/**
  * A command issued by an agent to mutate the DorkOS client UI.
  * Discriminated on `action` — 22 variants covering panels, sidebar, canvas,
  * PIP, file/terminal/browser opening, notifications, theme, scroll, agent
  * switching, shape switching, command palette, and celebration.
+ *
+ * The six CANVAS variants additionally take {@link UiCommandTargetSchema}, which
+ * names a room to put the document on instead of this window.
  */
 export const UiCommandSchema = z
   .discriminatedUnion('action', [
@@ -5277,12 +5363,33 @@ export const UiCommandSchema = z
       action: z.literal('open_canvas'),
       content: UiCanvasContentSchema.optional(),
       preferredWidth: z.number().min(20).max(80).optional(),
+      target: UiCommandTargetSchema.optional(),
     }),
     z.object({
       action: z.literal('update_canvas'),
       content: UiCanvasContentSchema,
+      /**
+       * Which document to replace, when the surface has more than one and no
+       * shared idea of an active one — that is, in a room.
+       *
+       * **Additive, and absent means exactly what it always meant.** A session
+       * has one active document and ignores this when it is absent, which is
+       * today's behaviour unchanged; passing one acts on that document instead,
+       * which is an improvement on the session surface too. In a ROOM there is no
+       * shared active document by design (nothing steals anyone's tab), so
+       * leaving it out means "the last document YOU opened here" and there is a
+       * plain refusal when you have none. Naming somebody else's document is how
+       * you act on it (spec `room-canvas` §5.6).
+       */
+      documentId: z.string().optional(),
+      target: UiCommandTargetSchema.optional(),
     }),
-    z.object({ action: z.literal('close_canvas') }),
+    z.object({
+      action: z.literal('close_canvas'),
+      /** Which document to close. Same rule as `update_canvas`'s. */
+      documentId: z.string().optional(),
+      target: UiCommandTargetSchema.optional(),
+    }),
 
     // PIP (floating panel)
     z.object({
@@ -5307,6 +5414,7 @@ export const UiCommandSchema = z
        * mime→viewer registry and opens it as a new canvas document.
        */
       sourcePath: z.string().min(1),
+      target: UiCommandTargetSchema.optional(),
     }),
     z.object({
       action: z.literal('open_diff'),
@@ -5318,6 +5426,7 @@ export const UiCommandSchema = z
        * — a repeated open re-activates the existing diff document.
        */
       sourcePath: z.string().min(1),
+      target: UiCommandTargetSchema.optional(),
     }),
     z.object({
       action: z.literal('open_terminal'),
@@ -5338,6 +5447,7 @@ export const UiCommandSchema = z
        * resolution and origin isolation are handled by the browser renderer.
        */
       url: z.string().min(1),
+      target: UiCommandTargetSchema.optional(),
     }),
 
     // Notification
@@ -5498,38 +5608,51 @@ export const UI_COMMAND_REACH: Record<UiCommand['action'], UiCommandReach> = {
 export const UiCommandEventSchema = z
   .object({
     command: UiCommandSchema,
+    /**
+     * Where a room turn's canvas command already landed — **server-side data the
+     * client never reads** (spec `room-canvas` §5.2).
+     *
+     * A `ui_command` reaches the session projector from three producers, and only
+     * one of them is a tool handler that can answer the model synchronously. The
+     * claude-code `control_ui` handler calls `RoomCanvasService.apply` itself and
+     * stamps the event with what it wrote; the room turn's collector applies
+     * every UNSTAMPED `ui_command` it sees, which is how codex and the scripted
+     * test-mode runtime reach the same writer. **The stamp is the dedupe, and it
+     * is the whole of it** — without it every claude-code operation would apply
+     * twice.
+     *
+     * `executeUiCommand` takes the `command` and nothing else, and a client-side
+     * read of this field is pinned as a failure by a test. It exists for one
+     * server-side decision and has no meaning anywhere else.
+     */
+    applied: z
+      .object({
+        documentId: z.string().min(1),
+        rev: z.number().int().nonnegative(),
+      })
+      .optional(),
   })
   .openapi('UiCommandEvent');
 
 export type UiCommandEvent = z.infer<typeof UiCommandEventSchema>;
 
 /**
- * Client UI state reported back to the agent via the Transport layer.
- * Gives agents situational awareness of what is visible and active.
+ * What the CLIENT tells the server about its own window, sent with a message
+ * (`ClientContext.uiState`).
+ *
+ * **It no longer describes the canvas, and that removal is the point** (spec
+ * `canvas-agent-seat` §1.7). The canvas is the server's now, so the server does
+ * not need the client's opinion of it — and the field it used to carry was one
+ * nullable content type for a surface that has held twelve documents since
+ * DOR-219. What `get_ui_state` ANSWERS with is {@link UiStateReportSchema},
+ * composed server-side from these panel/sidebar/agent parts plus the real table.
+ *
+ * Splitting the two is what makes this removal safe in both directions: an older
+ * client that still sends `canvas` is simply parsed without it (Zod strips
+ * unknown keys), and nothing new is ever required of a client at all.
  */
 export const UiStateSchema = z
   .object({
-    canvas: z.object({
-      open: z.boolean(),
-      contentType: z
-        .enum([
-          'url',
-          'markdown',
-          'json',
-          'image',
-          'pdf',
-          'widget',
-          'mcp_app',
-          'file',
-          'model3d',
-          'audio',
-          'video',
-          'csv',
-          'browser',
-          'diff',
-        ])
-        .nullable(),
-    }),
     panels: z.object({
       settings: z.boolean(),
       tasks: z.boolean(),
@@ -5548,6 +5671,78 @@ export const UiStateSchema = z
   .openapi('UiState');
 
 export type UiState = z.infer<typeof UiStateSchema>;
+
+/**
+ * One document on a session's canvas, as `get_ui_state` lists it.
+ *
+ * The same five keys `rooms.read_canvas` answers with — `id`, `type`, `title`,
+ * `author`, `pinned` — so an agent reading a room's table and its own session's
+ * parses one thing. It adds exactly one: `active`, set on at most one document
+ * per view. The room arm does not and must not, because a room has no shared
+ * active document by design — nothing steals anyone's tab.
+ */
+export const UiStateReportDocumentSchema = z
+  .object({
+    /** The document id, which `read_canvas_document` takes. */
+    id: z.string().min(1),
+    /** Its content type — `file`, `diff`, `browser`, and so on. */
+    type: z.string().min(1),
+    /** What the tab is called. */
+    title: z.string(),
+    /** Who put it there. */
+    author: z.string().min(1),
+    /** Pinned documents sort first and are never evicted. */
+    pinned: z.boolean(),
+    /** Whether this is the front document of its view. At most one per view. */
+    active: z.boolean(),
+  })
+  .openapi('UiStateReportDocument');
+
+/** One document on a session's canvas, as `get_ui_state` lists it. */
+export type UiStateReportDocument = z.infer<typeof UiStateReportDocumentSchema>;
+
+/**
+ * What `get_ui_state` ANSWERS with for a session — the client's panels, sidebar
+ * and agent, plus the server's own reading of the canvas (spec
+ * `canvas-agent-seat` §1.7).
+ *
+ * **Composed server-side and never parsed from a client**, which is why it can
+ * carry the real table where {@link UiStateSchema} carried one content type. The
+ * agent's answer to "what is on the canvas" used to be a guess about a copy in
+ * one browser; it is now a read of the rows every window is drawing from.
+ */
+export const UiStateReportSchema = z
+  .object({
+    canvas: z.object({
+      /**
+       * Whether there is anything on the canvas at all — `documents.length > 0`.
+       *
+       * **Not "is the pane open in the window"**, which is what the retired
+       * `UiState.canvas.open` meant: that was one browser's report of its own
+       * layout, and the answer changed depending on which window had spoken
+       * last. The table is the same for every window, so this one is too.
+       */
+      open: z.boolean(),
+      /**
+       * Live readers of this session's stream right now.
+       *
+       * Windows, not people: one person with two tabs counts twice, and an agent
+       * counts zero because agents do not subscribe. `0` means nobody is looking.
+       */
+      viewers: z.number().int().nonnegative(),
+      /** What is on the canvas, pinned first then most recently active. */
+      documents: z.array(UiStateReportDocumentSchema),
+      /** How many documents that is. */
+      count: z.number().int().nonnegative(),
+    }),
+    panels: UiStateSchema.shape.panels,
+    sidebar: UiStateSchema.shape.sidebar,
+    agent: UiStateSchema.shape.agent,
+  })
+  .openapi('UiStateReport');
+
+/** What `get_ui_state` answers with for a session. See {@link UiStateReportSchema}. */
+export type UiStateReport = z.infer<typeof UiStateReportSchema>;
 
 // === DevTools Bridge capture (DOR-213) ===
 //
@@ -5681,7 +5876,194 @@ export const DevtoolsIngestSchema = z
     console: z.array(DevtoolsConsoleEntrySchema).max(DEVTOOLS_CONSOLE_BATCH_MAX),
     network: z.array(DevtoolsNetworkEntrySchema).max(DEVTOOLS_NETWORK_BATCH_MAX),
     screenshot: DevtoolsScreenshotResultSchema.optional(),
+    /**
+     * The window claiming, or releasing, the driver seat for `documentId`.
+     *
+     * `true` means "this window is showing this page right now"; `false` means it
+     * stopped. The server pairs it with the caller's `X-Client-Id` and keeps one
+     * row per (window, page), so exactly one window is ever addressed by a
+     * driving command. Absent on an ordinary capture batch, which claims nothing.
+     */
+    active: z.boolean().optional(),
+    /**
+     * Whether this claim is an ACTIVATION or a keep-alive (spec
+     * `canvas-agent-seat` §2.2).
+     *
+     * `true` means a person brought this browser document to the front in this
+     * window, and the seat moves here. `false` means the window is saying it is
+     * still showing the same page on its refresh beat, which refreshes the row's
+     * clock and moves nothing. Every window running this bundle sends one or the
+     * other.
+     *
+     * **Absent is neither**, and the server spends it in exactly one place: a
+     * window it has not heard from takes the seat on its first claim, because
+     * that is what every claim meant before this field existed. Anything a
+     * window says about a page it is already holding is read as a keep-alive —
+     * a bundle too old to have the field sends an identical body on its beat and
+     * on an activation, so believing it would let a tab left open across an
+     * upgrade take the seat back every 15 s from the window somebody had just
+     * activated, and never give it back.
+     */
+    activation: z.boolean().optional(),
+    /**
+     * Whether the in-page shim ever handshook with this window for `documentId`.
+     *
+     * A page DorkOS serves or proxies carries the shim and answers `hello`; a
+     * page framed straight from the internet does not. Carried on the claim so a
+     * driving tool can say "that page is open but DorkOS is not instrumenting it"
+     * at once, instead of waiting out a timeout nothing was ever going to answer.
+     */
+    instrumented: z.boolean().optional(),
   })
   .openapi('DevtoolsIngest');
 
 export type DevtoolsIngest = z.infer<typeof DevtoolsIngestSchema>;
+
+/**
+ * How one driving command names the single element it acts on.
+ *
+ * Exactly one of the three routes must be given, which is a rule the tool layer
+ * enforces with a sentence rather than a schema: a union here would answer a
+ * two-route call with a parser dump instead of "name the element one way".
+ * `nth` disambiguates several matches; without it, several matches is a refusal.
+ */
+export const BrowserTargetSchema = z
+  .object({
+    role: z.string().max(64).optional(),
+    name: z.string().max(512).optional(),
+    text: z.string().max(512).optional(),
+    selector: z.string().max(512).optional(),
+    nth: z.number().int().min(0).max(999).optional(),
+  })
+  .openapi('BrowserTarget');
+
+export type BrowserTarget = z.infer<typeof BrowserTargetSchema>;
+
+/**
+ * One action for the in-page shim to perform, discriminated on `action`.
+ *
+ * The server composes it from a tool call and the client hands it to the shim
+ * verbatim; the shim answers exactly one {@link DevtoolsActionResultSchema} for
+ * the request id it came with. Every verb is bounded: the waits carry their own
+ * `timeoutMs`, and the reads carry their own character budget.
+ */
+export const BrowserActCommandSchema = z
+  .discriminatedUnion('action', [
+    z.object({ action: z.literal('click'), target: BrowserTargetSchema }),
+    z.object({
+      action: z.literal('type'),
+      target: BrowserTargetSchema.optional(),
+      text: z.string().max(10_000),
+      clear: z.boolean().optional(),
+      submit: z.boolean().optional(),
+    }),
+    z.object({ action: z.literal('press'), key: z.string().max(64) }),
+    z.object({
+      action: z.literal('scroll'),
+      target: BrowserTargetSchema.optional(),
+      by: z.number().optional(),
+      to: z.enum(['top', 'bottom']).optional(),
+    }),
+    z.object({
+      action: z.literal('wait_for'),
+      text: z.string().max(512).optional(),
+      selector: z.string().max(512).optional(),
+      gone: z.boolean().optional(),
+      fetchIdle: z.boolean().optional(),
+      timeoutMs: z.number().int().positive().max(10_000),
+    }),
+    z.object({
+      action: z.literal('read_page'),
+      selector: z.string().max(512).optional(),
+      maxChars: z.number().int().positive().max(65_536),
+    }),
+  ])
+  .openapi('BrowserActCommand');
+
+export type BrowserActCommand = z.infer<typeof BrowserActCommandSchema>;
+
+/**
+ * What the page reports about itself alongside every driving result: enough for
+ * an agent to know where it is without reading the whole document back.
+ */
+export const BrowserPageSummarySchema = z
+  .object({
+    title: z.string().max(512),
+    url: z.string().max(2_048),
+    focused: z.string().max(256).nullable(),
+  })
+  .openapi('BrowserPageSummary');
+
+export type BrowserPageSummary = z.infer<typeof BrowserPageSummarySchema>;
+
+/** Cap on one `browser_read_page` outline as it crosses the wire. */
+export const DEVTOOLS_OUTLINE_MAX_CHARS = 65_536;
+
+/**
+ * The outcome of one driving round trip, relayed by the client from the in-page
+ * shim to `POST /api/sessions/:id/devtools/action`.
+ *
+ * Exactly one result ever arrives per `requestId`, and `ok` decides which half
+ * is filled: `did`/`page` on success, one plain `error` sentence on failure.
+ */
+export const DevtoolsActionResultSchema = z
+  .object({
+    requestId: z.string().max(128),
+    ok: z.boolean(),
+    did: z.string().max(2_048).optional(),
+    matched: z.number().int().min(0).optional(),
+    documentId: z.string().max(256).optional(),
+    page: BrowserPageSummarySchema.optional(),
+    outline: z.string().max(DEVTOOLS_OUTLINE_MAX_CHARS).optional(),
+    truncated: z.boolean().optional(),
+    waitedMs: z.number().int().min(0).optional(),
+    /**
+     * Whether the window kept a recording frame from this action.
+     *
+     * The frame itself never travels: the client holds it until the recording
+     * is stopped and encoded there (spec `canvas-agent-seat` §3.2). This flag is
+     * all the server needs, and it is the only honest way to count — the server
+     * asked for a frame, and only the window can say whether one came back.
+     */
+    captured: z.boolean().optional(),
+    error: z.string().max(2_048).optional(),
+  })
+  .openapi('DevtoolsActionResult');
+
+export type DevtoolsActionResult = z.infer<typeof DevtoolsActionResultSchema>;
+
+/**
+ * The multipart form fields that accompany one finished recording on
+ * `POST /api/sessions/:id/devtools/recording` (spec `canvas-agent-seat` §3.4).
+ *
+ * The two FILE parts — `recording` (the GIF) and `keyframe` (the last frame as
+ * a PNG) — are read by multer and never appear here. Nothing in this body names
+ * a destination: `requestId` identifies the round trip the server is already
+ * awaiting, and the server takes the filename from its own recording state, so
+ * a caller can never choose where the bytes land.
+ */
+export const DevtoolsRecordingUploadSchema = z
+  .object({
+    requestId: z.string().min(1).max(128),
+    /** How many frames the window actually encoded, which is what the tool reports. */
+    frames: z.coerce.number().int().min(1).max(1_000).optional(),
+    /** Wall-clock length of the recording in milliseconds, as the window measured it. */
+    durationMs: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(24 * 60 * 60 * 1_000)
+      .optional(),
+    /**
+     * Why there is no file, in one sentence the agent can act on.
+     *
+     * Sent INSTEAD of the two file parts when the window cannot produce a
+     * recording — it came out over the size cap, the page went away mid-run, or
+     * the encoder failed. Without it the tool call would sit out its whole
+     * thirty-second wait to say something less true than this.
+     */
+    error: z.string().min(1).max(500).optional(),
+  })
+  .openapi('DevtoolsRecordingUpload');
+
+export type DevtoolsRecordingUpload = z.infer<typeof DevtoolsRecordingUploadSchema>;

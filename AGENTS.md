@@ -108,7 +108,7 @@ Gotchas: under a running `pnpm dev`/`pnpm dev:dogfood`, `@dorkos/shared` rebuild
 
 Express **5** on `DORKOS_PORT` (default 4242, dev 6242) — mind Express 5 semantics (`req.body` undefined on empty POSTs; changed wildcard routing). The `AgentRuntime` interface (`packages/shared/src/agent-runtime.ts`) abstracts agent backends; production runtimes live under `services/runtimes/`: **claude-code** (default), **codex** (SDK threads, ADR-0309), **opencode** (managed sidecar, ADR-0308), plus `test-mode` for e2e and `connect/` for runtime credentials/delegated login. Routes resolve a session's runtime via `runtimeRegistry` (per-session binding, first-write-wins, ADR-0255); session listing aggregates across runtimes with per-runtime degradation (ADR-0310). Every runtime must pass the shared conformance suite (`runtimeConformance` in `@dorkos/test-utils`); authoring checklist: `contributing/adding-a-runtime.md`.
 
-**Service domains** under `services/` — a complete census, not a highlights list, so adding or removing a domain means editing this line and `scripts/__tests__/agents-service-census.test.ts` fails until you do. The full set, alphabetical: activity, communities, connectors, core, core-extensions, diff, extensions, harness, identity, marketplace, marketplace-mcp, mcp-apps, memory, mesh, notifications, observability, relay, rooms, runtimes, search, session, shapes, tasks, terminal, workbench-serve, workspace (`__tests__` sits beside them and is the one directory that is not a domain). Filesystem scanning: `packages/mesh/src/discovery/unified-scanner.ts`. API docs at `/api/docs`.
+**Service domains** under `services/` — a complete census, not a highlights list, so adding or removing a domain means editing this line and `scripts/__tests__/agents-service-census.test.ts` fails until you do. The full set, alphabetical: activity, canvas, communities, connectors, core, core-extensions, diff, extensions, harness, identity, marketplace, marketplace-mcp, mcp-apps, memory, mesh, notifications, observability, relay, rooms, runtimes, search, session, shapes, tasks, terminal, workbench-serve, workspace (`__tests__` sits beside them and is the one directory that is not a domain). Filesystem scanning: `packages/mesh/src/discovery/unified-scanner.ts`. API docs at `/api/docs`.
 
 `CommunityAdapter` (`packages/shared/src/community-adapter.ts`) is the **fourth swappable seam** beside `AgentRuntime`, `Transport` and `ConnectorProvider` — one port for rooms in more than one place, gated by `communityConformance`. This machine's own SQLite rooms are the first backend behind it (`services/communities/local/`), registered as `LOCAL_COMMUNITY` at startup; it wraps `RoomService` rather than replacing it. `GET /api/rooms` is its production consumer (`services/communities/list-rooms-across-communities.ts`): it aggregates every OTHER configured community with per-community degradation, while this machine's own rooms stay off the port — it is single-identity and that list is per-caller. Telegram/Slack bridged rooms are **projections into local rooms, not community backends** (ADR `260814-024525`); the port is reserved for communities whose truth is remote.
 
@@ -139,7 +139,7 @@ React 19 + Vite 6 + Tailwind 4 + shadcn/ui (new-york, neutral gray). **Feature-S
 
 ### Site, Shared, CLI
 
-`apps/site`: Next.js 16 + Fumadocs at dorkos.ai; public marketplace browse + install telemetry (Neon Postgres + Drizzle). `packages/shared`: import via `@dorkos/shared/*` subpaths — see the `exports` map in `packages/shared/package.json` (72 subpaths, no root entry). `packages/cli`: published as `dorkos`; config precedence CLI flags > env vars > `~/.dork/config.json` > defaults.
+`apps/site`: Next.js 16 + Fumadocs at dorkos.ai; public marketplace browse + install telemetry (Neon Postgres + Drizzle). `packages/shared`: import via `@dorkos/shared/*` subpaths — see the `exports` map in `packages/shared/package.json` (85 subpaths, no root entry). `packages/cli`: published as `dorkos`; config precedence CLI flags > env vars > `~/.dork/config.json` > defaults.
 
 ## The `/flow` Workflow
 
@@ -188,6 +188,14 @@ Also on GitHub Actions: `fragment-present` (changelog), `scripts-test`, and CLI 
 - **Some checks stay PR-only on purpose.** Fragment _coverage_ needs the PR's labels and number, which the `merge_group` payload does not carry, so it is answered before queueing and not re-asked. Fragment _validity_ does re-run in the queue.
 
 **Landing a PR is automated.** `merge-tail.yml` arms auto-merge every 10 minutes on PRs that are finished (open, undrafted, unlabelled `hold`, cleanly mergeable, no unresolved threads, every check settled green). Its decision is `scripts/should-arm-automerge.sh`, fixture-pinned. Apply `hold` (or `do-not-merge`, `wip`, `blocked`) to keep a green PR from being armed.
+
+## Signing outward writes (agent provenance)
+
+Anything you post to an external tracker or forge — a Linear comment or description, a GitHub PR body or comment — ends with one hidden, machine-readable line so a later session can route a follow-up back to yours:
+
+`<!-- agent:provenance {"v":1,"harness":"claude-code","sessionId":"…","account":"…","host":"…","surface":"…"} -->`
+
+Emit only fields you actually know (omitted is a fact; invented is a lie); the value must be valid JSON or the line is omitted entirely. Running under DorkOS, also emit `instanceId` and `resumeUrl`; in a public repo, omit `resumeUrl` and truncate `sessionId` to 8 chars. `account` is a short non-PII handle (for Claude Code: the `CLAUDE_CONFIG_DIR` basename, default `claude`) — **never an email**, and never the tracker account a `getCurrentUser` call returns; if the derived value contains `@`, omit it. Linear stores the line byte-for-byte in descriptions and comment bodies (API round-trip verified 2026-09-11); GitHub's preservation of HTML comments is long-established convention. Readers also accept the legacy `flow:provenance` name on old bodies. The canonical spec, full field table, and reply-routing rules: `docs/provenance.md` in `dork-labs/marketplace` (merged `3191607`; readable without the flow plugin installed). Git commits keep their existing `Claude-Session:` trailer — the same idea in commit form.
 
 ## Research
 

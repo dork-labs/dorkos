@@ -186,6 +186,89 @@ export type RoomErrorCode =
    */
   | 'TOO_MANY_POSTS_THIS_TURN'
   /**
+   * An agent tried to change a room's shared canvas more times in one turn than
+   * `rooms.maxCanvasOpsPerTurn` allows (spec `room-canvas` §3.4).
+   *
+   * The twin of {@link RoomErrorCode.TOO_MANY_POSTS_THIS_TURN}, on the other
+   * thing an agent can do a lot of in one turn, and bounded for the same reason:
+   * a shared table buried under a dozen tabs nobody asked for is the
+   * over-participation the room bounds exist to damp. Counted inside
+   * `RoomCanvasService.apply` against the room turn's dispatch id, synchronously,
+   * so the refusal reaches the model that asked instead of dropping an operation
+   * the tool has already called successful.
+   */
+  | 'TOO_MANY_CANVAS_OPS_THIS_TURN'
+  /**
+   * A canvas document was named that this room's table does not hold.
+   *
+   * Scoped to the room, so an id from another room resolves here exactly as an
+   * id that never existed — a member holding one learns nothing about a room
+   * they are not in.
+   */
+  | 'CANVAS_DOCUMENT_NOT_FOUND'
+  /**
+   * Somebody else is editing that canvas document right now, so the change was
+   * HELD rather than applied (spec `room-canvas` §3.5, ADR `0292`).
+   *
+   * The half of ADR `0292` that was deferred and never landed: the update used to
+   * be dropped in silence and both sides told nothing. The person editing sees a
+   * quiet banner, and the agent's tool result says it was held rather than
+   * reporting success.
+   */
+  | 'CANVAS_BEING_EDITED'
+  /**
+   * A bare `update_canvas` or `close_canvas` arrived from a member with nothing
+   * of their own on this room's canvas (spec `room-canvas` §5.6).
+   *
+   * A room has no shared active document by design — nothing steals anybody's
+   * tab — so those two verbs default to the author's OWN last document, and a
+   * member who has opened nothing here has nothing to default to. Refusing is
+   * the only safe answer: the alternative default acts on somebody else's work.
+   */
+  | 'CANVAS_NO_DEFAULT_DOCUMENT'
+  /**
+   * A `control_ui` action that only makes sense in a one-on-one session was
+   * called inside a room (spec `room-canvas` §5.4).
+   *
+   * Sixteen of the twenty-two actions, expressed as an ALLOW-list of the six
+   * canvas verbs so a twenty-third action is refused by default rather than
+   * leaking onto one agent's private stream. `apply_layout` matters most: it is
+   * the one action that reaches this machine, and refusing it in a room is a
+   * security property rather than a tidiness one.
+   */
+  | 'CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM'
+  /**
+   * Somebody asked to follow themselves (spec `canvas-agent-seat` §6).
+   *
+   * A refusal rather than a quiet no-op, because the only way to send one is a
+   * client that has confused two author ids, and a claim that silently did
+   * nothing would leave a toggle stuck on with nothing behind it.
+   */
+  | 'CANNOT_FOLLOW_YOURSELF'
+  /**
+   * More people are following somebody on this machine than one process will
+   * hold claims for (spec `canvas-agent-seat` §6).
+   *
+   * The bound exists because a claim is memory the follower's client asks for,
+   * and anything a client can ask for without limit is something it can ask for
+   * without end. It is far above any real room: reaching it means something is
+   * looping, and the sentence says to try again rather than pretending the
+   * follow worked.
+   */
+  | 'TOO_MANY_FOLLOWERS'
+  /**
+   * The canvas writer faulted, or is not reachable from this process at all.
+   *
+   * **Not a 404 and not the caller's fault.** It used to answer `ROOM_NOT_FOUND`,
+   * which says "that thing does not exist" to every surface that turns a code
+   * into a status — and the thing did exist; the write failed. The two real
+   * causes are a database that says no (busy, locked, or opened read-only by a
+   * host reading somebody else's file) and a process that stood no canvas up.
+   * Both are conditions of the SERVER, so this is a 503: the request was fine
+   * and may well work on the next try.
+   */
+  | 'CANVAS_UNAVAILABLE'
+  /**
    * `post_to_room` was called by an agent whose turn in that room was STOPPED
    * (DOR-1313).
    *
@@ -334,6 +417,21 @@ export type RoomErrorCode =
   | 'ATTACHMENT_ALREADY_POSTED'
   /** A post named more attachments than `uploads.maxFiles` allows, or named one twice. */
   | 'TOO_MANY_ATTACHMENTS'
+  /**
+   * An agent's `post_to_room` named a file outside its OWN working directory
+   * (spec `canvas-agent-seat` §4).
+   *
+   * **Its own code because it is its own mistake.** The global boundary in a
+   * project room contains every member's working copy, so "that file exists and
+   * you may read it" and "that file is yours to attach" are different questions
+   * — and this is the second one answering no. The fix is to copy the file in,
+   * which the message says.
+   */
+  | 'ATTACHMENT_PATH_REFUSED'
+  /** An agent named a path that is missing, is a folder, or is a kind of file this install does not accept. */
+  | 'ATTACHMENT_UNREADABLE'
+  /** An agent named a file bigger than `uploads.maxFileSize`. */
+  | 'ATTACHMENT_TOO_LARGE'
   | 'NOT_A_BRIDGED_ROOM'
   /**
    * `RoomService.rebridge` was asked to re-bridge a `(adapterId, chatId)` that

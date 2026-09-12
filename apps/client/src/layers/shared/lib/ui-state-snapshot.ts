@@ -2,8 +2,8 @@
  * Client UI-state snapshot for agent situational awareness (ADR-0273).
  *
  * Composes the `ClientContext.uiState` the client sends with a message so the
- * agent's `get_ui_state` tool can report which panels/canvas/sidebar are open,
- * and gates re-sends: an unchanged snapshot is omitted from the message POST so
+ * agent's `get_ui_state` tool can report which panels and sidebar are open, and
+ * gates re-sends: an unchanged snapshot is omitted from the message POST so
  * it does not accumulate in the transcript (the server persists `session.uiState`
  * across turns, so re-sending an identical snapshot is pure noise).
  *
@@ -16,16 +16,19 @@
  *
  * @module shared/lib/ui-state-snapshot
  */
-import type { UiState, UiCanvasContent, UiSidebarTab } from '@dorkos/shared/types';
+import type { UiState, UiSidebarTab } from '@dorkos/shared/types';
 import { getPlatform } from './platform';
 
-/** The app-store slice values the UI-state snapshot reads. */
+/**
+ * The app-store slice values the UI-state snapshot reads.
+ *
+ * **The canvas is not among them any more** (spec `canvas-agent-seat` §1.7).
+ * It lives on the server, so the server does not need this window's opinion of
+ * it — and the field this used to compose was one nullable content type for a
+ * surface that has held twelve documents since DOR-219. `get_ui_state` reads
+ * the table instead.
+ */
 export interface UiStateSource {
-  canvasOpen: boolean;
-  /** Open canvas documents; the active one supplies the reported content type. */
-  openDocuments: { id: string; content: UiCanvasContent }[];
-  /** Id of the active canvas document, or null when none are open. */
-  activeDocumentId: string | null;
   settingsOpen: boolean;
   tasksOpen: boolean;
   relayOpen: boolean;
@@ -48,13 +51,7 @@ export interface UiStateSource {
  *   agent id is not tracked client-side, so `agent.cwd` is the identifying field.
  */
 export function buildUiStateSnapshot(source: UiStateSource, cwd: string | null): UiState {
-  // Tolerate a partial source (test mocks pass a subset of the store) — an
-  // absent document list reads as "no active content", never a throw.
-  const activeContent = (source.openDocuments ?? []).find(
-    (d) => d.id === source.activeDocumentId
-  )?.content;
   return {
-    canvas: { open: source.canvasOpen, contentType: activeContent?.type ?? null },
     panels: {
       settings: source.settingsOpen,
       tasks: source.tasksOpen,

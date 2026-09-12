@@ -10,18 +10,29 @@
  *
  * @module shared/transport-rooms
  */
-import type { UploadProgress } from './schemas.js';
+import type { UiCanvasContent, UploadProgress } from './schemas.js';
 import type { UploadFile } from './transport.js';
 import type {
+  RoomCanvasDiffReview,
+  RoomCanvasDiffWriteRequest,
+  RoomCanvasDiffWriteResult,
   RoomFileContentResponse,
   RoomFileListResponse,
   RoomFileSaveRequest,
   RoomFileSaveResponse,
 } from './room-files.js';
-import type { RoomMainRepairRequest, RoomMainRepairResult, RoomRepoStatus } from './room-repo.js';
+import type {
+  RoomMainRepairRequest,
+  RoomMainRepairResult,
+  RoomMergeResult,
+  RoomRepoStatus,
+} from './room-repo.js';
 import type {
   AuthorRef,
   AddRoomMemberRequest,
+  CanvasDocument,
+  CanvasEditingResponse,
+  CanvasThreadResponse,
   CreateRoomRequest,
   HaltRoomResponse,
   PromoteHoldResponse,
@@ -31,11 +42,13 @@ import type {
   PostThreadReplyRequest,
   PostToRoomRequest,
   PostToRoomResponse,
+  PublishRoomViewResponse,
   RoomAttachment,
   RoomEntry,
   RoomEntryListResponse,
   RoomEvent,
   RoomMember,
+  RoomSignalView,
   RoomRosterEntry,
   RoomSessionsResponse,
   RoomSummary,
@@ -43,6 +56,7 @@ import type {
   ThreadSummary,
   ToggleReactionRequest,
   ToggleReactionResponse,
+  UpdateCanvasDocumentRequest,
   UpdateMembershipRequest,
   UpdateRoomRequest,
 } from './room-schemas.js';
@@ -224,6 +238,34 @@ export interface RoomTransport {
    * @param req - Keep everything, or discard exactly these files.
    */
   repairRoomMain(id: string, req: RoomMainRepairRequest): Promise<RoomMainRepairResult>;
+  /**
+   * Bring one agent's working copy into the room's `main` (spec
+   * `canvas-agent-seat` §8).
+   *
+   * The merge has only ever been reachable by an AGENT, through
+   * `merge_to_room_main` — so reviewing an agent's diff and then merging it
+   * meant leaving the panel. This is the person's door to the same
+   * server-mediated merge: the room's own queue, the room's own refusals, and
+   * the one line it posts, which wakes nobody.
+   *
+   * **The operator's alone** (403 `OPERATOR_ONLY`). Naming somebody else's
+   * working copy is publishing a decision that was not theirs to make, and
+   * `worktree` is always somebody else's here: the operator has no branch in a
+   * room. A room the caller is not in answers 404 `ROOM_NOT_FOUND`, the same
+   * answer a room that does not exist gives.
+   *
+   * Every other refusal is a 409 naming what to do about it — `BEHIND_MAIN`
+   * (the working copy has to catch up first), `UNCOMMITTED_WORK`,
+   * `NOTHING_TO_MERGE`, `MAIN_CHECKOUT_DIRTY`, `MERGE_CONFLICT` — except
+   * `MERGE_IN_FLIGHT`, which is a 429 because waiting really is the remedy.
+   *
+   * @param id - The room whose `main` gains the work.
+   * @param input.summary - What the work does, in one line. It becomes the
+   *   merge commit's subject and the sentence the room reads.
+   * @param input.worktree - Which working copy to merge, by the slug
+   *   {@link readRoomRepoStatus} reports.
+   */
+  mergeRoomMain(id: string, input: { summary: string; worktree: string }): Promise<RoomMergeResult>;
   /**
    * Post to a room. Trigger-only, exactly as {@link postMessage} is: the 202
    * carries the new entry's identity, while the entry itself reaches every
@@ -420,15 +462,193 @@ export interface RoomTransport {
    * @param handle - The new handle, without the `@`. Empty clears it.
    */
   setAuthorHandle(authorId: string, handle: string): Promise<AuthorRef>;
+  // --- The room's shared canvas (spec `room-canvas` §4, §9.5) ---
+
+  /**
+   * Put something on a room's canvas as the person doing it.
+   *
+   * The doors a person has onto the table all come through here: the Browser
+   * tab's address bar, an empty view's starting points, and the Room tab's Files
+   * section. The author is resolved server-side from the request — an author a
+   * caller could name is an author a caller could impersonate — so nothing here
+   * sends one.
+   *
+   * The document it answers with also arrives on {@link subscribeRoom} as a
+   * `canvas` frame, for this viewer and every other one, and that frame is what
+   * every screen is drawn from. Callers use the return value for its id, never
+   * to write state.
+   *
+   * @param id - The room.
+   * @param content - What to show. One of the fourteen canvas shapes.
+   * @returns The document as the table now holds it.
+   */
+  openRoomCanvasDocument(id: string, content: UiCanvasContent): Promise<CanvasDocument>;
+
+  /**
+   * Change one document on a room's canvas — what it shows, whether it is
+   * pinned, where it sits in the order.
+   *
+   * Every field is optional and each does one thing, so pinning something does
+   * not re-send its content. `activate` changes the ORDER and nobody's open tab:
+   * a shared table does not steal anyone's view.
+   *
+   * @param id - The room.
+   * @param documentId - The document.
+   * @param req - What to change.
+   * @returns The document as the table now holds it.
+   */
+  updateRoomCanvasDocument(
+    id: string,
+    documentId: string,
+    req: UpdateCanvasDocumentRequest
+  ): Promise<CanvasDocument>;
+
+  /**
+   * Take a document off a room's canvas, for everybody.
+   *
+   * A close is a deletion rather than a flag, which is why every viewer learns
+   * about it through a `closed` frame and a reader who was away relearns the
+   * whole table on their next resume.
+   *
+   * @param id - The room.
+   * @param documentId - The document.
+   */
+  closeRoomCanvasDocument(id: string, documentId: string): Promise<void>;
+
+  /**
+   * Say you are editing one of a room's canvas documents, or that you have
+   * stopped.
+   *
+   * While the lock stands, an agent's update to the same document is held and
+   * the agent is told so. It lapses on its own once the heartbeats stop — sent
+   * every fifteen seconds while somebody is typing — so a browser that crashed
+   * mid-edit cannot wedge a document.
+   *
+   * @param id - The room.
+   * @param documentId - The document.
+   * @param editing - True to take or refresh the lock, false to let it go.
+   * @returns Who holds the lock now, and when it lapses.
+   */
+  setRoomCanvasEditing(
+    id: string,
+    documentId: string,
+    editing: boolean
+  ): Promise<CanvasEditingResponse>;
+
+  /**
+   * Open this document's discussion, or re-open the one that is already there.
+   *
+   * The first call posts one message from the room naming the document; every
+   * call after that hands back the same thread and posts nothing, so two people
+   * pressing "Discuss" at once end up in one conversation. It wakes nobody.
+   *
+   * @param id - The room.
+   * @param documentId - The document to discuss.
+   * @returns The message heading the discussion, and whether this call started it.
+   */
+  discussCanvasDocument(id: string, documentId: string): Promise<CanvasThreadResponse>;
+
+  // --- Following somebody's browser (spec `canvas-agent-seat` §6) ---
+
+  /**
+   * Follow somebody's browser in a room, or say you are still following them.
+   *
+   * Called again on a beat — the claim lapses on its own thirty seconds after
+   * the last call, which is what makes a closed tab, a crashed browser and a
+   * lost connection the same event. Following somebody new replaces whoever you
+   * were following.
+   *
+   * People only. An agent has no view to share, and the server refuses a claim
+   * on one.
+   *
+   * @param id - The room.
+   * @param memberId - The person to follow.
+   */
+  followRoomMember(id: string, memberId: string): Promise<void>;
+
+  /**
+   * Stop following whoever you were following in a room.
+   *
+   * Resolves the same way whether or not there was anything to stop, so an
+   * unload handler and a second press of the toggle are both safe.
+   *
+   * @param id - The room.
+   */
+  unfollowRoomMember(id: string): Promise<void>;
+
+  /**
+   * Say where you are looking, for whoever is following you.
+   *
+   * Sent at most once every 250 ms, and only once the room has said somebody is
+   * following. It carries the document, the page and the scroll offset — never
+   * anything that is IN the page.
+   *
+   * @param id - The room.
+   * @param view - The document, page and scroll offset you are on.
+   * @returns Whether anybody was following, so the position went out. `false`
+   *   means stop sending.
+   */
+  publishRoomView(id: string, view: RoomSignalView): Promise<PublishRoomViewResponse>;
+
+  /**
+   * Say which document on a room's canvas you are looking at, or that you have
+   * looked away.
+   *
+   * The room's other readers see a small face on that tab while you are there.
+   * Nothing is written down: the fact rides the live stream only, so a reader
+   * who connects afterwards does not learn it, and a reconnect forgets it.
+   *
+   * @param id - The room.
+   * @param documentId - The document, or `null` when the answer is none.
+   */
+  setRoomCanvasViewing(id: string, documentId: string | null): Promise<void>;
+  /**
+   * Read the two copies of the file behind a room's worktree diff (spec
+   * `canvas-agent-seat` §8).
+   *
+   * **A room route rather than {@link readFileContent}**, and the difference is
+   * a real one: a member's working copy of a room's files lives under the
+   * DorkOS data directory, which the raw file surfaces are deliberately
+   * confined out of. So the caller names a room and a DOCUMENT, and the tree and
+   * the path both come off that row — there is no directory to pass and none to
+   * get wrong.
+   *
+   * `base` is the empty string for a file this work ADDS, which is ordinary and
+   * not an error.
+   *
+   * @param id - The room whose `main` is the comparison.
+   * @param documentId - The `diff` document on its canvas.
+   */
+  readRoomCanvasDiff(id: string, documentId: string): Promise<RoomCanvasDiffReview>;
+  /**
+   * Put a reviewed file back in the member's working copy — how turning a hunk
+   * down lands.
+   *
+   * The whole file, conditional on the hash the diff was computed against. A
+   * file the agent changed in between answers `ok: false` carrying what it holds
+   * now, so a conflict is control flow and never a clobber.
+   *
+   * @param id - The room.
+   * @param documentId - The `diff` document on its canvas.
+   * @param req - The new contents, and the hash they were computed against.
+   */
+  writeRoomCanvasDiff(
+    id: string,
+    documentId: string,
+    req: RoomCanvasDiffWriteRequest
+  ): Promise<RoomCanvasDiffWriteResult>;
+
   /**
    * Subscribe to a room's durable event stream (`GET /rooms/:id/events`).
    *
    * Modeled on {@link subscribeSession}: with `sinceCursor` the server replays
    * only entries above it, and without one the connect is cold — the server
-   * leads with a `snapshot` frame, which this skips, because a room's roster and
-   * history are already hydrated through {@link getRoom} and
-   * {@link listRoomEntries}. Ephemeral `signal` events are delivered live and
-   * never replayed.
+   * leads with a `snapshot` frame, whose roster and history this skips, because
+   * both are already hydrated through {@link getRoom} and
+   * {@link listRoomEntries}. Its `canvas` is the exception and is delivered as
+   * `canvas` events: the room's shared table is hydrated from this stream and
+   * from nothing else. Ephemeral `signal` events are delivered live and never
+   * replayed.
    *
    * @param roomId - The room id.
    * @param sinceCursor - The highest `seq` already held, to resume from.

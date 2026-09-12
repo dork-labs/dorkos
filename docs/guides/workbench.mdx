@@ -10,11 +10,11 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 Chat is where you talk to your agent. The workbench is where you can see and touch what it's actually doing: the files it's editing, a shell to run commands in, and a browser to check its work in.
 
-It lives in the panel to the right of chat, as a set of tabs: **Files**, **Canvas**, and **Terminal**. Open a session and they're right there, no setup needed.
+It lives in the panel to the right of chat, as a set of tabs: **Files**, **Canvas**, **Browser**, and **Terminal**. Open a session and they're right there, no setup needed.
 
 <ProductShot
   id="workbench"
-  alt="The Workbench right panel with the Files, Canvas, and Terminal tab strip, showing a code file open in the Canvas editor"
+  alt="The Workbench right panel with the Files, Canvas, Browser, and Terminal tab strip, showing a code file open in the Canvas editor"
 />
 
 ## Quick Win: Open a File in 5 Seconds
@@ -56,6 +56,8 @@ Click a file and DorkOS picks the viewer that fits it:
 
 Code and markdown files open read-only by default. Click the pencil icon to start editing; it turns into a checkmark you click to stop and save. While you're editing, DorkOS holds back any agent update to that specific file, so your keystrokes and the agent's writes never collide. Every other open file keeps updating live.
 
+When the agent does try to change what you're editing, a short notice appears above the document: "Your agent changed this while you were editing, so nothing here moved." **Reload** shows their version and ends your edit; **Keep mine** throws theirs away. Agents are told up front that this is how it works, so "I've updated that" from your agent is never a claim that it replaced what's on your screen.
+
 If the file changed on disk while you had it open (say, the agent edited it too), DorkOS tells you before your save could clobber it, with a choice to reload the new version or overwrite it with yours.
 
 <Callout type="warn">
@@ -77,21 +79,29 @@ Open the Terminal tab and you get an actual shell, running in your session's wor
   does. Treat it like any other shell: don't paste commands you don't understand.
 </Callout>
 
-## Embedded Browser: Preview Without Leaving DorkOS
+## Browser: Preview Without Leaving DorkOS
 
-Open the Canvas tab and navigate to a URL, or click a local HTML file from the Files tab, and it renders inline with real browser chrome: back, forward, reload, and an address bar you can type into.
+The **Browser** tab is a browser inside DorkOS, with the controls you expect: back, forward, reload, and an address bar you can type into. Type an address yourself, or let your agent send you a page.
 
-- **Local HTML files** render right in the canvas, relative links and assets included.
-- **Dev servers you're running** — Vite, Next, anything on a `localhost` address — render too, from any device that reaches your DorkOS machine directly: your laptop, your phone, a tablet on the couch. Live reload keeps working. Through a tunnel, or an HTTPS proxy sitting in front of DorkOS, the canvas can't reach the preview; it tells you so and offers the "Open in system browser" button in the browser toolbar, which is always there.
+- **Local HTML files** render right there, relative links and pictures included.
+- **Dev servers you're running** — Vite, Next, anything on a `localhost` address — render too, from any device that reaches your DorkOS machine directly: your laptop, your phone, a tablet on the couch. Live reload keeps working. Through a tunnel, or an HTTPS proxy sitting in front of DorkOS, the tab can't reach the preview; it tells you so and offers the "Open in system browser" button in the toolbar, which is always there.
 - **External sites** are framed too, when the site allows it. When a site refuses (many do, for security), DorkOS shows an "Open in system browser" button instead of a blank frame.
-- When something goes wrong, the canvas says so instead of showing a blank white page: nothing running on that port, a page taking too long, or a page that failed to load some of its own files.
-- Each browser tab keeps its own back/forward history, so switching between an open file and an open browser tab never mixes up your navigation.
+- When something goes wrong, the tab says so instead of showing a blank white page: nothing running on that port, a page taking too long, or a page that failed to load some of its own files.
+- Each page keeps its own back/forward history, so switching between two open pages never mixes up where you were.
+
+A page here isn't only something to look at. Ask your agent to try the signup form and it will: it can click buttons, fill in fields, scroll, and read the page back to see what happened — in the tab you're watching, on the page you're looking at. See ["Agents can check their own work, and act on it"](#agents-can-check-their-own-work-and-act-on-it).
+
+Showing a page needs a server to serve your files and reach your dev server, so this tab is part of the web app and is not in the Obsidian plugin.
 
 ## Multi-Document Tabs
 
-The Canvas holds more than one document at a time. Open a file, then a browser preview, then another file, and each gets its own tab across the top, exactly like a code editor. Click a tab to switch, click its `x` to close it.
+Canvas and Browser each hold more than one thing at a time, and each keeps its own set. Open three files and they line up as tabs across the top of **Canvas**, exactly like a code editor. Open three pages and they line up the same way across the top of **Browser**. Click a tab to switch, click its `x` to close it.
+
+Each tab also remembers where you were. Switch to Browser and back, and the file you were reading is still the one on screen.
 
 If you (or the agent) open something that's already open, DorkOS switches to that existing tab instead of opening a duplicate.
+
+Your tabs live on your DorkOS machine, not in one browser. Open the same session on your phone and the same things are open; close one there and it closes on your laptop too. Clearing your browser data doesn't cost you your tabs, and a second window on the same session shows the same set rather than its own.
 
 ## Reviewing Changes: See Exactly What the Agent Edited
 
@@ -118,25 +128,54 @@ You can turn the automatic open off with `workbench.autoOpenDiff` in your [confi
 
 An agent isn't limited to describing what it did in text. It can act directly on the workbench you're looking at:
 
-- **Open a file** it just edited, so you're looking at exactly what changed.
+- **Open a file** it just edited, so you're looking at exactly what changed. It lands in the **Canvas** tab.
 - **Open a terminal**, if it wants you to see (or run) something in a live shell.
-- **Navigate the embedded browser** to a page it wants you to check, like a dev server it just started.
+- **Open a page** it wants you to check, like a dev server it just started. It lands in the **Browser** tab, so a page it sends never takes over the file you were reading.
+- **Use that page**, once it's open: click a button or a link, type into a field, press a key, scroll to something further down, and wait for the page to catch up before looking again.
+
+It can also **read what's already there**. Ask "what have we got open?" and the agent gets the real list — every tab, what it is, what it's called, and which one is at the front — and it can read one back, like the chart it drew for you last turn. Before, it could only guess from whatever your window last mentioned.
 
 This only reaches into the session you're actively viewing. An agent running unattended in the background can't reach into a workbench you have open elsewhere.
 
-## Agents Can Check Their Own Work
+Using a page works on a preview DorkOS is serving for you — a local HTML file, or a dev server on your machine. A page loaded straight from the internet is shown, not driven, and your agent is told so in a sentence instead of trying and waiting.
 
-Once an agent has a preview open in the embedded browser, it isn't flying blind: it can read the same signals you'd check yourself. It can read the console for errors and warnings, check for network requests that failed (a missing asset, a broken API call), and take a screenshot to see exactly how the page rendered. That lets it catch a mistake and fix it before telling you it's done, instead of you having to open dev tools and relay the error back.
+With the same conversation open in two windows, an agent acts in the one that most recently brought a preview to the front, and only that one. The other window sees nothing. Your agent can also name a specific tab when it has several open.
 
-This works on local previews DorkOS renders directly: a local HTML file or a localhost dev server. External sites, and pages with a strict security policy, aren't instrumented.
+### In a room, the canvas belongs to everyone
+
+Open a [room](/docs/concepts/rooms) and the same two tabs are there, showing the room's own set instead of your private one. When an agent in that room opens a document or a page, it lands on the room's canvas, and every member sees the same thing at the same time — still there after a reload, and gone for everyone when somebody closes it.
+
+Nobody is interrupted by it. The room's log gets one quiet line per turn saying what that agent opened, the tab grows a small dot so you can find it when you're ready, and the tab you're on doesn't move. An agent that actually wants you to look now `@mentions` you, like anyone else would.
+
+## Agents Can Check Their Own Work, and Act on It
+
+Once an agent has a preview open in the Browser tab, it isn't flying blind: it can read the same signals you'd check yourself. It can read the console for errors and warnings, check for network requests that failed (a missing asset, a broken API call), and take a screenshot to see exactly how the page rendered. That lets it catch a mistake and fix it before telling you it's done, instead of you having to open dev tools and relay the error back.
+
+It can also use the page. Ask it to "sign up as test@example.com and tell me what happens" and it reads the page to see what's on it, types the address into the email field, clicks **Create account**, waits for the page to settle, and tells you what it saw — including the 500 in the console, if there was one. It never pastes the page's HTML at you, and it doesn't guess: when several things on the page match what it asked for, it says so and asks which one rather than picking one.
+
+It can also record what it did. Ask for a recording and it starts one, redoes the steps, and stops — and you get back one line saying how many frames it kept, how long it covers, and where the file is. The file is a small animated picture: one frame per action, a slideshow of the steps rather than a video of them. It saves into the agent's own working directory, under `.dork/.temp/recordings/`, so you can open it and watch the form fail for yourself. The agent gets the last frame back as a picture, and it can put the file itself into a room so other people — and other agents — can open it.
+
+A recording keeps at most 60 frames. Past that it stops filming, and everything else keeps working.
+
+Both halves work on local previews DorkOS renders directly: a local HTML file or a localhost dev server. External sites, and pages with a strict security policy, aren't instrumented — they're shown, not driven.
+
+In the permission mode DorkOS ships with, your agent does this without stopping to ask. If you've set a mode that asks first, you'll see a card the first time it clicks something, the same as for any other action.
+
+Everything it does happens inside the preview frame, on the page you are looking at, and it cannot reach DorkOS itself. What that frame is depends on what you opened: a local file DorkOS serves has no sign-in and no address of its own, so there is nothing there to act as. **A dev server preview is your dev server** — so your agent acts on it exactly as you would by clicking in it, including anything that page is already signed in to. Point it at a page you would be happy to click around in yourself.
+
+Your Claude Code agents can do all of this out of the box. Codex and OpenCode agents can too, once you turn on **DorkOS tools in every runtime** in Settings under Experiments — with one difference: an agent reaching in from outside the DorkOS app cannot ask you about anything first, so applying a Shape is refused there and it tells you to do that one in the app yourself.
+
+The Obsidian plugin has no Browser tab, so none of this is there.
 
 ## For the Curious
 
-Two settings live under `workbench` in your [config file](/docs/getting-started/configuration):
+Three settings live under `workbench` in your [config file](/docs/getting-started/configuration):
 
 - `workbench.defaultViewers`: an object mapping a file extension to the viewer that should open it (for example, forcing `.csv` files into the plain code editor instead of the table view). Empty by default, which means every file type above uses its standard viewer.
 - `workbench.terminalGraceTtlMinutes`: how long a terminal's shell stays alive after every browser tab pointed at it disconnects, so a refresh can reattach instead of losing the shell. Defaults to 10 minutes.
 - `workbench.autoOpenDiff`: whether a diff opens automatically when the agent edits a file. On by default; set it to `false` to keep the canvas on whatever you last had open.
+
+One more sits outside `workbench`, because it's about rooms rather than your own panel: `rooms.maxCanvasOpsPerTurn` is how many times one agent may change a room's shared canvas in a single turn. It defaults to 3, and the fourth change is refused with a note telling the agent to put the rest in one change next turn.
 
 None of these are something most people ever need to touch.
 

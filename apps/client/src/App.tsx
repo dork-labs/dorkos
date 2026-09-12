@@ -88,9 +88,11 @@ export function App({ transformContent }: AppProps) {
 
   // Register the Inspector tabs into the extension registry. The embed has its
   // own React root (no web `main.tsx`), so it registers the same tab set the
-  // cockpit does — route + transport gating (e.g. the terminal's
-  // `supportsTerminal` check) drops what does not apply under the in-process
-  // transport. `register` dedupes by id, so re-running on re-render is harmless.
+  // app does — route + transport gating drops what does not apply under the
+  // in-process transport: the terminal on `supportsTerminal`, and the Browser
+  // tab on `supportsWorkbenchServe`, since this host can neither serve a local
+  // file nor open a preview listener. `register` dedupes by id, so re-running on
+  // re-render is harmless.
   const registerContribution = useExtensionRegistry((s) => s.register);
   useEffect(() => {
     registerRightPanelTabs(registerContribution);
@@ -195,10 +197,11 @@ export function App({ transformContent }: AppProps) {
             </main>
 
             {/* Right-panel Inspector — overlay Sheet in the embed (no PanelGroup,
-                narrow pane). Pulse + Profile + Files render under the
-                in-process transport; the terminal tab hides via its
-                `supportsTerminal` gate. Fixed `/session` pathname: the embed is
-                always a single session surface. */}
+                narrow pane). Pulse + Profile + Files + Canvas render under the
+                in-process transport; the Terminal and Browser tabs hide via
+                their capability gates (`supportsTerminal`,
+                `supportsWorkbenchServe`). Fixed `/session` pathname: the embed
+                is always a single session surface. */}
             <RightPanelContainer pathname={EMBED_PATHNAME} variant="overlay" />
           </div>
         </div>

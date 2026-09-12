@@ -60,6 +60,7 @@ import {
   recentRefusals,
   DISPATCH_BUFFER_SIZE,
 } from '../services/observability/dispatch-buffers.js';
+import { autoModeStopStats } from '../services/observability/auto-mode-stops.js';
 import { phantomCancellationStats } from '../services/observability/phantom-cancellations.js';
 import {
   listProjectorDebugCounters,
@@ -165,6 +166,15 @@ router.get('/refusals', (req, res) => {
 // flag-off and flag-on legs of its measurement.
 router.get('/phantom-cancellations', (req, res) => {
   res.json(phantomCancellationStats(readLimit(req.query.limit)));
+});
+
+// GET /api/debug/auto-mode-stops — how often auto mode stopped the agent on a
+// DorkOS tool, beside how many host-context notes DorkOS attached in the same
+// window (spec `auto-mode-classifier-context`). Read with
+// `DORKOS_CLASSIFIER_CONTEXT` on and again with it off to measure whether the
+// notes removed any stops.
+router.get('/auto-mode-stops', (_req, res) => {
+  res.json(autoModeStopStats());
 });
 
 // GET /api/debug/projectors — the live projector registry.

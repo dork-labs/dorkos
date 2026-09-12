@@ -60,6 +60,37 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // been accepted a moment earlier, and the remedy is to say less rather than to
   // say it differently, which is exactly what a rate answer means.
   TOO_MANY_POSTS_THIS_TURN: 429,
+  // The canvas twin of the line above, and the same 429 for the same reason: the
+  // request is well formed and would have been accepted a moment earlier, and
+  // the remedy is to change less rather than to ask differently.
+  TOO_MANY_CANVAS_OPS_THIS_TURN: 429,
+  // A document this room's canvas does not hold. 404 beside `ENTRY_NOT_FOUND`,
+  // and scoped to the room for the same reason: an id from elsewhere must not
+  // answer differently from an id that never existed.
+  CANVAS_DOCUMENT_NOT_FOUND: 404,
+  // Somebody is editing it. 409 rather than 403 — the request is allowed and the
+  // document is right; it is the moment that is wrong, and it passes.
+  CANVAS_BEING_EDITED: 409,
+  // A bare update or close from somebody with nothing of their own on the table.
+  // 400: the request named no document and there is none to infer, which no
+  // retry fixes without naming one.
+  CANVAS_NO_DEFAULT_DOCUMENT: 400,
+  // A window action asked for inside a room. 400 because the action is real and
+  // the room is the wrong surface for it; both MCP-only today, mapped because
+  // this table is total by type.
+  CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM: 400,
+  // 400: a follow claim on yourself. The request is well formed and the room is
+  // right; the two author ids are the same, and no retry changes that.
+  CANNOT_FOLLOW_YOURSELF: 400,
+  // 429: this process already holds as many follow claims as it will. A retry
+  // is exactly the right thing to do once some of them lapse.
+  TOO_MANY_FOLLOWERS: 429,
+  // The writer faulted or is absent. 503, not 404: nothing was missing, the
+  // server could not do it — and a retry is a reasonable thing for a caller to
+  // do, which is the difference this code exists to state. The session-canvas
+  // routes answer the same status from their own `CANVAS_UNAVAILABLE` check
+  // before they reach the writer at all.
+  CANVAS_UNAVAILABLE: 503,
   // Same story: an MCP-only verb, mapped because the table is total by type. A
   // 409 rather than a 400 — the request is well formed and the room is right,
   // but somebody stopped this turn while it was being written.
@@ -97,6 +128,13 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   ATTACHMENT_NOT_FOUND: 404,
   ATTACHMENT_ALREADY_POSTED: 409,
   TOO_MANY_ATTACHMENTS: 400,
+  // The three an agent's `post_to_room` can raise. No route reaches them today
+  // — the field is on the capability and the upload route stays people-only —
+  // but the table is exhaustive over the code union on purpose, so a code
+  // without a status cannot exist.
+  ATTACHMENT_PATH_REFUSED: 403,
+  ATTACHMENT_UNREADABLE: 400,
+  ATTACHMENT_TOO_LARGE: 413,
   // A 409 for both room-repo refusals: the request is well formed and the room
   // is right, but the install (or the room's own unmerged work) says not now.
   ROOM_REPOS_DISABLED: 409,

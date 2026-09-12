@@ -46,8 +46,10 @@
  *   stream before the watchdog re-arms.
  * - `MCP_TOOL_TIMEOUT` is the one thing that CAN still cut a hold short, because
  *   the turn's subprocess inherits `process.env` and an operator may have lowered
- *   it for a flaky external server. DorkOS floors the inherited value at cap +
- *   grace on the way in (`messaging/mcp-tool-timeout-env.ts`).
+ *   it for a flaky external server. The `dorkos` server declares its own per-call
+ *   ceiling at cap + grace instead, so that variable no longer reaches this
+ *   (`runtimes/claude-code/mcp-tools/tool-timeout.ts`; see the 0.3.268 note
+ *   below, which is where the floor it used to apply went).
  * - `CLAUDE_CODE_STREAM_CLOSE_TIMEOUT` is NOT a risk, though the SDK's own d.ts
  *   comment ("if your SDK MCP calls will run longer than 60s, override
  *   CLAUDE_CODE_STREAM_CLOSE_TIMEOUT") reads like one. That variable does not
@@ -69,7 +71,7 @@
  *   60s ceiling governs this hold, exactly as argued above. New at 0.3.224: a
  *   server's own config may carry `timeout`, and a value below 1000ms is ignored
  *   rather than honoured. `MCP_TOOL_TIMEOUT` remains the one thing that can cut a
- *   hold short, and `mcp-tool-timeout-env.ts` still floors it on the way in.
+ *   hold short, and at this bump DorkOS still floored it on the way in.
  * - **Re-verified**: `CLAUDE_CODE_STREAM_CLOSE_TIMEOUT` still does not exist
  *   anywhere in the shipped binary. The SDK d.ts comment naming it is still
  *   stale, and still not a risk.
@@ -77,6 +79,15 @@
  *   with no timer, and that the control channel is timerless. That is the
  *   load-bearing claim for the ten-minute hold and it is still dated to 0.3.177.
  *   Treat it as unconfirmed at 0.3.224 until someone reads it again.
+ *
+ * 2026-09-11, on the bump to 0.3.268 — the per-server `timeout` the 0.3.224 note
+ * spotted in the binary reached `createSdkMcpServer`'s own types at 0.3.248, and
+ * DorkOS took it. The `dorkos` server now states cap + grace directly
+ * (`runtimes/claude-code/mcp-tools/tool-timeout.ts`), and the environment floor
+ * that used to stand in for it is gone: it could only be applied subprocess-wide,
+ * so protecting this hold meant overriding whatever the operator had set for the
+ * external server they were actually worried about. `MCP_TOOL_TIMEOUT` is
+ * therefore no longer a way to cut a hold short, and no longer rewritten.
  *
  * @module services/core/capabilities/capability-approval-hold
  */
@@ -168,6 +179,66 @@ function pushHoldResolved(
 }
 
 /**
+ * What a held call returns when its approval stopped being answerable while it
+ * waited (spec `approval-expiry-notice`, DOR-1932).
+ *
+ * Deliberately NOT an `approval_required` payload with a different sentence: it
+ * carries no `approvalToken` and no `retry` block, because there is nothing left
+ * to retry with. Handing back the original payload — which is what a held call
+ * did for this ending until DOR-1932 — told the agent to call again with a token
+ * the sweep had just written off, and pointed it at a card that had already
+ * disappeared from the person's list. Every one of those three claims was false
+ * at the moment it was made.
+ */
+export interface ApprovalNoLongerValidPayload {
+  /** Discriminator. Always `approval_no_longer_valid`. */
+  status: 'approval_no_longer_valid';
+  /** The capability that did NOT run. */
+  capabilityId: string;
+  /** Its human-facing title, as the operator's card showed it. */
+  capabilityTitle: string;
+  /** The approval that is now past answering. Safe to show or log. */
+  approvalId: string;
+  /** When the decision window closed. ISO 8601 UTC. */
+  expiresAt: string;
+  /** One plain sentence the model can act on. */
+  message: string;
+}
+
+/**
+ * Turn a held call's fresh ask into the answer for an approval that can no
+ * longer be answered.
+ *
+ * **The wording covers two endings on purpose.** `awaitDecision` reports
+ * `expired` both for a window that genuinely closed and for a token somebody
+ * spent elsewhere while this hold waited (`toDecisionOutcome` folds `consumed`
+ * into `expired`, because neither leaves the caller anything to resume on).
+ * Naming only expiry would be a guess that is wrong half the time; what is true
+ * in both cases, and is the only part the agent has to act on, is that this
+ * request is finished and its token is dead.
+ *
+ * @param payload - The gate's fresh `approval_required` payload for this call.
+ * @returns The payload to hand the model instead.
+ */
+export function approvalNoLongerValid(
+  payload: ApprovalRequiredPayload
+): ApprovalNoLongerValidPayload {
+  return {
+    status: 'approval_no_longer_valid',
+    capabilityId: payload.capabilityId,
+    capabilityTitle: payload.capabilityTitle,
+    approvalId: payload.approvalId,
+    expiresAt: payload.expiresAt,
+    message:
+      `The approval for "${payload.capabilityTitle}" is no longer open: nobody answered it in ` +
+      'time, or it was already used. The token you were given will not work now, and there is ' +
+      'no card left for anyone to answer. Do not retry with it and do not look for another way ' +
+      'around it. If this still needs doing, say so plainly and ask for approval again; ' +
+      'otherwise tell the person what you could not finish.',
+  };
+}
+
+/**
  * Render the inline card, wait for the operator's decision (bounded by the hold
  * cap), then retire the card — whatever the outcome.
  *
@@ -223,9 +294,18 @@ export async function awaitCapabilityApproval(
     });
     return outcome;
   } finally {
-    // A decision was delivered by this call's return value, so the claim stays
-    // spent. Anything else means nobody was told, and the answer is still owed.
-    if (claimed && outcome !== 'granted' && outcome !== 'denied') {
+    // An ending this call REPORTS is delivered by its own return value, so the
+    // claim stays spent. Only `timeout` leaves the answer still owed: the window
+    // is still open, the card is still on the dashboard, and whoever answers
+    // later must reach the agent through the out-of-band deliverer.
+    //
+    // `expired` moved out of that set with DOR-1932. It used to be released
+    // here, which was pointless AND wrong: the sweep that settled the row had
+    // already broadcast, the deliverer had already lost the claim to this hold
+    // and dropped the notice, and no second broadcast was ever coming — so
+    // releasing invited a delivery nothing would trigger, while the caller went
+    // on to report the ending itself.
+    if (claimed && outcome === 'timeout') {
       hold.approvals.releaseVerdictDelivery(payload.approvalId);
     }
     if (emitted) pushHoldResolved(hold.session, payload.approvalId, outcome);

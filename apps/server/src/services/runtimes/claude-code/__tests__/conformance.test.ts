@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { runtimeConformance } from '@dorkos/test-utils';
+import { controlUi } from '../../../session/browser-seat/ui-control.js';
+import { driveRoomCanvasTurn } from '../../../session/__tests__/durable-turn-harness.js';
 import {
   wrapSdkQuery,
   sdkError,
@@ -541,6 +543,38 @@ runtimeConformance(
     // not persist, DOR-189), which is exactly what `drivePresenceTurn` does.
     presenceTurn: (runtime, sessionId, content, probes) =>
       drivePresenceTurn(runtime, sessionId, content, '/projects/conformance', probes),
+    // A room turn that puts a document on the room's shared canvas (spec
+    // `room-canvas` §5.5). `control_ui` reaches the table by calling the writer
+    // SYNCHRONOUSLY and stamping the event it then pushes, rather than leaving
+    // the work to the room turn's collector — so this wiring drives the real
+    // capability handler, which is the code every runtime now binds to.
+    //
+    // It is handed ONLY the session id, which is the point: which room this turn
+    // answers in is the runtime-neutral fact the trigger bound, and a handler
+    // that could not read it from the session id alone is a handler Codex and
+    // OpenCode could not have (spec `canvas-agent-seat` §5). Driving it with the
+    // real binding is what proves the binding is really there.
+    roomCanvasTurn: () =>
+      driveRoomCanvasTurn(
+        new ClaudeCodeRuntime(
+          '/tmp/dorkos-conformance',
+          '/projects/conformance',
+          new LocalSessionAttachmentStore(ATTACHMENT_HOME)
+        ),
+        {
+          agentPath: '/agents/ana',
+          otherAgentPath: '/agents/ben',
+          produce: async (sessionId) => {
+            await controlUi(
+              {
+                action: 'open_canvas',
+                content: { type: 'markdown', title: 'The plan', content: '# The plan' },
+              },
+              { sessionId }
+            );
+          },
+        }
+      ),
     // The media gate. Owns its own scripted turn because a media turn needs a
     // differently-scripted SDK than the default `sdkSimpleText` — a `Read` of a
     // PNG, which is the most ordinary media case on the DEFAULT runtime and the
@@ -673,11 +707,15 @@ runtimeConformance(
       }
       const launchedAppend = (index: number): string => {
         const systemPrompt = warmCli?.processes.at(index)?.options.systemPrompt;
-        // The SDK's `systemPrompt` is a union — a preset carrying an `append`,
-        // or a whole prompt as a bare string. DorkOS always launches the preset
-        // form; narrowing rather than casting is what would make a change to
-        // that visible here instead of silently reading `undefined`.
-        return typeof systemPrompt === 'object' && !Array.isArray(systemPrompt)
+        // The SDK's `systemPrompt` is a union — a preset carrying an `append`, a
+        // `{ type: 'custom' }` object carrying a whole prompt (added in SDK
+        // 0.3.268), or a whole prompt as a bare string. DorkOS always launches
+        // the preset form; narrowing on the discriminant rather than on
+        // `typeof === 'object'` is what would make a change to that visible here
+        // instead of silently reading `undefined` off a custom prompt.
+        return typeof systemPrompt === 'object' &&
+          !Array.isArray(systemPrompt) &&
+          systemPrompt.type === 'preset'
           ? (systemPrompt.append ?? '')
           : '';
       };

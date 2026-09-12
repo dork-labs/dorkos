@@ -11,9 +11,9 @@
  * hrefless `<button>` and its own, non-design-system confirm modal. Every
  * surface gets the same real anchor and the same confirmation instead.
  */
-import type { ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { Streamdown } from 'streamdown';
-import type { AllowedTags, Components } from 'streamdown';
+import type { AllowedTags, Components, CustomRenderer } from 'streamdown';
 // Streamdown's own stylesheet, which is what actually draws this markdown.
 // Imported here rather than relied on from elsewhere: it was only ever loaded
 // because the chat's `StreamingText` imports it, so every surface that renders
@@ -64,6 +64,22 @@ export interface MarkdownContentProps {
    * mention's `@handle`, not prose.
    */
   literalTagContent?: string[];
+  /**
+   * Code-fence renderers, keyed by fence language, for a surface that draws one
+   * of them as something other than a code block — a room body's
+   * ` ```dorkos-ui ` widget fence, say.
+   *
+   * **The renderer is passed IN, never reached for.** This component is
+   * `shared`, so it may not import a feature, and a widget renderer is a
+   * feature's (`features/gen-ui`). The caller — a widget, which may import both
+   * — supplies it, which is also what keeps the fence's meaning at the surface
+   * that decided it has one.
+   *
+   * Pass a module-scope constant: Streamdown compares its plugin config by
+   * identity, so an array rebuilt per render re-renders the whole body every
+   * time anything above it does.
+   */
+  renderers?: CustomRenderer[];
 }
 
 /** Renders static markdown content using streamdown. */
@@ -74,7 +90,12 @@ export function MarkdownContent({
   components,
   allowedTags,
   literalTagContent,
+  renderers,
 }: MarkdownContentProps) {
+  // Streamdown's top-level memo compares `plugins` by reference, so this must
+  // not be a fresh object each render — with a module-scope `renderers` it is
+  // then built exactly once for the life of the app.
+  const plugins = useMemo(() => (renderers ? { renderers } : undefined), [renderers]);
   return (
     // desktop:select-text — see message-variants.ts for why: the desktop
     // shell defaults chrome to non-selectable on every platform (DOR-562),
@@ -100,6 +121,7 @@ export function MarkdownContent({
           components={{ ...components, a: MarkdownLink }}
           allowedTags={allowedTags}
           literalTagContent={literalTagContent}
+          plugins={plugins}
         >
           {content}
         </Streamdown>

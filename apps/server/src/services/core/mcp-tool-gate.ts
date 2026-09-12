@@ -108,7 +108,11 @@ import type { ApprovalOrigin } from '@dorkos/shared/approval-schemas';
 
 import type { AgentIdentity } from './agent-identity/agent-identity-service.js';
 import { resolveApprovalSubject, type ApprovalRequestingSession } from './approvals/index.js';
-import { awaitCapabilityApproval, type CapabilityApprovalHold } from './capabilities/index.js';
+import {
+  approvalNoLongerValid,
+  awaitCapabilityApproval,
+  type CapabilityApprovalHold,
+} from './capabilities/index.js';
 import { approvalTokenArgument } from './capabilities/mcp-projection.js';
 import {
   enforceCapabilityTier,
@@ -290,17 +294,25 @@ interface HandlerRun {
 /**
  * Run one gated call, waiting for a person when there is a session to wait in.
  *
- * Three endings, and only the first is new:
+ * Four endings, and only the first is new:
  *
  * 1. **The person decides in time.** The gate is re-run with the granted token
  *    beside the input, so the SAME binding is checked and consumed that the
  *    person approved — never a second, unchecked path to the handler. A grant
  *    runs the tool and returns its real result; a denial returns the gate's
  *    refusal.
- * 2. **No decision before the cap** (`timeout`, `expired`). The original
- *    `approval_required` payload is returned verbatim — the exact poll flow this
- *    replaces, so a hold is never worse than not holding.
- * 3. **No hold at all**, or a refusal that minted nothing fresh. Unchanged.
+ * 2. **The cap runs out first** (`timeout`). The original `approval_required`
+ *    payload is returned verbatim — the exact poll flow this replaces, so a hold
+ *    is never worse than not holding. The card is still live and the token still
+ *    works; whoever answers later reaches the agent through the out-of-band
+ *    deliverer (`approvals/approval-verdict-delivery.ts`).
+ * 3. **The approval stops being answerable while the call waits** (`expired`:
+ *    the window closed, or the token was spent elsewhere). Returning the poll
+ *    payload here told the agent to retry with a token that no longer worked and
+ *    pointed it at a card nobody could answer, so this ending gets its own
+ *    `approval_no_longer_valid` payload instead (DOR-1932). The hold KEEPS its
+ *    delivery claim in that case, because it reports the ending itself.
+ * 4. **No hold at all**, or a refusal that minted nothing fresh. Unchanged.
  *
  * The retry carries the token as an ARGUMENT because that is the channel this
  * module advertises (`approvalTokenArgument`); `splitApprovalToken` lifts it
@@ -321,8 +333,14 @@ async function runGatedInSession(call: GateRun, run: HandlerRun): Promise<CallTo
     { ...run.hold, ...(signal ? { signal } : {}) },
     outcome.fresh
   );
-  // `timeout` and `expired` are not failures — they are the poll flow, which
-  // still works: the card is on the dashboard and the agent still holds a token.
+  // The window closed (or the token was spent elsewhere) while this call waited.
+  // The poll payload is no longer true for that ending — there is no live card
+  // left to answer and the token is dead — so returning it verbatim sent the
+  // agent off to retry with something the sweep had just written off (DOR-1932).
+  if (decided === 'expired') return textResult(approvalNoLongerValid(outcome.fresh));
+  // `timeout` alone is not a failure — it IS the poll flow, and for this ending
+  // every word of that payload is still true: the cap ran out rather than the
+  // window, so the card is on the dashboard and the agent still holds a live token.
   if (decided !== 'granted' && decided !== 'denied') return outcome.result;
 
   // A full gate pass, not a shortcut around it. The token rides beside the SAME

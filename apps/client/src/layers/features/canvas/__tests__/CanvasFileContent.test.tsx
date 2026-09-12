@@ -9,9 +9,22 @@ import '@testing-library/jest-dom/vitest';
 
 // Store mock: the viewer reads selectedCwd + the theme and flags per-document
 // edit mode via setDocumentEditing(id, editing).
+/**
+ * The per-document edit flag the editor writes with `setDocumentEditing` — and,
+ * since notify-and-reconcile, READS back: "Reload" on the held-update banner
+ * ends the edit from outside, and the editor follows the store out of edit mode.
+ * A mock that swallowed the write would leave the editor stuck in edit mode
+ * against a store that says otherwise, which is the state the effect exists to
+ * resolve.
+ */
 const mockState = {
   selectedCwd: '/work' as string | null,
-  setDocumentEditing: vi.fn(),
+  openDocuments: [{ id: 'doc-1', editing: false }],
+  setDocumentEditing: vi.fn((id: string, editing: boolean) => {
+    mockState.openDocuments = mockState.openDocuments.map((d) =>
+      d.id === id ? { ...d, editing } : d
+    );
+  }),
 };
 const readFileContent = vi.fn();
 // The resolved theme handed to CodeMirror. `useResolvedTheme` (system→OS
@@ -95,6 +108,7 @@ afterEach(cleanup);
 describe('CanvasFileContent', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockState.openDocuments = [{ id: 'doc-1', editing: false }];
     codeMirrorMountCount = 0;
     mockResolvedTheme.value = 'light';
     mockState.selectedCwd = '/work';

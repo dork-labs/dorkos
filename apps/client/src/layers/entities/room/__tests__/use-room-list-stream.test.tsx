@@ -15,7 +15,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { RoomSummary, RoomWithRoster, ThreadSummary } from '@dorkos/shared/room-schemas';
 import { roomKeys } from '../api/query-keys';
 import { useRoomListStream } from '../model/use-room-list-stream';
-import { useRoomWorkingStore } from '../model/use-room-working';
+import { useRoomWorkingStore } from '../model/live/use-room-working';
 
 /** Handlers registered by the hook, keyed by the event they wait for. */
 const handlers = new Map<string, (payload?: unknown) => void>();

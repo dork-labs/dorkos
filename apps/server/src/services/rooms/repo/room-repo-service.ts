@@ -157,6 +157,23 @@ export interface RoomRepoServiceDeps {
    */
   caps: () => RoomRepoCaps;
   /**
+   * Put this room's brand-new `ROOM.md` on its canvas, pinned.
+   *
+   * Called once, after the seed commit, for the room that just got files — which
+   * is the one moment a `ROOM.md` starts existing. The notes everybody in the
+   * room shares are the one document that is worth a tab by default, and pinning
+   * it is what stops a busy room's twelve-document ceiling ever pushing it off.
+   *
+   * Required rather than optional, for the reason
+   * {@link RoomRepoServiceDeps.mutex} is: a wiring that forgot it would compile,
+   * pass every test in this file, and quietly give every new room's shared notes
+   * no place to be.
+   *
+   * It must not throw — it is called inside the repo's own queue, and a canvas
+   * that refused would unwind a repo that was successfully created.
+   */
+  pinRoomMd: (roomId: string, authorId: string) => void;
+  /**
    * How many bytes of `ROOM.md` may ride a member agent's turn, read LIVE from
    * `config.rooms.repo.maxRoomMdBytes`.
    *
@@ -357,6 +374,18 @@ export class RoomRepoService {
         );
       }
       throw err;
+    }
+    // **Outside the unwind, and guarded on its own.** The repo exists and the
+    // seed commit is made; a canvas that refused the tab is a missing tab, not a
+    // reason to tear a working repo back down. So this can never reach the
+    // `catch` above, and it can never fail the enable either.
+    try {
+      this.deps.pinRoomMd(roomId, callerAuthorId);
+    } catch (err) {
+      logger.warn('[rooms] a new room’s notes did not reach its canvas', {
+        roomId,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -627,6 +656,39 @@ export class RoomRepoService {
    */
   hasRepo(roomId: string): boolean {
     return this.deps.enabled() && this.deps.store.getRow(roomId) !== null;
+  }
+
+  /**
+   * Where this room's own shared copy of its files lives, or `null` when it has
+   * none a caller may use.
+   *
+   * The one question the canvas asks of this service, and it asks it on a read
+   * path: a canvas document that resolved under the SHARED tree is one every
+   * member can already read, which is what makes returning its contents to any
+   * of them safe (spec `room-canvas` §8.1). A room with no repo answers `null`,
+   * and then no document belongs to a shared tree at all.
+   *
+   * @param roomId - The room.
+   * @returns The absolute path, or `null`.
+   */
+  repoPathFor(roomId: string): string | null {
+    return this.hasRepo(roomId) ? this.deps.store.repoPath(roomId) : null;
+  }
+
+  /**
+   * Where this room keeps its members' own working copies.
+   *
+   * The sibling of {@link RoomRepoService.repoPathFor}, and asked by the same
+   * kind of caller: the review surface has to confine a worktree document's
+   * stored directory to somewhere DorkOS itself made (spec `canvas-agent-seat`
+   * §8), and a path a row happens to hold is not a checked input. A room with
+   * no repo answers `null`, and then no directory is inside anything.
+   *
+   * @param roomId - The room.
+   * @returns The absolute path, or `null`.
+   */
+  worktreesPathFor(roomId: string): string | null {
+    return this.hasRepo(roomId) ? this.deps.store.worktreesPath(roomId) : null;
   }
 
   /**

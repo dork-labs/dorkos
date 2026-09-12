@@ -43,6 +43,20 @@ export async function* mapSystemEvent(
   if ('subtype' in message) {
     if (message.subtype === 'task_started') {
       const msg = message as Record<string, unknown>;
+      const ambient = msg.ambient as boolean | undefined;
+      // `spawn_depth` and `is_backgrounded` (SDK 0.3.238+) are read here and go
+      // no further. Neither earns a place on the wire: the subagent depth cap is
+      // 1, so `spawn_depth` is a constant, and whether the spawning tool call
+      // blocked is a fact about the runtime's own bookkeeping that changes
+      // nothing a person would do. They stay a debug line so a support session
+      // can still see them (spec `ambient-background-tasks`, decision 9).
+      logger.debug(
+        'Background task %s started (ambient=%s, is_backgrounded=%s, spawn_depth=%s)',
+        msg.task_id,
+        ambient ?? false,
+        msg.is_backgrounded,
+        msg.spawn_depth
+      );
       yield {
         type: 'background_task_started',
         data: {
@@ -53,6 +67,9 @@ export async function* mapSystemEvent(
           command: message.session_id ? undefined : (msg.command as string | undefined),
           toolUseId: msg.tool_use_id as string | undefined,
           description: msg.description as string,
+          // Forwarded only when the runtime said so: absent means not
+          // housekeeping, and every other runtime leaves it absent.
+          ...(ambient !== undefined ? { ambient } : {}),
         },
       };
       return;
@@ -77,6 +94,7 @@ export async function* mapSystemEvent(
     if (message.subtype === 'task_notification') {
       const msg = message as Record<string, unknown>;
       const usage = msg.usage as { tool_uses: number; duration_ms: number } | undefined;
+      const ambient = msg.ambient as boolean | undefined;
       yield {
         type: 'background_task_done',
         data: {
@@ -85,6 +103,7 @@ export async function* mapSystemEvent(
           summary: msg.summary as string | undefined,
           toolUses: usage?.tool_uses,
           durationMs: usage?.duration_ms,
+          ...(ambient !== undefined ? { ambient } : {}),
         },
       };
       return;
@@ -267,6 +286,14 @@ export async function* mapSystemEvent(
     // message). We render thinking from `thinking_delta` text instead — and force
     // `display: 'summarized'` so that text actually streams (see thinking-config.ts) —
     // so these carry no UI value here. Swallow them to keep the catch-all log quiet.
+    //
+    // Swallowed here, but NOT ignored upstream. Since claude-agent-sdk 0.3.260 the
+    // frame carries the `user_message_uuid` of the message whose turn is thinking,
+    // and `sessions/session-turn-windows.ts` reads it as proof that a steered
+    // message's turn has STARTED before it has said a word — the one signal that
+    // keeps a long thinking turn inside the window the person is watching
+    // (`provesSteeredTurnBegan`). Attribution happens where turns are cut, not here:
+    // this mapper emits no event for the frame, so it has no turn to attribute it to.
     if (message.subtype === 'thinking_tokens') {
       return;
     }

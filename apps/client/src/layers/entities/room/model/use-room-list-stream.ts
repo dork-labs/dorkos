@@ -15,7 +15,7 @@ import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type { RoomSummary, RoomWithRoster, ThreadSummary } from '@dorkos/shared/room-schemas';
 import { useEventSubscription } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
-import { useRoomWorkingStore } from './use-room-working';
+import { useRoomWorkingStore } from './live/use-room-working';
 
 /** Global events that change what a room list row says. */
 const ROOM_LIST_EVENTS = [

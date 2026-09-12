@@ -14,11 +14,12 @@ import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import { TaskDispatchPayloadSchema } from '@dorkos/shared/relay-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { createRunOutcomeTracker } from '@dorkos/shared/run-outcome';
+import { createRefusedAskLog, withRefusedAsks } from '@dorkos/shared/run-refusals';
 // The one sentence a run stopped by a clock is described with, written by this
 // path and by the direct-dispatch twin in `apps/server` (DOR-1786).
 import { runTimeLimitError } from '@dorkos/shared/run-time-limit';
 import type { AdapterContext, DeliveryResult, TraceStoreLike } from '../../types.js';
-import type { AgentRuntimeLike, TasksStoreLike } from './types.js';
+import type { AgentRuntimeLike, RefusedAskReporter, TasksStoreLike } from './types.js';
 import { OPERATOR_CANCEL } from './task-cancel-handler.js';
 import type { AbortRegistry } from '../../lib/abort-registry.js';
 import { interruptTurn } from './interrupt.js';
@@ -119,6 +120,14 @@ export interface TasksHandlerDeps {
   agentManager: AgentRuntimeLike;
   traceStore: TraceStoreLike;
   taskStore?: TasksStoreLike;
+  /**
+   * Where this run's refused asks are reported, so a scheduled run that could
+   * not use a tool says so in the activity feed on this path too (DOR-1580).
+   *
+   * Optional, and absent in most tests: without it the run's summary line is
+   * still written, exactly as before.
+   */
+  onRefusedAsk?: RefusedAskReporter;
   /**
    * The adapter's in-flight run registry — the only handle anything outside
    * this function has on a running task (DOR-808). Required, not optional: a
@@ -308,6 +317,15 @@ export async function handleTasksMessage(
   // "completed" on one dispatch path and "failed" on the other for the same
   // stream is the drift this is worth a subpath to avoid.
   const outcome = createRunOutcomeTracker();
+  // Which asks this run was refused without anybody being consulted, on the same
+  // shared rule the direct twin uses (spec
+  // `unattended-session-permission-prompts`). Two records come out of it: the
+  // summary line on the run row below, and — through `deps.onRefusedAsk`, since
+  // this package cannot see the activity feed — the same live feed entry per
+  // refused tool the direct twin writes (DOR-1580). With the relay adapter
+  // connected, which is the ordinary install, this path is the one a scheduled
+  // run actually takes, so the entry existed for nobody until it was wired here.
+  const refusals = createRefusedAskLog();
 
   try {
     if (controller.signal.aborted) {
@@ -327,12 +345,14 @@ export async function handleTasksMessage(
       // so the answer is carried on the wire (DOR-1571). The direct-dispatch twin
       // in `task-scheduler-service.ts` does the same.
       hasStarted,
-      // Nobody is coming back to a scheduled run, so an unanswered prompt is
-      // refused at ten minutes instead of parking for four hours and stalling
-      // the run (spec `ask-parks-on-timeout` §7). The direct-dispatch twin in
-      // `task-scheduler-service.ts` says the same thing; a run must not depend
-      // on which path carried it.
-      unattended: true,
+      // Nobody is coming back to a run the timer started, so an ask raised in it
+      // is refused the moment it is raised (spec
+      // `unattended-session-permission-prompts`). Only a SCHEDULED fire: a "Run
+      // now" a person clicked can travel this path too, and they are waiting in
+      // front of the app for it. The direct-dispatch twin in
+      // `task-scheduler-service.ts` reads the same field the same way; a run
+      // must not depend on which path carried it.
+      unattended: payload.trigger === 'scheduled',
       ...executionSettings,
     });
 
@@ -363,6 +383,10 @@ export async function handleTasksMessage(
       () => void interruptTurn(deps.agentManager, sessionId, `run ${runId}`, deps.logger),
       (event) => {
         outcome.observe(event);
+        // `observe` answers only on a tool's FIRST refusal, so this is one
+        // report per refused tool per run and the dedupe lives in one place.
+        const refused = refusals.observe(event);
+        if (refused) deps.onRefusedAsk?.({ taskId, runId, refused });
         if (event.type === 'text_delta' && outputSummary.length < OUTPUT_SUMMARY_MAX_CHARS) {
           const data = event.data as { text: string };
           outputSummary += data.text;
@@ -371,7 +395,13 @@ export async function handleTasksMessage(
     );
 
     const durationMs = clock() - startTime;
-    const truncatedSummary = outputSummary.slice(0, OUTPUT_SUMMARY_MAX_CHARS);
+    // The refused asks lead the summary, so the run-history row and the
+    // finished-run message — both of which quote only its FIRST line — say what
+    // the run could not do before they say what it did.
+    const truncatedSummary = withRefusedAsks(
+      refusals.summaryLine(),
+      outputSummary.slice(0, OUTPUT_SUMMARY_MAX_CHARS)
+    );
     // Both stops record `cancelled` — the run-status vocabulary has no separate
     // timeout — so the error line is what tells a person which one happened.
     //
@@ -441,7 +471,10 @@ export async function handleTasksMessage(
         status: 'failed',
         finishedAt: new Date().toISOString(),
         durationMs,
-        outputSummary: outputSummary.slice(0, OUTPUT_SUMMARY_MAX_CHARS),
+        outputSummary: withRefusedAsks(
+          refusals.summaryLine(),
+          outputSummary.slice(0, OUTPUT_SUMMARY_MAX_CHARS)
+        ),
         error: errorMsg,
         sessionId: persistedSessionId(),
       });

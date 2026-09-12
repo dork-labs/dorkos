@@ -19,6 +19,7 @@ import type { ResponseGateMode } from '../response-gate/routing-rules.js';
 import type { RoomLimitsResolver } from '../limits/room-limits.js';
 import type { ReactionBudget } from '../reactions/reaction-budget.js';
 import type { ReactionStore } from '../reactions/reaction-store.js';
+import type { CanvasDocumentStore, CanvasService } from '../../canvas/index.js';
 import type { AttachmentRowStore } from '../attachments/attachment-row-store.js';
 import type { RoomAgentLookup } from '../room-errors.js';
 import type { RoomStore } from '../room-store.js';
@@ -91,6 +92,10 @@ export interface RoomServiceDeps {
   store: RoomStore;
   /** Reactions on this room's entries — durable state, never a turn. */
   reactions: ReactionStore;
+  /** The documents on this room's shared canvas. */
+  canvasDocuments: CanvasDocumentStore;
+  /** The one writer every canvas on this machine goes through. */
+  canvas: CanvasService;
   /** The rows behind this room's attachments. The BYTES live behind a separate seam. */
   attachments: AttachmentRowStore;
   authors: AuthorRegistry;
@@ -184,6 +189,33 @@ export interface RoomServiceDeps {
    * `rooms.toolOnlyReplies` is on.
    */
   maxPostsPerTurn(): number;
+  /**
+   * The live `rooms.maxCanvasOpsPerTurn` — how many times one agent may change a
+   * room's shared canvas inside a single turn (spec `room-canvas` §3.4).
+   *
+   * Injected and read PER OPERATION for the same reasons its sibling above is:
+   * this domain reads no config, and moving the number in Settings has to bind
+   * the very next change rather than the next server start.
+   */
+  maxCanvasOpsPerTurn(): number;
+  /**
+   * The room's own shared checkout, or `null` when the room has no files.
+   *
+   * Read at canvas-read time to answer the §8.1 question — is this document's
+   * tree one every member can already read? Injected rather than reached for,
+   * because WHERE a room's files live is a deployment decision made once in
+   * `index.ts` and not something this domain may decide.
+   */
+  roomRepoPath(roomId: string): string | null;
+  /**
+   * The clock a canvas edit lock is judged against.
+   *
+   * Optional, and absent in production, where it is `Date.now`. It exists for
+   * the one property that cannot be asserted any other way: the lock's TTL is
+   * evaluated LAZILY, so proving it lapses means moving the clock rather than
+   * waiting forty-five seconds.
+   */
+  canvasNow?(): number;
   /**
    * Whether this author is the person who owns the install.
    *

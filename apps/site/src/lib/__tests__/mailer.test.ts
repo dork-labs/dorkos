@@ -132,6 +132,93 @@ describe('mailer (Resend seam)', () => {
       expect(payload.html).toMatch(/only email you about this report/i);
     });
 
+    it('sends a versionless shipped email when no version is known', async () => {
+      // The common real case: the feedback intake team has no projects and
+      // cycles disabled, so `resolveShippedVersion` never resolves anything.
+      await sendFeedbackShipped(TO, {
+        message: 'Chat stopped updating after the stream dropped.\nMore detail here.',
+        changelogUrl: 'https://dorkos.ai/docs/changelog',
+      });
+
+      expect(sendMock).toHaveBeenCalledTimes(1);
+      const payload = sendMock.mock.calls[0][0] as { to: string; subject: string; html: string };
+      expect(payload.to).toBe(TO);
+      expect(payload.subject).toBe('Your DorkOS report shipped');
+      // No dangling "in undefined"/"in v" where the version used to be.
+      expect(payload.subject).not.toMatch(/\bin\b/);
+      expect(payload.html).toContain('Good news: this shipped.');
+      expect(payload.html).not.toMatch(/undefined/);
+      // The link carries the weight the version otherwise would.
+      expect(payload.html).toContain('https://dorkos.ai/docs/changelog');
+      expect(payload.html).toContain('Chat stopped updating after the stream dropped.');
+      expect(payload.html).not.toContain('More detail here.');
+      expect(payload.html).toMatch(/only email you about this report/i);
+      // Claims no release the code cannot stand behind. Nobody here knows
+      // when a Done transition in Linear will actually go out.
+      expect(payload.html).not.toMatch(/recent|latest|release|version/i);
+    });
+
+    it('still names the version in the subject and body when one IS known', async () => {
+      await sendFeedbackShipped(TO, {
+        message: 'Add dark mode',
+        shippedVersion: '0.56.3',
+        changelogUrl: 'https://dorkos.ai/docs/changelog',
+      });
+
+      const payload = sendMock.mock.calls[0][0] as { subject: string; html: string };
+      expect(payload.subject).toBe('Your DorkOS report shipped in v0.56.3');
+      expect(payload.html).toContain('Good news: this shipped in v0.56.3.');
+    });
+
+    it('escapes HTML in the quoted report, so a report cannot inject markup', async () => {
+      // The report text is written by a stranger and this email is built as
+      // an HTML string, not JSX. The recipient may be an unverified `contact`
+      // address, so unescaped markup would arrive at a third party as a live
+      // link over our own signed sender. Unescape the interpolation in
+      // sendFeedbackShipped and this reds.
+      await sendFeedbackShipped(TO, {
+        message: '<script>alert(1)</script><a href="https://evil.test">Re-verify your account</a>',
+        changelogUrl: 'https://dorkos.ai/docs/changelog',
+      });
+
+      const payload = sendMock.mock.calls[0][0] as { html: string };
+      expect(payload.html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+      expect(payload.html).not.toContain('<script>');
+      // The attacker's URL still appears, but as inert text: its tag is
+      // entity-escaped, so a mail client renders it rather than linking it.
+      // (escapeHtml is text-content-only by design, so the quotes survive —
+      // harmless between tags. See its TSDoc.)
+      expect(payload.html).toContain('&lt;a href="https://evil.test"&gt;');
+      // The only *live* anchor in the email is ours, pointing at our own page.
+      expect(payload.html.match(/<a href=/g)).toHaveLength(1);
+      expect(payload.html).toContain('<a href="https://dorkos.ai/docs/changelog">');
+    });
+
+    it('escapes HTML in the version label, which comes off a Linear payload', async () => {
+      // `shippedVersion` is a milestone/cycle *name* read from a webhook, not
+      // a value this codebase chose.
+      await sendFeedbackShipped(TO, {
+        message: 'Add dark mode',
+        shippedVersion: '<img src=x onerror=alert(1)>',
+      });
+
+      const payload = sendMock.mock.calls[0][0] as { subject: string; html: string };
+      expect(payload.html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+      expect(payload.html).not.toContain('<img');
+      // The subject is a plain-text mail header, so it is NOT entity-escaped:
+      // escaping there would show the reader a literal "&lt;".
+      expect(payload.subject).toBe('Your DorkOS report shipped in <img src=x onerror=alert(1)>');
+    });
+
+    it('renders a versionless email with no link at all when none is passed', async () => {
+      await sendFeedbackShipped(TO, { message: 'Add dark mode' });
+
+      const payload = sendMock.mock.calls[0][0] as { subject: string; html: string };
+      expect(payload.subject).toBe('Your DorkOS report shipped');
+      expect(payload.html).not.toContain('<a href');
+      expect(payload.html).not.toMatch(/undefined/);
+    });
+
     it('includes the changelog link only when one is provided', async () => {
       await sendFeedbackShipped(TO, {
         message: 'Add dark mode',

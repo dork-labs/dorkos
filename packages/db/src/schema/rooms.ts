@@ -986,3 +986,160 @@ export const roomRepos = sqliteTable('room_repos', {
    */
   lastMergeSeq: integer('last_merge_seq'),
 });
+
+/**
+ * Every canvas document on this machine — a room's shared table and a person's
+ * own session canvas, in one table keyed by {@link canvasDocuments.scope}
+ * (specs `room-canvas` §1 and `canvas-agent-seat` §1.1).
+ *
+ * **Server-owned, both of them.** A session's canvas used to live in one
+ * browser's `localStorage`, so two tabs on one session held two different
+ * tables, a phone saw none of it, and no agent could read any of it. Both
+ * scopes are now a table: one set of rows every reader sees the same way, that
+ * survives a reload, and that an agent can read as well as write to.
+ *
+ * **Rows are closed, not tombstoned.** `close_canvas` deletes the row and the
+ * `canvas` frame that announces it carries the id and `closed: true`, so every
+ * viewer drops it. Nothing needs a tombstone, because a reconnecting viewer
+ * hydrates from the room snapshot and the canvas resync rather than from a delta
+ * log (§2).
+ *
+ * **Archiving keeps the rows and freezes them; deleting the room drops them.**
+ * Archive is a flag on `rooms`, so the cascade never fires: a dormant room keeps
+ * its whole table and shows it read-only. Every WRITE refuses on an archived
+ * room before touching this table (§3.7), on the precedent `postMergeEvent`
+ * sets; every READ still answers, which is the whole asymmetry of archiving —
+ * the record survives, the activity stops.
+ *
+ * **Every timestamp here is ISO-8601 `text`, not an integer**, because that is
+ * what every other table in this file already does (`rooms.created_at` and its
+ * siblings), with the caller supplying the value. A `{ mode: 'timestamp_ms' }`
+ * column would be the only one of its kind in the rooms schema and would read
+ * back as a `Date` where every sibling reads back as a string.
+ */
+export const canvasDocuments = sqliteTable(
+  'canvas_documents',
+  {
+    /**
+     * The document's id. Deterministic per `(scope, sourceKey)` when the content
+     * has a natural identity — a file path, a URL — so two agents opening the
+     * same file land on one document rather than two, which is what makes the
+     * table a table. Content with no natural identity (`json`, `widget`) gets a
+     * random ULID, so every open of one is a fresh document.
+     */
+    id: text('id').primaryKey(),
+    /**
+     * Who owns this document: `room:<roomId>` or `session:<sessionId>`.
+     *
+     * The owning key for every query and every index on this table, and for a
+     * session it is the CANONICAL session id — a brand-new session is rekeyed
+     * mid-first-turn, and `CanvasService.rekeyScope` renames the scope of every
+     * row in one statement when that happens (spec `canvas-agent-seat` §1.1).
+     */
+    scope: text('scope').notNull(),
+    /**
+     * The room this document belongs to, or `null` for a `session:` document.
+     *
+     * Nullable since the session canvas moved here (spec `canvas-agent-seat`
+     * §1.1): a session belongs to no room, so it stores `null` and the cascade
+     * keeps protecting only the rows that do have one. The invariant — a
+     * `room:` row's `room_id` equals its scope's id, a `session:` row's is
+     * `null` — is enforced in `CanvasService` rather than by a CHECK
+     * constraint, which is not something this schema uses anywhere. It matters:
+     * a session row carrying a `room_id` would be deleted by an unrelated room
+     * deletion.
+     */
+    roomId: text('room_id').references(() => rooms.id, { onDelete: 'cascade' }),
+    /** The `UiCanvasContent` union, JSON-encoded. Validated with its schema on read. */
+    content: text('content', { mode: 'json' }).notNull(),
+    /** Cached `content.title` (or the derived label) so a list does not parse every blob. */
+    title: text('title').notNull(),
+    /** `content.type` — one of the fourteen. Indexed: the Browser view is a query on it. */
+    contentType: text('content_type').notNull(),
+    /** The room author who put it here. A person's author id or an agent's. Never null. */
+    authorId: text('author_id').notNull(),
+    /** Dedupe key, or null for content with no natural identity (`json`, `widget`). */
+    sourceKey: text('source_key'),
+    /** Human label for where a file came from: `Ana's copy · 3 ahead of main`. */
+    sourceLabel: text('source_label'),
+    /** Absolute directory this document's `sourcePath` was resolved against, or null. */
+    resolvedCwd: text('resolved_cwd'),
+    /**
+     * WHICH tree that directory is, for the label a reader is shown: the room's
+     * own shared copy, one member's working copy of it, or somebody's own
+     * project. Null for a document that names no file.
+     *
+     * Stored rather than re-derived, because the answer depends on what the room
+     * held at OPEN time — a room that gains or loses a repo later must not
+     * silently relabel documents opened before it did.
+     */
+    treeKind: text('tree_kind'),
+    /**
+     * Commits this member's working copy had that the room's `main` did not, at
+     * open time — a snapshot with a timestamp, never a live number.
+     *
+     * Null means "not measured", never "level with the room". The two must not
+     * collapse: a label saying a copy is up to date when nothing checked is one
+     * somebody will act on.
+     */
+    aheadOfMain: integer('ahead_of_main'),
+    /** Pinned documents sort first and are never evicted. */
+    pinned: integer('pinned', { mode: 'boolean' }).notNull().default(false),
+    /**
+     * Monotonic per room, bumped on every write. It is what orders two frames
+     * racing for one document inside a client — a lower `rev` never overwrites a
+     * higher one — and it is deliberately NOT a stream cursor. The room stream
+     * has exactly one cursor and it is the highest durable ENTRY a reader holds.
+     */
+    rev: integer('rev').notNull(),
+    /**
+     * Who last opened or updated this document.
+     *
+     * On the ROW rather than in a process map, because it is what a bare
+     * `update_canvas` with no `documentId` acts on — the author's own last
+     * document — and a default that lived in memory would change meaning after a
+     * restart, mid-conversation.
+     */
+    lastTouchedBy: text('last_touched_by').notNull(),
+    /** When they did, ISO 8601. `(room, author)` ordered by this is that default. */
+    lastTouchedAt: text('last_touched_at').notNull(),
+    /** The room author currently holding the edit lock, or null. */
+    editingBy: text('editing_by'),
+    /**
+     * When that lock was last refreshed, ISO 8601.
+     *
+     * **Read lazily; a stale lock is simply not a lock.** No timer sweeps this
+     * table — a timer that expires locks is one that has to be cancelled on every
+     * close, restart and room deletion, and the failure mode of getting that
+     * wrong is a document nobody can ever edit again.
+     */
+    editingHeartbeatAt: text('editing_heartbeat_at'),
+    openedAt: text('opened_at').notNull(),
+    lastActiveAt: text('last_active_at').notNull(),
+    /**
+     * The room entry that roots this document's discussion thread, or null.
+     *
+     * Reserved by spec `canvas-agent-seat` §7 and written by no code in this
+     * build. It lands in the same migration as the nullability change above
+     * because SQLite recreates the table for either one, and two recreates of a
+     * table this size — for two changes decided at once — is a cost nobody is
+     * buying anything with.
+     */
+    threadRootEntryId: text('thread_root_entry_id'),
+  },
+  // **Keyed on `scope`, not `room_id`** (spec `canvas-agent-seat` §1.1). Every
+  // query in `CanvasDocumentStore` keys on the owner, and the owner is the
+  // scope: `room:<id>` for a room's table, `session:<id>` for one person's. A
+  // `session:` row has no `room_id` at all, so an index on it would leave every
+  // session query scanning the table.
+  (table) => [
+    index('idx_canvas_documents_scope').on(table.scope, table.lastActiveAt),
+    uniqueIndex('canvas_documents_source_unique').on(table.scope, table.sourceKey),
+    index('idx_canvas_documents_scope_type').on(table.scope, table.contentType),
+    index('idx_canvas_documents_last_touched').on(
+      table.scope,
+      table.lastTouchedBy,
+      table.lastTouchedAt
+    ),
+  ]
+);

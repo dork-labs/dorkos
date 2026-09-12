@@ -361,6 +361,26 @@ describe('projectInProgressTurn', () => {
     });
   });
 
+  it('carries the housekeeping mark onto the background_task part', () => {
+    // Spec `ambient-background-tasks`: the task bar decides what to draw from
+    // this part, so the mark has to survive the projection or a client that
+    // reconnected mid-turn draws work the runtime asked it to hide.
+    const events: SessionEvent[] = [
+      { seq: 1, type: 'subagent_update', taskId: 'chore', status: 'running', ambient: true },
+      { seq: 2, type: 'subagent_update', taskId: 'chore', status: 'running', toolUses: 2 },
+    ];
+    const parts = projectInProgressTurn(events);
+    expect(parts[0]).toMatchObject({ type: 'background_task', taskId: 'chore', ambient: true });
+  });
+
+  it('leaves the housekeeping mark off a part the runtime did not mark', () => {
+    const events: SessionEvent[] = [
+      { seq: 1, type: 'subagent_update', taskId: 'plain', status: 'running' },
+    ];
+    const parts = projectInProgressTurn(events);
+    expect(parts[0]).not.toHaveProperty('ambient', true);
+  });
+
   it('upserts repeated tool_call events for one id, appending input fragments', () => {
     // Real failure mode: the adapter's tool_call_start AND each streamed
     // input_json_delta fragment all normalize to `tool_call` — pushing a part

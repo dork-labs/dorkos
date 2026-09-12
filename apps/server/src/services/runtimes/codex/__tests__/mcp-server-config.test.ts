@@ -4,7 +4,6 @@
 import { describe, it, expect } from 'vitest';
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import { toCodexMcpServerConfig, toCodexMcpServers } from '../mcp-server-config.js';
-import { CODEX_UI_MCP_SERVER } from '../codex-ui-mcp-server.js';
 
 describe('toCodexMcpServerConfig', () => {
   it('maps a stdio connection to command/args/env', () => {
@@ -114,32 +113,29 @@ describe('toCodexMcpServers', () => {
     expect(skipped).toEqual(['stream']);
   });
 
-  it('drops reserved names so a managed server cannot occupy dorkos_ui', () => {
-    const { servers } = toCodexMcpServers(
-      { [CODEX_UI_MCP_SERVER]: stdio, files: stdio },
-      new Set([CODEX_UI_MCP_SERVER])
-    );
-    expect(servers).not.toHaveProperty(CODEX_UI_MCP_SERVER);
+  it('drops reserved names so a managed server cannot occupy dorkos', () => {
+    const { servers } = toCodexMcpServers({ dorkos: stdio, files: stdio }, new Set(['dorkos']));
+    expect(servers).not.toHaveProperty('dorkos');
     expect(servers).toHaveProperty('files');
   });
 
   it('REPORTS every dropped reserved name, so the caller can say so (DOR-1613)', () => {
-    // The drop was silent while `dorkos_ui` was the only reserved name, which
-    // nobody names a server. `dorkos` is a name a person plausibly used, and
-    // watching their tools vanish with no diagnostic is the failure this closes
-    // — so the names come back out, not just the survivors.
+    // The drop was silent while the retired `dorkos_ui` bridge was the only
+    // reserved name, which nobody names a server. `dorkos` is a name a person
+    // plausibly used, and watching their tools vanish with no diagnostic is the
+    // failure this closes — so the names come back out, not just the survivors.
     const { servers, reserved } = toCodexMcpServers(
-      { dorkos: stdio, [CODEX_UI_MCP_SERVER]: stdio, files: stdio },
-      new Set([CODEX_UI_MCP_SERVER, 'dorkos'])
+      { dorkos: stdio, notes: stdio, files: stdio },
+      new Set(['dorkos', 'notes'])
     );
-    expect(reserved.sort()).toEqual([CODEX_UI_MCP_SERVER, 'dorkos'].sort());
+    expect(reserved.sort()).toEqual(['dorkos', 'notes']);
     expect(servers).toEqual({ files: expect.anything() });
   });
 
   it('reports no collision when nothing was reserved', () => {
     // The discriminator on the case above: `reserved` has to be empty on the
     // ordinary path, or a caller that logs it would warn on every turn.
-    const { reserved } = toCodexMcpServers({ files: stdio }, new Set([CODEX_UI_MCP_SERVER]));
+    const { reserved } = toCodexMcpServers({ files: stdio }, new Set(['dorkos']));
     expect(reserved).toEqual([]);
   });
 

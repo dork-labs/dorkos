@@ -173,6 +173,7 @@ export type {
   AgentSessionStoreLike,
   TraceStoreLike,
   TasksStoreLike,
+  RefusedAskReporter,
   ExecutionSettingsResolver,
   TurnRuntimeTypeResolver,
   SessionRuntimeBinder,

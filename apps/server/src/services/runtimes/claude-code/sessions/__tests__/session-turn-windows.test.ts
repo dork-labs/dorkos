@@ -41,8 +41,13 @@ beforeAll(async () => {
   await initBoundary(CWD);
 });
 
-/** A `result` that answers `answers`, or one that answers nothing it can name. */
-function resultMessage(answers?: string): SDKMessage {
+/**
+ * A `result` that answers `answers`, or one that answers nothing it can name.
+ *
+ * @param answers - The id it names, through the singular field alone
+ * @param extra - Extra result fields (`queued_turn_count`, `user_message_uuids`, …)
+ */
+function resultMessage(answers?: string, extra: Record<string, unknown> = {}): SDKMessage {
   return {
     type: 'result',
     subtype: 'success',
@@ -51,12 +56,71 @@ function resultMessage(answers?: string): SDKMessage {
     uuid: `result-${answers ?? 'anonymous'}`,
     session_id: 'sdk-1',
     ...(answers !== undefined ? { user_message_uuid: answers } : {}),
+    ...extra,
   } as unknown as SDKMessage;
 }
 
 /**
- * The shape `SDKResultError` really has: no `user_message_uuid` field at all.
- * Every failed turn arrives looking like this.
+ * A `result` that names its WHOLE batch, as claude-agent-sdk 0.3.259 and later
+ * do: `user_message_uuids` in consumption order, with the singular field
+ * carrying the last member beside it exactly as the SDK documents ("always
+ * contains user_message_uuid").
+ *
+ * Carrying both is what makes the tests below mutation-proof: code that reads
+ * only the singular field still sees a plausible result and still closes the
+ * window, so a case that goes red on the singular reader is red for a reason
+ * about the LIST, never about a fixture the old code could not parse.
+ *
+ * @param answers - Every id this turn consumed, in order
+ * @param extra - Extra result fields (`resume_reason`, `local_command`, …)
+ */
+function coalescedResultMessage(
+  answers: readonly string[],
+  extra: Record<string, unknown> = {}
+): SDKMessage {
+  return {
+    type: 'result',
+    subtype: 'success',
+    is_error: false,
+    total_cost_usd: 0.01,
+    uuid: `result-${answers.join('+')}`,
+    session_id: 'sdk-1',
+    user_message_uuids: [...answers],
+    user_message_uuid: answers.at(-1),
+    ...extra,
+  } as unknown as SDKMessage;
+}
+
+/**
+ * The SDK's live thinking estimate (`system/thinking_tokens`), stamped since
+ * 0.3.260 with the id of the message whose turn is thinking.
+ *
+ * The only thing a turn emits while thinking is redacted — the API streams
+ * pings and the SDK digests them into this — so it is the earliest possible
+ * proof that a turn has started.
+ *
+ * @param answers - The message this thinking belongs to, if the SDK named one
+ */
+function thinkingTokensMessage(answers?: string): SDKMessage {
+  return {
+    type: 'system',
+    subtype: 'thinking_tokens',
+    estimated_tokens: 128,
+    estimated_tokens_delta: 32,
+    session_id: 'sdk-1',
+    uuid: `thinking-${answers ?? 'anonymous'}`,
+    ...(answers !== undefined ? { user_message_uuid: answers } : {}),
+  } as unknown as SDKMessage;
+}
+
+/**
+ * A `result` that names no message at all.
+ *
+ * This used to be the shape of every `SDKResultError`: until claude-agent-sdk
+ * 0.3.268 the error result declared no `user_message_uuid`, so a failed turn
+ * could arrive no other way. At 0.3.268 it declares one, so this is now the
+ * shape of any result that simply carried no id — the case row 2 of the module's
+ * table still has to answer, and the one this fixture is for.
  */
 function errorResultMessage(): SDKMessage {
   return {
@@ -389,6 +453,150 @@ describe('SessionTurnWindows — a turn opens on dispatch and closes on its resu
     expect(h.windows.openWindow).toBeUndefined();
   });
 
+  // Row 1 through the SDK's own list rather than through an inference. The
+  // outcome matches the case above by construction — one window, one result —
+  // and that is the point: reading the list changed nothing about the ordinary
+  // shape, which is what let it be adopted at all.
+  it('closes a coalesced window on the full list of messages the turn answered', async () => {
+    const h = harness();
+
+    await h.dispatch([
+      { content: 'first', messageId: 'm1' },
+      { content: 'second', messageId: 'm2' },
+    ]);
+    h.live().emit(coalescedResultMessage(['m1', 'm2']));
+    await settled(h, 1);
+
+    expect(h.windowsOnStream()).toHaveLength(1);
+    expect(h.windowsOnStream()[0]!.types.filter((t) => t === 'turn_end')).toHaveLength(1);
+    expect(h.windows.openWindow).toBeUndefined();
+    expect(h.pump.state).toBe('warm');
+  });
+
+  // What reading the list is FOR, and the one case the singular field cannot
+  // answer. A coalesced result names only its LAST member in `user_message_uuid`,
+  // so `m1` used to stay on the sent-but-unanswered ledger after the process had
+  // demonstrably spoken for it — and a later result naming `m1` would then close
+  // a window that had nothing to do with it, through the DOR-1294 branch.
+  //
+  // Revert `readAnsweredIds` to the singular field and the last assertion goes
+  // red: m3's window closes on a result for a message answered two turns ago.
+  it('retires every id the list names, so a spent one cannot close a later window', async () => {
+    const h = harness();
+
+    await h.dispatch([
+      { content: 'first', messageId: 'm1' },
+      { content: 'second', messageId: 'm2' },
+    ]);
+    h.live().emit(coalescedResultMessage(['m1', 'm2']));
+    await settled(h, 1);
+
+    await h.windows.dispatch([{ content: 'third', messageId: 'm3' }], CWD);
+    expect(h.windows.openWindow?.ids).toEqual(['m3']);
+
+    // The CLI says something about `m1` again. It has already been spoken for,
+    // so it is evidence about nothing — least of all about m3's turn.
+    h.live().emit(resultMessage('m1'));
+    await vi.waitFor(() => expect(h.opened.length).toBe(3));
+
+    expect(h.windows.openWindow?.ids).toEqual(['m3']);
+    expect(h.pump.state).toBe('running');
+  });
+
+  // The fallback the SDK itself prescribes. Delivery-failure results, zeroed
+  // results and older producers carry no list, and an EMPTY list is the same
+  // "names nothing" as a missing one — so both have to reach the singular field
+  // rather than being read as a result that answered no message at all.
+  it('falls back to the singular id when the list is empty', async () => {
+    const h = harness();
+
+    await h.dispatch([{ content: 'hello', messageId: 'm1' }]);
+    h.live().emit(resultMessage('m1', { user_message_uuids: [] }));
+    await settled(h, 1);
+
+    expect(h.windowsOnStream()).toHaveLength(1);
+    expect(h.windows.openWindow).toBeUndefined();
+    expect(h.pump.state).toBe('warm');
+  });
+
+  // The two fields are supposed to agree — the SDK documents the list as always
+  // containing the singular id — so a producer where they DON'T is a vendor bug.
+  // Preferring the list and discarding the singular makes that bug ours: the
+  // window this result really answers is never named, so it strands, and a
+  // runtime window opens beside it for the id nobody sent. Taking the union
+  // costs a spurious id that correlates nothing and keeps the window closable.
+  it('does not drop a singular id the list contradicts', async () => {
+    const h = harness();
+
+    await h.dispatch([{ content: 'hello', messageId: 'm1' }]);
+    h.live().emit(resultMessage('m1', { user_message_uuids: ['ghost'] }));
+    await settled(h, 1);
+
+    expect(h.windowsOnStream()).toHaveLength(1);
+    expect(h.windows.openWindow).toBeUndefined();
+    expect(h.pump.state).toBe('warm');
+  });
+
+  // `resume_reason` is set ONLY on the automatic re-run of a turn a host restart
+  // interrupted, so a runtime window carrying one is explained rather than
+  // surprising. Saying that at `warn` alongside genuine "the CLI answered
+  // something nobody sent" trains people to ignore both.
+  it('says why a turn nobody asked for happened, when the SDK explains it', async () => {
+    const info = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    try {
+      const h = harness();
+
+      await h.dispatch([{ content: 'hello', messageId: 'm1' }]);
+      h.live().emit(
+        coalescedResultMessage(['m-rerun'], {
+          resume_reason: 'host_draining',
+          result_index: 4,
+        })
+      );
+      await vi.waitFor(() => expect(h.opened.length).toBe(2));
+      await h.projected[1];
+
+      // The dispatched window is untouched — an explained turn is still not this
+      // window's turn.
+      expect(h.windows.openWindow?.ids).toEqual(['m1']);
+      expect(h.windowsOnStream().at(-1)?.origin).toBe('runtime');
+
+      const explained = info.mock.calls.find((call) =>
+        String(call[0]).includes('a turn DorkOS did not ask for')
+      );
+      expect(explained?.[1]).toMatchObject({ resumeReason: 'host_draining', resultIndex: 4 });
+      expect(
+        warn.mock.calls.some((call) => String(call[0]).includes('this session never sent'))
+      ).toBe(false);
+    } finally {
+      info.mockRestore();
+      warn.mockRestore();
+    }
+  });
+
+  // The other explained shape: a slash command the CLI ran without ever entering
+  // the model loop. Same treatment, and for the same reason — DorkOS did not
+  // dispatch it, but nothing went wrong.
+  it('says so for a local slash command that never entered the model loop', async () => {
+    const info = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    try {
+      const h = harness();
+
+      await h.dispatch([{ content: 'hello', messageId: 'm1' }]);
+      h.live().emit(coalescedResultMessage(['m-local'], { local_command: '/context' }));
+      await vi.waitFor(() => expect(h.opened.length).toBe(2));
+      await h.projected[1];
+
+      const explained = info.mock.calls.find((call) =>
+        String(call[0]).includes('a turn DorkOS did not ask for')
+      );
+      expect(explained?.[1]).toMatchObject({ localCommand: '/context' });
+    } finally {
+      info.mockRestore();
+    }
+  });
+
   // The mutation this correlation exists to survive: a result naming a message
   // this session never sent is NOT this window's result. Closing on it would
   // end a turn that is still running and hand the person a half-turn.
@@ -437,11 +645,11 @@ describe('SessionTurnWindows — a turn opens on dispatch and closes on its resu
     expect(h.opened[1]!.ids).toEqual([]);
   });
 
-  // Reality beating the spec's phrasing: `SDKResultError` declares no
-  // `user_message_uuid`, so every FAILED turn arrives unnamed. Treating it as
-  // uncorrelated would strand the open window on exactly the turns that went
-  // wrong.
-  it('closes the open window on an unnamed result, because error results carry no id', async () => {
+  // Row 2 of the module's table. Treating a result that names nothing as
+  // uncorrelated would strand the open window forever — which, before SDK
+  // 0.3.268 declared `user_message_uuid` on the error result, meant stranding it
+  // on exactly the turns that went wrong.
+  it('closes the open window on a result that names no message', async () => {
     const h = harness();
 
     await h.dispatch([{ content: 'hello', messageId: 'm1' }]);
@@ -452,6 +660,31 @@ describe('SessionTurnWindows — a turn opens on dispatch and closes on its resu
     expect(windows).toHaveLength(1);
     const end = windows[0]!.events.find((e) => e.type === 'turn_end');
     expect(end).toMatchObject({ terminalReason: 'error' });
+    expect(h.pump.state).toBe('warm');
+  });
+
+  // The same failure under SDK 0.3.268, which declares `user_message_uuid` on
+  // `SDKResultError` too. A named failure is row 1 rather than row 2: it closes
+  // the dispatch it NAMES instead of closing whatever happened to be open. Same
+  // outcome here by construction — one window is open and the result names it —
+  // and that is the point: `readAnsweredIds` reads the fields off the message, so
+  // the vendor moving it between branches changed no behavior at all.
+  it('closes the named window when a failed result carries an id (SDK 0.3.268)', async () => {
+    const h = harness();
+
+    await h.dispatch([{ content: 'hello', messageId: 'm1' }]);
+    h.live().emit({
+      ...(errorResultMessage() as unknown as Record<string, unknown>),
+      user_message_uuid: 'm1',
+    } as unknown as SDKMessage);
+    await settled(h, 1);
+
+    const windows = h.windowsOnStream();
+    expect(windows).toHaveLength(1);
+    expect(h.opened[0]!.ids).toEqual(['m1']);
+    expect(windows[0]!.events.find((e) => e.type === 'turn_end')).toMatchObject({
+      terminalReason: 'error',
+    });
     expect(h.pump.state).toBe('warm');
   });
 
@@ -963,6 +1196,49 @@ describe('SessionTurnWindows — a late result cannot strand the open window (DO
     expect(h.queries).toHaveLength(1);
   });
 
+  // The SAME sequence under an SDK that names the whole list, which is what the
+  // plural field was added for. The CLI answers the queued steer coalesced with
+  // turn 4, and the result now names BOTH — so turn 4's window closes on its own
+  // id (row 1) rather than on a stranger's (row 3), and nothing has to be
+  // recognised through the ledger at all.
+  //
+  // The assertion that carries the weight is the `warn`: row 3 says out loud
+  // that a result answered an EARLIER window's message, and that sentence is no
+  // longer true of this shape. The singular field still names the STEER here,
+  // exactly as the live measurement saw it, so reading only that field puts this
+  // back on row 3 and the assertion goes red.
+  it('closes turn four on its own id when the list names the steer beside it', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    try {
+      const h = harness();
+
+      await h.dispatch([{ content: 'do the thing', messageId: 'm-turn3' }]);
+      expect(h.windows.steerOpenWindow('m-steer')).toBe(true);
+      h.live().emit(resultMessage('m-turn3'));
+      await settled(h, 1);
+
+      await h.windows.dispatch([{ content: 'and now this', messageId: 'm-turn4' }], CWD);
+      h.live().emit(coalescedResultMessage(['m-turn4', 'm-steer']));
+      await settled(h, 2);
+
+      expect(h.windows.openWindow).toBeUndefined();
+      expect(h.pump.state).toBe('warm');
+      const windows = h.windowsOnStream();
+      expect(windows).toHaveLength(2);
+      for (const window of windows) {
+        expect(window.types.filter((t) => t === 'turn_end')).toHaveLength(1);
+        expect(window.events.find((e) => e.type === 'turn_end')).not.toMatchObject({
+          terminalReason: 'error',
+        });
+      }
+      expect(
+        warn.mock.calls.some((call) => String(call[0]).includes('an earlier window sent'))
+      ).toBe(false);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   // The ledger is a memory of what was SENT, not of every id ever seen: an id
   // nobody sent is still a turn of the CLI's own, and it must not close a
   // person's window. This is the guard the `sentEarlier` branch must not swallow
@@ -1352,6 +1628,222 @@ describe('a steered window waits for the continuation, and only for that (DOR-13
         (e) => e.type === 'text_delta' && e.text === 'answering the second steer'
       )
     ).toBe(true);
+  });
+
+  // Two steers, both folded into the one turn. The singular field names only the
+  // LAST of them, so reading it alone leaves the FIRST steer outstanding and the
+  // window spends a whole grace waiting for a continuation that already happened
+  // — the `keeps waiting while a SECOND steer is still unanswered` case below,
+  // reached by accident on a turn where nothing is actually outstanding.
+  //
+  // The list names both, so nothing is outstanding and the window closes at
+  // once. A five-second grace against vitest's one-second `waitFor` is what
+  // makes that an assertion rather than a coincidence.
+  it('does not wait when the list names every steer the turn folded in', async () => {
+    const h = harness({ graceMs: 5_000, capMs: 5_000 });
+
+    await h.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
+    expect(h.windows.steerOpenWindow('steer-1')).toBe(true);
+    expect(h.windows.steerOpenWindow('steer-2')).toBe(true);
+    h.live().emit(textDeltaMessage('answering all three at once'));
+    h.live().emit(coalescedResultMessage(['m1', 'steer-1', 'steer-2']));
+
+    await settled(h, 1);
+    expect(h.windowsOnStream()).toHaveLength(1);
+    expect(h.windows.openWindow).toBeUndefined();
+  });
+
+  /**
+   * `queued_turn_count` may only ever ADD to the wait, never shorten it. Every
+   * case below is about that asymmetry.
+   */
+  describe("the CLI's own count of what is still queued (SDK 0.3.243)", () => {
+    // A positive count is the CLI stating, about its own queue, that another
+    // turn runs without anybody sending anything else. That is evidence, so the
+    // window waits toward the CAP rather than the short grace — a 40ms grace
+    // against a 400ms cap, with the continuation arriving at 150ms, is red
+    // unless the count was read.
+    it('waits toward the cap when the CLI says a turn is still queued', async () => {
+      const h = harness({ graceMs: 40, capMs: 400 });
+
+      await h.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
+      expect(h.windows.steerOpenWindow('steer-1')).toBe(true);
+      h.live().emit(textDeltaMessage('the first answer'));
+      h.live().emit(resultMessage('m1', { queued_turn_count: 1 }));
+
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      h.live().emit(textDeltaMessage('and the steer, in its own turn'));
+      h.live().emit(resultMessage('steer-1'));
+      await settled(h, 1);
+
+      const windows = h.windowsOnStream();
+      expect(windows).toHaveLength(1);
+      expect(
+        windows[0]!.events.some(
+          (e) => e.type === 'text_delta' && e.text === 'and the steer, in its own turn'
+        )
+      ).toBe(true);
+    });
+
+    // A `0` is NOT evidence of an empty queue, and this is the shape that says
+    // why. The SDK counts sends "still waiting in the command queue when this
+    // result was produced" — a snapshot taken as the result object is built. A
+    // steer DorkOS writes after that assignment and before the CLI's read loop
+    // comes back around is real, is coming, and is not in the count. That gap is
+    // the tail-of-turn timing DOR-1312 measured.
+    //
+    // So a `0` keeps the short grace, and the continuation lands INSIDE the
+    // dispatched window. Make `0` close the window instead and this goes red
+    // twice over: one window becomes two, and the second is the `runtime` one
+    // `PersistentDispatch` drains and drops.
+    it('keeps the grace on a zero count, so a racing continuation is not lost', async () => {
+      const h = harness({ graceMs: 200, capMs: 400 });
+
+      await h.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
+      expect(h.windows.steerOpenWindow('steer-1')).toBe(true);
+      h.live().emit(textDeltaMessage('the first answer'));
+      // The snapshot says nothing is queued. The steer reached the CLI after it.
+      h.live().emit(resultMessage('m1', { queued_turn_count: 0 }));
+      h.live().emit(textDeltaMessage('the steer, answered after all'));
+      h.live().emit(resultMessage('steer-1'));
+
+      await settled(h, 1);
+      const windows = h.windowsOnStream();
+      expect(windows).toHaveLength(1);
+      expect(windows[0]!.origin).toBeUndefined();
+      expect(
+        windows[0]!.events.some(
+          (e) => e.type === 'text_delta' && e.text === 'the steer, answered after all'
+        )
+      ).toBe(true);
+    });
+
+    // An absent field is "this producer does not say", and it must change
+    // NOTHING — that is what makes reading the field safe on every older CLI and
+    // on the surfaces the SDK documents as having no command queue at all. A 40ms
+    // grace expiring on its own is the pre-0.3.243 behaviour, unchanged.
+    it('falls through to the grace when the CLI said nothing at all', async () => {
+      const h = harness({ graceMs: 40, capMs: 200 });
+
+      await h.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
+      expect(h.windows.steerOpenWindow('steer-1')).toBe(true);
+      h.live().emit(textDeltaMessage('the first answer'));
+      h.live().emit(resultMessage('m1'));
+
+      // Still open immediately after the result: it deferred, exactly as before.
+      expect(h.windows.openWindow?.ids).toEqual(['m1', 'steer-1']);
+
+      await settled(h, 1);
+      expect(h.windowsOnStream()).toHaveLength(1);
+      expect(h.rawStream().some((e) => e.type === 'error')).toBe(false);
+    });
+
+    // Deliberately NOT tested here: that a negative count is normalized away.
+    // `readQueuedTurnCount` does normalize it, but the only reader asks
+    // `> 0` — so a negative and an absent field take the same branch, and any
+    // test written against a window could not tell them apart. It would pass
+    // whether the guard existed or not, which is the one thing a test may never
+    // do. The guard is there so the function's own contract ("a count of zero or
+    // more, or nothing") holds for the next reader; see its TSDoc.
+
+    // A FAILED turn gets the same treatment, and that is a decision rather than
+    // an oversight. The module used to call an error result terminal whatever
+    // was outstanding — which it got for free, because before SDK 0.3.268 an
+    // `SDKResultError` carried no id and could not reach this wait at all. It
+    // names its dispatch now, and the snapshot race above applies to a steer at
+    // the tail of a FAILING turn exactly as it does to a healthy one. DorkOS
+    // cannot tell whether the CLI ran or discarded that steer, so it waits the
+    // short grace and shows the answer if one comes.
+    it('gives a failed turn the same short grace, and shows the answer if it comes', async () => {
+      const h = harness({ graceMs: 200, capMs: 400 });
+
+      await h.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
+      expect(h.windows.steerOpenWindow('steer-1')).toBe(true);
+      h.live().emit({
+        ...(errorResultMessage() as unknown as Record<string, unknown>),
+        user_message_uuid: 'm1',
+        queued_turn_count: 0,
+      } as unknown as SDKMessage);
+      h.live().emit(textDeltaMessage('answering the steer after the failure'));
+      h.live().emit(resultMessage('steer-1'));
+
+      await settled(h, 1);
+      const windows = h.windowsOnStream();
+      expect(windows).toHaveLength(1);
+      expect(
+        windows[0]!.events.some(
+          (e) => e.type === 'text_delta' && e.text === 'answering the steer after the failure'
+        )
+      ).toBe(true);
+    });
+
+    // ...and when nothing comes, it still settles on the CLI's own terminal
+    // rather than hanging. The grace expiring is a clean close.
+    it('settles a failed turn on its own result when no continuation comes', async () => {
+      const h = harness({ graceMs: 40, capMs: 200 });
+
+      await h.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
+      expect(h.windows.steerOpenWindow('steer-1')).toBe(true);
+      h.live().emit({
+        ...(errorResultMessage() as unknown as Record<string, unknown>),
+        user_message_uuid: 'm1',
+      } as unknown as SDKMessage);
+
+      await settled(h, 1);
+      const windows = h.windowsOnStream();
+      expect(windows).toHaveLength(1);
+      expect(windows[0]!.events.find((e) => e.type === 'turn_end')).toMatchObject({
+        terminalReason: 'error',
+      });
+      expect(h.windows.openWindow).toBeUndefined();
+    });
+  });
+
+  // A steer answered by a THINKING turn. The CLI has started the continuation
+  // but says nothing while thinking is redacted — only `thinking_tokens` frames,
+  // which since SDK 0.3.260 name the message whose turn they belong to. Read as
+  // mere proof of life they merely postpone the close to the cap, and extended
+  // thinking outruns any cap: a 120ms cap against 250ms of thinking drops the
+  // whole continuation into a runtime window nothing projects, which is the
+  // DOR-1314 loss reached by a different road.
+  it('lets a thinking continuation outlast the cap when the frame names the steer', async () => {
+    const h = harness({ graceMs: 40, capMs: 120 });
+    await steeredAndAnswered(h, [thinkingTokensMessage('steer-1')]);
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    h.live().emit(textDeltaMessage('here is what I thought about'));
+    h.live().emit(resultMessage('steer-1'));
+
+    await settled(h, 1);
+    const windows = h.windowsOnStream();
+    expect(windows).toHaveLength(1);
+    expect(
+      windows[0]!.events.some(
+        (e) => e.type === 'text_delta' && e.text === 'here is what I thought about'
+      )
+    ).toBe(true);
+  });
+
+  // The other half of that read, and the reason it is narrowed to a STEERED id.
+  // A thinking frame naming the dispatch that just ended belongs to the turn
+  // that finished — it is proof the process is alive and nothing more, so it
+  // buys time within the cap exactly as any other bookkeeping does and must not
+  // hold a finished turn open forever.
+  it('treats a thinking frame for the turn that just ended as mere proof of life', async () => {
+    const h = harness({ graceMs: 40, capMs: 200 });
+    await steeredAndAnswered(h);
+
+    const chatter = setInterval(() => h.live().emit(thinkingTokensMessage('m1')), 20);
+    try {
+      await settled(h, 1);
+    } finally {
+      clearInterval(chatter);
+    }
+
+    const windows = h.windowsOnStream();
+    expect(windows).toHaveLength(1);
+    expect(windows[0]!.types.at(-1)).toBe('turn_end');
+    expect(h.rawStream().some((e) => e.type === 'error')).toBe(false);
   });
 
   it('does not wait at all when the result names the steer itself', async () => {

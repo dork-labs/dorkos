@@ -2,6 +2,57 @@
   "version": 1,
   "specs": [
     {
+      "id": "260912-023441",
+      "slug": "canvas-agent-seat",
+      "title": "The canvas agent seat",
+      "created": "2026-09-12",
+      "status": "specified",
+      "project": "Canvas and Browser in Rooms"
+    },
+    {
+      "id": "260911-195750",
+      "slug": "room-canvas",
+      "title": "Canvas and Browser in rooms",
+      "created": "2026-09-11",
+      "status": "implemented",
+      "project": "Canvas and Browser in Rooms"
+    },
+    {
+      "id": "260911-181432",
+      "slug": "claude-agent-sdk-upgrade-0.3.268",
+      "title": "Claude Agent SDK Upgrade to 0.3.268",
+      "created": "2026-09-11",
+      "status": "implemented"
+    },
+    {
+      "id": "260911-191248",
+      "slug": "ambient-background-tasks",
+      "title": "Housekeeping tasks stay quiet",
+      "created": "2026-09-11",
+      "status": "implemented"
+    },
+    {
+      "id": "260911-191245",
+      "slug": "auto-mode-classifier-context",
+      "title": "Telling auto mode what it cannot see",
+      "created": "2026-09-11",
+      "status": "implemented"
+    },
+    {
+      "id": "260911-191243",
+      "slug": "unattended-session-permission-prompts",
+      "title": "Sessions with nobody to answer",
+      "created": "2026-09-11",
+      "status": "implemented"
+    },
+    {
+      "id": "260911-191240",
+      "slug": "plugin-reload-cache-cost",
+      "title": "Plugin reloads that respect the prompt cache",
+      "created": "2026-09-11",
+      "status": "implemented"
+    },
+    {
       "id": "260910-001729",
       "slug": "composio-managed-auth-defaults",
       "title": "Make Composio services ready to connect with managed sign-in defaults",
@@ -2926,6 +2977,15 @@
       "status": "implemented",
       "project": "Sessions & Runtimes",
       "linearIssue": "DOR-1925"
+    },
+    {
+      "id": "260912-190726",
+      "slug": "approval-expiry-notice",
+      "title": "Telling an agent nobody ever answered",
+      "created": "2026-09-12",
+      "status": "specified",
+      "project": "Agents as First-Class Operators",
+      "linearIssue": "DOR-1932"
     }
   ]
 }

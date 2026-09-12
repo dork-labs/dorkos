@@ -1,7 +1,16 @@
 import type { UiCommand, UiCanvasContent, UiPanelId, UiSidebarTab } from '@dorkos/shared/types';
-import { resolveViewerForPath, type CanvasViewerType } from '@dorkos/shared/viewer-registry';
+import { canvasContentForFile } from '@dorkos/shared/viewer-registry';
 import { toast } from 'sonner';
 import type { PipContent } from '@/layers/shared/model';
+// The key factory by its own path, NOT through `shared/model`'s barrel: this
+// module is on `shared/lib`'s barrel, and a VALUE import of that barrel pulls a
+// Transport into every `import { cn } from '@/layers/shared/lib'` (DOR-1809,
+// pinned by `__tests__/barrel-transport-isolation.test.ts`). `query-persister`
+// reaches the same factory the same way, and `one-config-query-key.test.ts`
+// keeps it the only spelling of the key.
+import { configKeys } from '@/layers/shared/model/server-config/query-keys';
+import { queryClient } from './query-client';
+import { canvasViewForContent } from '@dorkos/shared/canvas-view';
 import { getPlatform } from './platform';
 import { fireCelebration, type CelebrationOrigin } from './celebrations/celebration-effects';
 
@@ -38,9 +47,12 @@ export interface DispatcherStore {
    * is being edited keeps its content (ADR-0292).
    */
   openCanvasDocument: (content: UiCanvasContent) => void;
+  /** Take one document off the canvas by id (the `close_canvas` documentId arm). */
+  closeCanvasDocument: (id: string) => void;
   /**
-   * Mutate the active document's content. A no-op while that document is being
-   * edited, so the in-canvas editor stays the sole writer (ADR-0292).
+   * Mutate the active document of the view this content belongs to. A no-op
+   * while that document is being edited, so the in-canvas editor stays the sole
+   * writer (ADR-0292).
    */
   updateActiveDocument: (content: UiCanvasContent) => void;
   setCanvasPreferredWidth: (width: number | null) => void;
@@ -77,8 +89,80 @@ export type UiCommandOrigin = 'user' | 'agent';
 /** Right-panel tab id the canvas contribution registers under (init-extensions). */
 const CANVAS_TAB_ID = 'canvas';
 
+/** Right-panel tab id the browser contribution registers under (init-extensions). */
+const BROWSER_TAB_ID = 'browser';
+
 /** Right-panel tab id the terminal contribution registers under (init-extensions). */
 const TERMINAL_TAB_ID = 'terminal';
+
+/**
+ * Which `ui` commands are safe to run from a surface that has **no session**
+ * behind it — a room message, chiefly (DOR-1997).
+ *
+ * A widget in a session belongs to that session, so a command it fires lands
+ * where the person who is reading it already is. A widget in a room message
+ * belongs to nobody: the message may have been written by an agent nobody in
+ * the room runs, or relayed in from a bridged Telegram or Slack room by a
+ * stranger, and every viewer's click runs against THEIR app. So the
+ * session-shaped commands are exactly the dangerous ones there — a
+ * `browser_navigate` writes an arbitrary URL into whichever session's canvas
+ * the reader happens to have open, with no confirmation and nothing on screen
+ * to say where it came from.
+ *
+ * `true` means the command changes only local, visible, reversible chrome the
+ * reader can undo by looking at it: a panel, the palette, a toast, the theme,
+ * some confetti. Everything else is `false`, including commands that merely
+ * look harmless (`open_sidebar`, `close_canvas`, `scroll_to_message`) — an
+ * allowlist earns its keep by erring closed, and nothing has asked for them.
+ *
+ * **Exhaustive on purpose.** It is a `Record` over the whole `UiCommand` union,
+ * so a 23rd command added to the schema fails this file's typecheck until
+ * somebody decides which side of the line it is on. That decision must never be
+ * made by a default.
+ */
+const LOCAL_UI_ONLY_COMMANDS: Record<UiCommand['action'], boolean> = {
+  // Local, visible, reversible chrome.
+  open_panel: true,
+  close_panel: true,
+  toggle_panel: true,
+  open_command_palette: true,
+  show_toast: true,
+  set_theme: true,
+  celebrate: true,
+  // Canvas, browser, file and diff — all write into a session's own document
+  // store, keyed by whichever session the reader has open.
+  open_canvas: false,
+  update_canvas: false,
+  close_canvas: false,
+  open_file: false,
+  open_diff: false,
+  browser_navigate: false,
+  // The terminal runs commands; PiP follows a session's newest fence.
+  open_terminal: false,
+  open_pip: false,
+  close_pip: false,
+  // These move the reader somewhere, or change what their app IS.
+  switch_agent: false,
+  apply_layout: false,
+  scroll_to_message: false,
+  // Embedded-shell chrome, off the approved list rather than judged harmless.
+  open_sidebar: false,
+  close_sidebar: false,
+  switch_sidebar_tab: false,
+};
+
+/**
+ * Whether `command` may run with no session behind the widget that fired it.
+ *
+ * Read by `features/gen-ui`'s action state, which renders a control inert when
+ * this is `false` on a session-less surface — see {@link LOCAL_UI_ONLY_COMMANDS}
+ * for what the line is and why it is drawn where it is.
+ *
+ * @param command - The `ui` command a control is about to render or fire.
+ */
+export function isLocalUiOnlyCommand(command: UiCommand): boolean {
+  return LOCAL_UI_ONLY_COMMANDS[command.action];
+}
 
 /** Dependencies injected by the caller. All are obtainable outside React. */
 export interface DispatcherContext {
@@ -113,9 +197,18 @@ export interface DispatcherContext {
    */
   applyShape?: (shape: string) => void;
   /**
-   * Optional extension → viewer overrides (config `workbench.defaultViewers`)
-   * consulted when resolving an `open_file` command's viewer. Omit to use only
-   * the built-in registry defaults.
+   * Extension → viewer overrides (config `workbench.defaultViewers`) consulted
+   * when resolving an `open_file` command's viewer.
+   *
+   * **Omit it in production.** Four places build a context and any of them can
+   * carry an `open_file`, so plumbing the value through each was four chances to
+   * forget one — and forgetting one is not a missing feature, it is a SECOND
+   * answer to "what does opening this file mean": the server resolves
+   * `chart.png` to `{type:'file'}` under `{png:'file'}` while a blind client
+   * resolves it to `{type:'image'}`, and the two `canvasSourceKey`s give one
+   * file two tabs. So the default comes from {@link workbenchViewerOverrides},
+   * which reads the same config the server reads, and this field exists for a
+   * test that wants to state the overrides inline.
    */
   workbenchViewerOverrides?: Record<string, string>;
   /**
@@ -141,6 +234,22 @@ export interface DispatcherContext {
    * which have no originating session — `open_pip` then degrades to a toast.
    */
   sessionId?: string;
+  /**
+   * Whether the SERVER has already applied this command's canvas effect (spec
+   * `canvas-agent-seat` §1.5).
+   *
+   * True on exactly one path: the `ui_command` events arriving on a session's
+   * own stream. A session's canvas is the server's now, so `control_ui` writes
+   * the row itself and the change reaches every window as a `canvas` event —
+   * what is left for the dispatcher is the REVEAL, which is what a `ui_command`
+   * has always been for on a session.
+   *
+   * Absent everywhere else, and that is not an oversight: a click in the file
+   * tree, a widget button, an extension calling `api.ui.dispatch` — none of
+   * those has been applied by anybody, so each still opens the document through
+   * the store, which writes it through.
+   */
+  serverAppliedCanvas?: boolean;
   /**
    * Optional: the URL half of the dual dialog open signal (DOR-839).
    *
@@ -235,18 +344,32 @@ export function executeUiCommand(
       // Edit-protection (ADR-0292) is enforced inside `openCanvasDocument`: a
       // re-activated document that is being edited keeps its content. The
       // panel-reveal side effects below run regardless so the canvas surfaces.
-      if (command.content != null) {
+      if (command.content != null && !ctx.serverAppliedCanvas) {
         store.openCanvasDocument(command.content);
       }
       if (command.preferredWidth != null) {
         store.setCanvasPreferredWidth(command.preferredWidth);
       }
-      revealCanvas(store, origin);
+      // The reveal follows what the command produced: a page surfaces the
+      // Browser tab, everything else the Canvas tab. An `open_canvas` carrying
+      // no content asks for the canvas itself.
+      if (command.content != null) {
+        revealForContent(store, origin, command.content);
+      } else {
+        revealCanvas(store, origin);
+      }
       break;
     case 'update_canvas':
-      // `updateActiveDocument` ignores the push while the active document is
-      // being edited (ADR-0292); the editor stays the sole writer.
-      store.updateActiveDocument(command.content);
+      // Routed by view inside the store: a page push acts on the Browser tab's
+      // document and a document push on the Canvas tab's, so an update can never
+      // rewrite the thing somebody is reading in the other tab.
+      // `updateActiveDocument` ignores the push while that document is being
+      // edited (ADR-0292); the editor stays the sole writer.
+      //
+      // Deliberately does NOT reveal anything: an update is not an open, and a
+      // tab that selects itself because an agent refreshed a document is the
+      // pixel version of a turn that triggers itself (spec `room-canvas` §9.3).
+      if (!ctx.serverAppliedCanvas) store.updateActiveDocument(command.content);
       break;
     case 'open_file': {
       // Resolve the viewer from the mime→viewer registry and open the file as a
@@ -254,9 +377,19 @@ export function executeUiCommand(
       // cwd-confined URLs by the renderers at render time, so no cwd is needed
       // here. This is the client seam the file explorer and the agent's
       // `open_file` tool both drive.
-      const viewer = resolveViewerForPath(command.sourcePath, ctx.workbenchViewerOverrides);
-      store.openCanvasDocument(buildOpenFileContent(viewer, command.sourcePath));
-      revealCanvas(store, origin);
+      // The SAME function the server calls when it writes an agent's
+      // `open_file` (spec `canvas-agent-seat` §1.2). Two answers to "what does
+      // opening this file mean" gave two `sourceKey`s for one file, so one file
+      // grew two tabs and the agent's one opened a text editor on a PNG.
+      const content = canvasContentForFile(
+        command.sourcePath,
+        ctx.workbenchViewerOverrides ?? workbenchViewerOverrides()
+      );
+      if (!ctx.serverAppliedCanvas) store.openCanvasDocument(content);
+      // No viewer resolves to the embedded browser today, so every opened file
+      // reveals Canvas — and the day one does, this line routes it to Browser
+      // without an edit, because it asks the content rather than the extension.
+      revealForContent(store, origin, content);
       break;
     }
     case 'open_diff':
@@ -267,7 +400,9 @@ export function executeUiCommand(
       // loads baseline + current itself, so no bytes travel here (mirrors
       // `open_file`). `mediaKind` is left unset; the viewer resolves text vs
       // image from the registry.
-      store.openCanvasDocument({ type: 'diff', sourcePath: command.sourcePath });
+      if (!ctx.serverAppliedCanvas) {
+        store.openCanvasDocument({ type: 'diff', sourcePath: command.sourcePath });
+      }
       revealCanvas(store, origin);
       break;
     case 'open_terminal': {
@@ -291,10 +426,21 @@ export function executeUiCommand(
       // Append-and-activate a `browser` canvas document (dedup by URL inside the
       // store), then reveal the canvas. Appending never clobbers a document the
       // user is editing (edit-protection is per-doc; ADR-0292).
-      store.openCanvasDocument({ type: 'browser', url: command.url });
-      revealCanvas(store, origin);
+      if (!ctx.serverAppliedCanvas) {
+        store.openCanvasDocument({ type: 'browser', url: command.url });
+      }
+      revealBrowser(store, origin);
       break;
     case 'close_canvas':
+      // **Naming a document closes THAT document; naming none closes the whole
+      // panel, both views with it.** The verb names the surface unless it names
+      // a row — which is what `documentId` has meant on it since the room canvas
+      // added the field. A document close on a session is a write the server has
+      // already made, so the `canvas` event is what drops it here.
+      if (command.documentId !== undefined) {
+        if (!ctx.serverAppliedCanvas) store.closeCanvasDocument(command.documentId);
+        break;
+      }
       store.setCanvasOpen(false);
       store.setRightPanelOpen(false);
       break;
@@ -387,15 +533,31 @@ function tabSetterFor(
 }
 
 /**
- * Reveal the canvas via its live host: open the right panel and select the
- * canvas tab. `setCanvasOpen` is kept for the legacy AgentCanvas surface.
- * The tab switch respects `origin` — agent-driven reveals do not persist over
- * the user's per-agent tab preference (DOR-227).
+ * Reveal one of the panel's two document views: open the right panel and select
+ * that tab. `setCanvasOpen` no longer shows anything by itself — the views are
+ * right-panel contributions — but it is still what the per-session persisted
+ * entry and the agent's `get_ui_state` snapshot read, so a reveal keeps it
+ * truthful. The tab switch respects `origin` — agent-driven reveals do not
+ * persist over the user's per-agent tab preference (DOR-227).
  *
- * NOTE: the canvas contribution is only `visibleWhen` pathname === '/session'
- * (init-extensions), so off that route RightPanelContainer's auto-select falls
- * back to the first visible tab — the command still lands (the document is
- * persisted per session) and shows on return to /session.
+ * @param store - `useAppStore.getState()`.
+ * @param origin - Who is revealing it.
+ * @param tabId - The contribution id to select.
+ */
+function revealTab(store: DispatcherStore, origin: UiCommandOrigin, tabId: string): void {
+  store.setCanvasOpen(true);
+  store.setRightPanelOpen(true);
+  tabSetterFor(store, origin)(tabId);
+}
+
+/**
+ * Reveal the Canvas tab — documents, data, diffs, widgets and apps.
+ *
+ * NOTE: both the canvas and browser contributions are `visibleWhen` pathname
+ * === '/session' (init-extensions), so off that route RightPanelContainer's
+ * auto-select falls back to the first visible tab — the command still lands (the
+ * document is persisted per session) and shows on return to /session. The room
+ * routes get both tabs in a later phase of the `room-canvas` spec.
  *
  * Exported because opening a document is not the same act as showing it, and
  * anything in the app that opens one owes the reader both. A caller that
@@ -408,33 +570,71 @@ function tabSetterFor(
  *   preference, `'agent'` switches the view without overwriting one.
  */
 export function revealCanvas(store: DispatcherStore, origin: UiCommandOrigin): void {
-  store.setCanvasOpen(true);
-  store.setRightPanelOpen(true);
-  tabSetterFor(store, origin)(CANVAS_TAB_ID);
+  revealTab(store, origin, CANVAS_TAB_ID);
 }
 
-/** Build the canvas content for an `open_file` command from its resolved viewer. */
-function buildOpenFileContent(viewer: CanvasViewerType, sourcePath: string): UiCanvasContent {
-  switch (viewer) {
-    case 'image':
-      return { type: 'image', src: sourcePath };
-    case 'pdf':
-      return { type: 'pdf', src: sourcePath };
-    case 'model3d':
-      return { type: 'model3d', src: sourcePath };
-    case 'audio':
-      return { type: 'audio', src: sourcePath };
-    case 'video':
-      return { type: 'video', src: sourcePath };
-    case 'csv':
-      return { type: 'csv', src: sourcePath };
-    case 'markdown':
-      // Rendered by the file viewer, which loads the bytes and routes markdown
-      // to the rich Blintz editor (the `language` hint flags it).
-      return { type: 'file', sourcePath, language: 'markdown' };
-    case 'file':
-      return { type: 'file', sourcePath };
-  }
+/**
+ * Reveal the Browser tab — the pages the embedded browser renders.
+ *
+ * The sibling of {@link revealCanvas}, for the same reason: a page opened into a
+ * tab nobody selected is a page nobody sees.
+ *
+ * @param store - `useAppStore.getState()`.
+ * @param origin - Who is revealing it: `'user'` persists the tab choice as a
+ *   preference, `'agent'` switches the view without overwriting one.
+ */
+export function revealBrowser(store: DispatcherStore, origin: UiCommandOrigin): void {
+  revealTab(store, origin, BROWSER_TAB_ID);
+}
+
+/**
+ * Reveal whichever tab renders `content` — the reveal half of the two-view split
+ * (ADR 260911-200304), asked of the content rather than of a list of commands.
+ *
+ * **Prefer this over {@link revealCanvas} at any call site that opens a
+ * document.** Picking the reveal by hand is picking the tab by hand, and it is
+ * wrong the moment the content type changes: a chip opening a `url` and then
+ * revealing Canvas shows the reader an empty canvas with their page one tab
+ * over, and persists the wrong tab as their preference for `'user'` origins.
+ *
+ * @param store - `useAppStore.getState()`.
+ * @param origin - Who is revealing it: `'user'` persists the tab choice as a
+ *   preference, `'agent'` switches the view without overwriting one.
+ * @param content - The content that was just opened.
+ */
+export function revealForContent(
+  store: DispatcherStore,
+  origin: UiCommandOrigin,
+  content: UiCanvasContent
+): void {
+  if (canvasViewForContent(content) === 'browser') revealBrowser(store, origin);
+  else revealCanvas(store, origin);
+}
+
+/**
+ * This install's extension → viewer overrides, read live from the config cache.
+ *
+ * **The client half of the server's `readViewerOverrides`** (`rooms/index.ts`).
+ * Both sides resolve an `open_file` through `canvasContentForFile` and both must
+ * consult the same `workbench.defaultViewers`, or an agent's open and a person's
+ * open of one file produce two documents — which is the divergence the canvas
+ * moved to the server to remove.
+ *
+ * Read per dispatch and off the CACHE rather than passed in, for the same reason
+ * `getStore` is a getter: this runs outside React on a context built once at
+ * boot, and a value captured then would still be boot-time config on every later
+ * dispatch. `configKeys.current()` is the one key the whole cockpit reads
+ * `GET /api/config` under, so this is the answer every other reader has. An
+ * empty cache (a dispatch before the first config fetch settles) means the
+ * built-in table, which is what every install without an override already gets.
+ *
+ * @returns The overrides, or `undefined` when there are none to apply.
+ */
+function workbenchViewerOverrides(): Record<string, string> | undefined {
+  const config = queryClient.getQueryData<{
+    workbench?: { defaultViewers?: Record<string, string> };
+  }>(configKeys.current());
+  return config?.workbench?.defaultViewers;
 }
 
 function setPanelOpen(

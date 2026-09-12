@@ -173,12 +173,26 @@
  * @module server/services/rooms/room-capabilities
  */
 import { z } from 'zod';
+import { promises as fs } from 'node:fs';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
+import { canvasSourcePath } from '../canvas/index.js';
+import type { CanvasDocument } from '@dorkos/shared/room-schemas';
+import { FILE_LIMITS } from '../../config/constants.js';
+import { resolveWithinCwd } from '../../lib/file-route-guards.js';
+import { logger } from '../../lib/logger.js';
 import {
   directMessageTitle,
   MERGE_SUMMARY_MAX_CHARS,
+  ROOM_ATTACHMENT_MAX_PER_ENTRY,
+  ROOM_ATTACHMENT_NAME_MAX,
   type RoomEntry,
 } from '@dorkos/shared/room-schemas';
+import {
+  discardStagedAttachments,
+  stageAgentAttachments,
+} from './attachments/agent-attachments.js';
+import { sweepUnboundAttachments } from './attachments/unbound-sweep.js';
+import { getAttachmentRowStore, getRoomAttachmentStore } from './attachments/attachment-stores.js';
 
 import {
   CapabilityToolError,
@@ -485,6 +499,30 @@ function projectDetail(detail: RoomDetail): Record<string, unknown> {
  * @returns Whatever the verb returned.
  * @throws {CapabilityToolError} Carrying `{ error, code }` for a typed refusal.
  */
+/**
+ * The agent's own working directory, or a refusal it can act on.
+ *
+ * The one place a `post_to_room` attachment may point, and it is read off the
+ * VERIFIED in-session surface rather than off the arguments — a cwd a caller
+ * could name would be the confused-deputy shape this whole path exists to
+ * avoid. A surface with no working directory (external `/mcp`) can attach
+ * nothing, and says so instead of silently attaching from somewhere else.
+ *
+ * @param context - The capability invocation context.
+ * @returns The session's working directory.
+ * @throws {RoomError} `ATTACHMENT_PATH_REFUSED` when the surface carries none.
+ */
+function requireAgentCwd(context: CapabilityHandlerContext): string {
+  if (!context.cwd) {
+    throw new RoomError(
+      'ATTACHMENT_PATH_REFUSED',
+      'Attaching a file needs a working directory to read it from, and this surface has none. ' +
+        'Post the message without attachments.'
+    );
+  }
+  return context.cwd;
+}
+
 function answering<T>(body: () => T): T {
   try {
     return body();
@@ -678,6 +716,8 @@ export const roomsDomain: CapabilityDomain = {
         'something in a room other than the one you were just triggered from. ' +
         'Posting into the room that triggered your turn is how you answer it; posting into a ' +
         'different room leaves your answer here untouched. ' +
+        'You can show a file with it — a screenshot or a recording you made — by naming its ' +
+        'path in attachments; it has to be a file in your own working directory. ' +
         'Everyone in the room sees it, so post like a colleague: one clear message, not a running commentary.',
       tier: 'act',
       input: z.object({
@@ -692,6 +732,16 @@ export const roomsDomain: CapabilityDomain = {
           .string()
           .optional()
           .describe('Reply inside a thread: the entryId the thread hangs off.'),
+        attachments: z
+          .array(z.string())
+          .max(ROOM_ATTACHMENT_MAX_PER_ENTRY)
+          .optional()
+          .describe(
+            'Files to show with this message, by path. Relative paths are from your own ' +
+              'working directory, and only files inside it can be attached. Screenshots and ' +
+              'recordings you made are the usual case. Everyone in the room sees them, and the ' +
+              'other agents get their own copy.'
+          ),
       }),
       output: z.unknown(),
       surfaces: {
@@ -701,24 +751,85 @@ export const roomsDomain: CapabilityDomain = {
           annotations: { idempotentHint: false },
         },
       },
-      invoke: (deps, input, context) => {
+      invoke: async (deps, input, context) => {
         const rooms = requireRoomDeps(deps);
         // Inside `answering`, because resolving WHO is calling can itself refuse
         // — a login-on install that could name nobody — and a refusal a model
         // gets as a stack trace is a refusal it cannot act on.
-        const entry = answering(() =>
-          rooms.postFromTool(input.roomId, {
-            authorId: callerAuthor(rooms, context).id,
-            text: input.text,
-            ...(input.replyTo !== undefined ? { replyTo: input.replyTo } : {}),
-          })
-        );
-        return Promise.resolve({
+        const authorId = answering(() => callerAuthor(rooms, context).id);
+        // Staged BEFORE the entry, and bound inside its transaction below, so
+        // the message and its files land together or neither does. A refusal
+        // here leaves no bytes, no rows and no entry (spec §4).
+        //
+        // Only reached when the post NAMES files: every other `post_to_room`
+        // must keep working on a surface that has no working directory at all,
+        // and must not pay for the attachment stores to exist.
+        const named = input.attachments ?? [];
+        const attachmentIds =
+          named.length === 0
+            ? []
+            : await answeringAsync(() =>
+                stageAgentAttachments({
+                  roomId: input.roomId,
+                  authorId,
+                  cwd: requireAgentCwd(context),
+                  paths: named,
+                  store: getRoomAttachmentStore(),
+                  rows: getAttachmentRowStore(),
+                  limits: configManager.get('uploads'),
+                  nameMax: ROOM_ATTACHMENT_NAME_MAX,
+                })
+              );
+        // **The write can still refuse after the bytes are on disk**, and a
+        // refusal is the ordinary case rather than the exotic one: a mistyped
+        // `roomId`, the per-turn post ceiling, a stopped turn, an archived room,
+        // a direct message. The rules that decide those live inside
+        // `postFromTool` and must stay there — a dry run here would be the
+        // second write path that file exists to refuse — so the files are taken
+        // back instead, with the same cleanup the staging failure uses.
+        let entry;
+        try {
+          entry = answering(() =>
+            rooms.postFromTool(input.roomId, {
+              authorId,
+              text: input.text,
+              ...(input.replyTo !== undefined ? { replyTo: input.replyTo } : {}),
+              ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
+            })
+          );
+        } catch (err) {
+          if (attachmentIds.length > 0) {
+            await discardStagedAttachments({
+              roomId: input.roomId,
+              ids: attachmentIds,
+              store: getRoomAttachmentStore(),
+              rows: getAttachmentRowStore(),
+            });
+          }
+          throw err;
+        }
+
+        // Housekeeping on the path that creates the mess, exactly as the
+        // person's upload route does it. Without a call here the 24-hour sweep
+        // had ONE site — inside the `PEOPLE_ONLY` route — so a room only agents
+        // post in never swept at all, and the spec's reason for tolerating an
+        // orphan ("the sweep reclaims it") was not true there. Awaited but never
+        // fatal: it swallows its own errors, so a post cannot fail because a
+        // sweep did.
+        if (attachmentIds.length > 0) {
+          void (await sweepUnboundAttachments({
+            rows: getAttachmentRowStore(),
+            store: getRoomAttachmentStore(),
+            roomId: input.roomId,
+          }));
+        }
+        return {
           posted: true,
           entryId: entry.id,
           seq: entry.seq,
+          ...(attachmentIds.length > 0 ? { attached: attachmentIds.length } : {}),
           ...(entry.threadRootEntryId ? { threadRootEntryId: entry.threadRootEntryId } : {}),
-        });
+        };
       },
     }),
     defineCapability({
@@ -1466,5 +1577,213 @@ export const roomsDomain: CapabilityDomain = {
         return Promise.resolve({ left: true, roomId: input.roomId });
       },
     }),
+    defineCapability({
+      id: 'rooms.read_canvas',
+      title: "Read the room's canvas",
+      description:
+        'See what is on the shared canvas of a room you are in — the documents its members, ' +
+        'people and agents alike, have put in front of each other. ' +
+        'Call it with no documentId to list what is there: what each one is, what it is called, ' +
+        'who put it there, and how many windows are open on the room right now. ' +
+        'Call it with one to read that document. ' +
+        'Nothing here notifies anybody, and reading the canvas starts no turn. ' +
+        'A document that names a file you could not open yourself comes back as its name and ' +
+        'who opened it, without the contents.',
+      tier: 'observe',
+      input: z.object({
+        roomId: z
+          .string()
+          .describe(
+            'The room whose canvas to read, by its id — not its #name. Inside a room turn your ' +
+              'room context names it. You must be a member of it.'
+          ),
+        documentId: z
+          .string()
+          .optional()
+          .describe('Omit to list what is on the canvas; pass one to read that document.'),
+      }),
+      output: z.unknown(),
+      surfaces: {
+        mcp: {
+          toolName: 'read_canvas',
+          // Both servers, so the verb reaches claude-code, codex and opencode
+          // alike — which is what makes "any agent in a room can read the table"
+          // true rather than true of one runtime (spec §7).
+          servers: ['in-session', 'external'],
+          annotations: { idempotentHint: true },
+        },
+      },
+      invoke: (deps, input, context) => {
+        const rooms = requireRoomDeps(deps);
+        const caller = callerAuthor(rooms, context);
+        return answeringAsync(() => readRoomCanvas(rooms, input, caller.id, context.cwd));
+      },
+    }),
   ],
 };
+
+/**
+ * What `read_canvas` answers with — the list, or one document under the §8.1
+ * reader rule.
+ *
+ * **The rule, stated once and enforced here:** a canvas document never lets a
+ * member read a tree they could not already read. Otherwise "open a document"
+ * would be a cross-tree read primitive with a friendlier name. So a document
+ * whose file lives somewhere this reader cannot reach comes back as its
+ * metadata plus one plain sentence, and never as content — checked on the
+ * READER at read time, so it holds for a member who joined after the document
+ * was opened.
+ *
+ * Membership is asked first, by the service, and refuses a non-member exactly as
+ * it refuses a room that does not exist.
+ *
+ * @param rooms - The rooms service.
+ * @param input - The room, and the document when one was named.
+ * @param callerAuthorId - Who is asking, resolved server-side.
+ * @param callerCwd - Where they are working, when the surface carries it.
+ * @returns The list, or the document.
+ */
+async function readRoomCanvas(
+  rooms: RoomService,
+  input: { roomId: string; documentId?: string },
+  callerAuthorId: string,
+  callerCwd: string | undefined
+): Promise<unknown> {
+  // Membership, asked the same way every other read here asks it.
+  rooms.requireMembership(input.roomId, callerAuthorId);
+  const canvas = rooms.canvas;
+  if (input.documentId === undefined) {
+    return {
+      note: UNTRUSTED_NOTE,
+      viewers: canvas.viewers(input.roomId),
+      documents: canvas.list(input.roomId).map((document) => ({
+        documentId: document.id,
+        type: document.contentType,
+        title: sanitizeIdentity(document.title) ?? document.title,
+        author: authorLabel(rooms, document.authorId),
+        pinned: document.pinned,
+        lastChangedAt: document.lastTouchedAt,
+      })),
+    };
+  }
+  const document = canvas.get(input.roomId, input.documentId);
+  if (!document) {
+    throw new RoomError('CANVAS_DOCUMENT_NOT_FOUND', 'No such document on this room’s canvas');
+  }
+  // **The agent's face goes on the tab here, and only from here** (§9.4, E16a).
+  // It is a consequence of a turn that is really running really reading this
+  // document — not of anything the model chose to say — so it is gated on a live
+  // claim, and it is taken off again when that turn ends. An agent reading the
+  // canvas with no turn in hand (a person driving it from a shell, an external
+  // MCP client) shows nothing, which is right: nobody is waiting on it.
+  if (rooms.isWorkingHere(input.roomId, callerAuthorId)) {
+    canvas.noteAgentRead(input.roomId, callerAuthorId, document.id);
+  }
+  const metadata = {
+    note: UNTRUSTED_NOTE,
+    documentId: document.id,
+    type: document.contentType,
+    title: sanitizeIdentity(document.title) ?? document.title,
+    author: authorLabel(rooms, document.authorId),
+    pinned: document.pinned,
+    ...(document.treeKind !== undefined
+      ? { tree: document.treeKind, aheadOfMain: document.aheadOfMain ?? null }
+      : {}),
+    openedAt: document.openedAt,
+    lastChangedAt: document.lastTouchedAt,
+  };
+  if (!canvas.mayReadContent(document, callerCwd)) {
+    return {
+      ...metadata,
+      content: null,
+      reason:
+        `This file is in ${metadata.author}'s project, which you cannot read from here. ` +
+        'Ask them to share it, or open your own copy.',
+    };
+  }
+  // **A file document is read off DISK, not out of the row** (spec §7). The row
+  // records which file this tab is, and the file has very likely changed since
+  // it was opened — handing back the blob would answer with the past and call it
+  // the present. It goes through the same boundary check and the same byte cap
+  // the file route uses, so nothing here widens what a caller can reach.
+  const filePath = canvasSourcePath(document.content);
+  if (filePath !== null) {
+    return { ...metadata, ...(await readFileBacked(rooms, document, filePath)) };
+  }
+  return { ...metadata, content: document.content };
+}
+
+/**
+ * Read a file-backed canvas document's CURRENT bytes, through the same guard the
+ * file route uses.
+ *
+ * Three refusals, each handed back as a sentence rather than thrown: the
+ * document's tree was never recorded (an older row), the file is gone, and the
+ * file is too big or is not text. None of them is a failure of the tool — they
+ * are all true things about a file — so each answers with the metadata beside a
+ * `content: null` and says which one it was.
+ *
+ * @param rooms - The rooms service, for the directory the row recorded.
+ * @param document - The document.
+ * @param filePath - The path the document names.
+ * @returns `content` and, on any refusal, the sentence saying why there is none.
+ */
+async function readFileBacked(
+  rooms: RoomService,
+  document: CanvasDocument,
+  filePath: string
+): Promise<{ content: string | null; reason?: string }> {
+  // The directory the ROW recorded, never one derived here: the same boundary
+  // the check ran against at open time is the one it runs against now. A
+  // `session:` document cannot reach this path — `read_canvas` resolves its room
+  // first — so a null room id is a wiring fault answered as a plain sentence.
+  const cwd =
+    document.roomId === null ? null : rooms.canvas.resolvedTreeOf(document.roomId, document.id);
+  if (cwd === null) {
+    return {
+      content: null,
+      reason: 'This document does not record which folder its file is in, so it cannot be read.',
+    };
+  }
+  try {
+    const { resolved } = await resolveWithinCwd(cwd, filePath);
+    const stat = await fs.stat(resolved);
+    if (!stat.isFile()) return { content: null, reason: 'That path is not a file.' };
+    if (stat.size > FILE_LIMITS.MAX_TEXT_FILE_BYTES) {
+      return { content: null, reason: 'That file is too large to read as text.' };
+    }
+    const buffer = await fs.readFile(resolved);
+    // The standard binary heuristic, and git's: a NUL byte anywhere.
+    if (buffer.includes(0)) {
+      return { content: null, reason: 'That file is not text, so there is nothing to read out.' };
+    }
+    return { content: buffer.toString('utf8') };
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') {
+      return { content: null, reason: 'That file is not there any more.' };
+    }
+    logger.warn('[rooms] could not read a canvas document’s file', {
+      roomId: document.roomId,
+      documentId: document.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { content: null, reason: 'That file could not be read just now.' };
+  }
+}
+
+/**
+ * How a member is named in a canvas answer — their handle when they have one.
+ *
+ * Sanitized like every other label this seam hands back: it lands in text
+ * another model reads.
+ *
+ * @param rooms - The rooms service, for its author registry.
+ * @param authorId - The member to name.
+ * @returns A short label.
+ */
+function authorLabel(rooms: RoomService, authorId: string): string {
+  const author = rooms.authorRegistry.getById(authorId);
+  const name = author?.handle ?? author?.displayName;
+  return (name === undefined ? undefined : sanitizeIdentity(name)) ?? 'Somebody';
+}

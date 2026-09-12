@@ -13,11 +13,12 @@ import type {
   SessionLockedError,
   ReloadPluginsResult,
 } from '@dorkos/shared/types';
-import type { ClaudePluginTransport } from '@dorkos/shared/transport';
+import type { ClaudePluginTransport, DevtoolsRecordingPayload } from '@dorkos/shared/transport';
 import type {
   UiActionRequest,
   McpAppResourceRequest,
   McpAppResourceResponse,
+  DevtoolsActionResult,
   DevtoolsIngest,
   RecentSessionsResponse,
   SessionDailyCountsResponse,
@@ -383,17 +384,85 @@ export function createSessionMethods(
      * dropped batch must never surface in, or slow, the preview. The injected
      * shim never calls `/api/*`; this same-origin, authenticated client does.
      */
-    async ingestDevtoolsCapture(sessionId: string, batch: DevtoolsIngest): Promise<void> {
+    async ingestDevtoolsCapture(
+      sessionId: string,
+      batch: DevtoolsIngest,
+      options?: { keepalive?: boolean }
+    ): Promise<void> {
       try {
         await fetch(`${baseUrl}/sessions/${sessionId}/devtools/ingest`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          // The release a closing window sends is the one request an ordinary
+          // `fetch` would be cancelled mid-flight; `keepalive` is what lets it
+          // leave anyway.
+          ...(options?.keepalive ? { keepalive: true } : {}),
+          // The client id is what makes a seat claim mean anything: the server
+          // keeps one driver row per (window, page), and without the header
+          // every window would look like the same one.
+          headers: { 'Content-Type': 'application/json', 'X-Client-Id': getClientId() },
           credentials: 'include',
           body: JSON.stringify(batch),
         });
       } catch {
         /* best-effort capture — never disturb the preview */
       }
+    },
+
+    /**
+     * Relay one driving result to `POST /sessions/:id/devtools/action`.
+     * Fire-and-forget like the capture sink above, and for the same reason: a
+     * dropped result costs the tool its timeout, and a throw here would surface
+     * inside a message listener where nothing could act on it.
+     */
+    async postDevtoolsAction(sessionId: string, result: DevtoolsActionResult): Promise<void> {
+      try {
+        await fetch(`${baseUrl}/sessions/${sessionId}/devtools/action`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Client-Id': getClientId() },
+          credentials: 'include',
+          body: JSON.stringify(result),
+        });
+      } catch {
+        /* best-effort relay — never disturb the preview */
+      }
+    },
+
+    /**
+     * Hand one finished recording to `POST /sessions/:id/devtools/recording`.
+     *
+     * The one devtools call that is NOT fire-and-forget: a `browser_record_stop`
+     * is blocked on it, so a failure has to reach the caller and become the
+     * sentence that tool answers with.
+     */
+    async uploadDevtoolsRecording(
+      sessionId: string,
+      upload: DevtoolsRecordingPayload
+    ): Promise<void> {
+      const body = new FormData();
+      body.append('requestId', upload.requestId);
+      if (upload.error !== undefined) {
+        body.append('error', upload.error);
+      } else {
+        body.append('frames', String(upload.frames));
+        body.append('durationMs', String(upload.durationMs));
+        body.append(
+          'recording',
+          new Blob([await upload.recording.arrayBuffer()], { type: upload.recording.type }),
+          upload.recording.name
+        );
+        body.append(
+          'keyframe',
+          new Blob([await upload.keyframe.arrayBuffer()], { type: upload.keyframe.type }),
+          upload.keyframe.name
+        );
+      }
+      const res = await fetch(`${baseUrl}/sessions/${sessionId}/devtools/recording`, {
+        method: 'POST',
+        headers: { 'X-Client-Id': getClientId() },
+        credentials: 'include',
+        body,
+      });
+      if (!res.ok) throw new Error(`Recording upload failed (${res.status})`);
     },
 
     // ── MCP Apps (SEP-1865) ────────────────────────────────────────────────

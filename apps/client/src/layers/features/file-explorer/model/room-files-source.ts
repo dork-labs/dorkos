@@ -92,6 +92,13 @@ export function createRoomFilesSource(deps: RoomFilesSourceDeps): FileExplorerSo
     // the plumbing is this client's job here.
     filtersHidden: false,
     preview: 'inline',
+    // Reading a file stays one click and stays in the pane. Putting it on the
+    // room's canvas is a second, deliberate thing — it is a write everybody
+    // sees, so it is a control somebody presses rather than a side effect of
+    // opening something (spec `room-canvas` §9.5).
+    async showToEveryone(path: string): Promise<void> {
+      await transport.openRoomCanvasDocument(roomId, { type: 'file', sourcePath: path });
+    },
     // The tree is not writable and the FILES are — the opposite pair from a
     // session, and both halves are true at once. Merging is what adds and
     // removes entries here; a person's own edits go through §3.10's door, one

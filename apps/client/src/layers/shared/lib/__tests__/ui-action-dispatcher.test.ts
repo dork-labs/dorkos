@@ -7,6 +7,9 @@ import {
   type DispatcherStore,
 } from '../ui-action-dispatcher';
 import { setPlatformAdapter } from '../platform';
+import { queryClient } from '../query-client';
+import { configKeys } from '@/layers/shared/model';
+import { canvasContentForFile } from '@dorkos/shared/viewer-registry';
 
 vi.mock('../celebrations/celebration-effects', () => ({
   fireCelebration: vi.fn().mockResolvedValue(vi.fn()),
@@ -34,6 +37,7 @@ function makeMockStore(overrides: Partial<DispatcherStore> = {}): DispatcherStor
     setGlobalPaletteOpen: vi.fn(),
     setCanvasOpen: vi.fn(),
     openCanvasDocument: vi.fn(),
+    closeCanvasDocument: vi.fn(),
     updateActiveDocument: vi.fn(),
     setCanvasPreferredWidth: vi.fn(),
     setRightPanelOpen: vi.fn(),
@@ -457,13 +461,54 @@ describe('executeUiCommand — open_file', () => {
     }
   });
 
-  it('honors a config viewer override', () => {
+  it('honors a config viewer override stated on the context', () => {
     const ctx = makeMockCtx();
     ctx.workbenchViewerOverrides = { csv: 'file' };
     executeUiCommand(ctx, { action: 'open_file', sourcePath: 'data.csv' }, 'agent');
     expect(ctx.getStore().openCanvasDocument).toHaveBeenCalledWith({
       type: 'file',
       sourcePath: 'data.csv',
+    });
+  });
+
+  /**
+   * The production path: nothing passes the overrides in, so the dispatcher has
+   * to READ them (DOR-2006 review round 2, N1).
+   *
+   * Four places build a dispatcher context and none of them carried the value,
+   * so an install with `{png:'file'}` configured had the server write
+   * `{type:'file'}` and this window write `{type:'image'}` for the same file —
+   * two `canvasSourceKey`s, two tabs, which is exactly the divergence round 1
+   * closed for the DEFAULT config and this closes for the configured one.
+   */
+  it('reads the overrides off the config cache when the context states none', () => {
+    queryClient.setQueryData(configKeys.current(), {
+      workbench: { defaultViewers: { png: 'file', csv: 'file' } },
+    });
+    const ctx = makeMockCtx();
+    expect(ctx.workbenchViewerOverrides).toBeUndefined();
+
+    executeUiCommand(ctx, { action: 'open_file', sourcePath: 'chart.png' }, 'agent');
+
+    // The content the SERVER writes for the same file under the same config —
+    // asked of the one resolver both sides call, rather than restated here.
+    expect(ctx.getStore().openCanvasDocument).toHaveBeenCalledWith(
+      canvasContentForFile('chart.png', { png: 'file', csv: 'file' })
+    );
+    // …and it really is the overridden answer, not the built-in one.
+    expect(ctx.getStore().openCanvasDocument).toHaveBeenCalledWith({
+      type: 'file',
+      sourcePath: 'chart.png',
+    });
+  });
+
+  it('falls back to the built-in table when no config has been fetched', () => {
+    queryClient.removeQueries({ queryKey: configKeys.all });
+    const ctx = makeMockCtx();
+    executeUiCommand(ctx, { action: 'open_file', sourcePath: 'chart.png' }, 'agent');
+    expect(ctx.getStore().openCanvasDocument).toHaveBeenCalledWith({
+      type: 'image',
+      src: 'chart.png',
     });
   });
 });
@@ -539,7 +584,7 @@ describe('executeUiCommand — open_terminal', () => {
 // --- browser_navigate (agent tool → open a browser canvas document) ---
 
 describe('executeUiCommand — browser_navigate', () => {
-  it('appends a browser document and reveals the canvas', () => {
+  it('appends a browser document and reveals the Browser tab', () => {
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'browser_navigate', url: 'http://localhost:5173' }, 'agent');
     // Append-and-activate (dedup by URL inside the store) — never clobbers an
@@ -549,10 +594,62 @@ describe('executeUiCommand — browser_navigate', () => {
       url: 'http://localhost:5173',
     });
     expect(ctx.getStore().setRightPanelOpen).toHaveBeenCalledWith(true);
-    // Agent origin → view-only tab switch (DOR-227).
-    expect(ctx.getStore().setActiveRightPanelTabView).toHaveBeenCalledWith('canvas');
+    // Agent origin → view-only tab switch (DOR-227). A page belongs to the
+    // Browser tab, so revealing Canvas would show the reader the wrong strip.
+    expect(ctx.getStore().setActiveRightPanelTabView).toHaveBeenCalledWith('browser');
     expect(ctx.getStore().setActiveRightPanelTab).not.toHaveBeenCalled();
     expect(ctx.getStore().setCanvasOpen).toHaveBeenCalledWith(true);
+  });
+});
+
+// --- The reveal table: which tab a command surfaces (ADR 260911-200304) ---
+
+describe('executeUiCommand — reveal follows what the command produced', () => {
+  /** The tab an agent-origin dispatch of `command` switched the panel to. */
+  function revealedTab(command: UiCommand): string | undefined {
+    const ctx = makeMockCtx();
+    executeUiCommand(ctx, command, 'agent');
+    const calls = vi.mocked(ctx.getStore().setActiveRightPanelTabView).mock.calls;
+    return calls.at(-1)?.[0] ?? undefined;
+  }
+
+  it('reveals Browser for an open_canvas carrying a page', () => {
+    expect(
+      revealedTab({ action: 'open_canvas', content: { type: 'url', url: 'https://a.test/' } })
+    ).toBe('browser');
+    expect(
+      revealedTab({ action: 'open_canvas', content: { type: 'browser', url: 'https://a.test/' } })
+    ).toBe('browser');
+  });
+
+  it('reveals Canvas for an open_canvas carrying a document, and for a bare one', () => {
+    expect(
+      revealedTab({ action: 'open_canvas', content: { type: 'markdown', content: '# hi' } })
+    ).toBe('canvas');
+    // An app is not a page: `mcp_app` has its own viewer (Q3 of the spec).
+    expect(
+      revealedTab({
+        action: 'open_canvas',
+        content: { type: 'mcp_app', serverName: 's', uri: 'ui://a' },
+      })
+    ).toBe('canvas');
+    expect(revealedTab({ action: 'open_canvas' })).toBe('canvas');
+  });
+
+  it('reveals Canvas for open_file of a markdown file, and for open_diff', () => {
+    expect(revealedTab({ action: 'open_file', sourcePath: 'notes/plan.md' })).toBe('canvas');
+    expect(revealedTab({ action: 'open_diff', sourcePath: 'src/app.ts' })).toBe('canvas');
+  });
+
+  it('reveals nothing at all for update_canvas — an update is not an open', () => {
+    // A tab that selects itself because an agent refreshed a document is the
+    // pixel version of a turn that triggers itself.
+    expect(
+      revealedTab({ action: 'update_canvas', content: { type: 'url', url: 'https://a.test/' } })
+    ).toBe(undefined);
+    expect(
+      revealedTab({ action: 'update_canvas', content: { type: 'markdown', content: '# hi' } })
+    ).toBe(undefined);
   });
 });
 

@@ -1,13 +1,13 @@
 ---
-description: 'Self-test DorkOS rooms in a live browser — two agents in one channel, driven through bursts, mid-turn steering, halt, reactions, threads, and the three-way DM rule, cross-checked against the API and SQLite. Logs an evidence-based findings report.'
+description: 'Self-test DorkOS rooms in a live browser — two agents in one channel, driven through bursts, mid-turn steering, halt, reactions, threads, the shared canvas, and the three-way DM rule, cross-checked against the API and SQLite. Logs an evidence-based findings report.'
 argument-hint: '[url] [mode:sandbox|live] [perm:default|acceptEdits|bypassPermissions] [model:claude-haiku-4-5] [agents:ana,bo]'
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, AskUserQuestion, Skill, WebSearch, WebFetch, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_click, mcp__plugin_playwright_playwright__browser_type, mcp__plugin_playwright_playwright__browser_press_key, mcp__plugin_playwright_playwright__browser_evaluate, mcp__plugin_playwright_playwright__browser_take_screenshot, mcp__plugin_playwright_playwright__browser_console_messages, mcp__plugin_playwright_playwright__browser_network_requests, mcp__plugin_playwright_playwright__browser_hover, mcp__plugin_playwright_playwright__browser_wait_for
 category: testing
 ---
 
-Self-test the parts of DorkOS that only exist when **more than one participant shares a room**: a channel with two agents and you, driven through a message burst, a mid-turn arrival, a halt, a reaction, a thread, and the three-way rule that keeps you in any room two agents share. The command drives the browser, cross-checks the room API and the SQLite rows underneath it, and writes an evidence-based report.
+Self-test the parts of DorkOS that only exist when **more than one participant shares a room**: a channel with two agents and you, driven through a message burst, a mid-turn arrival, a halt, a reaction, a thread, a document on the room's shared canvas, and the three-way rule that keeps you in any room two agents share. The command drives the browser, cross-checks the room API and the SQLite rows underneath it, and writes an evidence-based report.
 
-It is the rooms sibling of `/chat:self-test` (one session, in depth) and `/chat:session-switch-test` (two sessions, switching). Use it whenever you touch `RoomService`, the trigger dispatcher, the collector, room notices, reactions, threads, or the room event stream.
+It is the rooms sibling of `/chat:self-test` (one session, in depth) and `/chat:session-switch-test` (two sessions, switching). Use it whenever you touch `RoomService`, the trigger dispatcher, the collector, room notices, reactions, threads, the room canvas, or the room event stream.
 
 Every check below cites the capability row it verifies in `meta/chat-capabilities.md` — a run of this command is a report against that contract, not a vibe check.
 
@@ -435,7 +435,94 @@ A stock install is never silent: with no chat app connected, that notification l
 
 **6c. Not reachable today, and say so.** No shipped agent tool seats a _second_ agent in a new room — the `rooms` capability domain is eight verbs (`post_to_room`, `react_to_room_entry`, `read_room_history`, `search_room_history`, `list_member_rooms`, `search_member_rooms`, `get_room`, `find_room`) and none of them creates a room. So the creation-time half of the rule (`OPERATOR_ONLY`, "Two agents can only share a room you are in — add yourself to it") cannot be provoked from a browser. Record it as `N/A (not browser-reachable)` with a pointer to `RoomService.requireSeedingAllowed`, never as PASS.
 
-### Check 7 — Triangulation: DOM vs API vs SQLite
+### Check 7 — M-22: an agent puts a document on the room's canvas, and nobody is woken
+
+The room's canvas is the one surface where "shared" is the whole claim, so check the claim rather than the pixels: the document lands for a reader who never asked for it, the tab they are on does not move, the room's log gets exactly one line about it, that line starts nobody's turn — and the OTHER agent is told about the document anyway, the next time it does anything in the room. That last leg is the point of the whole design, and it is the one a screenshot cannot show.
+
+**Seed it.** A fresh channel with **both** agents on it, the same pair the checks above use. Pin **both** to `mention-only` first, so `AGENT_B` stays quiet until you name it — do not lean on whatever this install defaults to, because the "nobody was woken" half of this check is only readable when the quiet is something you set:
+
+```bash
+for AUTHOR in "$AGENT_A_AUTHOR_ID" "$AGENT_B_AUTHOR_ID"; do
+  curl -sf -X PATCH "http://localhost:$API_PORT/api/rooms/$ROOM_ID/members/$AUTHOR" \
+    -H 'content-type: application/json' -d '{"responseMode":"mention-only"}'
+done
+```
+
+In `mode:sandbox`, install the scenario whose turn opens a document (`rooms-open-canvas` in `apps/server/src/services/runtimes/test-mode/room-reply-scenarios.ts` — it opens one markdown document called **The plan** and says one line about it). In `mode:live`, skip the scenario and ask in words: `@<AGENT_A> put a short plan on the room's canvas — a markdown document called "The plan" — and say one line about it.`
+
+```bash
+# Sandbox only. Read the acknowledgement back: the scenario store is server-global,
+# so a neighbour resetting it between this call and the turn leaves you driving a
+# runtime you did not choose.
+curl -sf -X POST "http://localhost:$API_PORT/api/test/scenario" \
+  -H 'content-type: application/json' -d '{"name":"rooms-open-canvas"}'
+```
+
+**Before the turn**, open the room's right panel and leave it on **Room** (`getByRole('tab', { name: 'Room' })`, `aria-selected="true"`). That is what makes the next assertion mean anything.
+
+**Then mention `AGENT_A` and expect, in this order:**
+
+- **The reader's tab did not move.** The Room tab is still `aria-selected="true"` after the document lands. A tab that selected itself because somebody else acted is the pixel version of a turn that triggers itself, and it is a FAIL, not a nicety.
+- **The Canvas tab grew a dot**: `getByRole('tab', { name: 'Canvas' })` contains `[data-slot="right-panel-tab-unread"]`. That is how an arrival announces itself without yanking anything.
+- **Click Canvas and the document is there**, in the strip `[role="tablist"][aria-label="Open canvas documents"]`, titled **The plan**, with the face of whoever put it there on the tab (`[data-slot="identity-avatar"]`). Clicking the tab clears the dot, because looking at it is reading it.
+
+**One coalesced line in the log, and it addresses nobody.** However many changes the turn made, the room gets exactly one entry about them, in the system voice, with the ops in its body and an empty mention list — which is what makes "a canvas change wakes nobody" structural rather than a consequence of the wording:
+
+```bash
+curl -s "http://localhost:$API_PORT/api/rooms/$ROOM_ID/entries?limit=200" | python3 -c "
+import sys, json
+entries = json.load(sys.stdin)['entries']
+lines = [e for e in entries if e['body'].get('canvas')]
+print('canvas lines:', len(lines))          # expect exactly 1 per turn that changed anything
+for e in lines:
+    print(' text:', e['body'].get('text'))  # 'Ana opened The plan on the canvas.'
+    print(' ops:', e['body']['canvas']['ops'])
+    print(' mentions:', e.get('mentions'))  # expect []
+"
+```
+
+**And the server really holds it**, rather than this browser holding a copy of it — the list route is what says so, and a hard reload that still shows the document is the other half:
+
+```bash
+curl -s "http://localhost:$API_PORT/api/rooms/$ROOM_ID/canvas" | python3 -c "
+import sys, json
+for d in json.load(sys.stdin)['documents']:
+    print(d['id'], '|', d['contentType'], '|', d['title'], '| pinned:', d['pinned'])
+"
+```
+
+**Nobody was woken.** Record the entry count once `AGENT_A`'s reply and the canvas line have both landed, wait out `rooms.collectDebounceMs` plus a few seconds, and read it again: it must not have grown, and **no entry may be authored by `AGENT_B`**. The canvas line is a system post that names nobody, so nothing should have answered it. A reply from the agent that was never mentioned is a real bug and the most valuable thing this check can find.
+
+```bash
+curl -s "http://localhost:$API_PORT/api/rooms/$ROOM_ID/entries?limit=200" | python3 -c "
+import sys, json
+entries = json.load(sys.stdin)['entries']
+print('entries:', len(entries))
+for e in entries:
+    print(' ', e['seq'], '|', e['authorId'], '|', e['body'].get('text', '')[:70])
+"
+```
+
+**And `AGENT_B` is told anyway, the next time it does anything.** That is the channel a canvas change actually reaches other members by, and it is the one leg nothing else here stands in for. In `mode:sandbox`, switch the scenario to the one that answers with what the ROOM put in its context, then mention `AGENT_B`:
+
+```bash
+# Read the acknowledgement back for the same reason as before.
+curl -sf -X POST "http://localhost:$API_PORT/api/test/scenario" \
+  -H 'content-type: application/json' -d '{"name":"rooms-report-canvas"}'
+```
+
+`AGENT_B`'s reply must read **`CANVAS-IN-MY-CONTEXT: The plan`** — the scenario prints every title the room handed it, and prints `CANVAS-IN-MY-CONTEXT: nothing` when the room told it about no canvas at all. That second string is the failing case, and it is the one worth watching for: it means the document is on the table and the context section did not carry it. Assert the text in the timeline **and** in the entries API, so a rendering bug and a context bug stay distinguishable.
+
+In `mode:live` there is no scenario to install — mention `AGENT_B` and ask it, in words, to say what is on the room's canvas without opening anything. A live answer naming **The plan** is evidence, not proof; say which one you have.
+
+Split the verdict the way check 4 does:
+
+- **Mechanical** (the document arrives for a reader who did not act, the tab does not move, one line lands, no turn runs for the agent nobody named, that agent's next turn is told, a reload restores the table) — PASS/FAIL in both modes.
+- **Judgment** (did the agent _choose_ the canvas over pasting a wall of text into the room) — `live` only; `N/A (sandbox)` otherwise, because the scenario made that choice for it.
+
+While you are here, the human door costs nothing extra: open the **Browser** tab, click its **Web Page** starting point, activate the address bar (it is a button named `Address: …` at rest and becomes a textbox named `Address` once clicked — a deliberate two-step, so a stray focus can never navigate), type a URL and press Enter. The page must appear in `[role="tablist"][aria-label="Open browser pages"]` **and** in the `/canvas` list above, with you as its author.
+
+### Check 8 — Triangulation: DOM vs API vs SQLite
 
 For the whole room, compare all three layers. Any disagreement is a finding even when the UI looks right — a room that renders correctly from a stale cache is a bug waiting for a reload.
 
@@ -473,18 +560,23 @@ Then **hard-refresh** and re-run all three. Reload-from-history parity is where 
 
 Append a `## Summary`, then the matrix, then a `## Findings` section — one block per issue: **Observed / Expected / Evidence (entry seq, notice code, screenshot path) / Root cause file:line / Recommendation** — and flip `Status: IN PROGRESS` → `COMPLETE`.
 
-| #   | Row  | Check                                            | Verdict | Evidence |
-| --- | ---- | ------------------------------------------------ | ------- | -------- |
-| 1   | A-03 | Burst of 3 → exactly one reply, addressing all 3 |         |          |
-| 2   | A-03 | Mid-turn arrival folds into the next answer      |         |          |
-| 3a  | A-16 | Halt stops every turn, exactly one notice        |         |          |
-| 3b  | A-16 | A literal "stop" message is answered normally    |         |          |
-| 3c  | A-16 | Stopping one agent leaves the other working      |         |          |
-| 4   | A-06 | Agent reacts instead of filler; pills render     |         |          |
-| 5   | M-05 | Thread reply stays out of the main timeline      |         |          |
-| 6a  | A-04 | Agent-seeded DM includes the operator            |         |          |
-| 6b  | A-04 | Owner cannot leave a two-agent room              |         |          |
-| 7   | —    | DOM == API == SQLite, live and after reload      |         |          |
+| #   | Row  | Check                                               | Verdict | Evidence |
+| --- | ---- | --------------------------------------------------- | ------- | -------- |
+| 1   | A-03 | Burst of 3 → exactly one reply, addressing all 3    |         |          |
+| 2   | A-03 | Mid-turn arrival folds into the next answer         |         |          |
+| 3a  | A-16 | Halt stops every turn, exactly one notice           |         |          |
+| 3b  | A-16 | A literal "stop" message is answered normally       |         |          |
+| 3c  | A-16 | Stopping one agent leaves the other working         |         |          |
+| 4   | A-06 | Agent reacts instead of filler; pills render        |         |          |
+| 5   | M-05 | Thread reply stays out of the main timeline         |         |          |
+| 6a  | A-04 | Agent-seeded DM includes the operator               |         |          |
+| 6b  | A-04 | Owner cannot leave a two-agent room                 |         |          |
+| 7a  | M-22 | Agent's document lands for everyone; tab unmoved    |         |          |
+| 7b  | M-22 | Exactly one canvas line per turn, mentioning nobody |         |          |
+| 7c  | M-22 | No turn runs for the agent nobody mentioned         |         |          |
+| 7d  | M-22 | That agent’s next turn is told what is on it        |         |          |
+| 7e  | M-22 | A typed address lands on the room’s table           |         |          |
+| 8   | —    | DOM == API == SQLite, live and after reload         |         |          |
 
 Verdict vocabulary — use it exactly:
 
@@ -496,16 +588,18 @@ Verdict vocabulary — use it exactly:
 
 For any genuine bug, trace the code before writing the recommendation. The root-cause map for this surface:
 
-| Area                                       | File                                                                                                                                                                                                                                                                               |
-| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Membership, posting, reactions, 3-way rule | `apps/server/src/services/rooms/room-service.ts`                                                                                                                                                                                                                                   |
-| Dispatch, halt, claims                     | `apps/server/src/services/rooms/room-trigger.ts`                                                                                                                                                                                                                                   |
-| The burst window and parking               | `apps/server/src/services/rooms/room-collect.ts`                                                                                                                                                                                                                                   |
-| Every notice's exact words                 | `apps/server/src/services/rooms/notices/notice-copy.ts`                                                                                                                                                                                                                            |
-| Reaction budget                            | `apps/server/src/services/rooms/reactions/reaction-budget.ts`                                                                                                                                                                                                                      |
-| Routes                                     | `apps/server/src/routes/rooms.ts`, `apps/server/src/routes/room-events-handler.ts`                                                                                                                                                                                                 |
-| What a triggered agent is told             | `apps/server/src/services/runtimes/shared/room-context-block.ts`                                                                                                                                                                                                                   |
-| Client                                     | `apps/client/src/layers/widgets/room-view/ui/` — `RoomHeader`, `ChannelComposer`, `RoomMessage`, `RoomFlow`, `RoomThreadPanel`, `RoomLiveLane`; the row itself, `NoticeRow`, the one list, the composer card and the live lane are `apps/client/src/layers/features/conversation/` |
+| Area                                                        | File                                                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Membership, posting, reactions, 3-way rule                  | `apps/server/src/services/rooms/room-service.ts`                                                                                                                                                                                                                                                                                                                                           |
+| Dispatch, halt, claims                                      | `apps/server/src/services/rooms/room-trigger.ts`                                                                                                                                                                                                                                                                                                                                           |
+| The burst window and parking                                | `apps/server/src/services/rooms/room-collect.ts`                                                                                                                                                                                                                                                                                                                                           |
+| Every notice's exact words                                  | `apps/server/src/services/rooms/notices/notice-copy.ts`                                                                                                                                                                                                                                                                                                                                    |
+| Reaction budget                                             | `apps/server/src/services/rooms/reactions/reaction-budget.ts`                                                                                                                                                                                                                                                                                                                              |
+| Routes                                                      | `apps/server/src/routes/rooms.ts`, `apps/server/src/routes/room-events-handler.ts`                                                                                                                                                                                                                                                                                                         |
+| What a triggered agent is told                              | `apps/server/src/services/runtimes/shared/room-context-block.ts`                                                                                                                                                                                                                                                                                                                           |
+| The room's canvas: the table, the writer, the per-turn line | `apps/server/src/services/rooms/canvas/room-canvas-service.ts`, `apps/server/src/routes/room-canvas.ts`                                                                                                                                                                                                                                                                                    |
+| What a room turn may do to the canvas                       | `apps/server/src/services/runtimes/shared/room-tools-context.ts`, `apps/server/src/services/runtimes/claude-code/mcp-tools/ui-tools.ts`                                                                                                                                                                                                                                                    |
+| Client                                                      | `apps/client/src/layers/widgets/room-view/ui/` — `RoomHeader`, `ChannelComposer`, `RoomMessage`, `RoomFlow`, `RoomThreadPanel`, `RoomLiveLane`; the room's canvas is `apps/client/src/layers/features/canvas/ui/room/` over `app-store-room-canvas.ts`; the row itself, `NoticeRow`, the one list, the composer card and the live lane are `apps/client/src/layers/features/conversation/` |
 
 If the run found bugs, close with the `/flow:ideate` prompt shape `/chat:self-test` uses — problem statement, this report's path, the affected files found while tracing, and what "fixed" looks like.
 

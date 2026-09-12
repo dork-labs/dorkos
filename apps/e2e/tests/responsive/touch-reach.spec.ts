@@ -130,13 +130,15 @@ test.describe('Touch reach — the surfaces batch 07 fixed @smoke', () => {
   test.use({ viewport: PHONE });
 
   /**
-   * A dev server for the canvas to frame.
+   * A dev server for the embedded browser to frame.
    *
-   * The canvas splash's "Web Page" action is the cheapest way to put a real
-   * document tab — and therefore a real close button — in the header. The
-   * fixture is the one `tests/workbench/dev-server-preview.spec.ts` already
-   * owns, so there is one honest answer in the repo to "what does a dev server
-   * emit" rather than two.
+   * The Browser tab's "Web Page" action is the cheapest way to put a real
+   * document tab — and therefore a real close button — in a strip. Both strips
+   * are the same component over different documents (ADR 260911-200304), so the
+   * reach this measures is the one the Canvas tab ships too. The fixture is the
+   * one `tests/workbench/dev-server-preview.spec.ts` already owns, so there is
+   * one honest answer in the repo to "what does a dev server emit" rather than
+   * two.
    */
   let devServer: Server;
   let devPort: number;
@@ -151,20 +153,20 @@ test.describe('Touch reach — the surfaces batch 07 fixed @smoke', () => {
     await new Promise<void>((resolve) => devServer.close(() => resolve()));
   });
 
-  test('a canvas document tab can be closed by a thumb', async ({ page, rightPanel }) => {
+  test('a document tab can be closed by a thumb', async ({ page, rightPanel }) => {
     await openInCanvasBrowser(page, rightPanel, `http://localhost:${devPort}/`);
 
     // The outcome, not a settle time: the strip only exists once a document is
     // open, so waiting for the close button IS waiting for the document.
     const close = page
-      .locator('[role="tablist"][aria-label="Open canvas documents"] button[aria-label^="Close "]')
+      .locator('[role="tablist"][aria-label="Open browser pages"] button[aria-label^="Close "]')
       .first();
     await expect(
       close,
-      'opening a web page must put a closable tab in the canvas strip'
+      'opening a web page must put a closable tab in the Browser tab’s strip'
     ).toBeVisible({ timeout: 15_000 });
 
-    await expectReach(close, 'the canvas document tab close button', {
+    await expectReach(close, 'the document tab close button', {
       minTouch: TAB_CLOSE_MIN_TOUCH_PX,
       minReach: TAB_CLOSE_MIN_REACH_PX,
     });

@@ -54,28 +54,120 @@ const SUBAGENT_TYPE_INPUT_KEY = 'subagent_type';
 const SUBAGENT_INTERRUPTED_METADATA_KEY = 'interrupted';
 
 /**
- * Tool-error text that means a subagent was STOPPED rather than failed. Four of
- * the five shapes were read off the compiled `opencode-ai@1.18.15` binary; the
- * fourth was live-captured, and the binary read had said it could not happen:
+ * Envelopes upstream wraps around an inner error before it reaches the parent's
+ * `task` part. They carry no outcome of their own — the stop-vs-failure signal
+ * is always the text INSIDE them — so {@link subagentFailureStatus} peels them
+ * off before classifying. Both verified in the upstream source at tag
+ * `v1.18.30`:
+ *
+ * - `Tool execution failed: <inner>` — the runner wrapping a tool's own throw
+ *   (`packages/core/src/session/runner/llm.ts:321`, and
+ *   `packages/opencode/src/session/prompt.ts:419`).
+ * - `Subagent failed (task_id: <child session id>): <inner>` — **new in opencode
+ *   1.18.20** (`packages/opencode/src/tool/task.ts:218,222`), which surfaces a
+ *   resumable child-session handle where the task tool previously returned an
+ *   empty result. The `task_id` here is upstream's RESUMPTION handle for the
+ *   child session, unrelated to the DorkOS `taskId` below (which is
+ *   `part.callID`, the parent's tool-call id).
+ *
+ * Peeling rather than pattern-matching each combination is deliberate: the two
+ * nest (`Tool execution failed: Subagent failed (task_id: …): Aborted`), and an
+ * envelope that is not peeled hides a stop behind the word "failed". Which
+ * layers were peeled is reported back, because one stop shape is only a stop
+ * inside the child-session envelope (see {@link SUBAGENT_CHILD_ABORTED_PATTERN}).
+ */
+const SUBAGENT_ERROR_ENVELOPES = [
+  { pattern: /^tool execution failed:\s*(.+)$/is, fromChildSession: false },
+  { pattern: /^subagent failed \(task_id:[^)]*\):\s*(.+)$/is, fromChildSession: true },
+] as const;
+
+/** Peel depth — two envelopes nest, one spare for a third that may be added. */
+const SUBAGENT_ENVELOPE_PEEL_LIMIT = 3;
+
+/**
+ * Tool-error text that means a subagent was STOPPED rather than failed, read
+ * after {@link SUBAGENT_ERROR_ENVELOPES} have been peeled off. Every shape was
+ * re-verified in the upstream source at tag `v1.18.30`:
  *
  * - `Tool execution aborted` — `SessionProcessor.cleanup` on abort, alongside
- *   `metadata.interrupted: true`. **This is the ordinary user-stop path.**
- * - `Tool execution interrupted` — `SessionRunner.failUnsettledTools`.
- * - `Tool execution failed: Task cancelled` — the TaskTool's own
- *   `Error("Task cancelled")` after the runner wraps it.
- * - `Task cancelled` — the SAME throw, unwrapped. Live-captured 2026-08-11
- *   (`fixtures/live-child-permission-stop.jsonl`) when the stop landed while the
- *   subagent was holding a permission: the task tool settles its own part, so
- *   the runner never wraps the message and never stamps `interrupted`. Reading
- *   it as a failure told the operator their own stop had gone wrong.
- * - `Cancelled` — `SessionPrompt.handleSubtask`'s `onInterrupt`, reachable only
- *   when a client sends a `SubtaskPartInput` (DorkOS never does).
+ *   `metadata.interrupted: true` (`packages/opencode/src/session/processor.ts:602`).
+ *   **This is the ordinary user-stop path.**
+ * - `Tool execution interrupted` — `SessionRunner.failUnsettledTools`
+ *   (`packages/core/src/session/runner/llm.ts:306,314,346`).
+ * - `Task cancelled` — the TaskTool's own throw when the child job reports
+ *   cancelled (`packages/opencode/src/tool/task.ts:340`). Reaches the parent
+ *   both bare and inside the `Tool execution failed:` envelope; bare was
+ *   live-captured 2026-08-11 (`fixtures/live-child-permission-stop.jsonl`) when
+ *   the stop landed while the subagent was holding a permission, because the
+ *   task tool settles its own part and nothing stamps `interrupted`. Reading it
+ *   as a failure told the operator their own stop had gone wrong.
+ * - `Cancelled` — `SessionPrompt.handleSubtask`'s `onInterrupt`
+ *   (`packages/opencode/src/session/prompt.ts:371`), reachable only when a
+ *   client sends a `SubtaskPartInput` (DorkOS never does).
  *
- * Anchoring on the last one alone (as this first shipped) painted an ordinary
+ * Anchoring on `Cancelled` alone (as this first shipped) painted an ordinary
  * stop as a failure, because it is the one path DorkOS cannot reach.
  */
 const SUBAGENT_STOPPED_PATTERN =
-  /^(?:(?:task )?cancelled|tool execution (?:aborted|interrupted|failed: task cancelled))$/i;
+  /^(?:(?:task )?cancelled|tool execution (?:aborted|interrupted))$/i;
+
+/**
+ * The one stop shape that counts ONLY inside the `Subagent failed (task_id: …)`
+ * envelope — **new reachable text at 1.18.20+**, and deliberately narrower than
+ * {@link SUBAGENT_STOPPED_PATTERN} because the trace that makes it a stop runs
+ * entirely through the CHILD session:
+ *
+ * Cancelling a child session does not interrupt the caller. The runner catches
+ * its own `RunnerCancelled` and RETURNS the child's last assistant message
+ * instead (`packages/opencode/src/effect/runner.ts:65`, fed by
+ * `packages/opencode/src/session/prompt.ts:1346`), and that message carries
+ * `MessageAbortedError{message: "Aborted"}` stamped by the interrupt handler
+ * (`prompt.ts:1203-1211` → `session/message-v2.ts:612` →
+ * `packages/core/src/v1/session.ts:50`). The task tool's new error branch reads
+ * that message and emits `Subagent failed (task_id: …): Aborted`
+ * (`packages/opencode/src/tool/task.ts:213-218` at `v1.18.30`). Before 1.18.20
+ * the same cancel produced an empty SUCCESS, so this text is exactly the class
+ * of change fully-anchored strings cannot survive on their own.
+ *
+ * **Why it is not in the pattern above.** `Aborted` is the message of a generic
+ * `DOMException`, not a sentence upstream writes about a subagent. Nothing at
+ * `v1.18.30` puts it on a parent tool part except that envelope, so widening the
+ * general pattern would buy no reachable case and would start reading a bare
+ * `Aborted` — from any future code path, meaning anything at all — as the user's
+ * own stop. Keeping it gated on the envelope keeps the claim as narrow as the
+ * evidence.
+ */
+const SUBAGENT_CHILD_ABORTED_PATTERN = /^aborted$/i;
+
+/** A tool error with every {@link SUBAGENT_ERROR_ENVELOPES} layer peeled off. */
+interface UnwrappedSubagentError {
+  /** The innermost message — the only text that says whether this was a stop. */
+  readonly text: string;
+  /**
+   * True when one of the peeled layers was the `Subagent failed (task_id: …)`
+   * envelope, so {@link text} is the CHILD session's own error rather than the
+   * parent's. {@link SUBAGENT_CHILD_ABORTED_PATTERN} applies only then.
+   */
+  readonly fromChildSession: boolean;
+}
+
+/** Peel every envelope off a tool error and report which layers were found. */
+function unwrapSubagentError(error: string): UnwrappedSubagentError {
+  let text = error.trim();
+  let fromChildSession = false;
+  for (let depth = 0; depth < SUBAGENT_ENVELOPE_PEEL_LIMIT; depth++) {
+    let inner: string | undefined;
+    for (const envelope of SUBAGENT_ERROR_ENVELOPES) {
+      const peeled = inner === undefined ? envelope.pattern.exec(text)?.[1]?.trim() : undefined;
+      if (peeled === undefined) continue;
+      inner = peeled;
+      fromChildSession ||= envelope.fromChildSession;
+    }
+    if (inner === undefined) break;
+    text = inner;
+  }
+  return { text, fromChildSession };
+}
 
 /** One live subagent run, keyed in the context by the `task` tool's callID. */
 interface OpenCodeSubagentRun {
@@ -136,15 +228,24 @@ function subagentFailureStatus(
     stateMetadata?.[SUBAGENT_INTERRUPTED_METADATA_KEY] ??
     partMetadata?.[SUBAGENT_INTERRUPTED_METADATA_KEY];
   if (interrupted === true) return 'stopped';
-  return SUBAGENT_STOPPED_PATTERN.test(error.trim()) ? 'stopped' : 'failed';
+  const unwrapped = unwrapSubagentError(error);
+  if (SUBAGENT_STOPPED_PATTERN.test(unwrapped.text)) return 'stopped';
+  if (unwrapped.fromChildSession && SUBAGENT_CHILD_ABORTED_PATTERN.test(unwrapped.text)) {
+    return 'stopped';
+  }
+  return 'failed';
 }
 
 /**
  * The child session a `task` part delegates to, or undefined when it has not
  * been created yet — or when the metadata names the PARENT session.
  *
- * That last guard is not reachable at 1.18.15, and is cheap insurance against a
- * shape change with a catastrophic failure mode: admitting the parent as its own
+ * That last guard is still not reachable at `v1.18.30` — the task tool creates
+ * the child with `parentID: ctx.sessionID` and then publishes
+ * `{parentSessionId: ctx.sessionID, sessionId: nextSession.id}`
+ * (`packages/opencode/src/tool/task.ts:159,185-190`), so the two ids cannot be
+ * equal. It is cheap insurance against a shape change with a catastrophic
+ * failure mode: admitting the parent as its own
  * child routes the whole turn down the child path, where its text is dropped,
  * its task completion is misread as progress, and its `session.idle` never ends
  * the turn. `part.sessionID` is the structural truth (a `task` part always lives

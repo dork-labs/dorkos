@@ -175,7 +175,7 @@ describe('an approval remembers who asked, so a late answer can reach them', () 
           approvalId,
           capabilityTitle: 'mesh.unregister',
           outcome: 'granted',
-          decidedAt: expect.any(String),
+          endedAt: expect.any(String),
         },
       });
     });
