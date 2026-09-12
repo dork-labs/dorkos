@@ -12,8 +12,8 @@
  *
  * A domain is included only when its service handles are present in `deps`:
  * `operatorDeps` gates the operator domain, `marketplaceDeps` the marketplace
- * domain, `roomDeps` the rooms domain, and the self-description domain is always
- * present. Every included
+ * domain, `roomDeps` the rooms domain, and the memory, `ui` and self-description
+ * domains are always present. Every included
  * domain's `assertDeps` runs inside `composeRegistry`, so a domain admitted
  * without its deps fails fast at boot.
  *
@@ -35,6 +35,7 @@ import { connectorExecutionDomain } from '../../connectors/execution/execution-c
 import { mcpDomain } from '../../mesh/mcp-capabilities.js';
 import { roomsDomain } from '../../rooms/room-capabilities.js';
 import { memoryDomain } from '../../memory/memory-capabilities.js';
+import { uiDomain } from '../../session/browser-seat/ui-capabilities.js';
 import { capabilitiesDomain } from './capabilities-domain.js';
 
 /**
@@ -68,6 +69,9 @@ export function composeDorkOsCapabilityRegistry(
   // this domain exists to fix — so there is no configuration under which the
   // right answer is to leave the verb out.
   domains.push(memoryDomain);
+  // Unconditional for the same reason: there is no handle to switch off. Every
+  // session has a window, and the canvas it reads is resolved per call.
+  domains.push(uiDomain);
   domains.push(capabilitiesDomain);
 
   const registry = composeRegistry(domains, deps, onInvocation);
@@ -117,6 +121,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     mcpDomain,
     roomsDomain,
     memoryDomain,
+    uiDomain,
     capabilitiesDomain,
   ];
   const deps: CapabilityDeps = {

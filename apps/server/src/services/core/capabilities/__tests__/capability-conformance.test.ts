@@ -576,6 +576,12 @@ capabilityConformance(registry, {
     // rather than a structured refusal that would read as "wired" without ever
     // reaching the service.
     'rooms.read_canvas': { roomId: CONFORMANCE_ROOM_ID },
+    // The SESSION canvas read (spec `canvas-agent-seat` §1.8). Its input is a
+    // document id and nothing else — there is no session argument, which is the
+    // whole security property — so the conformance call runs the handler with no
+    // session in context and gets the sentence that says so. That is the verb
+    // really running: a wiring fault would throw instead.
+    'ui.read_canvas_document': { documentId: 'conformance-document' },
   },
 });
 

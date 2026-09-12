@@ -284,7 +284,7 @@ describe('in-session tool exposure', () => {
     await Promise.all([client.close(), server.instance.close()]);
   });
 
-  it('always-loads exactly the eight a turn cannot search for first', async () => {
+  it('always-loads exactly the nine a turn cannot search for first', async () => {
     const tools = await advertisedTools();
     const eager = tools
       .filter((t) => t._meta?.[ALWAYS_LOAD_META] === true)
@@ -370,8 +370,16 @@ describe('in-session tool exposure', () => {
     // tool the PROMPT names may not be deferred. `<room_tools>` does name it,
     // and that is exactly why it also joins `ALWAYS_LOADED_TOOLS` above — both
     // counts move by one, which is what says nothing else came with it.
-    expect(tools).toHaveLength(92);
-    expect(deferred).toHaveLength(83);
+    //
+    // 92 → 93 for `read_canvas_document`, the first verb of the `ui` domain
+    // (spec `canvas-agent-seat` §5). It is DEFERRED, and it stays deferred: the
+    // eager slot is the scarcest thing in the prompt, and nothing names this
+    // tool before an agent has decided to look at its own canvas — `get_ui_state`
+    // is where an agent learns there is anything to read, and that is a tool call
+    // too. Both counts move by exactly one, which is what says nothing else came
+    // with it.
+    expect(tools).toHaveLength(93);
+    expect(deferred).toHaveLength(84);
     const retiredConnectorTools = [
       'connector_list_accounts',
       'connector_start_connect',

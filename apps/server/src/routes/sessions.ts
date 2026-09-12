@@ -70,6 +70,7 @@ import {
 import { sessionEventsHandler } from './session-events-handler.js';
 import { sessionCommandIntentHandler } from './session-command-intent-handler.js';
 import { sessionDevtoolsIngestHandler } from './session-devtools.js';
+import sessionCanvasRouter from './session-canvas.js';
 import { sessionAttachmentHandler } from './session-attachments-handler.js';
 import { sessionMcpAppResourceHandler } from './session-mcp-app-resource-handler.js';
 import path from 'node:path';
@@ -1471,6 +1472,13 @@ router.post('/:id/ui-action', sessionUiActionHandler);
 // projector (trigger-only, 202; delivery over /events, e.g. compact_boundary);
 // busy → 409 SESSION_LOCKED — see the handler's module doc.
 router.post('/:id/command-intents/:intent', sessionCommandIntentHandler);
+
+// /api/sessions/:id/canvas — this session's own canvas (spec
+// `canvas-agent-seat` §1.6). Six thin handlers over the one writer, in their own
+// file for the same reason the devtools sink is: this one stays under the size
+// rule. A person is the gate; an agent is refused `PEOPLE_ONLY` and reaches its
+// own canvas through `control_ui` and `read_canvas_document` instead.
+router.use('/:id/canvas', sessionCanvasRouter);
 
 // POST /api/sessions/:id/devtools/ingest — DevTools bridge capture sink (DOR-213).
 // Session-gated (credentialed same-origin client call), Zod-validated, batch-capped.

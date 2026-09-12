@@ -4900,6 +4900,153 @@ registry.registerPath({
   },
 });
 
+// === The session canvas (spec `canvas-agent-seat` §1.6) ===
+//
+// The same table the room canvas uses, under a `session:` scope. A person is the
+// gate: an agent is refused 403 `PEOPLE_ONLY` and reaches its own canvas through
+// `control_ui` and `read_canvas_document` instead, neither of which takes a
+// session id it could point somewhere else.
+
+/** Path params for a session-canvas route that names one document. */
+const SessionCanvasParams = z.object({
+  id: z.string().min(1),
+  documentId: z.string().min(1),
+});
+
+/** Path params for a session-canvas route that names only the session. */
+const SessionCanvasIdParams = z.object({ id: z.string().min(1) });
+
+/** 403 for an agent: a session's canvas belongs to the person whose session it is. */
+const sessionCanvasPeopleOnly = {
+  description: 'A session’s canvas is the person’s own',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
+
+/** 404 for a document this session's canvas does not hold. */
+const sessionCanvasDocumentNotFound = {
+  description: 'No such document on this canvas',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/sessions/{id}/canvas',
+  tags: ['Sessions'],
+  summary: 'Everything on this session’s canvas',
+  description:
+    "The documents open in this session's right panel, pinned first then most recently active — the same table on every device you open the session on. **The stream is how an app stays current, not this route**: a cold `GET /api/sessions/{id}/events` carries the whole canvas in its snapshot and every later change arrives as a `canvas` event. This exists for a cold read without a stream.",
+  request: { params: SessionCanvasIdParams },
+  responses: {
+    200: {
+      description: 'The session’s canvas, pinned first then most recently active',
+      content: { 'application/json': { schema: CanvasDocumentListResponseSchema } },
+    },
+    403: sessionCanvasPeopleOnly,
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/sessions/{id}/canvas/{documentId}',
+  tags: ['Sessions'],
+  summary: 'Read one document on this session’s canvas',
+  description:
+    'One row, content included. A document id from another session answers exactly as one that never existed, so an id is never a way to read across sessions.',
+  request: { params: SessionCanvasParams },
+  responses: {
+    200: {
+      description: 'The document',
+      content: { 'application/json': { schema: CanvasDocumentSchema } },
+    },
+    403: sessionCanvasPeopleOnly,
+    404: sessionCanvasDocumentNotFound,
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/sessions/{id}/canvas',
+  tags: ['Sessions'],
+  summary: 'Put something on this session’s canvas',
+  description:
+    'Content with a natural identity (a file path, a URL) DEDUPES: opening something already on the canvas refreshes that document rather than adding a second tab beside it, so two windows of one session land on one document. `json` and `widget` have no such identity, so every open of one is a fresh document. Past twelve unpinned documents the least recently active is dropped, and every window is told.',
+  request: {
+    params: SessionCanvasIdParams,
+    body: { content: { 'application/json': { schema: OpenCanvasDocumentRequestSchema } } },
+  },
+  responses: {
+    201: {
+      description: 'The document, as every window now has it',
+      content: { 'application/json': { schema: CanvasDocumentSchema } },
+    },
+    400: roomValidationError,
+    403: sessionCanvasPeopleOnly,
+    409: {
+      description: 'Somebody is editing the document this would have refreshed',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/sessions/{id}/canvas/{documentId}',
+  tags: ['Sessions'],
+  summary: 'Change one document on this session’s canvas',
+  description:
+    'Three independent changes, any of which may be omitted: replace what the document shows, pin or unpin it, and move it to the front of the list.',
+  request: {
+    params: SessionCanvasParams,
+    body: { content: { 'application/json': { schema: UpdateCanvasDocumentRequestSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'The document, as every window now has it',
+      content: { 'application/json': { schema: CanvasDocumentSchema } },
+    },
+    400: roomValidationError,
+    403: sessionCanvasPeopleOnly,
+    404: sessionCanvasDocumentNotFound,
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/sessions/{id}/canvas/{documentId}',
+  tags: ['Sessions'],
+  summary: 'Take a document off this session’s canvas',
+  description:
+    'The row is deleted and every window of this session is told to drop it. Nothing needs a tombstone: a window that reconnects hydrates the whole canvas from the session snapshot, so a close it missed corrects itself.',
+  request: { params: SessionCanvasParams },
+  responses: {
+    204: { description: 'Closed' },
+    403: sessionCanvasPeopleOnly,
+    404: sessionCanvasDocumentNotFound,
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/sessions/{id}/canvas/{documentId}/editing',
+  tags: ['Sessions'],
+  summary: 'Say you are editing a canvas document, or that you have stopped',
+  description:
+    "While you hold this, the agent's change to the same document is HELD rather than applied, and the agent is told it was held instead of being told it succeeded. Refresh it about every fifteen seconds while an editor is focused; it lapses on its own about forty-five seconds after the last refresh, so a browser that crashed mid-edit cannot leave a document nobody can touch.",
+  request: {
+    params: SessionCanvasParams,
+    body: { content: { 'application/json': { schema: CanvasEditingRequestSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'Who holds the lock now, and when it lapses',
+      content: { 'application/json': { schema: CanvasEditingResponseSchema } },
+    },
+    400: roomValidationError,
+    403: sessionCanvasPeopleOnly,
+    404: sessionCanvasDocumentNotFound,
+  },
+});
+
 registry.registerPath({
   method: 'get',
   path: '/api/rooms/{id}/events',
