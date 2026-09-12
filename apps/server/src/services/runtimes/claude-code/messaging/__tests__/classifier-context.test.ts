@@ -50,6 +50,7 @@ import {
 } from '../../../../observability/auto-mode-stops.js';
 import { inSessionToolName } from '../../mcp-tools/tool-exposure.js';
 import {
+  CLASSIFIER_CONTEXT_MATCHER,
   CLASSIFIER_SENTENCES,
   classifierContextFor,
   createClassifierContextHook,
@@ -193,6 +194,73 @@ describe('the off switch', () => {
 
   it.each(['0', 'false', 'no', 'off', 'FALSE', ' Off '])('turns notes off for %o', (raw) => {
     expect(isClassifierContextEnabled(raw)).toBe(false);
+  });
+});
+
+describe('the matcher the CLI is handed', () => {
+  /**
+   * The CLI's own rule for reading a hook matcher, transcribed from the shipped
+   * binary (`@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.268`, the pair of
+   * functions behind `Getting matching hook commands for`).
+   *
+   * A matcher of `[a-zA-Z0-9_|, -]` and nothing else is a LIST OF EXACT TOOL
+   * NAMES: it is split on `|` and `,` and the call's tool name has to BE one of
+   * the entries. Only a matcher carrying another character is compiled as a
+   * regular expression and tested against the name. This is why the bare prefix
+   * fired for nothing, and why the working PreToolUse matcher beside it
+   * (`Edit|Write|MultiEdit|NotebookEdit`) works: that one really is a name list.
+   *
+   * Transcribed rather than imported because there is nothing to import — the
+   * rule lives inside a 200MB compiled binary. It is therefore a copy that can
+   * go stale, and the live proof in the pull request is what says it was true of
+   * a real run; what this buys is that a future edit to the matcher gets checked
+   * against the rule instead of against its own spelling.
+   */
+  const cliWouldRunHook = (matcher: string, toolName: string): boolean => {
+    if (!matcher || matcher === '*') return true;
+    if (/^[a-zA-Z0-9_|, -]+$/.test(matcher)) {
+      return matcher
+        .split(/[|,]/)
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .includes(toolName);
+    }
+    try {
+      return new RegExp(matcher).test(toolName);
+    } catch {
+      return false;
+    }
+  };
+
+  it('is a pattern, not a name list the CLI would look for a tool called', () => {
+    expect(
+      /^[a-zA-Z0-9_|, -]+$/.test(CLASSIFIER_CONTEXT_MATCHER),
+      'a word-characters-only matcher is read as a list of exact tool names, so it can only ' +
+        'match a tool literally called that — the hook then never fires and nothing says so'
+    ).toBe(false);
+  });
+
+  it('reaches every tool the gate declares a tier for', () => {
+    for (const bare of Object.keys(MCP_TOOL_TIERS)) {
+      const toolName = inSessionToolName(bare);
+      expect(
+        cliWouldRunHook(CLASSIFIER_CONTEXT_MATCHER, toolName),
+        `the CLI would not run the hook for ${toolName}`
+      ).toBe(true);
+    }
+  });
+
+  it.each(['Read', 'Bash', 'mcp__other__mesh_list', 'evil__mcp__dorkos__mesh_list'])(
+    'does not put %s on the wire',
+    (toolName) => {
+      expect(cliWouldRunHook(CLASSIFIER_CONTEXT_MATCHER, toolName)).toBe(false);
+    }
+  );
+
+  it('would have failed for the bare prefix this shipped with', () => {
+    // The mutation check for the fix itself: revert the matcher to the prefix
+    // and the hook stops reaching a single call.
+    expect(cliWouldRunHook('mcp__dorkos__', inSessionToolName('mesh_list'))).toBe(false);
   });
 });
 

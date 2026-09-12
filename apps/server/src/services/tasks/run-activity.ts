@@ -9,8 +9,11 @@
  */
 import type { Task, TaskRun } from '@dorkos/shared/types';
 import { readableToolName, type RefusedAsk } from '@dorkos/shared/run-refusals';
+import type { RefusedAskReporter } from '@dorkos/relay';
 import type { ActivityService } from '../activity/activity-service.js';
+import type { TaskStore } from './task-store.js';
 import { formatDuration } from '../../lib/format-duration.js';
+import { logger } from '../../lib/logger.js';
 
 /**
  * Emit an activity event for a completed, failed, or cancelled run.
@@ -112,6 +115,14 @@ export function emitRunActivity(
  * covered on both paths by the cancel route; only the relay+deadline case is
  * uncovered.
  *
+ * The REFUSED-ASK entry is no longer part of that gap. It was, and it mattered
+ * more than the note admitted: with the relay adapter connected — the ordinary
+ * install — a scheduled run takes the relay path, so `tasks.ask_refused` reached
+ * nobody at all while the run's own summary said the tool had been skipped. The
+ * relay handler now reports each refusal to the host through its
+ * `onRefusedAsk` callback, and {@link createRelayRefusedAskEmitter} is what the
+ * composition root wires it to.
+ *
  * @param activityService - The feed to write to; nothing is emitted without one.
  * @param task - The run's task, or null when the hook could not read it.
  * @param run - The run as persisted at its terminal write.
@@ -188,4 +199,53 @@ export function emitRefusedAskActivity(
       ...(refused.reason !== undefined ? { reason: refused.reason } : {}),
     },
   });
+}
+
+/** What {@link createRelayRefusedAskEmitter} has to be able to look up. */
+export interface RelayRefusedAskDeps {
+  /** The task and run behind an id pair the relay handler carries. */
+  taskStore: Pick<TaskStore, 'getTask' | 'getRun'>;
+  /** The feed to write to; nothing is emitted without one. */
+  activityService: ActivityService | null;
+}
+
+/**
+ * The callback the relay's task handler reports a refused ask to (DOR-1580).
+ *
+ * The relay handler holds a task id and a run id and nothing else — it lives in
+ * `packages/relay`, which cannot see the activity feed or the `TaskStore` — so
+ * the ids are what crosses the seam and the lookup happens here. The run row
+ * exists by the time this runs: the scheduler writes it before it dispatches.
+ *
+ * Nothing is emitted for an id pair that resolves to nothing, and NOTHING
+ * escapes: this is instrumentation hanging off a live run, and a run must not
+ * fail because its feed entry could not be written. The catch is load-bearing
+ * rather than defensive habit. The two lookups are synchronous SQLite reads, and
+ * this callback runs inside the relay task handler's main `try` — whose catch
+ * marks the run `failed` and dead-letters the envelope. A database that throws
+ * mid-run (a shutdown closing the handle under a still-running turn is the real
+ * case) would therefore turn a run that actually ran into a dead-lettered
+ * failure, which is a worse outcome than the missing feed row it would be
+ * reporting. `debug`, because the run's own summary line still carries the
+ * refusal and nothing a person needs is lost.
+ *
+ * @param deps - Where to look the run up, and where to write.
+ * @returns The reporter to hand the relay adapter.
+ */
+export function createRelayRefusedAskEmitter(deps: RelayRefusedAskDeps): RefusedAskReporter {
+  return ({ taskId, runId, refused }) => {
+    try {
+      const task = deps.taskStore.getTask(taskId);
+      const run = deps.taskStore.getRun(runId);
+      if (!task || !run) return;
+      emitRefusedAskActivity(deps.activityService, task, run, refused);
+    } catch (err) {
+      logger.debug('[Tasks] could not record a refused ask for a relay-dispatched run', {
+        taskId,
+        runId,
+        toolName: refused.toolName,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
 }

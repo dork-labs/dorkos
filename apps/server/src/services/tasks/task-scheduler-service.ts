@@ -1312,10 +1312,12 @@ export class TaskSchedulerService {
           // every other activity writer has. `observe` answers only on a tool's
           // FIRST refusal: an agent that keeps reaching for the same blocked
           // tool would otherwise write the same row dozens of times and bury
-          // everything else in the feed. The relay dispatch path finalizes its
-          // runs inside `packages/relay`, which cannot reach the activity
-          // service, so it carries the summary line and no per-refusal entries —
-          // the same asymmetry DOR-1580 records for a timed-out relay run.
+          // everything else in the feed. The relay dispatch path writes the
+          // same entries: it cannot reach the activity service from
+          // `packages/relay`, so it reports each first refusal to the host
+          // instead and `createRelayRefusedAskEmitter` writes the row
+          // (DOR-1580). What is still asymmetric between the two paths is the
+          // deadline-cancel event, and only that.
           const refused = refusals.observe(event);
           if (refused) emitRefusedAskActivity(this.activityService, task, run, refused);
           // Collect first 500 chars of text output as summary

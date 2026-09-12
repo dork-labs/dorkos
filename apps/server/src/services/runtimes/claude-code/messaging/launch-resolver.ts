@@ -53,9 +53,13 @@ import { claudeConfigDirEnv, resolveLaunchAccountRoot } from '../claude-config-d
 import type { AgentIdentityPin, LaunchParams } from '../sessions/launch-fingerprint.js';
 import { narrowToClaudeCodeMode } from '../runtime-constants.js';
 import { resolveToolConfig } from '../tooling/tool-filter.js';
-import { loadsAgentToAgentTools, IN_SESSION_TOOL_PREFIX } from '../mcp-tools/tool-exposure.js';
+import { loadsAgentToAgentTools } from '../mcp-tools/tool-exposure.js';
 import { env } from '../../../../env.js';
-import { createClassifierContextHook, isClassifierContextEnabled } from './classifier-context.js';
+import {
+  CLASSIFIER_CONTEXT_MATCHER,
+  createClassifierContextHook,
+  isClassifierContextEnabled,
+} from './classifier-context.js';
 import { buildSystemPromptAppend, renderContextEntry } from './context-builder.js';
 import { createCanUseTool, handleElicitation } from './interactive-handlers.js';
 import {
@@ -552,15 +556,15 @@ export async function resolveLaunch(args: {
     // acceptable where an auto-approval list was not — ADR `260726-171347`
     // (DOR-519) is the record of what a list of tool names did here.
     //
-    // The matcher narrows the wire; `classifierContextFor` is the guard. It is
-    // written as a plain substring rather than an anchored pattern because the
-    // matcher is the CLI's to interpret and a pattern it read differently would
-    // fail SILENTLY — the hook would simply never fire. The guard re-checks the
-    // prefix and the gate's own table, so nothing rests on the matcher being
-    // narrow, only on it being wide enough.
+    // The matcher narrows the wire; `classifierContextFor` is the guard. It has
+    // to be shaped like a PATTERN, not like a prefix: the CLI reads a matcher of
+    // word characters alone as a list of exact tool names, so the bare
+    // `mcp__dorkos__` this shipped with matched nothing and the hook never fired
+    // at all. `CLASSIFIER_CONTEXT_MATCHER` carries the anchor that buys the
+    // regex reading, and its TSDoc has the whole rule.
     PostToolUse: [
       {
-        matcher: IN_SESSION_TOOL_PREFIX,
+        matcher: CLASSIFIER_CONTEXT_MATCHER,
         hooks: [createClassifierContextHook({ sessionId, enabled: CLASSIFIER_CONTEXT_ON })],
       },
     ],

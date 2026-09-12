@@ -14,6 +14,7 @@ import type {
   SessionSettings,
   StreamEvent,
 } from '@dorkos/shared/types';
+import type { RefusedAsk } from '@dorkos/shared/run-refusals';
 import type { ApprovalAuthorizer } from './approval-handler.js';
 
 /**
@@ -251,6 +252,29 @@ export interface AgentSessionStoreLike {
   set(agentId: string, sdkSessionId: string): void;
 }
 
+/**
+ * Told about one tool a relay-dispatched run reached for and could not have,
+ * because nobody was there to approve it (DOR-1580).
+ *
+ * A callback rather than a store write, because what the host does with it —
+ * write an activity entry naming the task — needs the activity feed, and this
+ * package cannot see it. The host wires one in; a host that wires none loses
+ * nothing it had before.
+ *
+ * Called at most ONCE PER TOOL per run: the caller only reports what
+ * `RefusedAskLog.observe` answers with, which is a tool's first refusal and
+ * never a repeat. That is the same dedupe the direct-dispatch twin relies on, so
+ * a run refused the same tool thirty times is one entry on either path.
+ */
+export type RefusedAskReporter = (report: {
+  /** The task the run belongs to. */
+  taskId: string;
+  /** The run that was refused. */
+  runId: string;
+  /** The refusal, as the runtime recorded it. */
+  refused: RefusedAsk;
+}) => void;
+
 /** Minimal TasksStore interface for Tasks run lifecycle updates. */
 export interface TasksStoreLike {
   updateRun(runId: string, update: Record<string, unknown>): void;
@@ -302,6 +326,12 @@ export interface ClaudeCodeAdapterDeps {
   agentRuntimes?: ReadonlyMap<string, AgentRuntimeLike>;
   traceStore: import('../../types.js').TraceStoreLike;
   taskStore?: TasksStoreLike;
+  /**
+   * Where a scheduled run's refused asks are reported — see
+   * {@link RefusedAskReporter}. Optional: nothing about a run changes without
+   * one, only what the activity feed says about it.
+   */
+  onRefusedAsk?: RefusedAskReporter;
   /**
    * Persistent store for mapping agent identifiers to SDK session UUIDs.
    *

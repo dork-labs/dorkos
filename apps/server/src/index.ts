@@ -87,6 +87,7 @@ import type { NotifyDmDeps } from './services/relay/notify-dm.js';
 import type { ConnectorProviderInstanceId } from '@dorkos/shared/connector-schemas';
 import type { RelayChannelDeps } from './services/notifications/channels/relay.js';
 import { createRunTerminalListener } from './services/tasks/run-terminal-broadcaster.js';
+import { createRelayRefusedAskEmitter } from './services/tasks/run-activity.js';
 import { TaskSchedulerService } from './services/tasks/task-scheduler-service.js';
 import { resolveTasksFiring } from './services/tasks/resolve-firing.js';
 import { TaskFileWatcher } from './services/tasks/task-file-watcher.js';
@@ -1937,6 +1938,14 @@ async function start() {
         ]),
         traceStore,
         taskStore: taskStore,
+        // A scheduled run that took the relay path is the ordinary case once an
+        // adapter is connected, and until DOR-1580 it was the case where
+        // "could not use that tool, nobody was there to approve it" reached the
+        // run's summary and no further. Built here because this is the only
+        // place that holds the whole `TaskStore` and the activity feed at once.
+        ...(taskStore && {
+          onRefusedAsk: createRelayRefusedAskEmitter({ taskStore, activityService }),
+        }),
         relayCore,
         meshCore, // meshCore is now available
         eventRecorder: traceStore,

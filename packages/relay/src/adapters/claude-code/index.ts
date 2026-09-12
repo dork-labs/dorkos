@@ -10,6 +10,7 @@ export type {
   AgentRuntimeLike,
   AgentSessionStoreLike,
   TasksStoreLike,
+  RefusedAskReporter,
   ExecutionSettingsResolver,
   TurnRuntimeTypeResolver,
   SessionRuntimeBinder,
