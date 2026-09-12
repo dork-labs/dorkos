@@ -93,6 +93,32 @@ async function seatThatAnswers(
 }
 
 /**
+ * Mint a real identity for an agent, so a request can act as somebody who is
+ * not the person driving the browser.
+ *
+ * Production only ever issues a token into a spawned session's process env, and
+ * a fabricated header does not fail — it falls through to the operator, which
+ * would make a test about another member's face pass while proving the opposite.
+ * So it is a real token or no test.
+ *
+ * @param request - The test's API context.
+ * @param agentPath - The agent's canonicalised project path.
+ * @param displayName - Its display name, for attribution labels.
+ */
+async function agentToken(
+  request: APIRequestContext,
+  agentPath: string,
+  displayName: string
+): Promise<string> {
+  const res = await request.post('/api/test/agent-token', { data: { agentPath, displayName } });
+  if (!res.ok()) {
+    throw new Error(`Could not mint an agent identity for ${agentPath}: ${await res.text()}`);
+  }
+  const { token } = (await res.json()) as { token: string };
+  return token;
+}
+
+/**
  * Put a document on a room's canvas AS THE PERSON, through the same route the
  * app's own doors use.
  *
@@ -293,55 +319,60 @@ test.describe('A room has a canvas everybody shares @smoke', () => {
     await expect(page.getByRole('button', { name: `Unpin ${second}` })).toBeVisible();
   });
 
-  test('a second window’s face appears on the tab it is looking at', async ({
+  test('another member’s face appears on the tab they are looking at', async ({
     page,
     basePage,
     roomsApi,
     roomsPage,
     request,
-    browser,
   }) => {
+    // **Not two browser windows, and the reason is the product's.** This install
+    // has exactly one person, so two windows are the SAME member — and a face
+    // telling you where you already are is noise, so the strip never draws your
+    // own. The other members of a room are its agents, which is who this drives:
+    // a real identity from the same seam the reaction spec uses, through the
+    // same route the app's own tabs call.
     const tag = roomsApi.runId;
-    const room = await roomsApi.createChannel(`canvas-face-${tag}`, `Face ${tag}`, []);
+    const name = `Watcher${tag}`;
+    const agent = await roomsApi.registerAgent(name, '👀', '#7c3aed');
+    const room = await roomsApi.createChannel(`canvas-face-${tag}`, `Face ${tag}`, [agent]);
+    const token = await agentToken(request, agent.projectPath, name);
+
     const watched = `Watched ${tag}`;
     const other = `Other ${tag}`;
-    await putOnCanvas(request, room.id, watched);
+    const watchedId = await putOnCanvas(request, room.id, watched);
     await putOnCanvas(request, room.id, other);
 
     await openRoom(page, basePage, roomsPage, room.id);
     await roomsPage.openCanvasTab();
-    // Nobody else is here yet, so no face is on anything.
     await expect(roomsPage.canvasDocuments).toContainText(watched, {
       timeout: SERVER_ROUND_TRIP_MS,
     });
+    // Nobody else is looking yet, so nothing is on any tab.
     await expect(roomsPage.canvasDocumentWatchers(watched)).toHaveCount(0);
 
-    const second = await browser.newContext();
-    const secondPage = await second.newPage();
-    const secondBase = new BasePage(secondPage);
-    const secondRooms = new RoomsPage(secondPage);
-    try {
-      await openRoom(secondPage, secondBase, secondRooms, room.id);
-      await secondRooms.openCanvasTab();
-      await secondRooms.canvasDocumentTab(watched).click();
-
-      // The face arrives over the first window's own stream, with no reload —
-      // which is the whole claim, and the one a per-browser store cannot make.
-      await expect(roomsPage.canvasDocumentWatchers(watched)).toBeVisible({
-        timeout: SERVER_ROUND_TRIP_MS,
+    const look = (documentId: string | null) =>
+      request.post(`/api/rooms/${room.id}/canvas/viewing`, {
+        headers: { 'X-DorkOS-Agent': token },
+        data: { documentId },
       });
-      await expect(roomsPage.canvasDocumentTab(watched)).toContainText('looking at this');
-      // …and it is on the tab they are ACTUALLY on, not on every tab.
-      await expect(roomsPage.canvasDocumentWatchers(other)).toHaveCount(0);
 
-      // Closing that window is looking away, and the face goes with it.
-      await second.close();
-      await expect(roomsPage.canvasDocumentWatchers(watched)).toHaveCount(0, {
-        timeout: SERVER_ROUND_TRIP_MS,
-      });
-    } finally {
-      if (!secondPage.isClosed()) await second.close();
-    }
+    expect((await look(watchedId)).ok()).toBe(true);
+
+    // It arrives over this window's own stream, with no reload — the claim a
+    // per-browser store could never make.
+    await expect(roomsPage.canvasDocumentWatchers(watched)).toBeVisible({
+      timeout: SERVER_ROUND_TRIP_MS,
+    });
+    await expect(roomsPage.canvasDocumentTab(watched)).toContainText(`${name} is looking at this.`);
+    // …and on the tab they are ACTUALLY on, not on every tab.
+    await expect(roomsPage.canvasDocumentWatchers(other)).toHaveCount(0);
+
+    // Looking away takes it off again, live.
+    expect((await look(null)).ok()).toBe(true);
+    await expect(roomsPage.canvasDocumentWatchers(watched)).toHaveCount(0, {
+      timeout: SERVER_ROUND_TRIP_MS,
+    });
   });
 
   test('a person types an address and the page lands on the room’s table', async ({
