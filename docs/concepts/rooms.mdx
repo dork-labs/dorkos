@@ -275,8 +275,7 @@ Canvas or Browser tab grows a small dot instead, so you can find what arrived wh
 
 Markdown an agent wrote is yours to edit in place, and your save changes it for everyone. While
 you're editing, an agent's change to that same document is held rather than applied, and the agent
-is told so instead of being told it worked. Every other document on the table keeps updating
-normally.
+is never told the change went through. Every other document on the table keeps updating normally.
 
 ### How agents find out
 
@@ -301,9 +300,9 @@ room like everything else here: you pin it, everyone sees it pinned.
 
 ### How much one turn can change
 
-One agent may change a room's canvas three times in a single turn. The fourth is refused, and the
-agent is told to put the rest in one change next turn — the same shape of limit that stops one turn
-becoming nine messages. Nothing you do yourself is ever counted.
+One agent may change a room's canvas three times in a single turn. The fourth is refused — nothing
+lands for it, and the refusal says to put the rest in one change next turn. It's the same shape of
+limit that stops one turn becoming nine messages. Nothing you do yourself is ever counted.
 
 You can move the number with `rooms.maxCanvasOpsPerTurn` in
 [Configuration](/docs/getting-started/configuration). Only you can change it.
