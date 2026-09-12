@@ -582,6 +582,27 @@ capabilityConformance(registry, {
     // session in context and gets the sentence that says so. That is the verb
     // really running: a wiring fault would throw instead.
     'ui.read_canvas_document': { documentId: 'conformance-document' },
+    // The rest of the `ui` domain (spec `canvas-agent-seat` §5). None of them
+    // takes a session argument — the surface supplies that, which is the whole
+    // security property — so every one of these runs with no session in context
+    // and answers the sentence that says so. That IS the verb really running: a
+    // wiring fault would throw instead.
+    //
+    // Each fixture is a call that would really do something if a window were
+    // there, so a schema that stopped advertising an argument reds here too.
+    'ui.control': { action: 'show_toast', message: 'conformance', level: 'info' },
+    'ui.state': {},
+    'ui.read_console': { level: 'error', limit: 5 },
+    'ui.read_network': { status: 'failed', limit: 5 },
+    'ui.screenshot': {},
+    'ui.click': { role: 'button', name: 'Continue' },
+    'ui.type': { selector: '#email', text: 'conformance@example.test' },
+    'ui.press': { key: 'Enter' },
+    'ui.scroll': { to: 'bottom' },
+    'ui.wait_for': { text: 'Done', timeoutMs: 1_000 },
+    'ui.read_page': {},
+    'ui.record_start': {},
+    'ui.record_stop': {},
   },
 });
 

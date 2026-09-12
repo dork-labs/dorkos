@@ -175,15 +175,16 @@ Most people never hit the differences below. This section is the deep reference 
 
 The runtimes are not identical, and DorkOS doesn't pretend they are. Surfaces that depend on runtime capabilities, like the cost strip, permission modes, and plugin commands, adapt to the active runtime instead of showing controls that don't work.
 
-| Capability                              | Claude Code | Codex         | OpenCode |
-| --------------------------------------- | ----------- | ------------- | -------- |
-| Interactive tool approvals              | Yes         | No, sandboxed | Yes      |
-| Cost tracking                           | Yes         | Tokens only   | Yes      |
-| Plugins and marketplace commands        | Yes         | No            | No       |
-| DorkOS agent tools (Relay, Mesh, Tasks) | Yes         | No            | No       |
-| Local / open-source models              | No          | No            | Yes      |
-| Auto mode is told about DorkOS's tools  | Yes         | No            | No       |
-| Marks its own housekeeping tasks        | Yes         | No            | No       |
+| Capability                              | Claude Code | Codex         | OpenCode   |
+| --------------------------------------- | ----------- | ------------- | ---------- |
+| Interactive tool approvals              | Yes         | No, sandboxed | Yes        |
+| Cost tracking                           | Yes         | Tokens only   | Yes        |
+| Plugins and marketplace commands        | Yes         | No            | No         |
+| DorkOS agent tools (Relay, Mesh, Tasks) | Yes         | Experiment    | Experiment |
+| Canvas and browser tools                | Yes         | Experiment    | Experiment |
+| Local / open-source models              | No          | No            | Yes        |
+| Auto mode is told about DorkOS's tools  | Yes         | No            | No         |
+| Marks its own housekeeping tasks        | Yes         | No            | No         |
 
 Known limitations, stated plainly:
 
@@ -192,6 +193,7 @@ Known limitations, stated plainly:
 - **Codex sessions don't survive a server restart in the session list.** Codex has no way to list its own past sessions. After a DorkOS server restart, earlier Codex sessions no longer show up in the list. Resuming a known session still works, for example by opening its URL directly.
 - **Only Claude Code's auto mode knows about DorkOS's own tools.** When an agent calls a DorkOS tool, DorkOS tells Claude Code which safety level that tool sits at and that the call already passed DorkOS's own check, so auto mode stops asking about things that were already decided. Codex and OpenCode have no way to be told, so they keep asking as they always have. The note never lets an agent do anything it could not do already.
 - **Only Claude Code says which background tasks are housekeeping.** Some of what an agent runs is work it started for itself, to stay oriented, rather than anything you asked for. Claude Code marks those, and DorkOS keeps them out of the task bar's count above the chat box, so that count only moves for work you are waiting on. You can still see them: open the task bar's detail panel with the arrow at its right edge, where they are listed with a count. They still appear in the chat itself, like any other background task. One that fails is always shown like any other failure. Codex and OpenCode do not mark their tasks, so every task they report is counted.
+- **Codex and OpenCode reach the DorkOS tools through an experiment.** A Claude Code session carries them always. For the other two, turn on **DorkOS tools in every runtime** in Settings under Experiments, and their next turn gets the same set — including the canvas and the browser: putting a document up, opening a file or a diff, pointing the Browser tab somewhere, reading the console and the network log, taking a screenshot, and using the page. One difference stays, and it is about consent rather than capability: an agent reaching in from outside the DorkOS app has no way to ask you first, so the one action that writes to your machine — applying a Shape — is refused there and answered with a sentence saying to do it in the app instead.
 - **OpenCode starts lazily.** DorkOS manages a small local OpenCode server behind the scenes and starts it on first use. The first OpenCode turn after a server start can take a couple of seconds. Every turn after that is immediate.
 
 ## Next Steps

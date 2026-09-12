@@ -18,6 +18,7 @@ import type {
   ProjectorStatusUpdate,
   InteractionChange,
 } from '../session-state-projector.js';
+import { uiTurnFacts } from '../browser-seat/ui-turn-facts.js';
 import { EVENT_LOG_MAX_EVENTS } from '../replay/event-log.js';
 import {
   StaleResumeCursorError,
@@ -1625,6 +1626,73 @@ describe('SessionStateProjector', () => {
 
     disposeProjector('never-rekeyed-id');
     disposeProjector('narrow-canonical');
+  });
+
+  /**
+   * The `ui` verbs' turn facts move with the session (spec `canvas-agent-seat`
+   * §5).
+   *
+   * `triggerTurn` binds the room marker and the window snapshot under the id the
+   * turn was DISPATCHED under — for a brand-new claude-code session, the request
+   * UUID. The SDK renames the session mid-first-turn, and a `control_ui` later in
+   * that same turn arrives carrying the CANONICAL id, because that is what the
+   * capability context resolves. Without this line the handler finds no room
+   * marker and writes the agent's PRIVATE session canvas instead of the room's
+   * shared table — on the first room turn of every new session, silently, with
+   * the model told it succeeded.
+   *
+   * Replacing the call with `void [fromId, newId];` leaves 3225 tests green, so
+   * this is the test that stands between that line and a no-op.
+   */
+  it('carries the `ui` verbs’ turn facts across the rename', () => {
+    const UUID = 'ui-facts-uuid';
+    const CANONICAL = 'ui-facts-canonical';
+    disposeProjector(UUID);
+    disposeProjector(CANONICAL);
+    uiTurnFacts.clear();
+
+    // What the trigger binds, under the id the turn started on.
+    getOrCreateProjector(UUID);
+    uiTurnFacts.bindTurn(UUID, {
+      roomTurn: { roomId: 'room-1', authorId: 'ana', turnId: 'turn-1' },
+      uiState: {
+        panels: { settings: false, tasks: true, relay: false, picker: false },
+        sidebar: { open: true, activeTab: null },
+        agent: { id: null, cwd: null },
+      },
+    });
+
+    rekeyProjector(UUID, CANONICAL);
+
+    // What a `control_ui` later in the same turn asks for, by the canonical id.
+    expect(uiTurnFacts.read(CANONICAL).roomTurn).toEqual({
+      roomId: 'room-1',
+      authorId: 'ana',
+      turnId: 'turn-1',
+    });
+    expect(uiTurnFacts.read(CANONICAL).uiState?.panels.tasks).toBe(true);
+    // …and nothing is left behind at the retired id, which would be a second
+    // session's worth of marker for the store to hand out later.
+    expect(uiTurnFacts.read(UUID)).toEqual({});
+
+    disposeProjector(CANONICAL);
+    uiTurnFacts.clear();
+  });
+
+  it('forgets a session’s turn facts when its projector is disposed', () => {
+    // The other half of the same ownership: the window those facts describe is
+    // gone, so the marker must not outlive it and be read by whatever id the
+    // store hands out next.
+    uiTurnFacts.clear();
+    getOrCreateProjector('ui-facts-dispose');
+    uiTurnFacts.bindTurn('ui-facts-dispose', {
+      roomTurn: { roomId: 'room-2', authorId: 'ben', turnId: 'turn-2' },
+    });
+    expect(uiTurnFacts.read('ui-facts-dispose').roomTurn).toBeDefined();
+
+    disposeProjector('ui-facts-dispose');
+
+    expect(uiTurnFacts.read('ui-facts-dispose')).toEqual({});
   });
 
   // Failure mode (C1 guards): rekey must be a no-op when the id is unchanged or

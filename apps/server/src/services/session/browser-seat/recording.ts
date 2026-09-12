@@ -22,16 +22,16 @@
  * @module services/session/browser-seat/recording
  */
 import { randomUUID } from 'node:crypto';
-import type { StreamEvent } from '@dorkos/shared/types';
 import { ulid } from 'ulidx';
 import { WORKBENCH } from '../../../config/constants.js';
 import type { DevtoolsCaptureStore } from '../devtools-capture-store.js';
+import type { RawSessionEvent } from '../session-state-projector.js';
 import {
   NOT_INSTRUMENTED_NOTE,
   NO_DRIVER_NOTE,
   NO_PREVIEW_NOTE,
   UNKNOWN_DOCUMENT_NOTE,
-  type SessionEventSink,
+  type SessionEventEmitter,
 } from './act-protocol.js';
 import type { DocumentInput, DrivingAnswer } from './handlers.js';
 
@@ -95,30 +95,19 @@ export type RecordingStore = Pick<
 
 /** Everything the two recording handlers need. */
 export interface RecordingDeps {
-  /** Read-time resolver for the session whose window is filming. */
-  resolveSessionId: () => string | undefined;
+  /** The session whose window is filming, resolved by the caller for this call. */
+  sessionId: string;
   /**
-   * Read-time resolver for that session's working directory — where the file
-   * lands. A recording with nowhere to land is refused before it starts, rather
-   * than filmed and then dropped.
+   * That session's working directory — where the file lands. A recording with
+   * nowhere to land is refused before it starts, rather than filmed and then
+   * dropped.
    */
-  resolveCwd: () => string | undefined;
+  cwd?: string;
   /** The capture store holding the driver table and the recording state. */
   store: RecordingStore;
-  /** The live session whose event queue reaches the addressed window. */
-  session: SessionEventSink;
+  /** Puts one event on the calling session's stream, for its windows to read. */
+  emit: SessionEventEmitter;
 }
-
-/** Error payload for a surface with no session — there is no window to film. */
-const SESSIONLESS_ANSWER: DrivingAnswer = {
-  payload: {
-    error: 'The browser verbs require an attached interactive session',
-    detail:
-      "They act inside the preview a live session has open in somebody's window. The current " +
-      'MCP surface has no session attached, so there is no preview to reach.',
-  },
-  isError: true,
-};
 
 /** No working directory means nowhere to write the file. Said before filming. */
 const NO_CWD_NOTE =
@@ -127,11 +116,13 @@ const NO_CWD_NOTE =
 /**
  * Build the two recording handlers, bound to one session's windows.
  *
- * The session and its directory are resolved on every call, never at build
- * time: a brand-new session is rekeyed to its canonical id mid-first-turn, and
- * an id captured earlier would address a window that no longer answers.
+ * Built PER CALL rather than per session, for the reason the driving handlers
+ * are: which session is calling is a fact of the call, resolved from the
+ * verified capability context, and an id captured earlier would address a
+ * window that no longer answers.
  *
- * @param deps - Session resolvers, capture store, and the event sink.
+ * @param deps - The calling session, its directory, the capture store, and the
+ *   event emitter.
  * @param stopTimeoutMs - How long a stop waits for the encode and upload.
  *   Injectable so a test does not spend thirty seconds proving the timeout.
  */
@@ -142,10 +133,8 @@ export function createRecordingHandlers(
   return {
     /** Start filming the page a window is holding. One per session. */
     async start(input: DocumentInput): Promise<DrivingAnswer> {
-      const sessionId = deps.resolveSessionId();
-      if (!sessionId) return SESSIONLESS_ANSWER;
-      const cwd = deps.resolveCwd();
-      if (!cwd) return { payload: { ok: false, note: NO_CWD_NOTE } };
+      const sessionId = deps.sessionId;
+      if (!deps.cwd) return { payload: { ok: false, note: NO_CWD_NOTE } };
 
       // Refused before anything is addressed, so a second start never sends a
       // window a request that would reset the buffer it is already filling.
@@ -191,8 +180,7 @@ export function createRecordingHandlers(
 
     /** Stop filming, wait for the file, and answer with where it landed. */
     async stop(): Promise<DrivingAnswer> {
-      const sessionId = deps.resolveSessionId();
-      if (!sessionId) return SESSIONLESS_ANSWER;
+      const sessionId = deps.sessionId;
       // Ended FIRST, before anything else can refuse. A stop that returns
       // without clearing the state leaves a recording nothing can ever finish:
       // every later start is refused "already running" and every later stop
@@ -201,7 +189,7 @@ export function createRecordingHandlers(
       const recording = deps.store.endRecording(sessionId);
       if (!recording) return { payload: { ok: false, note: NOTHING_RECORDING_NOTE } };
 
-      const cwd = deps.resolveCwd();
+      const cwd = deps.cwd;
       if (!cwd) return { payload: { ok: false, note: NO_CWD_NOTE } };
 
       const requestId = randomUUID();
@@ -257,7 +245,7 @@ export function createRecordingHandlers(
 /**
  * Address one window with one recording request.
  *
- * @param deps - The event sink to push onto.
+ * @param deps - The emitter that reaches the calling session's windows.
  * @param action - Start filming, or stop and hand the file back.
  * @param requestId - The round trip id a stop is answered under.
  * @param recordingId - The recording this is about.
@@ -272,22 +260,19 @@ function push(
   targetClientId: string,
   documentId: string
 ): void {
-  deps.session.eventQueue.push({
+  deps.emit({
     type: 'devtools_recording_request',
-    data: {
-      requestId,
-      targetClientId,
-      documentId,
-      action,
-      recordingId,
-      bounds: {
-        longEdgePx: WORKBENCH.RECORDING_LONG_EDGE_PX,
-        frameMs: WORKBENCH.RECORDING_FRAME_MS,
-        maxBytes: WORKBENCH.MAX_RECORDING_BYTES,
-      },
+    requestId,
+    targetClientId,
+    documentId,
+    action,
+    recordingId,
+    bounds: {
+      longEdgePx: WORKBENCH.RECORDING_LONG_EDGE_PX,
+      frameMs: WORKBENCH.RECORDING_FRAME_MS,
+      maxBytes: WORKBENCH.MAX_RECORDING_BYTES,
     },
-  } as StreamEvent);
-  deps.session.eventQueueNotify?.();
+  } as RawSessionEvent);
 }
 
 /** The two handlers, as the tool layer sees them. */

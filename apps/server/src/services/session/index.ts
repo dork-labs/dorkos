@@ -66,10 +66,13 @@ export { overlayApprovalReceipts } from './overlays/approval-receipt-overlay.js'
 export { overlayPermissionDenials } from './overlays/permission-denial-overlay.js';
 export { RingBuffer, RING_BUFFER_MAX_EVENTS, RING_BUFFER_TTL_MS } from './replay/ring-buffer.js';
 export { DevtoolsCaptureStore, devtoolsCaptureStore } from './devtools-capture-store.js';
-// The browser driver seat (spec `canvas-agent-seat` §2). Re-exported here is
-// what lives OUTSIDE the module — the tool layer and the test-mode scenario that
-// drives a real page. The rest of the seat's surface is reached at
-// `./browser-seat/index.js`, which is where its own tests read it.
+// The `ui` capability domain and the browser driver seat (spec
+// `canvas-agent-seat` §2 and §5). Re-exported here is what lives OUTSIDE the
+// module — the turn-fact binding the trigger writes, and the test-mode scenario
+// that drives a real page. The rest of the seat's surface is reached at
+// `./browser-seat/index.js`, which is where its own tests read it — and the `ui`
+// DOMAIN is reached at `./browser-seat/ui-capabilities.js`, deliberately not
+// through either barrel (see the note there).
 export {
   DOCUMENT_INPUT,
   DRIVING_SAFETY_SENTENCE,
@@ -78,6 +81,9 @@ export {
   TARGET_INPUT_NO_TEXT,
   createBrowserSeatHandlers,
   createRecordingHandlers,
+  emitToSession,
+  parseScreenshotDataUrl,
+  uiTurnFacts,
 } from './browser-seat/index.js';
 export type {
   BrowserSeatStore,
@@ -88,8 +94,9 @@ export type {
   PressInput,
   ReadPageInput,
   ScrollInput,
-  SessionEventSink,
+  SessionEventEmitter,
   TypeInput,
+  UiRoomTurn,
   WaitForInput,
 } from './browser-seat/index.js';
 export type {

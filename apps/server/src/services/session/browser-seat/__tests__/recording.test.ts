@@ -9,10 +9,10 @@
  *
  * @vitest-environment node
  */
-import { describe, it, expect, vi } from 'vitest';
-import type { StreamEvent } from '@dorkos/shared/types';
+import { describe, it, expect } from 'vitest';
 import { WORKBENCH } from '../../../../config/constants.js';
 import { DevtoolsCaptureStore } from '../../devtools-capture-store.js';
+import type { RawSessionEvent } from '../../session-state-projector.js';
 import { createBrowserSeatHandlers } from '../handlers.js';
 import { createRecordingHandlers } from '../recording.js';
 import {
@@ -22,10 +22,16 @@ import {
 } from '../recording.js';
 import { NO_DRIVER_NOTE, NOT_INSTRUMENTED_NOTE } from '../act-protocol.js';
 
-/** The live session's event queue, and a way to read what was pushed. */
-function makeSession() {
-  const eventQueue: StreamEvent[] = [];
-  return { session: { eventQueue, eventQueueNotify: vi.fn() }, eventQueue };
+/** A stand-in for the calling session's stream, and a way to read what reached it. */
+function makeSink() {
+  const emitted: RawSessionEvent[] = [];
+  return {
+    emit: (event: RawSessionEvent) => {
+      emitted.push(event);
+      return true;
+    },
+    emitted,
+  };
 }
 
 /** A store with one window holding one instrumented page. */
@@ -40,43 +46,41 @@ function storeWithDriver(instrumented = true): DevtoolsCaptureStore {
 }
 
 /** Read one pushed event, typed enough to assert on. */
-function pushed(eventQueue: StreamEvent[], index = -1) {
-  return eventQueue.at(index) as unknown as {
+function pushed(emitted: RawSessionEvent[], index = -1) {
+  return emitted.at(index) as unknown as {
     type: string;
-    data: {
-      requestId: string;
-      targetClientId: string;
-      documentId: string;
-      action?: string;
-      recordingId?: string;
-      capture?: boolean;
-      bounds?: { longEdgePx: number; frameMs: number; maxBytes: number };
-    };
+    requestId: string;
+    targetClientId: string;
+    documentId: string;
+    action?: string;
+    recordingId?: string;
+    capture?: boolean;
+    bounds?: { longEdgePx: number; frameMs: number; maxBytes: number };
   };
 }
 
 /** Both handler sets over one store and one session, as the tool layer builds them. */
 function seat(store: DevtoolsCaptureStore, stopTimeoutMs = 50) {
-  const { session, eventQueue } = makeSession();
-  const deps = { resolveSessionId: () => 's1', store, session };
+  const { emit, emitted } = makeSink();
+  const deps = { sessionId: 's1', store, emit };
   return {
-    eventQueue,
+    emitted,
     store,
     driving: createBrowserSeatHandlers(deps, 50),
-    recording: createRecordingHandlers({ ...deps, resolveCwd: () => '/tmp/cwd' }, stopTimeoutMs),
+    recording: createRecordingHandlers({ ...deps, cwd: '/tmp/cwd' }, stopTimeoutMs),
   };
 }
 
 describe('starting a recording', () => {
   it('addresses the window holding the page and carries the encoding bounds', async () => {
-    const { recording, eventQueue } = seat(storeWithDriver());
+    const { recording, emitted } = seat(storeWithDriver());
 
     const answer = await recording.start({});
 
     expect(answer.payload.ok).toBe(true);
-    const event = pushed(eventQueue);
+    const event = pushed(emitted);
     expect(event.type).toBe('devtools_recording_request');
-    expect(event.data).toMatchObject({
+    expect(event).toMatchObject({
       action: 'start',
       targetClientId: 'client-a',
       documentId: 'doc-a',
@@ -86,7 +90,7 @@ describe('starting a recording', () => {
         maxBytes: WORKBENCH.MAX_RECORDING_BYTES,
       },
     });
-    expect(event.data.recordingId).toBe(answer.payload.recordingId);
+    expect(event.recordingId).toBe(answer.payload.recordingId);
   });
 
   it('refuses a second recording in a sentence, and keeps the first one running', async () => {
@@ -126,10 +130,10 @@ describe('starting a recording', () => {
     // clearing it makes every later start refuse "already running" and every
     // later stop refuse again, with nothing able to break the loop.
     const store = storeWithDriver();
-    const { session } = makeSession();
-    const deps = { resolveSessionId: () => 's1', store, session };
-    const withCwd = createRecordingHandlers({ ...deps, resolveCwd: () => '/tmp/cwd' });
-    const withoutCwd = createRecordingHandlers({ ...deps, resolveCwd: () => undefined });
+    const { emit } = makeSink();
+    const deps = { sessionId: 's1', store, emit };
+    const withCwd = createRecordingHandlers({ ...deps, cwd: '/tmp/cwd' });
+    const withoutCwd = createRecordingHandlers(deps);
     await withCwd.start({});
 
     const answer = await withoutCwd.stop();
@@ -143,13 +147,8 @@ describe('starting a recording', () => {
 
   it('refuses a session with nowhere to save, before anything is filmed', async () => {
     const store = storeWithDriver();
-    const { session } = makeSession();
-    const recording = createRecordingHandlers({
-      resolveSessionId: () => 's1',
-      resolveCwd: () => undefined,
-      store,
-      session,
-    });
+    const { emit } = makeSink();
+    const recording = createRecordingHandlers({ sessionId: 's1', store, emit });
 
     const answer = await recording.start({});
 
@@ -161,24 +160,24 @@ describe('starting a recording', () => {
 
 describe('a running recording turns every action into a frame', () => {
   it('puts `capture` on the driving request, and counts what comes back', async () => {
-    const { recording, driving, eventQueue, store } = seat(storeWithDriver());
+    const { recording, driving, emitted, store } = seat(storeWithDriver());
     await recording.start({});
 
     const answer = driving.click({ text: 'Pay' });
-    const request = pushed(eventQueue);
-    expect(request.data.capture).toBe(true);
-    store.resolveAction({ requestId: request.data.requestId, ok: true, captured: true });
+    const request = pushed(emitted);
+    expect(request.capture).toBe(true);
+    store.resolveAction({ requestId: request.requestId, ok: true, captured: true });
     await answer;
 
     expect(store.recordingFor('s1')?.frames).toBe(1);
   });
 
   it('counts nothing when the page could not be rasterized', async () => {
-    const { recording, driving, eventQueue, store } = seat(storeWithDriver());
+    const { recording, driving, emitted, store } = seat(storeWithDriver());
     await recording.start({});
 
     const answer = driving.click({ text: 'Pay' });
-    store.resolveAction({ requestId: pushed(eventQueue).data.requestId, ok: true });
+    store.resolveAction({ requestId: pushed(emitted).requestId, ok: true });
     await answer;
 
     // The action happened; no frame did. Counting the REQUEST would make the
@@ -187,23 +186,23 @@ describe('a running recording turns every action into a frame', () => {
   });
 
   it('leaves `capture` off when nothing is recording', async () => {
-    const { driving, eventQueue, store } = seat(storeWithDriver());
+    const { driving, emitted, store } = seat(storeWithDriver());
 
     const answer = driving.click({ text: 'Pay' });
-    expect(pushed(eventQueue).data.capture).toBeUndefined();
-    store.resolveAction({ requestId: pushed(eventQueue).data.requestId, ok: true });
+    expect(pushed(emitted).capture).toBeUndefined();
+    store.resolveAction({ requestId: pushed(emitted).requestId, ok: true });
     await answer;
     expect(store.recordingFor('s1')).toBeUndefined();
   });
 
   it('stops filming at the ceiling and keeps driving', async () => {
-    const { recording, driving, eventQueue, store } = seat(storeWithDriver());
+    const { recording, driving, emitted, store } = seat(storeWithDriver());
     await recording.start({});
 
     for (let i = 0; i < WORKBENCH.MAX_RECORDING_FRAMES; i++) {
       const answer = driving.click({ text: 'Pay' });
       store.resolveAction({
-        requestId: pushed(eventQueue).data.requestId,
+        requestId: pushed(emitted).requestId,
         ok: true,
         captured: true,
       });
@@ -213,9 +212,9 @@ describe('a running recording turns every action into a frame', () => {
 
     // One more action: it still runs, and it no longer asks for a frame.
     const after = driving.click({ text: 'Pay' });
-    expect(pushed(eventQueue).data.capture).toBeUndefined();
+    expect(pushed(emitted).capture).toBeUndefined();
     store.resolveAction({
-      requestId: pushed(eventQueue).data.requestId,
+      requestId: pushed(emitted).requestId,
       ok: true,
       did: 'Clicked.',
     });
@@ -224,7 +223,7 @@ describe('a running recording turns every action into a frame', () => {
 
   it('counts an action the recording could not film, and says so on stop', async () => {
     const store = storeWithDriver();
-    const { recording, driving, eventQueue } = seat(store, 500);
+    const { recording, driving, emitted } = seat(store, 500);
     await recording.start({});
 
     // A person brought a preview to the front in ANOTHER window. The action is
@@ -235,17 +234,17 @@ describe('a running recording turns every action into a frame', () => {
       'client-b'
     );
     const acted = driving.click({ text: 'Pay' });
-    const request = pushed(eventQueue);
-    expect(request.data.targetClientId).toBe('client-b');
+    const request = pushed(emitted);
+    expect(request.targetClientId).toBe('client-b');
     // Never asked for a frame from a window that is not holding the buffer.
-    expect(request.data.capture).toBeUndefined();
-    store.resolveAction({ requestId: request.data.requestId, ok: true, did: 'Clicked.' });
+    expect(request.capture).toBeUndefined();
+    store.resolveAction({ requestId: request.requestId, ok: true, did: 'Clicked.' });
     // The action itself still succeeds — the run is not what went wrong.
     expect((await acted).payload).toMatchObject({ ok: true, did: 'Clicked.' });
 
     const stopping = recording.stop();
-    const stopEvent = pushed(eventQueue);
-    store.resolveRecording(stopEvent.data.requestId, {
+    const stopEvent = pushed(emitted);
+    store.resolveRecording(stopEvent.requestId, {
       ok: true,
       path: '.dork/.temp/recordings/rec.gif',
       bytes: 10,
@@ -266,7 +265,7 @@ describe('a running recording turns every action into a frame', () => {
 
   it('does not count an action that never came back as one that happened', async () => {
     const store = storeWithDriver();
-    const { recording, driving, eventQueue } = seat(store, 5);
+    const { recording, driving, emitted } = seat(store, 5);
     await recording.start({});
 
     // Same shape as above — the action is addressed to another window — except
@@ -279,11 +278,11 @@ describe('a running recording turns every action into a frame', () => {
       'client-b'
     );
     const acted = driving.click({ text: 'Pay' });
-    expect(pushed(eventQueue).data.targetClientId).toBe('client-b');
+    expect(pushed(emitted).targetClientId).toBe('client-b');
     expect((await acted).payload).toMatchObject({ ok: false });
 
     const stopping = recording.stop();
-    store.resolveRecording(pushed(eventQueue).data.requestId, {
+    store.resolveRecording(pushed(emitted).requestId, {
       ok: true,
       path: '.dork/.temp/recordings/rec.gif',
       bytes: 10,
@@ -298,18 +297,18 @@ describe('a running recording turns every action into a frame', () => {
   });
 
   it('says nothing about missed frames when the whole run was filmed', async () => {
-    const { recording, driving, eventQueue, store } = seat(storeWithDriver(), 500);
+    const { recording, driving, emitted, store } = seat(storeWithDriver(), 500);
     await recording.start({});
     const answer = driving.click({ text: 'Pay' });
     store.resolveAction({
-      requestId: pushed(eventQueue).data.requestId,
+      requestId: pushed(emitted).requestId,
       ok: true,
       captured: true,
     });
     await answer;
 
     const stopping = recording.stop();
-    store.resolveRecording(pushed(eventQueue).data.requestId, {
+    store.resolveRecording(pushed(emitted).requestId, {
       ok: true,
       path: '.dork/.temp/recordings/rec.gif',
       bytes: 10,
@@ -353,18 +352,18 @@ describe('a running recording turns every action into a frame', () => {
 
 describe('stopping a recording', () => {
   it('asks the window that started it, and answers with the file it wrote', async () => {
-    const { recording, eventQueue, store } = seat(storeWithDriver(), 500);
+    const { recording, emitted, store } = seat(storeWithDriver(), 500);
     const started = await recording.start({});
 
     const stopping = recording.stop();
-    const event = pushed(eventQueue);
-    expect(event.data).toMatchObject({
+    const event = pushed(emitted);
+    expect(event).toMatchObject({
       action: 'stop',
       targetClientId: 'client-a',
       documentId: 'doc-a',
       recordingId: started.payload.recordingId,
     });
-    store.resolveRecording(event.data.requestId, {
+    store.resolveRecording(event.requestId, {
       ok: true,
       path: '.dork/.temp/recordings/rec.gif',
       bytes: 743_210,
@@ -387,12 +386,12 @@ describe('stopping a recording', () => {
   });
 
   it('says the ceiling was reached when the run outran the film', async () => {
-    const { recording, driving, eventQueue, store } = seat(storeWithDriver(), 500);
+    const { recording, driving, emitted, store } = seat(storeWithDriver(), 500);
     await recording.start({});
     for (let i = 0; i < WORKBENCH.MAX_RECORDING_FRAMES; i++) {
       const answer = driving.click({ text: 'Pay' });
       store.resolveAction({
-        requestId: pushed(eventQueue).data.requestId,
+        requestId: pushed(emitted).requestId,
         ok: true,
         captured: true,
       });
@@ -400,8 +399,8 @@ describe('stopping a recording', () => {
     }
 
     const stopping = recording.stop();
-    const event = pushed(eventQueue);
-    store.resolveRecording(event.data.requestId, {
+    const event = pushed(emitted);
+    store.resolveRecording(event.requestId, {
       ok: true,
       path: '.dork/.temp/recordings/rec.gif',
       bytes: 10,
@@ -438,11 +437,11 @@ describe('stopping a recording', () => {
   });
 
   it('passes the sentence the window gave through when it could not make a file', async () => {
-    const { recording, eventQueue, store } = seat(storeWithDriver(), 500);
+    const { recording, emitted, store } = seat(storeWithDriver(), 500);
     await recording.start({});
 
     const stopping = recording.stop();
-    store.resolveRecording(pushed(eventQueue).data.requestId, {
+    store.resolveRecording(pushed(emitted).requestId, {
       ok: false,
       error: 'The recording came out bigger than 8 MB, so it was not saved.',
     });

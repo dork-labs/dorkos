@@ -12,10 +12,9 @@
  * hand-written `act-result` would prove none of that — it would be the
  * hypothesis, written down.
  *
- * So it builds the production handlers over a local event queue, drains what
- * they push onto the turn's own stream, and awaits the real answer. The only
- * piece not exercised is the MCP tool wrapper around them, which the unit tests
- * own.
+ * So it builds the production handlers over the production seam — the calling
+ * session's own durable stream — and awaits the real answer. The only piece not
+ * exercised is the capability wrapper around them, which the unit tests own.
  *
  * Inert unless a test selects it with `POST /api/test/scenario`.
  *
@@ -26,8 +25,10 @@ import {
   createBrowserSeatHandlers,
   createRecordingHandlers,
   devtoolsCaptureStore,
+  emitToSession,
   type DrivingAnswer,
 } from '../../session/index.js';
+import type { RawSessionEvent } from '../../session/session-state-projector.js';
 import type { ScenarioFn } from './scenario-store.js';
 
 /** The button this scenario clicks, and the text the fixture page shows after. */
@@ -50,11 +51,10 @@ function line(label: string, answer: DrivingAnswer): string {
  */
 export function browserDrivingScenarios(): Record<string, ScenarioFn> {
   const drive: ScenarioFn = async function* (_content, ctx) {
-    const eventQueue: StreamEvent[] = [];
     const handlers = createBrowserSeatHandlers({
-      resolveSessionId: () => ctx.sessionId,
+      sessionId: ctx.sessionId,
       store: devtoolsCaptureStore,
-      session: { eventQueue },
+      emit: (event) => emitToSession(ctx.sessionId, event),
     });
 
     yield {
@@ -65,30 +65,26 @@ export function browserDrivingScenarios(): Record<string, ScenarioFn> {
     const answers: string[] = [];
 
     /**
-     * Run one verb: the handler pushes its request synchronously, the generator
-     * forwards it onto the turn's stream, and only then does it await the
-     * answer. Forwarding after the await would leave the request sitting in a
-     * local array while the handler waited for a reply nobody was ever asked
-     * for.
+     * Run one verb and record what came back.
+     *
+     * The handler puts its request straight onto this session's durable stream —
+     * the production path, which every window open on the session is already
+     * reading — so there is nothing for this generator to forward. It waits for
+     * the one real answer.
      */
-    async function* step(
-      label: string,
-      run: () => Promise<DrivingAnswer>
-    ): AsyncGenerator<StreamEvent> {
-      const pending = run();
-      while (eventQueue.length > 0) yield eventQueue.shift() as StreamEvent;
-      const answer = await pending;
+    async function step(label: string, run: () => Promise<DrivingAnswer>): Promise<void> {
+      const answer = await run();
       answers.push(line(label, answer));
       const outline = (answer.payload as { outline?: string }).outline;
       if (outline) answers.push(`${label}-outline: ${outline.replace(/\n/g, ' | ')}`);
     }
 
-    yield* step('read', () => handlers.readPage({}));
-    yield* step('click', () => handlers.click({ role: 'button', name: DRIVING_FIXTURE_BUTTON }));
-    yield* step('wait', () =>
+    await step('read', () => handlers.readPage({}));
+    await step('click', () => handlers.click({ role: 'button', name: DRIVING_FIXTURE_BUTTON }));
+    await step('wait', () =>
       handlers.waitFor({ text: DRIVING_FIXTURE_DONE_TEXT, timeoutMs: 4_000 })
     );
-    yield* step('read-again', () => handlers.readPage({}));
+    await step('read-again', () => handlers.readPage({}));
 
     yield { type: 'text_delta', data: { text: answers.join('\n') } } as StreamEvent;
     yield { type: 'done', data: { sessionId: ctx.sessionId } } as StreamEvent;
@@ -104,14 +100,16 @@ export function browserDrivingScenarios(): Record<string, ScenarioFn> {
    * can reach.
    */
   const record: ScenarioFn = async function* (_content, ctx, opts) {
-    const eventQueue: StreamEvent[] = [];
     const deps = {
-      resolveSessionId: () => ctx.sessionId,
+      sessionId: ctx.sessionId,
       store: devtoolsCaptureStore,
-      session: { eventQueue },
+      emit: (event: RawSessionEvent) => emitToSession(ctx.sessionId, event),
     };
     const handlers = createBrowserSeatHandlers(deps);
-    const recording = createRecordingHandlers({ ...deps, resolveCwd: () => opts?.cwd });
+    const recording = createRecordingHandlers({
+      ...deps,
+      ...(opts?.cwd !== undefined ? { cwd: opts.cwd } : {}),
+    });
 
     yield {
       type: 'session_status',
@@ -120,14 +118,14 @@ export function browserDrivingScenarios(): Record<string, ScenarioFn> {
 
     const answers: string[] = [];
 
-    /** Run one verb, forwarding its request before awaiting its answer. */
-    async function* step(
-      label: string,
-      run: () => Promise<DrivingAnswer>
-    ): AsyncGenerator<StreamEvent> {
-      const pending = run();
-      while (eventQueue.length > 0) yield eventQueue.shift() as StreamEvent;
-      const answer = await pending;
+    /**
+     * Run one verb and record what came back.
+     *
+     * The handler puts its request straight onto this session's durable stream,
+     * so there is nothing for this generator to forward.
+     */
+    async function step(label: string, run: () => Promise<DrivingAnswer>): Promise<void> {
+      const answer = await run();
       answers.push(line(label, answer));
       const payload = answer.payload as { path?: string; frames?: number; bytes?: number };
       if (payload.path !== undefined) {
@@ -140,12 +138,12 @@ export function browserDrivingScenarios(): Record<string, ScenarioFn> {
       }
     }
 
-    yield* step('start', () => recording.start({}));
-    yield* step('click', () => handlers.click({ role: 'button', name: DRIVING_FIXTURE_BUTTON }));
-    yield* step('wait', () =>
+    await step('start', () => recording.start({}));
+    await step('click', () => handlers.click({ role: 'button', name: DRIVING_FIXTURE_BUTTON }));
+    await step('wait', () =>
       handlers.waitFor({ text: DRIVING_FIXTURE_DONE_TEXT, timeoutMs: 4_000 })
     );
-    yield* step('stop', () => recording.stop());
+    await step('stop', () => recording.stop());
 
     yield { type: 'text_delta', data: { text: answers.join('\n') } } as StreamEvent;
     yield { type: 'done', data: { sessionId: ctx.sessionId } } as StreamEvent;

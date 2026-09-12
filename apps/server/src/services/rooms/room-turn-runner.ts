@@ -1497,16 +1497,20 @@ function collectReply(
           bounds.onActivity(deriveSessionActivity(event.toolName, event.input) ?? null);
         }
         // **The runtime-neutral half of the canvas seam** (spec `room-canvas`
-        // §5.5). A `ui_command` reaches the projector from three producers and
-        // only one of them — claude-code's `control_ui` — is a tool handler that
-        // can call the writer itself. That one STAMPS what it wrote; codex and
-        // the scripted test-mode runtime stamp nothing, so an unstamped event is
-        // exactly the set this tap owns.
+        // §5.5). A `ui_command` reaches the projector from two kinds of producer.
+        // `control_ui` is one CAPABILITY now, shared by every runtime (spec
+        // `canvas-agent-seat` §5): it calls the writer itself and STAMPS what it
+        // wrote, on claude-code, Codex and OpenCode alike. The scripted test-mode
+        // runtime yields an ordinary unstamped `ui_command`, and so would any
+        // future producer that emits the event without writing — which is exactly
+        // the set this tap owns.
         //
         // **The stamp is the dedupe, and it is the whole of it.** Apply a
-        // stamped event here too and every claude-code operation lands twice:
-        // two rows for content with no dedupe key, two counts against the
-        // ceiling, two mentions in the turn's one line.
+        // stamped event here too and every operation the handler performed lands
+        // twice: two rows for content with no dedupe key, two counts against the
+        // ceiling, two mentions in the turn's one line. Both conformance legs
+        // that drive the real handler — claude-code's and Codex's — red at
+        // `expected 2 to be 1` the moment the stamp is dropped.
         //
         // What a tap-only producer gives up is stated rather than hidden: its
         // refusal cannot reach the model, because the turn has moved on. The

@@ -50,6 +50,7 @@ import {
   driveReloadedHistory,
   driveTerminalOnce,
   driveQueueDurability,
+  driveRoomCanvasTurn,
 } from '../../../session/__tests__/durable-turn-harness.js';
 
 /** Hoisted so the (also hoisted) vi.mock factories can branch on it. */
@@ -193,6 +194,7 @@ vi.mock('../check-dependencies.js', async (importOriginal) => {
 });
 
 import { CodexRuntime } from '../codex-runtime.js';
+import { controlUi } from '../../../session/browser-seat/ui-control.js';
 import { CodexThreadMap } from '../thread-map.js';
 import { LocalSessionAttachmentStore } from '../../../session/attachments/local-session-attachment-store.js';
 import { initConfigManager } from '../../../core/config-manager.js';
@@ -317,6 +319,34 @@ runtimeConformance(
     // through the same projector the trigger path feeds.
     presenceTurn: (runtime, sessionId, content, probes) =>
       drivePresenceTurn(runtime, sessionId, content, projectDir, probes),
+    // **A Codex room turn's canvas command, applied exactly once** (spec
+    // `canvas-agent-seat` §5). This is the acceptance the `dorkos_ui` retirement
+    // turns on: Codex used to reach the table through the event-mapper, which
+    // produced an UNSTAMPED `ui_command` for the room turn's tap to apply.
+    // `control_ui` is a capability now — it calls the writer itself and STAMPS
+    // what it wrote, so the tap skips it. Miss the stamp and every Codex canvas
+    // operation lands twice.
+    //
+    // The document is a `json` one on purpose: it has no source key, so dedupe
+    // cannot hide a second write the way it would for a file. `documents.length`
+    // in the shared case is therefore a real count.
+    roomCanvasTurn: () =>
+      driveRoomCanvasTurn(
+        new CodexRuntime({
+          threadMap: new CodexThreadMap(createTestDb()),
+          resolveBinary: async () => '/bin/codex',
+        }),
+        {
+          agentPath: '/agents/ana',
+          otherAgentPath: '/agents/ben',
+          produce: async (sessionId) => {
+            await controlUi(
+              { action: 'open_canvas', content: { type: 'json', data: {}, title: 'The plan' } },
+              { sessionId }
+            );
+          },
+        }
+      ),
     // C2/C3 are server-owned invariants every runtime inherits by construction
     // (feedProjector collapses a multi-result window; the server owns the queue),
     // so both drivers exercise the shared machinery rather than the codex binary —

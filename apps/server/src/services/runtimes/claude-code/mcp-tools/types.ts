@@ -14,6 +14,37 @@ import type { ExtensionManager } from '../../../extensions/extension-manager.js'
 import type { RuntimeRegistry } from '../../../core/runtime-registry.js';
 import type { ActivityService } from '../../../activity/activity-service.js';
 import type { ApprovalService } from '../../../core/approvals/index.js';
+import type { StreamEvent } from '@dorkos/shared/types';
+
+/**
+ * The live session the in-session tool server is built for, narrowed to what the
+ * hand-registered tools and the capability projection actually read.
+ *
+ * It used to carry the window's UI state and the room this turn was answering
+ * in. Both moved off it when the `ui` verbs became capabilities (spec
+ * `canvas-agent-seat` §5): a fact that lives on one runtime's session object is
+ * a fact the other two runtimes cannot have.
+ */
+export interface McpToolSession {
+  /** The turn's outbound event queue, drained into the session's SSE stream. */
+  eventQueue: StreamEvent[];
+  /** Wakes the queue drainer after a push. */
+  eventQueueNotify?: () => void;
+  /**
+   * Session working directory. Used to resolve the session's trusted Relay
+   * sender identity (see `resolveSenderIdentity`) so relay tools inject a
+   * server-derived `from` rather than trusting the LLM, and carried into every
+   * capability call as the directory the caller is standing in.
+   */
+  cwd?: string;
+  /**
+   * The session's canonical SDK id, seeded to the request id at creation and
+   * updated when the SDK init assigns the real id (see `session-store.ts`).
+   * Resolved at CALL time by everything that reads it, so a first-turn rekey
+   * never strands a call on the stale request UUID.
+   */
+  sdkSessionId?: string;
+}
 
 /**
  * Explicit dependency interface for MCP tool handlers.

@@ -27,8 +27,11 @@ import { createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { getUiTools } from '../ui-tools.js';
-import type { McpToolDeps } from '../types.js';
+import { noopLogger } from '@dorkos/shared/logger';
+import { capabilityMcpTools } from '../capability-mcp-tools.js';
+import { composeRegistry } from '../../../../core/capabilities/index.js';
+import { uiTurnFacts } from '../../../../session/index.js';
+import { uiDomain } from '../../../../session/browser-seat/ui-capabilities.js';
 import { setRoomService } from '../../../../rooms/index.js';
 import {
   agentLookupFor,
@@ -38,6 +41,7 @@ import {
 } from '../../../../rooms/__tests__/room-test-harness.js';
 
 const ANA = '/agents/ana';
+const SESSION = 'sess-control-ui';
 const agents = agentLookupFor({
   [ANA]: { name: 'ana', displayName: 'Ana', responseMode: 'always' },
 });
@@ -60,14 +64,18 @@ describe('control_ui through the real MCP layer', () => {
     ).id;
     ana = harness.authors.resolveAgent(ANA, 'Ana').id;
 
-    // The production construction, minus the tools this file is not about.
+    // The production construction: `control_ui` is a `ui` capability, projected
+    // onto the in-session SDK server exactly as `createDorkOsToolServer` does it.
+    // Which room this turn answers in is the runtime-neutral turn fact the
+    // trigger binds, so the handler reads it from the session id and nothing
+    // else (spec `canvas-agent-seat` §5).
+    uiTurnFacts.clear();
+    uiTurnFacts.bindTurn(SESSION, { roomTurn: { roomId, authorId: ana, turnId: 'turn-1' } });
+    const registry = composeRegistry([uiDomain], { logger: noopLogger });
     const server = createSdkMcpServer({
       name: 'dorkos',
       version: '1.0.0',
-      tools: getUiTools({} as McpToolDeps, {
-        eventQueue: [],
-        roomTurn: { roomId, authorId: ana, turnId: 'turn-1' },
-      }),
+      tools: capabilityMcpTools(registry, 'in-session', async () => ({ sessionId: SESSION })),
     });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     client = new Client({ name: 'canvas-probe', version: '0.0.0' });

@@ -1,34 +1,33 @@
 import { describe, it, expect } from 'vitest';
 import { UI_COMMAND_REACH } from '@dorkos/shared/schemas';
-import { isUiActionRefusedOnCodex, uiActionRefusalMessage } from '../ui-command-consent.js';
+import { reachesPastTheScreen, uiActionRefusalMessage } from '../ui-surface-consent.js';
 
 /**
  * The refusal predicate reads the shared reach table, so a new `control_ui`
  * action is covered by whatever verdict `UI_COMMAND_REACH` gives it — nothing
  * here needs editing when the union grows (DOR-639).
  *
- * OpenCode, checked in the same pass, needs no equivalent gate: it never receives
- * `control_ui` at all. Its only DorkOS tool surface is the external `/mcp` server,
- * which excludes the in-session-only tools — pinned by
- * `services/core/external-mcp/__tests__/surface-parity.test.ts` ("keeps the
- * in-session-only tools off the external server", which lists `control_ui`) — and
- * there is no scoped UI server or `ui_command` mapping anywhere under
- * `services/runtimes/opencode/`.
+ * It tests the SURFACE, not a runtime's name (spec `canvas-agent-seat` §5). Both
+ * Codex and OpenCode reach `control_ui` through the loopback runtime listener
+ * now, and neither has a way to put a question to the person before an action
+ * writes to their machine — so one rule covers both, and covers whatever runtime
+ * arrives next through the same door.
  */
-describe('isUiActionRefusedOnCodex', () => {
+describe('reachesPastTheScreen', () => {
   it('refuses exactly the actions UI_COMMAND_REACH says leave the browser', () => {
     for (const [action, reach] of Object.entries(UI_COMMAND_REACH)) {
-      expect(isUiActionRefusedOnCodex(action), action).toBe(reach !== 'client-only');
+      expect(reachesPastTheScreen(action), action).toBe(reach !== 'client-only');
     }
   });
 
-  it('lets an unknown action through to the mapper, which rejects it as invalid', () => {
-    // Fail-closed lives in the mapper: an action outside the union has no reach
-    // verdict here, and `UiCommandSchema` there turns it into `ui_command_invalid`
-    // rather than a `ui_command`. Prototype keys must not read as verdicts.
-    expect(isUiActionRefusedOnCodex('not_a_real_action')).toBe(false);
-    expect(isUiActionRefusedOnCodex('toString')).toBe(false);
-    expect(isUiActionRefusedOnCodex('constructor')).toBe(false);
+  it('lets an unknown action through to the parse, which rejects it as invalid', () => {
+    // Fail-closed lives in the handler's own parse: an action outside the union
+    // has no reach verdict here, and `UiCommandSchema` there turns it into an
+    // "Invalid UI command" refusal rather than a command. Prototype keys must not
+    // read as verdicts.
+    expect(reachesPastTheScreen('not_a_real_action')).toBe(false);
+    expect(reachesPastTheScreen('toString')).toBe(false);
+    expect(reachesPastTheScreen('constructor')).toBe(false);
   });
 });
 

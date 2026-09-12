@@ -2894,13 +2894,21 @@ export function runtimeConformance(
         async () => {
           const outcome = await roomCanvasTurn!();
 
-          // (a) The table holds it. A command the turn produced and nothing
-          // applied would leave this empty — which is the failure every runtime
-          // reached differently before there was one writer.
+          // (a) The table holds it, ONCE. Every wiring here produces exactly one
+          // `open_canvas`, so the count is the assertion rather than a floor —
+          // and the two failures it separates are opposite ones. Zero is a
+          // command nothing applied, which is the failure every runtime reached
+          // differently before there was one writer. TWO is the failure the
+          // other side of the same seam produces: a handler that applies the
+          // command itself and does not STAMP the event it pushes, so the room
+          // turn's runtime-neutral tap applies it a second time (spec
+          // `canvas-agent-seat` §5). The documents here carry no dedupe key, so
+          // a double really does land twice.
           expect(
             outcome.documents.length,
-            'the turn produced a canvas command and the room holds no document'
-          ).toBeGreaterThan(0);
+            'the turn produced ONE canvas command; zero means nothing applied it, two means ' +
+              'something applied it twice (an unstamped `ui_command` the room tap picked up)'
+          ).toBe(1);
 
           // (b) A SECOND member's next turn is told about it, by name. This is
           // the channel the whole feature rests on: nothing is pushed at

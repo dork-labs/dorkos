@@ -57,6 +57,7 @@ import { EventLog } from './replay/event-log.js';
 import { RingBuffer } from './replay/ring-buffer.js';
 import { guardEventSize } from './replay/event-size-guard.js';
 import { devtoolsCaptureStore } from './devtools-capture-store.js';
+import { uiTurnFacts } from './browser-seat/ui-turn-facts.js';
 import type { SessionEventStore } from './session-event-store.js';
 import { getMessageQueueStore, toQueuedMessage } from './message-queue-store.js';
 import { getStagedContextStore } from './staged-context-store.js';
@@ -2407,6 +2408,9 @@ export function disposeProjector(sessionId: string): void {
   // preview is gone, and the buffer must not outlive the session (DOR-213). The
   // buffer moved to the canonical id on the rekey, so it is dropped by that id.
   devtoolsCaptureStore.dropSession(key);
+  // And the `ui` verbs' turn facts, for the same reason and by the same id: the
+  // window they describe is gone (spec `canvas-agent-seat` §5).
+  uiTurnFacts.dropSession(key);
 }
 
 /**
@@ -2500,6 +2504,11 @@ export function rekeyProjector(oldId: string, newId: string): void {
   // Carry any DevTools capture buffer across the same rekey so a preview opened
   // under the request UUID keeps feeding the canonical session (DOR-213).
   devtoolsCaptureStore.rekeySession(fromId, newId);
+  // And the `ui` verbs' turn facts, which the trigger bound under the id the
+  // turn started on: a `control_ui` taken later in that same first turn arrives
+  // with the CANONICAL id and would otherwise find no room marker and no window
+  // snapshot (spec `canvas-agent-seat` §5).
+  uiTurnFacts.rekeySession(fromId, newId);
   // Carry the DURABLE rows too, or every permission decision made before the
   // rename stops existing. Rows key by the id held at flush time and readers
   // ask one id, so a session renamed after it has turns behind it would leave

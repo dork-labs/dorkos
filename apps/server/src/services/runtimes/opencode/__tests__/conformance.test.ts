@@ -141,6 +141,7 @@ vi.mock('../providers/check-dependencies.js', async (importOriginal) => {
 });
 
 import { OpenCodeRuntime } from '../opencode-runtime.js';
+import { controlUi } from '../../../session/browser-seat/ui-control.js';
 import { LocalSessionAttachmentStore } from '../../../session/attachments/local-session-attachment-store.js';
 import {
   driveDurableTurn,
@@ -148,6 +149,7 @@ import {
   driveReloadedHistory,
   driveTerminalOnce,
   driveQueueDurability,
+  driveRoomCanvasTurn,
 } from '../../../session/__tests__/durable-turn-harness.js';
 import { TurnEventQueue } from '../events/global-event-hub.js';
 import type { StreamEvent } from '@dorkos/shared/types';
@@ -498,6 +500,31 @@ runtimeConformance(
     // through the same projector the trigger path feeds.
     presenceTurn: (runtime, sessionId, content, probes) =>
       drivePresenceTurn(runtime, sessionId, content, PROJECT_DIR, probes),
+    // **An OpenCode room turn's canvas command, applied exactly once** (spec
+    // `canvas-agent-seat` §5). The third runtime on the same shared handler, so
+    // "each canvas op applies exactly once" is proven on all three rather than
+    // on two with the third implied. It runs against the MOCKED sidecar like
+    // every other leg here — the command never reaches a model, so this costs
+    // nothing and needs no credential.
+    //
+    // The document is a `json` one on purpose: no source key, so dedupe cannot
+    // hide a second write the way it would for a file.
+    roomCanvasTurn: () =>
+      driveRoomCanvasTurn(
+        new OpenCodeRuntime({
+          provider: LIVE ? liveManager! : makeMockedProvider(),
+        }),
+        {
+          agentPath: '/agents/ana',
+          otherAgentPath: '/agents/ben',
+          produce: async (sessionId) => {
+            await controlUi(
+              { action: 'open_canvas', content: { type: 'json', data: {}, title: 'The plan' } },
+              { sessionId }
+            );
+          },
+        }
+      ),
     // C2/C3 are server-owned invariants every runtime inherits by construction,
     // so both drivers exercise the shared machinery rather than the sidecar —
     // safe in LIVE mode too. OpenCode declares neither steer nor stage, so it

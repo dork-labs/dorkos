@@ -7,11 +7,7 @@ import { shutdownSessionPumps } from './services/runtimes/claude-code/sessions/s
 import { reapOrphanedWarmProcesses } from './services/runtimes/claude-code/sessions/warm-process-ledger.js';
 import { inventorySessionIds } from './services/runtimes/claude-code/sessions/session-inventory.js';
 import { previewListeners } from './services/workbench-serve/index.js';
-import {
-  CodexRuntime,
-  CodexThreadMap,
-  createCodexUiMcpServer,
-} from './services/runtimes/codex/index.js';
+import { CodexRuntime, CodexThreadMap } from './services/runtimes/codex/index.js';
 import {
   OpenCodeRuntime,
   OpenCodeSessionMap,
@@ -1167,21 +1163,6 @@ async function start() {
             // The thread map shares the consolidated Drizzle handle injected into
             // runtimeRegistry.setDb() above (one DB, one `codex_threads` table).
             threadMap: new CodexThreadMap(db),
-            // Loopback URL of the scoped `dorkos_ui` MCP server mounted below at
-            // /codex-ui-mcp. Codex's MCP client sends no Origin header, so it clears
-            // validateMcpOrigin via the non-browser early return (not the allowlist).
-            // Exposes `control_ui` to Codex for canvas parity (the event-mapper turns
-            // the resulting mcp_tool_call into a ui_command).
-            //
-            // Minted from the DIAL form of the bind host, never a hardcoded
-            // `127.0.0.1` (DOR-723): the server binds `env.DORKOS_HOST`, which
-            // Node resolves to ONE address family, so on a host where that is
-            // `::1` a `127.0.0.1` URL is connection-refused — and the shipped
-            // Docker image binds the wildcard `0.0.0.0`, which Windows refuses
-            // to dial at all. This was the last hardcoded mint site in the
-            // server; the sibling sites below already went through
-            // `localDialHost`.
-            mcpUiUrl: `http://${localDialHost(env.DORKOS_HOST)}:${PORT}/codex-ui-mcp`,
             // Where images a turn's MCP tools hand back are kept. Wiring it here
             // is what makes the runtime declare `mediaOutput: 'attachments'` —
             // the composition root owns the deployment decision, and the adapter
@@ -2988,20 +2969,6 @@ async function start() {
     })
   );
   logger.info(`[MCP] External MCP server mounted at /mcp (stateless, ${mcpAuthMode})`);
-
-  // Scoped Codex UI MCP server — a top-level sibling of /mcp (NOT nested, to
-  // avoid app.use('/mcp') shadowing). Exposes ONLY `control_ui` so the Codex
-  // runtime can open the canvas (ADR: Codex canvas parity). Deliberately omits
-  // requireMcpEnabled (canvas must not depend on the external-MCP feature flag)
-  // and the MCP auth middleware (the stub holds no secrets and the loopback URL
-  // threads no bearer token). Origin validation + rate limiting still apply.
-  app.use(
-    '/codex-ui-mcp',
-    validateMcpOrigin,
-    mcpRateLimiter,
-    createMcpRouter(() => createCodexUiMcpServer())
-  );
-  logger.info('[MCP] Scoped Codex UI MCP server mounted at /codex-ui-mcp (control_ui only)');
 
   // Mount Tasks routes if enabled. The scheduler resolves a runtime PER RUN off
   // the registry (DOR-1615) — it no longer holds one agent manager bound at

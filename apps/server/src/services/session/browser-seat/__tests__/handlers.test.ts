@@ -10,17 +10,26 @@
  * @vitest-environment node
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import type { StreamEvent } from '@dorkos/shared/types';
 import type { DevtoolsActionResult } from '@dorkos/shared/schemas';
 import { DevtoolsCaptureStore } from '../../devtools-capture-store.js';
+import type { RawSessionEvent } from '../../session-state-projector.js';
 import { createBrowserSeatHandlers } from '../handlers.js';
 import { NO_DRIVER_NOTE, NO_PREVIEW_NOTE, NOT_INSTRUMENTED_NOTE } from '../act-protocol.js';
 
-/** The live session's event queue, and a way to read what was pushed. */
-function makeSession() {
-  const eventQueue: StreamEvent[] = [];
-  const notify = vi.fn();
-  return { session: { eventQueue, eventQueueNotify: notify }, eventQueue, notify };
+/**
+ * A stand-in for the calling session's stream, and a way to read what reached
+ * it.
+ *
+ * @param reached - Whether the session has a live stream. `false` is a session
+ *   nobody has a window open on.
+ */
+function makeSink(reached = true) {
+  const emitted: RawSessionEvent[] = [];
+  const emit = (event: RawSessionEvent) => {
+    if (reached) emitted.push(event);
+    return reached;
+  };
+  return { emit, emitted };
 }
 
 /** A store with one window holding one instrumented page. */
@@ -40,12 +49,14 @@ function storeWithDriver(
 }
 
 /** The action request the handlers pushed, typed for reading. */
-function pushedRequest(eventQueue: StreamEvent[]) {
-  const event = eventQueue.at(-1) as unknown as {
+function pushedRequest(emitted: RawSessionEvent[]) {
+  return emitted.at(-1) as unknown as {
     type: string;
-    data: { requestId: string; targetClientId: string; documentId: string; command: unknown };
+    requestId: string;
+    targetClientId: string;
+    documentId: string;
+    command: unknown;
   };
-  return event;
 }
 
 describe('a driving verb addresses exactly one window', () => {
@@ -56,24 +67,20 @@ describe('a driving verb addresses exactly one window', () => {
       { documentId: 'doc-b', seq: 2, console: [], network: [], active: true, instrumented: true },
       'client-b'
     );
-    const { session, eventQueue, notify } = makeSession();
-    const handlers = createBrowserSeatHandlers(
-      { resolveSessionId: () => 's1', store, session },
-      50
-    );
+    const { emit, emitted } = makeSink();
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit }, 50);
 
     const answer = handlers.click({ role: 'button', name: 'Pay' });
     // The request is minted synchronously; the await is only the wait for a
     // result that never comes in this case.
-    const request = pushedRequest(eventQueue);
+    const request = pushedRequest(emitted);
     expect(request.type).toBe('devtools_action_request');
-    expect(request.data.targetClientId).toBe('client-b');
-    expect(request.data.documentId).toBe('doc-b');
-    expect(request.data.command).toMatchObject({
+    expect(request.targetClientId).toBe('client-b');
+    expect(request.documentId).toBe('doc-b');
+    expect(request.command).toMatchObject({
       action: 'click',
       target: { role: 'button', name: 'Pay' },
     });
-    expect(notify).toHaveBeenCalled();
     await answer;
   });
 
@@ -84,28 +91,22 @@ describe('a driving verb addresses exactly one window', () => {
       { documentId: 'doc-b', seq: 2, console: [], network: [], active: true, instrumented: true },
       'client-b'
     );
-    const { session, eventQueue } = makeSession();
-    const handlers = createBrowserSeatHandlers(
-      { resolveSessionId: () => 's1', store, session },
-      50
-    );
+    const { emit, emitted } = makeSink();
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit }, 50);
 
     const answer = handlers.readPage({ documentId: 'doc-a' });
-    expect(pushedRequest(eventQueue).data.targetClientId).toBe('client-a');
+    expect(pushedRequest(emitted).targetClientId).toBe('client-a');
     await answer;
   });
 
   it('reports the document it acted in on every answer', async () => {
     const store = storeWithDriver();
-    const { session, eventQueue } = makeSession();
-    const handlers = createBrowserSeatHandlers(
-      { resolveSessionId: () => 's1', store, session },
-      1_000
-    );
+    const { emit, emitted } = makeSink();
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit }, 1_000);
 
     const answer = handlers.click({ selector: '#pay' });
     const result: DevtoolsActionResult = {
-      requestId: pushedRequest(eventQueue).data.requestId,
+      requestId: pushedRequest(emitted).requestId,
       ok: true,
       did: 'Clicked button "Pay $42.00".',
       matched: 1,
@@ -150,8 +151,8 @@ describe('the three answers that never mint a request', () => {
 
   it('says nothing is open, at once, when no preview ever captured', async () => {
     const store = new DevtoolsCaptureStore();
-    const { session, eventQueue } = makeSession();
-    const handlers = createBrowserSeatHandlers({ resolveSessionId: () => 's1', store, session });
+    const { emit, emitted } = makeSink();
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit });
 
     let answer: { payload: Record<string, unknown> } | undefined;
     const spent = await elapsed(async () => {
@@ -160,7 +161,7 @@ describe('the three answers that never mint a request', () => {
 
     expect(answer!.payload.note).toBe(NO_PREVIEW_NOTE);
     expect(spent).toBe(0);
-    expect(eventQueue).toHaveLength(0);
+    expect(emitted).toHaveLength(0);
   });
 
   it('says no window is showing a preview, at once, when every claim was released', async () => {
@@ -170,8 +171,8 @@ describe('the three answers that never mint a request', () => {
       { documentId: 'doc-a', seq: 2, console: [], network: [], active: false },
       'client-a'
     );
-    const { session, eventQueue } = makeSession();
-    const handlers = createBrowserSeatHandlers({ resolveSessionId: () => 's1', store, session });
+    const { emit, emitted } = makeSink();
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit });
 
     let answer: { payload: Record<string, unknown> } | undefined;
     const spent = await elapsed(async () => {
@@ -180,15 +181,15 @@ describe('the three answers that never mint a request', () => {
 
     expect(answer!.payload.note).toBe(NO_DRIVER_NOTE);
     expect(spent).toBe(0);
-    expect(eventQueue).toHaveLength(0);
+    expect(emitted).toHaveLength(0);
   });
 
   it('says a page that is open but not instrumented cannot be driven, at once', async () => {
     // The case that mattered most: today this waited out the whole timeout and
     // then said something misleading about opening a preview that IS open.
     const store = storeWithDriver('s1', 'client-a', 'doc-external', false);
-    const { session, eventQueue } = makeSession();
-    const handlers = createBrowserSeatHandlers({ resolveSessionId: () => 's1', store, session });
+    const { emit, emitted } = makeSink();
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit });
 
     let answer: { payload: Record<string, unknown> } | undefined;
     const spent = await elapsed(async () => {
@@ -198,7 +199,7 @@ describe('the three answers that never mint a request', () => {
     expect(answer!.payload.note).toBe(NOT_INSTRUMENTED_NOTE);
     expect(answer!.payload.documentId).toBe('doc-external');
     expect(spent).toBe(0);
-    expect(eventQueue).toHaveLength(0);
+    expect(emitted).toHaveLength(0);
   });
 
   it('says so at once when a page STOPPED being instrumented', async () => {
@@ -213,8 +214,8 @@ describe('the three answers that never mint a request', () => {
       { documentId: 'doc-a', seq: 2, console: [], network: [], active: true, instrumented: false },
       'client-a'
     );
-    const { session, eventQueue } = makeSession();
-    const handlers = createBrowserSeatHandlers({ resolveSessionId: () => 's1', store, session });
+    const { emit, emitted } = makeSink();
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit });
 
     let answer: { payload: Record<string, unknown> } | undefined;
     const spent = await elapsed(async () => {
@@ -224,13 +225,13 @@ describe('the three answers that never mint a request', () => {
     expect(answer!.payload.note).toBe(NOT_INSTRUMENTED_NOTE);
     expect(answer!.payload.documentId).toBe('doc-a');
     expect(spent).toBe(0);
-    expect(eventQueue).toHaveLength(0);
+    expect(emitted).toHaveLength(0);
   });
 
   it('names the fix when a page id nobody holds is passed', async () => {
     const store = storeWithDriver();
-    const { session } = makeSession();
-    const handlers = createBrowserSeatHandlers({ resolveSessionId: () => 's1', store, session });
+    const { emit } = makeSink();
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit });
 
     let answer: { payload: Record<string, unknown> } | undefined;
     const spent = await elapsed(async () => {
@@ -245,11 +246,8 @@ describe('the three answers that never mint a request', () => {
     // The contrast that makes the three assertions above mean something: the
     // clock DOES move when a request was minted and nothing answered.
     const store = storeWithDriver();
-    const { session } = makeSession();
-    const handlers = createBrowserSeatHandlers(
-      { resolveSessionId: () => 's1', store, session },
-      8_000
-    );
+    const { emit } = makeSink();
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit }, 8_000);
 
     let answer: { payload: Record<string, unknown> } | undefined;
     const spent = await elapsed(async () => {
@@ -264,18 +262,18 @@ describe('the three answers that never mint a request', () => {
 describe('refusals decided before anything is minted', () => {
   it('refuses two ways of naming the same element', async () => {
     const store = storeWithDriver();
-    const { session, eventQueue } = makeSession();
-    const handlers = createBrowserSeatHandlers({ resolveSessionId: () => 's1', store, session });
+    const { emit, emitted } = makeSink();
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit });
 
     const answer = await handlers.click({ role: 'button', name: 'Pay', selector: '#pay' });
     expect(answer.payload.note).toContain('Name the element one way');
-    expect(eventQueue).toHaveLength(0);
+    expect(emitted).toHaveLength(0);
   });
 
   it('refuses a role with no name beside it, and says what to do', async () => {
     const store = storeWithDriver();
-    const { session } = makeSession();
-    const handlers = createBrowserSeatHandlers({ resolveSessionId: () => 's1', store, session });
+    const { emit } = makeSink();
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit });
 
     const answer = await handlers.click({ role: 'button' });
     expect(answer.payload.note).toContain('A role needs the name beside it');
@@ -283,8 +281,8 @@ describe('refusals decided before anything is minted', () => {
 
   it('refuses a click that names nothing at all', async () => {
     const store = storeWithDriver();
-    const { session } = makeSession();
-    const handlers = createBrowserSeatHandlers({ resolveSessionId: () => 's1', store, session });
+    const { emit } = makeSink();
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit });
 
     const answer = await handlers.click({});
     expect(answer.payload.note).toContain('Name the element one way');
@@ -292,30 +290,24 @@ describe('refusals decided before anything is minted', () => {
 
   it("reads browser_type's `text` as what to type, never as a way to name the field", async () => {
     const store = storeWithDriver();
-    const { session, eventQueue } = makeSession();
-    const handlers = createBrowserSeatHandlers(
-      { resolveSessionId: () => 's1', store, session },
-      50
-    );
+    const { emit, emitted } = makeSink();
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit }, 50);
 
     // Naming nothing means "the focused field" — and `text` must not sneak in
     // as a visible-text target, which would send a command naming an element by
     // the very string being typed into it.
     const answer = handlers.type({ text: 'hello' });
-    expect(pushedRequest(eventQueue).data.command).toEqual({ action: 'type', text: 'hello' });
+    expect(pushedRequest(emitted).command).toEqual({ action: 'type', text: 'hello' });
     await answer;
   });
 
   it('names the field by role and name on browser_type, and keeps the typed text out of it', async () => {
     const store = storeWithDriver();
-    const { session, eventQueue } = makeSession();
-    const handlers = createBrowserSeatHandlers(
-      { resolveSessionId: () => 's1', store, session },
-      50
-    );
+    const { emit, emitted } = makeSink();
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit }, 50);
 
     const answer = handlers.type({ role: 'textbox', name: 'Card number', text: '4242' });
-    expect(pushedRequest(eventQueue).data.command).toEqual({
+    expect(pushedRequest(emitted).command).toEqual({
       action: 'type',
       target: { role: 'textbox', name: 'Card number' },
       text: '4242',
@@ -325,18 +317,18 @@ describe('refusals decided before anything is minted', () => {
 
   it('refuses a scroll that says neither where nor how far', async () => {
     const store = storeWithDriver();
-    const { session, eventQueue } = makeSession();
-    const handlers = createBrowserSeatHandlers({ resolveSessionId: () => 's1', store, session });
+    const { emit, emitted } = makeSink();
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit });
 
     const answer = await handlers.scroll({});
     expect(answer.payload.note).toContain('Say where to scroll');
-    expect(eventQueue).toHaveLength(0);
+    expect(emitted).toHaveLength(0);
   });
 
   it('refuses a wait that names no condition, and one that names two', async () => {
     const store = storeWithDriver();
-    const { session } = makeSession();
-    const handlers = createBrowserSeatHandlers({ resolveSessionId: () => 's1', store, session });
+    const { emit } = makeSink();
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit });
 
     expect((await handlers.waitFor({})).payload.note).toContain('Say what to wait for');
     expect((await handlers.waitFor({ text: 'Done', fetchIdle: true })).payload.note).toContain(
@@ -348,13 +340,13 @@ describe('refusals decided before anything is minted', () => {
 describe('bounds every driving verb carries', () => {
   it('caps a wait at ten seconds however long the caller asked for', async () => {
     const store = storeWithDriver();
-    const { session, eventQueue } = makeSession();
-    const handlers = createBrowserSeatHandlers({ resolveSessionId: () => 's1', store, session });
+    const { emit, emitted } = makeSink();
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit });
 
     const answer = handlers.waitFor({ text: 'Done', timeoutMs: 60_000 });
-    expect(pushedRequest(eventQueue).data.command).toMatchObject({ timeoutMs: 10_000 });
+    expect(pushedRequest(emitted).command).toMatchObject({ timeoutMs: 10_000 });
     store.resolveAction({
-      requestId: pushedRequest(eventQueue).data.requestId,
+      requestId: pushedRequest(emitted).requestId,
       ok: true,
       waitedMs: 12,
     });
@@ -365,15 +357,15 @@ describe('bounds every driving verb carries', () => {
     // A server timeout at or below the page's own wait would report a failure
     // while the page was still doing exactly what it was told.
     const store = storeWithDriver();
-    const { session, eventQueue } = makeSession();
-    const handlers = createBrowserSeatHandlers({ resolveSessionId: () => 's1', store, session });
+    const { emit, emitted } = makeSink();
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit });
     vi.useFakeTimers();
 
     let answer: { payload: Record<string, unknown> } | undefined;
     const running = handlers.waitFor({ text: 'Done', timeoutMs: 10_000 }).then((value) => {
       answer = value;
     });
-    expect(pushedRequest(eventQueue).data.command).toMatchObject({ timeoutMs: 10_000 });
+    expect(pushedRequest(emitted).command).toMatchObject({ timeoutMs: 10_000 });
     await vi.advanceTimersByTimeAsync(10_500);
     expect(answer).toBeUndefined();
     await vi.advanceTimersByTimeAsync(2_000);
@@ -382,18 +374,17 @@ describe('bounds every driving verb carries', () => {
     vi.useRealTimers();
   });
 
-  it('answers a session-less surface with an error rather than a fake success', async () => {
+  it('answers at once when the session has no live stream to reach', async () => {
+    // A window claimed the seat and then the session stopped streaming. The
+    // request has nowhere to go, so saying so beats waiting out the round-trip
+    // timeout and then blaming the page.
     const store = storeWithDriver();
-    const { session } = makeSession();
-    const handlers = createBrowserSeatHandlers({
-      resolveSessionId: () => undefined,
-      store,
-      session,
-    });
+    const { emit } = makeSink(false);
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit });
 
     const answer = await handlers.click({ selector: '#pay' });
-    expect(answer.isError).toBe(true);
-    expect(answer.payload.error).toContain('attached interactive session');
+    expect(answer.payload.ok).toBe(false);
+    expect(answer.payload.note).toBe(NO_DRIVER_NOTE);
   });
 
   it('names the tab on a REFUSAL too, which is where an agent learns the id', async () => {
@@ -405,15 +396,12 @@ describe('bounds every driving verb carries', () => {
     // including when the answer is a refusal, which is exactly the moment an
     // agent is deciding what to pass next time.
     const store = storeWithDriver();
-    const { session, eventQueue } = makeSession();
-    const handlers = createBrowserSeatHandlers(
-      { resolveSessionId: () => 's1', store, session },
-      1_000
-    );
+    const { emit, emitted } = makeSink();
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit }, 1_000);
 
     const answer = handlers.click({ text: 'Delete' });
     store.resolveAction({
-      requestId: pushedRequest(eventQueue).data.requestId,
+      requestId: pushedRequest(emitted).requestId,
       ok: false,
       matched: 4,
       error: '4 things matched the text "Delete". Pass nth to pick one, or name it more exactly.',
@@ -424,11 +412,8 @@ describe('bounds every driving verb carries', () => {
 
   it('names the tab on every one of the six verbs, not just the ones with a target', async () => {
     const store = storeWithDriver();
-    const { session, eventQueue } = makeSession();
-    const handlers = createBrowserSeatHandlers(
-      { resolveSessionId: () => 's1', store, session },
-      1_000
-    );
+    const { emit, emitted } = makeSink();
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit }, 1_000);
 
     const calls: [string, Promise<{ payload: Record<string, unknown> }>][] = [
       ['browser_click', handlers.click({ selector: '#a' })],
@@ -439,9 +424,9 @@ describe('bounds every driving verb carries', () => {
       ['browser_read_page', handlers.readPage({})],
     ];
     // Answer each minted request in the order they were pushed.
-    for (const event of eventQueue) {
-      const request = event as unknown as { data: { requestId: string } };
-      store.resolveAction({ requestId: request.data.requestId, ok: true, did: 'did it.' });
+    for (const event of emitted) {
+      const request = event as unknown as { requestId: string };
+      store.resolveAction({ requestId: request.requestId, ok: true, did: 'did it.' });
     }
     for (const [verb, pending] of calls) {
       expect((await pending).payload.documentId, `${verb} did not name the tab`).toBe('doc-a');
@@ -450,15 +435,12 @@ describe('bounds every driving verb carries', () => {
 
   it('passes a page failure through as the page worded it, with what it matched', async () => {
     const store = storeWithDriver();
-    const { session, eventQueue } = makeSession();
-    const handlers = createBrowserSeatHandlers(
-      { resolveSessionId: () => 's1', store, session },
-      1_000
-    );
+    const { emit, emitted } = makeSink();
+    const handlers = createBrowserSeatHandlers({ sessionId: 's1', store, emit }, 1_000);
 
     const answer = handlers.click({ text: 'Delete' });
     store.resolveAction({
-      requestId: pushedRequest(eventQueue).data.requestId,
+      requestId: pushedRequest(emitted).requestId,
       ok: false,
       matched: 4,
       error: '4 things matched the text "Delete". Pass nth to pick one, or name it more exactly.',

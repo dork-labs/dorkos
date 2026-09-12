@@ -8,6 +8,9 @@
  * a flag with nobody's name on it — so each is asserted here rather than trusted.
  */
 import { describe, it, expect } from 'vitest';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { UserConfigSchema, USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import { EXPERIMENTS, type ExperimentEntry } from '../experiments-registry.js';
 import { configSchemaLeaves } from '../../operator/config-disclosure.js';
@@ -137,6 +140,143 @@ describe('EXPERIMENTS', () => {
     it('an entry with no graduation issue', () => {
       const problems = auditEntry({ ...base, path: 'a2a.enabled', graduationIssue: '  ' }, leaves);
       expect(problems).toEqual(['a2a.enabled: no graduationIssue']);
+    });
+  });
+
+  /**
+   * The name a page tells somebody to look for is the name on the switch.
+   *
+   * `ExperimentsTab.tsx` renders `entry.title` verbatim, so the title IS the
+   * label. A page that invents its own spelling sends a reader to Settings to
+   * hunt for a control that is not there — and the page they are reading is, by
+   * construction, the one paragraph explaining how to turn the feature on.
+   *
+   * Caught nothing for a year and then caught four strings at once: DOR-2009's
+   * docs and its release note all said "DorkOS tools for Codex and OpenCode"
+   * while the switch said "DorkOS tools in every runtime", and four OTHER pages
+   * in the same tree already used the real name. Nothing compared them.
+   *
+   * ## How a mention is recognised
+   *
+   * By the sentence people actually write: `**Some Title** … in Settings under
+   * Experiments`. The bolded phrase NEAREST before that instruction is the name
+   * being handed to the reader, so that is the string this compares. Prose that
+   * names the tab without bolding anything is not a claim about a label and is
+   * left alone; a bolded phrase anywhere else (a button, a heading) is not
+   * matched at all, which is why the rule names the Experiments tab rather than
+   * Settings in general.
+   */
+  describe('every page that names an experiment switch uses the title on the switch', () => {
+    /** The repo root, from this file. */
+    const REPO_ROOT = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      '../../../../../../..'
+    );
+
+    /**
+     * Where a person reads about an experiment. The COMPILED changelog is
+     * excluded on purpose: it is history, and an experiment renamed later must
+     * not make a shipped release note false retroactively (`changelog/README.md`).
+     */
+    const PROSE_ROOTS = [
+      'docs/guides',
+      'docs/concepts',
+      'docs/getting-started',
+      'docs/integrations',
+      'docs/marketplace',
+      'changelog/unreleased',
+      'contributing',
+    ];
+
+    /** Every markdown file under one root, recursively. */
+    function markdownUnder(root: string): string[] {
+      const absolute = path.join(REPO_ROOT, root);
+      let entries: string[];
+      try {
+        entries = readdirSync(absolute);
+      } catch {
+        return [];
+      }
+      return entries.flatMap((name) => {
+        const full = path.join(absolute, name);
+        if (statSync(full).isDirectory()) return markdownUnder(path.join(root, name));
+        return name.endsWith('.md') || name.endsWith('.mdx') ? [path.join(root, name)] : [];
+      });
+    }
+
+    const FILES = PROSE_ROOTS.flatMap(markdownUnder);
+
+    /** The phrase a page hands a reader to look for, and where it said it. */
+    interface Mention {
+      file: string;
+      named: string;
+    }
+
+    /** How close a bolded label has to sit to the instruction to BE the label. */
+    const LABEL_WINDOW_CHARS = 120;
+
+    /**
+     * Whether a bolded phrase is shaped like a switch label rather than like
+     * emphasis inside a sentence.
+     *
+     * Three cheap rules, each for a real shape in this corpus: a label is short,
+     * it is not a sentence, and it has no stray edge whitespace — which is what a
+     * span mis-paired across two adjacent bolds always has.
+     */
+    function looksLikeALabel(named: string): boolean {
+      return (
+        named.trim() === named && named.length > 0 && named.length <= 60 && !named.includes('. ')
+      );
+    }
+
+    /**
+     * Every `**Title** … in Settings under Experiments` in one file.
+     *
+     * Bolds are paired over the WHOLE file and then filtered by position, never
+     * by slicing a window and re-scanning it: a slice that starts inside a bold
+     * pairs that bold's closing `**` with the NEXT bold's opening one, and the
+     * real label two words later is never seen. That mis-pairing hid the very
+     * page this guard was written for.
+     *
+     * Of what is left, the last label-shaped bold within
+     * {@link LABEL_WINDOW_CHARS} of the instruction is the name a reader is being
+     * handed. Prose that merely mentions the tab — a note that a switch USED to
+     * live there, say — has no label beside it and is not a claim about one.
+     */
+    function mentionsIn(file: string): Mention[] {
+      const text = readFileSync(path.join(REPO_ROOT, file), 'utf-8');
+      const bolds = [...text.matchAll(/\*\*([^*\n]+)\*\*/g)]
+        .map((bold) => ({ named: bold[1], endsAt: bold.index + bold[0].length }))
+        .filter((bold) => looksLikeALabel(bold.named));
+      const found: Mention[] = [];
+      for (const match of text.matchAll(/in Settings,? under Experiments/g)) {
+        const last = bolds
+          .filter(
+            (bold) => bold.endsAt <= match.index && match.index - bold.endsAt <= LABEL_WINDOW_CHARS
+          )
+          .at(-1);
+        if (last !== undefined) found.push({ file, named: last.named });
+      }
+      return found;
+    }
+
+    const MENTIONS = FILES.flatMap(mentionsIn);
+
+    it('found the pages that say it, so the check below is about something', () => {
+      // Vacuously green against an empty corpus, which is the one way this could
+      // stop working without saying so.
+      expect(FILES.length).toBeGreaterThan(50);
+      expect(MENTIONS.length).toBeGreaterThan(0);
+    });
+
+    it('names only titles the registry really carries', () => {
+      const titles = new Set(EXPERIMENTS.map((entry) => entry.title));
+      const wrong = MENTIONS.filter((mention) => !titles.has(mention.named));
+      expect(
+        wrong.map((mention) => `${mention.file}: "${mention.named}"`),
+        'these send a reader to Settings to look for a switch with that label. ' +
+          `The labels that exist are: ${[...titles].map((title) => `"${title}"`).join(', ')}.`
+      ).toEqual([]);
     });
   });
 });

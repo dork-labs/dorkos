@@ -5,6 +5,5 @@
  */
 export { CodexRuntime, type CodexRuntimeOptions } from './codex-runtime.js';
 export { CodexThreadMap } from './thread-map.js';
-export { createCodexUiMcpServer, CODEX_UI_MCP_SERVER } from './codex-ui-mcp-server.js';
 export { checkCodexDependencies } from './check-dependencies.js';
 export { CODEX_CAPABILITIES } from './runtime-constants.js';
