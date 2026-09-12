@@ -7,6 +7,7 @@ covers:
   - "fix(rooms): keep a follow alive while the leader is still, and sign the room's own lines (DOR-2010)"
   - 'fix(rooms): pin the forget-on-leave wiring, and resolve one author per row (DOR-2010)'
   - "fix(rooms): strip the beat pin's comments with the repo's own lexer (DOR-2010)"
+  - "fix(rooms): keep a stale follow position off a follower's own scroll (DOR-2010)"
 ---
 
 ### Added
