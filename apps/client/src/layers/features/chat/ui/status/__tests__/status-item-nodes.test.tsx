@@ -57,6 +57,72 @@ vi.mock('@/layers/entities/runtime', async (importOriginal) => {
     ...actual,
     useCapabilitiesForRuntime: (runtimeType: string | null | undefined) =>
       mockCapabilitiesForRuntime(runtimeType),
+    // The DOR-1971 render test below mounts the real `RuntimeItem`, which reads
+    // these two directly (not through `useCapabilitiesForRuntime`) to decide
+    // whether it owes a dropdown. `canSelect: false` in that test means neither
+    // ever drives a branch that matters, so a stable "nothing registered yet"
+    // answer is enough.
+    useRuntimeCapabilities: () => ({ data: undefined }),
+    useRuntimeRequirements: () => ({ data: undefined }),
+  };
+});
+
+// `RuntimeItem` also calls these even when read-only (`canSelect: false`) —
+// both are unconditional in the component, not gated on the branch. Stubbed
+// here rather than wired through a real Transport so the DOR-1971 test needs no
+// provider tree: neither the account switcher nor the account roster is what
+// that test is about.
+vi.mock('@/layers/features/status/model/use-account-switch', () => ({
+  DEFAULT_ACCOUNT_VALUE: '__default__',
+  useAccountSwitch: () => ({
+    accounts: [],
+    selectedValue: '__default__',
+    isMultiAccount: false,
+    defaultLabel: undefined,
+    choose: vi.fn(),
+  }),
+}));
+
+// The roster read behind the chip's account tooltip (DOR-1970). It reaches for
+// the Transport, which this file deliberately does not stand up; `nameFor` is
+// never called here anyway, because the test's `runtimeChip.account` is null.
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
+  useClaudeAccounts: () => ({
+    accounts: [],
+    isMultiAccount: false,
+    nameFor: (path: string) => path,
+  }),
+}));
+
+// `ResponsivePopover` (behind `ModelConfigPopover`) reads this to pick its
+// desktop-vs-sheet rendering; false keeps it a plain popover in jsdom.
+vi.mock('@/layers/shared/model/media/use-is-mobile', () => ({ useIsMobile: () => false }));
+
+/**
+ * The one catalog entry the DOR-1971 render test needs: an OpenCode-style
+ * `provider/model` id, so both the runtime chip's own formatter
+ * (`formatModelLabel`, slash-stripped) and the model item's catalog lookup
+ * (`statusModelLabel`, display-name-stripped) resolve to the exact same short
+ * string. That agreement is what makes "the model name appears once" a single,
+ * unambiguous text count instead of two different spellings of the same idea.
+ */
+const QWEN_MODEL = {
+  value: 'ollama/qwen2.5-coder',
+  displayName: 'qwen2.5-coder',
+  description: 'Local coding model',
+};
+
+vi.mock('@/layers/entities/session', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/entities/session')>();
+  return {
+    ...actual,
+    useModels: () => ({
+      data: [QWEN_MODEL],
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    }),
   };
 });
 
@@ -455,5 +521,63 @@ describe('PermissionModeItem vs. PlanModeItem — never the same word when both 
     expect(new Set(visibleTexts).size).toBe(visibleTexts.length);
     expect(screen.getByRole('button', { name: 'Plan' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Permissions: Accept edits' })).toBeInTheDocument();
+  });
+});
+
+describe('buildStatusItemNodes — the runtime chip and the model item must not repeat (DOR-1971)', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('says the model name once at the full tier, not twice', () => {
+    // A started, non-default-runtime session — the one state where the
+    // runtime chip promotes at all (`status-bar-registry.ts`'s `runtime.promote`)
+    // — at `density: 'full'`, the tier a roomy desktop composer resolves to and
+    // exactly the state a user reported seeing the model name twice in
+    // (FB-12/DOR-1971). Both nodes are built and rendered together, the same way
+    // `ChatStatusSection` hands them to the line — not asserted in isolation.
+    const nodes = buildStatusItemNodes(
+      inputWith({
+        status: {
+          permissionMode: 'default',
+          model: QWEN_MODEL.value,
+          effort: null,
+          fastMode: false,
+          costUsd: null,
+          contextPercent: null,
+          isStreaming: false,
+          cwd: '/tmp/ana',
+        },
+        runtimeChip: {
+          runtime: 'opencode',
+          model: QWEN_MODEL.value,
+          account: null,
+          canSelect: false,
+          onChangeRuntime: vi.fn(),
+        },
+        density: 'full',
+      })
+    );
+
+    // Without both keys present, a count of zero would pass for the wrong
+    // reason — neither node rendered at all.
+    expect(nodes.runtime).toBeDefined();
+    expect(nodes.model).toBeDefined();
+
+    const { container } = render(
+      <TooltipProvider>
+        {nodes.runtime}
+        {nodes.model}
+      </TooltipProvider>
+    );
+
+    // Before the fix: the runtime chip reads "OpenCode · qwen2.5-coder" (its
+    // own `compact` was density-gated, and `full` left it showing the model
+    // half) right beside the model item's own "qwen2.5-coder" trigger — the
+    // same word on screen twice. After the fix, the runtime chip is always
+    // compact and shows only "OpenCode"; the model item is the one place the
+    // name appears.
+    const occurrences = container.textContent?.match(/qwen2\.5-coder/g) ?? [];
+    expect(occurrences).toHaveLength(1);
   });
 });

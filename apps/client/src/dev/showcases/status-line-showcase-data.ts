@@ -514,24 +514,24 @@ export const PLANNING: StatusScenario = {
 
 /**
  * One bar width per density tier, widest first: each tier at its floor from
- * `status-budget` (640 / 440 / 340), plus 320 for `avatar`, which has no floor.
+ * `status-budget` (648 / 440 / 340), plus 320 for `avatar`, which has no floor.
  *
  * A tier's floor is the tier at its worst — the most it may say in the fewest
  * pixels it may say it in — which is the interesting width and the only one where a
  * budget can be caught over-promising.
  *
- * Capped at 640 on purpose. These boxes are a fixed pixel width, and the
+ * Capped at 648 on purpose. These boxes are a fixed pixel width, and the
  * playground's content column is ~680px on a 1280px laptop; a wider row would
  * scroll its own `⋯` out of sight, which is the one thing this demo must never
- * hide. The `full` tier's budget keeps growing above 640 — the showcase's budget
+ * hide. The `full` tier's budget keeps growing above 648 — the showcase's budget
  * table reports that from the same function without drawing a 1440px bar.
  */
-export const TIER_WIDTHS = [640, 440, 340, 320] as const;
+export const TIER_WIDTHS = [648, 440, 340, 320] as const;
 
 /**
  * Widths the showcase's budget table samples, from a small phone to a wide desktop:
- * every tier floor (340 / 440 / 640), a 320px phone below the narrowest of them, one
+ * every tier floor (340 / 440 / 648), a 320px phone below the narrowest of them, one
  * width inside `compact` to show a tier whose budget does not move, and four above
- * 640, the only tier whose budget grows with the width.
+ * 648, the only tier whose budget grows with the width.
  */
-export const SAMPLED_WIDTHS = [320, 340, 440, 520, 640, 764, 890, 1024, 1440] as const;
+export const SAMPLED_WIDTHS = [320, 340, 440, 520, 648, 764, 890, 1024, 1440] as const;
