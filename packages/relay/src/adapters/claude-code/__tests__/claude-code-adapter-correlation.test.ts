@@ -203,7 +203,7 @@ describe('ClaudeCodeAdapter correlation ID', () => {
         permissionMode: 'default',
         scheduleName: 'Budget Monitor',
         cron: '0 * * * *',
-        trigger: 'cron',
+        trigger: 'scheduled',
       },
     };
 

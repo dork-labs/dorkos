@@ -173,6 +173,10 @@
       "types": "./src/run-outcome.ts",
       "default": "./dist/run-outcome.js"
     },
+    "./run-refusals": {
+      "types": "./src/run-refusals.ts",
+      "default": "./dist/run-refusals.js"
+    },
     "./run-time-limit": {
       "types": "./src/run-time-limit.ts",
       "default": "./dist/run-time-limit.js"

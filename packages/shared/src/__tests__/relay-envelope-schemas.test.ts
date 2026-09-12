@@ -78,7 +78,7 @@ describe('TaskDispatchPayloadSchema', () => {
     permissionMode: 'acceptEdits',
     taskName: 'Nightly digest',
     cron: '0 9 * * *',
-    trigger: 'schedule',
+    trigger: 'scheduled',
   };
 
   it('accepts a dispatch carrying a real permission mode', () => {
@@ -95,6 +95,25 @@ describe('TaskDispatchPayloadSchema', () => {
       permissionMode: 'yolo',
     });
     expect(result.success).toBe(false);
+  });
+
+  it('rejects a trigger no run row could ever carry', () => {
+    // Purpose: the receiver reads this field to decide whether the run is
+    // unattended — whether an ask is refused on the spot or waits for the person
+    // who clicked Run now. While it was an open string, a typo or an invented
+    // word ('cron', 'schedule' — both were live in fixtures) read as "not
+    // scheduled" and would have quietly handed a run nobody is watching the
+    // ten-minute wait back.
+    for (const trigger of ['cron', 'schedule', 'timer', '']) {
+      expect(
+        TaskDispatchPayloadSchema.safeParse({ ...validDispatch, trigger }).success,
+        `"${trigger}" must not parse as a run trigger`
+      ).toBe(false);
+    }
+    // The three a run row can actually hold all pass.
+    for (const trigger of ['scheduled', 'manual', 'agent']) {
+      expect(TaskDispatchPayloadSchema.safeParse({ ...validDispatch, trigger }).success).toBe(true);
+    }
   });
 });
 
@@ -130,7 +149,7 @@ describe('TaskDispatchPayloadSchema systemPromptAppend', () => {
     permissionMode: 'acceptEdits' as const,
     taskName: 'Nightly',
     cron: '0 9 * * *',
-    trigger: 'schedule',
+    trigger: 'scheduled',
   };
 
   it('carries the unattended briefing when one is set', () => {
