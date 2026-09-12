@@ -172,6 +172,29 @@ describe('a line the room wrote about somebody', () => {
     expect(within(row).getByText('Kai')).toBeInTheDocument();
     expect(within(row).queryByText('Unknown')).not.toBeInTheDocument();
   });
+
+  it('resolves that somebody behind the row as well as in front of it', async () => {
+    // The face and the row's actions used to be resolved from two different
+    // ids, so the row drew Kai and then offered a profile for nobody. "View
+    // profile" is the observable half of `authorRef`: it exists only when the
+    // roster answered.
+    renderTimeline({
+      members: [member('kai', 'Kai', 'human')],
+      entries: [
+        entry(1, {
+          authorId: 'system-author',
+          body: { text: 'Kai started a discussion about The plan.', subjectAuthorId: 'kai' },
+        }),
+      ],
+    });
+    const row = screen.getByTestId('room-entry');
+    fireEvent.mouseEnter(row);
+    const bar = await within(row).findByRole('toolbar', { name: 'Message actions' });
+
+    // The action exists only when the roster answered for `authorRef`. Pointing
+    // it back at the system author takes it away, which is what this catches.
+    expect(within(bar).getByRole('button', { name: 'View profile' })).toBeInTheDocument();
+  });
 });
 
 describe('RoomFlow', () => {

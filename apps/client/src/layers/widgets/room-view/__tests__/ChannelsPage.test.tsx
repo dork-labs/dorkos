@@ -27,6 +27,7 @@ import {
 import {
   usePendingPostStore,
   useRoomDraftStore,
+  useRoomFollowStore,
   useRoomHistoryPagingStore,
   useRoomOpenThreadStore,
 } from '@/layers/entities/room';
@@ -112,6 +113,10 @@ afterEach(() => {
   // Pending rows outlive their composer for the same reason drafts do — a
   // refusal has to find something still standing — so they outlive tests too.
   usePendingPostStore.setState({ posts: [] });
+  // Who this browser is following, which is per-room and per-visit. The suite
+  // below asserts that leaving a room clears it, so a leak here would make the
+  // NEXT test start from the state that test exists to rule out.
+  useRoomFollowStore.setState({ intent: {}, claims: {}, positions: {} });
 });
 
 function roomWith(id: string, slug: string): RoomWithRoster {
@@ -1269,5 +1274,53 @@ describe('ChannelsPage — reading older history', () => {
 
     expect(await screen.findByText('the only thing said here')).toBeInTheDocument();
     expect(screen.queryByTestId('room-load-older')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Following somebody is a choice about one room and one visit to it (spec
+ * `canvas-agent-seat` §6): off by default, never written down, never resumed.
+ *
+ * **Asserted at the PAGE, because that is the only level that can see it.**
+ * The hook that forgets it hangs off `RoomSurface`, whose life is exactly one
+ * room on screen — and a test that mounted the hook itself would pass with the
+ * surface wiring deleted, which is the shape of the bug this fix was for: a
+ * `forgetRoom` that was implemented, documented, tested and called from
+ * nowhere. Pointing `RoomSurface`'s call at `null` reds both cases below.
+ */
+describe('ChannelsPage — following somebody, and leaving', () => {
+  it('forgets who you were following when you switch rooms', async () => {
+    const { openRoom } = renderPage();
+    await screen.findByRole('combobox');
+
+    useRoomFollowStore.getState().startFollowing('room-1', 'author-kai');
+    expect(useRoomFollowStore.getState().intent['room-1']?.leaderId).toBe('author-kai');
+
+    await openRoom('room-2');
+
+    expect(useRoomFollowStore.getState().intent['room-1']).toBeUndefined();
+  });
+
+  it('forgets it when the room goes off screen altogether', async () => {
+    renderPage();
+    await screen.findByRole('combobox');
+    useRoomFollowStore.getState().startFollowing('room-1', 'author-kai');
+
+    cleanup();
+
+    expect(useRoomFollowStore.getState().intent['room-1']).toBeUndefined();
+  });
+
+  it('comes back to "Follow" rather than to a follow nobody re-chose', async () => {
+    const { openRoom } = renderPage();
+    await screen.findByRole('combobox');
+    useRoomFollowStore.getState().startFollowing('room-1', 'author-kai');
+
+    // Away and straight back, well inside the thirty seconds a claim would
+    // have survived on the server.
+    await openRoom('room-2');
+    await openRoom('room-1');
+
+    expect(useRoomFollowStore.getState().intent['room-1']).toBeUndefined();
   });
 });
