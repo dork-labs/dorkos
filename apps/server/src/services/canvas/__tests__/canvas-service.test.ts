@@ -1,7 +1,13 @@
 /**
- * The one writer: everything that can say no about a room's shared canvas, and
- * the ledger the turn's single log line is composed from (spec `room-canvas`
- * §3, §5.1, §6.2).
+ * The one writer: everything that can say no about a canvas, in BOTH scopes
+ * (specs `room-canvas` §3, §5.1, §6.2 and `canvas-agent-seat` §1.2).
+ *
+ * **The room half is the moved suite, passing unchanged.** That is the
+ * regression bar for generalising `RoomCanvasService` over a scope: a room's
+ * ceiling, its ledger, its coalesced line and its reader rule all still behave
+ * exactly as they did, over a writer that now also serves a session. The
+ * session half at the bottom is what is new, and every one of its assertions is
+ * about a difference the spec decided on purpose.
  *
  * Everything here runs against a REAL rooms subsystem over a real SQLite
  * database (`createRoomHarness`) — never a mocked `RoomCanvasService`. A mock
@@ -20,22 +26,23 @@
  * - Dropping the `lastTouchedBy` columns for a process map reddens "survives a
  *   restart" — the second service reads the same rows and finds the pointer.
  *
- * @module server/services/rooms/canvas/tests/room-canvas-service
+ * @module server/services/canvas/tests/canvas-service
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { RoomEntry, RoomEvent, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { UiCommand } from '@dorkos/shared/schemas';
-import type { AuthorRegistry } from '../../author-registry.js';
-import { RoomError } from '../../room-errors.js';
-import type { RoomService } from '../../room-service.js';
-import type { RoomCanvasService } from '../room-canvas-service.js';
+import type { AuthorRegistry } from '../../rooms/author-registry.js';
+import { RoomError } from '../../rooms/room-errors.js';
+import type { RoomService } from '../../rooms/room-service.js';
+import type { RoomCanvasService } from '../../rooms/canvas/room-canvas-service.js';
 import type { CanvasDocumentStore } from '../canvas-document-store.js';
-import type { RoomBroadcaster } from '../../room-stream.js';
+import { roomScope } from '../scopes.js';
+import type { RoomBroadcaster } from '../../rooms/room-stream.js';
 import {
   agentLookupFor,
   createRoomHarness,
   scriptedRunner,
-} from '../../__tests__/room-test-harness.js';
+} from '../../rooms/__tests__/room-test-harness.js';
 import {
   MAX_ROOM_CANVAS_DOCUMENTS,
   NOT_IN_A_ROOM_MESSAGE,
@@ -43,7 +50,7 @@ import {
   OPEN_CANVAS_NEEDS_CONTENT_MESSAGE,
   canvasChangeSentence,
   tooManyCanvasOpsMessage,
-} from '../room-canvas-service.js';
+} from '../../rooms/canvas/room-canvas-service.js';
 
 const ANA = '/agents/ana';
 const BEN = '/agents/ben';
@@ -203,6 +210,47 @@ describe('RoomCanvasService.apply', () => {
       expect(canvas.list(room.id)).toHaveLength(3);
     });
 
+    /**
+     * The one case the `>=` in `chargeCeiling` exists for (DOR-2006 review, 10b).
+     *
+     * The resolver reads the ceiling live and a host that has configured none
+     * answers `undefined`. `spent >= undefined` is false, so the operation
+     * proceeds — which is right. The inversion that ships as `!(spent < limit)`
+     * reads the same for every real number and flips exactly here: `spent <
+     * undefined` is false too, so its negation refuses. Every canvas command in
+     * every room then fails with "already changed the canvas undefined times",
+     * and re-seeding it left 2033 of 2034 server tests green.
+     */
+    it('lets everything through when the host has configured no ceiling', () => {
+      const {
+        service: unlimited,
+        authors: theirAuthors,
+        human: owner,
+      } = createRoomHarness({
+        agents,
+        runner: scriptedRunner(() => null),
+        // Exactly what `configManager.get('rooms').maxCanvasOpsPerTurn` answers
+        // on a config that has no such key.
+        maxCanvasOpsPerTurn: () => undefined as unknown as number,
+      });
+      const theirRoom = unlimited.createRoom(
+        { kind: 'channel', title: 'Unbounded', members: [], agentPaths: [ANA] },
+        owner
+      );
+      const theirAna = theirAuthors.resolveAgent(ANA, 'Ana').id;
+
+      for (const n of [1, 2, 3, 4, 5] as const) {
+        const result = unlimited.canvas.apply({
+          roomId: theirRoom.id,
+          authorId: theirAna,
+          turnId: 'turn-1',
+          command: { action: 'open_canvas', content: jsonContent(`doc ${n}`) },
+        });
+        expect(result.applied, `open ${n}`).toBe(true);
+      }
+      expect(unlimited.canvas.list(theirRoom.id)).toHaveLength(5);
+    });
+
     it('survives a turn that is closed more than once', () => {
       // `finishTurn` runs from the collector's `finally`, and a room turn can
       // reach one more than once — an abort and a settle, a retry, a second
@@ -335,8 +383,8 @@ describe('RoomCanvasService.apply', () => {
       // Read straight off the table rather than out of the service: what makes
       // the default survive a restart is that it is a COLUMN, and a process map
       // would pass every assertion above this one.
-      expect(canvasDocuments.lastTouchedBy(room.id, ana)?.id).toBe(id);
-      expect(canvasDocuments.lastTouchedBy(room.id, ben)).toBeNull();
+      expect(canvasDocuments.lastTouchedBy(roomScope(room.id), ana)?.id).toBe(id);
+      expect(canvasDocuments.lastTouchedBy(roomScope(room.id), ben)).toBeNull();
     });
   });
 
@@ -427,7 +475,7 @@ describe('RoomCanvasService.apply', () => {
       // What a reload actually reads: the ROW, in SQLite, rather than anything
       // this process is holding. Nothing about a pin lives in memory, which is
       // why closing the browser cannot lose one.
-      expect(canvasDocuments.get(room.id, doc.id)?.pinned).toBe(true);
+      expect(canvasDocuments.get(roomScope(room.id), doc.id)?.pinned).toBe(true);
       // And the order every viewer is served comes off those rows, so the pin is
       // first however recently anything else was touched.
       canvas.activate(room.id, human, later.id);

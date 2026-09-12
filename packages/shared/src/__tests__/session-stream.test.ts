@@ -334,6 +334,64 @@ describe('SessionEventSchema — queue_update', () => {
   });
 });
 
+const canvasDocument = {
+  id: 'doc-1',
+  scope: 'session:sess-1',
+  roomId: null,
+  content: { type: 'file' as const, sourcePath: '/src/router.ts' },
+  title: 'router.ts',
+  contentType: 'file',
+  authorId: 'owner',
+  pinned: false,
+  rev: 3,
+  lastTouchedBy: 'owner',
+  lastTouchedAt: '2026-09-12T10:00:00Z',
+  openedAt: '2026-09-12T09:00:00Z',
+  lastActiveAt: '2026-09-12T10:00:00Z',
+};
+
+describe("SessionEventSchema's canvas member", () => {
+  it('parses an opened frame carrying the whole document', () => {
+    const event = {
+      seq: 7,
+      type: 'canvas' as const,
+      documentId: 'doc-1',
+      document: canvasDocument,
+      change: 'opened' as const,
+    };
+    expect(SessionEventSchema.parse(event)).toEqual(event);
+  });
+
+  it('parses a closed frame, where the id is the whole payload', () => {
+    const event = { seq: 8, type: 'canvas' as const, documentId: 'doc-1', closed: true };
+    expect(SessionEventSchema.parse(event)).toEqual(event);
+  });
+
+  it('REQUIRES a seq — the inverse of the room frame, which deliberately has none', () => {
+    // The pair of these two assertions is what keeps the two streams' rules from
+    // being copied into each other. A session event without a seq cannot be
+    // replayed from the ring, so a reader that missed one would never learn it.
+    expect(
+      SessionEventSchema.safeParse({ type: 'canvas', documentId: 'doc-1', closed: true }).success
+    ).toBe(false);
+  });
+
+  it('leaves every other member of the union parsing', () => {
+    // Purpose: a union edit that narrowed a sibling would show up here and
+    // nowhere else until a live stream dropped an event.
+    const members: SessionEvent[] = [
+      { seq: 1, type: 'text_delta', text: 'hi' },
+      { seq: 2, type: 'ui_command', command: { action: 'open_sidebar' } },
+      { seq: 3, type: 'turn_end' },
+      { seq: 4, type: 'queue_update', queue: [] },
+      { seq: 5, type: 'devtools_capture_request', requestId: 'req-1' },
+    ];
+    for (const member of members) {
+      expect(SessionEventSchema.parse(member)).toEqual(member);
+    }
+  });
+});
+
 describe('SessionSnapshotSchema', () => {
   it('parses a valid cold snapshot', () => {
     // Purpose: a freshly hydrated, idle session must parse with an empty history.
@@ -343,6 +401,7 @@ describe('SessionSnapshotSchema', () => {
       status: coldStatus,
       pendingInteractions: [],
       queuedMessages: [],
+      canvas: [],
       cursor: 0,
     };
     expect(SessionSnapshotSchema.parse(snapshot)).toEqual(snapshot);
@@ -358,9 +417,39 @@ describe('SessionSnapshotSchema', () => {
       inProgressTurn: null,
       status: coldStatus,
       pendingInteractions: [],
+      canvas: [],
       cursor: 0,
     };
     expect(() => SessionSnapshotSchema.parse(withoutQueue)).toThrow();
+  });
+
+  it('REQUIRES canvas, so a transport cannot forget to decorate its snapshot', () => {
+    // Purpose: two transports build this snapshot — `deliverSessionStream` and
+    // `DirectTransport`'s own session-stream methods. An optional field would
+    // let one of them answer with an empty canvas that looks exactly like a
+    // session with nothing on it.
+    const withoutCanvas = {
+      messages: [],
+      inProgressTurn: null,
+      status: coldStatus,
+      pendingInteractions: [],
+      queuedMessages: [],
+      cursor: 0,
+    };
+    expect(() => SessionSnapshotSchema.parse(withoutCanvas)).toThrow();
+  });
+
+  it('carries the session’s documents', () => {
+    const snapshot = {
+      messages: [],
+      inProgressTurn: null,
+      status: coldStatus,
+      pendingInteractions: [],
+      queuedMessages: [],
+      canvas: [canvasDocument],
+      cursor: 0,
+    };
+    expect(SessionSnapshotSchema.parse(snapshot).canvas).toEqual([canvasDocument]);
   });
 
   it('accepts the highest seq as the cursor', () => {
@@ -371,6 +460,7 @@ describe('SessionSnapshotSchema', () => {
       status: coldStatus,
       pendingInteractions: [],
       queuedMessages: [],
+      canvas: [],
       cursor: 42,
     };
     expect(SessionSnapshotSchema.parse(snapshot).cursor).toBe(42);
@@ -393,6 +483,7 @@ describe('SessionSnapshotSchema', () => {
       status: { ...coldStatus, contextUsage: fullUsage },
       pendingInteractions: [],
       queuedMessages: [],
+      canvas: [],
       cursor: 0,
     };
     expect(SessionSnapshotSchema.parse(snapshot).status.contextUsage).toEqual(fullUsage);

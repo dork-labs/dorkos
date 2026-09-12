@@ -19,7 +19,7 @@ import type { ResponseGateMode } from '../response-gate/routing-rules.js';
 import type { RoomLimitsResolver } from '../limits/room-limits.js';
 import type { ReactionBudget } from '../reactions/reaction-budget.js';
 import type { ReactionStore } from '../reactions/reaction-store.js';
-import type { CanvasDocumentStore } from '../canvas/canvas-document-store.js';
+import type { CanvasDocumentStore, CanvasService } from '../../canvas/index.js';
 import type { AttachmentRowStore } from '../attachments/attachment-row-store.js';
 import type { RoomAgentLookup } from '../room-errors.js';
 import type { RoomStore } from '../room-store.js';
@@ -94,6 +94,8 @@ export interface RoomServiceDeps {
   reactions: ReactionStore;
   /** The documents on this room's shared canvas. */
   canvasDocuments: CanvasDocumentStore;
+  /** The one writer every canvas on this machine goes through. */
+  canvas: CanvasService;
   /** The rows behind this room's attachments. The BYTES live behind a separate seam. */
   attachments: AttachmentRowStore;
   authors: AuthorRegistry;

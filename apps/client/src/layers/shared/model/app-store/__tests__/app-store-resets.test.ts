@@ -14,7 +14,6 @@ const CROSS_SLICE_KEYS = [
   'dorkos-auto-hide-tool-calls',
   'dorkos-promo-enabled',
   'dorkos-sidebar-active-tab',
-  'dorkos-canvas-sessions',
   'dorkos-right-panel-state',
   'dorkos-right-panel-layouts',
   'dorkos-pip-panel-state',
@@ -29,7 +28,6 @@ function seed() {
   s.setPromoEnabled(false);
   s.setSidebarActiveTab('connections');
   s.setPipGeometry({ x: 1, y: 2, width: 300, height: 200 });
-  localStorage.setItem('dorkos-canvas-sessions', '{"s1":{"open":true}}');
   localStorage.setItem('dorkos-right-panel-state', '{"open":true,"activeTab":"profile"}');
   localStorage.setItem('dorkos-right-panel-layouts', '{"a1":{"open":true}}');
   localStorage.setItem('dorkos-dismissed-promo-ids', '["welcome"]');
@@ -113,6 +111,31 @@ describe('CoreSlice — resets', () => {
       expect(s.promoEnabled).toBe(true);
       expect(s.sidebarActiveTab).toBe('overview');
       expect(s.pipGeometry).toBeNull();
+    });
+  });
+
+  /**
+   * The one key that is NOT a preference, asserted rather than removed from the
+   * list (DOR-2006 review nit).
+   *
+   * `dorkos-canvas-sessions` stopped being local state when the canvas moved to
+   * the server: what is left is a one-time migration payload holding documents
+   * that may exist NOWHERE else yet. Dropping it from `CROSS_SLICE_KEYS` made
+   * the suite silent about it; sweeping it would throw away somebody's canvas
+   * because they reset their preferences before opening that session again.
+   */
+  describe('the retired canvas key', () => {
+    const LEGACY_CANVAS_KEY = 'dorkos-canvas-sessions';
+
+    it('survives both resets, because it is a migration payload and not a preference', () => {
+      seed();
+      localStorage.setItem(LEGACY_CANVAS_KEY, '{"s1":{"documents":[]}}');
+
+      useAppStore.getState().resetAppearance();
+      expect(localStorage.getItem(LEGACY_CANVAS_KEY)).not.toBeNull();
+
+      useAppStore.getState().resetAllSettings();
+      expect(localStorage.getItem(LEGACY_CANVAS_KEY)).not.toBeNull();
     });
   });
 });

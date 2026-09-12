@@ -24,4 +24,4 @@
  * @module features/canvas
  */
 export { CanvasContent, BrowserContent } from './ui/CanvasViews';
-export { useCanvasPersistence } from './model/use-canvas-persistence';
+export { useSessionCanvas, resetSessionCanvasImport } from './model/use-session-canvas';

@@ -21,6 +21,7 @@ import type { Transport } from '@dorkos/shared/transport';
 import type { DirectTransportServices } from './direct/services';
 import { createDirectSessionMethods } from './direct/session-methods';
 import { createDirectSessionStreamMethods } from './direct/session-stream-methods';
+import { createDirectSessionCanvasMethods } from './direct/session-canvas-methods';
 import { createDirectSystemMethods } from './direct/system-methods';
 import { createDirectMeshMethods } from './direct/mesh-methods';
 import { createDirectSearchMethods } from './direct/search-methods';
@@ -43,6 +44,7 @@ export interface DirectTransport
   extends
     ReturnType<typeof createDirectSessionMethods>,
     ReturnType<typeof createDirectSessionStreamMethods>,
+    ReturnType<typeof createDirectSessionCanvasMethods>,
     ReturnType<typeof createDirectSystemMethods>,
     ReturnType<typeof createDirectMeshMethods>,
     ReturnType<typeof createDirectSearchMethods>,
@@ -64,6 +66,7 @@ export class DirectTransport implements Transport {
       this,
       createDirectSessionMethods(services, () => this.clientId),
       createDirectSessionStreamMethods(services),
+      createDirectSessionCanvasMethods(services),
       createDirectSystemMethods(services),
       createDirectMeshMethods(),
       createDirectSearchMethods(services),

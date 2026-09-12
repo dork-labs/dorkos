@@ -410,6 +410,10 @@ export class FakeAgentRuntime implements AgentRuntime {
       },
       pendingInteractions: [],
       queuedMessages: [],
+      // The session canvas is the SERVER's, decorated onto the snapshot in
+      // `deliverSessionStream` rather than by a runtime (spec
+      // `canvas-agent-seat` §1.4) — so a runtime's own answer is always empty.
+      canvas: [],
       cursor: 0,
     });
   // The 4th parameter mirrors `AgentRuntime.subscribeSession`: a test that

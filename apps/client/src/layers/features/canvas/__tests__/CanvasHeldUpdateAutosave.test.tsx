@@ -207,6 +207,15 @@ describe('a pending autosave when the edit ends from outside', () => {
       useAppStore.getState().openCanvasDocument(MY_FILE);
       useAppStore.setState({ canvasOpen: true, selectedCwd: '/work' });
     });
+    // Let the open settle before reading the id. A document is on screen the
+    // instant it is opened, under a provisional id, and adopts the server's the
+    // moment the write answers (spec `canvas-agent-seat` §1.5). `CanvasViews`
+    // re-reads the active document every render and never notices; a test that
+    // mounts a viewer DIRECTLY has to hold the settled id, or it is driving a
+    // document that no longer exists.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
     const documentId = useAppStore.getState().activeCanvasDocumentId!;
     renderWithProviders(<CanvasFileContent documentId={documentId} content={MY_FILE} />);
     await act(async () => {

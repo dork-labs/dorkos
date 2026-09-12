@@ -30,7 +30,7 @@ import type { AuthorRecord, AuthorRegistry } from '../author-registry.js';
 import type { RoomLimitsResolver } from '../limits/room-limits.js';
 import type { ReactionBudget } from '../reactions/reaction-budget.js';
 import type { ReactionStore } from '../reactions/reaction-store.js';
-import type { CanvasDocumentStore } from '../canvas/canvas-document-store.js';
+import { roomScope, type CanvasDocumentStore, type CanvasService } from '../../canvas/index.js';
 import type { AttachmentRowStore } from '../attachments/attachment-row-store.js';
 import type { RoomAgentLookup } from '../room-errors.js';
 import { RoomRoster } from '../room-roster.js';
@@ -46,6 +46,8 @@ export interface RoomCore {
   readonly reactions: ReactionStore;
   /** The documents on this room's shared canvas. */
   readonly canvasDocuments: CanvasDocumentStore;
+  /** The one writer every canvas on this machine goes through. */
+  readonly canvas: CanvasService;
   /** How many emoji an agent may still land in one room this hour. */
   readonly reactionBudget: ReactionBudget;
   /** Words in, entry coordinates out. The message index, behind its port. */
@@ -111,7 +113,7 @@ export interface RoomCore {
  * @returns The section, or `null`.
  */
 function canvasContextFor(deps: RoomServiceDeps, roomId: string): RoomContextCanvas | null {
-  const documents = deps.canvasDocuments.list(roomId);
+  const documents = deps.canvasDocuments.list(roomScope(roomId));
   if (documents.length === 0) return null;
   return {
     viewers: deps.broadcaster.subscriberCount(roomId),
@@ -214,6 +216,7 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
     store: deps.store,
     reactions: deps.reactions,
     canvasDocuments: deps.canvasDocuments,
+    canvas: deps.canvas,
     reactionBudget: deps.reactionBudget,
     findMessages: deps.findMessages,
     indexEntry: deps.indexEntry,

@@ -62,6 +62,7 @@ function snapshot(): SessionSnapshot {
     },
     pendingInteractions: [],
     queuedMessages: [],
+    canvas: [],
     cursor: 0,
   };
 }

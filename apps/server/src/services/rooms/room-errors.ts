@@ -238,6 +238,18 @@ export type RoomErrorCode =
    */
   | 'CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM'
   /**
+   * The canvas writer faulted, or is not reachable from this process at all.
+   *
+   * **Not a 404 and not the caller's fault.** It used to answer `ROOM_NOT_FOUND`,
+   * which says "that thing does not exist" to every surface that turns a code
+   * into a status — and the thing did exist; the write failed. The two real
+   * causes are a database that says no (busy, locked, or opened read-only by a
+   * host reading somebody else's file) and a process that stood no canvas up.
+   * Both are conditions of the SERVER, so this is a 503: the request was fine
+   * and may well work on the next try.
+   */
+  | 'CANVAS_UNAVAILABLE'
+  /**
    * `post_to_room` was called by an agent whose turn in that room was STOPPED
    * (DOR-1313).
    *

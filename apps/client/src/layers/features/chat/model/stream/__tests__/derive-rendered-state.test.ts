@@ -39,6 +39,7 @@ function snapshot(
     status: BLOCKED_STATUS,
     pendingInteractions,
     queuedMessages: [],
+    canvas: [],
     cursor: 42,
   };
 }

@@ -382,8 +382,16 @@ describe('in-session tool exposure', () => {
     // deferred. `<ui_tools>` does name them, in full and prefixed, which is the
     // same shape `control_ui` and `get_ui_state` have always had there and which
     // costs one search rather than a failed call.
-    expect(tools).toHaveLength(98);
-    expect(deferred).toHaveLength(89);
+    //
+    // 98 -> 99 for `read_canvas_document`, the first verb of the `ui` capability
+    // DOMAIN (spec `canvas-agent-seat` §5). Deferred for the same reason, and it
+    // stays deferred: the eager slot is the scarcest thing in the prompt, and
+    // nothing names this tool before an agent has decided to look at its own
+    // canvas — `get_ui_state` is where an agent learns there is anything to
+    // read, and that is a tool call too. Both counts move by exactly one, which
+    // is what says nothing else came with it.
+    expect(tools).toHaveLength(99);
+    expect(deferred).toHaveLength(90);
     const retiredConnectorTools = [
       'connector_list_accounts',
       'connector_start_connect',

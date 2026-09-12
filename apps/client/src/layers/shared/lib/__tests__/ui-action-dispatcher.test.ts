@@ -7,6 +7,9 @@ import {
   type DispatcherStore,
 } from '../ui-action-dispatcher';
 import { setPlatformAdapter } from '../platform';
+import { queryClient } from '../query-client';
+import { configKeys } from '@/layers/shared/model';
+import { canvasContentForFile } from '@dorkos/shared/viewer-registry';
 
 vi.mock('../celebrations/celebration-effects', () => ({
   fireCelebration: vi.fn().mockResolvedValue(vi.fn()),
@@ -34,6 +37,7 @@ function makeMockStore(overrides: Partial<DispatcherStore> = {}): DispatcherStor
     setGlobalPaletteOpen: vi.fn(),
     setCanvasOpen: vi.fn(),
     openCanvasDocument: vi.fn(),
+    closeCanvasDocument: vi.fn(),
     updateActiveDocument: vi.fn(),
     setCanvasPreferredWidth: vi.fn(),
     setRightPanelOpen: vi.fn(),
@@ -457,13 +461,54 @@ describe('executeUiCommand — open_file', () => {
     }
   });
 
-  it('honors a config viewer override', () => {
+  it('honors a config viewer override stated on the context', () => {
     const ctx = makeMockCtx();
     ctx.workbenchViewerOverrides = { csv: 'file' };
     executeUiCommand(ctx, { action: 'open_file', sourcePath: 'data.csv' }, 'agent');
     expect(ctx.getStore().openCanvasDocument).toHaveBeenCalledWith({
       type: 'file',
       sourcePath: 'data.csv',
+    });
+  });
+
+  /**
+   * The production path: nothing passes the overrides in, so the dispatcher has
+   * to READ them (DOR-2006 review round 2, N1).
+   *
+   * Four places build a dispatcher context and none of them carried the value,
+   * so an install with `{png:'file'}` configured had the server write
+   * `{type:'file'}` and this window write `{type:'image'}` for the same file —
+   * two `canvasSourceKey`s, two tabs, which is exactly the divergence round 1
+   * closed for the DEFAULT config and this closes for the configured one.
+   */
+  it('reads the overrides off the config cache when the context states none', () => {
+    queryClient.setQueryData(configKeys.current(), {
+      workbench: { defaultViewers: { png: 'file', csv: 'file' } },
+    });
+    const ctx = makeMockCtx();
+    expect(ctx.workbenchViewerOverrides).toBeUndefined();
+
+    executeUiCommand(ctx, { action: 'open_file', sourcePath: 'chart.png' }, 'agent');
+
+    // The content the SERVER writes for the same file under the same config —
+    // asked of the one resolver both sides call, rather than restated here.
+    expect(ctx.getStore().openCanvasDocument).toHaveBeenCalledWith(
+      canvasContentForFile('chart.png', { png: 'file', csv: 'file' })
+    );
+    // …and it really is the overridden answer, not the built-in one.
+    expect(ctx.getStore().openCanvasDocument).toHaveBeenCalledWith({
+      type: 'file',
+      sourcePath: 'chart.png',
+    });
+  });
+
+  it('falls back to the built-in table when no config has been fetched', () => {
+    queryClient.removeQueries({ queryKey: configKeys.all });
+    const ctx = makeMockCtx();
+    executeUiCommand(ctx, { action: 'open_file', sourcePath: 'chart.png' }, 'agent');
+    expect(ctx.getStore().openCanvasDocument).toHaveBeenCalledWith({
+      type: 'image',
+      src: 'chart.png',
     });
   });
 });

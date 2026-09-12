@@ -33,6 +33,7 @@ import {
 import type { CallerPrincipal } from '../../../lib/caller-principal.js';
 import { askEntitlement } from '../../session/asks/ask-entitlement.js';
 import { logger } from '../../../lib/logger.js';
+import { peekCanvasService, sessionScope } from '../../canvas/index.js';
 
 /** Everything a caller must resolve before a session stream can be delivered. */
 export interface SessionStreamPlan {
@@ -154,6 +155,12 @@ export async function deliverSessionStream(
       // answer `GET /api/sessions/pending-interactions` gives, so a refusal
       // never says that an Ask exists.
       if (!maySeeAsk) snap.pendingInteractions = [];
+      // The session's canvas, decorated HERE rather than inside four runtime
+      // adapters (spec `canvas-agent-seat` §1.4). Storage a runtime owns lives
+      // in the runtime; storage the SERVER owns is not copied into each of them,
+      // which is ADR-0310's reasoning in the other direction. A process with no
+      // canvas service answers the empty table rather than failing the stream.
+      snap.canvas = peekCanvasService()?.list(sessionScope(sessionId)) ?? [];
       // The snapshot is the hydration frame and carries `cursor`, not a seq, so
       // it gets no frame id — the first live event after it carries the next.
       await sink.send({ event: 'snapshot', data: snap });

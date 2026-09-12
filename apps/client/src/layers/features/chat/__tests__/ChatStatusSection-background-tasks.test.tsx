@@ -179,6 +179,7 @@ function snapshotWithChildren(
     },
     pendingInteractions: [],
     queuedMessages: [],
+    canvas: [],
     cursor: 3,
   } satisfies SessionSnapshot;
 }

@@ -4,6 +4,8 @@ import {
   type UiCommand,
   UiCanvasContentSchema,
   UiStateSchema,
+  UiStateReportSchema,
+  UiStateReportDocumentSchema,
   UiPanelIdSchema,
   UiSidebarTabSchema,
   UiCommandEventSchema,
@@ -394,29 +396,87 @@ describe('UiCanvasContentSchema', () => {
   });
 });
 
-describe('UiStateSchema', () => {
+describe('UiStateSchema — what the client SENDS', () => {
+  const state = {
+    panels: { settings: false, tasks: false, relay: false, picker: false },
+    sidebar: { open: true, activeTab: 'sessions' },
+    agent: { id: null, cwd: '/home/user/project' },
+  };
+
   it('parses a complete UI state', () => {
-    const state = {
-      canvas: { open: false, contentType: null },
-      panels: { settings: false, tasks: false, relay: false, picker: false },
-      sidebar: { open: true, activeTab: 'sessions' },
-      agent: { id: null, cwd: '/home/user/project' },
-    };
     expect(UiStateSchema.parse(state)).toEqual(state);
   });
 
   it('rejects missing fields', () => {
-    expect(() => UiStateSchema.parse({ canvas: { open: false } })).toThrow();
+    expect(() => UiStateSchema.parse({ panels: { settings: false } })).toThrow();
   });
 
-  it.each(['audio', 'video'] as const)('accepts %s as a canvas contentType', (contentType) => {
-    const state = {
-      canvas: { open: true, contentType },
-      panels: { settings: false, tasks: false, relay: false, picker: false },
-      sidebar: { open: true, activeTab: 'sessions' },
-      agent: { id: null, cwd: '/home/user/project' },
-    };
-    expect(UiStateSchema.parse(state).canvas.contentType).toBe(contentType);
+  it('no longer declares canvas, and an OLDER client still parses', () => {
+    // The one non-additive schema change in `canvas-agent-seat`, and the half
+    // that makes it safe: a client built before this release still sends its
+    // view of the canvas, and Zod strips it rather than refusing the whole
+    // context bag. Without the strip, every older client's first turn breaks.
+    expect(UiStateSchema.shape).not.toHaveProperty('canvas');
+    const fromAnOlderClient = { ...state, canvas: { open: true, contentType: 'markdown' } };
+    expect(UiStateSchema.parse(fromAnOlderClient)).toEqual(state);
+  });
+});
+
+describe('UiStateReportSchema — what get_ui_state ANSWERS with', () => {
+  const report = {
+    canvas: {
+      open: true,
+      viewers: 2,
+      documents: [
+        {
+          id: 'doc-1',
+          type: 'diff',
+          title: 'src/router.ts',
+          author: 'Kai',
+          pinned: false,
+          active: true,
+        },
+      ],
+      count: 1,
+    },
+    panels: { settings: false, tasks: false, relay: false, picker: false },
+    sidebar: { open: true, activeTab: 'sessions' },
+    agent: { id: null, cwd: '/home/user/project' },
+  };
+
+  it('carries the documents, the count and the viewer count', () => {
+    expect(UiStateReportSchema.parse(report)).toEqual(report);
+  });
+
+  it('composes the client’s own three parts rather than copying them', () => {
+    // The report is the client's panels, sidebar and agent PLUS the server's
+    // canvas. Those three are the same schema objects `UiStateSchema` declares —
+    // asserted by identity, so a second copy of `sidebar` that drifts from the
+    // one a client sends cannot pass.
+    expect(UiStateReportSchema.shape.panels).toBe(UiStateSchema.shape.panels);
+    expect(UiStateReportSchema.shape.sidebar).toBe(UiStateSchema.shape.sidebar);
+    expect(UiStateReportSchema.shape.agent).toBe(UiStateSchema.shape.agent);
+  });
+
+  it('declares `active`, the one key the room arm does not answer with', () => {
+    // Whether the two arms AGREE on the other five is not a question this
+    // package can ask — the room arm is composed in the server's `ui-tools.ts`.
+    // It is asked where both handlers can be driven, in
+    // `services/rooms/canvas/__tests__/room-canvas-routing.test.ts`; an earlier
+    // version of this test compared a hardcoded six-name literal against the
+    // schema it was copied from and could never have caught a rename on either
+    // arm. What IS this package's to state is that `active` is the difference,
+    // and that it is required rather than optional.
+    expect(UiStateReportDocumentSchema.shape).toHaveProperty('active');
+    expect(() =>
+      UiStateReportDocumentSchema.parse({
+        id: 'doc-1',
+        type: 'diff',
+        title: 'src/router.ts',
+        author: 'Kai',
+        pinned: false,
+      })
+    ).toThrow();
   });
 });
 

@@ -53,6 +53,10 @@ import {
   type ToolApprovalOutcome,
   type QuestionOutcome,
 } from './schemas.js';
+// The canvas document shape, shared with the room canvas rather than mirrored
+// beside it (spec `canvas-agent-seat` §1.3): one client reducer handles both
+// scopes, and two definitions of "what is on the table" would drift.
+import { CanvasDocumentSchema } from './canvas-schemas.js';
 
 extendZodWithOpenApiOnce();
 
@@ -736,10 +740,42 @@ export const SessionEventSchema = z
     // projection: the server projector folds no status for it (the `default`
     // arm of `project()`), so it forwards live and rides `inProgressTurn` —
     // cleared at `turn_end`, never re-projected from a cold snapshot. Live
-    // clients dispatch it through `executeUiCommand`; cross-reconnect canvas
-    // state is restored from localStorage, not by replaying the command. The
-    // command's own discriminated union is carried whole.
+    // clients dispatch it through `executeUiCommand`, whose job on a session is
+    // to REVEAL the pane: the canvas effect itself was already written by the
+    // server, and arrives as the `canvas` event below (spec
+    // `canvas-agent-seat` §1.3). So a reconnect restores the canvas from the
+    // snapshot and the replay rather than by re-running a command, which is
+    // what it used to do out of localStorage. The command's own discriminated
+    // union is carried whole.
     z.object({ ...seqShape, type: z.literal('ui_command'), ...UiCommandEventSchema.shape }),
+    // One document on this session's canvas changed — opened, replaced, brought
+    // to the front, pinned, or closed (spec `canvas-agent-seat` §1.3). Mirrors
+    // `RoomCanvasEventSchema` field for field so one client reducer serves a
+    // room's table and a session's.
+    //
+    // **It carries a `seq`, and unlike the room frame it needs no resync.** The
+    // room stream has exactly one cursor — the highest durable entry — so a room
+    // canvas frame carries no seq and a resume re-sends the whole table. Every
+    // event here is seq'd by construction, the projector stamps it, and a resume
+    // replays from the ring above the reader's cursor; a cursor the window cannot
+    // serve falls back to a cold snapshot, which carries the whole set. So the
+    // gap a room resync exists to close cannot open here.
+    //
+    // Durable in SQLite and re-read from there, so it is deliberately NOT in
+    // `RECORDED_EVENT_TYPES`: the canvas is state, not transcript, and two
+    // records of one fact in two places have two lifetimes.
+    z.object({
+      ...seqShape,
+      type: z.literal('canvas'),
+      /** The document this frame is about. */
+      documentId: z.string().min(1),
+      /** The document's WHOLE current state. Absent when `closed` — the row is gone. */
+      document: CanvasDocumentSchema.optional(),
+      /** True when the document was closed and every viewer should drop it. */
+      closed: z.boolean().optional(),
+      /** Which write produced it. */
+      change: z.enum(['opened', 'updated', 'activated', 'pinned']).optional(),
+    }),
     // A server→client screenshot request (the `browser_screenshot` MCP tool,
     // DOR-213 Phase 3). Transient and side-effecting like `ui_command`: the
     // attached client forwards it into the preview frame, the in-page shim
@@ -946,6 +982,18 @@ export const SessionSnapshotSchema = z
      * changed it.
      */
     queuedMessages: z.array(QueuedMessageSchema),
+    /**
+     * This session's canvas, server-owned — pinned first, then most recently
+     * active (spec `canvas-agent-seat` §1.4).
+     *
+     * Required rather than optional, so a transport that forgot to decorate its
+     * snapshot fails a test instead of quietly answering with an empty table.
+     * Decorated in `deliverSessionStream` and in `DirectTransport`'s own
+     * session-stream methods rather than inside four runtime adapters: storage a
+     * runtime owns lives in the runtime, and storage the server owns is not
+     * copied into each of them (ADR-0310's reasoning, in the other direction).
+     */
+    canvas: z.array(CanvasDocumentSchema),
     /** Highest `seq` reflected in this snapshot; the resume point for replay. */
     cursor: z.number().int().nonnegative(),
   })
