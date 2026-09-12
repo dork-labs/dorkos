@@ -10,7 +10,7 @@
  *
  * @module shared/transport-rooms
  */
-import type { UploadProgress } from './schemas.js';
+import type { UiCanvasContent, UploadProgress } from './schemas.js';
 import type { UploadFile } from './transport.js';
 import type {
   RoomFileContentResponse,
@@ -22,6 +22,8 @@ import type { RoomMainRepairRequest, RoomMainRepairResult, RoomRepoStatus } from
 import type {
   AuthorRef,
   AddRoomMemberRequest,
+  CanvasDocument,
+  CanvasEditingResponse,
   CreateRoomRequest,
   HaltRoomResponse,
   PromoteHoldResponse,
@@ -43,6 +45,7 @@ import type {
   ThreadSummary,
   ToggleReactionRequest,
   ToggleReactionResponse,
+  UpdateCanvasDocumentRequest,
   UpdateMembershipRequest,
   UpdateRoomRequest,
 } from './room-schemas.js';
@@ -420,6 +423,79 @@ export interface RoomTransport {
    * @param handle - The new handle, without the `@`. Empty clears it.
    */
   setAuthorHandle(authorId: string, handle: string): Promise<AuthorRef>;
+  // --- The room's shared canvas (spec `room-canvas` §4, §9.5) ---
+
+  /**
+   * Put something on a room's canvas as the person doing it.
+   *
+   * The doors a person has onto the table all come through here: the Browser
+   * tab's address bar, an empty view's starting points, and the Room tab's Files
+   * section. The author is resolved server-side from the request — an author a
+   * caller could name is an author a caller could impersonate — so nothing here
+   * sends one.
+   *
+   * The document it answers with also arrives on {@link subscribeRoom} as a
+   * `canvas` frame, for this viewer and every other one, and that frame is what
+   * every screen is drawn from. Callers use the return value for its id, never
+   * to write state.
+   *
+   * @param id - The room.
+   * @param content - What to show. One of the fourteen canvas shapes.
+   * @returns The document as the table now holds it.
+   */
+  openRoomCanvasDocument(id: string, content: UiCanvasContent): Promise<CanvasDocument>;
+
+  /**
+   * Change one document on a room's canvas — what it shows, whether it is
+   * pinned, where it sits in the order.
+   *
+   * Every field is optional and each does one thing, so pinning something does
+   * not re-send its content. `activate` changes the ORDER and nobody's open tab:
+   * a shared table does not steal anyone's view.
+   *
+   * @param id - The room.
+   * @param documentId - The document.
+   * @param req - What to change.
+   * @returns The document as the table now holds it.
+   */
+  updateRoomCanvasDocument(
+    id: string,
+    documentId: string,
+    req: UpdateCanvasDocumentRequest
+  ): Promise<CanvasDocument>;
+
+  /**
+   * Take a document off a room's canvas, for everybody.
+   *
+   * A close is a deletion rather than a flag, which is why every viewer learns
+   * about it through a `closed` frame and a reader who was away relearns the
+   * whole table on their next resume.
+   *
+   * @param id - The room.
+   * @param documentId - The document.
+   */
+  closeRoomCanvasDocument(id: string, documentId: string): Promise<void>;
+
+  /**
+   * Say you are editing one of a room's canvas documents, or that you have
+   * stopped.
+   *
+   * While the lock stands, an agent's update to the same document is held and
+   * the agent is told so. It lapses on its own once the heartbeats stop — sent
+   * every fifteen seconds while somebody is typing — so a browser that crashed
+   * mid-edit cannot wedge a document.
+   *
+   * @param id - The room.
+   * @param documentId - The document.
+   * @param editing - True to take or refresh the lock, false to let it go.
+   * @returns Who holds the lock now, and when it lapses.
+   */
+  setRoomCanvasEditing(
+    id: string,
+    documentId: string,
+    editing: boolean
+  ): Promise<CanvasEditingResponse>;
+
   /**
    * Subscribe to a room's durable event stream (`GET /rooms/:id/events`).
    *

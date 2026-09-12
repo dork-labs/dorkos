@@ -26,10 +26,10 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
-import type { RoomEntry } from '@dorkos/shared/room-schemas';
+import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { SSE_RESILIENCE } from '@/layers/shared/lib';
 import { isFatalStreamError, streamManager } from '@/layers/shared/lib/transport';
-import { useTransport } from '@/layers/shared/model';
+import { useAppStore, useTransport } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
 import { mergeRoomReactions } from '../lib/reactions';
 import { usePendingPostStore } from './pending-posts';
@@ -106,6 +106,22 @@ function clearNoticeSubject(roomId: string, entry: RoomEntry): void {
 function cursorFromCache(queryClient: QueryClient, roomId: string): number {
   const cached = queryClient.getQueryData<RoomEntry[]>(roomKeys.entries(roomId));
   return cached && cached.length > 0 ? cached[cached.length - 1]!.seq : 0;
+}
+
+/**
+ * Who is reading this room, as the room's own read already answered.
+ *
+ * `RoomWithRoster.viewerAuthorId` is the server's statement of which author this
+ * caller is, so nothing here has to work it out. `null` while that read has not
+ * landed — which is honest rather than a fallback: a viewer we cannot name is a
+ * viewer no arrival may be attributed to, and the canvas slice treats that as
+ * "not mine", leaving every tab where it was.
+ *
+ * @param queryClient - The cache the room read lives in.
+ * @param roomId - The room.
+ */
+function viewerAuthorIdFromCache(queryClient: QueryClient, roomId: string): string | null {
+  return queryClient.getQueryData<RoomWithRoster>(roomKeys.detail(roomId))?.viewerAuthorId ?? null;
 }
 
 /**
@@ -345,6 +361,12 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
         // to the stability window and a live-but-unproven stream is not one the
         // wake-ups should be tearing down.
         betweenStreamsRef.current = false;
+        // The table this reader holds is now unknown: a document CLOSED while
+        // they were away leaves no frame to replay, so nothing but the canvas
+        // resync that follows this resume can correct it — and it corrects it by
+        // being the whole set (spec `room-canvas` §2). Merging into what is held
+        // would leave a closed document on screen forever.
+        useAppStore.getState().beginRoomCanvasCycle(roomId);
         // A room can be healthy and completely silent, so "an event arrived" is
         // not the only proof of life — a stream still open after the stability
         // window is the other, and it is the one that takes the notice back down
@@ -385,14 +407,17 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
             // whole document, no `seq`, re-sent in full on a resume — and, like a
             // reaction, it never moves the cursor and never enters the history.
             //
-            // **Dropped here on purpose, for now.** The server owns the table
-            // (spec `room-canvas` §3) and this frame is how a viewer's screen
-            // stays current with it; the slice that holds it and the two right-
-            // panel tabs that draw it are P2b's. Until then a reader ignores the
-            // frame rather than failing on it, which is the behaviour an older
-            // client would have had anyway — every addition on this union is
-            // additive for exactly that reason.
-            if (event.type === 'canvas') continue;
+            // It lands in the app store rather than the query cache: the table is
+            // stream-hydrated state, like presence, not a fetched resource
+            // (spec `room-canvas` §9.2). The viewer's own author id decides
+            // whether an open follows — a document YOU opened lands in front of
+            // you, and one another member opened never moves your tab (§9.3).
+            if (event.type === 'canvas') {
+              useAppStore
+                .getState()
+                .applyRoomCanvasFrame(roomId, event, viewerAuthorIdFromCache(queryClient, roomId));
+              continue;
+            }
             // An author's own entry retires that author's indicators here. It
             // has to happen on the way in, beside the merge: the entry replays
             // on a reconnect and the `done` beside it does not, so a client that

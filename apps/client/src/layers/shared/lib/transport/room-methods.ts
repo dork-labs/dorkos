@@ -15,6 +15,8 @@ import {
   RoomEventSchema,
   type AddRoomMemberRequest,
   type AuthorRef,
+  type CanvasDocument,
+  type CanvasEditingResponse,
   type CreateRoomRequest,
   type HaltRoomResponse,
   type PromoteHoldResponse,
@@ -36,6 +38,7 @@ import {
   type ThreadSummary,
   type ToggleReactionRequest,
   type ToggleReactionResponse,
+  type UpdateCanvasDocumentRequest,
   type UpdateMembershipRequest,
   type UpdateRoomRequest,
 } from '@dorkos/shared/room-schemas';
@@ -50,7 +53,7 @@ import type {
   RoomMainRepairResult,
   RoomRepoStatus,
 } from '@dorkos/shared/room-repo';
-import type { UploadProgress } from '@dorkos/shared/types';
+import type { UiCanvasContent, UploadProgress } from '@dorkos/shared/types';
 import type { UploadFile } from '@dorkos/shared/transport';
 import { SSE_RESILIENCE } from '../constants';
 import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
@@ -363,6 +366,57 @@ export function createRoomMethods(baseUrl: string) {
       return fetchNoContent(baseUrl, `/rooms/${id}/members/${encodeURIComponent(authorId)}`, {
         method: 'DELETE',
       });
+    },
+
+    // --- The room's shared canvas (spec `room-canvas` §4) ---
+
+    /**
+     * Put something on the room's canvas as the person doing it.
+     *
+     * The answer is the row the table now holds; every screen is drawn from the
+     * `canvas` frame that reaches every viewer, this one included, so nothing
+     * here writes state.
+     */
+    openRoomCanvasDocument(id: string, content: UiCanvasContent): Promise<CanvasDocument> {
+      return fetchJSON<CanvasDocument>(baseUrl, `/rooms/${encodeURIComponent(id)}/canvas`, {
+        method: 'POST',
+        body: JSON.stringify({ content }),
+      });
+    },
+
+    /** Change one canvas document — its content, its pin, its place in the order. */
+    updateRoomCanvasDocument(
+      id: string,
+      documentId: string,
+      req: UpdateCanvasDocumentRequest
+    ): Promise<CanvasDocument> {
+      return fetchJSON<CanvasDocument>(
+        baseUrl,
+        `/rooms/${encodeURIComponent(id)}/canvas/${encodeURIComponent(documentId)}`,
+        { method: 'PATCH', body: JSON.stringify(req) }
+      );
+    },
+
+    /** Take a document off the room's canvas, for everybody. */
+    closeRoomCanvasDocument(id: string, documentId: string): Promise<void> {
+      return fetchNoContent(
+        baseUrl,
+        `/rooms/${encodeURIComponent(id)}/canvas/${encodeURIComponent(documentId)}`,
+        { method: 'DELETE' }
+      );
+    },
+
+    /** Take, refresh or release the edit lock on one canvas document. */
+    setRoomCanvasEditing(
+      id: string,
+      documentId: string,
+      editing: boolean
+    ): Promise<CanvasEditingResponse> {
+      return fetchJSON<CanvasEditingResponse>(
+        baseUrl,
+        `/rooms/${encodeURIComponent(id)}/canvas/${encodeURIComponent(documentId)}/editing`,
+        { method: 'POST', body: JSON.stringify({ editing }) }
+      );
     },
 
     /**
