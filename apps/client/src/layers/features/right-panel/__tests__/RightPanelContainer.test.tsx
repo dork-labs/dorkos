@@ -131,6 +131,12 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
         currentAgentId: mockCurrentAgentId,
         selectedCwd: mockSelectedCwd,
         explicitAgentPath: mockExplicitAgentPath,
+        // The unread dot on a document tab reads these. They are part of the
+        // real store, so a stub without them is a stub that lies — and the strip
+        // renders outside the panel's error boundary, where a throw takes the
+        // whole header rather than one tab.
+        roomCanvasLiveRoomId: null,
+        roomCanvasUnread: {},
       }),
     useIsMobile: () => mockIsMobile,
     useIsBelowDesktop: () => mockIsBelowDesktop,

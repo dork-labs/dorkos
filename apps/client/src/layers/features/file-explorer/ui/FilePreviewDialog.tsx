@@ -29,7 +29,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileWarning, Pencil } from 'lucide-react';
+import { FileWarning, Pencil, Share2 } from 'lucide-react';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import {
   Button,
@@ -331,19 +331,39 @@ export function FilePreviewDialog({ source, path, onClose }: FilePreviewDialogPr
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 
-        {editable && !editing && (
-          <div className="flex justify-end px-4">
-            <Button
-              ref={pencilRef}
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground hover:text-foreground gap-1.5"
-              onClick={enterEdit}
-            >
-              <Pencil className="size-(--size-icon-xs)" />
-              Edit
-            </Button>
+        {!editing && (source.showToEveryone !== undefined || editable) && (
+          <div className="flex justify-end gap-1 px-4">
+            {/* A room's canvas is a table everybody can see, so this is a thing
+                one member does FOR the others. It is not offered where there is
+                no such place. */}
+            {source.showToEveryone !== undefined && path !== null && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground hover:text-foreground gap-1.5"
+                onClick={() => {
+                  source.showToEveryone?.(path);
+                  onClose();
+                }}
+              >
+                <Share2 className="size-(--size-icon-xs)" />
+                Put on the canvas
+              </Button>
+            )}
+            {editable && (
+              <Button
+                ref={pencilRef}
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground hover:text-foreground gap-1.5"
+                onClick={enterEdit}
+              >
+                <Pencil className="size-(--size-icon-xs)" />
+                Edit
+              </Button>
+            )}
           </div>
         )}
 

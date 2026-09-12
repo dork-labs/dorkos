@@ -11,10 +11,14 @@
  * @module shared/lib/transport/room-methods
  */
 
+import { z } from 'zod';
 import {
+  CanvasDocumentSchema,
   RoomEventSchema,
   type AddRoomMemberRequest,
   type AuthorRef,
+  type CanvasDocument,
+  type CanvasEditingResponse,
   type CreateRoomRequest,
   type HaltRoomResponse,
   type PromoteHoldResponse,
@@ -36,6 +40,7 @@ import {
   type ThreadSummary,
   type ToggleReactionRequest,
   type ToggleReactionResponse,
+  type UpdateCanvasDocumentRequest,
   type UpdateMembershipRequest,
   type UpdateRoomRequest,
 } from '@dorkos/shared/room-schemas';
@@ -50,12 +55,23 @@ import type {
   RoomMainRepairResult,
   RoomRepoStatus,
 } from '@dorkos/shared/room-repo';
-import type { UploadProgress } from '@dorkos/shared/types';
+import type { UiCanvasContent, UploadProgress } from '@dorkos/shared/types';
 import type { UploadFile } from '@dorkos/shared/transport';
 import { SSE_RESILIENCE } from '../constants';
 import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
 import { streamSocketFrames, type StreamSocketClosed } from './stream-socket-iterator';
 import { uploadRoomAttachmentsOverHttp } from './upload-methods';
+
+/**
+ * The one part of a cold connect's snapshot this adapter consumes.
+ *
+ * A room's roster and history are hydrated through `getRoom` and
+ * `listRoomEntries`, so the snapshot's other fields are dropped unread — and
+ * parsing what you drop is how an unrelated field's drift takes down the field
+ * you needed. The canvas has no second source: this stream is the only thing
+ * that ever tells a client what is on a room's table (spec `room-canvas` §9.2).
+ */
+const SNAPSHOT_CANVAS = z.object({ canvas: z.array(CanvasDocumentSchema).optional() });
 
 /**
  * A room's event stream answered with an HTTP error rather than a stream.
@@ -365,11 +381,64 @@ export function createRoomMethods(baseUrl: string) {
       });
     },
 
+    // --- The room's shared canvas (spec `room-canvas` §4) ---
+
+    /**
+     * Put something on the room's canvas as the person doing it.
+     *
+     * The answer is the row the table now holds; every screen is drawn from the
+     * `canvas` frame that reaches every viewer, this one included, so nothing
+     * here writes state.
+     */
+    openRoomCanvasDocument(id: string, content: UiCanvasContent): Promise<CanvasDocument> {
+      return fetchJSON<CanvasDocument>(baseUrl, `/rooms/${encodeURIComponent(id)}/canvas`, {
+        method: 'POST',
+        body: JSON.stringify({ content }),
+      });
+    },
+
+    /** Change one canvas document — its content, its pin, its place in the order. */
+    updateRoomCanvasDocument(
+      id: string,
+      documentId: string,
+      req: UpdateCanvasDocumentRequest
+    ): Promise<CanvasDocument> {
+      return fetchJSON<CanvasDocument>(
+        baseUrl,
+        `/rooms/${encodeURIComponent(id)}/canvas/${encodeURIComponent(documentId)}`,
+        { method: 'PATCH', body: JSON.stringify(req) }
+      );
+    },
+
+    /** Take a document off the room's canvas, for everybody. */
+    closeRoomCanvasDocument(id: string, documentId: string): Promise<void> {
+      return fetchNoContent(
+        baseUrl,
+        `/rooms/${encodeURIComponent(id)}/canvas/${encodeURIComponent(documentId)}`,
+        { method: 'DELETE' }
+      );
+    },
+
+    /** Take, refresh or release the edit lock on one canvas document. */
+    setRoomCanvasEditing(
+      id: string,
+      documentId: string,
+      editing: boolean
+    ): Promise<CanvasEditingResponse> {
+      return fetchJSON<CanvasEditingResponse>(
+        baseUrl,
+        `/rooms/${encodeURIComponent(id)}/canvas/${encodeURIComponent(documentId)}/editing`,
+        { method: 'POST', body: JSON.stringify({ editing }) }
+      );
+    },
+
     /**
      * Subscribe to a room's durable event stream, over a WebSocket.
      *
-     * The leading `snapshot` frame of a cold connect is skipped: the room and
-     * its history are hydrated through `getRoom` / `listRoomEntries`, so
+     * The leading `snapshot` frame of a cold connect is skipped EXCEPT for its
+     * canvas: the room and its history are hydrated through `getRoom` /
+     * `listRoomEntries`, while the room's shared canvas is hydrated from this
+     * stream and nowhere else — so
      * re-parsing the snapshot here would only duplicate what the cache already
      * holds. Callers that already have entries pass the highest `seq` they hold
      * as `sinceCursor`, which the server replays from gap-free.
@@ -400,7 +469,33 @@ export function createRoomMethods(baseUrl: string) {
       });
 
       for await (const frame of frames) {
-        if (frame.event === 'snapshot') continue;
+        // The leading frame of a COLD connect. Its roster and history are
+        // already hydrated through `getRoom` / `listRoomEntries`, so almost all
+        // of it is skipped — but the room's canvas is hydrated from this stream
+        // and nowhere else (spec `room-canvas` §9.2), so dropping the whole
+        // frame would leave a cold reader looking at an empty table. Each
+        // document comes through as the `canvas` frame a resume would have sent:
+        // no `change`, because nothing just happened — these are the rows that
+        // were already there.
+        if (frame.event === 'snapshot') {
+          // **Only the canvas is parsed, not the whole snapshot.** The rest of
+          // that frame is thrown away here, and validating what you discard buys
+          // nothing while costing something real: a roster field this adapter
+          // never reads, drifting or arriving from an older server, would fail
+          // the parse and take the canvas down with it.
+          const snapshot = SNAPSHOT_CANVAS.safeParse(frame.data);
+          if (!snapshot.success) {
+            console.warn('[Transport] dropping a room snapshot’s malformed canvas', {
+              roomId,
+              issues: snapshot.error.issues,
+            });
+            continue;
+          }
+          for (const document of snapshot.data.canvas ?? []) {
+            yield { type: 'canvas', documentId: document.id, document };
+          }
+          continue;
+        }
         const parsed = RoomEventSchema.safeParse(frame.data);
         if (!parsed.success) {
           console.warn('[Transport] dropping malformed room-event frame', {

@@ -16,6 +16,7 @@ import {
   useScrollOverflow,
   type RightPanelContribution,
 } from '@/layers/shared/model';
+import { TabUnreadDot } from './TabUnreadDot';
 
 /** DOM id of the right-panel content region the active tab controls. */
 export const RIGHT_PANEL_PANEL_ID = 'right-panel-content';
@@ -279,6 +280,7 @@ function TabStrip({
                     >
                       <TabIcon raw={contribution.icon} className="size-3.5" />
                       <span>{contribution.title}</span>
+                      <TabUnreadDot contributionId={contribution.id} />
                     </TabsTrigger>
                   </TooltipTrigger>
                   <TooltipContent side="bottom">{contribution.title}</TooltipContent>

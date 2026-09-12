@@ -22,7 +22,11 @@ import type {
   McpClientCredentials,
   McpSigninPollResult,
 } from '@dorkos/shared/transport';
-import type { RecentSessionsResponse, SessionDailyCountsResponse } from '@dorkos/shared/types';
+import type {
+  RecentSessionsResponse,
+  SessionDailyCountsResponse,
+  UiCanvasContent,
+} from '@dorkos/shared/types';
 import type { MemberRoomsResponse, TeamRosterResponse } from '@dorkos/shared/team-schemas';
 import type { UnattendedAutonomyState } from '@dorkos/shared/permission-semantics';
 import {
@@ -59,6 +63,8 @@ import type {
 } from '@dorkos/shared/runtime-connect';
 import type {
   AddRoomMemberRequest,
+  CanvasDocument,
+  CanvasEditingResponse,
   CreateRoomRequest,
   HaltRoomResponse,
   PromoteHoldResponse,
@@ -80,6 +86,7 @@ import type {
   ThreadSummary,
   ToggleReactionRequest,
   ToggleReactionResponse,
+  UpdateCanvasDocumentRequest,
   UpdateMembershipRequest,
   UpdateRoomRequest,
 } from '@dorkos/shared/room-schemas';
@@ -1033,6 +1040,30 @@ export const roomStubs = {
   },
 
   async repairRoomMain(_id: string, _req: RoomMainRepairRequest): Promise<RoomMainRepairResult> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
+  async openRoomCanvasDocument(_id: string, _content: UiCanvasContent): Promise<CanvasDocument> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
+  async updateRoomCanvasDocument(
+    _id: string,
+    _documentId: string,
+    _req: UpdateCanvasDocumentRequest
+  ): Promise<CanvasDocument> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
+  async closeRoomCanvasDocument(_id: string, _documentId: string): Promise<void> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
+  async setRoomCanvasEditing(
+    _id: string,
+    _documentId: string,
+    _editing: boolean
+  ): Promise<CanvasEditingResponse> {
     throw new Error('Rooms are not supported in embedded mode');
   },
 

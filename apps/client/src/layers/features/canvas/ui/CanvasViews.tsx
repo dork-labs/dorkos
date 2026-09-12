@@ -2,136 +2,29 @@
  * The right panel's two document views, over one store (ADR 260911-200304).
  *
  * {@link CanvasContent} is the Canvas tab and {@link BrowserContent} the Browser
- * tab; both render the same {@link CanvasBody} over the documents their own view
- * holds, with their own active document. {@link CanvasRenderer} is the viewer
- * dispatch those views are DEFINED by — `url` and `browser` go to
- * `CanvasBrowserContent`, so they are the Browser view, and everything else is
- * the Canvas view (`canvasViewForContent`).
+ * tab. With a room on screen both draw that ROOM's shared table through
+ * {@link RoomCanvasBody} — the same tab strip and the same viewers, over
+ * documents the server owns and every member sees; everywhere else they draw the
+ * private, per-session canvas through {@link CanvasBody}. Which documents belong
+ * to which tab is `canvasViewForContent` either way: `url` and `browser` are the
+ * Browser view, the other twelve are the Canvas view.
+ *
+ * **Which room, from the store rather than the route.** `roomCanvasLiveRoomId`
+ * is written by the room stream, which is opened for exactly the room on screen;
+ * resolving the route here instead would need the transport (Home's `#team` is
+ * found by a lookup, not by a path), and these two components also render in the
+ * Obsidian shell and in tests that have neither router nor transport.
  *
  * @module features/canvas/ui/CanvasViews
  */
-import { lazy, Suspense } from 'react';
 import { useAppStore, documentsInView } from '@/layers/shared/model';
 import type { CanvasView } from '@/layers/shared/lib';
-import type { UiCanvasContent } from '@dorkos/shared/types';
 import { CanvasHeader, canvasPanelId, canvasTabDomId } from './CanvasHeader';
 import { CanvasErrorBoundary } from './CanvasErrorBoundary';
-import { CanvasBrowserContent } from './CanvasBrowserContent';
-import { CanvasMarkdownContent } from './CanvasMarkdownContent';
-import { CanvasJsonContent } from './CanvasJsonContent';
-import { CanvasImageContent } from './CanvasImageContent';
-import { CanvasPdfContent } from './CanvasPdfContent';
-import { CanvasAudioContent } from './CanvasAudioContent';
-import { CanvasVideoContent } from './CanvasVideoContent';
-import { CanvasWidgetContent } from './CanvasWidgetContent';
-import { CanvasMcpAppContent } from './CanvasMcpAppContent';
+import { CanvasRenderer } from './CanvasRenderer';
 import { CanvasHeldUpdateBanner } from './CanvasHeldUpdateBanner';
 import { CanvasSplash } from './CanvasSplash';
-
-// Lazy: viewers that pull heavy, on-demand deps (CodeMirror, three.js /
-// model-viewer, papaparse) load only when their document first renders.
-const CanvasFileContent = lazy(() =>
-  import('./CanvasFileContent').then((m) => ({ default: m.CanvasFileContent }))
-);
-const CanvasModel3dContent = lazy(() =>
-  import('./CanvasModel3dContent').then((m) => ({ default: m.CanvasModel3dContent }))
-);
-const CanvasCsvContent = lazy(() =>
-  import('./CanvasCsvContent').then((m) => ({ default: m.CanvasCsvContent }))
-);
-// Feature→feature UI composition (DOR-212): the canvas dispatches the `diff`
-// variant to the diff-review feature's viewer, lazy so its `@codemirror/merge`
-// runtime never lands in the main bundle.
-const CanvasDiffContent = lazy(() =>
-  import('@/layers/features/diff-review').then((m) => ({ default: m.CanvasDiffContent }))
-);
-
-/** Renders one canvas document's content by its discriminated `type`. */
-function CanvasRenderer({
-  documentId,
-  content,
-  onContentChange,
-}: {
-  documentId: string;
-  content: UiCanvasContent;
-  onContentChange: (content: UiCanvasContent) => void;
-}) {
-  switch (content.type) {
-    // `url` and `browser` share one renderer (DOR-233): every canvas webpage gets
-    // navigation chrome and origin isolation, whichever content type opened it.
-    // Key on document identity AND content identity — the browser snapshots
-    // `content.url` into its history stack on mount, so an `update_canvas` that
-    // swaps the url in place (same document) and a tab switch between two web
-    // documents (same tree position) must both remount it. documentId alone
-    // misses the in-place update; url alone conflates two docs at the same URL.
-    case 'url':
-    case 'browser':
-      return (
-        <CanvasBrowserContent
-          key={`${documentId}:${content.url}`}
-          documentId={documentId}
-          content={content}
-        />
-      );
-    case 'markdown':
-      // Key per source file so the editor + its save state remount fresh when
-      // the document swaps (defense in depth).
-      return (
-        <CanvasMarkdownContent
-          key={content.sourcePath ?? 'generated'}
-          documentId={documentId}
-          content={content}
-          onContentChange={onContentChange}
-        />
-      );
-    case 'json':
-      return <CanvasJsonContent content={content} />;
-    case 'image':
-      return <CanvasImageContent content={content} />;
-    case 'pdf':
-      return <CanvasPdfContent content={content} />;
-    case 'audio':
-      return <CanvasAudioContent content={content} />;
-    case 'video':
-      return <CanvasVideoContent content={content} />;
-    case 'widget':
-      return <CanvasWidgetContent content={content} />;
-    case 'mcp_app':
-      return <CanvasMcpAppContent content={content} />;
-    case 'file':
-      return (
-        <Suspense fallback={<CanvasLoading />}>
-          <CanvasFileContent documentId={documentId} content={content} />
-        </Suspense>
-      );
-    case 'model3d':
-      return (
-        <Suspense fallback={<CanvasLoading />}>
-          <CanvasModel3dContent content={content} />
-        </Suspense>
-      );
-    case 'csv':
-      return (
-        <Suspense fallback={<CanvasLoading />}>
-          <CanvasCsvContent content={content} />
-        </Suspense>
-      );
-    case 'diff':
-      // Key per source file so review state (hunk count, side-by-side toggle,
-      // armed confirms) never leaks between two open diff tabs that share the
-      // same tree position on a tab switch.
-      return (
-        <Suspense fallback={<CanvasLoading />}>
-          <CanvasDiffContent key={content.sourcePath} documentId={documentId} content={content} />
-        </Suspense>
-      );
-  }
-}
-
-/** Fallback shown while a lazy viewer chunk loads. */
-function CanvasLoading() {
-  return <div className="text-muted-foreground p-4 text-sm">Loading…</div>;
-}
+import { RoomCanvasBody } from './room/RoomCanvasBody';
 
 /**
  * Shared body for one of the two document views — rendered in the right panel's
@@ -215,33 +108,40 @@ function CanvasBody({ view }: { view: CanvasView }) {
 }
 
 /**
- * Standalone canvas body for use as a right-panel contribution.
+ * The Canvas tab's body — this session's own documents, or the room's, by route.
  *
- * Renders {@link CanvasBody} inside its own full-height flex column — the
- * right-panel slot wrapper is a plain block container, so each contribution
- * must establish the flex context its body needs to lock height and scroll
- * (the same contract the docked profile follows).
+ * The route is the only thing that decides: on a room route the tab draws the
+ * table that room owns, live off its stream and identical for every member; on
+ * `/session` it draws the private canvas that session persists in this browser.
+ *
+ * Its own full-height flex column, because the right-panel slot wrapper is a
+ * plain block container and each contribution must establish the flex context
+ * its body needs to lock height and scroll (the same contract the docked profile
+ * follows).
  */
 export function CanvasContent() {
+  const roomId = useAppStore((s) => s.roomCanvasLiveRoomId);
   return (
     <div data-slot="canvas" className="flex h-full flex-col overflow-hidden">
-      <CanvasBody view="canvas" />
+      {roomId ? <RoomCanvasBody roomId={roomId} view="canvas" /> : <CanvasBody view="canvas" />}
     </div>
   );
 }
 
 /**
  * The Browser tab's body — the same surface over the documents the embedded
- * browser renders (`url` and `browser`), with its own active document.
+ * browser renders (`url` and `browser`), with its own active document, and on a
+ * room route over that room's shared table rather than this session's canvas.
  *
  * Registered only under a transport that can serve or proxy a page, so the
  * Obsidian shell drops the tab rather than showing one that could only error
  * (ADR 260911-200304).
  */
 export function BrowserContent() {
+  const roomId = useAppStore((s) => s.roomCanvasLiveRoomId);
   return (
     <div data-slot="browser" className="flex h-full flex-col overflow-hidden">
-      <CanvasBody view="browser" />
+      {roomId ? <RoomCanvasBody roomId={roomId} view="browser" /> : <CanvasBody view="browser" />}
     </div>
   );
 }
