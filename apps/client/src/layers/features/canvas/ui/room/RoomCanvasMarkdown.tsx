@@ -35,8 +35,14 @@ export interface RoomCanvasMarkdownProps {
   document: CanvasDocument;
   /** The markdown it carries. */
   content: Extract<UiCanvasContent, { type: 'markdown' }>;
-  /** Replace what this document shows, for every member. */
-  onSave: (documentId: string, content: UiCanvasContent) => void;
+  /**
+   * Replace what this document shows, for every member.
+   *
+   * Answers whether the room TOOK it. The editor holds the draft until it knows:
+   * a refusal that dropped back to read-only would not be an unsaved change, it
+   * would be a deleted one.
+   */
+  onSave: (documentId: string, content: UiCanvasContent) => Promise<boolean>;
 }
 
 /**
@@ -49,6 +55,9 @@ export interface RoomCanvasMarkdownProps {
  */
 export function RoomCanvasMarkdown({ roomId, document, content, onSave }: RoomCanvasMarkdownProps) {
   const [draft, setDraft] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  /** What the room said when it turned the last save down, or null. */
+  const [refusal, setRefusal] = useState<string | null>(null);
   const editing = draft !== null;
   // Read out of a file: shown, never edited here — the file's own tree is what
   // a save would have to reach, and this is not the editor that can.
@@ -56,11 +65,28 @@ export function RoomCanvasMarkdown({ roomId, document, content, onSave }: RoomCa
 
   useRoomCanvasEditLock(roomId, editing ? document.id : null);
 
-  const save = () => {
-    if (draft !== null && draft !== content.content) {
-      onSave(document.id, { ...content, content: draft });
+  /**
+   * Send the draft, and let go of it only once the room has taken it.
+   *
+   * **Clearing the draft before the answer came back was a data-loss bug**, not
+   * a cosmetic one: the editor dropped to read-only showing the document's old
+   * text, so a refusal the person could see in a toast had already deleted the
+   * thing the toast was about. The lock is held throughout for the same reason —
+   * the edit is not over until it has landed.
+   */
+  const save = async () => {
+    if (draft === null) return;
+    if (draft === content.content) {
+      setDraft(null);
+      setRefusal(null);
+      return;
     }
-    setDraft(null);
+    setSaving(true);
+    setRefusal(null);
+    const landed = await onSave(document.id, { ...content, content: draft });
+    setSaving(false);
+    if (landed) setDraft(null);
+    else setRefusal('That didn’t save. Your words are still here — try again.');
   };
 
   return (
@@ -68,18 +94,29 @@ export function RoomCanvasMarkdown({ roomId, document, content, onSave }: RoomCa
       {editable && (
         <div className="flex items-center justify-end gap-2 border-b px-2 py-1">
           {editing && (
-            <span className="text-muted-foreground text-xs">Everyone sees your save.</span>
+            <span className="text-muted-foreground text-xs">
+              {saving ? 'Saving…' : 'Everyone sees your save.'}
+            </span>
           )}
           <Button
             type="button"
             size="xs"
             variant="ghost"
+            disabled={saving}
             aria-label={editing ? 'Save for the room' : 'Edit this document'}
-            onClick={() => (editing ? save() : setDraft(content.content))}
+            onClick={() => (editing ? void save() : setDraft(content.content))}
           >
             {editing ? <Check className="size-3.5" /> : <Pencil className="size-3.5" />}
           </Button>
         </div>
+      )}
+      {/* Beside the toast, not instead of it: the toast says what the room said
+          and then goes away, while this stays as long as the words it is about
+          are still unsaved. */}
+      {refusal !== null && (
+        <p role="status" className="text-destructive border-b px-2 py-1 text-xs">
+          {refusal}
+        </p>
       )}
       {/* The same padded box the session's markdown viewer gives Blintz: the
           editor sizes to its own content, so a flex child with no padding draws
