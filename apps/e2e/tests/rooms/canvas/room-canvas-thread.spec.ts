@@ -74,7 +74,7 @@ test.describe('A document on a room’s canvas has its own discussion', () => {
     await expect(roomsPage.threadPanel).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
     await expect(roomsPage.threadEntries.first()).toContainText(title);
     await testInfo.attach('discuss-opened-the-thread', {
-      body: await page.screenshot({ fullPage: false }),
+      body: await page.screenshot(),
       contentType: 'image/png',
     });
 

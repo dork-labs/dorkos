@@ -29,6 +29,7 @@
  *
  * @module server/services/rooms/follow/room-follow-service
  */
+import { ROOM_LIVE_BEAT_MS, ROOM_LIVE_TTL_MS } from '@dorkos/shared/room-schemas';
 import type { RoomSignalView } from '@dorkos/shared/room-schemas';
 import { RoomError } from '../room-errors.js';
 import type { RoomVisibility } from '../service/room-visibility.js';
@@ -38,11 +39,13 @@ import type { AuthorRegistry } from '../author-registry.js';
 /**
  * How often a follower re-states its claim.
  *
- * The same beat presence republishes on (`PRESENCE_REPUBLISH_MS`), so the two
- * live indicators in a room age at one rate rather than two. Exported because
- * the client refreshes on it and a test asserts the pair agree.
+ * The room's one ephemeral beat, so the two live indicators in a room age at one
+ * rate rather than two — this is an alias for {@link ROOM_LIVE_BEAT_MS}, not a
+ * second copy of it. Re-exported under this name because a reader of this file
+ * is asking about follow claims, and `room-live-beat.test.ts` pins the two to
+ * each other and to the presence republisher.
  */
-export const FOLLOW_REFRESH_MS = 10_000;
+export const FOLLOW_REFRESH_MS = ROOM_LIVE_BEAT_MS;
 
 /**
  * How long a claim survives without a refresh.
@@ -51,7 +54,7 @@ export const FOLLOW_REFRESH_MS = 10_000;
  * whose browser was closed, crashed or put to sleep stops being a follower
  * within thirty seconds and the person they were following goes quiet again.
  */
-export const FOLLOW_CLAIM_TTL_MS = FOLLOW_REFRESH_MS * 3;
+export const FOLLOW_CLAIM_TTL_MS = ROOM_LIVE_TTL_MS;
 
 /** How many claims one process will hold before it refuses to take more. */
 const MAX_CLAIMS = 200;

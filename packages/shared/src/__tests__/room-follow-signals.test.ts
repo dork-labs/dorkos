@@ -54,14 +54,43 @@ describe('RoomSignalEventSchema follow payloads', () => {
     expect(result.error?.issues[0]?.message).toContain('one payload');
   });
 
-  it('refuses a frame carrying both a view and a follow claim', () => {
+  it('refuses every pair of payloads, and not only the ones follow mode added', () => {
+    // Four payloads ride this one verb: an agent's work claim, a follow
+    // position, a follow claim, and which canvas tab somebody is on. The rule
+    // is ONE per frame, so the test is every pair rather than the two that
+    // were on hand when it was written.
+    const payloads = {
+      state: 'working',
+      view: { documentId: '01JZDOC' },
+      follows: '01JZKAI',
+      documentId: '01JZDOC',
+    } as const;
+    const names = Object.keys(payloads) as Array<keyof typeof payloads>;
+    for (const a of names) {
+      for (const b of names) {
+        if (a >= b) continue;
+        const result = RoomSignalEventSchema.safeParse({
+          ...base,
+          [a]: payloads[a],
+          [b]: payloads[b],
+        });
+        expect(result.success, `${a} + ${b} must be refused`).toBe(false);
+      }
+    }
+    // …and all four at once, which is the case a pairwise loop alone could miss
+    // if the rule were written as a chain of two-way checks.
+    expect(RoomSignalEventSchema.safeParse({ ...base, ...payloads }).success).toBe(false);
+  });
+
+  it('accepts each payload on its own', () => {
+    expect(RoomSignalEventSchema.safeParse({ ...base, documentId: '01JZDOC' }).success).toBe(true);
     expect(
-      RoomSignalEventSchema.safeParse({
-        ...base,
-        view: { documentId: '01JZDOC' },
-        follows: '01JZKAI',
-      }).success
-    ).toBe(false);
+      RoomSignalEventSchema.safeParse({ ...base, view: { documentId: '01JZDOC' } }).success
+    ).toBe(true);
+    expect(RoomSignalEventSchema.safeParse({ ...base, follows: '01JZKAI' }).success).toBe(true);
+    // A `presence` frame with nothing on it at all is the "looked away" half of
+    // the tab-presence statement, and stays legal.
+    expect(RoomSignalEventSchema.safeParse(base).success).toBe(true);
   });
 
   it('refuses a view on any signal that is not presence', () => {

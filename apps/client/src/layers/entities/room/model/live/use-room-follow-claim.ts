@@ -21,6 +21,30 @@ import {
   useRoomFollowStore,
 } from './use-room-follow';
 
+/**
+ * Forget everything this browser holds about following one room, when the reader
+ * leaves it.
+ *
+ * **Mounted by the room VIEW, not by the panel**, and that is the whole point.
+ * The claim hook lives on the Browser tab and releases the server's claim when
+ * that tab goes away — but the local choice survived, so coming back to the room
+ * within the TTL resumed a follow nobody re-chose. Worse, the sweep that expires
+ * it only runs while that tab is mounted, so with no room open the stale choice
+ * outlived its own TTL indefinitely.
+ *
+ * Following is off by default and never persisted (spec `canvas-agent-seat` §6).
+ * Leaving the room is leaving it.
+ *
+ * @param roomId - The room on screen, or `null` where there is none.
+ */
+export function useForgetRoomFollowOnLeave(roomId: string | null): void {
+  const forgetRoom = useRoomFollowStore((s) => s.forgetRoom);
+  useEffect(() => {
+    if (roomId === null) return;
+    return () => forgetRoom(roomId);
+  }, [roomId, forgetRoom]);
+}
+
 /** What a surface gets for turning following on and off. */
 export interface RoomFollowControls {
   /** Who this viewer is following here, or `null`. */

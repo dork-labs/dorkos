@@ -56,7 +56,7 @@ export {
   ROOM_FOLLOW_TTL_MS,
 } from './model/live/use-room-follow';
 export type { FollowClaim, FollowIntent, FollowPosition } from './model/live/use-room-follow';
-export { useRoomFollowClaim } from './model/live/use-room-follow-claim';
+export { useForgetRoomFollowOnLeave, useRoomFollowClaim } from './model/live/use-room-follow-claim';
 export type { RoomFollowControls } from './model/live/use-room-follow-claim';
 export { useRoomViewPublish } from './model/live/use-room-view-publish';
 export type { RoomViewSource } from './model/live/use-room-view-publish';

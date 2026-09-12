@@ -261,13 +261,19 @@ export class RoomPublisher {
   }
 
   /**
-   * Register the chat bridge's presence forwarder (chats-as-channels §6.8),
-   * called for every ephemeral signal this service fans out. At most one is
-   * set; the binding subsystem wires it once the bridge presence forwarder
-   * exists — the same one-listener shape as
+   * Register the chat bridge's presence forwarder (chats-as-channels §6.8). At
+   * most one is set; the binding subsystem wires it once the bridge presence
+   * forwarder exists — the same one-listener shape as
    * {@link RoomService.setEntryCommitListener}.
    *
-   * @param listener - Called with each published signal, or `undefined` to clear.
+   * **It hears every signal {@link RoomPublisher.publishSignal} fans out, and no
+   * other.** The two follow frames above go to this room's own readers and stop
+   * there, deliberately: a bridged Telegram or Slack chat is other people's
+   * surface, and "Ana is following Kai", or how far down a panel she has
+   * scrolled, describes a window nobody over there has.
+   *
+   * @param listener - Called with each signal `publishSignal` published, or
+   *   `undefined` to clear.
    */
   setSignalListener(listener: RoomSignalListener | undefined): void {
     this.onSignalPublished = listener;

@@ -5,6 +5,24 @@ import { BasePage } from '../../../pages/BasePage';
 import { publishFollowClaim, publishFollowView, tapRoomStream } from '../room-signals';
 
 /**
+ * The smallest gap there may be between two positions leaving one window.
+ *
+ * The client's own `ROOM_FOLLOW_PUBLISH_MS`, restated because this file may not
+ * import client code. A floor, not the coalescing property itself: proving that
+ * a burst of moves collapses into ONE send needs a clock, and that assertion
+ * lives in `use-room-view-publish.test.tsx`.
+ */
+const FOLLOW_DEBOUNCE_MS = 250;
+
+/**
+ * How often a followed window re-states an unchanged position.
+ *
+ * Waiting longer than this is what turns "it stopped" into a claim about the
+ * beat as well as about the change path.
+ */
+const FOLLOW_BEAT_MS = 10_000;
+
+/**
  * Following somebody's browser, in the browser (spec `canvas-agent-seat` §6).
  *
  * **Two properties only a browser can show**, and both are about traffic that
@@ -73,7 +91,7 @@ async function openRoom(
 test.describe.configure({ mode: 'serial', timeout: 120_000 });
 
 test.describe('Following somebody’s browser in a room', () => {
-  test('says nothing at all until somebody is following, then says where you are', async ({
+  test('says nothing until followed, one thing when it is, and stops when told to', async ({
     page,
     basePage,
     roomsApi,
@@ -87,10 +105,10 @@ test.describe('Following somebody’s browser in a room', () => {
     await putPageOnCanvas(request, room.id, `Docs ${tag}`, 'http://localhost:5173/docs');
 
     // Every request this window makes to say where it is looking.
-    const positions: string[] = [];
+    const positions: Array<{ at: number; body: string }> = [];
     page.on('request', (req) => {
       if (req.method() === 'POST' && req.url().includes('/follow/view')) {
-        positions.push(req.postData() ?? '');
+        positions.push({ at: Date.now(), body: req.postData() ?? '' });
       }
     });
 
@@ -110,19 +128,32 @@ test.describe('Following somebody’s browser in a room', () => {
       contentType: 'image/png',
     });
 
-    // The room says somebody is following this person. Now, and only now, a
-    // position goes out — inside the debounce window, not a second later.
+    // The room says somebody is following this person. Now, and only now, one
+    // position goes out, carrying the document.
+    const claimedAt = Date.now();
     await publishFollowClaim(page, { followerId: 'author-someone-else', leaderId: me });
-    await expect.poll(() => positions.length, { timeout: 2_000 }).toBeGreaterThan(0);
-    expect(positions[0]).toContain('documentId');
+    await expect.poll(() => positions.length, { timeout: 2_000 }).toBe(1);
+    expect(positions[0]!.body).toContain('documentId');
+    expect(claimedAt).toBeLessThanOrEqual(positions[0]!.at);
 
-    // …and it stops again when the last follower lets go.
-    await publishFollowClaim(page, { followerId: 'author-someone-else', leaderId: null });
-    await page.waitForTimeout(600);
-    const settled = positions.length;
-    await roomsPage.canvasDocumentTab(`Preview ${tag}`).click();
-    await page.waitForTimeout(1_000);
-    expect(positions).toHaveLength(settled);
+    // **And the SERVER stops it, which is the half only this leg can show.**
+    // The claim above is a frame this test put on the socket; the server holds
+    // no such claim, so its answer to that position is `{followed:false}` — the
+    // documented stop signal. The window goes quiet on it rather than carrying
+    // on for the thirty seconds the claim would otherwise have lived, and the
+    // wait below is longer than a whole republish beat, so a leader that kept
+    // beating would be caught here.
+    for (const title of [`Docs ${tag}`, `Preview ${tag}`, `Docs ${tag}`]) {
+      await roomsPage.canvasDocumentTab(title).click();
+    }
+    await page.waitForTimeout(FOLLOW_BEAT_MS + 1_000);
+    expect(positions).toHaveLength(1);
+
+    // The gaps that DID happen respect the debounce. One send cannot show a
+    // window, so this is a floor rather than the property: the coalescing
+    // itself is asserted with a clock, in `use-room-view-publish.test.tsx`.
+    const gaps = positions.slice(1).map((sent, i) => sent.at - positions[i]!.at);
+    for (const gap of gaps) expect(gap).toBeGreaterThanOrEqual(FOLLOW_DEBOUNCE_MS);
   });
 
   test('moves this window onto the document the person you follow is on', async ({

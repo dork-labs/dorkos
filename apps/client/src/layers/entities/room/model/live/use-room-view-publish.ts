@@ -12,6 +12,17 @@
  * position from a moment ago is not worth sending, and a queue of them is a
  * queue of wrong answers.
  *
+ * **And re-stated on the beat, whether or not it moved.** Signals never replay,
+ * so a follower's belief expires {@link ROOM_FOLLOW_TTL_MS} after the last frame
+ * it heard. Publishing only on CHANGE meant that somebody reading one page for
+ * half a minute — the ordinary case, not a corner — silently stopped being
+ * followed: the follower's toggle flipped back with nothing said. So while
+ * somebody is following, the current position goes out every
+ * {@link ROOM_FOLLOW_REFRESH_MS}, through the same coalescing gate the change
+ * path uses, which is exactly what the presence republisher does one lane over.
+ * The beat runs ONLY while followed, so a room nobody follows still costs
+ * nothing.
+ *
  * **Published from real state, never from an intention.** What goes out is where
  * this viewer's panel actually is — the document it is showing, the page in the
  * frame, the scroll offset of the panel — read at the moment of sending.
@@ -21,7 +32,13 @@
 import { useEffect, useRef } from 'react';
 import type { RoomSignalView } from '@dorkos/shared/room-schemas';
 import { useTransport } from '@/layers/shared/model';
-import { ROOM_FOLLOW_PUBLISH_MS, useIsFollowed } from './use-room-follow';
+import {
+  ROOM_FOLLOW_PUBLISH_MS,
+  ROOM_FOLLOW_REFRESH_MS,
+  ROOM_FOLLOW_TTL_MS,
+  useIsFollowed,
+  useRoomFollowStore,
+} from './use-room-follow';
 
 /** What this viewer's panel is showing, as a position worth sharing. */
 export interface RoomViewSource {
@@ -80,15 +97,28 @@ export function useRoomViewPublish(source: RoomViewSource): void {
       sentAt.current = Date.now();
       const held = latest.current;
       if (held.roomId === null || held.documentId === null) return;
+      const room = held.roomId;
       const view: RoomSignalView = {
         documentId: held.documentId,
         ...(held.url !== undefined ? { url: held.url } : {}),
         ...(held.readScrollY ? { scrollY: Math.max(0, Math.round(held.readScrollY())) } : {}),
       };
-      void transport.publishRoomView(held.roomId, view).catch(() => {
-        // A refused position is not worth a sentence: the next one goes out in
-        // 250 ms, and the person being followed did nothing wrong.
-      });
+      void transport
+        .publishRoomView(room, view)
+        .then((answer) => {
+          // The server's own stop signal, honoured rather than discarded. It
+          // says nobody is following, which means this client is holding a claim
+          // the room no longer has — a release frame that never arrived because
+          // the socket cycled. Dropping the belief here ends the beat on the
+          // next render instead of thirty seconds from now.
+          if (!answer.followed && viewerAuthorId !== null) {
+            useRoomFollowStore.getState().noteNobodyFollowing(room, viewerAuthorId);
+          }
+        })
+        .catch(() => {
+          // A refused position is not worth a sentence: the next one goes out in
+          // 250 ms, and the person being followed did nothing wrong.
+        });
     };
 
     const moved = () => {
@@ -105,13 +135,18 @@ export function useRoomViewPublish(source: RoomViewSource): void {
 
     moved();
     const stop = subscribe?.(moved);
+    // The beat. `moved` rather than `send`, so a re-state that lands inside the
+    // debounce window of a real move is coalesced with it rather than doubling
+    // it — one position in flight, always.
+    const beat = setInterval(moved, ROOM_FOLLOW_REFRESH_MS);
     return () => {
+      clearInterval(beat);
       stop?.();
     };
     // `url` and `documentId` are in the list on purpose: a change to either is a
     // move, and re-running this effect is how it reaches the wire. `subscribe`
     // must be stable — wrap it in `useCallback` — or every render resubscribes.
-  }, [transport, followed, roomId, documentId, url, subscribe]);
+  }, [transport, followed, roomId, viewerAuthorId, documentId, url, subscribe]);
 
   // The armed send is cleared when this surface goes away for good, never
   // between two runs of the effect above — which is where the debounce lives.

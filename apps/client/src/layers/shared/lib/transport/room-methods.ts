@@ -2,7 +2,7 @@
  * Room Transport methods factory (HTTP adapter) — channels and DMs (spec
  * `rooms`). Talks to the Express `/api/rooms/*` routes.
  *
- * Only what the cockpit performs today is here: reading a room, posting to it,
+ * Only what the app performs today is here: reading a room, posting to it,
  * replying inside a thread, settling its title / topic / archived flag, editing
  * its roster, and moving the read cursor. The thread reply is its own route
  * rather than a flag on the post, because nothing has to be created first — a

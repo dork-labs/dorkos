@@ -45,6 +45,7 @@ import {
   groupByThread,
   threadRowId,
   threadRowKey,
+  displayAuthorIdOf,
   toMessageAuthor,
 } from '../lib/room-timeline';
 import { AgentInfoProvider, useRoomAgentDirectory } from '../model/agent-info-context';
@@ -372,7 +373,7 @@ export function RoomFlow({
           id: row.id,
           payload: row.entry,
           grouping: row.grouping,
-          author: toMessageAuthor(row.entry.authorId, authors, agents.faces),
+          author: toMessageAuthor(displayAuthorIdOf(row.entry, authors), authors, agents.faces),
           at: row.entry.createdAt,
         };
       }),
@@ -412,7 +413,7 @@ export function RoomFlow({
         <RoomMessage
           roomId={roomId}
           entry={row.entry}
-          author={toMessageAuthor(row.entry.authorId, authors, agents.faces)}
+          author={toMessageAuthor(displayAuthorIdOf(row.entry, authors), authors, agents.faces)}
           authorRef={authors.get(row.entry.authorId)}
           authors={authors}
           viewerAuthorId={viewerAuthorId}

@@ -82,6 +82,7 @@ vi.mock('../lib/probe-direct', () => ({
   probeDirect: (url: string) => probeDirect(url),
 }));
 
+import { useRoomFollowStore } from '@/layers/entities/room';
 import { CanvasBrowserContent } from '../ui/CanvasBrowserContent';
 
 function iframeSrc(): string | null {
@@ -784,5 +785,72 @@ describe('CanvasBrowserContent — the address bar on a room route', () => {
     await typeAddress('https://example.com');
 
     expect(await screen.findByRole('status')).toHaveTextContent(/couldn’t reach the server/i);
+  });
+});
+
+describe('CanvasBrowserContent — following somebody’s page', () => {
+  /** The page this document holds before anybody is followed. */
+  const roomPage = { type: 'url' as const, url: 'https://dorkos.ai' };
+  const KAI = 'author-kai';
+
+  beforeEach(() => {
+    mockState.roomCanvasLiveRoomId = 'room-1';
+    mockState.roomCanvasEditing = {};
+    useRoomFollowStore.setState({ intent: {}, claims: {}, positions: {} });
+  });
+
+  afterEach(() => {
+    useRoomFollowStore.setState({ intent: {}, claims: {}, positions: {} });
+  });
+
+  /** Follow Kai, and put them on `url` inside `documentId`. */
+  function kaiIsOn(documentId: string, url: string): void {
+    act(() => {
+      useRoomFollowStore.getState().startFollowing('room-1', KAI, Date.now());
+      useRoomFollowStore.getState().observe(
+        'room-1',
+        {
+          type: 'signal',
+          signal: 'presence',
+          authorId: KAI,
+          at: new Date().toISOString(),
+          view: { documentId, url },
+        } as never,
+        Date.now()
+      );
+    });
+  }
+
+  it('goes to the page the person being followed is on', async () => {
+    // This is the line that makes following a BROWSER rather than a tab strip:
+    // Back and Forward move inside the frame without telling the room, so the
+    // page in the payload is the only way a follower lands where they are.
+    render(<CanvasBrowserContent documentId="d1" content={roomPage} />);
+    expect(screen.getByRole('button', { name: /^Address:/ })).toHaveTextContent('dorkos.ai');
+
+    kaiIsOn('d1', 'https://example.com/deep');
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^Address:/ })).toHaveTextContent('example.com')
+    );
+  });
+
+  it('leaves a page alone when the position is about a different document', async () => {
+    render(<CanvasBrowserContent documentId="d1" content={roomPage} />);
+    kaiIsOn('another-document', 'https://example.com/deep');
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.getByRole('button', { name: /^Address:/ })).toHaveTextContent('dorkos.ai');
+  });
+
+  it('never moves somebody who is in the middle of typing', async () => {
+    // Room-canvas §9.3 outranks following: losing a draft is worse than losing
+    // the thread.
+    mockState.roomCanvasEditing = { 'room-1': 'd1' };
+    render(<CanvasBrowserContent documentId="d1" content={roomPage} />);
+    kaiIsOn('d1', 'https://example.com/deep');
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.getByRole('button', { name: /^Address:/ })).toHaveTextContent('dorkos.ai');
   });
 });

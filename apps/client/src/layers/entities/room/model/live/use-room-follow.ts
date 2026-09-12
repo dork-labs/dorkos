@@ -25,15 +25,18 @@
  */
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
+import { ROOM_LIVE_BEAT_MS, ROOM_LIVE_TTL_MS } from '@dorkos/shared/room-schemas';
 import type { RoomSignalEvent, RoomSignalView } from '@dorkos/shared/room-schemas';
 
 /**
- * How often a follower says it is still there.
+ * How often a follower says it is still there, and a followed person re-states
+ * where they are.
  *
- * The server's claim TTL is three of these, so two missed beats are survivable
- * and three are not. The same beat the room's presence indicator republishes on.
+ * The room's one ephemeral beat — an alias for {@link ROOM_LIVE_BEAT_MS} rather
+ * than a browser-side copy of 10 000, because the server's claim TTL is three of
+ * these and two numbers that must agree are one edit away from disagreeing.
  */
-export const ROOM_FOLLOW_REFRESH_MS = 10_000;
+export const ROOM_FOLLOW_REFRESH_MS = ROOM_LIVE_BEAT_MS;
 
 /**
  * How long a claim, or a position, stays true without being restated.
@@ -41,8 +44,12 @@ export const ROOM_FOLLOW_REFRESH_MS = 10_000;
  * Three beats. Past it the person being followed has gone quiet — closed the
  * tab, lost the network, put the laptop to sleep — and following a page that
  * stopped moving half a minute ago is worse than not following at all.
+ *
+ * **A leader who is simply STILL is not silent.** They re-state their position
+ * on the beat above whether or not it changed, so this expires a leader who has
+ * gone away, never one who is reading (`use-room-view-publish.ts`).
  */
-export const ROOM_FOLLOW_TTL_MS = ROOM_FOLLOW_REFRESH_MS * 3;
+export const ROOM_FOLLOW_TTL_MS = ROOM_LIVE_TTL_MS;
 
 /** How often the store drops what has aged out. */
 export const ROOM_FOLLOW_SWEEP_MS = 1_000;
@@ -130,6 +137,21 @@ interface RoomFollowActions {
    * @param roomId - The room.
    */
   forgetRoom: (roomId: string) => void;
+  /**
+   * Drop every claim naming this person, because the SERVER said nobody is
+   * following them.
+   *
+   * The answer to sharing a position carries `followed`, and `false` is the
+   * server correcting a client that believes something stale — a claim frame
+   * that arrived, followed by a release frame that did not (the socket cycled,
+   * the tab slept). Without this the leader would keep sending until the claim
+   * aged out thirty seconds later, which is thirty seconds of a room paying for
+   * nothing.
+   *
+   * @param roomId - The room.
+   * @param leaderId - The person nobody is following.
+   */
+  noteNobodyFollowing: (roomId: string, leaderId: string) => void;
 }
 
 /** The follow store. Read it through the hooks below. */
@@ -216,6 +238,21 @@ export const useRoomFollowStore = create<RoomFollowState & RoomFollowActions>()(
           },
           false,
           'roomFollow/sweep'
+        ),
+
+      noteNobodyFollowing: (roomId, leaderId) =>
+        set(
+          (held) => {
+            const inRoom = held.claims[roomId];
+            if (!inRoom) return held;
+            const kept = Object.fromEntries(
+              Object.entries(inRoom).filter(([, claim]) => claim.leaderId !== leaderId)
+            );
+            if (Object.keys(kept).length === Object.keys(inRoom).length) return held;
+            return { claims: { ...held.claims, [roomId]: kept } };
+          },
+          false,
+          'roomFollow/nobodyFollowing'
         ),
 
       forgetRoom: (roomId) =>

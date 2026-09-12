@@ -25,6 +25,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import type { RoomSignalEvent } from '@dorkos/shared/room-schemas';
 import {
   isFollowSignal,
+  ROOM_FOLLOW_REFRESH_MS,
   ROOM_FOLLOW_TTL_MS,
   useRoomFollowStore,
 } from '../model/live/use-room-follow';
@@ -116,6 +117,41 @@ describe('what the follow store forgets', () => {
     expect(held.intent[ROOM]).toBeUndefined();
     expect(held.claims[ROOM]).toBeUndefined();
     expect(held.positions[ROOM]).toBeUndefined();
+  });
+
+  it('keeps a follow alive through a minute of a leader who has not moved', () => {
+    // The leader re-states the SAME position on the beat, which is what
+    // `use-room-view-publish` publishes whether or not anything changed. A
+    // follower who expired through that would be expiring somebody who is
+    // reading — the ordinary case, not a corner.
+    const store = useRoomFollowStore.getState();
+    store.startFollowing(ROOM, KAI, 1_000);
+    const still = { documentId: 'doc-1', scrollY: 40 };
+
+    for (let beat = 1; beat <= 6; beat += 1) {
+      const at = 1_000 + beat * ROOM_FOLLOW_REFRESH_MS;
+      store.observe(ROOM, frame({ authorId: KAI, view: still }), at);
+      store.sweep(at);
+      expect(useRoomFollowStore.getState().intent[ROOM], `beat ${beat}`).toBeDefined();
+    }
+
+    // …and a leader who really went away still expires, one TTL after the last
+    // beat that was heard.
+    store.sweep(1_000 + 6 * ROOM_FOLLOW_REFRESH_MS + ROOM_FOLLOW_TTL_MS);
+    expect(useRoomFollowStore.getState().intent[ROOM]).toBeUndefined();
+  });
+
+  it('drops every claim on somebody the server says nobody follows', () => {
+    const store = useRoomFollowStore.getState();
+    store.observe(ROOM, frame({ authorId: YOU, follows: KAI }), 1_000);
+    store.observe(ROOM, frame({ authorId: ANA, follows: KAI }), 1_000);
+    store.observe(ROOM, frame({ authorId: 'author-sam', follows: ANA }), 1_000);
+
+    store.noteNobodyFollowing(ROOM, KAI);
+
+    // Only the claims naming KAI go. Somebody else's follow is not this
+    // person's business, and the answer said nothing about it.
+    expect(Object.keys(useRoomFollowStore.getState().claims[ROOM] ?? {})).toEqual(['author-sam']);
   });
 
   it('changes nothing when there is nothing to drop', () => {

@@ -953,6 +953,32 @@ export const RoomSignalViewSchema = z
   })
   .openapi('RoomSignalView');
 
+/**
+ * How often anything live in a room re-states itself on the room's stream.
+ *
+ * **One number, three producers, because it is one fact about the room's
+ * ephemeral lane.** Signals never replay, so everything on that lane has to
+ * restate itself or stop being true: an agent's work claim
+ * (`RoomTriggerDispatcher`'s republisher), a follow claim (the follower's own
+ * client) and a followed person's position (the leader's). Three copies of
+ * 10 000 were three chances for two of them to drift apart, and the drift is
+ * invisible — the indicator simply goes out a third of the time.
+ *
+ * Deliberately a constant and not configuration: it changes how quickly a stale
+ * indicator heals, never what the room does. Tuning it would be a knob with no
+ * honest guidance (room-presence spec §10).
+ */
+export const ROOM_LIVE_BEAT_MS = 10_000;
+
+/**
+ * How long anything live in a room stays true without being restated.
+ *
+ * Three beats, so two missed ones are survivable and three are not. Every TTL in
+ * the ephemeral lane is this number — the presence indicator's, the follow
+ * claim's on the server, and the follow position's in the browser.
+ */
+export const ROOM_LIVE_TTL_MS = ROOM_LIVE_BEAT_MS * 3;
+
 /** Where a followed person is looking. See {@link RoomSignalViewSchema}. */
 export type RoomSignalView = z.infer<typeof RoomSignalViewSchema>;
 
