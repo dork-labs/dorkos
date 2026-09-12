@@ -95,6 +95,40 @@ describe('the launch options every Claude Code turn is given', () => {
     ).toBe('1');
   });
 
+  it('registers the PostToolUse hook that tells auto mode about DorkOS tools', async () => {
+    // Spec `auto-mode-classifier-context`. Nothing else can catch this: a hook
+    // that was never registered produces no error, no log line and no failing
+    // assertion anywhere — auto mode just goes on guessing about DorkOS's own
+    // tools, exactly as it did before, and the whole change is a no-op nobody
+    // notices.
+    const options = await captureSdkOptions();
+
+    const matchers = options.hooks?.PostToolUse ?? [];
+    expect(matchers).toHaveLength(1);
+    expect(
+      matchers[0]?.matcher,
+      'the matcher is the CLI\u2019s to interpret, so it is a plain substring rather than a ' +
+        'pattern a different reading could silently reject'
+    ).toBe('mcp__dorkos__');
+
+    const hook = matchers[0]!.hooks[0]!;
+    const result = (await hook(
+      {
+        hook_event_name: 'PostToolUse',
+        tool_name: 'mcp__dorkos__mesh_list',
+        tool_input: {},
+        tool_response: {},
+        tool_use_id: 'toolu_1',
+      } as never,
+      'toolu_1',
+      { signal: new AbortController().signal }
+    )) as Record<string, unknown>;
+
+    const specific = result.hookSpecificOutput as Record<string, unknown>;
+    expect(specific?.hookEventName).toBe('PostToolUse');
+    expect(specific?.classifierContext).toContain("passed DorkOS's own permission check");
+  });
+
   it('sends the plugin list over stdin rather than on the command line', async () => {
     const options = await captureSdkOptions();
 
