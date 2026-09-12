@@ -22,7 +22,12 @@ import {
   toIdList,
   describeError,
 } from '@dorkos/relay';
-import type { AgentRuntimeLike, TraceStoreLike, TasksStoreLike } from '@dorkos/relay';
+import type {
+  AgentRuntimeLike,
+  TraceStoreLike,
+  TasksStoreLike,
+  RefusedAskReporter,
+} from '@dorkos/relay';
 import type { AdapterManifest, CatalogEntry } from '@dorkos/shared/relay-schemas';
 import type { AdapterStatus } from '@dorkos/relay';
 import { runtimeRegistry } from '../core/runtime-registry.js';
@@ -152,6 +157,14 @@ export interface AdapterManagerDeps {
   agentManager?: AgentRuntimeLike;
   traceStore: TraceStoreLike;
   taskStore?: TasksStoreLike;
+  /**
+   * Where a relay-dispatched scheduled run reports a tool it was refused
+   * because nobody was there to approve it, so the activity feed says so on
+   * this path too (DOR-1580). Built by the composition root, which is where the
+   * full `TaskStore` and the activity feed both are — this manager holds only
+   * the narrow `updateRun` seam.
+   */
+  onRefusedAsk?: RefusedAskReporter;
   /** Optional RelayCore for binding subsystem initialization */
   relayCore?: RelayCoreLike;
   /** Optional MeshCore for enriching AdapterContext with agent CWD resolution */
@@ -1307,6 +1320,7 @@ export class AdapterManager {
         agentRuntimes: this.agentRuntimes,
         traceStore: this.deps.traceStore,
         taskStore: this.deps.taskStore,
+        onRefusedAsk: this.deps.onRefusedAsk,
         agentSessionStore: this.bindingSubsystem?.getAgentSessionStore(),
         approvalAuthorizer: (decision) => this.authorizeBridgedApproval(decision),
         // The one map both sides of the inbound-budget thread read (DOR-791):

@@ -19,7 +19,7 @@ import { createRefusedAskLog, withRefusedAsks } from '@dorkos/shared/run-refusal
 // path and by the direct-dispatch twin in `apps/server` (DOR-1786).
 import { runTimeLimitError } from '@dorkos/shared/run-time-limit';
 import type { AdapterContext, DeliveryResult, TraceStoreLike } from '../../types.js';
-import type { AgentRuntimeLike, TasksStoreLike } from './types.js';
+import type { AgentRuntimeLike, RefusedAskReporter, TasksStoreLike } from './types.js';
 import { OPERATOR_CANCEL } from './task-cancel-handler.js';
 import type { AbortRegistry } from '../../lib/abort-registry.js';
 import { interruptTurn } from './interrupt.js';
@@ -120,6 +120,14 @@ export interface TasksHandlerDeps {
   agentManager: AgentRuntimeLike;
   traceStore: TraceStoreLike;
   taskStore?: TasksStoreLike;
+  /**
+   * Where this run's refused asks are reported, so a scheduled run that could
+   * not use a tool says so in the activity feed on this path too (DOR-1580).
+   *
+   * Optional, and absent in most tests: without it the run's summary line is
+   * still written, exactly as before.
+   */
+  onRefusedAsk?: RefusedAskReporter;
   /**
    * The adapter's in-flight run registry — the only handle anything outside
    * this function has on a running task (DOR-808). Required, not optional: a
@@ -311,9 +319,12 @@ export async function handleTasksMessage(
   const outcome = createRunOutcomeTracker();
   // Which asks this run was refused without anybody being consulted, on the same
   // shared rule the direct twin uses (spec
-  // `unattended-session-permission-prompts`). This path reaches no activity
-  // service, so the summary line below is the whole record here — the same
-  // asymmetry DOR-1580 records for a timed-out relay run.
+  // `unattended-session-permission-prompts`). Two records come out of it: the
+  // summary line on the run row below, and — through `deps.onRefusedAsk`, since
+  // this package cannot see the activity feed — the same live feed entry per
+  // refused tool the direct twin writes (DOR-1580). With the relay adapter
+  // connected, which is the ordinary install, this path is the one a scheduled
+  // run actually takes, so the entry existed for nobody until it was wired here.
   const refusals = createRefusedAskLog();
 
   try {
@@ -372,7 +383,10 @@ export async function handleTasksMessage(
       () => void interruptTurn(deps.agentManager, sessionId, `run ${runId}`, deps.logger),
       (event) => {
         outcome.observe(event);
-        refusals.observe(event);
+        // `observe` answers only on a tool's FIRST refusal, so this is one
+        // report per refused tool per run and the dedupe lives in one place.
+        const refused = refusals.observe(event);
+        if (refused) deps.onRefusedAsk?.({ taskId, runId, refused });
         if (event.type === 'text_delta' && outputSummary.length < OUTPUT_SUMMARY_MAX_CHARS) {
           const data = event.data as { text: string };
           outputSummary += data.text;
