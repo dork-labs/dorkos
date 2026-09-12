@@ -716,8 +716,9 @@ mark moving on another device) without needing a subscription to every room at o
 | `GET`    | `/api/rooms/:id/events`            | The room's live event stream.                    |
 
 The room's canvas has eight of its own. Every one resolves the caller server-side and answers `404`
-for a room you aren't in, exactly as if it didn't exist. The four that write also refuse an
-archived room; the two that read answer normally forever.
+for a room you aren't in, exactly as if it didn't exist. The five that write also refuse an
+archived room; the three that read answer normally forever. Two of them are yours alone — saying
+what you're looking at, and the review of somebody else's copy — and answer an agent `403`.
 
 | Method   | Path                                        | Purpose                                       |
 | -------- | ------------------------------------------- | --------------------------------------------- |

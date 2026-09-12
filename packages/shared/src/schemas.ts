@@ -5314,12 +5314,6 @@ export const CelebrationKindSchema = z
 export type CelebrationKind = z.infer<typeof CelebrationKindSchema>;
 
 /**
- * A command issued by an agent to mutate the DorkOS client UI.
- * Discriminated on `action` — 22 variants covering panels, sidebar, canvas,
- * PIP, file/terminal/browser opening, notifications, theme, scroll, agent
- * switching, shape switching, command palette, and celebration.
- */
-/**
  * Where a canvas verb lands, when that is not the window the agent is talking
  * through (spec `canvas-agent-seat` §9).
  *
@@ -5343,6 +5337,15 @@ export const UiCommandTargetSchema = z
 /** Where a canvas verb lands. See {@link UiCommandTargetSchema}. */
 export type UiCommandTarget = z.infer<typeof UiCommandTargetSchema>;
 
+/**
+ * A command issued by an agent to mutate the DorkOS client UI.
+ * Discriminated on `action` — 22 variants covering panels, sidebar, canvas,
+ * PIP, file/terminal/browser opening, notifications, theme, scroll, agent
+ * switching, shape switching, command palette, and celebration.
+ *
+ * The six CANVAS variants additionally take {@link UiCommandTargetSchema}, which
+ * names a room to put the document on instead of this window.
+ */
 export const UiCommandSchema = z
   .discriminatedUnion('action', [
     // Panel commands

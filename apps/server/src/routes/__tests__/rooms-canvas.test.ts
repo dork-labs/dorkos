@@ -1,6 +1,6 @@
 /**
- * The six canvas routes, driven through the REAL app mount (spec `room-canvas`
- * §4).
+ * The eight canvas routes, driven through the REAL app mount (specs
+ * `room-canvas` §4 and `canvas-agent-seat` §8).
  *
  * What only a route test can reach: the membership gate as the identity
  * middleware really resolves it, the status a refusal becomes, and the fact that
@@ -25,6 +25,13 @@ vi.mock('../../lib/boundary.js', () => ({
   getBoundary: vi.fn(() => '/mock/home'),
   initBoundary: vi.fn().mockResolvedValue('/mock/home'),
   isWithinBoundary: vi.fn().mockResolvedValue(true),
+  // The review's containment, named here because the module under test imports
+  // it. No case in this file reaches them: the people gate runs before the
+  // review is asked for anything, and a room with no files of its own is
+  // refused before a path is resolved. The symlink rule they carry is pinned
+  // where it can be planted, in `canvas/__tests__/canvas-diff-review.test.ts`.
+  resolveCanonicalPath: vi.fn(async (p: string) => p),
+  isContained: vi.fn(() => true),
   BoundaryError: class BoundaryError extends Error {},
 }));
 
@@ -297,6 +304,65 @@ describe('the room canvas routes', () => {
       // A refusal that still published would be the whole bug with a red status
       // code on it, so the frames are the assertion rather than the status.
       expect(await frames()).toEqual([]);
+    });
+
+    it('refuses a MEMBER agent the review of somebody else’s working copy', async () => {
+      // **The hole this closes, measured over HTTP by the reviewer.** A member
+      // agent holding only the token every spawned agent carries read another
+      // member's private copy and overwrote it — 200, the file changed, that
+      // member's checkout left dirty, which is the state their own merge then
+      // refuses. Both sibling writes (`PUT /:id/files/content`,
+      // `POST /:id/canvas/viewing`) refused the SAME token; this did not.
+      const created = await open('https://example.test/a');
+      const identity = initAgentIdentityService(db);
+      const token = await identity.mint({ agentPath: ANA_PATH, displayName: 'Ana' });
+
+      const read = await request(testServer)
+        .get(`/api/rooms/${roomId}/canvas/${created.body.id}/diff`)
+        .set('X-DorkOS-Agent', token);
+      const wrote = await request(testServer)
+        .put(`/api/rooms/${roomId}/canvas/${created.body.id}/diff`)
+        .set('X-DorkOS-Agent', token)
+        .send({ content: 'AGENT WAS HERE\n', expectedHash: 'whatever' });
+
+      for (const [name, res] of Object.entries({ read, wrote })) {
+        expect(res.status, `${name} let an agent at a colleague’s copy`).toBe(403);
+        expect(res.body.code).toBe('PEOPLE_ONLY');
+      }
+    });
+
+    it('lets a PERSON past that gate, and refuses for the review’s own reason', async () => {
+      // The discriminating half: the person is NOT refused `PEOPLE_ONLY`. What
+      // they reach instead is the review's own refusal — this document is a web
+      // page rather than a diff — which is the proof they got past the gate
+      // rather than that the gate is missing.
+      //
+      // It also pins that the "not a review" branch FIRES. It used to be dead:
+      // the route's seam pre-filtered non-`diff` documents to `null`, so a
+      // markdown document answered as a missing one.
+      const created = await open('https://example.test/a');
+
+      const read = await request(testServer).get(
+        `/api/rooms/${roomId}/canvas/${created.body.id}/diff`
+      );
+
+      expect(read.status).not.toBe(403);
+      expect(read.body.code).toBe('CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM');
+      expect(read.body.error).toContain('not a review');
+    });
+
+    it('refuses a real NON-MEMBER the review as if the room did not exist', async () => {
+      const created = await open('https://example.test/private');
+      const token = await seedOutsider();
+
+      const read = await request(testServer)
+        .get(`/api/rooms/${roomId}/canvas/${created.body.id}/diff`)
+        .set('X-DorkOS-Agent', token);
+
+      // 404, never 403: membership is checked first, so a stranger cannot tell
+      // a room it may not see from one that is not there.
+      expect(read.status).toBe(404);
+      expect(read.body.code).toBe('ROOM_NOT_FOUND');
     });
 
     it('lets the PERSON say where they are looking', async () => {

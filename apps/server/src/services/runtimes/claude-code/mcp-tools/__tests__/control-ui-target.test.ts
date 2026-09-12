@@ -27,6 +27,9 @@
  *   allowances": the reused id carries the previous turn's spend.
  * - Finishing every open ledger rather than only the `session:` ones reddens
  *   "a room turn's own ledger is untouched".
+ * - Answering `null` for a missing `sdkSessionId` — the old fall-through —
+ *   reddens "refuses rather than falling onto this session's own canvas": the
+ *   document lands here and the tool reports success.
  *
  * @vitest-environment node
  * @module services/runtimes/claude-code/mcp-tools/tests/control-ui-target
@@ -302,6 +305,27 @@ describe('control_ui target through the real MCP layer', () => {
 
     harness.service.canvas.finishTurn('room-turn-1');
     expect(canvasLines(design)).toHaveLength(1);
+  });
+
+  it('refuses rather than falling onto this session’s own canvas', async () => {
+    // A session whose canonical id has not arrived has no key to charge the
+    // ceiling against and none to close a ledger on. The old answer fell
+    // through: the document landed on this session's OWN canvas and the tool
+    // said `success` with no mention that `target` had been dropped — the one
+    // thing §10 forbids, reporting success for something that did not happen.
+    delete session.sdkSessionId;
+
+    const answer = await controlUi({
+      action: 'open_canvas',
+      content: jsonDoc('the chart'),
+      target: { roomId: backend },
+    });
+
+    expect(answer).toMatchObject({ success: false, target: 'room', roomId: backend });
+    expect(answer.reason).toContain('has not been given its id yet');
+    expect(harness.service.canvas.list(backend)).toHaveLength(0);
+    // …and nothing was pushed at this window either.
+    expect(session.eventQueue).toHaveLength(0);
   });
 
   it('ignores a target on an action a room has no surface for, and says so', async () => {

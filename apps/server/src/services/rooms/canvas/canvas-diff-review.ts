@@ -23,14 +23,23 @@
  *   own `worktrees/`. A row holding anything else is refused rather than read.
  * - **The path comes off the row too**, from the `diff` content the document
  *   carries, so there is no path parameter to traverse with.
- * - **Membership gates it**, like every other room read, and the route adds the
- *   archived refusal on the write.
+ * - **Every containment check runs on REALPATHS**, through `lib/boundary.ts`'s
+ *   own resolution rather than a second one. A lexical `path.relative` is not
+ *   containment: a symlink planted inside a working copy pointed at a file
+ *   outside it, and both the read and the write followed it — measured before
+ *   this used {@link resolveCanonicalPath}. The half a re-implementation always
+ *   drops is the symlink half.
+ * - **People only, and the route enforces it.** This is a write into somebody
+ *   ELSE's working copy, so it is the person's to make: an agent is refused
+ *   `PEOPLE_ONLY` exactly as it is on `PUT /:id/files/content` and
+ *   `POST /:id/canvas/viewing`.
  *
  * @module server/services/rooms/canvas/canvas-diff-review
  */
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import type { RoomCanvasDiffReview, RoomCanvasDiffWriteResult } from '@dorkos/shared/room-files';
+import { isContained, resolveCanonicalPath } from '../../../lib/boundary.js';
 import { sha256 } from '../../../lib/file-route-guards.js';
 import { RoomError } from '../room-errors.js';
 
@@ -72,7 +81,7 @@ export async function readCanvasDiffReview(
   roomId: string,
   documentId: string
 ): Promise<RoomCanvasDiffReview> {
-  const { file, sourcePath } = resolveReviewFile(deps, roomId, documentId);
+  const { file, sourcePath } = await resolveReviewFile(deps, roomId, documentId);
   const [current, base] = await Promise.all([
     readTextOrThrow(file),
     deps.mainCopy(roomId, sourcePath),
@@ -102,7 +111,7 @@ export async function writeCanvasDiffReview(
   documentId: string,
   input: { content: string; expectedHash: string }
 ): Promise<RoomCanvasDiffWriteResult> {
-  const { file } = resolveReviewFile(deps, roomId, documentId);
+  const { file } = await resolveReviewFile(deps, roomId, documentId);
   const current = await readTextOrThrow(file);
   const currentHash = sha256(current);
   if (currentHash !== input.expectedHash) {
@@ -119,17 +128,18 @@ export async function writeCanvasDiffReview(
  * @param deps - The seams.
  * @param roomId - The room.
  * @param documentId - The document.
- * @returns The file and the repo-relative path it came from.
+ * @returns The canonical file and the repo-relative path it came from.
  * @throws {RoomError} `CANVAS_DOCUMENT_NOT_FOUND` for a document that is gone,
  *   `NOT_A_PROJECT_ROOM` for a room with no files, and
  *   `CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM` for a document that is not a
- *   worktree diff.
+ *   worktree diff, whose tree is not one this room keeps, or whose path leaves
+ *   that tree — through a symlink included.
  */
-function resolveReviewFile(
+async function resolveReviewFile(
   deps: CanvasDiffReviewDeps,
   roomId: string,
   documentId: string
-): { file: string; sourcePath: string } {
+): Promise<{ file: string; sourcePath: string }> {
   const document = deps.document(roomId, documentId);
   if (!document) {
     throw new RoomError('CANVAS_DOCUMENT_NOT_FOUND', 'No such document on this room’s canvas');
@@ -142,22 +152,53 @@ function resolveReviewFile(
     throw new RoomError('NOT_A_PROJECT_ROOM', 'This room does not have files of its own.');
   }
   const tree = deps.resolvedTree(roomId, documentId);
-  // **Confined to a directory DorkOS made.** The row's value is a stored
-  // string, so it is treated as an input rather than as truth: anything that is
-  // not one of THIS room's working copies is refused, which also rules out the
-  // room's own checkout (that one is read through the room's files route, which
-  // has its own rules).
-  if (tree === null || !isWithin(tree, worktrees)) {
+  if (tree === null) {
     throw new RoomError('CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM', NOT_THIS_ROOM_S_TREE);
   }
-  // The path is the row's too, and it is joined rather than taken: a document
-  // whose stored path escaped its own tree would be a traversal, so the result
-  // is checked against the tree it was joined onto.
-  const file = path.resolve(tree, document.sourcePath);
-  if (!isWithin(file, tree)) {
+
+  // **Confined to a directory DorkOS made, on REALPATHS.** The row's value is a
+  // stored string, so it is treated as an input rather than as truth: anything
+  // that is not one of THIS room's working copies is refused, which also rules
+  // out the room's own checkout (that one is read through the room's files
+  // route, which has its own rules). Both sides are canonicalized first,
+  // because a lexical comparison judges a path by its spelling and a symlink is
+  // exactly the case where the spelling lies.
+  const worktreesReal = await resolveCanonicalPath(worktrees);
+  const treeReal = await resolveCanonicalPath(tree);
+  if (!isContained(treeReal, worktreesReal)) {
+    throw new RoomError('CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM', NOT_THIS_ROOM_S_TREE);
+  }
+
+  // **A stored path that is absolute, or that climbs, is refused before it is
+  // joined** — never normalized into something that looks fine. Collapsing `..`
+  // as text is only correct on a path with no symlinks left in it, and the
+  // components of `sourcePath` are exactly where one would be planted. A
+  // document's `sourcePath` is repo-relative by construction, so neither shape
+  // is a case to support.
+  if (path.isAbsolute(document.sourcePath) || climbs(document.sourcePath)) {
+    throw new RoomError('CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM', NOT_THIS_ROOM_S_TREE);
+  }
+
+  // Resolved through every link on the way, and then checked — so a link INSIDE
+  // the working copy pointing anywhere else is refused rather than followed.
+  const file = await resolveCanonicalPath(path.join(treeReal, document.sourcePath));
+  if (!isContained(file, treeReal)) {
     throw new RoomError('CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM', NOT_THIS_ROOM_S_TREE);
   }
   return { file, sourcePath: document.sourcePath };
+}
+
+/**
+ * Whether a repo-relative path has a `..` component in it.
+ *
+ * Its own predicate rather than a `includes('..')`, which reads a file honestly
+ * called `..config` as a climb.
+ *
+ * @param relative - The stored path.
+ * @returns Whether any segment is exactly `..`.
+ */
+function climbs(relative: string): boolean {
+  return relative.split(/[\\/]/).includes('..');
 }
 
 /**
@@ -177,19 +218,4 @@ async function readTextOrThrow(file: string): Promise<string> {
       'That file is not in the working copy any more, so there is nothing to review.'
     );
   }
-}
-
-/**
- * Whether one absolute path sits inside another.
- *
- * Its own helper rather than a `startsWith`, which reads `/a/bc` as inside
- * `/a/b`.
- *
- * @param candidate - The path being placed.
- * @param root - The directory it must be under.
- * @returns Whether it is.
- */
-function isWithin(candidate: string, root: string): boolean {
-  const relative = path.relative(root, candidate);
-  return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
 }

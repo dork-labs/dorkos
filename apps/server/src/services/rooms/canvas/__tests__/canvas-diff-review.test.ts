@@ -14,10 +14,15 @@
  *
  * Seeded defects, each run red before the code stood:
  *
- * - Dropping the `isWithin(tree, worktrees)` check reddens "refuses a document
- *   whose tree is not one this room keeps".
- * - Dropping the second `isWithin(file, tree)` check reddens "refuses a stored
+ * - Dropping the `isContained(treeReal, worktreesReal)` check reddens "refuses a
+ *   document whose tree is not one this room keeps".
+ * - Dropping the `isContained(file, treeReal)` check reddens "refuses a stored
  *   path that climbs out of its own copy".
+ * - Going back to a lexical `path.relative` — no `resolveCanonicalPath` —
+ *   reddens both symlink cases: the review followed a link planted inside the
+ *   working copy and read, then OVERWROTE, a file outside it. That is what the
+ *   adversarial review measured on round 1, and it is the reason this module
+ *   borrows `lib/boundary.ts`'s resolution rather than writing a second one.
  * - Comparing nothing instead of the expected hash reddens "refuses to clobber
  *   a file the agent changed underneath the review".
  *
@@ -116,6 +121,69 @@ describe('the file behind a room worktree diff', () => {
       document: () => ({ contentType: 'diff', sourcePath: '../../../etc/passwd' }),
     };
     await expect(readCanvasDiffReview(escaping, ROOM, DOCUMENT)).rejects.toThrow(
+      /this room does not keep working copies/
+    );
+  });
+
+  it('refuses a document that is not a review, rather than answering as a missing one', async () => {
+    // Reachable, which it was not: the route's seam used to pre-filter every
+    // non-`diff` document to `null`, so a markdown document on the table
+    // answered `CANVAS_DOCUMENT_NOT_FOUND`. The seam now reports what the table
+    // holds and the rule lives here.
+    const markdown = { ...deps, document: () => ({ contentType: 'markdown', sourcePath: 'a.md' }) };
+    await expect(readCanvasDiffReview(markdown, ROOM, DOCUMENT)).rejects.toThrow(
+      /not a review of somebody’s working copy/
+    );
+  });
+
+  it('refuses to READ through a symlink planted inside the working copy', async () => {
+    // The round-1 blocker, in the shape it was measured: a link inside the copy
+    // pointing at a file outside it. A lexical `path.relative` sees a path that
+    // starts with the tree and lets it through; the realpath sees where it
+    // actually goes.
+    const secret = path.join(home, 'secrets.json');
+    await fs.writeFile(secret, '{"token":"REAL-SECRET"}\n', 'utf-8');
+    await fs.symlink(secret, path.join(copy, 'src', 'notes.md'));
+    const throughLink = {
+      ...deps,
+      document: () => ({ contentType: 'diff', sourcePath: 'src/notes.md' }),
+    };
+
+    await expect(readCanvasDiffReview(throughLink, ROOM, DOCUMENT)).rejects.toThrow(
+      /this room does not keep working copies/
+    );
+  });
+
+  it('refuses to WRITE through one, and leaves the file outside untouched', async () => {
+    const secret = path.join(home, 'secrets.json');
+    await fs.writeFile(secret, '{"token":"REAL-SECRET"}\n', 'utf-8');
+    await fs.symlink(secret, path.join(copy, 'src', 'notes.md'));
+    const throughLink = {
+      ...deps,
+      document: () => ({ contentType: 'diff', sourcePath: 'src/notes.md' }),
+    };
+
+    await expect(
+      writeCanvasDiffReview(throughLink, ROOM, DOCUMENT, {
+        content: '{"token":"OVERWRITTEN"}\n',
+        expectedHash: hashOf('{"token":"REAL-SECRET"}\n'),
+      })
+    ).rejects.toThrow(/this room does not keep working copies/);
+
+    // The assertion that matters: the refusal is not the only thing checked,
+    // the bytes are.
+    expect(await fs.readFile(secret, 'utf-8')).toBe('{"token":"REAL-SECRET"}\n');
+  });
+
+  it('refuses a tree that only LOOKS like one of this room’s copies', async () => {
+    // A link at the worktree level, rather than inside one. Same rule, one
+    // directory up: the row's stored tree is an input either way.
+    const outside = path.join(home, 'somewhere-else');
+    await fs.mkdir(outside, { recursive: true });
+    await fs.symlink(outside, path.join(worktrees, 'ben'));
+    const linkedTree = { ...deps, resolvedTree: () => path.join(worktrees, 'ben') };
+
+    await expect(readCanvasDiffReview(linkedTree, ROOM, DOCUMENT)).rejects.toThrow(
       /this room does not keep working copies/
     );
   });

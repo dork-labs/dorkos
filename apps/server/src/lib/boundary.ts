@@ -272,11 +272,19 @@ async function resolveThroughExistingAncestor(input: string, hops = 0): Promise<
  * — but they are canonicalized as far as they are real rather than judged
  * lexically. See {@link resolveThroughExistingAncestor}.
  *
+ * **Exported because containment is not only this module's question.** A room
+ * worktree lives under `{dorkHome}`, which the boundary validators deliberately
+ * fence out (see {@link validateBoundaryOrDorkHome}) — so the review surface for
+ * a room's diff has to confine a path itself. It uses THIS resolution rather
+ * than a second one, because the half a re-implementation always drops is the
+ * symlink half, and dropping it is how a link planted inside a working copy
+ * reads and writes a file outside it.
+ *
  * @param userPath - User-supplied path (absolute or tilde-prefixed)
  * @returns Resolved canonical path (symlinks followed as far as the path exists)
  * @throws BoundaryError on null bytes (`NULL_BYTE`) or EACCES (`PERMISSION_DENIED`)
  */
-async function resolveCanonicalPath(userPath: string): Promise<string> {
+export async function resolveCanonicalPath(userPath: string): Promise<string> {
   // Reject null bytes — prevents null byte injection attacks
   if (userPath.includes('\0')) {
     throw new BoundaryError('Invalid path: null bytes not allowed', 'NULL_BYTE');
@@ -306,10 +314,15 @@ async function resolveCanonicalPath(userPath: string): Promise<string> {
  * Uses a `path.sep` suffix to prevent prefix collision — without it, boundary
  * `/home/user` would incorrectly allow `/home/username`.
  *
+ * **Both arguments must already be canonical.** It is a string comparison and
+ * nothing more; handing it a path with an unresolved symlink in it is the
+ * lexical containment this module exists to replace. Exported beside
+ * {@link resolveCanonicalPath} and only ever used with it.
+ *
  * @param resolved - Canonical path to test
  * @param root - Canonical containment root
  */
-function isContained(resolved: string, root: string): boolean {
+export function isContained(resolved: string, root: string): boolean {
   return resolved === root || resolved.startsWith(root + path.sep);
 }
 

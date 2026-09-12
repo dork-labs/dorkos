@@ -440,7 +440,6 @@ export function createRoomMethods(baseUrl: string) {
       );
     },
 
-    /** Say which canvas document you are looking at, or that you have looked away. */
     /** The two copies of the file behind a room's worktree diff. */
     readRoomCanvasDiff(id: string, documentId: string): Promise<RoomCanvasDiffReview> {
       return fetchJSON<RoomCanvasDiffReview>(
@@ -462,6 +461,7 @@ export function createRoomMethods(baseUrl: string) {
       );
     },
 
+    /** Say which canvas document you are looking at, or that you have looked away. */
     setRoomCanvasViewing(id: string, documentId: string | null): Promise<void> {
       return fetchNoContent(baseUrl, `/rooms/${encodeURIComponent(id)}/canvas/viewing`, {
         method: 'POST',

@@ -192,8 +192,7 @@ export function createControlUiHandler(session: UiToolSession) {
     const target = 'target' in command ? command.target : undefined;
     const targetsAnotherRoom = target !== undefined && target.roomId !== session.roomTurn?.roomId;
     if (targetsAnotherRoom && CANVAS_VERBS.has(command.action)) {
-      const answered = applyToTargetedRoom(session, target.roomId, command);
-      if (answered !== null) return answered;
+      return applyToTargetedRoom(session, target.roomId, command);
     }
     // **Refused in reverse.** A room shares a canvas, not a window, so the other
     // sixteen actions have nowhere to land there — and a room refuses them
@@ -314,6 +313,18 @@ const TARGET_ROOM_NOT_FOUND_MESSAGE =
   'No such room. Check the id — get_room or list_member_rooms will tell you which rooms you are in.';
 
 /**
+ * What an agent is told when it targets a room before its session has a
+ * canonical id.
+ *
+ * There is no key to charge a per-turn ceiling against or to close a ledger on,
+ * and the alternative — falling through to this session's own canvas — reports
+ * success for something that did not happen.
+ */
+const TARGET_NEEDS_A_SESSION_MESSAGE =
+  'This session has not been given its id yet, so nothing can be put on a room from it. Try again ' +
+  'on your next turn, or open the canvas here instead.';
+
+/**
  * What an agent is told when it targets a room from a session with no agent
  * behind it.
  *
@@ -346,12 +357,10 @@ const TARGET_IGNORED_MESSAGE =
  * sixteen actions have no surface in a room and are handled where the command
  * runs.
  *
- * **It answers `null` for "this is not a targeted write after all"**, which is
- * the one case the caller has to carry on from: a session with no canonical id
- * yet. Everything else — a room the agent is not in, no agent behind the
- * session, a refusal from the writer — is answered here, because each of them is
- * something the model must read rather than have silently fall through onto a
- * different surface.
+ * **It never falls through.** Every outcome is answered here — a room the agent
+ * is not in, a session with no canonical id yet, no agent behind the session, a
+ * refusal from the writer — because the alternative is putting the document on
+ * this session's own canvas and telling the model it went to the room.
  *
  * @param session - The session taking the turn.
  * @param roomId - The room `target` named.
@@ -362,9 +371,20 @@ function applyToTargetedRoom(
   session: UiToolSession,
   roomId: string,
   command: UiCommand
-): ReturnType<typeof jsonContent> | null {
+): ReturnType<typeof jsonContent> {
+  // **Refused, never fallen through.** Without a canonical id there is no key to
+  // charge the per-turn ceiling against or to close the ledger on, and falling
+  // through would put the document on this session's OWN canvas while answering
+  // `success` — the one thing §10 forbids, reporting success for something that
+  // did not happen. Near-unreachable (`sdkSessionId` is seeded at creation), and
+  // that is the argument for refusing rather than guessing.
   const sessionId = session.sdkSessionId;
-  if (sessionId === undefined) return null;
+  if (sessionId === undefined) {
+    return jsonContent(
+      { success: false, target: 'room', roomId, reason: TARGET_NEEDS_A_SESSION_MESSAGE },
+      true
+    );
+  }
 
   let rooms;
   try {
