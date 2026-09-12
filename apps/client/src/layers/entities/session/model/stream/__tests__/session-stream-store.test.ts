@@ -36,6 +36,7 @@ function snapshot(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot {
     status: STATUS,
     pendingInteractions: [],
     queuedMessages: [],
+    canvas: [],
     cursor: 5,
     ...overrides,
   };

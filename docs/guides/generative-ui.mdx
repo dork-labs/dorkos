@@ -46,9 +46,10 @@ Every runtime you can pick in DorkOS (Claude Code, Codex, or OpenCode) renders w
 Widgets show up in [rooms](/docs/concepts/rooms) too. Post the same block in a channel or a direct
 message and everyone there sees the finished widget, not the raw code. One difference: a room
 message isn't a session, so there's no agent turn for a button to answer into. Buttons that would
-send a note back to the agent, or that would open something in the canvas, the browser or a
-terminal, are still shown but switched off, with a short note when you hover them. Buttons that
-only touch the app itself, like opening Settings or a link, work exactly as they do in chat.
+send a note back to the agent are still shown but switched off, with a short note when you hover
+them. Everything else works: a button that opens something on the room's canvas, or in the browser,
+does what it says, and so does one that only touches the app itself, like opening Settings or a
+link.
 
 ## Widgets Talk Back
 
@@ -69,12 +70,15 @@ The same floating window works for full interactive apps an MCP server provides,
 
 Widgets aren't limited to chat. An agent can open the same widget in the canvas instead, or alongside chat, giving it more room to breathe. The canvas can hold several documents at once, each in its own tab: widgets, images, PDFs, files, and more. When the agent opens something new, it adds a tab and switches to it rather than replacing what was already there.
 
+Your canvas lives on your DorkOS machine rather than in one browser, so it is the same on every
+device you open the session on, and it survives clearing your browser data. The agent can read it
+too: ask what's open and it gets the real list, and it can read one of those documents back.
+
 <Callout type="warn">
   Two things worth knowing. If you're not watching the session live (say, it's running on a
-  schedule), the agent's canvas update is accepted but nothing appears on screen until you open a
-  live view. And if you're editing a canvas document yourself, DorkOS holds the agent's update to
-  that document back so it doesn't overwrite what you're typing; the agent's other tabs still update
-  normally.
+  schedule), the agent's canvas change is saved and you'll see it the moment you open a live view.
+  And if you're editing a canvas document yourself, DorkOS holds the agent's update to that document
+  back so it doesn't overwrite what you're typing; the agent's other tabs still update normally.
 </Callout>
 
 In a [room](/docs/concepts/rooms), the canvas is the room's rather than yours: a widget an agent
@@ -249,11 +253,11 @@ An agent can call `control_ui` with `open_canvas` (or `update_canvas`) and a `wi
 
 The canvas is a tabbed, multi-document surface (each `open_canvas` call appends a tab and activates it, deduping by source so reopening the same file re-activates its existing tab instead of duplicating it), and `widget` is one of fourteen content types it can render: `widget`, `image`, `pdf`, `file` (CodeMirror, for arbitrary text/code), `markdown` (the rich Blintz editor), `diff` (a hunk-by-hunk review of what changed in a file; `open_diff` is the easier way to open one), `model3d` (glTF/GLB/STL/OBJ/3MF/PLY/FBX/DAE), `audio` (HTML5 player), `video` (HTML5 player), `csv`, `browser` (an embedded, sandboxed page), `mcp_app` (a UI resource an MCP server hosts), `url`, and `json`.
 
-Two of those fourteen — `url` and `browser` — are pages, and pages live one tab along, in **Browser**. The other twelve open in **Canvas**. `mcp_app` stays in Canvas despite being served over HTTP: it's an app, not a page.
+Two of those fourteen — `url` and `browser` — are pages, and pages live one tab along, in **Browser**: those two are exactly what that tab renders. The other twelve open in **Canvas**. `mcp_app` stays in Canvas despite being served over HTTP: it's an app, not a page.
 
 `update_canvas` and `close_canvas` also take an optional `documentId`. Leave it out in a one-on-one session and the call acts on the active document, exactly as it always has. Leave it out in a **room**, where there is no shared active document on purpose, and it means "the last document you opened in this room" — so acting on a document somebody else put up takes naming it.
 
-Where that id comes from depends on the surface, and the two differ today. In a **room**, every verb that opens something (`open_canvas`, `open_file`, `open_diff`, `browser_navigate`) returns the new document's id, because the room's canvas is the server's and the row exists before the call answers. In a **one-on-one session** it does not: the call answers with `success` and the action it ran, and nothing else. That session canvas lives in your own browser rather than on the server, so there is no id to hand back until it moves there.
+Where that id comes from is the same on both surfaces. Every verb that opens something (`open_canvas`, `open_file`, `open_diff`, `browser_navigate`) returns the new document's id, its revision number, and how many windows are watching — in a room and in a one-on-one session alike, because both canvases are the server's and the row exists before the call answers. Hand that id straight back to `update_canvas`, `close_canvas` or `read_canvas_document`.
 
 The two content-heavy types worth knowing up front:
 

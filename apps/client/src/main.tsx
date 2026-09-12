@@ -468,7 +468,15 @@ const extensionDeps: ExtensionAPIDeps = {
 // Origin 'agent': autonomous control_ui commands must never persist over the
 // user's per-agent right-panel tab preference (DOR-227).
 streamManager.subscribeUiCommand((command, sessionId) =>
-  executeUiCommand({ ...extensionDeps.dispatcherContext, sessionId }, command, 'agent')
+  // `serverAppliedCanvas`: the ONE path where the canvas effect is already a row
+  // on the server (spec `canvas-agent-seat` §1.5). `control_ui` writes it and
+  // the change reaches every window of the session as a `canvas` event — what a
+  // `ui_command` is still for here is the reveal.
+  executeUiCommand(
+    { ...extensionDeps.dispatcherContext, sessionId, serverAppliedCanvas: true },
+    command,
+    'agent'
+  )
 );
 
 // Register all built-in features into the extension registry

@@ -444,7 +444,13 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // 98 -> 100 for the two recording verbs (spec `canvas-agent-seat` §3). Both
     // stay DEFERRED and both ARE named in `<ui_tools>`, prefixed, which is the
     // form that costs one ToolSearch hop rather than the turn.
-    expect(advertised.size).toBe(100);
+    //
+    // 100 -> 101 for `read_canvas_document`, the first verb of the `ui`
+    // capability DOMAIN (spec `canvas-agent-seat` §5). No prompt block names it
+    // — the agent learns there is anything to read from `get_ui_state`, which is
+    // a tool call of its own — so it stays deferred and unprefixed, and the
+    // prefixed count below does NOT move with it.
+    expect(advertised.size).toBe(101);
     expect(advertised.has('react_to_room_entry')).toBe(true);
     expect(
       [

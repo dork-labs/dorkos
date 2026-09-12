@@ -12,7 +12,7 @@
  */
 import { streamManager } from '@/layers/shared/lib/transport';
 import { clearUiStateSendCache } from '@/layers/shared/lib';
-import { useAgentBirthStore } from '@/layers/shared/model';
+import { useAgentBirthStore, useAppStore } from '@/layers/shared/model';
 
 import { useSessionStreamStore } from './session-stream-store';
 import { useSessionListStore } from './session-list-store';
@@ -40,8 +40,11 @@ const SETTLED_LIFECYCLES = new Set(['idle', 'interrupted']);
  * Install the StreamManager listeners that dispatch validated frames into the
  * stores. Idempotent — safe to call from every chat-hook mount.
  *
- * - `onSnapshot` → `applySnapshot` (hydration)
- * - `onSessionEvent` → `applyEvent` (idempotent seq-gated fold)
+ * - `onSnapshot` → `applySnapshot` (hydration), plus the canvas the snapshot
+ *   carries: the table is the SERVER's now (spec `canvas-agent-seat` §1.5), and
+ *   a cold connect is where a window learns what is on it.
+ * - `onSessionEvent` → `applyEvent` (idempotent seq-gated fold), plus the
+ *   `canvas` branch, which is how every OTHER window of one session finds out.
  * - `onSessionConnectionState` → `setConnectionState`, plus a uiState send-cache
  *   drop on every (re)entry into 'connected': the server holds `session.uiState`
  *   in memory only, so after a restart/eviction the client must not keep
@@ -59,10 +62,19 @@ export function initSessionStreamBinding(): void {
   bound = true;
 
   streamManager.setListeners({
-    onSnapshot: (sessionId, snapshot) =>
-      useSessionStreamStore.getState().applySnapshot(sessionId, snapshot),
-    onSessionEvent: (sessionId, event) =>
-      useSessionStreamStore.getState().applyEvent(sessionId, event),
+    onSnapshot: (sessionId, snapshot) => {
+      useSessionStreamStore.getState().applySnapshot(sessionId, snapshot);
+      useAppStore.getState().hydrateCanvasFromSnapshot(sessionId, snapshot.canvas);
+    },
+    onSessionEvent: (sessionId, event) => {
+      useSessionStreamStore.getState().applyEvent(sessionId, event);
+      // The canvas is not part of the transcript projection — it is durable
+      // state the app store holds, exactly as a room's table is. One branch
+      // here rather than a case in `projectEvent`, for the same reason.
+      if (event.type === 'canvas') {
+        useAppStore.getState().applyCanvasEvent(sessionId, event);
+      }
+    },
     onSessionConnectionState: (sessionId, state) => {
       useSessionStreamStore.getState().setConnectionState(sessionId, state);
       // (Re)connected — fresh attach OR SSE auto-reconnect after a server

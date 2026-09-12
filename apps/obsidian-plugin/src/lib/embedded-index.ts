@@ -35,7 +35,25 @@ import path from 'path';
 import { openReadOnlyDb, type Db } from '@dorkos/db';
 import { attachAccountReader, detachAccountReader } from '@dorkos/server/services/core/auth';
 import { createRoomSubsystem } from '@dorkos/server/services/rooms';
+import { sessionScope } from '@dorkos/server/services/canvas';
 import { createEmbeddedSearch, type EmbeddedSearch } from '@dorkos/server/services/search';
+import type { CanvasDocument } from '@dorkos/shared/room-schemas';
+
+/**
+ * The read half of this machine's session canvases, as `DirectTransport` takes
+ * it.
+ *
+ * Declared here rather than imported from the client so the plugin states its
+ * own contract; it is structurally the `canvas` seam on
+ * `DirectTransportServices`, and the compiler checks the two agree at the call
+ * site in `CopilotView`.
+ */
+export interface EmbeddedCanvas {
+  /** Everything on one session's canvas, pinned first then most recent. */
+  list(sessionId: string): CanvasDocument[];
+  /** One document, content included, or `null` when the session lacks it. */
+  get(sessionId: string, documentId: string): CanvasDocument | null;
+}
 
 /**
  * The tables a search needs to be able to answer at all.
@@ -59,6 +77,16 @@ const REQUIRED_TABLES = [
 export interface EmbeddedIndex {
   /** The seam `DirectTransport` is handed. */
   search: EmbeddedSearch;
+  /**
+   * This machine's session canvases, read-only (spec `canvas-agent-seat` §1.6).
+   *
+   * The same database, opened the same way and for the same reason: the panel
+   * shows the table the DorkOS app is drawing from rather than a private copy
+   * that drifts. It is a READER — `createRoomSubsystem` is told `readOnly`, so
+   * it registers no writer and nothing in this process has a path that writes
+   * this file (ADR `260825-194924`'s rule, applied to a second table).
+   */
+  canvas: EmbeddedCanvas;
   /** Close the database and release the account reader. Safe to call twice. */
   close(): void;
 }
@@ -106,11 +134,18 @@ export function openEmbeddedIndex(dorkHome: string): EmbeddedIndex | null {
     attachAccountReader(db);
     const rooms = createRoomSubsystem({ db, readOnly: true });
     const search = createEmbeddedSearch({ db, rooms: rooms.service });
+    // Reads only, and typed as reads only: the two methods `DirectTransport`
+    // calls, over the writer this subsystem built but did not register.
+    const canvas: EmbeddedCanvas = {
+      list: (sessionId) => rooms.canvas.list(sessionScope(sessionId)),
+      get: (sessionId, documentId) => rooms.canvas.get(sessionScope(sessionId), documentId),
+    };
 
     let closed = false;
     const handle = db;
     return {
       search,
+      canvas,
       close(): void {
         if (closed) return;
         closed = true;

@@ -51,7 +51,6 @@ afterEach(() => {
   useRoomDraftStore.setState({ drafts: {} });
   useRoomOpenThreadStore.setState({ open: {} });
   useAppStore.setState({ settingsOpen: false, rightPanelOpen: false, canvasOpen: false });
-  localStorage.removeItem(CANVAS_STORAGE_KEY);
   // Call history only — `mockRestore` would strip the mock transport's own
   // implementations, which are shared across this file's tests.
   vi.clearAllMocks();
@@ -159,9 +158,6 @@ const STAT_WIDGET = {
   title: 'Build health',
   root: { type: 'stat', label: 'Slowest step', value: 'typecheck' },
 };
-
-/** Where the app keeps each session's canvas documents — the probe's target. */
-const CANVAS_STORAGE_KEY = 'dorkos-canvas-sessions';
 
 /** One `agent` control — the kind a room can show but never fire. */
 const AGENT_BUTTON_WIDGET = {
@@ -277,8 +273,6 @@ describe('RoomMessage — dorkos-ui fences in a room body', () => {
     // bridged Telegram room — so the control is inert, like an `agent` one.
     const user = userEvent.setup();
     const openCanvasDocument = vi.spyOn(useAppStore.getState(), 'openCanvasDocument');
-    localStorage.setItem(CANVAS_STORAGE_KEY, JSON.stringify({ 'sess-mine': { open: false } }));
-    const before = localStorage.getItem(CANVAS_STORAGE_KEY);
 
     renderRow(
       entry(
@@ -306,7 +300,11 @@ describe('RoomMessage — dorkos-ui fences in a room body', () => {
 
     await user.click(preview);
     expect(openCanvasDocument).not.toHaveBeenCalled();
-    expect(localStorage.getItem(CANVAS_STORAGE_KEY)).toBe(before);
+    // And nothing reached the SERVER either. Since the canvas moved there (spec
+    // `canvas-agent-seat` §1.5) the store's mutators write through, so a control
+    // that got past the inert gate would put a stranger's URL on a table every
+    // device of that session is drawing from.
+    expect(transport.openSessionCanvasDocument).not.toHaveBeenCalled();
     expect(useAppStore.getState().canvasOpen).toBe(false);
     expect(useAppStore.getState().rightPanelOpen).toBe(false);
     // Restored here rather than in `afterEach`, which clears call history only

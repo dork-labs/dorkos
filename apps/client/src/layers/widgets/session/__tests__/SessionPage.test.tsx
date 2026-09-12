@@ -46,8 +46,11 @@ vi.mock('../ui/ChatPanel', () => ({
   },
 }));
 
+const mockUseSessionCanvas =
+  vi.fn<(sessionId: string | null, opts?: { canonical?: boolean }) => void>();
 vi.mock('@/layers/features/canvas', () => ({
-  useCanvasPersistence: () => {},
+  useSessionCanvas: (sessionId: string | null, opts?: { canonical?: boolean }) =>
+    mockUseSessionCanvas(sessionId, opts),
 }));
 
 vi.mock('@/layers/features/right-panel', () => ({
@@ -57,9 +60,11 @@ vi.mock('@/layers/features/right-panel', () => ({
 const mockUseSessionSearch = vi.fn<
   () => { runtime?: string; prompt?: string; send?: '1'; message?: string }
 >(() => ({}));
+const mockRekeyTarget = vi.fn<() => string | null>(() => null);
 vi.mock('@/layers/entities/session', () => ({
   useSessionId: () => ['session-abc', vi.fn()],
   useSessionSearch: () => mockUseSessionSearch(),
+  useSessionRekeyTarget: () => mockRekeyTarget(),
 }));
 
 const mockInPlaceNavigate = vi.fn();
@@ -84,6 +89,26 @@ afterEach(() => {
 describe('SessionPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockRekeyTarget.mockReturnValue(null);
+  });
+
+  /**
+   * The `localStorage` import's canonical gate has a PRODUCTION caller (DOR-2006
+   * review, finding 10c). It defaulted to `true` and this page passed nothing,
+   * so "the import waits for the canonical id" was a flag only tests set.
+   *
+   * The fact is the one the URL redirect already subscribes to: while a rekey
+   * target is known for the id on screen, that id is about to be replaced.
+   */
+  it('tells the canvas the id is canonical when no rekey is pending', () => {
+    render(<SessionPage />);
+    expect(mockUseSessionCanvas).toHaveBeenCalledWith('session-abc', { canonical: true });
+  });
+
+  it('tells it the id is NOT canonical while a rekey is announced for it', () => {
+    mockRekeyTarget.mockReturnValue('session-canonical');
+    render(<SessionPage />);
+    expect(mockUseSessionCanvas).toHaveBeenCalledWith('session-abc', { canonical: false });
   });
 
   it('renders ChatPanel', () => {

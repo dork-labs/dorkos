@@ -1,14 +1,21 @@
 /**
- * A room's shared canvas: the table, and every rule about who may change it
- * (spec `room-canvas` §3).
+ * A room's shared canvas: every rule about who may change it, over the one
+ * writer that changes it (spec `room-canvas` §3).
  *
- * ## The one writer
+ * ## The room's POLICY, over a shared writer
  *
- * {@link RoomCanvasService.apply} is **the single writer and the single
- * enforcement point** for everything an agent does here. Archived room, verb not
- * on the allow-list, no usable referent, over the per-turn ceiling, held by
- * somebody else's edit lock — all five refusals live in it, and nothing else in
- * the system writes a canvas row for an agent.
+ * The table itself — dedupe, the LRU, the edit lock, `rev` ordering, publishing
+ * — is `CanvasService`, which serves a room's scope and a session's alike (spec
+ * `canvas-agent-seat` §1.2). What lives here is everything that is a ROOM's:
+ * membership, the archived-room refusal, the verb allow-list, the per-turn
+ * ceiling, the ledger and its one coalesced line, and the viewer count read off
+ * the room's own stream.
+ *
+ * {@link RoomCanvasService.apply} is still the single enforcement point for
+ * everything an agent does in a room. Archived room, verb not on the allow-list,
+ * no usable referent, over the per-turn ceiling, held by somebody else's edit
+ * lock — all five refusals are decided on this path, and the last two are
+ * decided inside the writer it delegates to so no caller can reach around them.
  *
  * It is **synchronous**, and that is not a style choice. The claude-code
  * `control_ui` handler returns to the model on the same call stack, so a ceiling
@@ -45,46 +52,48 @@
 import type { CanvasDocument, RoomCanvasChange, RoomEvent } from '@dorkos/shared/room-schemas';
 import type { UiCanvasContent, UiCommand } from '@dorkos/shared/schemas';
 import { logger } from '../../../lib/logger.js';
-import { RoomError, type RoomErrorCode } from '../room-errors.js';
+import {
+  CANVAS_EDIT_HEARTBEAT_MS,
+  CANVAS_EDIT_TTL_MS,
+  CANVAS_VERBS,
+  MAX_CANVAS_DOCUMENTS,
+  OPEN_CANVAS_NEEDS_CONTENT_MESSAGE,
+  NO_DEFAULT_DOCUMENT_MESSAGE,
+  canvasSourcePath,
+  documentBeingEditedMessage,
+  parseScope,
+  roomScope,
+  type CanvasApplyResult,
+  type CanvasLedgerEntry,
+  type CanvasService,
+  type CanvasTreePlacement,
+} from '../../canvas/index.js';
+import { RoomError } from '../room-errors.js';
 import type { RoomBroadcaster } from '../room-stream.js';
 import type { RoomVisibility } from '../service/room-visibility.js';
-import {
-  toCanvasDocument,
-  type CanvasDocumentRow,
-  type CanvasDocumentStore,
-} from './canvas-document-store.js';
-import {
-  canvasDocumentId,
-  canvasSourceKey,
-  canvasSourcePath,
-  canvasTitle,
-} from './document-key.js';
 
 /**
  * How many unpinned documents one room's canvas holds before the least recently
- * active is dropped to make room.
+ * active is dropped.
  *
- * The same number the session canvas uses (`MAX_CANVAS_DOCUMENTS`), because it
- * is the same surface and a room whose strip behaved differently from a
- * session's would be two rules to learn. Pinned documents are neither counted
- * nor evicted.
+ * Re-exported under the room's own name rather than restated: it is the same
+ * number a session canvas uses, because it is the same surface, and a room whose
+ * strip behaved differently from a session's would be two rules to learn.
  */
-export const MAX_ROOM_CANVAS_DOCUMENTS = 12;
+export const MAX_ROOM_CANVAS_DOCUMENTS = MAX_CANVAS_DOCUMENTS;
 
-/** How often a focused editor refreshes its claim on a document. */
-export const CANVAS_EDIT_HEARTBEAT_MS = 15_000;
-
-/**
- * How long a heartbeat keeps an edit lock live — three times the interval, so
- * one dropped request never drops a lock while somebody is mid-sentence.
- *
- * Evaluated LAZILY at read and write time, with no sweeper. A timer that expired
- * locks would have to be cancelled on every close, restart and room deletion,
- * and the failure mode of getting that wrong is a document nobody can ever edit
- * again. Evaluated lazily, a crashed browser simply stops holding a lock 45
- * seconds later and no code had to notice.
- */
-export const CANVAS_EDIT_TTL_MS = 45_000;
+// The pieces the canvas domain now owns, re-exported under the names the room
+// domain has always used so no caller had to move with them.
+export {
+  CANVAS_EDIT_HEARTBEAT_MS,
+  CANVAS_EDIT_TTL_MS,
+  NO_DEFAULT_DOCUMENT_MESSAGE,
+  OPEN_CANVAS_NEEDS_CONTENT_MESSAGE,
+  documentBeingEditedMessage,
+  roomScope,
+  type CanvasApplyResult,
+  type CanvasLedgerEntry,
+};
 
 /**
  * How long a finished turn is remembered, so an operation that lands after its
@@ -131,16 +140,6 @@ const MAX_OPEN_LEDGERS = 500;
  */
 const LEDGER_TTL_MS = 2 * 60 * 60_000;
 
-/** The six `control_ui` verbs a room's canvas accepts. Everything else is refused. */
-const CANVAS_VERBS = new Set<UiCommand['action']>([
-  'open_canvas',
-  'update_canvas',
-  'close_canvas',
-  'open_file',
-  'open_diff',
-  'browser_navigate',
-]);
-
 /**
  * What an agent is told when it reaches for a window action inside a room.
  *
@@ -150,15 +149,6 @@ const CANVAS_VERBS = new Set<UiCommand['action']>([
 export const NOT_IN_A_ROOM_MESSAGE =
   'That only works in a one-on-one session, not in a room. Rooms share a canvas, not a whole ' +
   'window — put a document on the canvas instead.';
-
-/** What an agent is told when it opens the canvas in a room with nothing in it. */
-export const OPEN_CANVAS_NEEDS_CONTENT_MESSAGE =
-  'Opening the canvas by itself does nothing in a room. Pass the content you want the room to see.';
-
-/** What an agent is told when a bare `update_canvas` has nothing to act on. */
-export const NO_DEFAULT_DOCUMENT_MESSAGE =
-  'You have not opened anything on this room’s canvas yet, so there is nothing to update. Open a ' +
-  'document first, or pass the documentId of one that is already open.';
 
 /**
  * What an agent is told when it has spent its canvas changes for this turn.
@@ -173,43 +163,13 @@ export function tooManyCanvasOpsMessage(limit: number): string {
   );
 }
 
-/**
- * What an agent is told when somebody is editing the document it aimed at.
- *
- * @param holder - How the person holding the lock is named.
- * @returns The sentence the model reads.
- */
-export function documentBeingEditedMessage(holder: string): string {
-  return `${holder} is editing that document right now, so your change was held. Try again in a moment, or say what you wanted to change.`;
-}
-
-/**
- * What `apply` answers with — never a fabricated success.
- *
- * A refusal carries both halves on purpose: `reason` is the sentence the model
- * reads, and `code` is the same refusal as a machine value, so a surface that
- * has to turn it into an HTTP status or a typed tool error does not have to
- * match on prose.
- */
-export type CanvasApplyResult =
-  | { applied: true; documentId: string; rev: number; viewers: number }
-  | { applied: false; code: RoomErrorCode; reason: string };
-
-/** One operation a turn applied, as the turn's coalesced entry reports it. */
-export interface CanvasLedgerEntry {
-  change: 'opened' | 'updated' | 'closed';
-  documentId: string;
-  type: string;
-  title: string;
-}
-
 /** How a room's canvas reaches the rest of the server. */
 export interface RoomCanvasDeps {
-  /** The rows. */
-  documents: CanvasDocumentStore;
+  /** The one writer, shared with every other scope. */
+  canvas: CanvasService;
   /** Who may see a room, and who is in it. */
   visibility: RoomVisibility;
-  /** The room's live stream — where a `canvas` frame goes, and who is watching. */
+  /** The room's live stream — who is watching. */
   broadcaster: RoomBroadcaster;
   /** The per-turn ceiling, read PER CALL so a change in Settings binds the next operation. */
   maxOpsPerTurn: () => number;
@@ -241,9 +201,9 @@ export interface CanvasOpenOptions {
   sourceLabel?: string | null;
 }
 
-/** A room's shared canvas — the table, the rules, and the one writer. */
+/** A room's shared canvas — the room's rules, over the one writer. */
 export class RoomCanvasService {
-  private readonly documents: CanvasDocumentStore;
+  private readonly canvas: CanvasService;
   private readonly visibility: RoomVisibility;
   private readonly broadcaster: RoomBroadcaster;
   private readonly maxOpsPerTurn: () => number;
@@ -322,10 +282,10 @@ export class RoomCanvasService {
   /**
    * Build the service over its collaborators.
    *
-   * @param deps - The rows, the rules and the stream. See {@link RoomCanvasDeps}.
+   * @param deps - The writer, the rules and the stream. See {@link RoomCanvasDeps}.
    */
   constructor(deps: RoomCanvasDeps) {
-    this.documents = deps.documents;
+    this.canvas = deps.canvas;
     this.visibility = deps.visibility;
     this.broadcaster = deps.broadcaster;
     this.maxOpsPerTurn = deps.maxOpsPerTurn;
@@ -333,6 +293,15 @@ export class RoomCanvasService {
     this.displayNameFor = deps.displayNameFor;
     this.roomRepoPath = deps.roomRepoPath;
     this.now = deps.now ?? Date.now;
+    // **Faces follow the rows.** Whoever was looking at a document that has just
+    // gone is looking at nothing, and the writer is the only thing that knows a
+    // row went — an LRU eviction happens deep inside somebody else's write.
+    // Never unsubscribed: this service lives as long as the process does, and a
+    // teardown hook nothing calls would be one more thing to get wrong.
+    this.canvas.onRemoved((scope, documentId) => {
+      const parsed = parseScope(scope);
+      if (parsed.kind === 'room') this.clearWatchersOf(parsed.id, documentId);
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -340,8 +309,8 @@ export class RoomCanvasService {
   // -------------------------------------------------------------------------
 
   /**
-   * Apply one `control_ui` command to a room's canvas — the single writer and
-   * the single enforcement point (§5.1).
+   * Apply one `control_ui` command to a room's canvas — the room's enforcement
+   * point, over the one writer (§5.1).
    *
    * The refusals run in this order, and the order matters: an archived room is
    * refused before the table is touched at all, and the ceiling is charged only
@@ -403,60 +372,38 @@ export class RoomCanvasService {
       };
     }
 
-    const plan = this.planFrom(roomId, authorId, command, input.cwd, input.aheadOfMain ?? null);
-    if ('reason' in plan) {
-      return { applied: false, code: 'CANVAS_NO_DEFAULT_DOCUMENT', reason: plan.reason };
-    }
-
-    const limit = this.maxOpsPerTurn();
-    if (this.spentThisTurn(turnId) >= limit) {
-      return {
-        applied: false,
-        code: 'TOO_MANY_CANVAS_OPS_THIS_TURN',
-        reason: tooManyCanvasOpsMessage(limit),
-      };
-    }
-
-    const held = this.lockHeldByAnother(plan.existing, authorId);
-    if (held !== null) {
-      return {
-        applied: false,
-        code: 'CANVAS_BEING_EDITED',
-        reason: documentBeingEditedMessage(this.displayNameFor(held)),
-      };
-    }
-
-    if (plan.kind === 'close') {
-      const closed = plan.existing;
-      this.documents.remove(roomId, closed.id);
-      this.publish(roomId, { type: 'canvas', documentId: closed.id, closed: true });
-      this.record(turnId, roomId, authorId, {
-        change: 'closed',
-        documentId: closed.id,
-        type: closed.contentType,
-        title: closed.title,
-      });
-      return {
-        applied: true,
-        documentId: closed.id,
-        rev: closed.rev,
-        viewers: this.viewers(roomId),
-      };
-    }
-
-    const document = this.write(roomId, authorId, plan);
-    this.record(turnId, roomId, authorId, {
-      change: plan.existing ? 'updated' : 'opened',
-      documentId: document.id,
-      type: document.contentType,
-      title: document.title,
+    // Asked of the WRITER, so the tree this resolves is the tree the content it
+    // is about to write actually names (a `chart.png` resolves to an `image`,
+    // which names no file path at all).
+    const content = this.canvas.contentForCommand(command);
+    return this.canvas.apply({
+      scope: roomScope(roomId),
+      authorId,
+      command,
+      // A room's own question, answered here and handed down: which tree this
+      // file came out of, and whose copy it is.
+      tree:
+        content === null
+          ? undefined
+          : this.resolveTree(roomId, authorId, content, input.cwd, input.aheadOfMain ?? null),
+      // A room has NO shared active document by design, so the only default that
+      // cannot edit somebody else's work is the author's own last one (§5.6).
+      defaultTarget: 'author-last',
+      chargeCeiling: () => {
+        const limit = this.maxOpsPerTurn();
+        // **`>=`, never `< …` inverted.** The resolver reads the ceiling live
+        // from settings, and a host that has configured none answers
+        // `undefined` — where `spent >= undefined` is false (proceed, which is
+        // right) and `spent < undefined` is ALSO false (refuse, which is not).
+        // The conformance suite caught exactly that inversion: every room canvas
+        // command refused, with `undefined` printed in the sentence.
+        if (this.spentThisTurn(turnId) >= limit) {
+          return { code: 'TOO_MANY_CANVAS_OPS_THIS_TURN', reason: tooManyCanvasOpsMessage(limit) };
+        }
+        return null;
+      },
+      record: (entry) => this.record(turnId, roomId, authorId, entry),
     });
-    return {
-      applied: true,
-      documentId: document.id,
-      rev: document.rev,
-      viewers: this.viewers(roomId),
-    };
   }
 
   /**
@@ -513,27 +460,10 @@ export class RoomCanvasService {
     opts: CanvasOpenOptions = {}
   ): CanvasDocument {
     this.requireWritableRoom(roomId, authorId);
-    const scope = roomScope(roomId);
-    const sourceKey = canvasSourceKey(content);
-    const existing = this.documents.findBySourceKey(scope, sourceKey);
-    const held = this.lockHeldByAnother(existing, authorId);
-    if (held !== null) {
-      throw new RoomError(
-        'CANVAS_BEING_EDITED',
-        documentBeingEditedMessage(this.displayNameFor(held))
-      );
-    }
     const where = this.resolveTree(roomId, authorId, content, opts.resolvedCwd ?? undefined, null);
-    return this.write(roomId, authorId, {
-      kind: 'write',
-      content,
-      sourceKey,
-      existing,
+    return this.canvas.open(roomScope(roomId), authorId, content, {
       pinned: opts.pinned ?? false,
-      resolvedCwd: opts.resolvedCwd ?? null,
-      sourceLabel: opts.sourceLabel ?? where.sourceLabel,
-      treeKind: where.treeKind,
-      aheadOfMain: where.aheadOfMain,
+      tree: { ...where, sourceLabel: opts.sourceLabel ?? where.sourceLabel },
     });
   }
 
@@ -553,25 +483,7 @@ export class RoomCanvasService {
     content: UiCanvasContent
   ): CanvasDocument {
     this.requireWritableRoom(roomId, authorId);
-    const existing = this.requireDocument(roomId, documentId);
-    const held = this.lockHeldByAnother(existing, authorId);
-    if (held !== null) {
-      throw new RoomError(
-        'CANVAS_BEING_EDITED',
-        documentBeingEditedMessage(this.displayNameFor(held))
-      );
-    }
-    return this.write(roomId, authorId, {
-      kind: 'write',
-      content,
-      sourceKey: existing.sourceKey,
-      existing,
-      pinned: existing.pinned,
-      resolvedCwd: existing.resolvedCwd,
-      sourceLabel: existing.sourceLabel,
-      treeKind: existing.treeKind,
-      aheadOfMain: existing.aheadOfMain,
-    });
+    return this.canvas.update(roomScope(roomId), authorId, documentId, content);
   }
 
   /**
@@ -583,10 +495,9 @@ export class RoomCanvasService {
    */
   close(roomId: string, authorId: string, documentId: string): void {
     this.requireWritableRoom(roomId, authorId);
-    this.requireDocument(roomId, documentId);
-    this.documents.remove(roomId, documentId);
-    this.publish(roomId, { type: 'canvas', documentId, closed: true });
-    this.clearWatchersOf(roomId, documentId);
+    // Faces come off the document through the removal subscription below, which
+    // catches an EVICTION as well as this explicit close.
+    this.canvas.close(roomScope(roomId), documentId);
   }
 
   /**
@@ -603,11 +514,7 @@ export class RoomCanvasService {
    */
   activate(roomId: string, authorId: string, documentId: string): CanvasDocument {
     this.requireWritableRoom(roomId, authorId);
-    const existing = this.requireDocument(roomId, documentId);
-    const at = new Date(this.now()).toISOString();
-    const rev = this.documents.maxRev(roomId) + 1;
-    this.documents.update(roomId, documentId, { rev, lastActiveAt: at });
-    return this.publishDocument(roomId, { ...existing, rev, lastActiveAt: at }, 'activated');
+    return this.canvas.activate(roomScope(roomId), documentId);
   }
 
   /**
@@ -621,10 +528,7 @@ export class RoomCanvasService {
    */
   pin(roomId: string, authorId: string, documentId: string, pinned: boolean): CanvasDocument {
     this.requireWritableRoom(roomId, authorId);
-    const existing = this.requireDocument(roomId, documentId);
-    const rev = this.documents.maxRev(roomId) + 1;
-    this.documents.update(roomId, documentId, { rev, pinned });
-    return this.publishDocument(roomId, { ...existing, rev, pinned }, 'pinned');
+    return this.canvas.pin(roomScope(roomId), documentId, pinned);
   }
 
   /**
@@ -649,31 +553,7 @@ export class RoomCanvasService {
     editing: boolean
   ): { editingBy: string | null; expiresAt: string | null } {
     this.requireWritableRoom(roomId, authorId);
-    const existing = this.requireDocument(roomId, documentId);
-    if (!editing) {
-      // Only the holder may release it. A member who never held it releasing
-      // somebody else's lock would be a way to walk over their edit.
-      if (existing.editingBy === authorId) {
-        this.documents.update(roomId, documentId, { editingBy: null, editingHeartbeatAt: null });
-      }
-      return { editingBy: null, expiresAt: null };
-    }
-    const held = this.lockHeldByAnother(existing, authorId);
-    if (held !== null) {
-      throw new RoomError(
-        'CANVAS_BEING_EDITED',
-        documentBeingEditedMessage(this.displayNameFor(held))
-      );
-    }
-    const at = this.now();
-    this.documents.update(roomId, documentId, {
-      editingBy: authorId,
-      editingHeartbeatAt: new Date(at).toISOString(),
-    });
-    return {
-      editingBy: authorId,
-      expiresAt: new Date(at + CANVAS_EDIT_TTL_MS).toISOString(),
-    };
+    return this.canvas.heartbeat(roomScope(roomId), authorId, documentId, editing);
   }
 
   // -------------------------------------------------------------------------
@@ -710,7 +590,11 @@ export class RoomCanvasService {
    */
   setViewing(roomId: string, authorId: string, documentId: string | null): void {
     this.visibility.requireMembership(roomId, authorId);
-    if (documentId !== null) this.requireDocument(roomId, documentId);
+    // Through the writer, which is where the rows live now: a face must never
+    // be paintable onto a tab this room does not hold.
+    if (documentId !== null && this.canvas.get(roomScope(roomId), documentId) === null) {
+      throw new RoomError('CANVAS_DOCUMENT_NOT_FOUND', 'No such document on this canvas');
+    }
     this.publishViewing(roomId, authorId, documentId);
   }
 
@@ -733,7 +617,7 @@ export class RoomCanvasService {
     } else {
       this.watching.set(roomId, new Map([[authorId, documentId]]));
     }
-    this.publish(roomId, {
+    this.broadcaster.publish(roomId, {
       type: 'signal',
       signal: 'presence',
       authorId,
@@ -843,8 +727,7 @@ export class RoomCanvasService {
    * @returns The room's documents.
    */
   list(roomId: string): CanvasDocument[] {
-    const now = this.now();
-    return this.documents.list(roomId).map((row) => toCanvasDocument(row, now, CANVAS_EDIT_TTL_MS));
+    return this.canvas.list(roomScope(roomId));
   }
 
   /**
@@ -855,8 +738,7 @@ export class RoomCanvasService {
    * @returns The document, or `null` when the room does not hold it.
    */
   get(roomId: string, documentId: string): CanvasDocument | null {
-    const row = this.documents.get(roomId, documentId);
-    return row ? toCanvasDocument(row, this.now(), CANVAS_EDIT_TTL_MS) : null;
+    return this.canvas.get(roomScope(roomId), documentId);
   }
 
   /**
@@ -867,8 +749,7 @@ export class RoomCanvasService {
    * @returns The document, or `null` when they have opened nothing here.
    */
   lastDocumentFor(roomId: string, authorId: string): CanvasDocument | null {
-    const row = this.documents.lastTouchedBy(roomId, authorId);
-    return row ? toCanvasDocument(row, this.now(), CANVAS_EDIT_TTL_MS) : null;
+    return this.canvas.lastDocumentFor(roomScope(roomId), authorId);
   }
 
   /**
@@ -899,11 +780,7 @@ export class RoomCanvasService {
    * @returns One frame per live document.
    */
   resync(roomId: string): RoomEvent[] {
-    return this.list(roomId).map((document) => ({
-      type: 'canvas' as const,
-      documentId: document.id,
-      document,
-    }));
+    return this.canvas.resync(roomScope(roomId));
   }
 
   /**
@@ -920,7 +797,7 @@ export class RoomCanvasService {
    * @returns The absolute directory, or `null`.
    */
   resolvedTreeOf(roomId: string, documentId: string): string | null {
-    return this.documents.get(roomId, documentId)?.resolvedCwd ?? null;
+    return this.canvas.resolvedTreeOf(roomScope(roomId), documentId);
   }
 
   /**
@@ -942,18 +819,22 @@ export class RoomCanvasService {
    * - Otherwise the reader gets content only when the document resolved against
    *   their own directory.
    *
-   * @param document - The stored row.
+   * @param document - The document, as a reader was handed it.
    * @param readerCwd - Where the reader is working, or `undefined` when the
    *   surface does not carry one — which reads as "nowhere", never as "anywhere".
    * @returns Whether content may be returned.
    */
   mayReadContent(document: CanvasDocument, readerCwd: string | undefined): boolean {
-    const row = this.documents.get(document.roomId, document.id);
-    if (!row || row.resolvedCwd === null) return true;
-    const repoPath = this.roomRepoPath(document.roomId);
-    if (repoPath !== null && isWithin(row.resolvedCwd, repoPath)) return true;
-    if (readerCwd === undefined) return false;
-    return isWithin(row.resolvedCwd, readerCwd);
+    // A `session:` document reaching a room read is a wiring fault, not a
+    // permission question — answer no rather than fall through to a room repo
+    // lookup keyed on a null id.
+    if (document.roomId === null) return false;
+    return this.canvas.mayReadContent(
+      document.scope,
+      document.id,
+      readerCwd,
+      this.roomRepoPath(document.roomId)
+    );
   }
 
   /**
@@ -977,40 +858,6 @@ export class RoomCanvasService {
     if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
   }
 
-  /** Fetch a document or refuse, scoped to its room so ids do not cross rooms. */
-  private requireDocument(roomId: string, documentId: string): CanvasDocumentRow {
-    const row = this.documents.get(roomId, documentId);
-    if (!row) {
-      throw new RoomError('CANVAS_DOCUMENT_NOT_FOUND', 'No such document on this room’s canvas');
-    }
-    return row;
-  }
-
-  /**
-   * Who is holding a live edit lock on this document, when it is not the caller.
-   *
-   * `null` covers all three innocent cases: no document yet, nobody editing, and
-   * the caller holding their own lock.
-   */
-  private lockHeldByAnother(row: CanvasDocumentRow | null, authorId: string): string | null {
-    if (!row || row.editingBy === authorId) return null;
-    return this.lockHolder(row);
-  }
-
-  /**
-   * Who is holding a LIVE edit lock on this document, whoever they are.
-   *
-   * The TTL is what makes it live: a heartbeat older than the window is not a
-   * lock, evaluated here and nowhere else so there is one answer to "is somebody
-   * editing this".
-   */
-  private lockHolder(row: CanvasDocumentRow): string | null {
-    if (row.editingBy === null) return null;
-    const heldAt = row.editingHeartbeatAt ? Date.parse(row.editingHeartbeatAt) : NaN;
-    if (!Number.isFinite(heldAt) || this.now() - heldAt >= CANVAS_EDIT_TTL_MS) return null;
-    return row.editingBy;
-  }
-
   /**
    * Which directory a file document was resolved against, and how that is
    * described to a reader (§8).
@@ -1028,6 +875,7 @@ export class RoomCanvasService {
    * @param authorId - Who is opening it.
    * @param content - The content being opened.
    * @param cwd - Where the turn is standing, when the caller knows.
+   * @param aheadOfMain - The open-time ahead count, or `null` for not measured.
    * @returns The directory to record and the label to show, or nulls.
    */
   private resolveTree(
@@ -1036,12 +884,7 @@ export class RoomCanvasService {
     content: UiCanvasContent,
     cwd: string | undefined,
     aheadOfMain: number | null
-  ): {
-    resolvedCwd: string | null;
-    sourceLabel: string | null;
-    treeKind: CanvasDocumentRow['treeKind'];
-    aheadOfMain: number | null;
-  } {
+  ): CanvasTreePlacement {
     if (canvasSourcePath(content) === null || cwd === undefined) {
       return { resolvedCwd: null, sourceLabel: null, treeKind: null, aheadOfMain: null };
     }
@@ -1075,171 +918,6 @@ export class RoomCanvasService {
       treeKind: 'worktree',
       aheadOfMain,
     };
-  }
-
-  /**
-   * Turn a validated canvas command into the write it implies, or the sentence
-   * saying why there is nothing to write.
-   *
-   * This is where the §5.6 default lives: a verb that names no document acts on
-   * the author's OWN last one, which is the only default that cannot act on
-   * somebody else's work by accident.
-   */
-  private planFrom(
-    roomId: string,
-    authorId: string,
-    command: UiCommand,
-    cwd: string | undefined,
-    aheadOfMain: number | null
-  ): CanvasWritePlan | CanvasClosePlan | { reason: string } {
-    // The four OPENING verbs resolve by dedupe key: two agents opening one file
-    // land on one row, which is what makes the table a table.
-    if (command.action !== 'update_canvas' && command.action !== 'close_canvas') {
-      const content = contentFor(command);
-      if (content === null) return { reason: OPEN_CANVAS_NEEDS_CONTENT_MESSAGE };
-      const sourceKey = canvasSourceKey(content);
-      const existing = this.documents.findBySourceKey(roomScope(roomId), sourceKey);
-      const where = this.resolveTree(roomId, authorId, content, cwd, aheadOfMain);
-      return {
-        kind: 'write',
-        content,
-        sourceKey,
-        existing,
-        pinned: existing?.pinned ?? false,
-        resolvedCwd: where.resolvedCwd ?? existing?.resolvedCwd ?? null,
-        sourceLabel: where.sourceLabel ?? existing?.sourceLabel ?? null,
-        treeKind: where.treeKind ?? existing?.treeKind ?? null,
-        aheadOfMain: where.treeKind !== null ? where.aheadOfMain : (existing?.aheadOfMain ?? null),
-      };
-    }
-
-    // The two verbs that name a document resolve the same way, and it is the
-    // §5.6 rule: the id they were given, else this author's OWN last document,
-    // else a plain refusal. Never the room's most recent document whoever opened
-    // it — that default silently edits somebody else's work.
-    const target =
-      command.documentId !== undefined
-        ? this.documents.get(roomId, command.documentId)
-        : this.documents.lastTouchedBy(roomId, authorId);
-    if (!target) return { reason: NO_DEFAULT_DOCUMENT_MESSAGE };
-    if (command.action === 'close_canvas') return { kind: 'close', existing: target };
-    return {
-      kind: 'write',
-      content: command.content,
-      // **The row keeps its own dedupe key.** An update names a document and
-      // replaces what is in it; re-keying the row on the new content would let
-      // one update collide with another document's key, and would quietly move a
-      // tab everybody is looking at onto a different identity.
-      sourceKey: target.sourceKey,
-      existing: target,
-      pinned: target.pinned,
-      resolvedCwd: target.resolvedCwd,
-      sourceLabel: target.sourceLabel,
-      treeKind: target.treeKind,
-      aheadOfMain: target.aheadOfMain,
-    };
-  }
-
-  /** Insert or refresh one row, evict down to capacity, and publish the frame. */
-  private write(roomId: string, authorId: string, plan: CanvasWritePlan): CanvasDocument {
-    const at = new Date(this.now()).toISOString();
-    const rev = this.documents.maxRev(roomId) + 1;
-    const title = canvasTitle(plan.content);
-    if (plan.existing) {
-      this.documents.update(roomId, plan.existing.id, {
-        content: plan.content,
-        title,
-        contentType: plan.content.type,
-        rev,
-        lastTouchedBy: authorId,
-        lastTouchedAt: at,
-        lastActiveAt: at,
-        ...(plan.resolvedCwd !== null ? { resolvedCwd: plan.resolvedCwd } : {}),
-        ...(plan.sourceLabel !== null ? { sourceLabel: plan.sourceLabel } : {}),
-        ...(plan.treeKind !== null
-          ? { treeKind: plan.treeKind, aheadOfMain: plan.aheadOfMain }
-          : {}),
-      });
-      const row: CanvasDocumentRow = {
-        ...plan.existing,
-        content: plan.content,
-        title,
-        contentType: plan.content.type,
-        rev,
-        lastTouchedBy: authorId,
-        lastTouchedAt: at,
-        lastActiveAt: at,
-        resolvedCwd: plan.resolvedCwd ?? plan.existing.resolvedCwd,
-        sourceLabel: plan.sourceLabel ?? plan.existing.sourceLabel,
-        treeKind: plan.treeKind ?? plan.existing.treeKind,
-        aheadOfMain: plan.treeKind !== null ? plan.aheadOfMain : plan.existing.aheadOfMain,
-      };
-      return this.publishDocument(roomId, row, 'updated');
-    }
-    const scope = roomScope(roomId);
-    const row: CanvasDocumentRow = {
-      id: canvasDocumentId(scope, plan.sourceKey),
-      scope,
-      roomId,
-      content: plan.content,
-      title,
-      contentType: plan.content.type,
-      authorId,
-      sourceKey: plan.sourceKey,
-      sourceLabel: plan.sourceLabel,
-      resolvedCwd: plan.resolvedCwd,
-      treeKind: plan.treeKind,
-      aheadOfMain: plan.aheadOfMain,
-      pinned: plan.pinned,
-      rev,
-      lastTouchedBy: authorId,
-      lastTouchedAt: at,
-      editingBy: null,
-      editingHeartbeatAt: null,
-      openedAt: at,
-      lastActiveAt: at,
-    };
-    this.documents.insert(row);
-    this.evict(roomId, row.id);
-    return this.publishDocument(roomId, row, 'opened');
-  }
-
-  /**
-   * Drop the least recently active unpinned documents until the room is back
-   * under its ceiling, publishing a `closed` frame for each.
-   *
-   * Three carve-outs, and each one is a document somebody is relying on: the row
-   * that was just written, anything pinned, and anything under a live edit lock.
-   * Publishing the close is what keeps a viewer from holding a row the server
-   * has dropped.
-   */
-  private evict(roomId: string, protectedId: string): void {
-    const over = this.documents.unpinnedCount(roomId) - MAX_ROOM_CANVAS_DOCUMENTS;
-    if (over <= 0) return;
-    const candidates = this.documents
-      .evictionCandidates(roomId)
-      .filter((row) => row.id !== protectedId && this.lockHolder(row) === null);
-    for (const row of candidates.slice(0, over)) {
-      this.documents.remove(roomId, row.id);
-      this.publish(roomId, { type: 'canvas', documentId: row.id, closed: true });
-      this.clearWatchersOf(roomId, row.id);
-    }
-  }
-
-  /** Publish one document's whole current state and hand it back. */
-  private publishDocument(
-    roomId: string,
-    row: CanvasDocumentRow,
-    change: 'opened' | 'updated' | 'activated' | 'pinned'
-  ): CanvasDocument {
-    const document = toCanvasDocument(row, this.now(), CANVAS_EDIT_TTL_MS);
-    this.publish(roomId, { type: 'canvas', documentId: document.id, document, change });
-    return document;
-  }
-
-  /** Fan one frame out to this room's live readers. */
-  private publish(roomId: string, event: RoomEvent): void {
-    this.broadcaster.publish(roomId, event);
   }
 
   /** Append one applied operation to its turn's ledger. */
@@ -1386,60 +1064,6 @@ export class RoomCanvasService {
   }
 }
 
-/** A write this command implies: fresh row, or a refresh of one that exists. */
-interface CanvasWritePlan {
-  kind: 'write';
-  content: UiCanvasContent;
-  sourceKey: string | null;
-  existing: CanvasDocumentRow | null;
-  pinned: boolean;
-  resolvedCwd: string | null;
-  sourceLabel: string | null;
-  /** Which tree the path was resolved against, or `null` for a non-file document. */
-  treeKind: CanvasDocumentRow['treeKind'];
-  /** The open-time ahead count for a working copy; `null` means not measured. */
-  aheadOfMain: number | null;
-}
-
-/** A close this command implies, with the row it resolved to. */
-interface CanvasClosePlan {
-  kind: 'close';
-  existing: CanvasDocumentRow;
-}
-
-/** The scope string one room's documents live under. */
-export function roomScope(roomId: string): string {
-  return `room:${roomId}`;
-}
-
-/**
- * The content a canvas verb carries, or `null` for one that names a document
- * instead.
- *
- * `open_file`, `open_diff` and `browser_navigate` are content in disguise: each
- * is one shape of `UiCanvasContent` with the fields spelled differently, and
- * turning them into it here is what lets one writer serve all six verbs.
- *
- * @param command - The validated command.
- * @returns The content to write, or `null`.
- */
-function contentFor(command: UiCommand): UiCanvasContent | null {
-  switch (command.action) {
-    case 'open_canvas':
-      return command.content ?? null;
-    case 'update_canvas':
-      return command.content;
-    case 'open_file':
-      return { type: 'file', sourcePath: command.sourcePath };
-    case 'open_diff':
-      return { type: 'diff', sourcePath: command.sourcePath };
-    case 'browser_navigate':
-      return { type: 'browser', url: command.url };
-    default:
-      return null;
-  }
-}
-
 /**
  * The one line a person reads in the room's log for a whole turn's canvas work.
  *
@@ -1466,7 +1090,7 @@ export function canvasChangeSentence(author: string, ops: readonly CanvasLedgerE
  * Whether one absolute directory sits inside another, or is it.
  *
  * A path comparison rather than a filesystem one, deliberately: it runs on every
- * `read_canvas` and must not touch the disk. The separator check is what stops
+ * open and must not touch the disk. The separator check is what stops
  * `/work/agent-two` reading as being inside `/work/agent`.
  *
  * @param child - The directory being tested.

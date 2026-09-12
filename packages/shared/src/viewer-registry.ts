@@ -13,6 +13,18 @@
  *
  * @module viewer-registry
  */
+import type { UiCanvasContent } from './schemas.js';
+
+/**
+ * The canvas content shapes a file can open as.
+ *
+ * Narrowed from {@link UiCanvasContent} to the seven an `open_file` can produce,
+ * so a caller that has to branch on the result sees only what it can get.
+ */
+export type OpenFileCanvasContent = Extract<
+  UiCanvasContent,
+  { type: 'file' | 'image' | 'pdf' | 'model3d' | 'audio' | 'video' | 'csv' }
+>;
 
 /**
  * A canvas viewer a file can resolve to. These map onto `UiCanvasContent`
@@ -155,4 +167,54 @@ export function diffMediaKindForPath(
   overrides?: Record<string, string>
 ): 'text' | 'image' {
   return resolveViewerForPath(filePath, overrides) === 'image' ? 'image' : 'text';
+}
+
+/**
+ * The canvas content one `open_file` produces — viewer resolution and the
+ * content it implies, in ONE function.
+ *
+ * **One implementation, because two writers now open files.** The client's
+ * dispatcher resolved the viewer and built the content; since the session canvas
+ * moved to the server (spec `canvas-agent-seat` §1.2), an agent's `open_file`
+ * is written by the SERVER. Two answers to "what does opening `chart.png` mean"
+ * gave two different `sourceKey`s for one file — so one file grew two tabs, and
+ * the agent's one opened a text editor on a PNG.
+ *
+ * Kept beside the registry rather than in either app for the same reason
+ * `canvasSourceKey` is: the split is drawn by the viewer table, and a copy of it
+ * in an app drifts the moment the table gains a row.
+ *
+ * @param sourcePath - The file to open, as the caller named it.
+ * @param overrides - Extension → viewer overrides (config `workbench.defaultViewers`),
+ *   consulted exactly as {@link resolveViewerForPath} does. Both callers read
+ *   them off the same `GET /api/config`: the server through `readViewerOverrides`
+ *   in `services/rooms/index.ts`, the client off its config cache in
+ *   `ui-action-dispatcher.ts`. One blind side is not a missing feature — it is a
+ *   second answer for the same file, and two `canvasSourceKey`s make two tabs.
+ * @returns The canvas content for that file.
+ */
+export function canvasContentForFile(
+  sourcePath: string,
+  overrides?: Record<string, string>
+): OpenFileCanvasContent {
+  switch (resolveViewerForPath(sourcePath, overrides)) {
+    case 'image':
+      return { type: 'image', src: sourcePath };
+    case 'pdf':
+      return { type: 'pdf', src: sourcePath };
+    case 'model3d':
+      return { type: 'model3d', src: sourcePath };
+    case 'audio':
+      return { type: 'audio', src: sourcePath };
+    case 'video':
+      return { type: 'video', src: sourcePath };
+    case 'csv':
+      return { type: 'csv', src: sourcePath };
+    case 'markdown':
+      // Rendered by the file viewer, which loads the bytes and routes markdown
+      // to the rich Blintz editor (the `language` hint flags it).
+      return { type: 'file', sourcePath, language: 'markdown' };
+    case 'file':
+      return { type: 'file', sourcePath };
+  }
 }

@@ -179,6 +179,14 @@ const SESSION_EVENT_TYPES = [
   // prevent, and it rides the turn like any other member once it is allowlisted.
   'turn_input',
   'ui_command',
+  // One document on this session's canvas changed (spec `canvas-agent-seat`
+  // §1.3). Registered with the CONTRACT rather than with the panel that draws
+  // it, for the reason every entry below gives: this is the only way a SECOND
+  // window of one session learns that the first opened or closed something, and
+  // a frame dropped here looks exactly like the private-per-browser canvas this
+  // whole feature replaced. It was missing once — the row was written, the
+  // frame reached the socket, and nothing on screen moved.
+  'canvas',
   'devtools_capture_request',
   // The driving half of the same channel (spec `canvas-agent-seat` §2): a
   // click, a keystroke, a wait, a read. Registered with the contract for the

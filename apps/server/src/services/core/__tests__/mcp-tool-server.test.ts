@@ -656,7 +656,7 @@ describe('MCP Tool Handlers', () => {
       expect(server.version).toBe('1.0.0');
     });
 
-    it('registers 41 tools (32 legacy + 7 operator + list_capabilities + memory_write)', () => {
+    it('registers 42 tools (32 legacy + 7 operator + list_capabilities + memory_write + read_canvas_document)', () => {
       // Purpose: regression guard against accidental tool omissions or additions.
       // This count changes intentionally when new MCP tools are added. 32 legacy
       // (4 core + 5 tasks + 8 relay + 1 agent + 2 ui + 3 devtools + 6 browser
@@ -673,8 +673,14 @@ describe('MCP Tool Handlers', () => {
       //
       // 39 -> 41 for the two recording verbs (spec `canvas-agent-seat` §3),
       // registered beside the six they film.
+      //
+      // 41 -> 42 for `read_canvas_document`, the first verb of the `ui`
+      // capability DOMAIN (spec `canvas-agent-seat` §5). It declares
+      // `servers: ['in-session']`, so it reaches THIS server — the loopback one
+      // every runtime is injected with, which is the whole point of the domain
+      // — and not the external `/mcp` one.
       const server = createDorkOsToolServer(makeMockDeps()) as unknown as MockServer;
-      expect(server.tools).toHaveLength(41);
+      expect(server.tools).toHaveLength(42);
     });
 
     it('registers tools with correct names', () => {

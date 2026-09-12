@@ -101,6 +101,8 @@ Each tab also remembers where you were. Switch to Browser and back, and the file
 
 If you (or the agent) open something that's already open, DorkOS switches to that existing tab instead of opening a duplicate.
 
+Your tabs live on your DorkOS machine, not in one browser. Open the same session on your phone and the same things are open; close one there and it closes on your laptop too. Clearing your browser data doesn't cost you your tabs, and a second window on the same session shows the same set rather than its own.
+
 ## Reviewing Changes: See Exactly What the Agent Edited
 
 When the agent edits a file, DorkOS opens a **diff** for it automatically — a view of just the lines that changed since the agent started, not the whole file. You read three changed lines instead of hunting through three hundred.
@@ -130,6 +132,8 @@ An agent isn't limited to describing what it did in text. It can act directly on
 - **Open a terminal**, if it wants you to see (or run) something in a live shell.
 - **Open a page** it wants you to check, like a dev server it just started. It lands in the **Browser** tab, so a page it sends never takes over the file you were reading.
 - **Use that page**, once it's open: click a button or a link, type into a field, press a key, scroll to something further down, and wait for the page to catch up before looking again.
+
+It can also **read what's already there**. Ask "what have we got open?" and the agent gets the real list — every tab, what it is, what it's called, and which one is at the front — and it can read one back, like the chart it drew for you last turn. Before, it could only guess from whatever your window last mentioned.
 
 This only reaches into the session you're actively viewing. An agent running unattended in the background can't reach into a workbench you have open elsewhere.
 

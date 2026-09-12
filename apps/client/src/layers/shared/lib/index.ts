@@ -14,7 +14,10 @@ export {
   type AmbientTaskInput,
   type PartitionedAmbientTasks,
 } from './ambient-tasks';
-export { canvasViewForContent, type CanvasView } from './canvas-view';
+// Re-exported from `@dorkos/shared` so client code keeps importing it from the
+// `lib` barrel; the definition moved there when the server started needing it
+// too (spec `canvas-agent-seat`).
+export { canvasViewForContent, type CanvasView } from '@dorkos/shared/canvas-view';
 export { resolveApiBaseUrl } from './api-base-url';
 export { getDesktopAdmin, unwrapDesktopAdminResult } from './desktop-admin';
 export {
@@ -201,7 +204,6 @@ export {
   STORAGE_KEYS,
   FONT_SCALE_MAP,
   MAX_RECENT_CWDS,
-  MAX_CANVAS_SESSIONS,
   MAX_CANVAS_DOCUMENTS,
   MAX_RIGHT_PANEL_LAYOUTS,
   TIMING,

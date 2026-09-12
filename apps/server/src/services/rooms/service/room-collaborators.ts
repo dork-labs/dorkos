@@ -121,7 +121,7 @@ export function createRoomCollaborators(
   // — the same shape the merge service is given. Built BEFORE `reads` because a
   // room's cold-connect snapshot carries the whole table.
   const canvas = new RoomCanvasService({
-    documents: core.canvasDocuments,
+    canvas: core.canvas,
     visibility,
     broadcaster: core.broadcaster,
     maxOpsPerTurn: core.maxCanvasOpsPerTurn,

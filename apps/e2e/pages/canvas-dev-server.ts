@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import type { RightPanelPage } from './RightPanelPage';
 
 /**
@@ -72,11 +72,25 @@ export async function reserveClosedPort(): Promise<number> {
 
 /**
  * Open the embedded browser on `url`, the way a person does: open the right
- * panel, pick Browser, start a page from its empty state, then type the address.
+ * panel, pick Browser, start a page if the tab is empty, then type the address.
  *
  * Browser rather than Canvas since the panel split into two views over one
  * document store (ADR 260911-200304): a page is a Browser-tab document, and the
  * Canvas tab no longer offers to open one.
+ *
+ * **The empty state is conditional now, because the canvas is the SERVER's**
+ * (spec `canvas-agent-seat` §1.5). A second window on the same conversation
+ * already holds the page the first one opened, so it has a tab strip and an
+ * address bar rather than the splash — and this used to click
+ * `button` named `/Web Page/i` unconditionally, which in that window resolved to
+ * the synced tab's **"Close Web Page"** button. It closed the first window's
+ * page, the close synced back, and both windows sat on the splash waiting for an
+ * address bar that could not appear (PR #1822, `browser-driving` shard red). The
+ * splash locator is anchored for the same reason.
+ *
+ * Typing the address is kept on BOTH paths on purpose: it is what makes the page
+ * this window is showing, and — since a navigation re-claims the driver seat —
+ * it is also what makes this window the one an agent drives.
  *
  * @param page - The page under test.
  * @param rightPanel - The right-panel page object, for the tab strip.
@@ -104,9 +118,25 @@ export async function openInCanvasBrowser(
   await rightPanel.browserTab.click();
 
   // The empty state's web-page action opens a browser document; its address bar
-  // is how any page after the first one is reached.
-  await page.getByRole('button', { name: /Web Page/i }).click();
-  await page.getByRole('button', { name: /^Address:/ }).click();
+  // is how any page after the first one is reached. `^Web Page` is anchored so
+  // it can never resolve to a tab's "Close Web Page" or "Pin Web Page" button —
+  // the splash names the document it opens "Web Page", so every tab of one is
+  // spelled that way too.
+  const splashAction = page.getByRole('button', { name: /^Web Page/ });
+  const addressButton = page.getByRole('button', { name: /^Address:/ });
+  // Whichever this window has: the splash when no page is open here, the address
+  // bar when one already is. POLLED rather than asked once, so a window still
+  // hydrating its synced table is waited for rather than measured mid-flight —
+  // asked too early it has neither, and the splash click would then land in a
+  // window that is about to grow a tab strip.
+  await expect
+    .poll(async () => (await splashAction.count()) > 0 || (await addressButton.count()) > 0, {
+      timeout: 15_000,
+    })
+    .toBe(true);
+  if ((await addressButton.count()) === 0) await splashAction.click();
+
+  await addressButton.click();
   const address = page.getByRole('textbox', { name: 'Address' });
   await address.fill(url);
   await address.press('Enter');

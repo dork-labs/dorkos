@@ -145,10 +145,13 @@ let iframe: HTMLIFrameElement;
 /** A window that is NOT our iframe's contentWindow, standing in for a foreign frame. */
 let foreignFrame: HTMLIFrameElement;
 
+/** What the last mounted bridge handed back, for a test that drives it. */
+const bridge: { current: ReturnType<typeof useDevtoolsBridge> | null } = { current: null };
+
 function mount(previewOrigin: string | null = null): { current: HTMLIFrameElement | null } {
   const { result } = renderHook(() => {
     const ref = useRef<HTMLIFrameElement | null>(iframe) as RefObject<HTMLIFrameElement | null>;
-    useDevtoolsBridge({
+    bridge.current = useDevtoolsBridge({
       iframeRef: ref,
       documentId: 'doc',
       logicalUrl: 'preview.html',
@@ -726,7 +729,45 @@ describe('useDevtoolsBridge — the driver seat (spec `canvas-agent-seat` §2.2)
     await vi.advanceTimersByTimeAsync(0);
   }
 
-  it('claims the seat for its page on mount, before any handshake', async () => {
+  /** Put `doc` in this window's table, as one of the two paths a document arrives by. */
+  function seedDocument({ openedHere }: { openedHere: boolean }): void {
+    const store = useAppStore.getState();
+    store.loadCanvasForSession('session-1');
+    if (openedHere) {
+      // The person opened it HERE. `openCanvasDocument` mints the row this
+      // window owns; the id is `pending:` until the POST answers, so the row is
+      // renamed to the id the bridge is mounted on.
+      store.openCanvasDocument({ type: 'url', url: 'https://example.test/page' });
+      useAppStore.setState((prior) => ({
+        openDocuments: prior.openDocuments.map((d) => ({ ...d, id: 'doc' })),
+      }));
+      return;
+    }
+    // It arrived from the server — another window opened it, or this one
+    // hydrated a cold snapshot.
+    store.applyCanvasEvent('session-1', {
+      documentId: 'doc',
+      change: 'opened',
+      document: {
+        id: 'doc',
+        scope: 'session:session-1',
+        roomId: null,
+        content: { type: 'url', url: 'https://example.test/page' },
+        title: 'page',
+        contentType: 'url',
+        authorId: 'owner',
+        pinned: false,
+        rev: 1,
+        lastTouchedBy: 'owner',
+        lastTouchedAt: '2026-09-12T10:00:00.000Z',
+        openedAt: '2026-09-12T09:00:00.000Z',
+        lastActiveAt: '2026-09-12T10:00:00.000Z',
+      } as never,
+    });
+  }
+
+  it('claims the seat for a page a person opened HERE, before any handshake', async () => {
+    seedDocument({ openedHere: true });
     await mountAndSettle();
     const claims = claimCalls();
     expect(claims).toHaveLength(1);
@@ -736,6 +777,65 @@ describe('useDevtoolsBridge — the driver seat (spec `canvas-agent-seat` §2.2)
     // unless the claim says otherwise, so a silent activation would land as a
     // beat and leave the seat wherever it already was.
     expect(claims[0][1]).toMatchObject({ active: true, instrumented: false, activation: true });
+  });
+
+  /**
+   * The rule the server-owned canvas made necessary (PR #1822, `browser-driving`
+   * shard red).
+   *
+   * The table is shared, so a page opened in ONE window mounts in every other
+   * window of the session. A mount that always announced an activation therefore
+   * handed the seat to whichever window mounted last — including a background tab
+   * nobody is looking at — and the agent's clicks landed in a page the person
+   * could not see. Nobody did anything in this window, so the claim is a
+   * KEEP-ALIVE: the window still becomes reachable (the server's
+   * first-appearance rule), it just does not displace a live seat.
+   */
+  it('claims only a KEEP-ALIVE for a page that arrived from the server', async () => {
+    seedDocument({ openedHere: false });
+    await mountAndSettle();
+    expect(claimCalls()[0][1]).toMatchObject({ active: true, activation: false });
+  });
+
+  it('and the handshake does not upgrade that into an activation', async () => {
+    // The page finishing its handshake is the PAGE talking, not a person. A
+    // background window whose mount was a keep-alive must not take the seat one
+    // handshake later — which is the whole fix, undone.
+    seedDocument({ openedHere: false });
+    await mountAndSettle();
+    postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(claimCalls().at(-1)![1]).toMatchObject({ instrumented: true, activation: false });
+  });
+
+  it('re-activates when the person types an address in this window', async () => {
+    // The path the second window really takes: its page arrived over the wire,
+    // so the mount was a keep-alive — and then the person used it. Typing an
+    // address is local navigation, so nothing but this says a person did it.
+    seedDocument({ openedHere: false });
+    await mountAndSettle();
+    expect(claimCalls()[0][1]).toMatchObject({ activation: false });
+
+    act(() => bridge.current?.notePersonNavigated());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(claimCalls().at(-1)![1]).toMatchObject({ active: true, activation: true });
+
+    // …and it STAYS a person's window: the shim's own `navigated` report, which
+    // follows, does not quietly demote the claim back to a beat.
+    postFrom(iframe.contentWindow, { __dorkosDevtools: 'navigated' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(claimCalls().at(-1)![1]).toMatchObject({ active: true, activation: true });
+  });
+
+  it('re-activates when the person acts in this window', async () => {
+    // The other half: a window the person takes to IS an activation, whatever
+    // put the document there. This is how a second window claims the seat after
+    // its page arrived over the wire.
+    seedDocument({ openedHere: false });
+    await mountAndSettle();
+    window.dispatchEvent(new Event('focus'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(claimCalls().at(-1)![1]).toMatchObject({ active: true, activation: true });
   });
 
   it('upgrades the claim to instrumented once the shim says hello', async () => {

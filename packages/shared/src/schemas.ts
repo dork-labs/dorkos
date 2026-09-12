@@ -5604,32 +5604,22 @@ export const UiCommandEventSchema = z
 export type UiCommandEvent = z.infer<typeof UiCommandEventSchema>;
 
 /**
- * Client UI state reported back to the agent via the Transport layer.
- * Gives agents situational awareness of what is visible and active.
+ * What the CLIENT tells the server about its own window, sent with a message
+ * (`ClientContext.uiState`).
+ *
+ * **It no longer describes the canvas, and that removal is the point** (spec
+ * `canvas-agent-seat` §1.7). The canvas is the server's now, so the server does
+ * not need the client's opinion of it — and the field it used to carry was one
+ * nullable content type for a surface that has held twelve documents since
+ * DOR-219. What `get_ui_state` ANSWERS with is {@link UiStateReportSchema},
+ * composed server-side from these panel/sidebar/agent parts plus the real table.
+ *
+ * Splitting the two is what makes this removal safe in both directions: an older
+ * client that still sends `canvas` is simply parsed without it (Zod strips
+ * unknown keys), and nothing new is ever required of a client at all.
  */
 export const UiStateSchema = z
   .object({
-    canvas: z.object({
-      open: z.boolean(),
-      contentType: z
-        .enum([
-          'url',
-          'markdown',
-          'json',
-          'image',
-          'pdf',
-          'widget',
-          'mcp_app',
-          'file',
-          'model3d',
-          'audio',
-          'video',
-          'csv',
-          'browser',
-          'diff',
-        ])
-        .nullable(),
-    }),
     panels: z.object({
       settings: z.boolean(),
       tasks: z.boolean(),
@@ -5648,6 +5638,78 @@ export const UiStateSchema = z
   .openapi('UiState');
 
 export type UiState = z.infer<typeof UiStateSchema>;
+
+/**
+ * One document on a session's canvas, as `get_ui_state` lists it.
+ *
+ * The same five keys `rooms.read_canvas` answers with — `id`, `type`, `title`,
+ * `author`, `pinned` — so an agent reading a room's table and its own session's
+ * parses one thing. It adds exactly one: `active`, set on at most one document
+ * per view. The room arm does not and must not, because a room has no shared
+ * active document by design — nothing steals anyone's tab.
+ */
+export const UiStateReportDocumentSchema = z
+  .object({
+    /** The document id, which `read_canvas_document` takes. */
+    id: z.string().min(1),
+    /** Its content type — `file`, `diff`, `browser`, and so on. */
+    type: z.string().min(1),
+    /** What the tab is called. */
+    title: z.string(),
+    /** Who put it there. */
+    author: z.string().min(1),
+    /** Pinned documents sort first and are never evicted. */
+    pinned: z.boolean(),
+    /** Whether this is the front document of its view. At most one per view. */
+    active: z.boolean(),
+  })
+  .openapi('UiStateReportDocument');
+
+/** One document on a session's canvas, as `get_ui_state` lists it. */
+export type UiStateReportDocument = z.infer<typeof UiStateReportDocumentSchema>;
+
+/**
+ * What `get_ui_state` ANSWERS with for a session — the client's panels, sidebar
+ * and agent, plus the server's own reading of the canvas (spec
+ * `canvas-agent-seat` §1.7).
+ *
+ * **Composed server-side and never parsed from a client**, which is why it can
+ * carry the real table where {@link UiStateSchema} carried one content type. The
+ * agent's answer to "what is on the canvas" used to be a guess about a copy in
+ * one browser; it is now a read of the rows every window is drawing from.
+ */
+export const UiStateReportSchema = z
+  .object({
+    canvas: z.object({
+      /**
+       * Whether there is anything on the canvas at all — `documents.length > 0`.
+       *
+       * **Not "is the pane open in the window"**, which is what the retired
+       * `UiState.canvas.open` meant: that was one browser's report of its own
+       * layout, and the answer changed depending on which window had spoken
+       * last. The table is the same for every window, so this one is too.
+       */
+      open: z.boolean(),
+      /**
+       * Live readers of this session's stream right now.
+       *
+       * Windows, not people: one person with two tabs counts twice, and an agent
+       * counts zero because agents do not subscribe. `0` means nobody is looking.
+       */
+      viewers: z.number().int().nonnegative(),
+      /** What is on the canvas, pinned first then most recently active. */
+      documents: z.array(UiStateReportDocumentSchema),
+      /** How many documents that is. */
+      count: z.number().int().nonnegative(),
+    }),
+    panels: UiStateSchema.shape.panels,
+    sidebar: UiStateSchema.shape.sidebar,
+    agent: UiStateSchema.shape.agent,
+  })
+  .openapi('UiStateReport');
+
+/** What `get_ui_state` answers with for a session. See {@link UiStateReportSchema}. */
+export type UiStateReport = z.infer<typeof UiStateReportSchema>;
 
 // === DevTools Bridge capture (DOR-213) ===
 //

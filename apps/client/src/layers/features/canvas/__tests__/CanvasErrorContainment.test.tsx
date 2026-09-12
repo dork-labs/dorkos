@@ -61,7 +61,7 @@ const mockState = {
 vi.mock('@/layers/shared/model', async () => {
   // The real split rule, not a copy of it: one definition of which tab renders
   // a document, so a component test can never pass while the app disagrees.
-  const { canvasViewForContent: viewFor } = await import('@/layers/shared/lib/canvas-view');
+  const { canvasViewForContent: viewFor } = await import('@dorkos/shared/canvas-view');
   const useAppStore = (selector: (s: typeof mockState) => unknown) => selector(mockState);
   (useAppStore as unknown as { getState: () => typeof mockState }).getState = () => mockState;
   return {

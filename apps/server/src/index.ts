@@ -443,6 +443,7 @@ import {
   getOrCreateProjector,
 } from './services/session/index.js';
 import { aggregateSessionList } from './services/session/aggregate-session-list.js';
+import { peekCanvasService } from './services/canvas/index.js';
 import { env } from './env.js';
 
 // The live tunnel manager, re-exported for the CLI that started this server.
@@ -4406,6 +4407,45 @@ async function start() {
     throw err;
   });
 
+  /**
+   * Delete the canvas of every session a runtime has reported gone for good
+   * (spec `canvas-agent-seat` §Data model 6).
+   *
+   * Two-phase, like the message-queue sweep beside it: `onSessionRemoved` marks,
+   * and this asks a second time before deleting anything, so a session that came
+   * back between the two is spared.
+   *
+   * **It hands the sweep the degraded runtimes, and that is the half the
+   * precedent does not need.** `GET /api/sessions` degrades per runtime
+   * (ADR-0310), and a runtime that failed to list is a runtime whose sessions
+   * ALL look absent — so without this, one flaky sidecar would delete every
+   * OpenCode canvas on the machine. A listing that failed outright sweeps
+   * nothing at all.
+   */
+  async function sweepOrphanedCanvases(): Promise<void> {
+    const canvas = peekCanvasService();
+    if (!canvas) return;
+    try {
+      const listing = await aggregateSessionList({
+        runtimes: runtimeRegistry.listRuntimes(),
+        projectDir: env.DORKOS_DEFAULT_CWD ?? DEFAULT_CWD,
+      });
+      canvas.sweepOrphanedCanvasDocuments({
+        sessions: listing.sessions.map((session) => ({
+          id: session.id,
+          runtime: session.runtime,
+        })),
+        degradedRuntimes: [...new Set(listing.warnings.map((w) => w.runtime))],
+      });
+    } catch (err) {
+      // The listing itself failed, which is exactly the case that must delete
+      // nothing. Told rather than assumed: `null` is the sweep's own "I could
+      // not ask" input.
+      canvas.sweepOrphanedCanvasDocuments(null);
+      logger.warn('[canvas] could not list sessions for the orphan sweep', logError(err));
+    }
+  }
+
   // Start Tasks scheduler after server is listening
   if (schedulerService) {
     await schedulerService.start();
@@ -4418,6 +4458,7 @@ async function start() {
   healthCheckInterval = setInterval(() => {
     claudeRuntime?.checkSessionHealth();
     sweepOrphanedMessageQueues();
+    void sweepOrphanedCanvases();
     void connectorAgentRequests?.reconcile().catch((error: unknown) => {
       logger.warn('[Connections] Agent request recovery failed', logError(error));
     });

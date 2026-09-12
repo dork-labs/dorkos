@@ -30,7 +30,14 @@ import type { CollectWindow } from './room-collect.js';
 import type { ResponseGateMode } from './response-gate/routing-rules.js';
 import { ReactionBudget } from './reactions/reaction-budget.js';
 import { ReactionStore } from './reactions/reaction-store.js';
-import { CanvasDocumentStore } from './canvas/canvas-document-store.js';
+import {
+  CanvasDocumentStore,
+  CanvasService,
+  parseScope,
+  publishSessionCanvas,
+  sessionCanvasViewers,
+  setCanvasService,
+} from '../canvas/index.js';
 import { AttachmentRowStore } from './attachments/attachment-row-store.js';
 import type { RoomAttachmentStore } from './attachments/room-attachment-store.js';
 import type { RoomRepoService } from './repo/room-repo-service.js';
@@ -79,6 +86,17 @@ export interface RoomSubsystem {
    * than a tab that happens to be open, says somebody is at the keyboard.
    */
   welcomeBack: WelcomeBackGreeter;
+  /**
+   * The one canvas writer built over this database, handed back rather than only
+   * registered.
+   *
+   * A READ-ONLY subsystem does not register it (see the construction below), so
+   * a host that wants the read half — the Obsidian embed showing this machine's
+   * session canvas — has to be given it explicitly. That is the point: the thing
+   * you can be handed is the thing you can read through, and the thing nobody
+   * registered is the thing no agent path can write through.
+   */
+  canvas: CanvasService;
 }
 
 /**
@@ -198,6 +216,22 @@ function readRoomMinutesMs(field: 'replyWaitMinutes' | 'lateReplyCeilingMinutes'
     return configManager.get('rooms')[field] * 60_000;
   } catch {
     return USER_CONFIG_DEFAULTS.rooms[field] * 60_000;
+  }
+}
+
+/**
+ * This install's extension → viewer overrides, or `undefined` when it has none.
+ *
+ * Read through the same tolerant path the room limits use: a config store that
+ * cannot be read must not stop somebody opening a file, so an unreadable config
+ * means the built-in viewer table, which is what every install without an
+ * override already gets.
+ */
+function readViewerOverrides(): Record<string, string> | undefined {
+  try {
+    return configManager.get('workbench')?.defaultViewers;
+  } catch {
+    return undefined;
   }
 }
 
@@ -375,6 +409,8 @@ function safeJson(raw: string): unknown {
  *   one the rest of the server holds — a second instance over the same database
  *   behaves identically, so the default exists for tests and for the embedded
  *   transport, not as a second source of truth.
+ * @param opts.canvasNow - The clock the canvas judges an edit lock against, so a
+ *   test can move past its 45-second TTL without waiting.
  */
 export function createRoomSubsystem(opts: {
   db: Db;
@@ -382,6 +418,7 @@ export function createRoomSubsystem(opts: {
   turns?: RoomTurnRunner;
   budget?: RoomTurnBudget;
   readCursors?: ReadCursorService;
+  canvasNow?: () => number;
   /**
    * Whether this subsystem sits on a database it may not write (DOR-1563).
    *
@@ -400,12 +437,49 @@ export function createRoomSubsystem(opts: {
   const agentLookup = opts.agents ?? createAgentLookup(opts.db);
   const authors = new AuthorRegistry(opts.db, agentLookup);
   const broadcaster = new RoomBroadcaster();
+  // **One canvas service per process, built here and registered here.** It is
+  // the single writer for every scope (spec `canvas-agent-seat` §1.2), and this
+  // is the only place that holds both halves of what it needs: the rows, and the
+  // room broadcaster a room frame goes out on. Session frames ride the projector
+  // instead, which is what `publishSessionCanvas` reaches — so the routing
+  // decision lives in one function rather than inside the service.
+  const canvas = new CanvasService({
+    documents: canvasDocuments,
+    channels: {
+      publish: (scope, frame) => {
+        const parsed = parseScope(scope);
+        if (parsed.kind === 'room') broadcaster.publish(parsed.id, frame);
+        else if (parsed.kind === 'session') publishSessionCanvas(parsed.id, frame);
+      },
+      viewers: (scope) => {
+        const parsed = parseScope(scope);
+        if (parsed.kind === 'room') return broadcaster.subscriberCount(parsed.id);
+        if (parsed.kind === 'session') return sessionCanvasViewers(parsed.id);
+        return 0;
+      },
+    },
+    displayNameFor: (authorId) => authors.getById(authorId)?.displayName ?? 'Somebody',
+    // Read per call, never captured: a person who tells DorkOS in Settings to
+    // open CSVs in the plain editor must get that answer from the agent's next
+    // open too, and both sides resolve through `canvasContentForFile`.
+    viewerOverrides: () => readViewerOverrides(),
+    ...(opts.canvasNow ? { now: opts.canvasNow } : {}),
+  });
+  // **A read-only subsystem registers NO writer.** `readOnly` means this process
+  // is pointed at somebody else's live database (the Obsidian embed, ADR
+  // `260825-194924`), and a registered service is one `control_ui` will call —
+  // which threw `SqliteError: attempt to write a readonly database` instead of
+  // refusing. With none registered, every reader degrades: `control_ui` falls
+  // through to the event it always pushed, the routes answer 503, and the embed
+  // reads through the seam it is handed instead.
+  if (opts.readOnly !== true) setCanvasService(canvas);
   const bridges = new BridgeStore(opts.db);
   const readCursors = opts.readCursors ?? new ReadCursorService(new ReadCursorStore(opts.db));
   const service = new RoomService({
     store,
     reactions,
     canvasDocuments,
+    canvas,
     attachments,
     authors,
     broadcaster,
@@ -551,7 +625,17 @@ export function createRoomSubsystem(opts: {
     offers: { ask: (input) => service.askAside(input) },
     lastSeenAt: (userId) => lastPersonSignalAt(opts.db, userId),
   });
-  return { service, store, attachments, authors, broadcaster, bridges, readCursors, welcomeBack };
+  return {
+    service,
+    store,
+    attachments,
+    authors,
+    broadcaster,
+    bridges,
+    readCursors,
+    welcomeBack,
+    canvas,
+  };
 }
 
 let active: RoomService | null = null;

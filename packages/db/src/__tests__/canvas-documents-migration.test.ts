@@ -146,6 +146,8 @@ describe('0096 — the room canvas table', () => {
       'editing_heartbeat_at',
       'opened_at',
       'last_active_at',
+      // Added by 0097, in the same rebuild that made `room_id` nullable.
+      'thread_root_entry_id',
     ]);
     expect(columns.filter((c) => c.pk > 0).map((c) => c.name)).toEqual(['id']);
     // Every timestamp is TEXT, as every sibling table in the rooms schema
@@ -157,10 +159,13 @@ describe('0096 — the room canvas table', () => {
   });
 
   it('carries all four indexes — the failure Drizzle would not report', () => {
+    // Named as 0097 left them: three of the four moved from `room_id` to
+    // `scope` when the session canvas joined this table. `canvas_documents_
+    // source_unique` never moved — it was `(scope, source_key)` from the start.
     const names = indexesOf(migrated(), 'canvas_documents');
-    expect(names).toContain('idx_canvas_documents_room');
+    expect(names).toContain('idx_canvas_documents_scope');
     expect(names).toContain('canvas_documents_source_unique');
-    expect(names).toContain('idx_canvas_documents_type');
+    expect(names).toContain('idx_canvas_documents_scope_type');
     expect(names).toContain('idx_canvas_documents_last_touched');
   });
 
@@ -187,7 +192,7 @@ describe('0096 — the room canvas table', () => {
     ).toEqual({ n: 2 });
   });
 
-  it('refuses a document for a room that does not exist', () => {
+  it('refuses a ROOM document for a room that does not exist', () => {
     const raw = migrated();
     expect(() => seedDocument(raw, { id: 'doc-1', roomId: 'ghost', sourceKey: null })).toThrow(
       /FOREIGN KEY/i

@@ -42,7 +42,7 @@
  */
 import type { StateCreator } from 'zustand';
 import type { CanvasDocument, RoomCanvasEvent, RoomSignalEvent } from '@dorkos/shared/room-schemas';
-import { canvasViewForContent, type CanvasView } from '@/layers/shared/lib/canvas-view';
+import { canvasViewForContent, type CanvasView } from '@dorkos/shared/canvas-view';
 import type { AppState } from './app-store-types';
 
 /** Which document each of the two views is showing, for one room. */

@@ -2155,6 +2155,12 @@
               "$ref": "#/components/schemas/QueuedMessage"
             }
           },
+          "canvas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CanvasDocument"
+            }
+          },
           "cursor": {
             "type": "integer",
             "minimum": 0
@@ -2166,6 +2172,7 @@
           "status",
           "pendingInteractions",
           "queuedMessages",
+          "canvas",
           "cursor"
         ]
       },
@@ -3307,6 +3314,45 @@
               "seq",
               "type",
               "command"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "canvas"
+                ]
+              },
+              "documentId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "document": {
+                "$ref": "#/components/schemas/CanvasDocument"
+              },
+              "closed": {
+                "type": "boolean"
+              },
+              "change": {
+                "type": "string",
+                "enum": [
+                  "opened",
+                  "updated",
+                  "activated",
+                  "pinned"
+                ]
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "documentId"
             ]
           },
           {
@@ -4485,6 +4531,100 @@
           "stars"
         ]
       },
+      "CanvasDocument": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "scope": {
+            "type": "string",
+            "minLength": 1
+          },
+          "roomId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "content": {
+            "$ref": "#/components/schemas/UiCanvasContent"
+          },
+          "title": {
+            "type": "string"
+          },
+          "contentType": {
+            "type": "string",
+            "minLength": 1
+          },
+          "authorId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "rev": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "lastTouchedBy": {
+            "type": "string",
+            "minLength": 1
+          },
+          "lastTouchedAt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "editingBy": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sourceLabel": {
+            "type": "string"
+          },
+          "treeKind": {
+            "type": "string",
+            "enum": [
+              "room-main",
+              "worktree",
+              "agent-cwd"
+            ]
+          },
+          "aheadOfMain": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "openedAt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "lastActiveAt": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id",
+          "scope",
+          "roomId",
+          "content",
+          "title",
+          "contentType",
+          "authorId",
+          "pinned",
+          "rev",
+          "lastTouchedBy",
+          "lastTouchedAt",
+          "openedAt",
+          "lastActiveAt"
+        ]
+      },
       "BrowserActCommand": {
         "oneOf": [
           {
@@ -4977,41 +5117,6 @@
       "UiState": {
         "type": "object",
         "properties": {
-          "canvas": {
-            "type": "object",
-            "properties": {
-              "open": {
-                "type": "boolean"
-              },
-              "contentType": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "enum": [
-                  "url",
-                  "markdown",
-                  "json",
-                  "image",
-                  "pdf",
-                  "widget",
-                  "mcp_app",
-                  "file",
-                  "model3d",
-                  "audio",
-                  "video",
-                  "csv",
-                  "browser",
-                  "diff",
-                  null
-                ]
-              }
-            },
-            "required": [
-              "open",
-              "contentType"
-            ]
-          },
           "panels": {
             "type": "object",
             "properties": {
@@ -5083,7 +5188,6 @@
           }
         },
         "required": [
-          "canvas",
           "panels",
           "sidebar",
           "agent"
@@ -10026,97 +10130,6 @@
           "documents"
         ]
       },
-      "CanvasDocument": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "minLength": 1
-          },
-          "scope": {
-            "type": "string",
-            "minLength": 1
-          },
-          "roomId": {
-            "type": "string",
-            "minLength": 1
-          },
-          "content": {
-            "$ref": "#/components/schemas/UiCanvasContent"
-          },
-          "title": {
-            "type": "string"
-          },
-          "contentType": {
-            "type": "string",
-            "minLength": 1
-          },
-          "authorId": {
-            "type": "string",
-            "minLength": 1
-          },
-          "pinned": {
-            "type": "boolean"
-          },
-          "rev": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "lastTouchedBy": {
-            "type": "string",
-            "minLength": 1
-          },
-          "lastTouchedAt": {
-            "type": "string",
-            "minLength": 1
-          },
-          "editingBy": {
-            "type": "string",
-            "minLength": 1
-          },
-          "sourceLabel": {
-            "type": "string"
-          },
-          "treeKind": {
-            "type": "string",
-            "enum": [
-              "room-main",
-              "worktree",
-              "agent-cwd"
-            ]
-          },
-          "aheadOfMain": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "minimum": 0
-          },
-          "openedAt": {
-            "type": "string",
-            "minLength": 1
-          },
-          "lastActiveAt": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "id",
-          "scope",
-          "roomId",
-          "content",
-          "title",
-          "contentType",
-          "authorId",
-          "pinned",
-          "rev",
-          "lastTouchedBy",
-          "lastTouchedAt",
-          "openedAt",
-          "lastActiveAt"
-        ]
-      },
       "OpenCanvasDocumentRequest": {
         "type": "object",
         "properties": {
@@ -14073,6 +14086,45 @@
                         "seq",
                         "type",
                         "command"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "canvas"
+                          ]
+                        },
+                        "documentId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "document": {
+                          "$ref": "#/components/schemas/CanvasDocument"
+                        },
+                        "closed": {
+                          "type": "boolean"
+                        },
+                        "change": {
+                          "type": "string",
+                          "enum": [
+                            "opened",
+                            "updated",
+                            "activated",
+                            "pinned"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "documentId"
                       ]
                     },
                     {
@@ -51401,6 +51453,548 @@
           },
           "409": {
             "description": "The room is archived, or somebody else already holds this lock",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/canvas": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Everything on this session’s canvas",
+        "description": "The documents open in this session's right panel, pinned first then most recently active — the same table on every device you open the session on. **The stream is how an app stays current, not this route**: a cold `GET /api/sessions/{id}/events` carries the whole canvas in its snapshot and every later change arrives as a `canvas` event. This exists for a cold read without a stream.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The session’s canvas, pinned first then most recently active",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasDocumentListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "That is not a session id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "That agent identity could not be verified — its token may be revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A session’s canvas is the person’s own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This server has no canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Put something on this session’s canvas",
+        "description": "Content with a natural identity (a file path, a URL) DEDUPES: opening something already on the canvas refreshes that document rather than adding a second tab beside it, so two windows of one session land on one document. `json` and `widget` have no such identity, so every open of one is a fresh document. Past twelve unpinned documents the least recently active is dropped, and every window is told.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenCanvasDocumentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The document, as every window now has it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "That is not a session id, or the body is not a valid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "That agent identity could not be verified — its token may be revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A session’s canvas is the person’s own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "That id names no session this server knows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Somebody is editing the document this would have refreshed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This server has no canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/canvas/{documentId}": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Read one document on this session’s canvas",
+        "description": "One row, content included. A document id from another session answers exactly as one that never existed, so an id is never a way to read across sessions.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "documentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "That is not a session id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "That agent identity could not be verified — its token may be revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A session’s canvas is the person’s own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such document on this canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This server has no canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Change one document on this session’s canvas",
+        "description": "Three independent changes, any of which may be omitted: replace what the document shows, pin or unpin it, and move it to the front of the list.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "documentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCanvasDocumentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The document, as every window now has it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "That is not a session id, or the body is not a valid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "That agent identity could not be verified — its token may be revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A session’s canvas is the person’s own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such document on this canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This server has no canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Take a document off this session’s canvas",
+        "description": "The row is deleted and every window of this session is told to drop it. Nothing needs a tombstone: a window that reconnects hydrates the whole canvas from the session snapshot, so a close it missed corrects itself.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "documentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Closed"
+          },
+          "400": {
+            "description": "That is not a session id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "That agent identity could not be verified — its token may be revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A session’s canvas is the person’s own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such document on this canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This server has no canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/canvas/{documentId}/editing": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Say you are editing a canvas document, or that you have stopped",
+        "description": "While you hold this, the agent's change to the same document is HELD rather than applied, and the agent is told it was held instead of being told it succeeded. Refresh it about every fifteen seconds while an editor is focused; it lapses on its own about forty-five seconds after the last refresh, so a browser that crashed mid-edit cannot leave a document nobody can touch.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "documentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CanvasEditingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Who holds the lock now, and when it lapses",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasEditingResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "That is not a session id, or the body is not a valid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "That agent identity could not be verified — its token may be revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A session’s canvas is the person’s own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such document on this canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This server has no canvas",
             "content": {
               "application/json": {
                 "schema": {
