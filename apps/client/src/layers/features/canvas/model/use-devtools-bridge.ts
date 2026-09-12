@@ -596,9 +596,11 @@ export function useDevtoolsBridge({
               active,
               // Says whether this is a person bringing the page to the front or
               // the beat below saying nothing changed (spec `canvas-agent-seat`
-              // §2.2). Sent only when it is FALSE: absent means activation, so
-              // every other caller here reads as one without saying so.
-              ...(activation ? {} : { activation: false }),
+              // §2.2). Always sent, both ways round: the server treats a report
+              // about a page this window already holds as a keep-alive unless
+              // this says otherwise, so an activation that stayed silent would
+              // stop moving the seat.
+              activation,
               // True only for the page the frame is showing NOW. A handshake
               // that belonged to the page before a navigation is not an answer
               // about this one.

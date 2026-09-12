@@ -731,7 +731,11 @@ describe('useDevtoolsBridge — the driver seat (spec `canvas-agent-seat` §2.2)
     const claims = claimCalls();
     expect(claims).toHaveLength(1);
     expect(claims[0][0]).toBe('session-1');
-    expect(claims[0][1]).toMatchObject({ active: true, instrumented: false });
+    // `activation: true` is what makes the seat MOVE here: the server reads
+    // anything a window says about a page it already holds as a keep-alive
+    // unless the claim says otherwise, so a silent activation would land as a
+    // beat and leave the seat wherever it already was.
+    expect(claims[0][1]).toMatchObject({ active: true, instrumented: false, activation: true });
   });
 
   it('upgrades the claim to instrumented once the shim says hello', async () => {
@@ -776,7 +780,12 @@ describe('useDevtoolsBridge — the driver seat (spec `canvas-agent-seat` §2.2)
     expect(claimCalls()).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(30_000);
     expect(claimCalls()).toHaveLength(3);
-    for (const [, batch] of claimCalls()) expect(batch.active).toBe(true);
+    // Still here, and NOT a person putting the page in front — the distinction
+    // the server arbitrates the seat on. A beat that claimed to be an
+    // activation made two open windows trade the seat every 15 s.
+    for (const [, batch] of claimCalls()) {
+      expect(batch).toMatchObject({ active: true, activation: false });
+    }
   });
 
   it('re-reports the moment the tab becomes visible again', async () => {

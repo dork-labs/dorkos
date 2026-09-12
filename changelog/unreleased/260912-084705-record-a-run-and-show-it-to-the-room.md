@@ -3,6 +3,10 @@ covers:
   - 'feat(workbench): record a browser run as a GIF (DOR-2008)'
   - 'feat(rooms): an agent can show a room a file it made (DOR-2008)'
   - 'test(e2e): record a run and post a file it made, in a real browser (DOR-2008)'
+  - 'fix(session): a window saying it is still there does not take the seat'
+  - "fix(rooms): an agent's files are taken back when the post is refused"
+  - 'fix(session): only an activation moves the driver seat'
+  - 'fix(rooms): a rollback only takes back what it claimed'
 ---
 
 ### Added

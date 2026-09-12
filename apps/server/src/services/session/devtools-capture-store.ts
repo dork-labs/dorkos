@@ -379,11 +379,14 @@ export class DevtoolsCaptureStore {
     if (batch.active !== undefined && clientId && batch.documentId) {
       this.applyClaim(buffer, clientId, batch.documentId, batch.active, {
         instrumented: batch.instrumented === true,
-        // ABSENT means an activation, which is what every claim before this
-        // field existed was. A client that predates it keeps the behaviour it
-        // shipped with, and the fix is carried by the one caller that has a
-        // reason to say otherwise: the 15 s keep-alive beat.
-        activation: batch.activation !== false,
+        // Passed through as the THREE states it has, because absent is neither
+        // of the other two. Absent is what a client that predates the field
+        // sends on every report including its beat, so reading it as "yes, a
+        // person put this in front" let a tab left open across an upgrade take
+        // the seat back every 15 s from the window somebody had just activated.
+        // {@link applyClaim} spends it where it is safe — on a window nobody
+        // has heard from — and nowhere else.
+        activation: batch.activation,
       });
     }
 
@@ -399,7 +402,8 @@ export class DevtoolsCaptureStore {
    *
    * - an **activation** — a person brought this browser document to the front
    *   in this window (it mounted, the window took focus, the tab came back, the
-   *   page finished handshaking). It takes the seat.
+   *   page finished handshaking). It takes the seat, and it has to SAY it is one
+   *   (`activation: true`).
    * - a **keep-alive** — the same window saying it is still showing the same
    *   page, on a 15 s beat. It refreshes the row's clock and NOTHING else. Every
    *   mounted preview sends one, so a keep-alive that reordered the table made
@@ -407,6 +411,13 @@ export class DevtoolsCaptureStore {
    *   pinned to one of them missed every action dispatched to the other.
    * - a **release** — the window stopped showing it. The row goes, and the seat
    *   with it if it was there.
+   *
+   * Anything a window says about a page it is ALREADY holding is a keep-alive
+   * unless it says otherwise, which is what a client older than the field can
+   * never do — so its beat refreshes and nothing more. The one thing absent
+   * still buys is a first appearance: a window nobody has heard from takes the
+   * seat whether or not it can name what it is doing, because that is what every
+   * claim meant before the field existed and it is the claim that matters.
    *
    * Capped oldest-first, so a person who opens twenty previews over an afternoon
    * does not accumulate twenty rows.
@@ -416,15 +427,15 @@ export class DevtoolsCaptureStore {
    * @param documentId - The browser document it is reporting about.
    * @param active - False for a release.
    * @param opts.instrumented - Whether the shim handshook in that frame.
-   * @param opts.activation - False for a keep-alive; true (or absent) for an
-   *   activation.
+   * @param opts.activation - True for an activation, false for a keep-alive,
+   *   absent for a client too old to tell them apart.
    */
   private applyClaim(
     buffer: InternalBuffer,
     clientId: string,
     documentId: string,
     active: boolean,
-    opts: { instrumented: boolean; activation: boolean }
+    opts: { instrumented: boolean; activation: boolean | undefined }
   ): void {
     const index = buffer.drivers.findIndex(
       (claim) => claim.clientId === clientId && claim.documentId === documentId
@@ -447,14 +458,23 @@ export class DevtoolsCaptureStore {
       return;
     }
 
-    if (!opts.activation && index >= 0) {
-      // A keep-alive for a row that already exists: the clock moves, the order
-      // does not, and the seat is not touched. This is the whole fix.
-      const claim = buffer.drivers[index];
-      claim.activeAt = Date.now();
-      claim.instrumented = opts.instrumented;
-      return;
+    const held = index >= 0 ? buffer.drivers[index] : undefined;
+    if (held && held.activeAt >= Date.now() - WORKBENCH.DEVTOOLS_SEAT_STALE_MS) {
+      if (opts.activation !== true) {
+        // Anything but an explicit activation, about a page this window is
+        // already holding and still answering for: the clock moves, the order
+        // does not, and the seat is not touched. This is the whole fix, and it
+        // has to cover the ABSENT case too — a bundle that predates the field
+        // sends the same body on its beat as on an activation, so trusting
+        // absent here let a stale tab take the seat every 15 s and never give
+        // it back.
+        held.activeAt = Date.now();
+        held.instrumented = opts.instrumented;
+        return;
+      }
     }
+    // Everything below is a window arriving: a first claim, an explicit
+    // activation, or a row so old it had stopped counting as open at all.
 
     if (index >= 0) buffer.drivers.splice(index, 1);
     buffer.drivers.push({
@@ -466,11 +486,13 @@ export class DevtoolsCaptureStore {
     if (buffer.drivers.length > MAX_DRIVER_CLAIMS) {
       buffer.drivers.splice(0, buffer.drivers.length - MAX_DRIVER_CLAIMS);
     }
-    // An activation takes the seat. A keep-alive for a row nobody has seen
-    // before takes it only when nothing live holds it — a window that appeared
-    // without ever announcing itself still has to be reachable, and "nothing is
-    // open" would be the wrong answer about a window that plainly is.
-    if (opts.activation || !this.seatIsLive(buffer)) {
+    // An activation takes the seat, and so does a first claim from a client too
+    // old to call it one. A KEEP-ALIVE that got this far — a window whose first
+    // word was a beat — takes it only when nothing live holds it: it still has
+    // to be reachable, and "nothing is open" would be the wrong answer about a
+    // window that plainly is, but it has announced nothing worth displacing
+    // somebody's live seat for.
+    if (opts.activation !== false || !this.seatIsLive(buffer)) {
       buffer.seat = { clientId, documentId };
     }
   }
@@ -491,11 +513,13 @@ export class DevtoolsCaptureStore {
   /**
    * Which window a request should be addressed to, and for which page.
    *
-   * With no `documentId` the answer is the **seat**: the most recent claim, the
-   * window whose preview came to the front last. With one, it is the most recent
-   * claim on exactly that document — so an agent that holds three previews can
-   * say which. `undefined` means nothing matched, and the caller answers in a
-   * sentence rather than minting a request nobody will ever reply to.
+   * With no `documentId` the answer is the **seat**: the window whose preview
+   * came to the front last. With one, it is the seat again when the seat is
+   * showing that page, and otherwise the most recent live claim on exactly that
+   * document — so an agent that holds three previews can say which, and naming
+   * the page it is already being driven in cannot quietly move it elsewhere.
+   * `undefined` means nothing matched, and the caller answers in a sentence
+   * rather than minting a request nobody will ever reply to.
    *
    * @param sessionId - The session whose table to read.
    * @param documentId - The browser tab to address, or `undefined` for the seat.
@@ -512,21 +536,26 @@ export class DevtoolsCaptureStore {
     // constant says why six rather than three.
     const floor = Date.now() - WORKBENCH.DEVTOOLS_SEAT_STALE_MS;
 
-    // With no `documentId` the answer is the SEAT — the window that last brought
-    // a browser document to the front — read off `buffer.seat` rather than off
-    // the end of the list. Position stopped meaning "most recently activated"
-    // the moment keep-alives stopped reordering, which is the point.
-    if (documentId === undefined) {
-      const seat = buffer.seat;
-      if (seat) {
-        const held = claims.find(
-          (claim) =>
-            claim.clientId === seat.clientId &&
-            claim.documentId === seat.documentId &&
-            claim.activeAt >= floor
-        );
-        if (held) return { ...held };
-      }
+    // The SEAT answers first — the window that last brought a browser document
+    // to the front — read off `buffer.seat` rather than off the end of the list.
+    // Position stopped meaning "most recently activated" the moment keep-alives
+    // stopped reordering, which is the point.
+    //
+    // It answers a NAMED page too, when the seat is showing that page. Two
+    // windows can show the same document (canvas documents are session-wide),
+    // and `browser_record_start` pins to the seat and hands the agent that
+    // `documentId` back — so a named page resolved positionally could address a
+    // different window from the one the recording is in, action after action,
+    // while every answer said `ok`.
+    const seat = buffer.seat;
+    if (seat && (documentId === undefined || seat.documentId === documentId)) {
+      const held = claims.find(
+        (claim) =>
+          claim.clientId === seat.clientId &&
+          claim.documentId === seat.documentId &&
+          claim.activeAt >= floor
+      );
+      if (held) return { ...held };
     }
 
     // No live seat, or a page named by id: fall back to the most recent live

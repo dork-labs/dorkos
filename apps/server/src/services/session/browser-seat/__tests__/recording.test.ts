@@ -257,7 +257,44 @@ describe('a running recording turns every action into a frame', () => {
     const answer = await stopping;
     // `ok: true` with an unexplained gap is the one thing §10 forbids.
     expect(answer.payload).toMatchObject({ ok: true, missed: 1 });
-    expect(String(answer.payload.note)).toContain('another window');
+    // And it reads as one thing, not as several.
+    expect(String(answer.payload.note)).toContain(
+      '1 action you took happened in another window while this was recording, so it is not in ' +
+        'the file.'
+    );
+  });
+
+  it('does not count an action that never came back as one that happened', async () => {
+    const store = storeWithDriver();
+    const { recording, driving, eventQueue } = seat(store, 5);
+    await recording.start({});
+
+    // Same shape as above — the action is addressed to another window — except
+    // that window never answers. Nothing happened there, so the recording has
+    // no gap to own up to: saying it does would make the count claim more than
+    // the run did.
+    store.ingest(
+      's1',
+      { documentId: 'doc-b', seq: 2, console: [], network: [], active: true, instrumented: true },
+      'client-b'
+    );
+    const acted = driving.click({ text: 'Pay' });
+    expect(pushed(eventQueue).data.targetClientId).toBe('client-b');
+    expect((await acted).payload).toMatchObject({ ok: false });
+
+    const stopping = recording.stop();
+    store.resolveRecording(pushed(eventQueue).data.requestId, {
+      ok: true,
+      path: '.dork/.temp/recordings/rec.gif',
+      bytes: 10,
+      frames: 2,
+      durationMs: 1_000,
+      keyframe: null,
+    });
+
+    const stopped = await stopping;
+    expect(stopped.payload.missed).toBeUndefined();
+    expect(String(stopped.payload.note)).not.toContain('another window');
   });
 
   it('says nothing about missed frames when the whole run was filmed', async () => {

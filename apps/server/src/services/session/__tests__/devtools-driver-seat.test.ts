@@ -15,9 +15,18 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { DevtoolsCaptureStore } from '../devtools-capture-store.js';
 import type { DevtoolsIngest } from '@dorkos/shared/schemas';
 
-/** An ingest batch that carries only a seat claim. */
+/**
+ * An ingest batch carrying a seat claim the way a client OLDER than the
+ * `activation` field sends it: no field at all, on a first claim and on its
+ * 15 s beat alike.
+ */
 function claim(documentId: string, active: boolean, instrumented = true): DevtoolsIngest {
   return { documentId, seq: 1, console: [], network: [], active, instrumented };
+}
+
+/** What this bundle sends when a person brings a page to the front. */
+function activate(documentId: string, instrumented = true): DevtoolsIngest {
+  return { ...claim(documentId, true, instrumented), activation: true };
 }
 
 describe('one session, two windows, one driver seat', () => {
@@ -61,7 +70,10 @@ describe('one session, two windows, one driver seat', () => {
   it('re-claiming the same page takes the seat back without duplicating the row', () => {
     store.ingest('s1', claim('doc-a', true), 'client-a');
     store.ingest('s1', claim('doc-b', true), 'client-b');
-    store.ingest('s1', claim('doc-a', true), 'client-a');
+    // An ACTIVATION, said out loud: a window re-reporting a page it is already
+    // holding is a keep-alive unless it says otherwise, which is what stops a
+    // beat from taking the seat.
+    store.ingest('s1', activate('doc-a'), 'client-a');
 
     expect(store.resolveDriver('s1')).toMatchObject({ clientId: 'client-a' });
     // And releasing that one row leaves exactly the other window's claim, which
@@ -295,7 +307,7 @@ describe('a keep-alive is not a claim', () => {
 
     // A person brought window A's preview to the front: focus, a tab click, a
     // page that just handshook. That is what the seat is FOR.
-    store.ingest('s1', claim('doc-a', true), 'client-a');
+    store.ingest('s1', activate('doc-a'), 'client-a');
     expect(store.resolveDriver('s1')).toMatchObject({ clientId: 'client-a' });
   });
 
@@ -329,14 +341,66 @@ describe('a keep-alive is not a claim', () => {
     }
   });
 
-  it('treats a claim with no `activation` field as an activation', () => {
-    // A client that predates the field keeps exactly the behaviour it shipped
-    // with: absent means a person put this page in front.
+  it('treats a FIRST claim with no `activation` field as an activation', () => {
+    // A client that predates the field is still heard the first time it speaks:
+    // a window nobody has heard from takes the seat whether or not it can name
+    // what it is doing, which is what every claim meant before the field.
     store.ingest('s1', claim('doc-a', true), 'client-a');
+    expect(store.resolveDriver('s1')).toMatchObject({ clientId: 'client-a' });
     store.ingest('s1', claim('doc-b', true), 'client-b');
-    store.ingest('s1', claim('doc-a', true), 'client-a');
+    expect(store.resolveDriver('s1')).toMatchObject({ clientId: 'client-b' });
+  });
+
+  it('leaves the seat with the window a person activated while an old tab beats', () => {
+    // A tab open across the upgrade sends the pre-field body every 15 s, so its
+    // beat is indistinguishable from its activation. Reading absent as "a person
+    // put this in front" gave the seat to the window nobody is looking at, on
+    // every beat, for as long as that tab stayed open: the person drives one
+    // window and the actions land in the other.
+    store.ingest('s1', claim('doc-old', true), 'client-old');
+    store.ingest('s1', activate('doc-new'), 'client-new');
+    expect(store.resolveDriver('s1')).toMatchObject({ clientId: 'client-new' });
+
+    for (let round = 0; round < 4; round += 1) {
+      store.ingest('s1', claim('doc-old', true), 'client-old');
+      expect(store.resolveDriver('s1')).toMatchObject({ clientId: 'client-new' });
+    }
+  });
+
+  it('answers a NAMED page from the seat, not from the end of the table', () => {
+    // Canvas documents are session-wide, so two windows can be showing the same
+    // page. `browser_record_start` pins to the seat and hands that `documentId`
+    // back for every later action — so if naming it resolved positionally, the
+    // recording would be in one window and the actions in the other.
+    store.ingest('s1', activate('doc-a'), 'client-a');
+    // The second window's first word is a beat: its mount claim was dropped, or
+    // the server restarted under it. It is reachable, and it has announced
+    // nothing worth taking a live seat for.
+    store.ingest('s1', beat('doc-a'), 'client-b');
 
     expect(store.resolveDriver('s1')).toMatchObject({ clientId: 'client-a' });
+    expect(store.resolveDriver('s1', 'doc-a')).toMatchObject({ clientId: 'client-a' });
+  });
+
+  it('keeps a named page addressed to one window across beats', () => {
+    // The shape the defect actually had: a page that is NOT the seat's, held by
+    // two windows at once. Nothing but claim order arbitrates it, so a beat that
+    // reordered the table sent alternate actions to alternate windows — and the
+    // seat pointer, which the assertions above read, never noticed.
+    store.ingest('s1', activate('doc-a'), 'client-a');
+    store.ingest('s1', activate('doc-a'), 'client-b');
+    // Window B moves on to another page and keeps the seat there.
+    store.ingest('s1', activate('doc-b'), 'client-b');
+    expect(store.resolveDriver('s1')).toMatchObject({ clientId: 'client-b' });
+    expect(store.resolveDriver('s1', 'doc-a')).toMatchObject({ clientId: 'client-b' });
+
+    for (let round = 0; round < 4; round += 1) {
+      store.ingest('s1', beat('doc-a'), 'client-a');
+      expect(store.resolveDriver('s1', 'doc-a')).toMatchObject({ clientId: 'client-b' });
+      store.ingest('s1', beat('doc-a'), 'client-b');
+      store.ingest('s1', beat('doc-b'), 'client-b');
+      expect(store.resolveDriver('s1', 'doc-a')).toMatchObject({ clientId: 'client-b' });
+    }
   });
 
   it('makes a window reachable even if its first word is a keep-alive', () => {

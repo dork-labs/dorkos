@@ -5771,16 +5771,20 @@ export const DevtoolsIngestSchema = z
      * Whether this claim is an ACTIVATION or a keep-alive (spec
      * `canvas-agent-seat` §2.2).
      *
-     * `true` — or absent — means a person brought this browser document to the
-     * front in this window, and the seat moves here. `false` means the window is
-     * saying it is still showing the same page on its refresh beat, which
-     * refreshes the row's clock and moves nothing.
+     * `true` means a person brought this browser document to the front in this
+     * window, and the seat moves here. `false` means the window is saying it is
+     * still showing the same page on its refresh beat, which refreshes the row's
+     * clock and moves nothing. Every window running this bundle sends one or the
+     * other.
      *
-     * **Absent means activation on purpose**: every claim sent before this field
-     * existed was one, so a client that predates it keeps exactly the behaviour
-     * it shipped with. The defect it closes is specific to the beat — two open
-     * windows re-reporting every 15 s made the seat alternate between them, and
-     * a recording pinned to one missed every action dispatched to the other.
+     * **Absent is neither**, and the server spends it in exactly one place: a
+     * window it has not heard from takes the seat on its first claim, because
+     * that is what every claim meant before this field existed. Anything a
+     * window says about a page it is already holding is read as a keep-alive —
+     * a bundle too old to have the field sends an identical body on its beat and
+     * on an activation, so believing it would let a tab left open across an
+     * upgrade take the seat back every 15 s from the window somebody had just
+     * activated, and never give it back.
      */
     activation: z.boolean().optional(),
     /**

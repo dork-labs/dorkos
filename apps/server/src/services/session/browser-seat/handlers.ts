@@ -187,11 +187,7 @@ async function dispatch(
     recording.documentId === claim.documentId &&
     recording.clientId === claim.clientId;
   const capture = onTheRecordedPage && !recording.full;
-  // This action is going somewhere the recording cannot reach — a person
-  // activated a preview in another window mid-run. It still happens, and it is
-  // still missing from the film, so the stop answer has to say so rather than
-  // hand back a gap it calls a record (spec §10).
-  if (recording !== undefined && !onTheRecordedPage) deps.store.noteMissedFrame(sessionId);
+  const outOfShot = recording !== undefined && !onTheRecordedPage;
 
   const requestId = randomUUID();
   deps.session.eventQueue.push({
@@ -214,6 +210,13 @@ async function dispatch(
   if (capture && result?.captured === true) {
     deps.store.noteRecordedFrame(sessionId, WORKBENCH.MAX_RECORDING_FRAMES);
   }
+  // And the same rule for the gap: counted only once the OTHER window has
+  // answered. This action went somewhere the recording cannot reach — a person
+  // activated a preview elsewhere mid-run — so it is missing from the film, and
+  // the stop answer has to say so rather than hand back a gap it calls a record
+  // (spec §10). But an action that timed out is not something that happened, and
+  // reporting it as one would make the count claim more than the run did.
+  if (outOfShot && result !== undefined) deps.store.noteMissedFrame(sessionId);
   if (result === undefined) {
     return {
       payload: {

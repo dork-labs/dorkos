@@ -73,9 +73,10 @@ const RECORDING_FULL_NOTE =
  * @param missed - How many actions ran somewhere this recording could not film.
  */
 function recordingMissedNote(missed: number): string {
-  const actions = missed === 1 ? '1 thing you did' : `${missed} things you did`;
+  const actions = missed === 1 ? '1 action you took' : `${missed} actions you took`;
+  const missing = missed === 1 ? 'it is' : 'they are';
   return (
-    `${actions} happened in another window while this was recording, so they are not in the ` +
+    `${actions} happened in another window while this was recording, so ${missing} not in the ` +
     'file. Everything you did still happened. Keep one window in front to film a whole run.'
   );
 }
