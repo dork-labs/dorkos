@@ -3,6 +3,7 @@ covers:
   - "feat(rooms): hold a room's shared canvas in the client, live off its stream"
   - 'feat(rooms): give a room a Canvas and a Browser tab everybody shares'
   - "test(rooms): drive a room's shared canvas through two real browsers"
+  - 'fix(rooms): never let a reconnect take what somebody is typing'
 ---
 
 ### Added
@@ -18,4 +19,7 @@ covers:
   typing, an agent's change to that same document is held rather than dropped on top of you; every
   other document stays live
 - A document that arrives while you are looking somewhere else lights a small dot on the tab it
-  landed on. Nothing ever moves the tab you are on, and nothing interrupts you mid-edit
+  landed on. Nothing ever moves the tab you are on, and a brief drop in your connection never takes
+  away what you were typing
+- When the room turns something down — it has been archived, or the document is already gone — it
+  says so where you pressed, and an address it would not take stays in the box so you can fix it
