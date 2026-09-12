@@ -138,6 +138,70 @@ describe('CanvasService on a session scope', () => {
       );
       expect(published.some((p) => p.frame.closed === true)).toBe(true);
     });
+
+    /**
+     * Pinned rows are EXEMPT, not counted (DOR-2006 review, finding 9/10a).
+     *
+     * The cap is over unpinned documents, on both sides of the wire: the window
+     * counts the same set this does. When it counted all of them, thirteen
+     * documents with two pinned had the window evict locally what the server
+     * keeps, and the next hydrate simply put it back.
+     */
+    it('holds more than the cap when the extra documents are pinned', () => {
+      for (let n = 0; n < MAX_CANVAS_DOCUMENTS; n += 1) {
+        canvas.open(SCOPE, SESSION_OWNER_AUTHOR, { type: 'url', url: `https://example.test/${n}` });
+      }
+      const pinned = [0, 1].map((n) =>
+        canvas.open(SCOPE, SESSION_OWNER_AUTHOR, {
+          type: 'json',
+          data: { n },
+          title: `pinned ${n}`,
+        })
+      );
+      for (const document of pinned) canvas.pin(SCOPE, document.id, true);
+
+      // Two more unpinned opens: the table is at the cap on unpinned rows, so
+      // each evicts one unpinned row and neither touches a pin.
+      canvas.open(SCOPE, SESSION_OWNER_AUTHOR, {
+        type: 'url',
+        url: 'https://example.test/extra-1',
+      });
+      canvas.open(SCOPE, SESSION_OWNER_AUTHOR, {
+        type: 'url',
+        url: 'https://example.test/extra-2',
+      });
+
+      const live = canvas.list(SCOPE);
+      expect(live.filter((d) => !d.pinned)).toHaveLength(MAX_CANVAS_DOCUMENTS);
+      expect(
+        live
+          .filter((d) => d.pinned)
+          .map((d) => d.id)
+          .sort()
+      ).toEqual(pinned.map((d) => d.id).sort());
+      expect(live).toHaveLength(MAX_CANVAS_DOCUMENTS + 2);
+    });
+
+    it('never evicts the document the OTHER view is showing', () => {
+      // The page somebody is sitting on in Browser, opened first and never
+      // touched again: `lastActiveAt` does not move when the reader switches
+      // tabs, so a plain LRU takes the one document on screen the moment twelve
+      // documents open in Canvas.
+      const onScreen = canvas.open(SCOPE, SESSION_OWNER_AUTHOR, {
+        type: 'url',
+        url: 'https://example.test/reading-this',
+      });
+      for (let n = 0; n <= MAX_CANVAS_DOCUMENTS; n += 1) {
+        canvas.open(SCOPE, SESSION_OWNER_AUTHOR, {
+          type: 'json',
+          data: { n },
+          title: `doc ${n}`,
+        });
+      }
+
+      expect(canvas.get(SCOPE, onScreen.id)).not.toBeNull();
+      expect(canvas.list(SCOPE)).toHaveLength(MAX_CANVAS_DOCUMENTS);
+    });
   });
 
   describe('dedupe', () => {

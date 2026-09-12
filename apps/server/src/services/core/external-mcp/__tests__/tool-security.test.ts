@@ -55,6 +55,7 @@ import { mcpDomain } from '../../../mesh/mcp-capabilities.js';
 import type { McpCapabilityDeps } from '../../../mesh/mcp-capability-deps.js';
 import { roomsDomain } from '../../../rooms/room-capabilities.js';
 import { capabilitiesDomain } from '../../self-description/capabilities-domain.js';
+import { uiDomain } from '../../../session/browser-seat/ui-capabilities.js';
 import { composeDorkOsCapabilityRegistry } from '../../self-description/dorkos-registry.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
@@ -344,3 +345,43 @@ function parseSseMessages(text: string): JsonRpcMessage[] {
   }
   return messages;
 }
+
+/**
+ * The `ui` domain reaches the IN-SESSION server and nothing else (spec
+ * `canvas-agent-seat` §5; DOR-2006 review).
+ *
+ * **Asserted directly, because the guard that covered it was incidental.** Every
+ * `ui` verb reads what a live session's window is showing, and it takes no
+ * session argument — `context.sessionId` is carried by the in-session surface
+ * and by nothing else, which is the security property. The external `/mcp`
+ * server carries no session at all, so a `ui` verb there could only ever answer
+ * about somebody else's window or about nothing.
+ *
+ * The existing coverage was the read-only census above, which happens to notice
+ * `read_canvas_document` because that verb is `observe`. An `act`-tier `ui` verb
+ * — `ui.click`, which Q2 and Q4 are about — would not be read-only and would
+ * slip straight past it. This one keys on the DOMAIN.
+ */
+describe('the ui domain never reaches the external /mcp server', () => {
+  it('exposes no tool that any ui capability projects', async () => {
+    const uiToolNames = new Set(
+      uiDomain.capabilities
+        .map((capability) => capability.surfaces.mcp?.toolName)
+        .filter((name): name is string => name !== undefined)
+    );
+    expect(uiToolNames.size).toBeGreaterThan(0);
+
+    const live = new Set((await fetchLiveTools()).map((tool) => tool.name));
+    for (const name of uiToolNames) {
+      expect(live.has(name), `${name} reached /mcp`).toBe(false);
+    }
+  });
+
+  it('is not an accident of the tool list — every ui capability says in-session only', () => {
+    // The `servers` declaration is what the projection reads, so this is the
+    // fact the test above OBSERVES, asserted at its source.
+    for (const capability of uiDomain.capabilities) {
+      expect(capability.surfaces.mcp?.servers, capability.id).toEqual(['in-session']);
+    }
+  });
+});

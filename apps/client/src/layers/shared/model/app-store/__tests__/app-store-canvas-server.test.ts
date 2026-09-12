@@ -26,6 +26,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import type { CanvasDocument as ServerCanvasDocument } from '@dorkos/shared/room-schemas';
+import { MAX_CANVAS_DOCUMENTS } from '@/layers/shared/lib/constants';
 import { useAppStore } from '../app-store';
 import { setSessionCanvasTransport, type SessionCanvasTransport } from '../app-store-canvas';
 
@@ -118,6 +119,37 @@ describe('CanvasSlice — the server’s table, as this window holds it', () => 
           serverDocument({ id: 'doc-a', content: fileDoc('a.ts') }),
         ]);
       expect(useAppStore.getState().openDocuments).toHaveLength(0);
+    });
+  });
+
+  /**
+   * The cap is the SERVER's rule, applied here too (DOR-2006 review, 9 / 10a).
+   *
+   * Two LRUs over one table is two answers: when this window counted pinned
+   * rows toward the twelve, thirteen documents with two pinned had it evict
+   * locally what the server keeps — and the next hydrate simply put the row
+   * back, which is the divergence §1.5 exists to remove.
+   */
+  describe('the cap', () => {
+    it('does not count pinned documents, exactly as the server does not', () => {
+      const documents = Array.from({ length: MAX_CANVAS_DOCUMENTS + 2 }, (_, i) => ({
+        ...serverDocument({ id: `doc-${i}`, content: fileDoc(`file-${i}.ts`) }),
+        pinned: i < 2,
+      }));
+      useAppStore.getState().hydrateCanvasFromSnapshot(SESSION, documents);
+      expect(useAppStore.getState().openDocuments).toHaveLength(MAX_CANVAS_DOCUMENTS + 2);
+
+      // One more arrives from another window. Twelve unpinned is the cap, so
+      // this evicts one unpinned row and leaves both pins alone.
+      useAppStore.getState().applyCanvasEvent(SESSION, {
+        documentId: 'doc-new',
+        document: serverDocument({ id: 'doc-new', content: fileDoc('file-new.ts') }),
+        change: 'opened',
+      });
+
+      const open = useAppStore.getState().openDocuments;
+      expect(open.filter((d) => !d.pinned)).toHaveLength(MAX_CANVAS_DOCUMENTS);
+      expect(open.filter((d) => d.pinned).map((d) => d.id)).toEqual(['doc-0', 'doc-1']);
     });
   });
 

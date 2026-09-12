@@ -1002,9 +1002,20 @@ export class CanvasService {
   private evict(scope: string, protectedId: string): void {
     const over = this.documents.unpinnedCount(scope) - MAX_CANVAS_DOCUMENTS;
     if (over <= 0) return;
+    // The front document of each view is never evictable (DOR-2006 review,
+    // finding 10a). `lastActiveAt` moves when a document is opened or activated
+    // and NOT when the reader switches tabs, so the page somebody is sitting on
+    // in Browser goes stale the moment twelve documents open in Canvas — and a
+    // plain LRU takes the one document on screen. The window's own optimistic
+    // bound has protected those two ids since the canvas was client-side; the
+    // rule belongs HERE now, over the table, so the two sides drop the same row
+    // rather than each dropping a different one.
+    const onScreen = frontOfViewIds(this.documents.list(scope));
     const candidates = this.documents
       .evictionCandidates(scope)
-      .filter((row) => row.id !== protectedId && this.lockHolder(row) === null);
+      .filter(
+        (row) => row.id !== protectedId && !onScreen.has(row.id) && this.lockHolder(row) === null
+      );
     for (const row of candidates.slice(0, over)) {
       this.documents.remove(scope, row.id);
       this.publish(scope, { type: 'canvas', documentId: row.id, closed: true });
@@ -1035,6 +1046,36 @@ interface CanvasWritePlan extends CanvasTreePlacement {
   sourceKey: string | null;
   existing: CanvasDocumentRow | null;
   pinned: boolean;
+}
+
+/**
+ * The id of the front document of each view — at most one per view.
+ *
+ * **One rule, read by both the LRU and the report.** `get_ui_state`'s `active`
+ * flag and the eviction's "never take the tab somebody is looking at" are the
+ * same question, and they used to be two copies of it: the window protected the
+ * two on-screen ids and the server protected none, so a thirteenth open had
+ * each side drop a different row and left the window missing one until the next
+ * hydrate.
+ *
+ * "Front" is the most recently ACTIVE document of that view, which is the rule
+ * the window draws by. Pinning sorts a document first; it does not make it the
+ * one on screen.
+ *
+ * @param rows - Every document in one scope.
+ * @returns The front id of each view that has one.
+ */
+export function frontOfViewIds(
+  rows: readonly { id: string; content: UiCanvasContent; lastActiveAt: string }[]
+): Set<string> {
+  const ids = new Set<string>();
+  for (const view of ['canvas', 'browser'] as const) {
+    const front = rows
+      .filter((row) => canvasViewForContent(row.content) === view)
+      .sort((a, b) => Date.parse(b.lastActiveAt) - Date.parse(a.lastActiveAt))[0];
+    if (front) ids.add(front.id);
+  }
+  return ids;
 }
 
 /** A close this command implies, with the row it resolved to. */

@@ -93,6 +93,15 @@ export interface CanvasDocument {
   /** Short label for the document tab. */
   sourceLabel: string;
   /**
+   * Whether somebody pinned this document.
+   *
+   * Carried from the server's row because the CAP is over unpinned documents
+   * only, on both sides. Without it this window counted pinned rows toward the
+   * twelve and evicted locally what the server keeps — which the next hydrate
+   * simply put back (DOR-2006 review, finding 10a).
+   */
+  pinned: boolean;
+  /**
    * Per-document edit-protection. While `true`, agent content pushes to THIS
    * document are held so the in-canvas editor is the sole writer (ADR-0292).
    * Transient — never persisted, so a reload never resurrects edit mode.
@@ -393,8 +402,16 @@ function reconcileActiveIds(documents: CanvasDocument[], current: ActiveIds): Ac
 }
 
 /**
- * Enforce the open-document cap by dropping the least-recently-active documents,
- * never evicting a document being edited and never one a view is showing.
+ * Enforce the open-document cap by dropping the least-recently-active UNPINNED
+ * documents, never one being edited and never one a view is showing.
+ *
+ * **The same rule the server applies to the same table** (`evict` in
+ * `services/canvas/canvas-service.ts`), which is what makes this an optimistic
+ * preview of the server's answer rather than a second opinion: the cap counts
+ * unpinned documents only, pinned rows are neither counted nor dropped, and the
+ * front document of each view is protected on both sides. When the two
+ * disagreed, a thirteenth open had each drop a different row and the window
+ * ended up missing one until the next hydrate.
  *
  * The cap is over BOTH views together: twelve open documents is twelve, however
  * they are split between the tabs. That is exactly why **both** active ids are
@@ -402,8 +419,7 @@ function reconcileActiveIds(documents: CanvasDocument[], current: ActiveIds): Ac
  * document is opened or activated, not when the reader switches tabs, so the
  * page somebody is sitting on in Browser goes stale the moment an agent opens
  * twelve documents in Canvas — and the LRU would take the one document on
- * screen. Before the split that could not happen: there was one active id and it
- * was always the just-opened one.
+ * screen.
  *
  * @param documents - The open set, including the document just added.
  * @param protectedIds - Ids that may never be evicted: the just-opened document
@@ -413,12 +429,12 @@ function evictToCapacity(
   documents: CanvasDocument[],
   protectedIds: readonly (string | null)[]
 ): CanvasDocument[] {
-  if (documents.length <= MAX_CANVAS_DOCUMENTS) return documents;
+  const dropCount = documents.filter((d) => !d.pinned).length - MAX_CANVAS_DOCUMENTS;
+  if (dropCount <= 0) return documents;
   const keep = new Set(protectedIds.filter((id): id is string => id !== null));
   const evictable = documents
-    .filter((d) => !keep.has(d.id) && !d.editing)
+    .filter((d) => !d.pinned && !keep.has(d.id) && !d.editing)
     .sort((a, b) => a.lastActiveAt - b.lastActiveAt);
-  const dropCount = documents.length - MAX_CANVAS_DOCUMENTS;
   const dropIds = new Set(evictable.slice(0, dropCount).map((d) => d.id));
   return documents.filter((d) => !dropIds.has(d.id));
 }
@@ -518,6 +534,7 @@ function fromServer(row: ServerCanvasDocument, previous?: CanvasDocument): Canva
     openedAt: Date.parse(row.openedAt),
     lastActiveAt: Date.parse(row.lastActiveAt),
     sourceLabel: row.title || sourceLabel(row.content),
+    pinned: row.pinned,
     editing: previous?.editing ?? false,
     heldUpdate: previous?.heldUpdate ?? null,
   };
@@ -640,6 +657,9 @@ export const createCanvasSlice: StateCreator<
             openedAt: now,
             lastActiveAt: now,
             sourceLabel: sourceLabel(content),
+            // Nothing this window mints is pinned: the POST does not ask for it
+            // and the server answers `pinned: false`.
+            pinned: false,
             editing: false,
             heldUpdate: null,
           };

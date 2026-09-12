@@ -51066,8 +51066,38 @@
               }
             }
           },
+          "400": {
+            "description": "That is not a session id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "That agent identity could not be verified — its token may be revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "A session’s canvas is the person’s own",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This server has no canvas",
             "content": {
               "application/json": {
                 "schema": {
@@ -51116,7 +51146,17 @@
             }
           },
           "400": {
-            "description": "Validation error",
+            "description": "That is not a session id, or the body is not a valid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "That agent identity could not be verified — its token may be revoked or expired",
             "content": {
               "application/json": {
                 "schema": {
@@ -51135,8 +51175,28 @@
               }
             }
           },
+          "404": {
+            "description": "That id names no session this server knows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "409": {
             "description": "Somebody is editing the document this would have refreshed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This server has no canvas",
             "content": {
               "application/json": {
                 "schema": {
@@ -51186,6 +51246,26 @@
               }
             }
           },
+          "400": {
+            "description": "That is not a session id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "That agent identity could not be verified — its token may be revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "A session’s canvas is the person’s own",
             "content": {
@@ -51198,6 +51278,16 @@
           },
           "404": {
             "description": "No such document on this canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This server has no canvas",
             "content": {
               "application/json": {
                 "schema": {
@@ -51255,7 +51345,17 @@
             }
           },
           "400": {
-            "description": "Validation error",
+            "description": "That is not a session id, or the body is not a valid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "That agent identity could not be verified — its token may be revoked or expired",
             "content": {
               "application/json": {
                 "schema": {
@@ -51276,6 +51376,16 @@
           },
           "404": {
             "description": "No such document on this canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This server has no canvas",
             "content": {
               "application/json": {
                 "schema": {
@@ -51316,6 +51426,26 @@
           "204": {
             "description": "Closed"
           },
+          "400": {
+            "description": "That is not a session id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "That agent identity could not be verified — its token may be revoked or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "A session’s canvas is the person’s own",
             "content": {
@@ -51328,6 +51458,16 @@
           },
           "404": {
             "description": "No such document on this canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This server has no canvas",
             "content": {
               "application/json": {
                 "schema": {
@@ -51387,7 +51527,17 @@
             }
           },
           "400": {
-            "description": "Validation error",
+            "description": "That is not a session id, or the body is not a valid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "That agent identity could not be verified — its token may be revoked or expired",
             "content": {
               "application/json": {
                 "schema": {
@@ -51408,6 +51558,16 @@
           },
           "404": {
             "description": "No such document on this canvas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This server has no canvas",
             "content": {
               "application/json": {
                 "schema": {

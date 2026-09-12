@@ -58,6 +58,7 @@ export {
   OPEN_CANVAS_NEEDS_CONTENT_MESSAGE,
   contentFor,
   documentBeingEditedMessage,
+  frontOfViewIds,
   type CanvasApplyResult,
   type CanvasChannels,
   type CanvasDefaultTarget,

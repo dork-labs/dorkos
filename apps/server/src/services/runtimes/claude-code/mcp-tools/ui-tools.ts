@@ -22,19 +22,13 @@
  */
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { UiCommandSchema } from '@dorkos/shared/schemas';
-import type {
-  UiState,
-  UiStateReport,
-  UiCommand,
-  StreamEvent,
-  UiCanvasContent,
-} from '@dorkos/shared/types';
-import { canvasViewForContent } from '@dorkos/shared/canvas-view';
+import type { UiState, UiStateReport, UiCommand, StreamEvent } from '@dorkos/shared/types';
 import { CONTROL_UI_DESCRIPTION, CONTROL_UI_INPUT } from '../../shared/ui-tool-contract.js';
 import { getRoomService, RoomError } from '../../../rooms/index.js';
 import {
   CANVAS_VERBS,
   SESSION_AGENT_AUTHOR,
+  frontOfViewIds,
   peekCanvasService,
   sessionScope,
   type CanvasApplyResult,
@@ -432,17 +426,9 @@ function sessionUiStateReport(session: UiToolSession): UiStateReport {
   const canvas = peekCanvasService();
   const sessionId = session.sdkSessionId;
   const documents = canvas && sessionId !== undefined ? canvas.list(sessionScope(sessionId)) : [];
-  // At most one document per view is the front one, and it is the most recently
-  // active of that view — the same rule the window draws by. Pinning sorts a
-  // document first; it does not make it the one on screen.
-  const frontOfView = new Set(
-    (['canvas', 'browser'] as const).map((view) => {
-      const inView = documents
-        .filter((d) => canvasViewForContent(d.content as UiCanvasContent) === view)
-        .sort((a, b) => Date.parse(b.lastActiveAt) - Date.parse(a.lastActiveAt));
-      return inView[0]?.id;
-    })
-  );
+  // The same helper the writer's LRU reads, so "the front document of this
+  // view" is one rule over one table rather than two copies that can disagree.
+  const frontOfView = frontOfViewIds(documents);
   return {
     canvas: {
       open: documents.length > 0,

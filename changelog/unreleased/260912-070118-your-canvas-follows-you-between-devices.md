@@ -6,6 +6,7 @@ covers:
   - 'fix(canvas): let a canvas frame reach the other window, and say so in the docs (DOR-2006)'
   - 'test(canvas): cover the canvas the Obsidian embed can read (DOR-2006)'
   - 'fix(canvas): resolve the viewer where the row is written, and let the embed read (DOR-2006)'
+  - 'test(canvas): pin the six routes, the bounds, and the one LRU rule (DOR-2006)'
 ---
 
 ### Changed
@@ -15,6 +16,11 @@ covers:
   closes on the laptop. Clearing your browser data no longer costs you your tabs, and two windows
   on the same session show the same set instead of drifting apart. Anything you had open is
   carried over the first time you open that session (DOR-2006).
+- Your agent can now name which canvas tab it means. Asking it to change or close
+  "the chart" used to act on whichever tab was at the front, so it could only ever
+  work on the one you were looking at; it can now pass the id of any document on
+  the canvas. Leave the id out and it still acts on the front tab, exactly as
+  before (DOR-2006).
 - Your agent can see what's on your canvas, and read it. Ask "what have we got open?" and it gets
   the real list — every tab, what it is, what it's called, which one is at the front, and how many
   windows are watching — instead of guessing from whatever your window last mentioned. It can read
