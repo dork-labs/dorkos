@@ -3,6 +3,7 @@ covers:
   - "feat(rooms): follow a teammate's browser, and discuss a document (DOR-2010)"
   - "feat(rooms): a Follow button and a Discuss button on a room's canvas (DOR-2010)"
   - "test(rooms): drive following and a document's discussion in a real browser (DOR-2010)"
+  - 'fix(canvas): name the reset suite among the readers of the retired key'
 ---
 
 ### Added
