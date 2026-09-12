@@ -4,6 +4,7 @@ covers:
   - 'feat(workbench): six browser verbs an agent can call on its own preview'
   - 'feat(canvas): one window answers when an agent drives the browser'
   - 'test(workbench): drive a real page in a real browser, in two windows'
+  - "fix(canvas): type the bridge test's batch helpers as real ingest batches"
 ---
 
 ### Added
