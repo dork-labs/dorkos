@@ -434,7 +434,12 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // `<room_tools>` block DOES name it, which is what makes it prefixed below
     // and is deliberate: an agent told a room has a canvas and not told how to
     // read it spends a turn finding out.
-    expect(advertised.size).toBe(92);
+    //
+    // 92 → 93 for `read_canvas_document`, the first verb of the `ui` domain
+    // (spec `canvas-agent-seat` §5). No prompt block names it — the agent learns
+    // there is anything to read from `get_ui_state`, which is a tool call of its
+    // own — so it stays deferred and unprefixed.
+    expect(advertised.size).toBe(93);
     expect(advertised.has('react_to_room_entry')).toBe(true);
     expect(
       [

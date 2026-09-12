@@ -86,7 +86,8 @@ export const uiDomain: CapabilityDomain = {
       description:
         'Read one document off the canvas of the window you are talking through — the chart you ' +
         'drew last turn, the file somebody opened, the page in the browser tab. ' +
-        'Call get_ui_state first to see what is there; it lists every document with its id. ' +
+        'It takes a document id, which the tool that reports the window’s state lists for every ' +
+        'document that is open. ' +
         'A document backed by a file is read off DISK, so you get what the file holds NOW rather ' +
         'than what it held when the tab was opened. ' +
         'Reading the canvas notifies nobody and starts no turn.',

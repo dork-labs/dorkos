@@ -346,8 +346,16 @@ export class RoomCanvasService {
       defaultTarget: 'author-last',
       chargeCeiling: () => {
         const limit = this.maxOpsPerTurn();
-        if (this.spentThisTurn(turnId) < limit) return null;
-        return { code: 'TOO_MANY_CANVAS_OPS_THIS_TURN', reason: tooManyCanvasOpsMessage(limit) };
+        // **`>=`, never `< …` inverted.** The resolver reads the ceiling live
+        // from settings, and a host that has configured none answers
+        // `undefined` — where `spent >= undefined` is false (proceed, which is
+        // right) and `spent < undefined` is ALSO false (refuse, which is not).
+        // The conformance suite caught exactly that inversion: every room canvas
+        // command refused, with `undefined` printed in the sentence.
+        if (this.spentThisTurn(turnId) >= limit) {
+          return { code: 'TOO_MANY_CANVAS_OPS_THIS_TURN', reason: tooManyCanvasOpsMessage(limit) };
+        }
+        return null;
       },
       record: (entry) => this.record(turnId, roomId, authorId, entry),
     });

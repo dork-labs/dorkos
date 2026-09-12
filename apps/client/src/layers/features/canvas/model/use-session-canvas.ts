@@ -142,11 +142,14 @@ export function useSessionCanvas(
     }
     imported.add(sessionId);
 
-    let cancelled = false;
+    // **Deliberately not cancelled on unmount.** This is a migration, not a
+    // subscription: an unmount halfway through would leave a table half written
+    // — and React runs an effect, cleans it up and runs it again on every mount
+    // in development, so a cancel-on-cleanup import never ran at all. The latch
+    // above is what keeps it to once; nothing else needs to.
     void (async () => {
       try {
         const existing = await transport.listSessionCanvas(sessionId);
-        if (cancelled) return;
         if (existing.length > 0) {
           // The table is already filled — by an earlier import, by another
           // device, or by this session's own agent. Never re-seeded, which is
@@ -155,23 +158,27 @@ export function useSessionCanvas(
           return;
         }
         for (const content of documentsOf(entry)) {
-          if (cancelled) return;
           await transport.openSessionCanvasDocument(sessionId, content);
         }
-        if (cancelled) return;
         // Only now: every write returned. A partial import keeps the entry and
         // retries on the next hydrate, because a half-written table plus a
         // deleted local copy is the one outcome with no way back.
         dropEntry(sessionId);
+        // And put what was just written on screen. The cold snapshot that fills
+        // this slice was taken BEFORE the import ran, and a session nobody has
+        // sent a message on yet has no projector to publish a `canvas` event
+        // through — so without this the documents would be on the server and
+        // invisible until the next reload, which is the divergence this whole
+        // move removes, arriving by a different route.
+        useAppStore
+          .getState()
+          .hydrateCanvasFromSnapshot(sessionId, await transport.listSessionCanvas(sessionId));
       } catch {
         // Kept, deliberately. The next hydrate tries again, and the emptiness
         // check above is what stops the retry from doubling anything.
         imported.delete(sessionId);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
   }, [sessionId, canonical, transport]);
 }
 

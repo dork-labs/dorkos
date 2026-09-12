@@ -75,6 +75,11 @@ function requireRegistry(deps: CapabilityDeps): CapabilityRegistry {
  * (`create_agent`), but `operator.update_agent` and
  * `operator.agents_recent_activity` are real catalog entries with tiers, so
  * naming `agent` wholesale as absent would be its own overclaim.
+ *
+ * `ui` left this list when the domain opened (spec `canvas-agent-seat` §5): it
+ * is a real registry domain now, so naming it as absent would be the same
+ * overclaim in the other direction. It is the guard below retiring an entry
+ * exactly as intended, rather than a number somebody patched.
  */
 export const UNREGISTERED_TOOL_FAMILIES: readonly string[] = [
   'tasks',
@@ -84,7 +89,6 @@ export const UNREGISTERED_TOOL_FAMILIES: readonly string[] = [
   'trace',
   'extension',
   'devtools',
-  'ui',
 ];
 
 /**
