@@ -129,6 +129,39 @@ describe('the tool input schema can carry every action it teaches', () => {
     expect(named(hint, CONTENT_TYPES).sort()).toEqual([...CONTENT_TYPES].sort());
   });
 
+  it('advertises every argument the action catalog teaches', () => {
+    // The OTHER half of this file's drift, and the one that bit: a field can be
+    // in `UiCommandSchema`, be taught in the description, and still be missing
+    // HERE — and the SDK builds the tool's JSON Schema from exactly these keys,
+    // so the value is stripped in transit. Nothing fails: the tool answers
+    // `success` and simply acted without it. `documentId` shipped that way.
+    const advertised = new Set(Object.keys(CONTROL_UI_INPUT));
+    const missing: string[] = [];
+    for (const line of buildUiActionCatalog({ indent: '', sentences: false }).split('\n')) {
+      const args = line.slice(line.indexOf(':') + 1);
+      if (!args.includes('{')) continue;
+      // Top-level keys only: a name right after `{` or `,`, never one inside a
+      // quoted value such as "https://…".
+      for (const [, field] of args.matchAll(/(?:[{,])\s*([A-Za-z_][A-Za-z0-9_]*)\??\s*:/g)) {
+        if (!advertised.has(field)) missing.push(`${line.split(':')[0]}.${field}`);
+      }
+    }
+    expect(missing, 'taught but not advertised — the MCP layer strips these').toEqual([]);
+  });
+
+  it('teaches documentId on both canvas verbs that take one', () => {
+    // Named rather than left to the rule above, because these two are why the
+    // rule exists and a future refactor of the catalog must not quietly drop
+    // them: in a room, a bare update acts on the author's own last document, so
+    // an agent with no way to name one can never touch anybody else's.
+    const catalog = buildUiActionCatalog({ indent: '', sentences: false });
+    for (const verb of ['update_canvas', 'close_canvas']) {
+      const line = catalog.split('\n').find((entry) => entry.startsWith(`${verb}:`));
+      expect(line, `${verb} has no catalog line`).toBeDefined();
+      expect(line).toContain('documentId');
+    }
+  });
+
   it('carries no z.record at any depth, which would empty the whole tool list', () => {
     // claude-agent-sdk 0.3.257+ with zod 4.5.3+ throws inside its record
     // processor while answering `tools/list`, and the model is handed NO DorkOS
