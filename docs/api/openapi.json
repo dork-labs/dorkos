@@ -9898,6 +9898,21 @@
           "editing"
         ]
       },
+      "CanvasViewingRequest": {
+        "type": "object",
+        "properties": {
+          "documentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          }
+        },
+        "required": [
+          "documentId"
+        ]
+      },
       "RoomSnapshot": {
         "type": "object",
         "properties": {
@@ -9990,6 +10005,9 @@
               "answered",
               "silent"
             ]
+          },
+          "documentId": {
+            "type": "string"
           }
         },
         "required": [
@@ -50974,6 +50992,70 @@
           },
           "409": {
             "description": "The room is archived, or somebody else already holds this lock",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{id}/canvas/viewing": {
+      "post": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Say which canvas document you are looking at",
+        "description": "Puts a small face on that document’s tab for everybody else looking at this room, and takes it off again when you send `{\"documentId\": null}`. **Nothing is written down.** The whole effect is one live-only frame on the room’s stream, so a reader who connects afterwards never learns it and a reconnect forgets it — a face left on a document somebody walked away from ten minutes ago would be worse than no face. Send it when the document you are looking at changes, and once with `null` on the way out. It answers for an archived room, because looking at one is allowed.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CanvasViewingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Told the room"
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`AGENT_IDENTITY_UNVERIFIED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, the caller may not see it, or no such document on its canvas",
             "content": {
               "application/json": {
                 "schema": {

@@ -509,6 +509,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     updateRoomCanvasDocument: vi.fn().mockResolvedValue(mockCanvasDocument()),
     closeRoomCanvasDocument: vi.fn().mockResolvedValue(undefined),
     setRoomCanvasEditing: vi.fn().mockResolvedValue({ editingBy: null, expiresAt: null }),
+    setRoomCanvasViewing: vi.fn().mockResolvedValue(undefined),
     subscribeRoom: vi.fn(emptyAsyncIterable),
     // Read state (team-room-home D4) — one cursor for every kind of thread a
     // person reads, rooms included. The default read is `null`: a test that says

@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { mockCanvasDocument } from '@dorkos/test-utils';
-import type { CanvasDocument, RoomCanvasEvent } from '@dorkos/shared/room-schemas';
+import type { CanvasDocument, RoomCanvasEvent, RoomSignalEvent } from '@dorkos/shared/room-schemas';
 import { useAppStore } from '../app-store';
 import { roomDocumentsInView } from '../app-store-room-canvas';
 
@@ -18,6 +18,8 @@ function resetRoomCanvas() {
     roomCanvasUnread: {},
     roomCanvasEditing: {},
     roomCanvasStale: {},
+    roomCanvasPresence: {},
+    roomCanvasPresenceEpoch: {},
   });
 }
 
@@ -304,6 +306,75 @@ describe('RoomCanvasSlice — closing and reading', () => {
     useAppStore.getState().clearRoomCanvasUnread(ROOM, 'canvas');
 
     expect(useAppStore.getState().roomCanvasUnread[ROOM]?.canvas).toEqual([]);
+  });
+});
+
+describe('RoomCanvasSlice — who is looking', () => {
+  beforeEach(resetRoomCanvas);
+
+  /** One `presence` signal, as the room's stream delivers it. */
+  const looking = (authorId: string, documentId?: string): RoomSignalEvent => ({
+    type: 'signal',
+    signal: 'presence',
+    authorId,
+    at: '2026-09-12T00:00:00.000Z',
+    ...(documentId !== undefined ? { documentId } : {}),
+  });
+
+  const presence = () => useAppStore.getState().roomCanvasPresence[ROOM];
+
+  it('remembers where each member is, one document each', () => {
+    useAppStore.getState().applyRoomCanvasPresence(ROOM, looking('author-ana', 'd1'));
+    useAppStore.getState().applyRoomCanvasPresence(ROOM, looking('author-ben', 'd2'));
+    // Moving is one statement, not two: the second replaces the first.
+    useAppStore.getState().applyRoomCanvasPresence(ROOM, looking('author-ana', 'd2'));
+
+    expect(presence()).toEqual({ 'author-ana': 'd2', 'author-ben': 'd2' });
+  });
+
+  it('takes a face off when the frame names no document', () => {
+    useAppStore.getState().applyRoomCanvasPresence(ROOM, looking('author-ana', 'd1'));
+    useAppStore.getState().applyRoomCanvasPresence(ROOM, looking('author-ana'));
+
+    expect(presence()).toEqual({});
+  });
+
+  it('ignores a signal that is not about who is looking', () => {
+    // The same lane carries the working indicator, which is a different fact
+    // with a different life — and it names no document, so a store that did not
+    // check the signal name would read every `working` frame as "Ana looked
+    // away" and wipe a face that is still true. Hence the face FIRST: a store
+    // that started empty could not tell the two behaviours apart.
+    useAppStore.getState().applyRoomCanvasPresence(ROOM, looking('author-ana', 'd1'));
+
+    useAppStore.getState().applyRoomCanvasPresence(ROOM, {
+      type: 'signal',
+      signal: 'progress',
+      authorId: 'author-ana',
+      at: '2026-09-12T00:00:01.000Z',
+      state: 'working',
+      entryId: 'entry-1',
+      since: '2026-09-12T00:00:00.000Z',
+    });
+
+    expect(presence()).toEqual({ 'author-ana': 'd1' });
+  });
+
+  it('forgets every face when the stream cycles, and asks this viewer to say again', () => {
+    apply(frame(doc({ id: 'd1' })));
+    useAppStore.getState().applyRoomCanvasPresence(ROOM, looking('author-ana', 'd1'));
+    const before = useAppStore.getState().roomCanvasPresenceEpoch[ROOM] ?? 0;
+
+    useAppStore.getState().beginRoomCanvasCycle(ROOM);
+
+    // **Emptied, where a document is only marked.** Nothing replays a signal, so
+    // every face this reader holds may be minutes stale; a document is re-sent
+    // by the resync, so keeping it costs nothing.
+    expect(presence()).toEqual({});
+    expect(table().map((d) => d.id)).toEqual(['d1']);
+    // The epoch moving is what makes the faces come back: every connected viewer
+    // re-states where it is looking, which is one frame each per reconnect.
+    expect(useAppStore.getState().roomCanvasPresenceEpoch[ROOM]).toBe(before + 1);
   });
 });
 

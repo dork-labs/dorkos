@@ -27,6 +27,7 @@ import {
   type TeamAgent,
   type TeamRoomDeps,
 } from '../ensure-team-room.js';
+import { TEAM_BOARD_TITLE } from '../team-board.js';
 import { agentLookupFor, createRoomHarness, type RoomHarness } from './room-test-harness.js';
 
 const DORKBOT = '/agents/dorkbot';
@@ -114,6 +115,58 @@ describe('opening #team', () => {
     // exists": a hook that found nothing and was refused by the unique index
     // would also leave one row, and would silently stop backfilling the roster.
     expect([opened?.id, second?.id, third?.id]).toEqual([room.id, room.id, room.id]);
+  });
+
+  describe('the example board', () => {
+    /** The board on #team's canvas, or null when there is none. */
+    const board = (harness: RoomHarness) =>
+      harness.service.canvas.list(teamRoom(harness).id).find((d) => d.title === TEAM_BOARD_TITLE) ??
+      null;
+
+    it('seeds one pinned board, with no numbers nothing measured', () => {
+      const harness = install();
+      ensureTeamRoom(harness.deps);
+
+      const seeded = board(harness);
+      expect(seeded).not.toBeNull();
+      expect(seeded?.pinned).toBe(true);
+      // **No new primitive.** It is an ordinary `widget` on an ordinary room
+      // canvas — the claim D13 makes, and the one a reviewer would otherwise
+      // have to take on trust.
+      expect(seeded?.contentType).toBe('widget');
+      // A board that shipped with a zero on it would be the app inventing a
+      // measurement, so the seed is a checklist of things to do next.
+      expect(JSON.stringify(seeded?.content)).toContain('Make your first agent');
+    });
+
+    it('never comes back after somebody takes it off their canvas', () => {
+      const harness = install();
+      ensureTeamRoom(harness.deps);
+      const seeded = board(harness);
+      expect(seeded).not.toBeNull();
+
+      harness.service.canvas.close(teamRoom(harness).id, harness.human, seeded!.id);
+      // Every later boot, and every agent created in between — none of them may
+      // put it back. A person who cleared their table has decided something.
+      ensureTeamRoom(harness.deps);
+      joinTeamRoom(harness.deps, NOVA);
+      ensureTeamRoom(harness.deps);
+
+      expect(board(harness)).toBeNull();
+    });
+
+    it('seeds exactly one, however many boots', () => {
+      const harness = install();
+      ensureTeamRoom(harness.deps);
+      ensureTeamRoom(harness.deps);
+      ensureTeamRoom(harness.deps);
+
+      expect(
+        harness.service.canvas
+          .list(teamRoom(harness).id)
+          .filter((d) => d.title === TEAM_BOARD_TITLE)
+      ).toHaveLength(1);
+    });
   });
 
   it('does not duplicate a membership on a second boot', () => {

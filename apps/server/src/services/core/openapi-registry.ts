@@ -130,6 +130,7 @@ import {
   CanvasDocumentSchema,
   CanvasDocumentListResponseSchema,
   CanvasEditingRequestSchema,
+  CanvasViewingRequestSchema,
   CanvasEditingResponseSchema,
   OpenCanvasDocumentRequestSchema,
   UpdateCanvasDocumentRequestSchema,
@@ -4897,6 +4898,25 @@ registry.registerPath({
       description: 'The room is archived, or somebody else already holds this lock',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/rooms/{id}/canvas/viewing',
+  tags: ['Rooms'],
+  summary: 'Say which canvas document you are looking at',
+  description:
+    'Puts a small face on that document’s tab for everybody else looking at this room, and takes it off again when you send `{"documentId": null}`. **Nothing is written down.** The whole effect is one live-only frame on the room’s stream, so a reader who connects afterwards never learns it and a reconnect forgets it — a face left on a document somebody walked away from ten minutes ago would be worse than no face. Send it when the document you are looking at changes, and once with `null` on the way out. It answers for an archived room, because looking at one is allowed.',
+  request: {
+    params: RoomIdParams,
+    body: { content: { 'application/json': { schema: CanvasViewingRequestSchema } } },
+  },
+  responses: {
+    204: { description: 'Told the room' },
+    400: roomValidationError,
+    401: roomAgentUnverified,
+    404: canvasDocumentNotFound,
   },
 });
 

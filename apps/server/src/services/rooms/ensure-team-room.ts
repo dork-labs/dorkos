@@ -45,6 +45,7 @@ import { TEAM_ROOM_WELL_KNOWN, type Room, type RoomRosterEntry } from '@dorkos/s
 import { logger } from '../../lib/logger.js';
 import { DORKBOT_AGENT_NAME } from '../mesh/ensure-dorkbot.js';
 import { CHANNEL_RESPONSE_MODE } from './room-roster.js';
+import { seedTeamBoard as teamBoardContent } from './team-board.js';
 import type { RoomService } from './room-service.js';
 
 /**
@@ -142,8 +143,14 @@ export interface TeamRoomConfigSource {
  * @returns The room, or `null` when it could not be opened.
  */
 export function ensureTeamRoom(deps: TeamRoomDeps): Room | null {
-  const room = openTeamRoom(deps);
-  if (!room) return null;
+  const opened = openTeamRoom(deps);
+  if (!opened) return null;
+  const room = opened.room;
+  // **Only on the boot that CREATED the room**, which is once per install. The
+  // board is an example, and a person who takes it off their canvas has decided
+  // something — re-seeding it because the table is empty again would be the app
+  // arguing with them (spec `room-canvas` D13).
+  if (opened.created) seedTeamBoard(deps, room);
   // Guarded like every other read that leaves this module: the agent registry
   // is a subsystem that can be down, and a boot must not die because it was.
   let registered: readonly TeamAgent[] = [];
@@ -184,10 +191,10 @@ export function ensureTeamRoom(deps: TeamRoomDeps): Room | null {
  * @param agentPath - The new agent's directory.
  */
 export function joinTeamRoom(deps: TeamRoomDeps, agentPath: string): void {
-  const room = openTeamRoom(deps);
-  if (!room) return;
-  seatAgent(deps, room, agentPath);
-  syncDefaultAgent(deps, room);
+  const opened = openTeamRoom(deps);
+  if (!opened) return;
+  seatAgent(deps, opened.room, agentPath);
+  syncDefaultAgent(deps, opened.room);
 }
 
 /**
@@ -206,8 +213,8 @@ export function joinTeamRoom(deps: TeamRoomDeps, agentPath: string): void {
 export function watchDefaultAgent(deps: TeamRoomDeps, source: TeamRoomConfigSource): () => void {
   return source.onChange((change) => {
     if (!change.sections.includes('agents')) return;
-    const room = openTeamRoom(deps);
-    if (room) syncDefaultAgent(deps, room);
+    const opened = openTeamRoom(deps);
+    if (opened) syncDefaultAgent(deps, opened.room);
   });
 }
 
@@ -215,9 +222,15 @@ export function watchDefaultAgent(deps: TeamRoomDeps, source: TeamRoomConfigSour
  * The room, opened once and returned forever after. Degrades to `null` with a
  * warning naming what was lost.
  *
+ * It answers whether THIS call is what made the room, because one thing is owed
+ * to a brand-new #team and to no later one: the example board on its canvas.
+ *
  * @param deps - The service and the owner.
+ * @returns The room and whether this call created it, or `null`.
  */
-function openTeamRoom(deps: Pick<TeamRoomDeps, 'service' | 'operatorAuthorId'>): Room | null {
+function openTeamRoom(
+  deps: Pick<TeamRoomDeps, 'service' | 'operatorAuthorId'>
+): { room: Room; created: boolean } | null {
   try {
     const { room, created } = deps.service.ensureSystemChannel(
       TEAM_ROOM_WELL_KNOWN,
@@ -226,12 +239,33 @@ function openTeamRoom(deps: Pick<TeamRoomDeps, 'service' | 'operatorAuthorId'>):
     );
     if (created)
       logger.info('[Rooms] Opened your team room at #%s', room.slug ?? TEAM_ROOM_WELL_KNOWN);
-    return room;
+    return { room, created };
   } catch (err) {
     logger.warn('[Rooms] could not open the team room', {
       error: err instanceof Error ? err.message : String(err),
     });
     return null;
+  }
+}
+
+/**
+ * Put the example board on a brand-new #team's canvas, pinned.
+ *
+ * Guarded like every other outward call in this module: a canvas that refused is
+ * a missing example, never a boot that died.
+ *
+ * @param deps - The service and the owner.
+ * @param room - The team room, just created.
+ */
+function seedTeamBoard(deps: Pick<TeamRoomDeps, 'service' | 'operatorAuthorId'>, room: Room): void {
+  try {
+    deps.service.canvas.open(room.id, deps.operatorAuthorId(), teamBoardContent(), {
+      pinned: true,
+    });
+  } catch (err) {
+    logger.warn('[Rooms] could not put the example board on the team room’s canvas', {
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 

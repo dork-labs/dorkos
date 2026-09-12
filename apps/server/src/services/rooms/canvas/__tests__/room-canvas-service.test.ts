@@ -389,6 +389,51 @@ describe('RoomCanvasService.apply', () => {
       expect(canvas.list(room.id)).toHaveLength(MAX_ROOM_CANVAS_DOCUMENTS + 1);
     });
 
+    it('spares a pin taken on the document that was next to go', () => {
+      // The discriminating case, and the one the happy path misses: fill the
+      // room to its ceiling, then pin the LEAST recently active document — the
+      // one eviction would reach for first — and push the room over. A carve-out
+      // that only protected documents pinned at OPEN time passes the test above
+      // and fails this one.
+      const oldest = canvas.open(room.id, human, {
+        type: 'url',
+        url: 'https://example.test/first',
+      });
+      for (let n = 1; n < MAX_ROOM_CANVAS_DOCUMENTS; n += 1) {
+        canvas.open(room.id, human, { type: 'url', url: `https://example.test/${n}` });
+      }
+      expect(canvas.list(room.id)).toHaveLength(MAX_ROOM_CANVAS_DOCUMENTS);
+
+      // Pinning takes it out of the count, so it takes TWO more opens to put the
+      // room back over — which is itself the second half of the carve-out.
+      canvas.pin(room.id, human, oldest.id, true);
+      canvas.open(room.id, human, { type: 'url', url: 'https://example.test/newer' });
+      canvas.open(room.id, human, { type: 'url', url: 'https://example.test/newest' });
+
+      expect(canvas.get(room.id, oldest.id)).not.toBeNull();
+      // …and somebody else went instead, so the ceiling still bites.
+      const live = canvas.list(room.id);
+      expect(live).toHaveLength(MAX_ROOM_CANVAS_DOCUMENTS + 1);
+      expect(live.some((d) => d.content.type === 'url' && d.content.url.endsWith('/1'))).toBe(
+        false
+      );
+    });
+
+    it('a pin is a row, so a reload finds it and still sorts it first', () => {
+      const doc = canvas.open(room.id, human, jsonContent('the plan'));
+      const later = canvas.open(room.id, human, jsonContent('something later'));
+      canvas.pin(room.id, human, doc.id, true);
+
+      // What a reload actually reads: the ROW, in SQLite, rather than anything
+      // this process is holding. Nothing about a pin lives in memory, which is
+      // why closing the browser cannot lose one.
+      expect(canvasDocuments.get(room.id, doc.id)?.pinned).toBe(true);
+      // And the order every viewer is served comes off those rows, so the pin is
+      // first however recently anything else was touched.
+      canvas.activate(room.id, human, later.id);
+      expect(canvas.list(room.id).map((d) => d.id)).toEqual([doc.id, later.id]);
+    });
+
     it('publishes a `closed` frame for anything it evicts', async () => {
       const frames = await collectFrames(broadcaster, room.id, async () => {
         for (let n = 0; n <= MAX_ROOM_CANVAS_DOCUMENTS; n += 1) {
