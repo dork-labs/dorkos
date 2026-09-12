@@ -22,6 +22,8 @@ export const connectorAuthenticationFlows = sqliteTable(
     label: text('label'),
     /** Stable local connection being reauthenticated, when this is reconnect. */
     reconnectConnectionId: text('reconnect_connection_id').references(() => connections.id),
+    /** Private acknowledged cleanup generations captured at owner flow creation. */
+    cleanupSnapshotJson: text('cleanup_snapshot_json'),
     /** Owner-only provider consent URL; cleared on every terminal transition. */
     authorizeUrl: text('authorize_url'),
     /** Optional hash of callback state when a provider returns one to DorkOS. */
@@ -100,6 +102,8 @@ export const connectorManagedAuthorityOutbox = sqliteTable(
     }).notNull(),
     subjectId: text('subject_id').notNull(),
     scopeVersion: integer('scope_version').notNull(),
+    /** Local cleanup generation bound to this durable hosted command. */
+    cleanupGeneration: integer('cleanup_generation').notNull().default(0),
     requestHash: text('request_hash').notNull(),
     requestJson: text('request_json').notNull(),
     state: text('state', { enum: ['pending', 'applied', 'rejected', 'superseded'] }).notNull(),

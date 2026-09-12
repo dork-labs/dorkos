@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pause, Play, RefreshCw, Trash2 } from 'lucide-react';
 import {
   useConnectorConnection,
   useConnectorDisconnectImpact,
   useConnectorUsage,
   useDisconnectConnectorConnection,
+  useRemoveConnectorConnection,
   usePauseConnectorConnection,
   useRenameConnectorConnection,
   useReconnectConnectorConnection,
@@ -68,15 +69,42 @@ export function ConnectionDetailSheet({
   const pause = usePauseConnectorConnection();
   const resume = useResumeConnectorConnection();
   const disconnect = useDisconnectConnectorConnection();
+  const remove = useRemoveConnectorConnection();
   const [editedLabel, setEditedLabel] = useState<{ connectionId: string; value: string } | null>(
     null
   );
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const impact = useConnectorDisconnectImpact(connectionId, confirmDisconnect);
+  useEffect(() => {
+    rename.reset();
+    reconnect.reset();
+    pause.reset();
+    resume.reset();
+    disconnect.reset();
+    remove.reset();
+    setConfirmDisconnect(false);
+    setConfirmRemove(false);
+  }, [
+    connectionId,
+    rename.reset,
+    reconnect.reset,
+    pause.reset,
+    resume.reset,
+    disconnect.reset,
+    remove.reset,
+  ]);
 
   const mutationError =
-    rename.error ?? reconnect.error ?? pause.error ?? resume.error ?? disconnect.error;
+    remove.error ??
+    rename.error ??
+    reconnect.error ??
+    pause.error ??
+    resume.error ??
+    disconnect.error;
   const connection = detail.data?.connection;
+  const cleanupConfirmed =
+    connection?.externalCleanup === 'complete' || connection?.externalCleanup === 'not_required';
   const label =
     editedLabel?.connectionId === connectionId ? editedLabel.value : (connection?.label ?? '');
 
@@ -292,7 +320,7 @@ export function ConnectionDetailSheet({
                     role="alert"
                     className="text-destructive bg-destructive/5 rounded-lg p-3 text-sm"
                   >
-                    We couldn’t confirm that change. The latest account state has been reloaded.
+                    {accountChangeError(mutationError)}
                   </p>
                 )}
 
@@ -331,10 +359,46 @@ export function ConnectionDetailSheet({
                           { onSuccess: (result) => onReconnect(result.flowId) }
                         )
                       }
-                      disabled={reconnect.isPending}
+                      disabled={
+                        reconnect.isPending ||
+                        (connection?.lifecycle === 'disconnected' && !cleanupConfirmed)
+                      }
                     >
                       <RefreshCw className="size-4" aria-hidden /> Reconnect
                     </Button>
+                    {connection?.lifecycle === 'disconnected' && (
+                      <>
+                        {!cleanupConfirmed && (
+                          <Button
+                            variant="secondary"
+                            disabled={disconnect.isPending}
+                            onClick={() =>
+                              connectionId && disconnect.mutate({ connectionId, input: undefined })
+                            }
+                          >
+                            {disconnect.isPending
+                              ? 'Disconnecting…'
+                              : connection.externalCleanup === 'failed'
+                                ? 'Try disconnecting again'
+                                : 'Finish disconnecting'}
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          disabled={!cleanupConfirmed || remove.isPending}
+                          data-testid="remove-account"
+                          onClick={() => setConfirmRemove(true)}
+                        >
+                          <Trash2 className="size-4" aria-hidden /> Remove from Accounts
+                        </Button>
+                        {!cleanupConfirmed && (
+                          <p className="text-muted-foreground w-full text-xs">
+                            Finish disconnecting this account before reconnecting or removing it.
+                            Agent access is already closed.
+                          </p>
+                        )}
+                      </>
+                    )}
                     {connection?.lifecycle !== 'disconnected' && (
                       <Button variant="ghost" onClick={() => setConfirmDisconnect(true)}>
                         <Trash2 className="size-4" aria-hidden /> Disconnect
@@ -348,6 +412,37 @@ export function ConnectionDetailSheet({
         </ResponsiveDialogContent>
       </ResponsiveDialog>
 
+      <AlertDialog open={confirmRemove} onOpenChange={setConfirmRemove}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove this account from Accounts?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The account will disappear from this list. Its past usage and activity will remain.
+              Connecting it again will require you to choose agent access again.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep account</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={remove.isPending || !cleanupConfirmed}
+              onClick={() =>
+                connectionId &&
+                remove.mutate(
+                  { connectionId, input: undefined },
+                  {
+                    onSuccess: () => {
+                      setConfirmRemove(false);
+                      onClose();
+                    },
+                  }
+                )
+              }
+            >
+              Remove from Accounts
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog open={confirmDisconnect} onOpenChange={setConfirmDisconnect}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -390,4 +485,24 @@ export function ConnectionDetailSheet({
       </AlertDialog>
     </>
   );
+}
+
+/** Present only known account failure codes; never expose arbitrary server text. */
+function accountChangeError(error: unknown): string {
+  const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+  switch (code) {
+    case 'connection_cleanup_pending':
+      return 'Finish disconnecting this account, then try again. Agent access is already closed.';
+    case 'connection_not_disconnected':
+      return 'Disconnect this account before removing it from Accounts.';
+    case 'connection_not_found':
+      return 'This account is no longer available. Close these details and choose an account from Accounts.';
+    case 'provider_not_found':
+    case 'authentication_unavailable':
+      return 'Sign-in is unavailable for this service. Check your account setup, then try again.';
+    case 'idempotency_conflict':
+      return 'This sign-in request has already been used. Close these details and start again.';
+    default:
+      return 'We couldn’t confirm that change. Check the account’s current status before trying again.';
+  }
 }

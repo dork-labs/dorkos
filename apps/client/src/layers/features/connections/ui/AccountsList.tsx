@@ -35,26 +35,53 @@ export function AccountsList({
     );
   }
   const connections = query.data?.connections ?? [];
-  if (connections.length === 0) {
-    return (
-      <div className="bg-muted/40 rounded-lg p-5">
-        <p className="text-sm font-medium">No accounts connected</p>
-        <p className="text-muted-foreground mt-1 text-xs">
-          Connect a service, then choose exactly which agents may use it.
-        </p>
-      </div>
-    );
-  }
+  const connected = connections.filter((connection) => connection.lifecycle !== 'disconnected');
+  const disconnected = connections.filter((connection) => connection.lifecycle === 'disconnected');
   return (
-    <ul className="space-y-2">
-      {connections.map((connection) => (
-        <AccountRow
-          key={connection.connectionId}
-          connection={connection}
-          onOpenDetail={onOpenDetail}
-        />
-      ))}
-    </ul>
+    <div className="space-y-6">
+      <section aria-labelledby="connections-connected" className="space-y-3">
+        <h3 id="connections-connected" className="text-sm font-semibold">
+          Connected accounts
+        </h3>
+        {connected.length === 0 ? (
+          <div className="bg-muted/40 rounded-lg p-5">
+            <p className="text-sm font-medium">No accounts connected</p>
+            <p className="text-muted-foreground mt-1 text-xs">
+              Connect a service, then choose exactly which agents may use it.
+            </p>
+          </div>
+        ) : (
+          <ul className="space-y-2">
+            {connected.map((connection) => (
+              <AccountRow
+                key={connection.connectionId}
+                connection={connection}
+                onOpenDetail={onOpenDetail}
+              />
+            ))}
+          </ul>
+        )}
+      </section>
+      {disconnected.length > 0 && (
+        <section aria-labelledby="connections-disconnected" className="space-y-3">
+          <h3 id="connections-disconnected" className="text-sm font-semibold">
+            Disconnected accounts
+          </h3>
+          <p className="text-muted-foreground text-xs">
+            These accounts cannot be used by agents. Reconnect one or remove it from Accounts.
+          </p>
+          <ul className="space-y-2">
+            {disconnected.map((connection) => (
+              <AccountRow
+                key={connection.connectionId}
+                connection={connection}
+                onOpenDetail={onOpenDetail}
+              />
+            ))}
+          </ul>
+        </section>
+      )}
+    </div>
   );
 }
 

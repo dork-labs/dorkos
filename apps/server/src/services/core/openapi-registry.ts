@@ -3148,6 +3148,25 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'post',
+  path: '/api/connectors/connections/{connectionId}/remove',
+  tags: ['Connectors'],
+  summary: 'Remove a disconnected account from Accounts while retaining its history',
+  request: { params: z.object({ connectionId: z.string().min(1) }) },
+  responses: {
+    204: { description: 'Account removed from the owner inventory' },
+    404: {
+      description: 'Account absent or owned by someone else',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'Account must finish disconnecting before removal',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
   path: '/api/connectors/connections/{connectionId}/reconnect',
   tags: ['Connectors'],
   summary: 'Start an idempotent reconnect flow',

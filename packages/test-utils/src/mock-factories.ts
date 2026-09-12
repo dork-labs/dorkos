@@ -1135,6 +1135,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     resumeConnectorConnection: vi.fn(),
     getConnectorDisconnectImpact: vi.fn(),
     disconnectConnectorConnection: vi.fn(),
+    removeConnectorConnection: vi.fn(),
     getAgentConnectorConnections: vi
       .fn()
       .mockImplementation((agentId: string) => Promise.resolve({ agentId, connections: [] })),

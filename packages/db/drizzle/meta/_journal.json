@@ -687,6 +687,13 @@
       "when": 1789191429323,
       "tag": "0097_new_boomerang",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "6",
+      "when": 1789248008759,
+      "tag": "0098_removed_connections",
+      "breakpoints": true
     }
   ]
 }

@@ -216,19 +216,54 @@ export class ConnectionStore {
   reconcile(
     provider: ConnectorProvider,
     account: ProviderConnectedAccount,
-    options: { restoreDisconnected?: boolean } = {}
+    options: { restoreDisconnected?: boolean; allowRemovedReplacement?: boolean } = {}
   ): ConnectedAccount {
     this.assertAvailable();
-    const existing = this.db.$client
+    let existing = this.db.$client
       .prepare(
-        `SELECT id, created_at, enabled, lifecycle_state
+        `SELECT id, created_at, enabled, lifecycle_state, removed_at, external_cleanup_state
          FROM connections
-         WHERE provider_instance_id = ? AND external_account_ref = ?`
+         WHERE provider_instance_id = ? AND external_account_ref = ?
+         ORDER BY removed_at IS NULL DESC, removed_at DESC, id DESC
+         LIMIT 1`
       )
       .get(provider.instanceId, account.externalAccountRef) as
-      { id: string; created_at: string; enabled: number; lifecycle_state: string } | undefined;
+      | {
+          id: string;
+          created_at: string;
+          enabled: number;
+          lifecycle_state: string;
+          removed_at: string | null;
+          external_cleanup_state: string;
+        }
+      | undefined;
+    if (existing?.removed_at) {
+      if (options.allowRemovedReplacement) {
+        if (!['complete', 'not_required'].includes(existing.external_cleanup_state))
+          throw new Error('Account cleanup is not confirmed.');
+        existing = undefined;
+      } else {
+        return {
+          id: existing.id as ConnectedAccount['id'],
+          provider: provider.type,
+          toolkit: account.toolkit,
+          label: account.label,
+          status: 'revoked',
+          custody: account.custody,
+        };
+      }
+    }
     const now = new Date().toISOString();
     const id = existing?.id ?? ulid();
+    // Closing an account clears `enabled` as well as the lifecycle state
+    // (`ConnectorLifecycleService.disconnect`), so bringing one back has to
+    // restore BOTH. Restoring only the lifecycle state lands a row that reads
+    // `connected` everywhere and is still refused by every executability check,
+    // which is a reconnected account no agent can use. A merely PAUSED row is
+    // deliberately left alone: pausing is an explicit owner choice, and a
+    // sign-in does not overrule it.
+    const restoringDisconnected =
+      Boolean(options.restoreDisconnected) && existing?.lifecycle_state === 'disconnected';
     this.db
       .insert(connections)
       .values({
@@ -245,11 +280,13 @@ export class ConnectionStore {
       })
       .onConflictDoUpdate({
         target: [connections.providerInstanceId, connections.externalAccountRef],
+        targetWhere: sql`${connections.removedAt} IS NULL`,
         set: {
           toolkit: account.toolkit,
           label: account.label,
           status: account.status,
           ...(options.restoreDisconnected && { lifecycleState: 'connected' as const }),
+          ...(restoringDisconnected && { enabled: true }),
           updatedAt: now,
           lastVerifiedAt: now,
         },
@@ -263,11 +300,22 @@ export class ConnectionStore {
       status:
         existing?.lifecycle_state === 'disconnected' && !options.restoreDisconnected
           ? 'revoked'
-          : existing?.enabled === 0
+          : !restoringDisconnected && existing?.enabled === 0
             ? 'paused'
             : account.status,
       custody: account.custody,
     };
+  }
+
+  /** Whether an account has been removed from owner and agent inventory. */
+  isRemoved(connectionId: string): boolean {
+    return Boolean(
+      this.db
+        .select({ removedAt: connections.removedAt })
+        .from(connections)
+        .where(eq(connections.id, connectionId))
+        .get()?.removedAt
+    );
   }
 
   /** Read one private binding by stable public connection id. */
@@ -327,7 +375,7 @@ export class ConnectionStore {
     const rows = this.db.$client
       .prepare(
         `SELECT id FROM connections
-         WHERE provider_instance_id = ? AND toolkit = ? AND lifecycle_state = 'disconnected'
+         WHERE provider_instance_id = ? AND toolkit = ? AND lifecycle_state = 'disconnected' AND removed_at IS NULL
            AND (? IS NULL OR label = ?)
          ORDER BY id
          LIMIT 2`
@@ -362,7 +410,12 @@ export class ConnectionStore {
     const now = new Date().toISOString();
     this.db.transaction((tx) => {
       tx.update(connections)
-        .set({ lifecycleState: 'disconnected', updatedAt: now })
+        .set({
+          lifecycleState: 'disconnected',
+          externalCleanupState: 'unknown',
+          cleanupGeneration: sql`${connections.cleanupGeneration} + 1`,
+          updatedAt: now,
+        })
         .where(eq(connections.id, connectionId))
         .run();
       tx.delete(agentConnectionAttachments)

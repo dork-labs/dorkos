@@ -381,6 +381,72 @@ describe('ManagedAuthoritySyncService', () => {
     expect(db.select().from(connectorManagedAuthorityOutbox).get()?.state).toBe('applied');
   });
 
+  it.each(['owner retry', 'background recovery'] as const)(
+    'finishes pending managed cleanup through %s after restart without another delete',
+    async (path) => {
+      cloud.submitConnectorAuthorityCommand = vi.fn(async (command) => {
+        submitted.push(command);
+        return {
+          ...statusFor(command),
+          externalCleanup: 'pending',
+        } as ManagedConnectorAuthorityCommandStatus;
+      });
+      await service().transition({
+        connectionId: CONNECTION_ID,
+        managedConnectionId: MANAGED_CONNECTION_ID,
+        lifecycle: 'disconnected',
+        providerInstanceId: PROVIDER_ID,
+        executionConfigGeneration: 1,
+        owner: OWNER,
+        signal: new AbortController().signal,
+      });
+      const stored = db.select().from(connectorManagedAuthorityOutbox).get()!;
+      expect(stored).toMatchObject({
+        state: 'pending',
+        cleanupGeneration: 1,
+        nextAttemptAt: expect.any(String),
+      });
+      expect(db.select().from(connections).get()).toMatchObject({
+        externalCleanupState: 'pending',
+        cleanupGeneration: 1,
+        enabled: false,
+      });
+      cloud.readConnectorAuthorityCommand = vi.fn(
+        async () =>
+          ({
+            ...statusFor(submitted[0]!),
+            externalCleanup: 'complete',
+          }) as ManagedConnectorAuthorityCommandStatus
+      );
+      clock = Date.parse(stored.nextAttemptAt!) + 1;
+      if (path === 'owner retry')
+        await expect(
+          service().transition({
+            connectionId: CONNECTION_ID,
+            managedConnectionId: MANAGED_CONNECTION_ID,
+            lifecycle: 'disconnected',
+            providerInstanceId: PROVIDER_ID,
+            executionConfigGeneration: 1,
+            owner: OWNER,
+            signal: new AbortController().signal,
+          })
+        ).resolves.toMatchObject({ externalCleanup: 'complete' });
+      else await expect(service().recoverPending(new AbortController().signal)).resolves.toBe(1);
+      expect(db.select().from(connectorManagedAuthorityOutbox).all()).toHaveLength(1);
+      expect(cloud.readConnectorAuthorityCommand).toHaveBeenCalledWith(
+        stored.commandId,
+        expect.any(AbortSignal)
+      );
+      expect(cloud.submitConnectorAuthorityCommand).toHaveBeenCalledTimes(1);
+      expect(db.select().from(connectorManagedAuthorityOutbox).get()?.state).toBe('applied');
+      expect(db.select().from(connections).get()).toMatchObject({
+        externalCleanupState: 'complete',
+        cleanupGeneration: 1,
+        enabled: false,
+      });
+    }
+  );
+
   it('recovers an ambiguous POST by reading first and repeats the same command only after 404', async () => {
     cloud.submitConnectorAuthorityCommand = vi.fn(async (command) => {
       submitted.push(command);

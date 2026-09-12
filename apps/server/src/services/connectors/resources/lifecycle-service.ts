@@ -1,5 +1,5 @@
 /** Owner lifecycle mutations with local close-first connector authority. */
-import { and, connections, connectorProviderInstances, eq, type Db } from '@dorkos/db';
+import { and, connections, connectorProviderInstances, eq, isNull, sql, type Db } from '@dorkos/db';
 import {
   ConnectorLifecycleResultSchema,
   type ConnectorAuthoritySyncState,
@@ -44,7 +44,11 @@ export interface ConnectorManagedLifecyclePort {
 /** Safe refusal from the owner lifecycle boundary. */
 export class ConnectorLifecycleError extends Error {
   /** Stable machine-readable refusal. */
-  readonly code: 'connection_not_found' | 'managed_sync_unavailable';
+  readonly code:
+    | 'connection_not_found'
+    | 'managed_sync_unavailable'
+    | 'connection_not_disconnected'
+    | 'connection_cleanup_pending';
 
   /** Construct one safe lifecycle refusal. */
   constructor(code: ConnectorLifecycleError['code'], message: string) {
@@ -67,6 +71,10 @@ export interface ConnectorLifecycleServiceOptions {
   /** Durable hosted synchronizer when managed connectors are configured. */
   readonly managed?: ConnectorManagedLifecyclePort;
 }
+
+// Share the pending operation across service instances using the same database.
+// A second delete must not outlive a newer cleanup acknowledgement and sign-in.
+const pendingDisconnects = new WeakMap<Db, Map<string, Promise<ConnectorLifecycleResult>>>();
 
 function ownerColumns(owner: ConnectorOwnerAuthority): {
   ownerKind: 'user' | 'local_install';
@@ -91,6 +99,43 @@ export class ConnectorLifecycleService {
     const row = this.requireOwnedConnection(owner, connectionId);
     this.options.registry.setLabel(row.connectionId, label);
     return this.result(row.connectionId, 'not_required');
+  }
+
+  /** Remove one disconnected account from inventory without deleting history or cleanup. */
+  remove(owner: ConnectorOwnerAuthority, connectionId: string): void {
+    const parsed = ConnectionIdSchema.parse(connectionId);
+    this.options.db.transaction((tx) => {
+      const row = this.ownedConnection(owner, parsed);
+      if (!row) throw new ConnectorLifecycleError('connection_not_found', 'Connection not found.');
+      if (row.removedAt) return;
+      if (row.lifecycleState !== 'disconnected') {
+        throw new ConnectorLifecycleError(
+          'connection_not_disconnected',
+          'Disconnect this account before removing it.'
+        );
+      }
+      if (row.externalCleanupState !== 'complete' && row.externalCleanupState !== 'not_required') {
+        throw new ConnectorLifecycleError(
+          'connection_cleanup_pending',
+          'Finish disconnecting this account before removing it.'
+        );
+      }
+      this.options.authenticationFlows.invalidateConnectionFlows(owner, parsed);
+      tx.update(connections)
+        .set({
+          removedAt: new Date().toISOString(),
+          enabled: false,
+          cleanupGeneration: sql`${connections.cleanupGeneration} + 1`,
+        })
+        .where(
+          and(
+            eq(connections.id, parsed),
+            eq(connections.lifecycleState, 'disconnected'),
+            isNull(connections.removedAt)
+          )
+        )
+        .run();
+    });
   }
 
   /** Close one owned connection immediately, then synchronize hosted authority if needed. */
@@ -135,38 +180,102 @@ export class ConnectorLifecycleService {
     connectionId: string,
     signal: AbortSignal
   ): Promise<ConnectorLifecycleResult> {
-    const row = this.requireOwnedConnection(owner, connectionId);
+    const row = this.ownedConnection(owner, ConnectionIdSchema.parse(connectionId));
+    if (!row || row.removedAt !== null) {
+      throw new ConnectorLifecycleError('connection_not_found', 'Connection not found.');
+    }
+    let pending = pendingDisconnects.get(this.options.db);
+    if (!pending) {
+      pending = new Map();
+      pendingDisconnects.set(this.options.db, pending);
+    }
+    const existing = pending.get(row.connectionId);
+    if (existing) return existing;
+    let resolve!: (result: ConnectorLifecycleResult) => void;
+    let reject!: (error: unknown) => void;
+    const operation = new Promise<ConnectorLifecycleResult>((yes, no) => {
+      resolve = yes;
+      reject = no;
+    });
+    pending.set(row.connectionId, operation);
+    const release = () => {
+      if (pending.get(row.connectionId) === operation) pending.delete(row.connectionId);
+    };
+    void this.disconnectOwned(owner, row, signal).then(
+      (result) => {
+        release();
+        resolve(result);
+      },
+      (error: unknown) => {
+        release();
+        reject(error);
+      }
+    );
+    return operation;
+  }
+
+  private async disconnectOwned(
+    owner: ConnectorOwnerAuthority,
+    row: NonNullable<ReturnType<ConnectorLifecycleService['ownedConnection']>>,
+    signal: AbortSignal
+  ): Promise<ConnectorLifecycleResult> {
     this.options.authenticationFlows.invalidateConnectionFlows(owner, row.connectionId);
     const provider = this.options.registry.resolveProviderInstance(row.providerInstanceId);
-    const providerDisconnect =
-      row.mode === 'byo' && provider
-        ? provider.disconnect(row.externalAccountRef)
-        : row.mode === 'byo'
-          ? Promise.reject(new Error('Connector provider is unavailable for external cleanup.'))
-          : Promise.resolve();
-    if (row.mode === 'byo' || !this.options.managed) {
-      this.options.registry.recordDisconnect(row.connectionId);
-    }
+    // Managed staging closes authority and captures its cleanup generation in the outbox.
     const managedSync =
-      row.mode === 'managed' ? this.syncManaged(owner, row, 'disconnected', signal) : undefined;
+      row.mode === 'managed' && this.options.managed
+        ? this.syncManaged(owner, row, 'disconnected', signal)
+        : undefined;
+    const generation = managedSync
+      ? undefined
+      : this.options.db.transaction((tx) => {
+          this.options.registry.recordDisconnect(row.connectionId);
+          return tx
+            .update(connections)
+            .set({ enabled: false, externalCleanupState: 'pending' })
+            .where(eq(connections.id, row.connectionId))
+            .returning({ generation: connections.cleanupGeneration })
+            .get()!.generation;
+        });
     this.options.authorityCleanup.revokeConnection({
       connectionId: row.connectionId,
       reason: 'connection_removed',
     });
-
     if (managedSync) {
       const sync = await managedSync;
       return this.result(row.connectionId, sync.externalCleanup, sync.authoritySync);
     }
+    if (row.mode === 'managed')
+      return this.result(row.connectionId, 'pending', {
+        status: 'failed',
+        reason: 'Link this installation before finishing account disconnection.',
+      });
+    const acknowledge = (state: 'complete' | 'failed') =>
+      this.options.db
+        .update(connections)
+        .set({ externalCleanupState: state, updatedAt: new Date().toISOString() })
+        .where(
+          and(
+            eq(connections.id, row.connectionId),
+            eq(connections.externalAccountRef, row.externalAccountRef),
+            eq(connections.cleanupGeneration, generation!),
+            eq(connections.lifecycleState, 'disconnected')
+          )
+        )
+        .run();
     try {
-      await providerDisconnect;
-      return this.result(row.connectionId, 'complete');
+      if (!provider) throw new Error('Service unavailable for disconnection.');
+      await provider.disconnect(row.externalAccountRef);
+      const current = acknowledge('complete').changes === 1;
+      return this.result(row.connectionId, current ? 'complete' : 'pending');
     } catch {
+      if (acknowledge('failed').changes !== 1) return this.result(row.connectionId, 'pending');
       return ConnectorLifecycleResultSchema.parse({
         ...this.result(row.connectionId, 'failed'),
         warning: {
           code: 'external_cleanup_failed',
-          message: 'Local access is closed. The service could not confirm account cleanup.',
+          message:
+            'Agent access is closed. Try disconnecting again to finish removing access at the service.',
         },
       });
     }
@@ -248,7 +357,7 @@ export class ConnectorLifecycleService {
   private requireOwnedConnection(owner: ConnectorOwnerAuthority, connectionId: string) {
     const parsed = ConnectionIdSchema.parse(connectionId);
     const row = this.ownedConnection(owner, parsed);
-    if (!row || row.lifecycleState === 'disconnected') {
+    if (!row || row.removedAt || row.lifecycleState === 'disconnected') {
       throw new ConnectorLifecycleError('connection_not_found', 'Connection not found.');
     }
     return row;
@@ -262,6 +371,8 @@ export class ConnectorLifecycleService {
         providerInstanceId: connectorProviderInstances.id,
         externalAccountRef: connections.externalAccountRef,
         lifecycleState: connections.lifecycleState,
+        removedAt: connections.removedAt,
+        externalCleanupState: connections.externalCleanupState,
         authenticationStatus: connections.status,
         reconciliationStatus: connections.grantReconciliationStatus,
         executionConfigGeneration: connectorProviderInstances.executionConfigGeneration,

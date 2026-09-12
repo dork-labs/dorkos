@@ -185,3 +185,11 @@ export function useDisconnectConnectorConnection() {
     transport.disconnectConnectorConnection(connectionId)
   );
 }
+
+/** Remove a disconnected account from the visible owner inventory. */
+export function useRemoveConnectorConnection() {
+  const transport = useTransport();
+  return useConnectionMutation<void>((connectionId) =>
+    transport.removeConnectorConnection(connectionId)
+  );
+}

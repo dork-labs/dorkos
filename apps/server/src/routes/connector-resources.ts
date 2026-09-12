@@ -52,7 +52,10 @@ export interface ConnectorResourcesRouterDeps extends ConnectorOwnerBoundaryDeps
   /** Restart-safe provider authentication flows. */
   readonly authentication: Pick<ConnectorAuthenticationFlowService, 'start' | 'reconnect' | 'poll'>;
   /** Canonical local lifecycle mutations. */
-  readonly lifecycle: Pick<ConnectorLifecycleService, 'rename' | 'pause' | 'resume' | 'disconnect'>;
+  readonly lifecycle: Pick<
+    ConnectorLifecycleService,
+    'rename' | 'pause' | 'resume' | 'disconnect' | 'remove'
+  >;
 }
 
 function owner(req: Request, res: Response, deps: ConnectorResourcesRouterDeps) {
@@ -90,7 +93,13 @@ function sendResourceError(res: Response, error: unknown): void {
     return;
   }
   if (error instanceof ConnectorLifecycleError || error instanceof ConnectorOperatorQueryError) {
-    res.status(404).json({ error: error.message, code: error.code });
+    res
+      .status(
+        error.code === 'connection_not_disconnected' || error.code === 'connection_cleanup_pending'
+          ? 409
+          : 404
+      )
+      .json({ error: error.message, code: error.code });
     return;
   }
   res.status(500).json({ error: 'DorkOS could not complete this connection request. Try again.' });
@@ -215,6 +224,18 @@ export function createConnectorResourcesRouter(deps: ConnectorResourcesRouterDep
     if (!body) return;
     try {
       res.json(deps.lifecycle.rename(operator, req.params.connectionId, body.label));
+    } catch (error) {
+      sendResourceError(res, error);
+    }
+  });
+
+  router.post('/connections/:connectionId/remove', (req, res) => {
+    const operator = owner(req, res, deps);
+    if (!operator) return;
+    if (!parseBody(z.object({}).strict(), req.body ?? {}, res)) return;
+    try {
+      deps.lifecycle.remove(operator, req.params.connectionId);
+      res.status(204).end();
     } catch (error) {
       sendResourceError(res, error);
     }

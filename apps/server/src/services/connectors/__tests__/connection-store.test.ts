@@ -48,6 +48,82 @@ describe('ConnectionStore lifecycle and cleanup', () => {
       .run();
   });
 
+  it('keeps removed accounts hidden on passive refresh and gives an approved replacement a fresh id', async () => {
+    const account = (await provider.listAccounts())[0]!;
+    db.insert(connectionOperationGrants)
+      .values({
+        id: 'grant-1',
+        subjectType: 'agent',
+        subjectId: 'agent-a',
+        agentId: 'agent-a',
+        connectionId: connection.id,
+        operationRevisionId: 'revision-1',
+        createdBy: 'operator',
+        createdAt: NOW,
+      })
+      .run();
+    db.insert(connectorUsageAttempts)
+      .values({
+        attemptId: 'attempt-1',
+        logicalOperationId: 'logical-1',
+        attemptIndex: 1,
+        surface: 'mcp',
+        actorKind: 'agent',
+        actorId: 'agent-a',
+        ownerKind: 'local_install',
+        ownerId: 'installation-a',
+        agentId: 'agent-a',
+        connectionId: connection.id,
+        providerInstanceId: provider.instanceId,
+        providerType: provider.type,
+        payer: 'operator_byo',
+        operationRevisionId: 'revision-1',
+        startedAt: NOW,
+      })
+      .run();
+    registry.recordDisconnect(connection.id);
+    db.update(connections)
+      .set({ removedAt: NOW, externalCleanupState: 'complete' })
+      .where(eq(connections.id, connection.id))
+      .run();
+    expect((await registry.listAccounts()).accounts).toEqual([]);
+    expect(registry.recordConnect(provider, account).id).toBe(connection.id);
+    expect(db.select().from(connections).all()).toHaveLength(1);
+    const replacement = registry.recordConnect(provider, account, {
+      allowRemovedReplacement: true,
+    });
+    expect(replacement.id).not.toBe(connection.id);
+    expect(db.select().from(connections).all()).toHaveLength(2);
+    expect(db.select().from(connectionOperationGrants).all()).toMatchObject([
+      { connectionId: connection.id, revokedAt: expect.any(String) },
+    ]);
+    expect(
+      db
+        .select()
+        .from(connectionOperationGrants)
+        .where(eq(connectionOperationGrants.connectionId, replacement.id))
+        .all()
+    ).toEqual([]);
+    expect(db.select().from(connectorUsageAttempts).get()?.connectionId).toBe(connection.id);
+    expect((await registry.listAccounts()).accounts.map((row) => row.id)).toEqual([replacement.id]);
+    expect(
+      db.select().from(connections).where(eq(connections.id, connection.id)).get()?.removedAt
+    ).toBe(NOW);
+  });
+
+  it('refuses same-reference replacement before cleanup acknowledgement', async () => {
+    const account = (await provider.listAccounts())[0]!;
+    registry.recordDisconnect(connection.id);
+    db.update(connections)
+      .set({ removedAt: NOW, externalCleanupState: 'pending' })
+      .where(eq(connections.id, connection.id))
+      .run();
+    expect(() =>
+      registry.recordConnect(provider, account, { allowRemovedReplacement: true })
+    ).toThrow('cleanup is not confirmed');
+    expect(db.select().from(connections).all()).toHaveLength(1);
+  });
+
   it('keeps operator pause separate from provider authentication state', async () => {
     registry.setPaused(connection.id, true);
     expect(registry.accountBinding(connection.id)?.status).toBe('paused');
@@ -186,6 +262,8 @@ describe('ConnectionStore lifecycle and cleanup', () => {
     expect(db.select().from(connections).get()).toMatchObject({
       status: 'active',
       lifecycleState: 'disconnected',
+      externalCleanupState: 'unknown',
+      cleanupGeneration: 1,
     });
     expect(registry.accountBinding(connection.id)?.status).toBe('revoked');
     expect(db.select().from(connectorOperationRevisions).all()).toHaveLength(1);

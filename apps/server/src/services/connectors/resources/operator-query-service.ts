@@ -343,6 +343,7 @@ export class ConnectorOperatorQueryService {
         identityHint: connections.identityHint,
         authenticationStatus: connections.status,
         lifecycleState: connections.lifecycleState,
+        externalCleanupState: connections.externalCleanupState,
         enabled: connections.enabled,
         reconciliationStatus: connections.grantReconciliationStatus,
         mode: connectorProviderInstances.mode,
@@ -357,6 +358,7 @@ export class ConnectorOperatorQueryService {
       )
       .where(
         and(
+          isNull(connections.removedAt),
           eq(connectorProviderInstances.ownerKind, owned.ownerKind),
           eq(connectorProviderInstances.ownerId, owned.ownerId)
         )
@@ -526,6 +528,7 @@ export class ConnectorOperatorQueryService {
         toolkit: connections.toolkit,
         label: connections.label,
         lifecycleState: connections.lifecycleState,
+        externalCleanupState: connections.externalCleanupState,
         enabled: connections.enabled,
         authenticationStatus: connections.status,
         reconciliationStatus: connections.grantReconciliationStatus,
@@ -544,6 +547,7 @@ export class ConnectorOperatorQueryService {
           eq(connectionOperationGrants.subjectType, 'agent'),
           eq(connectionOperationGrants.subjectId, agentId),
           isNull(connectionOperationGrants.revokedAt),
+          isNull(connections.removedAt),
           eq(connectorProviderInstances.ownerKind, owned.ownerKind),
           eq(connectorProviderInstances.ownerId, owned.ownerId)
         )
@@ -636,6 +640,7 @@ export class ConnectorOperatorQueryService {
         toolkit: connections.toolkit,
         label: connections.label,
         lifecycleState: connections.lifecycleState,
+        externalCleanupState: connections.externalCleanupState,
         enabled: connections.enabled,
         authenticationStatus: connections.status,
         reconciliationStatus: connections.grantReconciliationStatus,
@@ -651,6 +656,7 @@ export class ConnectorOperatorQueryService {
       .where(
         and(
           eq(sessionConnectionOverrides.sessionId, sessionId),
+          isNull(connections.removedAt),
           eq(connectorProviderInstances.ownerKind, ownerColumns(owner).ownerKind),
           eq(connectorProviderInstances.ownerId, ownerColumns(owner).ownerId)
         )
@@ -735,6 +741,7 @@ export class ConnectorOperatorQueryService {
         identityHint: connections.identityHint,
         authenticationStatus: connections.status,
         lifecycleState: connections.lifecycleState,
+        externalCleanupState: connections.externalCleanupState,
         enabled: connections.enabled,
         reconciliationStatus: connections.grantReconciliationStatus,
         mode: connectorProviderInstances.mode,
@@ -750,6 +757,7 @@ export class ConnectorOperatorQueryService {
       .where(
         and(
           eq(connections.id, connectionId),
+          isNull(connections.removedAt),
           eq(connectorProviderInstances.ownerKind, owned.ownerKind),
           eq(connectorProviderInstances.ownerId, owned.ownerId)
         )
@@ -784,6 +792,7 @@ export class ConnectorOperatorQueryService {
       toolkit: row.toolkit,
       label: row.label,
       identityHint: row.identityHint,
+      externalCleanup: row.externalCleanupState,
       lifecycle: lifecycle(row),
       authenticationStatus: row.authenticationStatus,
       reconciliationStatus: row.reconciliationStatus,

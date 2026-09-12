@@ -6,6 +6,7 @@ import {
   connectorProviderInstances,
   connections,
   eq,
+  isNull,
   or,
   type Db,
 } from '@dorkos/db';
@@ -34,7 +35,8 @@ export class ConnectorAuthenticationFlowError extends Error {
     | 'authentication_unavailable'
     | 'flow_not_found'
     | 'idempotency_conflict'
-    | 'connection_not_found';
+    | 'connection_not_found'
+    | 'connection_cleanup_pending';
 
   /** Construct one safe authentication-flow error. */
   constructor(code: ConnectorAuthenticationFlowError['code'], message: string) {
@@ -123,9 +125,19 @@ export class ConnectorAuthenticationFlowService {
     connectionId: ConnectionId,
     idempotencyKey: string
   ): Promise<ConnectorAuthenticationFlowState> {
-    const owned = this.ownedConnection(owner, connectionId);
+    const owned = this.ownedConnection(owner, connectionId, { includeDisconnected: true });
     if (!owned) {
       throw new ConnectorAuthenticationFlowError('connection_not_found', 'Connection not found.');
+    }
+    if (
+      owned.lifecycleState === 'disconnected' &&
+      owned.externalCleanupState !== 'complete' &&
+      owned.externalCleanupState !== 'not_required'
+    ) {
+      throw new ConnectorAuthenticationFlowError(
+        'connection_cleanup_pending',
+        'Finish disconnecting this account before signing in again.'
+      );
     }
     return this.startInternal(
       owner,
@@ -156,6 +168,15 @@ export class ConnectorAuthenticationFlowService {
       this.finishPending(row.id, 'expired', now);
       row = this.ownedFlow(owner, flowId)!;
       return this.toPublic(row);
+    }
+    if (row.cleanupSnapshotJson === null) {
+      this.finishPending(
+        row.id,
+        'failed',
+        now,
+        'This saved sign-in can no longer be used. Start a new sign-in from Accounts.'
+      );
+      return this.toPublic(this.ownedFlow(owner, flowId)!);
     }
     if (row.state === 'starting' || !row.providerFlowId) return this.toPublic(row);
 
@@ -245,7 +266,19 @@ export class ConnectorAuthenticationFlowService {
       previous.externalAccountRef === accountData.externalAccountRef;
     const completedAt = this.now().toISOString();
     this.db.transaction(() => {
-      const account = this.registry.recordConnect(provider, accountData);
+      if (!this.cleanupSnapshotCurrent(owner, row, accountData.externalAccountRef)) {
+        this.finishPending(
+          row.id,
+          'failed',
+          afterPoll,
+          'This account changed while you were signing in. Finish disconnecting if needed, then start a new sign-in.',
+          polledProviderFlowId
+        );
+        return;
+      }
+      const account = this.registry.recordConnect(provider, accountData, {
+        allowRemovedReplacement: true,
+      });
       if (sameAccount && row.reconnectConnectionId === account.id) {
         this.registry.setPaused(account.id, false);
       }
@@ -357,7 +390,7 @@ export class ConnectorAuthenticationFlowService {
           'This sign-in request was already used for different account details. Start a new request.'
         );
       }
-      return this.toPublic(existing);
+      return this.currentPublicState(owner, existing.id);
     }
 
     const provider = this.ownedProvider(owner, input.providerInstanceId);
@@ -384,28 +417,47 @@ export class ConnectorAuthenticationFlowService {
 
     const now = this.now();
     const flowId = this.createId();
-    this.db
-      .insert(connectorAuthenticationFlows)
-      .values({
-        id: flowId,
-        ...ownerKey,
-        idempotencyKey: input.idempotencyKey,
-        requestHash: hash,
-        providerInstanceId: input.providerInstanceId,
-        executionConfigGeneration: generation,
-        providerFlowId: null,
-        toolkit: input.toolkit,
-        label: input.label,
-        reconnectConnectionId,
-        state: 'starting',
-        createdAt: now.toISOString(),
-        expiresAt: new Date(now.getTime() + this.flowTtlMs).toISOString(),
-        updatedAt: now.toISOString(),
-      })
-      .run();
+    this.db.transaction(() => {
+      const cleanupSnapshot = this.captureCleanupSnapshot(
+        owner,
+        input.providerInstanceId,
+        input.toolkit
+      );
+      if (
+        reconnectConnectionId &&
+        (!this.ownedConnection(owner, reconnectConnectionId, { includeDisconnected: true }) ||
+          cleanupSnapshot[reconnectConnectionId] === undefined)
+      ) {
+        throw new ConnectorAuthenticationFlowError(
+          'connection_cleanup_pending',
+          'Finish disconnecting this account before signing in again.'
+        );
+      }
+      this.db
+        .insert(connectorAuthenticationFlows)
+        .values({
+          id: flowId,
+          ...ownerKey,
+          idempotencyKey: input.idempotencyKey,
+          requestHash: hash,
+          providerInstanceId: input.providerInstanceId,
+          executionConfigGeneration: generation,
+          providerFlowId: null,
+          toolkit: input.toolkit,
+          label: input.label,
+          reconnectConnectionId,
+          cleanupSnapshotJson: JSON.stringify(cleanupSnapshot),
+          state: 'starting',
+          createdAt: now.toISOString(),
+          expiresAt: new Date(now.getTime() + this.flowTtlMs).toISOString(),
+          updatedAt: now.toISOString(),
+        })
+        .run();
+
+      afterClaim?.();
+    });
 
     try {
-      afterClaim?.();
       const started = await provider.startConnect(
         input.toolkit,
         input.label ? { label: input.label } : undefined
@@ -518,7 +570,15 @@ export class ConnectorAuthenticationFlowService {
     }
     if (row.state === 'starting' || row.state === 'pending') {
       const now = this.now();
-      if (Date.parse(row.expiresAt) <= now.getTime()) {
+      if (row.cleanupSnapshotJson === null) {
+        this.finishPending(
+          row.id,
+          'failed',
+          now,
+          'This saved sign-in can no longer be used. Start a new sign-in from Accounts.'
+        );
+        row = this.ownedFlow(owner, flowId)!;
+      } else if (Date.parse(row.expiresAt) <= now.getTime()) {
         this.finishPending(row.id, 'expired', now);
         row = this.ownedFlow(owner, flowId)!;
       } else {
@@ -561,11 +621,97 @@ export class ConnectorAuthenticationFlowService {
       : undefined;
   }
 
-  private ownedConnection(owner: ConnectorOwnerAuthority, connectionId: ConnectionId) {
+  private captureCleanupSnapshot(
+    owner: ConnectorOwnerAuthority,
+    providerId: string,
+    toolkit: string
+  ): Record<string, number> {
+    const owned = ownerColumns(owner);
+    const rows = this.db
+      .select({
+        id: connections.id,
+        generation: connections.cleanupGeneration,
+        state: connections.externalCleanupState,
+      })
+      .from(connections)
+      .innerJoin(
+        connectorProviderInstances,
+        eq(connectorProviderInstances.id, connections.providerInstanceId)
+      )
+      .where(
+        and(
+          eq(connections.providerInstanceId, providerId),
+          eq(connections.toolkit, toolkit),
+          eq(connectorProviderInstances.ownerKind, owned.ownerKind),
+          eq(connectorProviderInstances.ownerId, owned.ownerId)
+        )
+      )
+      .all();
+    return Object.fromEntries(
+      rows
+        .filter((row) => row.state === 'complete' || row.state === 'not_required')
+        .map((row) => [row.id, row.generation])
+    );
+  }
+
+  private cleanupSnapshotCurrent(
+    owner: ConnectorOwnerAuthority,
+    flow: typeof connectorAuthenticationFlows.$inferSelect,
+    externalRef: string
+  ): boolean {
+    if (flow.cleanupSnapshotJson === null) return false;
+    let snapshot: Record<string, unknown>;
+    try {
+      snapshot = JSON.parse(flow.cleanupSnapshotJson);
+    } catch {
+      return false;
+    }
+    if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return false;
+    const owned = ownerColumns(owner);
+    const rows = this.db
+      .select({
+        id: connections.id,
+        generation: connections.cleanupGeneration,
+        state: connections.externalCleanupState,
+        lifecycle: connections.lifecycleState,
+        removedAt: connections.removedAt,
+        ref: connections.externalAccountRef,
+      })
+      .from(connections)
+      .innerJoin(
+        connectorProviderInstances,
+        eq(connectorProviderInstances.id, connections.providerInstanceId)
+      )
+      .where(
+        and(
+          eq(connections.providerInstanceId, flow.providerInstanceId),
+          eq(connections.toolkit, flow.toolkit),
+          eq(connectorProviderInstances.ownerKind, owned.ownerKind),
+          eq(connectorProviderInstances.ownerId, owned.ownerId)
+        )
+      )
+      .all();
+    const acknowledged = (row: (typeof rows)[number]) =>
+      snapshot[row.id] === row.generation &&
+      (row.state === 'complete' || row.state === 'not_required');
+    if (flow.reconnectConnectionId) {
+      const target = rows.find((row) => row.id === flow.reconnectConnectionId);
+      if (!target || target.removedAt !== null || !acknowledged(target)) return false;
+    }
+    return rows.filter((row) => row.ref === externalRef).every(acknowledged);
+  }
+
+  private ownedConnection(
+    owner: ConnectorOwnerAuthority,
+    connectionId: ConnectionId,
+    options: { includeDisconnected?: boolean } = {}
+  ) {
     const ownerKey = ownerColumns(owner);
     return this.db
       .select({
         connectionId: connections.id,
+        lifecycleState: connections.lifecycleState,
+        externalCleanupState: connections.externalCleanupState,
         providerInstanceId: connectorProviderInstances.id,
         providerType: connectorProviderInstances.type,
         toolkit: connections.toolkit,
@@ -579,7 +725,8 @@ export class ConnectorAuthenticationFlowService {
       .where(
         and(
           eq(connections.id, connectionId),
-          eq(connections.lifecycleState, 'connected'),
+          isNull(connections.removedAt),
+          ...(options.includeDisconnected ? [] : [eq(connections.lifecycleState, 'connected')]),
           eq(connectorProviderInstances.ownerKind, ownerKey.ownerKind),
           eq(connectorProviderInstances.ownerId, ownerKey.ownerId)
         )

@@ -20331,6 +20331,16 @@
                             "minLength": 1,
                             "maxLength": 500
                           },
+                          "externalCleanup": {
+                            "type": "string",
+                            "enum": [
+                              "not_required",
+                              "pending",
+                              "complete",
+                              "failed",
+                              "unknown"
+                            ]
+                          },
                           "lifecycle": {
                             "type": "string",
                             "enum": [
@@ -21326,6 +21336,16 @@
                           ],
                           "minLength": 1,
                           "maxLength": 500
+                        },
+                        "externalCleanup": {
+                          "type": "string",
+                          "enum": [
+                            "not_required",
+                            "pending",
+                            "complete",
+                            "failed",
+                            "unknown"
+                          ]
                         },
                         "lifecycle": {
                           "type": "string",
@@ -22412,6 +22432,50 @@
           },
           "404": {
             "description": "Connection absent or owned by someone else",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/connections/{connectionId}/remove": {
+      "post": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Remove a disconnected account from Accounts while retaining its history",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "connectionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Account removed from the owner inventory"
+          },
+          "404": {
+            "description": "Account absent or owned by someone else",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Account must finish disconnecting before removal",
             "content": {
               "application/json": {
                 "schema": {

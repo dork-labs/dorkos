@@ -1,0 +1,37 @@
+{
+  "tasks": [
+    {
+      "id": "persistence",
+      "status": "completed"
+    },
+    {
+      "id": "owner-removal-route",
+      "status": "completed"
+    },
+    {
+      "id": "visibility-and-reconcile",
+      "status": "completed"
+    },
+    {
+      "id": "real-sqlite-tests-and-mutant",
+      "status": "completed"
+    },
+    {
+      "id": "independent-review-and-handoff",
+      "status": "completed"
+    },
+    {
+      "id": "reconnect-cleanup-generation-and-races",
+      "status": "completed"
+    },
+    {
+      "id": "owner-ui-transport-and-openapi",
+      "status": "completed"
+    },
+    {
+      "id": "synthetic-browser-and-final-verification",
+      "status": "completed"
+    }
+  ],
+  "evidence": "04-implementation.md"
+}
