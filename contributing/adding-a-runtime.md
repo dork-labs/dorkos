@@ -380,11 +380,11 @@ Any prose you write that tells an agent to call a tool must spell that tool the 
 
 The names differ per runtime because DorkOS's tools arrive by more than one route:
 
-| Runtime     | How it reaches DorkOS tools                                                                       | What the model must type                                                          |
-| ----------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| claude-code | in-session SDK MCP server (`createDorkOsToolServer`)                                              | `mcp__dorkos__<verb>` — Claude Code qualifies every MCP tool                      |
-| codex       | the loopback `dorkos` server, injected per turn (`shared/dorkos-mcp-injection.ts`)                | `mcp__dorkos__<verb>` — Codex qualifies plugin MCP tools the same way            |
-| opencode    | the same loopback `dorkos` server                                                                 | `dorkos_<verb>` — OpenCode builds `sanitize(server) + "_" + sanitize(tool)`      |
+| Runtime     | How it reaches DorkOS tools                                                        | What the model must type                                                    |
+| ----------- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| claude-code | in-session SDK MCP server (`createDorkOsToolServer`)                               | `mcp__dorkos__<verb>` — Claude Code qualifies every MCP tool                |
+| codex       | the loopback `dorkos` server, injected per turn (`shared/dorkos-mcp-injection.ts`) | `mcp__dorkos__<verb>` — Codex qualifies plugin MCP tools the same way       |
+| opencode    | the same loopback `dorkos` server                                                  | `dorkos_<verb>` — OpenCode builds `sanitize(server) + "_" + sanitize(tool)` |
 
 There used to be a fourth row: a scoped `dorkos_ui` server Codex spawned, whose tools a model had
 to type as `mcp__dorkos_ui__<verb>`. It is retired (spec `canvas-agent-seat` §5) and that prefix now

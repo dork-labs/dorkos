@@ -168,14 +168,25 @@ describe('EXPERIMENTS', () => {
    */
   describe('every page that names an experiment switch uses the title on the switch', () => {
     /** The repo root, from this file. */
-    const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../../../..');
+    const REPO_ROOT = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      '../../../../../../..'
+    );
 
     /**
      * Where a person reads about an experiment. The COMPILED changelog is
      * excluded on purpose: it is history, and an experiment renamed later must
      * not make a shipped release note false retroactively (`changelog/README.md`).
      */
-    const PROSE_ROOTS = ['docs/guides', 'docs/concepts', 'docs/getting-started', 'docs/integrations', 'docs/marketplace', 'changelog/unreleased', 'contributing'];
+    const PROSE_ROOTS = [
+      'docs/guides',
+      'docs/concepts',
+      'docs/getting-started',
+      'docs/integrations',
+      'docs/marketplace',
+      'changelog/unreleased',
+      'contributing',
+    ];
 
     /** Every markdown file under one root, recursively. */
     function markdownUnder(root: string): string[] {
@@ -213,7 +224,9 @@ describe('EXPERIMENTS', () => {
      * span mis-paired across two adjacent bolds always has.
      */
     function looksLikeALabel(named: string): boolean {
-      return named.trim() === named && named.length > 0 && named.length <= 60 && !named.includes('. ');
+      return (
+        named.trim() === named && named.length > 0 && named.length <= 60 && !named.includes('. ')
+      );
     }
 
     /**
@@ -237,9 +250,11 @@ describe('EXPERIMENTS', () => {
         .filter((bold) => looksLikeALabel(bold.named));
       const found: Mention[] = [];
       for (const match of text.matchAll(/in Settings,? under Experiments/g)) {
-        const last = bolds.filter(
-          (bold) => bold.endsAt <= match.index && match.index - bold.endsAt <= LABEL_WINDOW_CHARS
-        ).at(-1);
+        const last = bolds
+          .filter(
+            (bold) => bold.endsAt <= match.index && match.index - bold.endsAt <= LABEL_WINDOW_CHARS
+          )
+          .at(-1);
         if (last !== undefined) found.push({ file, named: last.named });
       }
       return found;
