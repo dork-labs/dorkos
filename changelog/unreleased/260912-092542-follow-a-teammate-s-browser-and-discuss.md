@@ -5,6 +5,7 @@ covers:
   - "test(rooms): drive following and a document's discussion in a real browser (DOR-2010)"
   - 'fix(canvas): name the reset suite among the readers of the retired key'
   - "fix(rooms): keep a follow alive while the leader is still, and sign the room's own lines (DOR-2010)"
+  - 'fix(rooms): pin the forget-on-leave wiring, and resolve one author per row (DOR-2010)'
 ---
 
 ### Added
