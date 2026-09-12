@@ -268,18 +268,28 @@ export function RoomCanvasBody({ roomId, view }: RoomCanvasBodyProps) {
     subscribe: subscribeToScroll,
   });
 
-  // Go where the person being followed is. Two rules bound it: a document this
-  // viewer cannot see in this view is not somewhere to go, and a viewer who is
-  // EDITING is never moved off what they are typing in — room-canvas §9.3
-  // outranks following, because losing a draft is worse than losing the thread.
+  // Go where the person being followed is. Three rules bound it, and each is a
+  // reason to do NOTHING rather than something approximate:
+  //
+  // - A viewer who is EDITING is never moved off what they are typing in.
+  //   Room-canvas §9.3 outranks following: losing a draft is worse than losing
+  //   the thread.
+  // - **A document this view does not hold is not somewhere to go, and its
+  //   position is not a position here.** A follow claim lives thirty seconds
+  //   past the last frame, so a position naming a document this viewer has
+  //   closed — or that their own LRU evicted — outlives it. Scrolling on that
+  //   would take somebody's scroll away from the document they ARE reading, for
+  //   half a minute, over a document that is not on their screen.
+  // - The scroll belongs to the document it was measured in, so it waits for
+  //   the activation above to land. The effect re-runs on `activeDocumentId`,
+  //   which is the next pass — the panel is on the right document by then.
   const documentIds = useMemo(() => inView.map((d) => d.id).join('\u0000'), [inView]);
   useEffect(() => {
     if (followedView === null || editingDocumentId !== null) return;
-    if (
-      followedView.documentId !== activeDocumentId &&
-      documentIds.split('\u0000').includes(followedView.documentId)
-    ) {
+    if (!documentIds.split('\u0000').includes(followedView.documentId)) return;
+    if (followedView.documentId !== activeDocumentId) {
       activate(roomId, followedView.documentId);
+      return;
     }
     if (followedView.scrollY !== undefined && panel.current) {
       panel.current.scrollTop = followedView.scrollY;

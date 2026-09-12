@@ -87,6 +87,19 @@ function renderBrowserTab() {
   );
 }
 
+/**
+ * The scroll container this view's document lives in.
+ *
+ * Addressed by the id the header and the body agree on, because that is what
+ * the component's own ref points at — and `scrollTop` is the only observable a
+ * follow position has beyond which tab is showing.
+ */
+function panelOf(view: 'canvas' | 'browser'): HTMLElement {
+  const panel = document.getElementById(view === 'browser' ? 'browser-panel' : 'canvas-panel');
+  if (panel === null) throw new Error(`the ${view} panel is not on screen`);
+  return panel;
+}
+
 /** Deliver one `presence` signal into the follow store, as the stream would. */
 function signal(over: Record<string, unknown>) {
   act(() => {
@@ -207,6 +220,61 @@ describe('being moved by somebody you follow', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(useAppStore.getState().roomCanvasActive[ROOM]?.browser).toBe(before);
+  });
+
+  it('scrolls to where they are on the document this viewer is already showing', async () => {
+    seed({ id: 'page', title: 'localhost' });
+    renderBrowserTab();
+    const panel = panelOf('browser');
+    panel.scrollTop = 0;
+    act(() => {
+      useRoomFollowStore.getState().startFollowing(ROOM, KAI, Date.now());
+    });
+
+    signal({ authorId: KAI, view: { documentId: 'page', scrollY: 240 } });
+
+    await waitFor(() => expect(panel.scrollTop).toBe(240));
+  });
+
+  it('leaves this viewer’s own scroll alone when the position names a document they closed', async () => {
+    // A follow claim outlives the last frame by thirty seconds, so a position
+    // naming a document this viewer has closed — or that their own LRU evicted
+    // — arrives while they are reading something else. Acting on it would take
+    // their scroll away, repeatedly, over a document not on their screen.
+    seed({ id: 'page', title: 'localhost' });
+    renderBrowserTab();
+    const panel = panelOf('browser');
+    panel.scrollTop = 90;
+    act(() => {
+      useRoomFollowStore.getState().startFollowing(ROOM, KAI, Date.now());
+    });
+
+    signal({ authorId: KAI, view: { documentId: 'gone-from-here', scrollY: 240 } });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(panel.scrollTop).toBe(90);
+    expect(useAppStore.getState().roomCanvasActive[ROOM]?.browser).toBe('page');
+  });
+
+  it('moves to another open document first, and scrolls only once it is showing', async () => {
+    // The offset was measured inside the document it names, so applying it to
+    // whatever happens to be on screen would scroll the wrong thing for one
+    // render. The activation lands first; the scroll rides the next pass.
+    seed({ id: 'page', title: 'localhost' });
+    seed({ id: 'other', title: 'other page', content: { type: 'browser', url: 'http://a/' } });
+    renderBrowserTab();
+    const panel = panelOf('browser');
+    panel.scrollTop = 0;
+    act(() => {
+      useRoomFollowStore.getState().startFollowing(ROOM, KAI, Date.now());
+    });
+
+    signal({ authorId: KAI, view: { documentId: 'other', scrollY: 160 } });
+
+    await waitFor(() =>
+      expect(useAppStore.getState().roomCanvasActive[ROOM]?.browser).toBe('other')
+    );
+    await waitFor(() => expect(panel.scrollTop).toBe(160));
   });
 });
 
