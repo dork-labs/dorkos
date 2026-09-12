@@ -251,7 +251,9 @@ The canvas is a tabbed, multi-document surface (each `open_canvas` call appends 
 
 Two of those fourteen — `url` and `browser` — are pages, and pages live one tab along, in **Browser**. The other twelve open in **Canvas**. `mcp_app` stays in Canvas despite being served over HTTP: it's an app, not a page.
 
-`update_canvas` and `close_canvas` also take an optional `documentId`, and every verb that opens something (`open_canvas`, `open_file`, `open_diff`, `browser_navigate`) hands one back. Leave it out in a one-on-one session and the call acts on the active document, exactly as it always has. Leave it out in a **room**, where there is no shared active document on purpose, and it means "the last document you opened in this room" — so acting on a document somebody else put up takes naming it.
+`update_canvas` and `close_canvas` also take an optional `documentId`. Leave it out in a one-on-one session and the call acts on the active document, exactly as it always has. Leave it out in a **room**, where there is no shared active document on purpose, and it means "the last document you opened in this room" — so acting on a document somebody else put up takes naming it.
+
+Where that id comes from depends on the surface, and the two differ today. In a **room**, every verb that opens something (`open_canvas`, `open_file`, `open_diff`, `browser_navigate`) returns the new document's id, because the room's canvas is the server's and the row exists before the call answers. In a **one-on-one session** it does not: the call answers with `success` and the action it ran, and nothing else. That session canvas lives in your own browser rather than on the server, so there is no id to hand back until it moves there.
 
 The two content-heavy types worth knowing up front:
 

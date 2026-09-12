@@ -437,9 +437,18 @@ A stock install is never silent: with no chat app connected, that notification l
 
 ### Check 7 — M-22: an agent puts a document on the room's canvas, and nobody is woken
 
-The room's canvas is the one surface where "shared" is the whole claim, so check the claim rather than the pixels: the document lands for a reader who never asked for it, the tab they are on does not move, the room's log gets exactly one line about it, and that line starts no turn.
+The room's canvas is the one surface where "shared" is the whole claim, so check the claim rather than the pixels: the document lands for a reader who never asked for it, the tab they are on does not move, the room's log gets exactly one line about it, that line starts nobody's turn — and the OTHER agent is told about the document anyway, the next time it does anything in the room. That last leg is the point of the whole design, and it is the one a screenshot cannot show.
 
-**Seed it.** A fresh channel with **one** agent seated to answer, so the entry count below is readable. In `mode:sandbox`, install the scenario whose turn opens a document (`rooms-open-canvas` in `apps/server/src/services/runtimes/test-mode/room-reply-scenarios.ts` — it opens one markdown document called **The plan** and says one line about it). In `mode:live`, skip the scenario and ask the agent for it in words: `@ana put a short plan on the room's canvas — a markdown document called "The plan" — and say one line about it.`
+**Seed it.** A fresh channel with **both** agents on it, the same pair the checks above use. Pin **both** to `mention-only` first, so `AGENT_B` stays quiet until you name it — do not lean on whatever this install defaults to, because the "nobody was woken" half of this check is only readable when the quiet is something you set:
+
+```bash
+for AUTHOR in "$AGENT_A_AUTHOR_ID" "$AGENT_B_AUTHOR_ID"; do
+  curl -sf -X PATCH "http://localhost:$API_PORT/api/rooms/$ROOM_ID/members/$AUTHOR" \
+    -H 'content-type: application/json' -d '{"responseMode":"mention-only"}'
+done
+```
+
+In `mode:sandbox`, install the scenario whose turn opens a document (`rooms-open-canvas` in `apps/server/src/services/runtimes/test-mode/room-reply-scenarios.ts` — it opens one markdown document called **The plan** and says one line about it). In `mode:live`, skip the scenario and ask in words: `@<AGENT_A> put a short plan on the room's canvas — a markdown document called "The plan" — and say one line about it.`
 
 ```bash
 # Sandbox only. Read the acknowledgement back: the scenario store is server-global,
@@ -451,7 +460,7 @@ curl -sf -X POST "http://localhost:$API_PORT/api/test/scenario" \
 
 **Before the turn**, open the room's right panel and leave it on **Room** (`getByRole('tab', { name: 'Room' })`, `aria-selected="true"`). That is what makes the next assertion mean anything.
 
-**Then post the trigger and expect, in this order:**
+**Then mention `AGENT_A` and expect, in this order:**
 
 - **The reader's tab did not move.** The Room tab is still `aria-selected="true"` after the document lands. A tab that selected itself because somebody else acted is the pixel version of a turn that triggers itself, and it is a FAIL, not a nicety.
 - **The Canvas tab grew a dot**: `getByRole('tab', { name: 'Canvas' })` contains `[data-slot="right-panel-tab-unread"]`. That is how an arrival announces itself without yanking anything.
@@ -482,11 +491,33 @@ for d in json.load(sys.stdin)['documents']:
 "
 ```
 
-**No extra turn.** Record the entry count immediately after the reply lands, wait out `rooms.collectDebounceMs` plus a few seconds, and read it again: it must not have grown. The canvas line is a system post that names nobody, so nothing should have answered it. A second agent reply here is a real bug and the most valuable thing this check can find.
+**Nobody was woken.** Record the entry count once `AGENT_A`'s reply and the canvas line have both landed, wait out `rooms.collectDebounceMs` plus a few seconds, and read it again: it must not have grown, and **no entry may be authored by `AGENT_B`**. The canvas line is a system post that names nobody, so nothing should have answered it. A reply from the agent that was never mentioned is a real bug and the most valuable thing this check can find.
+
+```bash
+curl -s "http://localhost:$API_PORT/api/rooms/$ROOM_ID/entries?limit=200" | python3 -c "
+import sys, json
+entries = json.load(sys.stdin)['entries']
+print('entries:', len(entries))
+for e in entries:
+    print(' ', e['seq'], '|', e['authorId'], '|', e['body'].get('text', '')[:70])
+"
+```
+
+**And `AGENT_B` is told anyway, the next time it does anything.** That is the channel a canvas change actually reaches other members by, and it is the one leg nothing else here stands in for. In `mode:sandbox`, switch the scenario to the one that answers with what the ROOM put in its context, then mention `AGENT_B`:
+
+```bash
+# Read the acknowledgement back for the same reason as before.
+curl -sf -X POST "http://localhost:$API_PORT/api/test/scenario" \
+  -H 'content-type: application/json' -d '{"name":"rooms-report-canvas"}'
+```
+
+`AGENT_B`'s reply must read **`CANVAS-IN-MY-CONTEXT: The plan`** — the scenario prints every title the room handed it, and prints `CANVAS-IN-MY-CONTEXT: nothing` when the room told it about no canvas at all. That second string is the failing case, and it is the one worth watching for: it means the document is on the table and the context section did not carry it. Assert the text in the timeline **and** in the entries API, so a rendering bug and a context bug stay distinguishable.
+
+In `mode:live` there is no scenario to install — mention `AGENT_B` and ask it, in words, to say what is on the room's canvas without opening anything. A live answer naming **The plan** is evidence, not proof; say which one you have.
 
 Split the verdict the way check 4 does:
 
-- **Mechanical** (the document arrives for a reader who did not act, the tab does not move, one line lands, the count stays put, a reload restores the table) — PASS/FAIL in both modes.
+- **Mechanical** (the document arrives for a reader who did not act, the tab does not move, one line lands, no turn runs for the agent nobody named, that agent's next turn is told, a reload restores the table) — PASS/FAIL in both modes.
 - **Judgment** (did the agent _choose_ the canvas over pasting a wall of text into the room) — `live` only; `N/A (sandbox)` otherwise, because the scenario made that choice for it.
 
 While you are here, the human door costs nothing extra: open the **Browser** tab, click its **Web Page** starting point, activate the address bar (it is a button named `Address: …` at rest and becomes a textbox named `Address` once clicked — a deliberate two-step, so a stray focus can never navigate), type a URL and press Enter. The page must appear in `[role="tablist"][aria-label="Open browser pages"]` **and** in the `/canvas` list above, with you as its author.
@@ -542,8 +573,9 @@ Append a `## Summary`, then the matrix, then a `## Findings` section — one blo
 | 6b  | A-04 | Owner cannot leave a two-agent room                 |         |          |
 | 7a  | M-22 | Agent's document lands for everyone; tab unmoved    |         |          |
 | 7b  | M-22 | Exactly one canvas line per turn, mentioning nobody |         |          |
-| 7c  | M-22 | The canvas line triggers no second turn             |         |          |
-| 7d  | M-22 | A typed address lands on the room's table           |         |          |
+| 7c  | M-22 | No turn runs for the agent nobody mentioned         |         |          |
+| 7d  | M-22 | That agent’s next turn is told what is on it        |         |          |
+| 7e  | M-22 | A typed address lands on the room’s table           |         |          |
 | 8   | —    | DOM == API == SQLite, live and after reload         |         |          |
 
 Verdict vocabulary — use it exactly:
