@@ -150,10 +150,14 @@ import { ROOM_EXPORT_CONTENT_TYPE, RoomExportLineSchema } from '@dorkos/shared/r
 import {
   RoomBranchStatusSchema as SharedRoomBranchStatusSchema,
   RoomMainStatusSchema as SharedRoomMainStatusSchema,
+  RoomMergeResultSchema as SharedRoomMergeResultSchema,
   RoomRepoStatusSchema as SharedRoomRepoStatusSchema,
   RoomStrayChangeSchema as SharedRoomStrayChangeSchema,
 } from '@dorkos/shared/room-repo';
 import {
+  RoomCanvasDiffReviewSchema,
+  RoomCanvasDiffWriteRequestSchema,
+  RoomCanvasDiffWriteResultSchema,
   RoomFileConflictResponseSchema,
   RoomFileContentQuerySchema,
   RoomFileContentResponseSchema,
@@ -4502,6 +4506,14 @@ const RoomMainStatusSchema = z
   })
   .openapi('RoomMainStatus');
 
+/**
+ * What a completed merge answers — derived from the shared schema exactly as
+ * the rows above are, and for the reasons their doc gives.
+ */
+const RoomMergeResultSchema = z
+  .object(SharedRoomMergeResultSchema.shape)
+  .openapi('RoomMergeResult');
+
 /** What `GET /api/rooms/{id}/repo/status` answers. */
 const RoomRepoStatusSchema = z
   .object({
@@ -4513,18 +4525,6 @@ const RoomRepoStatusSchema = z
     main: RoomMainStatusSchema,
   })
   .openapi('RoomRepoStatus');
-
-/** What a completed merge answers. */
-const RoomMergeResultSchema = z
-  .object({
-    branch: z.string(),
-    commit: z.string().describe('The merge commit now on the room’s `main`.'),
-    files: z.number().int(),
-    insertions: z.number().int(),
-    deletions: z.number().int(),
-    seq: z.number().int().describe('The `seq` of the room entry announcing the merge.'),
-  })
-  .openapi('RoomMergeResult');
 
 registry.registerPath({
   method: 'get',
@@ -4944,6 +4944,51 @@ const followPeopleOnly = {
   content: { 'application/json': { schema: ErrorResponseSchema } },
 };
 
+/**
+ * 403 on both review routes: reading or changing somebody ELSE's working copy is
+ * a person's, on the same instrument `PUT /:id/files/content` uses.
+ */
+const canvasDiffPeopleOnly = {
+  description:
+    'The caller is an agent; only people review somebody else’s working copy (`PEOPLE_ONLY`)',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
+
+/**
+ * 404 on both: a room the caller may not see, a room that is not there, and a
+ * document this canvas does not hold all answer alike.
+ *
+ * The last of those is why this is its own helper rather than
+ * `canvasDocumentNotFound`: the review can also answer 404 because the FILE is
+ * not in the working copy any more (`ROOM_FILE_NOT_FOUND`), which a client
+ * drawing "this file has moved on" needs named.
+ */
+const canvasDiffNotFound = {
+  description:
+    'No such room, or the caller is not a member of it (`ROOM_NOT_FOUND`) — the same answer for both — no such document on this room’s canvas (`CANVAS_DOCUMENT_NOT_FOUND`), or the file is not in that working copy any more (`ROOM_FILE_NOT_FOUND`)',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
+
+/**
+ * 400 on the read: the document is not a review, or its stored tree or path is
+ * not one this room keeps.
+ *
+ * A 400 rather than a 409 because `CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM` is
+ * what the room's error table maps it to — the request named something this
+ * surface has no answer for, rather than meeting a room state that will change.
+ */
+const canvasDiffNotReviewable = {
+  description:
+    'The document is not a review of somebody’s working copy, or its tree or path is not one this room keeps (`CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM`)',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
+
+/** 409 on the read: the one room-state refusal it can meet. */
+const canvasDiffNoRoomFiles = {
+  description: 'This room has no files of its own (`NOT_A_PROJECT_ROOM`)',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
+
 registry.registerPath({
   method: 'put',
   path: '/api/rooms/{id}/follow',
@@ -5008,6 +5053,59 @@ registry.registerPath({
     401: roomAgentUnverified,
     403: followPeopleOnly,
     404: roomNotFound,
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/rooms/{id}/canvas/{documentId}/diff',
+  tags: ['Rooms'],
+  summary: 'Read the two copies of the file behind a worktree diff',
+  description:
+    'The room’s own copy of the file and the member’s working copy, so the review can be drawn side by side. **Not the ordinary file API**: a member’s working copy lives under the DorkOS data directory, which the raw file surfaces are deliberately confined out of — so this names a room and a DOCUMENT, and the tree and the path both come off that row rather than being chosen by the caller. `base` is the empty string for a file this work ADDS, which is ordinary rather than an error. **People only, unlike every other room read**: this hands back the contents of somebody ELSE’s working copy, which an agent is refused everywhere else, so a member agent is refused 403 `PEOPLE_ONLY` — the same instrument `PUT /:id/files/content` uses. Membership is asked FIRST, so a caller who is not on the roster gets the same 404 an unknown room gets and never learns the room exists. Any member who is a person may read it; whether they may MERGE what they see is a separate question, answered by `POST /:id/repo/merge`, which is the owner’s alone.',
+  request: { params: RoomCanvasParams },
+  responses: {
+    200: {
+      description: 'Both copies, and the fingerprint a later write must carry back',
+      content: { 'application/json': { schema: RoomCanvasDiffReviewSchema } },
+    },
+    400: canvasDiffNotReviewable,
+    401: roomAgentUnverified,
+    403: canvasDiffPeopleOnly,
+    404: canvasDiffNotFound,
+    409: canvasDiffNoRoomFiles,
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/rooms/{id}/canvas/{documentId}/diff',
+  tags: ['Rooms'],
+  summary: 'Put a reviewed file back in the member’s working copy',
+  description:
+    'How turning a hunk down lands: the whole file, conditional on the hash the diff was computed against. A file the agent changed in between answers `ok: false` carrying what it holds now — a conflict is control flow, and the screen recomputes rather than clobbering work that carried on. **People only** (403 `PEOPLE_ONLY`), on the same instrument `PUT /:id/files/content` uses: this writes into a colleague’s checkout, and an agent doing that leaves that colleague dirty — the state their own merge then refuses. Membership is asked first, so a non-member still gets 404. Any member who is a person may send a hunk back; only the owner may merge. Archived rooms refuse it 409, like every other canvas write.',
+  request: {
+    params: RoomCanvasParams,
+    body: { content: { 'application/json': { schema: RoomCanvasDiffWriteRequestSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'What was written, or what the file holds now',
+      content: { 'application/json': { schema: RoomCanvasDiffWriteResultSchema } },
+    },
+    400: {
+      description:
+        'The body is not a valid request, or the document is not a review of a working copy this room keeps (`CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    401: roomAgentUnverified,
+    403: canvasDiffPeopleOnly,
+    404: canvasDiffNotFound,
+    409: {
+      description:
+        'The room is archived (`ROOM_ARCHIVED`), or it has no files of its own (`NOT_A_PROJECT_ROOM`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
   },
 });
 

@@ -329,3 +329,76 @@ export const RoomFileConflictResponseSchema = z.object({
 
 /** The 409 body a `FILE_CHANGED` refusal carries. See {@link RoomFileConflictResponseSchema}. */
 export type RoomFileConflictResponse = z.infer<typeof RoomFileConflictResponseSchema>;
+
+/**
+ * The two copies of one file behind a room's worktree diff — what
+ * `GET /api/rooms/{id}/canvas/{documentId}/diff` answers (spec
+ * `canvas-agent-seat` §8).
+ *
+ * **A room route rather than the ordinary file API**, because a member's
+ * working copy lives under the DorkOS data directory and the raw file surfaces
+ * are confined to the operator's project boundary on purpose. The caller names
+ * a room and a DOCUMENT; the tree and the path both come off that row, so there
+ * is no directory and no path for a caller to choose.
+ */
+export const RoomCanvasDiffReviewSchema = z.object({
+  /** The file, relative to both trees. */
+  path: z.string().describe('The file, relative to both copies.'),
+  /**
+   * The room's own `main` copy.
+   *
+   * The empty string for a file the branch ADDS, which is the ordinary case for
+   * new work and is not an error: the honest comparison is "nothing, then this".
+   */
+  base: z.string().describe('The room’s own copy, or the empty string for a file this work adds.'),
+  /** The member's working copy, as it is on disk right now. */
+  current: z.string().describe('The member’s working copy, as it is on disk right now.'),
+  /**
+   * SHA-256 of `current` — the fingerprint a later write is conditional on, so
+   * a file the agent changed in between comes back a conflict rather than being
+   * overwritten.
+   */
+  currentHash: z.string().describe('SHA-256 of `current`; a write must carry it back.'),
+});
+
+/** The two copies of one file behind a room's worktree diff. See {@link RoomCanvasDiffReviewSchema}. */
+export type RoomCanvasDiffReview = z.infer<typeof RoomCanvasDiffReviewSchema>;
+
+/**
+ * What `PUT /api/rooms/{id}/canvas/{documentId}/diff` answers.
+ *
+ * **A conflict is control flow, not a failure**, exactly as it is on the
+ * session diff: the file moved underneath the review, so the answer carries
+ * what it holds now and the screen recomputes instead of clobbering an agent
+ * that carried on working.
+ */
+export const RoomCanvasDiffWriteResultSchema = z.discriminatedUnion('ok', [
+  z.object({
+    ok: z.literal(true),
+    /** SHA-256 of what was written. */
+    hash: z.string(),
+  }),
+  z.object({
+    ok: z.literal(false),
+    conflict: z.object({
+      /** SHA-256 of what the file holds now. */
+      currentHash: z.string(),
+      /** What it holds now, so the review can be recomputed against it. */
+      currentContent: z.string(),
+    }),
+  }),
+]);
+
+/** What a review write answers. See {@link RoomCanvasDiffWriteResultSchema}. */
+export type RoomCanvasDiffWriteResult = z.infer<typeof RoomCanvasDiffWriteResultSchema>;
+
+/** What a review write sends. */
+export const RoomCanvasDiffWriteRequestSchema = z.object({
+  /** The whole file, as the review leaves it. */
+  content: z.string(),
+  /** The hash the diff was computed against. */
+  expectedHash: z.string().min(1),
+});
+
+/** What a review write sends. See {@link RoomCanvasDiffWriteRequestSchema}. */
+export type RoomCanvasDiffWriteRequest = z.infer<typeof RoomCanvasDiffWriteRequestSchema>;

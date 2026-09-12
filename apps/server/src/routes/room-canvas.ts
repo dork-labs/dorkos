@@ -14,9 +14,13 @@
  * such room". The service enforces it on every method; these handlers add no
  * rule of their own.
  *
- * **The four writing routes refuse an archived room; the two reads do not.**
+ * **The five writing routes refuse an archived room; the three reads do not.**
  * That asymmetry is the whole point of archiving: the record survives, the
  * activity stops.
+ *
+ * **Two of the eight are a PERSON's**: saying what you are looking at, and the
+ * review of somebody else's working copy. Both refuse an agent 403
+ * `PEOPLE_ONLY`, through the same predicate `PUT /:id/files/content` uses.
  *
  * @module routes/room-canvas
  */
@@ -27,7 +31,19 @@ import {
   OpenCanvasDocumentRequestSchema,
   UpdateCanvasDocumentRequestSchema,
 } from '@dorkos/shared/room-schemas';
-import { getRoomService, RoomError } from '../services/rooms/index.js';
+import { RoomCanvasDiffWriteRequestSchema } from '@dorkos/shared/room-files';
+import {
+  getRoomFilesService,
+  getRoomService,
+  RoomError,
+  tryGetRoomRepoService,
+} from '../services/rooms/index.js';
+import { canvasSourcePath } from '../services/canvas/index.js';
+import {
+  readCanvasDiffReview,
+  writeCanvasDiffReview,
+  type CanvasDiffReviewDeps,
+} from '../services/rooms/canvas/canvas-diff-review.js';
 import { resolveCaller } from './room-caller.js';
 import { sendRoomError } from './room-error-response.js';
 import { parseBody, sendError } from '../lib/route-utils.js';
@@ -54,6 +70,30 @@ interface CanvasParams {
 }
 
 /**
+ * What an agent is told when it says which document it is looking at.
+ *
+ * A face on a tab means "this member's turn really read this document", and an
+ * agent that could simply assert one would be putting itself on somebody's
+ * screen — with no room stream of its own, nothing would ever take it off again.
+ */
+const VIEWING_IS_A_PERSONS =
+  'can say what they are looking at. An agent’s face appears on a document because its turn read ' +
+  'that document, not because it said so.';
+
+/**
+ * What an agent is told when it reaches for the review of a worktree diff.
+ *
+ * **The review reads and writes somebody ELSE's working copy**, which is the one
+ * thing this domain has never let an agent do: `read_canvas` hands an agent the
+ * contents of a tree only when it is that agent's own (spec `room-canvas` §8.1),
+ * and a reject here would leave a colleague's checkout dirty — the exact state
+ * that then refuses that colleague's own merge. So it is the person's, on the
+ * same instrument `PUT /:id/files/content` already uses.
+ */
+const REVIEWING_IS_A_PERSONS =
+  'can review somebody else’s working copy. Merge your own work instead, or ask them to change it.';
+
+/**
  * Refuse anybody who may not act on this room's canvas, BEFORE a single row is
  * read.
  *
@@ -64,22 +104,40 @@ interface CanvasParams {
  * room read uses, and it refuses a non-member with the same `ROOM_NOT_FOUND` a
  * room that does not exist gets, so a room id is never a probe.
  *
- * `forWrite` adds the archived-room refusal. Reads answer for an archived room
+ * `write` adds the archived-room refusal. Reads answer for an archived room
  * on purpose — the record survives, the activity stops — and putting that check
  * on a read would take the record away with it.
  *
+ * `personOnly` adds the people-only refusal, and carries the words it is
+ * refused with so each route says why in its own sentence. It runs through
+ * `RoomService.requirePersonAuthor` — the one predicate `PUT /:id/files/content`
+ * already refuses agents with — rather than a second `caller.kind` test, because
+ * a second copy of a rule like this is a place for the two to disagree.
+ *
  * @param req - The request, for its caller and its `:id`.
  * @param res - The response, for `resolveCaller`.
- * @param forWrite - Whether this route changes the canvas.
+ * @param opts.write - Whether this route changes the canvas.
+ * @param opts.personOnly - What a non-person was trying to do, when only a
+ *   person may; omitted where agents are welcome.
  * @returns The caller's author id.
  * @throws {RoomError} `ROOM_NOT_FOUND` for a stranger, `ROOM_ARCHIVED` for a
- *   write into a room that has been put away.
+ *   write into a room that has been put away, `PEOPLE_ONLY` for an agent on a
+ *   route that is a person's.
  */
-function requireCanvasAccess(req: Request<CanvasParams>, res: Response, forWrite: boolean): string {
+function requireCanvasAccess(
+  req: Request<CanvasParams>,
+  res: Response,
+  opts: { write?: boolean; personOnly?: string } = {}
+): string {
   const callerId = resolveCaller(req, res).id;
   const room = getRoomService().requireMembership(req.params.id, callerId);
-  if (forWrite && room.archived) {
+  if (opts.write === true && room.archived) {
     throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
+  }
+  // AFTER the membership check, for the reason `GET /:id/sessions` gives:
+  // visibility first means an agent probing room ids cannot tell 403 from 404.
+  if (opts.personOnly !== undefined) {
+    getRoomService().requirePersonAuthor(callerId, opts.personOnly);
   }
   return callerId;
 }
@@ -87,7 +145,7 @@ function requireCanvasAccess(req: Request<CanvasParams>, res: Response, forWrite
 /** GET / — everything on this room's canvas, pinned first then most recent. */
 router.get<CanvasParams>('/', (req, res) => {
   try {
-    requireCanvasAccess(req, res, false);
+    requireCanvasAccess(req, res);
     res.json({ documents: getRoomService().canvas.list(req.params.id) });
   } catch (err) {
     sendRoomError(res, err, 'GET /:id/canvas');
@@ -97,7 +155,7 @@ router.get<CanvasParams>('/', (req, res) => {
 /** GET /:documentId — one document, content included. */
 router.get<CanvasParams>('/:documentId', (req, res) => {
   try {
-    requireCanvasAccess(req, res, false);
+    requireCanvasAccess(req, res);
     const document = getRoomService().canvas.get(req.params.id, req.params.documentId);
     if (!document) {
       return sendError(
@@ -118,7 +176,7 @@ router.post<CanvasParams>('/', (req, res) => {
   const body = parseBody(OpenCanvasDocumentRequestSchema, req.body, res);
   if (!body) return;
   try {
-    const caller = requireCanvasAccess(req, res, true);
+    const caller = requireCanvasAccess(req, res, { write: true });
     const document = getRoomService().canvas.open(
       req.params.id,
       caller,
@@ -164,16 +222,8 @@ router.post<CanvasParams>('/viewing', (req, res) => {
   const body = parseBody(CanvasViewingRequestSchema, req.body, res);
   if (!body) return;
   try {
-    const caller = resolveCaller(req, res);
-    getRoomService().requireMembership(req.params.id, caller.id);
-    if (caller.kind !== 'human') {
-      throw new RoomError(
-        'PEOPLE_ONLY',
-        'Only a person can say what they are looking at. An agent’s face appears on a document ' +
-          'because its turn read that document, not because it said so.'
-      );
-    }
-    getRoomService().canvas.setViewing(req.params.id, caller.id, body.documentId);
+    const caller = requireCanvasAccess(req, res, { personOnly: VIEWING_IS_A_PERSONS });
+    getRoomService().canvas.setViewing(req.params.id, caller, body.documentId);
     res.status(204).end();
   } catch (err) {
     sendRoomError(res, err, 'POST /:id/canvas/viewing');
@@ -195,7 +245,7 @@ router.patch<CanvasParams>('/:documentId', (req, res) => {
     // asks for nothing, so every branch below was skipped and the handler
     // answered 200 with the document it had already fetched — to a caller who
     // may not be a member, out of a room that may be archived.
-    const caller = requireCanvasAccess(req, res, true);
+    const caller = requireCanvasAccess(req, res, { write: true });
     const service = getRoomService();
     const roomId = req.params.id;
     const documentId = req.params.documentId;
@@ -223,7 +273,7 @@ router.patch<CanvasParams>('/:documentId', (req, res) => {
 /** DELETE /:documentId — take a document off the table. */
 router.delete<CanvasParams>('/:documentId', (req, res) => {
   try {
-    const caller = requireCanvasAccess(req, res, true);
+    const caller = requireCanvasAccess(req, res, { write: true });
     getRoomService().canvas.close(req.params.id, caller, req.params.documentId);
     res.status(204).end();
   } catch (err) {
@@ -244,7 +294,7 @@ router.delete<CanvasParams>('/:documentId', (req, res) => {
  */
 router.post<CanvasParams>('/:documentId/thread', (req, res) => {
   try {
-    const caller = requireCanvasAccess(req, res, true);
+    const caller = requireCanvasAccess(req, res, { write: true });
     const thread = getRoomService().canvas.discuss(req.params.id, caller, req.params.documentId);
     res.status(thread.created ? 201 : 200).json(thread);
   } catch (err) {
@@ -265,13 +315,115 @@ router.post<CanvasParams>('/:documentId/editing', (req, res) => {
   const body = parseBody(CanvasEditingRequestSchema, req.body, res);
   if (!body) return;
   try {
-    const caller = requireCanvasAccess(req, res, true);
+    const caller = requireCanvasAccess(req, res, { write: true });
     res.json(
       getRoomService().canvas.heartbeat(req.params.id, caller, req.params.documentId, body.editing)
     );
   } catch (err) {
     sendRoomError(res, err, 'POST /:id/canvas/:documentId/editing');
   }
+});
+
+/**
+ * The seams the review reads and writes through, resolved per call.
+ *
+ * Late rather than captured, for the reason every other late resolution in this
+ * domain gives: the repo and files services are registered further into boot
+ * than this router is, and an install with no repo machinery answers `null`
+ * forever — which is exactly right, because then no room has working copies and
+ * there is nothing to review.
+ */
+function reviewDeps(): CanvasDiffReviewDeps {
+  return {
+    // **What the table holds, not what the review wants.** The "this is not a
+    // review" refusal belongs with the rule, in the module that owns it —
+    // filtering here instead made that refusal unreachable and answered a
+    // markdown document as a missing one.
+    document: (roomId, documentId) => {
+      const document = getRoomService().canvas.get(roomId, documentId);
+      if (!document) return null;
+      return {
+        contentType: document.content.type,
+        sourcePath: canvasSourcePath(document.content) ?? '',
+      };
+    },
+    resolvedTree: (roomId, documentId) =>
+      getRoomService().canvas.resolvedTreeOf(roomId, documentId),
+    worktreesPath: (roomId) => tryGetRoomRepoService()?.worktreesPathFor(roomId) ?? null,
+    mainCopy: async (roomId, sourcePath) => {
+      try {
+        const file = await getRoomFilesService().read(roomId, sourcePath);
+        return file.body.kind === 'text' ? file.body.text : null;
+      } catch {
+        // `main` does not have this file, which is the ordinary case for work
+        // that ADDS one. The caller draws it against an empty base.
+        return null;
+      }
+    },
+  };
+}
+
+/**
+ * GET /:documentId/diff — the two copies of the file behind a worktree diff
+ * (spec `canvas-agent-seat` §8).
+ *
+ * The room's own copy and the member's, so the review can be drawn. **Not the
+ * ordinary file API**, and the module doc of `canvas-diff-review.ts` says why:
+ * a working copy lives under the DorkOS data directory, which the raw file
+ * surfaces are deliberately confined out of. Nothing here takes a directory or
+ * a path — both come off the document's own row.
+ *
+ * **A person's, both ways.** It hands back the contents of somebody ELSE's
+ * working copy, which `read_canvas` refuses an agent by design (spec
+ * `room-canvas` §8.1) — so an agent is refused 403 `PEOPLE_ONLY` here too,
+ * after the membership check.
+ *
+ * **The gate is PERSONHOOD, not ownership**, exactly as it is on the file-write
+ * route this borrows from: any member who is a person may read the review and
+ * send a hunk back, and only the install's owner may MERGE (`POST
+ * /:id/repo/merge`, 403 `OPERATOR_ONLY`). Spec §8 frames the flow as the
+ * operator's because on a single-person install they are the same caller; on one
+ * with login on they are not, and this is the line.
+ */
+router.get<CanvasParams>('/:documentId/diff', (req, res) => {
+  void (async () => {
+    try {
+      requireCanvasAccess(req, res, { personOnly: REVIEWING_IS_A_PERSONS });
+      res.json(await readCanvasDiffReview(reviewDeps(), req.params.id, req.params.documentId));
+    } catch (err) {
+      sendRoomError(res, err, 'GET /:id/canvas/:documentId/diff');
+    }
+  })();
+});
+
+/**
+ * PUT /:documentId/diff — put a reviewed file back in the member's working copy.
+ *
+ * How turning a hunk down lands: the whole file, conditional on the hash the
+ * diff was computed against. A file the agent changed in between comes back
+ * `ok: false` with what it holds now — a conflict is control flow, and the
+ * screen recomputes rather than clobbering work that carried on.
+ *
+ * **A person's** (403 `PEOPLE_ONLY`), on the same instrument
+ * `PUT /:id/files/content` uses: this writes into a colleague's checkout, and an
+ * agent doing that leaves that colleague dirty — the state their own merge then
+ * refuses. Any member who is a person may do it, not only the owner — the
+ * ownership line is drawn at the MERGE and nowhere else. Archived rooms refuse
+ * it too, like every other canvas write.
+ */
+router.put<CanvasParams>('/:documentId/diff', (req, res) => {
+  const body = parseBody(RoomCanvasDiffWriteRequestSchema, req.body, res);
+  if (!body) return;
+  void (async () => {
+    try {
+      requireCanvasAccess(req, res, { write: true, personOnly: REVIEWING_IS_A_PERSONS });
+      res.json(
+        await writeCanvasDiffReview(reviewDeps(), req.params.id, req.params.documentId, body)
+      );
+    } catch (err) {
+      sendRoomError(res, err, 'PUT /:id/canvas/:documentId/diff');
+    }
+  })();
 });
 
 export default router;

@@ -413,3 +413,64 @@ export const RoomMainRepairResultSchema = z.object({
 
 /** What a repair did. See {@link RoomMainRepairResultSchema}. */
 export type RoomMainRepairResult = z.infer<typeof RoomMainRepairResultSchema>;
+
+/**
+ * What a completed merge answers — `POST /api/rooms/{id}/repo/merge` and the
+ * `merge_to_room_main` verb alike.
+ *
+ * **Here rather than beside the service that produces it**, for the reason
+ * {@link RoomBranchStatusSchema} gives: two ends read it now. The server
+ * answers with it, and the DorkOS app's own merge action (spec
+ * `canvas-agent-seat` §8) reads it back through `RoomTransport.mergeRoomMain`.
+ * One declaration is what keeps the route, the tool and the client describing
+ * the same fact.
+ */
+export const RoomMergeResultSchema = z.object({
+  /** The branch that was merged. */
+  branch: z.string(),
+  /** The merge commit now on `main`. */
+  commit: z.string().describe('The merge commit now on the room’s `main`.'),
+  /** How many files it touched. */
+  files: z.number().int(),
+  /** Lines added. */
+  insertions: z.number().int(),
+  /** Lines removed. */
+  deletions: z.number().int(),
+  /** The `seq` of the room entry announcing it. */
+  seq: z.number().int().describe('The `seq` of the room entry announcing the merge.'),
+});
+
+/** What a completed merge answers. See {@link RoomMergeResultSchema}. */
+export type RoomMergeResult = z.infer<typeof RoomMergeResultSchema>;
+
+/**
+ * `1 commit` / `3 commits` — the small grammar the merge refusals need.
+ *
+ * @param count - How many.
+ * @param noun - The singular noun.
+ * @returns The counted noun.
+ */
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+/**
+ * Why a working copy that has fallen behind the room cannot be merged yet.
+ *
+ * **One sentence, in one place, because two ends say it.** The merge service
+ * throws it as `BEHIND_MAIN`, and the DorkOS app's merge action shows it
+ * BEFORE the press rather than after (spec `canvas-agent-seat` §8) — so a
+ * screen that invented its own wording would tell a person something different
+ * from what the server would have. It is the server's own words either way.
+ *
+ * @param behind - Commits `main` holds that the branch does not.
+ * @param ahead - Commits the branch holds that `main` does not.
+ * @returns The sentence.
+ */
+export function behindMainMessage(behind: number, ahead: number): string {
+  return (
+    `The room has moved on: main is ${plural(behind, 'commit')} ahead of your branch, ` +
+    `and you are ${plural(ahead, 'commit')} ahead of it. Run \`git merge main\` in your own ` +
+    `working copy, sort out anything that clashes there, then merge again.`
+  );
+}

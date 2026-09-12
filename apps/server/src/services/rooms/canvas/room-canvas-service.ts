@@ -142,6 +142,29 @@ const MAX_OPEN_LEDGERS = 500;
 const LEDGER_TTL_MS = 2 * 60 * 60_000;
 
 /**
+ * The turn id a ONE-ON-ONE session's targeted write is charged and ledgered
+ * against: `session:<sessionId>:<n>:room:<roomId>` (spec `canvas-agent-seat`
+ * §9).
+ *
+ * **The `session:` prefix is the whole of the namespace separation.** A room
+ * turn's id is a ULID from the runner — 26 characters of Crockford base32, with
+ * no colon in it — so no derived id can ever collide with one, and
+ * {@link RoomCanvasService.finishTargetedTurns} can never close a room turn's
+ * ledger.
+ *
+ * The room id is IN the key, so two rooms targeted in one turn get one
+ * allowance each rather than sharing one.
+ *
+ * @param sessionId - The calling session's canonical id.
+ * @param n - How many turn boundaries this session has passed.
+ * @param roomId - The room being written to.
+ * @returns The derived id.
+ */
+export function targetedTurnId(sessionId: string, n: number, roomId: string): string {
+  return `session:${sessionId}:${n}:room:${roomId}`;
+}
+
+/**
  * What an agent is told when it reaches for a window action inside a room.
  *
  * Expressed against an ALLOW-list, so a twenty-third `control_ui` action is
@@ -280,6 +303,32 @@ export class RoomCanvasService {
    * one finishes closing.
    */
   private readonly readers = new Map<string, Map<string, number>>();
+
+  /**
+   * The turn a ONE-ON-ONE session is in, for the rooms it has written to from
+   * there (spec `canvas-agent-seat` §9).
+   *
+   * A direct session's turn has no turn id — `turnId` exists only under
+   * `session.roomTurn`, threaded from the room runner — so a targeted write has
+   * nothing to charge a ceiling against and nothing to compose a line from.
+   * Rather than thread a turn id through the message dispatcher into four
+   * runtime adapters for a feature none of them needs, the seam is the turn
+   * boundary the projector already publishes, and the id is DERIVED:
+   * `session:<sessionId>:<n>:room:<roomId>`.
+   *
+   * `n` counts the boundaries this service has seen for that session, so the id
+   * holds for a whole turn (the ceiling bites across every call in it) and
+   * changes at the boundary (the next turn gets fresh allowances). It is
+   * MONOTONIC and outlives the rooms it named: reusing an id whose line was
+   * already posted would hand the new turn the old one's spend, which is the
+   * ceiling refusing a turn that has done nothing.
+   *
+   * A room turn is untouched by any of this — its id is a ULID from the runner,
+   * which carries no colon and can never be in the `session:` namespace.
+   *
+   * Bounded by age and by count, exactly as {@link closedTurns} is.
+   */
+  private readonly targetedTurns = new Map<string, { n: number; rooms: Set<string>; at: number }>();
 
   /**
    * Build the service over its collaborators.
@@ -440,6 +489,122 @@ export class RoomCanvasService {
    */
   ledgerFor(turnId: string): readonly CanvasLedgerEntry[] {
     return this.ledger.get(turnId)?.ops ?? [];
+  }
+
+  /**
+   * Apply one canvas command a ONE-ON-ONE session aimed at a room it is in
+   * (spec `canvas-agent-seat` §9).
+   *
+   * **Membership is the gate, and it is checked here rather than by the
+   * caller.** A room the agent is not in answers the same `ROOM_NOT_FOUND` a
+   * room that does not exist answers, deliberately, so a room id is never
+   * something to probe with ({@link RoomVisibility.requireMembership}).
+   *
+   * Everything after that is the ordinary room path: the same
+   * {@link RoomCanvasService.apply}, so the same archived-room refusal, the same
+   * verb allow-list, the same per-turn ceiling and the same ledger — charged
+   * against the derived turn id, one allowance per room.
+   *
+   * @param input.sessionId - The calling session's canonical id.
+   * @param input.roomId - The room named by `target`.
+   * @param input.authorId - The calling agent, resolved server-side.
+   * @param input.command - The validated command.
+   * @param input.cwd - Where the session stands, so a file document records the
+   *   tree it was resolved against.
+   * @returns What was written, or the sentence explaining why nothing was.
+   * @throws {RoomError} `ROOM_NOT_FOUND` for a room this caller is not in.
+   */
+  applyTargeted(input: {
+    sessionId: string;
+    roomId: string;
+    authorId: string;
+    command: UiCommand;
+    cwd?: string;
+  }): CanvasApplyResult {
+    const { sessionId, roomId, authorId, command } = input;
+    this.visibility.requireMembership(roomId, authorId);
+    return this.apply({
+      roomId,
+      authorId,
+      turnId: this.targetedTurnId(sessionId, roomId),
+      command,
+      ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
+    });
+  }
+
+  /**
+   * Close every targeted turn a session opened, at the boundary that ended it.
+   *
+   * One coalesced line per room, exactly as a room turn gets — composed from the
+   * ledger, posted by {@link RoomCanvasService.finishTurn}, and waking nobody.
+   *
+   * **It only ever finishes ids in the `session:` namespace**, so a room turn's
+   * own `turnId` — still finished by the room runner's collector, unchanged —
+   * cannot be closed by it. A session that targeted nothing has no entry here
+   * and this is a no-op.
+   *
+   * Never throws, for the reason `finishTurn` does not.
+   *
+   * @param sessionId - The session whose turn just ended.
+   */
+  finishTargetedTurns(sessionId: string): void {
+    const state = this.targetedTurns.get(sessionId);
+    if (!state) return;
+    for (const roomId of state.rooms) {
+      this.finishTurn(targetedTurnId(sessionId, state.n, roomId));
+    }
+    state.rooms.clear();
+    // **Bumped whether or not anything was open.** The count is what makes the
+    // next turn's id different from this one's; leaving it still would reuse an
+    // id `closedTurns` remembers the spend of.
+    state.n += 1;
+    state.at = this.now();
+    this.expireTargetedTurns();
+  }
+
+  /**
+   * The derived turn id for one session writing to one room, minting the
+   * session's counter the first time it targets anything.
+   *
+   * @param sessionId - The calling session's canonical id.
+   * @param roomId - The room being written to.
+   * @returns The id the ceiling and the ledger are keyed on.
+   */
+  private targetedTurnId(sessionId: string, roomId: string): string {
+    const state = this.targetedTurns.get(sessionId) ?? {
+      n: 0,
+      rooms: new Set<string>(),
+      at: this.now(),
+    };
+    state.rooms.add(roomId);
+    this.targetedTurns.set(sessionId, state);
+    this.expireTargetedTurns(sessionId);
+    return targetedTurnId(sessionId, state.n, roomId);
+  }
+
+  /**
+   * Forget the sessions nobody has targeted anything from in a long time, and
+   * hold the map to its count bound.
+   *
+   * The same two bounds {@link RoomCanvasService.markClosed} keeps, for the same
+   * reason: the age bound is the honest one and the count bound is the one that
+   * holds on a busy machine. Dropping an entry loses a counter, not a row — the
+   * worst case is a session whose next targeted turn reuses an id whose line was
+   * posted two hours ago, which `closedTurns` has itself forgotten by then.
+   *
+   * @param keep - The session being written for right now, never dropped.
+   */
+  private expireTargetedTurns(keep?: string): void {
+    const at = this.now();
+    for (const [id, state] of this.targetedTurns) {
+      if (id === keep || state.rooms.size > 0 || at - state.at < LEDGER_TTL_MS) continue;
+      this.targetedTurns.delete(id);
+    }
+    while (this.targetedTurns.size > MAX_OPEN_LEDGERS) {
+      const oldest = this.targetedTurns.keys().next().value;
+      if (oldest === undefined || oldest === keep) break;
+      this.targetedTurns.delete(oldest);
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -917,8 +1082,16 @@ export class RoomCanvasService {
    * each of the two maps — are the claim, and a test that could not read the
    * sizes could only assert whatever behaviour happens to follow from them.
    */
-  bookkeepingSize(): { openLedgers: number; rememberedTurns: number } {
-    return { openLedgers: this.ledger.size, rememberedTurns: this.closedTurns.size };
+  bookkeepingSize(): {
+    openLedgers: number;
+    rememberedTurns: number;
+    targetedSessions: number;
+  } {
+    return {
+      openLedgers: this.ledger.size,
+      rememberedTurns: this.closedTurns.size,
+      targetedSessions: this.targetedTurns.size,
+    };
   }
 
   // -------------------------------------------------------------------------

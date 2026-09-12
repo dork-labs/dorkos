@@ -1,8 +1,12 @@
 /**
  * MCP tools for agent-driven UI control and UI state queries.
  *
- * `control_ui` validates a UiCommand via Zod and then splits three ways:
+ * `control_ui` validates a UiCommand via Zod and then splits four ways:
  *
+ * - **A canvas verb carrying `target`** goes to the room that names, whichever
+ *   surface the turn is on (spec `canvas-agent-seat` §9). Membership is checked
+ *   at this seam, and a room the agent is not in answers exactly as one that
+ *   does not exist.
  * - **In a room**, the room's canvas verbs go through `RoomCanvasService.apply`
  *   and the tool answers the model with what really happened (spec
  *   `room-canvas` §5.2).
@@ -24,7 +28,7 @@ import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { UiCommandSchema } from '@dorkos/shared/schemas';
 import type { UiState, UiStateReport, UiCommand, StreamEvent } from '@dorkos/shared/types';
 import { CONTROL_UI_DESCRIPTION, CONTROL_UI_INPUT } from '../../shared/ui-tool-contract.js';
-import { getRoomService, RoomError } from '../../../rooms/index.js';
+import { getRoomService, RoomError, type RoomService } from '../../../rooms/index.js';
 import { logger } from '../../../../lib/logger.js';
 import {
   CANVAS_VERBS,
@@ -177,6 +181,35 @@ export function createControlUiHandler(session: UiToolSession) {
 
     const command = parsed.data;
 
+    // **A targeted write goes somewhere else entirely, and it is decided
+    // first** (spec `canvas-agent-seat` §9). `target` names a room this agent is
+    // a member of, so neither branch below applies: not the room this turn is
+    // answering in, and not this session's own canvas.
+    // Naming the room the turn is ALREADY in is accepted and is a no-op
+    // distinction, so it falls through to the ordinary room path below: one
+    // ledger, one allowance and one line for that room, rather than two of each
+    // for the same turn in the same place.
+    const target = 'target' in command ? command.target : undefined;
+    const targetsAnotherRoom = target !== undefined && target.roomId !== session.roomTurn?.roomId;
+    if (targetsAnotherRoom && CANVAS_VERBS.has(command.action)) {
+      return applyToTargetedRoom(session, target.roomId, command);
+    }
+    // **Refused in reverse.** A room shares a canvas, not a window, so the other
+    // sixteen actions have nowhere to land there — and a room refuses them
+    // anyway (`CANVAS_VERBS`), so targeting must not become a way around that.
+    // The action still runs where it was going to run and the target is dropped,
+    // out loud, because a field that silently does nothing is worse than one
+    // that says so.
+    //
+    // It is read off the RAW arguments rather than off the parsed command,
+    // because `target` rides the six canvas members of the union and nothing
+    // else — so on any other action the schema has already dropped it, and a
+    // check on the parsed value could never see one to complain about.
+    const targetIgnored =
+      args.target !== undefined && !CANVAS_VERBS.has(command.action)
+        ? { targetIgnored: TARGET_IGNORED_MESSAGE }
+        : {};
+
     // **In a room, this is the writer's call and it answers the model with what
     // really happened** (spec `room-canvas` §5.2). Synchronous, because the
     // alternative is refusing an operation the tool has already reported as
@@ -264,8 +297,186 @@ export function createControlUiHandler(session: UiToolSession) {
     // diverge (see CONTROL_UI_DESCRIPTION notes).
     session.uiState = applyUiCommandToState(session.uiState ?? cloneDefaultUiState(), command);
 
-    return jsonContent({ success: true, action: command.action });
+    return jsonContent({ success: true, action: command.action, ...targetIgnored });
   };
+}
+
+/**
+ * What an agent is told when `target` names a room it is not in — or one that
+ * does not exist, which is deliberately the same answer.
+ *
+ * The room system's own refusal, with the two verbs that fix it. A room id is
+ * not a capability, so "no such room" and "you are not in it" must never be
+ * distinguishable from out here (`room-visibility.ts`).
+ */
+const TARGET_ROOM_NOT_FOUND_MESSAGE =
+  'No such room. Check the id — get_room or list_member_rooms will tell you which rooms you are in.';
+
+/**
+ * What an agent is told when it targets a room before its session has a
+ * canonical id.
+ *
+ * There is no key to charge a per-turn ceiling against or to close a ledger on,
+ * and the alternative — falling through to this session's own canvas — reports
+ * success for something that did not happen.
+ */
+const TARGET_NEEDS_A_SESSION_MESSAGE =
+  'This session has not been given its id yet, so nothing can be put on a room from it. Try again ' +
+  'on your next turn, or open the canvas here instead.';
+
+/**
+ * What an agent is told when it targets a room from a session with no agent
+ * behind it.
+ *
+ * A targeted write is posted in somebody's name and charged to somebody's
+ * per-turn allowance, and this session's directory hosts no agent to be — so
+ * there is nobody to write as. It is refused rather than written as the
+ * operator, which is who a fallback would silently pick.
+ */
+const TARGET_NEEDS_AN_AGENT_MESSAGE =
+  'This session is not an agent, so it has no membership to put something on a room with. Open the canvas here instead, or post to the room.';
+
+/**
+ * What an agent is told when it hangs `target` on an action a room has no
+ * surface for.
+ *
+ * The sixteen non-canvas actions are imperatives to one WINDOW — a toast, a
+ * panel, the command palette — and a room has no window to push them to.
+ * Targeting must not become a way around the verb allow-list a room already
+ * enforces, so the action still runs where it was going to run and the target is
+ * dropped, out loud.
+ */
+const TARGET_IGNORED_MESSAGE =
+  'A room only shares a canvas, so target does nothing for this action. It ran in this window instead. The six canvas actions are the ones a room can take.';
+
+/**
+ * Put one canvas command on a room the calling session is a member of (spec
+ * `canvas-agent-seat` §9).
+ *
+ * **Only ever called for a CANVAS verb**, which the caller decides: the other
+ * sixteen actions have no surface in a room and are handled where the command
+ * runs.
+ *
+ * **It never falls through.** Every outcome is answered here — a room the agent
+ * is not in, a session with no canonical id yet, no agent behind the session, a
+ * refusal from the writer — because the alternative is putting the document on
+ * this session's own canvas and telling the model it went to the room.
+ *
+ * @param session - The session taking the turn.
+ * @param roomId - The room `target` named.
+ * @param command - The validated command.
+ * @returns The tool result, or `null` to fall through.
+ */
+function applyToTargetedRoom(
+  session: UiToolSession,
+  roomId: string,
+  command: UiCommand
+): ReturnType<typeof jsonContent> {
+  // **Refused, never fallen through.** Without a canonical id there is no key to
+  // charge the per-turn ceiling against or to close the ledger on, and falling
+  // through would put the document on this session's OWN canvas while answering
+  // `success` — the one thing §10 forbids, reporting success for something that
+  // did not happen. Near-unreachable (`sdkSessionId` is seeded at creation), and
+  // that is the argument for refusing rather than guessing.
+  const sessionId = session.sdkSessionId;
+  if (sessionId === undefined) {
+    return jsonContent(
+      { success: false, target: 'room', roomId, reason: TARGET_NEEDS_A_SESSION_MESSAGE },
+      true
+    );
+  }
+
+  let rooms;
+  try {
+    rooms = getRoomService();
+  } catch {
+    // No rooms subsystem in this process — an embedded host, or a boot that
+    // never stood one up. Falling through would put the document on this
+    // session's own canvas, which is not what was asked for.
+    return jsonContent(
+      { success: false, target: 'room', roomId, reason: TARGET_ROOM_NOT_FOUND_MESSAGE },
+      true
+    );
+  }
+
+  // Who is writing, resolved server-side and never from the arguments. A room
+  // turn already knows — the runner resolved it — and a one-on-one turn is the
+  // agent whose directory the session runs in, which is the same key the
+  // in-session identity resolver uses.
+  const authorId = session.roomTurn?.authorId ?? agentAuthorForSession(rooms, session.cwd);
+  if (authorId === null) {
+    return jsonContent(
+      { success: false, target: 'room', roomId, reason: TARGET_NEEDS_AN_AGENT_MESSAGE },
+      true
+    );
+  }
+
+  try {
+    const applied = rooms.canvas.applyTargeted({
+      sessionId,
+      roomId,
+      authorId,
+      command,
+      // The turn's own directory, preferred over the session's, for the reason
+      // `applyToRoomCanvas` gives: in a project room they differ.
+      ...((session.roomTurn?.cwd ?? session.cwd) !== undefined
+        ? { cwd: session.roomTurn?.cwd ?? session.cwd }
+        : {}),
+    });
+    if (!applied.applied) {
+      return jsonContent({ success: false, target: 'room', roomId, reason: applied.reason }, true);
+    }
+    // No `ui_command` event: the document went to a room, and this session's own
+    // window has nothing to reveal. Every viewer of that room learns about it on
+    // the room's own stream, which is where the effect already went.
+    return jsonContent({
+      success: true,
+      target: 'room',
+      roomId,
+      action: command.action,
+      documentId: applied.documentId,
+      rev: applied.rev,
+      viewers: applied.viewers,
+    });
+  } catch (err) {
+    return jsonContent(
+      {
+        success: false,
+        target: 'room',
+        roomId,
+        reason:
+          err instanceof RoomError && err.code === 'ROOM_NOT_FOUND'
+            ? TARGET_ROOM_NOT_FOUND_MESSAGE
+            : 'That room’s canvas could not be reached just now.',
+      },
+      true
+    );
+  }
+}
+
+/**
+ * The room author of the agent whose session this is, or `null` when the
+ * session's directory hosts no agent.
+ *
+ * The directory IS the agent-identity key everywhere else in this file's
+ * neighbourhood — the relay sender, the task proposer, the in-session capability
+ * principal all resolve from it — so it is the key here too. Asked of the
+ * registry's one agent seam FIRST, so a directory with no agent in it is
+ * answered rather than minting an author row nothing will ever use.
+ *
+ * @param rooms - The room service.
+ * @param cwd - The session's working directory.
+ * @returns The author id, or `null`.
+ */
+function agentAuthorForSession(rooms: RoomService, cwd: string | undefined): string | null {
+  if (cwd === undefined) return null;
+  const registry = rooms.authorRegistry;
+  if (registry.agentNameOf(cwd) === null) return null;
+  // Undefined rather than the name: `resolveAgent` refreshes the cached display
+  // name from what it is handed, and `agents.name` is the address rather than
+  // the label. Absent means "this caller does not know", which keeps whatever
+  // the mesh-backed resolve stored.
+  return registry.resolveAgent(cwd, undefined).id;
 }
 
 /**

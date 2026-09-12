@@ -18,6 +18,7 @@ import {
 import { TEAM_ROOM_WELL_KNOWN } from '@dorkos/shared/room-schemas';
 import { configManager } from '../core/config-manager.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
+import { onProjectorTurnBoundary } from '../session/session-state-projector.js';
 import { ReadCursorService } from '../core/read-cursor-service.js';
 import { ReadCursorStore } from '../core/read-cursor-store.js';
 import { readOwnerAccount } from '../core/auth/index.js';
@@ -639,6 +640,27 @@ export function createRoomSubsystem(opts: {
 }
 
 let active: RoomService | null = null;
+
+// **The turn boundary is the only seam a targeted canvas write can close on**
+// (spec `canvas-agent-seat` §9). A ONE-ON-ONE session has no turn id — that
+// lives under `session.roomTurn`, threaded from the room runner — so the id a
+// targeted write is charged and ledgered against is derived, and this is what
+// ends it: one coalesced line per room it wrote to, and fresh allowances for the
+// next turn.
+//
+// Wired at module scope, beside the canvas domain's own two listeners and for
+// the reason its doc gives: both shells import this module and only one of them
+// runs `index.ts`. It is a no-op until a room service is registered, a no-op on
+// `interaction_resolved` (a person answering mid-turn is not a turn that ended),
+// and a no-op for a session that targeted nothing — which is nearly all of them.
+//
+// A ROOM turn is untouched: its own `turnId` is still finished by the runner's
+// collector, and `finishTargetedTurns` only ever closes ids in the `session:`
+// namespace.
+onProjectorTurnBoundary((sessionId, kind) => {
+  if (kind !== 'turn_end') return;
+  active?.canvas.finishTargetedTurns(sessionId);
+});
 
 /**
  * Register the active RoomService at bootstrap.

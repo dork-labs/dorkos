@@ -421,6 +421,10 @@ export class RoomService {
   *exportRoom(roomId: string, viewerAuthorId: string): Generator<RoomExportLine> {
     yield* this.parts.reads.exportRoom(roomId, viewerAuthorId);
   }
+  /** Refuse a caller who is not a person. See {@link RoomVisibility.requirePersonAuthor}. */
+  requirePersonAuthor(authorId: string, what: string): void {
+    this.parts.visibility.requirePersonAuthor(authorId, what);
+  }
   /** Refuse anyone who may not attach a file. See {@link RoomVisibility.assertCanAttach}. */
   assertCanAttach(roomId: string, authorId: string): void {
     this.parts.visibility.assertCanAttach(roomId, authorId);

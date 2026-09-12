@@ -66,10 +66,11 @@ import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import type {
   RoomBranchStatus,
   RoomMainStatus,
+  RoomMergeResult,
   RoomRepoCaps,
   RoomRepoStatus,
 } from '@dorkos/shared/room-repo';
-import { MAX_REPORTED_ROOM_STRAYS } from '@dorkos/shared/room-repo';
+import { MAX_REPORTED_ROOM_STRAYS, behindMainMessage } from '@dorkos/shared/room-repo';
 import { MERGE_SUMMARY_MAX_CHARS } from '@dorkos/shared/room-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../../lib/logger.js';
@@ -134,21 +135,16 @@ const STATUS_CACHE_MS = 5_000;
  */
 const MAX_REPORTED_STRAYS = MAX_REPORTED_ROOM_STRAYS;
 
-/** What a completed merge answers. */
-export interface RoomMergeResult {
-  /** The branch that was merged. */
-  branch: string;
-  /** The merge commit now on `main`. */
-  commit: string;
-  /** How many files it touched. */
-  files: number;
-  /** Lines added. */
-  insertions: number;
-  /** Lines removed. */
-  deletions: number;
-  /** The `seq` of the room entry announcing it. */
-  seq: number;
-}
+/**
+ * What a completed merge answers.
+ *
+ * Declared on the wire contract (`@dorkos/shared/room-repo`) rather than here,
+ * because the DorkOS app reads it back too: the merge action on a room's diff
+ * (spec `canvas-agent-seat` §8) calls `RoomTransport.mergeRoomMain` and renders
+ * this shape. Re-exported under the name every caller in this domain already
+ * uses, so nothing had to move with it.
+ */
+export type { RoomMergeResult };
 
 /** The seams {@link RoomMergeService} needs from the rest of the server. */
 export interface RoomMergeServiceDeps {
@@ -609,10 +605,7 @@ export class RoomMergeService {
 
     const { ahead, behind } = await aheadBehind(repoDir, 'main', target.branch, ceiling);
     if (behind > 0) {
-      throw new RoomError(
-        'BEHIND_MAIN',
-        `The room has moved on: main is ${plural(behind, 'commit')} ahead of your branch, and you are ${plural(ahead, 'commit')} ahead of it. Run \`git merge main\` in your own working copy, sort out anything that clashes there, then merge again.`
-      );
+      throw new RoomError('BEHIND_MAIN', behindMainMessage(behind, ahead));
     }
     if (ahead === 0) {
       throw new RoomError(

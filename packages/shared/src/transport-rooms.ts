@@ -13,12 +13,20 @@
 import type { UiCanvasContent, UploadProgress } from './schemas.js';
 import type { UploadFile } from './transport.js';
 import type {
+  RoomCanvasDiffReview,
+  RoomCanvasDiffWriteRequest,
+  RoomCanvasDiffWriteResult,
   RoomFileContentResponse,
   RoomFileListResponse,
   RoomFileSaveRequest,
   RoomFileSaveResponse,
 } from './room-files.js';
-import type { RoomMainRepairRequest, RoomMainRepairResult, RoomRepoStatus } from './room-repo.js';
+import type {
+  RoomMainRepairRequest,
+  RoomMainRepairResult,
+  RoomMergeResult,
+  RoomRepoStatus,
+} from './room-repo.js';
 import type {
   AuthorRef,
   AddRoomMemberRequest,
@@ -230,6 +238,34 @@ export interface RoomTransport {
    * @param req - Keep everything, or discard exactly these files.
    */
   repairRoomMain(id: string, req: RoomMainRepairRequest): Promise<RoomMainRepairResult>;
+  /**
+   * Bring one agent's working copy into the room's `main` (spec
+   * `canvas-agent-seat` §8).
+   *
+   * The merge has only ever been reachable by an AGENT, through
+   * `merge_to_room_main` — so reviewing an agent's diff and then merging it
+   * meant leaving the panel. This is the person's door to the same
+   * server-mediated merge: the room's own queue, the room's own refusals, and
+   * the one line it posts, which wakes nobody.
+   *
+   * **The operator's alone** (403 `OPERATOR_ONLY`). Naming somebody else's
+   * working copy is publishing a decision that was not theirs to make, and
+   * `worktree` is always somebody else's here: the operator has no branch in a
+   * room. A room the caller is not in answers 404 `ROOM_NOT_FOUND`, the same
+   * answer a room that does not exist gives.
+   *
+   * Every other refusal is a 409 naming what to do about it — `BEHIND_MAIN`
+   * (the working copy has to catch up first), `UNCOMMITTED_WORK`,
+   * `NOTHING_TO_MERGE`, `MAIN_CHECKOUT_DIRTY`, `MERGE_CONFLICT` — except
+   * `MERGE_IN_FLIGHT`, which is a 429 because waiting really is the remedy.
+   *
+   * @param id - The room whose `main` gains the work.
+   * @param input.summary - What the work does, in one line. It becomes the
+   *   merge commit's subject and the sentence the room reads.
+   * @param input.worktree - Which working copy to merge, by the slug
+   *   {@link readRoomRepoStatus} reports.
+   */
+  mergeRoomMain(id: string, input: { summary: string; worktree: string }): Promise<RoomMergeResult>;
   /**
    * Post to a room. Trigger-only, exactly as {@link postMessage} is: the 202
    * carries the new entry's identity, while the entry itself reaches every
@@ -566,6 +602,41 @@ export interface RoomTransport {
    * @param documentId - The document, or `null` when the answer is none.
    */
   setRoomCanvasViewing(id: string, documentId: string | null): Promise<void>;
+  /**
+   * Read the two copies of the file behind a room's worktree diff (spec
+   * `canvas-agent-seat` §8).
+   *
+   * **A room route rather than {@link readFileContent}**, and the difference is
+   * a real one: a member's working copy of a room's files lives under the
+   * DorkOS data directory, which the raw file surfaces are deliberately
+   * confined out of. So the caller names a room and a DOCUMENT, and the tree and
+   * the path both come off that row — there is no directory to pass and none to
+   * get wrong.
+   *
+   * `base` is the empty string for a file this work ADDS, which is ordinary and
+   * not an error.
+   *
+   * @param id - The room whose `main` is the comparison.
+   * @param documentId - The `diff` document on its canvas.
+   */
+  readRoomCanvasDiff(id: string, documentId: string): Promise<RoomCanvasDiffReview>;
+  /**
+   * Put a reviewed file back in the member's working copy — how turning a hunk
+   * down lands.
+   *
+   * The whole file, conditional on the hash the diff was computed against. A
+   * file the agent changed in between answers `ok: false` carrying what it holds
+   * now, so a conflict is control flow and never a clobber.
+   *
+   * @param id - The room.
+   * @param documentId - The `diff` document on its canvas.
+   * @param req - The new contents, and the hash they were computed against.
+   */
+  writeRoomCanvasDiff(
+    id: string,
+    documentId: string,
+    req: RoomCanvasDiffWriteRequest
+  ): Promise<RoomCanvasDiffWriteResult>;
 
   /**
    * Subscribe to a room's durable event stream (`GET /rooms/:id/events`).

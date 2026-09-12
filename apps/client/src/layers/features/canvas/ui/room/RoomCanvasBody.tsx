@@ -40,6 +40,7 @@ import {
   type CanvasDocumentAuthor,
 } from '../CanvasHeader';
 import { CanvasErrorBoundary } from '../CanvasErrorBoundary';
+import { RoomWorktreeDiff } from '@/layers/features/diff-review';
 import { CanvasRenderer } from '../CanvasRenderer';
 import { CanvasSplash } from '../CanvasSplash';
 import { RoomCanvasChrome, type FollowableMember } from './RoomCanvasChrome';
@@ -75,6 +76,19 @@ function RoomCanvasDocumentBody({
   onUpdate: (documentId: string, content: UiCanvasContent) => Promise<boolean>;
 }) {
   const reading = roomDocumentReading(document);
+  // Work waiting for a decision, rather than a file somebody is reading: the
+  // agent's copy against the room's own, with the merge on the header for the
+  // operator (spec `canvas-agent-seat` §8).
+  if (reading.kind === 'worktree-diff') {
+    return (
+      <RoomWorktreeDiff
+        roomId={roomId}
+        content={reading.content}
+        documentId={document.id}
+        authorId={document.authorId}
+      />
+    );
+  }
   if (reading.kind !== 'inline') {
     return <RoomCanvasFileCard roomId={roomId} document={document} reading={reading} />;
   }

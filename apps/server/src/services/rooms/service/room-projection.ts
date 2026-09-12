@@ -64,6 +64,7 @@ export class RoomProjection {
   private readonly roster: RoomRoster;
   private readonly bridges: BridgeStore;
   private readonly triggers: RoomTriggerDispatcher;
+  private readonly isOwnerAuthor: (authorId: string) => boolean;
 
   constructor(core: RoomCore) {
     this.reactions = core.reactions;
@@ -71,6 +72,7 @@ export class RoomProjection {
     this.roster = core.roster;
     this.bridges = core.bridges;
     this.triggers = core.triggers;
+    this.isOwnerAuthor = core.isOwnerAuthor;
   }
 
   /**
@@ -140,6 +142,14 @@ export class RoomProjection {
       // read, the create response, and the stream's hydration snapshot — and the
       // reader it belongs to is the id this call was already scoped by.
       reactionFrequents: this.reactions.frequents(viewerAuthorId),
+      // The one gate in a room that is not a membership: whether this reader is
+      // the person who owns the install. It rides the room read for the same
+      // reason `viewerAuthorId` does — the reader is already resolved here, and
+      // nothing else on the wire told a client, so every operator-only
+      // affordance had to be drawn for everybody and refused afterwards. The
+      // server still refuses a non-operator; this only decides what is drawn
+      // (spec `canvas-agent-seat` §8).
+      viewerIsOperator: this.isOwnerAuthor(viewerAuthorId),
       // Here for the same reason `reactionFrequents` is, and it buys more: this
       // one method feeds the room read, the create response AND the stream's
       // hydration snapshot, so every way of arriving at a room arrives with its
