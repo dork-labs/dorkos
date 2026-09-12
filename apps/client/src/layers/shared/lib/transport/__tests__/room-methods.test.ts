@@ -237,7 +237,7 @@ describe('subscribeRoom over a stream socket', () => {
     socket.finish();
   });
 
-  it('skips the snapshot frame — the cache already holds that history', async () => {
+  it('skips the snapshot frame’s history — the cache already holds it', async () => {
     const iterator = setup().subscribeRoom('room-1')[Symbol.asyncIterator]();
     const next = iterator.next();
     const socket = await nthSocket();
@@ -246,6 +246,43 @@ describe('subscribeRoom over a stream socket', () => {
     socket.push('entry', ENTRY_EVENT);
 
     expect((await next).value).toEqual(ENTRY_EVENT);
+    socket.finish();
+  });
+
+  it('hydrates the room’s canvas from the snapshot, because nothing else can', async () => {
+    // The one part of a cold connect's snapshot that is NOT already in the
+    // cache: the shared table rides this stream and no other route feeds it, so
+    // dropping the whole frame left a cold reader looking at an empty canvas.
+    // Each document comes through as the `canvas` frame a resume would send —
+    // no `change`, because nothing just happened.
+    const document = {
+      id: 'doc-1',
+      scope: 'room:room-1',
+      roomId: 'room-1',
+      content: { type: 'markdown', content: '# Notes' },
+      title: 'Notes',
+      contentType: 'markdown',
+      authorId: 'author-ana',
+      pinned: false,
+      rev: 1,
+      lastTouchedBy: 'author-ana',
+      lastTouchedAt: '2026-09-11T00:00:00.000Z',
+      openedAt: '2026-09-11T00:00:00.000Z',
+      lastActiveAt: '2026-09-11T00:00:00.000Z',
+    };
+    const iterator = setup().subscribeRoom('room-1')[Symbol.asyncIterator]();
+    const next = iterator.next();
+    const socket = await nthSocket();
+
+    socket.push('snapshot', {
+      room: {},
+      members: [],
+      entries: [],
+      cursor: 3,
+      canvas: [document],
+    });
+
+    expect((await next).value).toEqual({ type: 'canvas', documentId: 'doc-1', document });
     socket.finish();
   });
 

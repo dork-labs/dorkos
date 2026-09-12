@@ -12,11 +12,14 @@ import {
   LayoutDashboard,
   AppWindow,
   GitCompare,
+  Pin,
+  PinOff,
   X,
 } from 'lucide-react';
+import type { AuthorKind } from '@dorkos/shared/room-schemas';
 import type { UiCanvasContent } from '@dorkos/shared/types';
-import { cn, type CanvasView } from '@/layers/shared/lib';
-import { useRovingTabList } from '@/layers/shared/ui';
+import { cn, hashToHslColor, initialOf, type CanvasView } from '@/layers/shared/lib';
+import { IdentityAvatar, useRovingTabList } from '@/layers/shared/ui';
 
 const CONTENT_TYPE_ICONS = {
   url: Globe,
@@ -82,11 +85,42 @@ export function canvasTabDomId(documentId: string): string {
   return `canvas-tab-${documentId}`;
 }
 
+/**
+ * Who put a document on a shared table, as the tab needs to draw them.
+ *
+ * Faces come through the identity kit rather than from a raw `icon`/`color`
+ * read: almost no agent stores either, so a call site that read them straight
+ * would draw a blank disc for nearly every agent in the room.
+ */
+export interface CanvasDocumentAuthor {
+  /** The author's id — what the face's fallback colour is hashed from. */
+  id: string;
+  /** Their name, for the face's letter and the tab's title. */
+  displayName: string;
+  /** Person, agent, or the room's own voice — decides the disc's shape and badge. */
+  kind: AuthorKind;
+  /** Their emoji, when they have one. */
+  emoji?: string;
+  /** Their own colour, when they have one. */
+  color?: string;
+  /** Their photo, when they have one. */
+  imageUrl?: string;
+}
+
 /** A single open document, as the header needs to render its tab. */
 export interface CanvasHeaderDocument {
   id: string;
   sourceLabel: string;
   contentType: UiCanvasContent['type'];
+  /**
+   * Who put it here. Set on a room's shared table, where the answer is
+   * information; absent on a private session canvas, where it is always you.
+   */
+  author?: CanvasDocumentAuthor;
+  /** Pinned documents sort first and are never dropped to make room. */
+  pinned?: boolean;
+  /** True when this document arrived and this viewer has not looked at it yet. */
+  unread?: boolean;
 }
 
 interface CanvasHeaderProps {
@@ -100,6 +134,11 @@ interface CanvasHeaderProps {
   onActivate: (id: string) => void;
   /** Close a document by id. */
   onClose: (id: string) => void;
+  /**
+   * Pin or unpin a document by id. Omitted where pinning means nothing — a
+   * private canvas has no order worth defending — and the control is not drawn.
+   */
+  onPin?: (id: string, pinned: boolean) => void;
 }
 
 /**
@@ -119,6 +158,7 @@ export function CanvasHeader({
   activeDocumentId,
   onActivate,
   onClose,
+  onPin,
 }: CanvasHeaderProps) {
   const panelId = canvasPanelId(view);
   const { getTabProps } = useRovingTabList({
@@ -144,6 +184,7 @@ export function CanvasHeader({
       {documents.map((doc) => {
         const Icon = CONTENT_TYPE_ICONS[doc.contentType];
         const isActive = doc.id === activeDocumentId;
+        const author = doc.author;
         return (
           // role="presentation" wrapper: ARIA expects tabs as direct tablist
           // children; this div exists only to anchor the absolutely-positioned
@@ -158,15 +199,57 @@ export function CanvasHeader({
               aria-controls={isActive ? panelId : undefined}
               {...getTabProps(doc.id)}
               className={cn(
-                'focus-ring flex items-center gap-1.5 rounded-md py-3 pr-7 pl-2 text-xs transition-colors md:py-1',
+                'focus-ring flex items-center gap-1.5 rounded-md py-3 pl-2 text-xs transition-colors md:py-1',
+                // A pin control needs its own slot beside the close button, so
+                // the tab reserves a second one — and only where pinning is
+                // offered, so a private canvas's tabs keep their label width.
+                onPin ? 'pr-12' : 'pr-7',
                 isActive
                   ? 'bg-muted text-foreground'
                   : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
               )}
             >
+              {author && (
+                // Who put it here — the fact a shared table has and a private
+                // canvas does not. Decorative: the tab's own title names them.
+                <IdentityAvatar
+                  aria-hidden
+                  size="xs"
+                  className="size-3.5 shrink-0 text-[8px]"
+                  kind={author.kind}
+                  color={author.color ?? hashToHslColor(author.id)}
+                  emoji={author.emoji}
+                  imageUrl={author.imageUrl}
+                  badge={null}
+                  fallback={initialOf(author.displayName)}
+                />
+              )}
               <Icon className="size-3.5 shrink-0" />
               <span className="max-w-40 truncate font-medium">{doc.sourceLabel}</span>
+              {doc.unread && (
+                <span
+                  data-slot="canvas-tab-unread"
+                  aria-hidden
+                  className="bg-primary size-1.5 shrink-0 rounded-full"
+                />
+              )}
             </button>
+            {onPin && (
+              <button
+                type="button"
+                tabIndex={-1}
+                onClick={() => onPin(doc.id, !doc.pinned)}
+                aria-label={doc.pinned ? `Unpin ${doc.sourceLabel}` : `Pin ${doc.sourceLabel}`}
+                className={cn(
+                  'focus-ring hover:bg-background/80 absolute top-1/2 right-6 -translate-y-1/2 rounded-sm p-1.5 transition-opacity md:p-0.5',
+                  // A pin is state, so it stays visible; an unpinned tab's
+                  // control is an affordance, so it waits for a hover.
+                  doc.pinned ? 'opacity-100' : 'opacity-0 group-hover:opacity-60'
+                )}
+              >
+                {doc.pinned ? <PinOff className="size-3" /> : <Pin className="size-3" />}
+              </button>
+            )}
             <button
               type="button"
               tabIndex={-1}
