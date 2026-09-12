@@ -154,9 +154,8 @@ export function useRoomCanvasEditLock(roomId: string, documentId: string | null)
 /**
  * How long a reader has to settle on a tab before the room is told.
  *
- * Arrow-keying along a strip of eight tabs is one decision, not eight, and
- * without this it would be eight requests and eight frames fanned out to
- * everybody. Short enough that a deliberate switch feels immediate.
+ * Arrow-keying along a strip of eight tabs is one decision, not eight. Short
+ * enough that a deliberate switch feels immediate.
  */
 export const CANVAS_VIEWING_DEBOUNCE_MS = 400;
 
@@ -190,13 +189,21 @@ export function useRoomCanvasViewing(roomId: string, documentId: string | null):
         console.warn('[room-canvas] could not say where we are looking', { roomId, err });
       });
     };
-    const timer = setTimeout(() => say(documentId), CANVAS_VIEWING_DEBOUNCE_MS);
+    let said = false;
+    const timer = setTimeout(() => {
+      said = true;
+      say(documentId);
+    }, CANVAS_VIEWING_DEBOUNCE_MS);
     return () => {
       clearTimeout(timer);
-      // Unconditional, even for a switch the debounce swallowed: the server
-      // publishes nothing for a viewer who was not on record as looking, so a
-      // redundant clear costs one request and no frame.
-      say(null);
+      // **Nothing to take back if nothing was said.** The debounce is what makes
+      // arrow-keying along eight tabs one statement rather than eight — and a
+      // cleanup that cleared unconditionally would send the other eight anyway,
+      // one per tab passed through, which is the fan-out the debounce exists to
+      // stop. The server publishes no FRAME for a clear it has nothing to clear,
+      // but the request still crosses the wire, and that is the half this
+      // decides.
+      if (said) say(null);
     };
     // `epoch` is a dependency on purpose: a stream cycle clears every face in
     // the room, and re-running this is how this viewer's own comes back.

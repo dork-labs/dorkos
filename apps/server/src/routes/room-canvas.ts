@@ -140,6 +140,23 @@ router.post<CanvasParams>('/', (req, res) => {
  * whole effect is one ephemeral `signal` frame that puts a small face on that
  * tab for the room's other readers. It is never written down and never replayed.
  *
+ * **People only, and this one is an invariant rather than a convention**
+ * (etiquette E16a, `specs/room-presence`: a mechanical presence signal is the
+ * system's, never something a model chose to send). An agent's face on a
+ * document means a turn that is really running really read it, and the server
+ * puts it there from `read_canvas` under a live claim — *not* from a route. A
+ * member agent could otherwise paint its own face on any tab with no turn
+ * behind it, using the token every spawned agent has in its environment; and
+ * because an agent holds no room stream, nothing would ever take that face off
+ * again. So a caller presenting `X-DorkOS-Agent` is refused 403 `PEOPLE_ONLY`,
+ * the same instrument `GET /:id/sessions` and `PATCH /authors/:authorId/handle`
+ * use, and one presenting a token this machine cannot verify is refused 401 by
+ * `resolveCaller` before this handler runs.
+ *
+ * The gate is AFTER the membership check for the reason `GET /:id/sessions`
+ * gives: visibility first means an agent probing room ids cannot tell 403 from
+ * 404.
+ *
  * Declared above `/:documentId` so the literal path is matched before the
  * parameter would swallow it.
  */
@@ -147,8 +164,16 @@ router.post<CanvasParams>('/viewing', (req, res) => {
   const body = parseBody(CanvasViewingRequestSchema, req.body, res);
   if (!body) return;
   try {
-    const caller = requireCanvasAccess(req, res, false);
-    getRoomService().canvas.setViewing(req.params.id, caller, body.documentId);
+    const caller = resolveCaller(req, res);
+    getRoomService().requireMembership(req.params.id, caller.id);
+    if (caller.kind !== 'human') {
+      throw new RoomError(
+        'PEOPLE_ONLY',
+        'Only a person can say what they are looking at. An agent’s face appears on a document ' +
+          'because its turn read that document, not because it said so.'
+      );
+    }
+    getRoomService().canvas.setViewing(req.params.id, caller.id, body.documentId);
     res.status(204).end();
   } catch (err) {
     sendRoomError(res, err, 'POST /:id/canvas/viewing');

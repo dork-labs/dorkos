@@ -27,6 +27,9 @@ import { BasePage } from '../../../pages/BasePage';
 /** The scenario that puts one markdown document on the room's canvas. */
 const OPENS_CANVAS = 'rooms-open-canvas';
 
+/** The scenario that reads the room's canvas from inside a turn, then holds it open. */
+const READS_CANVAS = 'rooms-read-canvas';
+
 /** What {@link OPENS_CANVAS} calls the document it opens. */
 const AGENT_DOCUMENT = 'The plan';
 
@@ -93,32 +96,6 @@ async function seatThatAnswers(
 }
 
 /**
- * Mint a real identity for an agent, so a request can act as somebody who is
- * not the person driving the browser.
- *
- * Production only ever issues a token into a spawned session's process env, and
- * a fabricated header does not fail — it falls through to the operator, which
- * would make a test about another member's face pass while proving the opposite.
- * So it is a real token or no test.
- *
- * @param request - The test's API context.
- * @param agentPath - The agent's canonicalised project path.
- * @param displayName - Its display name, for attribution labels.
- */
-async function agentToken(
-  request: APIRequestContext,
-  agentPath: string,
-  displayName: string
-): Promise<string> {
-  const res = await request.post('/api/test/agent-token', { data: { agentPath, displayName } });
-  if (!res.ok()) {
-    throw new Error(`Could not mint an agent identity for ${agentPath}: ${await res.text()}`);
-  }
-  const { token } = (await res.json()) as { token: string };
-  return token;
-}
-
-/**
  * Put a document on a room's canvas AS THE PERSON, through the same route the
  * app's own doors use.
  *
@@ -171,6 +148,9 @@ test.describe('A room has a canvas everybody shares @smoke', () => {
   });
 
   test.afterEach(async ({ request }) => {
+    // A held turn this case never released would outlive it, so the flag is
+    // raised unconditionally — it is sticky until the next reset either way.
+    await request.post('/api/test/finish-turn').catch(() => {});
     await useScenario(request, 'simple-text').catch(() => {});
   });
 
@@ -319,7 +299,7 @@ test.describe('A room has a canvas everybody shares @smoke', () => {
     await expect(page.getByRole('button', { name: `Unpin ${second}` })).toBeVisible();
   });
 
-  test('another member’s face appears on the tab they are looking at', async ({
+  test('an agent’s face appears while its turn is reading, and goes when the turn ends', async ({
     page,
     basePage,
     roomsApi,
@@ -329,47 +309,50 @@ test.describe('A room has a canvas everybody shares @smoke', () => {
     // **Not two browser windows, and the reason is the product's.** This install
     // has exactly one person, so two windows are the SAME member — and a face
     // telling you where you already are is noise, so the strip never draws your
-    // own. The other members of a room are its agents, which is who this drives:
-    // a real identity from the same seam the reaction spec uses, through the
-    // same route the app's own tabs call.
+    // own. The other members of a room are its agents, so an agent's face is the
+    // only one a single-identity install can show.
+    //
+    // **And it is driven by a real turn rather than by a request**, because that
+    // is the whole rule: a face means the dispatcher holds a claim for a turn
+    // that really called `read_canvas` (etiquette E16a). The route a person uses
+    // refuses an agent outright, so there is no shortcut here — the scenario
+    // reads the canvas from inside the turn and then HOLDS it open, which is the
+    // only way the middle of a turn is a state a browser can look at.
     const tag = roomsApi.runId;
-    const name = `Watcher${tag}`;
+    const name = `Reader${tag}`;
     const agent = await roomsApi.registerAgent(name, '👀', '#7c3aed');
     const room = await roomsApi.createChannel(`canvas-face-${tag}`, `Face ${tag}`, [agent]);
-    const token = await agentToken(request, agent.projectPath, name);
+    const seat = await seatThatAnswers(roomsApi, room, name);
+    await useScenario(request, READS_CANVAS);
 
     const watched = `Watched ${tag}`;
-    const other = `Other ${tag}`;
-    const watchedId = await putOnCanvas(request, room.id, watched);
-    await putOnCanvas(request, room.id, other);
+    await putOnCanvas(request, room.id, watched);
 
     await openRoom(page, basePage, roomsPage, room.id);
     await roomsPage.openCanvasTab();
     await expect(roomsPage.canvasDocuments).toContainText(watched, {
       timeout: SERVER_ROUND_TRIP_MS,
     });
-    // Nobody else is looking yet, so nothing is on any tab.
+    // Nobody is reading yet, so nothing is on the tab.
     await expect(roomsPage.canvasDocumentWatchers(watched)).toHaveCount(0);
 
-    const look = (documentId: string | null) =>
-      request.post(`/api/rooms/${room.id}/canvas/viewing`, {
-        headers: { 'X-DorkOS-Agent': token },
-        data: { documentId },
-      });
+    await roomsApi.postEntries(room.id, [`@${name} what is on the canvas?`]);
 
-    expect((await look(watchedId)).ok()).toBe(true);
-
-    // It arrives over this window's own stream, with no reload — the claim a
-    // per-browser store could never make.
+    // Mid-turn: the claim is held, the read happened, and the face arrived over
+    // this window's own stream with no reload.
     await expect(roomsPage.canvasDocumentWatchers(watched)).toBeVisible({
       timeout: SERVER_ROUND_TRIP_MS,
     });
     await expect(roomsPage.canvasDocumentTab(watched)).toContainText(`${name} is looking at this.`);
-    // …and on the tab they are ACTUALLY on, not on every tab.
-    await expect(roomsPage.canvasDocumentWatchers(other)).toHaveCount(0);
 
-    // Looking away takes it off again, live.
-    expect((await look(null)).ok()).toBe(true);
+    // The turn ends, and the face goes with it — from the one block every ending
+    // reaches, rather than from anything the agent chose to say.
+    await request.post('/api/test/finish-turn');
+    await roomsApi.waitForEntry(
+      room.id,
+      (entry) => entry.authorId === seat,
+      `an answer from ${name}`
+    );
     await expect(roomsPage.canvasDocumentWatchers(watched)).toHaveCount(0, {
       timeout: SERVER_ROUND_TRIP_MS,
     });

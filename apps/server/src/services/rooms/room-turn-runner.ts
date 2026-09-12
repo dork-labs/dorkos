@@ -1538,15 +1538,26 @@ function collectReply(
       // `persistSessionRuntime`: posting can fail (a room archived mid-turn, a
       // busy database) and a rejection out of here would surface from a `closed`
       // promise this function documents as never rejecting.
+      //
+      // **The face comes off FIRST, in its own `try`.** The line and the face
+      // are two different promises and only one of them can fail: posting can
+      // throw (a room archived mid-turn, a busy database), and sharing a `try`
+      // with it would mean the very endings this block exists for — the ones
+      // that go wrong — are exactly the ones that leave an agent's face on a tab
+      // for a turn that has stopped. Unconditional and silent: the service
+      // publishes nothing for an agent that was not looking, which is every turn
+      // that never called `read_canvas`.
+      try {
+        getRoomService().canvas.clearViewing(bounds.roomId, bounds.authorId);
+      } catch (err) {
+        logger.warn('[rooms] could not take an agent’s face off the canvas', {
+          roomId: bounds.roomId,
+          authorId: bounds.authorId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
       try {
         getRoomService().canvas.finishTurn(bounds.turnId);
-        // **And the agent's face comes off the canvas**, in the same breath and
-        // for the same reason: this is the one block every ending reaches, so
-        // there is no terminal — the ordinary one, the ceiling, a halt — that
-        // can leave a face on a tab for a turn that has stopped. Unconditional
-        // and silent: the service publishes nothing for an agent that was not
-        // looking, which is every turn that never called `read_canvas`.
-        getRoomService().canvas.clearViewing(bounds.roomId, bounds.authorId);
       } catch (err) {
         logger.warn('[rooms] could not close out a turn’s canvas line', {
           roomId: bounds.roomId,

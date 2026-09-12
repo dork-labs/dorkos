@@ -271,6 +271,26 @@ describe('the room canvas — two views over one table', () => {
     });
   });
 
+  it('says nothing at all for a tab the reader only passed through', async () => {
+    // Arrow-keying along a strip is one decision, not eight. A cleanup that
+    // cleared unconditionally would send the other seven requests anyway — one
+    // per tab passed through — which is the fan-out the debounce exists to stop.
+    seed({ id: 'note', title: 'Notes' });
+    seed({ id: 'plan', title: 'Plan' });
+    renderTab('canvas');
+
+    act(() => {
+      useAppStore.getState().activateRoomCanvasDocument(ROOM, 'plan');
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+
+    // One statement, about where they landed — never one about where they were.
+    expect(transport.setRoomCanvasViewing).toHaveBeenCalledTimes(1);
+    expect(transport.setRoomCanvasViewing).toHaveBeenCalledWith(ROOM, 'plan');
+  });
+
   it('never writes the table locally — the frame the server sends is what moves', () => {
     seed({ id: 'note', title: 'Notes' });
     renderTab('canvas');

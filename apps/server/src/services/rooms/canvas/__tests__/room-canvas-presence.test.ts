@@ -30,6 +30,7 @@ import {
   createRoomHarness,
   scriptedRunner,
 } from '../../__tests__/room-test-harness.js';
+import { MAX_ROOM_CANVAS_DOCUMENTS } from '../room-canvas-service.js';
 
 const ANA = '/agents/ana';
 
@@ -153,6 +154,27 @@ describe('who is looking at a room’s canvas', () => {
         .map((e) => e.type === 'signal' && e.authorId)
         .sort()
     ).toEqual([human, ana].sort());
+  });
+
+  it('takes every face off a document the ceiling drops', async () => {
+    // Eviction is the other way a tab disappears, and it is the one nobody
+    // pressed — so it is the one a hand-written close path would forget. The
+    // entry left behind would make the NEXT thing that member looked at read as
+    // a move from a document nobody can see.
+    const doomed = canvas.open(room.id, human, { type: 'url', url: 'https://example.test/0' });
+    canvas.setViewing(room.id, human, doomed.id);
+
+    const seen = await frames(() => {
+      for (let n = 1; n <= MAX_ROOM_CANVAS_DOCUMENTS; n += 1) {
+        canvas.open(room.id, human, { type: 'url', url: `https://example.test/${n}` });
+      }
+    });
+
+    // It really was dropped…
+    expect(canvas.get(room.id, doomed.id)).toBeNull();
+    // …and the face went with it, unprompted.
+    expect(presence(seen)).toMatchObject([{ authorId: human }]);
+    expect(presence(seen)[0]).not.toHaveProperty('documentId');
   });
 
   it('is written down nowhere, and reaches nobody who was not already listening', async () => {
