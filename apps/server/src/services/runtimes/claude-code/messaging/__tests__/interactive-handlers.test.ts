@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { logger } from '../../../../../lib/logger.js';
 import {
   createCanUseTool,
@@ -9,6 +9,10 @@ import {
   type ToolApprovalContext,
 } from '../interactive-handlers.js';
 import type { InteractiveSession, PendingInteraction } from '../interaction-wait.js';
+import {
+  autoModeStopStats,
+  resetAutoModeStops,
+} from '../../../../observability/auto-mode-stops.js';
 import { resolveApprovalDecision } from '../../../opencode/messaging/approvals.js';
 import { toRawSessionEvent } from '../../../../session/session-event-normalizer.js';
 import type { StreamEvent, QuestionItem } from '@dorkos/shared/types';
@@ -1492,5 +1496,59 @@ describe('the scope an "Always Allow" card names (DOR-1462)', () => {
     } finally {
       info.mockRestore();
     }
+  });
+});
+
+describe('counting the stops auto mode makes on DorkOS tools', () => {
+  /**
+   * The measurement half of spec `auto-mode-classifier-context`.
+   *
+   * Reaching the approval card in AUTO mode with a DorkOS tool means the
+   * runtime's own classifier decided the call deserved a person, and DorkOS's
+   * auto-allow list did not cover it — the exact stop the host-context note
+   * exists to remove. Counting it here, rather than off a log grep afterwards,
+   * is what makes "did it work" answerable at all.
+   */
+  const DORKOS_TOOL = 'mcp__dorkos__tasks_delete';
+
+  beforeEach(() => {
+    resetAutoModeStops();
+  });
+
+  it('counts a DorkOS tool that auto mode stopped on', () => {
+    const session = makeSession('auto');
+    void createCanUseTool(session, noopLog)(DORKOS_TOOL, { id: 'x' }, makeContext('tool-a'));
+
+    const stats = autoModeStopStats();
+    expect(stats.stops).toBe(1);
+    expect(stats.stopsByTool).toEqual({ [DORKOS_TOOL]: 1 });
+  });
+
+  it('ignores a stop on a tool DorkOS does not own', () => {
+    const session = makeSession('auto');
+    void createCanUseTool(session, noopLog)('Bash', { command: 'ls' }, makeContext('tool-b'));
+
+    expect(autoModeStopStats().stops).toBe(0);
+  });
+
+  it('ignores modes that ask about everything by design', () => {
+    // `default` raises a card for every non-safe tool, so counting its cards
+    // would bury the auto-mode signal under the mode that is supposed to
+    // produce them.
+    for (const mode of ['default', 'acceptEdits', 'plan'] as const) {
+      const session = makeSession(mode);
+      void createCanUseTool(session, noopLog)(DORKOS_TOOL, { id: 'x' }, makeContext(`t-${mode}`));
+    }
+
+    expect(autoModeStopStats().stops).toBe(0);
+  });
+
+  it('ignores a DorkOS tool auto mode did not stop on', async () => {
+    // `mesh_list` is on the auto-allow list, so it never reaches the card — and
+    // an auto-allow is not a stop.
+    const session = makeSession('auto');
+    await createCanUseTool(session, noopLog)('mcp__dorkos__mesh_list', {}, makeContext('tool-c'));
+
+    expect(autoModeStopStats().stops).toBe(0);
   });
 });
