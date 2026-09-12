@@ -122,6 +122,30 @@ export const WORKBENCH = {
    * relays then vanishes) by evicting the least-recently-updated buffer.
    */
   DEVTOOLS_MAX_SESSIONS: 50,
+  /**
+   * How long a driving verb waits (ms) for the addressed window to answer
+   * (stream → client → frame → act → result route). Matches the screenshot
+   * round trip: the work in the page is a click, not a render, so the budget is
+   * almost all delivery.
+   */
+  DEVTOOLS_ACT_TIMEOUT_MS: 8_000,
+  /**
+   * Extra time (ms) `browser_wait_for` is given on top of the wait it was asked
+   * for. The page is deliberately busy for that whole wait, so the server's own
+   * timeout has to sit past it or it would report a failure while the page was
+   * still doing exactly what it was told.
+   */
+  DEVTOOLS_ACT_ROUND_TRIP_GRACE_MS: 2_000,
+  /** Default wait (ms) for `browser_wait_for` when the caller names none. */
+  DEVTOOLS_WAIT_DEFAULT_MS: 5_000,
+  /** The longest wait (ms) `browser_wait_for` accepts. Every wait is bounded. */
+  DEVTOOLS_WAIT_MAX_MS: 10_000,
+  /**
+   * Default character budget for one `browser_read_page` outline — half the
+   * budget the console reads already use, because a page outline is a thing an
+   * agent reads several times in a turn and a console read is not.
+   */
+  DEVTOOLS_OUTLINE_BUDGET_CHARS: 32_768,
 } as const;
 
 export const WATCHER = {

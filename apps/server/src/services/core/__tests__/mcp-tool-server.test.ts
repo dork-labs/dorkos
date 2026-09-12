@@ -656,17 +656,21 @@ describe('MCP Tool Handlers', () => {
       expect(server.version).toBe('1.0.0');
     });
 
-    it('registers 33 tools (24 legacy + 7 operator + list_capabilities + memory_write)', () => {
+    it('registers 39 tools (30 legacy + 7 operator + list_capabilities + memory_write)', () => {
       // Purpose: regression guard against accidental tool omissions or additions.
-      // This count changes intentionally when new MCP tools are added. 24 legacy
-      // (4 core + 5 tasks + 8 relay + 1 agent + 2 ui + 3 devtools + 1 extension)
-      // plus the 7 operator capabilities, `list_capabilities` and `memory_write`,
-      // all projected from the registry.
+      // This count changes intentionally when new MCP tools are added. 30 legacy
+      // (4 core + 5 tasks + 8 relay + 1 agent + 2 ui + 3 devtools + 6 browser
+      // driving + 1 extension) plus the 7 operator capabilities,
+      // `list_capabilities` and `memory_write`, all projected from the registry.
       //
       // 32 -> 33 for `update_agent_boundaries`, the NOPE.md write split out of
       // `update_agent` so it can be tier `destructive` (DOR-1698).
+      //
+      // 33 -> 39 for the six browser-driving verbs (spec `canvas-agent-seat`):
+      // click, type, press, scroll, wait_for and read_page, registered beside
+      // the three DevTools reads they extend.
       const server = createDorkOsToolServer(makeMockDeps()) as unknown as MockServer;
-      expect(server.tools).toHaveLength(33);
+      expect(server.tools).toHaveLength(39);
     });
 
     it('registers tools with correct names', () => {

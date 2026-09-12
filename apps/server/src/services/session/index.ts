@@ -66,6 +66,32 @@ export { overlayApprovalReceipts } from './overlays/approval-receipt-overlay.js'
 export { overlayPermissionDenials } from './overlays/permission-denial-overlay.js';
 export { RingBuffer, RING_BUFFER_MAX_EVENTS, RING_BUFFER_TTL_MS } from './replay/ring-buffer.js';
 export { DevtoolsCaptureStore, devtoolsCaptureStore } from './devtools-capture-store.js';
+export {
+  DRIVING_SAFETY_SENTENCE,
+  DOCUMENT_INPUT,
+  TARGET_INPUT,
+  TARGET_INPUT_NO_TEXT,
+  createBrowserSeatHandlers,
+  NO_PREVIEW_NOTE,
+  resolveTargetInput,
+  targetIsEmpty,
+} from './browser-seat/index.js';
+export type {
+  BrowserSeatDeps,
+  BrowserSeatHandlers,
+  BrowserSeatSessionResolver,
+  BrowserSeatStore,
+  ClickInput,
+  DocumentInput,
+  DrivingAnswer,
+  PressInput,
+  ReadPageInput,
+  ScrollInput,
+  SessionEventSink,
+  TargetInput,
+  TypeInput,
+  WaitForInput,
+} from './browser-seat/index.js';
 export type {
   CaptureBuffer,
   CaptureBufferView,

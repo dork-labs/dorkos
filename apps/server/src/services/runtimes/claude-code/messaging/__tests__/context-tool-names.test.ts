@@ -434,7 +434,13 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // `<room_tools>` block DOES name it, which is what makes it prefixed below
     // and is deliberate: an agent told a room has a canvas and not told how to
     // read it spends a turn finding out.
-    expect(advertised.size).toBe(92);
+    //
+    // 92 -> 98 for the six browser-driving verbs (spec `canvas-agent-seat`).
+    // All six stay DEFERRED and all six ARE named in `<ui_tools>`, prefixed —
+    // the same shape `control_ui` and `get_ui_state` have carried there since
+    // that block was written. A prefixed name costs one ToolSearch hop; a bare
+    // one costs the turn, which is the DOR-1292 defect this file exists for.
+    expect(advertised.size).toBe(98);
     expect(advertised.has('react_to_room_entry')).toBe(true);
     expect(
       [
@@ -490,7 +496,11 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // once and `read_canvas` once, in each of its two variants, and only one
     // variant renders per session — so the whole rendered corpus this case walks
     // gains exactly two prefixed names on top of whatever main already had.
-    expect(prefixed.length).toBe(86);
+    //
+    // 86 -> 93 for the browser tab (spec `canvas-agent-seat`): `<ui_tools>`
+    // gains the six driving verbs, each named once, plus one more mention of
+    // `get_ui_state` where it says how to pick between two open tabs.
+    expect(prefixed.length).toBe(93);
   });
 
   it('names only advertised tools in the agent-session variant of the prompt too', async () => {
