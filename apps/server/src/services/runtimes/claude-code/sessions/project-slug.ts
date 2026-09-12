@@ -15,13 +15,19 @@
  * against 104 real transcript directories on a developer machine, and the hash
  * verified byte-identically against an on-disk 207-character truncated name.
  *
- * Re-checked against 0.3.224's `sdk.mjs` on 2026-08-07, because that release's
- * headline fix was about project paths past 200 characters — a changed slug
- * scheme would point every transcript read at the wrong directory with no type
- * error and no failing test. **The algorithm is unchanged.** Only the minified
- * names moved: `So` → `jo`, `My` → `Zb`, `a6` → `tSe`, `Di` → `ro`, and 0.3.224
- * lifts the dash-replace into its own helper (`vE`). The hash body is
- * character-for-character identical, the cut is still 200, and the appended
+ * Re-checked against 0.3.224's `sdk.mjs` on 2026-08-07 and against **0.3.268's**
+ * on 2026-09-11. A changed slug scheme would point every transcript read at the
+ * wrong directory with no type error and no failing test, so this is re-read on
+ * every bump. **The algorithm is unchanged at both.** 0.3.224 lifted the
+ * dash-replace into its own helper; 0.3.268 changed nothing but names again.
+ *
+ * **Cite strings, never minified symbols.** The 0.3.177 note named four
+ * (`So`, `My`, `a6`, `Di`); every one of them had moved by 0.3.224, and every
+ * 0.3.224 name had moved again by 0.3.268. What survives a bump is the source
+ * text, so that is what to grep for: `e.replace(/[^a-zA-Z0-9]/g,"-")` for the
+ * sanitizer, `t=(t<<5)-t+e.charCodeAt(n)|0` for the hash body, `=200` for the
+ * cut, and `Math.abs(…).toString(36)` for the suffix. At 0.3.268 all four are
+ * character-for-character what they were, the cut is still 200, and the appended
  * base36 hash is still taken over the ORIGINAL path rather than the replaced
  * string. 0.3.224's fix was on the lookup side (disambiguating two paths that
  * share a sanitized prefix), which this module gets for free.

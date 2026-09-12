@@ -1632,6 +1632,25 @@ export const UsageStatusSchema = z
      * `subscription`.
      */
     costUsd: z.number().min(0).optional(),
+    /**
+     * Which price table `costUsd` was computed from, when the runtime says:
+     *
+     * - `list` — the runtime's own published prices. The figure is as good as a
+     *   cost figure gets, and a client shows it plain.
+     * - `managed` — rates or a multiplier the operator's organization
+     *   configured. Real, but not the public price, so a client that renders
+     *   the number should say the rate is not the list one.
+     * - `unknown` — no price row matched the model at all and the runtime
+     *   priced it at some default's rate. This is a GUESS, and a client that
+     *   renders it without saying so is claiming precision nobody has.
+     *
+     * Absent means the runtime reports no basis (every runtime but claude-code
+     * today, and claude-code before it has priced its first request of a
+     * session). Absent is read as `list`, which is what the SDK's own field doc
+     * instructs and what every DorkOS cost figure meant before this field
+     * existed.
+     */
+    costBasis: z.enum(['list', 'managed', 'unknown']).optional(),
     /** Utilization health. Absent implies `ok`. Subscription only. */
     state: UsageStateSchema.optional(),
     /** One-line tooltip detail (e.g. "Using overage capacity", active provider). */
@@ -1667,6 +1686,21 @@ export const SessionStatusEventSchema = z
      * streaming `outputTokens` delta so the projector's merge is unaffected.
      */
     turnOutputTokens: z.number().int().optional(),
+    /**
+     * Turn-total thinking tokens, already counted inside
+     * {@link SessionStatusEventSchema}'s `turnOutputTokens` — a share of the
+     * output, never an addition to it. Summed across models on the terminal
+     * result status, like its two siblings.
+     *
+     * **Absent is not zero, and the difference matters.** A runtime reports this
+     * only for turns it actually recorded it on; a session resumed from an older
+     * transcript reports a PARTIAL count for the turns that predate the field.
+     * So a reader may say "the model spent this many tokens thinking" and may
+     * not say "the model did not think" — which is why nothing is written here
+     * unless a model reported the field, rather than a zero standing in for
+     * silence.
+     */
+    turnThinkingTokens: z.number().int().optional(),
     /** Tokens read from prompt cache (90% cost savings). */
     cacheReadTokens: z.number().int().optional(),
     /** Tokens written to prompt cache (slight write premium). */

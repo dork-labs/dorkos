@@ -43,6 +43,13 @@ DorkOS never shows you that raw code. It reads the JSON and renders a real card 
 
 Every runtime you can pick in DorkOS (Claude Code, Codex, or OpenCode) renders widgets the same way, so switching runtimes never changes what you see.
 
+Widgets show up in [rooms](/docs/concepts/rooms) too. Post the same block in a channel or a direct
+message and everyone there sees the finished widget, not the raw code. One difference: a room
+message isn't a session, so there's no agent turn for a button to answer into. Buttons that would
+send a note back to the agent, or that would open something in the canvas, the browser or a
+terminal, are still shown but switched off, with a short note when you hover them. Buttons that
+only touch the app itself, like opening Settings or a link, work exactly as they do in chat.
+
 ## Widgets Talk Back
 
 Buttons, list items, and form submits aren't just for show. Click "Refresh" on a weather widget, and DorkOS sends the agent a note saying you asked for a refresh, ready for it to respond in your next turn.

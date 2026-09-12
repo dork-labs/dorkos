@@ -23,6 +23,48 @@ export function hasRenderableUsage(usage: UsageStatus): boolean {
 }
 
 /**
+ * The sentence that has to sit beside a cost figure whose price table is not the
+ * published one, or `null` when the figure can be shown plain.
+ *
+ * A dollar amount reads as a fact, so one computed at rates nobody published has
+ * to say so where the number is (the product's honesty rule: no figure claims
+ * more precision than it has). `unknown` is the one that is genuinely a guess —
+ * no price matched the model at all — and it is worded so a reader knows not to
+ * budget against it. `managed` is a real charge at the operator's own
+ * organization's rates, so it corrects the reader's assumption rather than
+ * warning them.
+ *
+ * @param usage - The runtime-neutral usage descriptor.
+ */
+function costBasisNote(usage: UsageStatus): string | null {
+  if (usage.costUsd == null) return null;
+  switch (usage.costBasis) {
+    case 'unknown':
+      return 'Estimated — no price was listed for this model.';
+    case 'managed':
+      return "Charged at your organization's own rates.";
+    default:
+      return null;
+  }
+}
+
+/**
+ * What to call a cost figure: the same words wherever one is named — the
+ * status-bar item's accessible label, its tooltip heading, and the detail body's
+ * heading.
+ *
+ * One rule in one function, because the alternative was the shape this already
+ * shipped in once: an accessible name that said "Estimated" over a heading that
+ * said the cost was simply the session's, so a screen-reader user and a sighted
+ * user were told different things about the same number.
+ *
+ * @param usage - The runtime-neutral usage descriptor.
+ */
+function costHeading(usage: UsageStatus): string {
+  return usage.costBasis === 'unknown' ? 'Estimated session cost' : 'Session cost';
+}
+
+/**
  * The usage & cost detail body — utilization, window, resets, and cost for a
  * subscription; the cost figure for pay-as-you-go. Shared by the status-bar
  * item's hover tooltip and the pinned `/context` reveal so both read identically
@@ -31,6 +73,7 @@ export function hasRenderableUsage(usage: UsageStatus): boolean {
  * @param usage - The runtime-neutral usage descriptor.
  */
 export function UsageDetail({ usage }: UsageStatusItemProps) {
+  const basisNote = costBasisNote(usage);
   if (usage.kind === 'subscription' && usage.utilization != null) {
     const pct = Math.round(usage.utilization * 100);
     const isExhausted = usage.state === 'exhausted';
@@ -47,6 +90,7 @@ export function UsageDetail({ usage }: UsageStatusItemProps) {
           {usage.costUsd != null && (
             <DetailRow label="Session cost">{`$${usage.costUsd.toFixed(2)}`}</DetailRow>
           )}
+          {basisNote && <div className="text-muted-foreground">{basisNote}</div>}
           {usage.detail && <div className="text-amber-500">{usage.detail}</div>}
           {isExhausted && <div className="text-red-500">Rate limit reached</div>}
         </div>
@@ -56,11 +100,12 @@ export function UsageDetail({ usage }: UsageStatusItemProps) {
 
   return (
     <div className="space-y-1">
-      <div className="text-xs font-medium">Session cost</div>
+      <div className="text-xs font-medium">{costHeading(usage)}</div>
       <div className="text-3xs space-y-0.5">
         {usage.costUsd != null && (
           <DetailRow label="Cost">{`$${usage.costUsd.toFixed(2)}`}</DetailRow>
         )}
+        {basisNote && <div className="text-muted-foreground">{basisNote}</div>}
         {usage.detail && <div className="text-muted-foreground">{usage.detail}</div>}
       </div>
     </div>
@@ -125,10 +170,18 @@ export function UsageStatusItem({ usage }: UsageStatusItemProps) {
   // after the cluster had run out of room (DOR-461 review). Reachable today only
   // by a pin, which bypasses `promote` entirely.
   const costLabel = formatCost(usage.costUsd);
+  // A figure priced off something other than the published list has to carry the
+  // sentence that says so. The number itself is left exactly as it was: this item
+  // is rigid because a truncated amount is a different amount (see above), and a
+  // `~` or an `est.` spent on the one value in the row that cannot give width
+  // back would buy the qualifier by pushing the whole item into the `⋯`. So the
+  // qualifier rides the tooltip and the accessible name, both of which are free.
+  const basisNote = costBasisNote(usage);
+  const label = costHeading(usage);
 
-  if (!usage.detail) {
+  if (!usage.detail && !basisNote) {
     return (
-      <span className="inline-flex shrink-0 items-center gap-1" aria-label="Session cost">
+      <span className="inline-flex shrink-0 items-center gap-1" aria-label={label}>
         <DollarSign className="size-(--size-icon-xs)" />
         <span>{costLabel}</span>
       </span>
@@ -138,18 +191,16 @@ export function UsageStatusItem({ usage }: UsageStatusItemProps) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span
-          className="inline-flex shrink-0 cursor-default items-center gap-1"
-          aria-label="Session cost"
-        >
+        <span className="inline-flex shrink-0 cursor-default items-center gap-1" aria-label={label}>
           <DollarSign className="size-(--size-icon-xs)" />
           <span>{costLabel}</span>
         </span>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-56">
         <div className="space-y-1">
-          <div className="text-xs font-medium">Session cost</div>
-          <div className="text-muted-foreground text-3xs">{usage.detail}</div>
+          <div className="text-xs font-medium">{label}</div>
+          {basisNote && <div className="text-muted-foreground text-3xs">{basisNote}</div>}
+          {usage.detail && <div className="text-muted-foreground text-3xs">{usage.detail}</div>}
         </div>
       </TooltipContent>
     </Tooltip>

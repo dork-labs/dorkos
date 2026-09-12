@@ -46,8 +46,10 @@
  *   stream before the watchdog re-arms.
  * - `MCP_TOOL_TIMEOUT` is the one thing that CAN still cut a hold short, because
  *   the turn's subprocess inherits `process.env` and an operator may have lowered
- *   it for a flaky external server. DorkOS floors the inherited value at cap +
- *   grace on the way in (`messaging/mcp-tool-timeout-env.ts`).
+ *   it for a flaky external server. The `dorkos` server declares its own per-call
+ *   ceiling at cap + grace instead, so that variable no longer reaches this
+ *   (`runtimes/claude-code/mcp-tools/tool-timeout.ts`; see the 0.3.268 note
+ *   below, which is where the floor it used to apply went).
  * - `CLAUDE_CODE_STREAM_CLOSE_TIMEOUT` is NOT a risk, though the SDK's own d.ts
  *   comment ("if your SDK MCP calls will run longer than 60s, override
  *   CLAUDE_CODE_STREAM_CLOSE_TIMEOUT") reads like one. That variable does not
@@ -69,7 +71,7 @@
  *   60s ceiling governs this hold, exactly as argued above. New at 0.3.224: a
  *   server's own config may carry `timeout`, and a value below 1000ms is ignored
  *   rather than honoured. `MCP_TOOL_TIMEOUT` remains the one thing that can cut a
- *   hold short, and `mcp-tool-timeout-env.ts` still floors it on the way in.
+ *   hold short, and at this bump DorkOS still floored it on the way in.
  * - **Re-verified**: `CLAUDE_CODE_STREAM_CLOSE_TIMEOUT` still does not exist
  *   anywhere in the shipped binary. The SDK d.ts comment naming it is still
  *   stale, and still not a risk.
@@ -77,6 +79,15 @@
  *   with no timer, and that the control channel is timerless. That is the
  *   load-bearing claim for the ten-minute hold and it is still dated to 0.3.177.
  *   Treat it as unconfirmed at 0.3.224 until someone reads it again.
+ *
+ * 2026-09-11, on the bump to 0.3.268 — the per-server `timeout` the 0.3.224 note
+ * spotted in the binary reached `createSdkMcpServer`'s own types at 0.3.248, and
+ * DorkOS took it. The `dorkos` server now states cap + grace directly
+ * (`runtimes/claude-code/mcp-tools/tool-timeout.ts`), and the environment floor
+ * that used to stand in for it is gone: it could only be applied subprocess-wide,
+ * so protecting this hold meant overriding whatever the operator had set for the
+ * external server they were actually worried about. `MCP_TOOL_TIMEOUT` is
+ * therefore no longer a way to cut a hold short, and no longer rewritten.
  *
  * @module services/core/capabilities/capability-approval-hold
  */

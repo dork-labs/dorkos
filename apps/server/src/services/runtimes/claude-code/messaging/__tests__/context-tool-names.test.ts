@@ -486,11 +486,11 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // above would pass while teaching nothing callable. Counted exactly, so the
     // day a block stops rendering the number moves rather than the bound holding.
     //
-    // 83 → 85 for the room canvas (DOR-1999): `<room_tools>` names
-    // `control_ui` once and `read_canvas` once, in each of its two variants, and
-    // only one variant renders per session — so the whole rendered corpus this
-    // case walks gains exactly two prefixed names.
-    expect(prefixed.length).toBe(85);
+    // 84 → 86 for the room canvas (DOR-1999): `<room_tools>` names `control_ui`
+    // once and `read_canvas` once, in each of its two variants, and only one
+    // variant renders per session — so the whole rendered corpus this case walks
+    // gains exactly two prefixed names on top of whatever main already had.
+    expect(prefixed.length).toBe(86);
   });
 
   it('names only advertised tools in the agent-session variant of the prompt too', async () => {

@@ -4,7 +4,7 @@ import type { Components } from 'streamdown';
 import { cn, DEFAULT_TEXT_EFFECT, resolveStreamdownAnimation } from '@/layers/shared/lib';
 import type { TextEffectConfig } from '@/layers/shared/lib';
 import { MarkdownErrorBoundary, MarkdownLink } from '@/layers/shared/ui';
-import { WidgetFence } from '@/layers/features/gen-ui';
+import { WidgetFence, WIDGET_FENCE_LANGUAGE } from '@/layers/features/gen-ui';
 import 'streamdown/styles.css';
 
 interface StreamingTextProps {
@@ -74,7 +74,7 @@ function DorkosUiFence(props: { code: string; isIncomplete: boolean }) {
  * streaming state arrive via {@link FenceContext}.
  */
 const widgetPlugins = {
-  renderers: [{ language: 'dorkos-ui', component: DorkosUiFence }],
+  renderers: [{ language: WIDGET_FENCE_LANGUAGE, component: DorkosUiFence }],
 };
 
 /** Renders markdown content via Streamdown with link safety confirmation and a streaming cursor. */

@@ -175,7 +175,11 @@ describe('widget actions', () => {
     const noTerminalTransport = createMockTransport({ supportsTerminal: false });
     render(
       <TransportProvider transport={noTerminalTransport}>
+        {/* A session, because `open_terminal` is session-shaped: off a session
+            the control is inert by design (DOR-1997) and this test is about the
+            terminal-less TRANSPORT, not about the missing session. */}
         <WidgetRenderer
+          sessionId="sess-1"
           document={{
             version: 1,
             title: 'Shell',

@@ -86,6 +86,9 @@ function overrideNames(input: RuntimeEnvironmentInput): Set<string> {
   if (authPurpose(input.purpose)) for (const name of profileNames(input)) names.add(name);
   if (input.runtime === 'claude-code' && ['turn', 'warmup'].includes(input.purpose)) {
     names.add('CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS');
+    // Keeps the task/todo tools on the model's surface — see the launch
+    // resolver's own note for why the env var and not `allowedTools`.
+    names.add('CLAUDE_CODE_ENABLE_TODO_TOOLS');
     if (input.purpose === 'turn') names.add('DORKOS_AGENT_TOKEN');
   }
   if (input.runtime === 'codex' && input.purpose === 'turn') names.add('DORKOS_AGENT_TOKEN');

@@ -14,6 +14,7 @@ import { CanvasAudioContent } from './CanvasAudioContent';
 import { CanvasVideoContent } from './CanvasVideoContent';
 import { CanvasWidgetContent } from './CanvasWidgetContent';
 import { CanvasMcpAppContent } from './CanvasMcpAppContent';
+import { CanvasHeldUpdateBanner } from './CanvasHeldUpdateBanner';
 import { CanvasSplash } from './CanvasSplash';
 
 // Lazy: viewers that pull heavy, on-demand deps (CodeMirror, three.js /
@@ -129,6 +130,8 @@ function CanvasBody() {
   const close = useAppStore((s) => s.closeCanvasDocument);
   const setActiveContent = useAppStore((s) => s.setActiveDocumentContent);
   const openDocument = useAppStore((s) => s.openCanvasDocument);
+  const applyHeldUpdate = useAppStore((s) => s.applyHeldUpdate);
+  const discardHeldUpdate = useAppStore((s) => s.discardHeldUpdate);
 
   const active = openDocuments.find((d) => d.id === activeDocumentId) ?? null;
   const headerDocs = openDocuments.map((d) => ({
@@ -145,6 +148,15 @@ function CanvasBody() {
         onActivate={activate}
         onClose={close}
       />
+      {/* Above the scroll container, so the choice stays put while the document
+          scrolls under it — and outside the tabpanel, because it is about the
+          document rather than part of it. */}
+      {active?.heldUpdate && (
+        <CanvasHeldUpdateBanner
+          onReload={() => applyHeldUpdate(active.id)}
+          onKeepMine={() => discardHeldUpdate(active.id)}
+        />
+      )}
       {/* Single scroll container for all content types. min-h-0 keeps the flex
           item from sizing to its content, which would clip instead of scroll
           (DOR-96). When a document is open it is the tab strip's panel, labelled

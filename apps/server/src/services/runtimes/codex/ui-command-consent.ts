@@ -51,9 +51,14 @@ export const UI_COMMAND_REFUSED_CODE = 'ui_command_refused';
  * refusing is the only honest answer.
  *
  * Reads the table by action STRING rather than parsing `UiCommandSchema`, because
- * the MCP handler sees arguments already narrowed to `CONTROL_UI_INPUT`'s keys —
- * an `apply_layout` call arrives there stripped of its required `shape` and would
- * fail a full parse. The action name is the one field both call sites can rely on.
+ * the MCP handler sees arguments already narrowed to `CONTROL_UI_INPUT`'s keys, and
+ * a refusal must not depend on the rest of the call being well-formed: the whole
+ * point is to answer before anything is interpreted. The action name is the one
+ * field both call sites can rely on. (Until DOR-1996 there was a second reason —
+ * `CONTROL_UI_INPUT` had no `shape` key at all, so an `apply_layout` call arrived
+ * here stripped of its required argument and could never have parsed. It was
+ * being refused on Codex and was uncallable on claude-code; the key landed with
+ * the generated teaching that finally names the action.)
  * Because `UI_COMMAND_REACH` is a total `Record` over the action union, a new
  * action cannot be added without `tsc` demanding a reach verdict, and that verdict
  * lands here for free.

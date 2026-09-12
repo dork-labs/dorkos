@@ -31,6 +31,7 @@ Runtime-call spans also carry standard AI metadata, following OpenTelemetry's `g
 - `gen_ai.system`: which runtime ran the turn (`claude-code`, `codex`, or `opencode`).
 - `gen_ai.response.model`: the model that answered, when the runtime reports one.
 - `gen_ai.usage.input_tokens` and `gen_ai.usage.output_tokens`: the token counts for the whole turn, when known.
+- `dorkos.gen_ai.thinking_tokens`: how many of those output tokens the model spent thinking, when the runtime reports it. It is part of the output count, not an extra on top, so adding the two counts the same tokens twice.
 - `dorkos.gen_ai.cost_usd`: the turn's cost in dollars, when the runtime reports one.
 
 These are counts and a model name, nothing more. There is still no prompt, no code, and no path on the span. They show up automatically once tracing is on, both in your local trace file and at your OTLP endpoint. (If you would rather share only these AI counts with us, and nothing else, there is a separate opt-in setting on the [telemetry](/docs/self-hosting/telemetry) page.)

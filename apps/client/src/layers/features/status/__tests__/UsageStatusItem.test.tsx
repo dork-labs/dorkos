@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { TooltipProvider } from '@/layers/shared/ui';
 import type { UsageStatus } from '@dorkos/shared/types';
-import { UsageStatusItem, hasRenderableUsage } from '../ui/UsageStatusItem';
+import { UsageStatusItem, UsageDetail, hasRenderableUsage } from '../ui/UsageStatusItem';
 
 afterEach(cleanup);
 
@@ -151,5 +151,100 @@ describe('UsageStatusItem — the one value with no upper bound', () => {
       expect(screen.getByText(shown)).toBeInTheDocument();
       expect(shown.length).toBeLessThanOrEqual(7);
     }
+  });
+});
+
+describe('UsageStatusItem — a cost says which price list it came from', () => {
+  // The figure itself never changes: this item is rigid because a truncated
+  // amount is a different amount, so the qualifier rides the accessible name and
+  // the tooltip, which cost no width.
+  it('leaves a list-priced cost to stand plain', () => {
+    render(
+      <UsageStatusItem usage={{ kind: 'pay-as-you-go', costUsd: 0.42, costBasis: 'list' }} />,
+      {
+        wrapper: Wrapper,
+      }
+    );
+    expect(screen.getByLabelText('Session cost')).toBeInTheDocument();
+  });
+
+  it('treats a cost with no stated basis as list-priced', () => {
+    // Every runtime but claude-code, and claude-code before its first priced
+    // request. This is what the figure already meant before the field existed.
+    render(<UsageStatusItem usage={{ kind: 'pay-as-you-go', costUsd: 0.42 }} />, {
+      wrapper: Wrapper,
+    });
+    expect(screen.getByLabelText('Session cost')).toBeInTheDocument();
+  });
+
+  it('calls a guessed cost estimated in its accessible name', () => {
+    render(
+      <UsageStatusItem usage={{ kind: 'pay-as-you-go', costUsd: 0.42, costBasis: 'unknown' }} />,
+      { wrapper: Wrapper }
+    );
+    expect(screen.getByLabelText('Estimated session cost')).toBeInTheDocument();
+    // The number is untouched — the qualifier is not bought with digits.
+    expect(screen.getByText('$0.42')).toBeInTheDocument();
+  });
+});
+
+describe('UsageStatusItem — every place a cost is named says the same thing', () => {
+  // The accessible name and the heading above the figure are one rule, so a
+  // screen-reader user and a sighted user are never told different things about
+  // the same number.
+  it('heads the detail body with the estimated wording too', () => {
+    render(<UsageDetail usage={{ kind: 'pay-as-you-go', costUsd: 0.42, costBasis: 'unknown' }} />, {
+      wrapper: Wrapper,
+    });
+    expect(screen.getByText('Estimated session cost')).toBeInTheDocument();
+  });
+
+  it('heads a list-priced detail body plainly', () => {
+    render(<UsageDetail usage={{ kind: 'pay-as-you-go', costUsd: 0.42, costBasis: 'list' }} />, {
+      wrapper: Wrapper,
+    });
+    expect(screen.getByText('Session cost')).toBeInTheDocument();
+  });
+});
+
+describe('UsageDetail — the sentence beside the figure', () => {
+  it('says nothing extra about a list-priced cost', () => {
+    render(<UsageDetail usage={{ kind: 'pay-as-you-go', costUsd: 1.5, costBasis: 'list' }} />, {
+      wrapper: Wrapper,
+    });
+    expect(screen.queryByText(/Estimated/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/organization/)).not.toBeInTheDocument();
+  });
+
+  it('warns that an unpriced model makes the figure a guess', () => {
+    render(<UsageDetail usage={{ kind: 'pay-as-you-go', costUsd: 1.5, costBasis: 'unknown' }} />, {
+      wrapper: Wrapper,
+    });
+    expect(screen.getByText('Estimated — no price was listed for this model.')).toBeInTheDocument();
+  });
+
+  it('says whose rates a managed cost was charged at, on a subscription too', () => {
+    render(
+      <UsageDetail
+        usage={{
+          kind: 'subscription',
+          utilization: 0.3,
+          costUsd: 1.5,
+          costBasis: 'managed',
+        }}
+      />,
+      { wrapper: Wrapper }
+    );
+    expect(screen.getByText("Charged at your organization's own rates.")).toBeInTheDocument();
+  });
+
+  it('says nothing when there is no figure for a basis to describe', () => {
+    render(
+      <UsageDetail usage={{ kind: 'subscription', utilization: 0.3, costBasis: 'unknown' }} />,
+      {
+        wrapper: Wrapper,
+      }
+    );
+    expect(screen.queryByText(/Estimated/)).not.toBeInTheDocument();
   });
 });
