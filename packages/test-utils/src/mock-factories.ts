@@ -548,6 +548,18 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     updateRoomCanvasDocument: vi.fn().mockResolvedValue(mockCanvasDocument()),
     closeRoomCanvasDocument: vi.fn().mockResolvedValue(undefined),
     setRoomCanvasEditing: vi.fn().mockResolvedValue({ editingBy: null, expiresAt: null }),
+    // Discuss answers with the thread it opened. A test that cares which one
+    // overrides it; one that does not needs only an id to open a panel on.
+    discussCanvasDocument: vi
+      .fn()
+      .mockResolvedValue({ threadRootEntryId: 'thread-root', created: true }),
+    // Following somebody. The claim and the position both come back on the room
+    // stream, so nothing here writes state; `publishRoomView` answers `true` by
+    // default because the only caller that reaches it is one the room has
+    // already said is being followed.
+    followRoomMember: vi.fn().mockResolvedValue(undefined),
+    unfollowRoomMember: vi.fn().mockResolvedValue(undefined),
+    publishRoomView: vi.fn().mockResolvedValue({ followed: true }),
     subscribeRoom: vi.fn(emptyAsyncIterable),
     // The session canvas (spec `canvas-agent-seat` §1.6). Honest-empty reads: a
     // test that has said nothing about the canvas gets a session with nothing on

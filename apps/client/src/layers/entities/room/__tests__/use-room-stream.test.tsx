@@ -10,7 +10,7 @@ import { SSE_RESILIENCE } from '@/layers/shared/lib';
 import { RoomStreamHttpError } from '@/layers/shared/lib/transport';
 import { TransportProvider } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
-import { useRoomPresenceStore } from '../model/use-room-presence';
+import { useRoomPresenceStore } from '../model/live/use-room-presence';
 import { useRoomStream } from '../model/use-room-stream';
 
 function entry(seq: number): RoomEntry {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, ExternalLink, RotateCw } from 'lucide-react';
 import type { UiCanvasContent } from '@dorkos/shared/types';
+import { useFollowedView } from '@/layers/entities/room';
 import type { BrowserHistoryState } from '@/layers/shared/model';
 import { useAppStore } from '@/layers/shared/model';
 import { Input } from '@/layers/shared/ui';
@@ -170,6 +171,25 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
     },
     [cursor]
   );
+
+  // Where the person this viewer is following has their browser, and whether
+  // this viewer is in the middle of typing in something.
+  const followedView = useFollowedView(roomId);
+  const editingDocumentId = useAppStore((s) =>
+    roomId ? (s.roomCanvasEditing[roomId] ?? null) : null
+  );
+
+  // Go where they went (spec `canvas-agent-seat` §6). Only for THIS document —
+  // the tab strip moves the viewer onto the right one — and never while this
+  // viewer is editing something, which is room-canvas §9.3 and outranks
+  // following: losing a draft is worse than losing the thread.
+  useEffect(() => {
+    if (followedView === null || editingDocumentId !== null) return;
+    if (followedView.documentId !== documentId) return;
+    const url = followedView.url;
+    if (url === undefined || url === currentUrl) return;
+    navigate(url);
+  }, [followedView, editingDocumentId, documentId, currentUrl, navigate]);
 
   const canBack = cursor > 0;
   const canForward = cursor < history.length - 1;

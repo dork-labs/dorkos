@@ -23,6 +23,11 @@ const mockState = {
   // Null by default: every test below the room describe is about the PRIVATE
   // canvas, where an address bar navigates this frame and nothing else.
   roomCanvasLiveRoomId: null as string | null,
+  // Which document this viewer is typing in, if any. Present because the real
+  // slice always has it: following reads it to keep from moving somebody
+  // mid-edit (room-canvas §9.3), and a fixture missing it would make that read
+  // throw for a reason production never has.
+  roomCanvasEditing: {} as Record<string, string | null>,
   browserHistories: {} as Record<string, BrowserHistoryEntry>,
   writeBrowserHistory: vi.fn((documentId: string, entry: BrowserHistoryEntry) => {
     mockState.browserHistories[documentId] = entry;

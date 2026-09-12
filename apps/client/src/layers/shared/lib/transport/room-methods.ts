@@ -19,6 +19,9 @@ import {
   type AuthorRef,
   type CanvasDocument,
   type CanvasEditingResponse,
+  type CanvasThreadResponse,
+  type PublishRoomViewResponse,
+  type RoomSignalView,
   type CreateRoomRequest,
   type HaltRoomResponse,
   type PromoteHoldResponse,
@@ -429,6 +432,39 @@ export function createRoomMethods(baseUrl: string) {
         baseUrl,
         `/rooms/${encodeURIComponent(id)}/canvas/${encodeURIComponent(documentId)}/editing`,
         { method: 'POST', body: JSON.stringify({ editing }) }
+      );
+    },
+
+    /** Open this document's discussion, or re-open the one already there. */
+    discussCanvasDocument(id: string, documentId: string): Promise<CanvasThreadResponse> {
+      return fetchJSON<CanvasThreadResponse>(
+        baseUrl,
+        `/rooms/${encodeURIComponent(id)}/canvas/${encodeURIComponent(documentId)}/thread`,
+        { method: 'POST' }
+      );
+    },
+
+    /** Follow somebody's browser here, or say you are still following them. */
+    followRoomMember(id: string, memberId: string): Promise<void> {
+      return fetchNoContent(baseUrl, `/rooms/${encodeURIComponent(id)}/follow`, {
+        method: 'PUT',
+        body: JSON.stringify({ memberId }),
+      });
+    },
+
+    /** Stop following whoever you were following here. */
+    unfollowRoomMember(id: string): Promise<void> {
+      return fetchNoContent(baseUrl, `/rooms/${encodeURIComponent(id)}/follow`, {
+        method: 'DELETE',
+      });
+    },
+
+    /** Say where you are looking, for whoever is following you. */
+    publishRoomView(id: string, view: RoomSignalView): Promise<PublishRoomViewResponse> {
+      return fetchJSON<PublishRoomViewResponse>(
+        baseUrl,
+        `/rooms/${encodeURIComponent(id)}/follow/view`,
+        { method: 'POST', body: JSON.stringify(view) }
       );
     },
 

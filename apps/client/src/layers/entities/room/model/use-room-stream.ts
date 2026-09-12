@@ -33,7 +33,8 @@ import { useAppStore, useTransport } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
 import { mergeRoomReactions } from '../lib/reactions';
 import { usePendingPostStore } from './pending-posts';
-import { useRoomPresenceStore } from './use-room-presence';
+import { useRoomPresenceStore } from './live/use-room-presence';
+import { isFollowSignal, useRoomFollowStore } from './live/use-room-follow';
 
 /**
  * Insert an entry into a room's cached history, keeping it ordered by `seq` and
@@ -471,7 +472,13 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
             // they never enter the history — they go to the presence store,
             // which expires them rather than keeping them.
             if (event.type === 'signal') {
-              useRoomPresenceStore.getState().observe(roomId, event);
+              // Two readers, one frame, and each says which frames are its own:
+              // a `presence` signal carrying a follow claim or a follow position
+              // belongs to the follow store, and one carrying an agent's work
+              // state belongs to the presence store. The schema refuses a frame
+              // carrying both, so this is a split rather than a race.
+              if (isFollowSignal(event)) useRoomFollowStore.getState().observe(roomId, event);
+              else useRoomPresenceStore.getState().observe(roomId, event);
               continue;
             }
             // Reactions are durable state ON an entry rather than a place in

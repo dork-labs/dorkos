@@ -24,14 +24,14 @@
  *   so a freshly loaded cockpit draws its dots immediately rather than after the
  *   first republish tick.
  *
- * @module entities/room/model/use-room-working
+ * @module entities/room/model/live/use-room-working
  */
 import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { useTransport } from '@/layers/shared/model';
-import { roomKeys } from '../api/query-keys';
+import { roomKeys } from '../../api/query-keys';
 import { PRESENCE_TICK_MS, PRESENCE_TTL_MS } from './use-room-presence';
 
 /** The last thing the fan-out said about one room. */

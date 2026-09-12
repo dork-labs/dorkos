@@ -35,7 +35,7 @@ export {
   PRESENCE_TICK_MS,
   PRESENCE_TTL_MS,
   SILENT_FINISH_DISPLAY_MS,
-} from './model/use-room-presence';
+} from './model/live/use-room-presence';
 export type {
   PresenceScope,
   RoomPresenceAuthor,
@@ -43,8 +43,28 @@ export type {
   RoomPresenceClaimRow,
   RoomHoldRow,
   RoomSilentFinish,
-} from './model/use-room-presence';
-export { useRoomWorking, useRoomWorkingStore, useOpenRoomWorking } from './model/use-room-working';
+} from './model/live/use-room-presence';
+export {
+  isFollowSignal,
+  useFollowedMember,
+  useFollowedView,
+  useIsFollowed,
+  useRoomFollowStore,
+  ROOM_FOLLOW_PUBLISH_MS,
+  ROOM_FOLLOW_REFRESH_MS,
+  ROOM_FOLLOW_SWEEP_MS,
+  ROOM_FOLLOW_TTL_MS,
+} from './model/live/use-room-follow';
+export type { FollowClaim, FollowIntent, FollowPosition } from './model/live/use-room-follow';
+export { useRoomFollowClaim } from './model/live/use-room-follow-claim';
+export type { RoomFollowControls } from './model/live/use-room-follow-claim';
+export { useRoomViewPublish } from './model/live/use-room-view-publish';
+export type { RoomViewSource } from './model/live/use-room-view-publish';
+export {
+  useRoomWorking,
+  useRoomWorkingStore,
+  useOpenRoomWorking,
+} from './model/live/use-room-working';
 export { usePostToRoom } from './model/use-post-to-room';
 export type { PostToRoomInput } from './model/use-post-to-room';
 export { useHaltRoom } from './model/use-halt-room';
