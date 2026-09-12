@@ -30,12 +30,19 @@ export { FileExplorer } from './ui/FileExplorer';
 export type { FileExplorerProps } from './ui/FileExplorer';
 export { FileExplorerActions } from './ui/FileExplorerActions';
 export { HiddenEntriesToggle } from './ui/HiddenEntriesToggle';
-// `PendingWorkBadge`, `RoomMainWarning` and their models are deliberately NOT
-// here. Nothing outside this slice mounts either — `RoomFilesSection` composes
-// both from sibling paths, which are internal imports and need no barrel — and
-// a barrel export with no consumer is a public surface nobody asked for and
-// nothing keeps honest. The save-refusal copy and the conflict parser are the
-// same: they exist for `room-files-source`, one directory away.
+// `PendingWorkBadge` and `RoomMainWarning` are deliberately NOT here. Nothing
+// outside this slice mounts either — `RoomFilesSection` composes both from
+// sibling paths, which are internal imports and need no barrel — and a barrel
+// export with no consumer is a public surface nobody asked for and nothing
+// keeps honest. The save-refusal copy and the conflict parser are the same:
+// they exist for `room-files-source`, one directory away.
+//
+// Their MODEL is here, because it now has a second reader: the merge action on
+// a room worktree diff (spec `canvas-agent-seat` §8) needs the same answer the
+// badge does, about the same room, at the same moment — and the whole point of
+// that module's doc is that one question gets one cache entry.
+export { roomRepoStatusQueryOptions } from './model/pending-work';
+export type { RoomRepoStatusRead } from './model/pending-work';
 export { RoomFilesSection } from './ui/RoomFilesSection';
 export type { RoomFilesSectionProps } from './ui/RoomFilesSection';
 export { FilePreviewDialog } from './ui/FilePreviewDialog';

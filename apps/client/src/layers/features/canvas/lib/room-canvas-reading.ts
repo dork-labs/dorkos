@@ -32,6 +32,21 @@ export type RoomDocumentReading =
   | { kind: 'inline' }
   /** A text file in the room's own shared copy: read and save it through the room's files. */
   | { kind: 'room-file'; sourcePath: string }
+  /**
+   * An agent's working copy of the room's files, ahead of the room — review it
+   * against `main`, and merge it (spec `canvas-agent-seat` §8).
+   *
+   * The one document on a room's table that is about a DECISION rather than
+   * about reading something, which is why it is its own answer: the tree is the
+   * room's own working copy, DorkOS made it, and the row records exactly which
+   * one — so a reject lands where the work is instead of being re-derived.
+   */
+  | {
+      kind: 'worktree-diff';
+      sourcePath: string;
+      cwd: string;
+      content: Extract<UiCanvasContent, { type: 'diff' }>;
+    }
   /** Somewhere this app has no route to: draw the card and say this. */
   | { kind: 'elsewhere'; sourcePath: string; sentence: string };
 
@@ -111,6 +126,28 @@ export function roomDocumentReading(document: CanvasDocument): RoomDocumentReadi
       sourcePath,
       sentence:
         'This file is in the room’s own files. Open it from the Files section of the Room tab.',
+    };
+  }
+
+  // **A diff from a working copy that is ahead of the room is a review, not a
+  // card** (spec `canvas-agent-seat` §8). Three things have to be true together
+  // and each rules something out: the tree is a room worktree, so DorkOS made it
+  // and the row carries the directory; the copy is measurably ahead, so there is
+  // something to decide (`null` means nobody asked, which is not the same as
+  // level and must not be shown as one); and the row actually recorded the
+  // directory, which only a `worktree` row does.
+  if (
+    document.content.type === 'diff' &&
+    document.treeKind === 'worktree' &&
+    typeof document.aheadOfMain === 'number' &&
+    document.aheadOfMain > 0 &&
+    document.resolvedCwd !== undefined
+  ) {
+    return {
+      kind: 'worktree-diff',
+      sourcePath,
+      cwd: document.resolvedCwd,
+      content: document.content,
     };
   }
 

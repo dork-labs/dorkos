@@ -3804,6 +3804,9 @@
                 "type": "number",
                 "minimum": 20,
                 "maximum": 80
+              },
+              "target": {
+                "$ref": "#/components/schemas/UiCommandTarget"
               }
             },
             "required": [
@@ -3824,6 +3827,9 @@
               },
               "documentId": {
                 "type": "string"
+              },
+              "target": {
+                "$ref": "#/components/schemas/UiCommandTarget"
               }
             },
             "required": [
@@ -3842,6 +3848,9 @@
               },
               "documentId": {
                 "type": "string"
+              },
+              "target": {
+                "$ref": "#/components/schemas/UiCommandTarget"
               }
             },
             "required": [
@@ -3891,6 +3900,9 @@
               "sourcePath": {
                 "type": "string",
                 "minLength": 1
+              },
+              "target": {
+                "$ref": "#/components/schemas/UiCommandTarget"
               }
             },
             "required": [
@@ -3910,6 +3922,9 @@
               "sourcePath": {
                 "type": "string",
                 "minLength": 1
+              },
+              "target": {
+                "$ref": "#/components/schemas/UiCommandTarget"
               }
             },
             "required": [
@@ -3946,6 +3961,9 @@
               "url": {
                 "type": "string",
                 "minLength": 1
+              },
+              "target": {
+                "$ref": "#/components/schemas/UiCommandTarget"
               }
             },
             "required": [
@@ -4435,6 +4453,19 @@
           }
         ]
       },
+      "UiCommandTarget": {
+        "type": "object",
+        "properties": {
+          "roomId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The room id to put this on. You must be a member of it."
+          }
+        },
+        "required": [
+          "roomId"
+        ]
+      },
       "UiToastLevel": {
         "type": "string",
         "enum": [
@@ -4524,6 +4555,11 @@
               "null"
             ],
             "minimum": 0
+          },
+          "resolvedCwd": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The working copy a `worktree` document’s path was resolved against — and only a `worktree` one. The review surface reads and writes there, so a rejected hunk lands in the tree the document was opened against rather than a re-derived one. Withheld for every other tree kind: a room’s working copies are the room’s own, while an `agent-cwd` is somebody’s own project directory."
           },
           "openedAt": {
             "type": "string",
@@ -8330,6 +8366,10 @@
                 "type": "string",
                 "minLength": 1,
                 "description": "The author id the server resolved for THIS request — who the reader is. Match a roster member on it to find your own membership (your read cursor, your response mode); never match on `author.kind`. It is not necessarily on `members`: seeing a room and being in it are different things."
+              },
+              "viewerIsOperator": {
+                "type": "boolean",
+                "description": "Whether THIS reader is the person who owns this install — the one gate that is not a membership. It rides the room read for the same reason `viewerAuthorId` does: the reader is already resolved here, and nothing else on the wire tells a client, so every operator-only affordance in a room had to be drawn for everybody and refused afterwards. **Absent means \"this source cannot say\", never `false`** — a caller that predates it still parses, and a screen reading it as a denial would hide the action from the one person who can take it. Used by the merge action on a room worktree diff (spec `canvas-agent-seat` §8); the server still refuses a non-operator, so this only decides what is drawn."
               },
               "reactionFrequents": {
                 "type": "array",

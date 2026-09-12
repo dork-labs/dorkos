@@ -189,10 +189,26 @@ export function createControlUiHandler(session: UiToolSession) {
     // ledger, one allowance and one line for that room, rather than two of each
     // for the same turn in the same place.
     const target = 'target' in command ? command.target : undefined;
-    if (target !== undefined && target.roomId !== session.roomTurn?.roomId) {
+    const targetsAnotherRoom = target !== undefined && target.roomId !== session.roomTurn?.roomId;
+    if (targetsAnotherRoom && CANVAS_VERBS.has(command.action)) {
       const answered = applyToTargetedRoom(session, target.roomId, command);
       if (answered !== null) return answered;
     }
+    // **Refused in reverse.** A room shares a canvas, not a window, so the other
+    // sixteen actions have nowhere to land there — and a room refuses them
+    // anyway (`CANVAS_VERBS`), so targeting must not become a way around that.
+    // The action still runs where it was going to run and the target is dropped,
+    // out loud, because a field that silently does nothing is worse than one
+    // that says so.
+    //
+    // It is read off the RAW arguments rather than off the parsed command,
+    // because `target` rides the six canvas members of the union and nothing
+    // else — so on any other action the schema has already dropped it, and a
+    // check on the parsed value could never see one to complain about.
+    const targetIgnored =
+      args.target !== undefined && !CANVAS_VERBS.has(command.action)
+        ? { targetIgnored: TARGET_IGNORED_MESSAGE }
+        : {};
 
     // **In a room, this is the writer's call and it answers the model with what
     // really happened** (spec `room-canvas` §5.2). Synchronous, because the
@@ -272,7 +288,7 @@ export function createControlUiHandler(session: UiToolSession) {
     // diverge (see CONTROL_UI_DESCRIPTION notes).
     session.uiState = applyUiCommandToState(session.uiState ?? cloneDefaultUiState(), command);
 
-    return jsonContent({ success: true, action: command.action });
+    return jsonContent({ success: true, action: command.action, ...targetIgnored });
   };
 }
 
@@ -316,12 +332,16 @@ const TARGET_IGNORED_MESSAGE =
  * Put one canvas command on a room the calling session is a member of (spec
  * `canvas-agent-seat` §9).
  *
+ * **Only ever called for a CANVAS verb**, which the caller decides: the other
+ * sixteen actions have no surface in a room and are handled where the command
+ * runs.
+ *
  * **It answers `null` for "this is not a targeted write after all"**, which is
- * the one case the caller has to carry on from: a process with no canvas
- * service. Everything else — the wrong verb, a room the agent is not in, a
- * refusal from the writer — is answered here, because each of them is something
- * the model must read rather than have silently fall through onto a different
- * surface.
+ * the one case the caller has to carry on from: a session with no canonical id
+ * yet. Everything else — a room the agent is not in, no agent behind the
+ * session, a refusal from the writer — is answered here, because each of them is
+ * something the model must read rather than have silently fall through onto a
+ * different surface.
  *
  * @param session - The session taking the turn.
  * @param roomId - The room `target` named.
@@ -333,11 +353,6 @@ function applyToTargetedRoom(
   roomId: string,
   command: UiCommand
 ): ReturnType<typeof jsonContent> | null {
-  // Refused in reverse: a room refuses the other sixteen actions anyway
-  // (`CANVAS_VERBS`), so targeting cannot be a way to reach one there.
-  if (!CANVAS_VERBS.has(command.action)) {
-    return jsonContent({ success: false, target: 'room', roomId, reason: TARGET_IGNORED_MESSAGE });
-  }
   const sessionId = session.sdkSessionId;
   if (sessionId === undefined) return null;
 

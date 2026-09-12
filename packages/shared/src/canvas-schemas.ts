@@ -111,7 +111,13 @@ export const CanvasDocumentSchema = z
      * `agent-cwd` is somebody's own project directory, which is not the room's
      * to publish and which nothing in the app could open anyway.
      */
-    resolvedCwd: z.string().min(1).optional(),
+    resolvedCwd: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'The working copy a `worktree` document\u2019s path was resolved against \u2014 and only a `worktree` one. The review surface reads and writes there, so a rejected hunk lands in the tree the document was opened against rather than a re-derived one. Withheld for every other tree kind: a room\u2019s working copies are the room\u2019s own, while an `agent-cwd` is somebody\u2019s own project directory.'
+      ),
     openedAt: z.string().min(1),
     lastActiveAt: z.string().min(1),
   })
