@@ -19,7 +19,31 @@ const ingestDevtoolsCapture = vi.fn(async () => {});
  * observe what happens to a batch that is still coalescing when something
  * changes. The flush-window session bleed lived in that blind spot.
  */
-const transport = { ingestDevtoolsCapture };
+const postDevtoolsAction = vi.fn(async () => {});
+const transport = { ingestDevtoolsCapture, postDevtoolsAction, clientId: 'web-this-window' };
+
+/**
+ * The CAPTURE relays only — the seat claims filtered out.
+ *
+ * The bridge posts two different things down one route: console/network
+ * captures, and the claim that says which page this window is showing (spec
+ * `canvas-agent-seat` §2.2). A claim carries `active` and never carries an
+ * entry, so the two are trivially separable — and every assertion in this file
+ * is about one or the other, never about the raw call count, which would now
+ * mean "captures plus however many times the window claimed".
+ */
+function captureCalls(): [string, { active?: boolean }][] {
+  return (ingestDevtoolsCapture as Mock).mock.calls.filter(
+    ([, batch]: [string, { active?: boolean }]) => batch.active === undefined
+  );
+}
+
+/** The seat claims only — the mirror image of {@link captureCalls}. */
+function claimCalls(): [string, { active?: boolean; instrumented?: boolean }][] {
+  return (ingestDevtoolsCapture as Mock).mock.calls.filter(
+    ([, batch]: [string, { active?: boolean }]) => batch.active !== undefined
+  );
+}
 
 /**
  * The routed cockpit's `?session=`.
@@ -135,6 +159,7 @@ beforeEach(() => {
   useAppStore.getState().setSessionId(null);
   attachInUrl('session-1');
   ingestDevtoolsCapture.mockClear();
+  postDevtoolsAction.mockClear();
   loadRasterizerSource.mockClear();
   sessionEventListeners.clear();
   iframe = document.createElement('iframe');
@@ -158,21 +183,21 @@ describe('useDevtoolsBridge — source-identity guard (anti-spoofing)', () => {
       network: [],
     });
     vi.advanceTimersByTime(500);
-    expect(ingestDevtoolsCapture).not.toHaveBeenCalled();
+    expect(captureCalls()).toHaveLength(0);
   });
 
   it('ignores a batch from the top window', () => {
     mount();
     postFrom(window, { __dorkosDevtools: 'batch', seq: 1, console: [consoleEntry], network: [] });
     vi.advanceTimersByTime(500);
-    expect(ingestDevtoolsCapture).not.toHaveBeenCalled();
+    expect(captureCalls()).toHaveLength(0);
   });
 
   it('ignores a non-DevTools message from our own frame', () => {
     mount();
     postFrom(iframe.contentWindow, { some: 'other-app-message' });
     vi.advanceTimersByTime(500);
-    expect(ingestDevtoolsCapture).not.toHaveBeenCalled();
+    expect(captureCalls()).toHaveLength(0);
   });
 
   it('ignores a frame with a real origin — only our own opaque frames carry the shim', () => {
@@ -187,7 +212,7 @@ describe('useDevtoolsBridge — source-identity guard (anti-spoofing)', () => {
       'http://localhost:5173'
     );
     vi.advanceTimersByTime(500);
-    expect(ingestDevtoolsCapture).not.toHaveBeenCalled();
+    expect(captureCalls()).toHaveLength(0);
   });
 
   it('never acks a hello from a frame with a real origin', () => {
@@ -207,7 +232,7 @@ describe('useDevtoolsBridge — source-identity guard (anti-spoofing)', () => {
       'http://localhost:4390'
     );
     vi.advanceTimersByTime(500);
-    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(1);
+    expect(captureCalls()).toHaveLength(1);
   });
 
   it('still rejects a different real origin while a preview origin is allowed', () => {
@@ -218,7 +243,7 @@ describe('useDevtoolsBridge — source-identity guard (anti-spoofing)', () => {
       'http://localhost:4391'
     );
     vi.advanceTimersByTime(500);
-    expect(ingestDevtoolsCapture).not.toHaveBeenCalled();
+    expect(captureCalls()).toHaveLength(0);
   });
 });
 
@@ -347,8 +372,8 @@ describe('useDevtoolsBridge — relay', () => {
     });
     vi.advanceTimersByTime(300);
 
-    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(1);
-    const [sid, batch] = (ingestDevtoolsCapture as Mock).mock.calls[0];
+    expect(captureCalls()).toHaveLength(1);
+    const [sid, batch] = captureCalls()[0];
     expect(sid).toBe('session-1');
     expect(batch.console).toHaveLength(2);
     expect(batch.network).toHaveLength(1);
@@ -368,7 +393,7 @@ describe('useDevtoolsBridge — relay', () => {
       network: [],
     });
     vi.advanceTimersByTime(500);
-    expect(ingestDevtoolsCapture).not.toHaveBeenCalled();
+    expect(captureCalls()).toHaveLength(0);
   });
 
   it('relays a reset (and clears stale captures) on a navigation boundary', () => {
@@ -382,8 +407,8 @@ describe('useDevtoolsBridge — relay', () => {
     postFrom(iframe.contentWindow, { __dorkosDevtools: 'navigated' });
     vi.advanceTimersByTime(300);
 
-    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(1);
-    const [, batch] = (ingestDevtoolsCapture as Mock).mock.calls[0];
+    expect(captureCalls()).toHaveLength(1);
+    const [, batch] = captureCalls()[0];
     expect(batch.reset).toBe(true);
     expect(batch.console).toHaveLength(0); // pre-navigation captures dropped
   });
@@ -410,8 +435,8 @@ describe('useDevtoolsBridge — which session is the attached one (DOR-1305)', (
     mount();
     sendOneBatch();
 
-    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(1);
-    expect((ingestDevtoolsCapture as Mock).mock.calls[0][0]).toBe('session-from-url');
+    expect(captureCalls()).toHaveLength(1);
+    expect(captureCalls()[0][0]).toBe('session-from-url');
   });
 
   it('relays a screenshot result in the browser app too', () => {
@@ -424,8 +449,8 @@ describe('useDevtoolsBridge — which session is the attached one (DOR-1305)', (
       dataUrl: 'data:image/png;base64,AAAA',
     });
 
-    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(1);
-    expect((ingestDevtoolsCapture as Mock).mock.calls[0][0]).toBe('session-from-url');
+    expect(captureCalls()).toHaveLength(1);
+    expect(captureCalls()[0][0]).toBe('session-from-url');
   });
 
   it('still relays in the Obsidian embed, where it lives in the store', () => {
@@ -434,8 +459,8 @@ describe('useDevtoolsBridge — which session is the attached one (DOR-1305)', (
     mount();
     sendOneBatch();
 
-    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(1);
-    expect((ingestDevtoolsCapture as Mock).mock.calls[0][0]).toBe('session-from-store');
+    expect(captureCalls()).toHaveLength(1);
+    expect(captureCalls()[0][0]).toBe('session-from-store');
   });
 
   /**
@@ -478,8 +503,8 @@ describe('useDevtoolsBridge — which session is the attached one (DOR-1305)', (
     act(() => rerender()); // the address moved; the bridge re-renders under B
     act(() => void vi.advanceTimersByTime(500));
 
-    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(1);
-    const [sid, batch] = (ingestDevtoolsCapture as Mock).mock.calls[0];
+    expect(captureCalls()).toHaveLength(1);
+    const [sid, batch] = captureCalls()[0];
     expect(sid).toBe('session-a');
     expect(batch.console[0].text).toBe('captured-under-a');
   });
@@ -497,11 +522,11 @@ describe('useDevtoolsBridge — which session is the attached one (DOR-1305)', (
     sendBatch('captured-under-b', 2);
     act(() => void vi.advanceTimersByTime(500));
 
-    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(2);
-    const [firstSid, firstBatch] = (ingestDevtoolsCapture as Mock).mock.calls[0];
+    expect(captureCalls()).toHaveLength(2);
+    const [firstSid, firstBatch] = captureCalls()[0];
     expect(firstSid).toBe('session-a');
     expect(firstBatch.console.map((e: { text: string }) => e.text)).toEqual(['captured-under-a']);
-    const [secondSid, secondBatch] = (ingestDevtoolsCapture as Mock).mock.calls[1];
+    const [secondSid, secondBatch] = captureCalls()[1];
     expect(secondSid).toBe('session-b');
     expect(secondBatch.console.map((e: { text: string }) => e.text)).toEqual(['captured-under-b']);
   });
@@ -514,7 +539,7 @@ describe('useDevtoolsBridge — which session is the attached one (DOR-1305)', (
     mount();
     sendOneBatch();
 
-    expect(ingestDevtoolsCapture).not.toHaveBeenCalled();
+    expect(captureCalls()).toHaveLength(0);
   });
 });
 
@@ -591,8 +616,8 @@ describe('useDevtoolsBridge — screenshot round-trip (DOR-213 Phase 3)', () => 
     });
 
     // Immediate — the awaiting tool must not eat the 300ms batch debounce.
-    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(1);
-    const [sid, batch] = (ingestDevtoolsCapture as Mock).mock.calls[0];
+    expect(captureCalls()).toHaveLength(1);
+    const [sid, batch] = captureCalls()[0];
     expect(sid).toBe('session-1');
     expect(batch.screenshot).toEqual({
       requestId: 'r1',
@@ -610,8 +635,8 @@ describe('useDevtoolsBridge — screenshot round-trip (DOR-213 Phase 3)', () => 
       error: 'CSP blocked the rasterizer',
     });
 
-    expect(ingestDevtoolsCapture).toHaveBeenCalledTimes(1);
-    const [, batch] = (ingestDevtoolsCapture as Mock).mock.calls[0];
+    expect(captureCalls()).toHaveLength(1);
+    const [, batch] = captureCalls()[0];
     expect(batch.screenshot).toEqual({ requestId: 'r1', error: 'CSP blocked the rasterizer' });
   });
 
@@ -622,7 +647,7 @@ describe('useDevtoolsBridge — screenshot round-trip (DOR-213 Phase 3)', () => 
       requestId: 'r1',
       dataUrl: 'data:image/png;base64,AAAA',
     });
-    expect(ingestDevtoolsCapture).not.toHaveBeenCalled();
+    expect(captureCalls()).toHaveLength(0);
   });
 
   it('drops a capture-result when no session is attached', () => {
@@ -633,6 +658,184 @@ describe('useDevtoolsBridge — screenshot round-trip (DOR-213 Phase 3)', () => 
       requestId: 'r1',
       dataUrl: 'data:image/png;base64,AAAA',
     });
-    expect(ingestDevtoolsCapture).not.toHaveBeenCalled();
+    expect(captureCalls()).toHaveLength(0);
+  });
+});
+
+describe('useDevtoolsBridge — the driver seat (spec `canvas-agent-seat` §2.2)', () => {
+  /** Push one addressed request onto the stream, the way the server does. */
+  function emitActionRequest(
+    requestId: string,
+    addressing: { targetClientId?: string; documentId?: string } = {}
+  ): void {
+    for (const handler of sessionEventListeners) {
+      handler('session-1', {
+        type: 'devtools_action_request',
+        requestId,
+        targetClientId: 'web-this-window',
+        documentId: 'doc',
+        command: { action: 'click', target: { selector: '#pay' } },
+        seq: 1,
+        ...addressing,
+      });
+    }
+  }
+
+  it('claims the seat for its page on mount, before any handshake', () => {
+    mount();
+    const claims = claimCalls();
+    expect(claims).toHaveLength(1);
+    expect(claims[0][0]).toBe('session-1');
+    expect(claims[0][1]).toMatchObject({ active: true, instrumented: false });
+  });
+
+  it('upgrades the claim to instrumented once the shim says hello', () => {
+    mount();
+    postFrom(iframe.contentWindow, { __dorkosDevtools: 'hello' });
+    const claims = claimCalls();
+    expect(claims).toHaveLength(2);
+    expect(claims[1][1]).toMatchObject({ active: true, instrumented: true });
+  });
+
+  it('releases the seat when the page goes away', () => {
+    mount();
+    cleanup();
+    expect(claimCalls().at(-1)![1]).toMatchObject({ active: false });
+  });
+
+  it('forwards a request addressed to this window and this page', () => {
+    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
+    mount();
+    emitActionRequest('a1');
+
+    expect(postSpy).toHaveBeenCalledWith(
+      {
+        __dorkosDevtools: 'act-request',
+        requestId: 'a1',
+        documentId: 'doc',
+        command: { action: 'click', target: { selector: '#pay' } },
+      },
+      '*'
+    );
+  });
+
+  it('ignores a request addressed to another window, however active this one is', () => {
+    // The bug this closes, in its new place: re-deriving "am I the active one"
+    // locally gives two windows on one session the same answer.
+    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
+    mount();
+    emitActionRequest('a2', { targetClientId: 'web-the-other-window' });
+    expect(postSpy).not.toHaveBeenCalled();
+  });
+
+  it('ignores a request for a page this window is not holding', () => {
+    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
+    mount();
+    emitActionRequest('a3', { documentId: 'some-other-doc' });
+    expect(postSpy).not.toHaveBeenCalled();
+  });
+
+  it('applies the same addressing to a screenshot request', async () => {
+    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
+    mount();
+    for (const handler of sessionEventListeners) {
+      handler('session-1', {
+        type: 'devtools_capture_request',
+        requestId: 'c1',
+        targetClientId: 'web-the-other-window',
+        documentId: 'doc',
+        seq: 1,
+      });
+    }
+    await vi.advanceTimersByTimeAsync(0);
+    expect(postSpy).not.toHaveBeenCalled();
+  });
+
+  it('still forwards a request that names nobody, the way an older server sends it', async () => {
+    const postSpy = vi.spyOn(iframe.contentWindow as Window, 'postMessage');
+    mount();
+    for (const handler of sessionEventListeners) {
+      handler('session-1', { type: 'devtools_capture_request', requestId: 'c2', seq: 1 });
+    }
+    await vi.advanceTimersByTimeAsync(0);
+    expect(postSpy).toHaveBeenCalledWith(
+      { __dorkosDevtools: 'capture-request', requestId: 'c2', lib: 'RASTERIZER_SRC' },
+      '*'
+    );
+  });
+
+  it('relays an act-result immediately, with no debounce', () => {
+    mount();
+    postFrom(iframe.contentWindow, {
+      __dorkosDevtools: 'act-result',
+      requestId: 'a1',
+      ok: true,
+      did: 'Clicked button "Pay $42.00".',
+      matched: 1,
+      documentId: 'doc',
+      page: { title: 'Checkout', url: 'https://preview/checkout', focused: null },
+    });
+
+    // Not a capture batch, and not waiting out the 300ms flush window: a tool
+    // call is awaiting this requestId server-side.
+    expect(postDevtoolsAction).toHaveBeenCalledTimes(1);
+    expect((postDevtoolsAction as Mock).mock.calls[0]).toEqual([
+      'session-1',
+      {
+        requestId: 'a1',
+        ok: true,
+        did: 'Clicked button "Pay $42.00".',
+        matched: 1,
+        documentId: 'doc',
+        page: { title: 'Checkout', url: 'https://preview/checkout', focused: null },
+      },
+    ]);
+  });
+
+  it('relays a page-side failure as a failure, keeping its sentence', () => {
+    mount();
+    postFrom(iframe.contentWindow, {
+      __dorkosDevtools: 'act-result',
+      requestId: 'a1',
+      ok: false,
+      matched: 4,
+      error: '4 things matched that. Pass nth to pick one, or name it more exactly.',
+    });
+
+    expect((postDevtoolsAction as Mock).mock.calls[0][1]).toMatchObject({
+      ok: false,
+      matched: 4,
+      error: '4 things matched that. Pass nth to pick one, or name it more exactly.',
+    });
+  });
+
+  it('drops a malformed page summary rather than posting a body the route rejects', () => {
+    mount();
+    postFrom(iframe.contentWindow, {
+      __dorkosDevtools: 'act-result',
+      requestId: 'a1',
+      ok: true,
+      page: { title: 42, url: null },
+    });
+
+    expect((postDevtoolsAction as Mock).mock.calls[0][1]).not.toHaveProperty('page');
+  });
+
+  it('ignores an act-result from a foreign frame (anti-spoofing)', () => {
+    mount();
+    postFrom(foreignFrame.contentWindow, {
+      __dorkosDevtools: 'act-result',
+      requestId: 'a1',
+      ok: true,
+      did: 'Clicked something nobody asked for.',
+    });
+    expect(postDevtoolsAction).not.toHaveBeenCalled();
+  });
+
+  it('drops an act-result when no session is attached', () => {
+    detachSession();
+    mount();
+    postFrom(iframe.contentWindow, { __dorkosDevtools: 'act-result', requestId: 'a1', ok: true });
+    expect(postDevtoolsAction).not.toHaveBeenCalled();
   });
 });

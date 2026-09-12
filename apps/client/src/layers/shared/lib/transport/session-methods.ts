@@ -18,6 +18,7 @@ import type {
   UiActionRequest,
   McpAppResourceRequest,
   McpAppResourceResponse,
+  DevtoolsActionResult,
   DevtoolsIngest,
   RecentSessionsResponse,
   SessionDailyCountsResponse,
@@ -387,12 +388,34 @@ export function createSessionMethods(
       try {
         await fetch(`${baseUrl}/sessions/${sessionId}/devtools/ingest`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          // The client id is what makes a seat claim mean anything: the server
+          // keeps one driver row per (window, page), and without the header
+          // every window would look like the same one.
+          headers: { 'Content-Type': 'application/json', 'X-Client-Id': getClientId() },
           credentials: 'include',
           body: JSON.stringify(batch),
         });
       } catch {
         /* best-effort capture — never disturb the preview */
+      }
+    },
+
+    /**
+     * Relay one driving result to `POST /sessions/:id/devtools/action`.
+     * Fire-and-forget like the capture sink above, and for the same reason: a
+     * dropped result costs the tool its timeout, and a throw here would surface
+     * inside a message listener where nothing could act on it.
+     */
+    async postDevtoolsAction(sessionId: string, result: DevtoolsActionResult): Promise<void> {
+      try {
+        await fetch(`${baseUrl}/sessions/${sessionId}/devtools/action`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Client-Id': getClientId() },
+          credentials: 'include',
+          body: JSON.stringify(result),
+        });
+      } catch {
+        /* best-effort relay — never disturb the preview */
       }
     },
 

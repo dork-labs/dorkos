@@ -33,11 +33,20 @@
  *   ever writes that field, so in a browser the gate below never opened and an
  *   agent's `browser_read_console` saw nothing.
  *
- * It also drives the `browser_screenshot` round-trip (DOR-213 Phase 3): a
- * `devtools_capture_request` on the attached session's event stream is
- * forwarded into the frame (with the lazy-loaded rasterizer source riding
- * along), and the shim's `capture-result` is ingested immediately, tagged with
- * its `requestId`, resolving the awaiting tool call server-side.
+ * It also drives both server→client round trips: `devtools_capture_request`
+ * (`browser_screenshot`, DOR-213 Phase 3) and `devtools_action_request` (the six
+ * driving verbs, spec `canvas-agent-seat`). Each is forwarded into the frame —
+ * the capture with the lazy-loaded rasterizer source riding along — and the
+ * shim's one result is posted back immediately, tagged with its `requestId`,
+ * resolving the awaiting tool call server-side.
+ *
+ * **Which window answers is the SERVER's decision, never this hook's.** One
+ * session is routinely open in two windows, so "am I showing the active
+ * preview?" has two true answers and cannot arbitrate anything. This hook
+ * CLAIMS — it tells the server which page this window is showing, and the
+ * server keeps one driver seat per session — and then answers only a request
+ * addressed to its own `clientId` and its own `documentId`. Local state produces
+ * a claim; the server produces the address.
  *
  * It also counts the resources the current document failed to load and hands
  * that count back to the canvas, which turns it into a banner — a page whose
@@ -50,6 +59,7 @@
  */
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import type {
+  DevtoolsActionResult,
   DevtoolsConsoleEntry,
   DevtoolsIngest,
   DevtoolsNetworkEntry,
@@ -65,16 +75,33 @@ const FLUSH_DEBOUNCE_MS = 300;
 
 /** A message the shim posts to the parent. */
 interface DevtoolsMessage {
-  __dorkosDevtools?: 'hello' | 'batch' | 'navigated' | 'capture-result' | 'resource-error';
+  __dorkosDevtools?:
+    'hello' | 'batch' | 'navigated' | 'capture-result' | 'act-result' | 'resource-error';
   seq?: number;
   console?: DevtoolsConsoleEntry[];
   network?: DevtoolsNetworkEntry[];
-  /** `capture-result`: the round-trip id echoed from the capture request. */
+  /** `capture-result` and `act-result`: the id echoed from the request. */
   requestId?: unknown;
   /** `capture-result`: the rendered PNG data URL on success. */
   dataUrl?: unknown;
-  /** `capture-result`: the shim's failure reason when rasterization failed. */
+  /** `capture-result` and `act-result`: the shim's failure reason. */
   error?: unknown;
+  /** `act-result`: whether the page did what it was asked. */
+  ok?: unknown;
+  /** `act-result`: one line saying what it did. */
+  did?: unknown;
+  /** `act-result`: how many elements the target matched. */
+  matched?: unknown;
+  /** `act-result`: which document answered. */
+  documentId?: unknown;
+  /** `act-result`: where that page is now. */
+  page?: unknown;
+  /** `act-result`: the accessibility outline, for a read. */
+  outline?: unknown;
+  /** `act-result`: whether the outline was cut to fit its budget. */
+  truncated?: unknown;
+  /** `act-result`: how long a wait actually took. */
+  waitedMs?: unknown;
 }
 
 /** Inputs to {@link useDevtoolsBridge}. */
@@ -113,6 +140,25 @@ export interface DevtoolsBridge {
    * promises a page is fine.
    */
   resourceErrorCount: number;
+}
+
+/**
+ * Whether a page summary from the shim is shaped the way the server expects.
+ *
+ * The value crossed an untrusted page, so it is checked rather than cast: a
+ * hostile page may only ever tell the agent something wrong, never post a body
+ * the ingest route rejects, which would strand the tool call in a timeout.
+ */
+function isPageSummary(
+  value: unknown
+): value is { title: string; url: string; focused: string | null } {
+  if (!value || typeof value !== 'object') return false;
+  const page = value as { title?: unknown; url?: unknown; focused?: unknown };
+  return (
+    typeof page.title === 'string' &&
+    typeof page.url === 'string' &&
+    (page.focused === null || typeof page.focused === 'string')
+  );
 }
 
 /** Drop the oldest entries in place so `arr` holds at most `cap`. */
@@ -183,6 +229,16 @@ export function useDevtoolsBridge({
    * buffer. `null` means nothing is pending.
    */
   const pendingSessionId = useRef<string | null>(null);
+  /**
+   * Whether the shim in THIS frame ever said hello.
+   *
+   * Carried on the seat claim so a driving tool can answer "that page is open
+   * but DorkOS is not instrumenting it" at once. An external site and a dev
+   * server framed by its own address both render and neither carries the shim,
+   * so without this the tool would wait out a whole timeout to say nothing
+   * useful.
+   */
+  const handshook = useRef(false);
 
   useEffect(() => {
     /** Relay whatever is pending to the session it was captured under. */
@@ -248,14 +304,31 @@ export function useDevtoolsBridge({
       if (!data || typeof data !== 'object' || typeof data.__dorkosDevtools !== 'string') return;
 
       switch (data.__dorkosDevtools) {
-        case 'hello':
+        case 'hello': {
           // Ack unconditionally — the handshake carries no captured data, and the
           // shim stops retrying after ~5s, so gating the ack on session attach
           // would leave a preview that loads first permanently un-instrumented.
           // The attached-session gate below still keeps unattached CAPTURES from
           // ever relaying.
           frame.contentWindow?.postMessage({ __dorkosDevtools: 'ack' }, '*');
+          // And tell the server this page can be driven. The first claim goes
+          // out on mount, before any handshake could have happened, so without
+          // this upgrade every page would look un-instrumented forever.
+          handshook.current = true;
+          const helloSession = sessionIdRef.current;
+          if (helloSession) {
+            void transport.ingestDevtoolsCapture(helloSession, {
+              documentId: documentIdRef.current,
+              logicalUrl: logicalUrlRef.current,
+              seq: lastSeq.current,
+              console: [],
+              network: [],
+              active: true,
+              instrumented: true,
+            });
+          }
           return;
+        }
         case 'resource-error':
           // Counted before the attached-session gate below: relaying captures
           // to an agent needs a session, but telling the person watching that
@@ -294,6 +367,26 @@ export function useDevtoolsBridge({
           cap(pendingNetwork.current, DEVTOOLS_NETWORK_BATCH_MAX);
           schedule();
           return;
+        case 'act-result': {
+          // One driving round trip's answer. Posted the moment it exists, with
+          // no debounce: a tool call is awaiting this requestId server-side, and
+          // a coalesced answer is an answer that arrives after the timeout.
+          if (typeof data.requestId !== 'string') return;
+          const result: DevtoolsActionResult = {
+            requestId: data.requestId,
+            ok: data.ok === true,
+            ...(typeof data.did === 'string' ? { did: data.did } : {}),
+            ...(typeof data.matched === 'number' ? { matched: data.matched } : {}),
+            ...(typeof data.documentId === 'string' ? { documentId: data.documentId } : {}),
+            ...(isPageSummary(data.page) ? { page: data.page } : {}),
+            ...(typeof data.outline === 'string' ? { outline: data.outline } : {}),
+            ...(typeof data.truncated === 'boolean' ? { truncated: data.truncated } : {}),
+            ...(typeof data.waitedMs === 'number' ? { waitedMs: data.waitedMs } : {}),
+            ...(typeof data.error === 'string' ? { error: data.error } : {}),
+          };
+          void transport.postDevtoolsAction(sid, result);
+          return;
+        }
         case 'capture-result': {
           // A `browser_screenshot` round-trip result. Ingested IMMEDIATELY (no
           // debounce) — the tool call is awaiting this requestId server-side.
@@ -330,37 +423,102 @@ export function useDevtoolsBridge({
     };
   }, [transport, iframeRef]);
 
-  // Forward `browser_screenshot` capture requests into the preview frame. The
-  // stream manager already gates `subscribeSessionEvent` to the ATTACHED
-  // session, so a background agent can never trigger a capture of the preview
-  // the operator is watching. The rasterizer source rides along (lazy-loaded on
-  // first use — see `load-rasterizer.ts`); on a load failure the request is
-  // forwarded without it so the shim fails fast with an error result instead of
-  // letting the tool time out.
+  // Claim the driver seat for this page, so the SERVER can address exactly one
+  // window (spec `canvas-agent-seat` §2.2).
   //
-  // KNOWN v1 LIMITATION (multi-preview race): this hook mounts once per open
-  // browser document, and the capture request carries no document target, so
-  // with several previews open EVERY bridge forwards it and the first ingest
-  // wins nondeterministically (single screenshot slot, latest write retained;
-  // the awaiting tool resolves on the first result). Acceptable for v1 — a
-  // follow-up should target the request by documentId so the agent can choose
-  // which preview to capture.
+  // THE RACE THIS CLOSES, and why it is a claim rather than a decision. This
+  // hook mounts once per browser document a window is showing, and until now a
+  // capture request carried no target at all — so with several previews open,
+  // every bridge forwarded it and the first ingest won nondeterministically. The
+  // obvious fix, "answer only when my document is the active one", does not
+  // work: two windows on one session each hold their own `activeBrowserDocumentId`
+  // and each would consider itself addressed. So the window says what it is
+  // SHOWING, the server keeps one seat per session, and the answer half below
+  // consults neither — it compares the addressed ids to its own.
+  //
+  // A release is sent when the page closes or this window stops showing it.
+  // Deliberately NOT on window blur: a preview does not stop being on screen
+  // because somebody switched to another application, and releasing there would
+  // answer "no window is showing a preview" while one plainly is.
+  useEffect(() => {
+    const sid = sessionId;
+    if (!sid) return;
+    const claim = (active: boolean): void => {
+      void transport.ingestDevtoolsCapture(sid, {
+        documentId,
+        logicalUrl,
+        seq: lastSeq.current,
+        console: [],
+        network: [],
+        active,
+        instrumented: handshook.current,
+      });
+    };
+    claim(true);
+    const onFocus = (): void => claim(true);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      claim(false);
+    };
+  }, [transport, sessionId, documentId, logicalUrl]);
+
+  // Forward the two server→client round trips into the preview frame.
+  //
+  // The stream manager already gates `subscribeSessionEvent` to the ATTACHED
+  // session, so a background agent can never reach the preview the operator is
+  // watching. On top of that, this bridge answers ONLY when the server addressed
+  // this window and this document: `targetClientId` and `documentId` are
+  // resolved server-side from the driver seat, and a window that is not the one
+  // named simply does nothing. A request carrying neither (an older server) is
+  // forwarded the way it always was.
+  //
+  // The rasterizer source rides along with a capture (lazy-loaded on first use —
+  // see `load-rasterizer.ts`); on a load failure the request is forwarded
+  // without it so the shim fails fast with an error result instead of letting
+  // the tool time out.
   useEffect(() => {
     return streamManager.subscribeSessionEvent((_sessionId, event) => {
-      if (event.type !== 'devtools_capture_request') return;
-      const target = iframeRef.current?.contentWindow;
-      if (!target) return;
-      const forward = (lib?: string): void => {
-        // Re-read the ref: the frame may have re-rendered while the lazy
-        // rasterizer chunk loaded.
+      if (event.type === 'devtools_capture_request') {
+        if (!addressedTo(event.targetClientId, event.documentId)) return;
+        if (!iframeRef.current?.contentWindow) return;
+        const forward = (lib?: string): void => {
+          // Re-read the ref: the frame may have re-rendered while the lazy
+          // rasterizer chunk loaded.
+          iframeRef.current?.contentWindow?.postMessage(
+            { __dorkosDevtools: 'capture-request', requestId: event.requestId, lib },
+            '*'
+          );
+        };
+        loadRasterizerSource().then(forward, () => forward(undefined));
+        return;
+      }
+      if (event.type === 'devtools_action_request') {
+        if (!addressedTo(event.targetClientId, event.documentId)) return;
         iframeRef.current?.contentWindow?.postMessage(
-          { __dorkosDevtools: 'capture-request', requestId: event.requestId, lib },
+          {
+            __dorkosDevtools: 'act-request',
+            requestId: event.requestId,
+            documentId: event.documentId,
+            command: event.command,
+          },
           '*'
         );
-      };
-      loadRasterizerSource().then(forward, () => forward(undefined));
+      }
     });
-  }, [iframeRef]);
+
+    /**
+     * Whether the server addressed THIS window and THIS page.
+     *
+     * Both ids are compared, and `activeBrowserDocumentId` is not consulted at
+     * all: re-deriving the arbiter locally is the original bug in a new place.
+     */
+    function addressedTo(targetClientId?: string, documentId?: string): boolean {
+      if (targetClientId !== undefined && targetClientId !== transport.clientId) return false;
+      if (documentId !== undefined && documentId !== documentIdRef.current) return false;
+      return true;
+    }
+  }, [iframeRef, transport]);
 
   return { resourceErrorCount };
 }
