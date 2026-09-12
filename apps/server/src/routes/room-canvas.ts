@@ -355,8 +355,14 @@ function reviewDeps(): CanvasDiffReviewDeps {
  * **A person's, both ways.** It hands back the contents of somebody ELSE's
  * working copy, which `read_canvas` refuses an agent by design (spec
  * `room-canvas` §8.1) — so an agent is refused 403 `PEOPLE_ONLY` here too,
- * after the membership check. Whether the person may MERGE what they see is a
- * separate question, answered by the merge route.
+ * after the membership check.
+ *
+ * **The gate is PERSONHOOD, not ownership**, exactly as it is on the file-write
+ * route this borrows from: any member who is a person may read the review and
+ * send a hunk back, and only the install's owner may MERGE (`POST
+ * /:id/repo/merge`, 403 `OPERATOR_ONLY`). Spec §8 frames the flow as the
+ * operator's because on a single-person install they are the same caller; on one
+ * with login on they are not, and this is the line.
  */
 router.get<CanvasParams>('/:documentId/diff', (req, res) => {
   void (async () => {
@@ -377,10 +383,12 @@ router.get<CanvasParams>('/:documentId/diff', (req, res) => {
  * `ok: false` with what it holds now — a conflict is control flow, and the
  * screen recomputes rather than clobbering work that carried on.
  *
- * **The person's alone** (403 `PEOPLE_ONLY`), on the same instrument
+ * **A person's** (403 `PEOPLE_ONLY`), on the same instrument
  * `PUT /:id/files/content` uses: this writes into a colleague's checkout, and an
  * agent doing that leaves that colleague dirty — the state their own merge then
- * refuses. Archived rooms refuse it too, like every other canvas write.
+ * refuses. Any member who is a person may do it, not only the owner — the
+ * ownership line is drawn at the MERGE and nowhere else. Archived rooms refuse
+ * it too, like every other canvas write.
  */
 router.put<CanvasParams>('/:documentId/diff', (req, res) => {
   const body = parseBody(RoomCanvasDiffWriteRequestSchema, req.body, res);

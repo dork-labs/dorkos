@@ -165,7 +165,13 @@ async function resolveReviewFile(
   // exactly the case where the spelling lies.
   const worktreesReal = await resolveCanonicalPath(worktrees);
   const treeReal = await resolveCanonicalPath(tree);
-  if (!isContained(treeReal, worktreesReal)) {
+  // **`isContained` counts a path equal to the root as contained**, which the
+  // lexical helper it replaced did not — so the ROOT is refused here by name.
+  // A row storing `<roomHome>/worktrees` itself is not reachable today (the
+  // server only ever writes one specific copy), and the file check below would
+  // still confine the target; refusing it explicitly keeps "one of THIS room's
+  // working copies" the literal rule rather than one that happens to hold.
+  if (treeReal === worktreesReal || !isContained(treeReal, worktreesReal)) {
     throw new RoomError('CANVAS_ACTION_NOT_AVAILABLE_IN_A_ROOM', NOT_THIS_ROOM_S_TREE);
   }
 

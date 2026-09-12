@@ -25,6 +25,9 @@
  *   borrows `lib/boundary.ts`'s resolution rather than writing a second one.
  * - Comparing nothing instead of the expected hash reddens "refuses to clobber
  *   a file the agent changed underneath the review".
+ * - Dropping the `treeReal === worktreesReal` guard reddens "refuses the
+ *   worktrees directory ITSELF as a tree": `isContained` counts a path equal to
+ *   the root as contained, which the lexical helper it replaced did not.
  *
  * @module server/services/rooms/canvas/tests/canvas-diff-review
  */
@@ -111,6 +114,17 @@ describe('the file behind a room worktree diff', () => {
     // so — without it the review is a read primitive over the whole disk.
     const elsewhere = { ...deps, resolvedTree: () => path.join(home, 'not-a-worktree') };
     await expect(readCanvasDiffReview(elsewhere, ROOM, DOCUMENT)).rejects.toThrow(
+      /this room does not keep working copies/
+    );
+  });
+
+  it('refuses the worktrees directory ITSELF as a tree', async () => {
+    // `isContained` reads a path equal to the root as contained, where the
+    // lexical helper it replaced did not. Unreachable today — the server writes
+    // one specific copy, never its parent — so this exists to hold the rule
+    // where the swap changed the semantics under it.
+    const asTheRoot = { ...deps, resolvedTree: () => worktrees };
+    await expect(readCanvasDiffReview(asTheRoot, ROOM, DOCUMENT)).rejects.toThrow(
       /this room does not keep working copies/
     );
   });

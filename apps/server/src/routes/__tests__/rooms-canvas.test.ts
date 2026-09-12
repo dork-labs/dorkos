@@ -481,7 +481,47 @@ describe('the room canvas routes', () => {
     expect(paths).toContain('/api/rooms/{id}/canvas/{documentId}');
     expect(paths).toContain('/api/rooms/{id}/canvas/{documentId}/editing');
     expect(paths).toContain('/api/rooms/{id}/canvas/viewing');
+    expect(paths).toContain('/api/rooms/{id}/canvas/{documentId}/diff');
     const document = spec.paths?.['/api/rooms/{id}/canvas/{documentId}'];
     expect(Object.keys(document ?? {}).sort()).toEqual(['delete', 'get', 'patch']);
+  });
+
+  it('declares on the review routes every status they really answer', async () => {
+    // **The gate `docs:export-api` cannot be.** That command only notices a
+    // registry that CHANGED; a registry nobody edited exports byte-identically
+    // and says nothing, which is how both review routes shipped documenting no
+    // 403 after the people-only gate landed, and a 409 naming two causes that
+    // answer 400 and 404. Every status below is one this file drives.
+    const { generateOpenAPISpec } = await import('../../services/core/openapi-registry.js');
+    const spec = generateOpenAPISpec();
+    const review = spec.paths?.['/api/rooms/{id}/canvas/{documentId}/diff'] as
+      Record<string, { responses?: Record<string, unknown>; description?: string }> | undefined;
+
+    expect(Object.keys(review ?? {}).sort()).toEqual(['get', 'put']);
+    expect(Object.keys(review?.get?.responses ?? {}).sort()).toEqual([
+      '200',
+      '400',
+      '401',
+      '403',
+      '404',
+      '409',
+    ]);
+    expect(Object.keys(review?.put?.responses ?? {}).sort()).toEqual([
+      '200',
+      '400',
+      '401',
+      '403',
+      '404',
+      '409',
+    ]);
+    // The refusal a client will actually hit has to be NAMED, not only listed:
+    // a 403 with no code in the prose is one a caller cannot branch on.
+    expect(review?.get?.description).toContain('PEOPLE_ONLY');
+    expect(review?.put?.description).toContain('PEOPLE_ONLY');
+    // …and the sentence the gate made false has to be gone.
+    expect(
+      review?.get?.description,
+      'this route is no longer gated like every other room read'
+    ).not.toContain('Membership-gated like every other room read');
   });
 });
