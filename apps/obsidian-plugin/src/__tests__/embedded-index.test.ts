@@ -22,6 +22,13 @@ import { createDb, openReadOnlyDb, runMigrations } from '@dorkos/db';
 import { readOwnerAccount } from '../../../server/src/services/core/auth/index.js';
 import { logger } from '../../../server/src/lib/logger.js';
 import { createRoomSubsystem } from '../../../server/src/services/rooms/index.js';
+import {
+  CanvasDocumentStore,
+  CanvasService,
+  peekCanvasService,
+  sessionScope,
+  SESSION_OWNER_AUTHOR,
+} from '../../../server/src/services/canvas/index.js';
 import { openEmbeddedIndex } from '../lib/embedded-index';
 
 const rooms = vi.hoisted(() => ({ throws: false }));
@@ -158,7 +165,53 @@ describe('letting go', () => {
   });
 });
 
+describe('what the embed may read', () => {
+  it('this machine’s session canvas, through the seam DirectTransport is handed', () => {
+    // The seam existed and no host wired it, so every embed read answered `[]`
+    // and the panel's canvas was dead (DOR-2006 review, blocker 3). Seeded
+    // through the real writer, over a normal connection, the way the DorkOS
+    // that owns this database writes it.
+    seedDatabase();
+    const writable = createDb(path.join(dorkHome, 'dork.db'));
+    new CanvasService({
+      documents: new CanvasDocumentStore(writable),
+      channels: { publish: () => {}, viewers: () => 0 },
+    }).open(sessionScope('sess-1'), SESSION_OWNER_AUTHOR, {
+      type: 'file',
+      sourcePath: '/notes/a.md',
+    });
+    writable.$client.close();
+
+    const index = openEmbeddedIndex(dorkHome);
+    const documents = index?.canvas.list('sess-1') ?? [];
+
+    expect(documents).toHaveLength(1);
+    expect(index?.canvas.get('sess-1', documents[0]!.id)?.content).toEqual({
+      type: 'file',
+      sourcePath: '/notes/a.md',
+    });
+    // And another session's canvas is not this one's.
+    expect(index?.canvas.list('sess-2')).toEqual([]);
+    index?.close();
+  });
+});
+
 describe('what the embed may write', () => {
+  it('nothing through the canvas either — no writer is registered in this process', () => {
+    // `control_ui`'s session path calls whatever `peekCanvasService()` returns.
+    // A read-only subsystem that registered one gave it a writer over somebody
+    // else's live database, and the call threw `SqliteError: attempt to write a
+    // readonly database` straight through the tool.
+    seedDatabase();
+    const before = peekCanvasService();
+
+    const index = openEmbeddedIndex(dorkHome);
+
+    expect(index).not.toBeNull();
+    expect(peekCanvasService()).toBe(before);
+    index?.close();
+  });
+
   it('nothing during the open either — the rooms domain is built read-only', () => {
     // `createRoomSubsystem` normally seeds the reserved handles at construction,
     // which is a write. It is the ONLY thing construction writes, and on a

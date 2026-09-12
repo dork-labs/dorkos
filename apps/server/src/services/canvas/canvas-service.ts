@@ -39,6 +39,7 @@
  */
 import type { CanvasDocument } from '@dorkos/shared/room-schemas';
 import { canvasViewForContent } from '@dorkos/shared/canvas-view';
+import { canvasContentForFile } from '@dorkos/shared/viewer-registry';
 import type { UiCanvasContent, UiCommand } from '@dorkos/shared/schemas';
 import { logger } from '../../lib/logger.js';
 // The typed refusals, imported from the rooms domain's LEAF error module rather
@@ -216,6 +217,15 @@ export interface CanvasDeps {
   channels: CanvasChannels;
   /** How the holder of an edit lock is named in the sentence an agent reads. */
   displayNameFor?: (authorId: string) => string;
+  /**
+   * Extension → viewer overrides, read PER CALL so a change in Settings binds
+   * the next open (`workbench.defaultViewers`).
+   *
+   * The client is handed the same map, and both sides resolve through
+   * `canvasContentForFile` — which is what keeps an agent's `open_file` and a
+   * person's landing on one document rather than two.
+   */
+  viewerOverrides?: () => Record<string, string> | undefined;
   /** The clock, so a lock's TTL is testable without waiting 45 seconds. */
   now?: () => number;
 }
@@ -233,6 +243,7 @@ export class CanvasService {
   private readonly documents: CanvasDocumentStore;
   private readonly channels: CanvasChannels;
   private readonly displayNameFor: (authorId: string) => string;
+  private readonly viewerOverrides: () => Record<string, string> | undefined;
   private readonly now: () => number;
 
   /**
@@ -253,6 +264,7 @@ export class CanvasService {
     this.documents = deps.documents;
     this.channels = deps.channels;
     this.displayNameFor = deps.displayNameFor ?? (() => 'Somebody');
+    this.viewerOverrides = deps.viewerOverrides ?? (() => undefined);
     this.now = deps.now ?? Date.now;
   }
 
@@ -360,6 +372,23 @@ export class CanvasService {
       rev: document.rev,
       viewers: this.viewers(scope),
     };
+  }
+
+  /**
+   * The content one canvas verb implies, with this install's viewer overrides
+   * applied — the same answer `apply` will reach.
+   *
+   * Exposed so a CALLER that has to look at the content before delegating (the
+   * room flavour resolves which tree a file came out of; the claude-code handler
+   * decides whether to record a directory at all) asks the same question the
+   * writer will, rather than calling the pure helper without the overrides and
+   * getting a different shape for the same file.
+   *
+   * @param command - The validated command.
+   * @returns The content, or `null` for a verb that names a document instead.
+   */
+  contentForCommand(command: UiCommand): UiCanvasContent | null {
+    return contentFor(command, this.viewerOverrides());
   }
 
   // -------------------------------------------------------------------------
@@ -824,7 +853,7 @@ export class CanvasService {
     // The four OPENING verbs resolve by dedupe key: two agents opening one file
     // land on one row, which is what makes the table a table.
     if (command.action !== 'update_canvas' && command.action !== 'close_canvas') {
-      const content = contentFor(command);
+      const content = contentFor(command, this.viewerOverrides());
       if (content === null) return { reason: OPEN_CANVAS_NEEDS_CONTENT_MESSAGE };
       const sourceKey = canvasSourceKey(content);
       const existing = this.documents.findBySourceKey(scope, sourceKey);
@@ -1022,17 +1051,30 @@ interface CanvasClosePlan {
  * is one shape of `UiCanvasContent` with the fields spelled differently, and
  * turning them into it here is what lets one writer serve all six verbs.
  *
+ * **`open_file` resolves its VIEWER here**, through the same shared function the
+ * client's dispatcher calls. It used to resolve on the client alone, so once the
+ * server started writing an agent's `open_file` the two disagreed: the agent's
+ * `chart.png` became a bare `file` document that loads a PNG into a text editor,
+ * and a person opening the same file wrote `{type:'image'}` — a different
+ * `sourceKey`, so one file grew two tabs.
+ *
  * @param command - The validated command.
+ * @param viewerOverrides - Extension → viewer overrides from
+ *   `workbench.defaultViewers`, so a person who told DorkOS to open CSVs
+ *   differently gets that answer from the agent's opens too.
  * @returns The content to write, or `null`.
  */
-export function contentFor(command: UiCommand): UiCanvasContent | null {
+export function contentFor(
+  command: UiCommand,
+  viewerOverrides?: Record<string, string>
+): UiCanvasContent | null {
   switch (command.action) {
     case 'open_canvas':
       return command.content ?? null;
     case 'update_canvas':
       return command.content;
     case 'open_file':
-      return { type: 'file', sourcePath: command.sourcePath };
+      return canvasContentForFile(command.sourcePath, viewerOverrides);
     case 'open_diff':
       return { type: 'diff', sourcePath: command.sourcePath };
     case 'browser_navigate':

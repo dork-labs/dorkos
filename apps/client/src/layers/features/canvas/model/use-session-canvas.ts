@@ -36,13 +36,19 @@ import { useAppStore, useTransport } from '@/layers/shared/model';
 const LEGACY_CANVAS_KEY = 'dorkos-canvas-sessions';
 
 /**
- * How many entries the retired store kept before evicting the least recent.
+ * How stale a retired entry may be before a hydrate drops it.
  *
  * Entries for sessions the person never opens again are swept on any hydrate,
  * so the retired map does not sit in `localStorage` for ever waiting for a
  * session nobody will reopen.
+ *
+ * **By AGE, not by count.** The first version of this swept everything past the
+ * retired store's own 50-entry window — which that store enforced on every
+ * write, so the map was never above it and the sweep returned immediately,
+ * every time, for ever. Sixty days is the same judgement the retired LRU was
+ * making, expressed in the one dimension the map can still be measured in.
  */
-const RETIRED_SESSION_WINDOW = 50;
+const RETIRED_ENTRY_MAX_AGE_MS = 60 * 24 * 60 * 60 * 1000;
 
 /** One document as the retired `localStorage` map held it. */
 interface LegacyDocument {
@@ -135,9 +141,9 @@ export function useSessionCanvas(
     const entry = map[sessionId];
     if (!entry) {
       // Nothing to import for THIS session, but the map may still be holding
-      // entries for sessions nobody will reopen. Sweep what is past the window
-      // the retired store itself kept.
-      sweepStaleEntries(map, sessionId);
+      // entries for sessions nobody will reopen. Drop the ones that have gone
+      // stale, so the retired key empties out and disappears on its own.
+      sweepStaleEntries(map);
       return;
     }
     imported.add(sessionId);
@@ -190,13 +196,24 @@ function dropEntry(sessionId: string): void {
   writeLegacyMap(rest);
 }
 
-/** Drop retired entries older than the window the retired store itself kept. */
-function sweepStaleEntries(map: Record<string, LegacyEntry>, keep: string): void {
-  const entries = Object.entries(map);
-  if (entries.length <= RETIRED_SESSION_WINDOW) return;
-  const survivors = entries
-    .sort((a, b) => (b[1].accessedAt ?? 0) - (a[1].accessedAt ?? 0))
-    .slice(0, RETIRED_SESSION_WINDOW)
-    .filter(([id]) => id !== keep);
+/**
+ * Drop retired entries nobody has opened in {@link RETIRED_ENTRY_MAX_AGE_MS}.
+ *
+ * An entry carrying no `accessedAt` is from the single-document shape that
+ * predates the timestamp, and it is KEPT: it cannot be dated, and deleting
+ * somebody's only copy of a canvas on a guess is the one failure direction with
+ * no way back. Those go when their session is next opened and imported.
+ *
+ * There is no "except the session on screen" argument, because there is no such
+ * case: this runs only on the branch where the map holds NO entry for it.
+ *
+ * @param map - The retired map, as read.
+ */
+function sweepStaleEntries(map: Record<string, LegacyEntry>): void {
+  const cutoff = Date.now() - RETIRED_ENTRY_MAX_AGE_MS;
+  const survivors = Object.entries(map).filter(
+    ([, entry]) => entry.accessedAt === undefined || entry.accessedAt >= cutoff
+  );
+  if (survivors.length === Object.keys(map).length) return;
   writeLegacyMap(Object.fromEntries(survivors));
 }

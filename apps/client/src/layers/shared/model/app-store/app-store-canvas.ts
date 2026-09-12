@@ -677,15 +677,22 @@ export const createCanvasSlice: StateCreator<
           const row = await transport.openSessionCanvasDocument(id, content);
           settlePending(pendingId, row);
         },
-        () =>
-          set((s) => {
-            const documents = s.openDocuments.filter((d) => d.id !== pendingId);
-            return {
-              openDocuments: documents,
-              ...reconcileActiveIds(documents, s),
-              browserHistories: pruneBrowserHistories(s.browserHistories, documents),
-            };
-          })
+        // **Two reverts, because there were two applies.** A refused open of a
+        // document that was ALREADY there — a routine 409 while somebody is
+        // editing it — must put that document's previous content back, never
+        // remove a row the server still holds. Only the fresh branch minted a
+        // row nobody else has, and only it may take one away.
+        existing
+          ? () => restoreContent(set, existing.id, existing.content)
+          : () =>
+              set((s) => {
+                const documents = s.openDocuments.filter((d) => d.id !== pendingId);
+                return {
+                  openDocuments: documents,
+                  ...reconcileActiveIds(documents, s),
+                  browserHistories: pruneBrowserHistories(s.browserHistories, documents),
+                };
+              })
       );
     },
 

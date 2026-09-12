@@ -219,6 +219,45 @@ describe('CanvasSlice — the server’s table, as this window holds it', () => 
       expect(useAppStore.getState().activeCanvasDocumentId).toBeNull();
     });
 
+    /**
+     * The dedupe branch has its OWN revert, and it is not the fresh branch's
+     * (DOR-2006 review, blocker 2).
+     *
+     * Re-opening a file that is already on the canvas resolves onto the existing
+     * row rather than minting one. The single revert removed `pendingId` — which
+     * on that branch IS the real document's id — so a routine refusal (a 409
+     * while somebody types in it) deleted a row the server still holds, in the
+     * one window that asked. That is the divergence §1.5 exists to remove,
+     * reintroduced by the recovery path.
+     */
+    it('a refused re-open of an ALREADY-OPEN document must not delete it', async () => {
+      const transport = fakeTransport({
+        openSessionCanvasDocument: vi.fn().mockRejectedValue(new Error('somebody is editing it')),
+      });
+      setSessionCanvasTransport(transport);
+      useAppStore
+        .getState()
+        .hydrateCanvasFromSnapshot(SESSION, [
+          serverDocument({ id: 'doc-a', content: fileDoc('a.ts') }),
+        ]);
+
+      // Same file, different content shape — the dedupe key is the source path,
+      // so this lands on `doc-a` rather than minting a pending row.
+      useAppStore
+        .getState()
+        .openCanvasDocument({ type: 'file', sourcePath: 'a.ts', language: 'typescript' });
+
+      await vi.waitFor(() => {
+        expect(transport.openSessionCanvasDocument).toHaveBeenCalled();
+      });
+      // The row is still there, still showing what the SERVER holds.
+      expect(useAppStore.getState().openDocuments.map((d) => d.id)).toEqual(['doc-a']);
+      await vi.waitFor(() => {
+        expect(useAppStore.getState().openDocuments[0]!.content).toEqual(fileDoc('a.ts'));
+      });
+      expect(useAppStore.getState().activeCanvasDocumentId).toBe('doc-a');
+    });
+
     it('writes a content change through, and puts the old content back on failure', async () => {
       const transport = fakeTransport({
         updateSessionCanvasDocument: vi.fn().mockRejectedValue(new Error('somebody is editing it')),

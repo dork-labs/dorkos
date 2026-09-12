@@ -175,6 +175,62 @@ describe('useSessionCanvas — the one-time import', () => {
     expect(transport.openSessionCanvasDocument).not.toHaveBeenCalled();
     expect(localStorage.getItem(LEGACY_KEY)).not.toBeNull();
   });
+
+  /**
+   * The sweep, which really sweeps (DOR-2006 review nit).
+   *
+   * It used to drop entries past the retired store's own 50-session window —
+   * a window that store enforced on every write, so the map was never above it
+   * and the sweep returned immediately, for ever. It goes by age now.
+   */
+  describe('the sweep of entries nobody will reopen', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+
+    it('drops an entry nothing has touched in months', async () => {
+      localStorage.setItem(
+        LEGACY_KEY,
+        JSON.stringify({
+          'long-forgotten': { documents: [], accessedAt: Date.now() - 90 * DAY },
+          'last-week': { documents: [], accessedAt: Date.now() - 7 * DAY },
+        })
+      );
+      renderHook(() => useSessionCanvas(SESSION), { wrapper });
+      await Promise.resolve();
+
+      const map = JSON.parse(localStorage.getItem(LEGACY_KEY) ?? '{}') as Record<string, unknown>;
+      expect(Object.keys(map)).toEqual(['last-week']);
+    });
+
+    it('keeps an undated entry, because a guess cannot be undone', async () => {
+      // The single-document shape, from before the retired store timestamped
+      // anything. It goes when its own session is next opened and imported.
+      localStorage.setItem(
+        LEGACY_KEY,
+        JSON.stringify({ ancient: { content: { type: 'file', sourcePath: '/src/a.ts' } } })
+      );
+      renderHook(() => useSessionCanvas(SESSION), { wrapper });
+      await Promise.resolve();
+
+      expect(Object.keys(JSON.parse(localStorage.getItem(LEGACY_KEY) ?? '{}'))).toEqual([
+        'ancient',
+      ]);
+    });
+
+    it('never runs for a session that HAS an entry — the import owns that one', async () => {
+      // Its own age is irrelevant: a stale-looking entry for the session on
+      // screen is imported, not swept, and deleted only once its documents have
+      // landed on the server.
+      localStorage.setItem(
+        LEGACY_KEY,
+        JSON.stringify({ [SESSION]: { documents: [A], accessedAt: Date.now() - 90 * DAY } })
+      );
+      renderHook(() => useSessionCanvas(SESSION), { wrapper });
+
+      await waitFor(() => {
+        expect(transport.openSessionCanvasDocument).toHaveBeenCalledTimes(1);
+      });
+    });
+  });
 });
 
 describe('the retirement', () => {

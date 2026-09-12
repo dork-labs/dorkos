@@ -94,6 +94,11 @@ export class CopilotView extends ItemView {
       // plain sentence rather than answer emptily, which is the difference
       // between "no index here" and "you never said that".
       ...(this.index && { search: this.index.search }),
+      // This machine's session canvases, read in this process over the SAME
+      // read-only handle the index uses (spec `canvas-agent-seat` §1.6). Left
+      // out when there is no database here, which makes the canvas answer an
+      // empty table and every write refuse in a sentence rather than pretend.
+      ...(this.index && { canvas: this.index.canvas }),
     });
 
     // Embedded mode has no HTTP server: source the StreamManager's durable

@@ -229,31 +229,79 @@ describe('list_capabilities surface', () => {
      * The list is NOT restated here. It comes from the same exported
      * `UNREGISTERED_TOOL_FAMILIES` the description is built from, so the prose and
      * the guard cannot drift, and every family the description claims is absent is
-     * covered rather than an arbitrary three of them. The entries are domain
-     * prefixes (`tasks`, not `task`) precisely because that is what a migrated
-     * capability id would carry: an earlier version of this test compared `'task'`
-     * by exact `Set` membership and therefore could never have caught the `tasks`
-     * domain migrating, which is the family the original defect was about.
+     * covered rather than an arbitrary three of them.
+     *
+     * ## It compares TOOL NAMES, not capability-id prefixes (DOR-2006)
+     *
+     * The sentence in the description is about the reader's own tool list: these
+     * tools are callable but do not appear in the catalog. So the guard asks the
+     * matching question — does the registry project an MCP TOOL belonging to this
+     * family — rather than "does any capability id start with this word".
+     *
+     * An id-prefix guard gets `ui` wrong in both directions, which is how this
+     * version came about. Opening `ui.read_canvas_document` made the id prefix
+     * `ui` appear on the registry, so the prefix guard demanded the family be
+     * struck from the caveat — while `control_ui` and `get_ui_state`, the two
+     * tools an agent reaches for to drive the window, were still hand-registered
+     * and still absent from the catalog. The caveat would have gone silent about
+     * the very tools it exists to point at. Comparing tool names keeps `ui`
+     * listed today (the one catalogued verb projects as `read_canvas_document`,
+     * which carries no `ui` segment) and retires it the moment those two migrate,
+     * because the catalog would then project `control_ui` / `get_ui_state`.
+     *
+     * A family matches a tool name by SEGMENT (`tasks_create` → `tasks`,
+     * `create_extension` → `extension`), never by substring: substring matching
+     * would score `relay_get_metrics` as the `trace` family's neighbour and, worse,
+     * would make a future `build_ui_preview` retire the `ui` caveat by accident.
      */
-    it('only names families that really are absent from the registry', () => {
+    it('only names families whose tools really are absent from the catalog', () => {
       const text = description().toLowerCase();
-      const registeredDomains = new Set(
-        composeDorkOsCapabilityRegistry({
-          logger: noopLogger,
-          operatorDeps: {} as McpToolDeps,
-        }).capabilities.map((c) => c.id.split('.')[0])
-      );
+      const catalogToolNames = composeDorkOsCapabilityRegistry({
+        logger: noopLogger,
+        operatorDeps: {} as McpToolDeps,
+      }).capabilities.flatMap((c) => (c.surfaces.mcp ? [c.surfaces.mcp.toolName] : []));
+
+      const segmentsOf = (toolName: string) => new Set(toolName.split('_'));
 
       expect(UNREGISTERED_TOOL_FAMILIES.length).toBeGreaterThan(0);
+      // The catalog does project tools — otherwise every assertion below is
+      // vacuously true and this guard proves nothing.
+      expect(catalogToolNames.length).toBeGreaterThan(0);
       for (const family of UNREGISTERED_TOOL_FAMILIES) {
         // The description really does name it...
         expect(text).toContain(family);
-        // ...and it really is absent. If this fails, the family migrated onto the
-        // registry: drop it from UNREGISTERED_TOOL_FAMILIES, which removes it from
-        // the description too. Do not reword the caveat.
-        expect(registeredDomains).not.toContain(family);
+        // ...and no tool in the catalog belongs to it. If this fails, the family
+        // migrated onto the registry: drop it from UNREGISTERED_TOOL_FAMILIES,
+        // which removes it from the description too. Do not reword the caveat.
+        expect(catalogToolNames.filter((name) => segmentsOf(name).has(family))).toEqual([]);
       }
       expect(text).toContain('tool list');
+    });
+
+    /**
+     * The other half of the same claim, and the half a one-way guard cannot make:
+     * a family is only worth naming while it has tools to name.
+     *
+     * Checked against `MCP_TOOL_TIERS`, which is every hand-registered tool. Not
+     * every family is spelled the way its tools are (`devtools` is the
+     * `browser_*` trio), so this asserts the families that ARE tool-shaped still
+     * have tools, rather than demanding a tool-name segment for each.
+     */
+    it('keeps ui listed while control_ui and get_ui_state are hand-registered', () => {
+      expect(UNREGISTERED_TOOL_FAMILIES).toContain('ui');
+      // The two tools the caveat is about. When Q4 catalogues them they leave
+      // this table, and the guard above starts failing on the projected names —
+      // either way `ui` has to leave the list at the same time.
+      expect(Object.keys(MCP_TOOL_TIERS)).toContain('control_ui');
+      expect(Object.keys(MCP_TOOL_TIERS)).toContain('get_ui_state');
+      // The one `ui` capability that IS catalogued does not project a `ui`-segment
+      // tool name, which is why the family can honestly stay listed.
+      const catalog = composeDorkOsCapabilityRegistry({
+        logger: noopLogger,
+        operatorDeps: {} as McpToolDeps,
+      });
+      const uiCapability = catalog.capabilities.find((c) => c.id === 'ui.read_canvas_document');
+      expect(uiCapability?.surfaces.mcp?.toolName).toBe('read_canvas_document');
     });
 
     it('does not name a family that IS on the registry (the agent overclaim)', () => {

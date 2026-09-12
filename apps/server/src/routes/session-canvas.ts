@@ -12,10 +12,14 @@
  * is `control_ui` and `read_canvas_document`, neither of which can name a
  * session that is not its own.
  *
- * **The id is the session's canonical one.** The client learns it from the 202
- * its message POST answered with, and the store defers every write until it
- * has it — a row written under the pre-rekey UUID would be renamed out from
- * under the window that wrote it.
+ * **The id is whatever the window currently knows the session as**, and these
+ * routes do not wait for the canonical one. A canvas opened on a brand-new
+ * session lands under the request UUID, and the rekey listener in
+ * `services/canvas/index.ts` moves the whole scope when the runtime renames the
+ * session mid-first-turn — which is the acceptance criterion this phase is
+ * written against ("a document opened on a fresh, un-canonical session survives
+ * the first-turn rekey"), and the reason the move is the writer's job rather
+ * than the caller's.
  *
  * @module routes/session-canvas
  */

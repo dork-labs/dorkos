@@ -1,5 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createDb, runMigrations, type Db } from '@dorkos/db';
 import type { StreamEvent, UiState } from '@dorkos/shared/types';
+import { CanvasDocumentStore, CanvasService, setCanvasService } from '../../canvas/index.js';
 import {
   createControlUiHandler,
   createGetUiStateHandler,
@@ -320,5 +322,76 @@ describe('getUiTools without a session (session-less)', () => {
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.error).toMatch(/require an attached interactive session/i);
     expect(parsed.canvas).toBeUndefined();
+  });
+});
+
+/**
+ * What `control_ui` does about a canvas writer it cannot reach (DOR-2006 review,
+ * blocker 3 and finding 4).
+ *
+ * Two hosts have no writer to reach. The Obsidian embed opens somebody else's
+ * database READ-ONLY and registers none on purpose; a server mid-boot has not
+ * built one yet. Both must degrade to the event this tool has always pushed —
+ * and a writer that faults mid-call (a locked database, or the read-only one the
+ * embed used to register) must reach the model as a sentence rather than as a
+ * stack trace that ends its turn.
+ */
+describe('control_ui when there is no canvas writer to reach', () => {
+  it('falls through to the event, rather than failing the call', async () => {
+    // No `setCanvasService` anywhere above: this is the embed's situation, and
+    // the session has a real id, so nothing but the missing writer is in play.
+    const session: UiToolSession = { ...createMockSession(), sdkSessionId: 'sess-embedded' };
+    const handler = createControlUiHandler(session);
+
+    const result = await handler({ action: 'open_file', sourcePath: '/notes/a.md' });
+
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.success).toBe(true);
+    // No document id: nothing was written, and the answer does not pretend it was.
+    expect(parsed.documentId).toBeUndefined();
+    expect(session.eventQueue).toHaveLength(1);
+  });
+});
+
+describe('control_ui when the canvas writer faults', () => {
+  let db: Db;
+
+  beforeEach(() => {
+    db = createDb(':memory:');
+    runMigrations(db);
+    const canvas = new CanvasService({
+      documents: new CanvasDocumentStore(db),
+      channels: { publish: () => {}, viewers: () => 0 },
+    });
+    // A real service, made to fault the way a locked or read-only database
+    // faults — `SqliteError: attempt to write a readonly database` is what the
+    // embed produced before it stopped registering a writer at all.
+    vi.spyOn(canvas, 'apply').mockImplementation(() => {
+      throw new Error('attempt to write a readonly database');
+    });
+    setCanvasService(canvas);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    db.$client.close();
+  });
+
+  it('answers the model with a refusal instead of throwing through the tool', async () => {
+    const session: UiToolSession = { ...createMockSession(), sdkSessionId: 'sess-faulting' };
+    const handler = createControlUiHandler(session);
+
+    const result = await handler({ action: 'open_file', sourcePath: '/notes/a.md' });
+
+    expect(result.isError).toBe(true);
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.success).toBe(false);
+    expect(parsed.target).toBe('session');
+    expect(parsed.reason).toMatch(/could not be reached/i);
+    // The driver's own message is NOT passed on: it names internals the model
+    // can do nothing about.
+    expect(parsed.reason).not.toMatch(/readonly/i);
+    // And a write that did not happen pushes no event, so no window is told it did.
+    expect(session.eventQueue).toHaveLength(0);
   });
 });

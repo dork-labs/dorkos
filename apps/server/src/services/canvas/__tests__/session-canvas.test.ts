@@ -159,6 +159,86 @@ describe('CanvasService on a session scope', () => {
       canvas.open(SCOPE, SESSION_OWNER_AUTHOR, jsonContent('b'));
       expect(canvas.list(SCOPE)).toHaveLength(2);
     });
+
+    /**
+     * The writer resolves the VIEWER, so an agent's `open_file` and a person's
+     * land on one document (DOR-2006 review, blocker 1).
+     *
+     * Viewer resolution used to happen only in the client's dispatcher. Once the
+     * server started writing an agent's `open_file` it wrote a bare
+     * `{type:'file'}` for everything, which is two defects at once: a PNG opened
+     * in a text editor ("This file isn't text and can't be shown"), and a
+     * different `canvasSourceKey` from the person's `{type:'image'}` — so one
+     * file grew two tabs, the exact divergence this phase exists to remove.
+     */
+    it('opens an agent’s chart.png as an IMAGE, and on the person’s row', () => {
+      // The person opens it first, through the same content the client builds.
+      const byPerson = canvas.open(SCOPE, SESSION_OWNER_AUTHOR, {
+        type: 'image',
+        src: '/assets/chart.png',
+      });
+
+      const result = applyAsAgent({ action: 'open_file', sourcePath: '/assets/chart.png' });
+
+      expect(result.applied).toBe(true);
+      expect(result.applied === true && result.documentId).toBe(byPerson.id);
+      expect(canvas.list(SCOPE)).toHaveLength(1);
+      expect(canvas.list(SCOPE)[0]?.content).toEqual({ type: 'image', src: '/assets/chart.png' });
+    });
+
+    it('applies this install’s viewer overrides, read per call', () => {
+      // `workbench.defaultViewers` (DOR-219) lives in config the client used to
+      // apply alone, so a server-side answer that ignored it disagreed with the
+      // window that asked for it. Read per call, never captured: a change in
+      // Settings binds the next open.
+      const settings: { defaultViewers?: Record<string, string> } = {};
+      const configured = new CanvasService({
+        documents,
+        channels: { publish: () => {}, viewers: () => 0 },
+        viewerOverrides: () => settings.defaultViewers,
+      });
+
+      configured.apply({
+        scope: SCOPE,
+        authorId: SESSION_AGENT_AUTHOR,
+        command: { action: 'open_file', sourcePath: '/assets/logo.png' },
+        defaultTarget: 'active-in-view',
+      });
+      expect(configured.list(SCOPE)[0]?.contentType).toBe('image');
+
+      settings.defaultViewers = { png: 'file' };
+      configured.apply({
+        scope: SCOPE,
+        authorId: SESSION_AGENT_AUTHOR,
+        command: { action: 'open_file', sourcePath: '/assets/other.png' },
+        defaultTarget: 'active-in-view',
+      });
+      const other = configured.list(SCOPE).find((d) => d.title.includes('other'));
+      expect(other?.contentType).toBe('file');
+    });
+
+    it('answers contentForCommand with the same content it would write', () => {
+      // The two callers that look at the content before delegating — the room
+      // flavour resolving which tree a file came from, and the claude-code
+      // handler — must ask the WRITER, not the pure helper, or they see a
+      // different shape for the same file than the row ends up holding.
+      const configured = new CanvasService({
+        documents,
+        channels: { publish: () => {}, viewers: () => 0 },
+        viewerOverrides: () => ({ png: 'file' }),
+      });
+      const peeked = configured.contentForCommand({
+        action: 'open_file',
+        sourcePath: '/assets/logo.png',
+      });
+      configured.apply({
+        scope: SCOPE,
+        authorId: SESSION_AGENT_AUTHOR,
+        command: { action: 'open_file', sourcePath: '/assets/logo.png' },
+        defaultTarget: 'active-in-view',
+      });
+      expect(configured.list(SCOPE)[0]?.content).toEqual(peeked);
+    });
   });
 
   describe('the default a bare update_canvas acts on', () => {

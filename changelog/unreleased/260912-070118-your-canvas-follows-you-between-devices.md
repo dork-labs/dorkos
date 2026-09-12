@@ -5,6 +5,7 @@ covers:
   - 'feat(canvas): your canvas follows you between devices (DOR-2006)'
   - 'fix(canvas): let a canvas frame reach the other window, and say so in the docs (DOR-2006)'
   - 'test(canvas): cover the canvas the Obsidian embed can read (DOR-2006)'
+  - 'fix(canvas): resolve the viewer where the row is written, and let the embed read (DOR-2006)'
 ---
 
 ### Changed
