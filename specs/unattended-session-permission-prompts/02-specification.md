@@ -2,7 +2,7 @@
 slug: unattended-session-permission-prompts
 id: 260911-191243
 created: 2026-09-12
-status: specified
+status: implemented
 ---
 
 # Sessions with nobody to answer
