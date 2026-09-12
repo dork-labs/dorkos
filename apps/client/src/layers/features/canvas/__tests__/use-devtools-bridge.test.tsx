@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import { renderHook, cleanup, act } from '@testing-library/react';
 import { useRef, type RefObject } from 'react';
+import type { DevtoolsIngest } from '@dorkos/shared/schemas';
 import { WORKBENCH_SANDBOX_ISOLATED } from '../lib/browser-url';
 
 const ingestDevtoolsCapture = vi.fn(async () => {});
@@ -32,17 +33,18 @@ const transport = { ingestDevtoolsCapture, postDevtoolsAction, clientId: 'web-th
  * is about one or the other, never about the raw call count, which would now
  * mean "captures plus however many times the window claimed".
  */
-function captureCalls(): [string, { active?: boolean }][] {
-  return (ingestDevtoolsCapture as Mock).mock.calls.filter(
-    ([, batch]: [string, { active?: boolean }]) => batch.active === undefined
-  );
+function relayedBatches(): [string, DevtoolsIngest][] {
+  return (ingestDevtoolsCapture as Mock).mock.calls as unknown as [string, DevtoolsIngest][];
+}
+
+/** The capture relays only. */
+function captureCalls(): [string, DevtoolsIngest][] {
+  return relayedBatches().filter(([, batch]) => batch.active === undefined);
 }
 
 /** The seat claims only — the mirror image of {@link captureCalls}. */
-function claimCalls(): [string, { active?: boolean; instrumented?: boolean }][] {
-  return (ingestDevtoolsCapture as Mock).mock.calls.filter(
-    ([, batch]: [string, { active?: boolean }]) => batch.active !== undefined
-  );
+function claimCalls(): [string, DevtoolsIngest][] {
+  return relayedBatches().filter(([, batch]) => batch.active !== undefined);
 }
 
 /**
