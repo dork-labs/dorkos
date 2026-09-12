@@ -171,6 +171,44 @@ carries every column: Drizzle drops a standalone `index(...)` export in silence
 If another branch lands an `0097` first, rebase and renumber; two branches minting one number
 conflict in `_journal.json`.
 
+**The scope is the CANONICAL session id, and a rekey moves it.** This is the trap the whole phase
+turns on. A claude-code session id starts life as the request UUID the client minted and is replaced
+by the canonical SDK id mid-first-turn (`ui-tools.ts:145-170` explains the same hazard for the
+capture store). Every in-memory store in the server already migrates across that moment, and there
+are two established ways to hook it:
+
+- **inside `rekeyProjector`**, which is what the capture store does
+  (`session-state-projector.ts:2430`: `devtoolsCaptureStore.rekeySession(fromId, newId)`);
+- **through the `onProjectorRekey` listener** (`session-state-projector.ts:2553`, notified at
+  `:2466`), which is what the connector attachment store and the message dispatcher do.
+
+`CanvasService` takes the **listener**, because the projector must not import it: the service already
+calls `peekProjector` to publish (§1.3), and a direct call the other way would close the cycle. The
+call site is one line in `apps/server/src/index.ts`, immediately beside the one that is already
+there at `:2727`:
+
+```ts
+onProjectorRekey((oldId, newId) => sessionConnectorAttachmentStore.rekey(oldId, newId));
+onProjectorRekey((oldId, newId) =>
+  canvasService.rekeyScope(sessionScope(oldId), sessionScope(newId))
+);
+```
+
+`rekeyScope(from, to)` is **one SQL statement in one transaction** — `UPDATE canvas_documents SET
+scope = ? WHERE scope = ?` — so a reader either sees every row under the old scope or every row under
+the new one, never a split table. It is a no-op when the old scope holds nothing, which is the
+common case, and it does **not** republish: a rekeying session is mid-first-turn and its reader
+re-hydrates from the snapshot under the new id.
+
+**The document ids do not move with it, and that is deliberate.** `canvasDocumentId(scope, sourceKey)`
+is a hash of the scope (`document-key.ts:42-45`), so a rekey would in principle change the
+deterministic id of every row. Recomputing them would break every id already handed to the model in
+this turn's tool results. So `rekeyScope` rewrites **`scope` only** and leaves `id` alone; the id is
+opaque and the unique index is on `(scope, sourceKey)`, which is still unique after the rewrite. The
+one consequence is that a document opened before the rekey has an id derived from the retired scope —
+invisible to everyone, and a test asserts that re-opening the same source key after the rekey finds
+that same row rather than inserting a second one.
+
 #### 1.2 `CanvasService`: what is shared, what differs
 
 `RoomCanvasService` (`services/rooms/canvas/room-canvas-service.ts`) is already the single writer,
@@ -277,7 +315,7 @@ snapshot.
 
 Two edits keep it from landing in the wrong place:
 
-- `EVENTS_OUTSIDE_THE_TURN` (`session-state-projector.ts:198-201`) gains `'canvas'`. A person opening
+- `EVENTS_OUTSIDE_THE_TURN` (`session-state-projector.ts:198-202`) gains `'canvas'`. A person opening
   a document while no turn is running must not open an in-progress turn, and a document opened
   mid-turn must not be replayed as part of that turn's content.
 - `RECORDED_EVENT_TYPES` (`projector-persistence.ts:73-81`) does **not** gain it. The canvas is state,
@@ -346,31 +384,46 @@ that is right. What changes is where its state comes from and where a change goe
 (`app-store-helpers.ts:136-268`) are all **removed**, not left dormant. `knip` would flag them and
 the quality standard forbids a superseded path kept "just in case".
 
-The import runs once per session, in the client, on the cold connect that hydrates it:
+**The import waits for the canonical id, and deletes nothing until the server confirms.** A brand-new
+session streams under the request UUID the client minted and is rekeyed to the SDK's canonical id
+mid-first-turn (§1.1). Importing under the pre-rekey id would write rows into a scope that is about
+to be renamed, and — worse — deleting the local entry at that moment would destroy the only copy if
+the POSTs had not landed. So the import is gated on two facts the client already has:
+
+- **Canonical.** The client learns the canonical id twice over: `transport.postMessage` returns
+  `{ sessionId }` — "the SDK-canonical id the server resolved for this turn" — and
+  `use-session-submit.ts:419-424` already re-attaches the stream to it; and when the id resolves
+  after the 202, `session_status.retiredSessionId` (`session-stream.ts:942-951`) carries the retired
+  UUID and `useSessionRekeyRedirect` (`use-session-stream.ts:127-149`) already rewrites the URL. The
+  import subscribes to the same fact rather than inventing a third path. A session the client has
+  never sent a message on is **already** canonical — it has no pre-rekey id to be confused by — so
+  the common case waits for nothing.
+- **Confirmed.** The local entry is deleted only after every POST has returned `201`. A failed or
+  partial import leaves the local entry exactly where it was and retries on the next hydrate.
 
 ```
-if (snapshot.canvas.length === 0 and localStorage has an entry for this session):
-    POST each of that entry's documents, oldest openedAt first
-    delete the entry from the map
-else:
-    delete the entry from the map
+on cold connect, once the session id is canonical:
+    if localStorage has no entry for this session: stop
+    if snapshot.canvas is non-empty:            delete the local entry; stop
+    POST each of the entry's documents, oldest openedAt first
+    if every POST returned 201:                 delete the local entry
+    else:                                       keep it; retry next hydrate
 ```
 
-**Its idempotence rule is the emptiness check plus the delete, and both halves are load-bearing.**
-The check means a session whose server table already has anything is never re-seeded, so a second
-device that connects after the first has imported adds nothing. The delete means even a client that
-crashed between the POSTs and the delete cannot double-import, because the documents it already sent
-make the table non-empty. Two devices importing the same session concurrently converge anyway: the
-documents carry source keys, `canvas_documents_source_unique` is on `(scope, sourceKey)`, and an
-insert that collides refreshes the existing row rather than making a second one — `json` and `widget`
-documents, which have no source key, are the one case that can double, and they are the one case the
-store itself already treats as "every open is a fresh document".
+**Its idempotence rests on the emptiness check, and its safety on the confirm-before-delete.** The
+check means a session whose server table already holds anything is never re-seeded, so a second
+device connecting after the first has imported adds nothing — and a client that crashed mid-import
+does not double, because the documents it already sent make the table non-empty. Two devices
+importing concurrently converge anyway: the documents carry source keys,
+`canvas_documents_source_unique` is on `(scope, sourceKey)`, and a colliding insert refreshes the
+existing row rather than making a second. `json` and `widget` documents have no source key and are
+the one case that can double — and they are the one case the store itself already treats as "every
+open is a fresh document".
 
-After the import, the whole map key is removed. A person who never opens a given session again keeps
-one stale blob until they do; `MAX_CANVAS_SESSIONS` is gone, so the sweep is: on the first hydrate
-after this ships, **every** entry older than the LRU window is dropped whether or not its session was
-the one being opened. One sentence in the release note says the canvas now follows you between
-devices, and nothing asks the person to do anything.
+Entries for sessions the person never opens again are swept on any hydrate: once this ships the
+client drops every entry it did not just import whose `accessedAt` is older than the retired
+50-session window. One sentence in the release note says the canvas now follows you between devices,
+and nothing asks the person to do anything.
 
 #### 1.6 Transport
 
@@ -422,7 +475,14 @@ The room arm is unchanged. The session arm keeps returning `UiState` for the par
     "open": true,
     "viewers": 2,
     "documents": [
-      { "id": "…", "type": "diff", "title": "src/router.ts", "pinned": false, "active": true }
+      {
+        "id": "…",
+        "type": "diff",
+        "title": "src/router.ts",
+        "author": "Kai",
+        "pinned": false,
+        "active": true
+      }
     ],
     "count": 3
   },
@@ -450,6 +510,14 @@ Splitting them is what makes `UiStateSchema.canvas`'s removal safe: an older cli
 required of a client at all. `applyUiCommandToState` (`ui-tools.ts:69-122`) loses its canvas arms
 entirely — they existed to keep `contentType` plausible — and keeps only the panel, sidebar and agent
 arms it is actually right about.
+
+**The document shape is the one the room arm already uses**, so an agent reading a room's table and
+its own session's table parses one thing: `{ id, type, title, author, pinned }`, exactly as
+`get_ui_state`'s room arm returns today (`ui-tools.ts:243-267`). The session arm adds **one** field,
+`active`, set on at most one document per view; the room arm does not, and must not, because a room
+has **no shared active document** by design (`specs/room-canvas/` §9.3 — nothing steals anyone's
+tab). That is the only difference between the two, and it is a difference in the world rather than in
+the schema. A test asserts the two arms agree on the five shared keys.
 
 `viewers` is **live readers of this session's stream**, the exact session parallel of
 `RoomBroadcaster.subscriberCount`. `SessionStateProjector` gains `subscriberCount(): number`, counting
@@ -513,7 +581,7 @@ The shim already round-trips one command by `requestId`: the parent posts
     | { action: 'press';    key: string }
     | { action: 'scroll';   target?: Target; by?: number; to?: 'top' | 'bottom' }
     | { action: 'wait_for'; text?: string; selector?: string; gone?: boolean;
-                            networkIdle?: boolean; timeoutMs: number }
+                            fetchIdle?: boolean; timeoutMs: number }
     | { action: 'read_page'; selector?: string; maxChars: number },
   /** Set while a recording is running: answer with a keyframe too (§3). */
   capture?: boolean,
@@ -528,7 +596,8 @@ The shim already round-trips one command by `requestId`: the parent posts
   did?: string,
   /** How many elements the target matched, when the command had one. */
   matched?: number,
-  /** Always present when ok: where the page is now. */
+  /** Always present when ok: which document answered, and where its page is now. */
+  documentId?: string,
   page?: { title: string; url: string; focused: string | null },
   /** read_page only. */
   outline?: string,
@@ -552,7 +621,8 @@ and which are easy to lose by rewriting rather than extending:
 1. **The shim talks only to `window.parent`**, never to `/api/*`. The preview sandbox has no
    `allow-same-origin`, so the frame's origin is the opaque string `"null"` and it has no credential
    to send anywhere (`devtools-shim.ts:6-17`, ADR `260708-185519`). Driving changes nothing about
-   that, which is the whole of why it is safe to auto-allow (§2.5).
+   that, which is the whole of why it is safe to leave on a permission mode rather than behind a
+   consent door (§2.5).
 2. **The guard is source identity, not origin.** `ev.source !== parent` on the shim side
    (`devtools-shim.ts:477`); `ev.source !== frame.contentWindow` plus the known-origin check on the
    parent side (`use-devtools-bridge.ts:244-246`). Every opaque frame reports the same `"null"`
@@ -570,35 +640,81 @@ exactly as `awaitScreenshot` is, so a session rekey between request and result c
 `204`, and the same "pure sink, no session-existence check" posture `session-devtools.ts:54-64`
 documents.
 
-#### 2.2 Targeting the ACTIVE browser document
+#### 2.2 One driver seat per session, arbitrated on the server
 
 `use-devtools-bridge.ts:341-347` names the v1 limitation in full: the hook mounts once per open
 browser document, the capture request carries no target, so **every** bridge forwards it and the
-first ingest wins nondeterministically. Driving would make that worse — a click delivered to whichever
-preview answered first is a click nobody can reason about.
+first ingest wins nondeterministically. Driving would make that worse — a click delivered to
+whichever preview answered first is a click nobody can reason about.
 
-The fix is one field, and it fixes screenshots too:
+**Resolving it against the client's own `activeBrowserDocumentId` does not fix it**, and §1 is the
+reason: the headline of this spec is that one session is open in more than one window at a time. Two
+windows each hold their own `activeBrowserDocumentId`, each would consider itself addressed, and the
+race comes straight back with `act` verbs in it instead of screenshots. The arbiter has to be
+somewhere there is exactly one of, and that is the server.
 
-- `devtools_capture_request` and the new `devtools_action_request` session events each gain
-  `documentId: string | null`.
-- A bridge forwards a request only when `event.documentId === this.documentId`, **or** when
-  `event.documentId === null` and this document is the store's `activeBrowserDocumentId`
-  (`app-store-canvas.ts:119-207`). Every other bridge ignores it. No frame ever sees a command
-  addressed to another.
-- Every browser tool takes an optional `documentId`, defaulting to `null` — "the browser tab you are
-  looking at". `get_ui_state` lists the ids (§1.7), so naming one is possible and rarely necessary.
-- When no browser document is open at all, or the named id is not one, the tool answers immediately
-  with a sentence rather than waiting out a timeout.
+**The capture store keeps a driver table per session.** Each row is
+`{ clientId, documentId, activeAt }`, capped at eight rows and evicted oldest-first; the **driver
+seat** is the row with the greatest `activeAt`. It lives beside the capture buffers in
+`DevtoolsCaptureStore`, keyed by session id like everything else there, and moves across a session
+rekey with them (`rekeySession`, `devtools-capture-store.ts:283-289`).
 
-The stale comment at `:341-347` is **rewritten, not deleted**: it becomes the record of how the
-request is targeted, so the next reader finds the answer where the question was.
+**How a window claims the seat.** The bridge already posts to
+`POST /api/sessions/:id/devtools/ingest`, and `DevtoolsIngestSchema` (`schemas.ts:5750-5762`) already
+carries `documentId`. Two additions:
+
+- The ingest body gains `active?: boolean` — "the browser document this window is showing is the one
+  on screen". The bridge sets it when its document becomes the window's `activeBrowserDocumentId`,
+  when the window regains focus, and on the handshake; it posts `active: false` on blur, on document
+  close, and on unmount.
+- The **route reads `X-Client-Id`**, which it does not today: `session-devtools.ts` validates the body
+  and calls `ingest` with nothing else. It is read inline exactly as the three handlers that already
+  read it do (`routes/sessions.ts:1212-1213`, `session-ui-action-handler.ts:80`,
+  `session-command-intent-handler.ts:121`), including their `randomUUID()` fallback — a client that
+  sends no id gets a stable-per-request one and simply never wins a seat it did not claim.
+
+A claim with `active: true` sets that row's `activeAt` to now, which takes the seat. `active: false`
+clears the row; if it held the seat, the seat falls to the next most recent row, and to nobody when
+there is none.
+
+**How a request is addressed.** `devtools_capture_request` and the new `devtools_action_request`
+session events each carry **both** `targetClientId` and `documentId`, resolved **server-side** before
+the request is minted:
+
+| The tool passed              | The server addresses                                                |
+| ---------------------------- | ------------------------------------------------------------------- |
+| no `documentId`              | the seat: its `clientId` and its `documentId`                       |
+| a `documentId`               | the most recent row for that document; its `clientId` is the target |
+| a `documentId` nobody claims | nothing is minted — the tool answers immediately (below)            |
+| nothing claimed at all       | nothing is minted — the tool answers immediately (below)            |
+
+A bridge answers **only** when `event.targetClientId === transport.clientId` **and**
+`event.documentId === this.documentId`. It consults `activeBrowserDocumentId` to decide what to
+**claim**, never to decide what to **answer** — local state produces a claim, the server arbitrates,
+and exactly one window is ever addressed. This closes the race for `browser_screenshot` too, which is
+the bug `:341-347` documents; the stale comment there is **rewritten, not deleted**, so the next
+reader finds the answer where the question was.
+
+**The "no driver" sentence**, returned immediately rather than after a timeout:
+
+> No window is showing a browser preview for this session right now, so there is nothing to drive.
+> Open one with browser_navigate, or bring the window with the preview to the front.
+
+and, when a `documentId` was named that no window is holding:
+
+> No window has that page open any more. Call get_ui_state to see which browser tabs are open.
+
+**Every driving result names the document it acted on** — `documentId` and the tab's `title` sit
+beside `did`, `matched` and `page` (§2.3), so a turn that drove one of three previews can say which,
+and a person reading the transcript can tell.
 
 #### 2.3 The six tools
 
 All six are registered as `ui` capabilities (§5) and reach claude-code, Codex and OpenCode alike.
-Every one returns what it did, how many elements it matched, and one line of where the page is now —
-because an agent that clicked something needs to know **what** it clicked at least as much as that
-the click succeeded.
+Every one returns what it did, how many elements it matched, **which document it acted on** (its
+`documentId` and tab title, §2.2) and one line of where that page is now — because an agent that
+clicked something needs to know **what** it clicked, and in which of its previews, at least as much
+as that the click succeeded.
 
 ```ts
 /** Shared across the four verbs that name an element. Exactly one route must be given. */
@@ -637,19 +753,20 @@ const DOCUMENT = {
     .string()
     .optional()
     .describe(
-      'Which browser tab to act in. Leave it out for the one on screen. Ids come from get_ui_state.'
+      'Which browser tab to act in. Leave it out for the one whose window last brought a preview ' +
+        'to the front. Ids come from get_ui_state.'
     ),
 };
 ```
 
-| Tool                | Input beyond `DOCUMENT`                                                               | Answers                        |
-| ------------------- | ------------------------------------------------------------------------------------- | ------------------------------ |
-| `browser_click`     | `TARGET`                                                                              | `{ did, matched, page }`       |
-| `browser_type`      | `TARGET` (optional — the focused field), `text` (≤ 10 000), `clear?`, `submit?`       | `{ did, matched, page }`       |
-| `browser_press`     | `key` — one key or a chord, `"Enter"`, `"Escape"`, `"Control+a"`                      | `{ did, page }`                |
-| `browser_scroll`    | `TARGET` (optional), `by?` (pixels, ±), `to?` (`top`/`bottom`)                        | `{ did, page }`                |
-| `browser_wait_for`  | `text?`, `selector?`, `gone?`, `networkIdle?`, `timeoutMs?` (≤ 10 000, default 5 000) | `{ did, waitedMs, page }`      |
-| `browser_read_page` | `selector?` (a subtree root), nothing else                                            | `{ outline, truncated, page }` |
+| Tool                | Input beyond `DOCUMENT`                                                             | Answers                        |
+| ------------------- | ----------------------------------------------------------------------------------- | ------------------------------ |
+| `browser_click`     | `TARGET`                                                                            | `{ did, matched, page }`       |
+| `browser_type`      | `TARGET` (optional — the focused field), `text` (≤ 10 000), `clear?`, `submit?`     | `{ did, matched, page }`       |
+| `browser_press`     | `key` — one key or a chord, `"Enter"`, `"Escape"`, `"Control+a"`                    | `{ did, page }`                |
+| `browser_scroll`    | `TARGET` (optional), `by?` (pixels, ±), `to?` (`top`/`bottom`)                      | `{ did, page }`                |
+| `browser_wait_for`  | `text?`, `selector?`, `gone?`, `fetchIdle?`, `timeoutMs?` (≤ 10 000, default 5 000) | `{ did, waitedMs, page }`      |
+| `browser_read_page` | `selector?` (a subtree root), nothing else                                          | `{ outline, truncated, page }` |
 
 **Refusals are plain sentences, and each names the fix.** Zero or more than one targeting route:
 "Name the element one way — a role and name, some visible text, or a CSS selector — not several."
@@ -657,6 +774,16 @@ No match: "Nothing on the page matched that. Call browser_read_page to see what 
 matches with no `nth`: "Four things matched that. Pass nth to pick one, or name it more exactly."
 An element that matched but cannot be clicked (hidden, disabled, zero-size): "That matched a
 <button> that is disabled, so the click would do nothing."
+
+**`fetchIdle`, named for what it actually measures.** The shim wraps `window.fetch`
+(`devtools-shim.ts:319-354`) and `XMLHttpRequest.prototype.open`/`send` (`:357-394`) to record
+completed requests; it keeps **no in-flight counter**, so nothing in the page knows what "network
+idle" would mean, and nothing there can see an image, a stylesheet, a `sendBeacon`, a WebSocket or a
+service worker at all. Calling the mode `networkIdle` would promise all of that. So the wrappers gain
+one integer — incremented on entry, decremented in the settle path of both the success and the
+failure branch of each — and the mode is called **`fetchIdle`**: _no `fetch` or `XMLHttpRequest` has
+been in flight for 500 ms_. The tool's description says exactly that, including what it does not
+cover, so an agent waiting on an image is told to wait on the element instead.
 
 **A driving verb never navigates on its own**, and a click that navigates is reported as such: the
 shim's existing `'navigated'` message (`devtools-shim.ts:397-401`) already fires on `pagehide`, and
@@ -710,15 +837,15 @@ falling back to an offset-parent-and-rects check. Budget: `maxChars` defaults to
 past it the outline is truncated **breadth-first from the deepest nodes**, so the page's structure
 survives and its leaves are what is lost, and `truncated: true` says so.
 
-#### 2.5 Tiers, reach, auto-allow, and the no-preview path
+#### 2.5 Tiers, reach, approval, and the no-preview path
 
-| Property     | Value                                                                               |
-| ------------ | ----------------------------------------------------------------------------------- |
-| tier         | `act` — it changes something a person can see                                       |
-| reach        | `client-only` — the same reach the canvas actions carry (`schemas.ts:5463-5481`)    |
-| MCP servers  | `['in-session']` only. Never `/mcp`                                                 |
-| auto-allowed | yes, with a justification sentence in `AUTO_ALLOW_ACT_REASONS`                      |
-| annotations  | `readOnlyHint: true` for `browser_read_page` only; the other five are not read-only |
+| Property     | Value                                                                            |
+| ------------ | -------------------------------------------------------------------------------- |
+| tier         | `act` for click/type/press/scroll; `observe` for `wait_for` and `read_page`      |
+| reach        | `client-only` — the same reach the canvas actions carry (`schemas.ts:5463-5481`) |
+| MCP servers  | `['in-session']` only. Never `/mcp`                                              |
+| auto-allowed | **no** — see below                                                               |
+| annotations  | `readOnlyHint: true` for `browser_read_page` and `browser_wait_for` only         |
 
 `servers: ['in-session']` is the load-bearing half. The in-session surface is **both** the claude-code
 in-process server and the loopback `dorkos` server Codex and OpenCode are injected with
@@ -727,12 +854,37 @@ runtimes **and** keeps these tools off the external `/mcp` exactly as
 `register-from-definitions.ts:30-50` describes today. A test asserts no `ui.*` tool is registered on
 the external server, which turns that paragraph's stated fact into a checked one.
 
-The `AUTO_ALLOW_ACT_REASONS` entry (`mcp-tool-gate.test.ts:518-563`; every `act`-tier or
-identity-scoped entry on `DORKOS_AGENT_TOOLS` must have one or the test fails):
+**Not auto-allowed, and that corrects the ideation.** `01-ideation.md` B2 says the driving tools are
+"auto-allowed with a justification sentence in the table". The code says the precedent runs the other
+way. Auto-allow is membership of `DORKOS_AGENT_TOOLS` (`interactive-handlers.ts:116-170`), which the
+gate reads at `:855` — and the three existing `browser_*` tools are **not** on it, while
+`READ_ONLY_TOOLS` (`:44-52`) holds only Claude Code's own built-ins. So a `browser_read_console` call
+already raises an approval card under any asking mode. Driving a page is strictly more consequential
+than reading its console; putting the driving verbs on the auto-allow list while the reads stay off it
+would be backwards. Therefore:
 
-> Acts only inside the sandboxed preview frame DorkOS itself serves — an opaque origin with no
-> credentials, no reach to `/api/*`, and no path to the machine. It is the same frame
-> `browser_screenshot` already reads, and the same page the person is looking at.
+- **no phase edits `DORKOS_AGENT_TOOLS`**, and `AUTO_ALLOW_ACT_REASONS` (`mcp-tool-gate.test.ts:518-563`)
+  keeps its 22 entries through every phase. That test pins the set **both ways**
+  (`:555-579`: `needsAReason` from `DORKOS_AGENT_TOOLS ∩ (act ∨ identity-scoped)` must `toEqual` the
+  table's keys), so an entry added without a list change fails just as loudly as one omitted.
+- The driving verbs are decided by the session's permission mode like every other unlisted tool: under
+  the shipped `bypassPermissions` default they do not prompt, and under an asking mode the person sees
+  a card the first time an agent clicks something. For a verb that acts on a page, that is the right
+  default.
+- Each verb's description carries the sentence that would have been the justification, because it is
+  what a person reading that card needs:
+
+  > Acts only inside the sandboxed preview frame DorkOS itself serves — an opaque origin with no
+  > credentials, no reach to `/api/*`, and no path to the machine. It is the same frame
+  > `browser_screenshot` already reads, and the same page you are looking at.
+
+**Q4 must not change `control_ui`'s auto-allow, and that is a test, not a hope.** `control_ui` and
+`get_ui_state` **are** on `DORKOS_AGENT_TOOLS`, by their prefixed in-session names, and
+`isAutoAllowedCall` (`interactive-handlers.ts:416-421`) additionally gates `control_ui` per argument
+on `UI_COMMAND_REACH[action] === 'client-only'`. A capability registered on the in-session server
+produces the **same** prefixed tool name, so the move in §5 leaves both mechanisms working untouched —
+and a test asserts a `control_ui` call with a `client-only` action still auto-allows, and one with
+`apply_layout` still does not, after the move.
 
 **The no-preview path, three distinct answers instead of one silence.** Today a capture with nothing
 open waits 8 s and then returns `NO_PREVIEW_NOTE`. Driving distinguishes:
@@ -816,13 +968,14 @@ server-side encode would mean shipping N base64 PNGs up the wire to decode them 
 quantizes to a shared 256-colour palette built from the **first** frame plus the last, encodes, and
 uploads the result once.
 
-| Bound                    | Value | Why                                                                                                       |
-| ------------------------ | ----- | --------------------------------------------------------------------------------------------------------- |
-| `MAX_RECORDING_FRAMES`   | 60    | ~60 actions is a long session; past it the run keeps working and stops filming, with a sentence           |
-| `RECORDING_LONG_EDGE_PX` | 800   | Downscaled from the 1568 px capture. Readable, and a quarter of the pixels                                |
-| `RECORDING_FRAME_MS`     | 500   | Two frames a second. It is a slideshow of actions, and it should look like one                            |
-| `MAX_RECORDING_BYTES`    | 8 MiB | The encoded GIF. Over it, the client re-encodes once at half the long edge, then gives up with a sentence |
-| one per session          | —     | The state machine above                                                                                   |
+| Bound                       | Value  | Why                                                                                                       |
+| --------------------------- | ------ | --------------------------------------------------------------------------------------------------------- |
+| `MAX_RECORDING_FRAMES`      | 60     | ~60 actions is a long session; past it the run keeps working and stops filming, with a sentence           |
+| `RECORDING_LONG_EDGE_PX`    | 800    | Downscaled from the 1568 px capture. Readable, and a quarter of the pixels                                |
+| `RECORDING_FRAME_MS`        | 500    | Two frames a second. It is a slideshow of actions, and it should look like one                            |
+| `MAX_RECORDING_BYTES`       | 8 MiB  | The encoded GIF. Over it, the client re-encodes once at half the long edge, then gives up with a sentence |
+| `RECORDING_STOP_TIMEOUT_MS` | 30 000 | The encode-and-upload wait. Past it, a plain failure and the buffer is dropped                            |
+| one per session             | —      | The state machine above                                                                                   |
 
 These are **constants in `apps/server/src/config/constants.ts`'s `WORKBENCH` block, not config
 fields.** Nothing about them is a preference a person would want to set, and the cost of a config
@@ -886,10 +1039,16 @@ already uses.
 
 The server, in order, and **all of it before the entry is written**:
 
-1. **Resolve and boundary-check every path.** `validateBoundary(userPath)` (`lib/boundary.ts:367`),
-   the same call every file route makes — an absolute path outside the boundary is refused with the
-   boundary's own sentence, and a path that is not a regular file is refused by name. Nothing here
-   widens what an agent can read: a path it cannot read today it cannot attach today.
+1. **Resolve every path inside the agent's OWN working directory.** Not `validateBoundary(userPath)`
+   (`lib/boundary.ts:367`) on its own: that confines to the **global** boundary, which in a project
+   room contains every member's worktree, so an agent could name another agent's copy and attach it.
+   The call is `resolveWithinCwd(agentCwd, path)` (`lib/file-route-guards.ts:137-146`) — the guard
+   `routes/files.ts` and `routes/diff.ts` already use — which validates the cwd and then validates
+   the target **against that cwd**, canonicalizing through the deepest ancestor on disk so a
+   symlinked parent is followed rather than read as text (DOR-1185). A path outside the agent's own
+   cwd is refused with the boundary's own sentence; a path that is not a regular file is refused by
+   name. Nothing here widens what an agent can read: a file it could not open today it cannot attach
+   today, and another member's worktree is not attachable at all.
 2. **Check the caps**, which are the human route's caps, read from the same place
    (`configManager.get('uploads')`, `config-schema.ts:2140-2151`): at most `maxFiles` (10) per post,
    at most `maxFileSize` (10 MiB) each, and the `allowedTypes` mime allow-list. A refusal names the
@@ -969,6 +1128,46 @@ session's window captured, and a surface with no session has no window.
 `getDevtoolsTools` (`mcp-tools/index.ts:227-237`) stop contributing these five, and the capability
 registry supplies them to all three runtimes. One implementation, one description, one input schema.
 
+**Codex's `dorkos_ui` server is retired in the same PR, and that is a decision with a loser.** Today
+`control_ui` exists in **three** copies, and `mcp-tool-tiers.ts:247-253` says so in a standing
+comment: "A third copy of this tool is registered on the codex-scoped `dorkos_ui` server, which does
+NOT go through the gate… if this tool were ever promoted, that server would need the gated registrar
+first." The third copy is `codex-ui-mcp-server.ts:38,55-66` — one tool, `control_ui`, with a
+**deliberately stubbed handler** that produces no effect and only echoes `{ success, action }`,
+because that server has no session in scope. The real effect is produced downstream in
+`codex/event-mapper.ts:398-405` and `mapControlUi` (`:631-674`), which intercepts the resulting
+`mcp_tool_call` item and turns it into a `ui_command` StreamEvent.
+
+**We retire it**, rather than keeping it and declining to register `ui.control` for codex. The reason
+the stub exists is that its server has no session; the loopback `dorkos` server **does** — it takes
+`sessionId` from the verified `principal.claims.canonicalSessionId`
+(`agent-runtime-server.ts:23-41`), never from an argument. Every premise of the split is therefore
+gone, and keeping it would mean two `control_ui` implementations for one runtime, one of them outside
+the gate, forever. What moves with it:
+
+| Concern today                                                                     | Where it lands                                                                                                         |
+| --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| the refusal reaching the model (`codex-ui-mcp-server.ts:58-65`)                   | the capability's own error result — the same channel, and a direct one                                                 |
+| `isUiActionRefusedOnCodex` (reach ≠ `client-only`, `ui-command-consent.ts:69-74`) | the `ui.control` handler, as a **surface** rule (below)                                                                |
+| `isUiActionRefusedInRoom` + `NOT_IN_A_ROOM_MESSAGE` (`event-mapper.ts:655-662`)   | already enforced by `RoomCanvasService.apply`'s `CANVAS_VERBS` allow-list, which the handler calls                     |
+| pushing the `ui_command` event                                                    | the handler, through `peekProjector(sessionId)?.ingest(...)`, **carrying the `applied` stamp** when it wrote to a room |
+| the name reservation (`codex/mcp-server-config.ts:42,202-219`)                    | removed, with its tests                                                                                                |
+
+**The `applied` stamp is the part that must not be dropped.** `room-turn-runner.ts:1501-1503` applies
+any `ui_command` whose `applied` is `undefined`, and that tap is what makes codex's canvas writes work
+today. Once codex's `control_ui` calls `apply` itself, it **must** stamp, or every codex canvas
+operation applies twice. The test for this already exists in shape for claude-code
+(`specs/room-canvas/` §5.5) and is duplicated for codex in the same PR.
+
+**The consent rule becomes a property of the surface, not of a runtime name.**
+`isUiActionRefusedOnCodex` refuses any action whose reach is not `client-only`, because a Codex
+session has no way to ask the person first. That is true of the **loopback runtime surface** as a
+whole, not of Codex in particular — OpenCode reaches DorkOS the same way and today has no rule at all
+because it has no `control_ui`. So the predicate is renamed to what it tests and moved to the handler:
+a `ui.control` call arriving with a `runtime` principal refuses a non-`client-only` action with
+`uiActionRefusalMessage`'s sentence, reworded to name the surface rather than Codex. OpenCode gains a
+refusal it never had, which regresses nothing, because it never had the verb.
+
 **What changes in the guards, and the arithmetic to re-derive before each PR.** Every phase that adds
 a verb reds a count guard _by design_; none of these numbers is a thing to "fix" by changing an
 assertion without reading its comment trail.
@@ -981,23 +1180,31 @@ assertion without reading its comment trail.
 | `mcp-tool-gate.test.ts:317-323` — hand-registered in-session | 47    | 47       | 47  | 47  | **42** |
 | `mcp-tool-gate.test.ts:317-323` — `MCP_TOOL_TIERS` keys      | 47    | 47       | 47  | 47  | **42** |
 | `mcp-tool-gate.test.ts:317-323` — external                   | 40    | 40       | 40  | 40  | 40     |
-| `AUTO_ALLOW_ACT_REASONS` entries (`:518-563`)                | 22    | 22       | 26  | 28  | 28     |
+| `AUTO_ALLOW_ACT_REASONS` entries (`:518-563`)                | 22    | 22       | 22  | 22  | 22     |
 
 - **Always-loaded stays nine.** None of these verbs is one a turn cannot search for first, and the
   eager slot is the scarcest thing in the prompt. (While editing that test, fix its stale title: it
   says "exactly the eight" and asserts nine, since `read_canvas` joined in DOR-1999.)
 - **The external count never moves.** The `ui` domain declares `servers: ['in-session']`, so nothing
   it adds reaches `/mcp`, and it contributes nothing to `READ_ONLY_MCP_TOOL_NAMES` or
-  `GUARDED_READ_ONLY_TOOL_NAMES` (`tool-security.ts:160-198`). A test asserts that directly, which
+  `GUARDED_READ_ONLY_TOOL_NAMES` (`tool-security.ts:160-177`). A test asserts that directly, which
   turns `register-from-definitions.ts:30-50`'s stated fact into a checked one.
-- **`AUTO_ALLOW_ACT_REASONS` gains one entry per `act`-tier verb** (`browser_click`, `browser_type`,
-  `browser_press`, `browser_scroll` in Q2; the two recording verbs in Q3) — the four driving verbs
-  share the §2.5 sentence, and the recording verbs say that a recording is frames of a page the
-  person is already looking at, written to the session's own temp directory.
+- **`AUTO_ALLOW_ACT_REASONS` never moves either**, for the reason §2.5 gives: no phase edits
+  `DORKOS_AGENT_TOOLS`, and that test pins the table against it in both directions (`:555-579`).
+- **`MCP_TOOL_TIERS` is half of a pair, and the other half is in `packages/shared`.**
+  `mcp-tool-tiers.ts:294-299` are compile-time exhaustiveness assertions comparing the **tool-name key
+  sets** of `MCP_TOOL_TIERS` and `MCP_TOOL_GATE_GROUPS` (`packages/shared/src/mcp-tool-groups.ts:177-237`,
+  whose keys are `McpToolGroupName`). So Q4 removes the same five names from **both** tables or
+  `tsc` fails — and removing them from the groups table empties the `'ui'` and `'devtools'` gate
+  groups entirely (`mcp-tool-groups.ts:185-190` are their only members). Q4 therefore also drops
+  `'ui'` and `'devtools'` from the `ToolGateGroup` union (`:125-136`) and from
+  `SESSION_CORE_TOOL_GROUPS` (`:274`), which shortens `SESSION_CORE_TOOL_NAMES` to the `core` group.
+  **The visible consequence, stated rather than discovered:** the app's always-enabled tool-group row
+  stops listing a UI group and a devtools group, because those tools are no longer gated by group at
+  all — they are capabilities, gated by tier. A test asserts the row still renders and that no
+  `ui.*` tool is missing from the session's advertised set.
 - **`capability-conformance.test.ts:472-580` `sampleInputs`** gains a realistic input per new
   capability id, or the conformance run cannot invoke it.
-- **`MCP_TOOL_TIERS`** (`mcp-tool-tiers.ts:125-261`) loses five entries in Q4; its two exhaustiveness
-  assertions (`:294-299`) fail until `McpToolName` loses them too.
 
 ### 6. Follow mode (B6)
 
@@ -1008,12 +1215,22 @@ A person can follow another **person's** browser view in a room. A toggle on the
 reads "Follow Ana"; while it is on, the follower's frame goes where Ana's goes.
 
 **The wire is a `signal` frame, because it is exactly what signals are for**: live, never logged,
-never replayed (`room-publisher.ts:159-190`). `SignalTypeSchema`
-(`packages/shared/src/relay-envelope-schemas.ts:39-42`) gains a sixth member, `'view'`, and
-`RoomSignalEventSchema` gains one optional payload:
+never replayed (`room-publisher.ts:159-190`). **It declares no new signal name**, because
+`specs/rooms/02-specification.md:229` forbids one:
+
+> Ephemeral signals never enter the room log… They reuse `SignalTypeSchema`
+> (`packages/shared/src/relay-envelope-schemas.ts:21`) rather than declaring new names.
+
+That rule has been kept once already: room presence reused `'progress'` rather than minting a
+`'working'` signal, and rooms emit exactly that one member today (`room-service.ts:129`) out of the
+six the enum holds (`typing`, `presence`, `read_receipt`, `delivery_receipt`, `progress`,
+`backpressure`) — the other five are the relay's. So follow mode reuses **`'presence'`**, which is
+the member that already means "where this member is", and adds a payload to
+`RoomSignalEventSchema` beside its existing optional `state`, `entryId`, `since`, `activity`,
+`heldBehind` and `outcome`:
 
 ```ts
-    /** Where this member is looking, for follow mode. Only ever sent with signal `'view'`. */
+    /** Where this member is looking. Present only on a `presence` signal from a followed person. */
     view: z
       .object({
         documentId: z.string().min(1),
@@ -1023,12 +1240,13 @@ never replayed (`room-publisher.ts:159-190`). `SignalTypeSchema`
       .optional(),
 ```
 
-Adding a member to the shared vocabulary is the right size of change: the enum already holds three
-members rooms never emit (`typing`, `read_receipt`, `delivery_receipt` — rooms emit only `'progress'`
-for agents, `room-trigger.ts:472-478`), so "a member one surface uses and the other does not" is the
-file's normal shape rather than a new precedent. A test asserts no relay adapter maps to `'view'`.
+**The payload is the discriminator**, exactly as `state` already discriminates an agent's presence
+from a bare one: a `presence` frame with `view` is a follow position, a `presence` frame with `state`
+is an agent's work claim, and neither reads the other's field. A schema test refuses a frame carrying
+both, and refuses `view` on any signal that is not `presence`. Nothing is added to
+`SignalTypeSchema`, so nothing changes for the relay.
 
-The rules, each a mechanism:
+The rules, each a mechanism:The rules, each a mechanism:
 
 - **Publish only while somebody is following.** The server tells a client it is being followed — the
   room stream already knows who has a follow claim open — and the client publishes nothing until then.
@@ -1096,9 +1314,16 @@ The room-canvas table already stores what this needs: `treeKind` is one of `room
 - **The component is the one that exists.** `CanvasDiffContent` → `CodeMirrorDiff`
   (`features/diff-review/ui/`) already renders a two-document comparison with a per-chunk gutter; it
   is handed the worktree copy and the room's `main` copy instead of the file and its baseline.
-- **"Merge into the room" is on the diff header, and only the operator sees it.** It calls the
-  existing server-mediated merge — `RoomMergeService.merge(roomId, callerAuthorId, { summary,
-worktree })` (`room-merge-service.ts:249-278`) — which posts its usual line through `postMergeEvent`
+- **"Merge into the room" is on the diff header, and only the operator sees it.** It needs a
+  `Transport` method, and **there is none**: neither `Transport` nor `RoomTransport`
+  (`packages/shared/src/transport-rooms.ts`, 24 methods) exposes the merge, which has only ever been
+  reached by an agent through `merge_to_room_main`. So `RoomTransport` gains
+  `mergeRoomMain(roomId, input: { summary: string; worktree: string }): Promise<RoomMergeResult>`,
+  landing in all three implementations — a `createRoomMethods` entry for `HttpTransport` against the
+  existing route, a `roomStubs` entry for `DirectTransport` (the Obsidian shell has no rooms at all,
+  so it refuses in a sentence), and a `vi.fn()` in `createMockTransport`. Behind it, the same
+  server-mediated merge — `RoomMergeService.merge(roomId, callerAuthorId, { summary, worktree })`
+  (`room-merge-service.ts:249-278`) — which posts its usual line through `postMergeEvent`
   and **wakes nobody** (`room-system-posts.ts:160-179`: a `post`, `mentions: []`, cascade spent at the
   ceiling, never dispatched). No new merge path, no client-side git, and no agent-reachable verb:
   agents keep `merge_to_room_main` and gain nothing here.
@@ -1144,20 +1369,43 @@ worktree })` (`room-merge-service.ts:249-278`) — which posts its usual line th
   > No such room. Check the id — `get_room` or `list_member_rooms` will tell you which rooms you are
   > in.
 
-- **The turn id is synthetic, derived, and capped like any other.** The room's per-turn ceiling is
-  keyed by `turnId` (`room-canvas-service.ts:1197-1199`), so a targeted write needs one. It is
-  `\`${callingTurnId}:${roomId}\`` — derived from the calling turn rather than minted fresh, so a
-  turn that targets one room twenty times is refused on the fourth exactly as a room turn is, and a
-  turn that targets two rooms gets one allowance each. Deriving rather than minting is what makes the
-  ceiling hold across calls within one turn.
-- **The coalesced line posts when the calling turn ends.** The room's `finishTurn(turnId)` is called
-  today from `collectReply`'s `finally` (`room-turn-runner.ts:1537-1544`). A targeted write may come
-  from a session turn that no room runner is watching, so the caller that owns the calling turn calls
-  `finishTurn` for every synthetic turn id it opened, in **its** end-of-turn path — for a room turn
-  that is the same `finally`, and for a direct session turn it is the `turn_end` the projector already
-  emits. The service's `closedTurns` bookkeeping (`:1128-1144`) means a late operation still gets its
-  own line rather than reopening a dead ledger, so a turn whose process dies loses the line and keeps
-  the rows, which is already the room behaviour.
+- **A direct session turn has no turn id, so the seam mints one — and there is exactly one place that
+  can.** `turnId` exists today only under `session.roomTurn`, threaded from the room runner
+  (`specs/room-canvas/` §5.3); `finishTurn` has one call site, `collectReply`'s `finally`
+  (`room-turn-runner.ts:1537-1544`); and the projector holds no room ledger. A targeted write from a
+  direct session turn has none of that. Rather than thread a turn id through the message dispatcher
+  into every runtime — which would mean four adapters and a new `MessageOpts` field for a feature none
+  of them needs — the seam is the **turn boundary the projector already publishes**, which is
+  server-owned, runtime-neutral, and already subscribed to by exactly this kind of subsystem:
+
+  ```ts
+  // apps/server/src/index.ts, beside the rekey subscription of §1.1
+  onProjectorTurnBoundary((sessionId, kind) => {
+    if (kind === 'turn_end') canvasService.finishTargetedTurns(sessionId);
+  });
+  ```
+
+  `onProjectorTurnBoundary` (`session-state-projector.ts:2515`, notified at `:668` for `turn_end` and
+  `interaction_resolved`) is the same hook the message dispatcher already uses
+  (`message-dispatcher.ts:2280`).
+
+- **The synthetic turn id is `session:<sessionId>:<n>:room:<roomId>`**, where `n` is the count of
+  `turn_end` boundaries the service has seen for that session. It is constant for the whole of one
+  turn, so the room's per-turn ceiling (`room-canvas-service.ts:1197-1199`) holds across every call
+  in it — twenty targeted writes to one room are refused at the fourth, exactly as a room turn is —
+  and it changes at the boundary, so the next turn gets fresh allowances. Two rooms targeted in one
+  turn get one allowance each, because the room id is in the key. A **room** turn keeps its own
+  `turnId` from the runner and is unaffected: `finishTargetedTurns` only ever finishes ids in the
+  `session:` namespace, so the two paths cannot finish each other's ledgers.
+
+- **The coalesced line posts at that boundary.** `finishTargetedTurns(sessionId)` calls the existing
+  `finishTurn` once per synthetic id opened under the turn that just ended, which composes and posts
+  one line per targeted room and clears the ledger. It never throws, exactly as `finishTurn` never
+  does. A session whose process dies mid-turn never reaches the boundary; the service's `closedTurns`
+  and `LEDGER_TTL_MS` bookkeeping (`:1128-1144`, `:1160-1183`) already covers that — a late operation
+  gets its own line, and a ledger nobody closes ages out in two hours. The rows survive either way;
+  only the line is lost, which is already the room behaviour.
+
 - **A room turn without `target` behaves exactly as today.** `session.roomTurn` still decides the
   default surface; `target` only ever names a _different_ room, and naming the room the turn is
   already in is accepted and is a no-op distinction.
@@ -1200,21 +1448,26 @@ worktree })` (`room-merge-service.ts:249-278`) — which posts its usual line th
      indexes are present, the column list is complete, and the copy carries every row
      (`.claude/rules/testing.md:317`).
 2. **Shared schemas**, every one additive or optional so an older client parses a newer server:
-   - `SessionEventSchema` (`session-stream.ts:356-790`) gains a `canvas` member (§1.3).
+   - `SessionEventSchema` (`session-stream.ts:356-790`) gains a `canvas` member (§1.3);
+     `devtools_capture_request` gains `targetClientId` and `documentId`, and
+     `devtools_action_request` joins it (§2.2); `DevtoolsIngestSchema` (`schemas.ts:5750-5762`) gains
+     `active` (§2.2).
    - `SessionSnapshotSchema` (`:897-920`) gains `canvas: CanvasDocument[]` (§1.4).
-   - `UiStateSchema.canvas` (`schemas.ts:5587-5607`) is **removed** — the client stops sending its
+   - `UiStateSchema.canvas` (`schemas.ts:5585-5623`) is **removed** — the client stops sending its
      view of the canvas — and a new `UiStateReport` schema carries what `get_ui_state` returns
      (§1.7). This is the one **non-additive** schema change in the spec, and the split is what makes
      it safe: nothing new is ever required of a client, and the report is composed server-side and
      never parsed from one.
    - `UiCommandSchema` (`:5276-5285`) gains `target` on the six canvas verbs, and
      `CONTROL_UI_INPUT` (`ui-tool-contract.ts`) gains the matching optional field (§9).
-   - `SignalTypeSchema` (`relay-envelope-schemas.ts:39-42`) gains `'view'`; `RoomSignalEventSchema`
-     gains an optional `view` payload (§6).
+   - `RoomSignalEventSchema` gains an optional `view` payload, carried on the existing `'presence'`
+     signal. **`SignalTypeSchema` (`relay-envelope-schemas.ts:39-42`) is not touched** — declaring a
+     new signal name is what `specs/rooms/02-specification.md:229` forbids (§6).
    - `rooms.post`'s capability input gains `attachments?: string[]` (§4).
    - `CanvasDocumentSchema` (`room-schemas.ts:888-940`) gains an optional `threadRootEntryId`.
 3. **`Transport`** — six session-canvas methods under a new `// --- Session canvas ---` banner
-   (§1.6), each landing in `HttpTransport`, `DirectTransport` and `createMockTransport`.
+   (§1.6), plus `RoomTransport.mergeRoomMain` in Q6 (§8) — the merge has never had a client method.
+   Each lands in `HttpTransport`, `DirectTransport` and `createMockTransport`, or the build breaks.
 4. **Removed, not deprecated:** `STORAGE_KEYS.CANVAS_SESSIONS` and `MAX_CANVAS_SESSIONS`
    (`constants.ts:9, 16`), `PersistedCanvasDocument`, `CanvasSessionEntry`, `readCanvasSession`,
    `writeCanvasSession` and their legacy normalizers (`app-store-helpers.ts:136-268`),
@@ -1226,7 +1479,31 @@ worktree })` (`room-merge-service.ts:249-278`) — which posts its usual line th
    `config-schema.ts` edit, no `projectVersion` bump, no `CONFIG_MIGRATIONS` key, and no
    `merged-migration-hashes.ts` change — stated explicitly so a reviewer checks the claim rather
    than inferring it from silence.
-6. **`AGENTS.md`'s service-domain census** gains `canvas`, and
+6. **Retention for `session:` rows, because nothing cascades them.** A `room:` row is deleted by the
+   room's `ON DELETE cascade`. A `session:` row has nothing to hang off: sessions are runtime-owned
+   (ADR-0310) and **DorkOS has no session deletion at all** — there is no `DELETE /api/sessions/:id`
+   in `routes/sessions.ts`, only `DELETE /:id/queue/:messageId` (`:1306`). What exists instead is a
+   runtime **reporting a session gone**, and a two-phase precedent for reclaiming state behind it:
+
+   - **Mark.** `onSessionRemoved` (`session-list-broadcaster.ts:656-677`) fires when a runtime's
+     watcher reports a conversation no longer exists (`session-list-watcher.ts:119-129` →
+     `session-list-broadcaster.ts:638`). `CanvasService` subscribes and records the id, exactly as
+     `noteSessionOrphaned` does (`message-dispatcher.ts:2182-2183`, wired at `:2282`).
+   - **Sweep.** `sweepOrphanedCanvasDocuments()` runs on the existing health-check interval beside
+     `sweepOrphanedMessageQueues()` (`index.ts:4395-4402`) and deletes the `session:<id>` rows of
+     marked ids that are **still** absent from the session listing. The deferral is the point of the
+     pattern: a session that comes back between the mark and the sweep is not purged.
+   - **The degradation rule, which the precedent does not need and this one does.**
+     `GET /api/sessions` degrades per runtime and reports it in `warnings[]` (ADR-0310), and a runtime
+     that failed to list is a runtime whose sessions all look absent. **The sweep skips every id
+     belonging to a runtime that degraded in that listing**, and skips the whole pass when the listing
+     itself failed — otherwise one flaky sidecar deletes every OpenCode canvas on the machine. A test
+     drives exactly that: a degraded runtime, a marked session, zero rows deleted.
+   - **`disposeProjector` is NOT the seam** (`session-state-projector.ts:2327-2338`, where
+     `devtoolsCaptureStore.dropSession` hangs). That is idle eviction of in-memory state for a session
+     that is still real and can resume; deleting durable rows there would lose a canvas to a timeout.
+
+7. **`AGENTS.md`'s service-domain census** gains `canvas`, and
    `scripts/__tests__/agents-service-census.test.ts` fails until it does.
 
 ## User Experience
@@ -1287,11 +1564,15 @@ catch. None of them reads a paid credential, and none may.
   into each other._
 - `SessionSnapshotSchema` accepts `canvas` and an old snapshot without it fails, since the field is
   required on the new contract — so the decorator cannot be forgotten in one transport.
+- `get_ui_state`'s room arm and session arm return the same five document keys
+  (`id`, `type`, `title`, `author`, `pinned`); only the session arm adds `active`.
 - `UiStateSchema` no longer declares `canvas`, and a client that still sends one still parses;
   `UiStateReport` carries the documents, the count and the viewer count. _Catches the removal being
   done on the wrong side of the wire, which would break every older client's first turn._
-- `SignalTypeSchema` holds `'view'`; a `signal` frame carrying `view` round-trips; a frame with
-  `signal: 'progress'` and a `view` payload **fails**. _Catches a payload that drifts off its verb._
+- **`SignalTypeSchema` is unchanged** — a test asserts its six members, because `specs/rooms/` §229
+  forbids a new signal name and the easy mistake is to add one. A `presence` frame carrying `view`
+  round-trips; a `presence` frame carrying both `view` and `state` **fails**; `view` on any other
+  signal **fails**. _Catches a payload drifting off the verb that discriminates it._
 
 ### Unit — `packages/db`
 
@@ -1312,6 +1593,14 @@ catch. None of them reads a paid credential, and none may.
   _Catches the room's mechanisms leaking into a scope that has no audience to protect._
 - A `session:` row is written with `room_id` null and a `room:` row with its room id; the invariant
   is asserted both ways.
+- **`rekeyScope` moves every row of a scope in one transaction** and moves none of any other; a
+  concurrent reader sees the old set or the new set, never a split; a document's `id` is unchanged by
+  it, and re-opening the same source key after the rekey finds that row rather than inserting a
+  second. _Catches the trap the whole phase turns on: a canvas written under the request UUID and
+  stranded there when the SDK's canonical id arrives mid-first-turn._
+- **The orphan sweep respects degradation.** A marked session whose runtime reported `warnings[]` in
+  the listing is not swept; a listing that failed entirely sweeps nothing; a marked session genuinely
+  absent from a healthy listing is swept. _Catches one flaky sidecar deleting every canvas it owns._
 - The LRU evicts the 13th unpinned session document and publishes a `closed` event for it.
 - Two tabs of one session opening the same file land on one document (`canvas_documents_source_unique`
   on `(scope, sourceKey)`), and two `json` opens land on two.
@@ -1336,23 +1625,32 @@ catch. None of them reads a paid credential, and none may.
 - **A devtools-shim test against a real page, one per driving command.** `devtools-shim.ts` is a
   string of source injected into a page, so it is tested by evaluating it in a real document and
   posting it real messages. jsdom is enough for `click`, `type`, `press`, `scroll`, `read_page` and
-  the target resolution; **`wait_for` with `networkIdle` and the visibility checks run in Playwright**
+  the target resolution; **`wait_for` with `fetchIdle` and the visibility checks run in Playwright**
   (`apps/e2e`), because jsdom has neither a layout engine nor `checkVisibility`. Each asserts the
   `act-result` shape, including `matched`, and that exactly one result is posted per `requestId`.
   _Catches the whole class this spec's memory warns about: reading the shim's source and reasoning
   about it yields confident wrong conclusions; it has to be executed._
 - Target resolution: role+name, visible text, and selector each find the right element; two matches
   with no `nth` is a refusal, not a guess; zero matches names `browser_read_page` as the fix.
+- `fetchIdle` waits on the shim's new in-flight counter: it does not return while a `fetch` is
+  pending, does return 500 ms after the last one settles, and returns just as promptly after one that
+  **rejected**. _The decrement in the failure branch is the half that gets forgotten, and forgetting
+  it wedges every later wait for the life of the page._
 - `browser_read_page` prints the outline shape of §2.4 for a page with landmarks, forms and a live
   region; a node with no name, no landmark role and no children is dropped; over the budget it
   truncates from the deepest nodes and sets `truncated`.
 - **Capture store**: `awaitAction(requestId, timeoutMs)` resolves the result, resolves `undefined` at
   the timeout, and resolves the result across a `rekeySession` between request and answer. _Catches
   the stranding `devtools-capture-store.ts:206-214` already avoided for screenshots._
-- **Targeting**: with three browser documents open, a request carrying one `documentId` is forwarded
-  by exactly one bridge, and a request carrying `null` by the bridge whose document is
-  `activeBrowserDocumentId`. Asserted on the **client** side, where the race is. _This is the test
-  that closes `use-devtools-bridge.ts:341-347`._
+- **The driver seat, asserted on the server**: two client ids claim browser documents for one
+  session; the seat is the later claim; a request with no `documentId` resolves to that client and
+  that document; a request naming the other document resolves to the other client; releasing the seat
+  moves it to the remaining claim and then to nobody. _This is the test that closes
+  `use-devtools-bridge.ts:341-347` — and it is a server test, because a client test could only prove
+  that one window behaves, which is exactly what is already true and already insufficient._
+- **And on the client**: a bridge ignores a request whose `targetClientId` is not its own even when
+  its own document is the active one, and ignores one whose `documentId` is not its own even when it
+  holds the seat. _Catches the arbiter being re-derived locally, which is the bug in a new place._
 - The three no-preview answers of §2.5 are distinguished, and the first two return **without waiting
   out a timeout** — asserted on elapsed time against a fake clock, not on the text alone.
 - **Recording**: the state machine's eight transitions, including a second `record_start` refused, a
@@ -1367,9 +1665,11 @@ catch. None of them reads a paid credential, and none may.
 
 - `post_to_room` with `attachments` writes the bytes, inserts the rows and binds them to the entry
   **in one transaction**: a failure at the bind leaves no bytes, no rows and no entry.
-- A path outside the boundary is refused with the boundary's sentence and nothing is written; a
-  directory, a symlink pointing outside, and a missing file are each refused by name. _Catches the
-  only way this feature could widen what an agent reads._
+- A path outside the **agent's own cwd** is refused and nothing is written — asserted with a second
+  agent's worktree in the same project room, which is inside the global boundary and must still be
+  refused. A directory, a symlink pointing outside, and a missing file are each refused by name.
+  _Catches the only way this feature could widen what an agent reads, and catches it in the case
+  `validateBoundary` alone would have let through._
 - A file over `uploads.maxFileSize`, and an eleventh file, are each refused naming the limit.
 - `preview` is `'image'` only when the **bytes** sniff as an image — asserted with a `.png` that is
   not one.
@@ -1401,6 +1701,19 @@ Beyond that, the **parity claim needs a parity test**, once per runtime:
   regress: a capability whose `servers` list was edited._
 - A test asserts **no `ui.*` tool is registered on the external `/mcp` server** and that
   `READ_ONLY_MCP_TOOL_NAMES` and `GUARDED_READ_ONLY_TOOL_NAMES` are unchanged by the domain.
+- **The `dorkos_ui` retirement, asserted where it can break.** A Codex room turn that runs one
+  `open_canvas` ends with **exactly one row, one frame and one line** — the handler applied it and
+  stamped `applied`, so the runtime-neutral tap at `room-turn-runner.ts:1501-1503` skips it. _Without
+  the stamp every Codex canvas operation applies twice, and dedupe by source key would hide it for
+  every content type except `json` and `widget`; the test uses `json`._
+- A non-`client-only` action arriving over the loopback runtime surface is refused with the reworded
+  sentence, on Codex **and** on OpenCode; the refusal reaches the caller as the capability's error
+  result, which is the channel `codex-ui-mcp-server.ts:48-53` says is the only one that reaches the
+  model.
+- `control_ui` still auto-allows a `client-only` action and still does not auto-allow `apply_layout`
+  after the move — `DORKOS_AGENT_TOOLS` keys on the prefixed in-session tool name, which a capability
+  registration produces unchanged. _Catches the move silently un-gating or un-allowing the one tool
+  on that list that is argument-gated._
 
 ### Client tests (RTL + jsdom, mock `Transport`)
 
@@ -1409,10 +1722,13 @@ Beyond that, the **parity claim needs a parity test**, once per runtime:
 - A local open writes through the transport, and a failed write reverts the optimistic apply and
   surfaces the server's sentence. _Catches the two disagreeing silently, which is today's whole
   problem in a new place._
-- **The import runs once**: a session with a `localStorage` entry and an empty server table POSTs its
-  documents and deletes the entry; the same session on a second mount POSTs nothing; a session whose
-  server table is non-empty POSTs nothing and still deletes the entry. _Catches the double-import,
-  which would duplicate every `json` and `widget` document._
+- **The import runs once, and only when canonical**: a session with a `localStorage` entry and an
+  empty server table POSTs its documents and deletes the entry; the same session on a second mount
+  POSTs nothing; a session whose server table is non-empty POSTs nothing and still deletes the entry;
+  **a session whose id is still the pre-rekey UUID POSTs nothing and deletes nothing** until the
+  canonical id arrives; and a POST that fails leaves the entry in place for the next hydrate.
+  _Catches the double-import, which would duplicate every `json` and `widget` document, and catches
+  the worse one: deleting the only copy after writing it under a scope about to be renamed._
 - A test greps `apps/client/src` for `dorkos-canvas-sessions` and for `writeCanvasSession` and fails
   on a hit. _Catches a retirement that left a caller behind._
 - Follow mode publishes nothing until a follower exists, coalesces to the latest position, stops on
@@ -1425,15 +1741,15 @@ Built on the helpers rooms specs already use (`fixtures/rooms-api.ts`, `room-sig
 loudly instead of starting a billable turn), and on `workbench/dev-server-preview.spec.ts`'s real
 local dev server.
 
-| Spec                                                    | What it proves                                                                                                                                                                 |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `tests/workbench/browser-driving.spec.ts` (new)         | a real page in the real preview frame is clicked, typed into, scrolled and read back; `wait_for` with `networkIdle`; the visibility rules jsdom cannot see                     |
-| `tests/workbench/session-canvas-sync.spec.ts` (new)     | open a document in one context; a **second context on the same session** sees it without reloading; reload and the table is still there; close in one and it goes in the other |
-| `tests/rooms/room-agent-attachment.spec.ts` (new)       | a test-mode agent turn posts a file with `attachments`; it renders inline in the log and downloads correctly                                                                   |
-| `tests/rooms/room-follow.spec.ts` (new)                 | two contexts, one follows the other, the frame moves; the leader publishes nothing until followed                                                                              |
-| `tests/rooms/room-canvas-thread.spec.ts` (new)          | Discuss on a document opens its thread, the root names the document, a reply lands in it, nobody is woken                                                                      |
-| `tests/rooms/room-merge-from-diff.spec.ts` (new)        | a worktree diff shows the merge action for the operator; a hunk reject writes; the merge posts one line and triggers nobody                                                    |
-| `tests/workbench/dev-server-preview.spec.ts` (existing) | still passes; its console assertion is the one that proves the shim survived the protocol extension                                                                            |
+| Spec                                                    | What it proves                                                                                                                                                                                                                                                     |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `tests/workbench/browser-driving.spec.ts` (new)         | a real page in the real preview frame is clicked, typed into, scrolled and read back; `wait_for` with `fetchIdle`; the visibility rules jsdom cannot see; **two windows on one session, and only the seat holder answers**                                         |
+| `tests/workbench/session-canvas-sync.spec.ts` (new)     | open a document in one context; a **second context on the same session** sees it without reloading; reload and the table is still there; close in one and it goes in the other; a brand-new session's first turn rekeys and the document is still there afterwards |
+| `tests/rooms/room-agent-attachment.spec.ts` (new)       | a test-mode agent turn posts a file with `attachments`; it renders inline in the log and downloads correctly                                                                                                                                                       |
+| `tests/rooms/room-follow.spec.ts` (new)                 | two contexts, one follows the other, the frame moves; the leader publishes nothing until followed                                                                                                                                                                  |
+| `tests/rooms/room-canvas-thread.spec.ts` (new)          | Discuss on a document opens its thread, the root names the document, a reply lands in it, nobody is woken                                                                                                                                                          |
+| `tests/rooms/room-merge-from-diff.spec.ts` (new)        | a worktree diff shows the merge action for the operator; a hunk reject writes; the merge posts one line and triggers nobody                                                                                                                                        |
+| `tests/workbench/dev-server-preview.spec.ts` (existing) | still passes; its console assertion is the one that proves the shim survived the protocol extension                                                                                                                                                                |
 
 **Mocking strategy.** Server tests use a real SQLite database and the real capability registry, never
 a mocked `CanvasService` — a mock here would encode the hypothesis rather than test it. The shim is
@@ -1583,11 +1899,11 @@ One PR per phase. Each phase's acceptance criteria are the gate, and none of the
 
 - `packages/db/src/schema/rooms.ts` — nullable `room_id`, indexes on `scope`
 - `packages/shared/src/session-stream.ts` — the `canvas` event member, `SessionSnapshotSchema.canvas`
-- `packages/shared/src/schemas.ts:5587-5607` — `UiStateSchema.canvas` removed, `UiStateReport`
+- `packages/shared/src/schemas.ts:5585-5623` — `UiStateSchema.canvas` removed, `UiStateReport`
   added; `apps/client/src/layers/shared/lib/ui-state-snapshot.ts:66` stops composing it
 - `packages/shared/src/transport.ts` — six methods; `http-transport.ts`, `direct-transport.ts`,
   `packages/test-utils/src/mock-factories.ts`
-- `apps/server/src/services/session/session-state-projector.ts:198-201` — `EVENTS_OUTSIDE_THE_TURN`;
+- `apps/server/src/services/session/session-state-projector.ts:198-202` — `EVENTS_OUTSIDE_THE_TURN`;
   a `subscriberCount()` beside `getWaiterCount()` (`:2011`)
 - `apps/server/src/services/core/streams/session-stream-delivery.ts:152-159` — decorate the snapshot
 - `apps/server/src/services/rooms/canvas/room-canvas-service.ts` — the room flavour, delegating
@@ -1597,6 +1913,13 @@ One PR per phase. Each phase's acceptance criteria are the gate, and none of the
   `persist()`; `app-store-helpers.ts:136-268` and `constants.ts:9,16` — the retirement; the one-time
   import; **delete** `features/canvas/model/use-canvas-persistence.ts`
 - `apps/server/src/routes/sessions.ts` — mount; `openapi-registry.ts` + both regeneration commands
+- `apps/server/src/index.ts:2727` — `onProjectorRekey(... canvasService.rekeyScope(...))` beside the
+  connector-attachment line; `onSessionRemoved(...)` beside `noteSessionOrphaned`
+  (`message-dispatcher.ts:2282`); `sweepOrphanedCanvasDocuments()` in the health-check interval
+  (`index.ts:4395-4402`)
+- `apps/client/src/layers/features/chat/model/use-session-submit.ts:419-424` and
+  `use-session-stream.ts:127-149` — the import waits for the canonical id off the paths that already
+  learn it
 - `AGENTS.md` + `scripts/__tests__/agents-service-census.test.ts` — the `canvas` domain
 - `tool-exposure.test.ts` (92→93, 83→84), `capability-conformance.test.ts` `sampleInputs`
 
@@ -1606,7 +1929,11 @@ afterwards and a grep test fails on one; a session with a pre-existing local ent
 once and never twice; `get_ui_state` lists the real documents and a real viewer count; an agent reads
 one back with `read_canvas_document` and cannot name another session; a `canvas` event never appears
 inside an in-progress turn and never reaches the event store; a resume replays missed canvas events
-gap-free; the moved room-canvas test suite passes unchanged.
+gap-free; the moved room-canvas test suite passes unchanged; **a document opened on a fresh,
+un-canonical session survives the first-turn rekey** — after it, a hydrate lists that document under
+the canonical scope, re-opening the same source key finds the same row rather than a second, and only
+then is the local entry removed; a runtime that degrades in the session listing causes the orphan
+sweep to delete nothing.
 
 ### Q2 — Driving the browser (B2)
 
@@ -1622,23 +1949,32 @@ gap-free; the moved room-canvas test suite passes unchanged.
   the six commands, the accessibility outline walker
 - `apps/server/src/services/session/devtools-capture-store.ts` — `awaitAction`, keyed by `requestId`
 - `packages/shared/src/session-stream.ts` — `devtools_action_request`; `devtools_capture_request`
-  gains `documentId`
-- `apps/client/src/layers/features/canvas/model/use-devtools-bridge.ts:341-363` — per-document
-  targeting, the `act-request` forward, the immediate `act-result` post, the rewritten comment
+  gains `targetClientId` and `documentId`; `schemas.ts:5750-5762` — `DevtoolsIngestSchema.active`
+- `apps/server/src/routes/session-devtools.ts` — read `X-Client-Id` (it does not today), the way
+  `routes/sessions.ts:1212-1213` does, and pass it to the store
+- `apps/server/src/services/session/devtools-capture-store.ts` — the per-session driver table, its
+  claim/release, and its move across `rekeySession`
+- `apps/client/src/layers/features/canvas/model/use-devtools-bridge.ts:341-363` — claim the seat from
+  `activeBrowserDocumentId` and focus, answer only the addressed `targetClientId` + `documentId`, the
+  `act-request` forward, the immediate `act-result` post, the rewritten comment
 - `apps/server/src/services/session/ui-capabilities.ts` — six capabilities
 - `apps/server/src/config/constants.ts` — the act timeout and the outline budget
-- `mcp-tool-gate.test.ts` `AUTO_ALLOW_ACT_REASONS` (+4), `tool-exposure.test.ts` (93→99, 84→90),
-  `capability-conformance.test.ts` `sampleInputs`
+- `tool-exposure.test.ts` (93→99, 84→90), `capability-conformance.test.ts` `sampleInputs`.
+  `DORKOS_AGENT_TOOLS` and `AUTO_ALLOW_ACT_REASONS` are **not** touched (§2.5)
 - `runtimes/shared/{ui-tool-contract,room-tools-context}.ts` and
   `claude-code/messaging/context-builder.ts` — the teaching paragraph
 - `docs/guides/workbench.mdx`; a changelog fragment
 
 **Acceptance:** in a real browser, an agent clicks a button by role and name, types into a field,
 presses Enter, scrolls to an element, waits for text, and reads the page outline — each returning
-what it did and where the page is; with three previews open, a command reaches exactly the named one
-and a command with no name reaches the active one; two matches with no `nth` refuses rather than
-guessing; a page that is open but not instrumented answers in a sentence **without** waiting out a
-timeout; nothing in the shim can reach `/api/*`, asserted by a test that tries.
+what it did, **which document it acted on**, and where that page is; **with the same session open in
+two windows**, a command with no `documentId` reaches exactly the window that most recently activated
+a browser document and the other never sees it; a command naming a `documentId` reaches the window
+holding it; the seat moves when the second window activates one; with nothing claimed, the tool
+answers in a sentence immediately; two matches with no `nth` refuses rather than guessing; a page that
+is open but not instrumented answers in a sentence **without** waiting out a timeout; `fetchIdle`
+returns only after the shim's in-flight counter has been zero for 500 ms; nothing in the shim can
+reach `/api/*`, asserted by a test that tries.
 
 ### Q3 — Recording and agent attachments (B3, B4) — depends on Q2
 
@@ -1653,9 +1989,11 @@ timeout; nothing in the shim can reach `/api/*`, asserted by a test that tries.
 - `devtools-capture-store.ts` — `RecordingState` and its transitions
 - `devtools-shim.ts` — the `capture` flag on `act-request`
 - `ui-capabilities.ts` — `ui.record_start`, `ui.record_stop`
-- `apps/server/src/services/rooms/room-capabilities.ts:669-729` — `post_to_room.attachments`; the
-  store/row/bind path beside `services/rooms/attachments/`
-- `apps/server/src/config/constants.ts` — the four recording bounds
+- `apps/server/src/services/rooms/room-capabilities.ts:669-729` — `post_to_room.attachments`,
+  resolved with `resolveWithinCwd` (`lib/file-route-guards.ts:137-146`); the store/row/bind path
+  beside `services/rooms/attachments/`
+- `apps/server/src/config/constants.ts` — the five recording bounds, `RECORDING_STOP_TIMEOUT_MS`
+  included
 - `apps/client/package.json` — `gifenc`
 - `mcp-tool-gate.test.ts` (+2 reasons), `tool-exposure.test.ts` (99→101, 90→92)
 - `docs/guides/workbench.mdx`, `docs/concepts/rooms.mdx`; a changelog fragment
@@ -1663,10 +2001,12 @@ timeout; nothing in the shim can reach `/api/*`, asserted by a test that tries.
 **Acceptance:** a recorded run of four actions produces a GIF whose bytes parse as a GIF with six
 frames (start, four actions, stop), at the recording size, under the byte cap; the file is at
 `{cwd}/.dork/.temp/recordings/<id>.gif` and the tool answers with the path and the final frame, never
-the GIF; a second `record_start` is refused; the frame ceiling stops filming and keeps driving; an
+the GIF; a stop that never comes back fails plainly at 30 s and claims no file; a second
+`record_start` is refused; the frame ceiling stops filming and keeps driving; an
 agent posts that file to a room with one `post_to_room` call, it renders inline for members, and the
-next turn of a second agent finds it hardlinked in its own working copy; a path outside the boundary
-is refused and writes nothing; the human upload route still refuses agents.
+next turn of a second agent finds it hardlinked in its own working copy; a path outside the **agent's own cwd** — another member's
+worktree in the same room, reachable under the global boundary — is refused and writes nothing; the
+human upload route still refuses agents.
 
 ### Q4 — Runtime parity (B5) — depends on Q1 and Q2
 
@@ -1676,19 +2016,36 @@ is refused and writes nothing; the human upload route still refuses agents.
   `ui.read_network`, `ui.screenshot`, each wrapping the handler that already exists
 - `apps/server/src/services/runtimes/claude-code/mcp-tools/{ui-tools,devtools-tools,index}.ts` — the
   hand registrations **deleted**; the handlers moved, not copied
-- `apps/server/src/services/core/mcp-tool-tiers.ts:125-261` — five entries removed; `McpToolName`
-- `apps/server/src/services/core/external-mcp/register-from-definitions.ts:30-50` — the paragraph that
-  names these five as in-session-only is rewritten to say they are capabilities with
-  `servers: ['in-session']`, which is now what keeps them off `/mcp`
+- `apps/server/src/services/core/mcp-tool-tiers.ts:125-261` — five entries removed, `McpToolName`
+  narrowed, and the `:247-253` comment about the ungated third copy deleted because the third copy is
+  gone
+- `packages/shared/src/mcp-tool-groups.ts:177-237` — **the same five names removed**, or
+  `mcp-tool-tiers.ts:294-299`'s exhaustiveness assertions fail to compile; `'ui'` and `'devtools'`
+  dropped from `ToolGateGroup` (`:125-136`) and from `SESSION_CORE_TOOL_GROUPS` (`:274`), with the
+  client's always-enabled tool-group row re-checked
+- **`dorkos_ui` retired:** `apps/server/src/services/runtimes/codex/codex-ui-mcp-server.ts` **deleted**
+  with its test; `codex/index.ts:8` exports removed; `codex/event-mapper.ts:398-405, 631-674` — the
+  `mcp_tool_call` interception and `mapControlUi` removed; `codex/mcp-server-config.ts:42, 202-219`
+  and `codex/codex-options.ts` — the name reservation and the injected bridge URL removed;
+  `codex/ui-command-consent.ts:69-74` — `isUiActionRefusedOnCodex` renamed for the surface it tests
+  and moved to the `ui.control` handler, `uiActionRefusalMessage` reworded to name the surface;
+  `apps/server/src/index.ts:1161` — the loopback mount removed
+- `apps/server/src/services/session/ui-capabilities.ts` — the `ui.control` handler stamps `applied`
+  when it wrote to a room and pushes the `ui_command` through `peekProjector(sessionId)?.ingest`
 - `mcp-tool-gate.test.ts:317-323` (47→42 twice; external stays 40),
   `tool-exposure.test.ts:287-323` (fix the stale "eight" title while there)
 - `contributing/adding-a-runtime.md`; a changelog fragment
 
 **Acceptance:** a Codex session and an OpenCode session each list and successfully call
-`get_ui_state`, `browser_read_console` and `browser_click` through the loopback `dorkos` server, with
-the session resolved from the verified principal; claude-code's behaviour is unchanged, asserted by
-the existing suites passing without edits beyond the counts; no `ui.*` tool appears on `/mcp`;
-`MCP_TOOL_TIERS` and `McpToolName` are consistent (the two exhaustiveness assertions compile).
+`control_ui`, `get_ui_state`, `browser_read_console` and `browser_click` through the loopback `dorkos`
+server, with the session resolved from the verified principal; **a Codex room turn's `open_canvas`
+writes exactly one row** — the handler applied it and stamped `applied`, so
+`room-turn-runner.ts:1501-1503` skips it, and asserting one row is what catches the double-apply this
+retirement could introduce; a non-`client-only` action over the loopback surface is refused with the
+reworded sentence, on Codex **and** on OpenCode; `control_ui` still auto-allows for a `client-only`
+action and still does not for `apply_layout`, after the move; claude-code's behaviour is unchanged,
+asserted by the existing suites passing without edits beyond the counts; no `ui.*` tool appears on
+`/mcp`; `tsc` is green, which is what proves the tiers and groups tables still describe one set.
 
 ### Q5 — Follow mode and document threads (B6, B7) — depends on room-canvas P2b and P3
 
@@ -1697,8 +2054,8 @@ the existing suites passing without edits beyond the counts; no `ui.*` tool appe
 
 **Modify**
 
-- `packages/shared/src/relay-envelope-schemas.ts:39-42` — `'view'`;
-  `packages/shared/src/room-schemas.ts` — the `view` payload, `CanvasDocumentSchema.threadRootEntryId`
+- `packages/shared/src/room-schemas.ts` — the optional `view` payload on `RoomSignalEventSchema`,
+  `CanvasDocumentSchema.threadRootEntryId`. **`SignalTypeSchema` is not touched** (§6)
 - `packages/db/src/schema/rooms.ts` — `thread_root_entry_id` on `canvas_documents` (the `0097`
   migration already added it in Q1)
 - `apps/server/src/services/rooms/service/room-publisher.ts:159-190` — the follow claim
@@ -1725,11 +2082,15 @@ nobody; a thread turn's context carries that document and no other, and carries 
 - `apps/client/src/layers/features/diff-review/` — the worktree-vs-main comparison for a
   `treeKind: 'worktree'` document, the operator-only merge action, the behind-main sentence, the
   per-hunk reject against the row's `resolvedCwd`
+- `packages/shared/src/transport-rooms.ts` — `mergeRoomMain`, with `createRoomMethods`,
+  `embedded-mode-stubs.ts` and `mock-factories.ts`
 - `packages/shared/src/schemas.ts:5276-5285` + `runtimes/shared/ui-tool-contract.ts` — `target`
 - `apps/server/src/services/runtimes/claude-code/mcp-tools/ui-tools.ts:170-228` (now
   `ui-capabilities.ts`) — membership check, the derived synthetic turn id, the refusal
-- `apps/server/src/services/rooms/room-turn-runner.ts:1537-1544` and the session `turn_end` path —
-  `finishTurn` for every synthetic turn the turn opened
+- `apps/server/src/index.ts` — `onProjectorTurnBoundary(... finishTargetedTurns(sessionId))` beside
+  the Q1 rekey subscription; `services/canvas/canvas-service.ts` — the `session:` synthetic ledger,
+  its `n` counter and `finishTargetedTurns`. `room-turn-runner.ts:1537-1544` is **unchanged**: a room
+  turn keeps finishing its own `turnId`
 - `apps/e2e/tests/rooms/room-merge-from-diff.spec.ts`
 - `docs/concepts/rooms.mdx`; a changelog fragment
 

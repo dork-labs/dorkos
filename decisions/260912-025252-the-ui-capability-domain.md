@@ -33,8 +33,13 @@ We will declare a `ui` capability domain in `services/session/ui-capabilities.ts
 and browser verb — the five that exist and the nine this spec adds — each with
 `servers: ['in-session']`, each handler keyed on `context.sessionId`. The claude-code hand
 registrations are deleted and their handlers moved, so there is one implementation, one description and
-one input schema per verb. `servers: ['in-session']` is what now keeps these tools off `/mcp`, which is
-what the deleted paragraph used to guarantee by omission; a test asserts it directly.
+one input schema per verb. Codex's scoped `dorkos_ui` server goes with them: its `control_ui` handler
+is a stub only because that server has no session in scope, and the loopback server has one, so the
+stub, the event-mapper's `mapControlUi` translation and the name reservation are all retired — the
+handler stamps `applied` itself, and Codex's reach-based refusal becomes a property of the loopback
+surface, which also gives OpenCode the rule it never had. `servers: ['in-session']` is what now keeps
+these tools off `/mcp`, which is what the deleted paragraph used to guarantee by omission; a test
+asserts it directly.
 
 ## Consequences
 
@@ -45,7 +50,10 @@ what the deleted paragraph used to guarantee by omission; a test asserts it dire
 - One implementation per verb instead of a hand registration and a capability drifting apart.
 - The "these five stay off `/mcp`" property becomes a checked assertion rather than a comment about
   which table has fewer entries.
-- Tier, approval and gate handling come from the registry, which already enforces them.
+- Tier, approval and gate handling come from the registry, which already enforces them —
+  `control_ui` stops being a third copy outside the gate, which `mcp-tool-tiers.ts` has carried a
+  standing comment about.
+- OpenCode gains a consent refusal it never had, because it never had the verb.
 
 ### Negative
 
@@ -55,4 +63,8 @@ what the deleted paragraph used to guarantee by omission; a test asserts it dire
 - A capability's handler context carries a session id only on the in-session surface, so the whole
   domain is unreachable from any surface that has none, and each verb must refuse that case by name.
 - `MCP_TOOL_TIERS` and the capability definitions become two places a tier can live, which is already
-  true but becomes true of five more tools.
+  true but becomes true of five more tools. Removing the five also empties the `ui` and `devtools`
+  gate groups, which changes what the app's always-enabled tool-group row shows.
+- Retiring `dorkos_ui` moves Codex's enforcement point from a mapper that reads the raw recorded
+  arguments to a handler that runs before the effect. That is better, and it is a real change to a
+  path DOR-639 hardened deliberately, so the stamp and the refusal both need their own tests.

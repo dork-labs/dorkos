@@ -39,6 +39,13 @@ Transport; `readCanvasSession`, `writeCanvasSession`, `use-canvas-persistence.ts
 are deleted, after a one-time import that runs only when the server table is empty and deletes the
 local entry either way.
 
+The scope names the **canonical** session id: a claude-code session starts under the request UUID the
+client minted and is rekeyed mid-first-turn, so `CanvasService` subscribes to `onProjectorRekey` and
+renames the scope in one statement, and the client defers both its one-time import and the deletion of
+its local copy until the id is canonical and the server has confirmed the rows. Nothing cascades a
+session row away, because DorkOS has no session deletion, so a two-phase mark-and-sweep behind
+`onSessionRemoved` reclaims them — skipping any runtime that degraded in the session listing.
+
 ## Consequences
 
 ### Positive
@@ -57,5 +64,7 @@ local entry either way.
 - `canvas_documents.room_id` becomes nullable and its indexes move to `scope`, which on SQLite means a
   table recreate — a migration that has to be read rather than trusted.
 - The one-time import is a migration in the client, running on people's machines, and its idempotence
-  rests on an emptiness check plus a delete rather than on a transaction.
+  rests on an emptiness check plus a confirm-before-delete rather than on a transaction.
+- Two more subscriptions to global projector events, and an orphan sweep whose correctness depends on
+  reading a degraded runtime listing correctly — a wrong answer there deletes people's canvases.
 - Adding a `canvas` service domain means editing the `AGENTS.md` census and the test that guards it.
