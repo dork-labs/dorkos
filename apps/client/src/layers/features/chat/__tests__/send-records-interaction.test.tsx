@@ -39,7 +39,13 @@ vi.mock('@/layers/shared/lib/transport', async (importOriginal) => ({
 
 vi.mock('@/layers/shared/model', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/shared/model')>();
-  const appState = { selectedCwd: '/projects/alpha', enableMessagePolling: false };
+  const appState = {
+    selectedCwd: '/projects/alpha',
+    enableMessagePolling: false,
+    // See the note in `use-session-submit.test.tsx`: the rekey branch calls this
+    // before it rewrites anything, so a stand-in store has to have it.
+    carryCanvasWritesAcross: () => {},
+  };
   const useAppStore = Object.assign(
     (selector?: (s: Record<string, unknown>) => unknown) =>
       selector ? selector(appState) : appState,

@@ -439,6 +439,12 @@ export function useSessionSubmit({
           // stream fires the same migration when the canonical id resolves only
           // AFTER this 202 (the common Claude path — see session-stream-binding).
           useSessionStreamStore.getState().migrateSessionContinuity(targetSessionId, canonicalId);
+          // A canvas write still waiting for this session's stream is addressed
+          // to the retired id; re-aim it before the rebind that follows, or the
+          // document somebody opened before sending disappears without a word
+          // (DOR-2016 review, finding 2). The server has already moved the whole
+          // scope across, so the write is still the right one to send.
+          useAppStore.getState().carryCanvasWritesAcross(targetSessionId, canonicalId);
           // The interaction the send above recorded is bucketed under the
           // throwaway id too, and Today walks the session LIST — so left behind
           // it names a session no list will ever contain, and the conversation

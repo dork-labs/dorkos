@@ -124,6 +124,34 @@ export class TestModeSessionRegistry {
     return true;
   }
 
+  /**
+   * Move a tracked session to the canonical id a first turn assigned it.
+   *
+   * The scripted stand-in for what the Claude adapter does mid-first-turn: a
+   * session streams under the request UUID the client minted and is renamed to
+   * the id the SDK actually keeps it under. Nothing here mints that id — a test
+   * declares it (`POST /api/test/canonical-id`) and this moves the metadata to
+   * match, so the session list, the sidebar and `GET /api/sessions/:id` all
+   * agree with the projector after {@link TestModeRuntime.getInternalSessionId}
+   * starts answering the new name.
+   *
+   * No `session_removed` for the old id: the session did not go away, it was
+   * renamed, and announcing a removal would tell every listener that watches for
+   * one — the canvas's orphan sweep among them — to reclaim what it holds.
+   *
+   * @param oldId - The id the session was tracked under.
+   * @param newId - The canonical id it is keeping.
+   */
+  rekey(oldId: string, newId: string): void {
+    const session = this.sessions.get(oldId);
+    if (!session || oldId === newId) return;
+    this.sessions.delete(oldId);
+    session.id = newId;
+    session.updatedAt = new Date().toISOString();
+    this.sessions.set(newId, session);
+    this.emit({ type: 'session_upserted', session: { ...session } });
+  }
+
   /** Whether the session is tracked. */
   has(sessionId: string): boolean {
     return this.sessions.has(sessionId);

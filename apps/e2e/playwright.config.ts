@@ -744,6 +744,12 @@ export default defineConfig({
         // The recording half (spec `canvas-agent-seat` §3), same leg and same
         // reason: it drives a turn.
         '**/workbench/browser-recording.spec.ts',
+        // The session-canvas suite joined them when its first-turn-rename leg
+        // landed (DOR-2015): three of its tests send a message, and the rename
+        // they drive is declared through `/api/test/canonical-id`, which exists
+        // only under `DORKOS_TEST_RUNTIME`. On this leg they would neither find
+        // that route nor be free.
+        '**/workbench/session-canvas-sync.spec.ts',
         // Both run against the test-mode leg in `chromium-rooms-agents` below,
         // and both must NEVER run here. They are the only rooms specs that
         // un-silence an agent, so on this leg every turn they start would be a
@@ -875,12 +881,20 @@ export default defineConfig({
       // second browser CONTEXT — a second window on one conversation is the
       // thing under test — which chat-mock's single-worker choreography has no
       // room for.
+      //
+      // The session-canvas suite runs here too (DOR-2015). It shares both
+      // reasons: its rename leg drives turns, and its sync test opens a second
+      // context.
       name: 'chromium-browser-driving',
       use: {
         ...devices['Desktop Chrome'],
         baseURL: `http://localhost:${MOCK_VITE_PORT}`,
       },
-      testMatch: ['**/workbench/browser-driving.spec.ts', '**/workbench/browser-recording.spec.ts'],
+      testMatch: [
+        '**/workbench/browser-driving.spec.ts',
+        '**/workbench/browser-recording.spec.ts',
+        '**/workbench/session-canvas-sync.spec.ts',
+      ],
     },
     {
       // Home is the #team room (spec `team-room-home` Phase 2) — against the

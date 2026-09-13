@@ -506,3 +506,63 @@ describe('TestModeRuntime.getMcpStatus', () => {
     ]);
   });
 });
+
+/**
+ * The declared first-turn rename (DOR-2015).
+ *
+ * A real claude-code session is renamed to the SDK's own id mid-first-turn, and
+ * that rename moves the projector, the lock, the route the window is on and the
+ * session's canvas. Test mode has no SDK to mint an id, so `/api/test/canonical-id`
+ * declares one and this is the contract the browser leg stands on.
+ *
+ * Seeded defects, each run red before the code stood: answering the declared id
+ * from `getInternalSessionId` straight away (the turn then starts already
+ * renamed, and nothing ever rekeys); and leaving the tracked metadata under the
+ * old id (the session list keeps a row the projector no longer backs).
+ */
+describe('TestModeRuntime — a declared first-turn rename', () => {
+  const CANONICAL = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
+  it('stays quiet until the turn starts, then renames mid-turn', async () => {
+    const runtime = new TestModeRuntime();
+    runtime.ensureSession(SESSION_A, { cwd: CTX.cwd, permissionMode: CTX.permissionMode });
+    runtime.declareCanonicalSessionId(SESSION_A, CANONICAL);
+
+    // Declaring is inert: the turn has to begin under the id the client minted,
+    // or there is no rename to carry anything across.
+    expect(runtime.getInternalSessionId(SESSION_A)).toBeUndefined();
+
+    const rekeys: [string, string][] = [];
+    const projector = getOrCreateProjector(SESSION_A, CTX.cwd);
+    const result = await triggerTurn({
+      sessionId: SESSION_A,
+      clientId: 'test-client',
+      content: 'hello',
+      cwd: CTX.cwd,
+      projector,
+      deps: {
+        acquireLock: (sid, cid, res, token) => runtime.acquireLock(sid, cid, res, token),
+        releaseLock: (sid, cid, token) => runtime.releaseLock(sid, cid, token),
+        sendMessage: (sid, text, opts) => runtime.sendMessage(sid, text, opts),
+        interruptQuery: (sid) => runtime.interruptQuery(sid),
+        getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
+        rekeyProjector: (oldId, newId) => rekeys.push([oldId, newId]),
+        getCapabilities: () => runtime.getCapabilities(),
+      },
+    });
+    expect(result.accepted).toBe(true);
+    await vi.waitFor(() => {
+      expect(rekeys).toEqual([[SESSION_A, CANONICAL]]);
+    });
+    expect(runtime.getInternalSessionId(SESSION_A)).toBe(CANONICAL);
+    // And the tracked metadata went with it, so the session list and the
+    // projector agree about what this session is called.
+    expect(await runtime.getSession(CTX.cwd, CANONICAL)).not.toBeNull();
+    expect(await runtime.getSession(CTX.cwd, SESSION_A)).toBeNull();
+  });
+
+  it('declares nothing for a session that never asked', () => {
+    const runtime = new TestModeRuntime();
+    expect(runtime.getInternalSessionId(SESSION_B)).toBeUndefined();
+  });
+});
