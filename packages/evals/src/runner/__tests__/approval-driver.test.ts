@@ -12,7 +12,11 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { SseFrame } from '@dorkos/test-utils';
-import { ApprovalDriver } from '../approval-driver.js';
+import {
+  ApprovalDriver,
+  UnansweredApprovalPromptError,
+  unansweredPromptWatcher,
+} from '../approval-driver.js';
 import type { ApprovalPolicy } from '../../types.js';
 
 /** One request the fake server saw. */
@@ -391,5 +395,108 @@ describe('ApprovalDriver', () => {
       await driver.stop();
       expect(driver.log.errors.length).toBeGreaterThan(0);
     });
+  });
+});
+
+describe('unansweredPromptWatcher — the case that forgot its policy', () => {
+  /** The same durable prompt frame the driver answers, for a case with no driver. */
+  function prompt(toolCallId: string, toolName: string): SseFrame {
+    return {
+      event: 'approval_required',
+      data: { type: 'approval_required', id: toolCallId, toolName, input: '{}' },
+    };
+  }
+
+  it('throws on the first permission prompt, naming the tool and the fix', () => {
+    const watch = unansweredPromptWatcher();
+    expect(() => watch([prompt('tc1', 'mcp__dorkos__config_patch')])).toThrow(
+      UnansweredApprovalPromptError
+    );
+    try {
+      watch([prompt('tc1', 'mcp__dorkos__config_patch')]);
+      expect.unreachable('the watcher must throw');
+    } catch (err) {
+      expect(err).toBeInstanceOf(UnansweredApprovalPromptError);
+      expect((err as Error).message).toContain('mcp__dorkos__config_patch');
+      expect((err as Error).message).toContain('approvalPolicy');
+    }
+  });
+
+  it('recognises the prompt by its payload type as well as its event line', () => {
+    const watch = unansweredPromptWatcher();
+    expect(() =>
+      watch([{ event: '', data: { type: 'approval_required', id: 'tc1', toolName: 'Skill' } }])
+    ).toThrow(UnansweredApprovalPromptError);
+  });
+
+  it('stays silent for a turn that is never asked for permission', () => {
+    // The case this exists to permit: a genuinely read-only turn, whose tools the
+    // runtime auto-allows. It must cost such a case nothing.
+    const watch = unansweredPromptWatcher();
+    expect(() =>
+      watch([
+        { event: 'turn_start', data: { type: 'turn_start' } },
+        { event: 'tool_call', data: { type: 'tool_call', toolName: 'mcp__dorkos__activity_list' } },
+        { event: 'turn_end', data: { type: 'turn_end' } },
+      ])
+    ).not.toThrow();
+  });
+
+  it('ignores an approval_required frame that names no tool', () => {
+    // The runtime's prompt always names one. A frame carrying the type and no
+    // tool is not something the driver could have answered or a case could have
+    // written a policy for, so turning it into a red would be a red nobody can
+    // act on — the watcher must fire on exactly what the driver answers.
+    const watch = unansweredPromptWatcher();
+    expect(() =>
+      watch([{ event: 'approval_required', data: { type: 'approval_required', id: 'tc1' } }])
+    ).not.toThrow();
+  });
+
+  it('ignores an approval_required frame with no prompt id', () => {
+    const watch = unansweredPromptWatcher();
+    expect(() =>
+      watch([{ event: 'approval_required', data: { type: 'approval_required', toolName: 'Bash' } }])
+    ).not.toThrow();
+  });
+
+  it('ignores the capability gate\u2019s own inline card, which is a different event', () => {
+    // `capability_approval_required` is the tier gate ASKING, which is the whole
+    // subject of the governance cases. It must never trip a guard about prompts
+    // nobody answers.
+    const watch = unansweredPromptWatcher();
+    expect(() =>
+      watch([
+        {
+          event: 'capability_approval_required',
+          data: {
+            type: 'capability_approval_required',
+            approval: { approvalId: 'a1', capabilityId: 'marketplace.uninstall' },
+          },
+        },
+      ])
+    ).not.toThrow();
+  });
+
+  it('fires on exactly the frames the driver would have answered', () => {
+    // One rule, two halves: the driver answers what it can identify, and the
+    // watcher fails the case on the same set. A frame either is a prompt for
+    // both of them or for neither.
+    const answerable = prompt('tc1', 'mcp__dorkos__config_patch');
+    const idless = { event: 'approval_required', data: { type: 'approval_required' } } as SseFrame;
+
+    const watch = unansweredPromptWatcher();
+    expect(() => watch([answerable])).toThrow(UnansweredApprovalPromptError);
+    expect(() => watch([idless])).not.toThrow();
+
+    const driver = new ApprovalDriver({
+      baseUrl: 'http://127.0.0.1:1',
+      policy: { allowTools: [] },
+    });
+    driver.start();
+    driver.observe([idless], 'sess-1');
+    // The driver skipped the id-less frame outright — no answer attempted, so
+    // nothing was even recorded against it.
+    expect(driver.log.toolPermissions).toHaveLength(0);
   });
 });

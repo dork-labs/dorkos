@@ -9,7 +9,7 @@
  * with fabricated `tool_call` frames; filesystem oracles by writing the state
  * the agent would produce.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -31,6 +31,7 @@ import {
   activityReadCase,
   configToggleCase,
   marketplaceInstallCase,
+  capabilityDiscoveryCase,
   operateDorkOsCases,
 } from '../operate.js';
 
@@ -116,6 +117,31 @@ describe('operate-DorkOS case metadata', () => {
       // `--suite core --tier test-mode` structural run stays green (the tools
       // under test do not exist on test-mode).
       expect(c.quarantined).toBe(true);
+    }
+  });
+
+  it('every case declares an approvalPolicy naming only the tools its own task needs', () => {
+    // A credentialed turn that reaches for a tool is asked for permission, and a
+    // case with nobody to answer sits out the 90-second turn guard and reports a
+    // runner error — which is exactly what `agent-self-edit`, `activity-read`
+    // and `config-toggle` did on 2026-09-12, the only three `core` cases with no
+    // policy. `runner/approval-driver.ts`'s watcher now fails that fast; these
+    // policies are what keep it quiet.
+    const expected: Record<string, string[]> = {
+      'agent-self-edit': ['update_agent'],
+      'activity-read': ['activity_list'],
+      'config-toggle': ['config_get', 'config_patch'],
+      'marketplace-search-and-install': ['marketplace_search', 'marketplace_install'],
+      'capability-discovery': ['list_capabilities'],
+    };
+    for (const c of operateDorkOsCases) {
+      expect(c.approvalPolicy?.allowTools, c.id).toEqual(expected[c.id]);
+      // Deny-by-default is the point: nothing here allows a file tool or `Bash`,
+      // which is how an agent that gave up on the right tool would satisfy a
+      // filesystem oracle for the wrong reason.
+      expect(c.approvalPolicy?.allowTools.some((t) => /^(bash|write|edit|read)$/i.test(t))).toBe(
+        false
+      );
     }
   });
 
@@ -391,5 +417,181 @@ describe('marketplace-search-and-install', () => {
       ctx([toolCallFrame('marketplace_install')])
     );
     expect(byLabel(results, 'installed under DORK_HOME').passed).toBe(false);
+  });
+});
+
+describe('capability-discovery — the answer, not the tool call', () => {
+  /**
+   * A catalog page in the real envelope shape, carrying REAL capability ids.
+   *
+   * Real ones deliberately: an earlier fixture invented `config.patch` and
+   * `mesh.list`, neither of which the registry has, so the test proved the
+   * oracle worked on a product that does not exist. Every id below is live
+   * (`operator-capabilities.ts`, `marketplace-capabilities.ts`, the rooms and
+   * mcp domains), including the `connector`/`connectors` singular-plural pair
+   * that the domain-spread check has to collapse.
+   */
+  const catalogPage = {
+    catalogVersion: 'v1',
+    generatedAt: new Date().toISOString(),
+    total: 8,
+    returned: 8,
+    offset: 0,
+    detail: 'full',
+    capabilities: [
+      { id: 'rooms.post', surfaces: { mcp: { toolName: 'post_to_room' } } },
+      { id: 'rooms.read_history', surfaces: { mcp: { toolName: 'read_room_history' } } },
+      { id: 'marketplace.install', surfaces: { mcp: { toolName: 'marketplace_install' } } },
+      { id: 'marketplace.search', surfaces: { mcp: { toolName: 'marketplace_search' } } },
+      { id: 'mcp.add', surfaces: { mcp: { toolName: 'mcp_add_server' } } },
+      { id: 'operator.activity_list', surfaces: { mcp: { toolName: 'activity_list' } } },
+      { id: 'connector.recommend', surfaces: { mcp: { toolName: 'connector_recommend' } } },
+      { id: 'connectors.request_connection' },
+      { id: 'capabilities.list', surfaces: { mcp: { toolName: 'list_capabilities' } } },
+    ],
+  };
+
+  /**
+   * Stub `fetch` so the oracle reads a catalog without a running server.
+   *
+   * A FRESH `Response` per call, not one shared instance: a body can only be
+   * read once, and a test that runs the oracle twice would get an already-consumed
+   * stream on the second pass and a verdict about the stub rather than the code.
+   */
+  function stubCatalog(page: unknown = catalogPage): void {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify(page), { status: 200 }))
+    );
+  }
+
+  /** Frames for one assistant turn whose final message is `text`. */
+  function answer(text: string): SseFrame[] {
+    return [
+      { event: 'turn_start', data: { type: 'turn_start' } },
+      { event: 'text_delta', data: { type: 'text_delta', text } },
+      { event: 'turn_end', data: { type: 'turn_end' } },
+    ];
+  }
+
+  /** The oracle's own verdict, out of the case's full oracle run. */
+  async function verdict(text: string): Promise<OracleResult> {
+    return byLabel(
+      await runOracles(capabilityDiscoveryCase, ctx(answer(text))),
+      'capabilities the agent really has'
+    );
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('passes on a plain-English answer that names no identifiers at all', async () => {
+    // The shape of the real 2026-09-13 answer: every claim true, and ZERO of the
+    // registered ids or tool names spelled out. An ids-only oracle scored that 0.
+    stubCatalog();
+    const result = await verdict(
+      '## Collaboration\n- **Rooms** — post messages and read the history\n' +
+        '## Marketplace\n- search for packages and install them\n' +
+        '## Configuration\n- add an MCP server, or read the recent activity list'
+    );
+    expect(result.passed).toBe(true);
+  });
+
+  it('passes on an answer that DOES spell the tool names', async () => {
+    stubCatalog();
+    expect(
+      (
+        await verdict(
+          'I can use post_to_room, marketplace_install, marketplace_search, mcp_add_server, ' +
+            'activity_list and list_capabilities.'
+        )
+      ).passed
+    ).toBe(true);
+  });
+
+  it('FAILS on a fluent sentence that gestures at areas without saying what it does', async () => {
+    // The exact string from review. Naming an area is cheap — this one hits
+    // three domain words, `capabilities` among them because it is the
+    // question's own word — so a domains-only oracle passed it. Evidencing a
+    // capability needs the verb too, and this evidences none.
+    stubCatalog();
+    const result = await verdict('Here are my capabilities, including connectors and rooms');
+    expect(result.passed).toBe(false);
+    expect(result.detail).toContain('evidenced 0');
+  });
+
+  it('FAILS that same sentence even when it also name-drops the UI', async () => {
+    stubCatalog();
+    expect(
+      (await verdict('Here are my capabilities in the UI, with connectors and rooms')).passed
+    ).toBe(false);
+  });
+
+  it('FAILS on a vague answer that describes nothing', async () => {
+    stubCatalog();
+    const result = await verdict('I can help you with all sorts of things — just ask!');
+    expect(result.passed).toBe(false);
+    expect(result.detail).toContain('evidenced 0');
+  });
+
+  it('FAILS on an answer confined to one corner of the product', async () => {
+    // Two real capabilities, one domain — a partial answer wearing a complete
+    // one's clothes. Both the count and the spread refuse it.
+    stubCatalog();
+    const result = await verdict('I work with rooms: I can post to a room and read its history.');
+    expect(result.passed).toBe(false);
+    expect(result.evidence).toMatchObject({ domains: ['room'] });
+  });
+
+  it('counts a singular/plural domain pair in the registry as ONE area', async () => {
+    // `connector` and `connectors` are both real domains. The word "connectors"
+    // must not buy two-thirds of the domain-spread bar on its own.
+    stubCatalog();
+    const result = await verdict(
+      'I can recommend connectors and request a connection through them.'
+    );
+    expect(result.evidence).toMatchObject({ domains: ['connector'] });
+  });
+
+  it('FAILS honestly when the catalog cannot be read, instead of passing vacuously', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('nope', { status: 500 }));
+    const result = await verdict('anything');
+    expect(result.passed).toBe(false);
+    expect(result.detail).toContain('could not read the capability catalog');
+  });
+
+  it('matches a word at both boundaries, not anywhere inside a longer one', async () => {
+    // `ui` must match "UI" and not "build"/"guide", or every answer covers it.
+    stubCatalog({ ...catalogPage, capabilities: [{ id: 'ui.click' }] });
+    expect(
+      (await verdict('I can build things and guide you, clicking as I go.')).evidence
+    ).toMatchObject({ evidenced: [] });
+    expect((await verdict('I can click things in the UI for you.')).evidence).toMatchObject({
+      evidenced: ['ui.click'],
+    });
+  });
+
+  it('records whether the catalog tool was called, as evidence and not as a verdict', async () => {
+    // Since #1080 an agent is taught its tools by name and may answer without
+    // calling `list_capabilities`. That is no longer a failure — but it stays
+    // visible on the transcript.
+    stubCatalog();
+    const words = answer(
+      'Rooms: post messages, read the history. Marketplace: search and install. ' +
+        'Also add an MCP server.'
+    );
+    const without = await runOracles(capabilityDiscoveryCase, ctx(words));
+    expect(byLabel(without, 'capabilities the agent really has').passed).toBe(true);
+    expect(byLabel(without, 'capabilities the agent really has').evidence).toMatchObject({
+      calledListCapabilities: false,
+    });
+
+    const withCall = await runOracles(
+      capabilityDiscoveryCase,
+      ctx([toolCallFrame('mcp__dorkos__list_capabilities'), ...words])
+    );
+    expect(byLabel(withCall, 'capabilities the agent really has').evidence).toMatchObject({
+      calledListCapabilities: true,
+    });
   });
 });

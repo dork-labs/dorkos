@@ -33,7 +33,7 @@ import type {
   RuntimeTier,
 } from '../types.js';
 import { emptyApprovalLog } from '../types.js';
-import { ApprovalDriver } from './approval-driver.js';
+import { ApprovalDriver, unansweredPromptWatcher } from './approval-driver.js';
 import { resolveClaudeConfigPin } from './claude-config.js';
 import { createSandbox, type Sandbox } from './sandbox.js';
 import { onInterrupt } from './interrupt.js';
@@ -438,8 +438,12 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
 
     // A case that drives a real tool parks on an approval prompt nobody would
     // otherwise answer (DOR-498). The driver answers within the case's policy and
-    // hands its record to the oracles; a case without a policy gets no driver and
-    // an empty log, which is correct for a turn that runs no tools.
+    // hands its record to the oracles.
+    //
+    // A case WITHOUT a policy gets no driver and an empty log, which is correct
+    // only for a turn that runs no tools — so it gets the watcher instead, which
+    // fails the eval the moment a prompt proves otherwise rather than letting it
+    // sit out the 90-second guard. See `unansweredPromptWatcher`.
     const probeBeforeDecision = evalCase.probeBeforeDecision;
     if (evalCase.approvalPolicy) {
       approvalDriver = new ApprovalDriver({
@@ -450,7 +454,10 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
       approvalDriver.start();
     }
     const driver = approvalDriver;
-    const onFrames = driver ? (fs: SseFrame[], id: string) => driver.observe(fs, id) : undefined;
+    const watchForUnanswered = unansweredPromptWatcher();
+    const onFrames = driver
+      ? (fs: SseFrame[], id: string) => driver.observe(fs, id)
+      : (fs: SseFrame[]) => watchForUnanswered(fs);
 
     if (turns.length > 0) {
       turnAttempted = true;
