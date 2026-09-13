@@ -65,26 +65,39 @@ function openRun(taskId: string) {
   return store.createRun(taskId, 'scheduled');
 }
 
+/** What every session route's `parseSessionId` will accept. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 describe('resolveRunSession', () => {
-  it('gives a non-sticky run its own id and no resume', () => {
+  it('gives a non-sticky run a session of its own and no resume', () => {
     const t = task(false);
     completedRun(t.id, 'sess-old', 'claude-code');
-    const run = openRun(t.id);
 
-    expect(resolveRunSession(store, t, run, { runtimeType: 'claude-code' })).toEqual({
-      sessionId: run.id,
-      hasStarted: false,
-    });
+    const resolved = resolveRunSession(store, t, { runtimeType: 'claude-code' });
+    expect(resolved.hasStarted).toBe(false);
+    expect(resolved.sessionId).toMatch(UUID);
   });
 
-  it("gives a sticky task's FIRST fire its own id and no resume", () => {
-    const t = task();
-    const run = openRun(t.id);
+  it('gives every non-sticky run a session NOBODY else is on', () => {
+    // The discriminating case for using a fresh id rather than the run's own.
+    // Two fires of the same task must not land on one session, and — the reason
+    // this changed at all — the id has to be one the session routes accept: a
+    // run id is a ULID, and `parseSessionId` answers 400 for those, so a card
+    // raised on that session could be opened by nobody and answered by nothing.
+    const t = task(false);
 
-    expect(resolveRunSession(store, t, run, { runtimeType: 'claude-code' })).toEqual({
-      sessionId: run.id,
-      hasStarted: false,
-    });
+    const first = resolveRunSession(store, t, { runtimeType: 'claude-code' });
+    const second = resolveRunSession(store, t, { runtimeType: 'claude-code' });
+    expect(first.sessionId).not.toBe(second.sessionId);
+    expect(first.sessionId).toMatch(UUID);
+  });
+
+  it("gives a sticky task's FIRST fire a session of its own and no resume", () => {
+    const t = task();
+
+    const resolved = resolveRunSession(store, t, { runtimeType: 'claude-code' });
+    expect(resolved.hasStarted).toBe(false);
+    expect(resolved.sessionId).toMatch(UUID);
   });
 
   it('resumes the prior session when the runtime has not changed', () => {
@@ -92,7 +105,7 @@ describe('resolveRunSession', () => {
     completedRun(t.id, 'sess-old', 'claude-code');
     const run = openRun(t.id);
 
-    expect(resolveRunSession(store, t, run, { runtimeType: 'claude-code' })).toEqual({
+    expect(resolveRunSession(store, t, { runtimeType: 'claude-code' })).toEqual({
       sessionId: 'sess-old',
       hasStarted: true,
     });
@@ -105,12 +118,10 @@ describe('resolveRunSession', () => {
     // is the one this task's very first fire got.
     const t = task();
     completedRun(t.id, 'sess-codex', 'codex');
-    const run = openRun(t.id);
 
-    expect(resolveRunSession(store, t, run, { runtimeType: 'claude-code' })).toEqual({
-      sessionId: run.id,
-      hasStarted: false,
-    });
+    const resolved = resolveRunSession(store, t, { runtimeType: 'claude-code' });
+    expect(resolved.hasStarted).toBe(false);
+    expect(resolved.sessionId).toMatch(UUID);
   });
 
   it('still resumes a prior run with NO runtime on record', () => {
@@ -122,7 +133,7 @@ describe('resolveRunSession', () => {
     completedRun(t.id, 'sess-ancient', null);
     const run = openRun(t.id);
 
-    expect(resolveRunSession(store, t, run, { runtimeType: 'claude-code' })).toEqual({
+    expect(resolveRunSession(store, t, { runtimeType: 'claude-code' })).toEqual({
       sessionId: 'sess-ancient',
       hasStarted: true,
     });
@@ -135,13 +146,9 @@ describe('resolveRunSession', () => {
     const t = task();
     completedRun(t.id, 'sess-first', 'claude-code');
     completedRun(t.id, 'sess-second', 'codex');
-    const run = openRun(t.id);
 
-    expect(resolveRunSession(store, t, run, { runtimeType: 'claude-code' })).toEqual({
-      sessionId: run.id,
-      hasStarted: false,
-    });
-    expect(resolveRunSession(store, t, run, { runtimeType: 'codex' })).toEqual({
+    expect(resolveRunSession(store, t, { runtimeType: 'claude-code' }).hasStarted).toBe(false);
+    expect(resolveRunSession(store, t, { runtimeType: 'codex' })).toEqual({
       sessionId: 'sess-second',
       hasStarted: true,
     });

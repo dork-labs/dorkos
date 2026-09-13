@@ -111,9 +111,17 @@ export type {
 export {
   triggerTurn,
   DetachedTurnLifecycle,
+  sessionTurnQueue,
   CANONICAL_ID_TIMEOUT_MS,
   guardTurnErrors,
 } from './trigger-turn.js';
+export { settleOpenTurnBefore } from './settle-open-turn.js';
+export { createCanonicalRekey } from './turn-identity/canonical-rekey.js';
+export type {
+  CanonicalRekeyOpts,
+  CanonicalRekeyPort,
+  TurnChainLink,
+} from './turn-identity/canonical-rekey.js';
 export type { TriggerTurnDeps, TriggerTurnOpts, TriggerTurnResult } from './trigger-turn.js';
 export {
   resolveSessionDefaults,

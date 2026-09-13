@@ -100,23 +100,32 @@ describe('handleTasksMessage sticky session (DOR-1571)', () => {
     );
   });
 
-  it('falls back to the run id and starts fresh when no session is carried (unchanged)', async () => {
+  it('mints a session of its own — never the run id — when none is carried', async () => {
+    // An envelope from an older scheduler, which carried the session id only for
+    // a sticky run. Today's scheduler always carries one, so this is the last
+    // path that could still put a RUN ID on a session — and a run id is a ULID,
+    // which every session route rejects. A session under one can be opened by
+    // nobody: no event stream, no approval routes, no snapshot. A fresh UUID is
+    // the same isolated-per-run session the fallback always meant.
     const payload = basePayload({ runId: 'run-7' });
 
     await handleTasksMessage('sub', envelopeFor(payload), undefined, Date.now(), config, deps);
 
-    expect(agentManager.ensureSession).toHaveBeenCalledWith(
-      'run-7',
-      expect.objectContaining({ hasStarted: false })
-    );
+    const [sessionId, opts] = vi.mocked(agentManager.ensureSession).mock.calls[0]!;
+    expect(sessionId).not.toBe('run-7');
+    expect(sessionId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(opts).toEqual(expect.objectContaining({ hasStarted: false }));
+    // The turn runs on that same session, not on two.
     expect(agentManager.sendMessage).toHaveBeenCalledWith(
-      'run-7',
+      sessionId,
       'do the thing',
       expect.anything()
     );
+    // Still the runtime's own id on the row, sticky or not: it is what makes the
+    // run clickable through to the conversation it actually had.
     expect(taskStore.updateRun).toHaveBeenCalledWith(
       'run-7',
-      expect.objectContaining({ status: 'completed', sessionId: 'run-7' })
+      expect.objectContaining({ status: 'completed', sessionId: 'sdk-real-after-turn' })
     );
   });
 });

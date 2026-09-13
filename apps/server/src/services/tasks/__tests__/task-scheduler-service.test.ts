@@ -43,6 +43,9 @@ function createMockAgentManager(): SchedulerAgentManager {
     // The bare mock never remaps, so a sticky run persists the key it was given.
     // The sticky tests that care about the SDK's id remap use RemapFakeAgent below.
     getInternalSessionId: vi.fn(() => undefined),
+    // Nobody else is writing to these sessions, so the write-lock is always free.
+    acquireLock: vi.fn(() => true),
+    releaseLock: vi.fn(),
   } as unknown as SchedulerAgentManager;
 }
 
@@ -110,6 +113,11 @@ class RemapFakeAgent {
   getInternalSessionId(sessionId: string): string | undefined {
     return this.live.get(sessionId);
   }
+
+  /** Nobody else writes to these sessions, so the write-lock is always free. */
+  acquireLock = vi.fn(() => true);
+
+  releaseLock = vi.fn();
 
   interruptQuery = vi.fn().mockResolvedValue(true);
 
@@ -184,6 +192,13 @@ function turnThatEndsAsItIsStopped(stopAtEnd: () => void): AsyncGenerator<Stream
     ...iterator,
   } as AsyncGenerator<StreamEvent>;
 }
+
+/**
+ * A run's session id is a freshly minted UUID (`resolveRunSession`), never the
+ * run's own ULID — this is what a test matches it against instead of a
+ * hardcoded identity.
+ */
+const SESSION_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** Build a minimal CreateTaskStoreInput with defaults for required fields. */
 function taskInput(
@@ -776,8 +791,14 @@ describe('TaskSchedulerService', () => {
         { timeout: 2000 }
       );
 
-      // The runtime is told to stop, not merely marked stopped in the DB.
-      expect(interruptSpy(mockAgent)).toHaveBeenCalledWith(run!.id);
+      // The runtime is told to stop, not merely marked stopped in the DB — on
+      // the freshly minted session id the turn actually ran on (no longer the
+      // run's own id), so pull it from the call that opened the session rather
+      // than assume an identity that no longer holds.
+      const sessionId = vi.mocked(mockAgent.ensureSession).mock.calls[0]![0];
+      expect(sessionId).toMatch(SESSION_UUID_RE);
+      expect(interruptSpy(mockAgent)).toHaveBeenCalledWith(sessionId);
+      expect(store.getRun(run!.id)!.sessionId).toBe(sessionId);
       // A deadline reads differently from an operator cancel in the run record.
       expect(store.getRun(run!.id)!.error).toContain('time limit');
       // The concurrency slot is released, so the next tick can fire.
@@ -807,9 +828,18 @@ describe('TaskSchedulerService', () => {
         { timeout: 2000 }
       );
 
-      expect(interruptSpy(mockAgent)).toHaveBeenCalledWith(run!.id);
+      // Same relationship as above: the interrupt targets the session the turn
+      // actually runs on, captured from the call that opened it.
+      const sessionId = vi.mocked(mockAgent.ensureSession).mock.calls[0]![0];
+      expect(sessionId).toMatch(SESSION_UUID_RE);
+      expect(interruptSpy(mockAgent)).toHaveBeenCalledWith(sessionId);
+      expect(store.getRun(run!.id)!.sessionId).toBe(sessionId);
       expect(store.getRun(run!.id)!.error).toBe('Run cancelled');
-      expect(service.getActiveRunCount()).toBe(0);
+      // The row goes terminal first and the slot comes back a beat later: an
+      // attended run hands its session back — the turn window, the write-lock,
+      // the chain slot — before it stops counting against the cap, so that the
+      // next run to start never finds the session still held.
+      await vi.waitFor(() => expect(service.getActiveRunCount()).toBe(0), { timeout: 2000 });
 
       await service.stop();
     });
@@ -822,11 +852,14 @@ describe('TaskSchedulerService', () => {
         taskInput({ name: 'PhotoFinish', prompt: 'test', cron: '0 * * * *', maxRuntime: null })
       );
       const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
-      // The session key IS the run id, so the turn can stop the very run it is
-      // ending — at the instant it ends.
-      vi.mocked(mockAgent.sendMessage).mockImplementation(((sessionId: string) =>
+      // The session key is a freshly minted UUID now, not the run id, so the
+      // turn cannot stop itself by echoing back what it was called with — it
+      // looks the run up by task instead. The row already exists by the time
+      // this fires: `triggerManualRun` opens it, synchronously, before the turn
+      // is ever started.
+      vi.mocked(mockAgent.sendMessage).mockImplementation((() =>
         turnThatEndsAsItIsStopped(
-          () => void service.cancelRun(sessionId)
+          () => void service.cancelRun(store.listRuns({ taskId: task.id })[0]!.id)
         )) as unknown as SchedulerAgentManager['sendMessage']);
 
       const run = await service.triggerManualRun(task.id);
@@ -1133,25 +1166,30 @@ describe('TaskSchedulerService', () => {
     }
 
     /**
-     * Trigger a manual run and wait for it to actually reach the bus.
+     * Dispatch a SCHEDULED fire and wait for it to actually reach the bus.
      *
-     * `triggerManualRun` is fire-and-forget by contract, and a dispatch now
-     * RESOLVES its runtime, model and effort before it routes (DOR-1615) —
-     * real awaited work. So "the trigger returned" never meant "the run was
-     * dispatched"; on this path it merely used to be true by accident. Waiting
-     * on the observable each case is actually about keeps it honest either way.
+     * An attended run (manual, or otherwise watched) never rides the relay any
+     * more — `assessRelayDispatch` refuses everything but `trigger ===
+     * 'scheduled'` — so exercising the bus path means driving `dispatch()`
+     * directly, the same private chokepoint the cron callback itself uses.
+     * `dispatch()` awaits the whole run, `mockRelay.publish` included, so the
+     * wait below is a formality rather than a race — kept because it documents
+     * what this helper is actually for.
      *
      * @param service - The scheduler under test.
-     * @param taskId - The task to fire.
+     * @param task - The task to fire.
+     * @param when - The scheduled tick this fire claims; give each dispatch in
+     *   a test its own value; `dispatch` dedupes same-tick fires.
      */
     async function triggerAndPublish(
       service: TaskSchedulerService,
-      taskId: string
+      task: ReturnType<TaskStore['createTask']>,
+      when: Date
     ): Promise<TaskRun | null> {
       const before = mockRelay.publish.mock.calls.length;
-      const run = await service.triggerManualRun(taskId);
+      await (service as unknown as Dispatchable).dispatch(task, when);
       await vi.waitFor(() => expect(mockRelay.publish.mock.calls.length).toBeGreaterThan(before));
-      return run;
+      return store.listRuns({ taskId: task.id })[0] ?? null;
     }
 
     it('a relay-dispatched run is counted as active', async () => {
@@ -1161,7 +1199,7 @@ describe('TaskSchedulerService', () => {
       const task = store.createTask(taskInput({ name: 'Busy relay', cron: '0 * * * *' }));
       const service = relayScheduler();
 
-      await triggerAndPublish(service, task.id);
+      await triggerAndPublish(service, task, new Date(1_700_000_000_000));
 
       expect(service.getActiveRunCount()).toBe(1);
       await service.stop();
@@ -1174,7 +1212,7 @@ describe('TaskSchedulerService', () => {
       const second = store.createTask(taskInput({ name: 'Second', cron: '0 * * * *' }));
       const service = relayScheduler(1);
 
-      await triggerAndPublish(service, first.id); // takes the only slot
+      await triggerAndPublish(service, first, new Date(1_700_000_000_000)); // takes the only slot
       await (service as unknown as Dispatchable).dispatch(second, new Date(1_700_000_040_000));
 
       // The second task was NOT published — it never ran.
@@ -1189,7 +1227,7 @@ describe('TaskSchedulerService', () => {
       const second = store.createTask(taskInput({ name: 'Then runs', cron: '0 * * * *' }));
       const service = relayScheduler(1);
 
-      const held = await triggerAndPublish(service, first.id);
+      const held = await triggerAndPublish(service, first, new Date(1_700_000_000_000));
       expect(service.getActiveRunCount()).toBe(1);
 
       // The receiver finishes it — the row is the only thing that says so.
@@ -1202,14 +1240,17 @@ describe('TaskSchedulerService', () => {
       await service.stop();
     });
 
-    it('a non-sticky relay dispatch carries no session on the wire (DOR-1571)', async () => {
+    it('a non-sticky relay dispatch carries a fresh, non-resuming session on the wire (DOR-1571)', async () => {
       const task = store.createTask(taskInput({ name: 'Plain relay', cron: '0 * * * *' }));
       const service = relayScheduler();
-      await triggerAndPublish(service, task.id);
+      await triggerAndPublish(service, task, new Date(1_700_000_000_000));
 
+      // Every dispatch carries a session now (`resolveRunSession` always mints
+      // one) — a non-sticky run's is simply freshly minted and never resumed,
+      // rather than absent.
       const [, payload] = mockRelay.publish.mock.calls[0] as [string, TaskDispatchPayload];
-      expect(payload.sessionId).toBeUndefined();
-      expect(payload.resumeSession).toBeUndefined();
+      expect(payload.sessionId).toMatch(SESSION_UUID_RE);
+      expect(payload.resumeSession).toBe(false);
       await service.stop();
     });
 
@@ -1219,10 +1260,12 @@ describe('TaskSchedulerService', () => {
       );
       const service = relayScheduler();
 
-      // First fire: no prior run, so it starts fresh under the run's own id.
-      const first = await triggerAndPublish(service, task.id);
+      // First fire: no prior run, so it starts fresh under a freshly minted
+      // session id — never the run's own id, which is a ULID no session route
+      // accepts.
+      const first = await triggerAndPublish(service, task, new Date(1_700_000_040_000));
       const [, firstPayload] = mockRelay.publish.mock.calls[0] as [string, TaskDispatchPayload];
-      expect(firstPayload.sessionId).toBe(first!.id);
+      expect(firstPayload.sessionId).toMatch(SESSION_UUID_RE);
       expect(firstPayload.resumeSession).toBe(false);
 
       // The receiver finishes the turn and records the RUNTIME's own session id
@@ -1247,7 +1290,7 @@ describe('TaskSchedulerService', () => {
     it('shutdown asks the bus to stop the relay runs it cannot abort itself', async () => {
       const task = store.createTask(taskInput({ name: 'Left running', cron: '0 * * * *' }));
       const service = relayScheduler();
-      const run = await triggerAndPublish(service, task.id);
+      const run = await triggerAndPublish(service, task, new Date(1_700_000_000_000));
 
       await service.stop();
 
@@ -1380,7 +1423,7 @@ describe('TaskSchedulerService', () => {
       await service.stop();
     });
 
-    it('a non-sticky task still gets a fresh session per run (unchanged)', async () => {
+    it('a non-sticky task still gets a fresh session per run', async () => {
       const fake = new RemapFakeAgent();
       const task = store.createTask(taskInput({ name: 'Fresh each time', cron: '* * * * *' }));
       const service = new TaskSchedulerService(store, fake as unknown as SchedulerAgentManager, {
@@ -1394,11 +1437,18 @@ describe('TaskSchedulerService', () => {
 
       const runs = store.listRuns({ taskId: task.id });
       expect(runs).toHaveLength(2);
-      // Non-sticky keeps writing the run's own id (byte-for-byte the old behaviour),
-      // and the two runs differ. Neither ever resumes.
-      expect(runs[0].sessionId).toBe(runs[0].id);
-      expect(runs[1].sessionId).toBe(runs[1].id);
-      expect(runs[0].sessionId).not.toBe(runs[1].sessionId);
+      expect(fake.turns).toHaveLength(2);
+      // Non-sticky no longer keys the session off the run's own id (a run id is
+      // a ULID, and no session route accepts one) — each run's session is
+      // whatever id the runtime actually ran under, captured back through
+      // `getInternalSessionId`. Every run still gets its OWN session, and
+      // neither ever resumes.
+      const ranAsIds = fake.turns.map((t) => t.ranAs);
+      expect(new Set(ranAsIds).size).toBe(2);
+      for (const run of runs) {
+        expect(ranAsIds).toContain(run.sessionId);
+        expect(run.sessionId).not.toBe(run.id);
+      }
       expect(fake.turns.every((t) => t.loadedHistory === false)).toBe(true);
 
       await service.stop();
@@ -1800,7 +1850,14 @@ describe('TaskSchedulerService', () => {
     });
   });
 
-  describe('executeRunViaRelay (via triggerManualRun)', () => {
+  describe('executeRunViaRelay (via a scheduled dispatch)', () => {
+    // Attended runs (manual "Run now" included) never ride the relay any more —
+    // `assessRelayDispatch` refuses everything but `trigger === 'scheduled'` —
+    // so exercising this path means driving the scheduled-firing chokepoint
+    // directly, the same door the cron callback itself uses.
+    type Dispatchable = {
+      dispatch(t: ReturnType<TaskStore['createTask']>, when?: Date | null): Promise<void>;
+    };
     let mockRelay: { publish: ReturnType<typeof vi.fn> };
 
     beforeEach(() => {
@@ -1830,7 +1887,7 @@ describe('TaskSchedulerService', () => {
         relay: mockRelay as unknown as RelayCore,
       });
 
-      await service.triggerManualRun(task.id);
+      await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
       await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
 
       const [subject] = mockRelay.publish.mock.calls[0];
@@ -1856,7 +1913,7 @@ describe('TaskSchedulerService', () => {
         relay: mockRelay as unknown as RelayCore,
       });
 
-      await service.triggerManualRun(task.id);
+      await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
       await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
 
       const [, payload, options] = mockRelay.publish.mock.calls[0];
@@ -1870,7 +1927,7 @@ describe('TaskSchedulerService', () => {
       expect(dispatch.permissionMode).toBe('acceptEdits');
       expect(dispatch.taskName).toBe('Payload Test');
       expect(dispatch.cron).toBe('30 2 * * *');
-      expect(dispatch.trigger).toBe('manual');
+      expect(dispatch.trigger).toBe('scheduled');
       // The unattended briefing the direct path builds, carried on the wire so
       // the receiving process can hand it to the agent (DOR-1567).
       expect(dispatch.systemPromptAppend).toContain('Job: Payload Test');
@@ -1907,12 +1964,15 @@ describe('TaskSchedulerService', () => {
         relay: mockRelay as unknown as RelayCore,
       });
 
-      const run = await service.triggerManualRun(task.id);
+      await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
+      const run = store.listRuns({ taskId: task.id })[0];
       await vi.waitFor(() => expect(store.getRun(run!.id)!.status).toBe('failed'));
 
       const updatedRun = store.listRuns({ taskId: task.id }).find((r) => r.id === run!.id);
       expect(updatedRun?.status).toBe('failed');
-      expect(updatedRun?.error).toBe('No receiver for the scheduled run');
+      expect(updatedRun?.error).toBe(
+        'Nothing was available to run this scheduled task, so the run never started.'
+      );
 
       await service.stop();
     });
@@ -1944,7 +2004,8 @@ describe('TaskSchedulerService', () => {
       // `updateRun({ status: 'running' })` in `relay-dispatch.ts` and this reds.
       const wroteRunning = vi.spyOn(store, 'updateRun');
 
-      const run = await service.triggerManualRun(task.id);
+      await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
+      const run = store.listRuns({ taskId: task.id })[0];
       await vi.waitFor(() =>
         expect(wroteRunning).toHaveBeenCalledWith(run!.id, { status: 'running' })
       );
@@ -1985,7 +2046,8 @@ describe('TaskSchedulerService', () => {
         relay: mockRelay as unknown as RelayCore,
       });
 
-      const run = await service.triggerManualRun(task.id);
+      await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
+      const run = store.listRuns({ taskId: task.id })[0];
       await vi.waitFor(() => expect(store.getRun(run!.id)!.status).toBe('completed'));
 
       const updatedRun = store.getRun(run!.id);
@@ -2015,7 +2077,7 @@ describe('TaskSchedulerService', () => {
         relay: mockRelay as unknown as RelayCore,
       });
 
-      await service.triggerManualRun(task.id);
+      await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
       await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
 
       const [, , options] = mockRelay.publish.mock.calls[0];
@@ -2043,7 +2105,7 @@ describe('TaskSchedulerService', () => {
         relay: mockRelay as unknown as RelayCore,
       });
 
-      await service.triggerManualRun(task.id);
+      await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
       await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
 
       const [, , options] = mockRelay.publish.mock.calls[0];
@@ -2083,7 +2145,8 @@ describe('TaskSchedulerService', () => {
         activityService: activityService as unknown as ActivityService,
       });
 
-      const run = await service.triggerManualRun(task.id);
+      await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
+      const run = store.listRuns({ taskId: task.id })[0];
       // The handler's terminal write is the signal. The `deliveredTo === 0`
       // branch that this test is really about runs synchronously once `publish`
       // resolves — i.e. before any poll of this wait can observe the row — so a
@@ -2329,9 +2392,14 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
     const run = await service.triggerManualRun(task.id);
     await vi.waitFor(() => expect(store.getRun(run!.id)!.status).toBe('failed'));
 
+    // The session id is a freshly minted UUID now, not the run's own id — pull
+    // it from the call that opened the session and check the failed row was
+    // stamped with that same one.
+    const sessionId = vi.mocked(mockAgent.ensureSession).mock.calls[0]![0];
+    expect(sessionId).toMatch(SESSION_UUID_RE);
     const updated = store.getRun(run!.id);
     expect(updated!.error).toContain('the runtime fell over');
-    expect(updated!.sessionId).toBe(run!.id);
+    expect(updated!.sessionId).toBe(sessionId);
 
     await service.stop();
   });
@@ -2541,6 +2609,19 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
   }
 
   /**
+   * The scheduled-firing chokepoint, for driving the relay-dispatch path
+   * directly.
+   *
+   * Attended runs — manual "Run now" included — never ride the relay any more
+   * (`assessRelayDispatch` refuses everything but `trigger === 'scheduled'`),
+   * so every routing case below that is actually about the bus dispatches a
+   * SCHEDULED fire through this rather than `triggerManualRun`.
+   */
+  type Dispatchable = {
+    dispatch(t: ReturnType<TaskStore['createTask']>, when?: Date | null): Promise<void>;
+  };
+
+  /**
    * Write an agent whose manifest names a runtime and a model, under a chosen
    * workspace binding.
    *
@@ -2620,8 +2701,12 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
 
     const first = await runToCompletion(service, task.id);
     expect(first.resolvedRuntime).toBe('claude-code');
+    // The session id is a freshly minted UUID now, not the run's own id — the
+    // persisted row is what pins the identity, and that is exactly what a
+    // second fire needs to resume.
+    expect(first.sessionId).toMatch(SESSION_UUID_RE);
     expect(store.latestStickyRun(task.id)).toEqual({
-      sessionId: first.id,
+      sessionId: first.sessionId,
       runtime: 'claude-code',
     });
 
@@ -2640,7 +2725,10 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
 
     const [sessionId, opts] = vi.mocked(managers['codex']!.ensureSession).mock.calls.at(-1)!;
     expect(opts).toMatchObject({ hasStarted: false });
-    expect(sessionId).toBe(third.id);
+    // Fresh means a newly minted UUID, not the run's own id — and the id
+    // passed to `ensureSession` is the same one the row ends up recording.
+    expect(sessionId).toMatch(SESSION_UUID_RE);
+    expect(sessionId).toBe(third.sessionId);
     expect(third.resolvedRuntime).toBe('codex');
     await service.stop();
   });
@@ -2752,7 +2840,7 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
       const task = store.createTask(taskInput({ name: 'Bus', runtime: 'claude-code' }));
       const service = scheduler(['claude-code', 'codex'], relay as unknown as RelayCore);
 
-      await service.triggerManualRun(task.id);
+      await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
       await vi.waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
 
       expect(managers['claude-code']!.sendMessage).not.toHaveBeenCalled();
@@ -2782,7 +2870,7 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
       );
       const service = scheduler(['claude-code'], relay as unknown as RelayCore);
 
-      await service.triggerManualRun(task.id);
+      await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
       await vi.waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
 
       const [, payload] = relay.publish.mock.calls[0] as [string, TaskDispatchPayload];
@@ -2797,7 +2885,7 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
       const task = store.createTask(taskInput({ name: 'Plain wire' }));
       const service = scheduler(['claude-code'], relay as unknown as RelayCore);
 
-      await service.triggerManualRun(task.id);
+      await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
       await vi.waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
 
       const [, payload] = relay.publish.mock.calls[0] as [string, TaskDispatchPayload];
@@ -2845,7 +2933,7 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
         HOLDS_EVERYTHING
       );
 
-      await service.triggerManualRun(task.id);
+      await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
       await vi.waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
 
       expect(managers['codex']!.sendMessage).not.toHaveBeenCalled();
@@ -2864,7 +2952,7 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
         HOLDS_EVERYTHING
       );
 
-      await service.triggerManualRun(task.id);
+      await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
       await vi.waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
 
       const [, payload] = relay.publish.mock.calls[0] as [string, TaskDispatchPayload];
@@ -2903,7 +2991,7 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
       const task = store.createTask(taskInput({ name: 'Test mode', runtime: 'test-mode' }));
       const service = scheduler(['test-mode'], relay as unknown as RelayCore, HOLDS_EVERYTHING);
 
-      await service.triggerManualRun(task.id);
+      await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
       await vi.waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
 
       const [, payload] = relay.publish.mock.calls[0] as [string, TaskDispatchPayload];
@@ -2977,7 +3065,7 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
         livePredicate(['claude-code'])
       );
 
-      await service.triggerManualRun(task.id);
+      await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
       await vi.waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
 
       expect(managers['claude-code']!.sendMessage).not.toHaveBeenCalled();
@@ -2992,7 +3080,8 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
       await registry.unregister('claude-code');
       // What the bus really answers with nothing claiming the subject, so the
       // old reading fails this test the way the bug failed in production: a
-      // `failed` row reading "No receiver for the scheduled run".
+      // `failed` row reading "Nothing was available to run this scheduled
+      // task, so the run never started."
       relay.publish.mockResolvedValue({ messageId: 'm-1', deliveredTo: 0 });
       const task = store.createTask(taskInput({ name: 'Disabled bus', runtime: 'claude-code' }));
       const service = scheduler(
@@ -3049,7 +3138,7 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
         return livePredicate(['claude-code'])(rt, subject);
       });
 
-      await service.triggerManualRun(task.id);
+      await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
       await vi.waitFor(() => expect(relay.publish).toHaveBeenCalledOnce());
 
       expect(asked).toEqual([taskDispatchSubject(task.id)]);

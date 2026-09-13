@@ -204,14 +204,17 @@ describe('flow-drain Pulse seat (real chokidar + croner integration)', () => {
     expect(runtime.ensureSession).toHaveBeenCalledTimes(1);
     expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
 
-    // The session is keyed by the run id (sessionId === run.id) and starts fresh.
+    // The session is the run's own, starts fresh, and is named by a UUID — the
+    // only id shape the session routes accept, so a person can open it.
     const [ensureSessionId, ensureOpts] = runtime.ensureSession.mock.calls[0];
-    expect(ensureSessionId).toBe(run!.id);
+    expect(ensureSessionId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+    );
     expect(ensureOpts).toMatchObject({ hasStarted: false, cwd: WORKTREE_CWD });
 
     // The dispatch resolves the worktree cwd (via the mesh-linked agent).
     const [sendSessionId, sendContent, sendOpts] = runtime.sendMessage.mock.calls[0];
-    expect(sendSessionId).toBe(run!.id);
+    expect(sendSessionId).toBe(ensureSessionId);
     expect(sendContent).toContain('Run one tick of the /flow autonomous loop');
     expect(sendOpts?.cwd).toBe(WORKTREE_CWD);
     expect(sendOpts?.permissionMode).toBe('acceptEdits');
@@ -219,7 +222,7 @@ describe('flow-drain Pulse seat (real chokidar + croner integration)', () => {
     // The run is recorded against that session.
     const finished = store.getRun(run!.id);
     expect(finished?.status).toBe('completed');
-    expect(finished?.sessionId).toBe(run!.id);
+    expect(finished?.sessionId).toBe(ensureSessionId);
   });
 
   it('registers a non-overlapping (protect:true) croner job in the task timezone', async () => {
@@ -267,7 +270,7 @@ describe('flow-drain Pulse seat (real chokidar + croner integration)', () => {
     job.stop();
   });
 
-  it('each tick is a fresh session keyed by its run id (fresh-session-per-issue, §7.7)', async () => {
+  it('each tick is a fresh session of its own (fresh-session-per-issue, §7.7)', async () => {
     const projectPath = path.join(dorkHome, 'project');
     const skillDir = path.join(skillsDir, 'flow-drain');
     await mkdir(skillDir);
@@ -306,17 +309,19 @@ describe('flow-drain Pulse seat (real chokidar + croner integration)', () => {
       expect(store.getRun(second!.id)?.status).toBe('completed');
     });
 
-    // Distinct runs, each its own fresh session (sessionId === run.id).
+    // Distinct runs, and neither tick reuses the other's session.
     expect(first!.id).not.toBe(second!.id);
     expect(runtime.ensureSession).toHaveBeenCalledTimes(2);
     expect(runtime.sendMessage).toHaveBeenCalledTimes(2);
 
     const sessionIds = runtime.sendMessage.mock.calls.map(([sid]) => sid);
-    expect(new Set(sessionIds)).toEqual(new Set([first!.id, second!.id]));
+    expect(new Set(sessionIds).size).toBe(2);
 
     const runs = store.listRuns({ taskId: task.id });
     expect(runs.length).toBe(2);
     expect(runs.every((r) => r.status === 'completed')).toBe(true);
-    expect(runs.every((r) => r.sessionId === r.id)).toBe(true);
+    // Each run names the session it actually ran on, so it opens to a real
+    // conversation rather than to a 400.
+    expect(new Set(runs.map((r) => r.sessionId))).toEqual(new Set(sessionIds));
   });
 });

@@ -6,10 +6,11 @@ import type {
   InterruptReceipt,
   Task,
   TaskRun,
+  TaskRunTrigger,
   PermissionMode,
   StreamEvent,
 } from '@dorkos/shared/types';
-import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
+import type { RuntimeCapabilities, SseResponse } from '@dorkos/shared/agent-runtime';
 import { isTerminalRunStatus, type TaskStore } from './task-store.js';
 import type { ActivityService } from '../activity/activity-service.js';
 import { isRelayEnabled } from '../relay/relay-state.js';
@@ -41,6 +42,7 @@ import { buildTaskAppend } from './task-append.js';
 import { previewNextRuns } from './cron-preview.js';
 import { resolveScheduledRunPermissionMode } from './scheduled-run-power.js';
 import { resolveRunSession } from './session/sticky-session.js';
+import { claimRunTurn, SESSION_BUSY_ERROR, type RunTurn } from './session/run-projection.js';
 import { resolveSessionCwd } from '../workspace/resolve-session-cwd.js';
 import {
   resolveRunExecution,
@@ -189,12 +191,32 @@ export interface SchedulerAgentManager {
    * The runtime's OWN session id for a session key, after the SDK has minted or
    * kept one (`AgentRuntime.getInternalSessionId`).
    *
-   * A sticky run reads this once its turn is over to learn the real id the SDK
-   * wrote its transcript under, then persists it as the run's `sessionId` so the
-   * next fire can resume that exact conversation (DOR-1571). Returns undefined
-   * when the session is gone or never started.
+   * Every run reads this once its turn is over to learn the real id the SDK
+   * wrote its transcript under, then persists it as the run's `sessionId`: it is
+   * what makes the run clickable through to the conversation it actually had,
+   * and what a sticky task's next fire resumes (DOR-1571). Returns undefined
+   * when the session is gone or never started, and the run then records the id
+   * it asked to run under.
    */
   getInternalSessionId(sessionId: string): string | undefined;
+  /**
+   * Take the session write-lock (`AgentRuntime.acquireLock`), answering whether
+   * it was taken.
+   *
+   * An ATTENDED run holds it for the whole of its turn, for the reason a
+   * person's turn does: it is the only seam that serializes against a DIFFERENT
+   * writer, and a sticky task can resume the very session somebody is typing in
+   * (`session/run-projection.ts`). A scheduled fire on a fresh session never
+   * contends for it, and takes it uncontested.
+   */
+  acquireLock(sessionId: string, clientId: string, res: SseResponse, token?: symbol): boolean;
+  /** Give back a lock this run took (`AgentRuntime.releaseLock`). */
+  releaseLock(sessionId: string, clientId: string, token?: symbol): void;
+  /**
+   * End a turn the runtime left open (`AgentRuntime.settleOpenTurn`). Absent for
+   * a runtime that cannot strand one, which reads as "nothing to settle".
+   */
+  settleOpenTurn?(sessionId: string): Promise<boolean>;
 }
 
 /**
@@ -1069,7 +1091,7 @@ export class TaskSchedulerService {
         // why a relay that never built answers "no" rather than being guessed
         // at. It is NOT why the predicate is optional — an absent predicate
         // takes the v1 reading instead, see {@link V1_RELAY_RUNTIME}.
-        const relayVerdict = this.assessRelayDispatch(execution.runtimeType, task.id);
+        const relayVerdict = this.assessRelayDispatch(execution.runtimeType, task.id, run.trigger);
         const viaRelay = relayVerdict.deliverable;
         span.setAttr(ATTR.TASK_DISPATCH, viaRelay ? 'relay' : 'direct');
         if (!relayVerdict.deliverable) {
@@ -1114,9 +1136,29 @@ export class TaskSchedulerService {
    *
    * @param runtimeType - What this run resolved to run on.
    * @param taskId - The task, which names the subject a dispatch would use.
+   * @param trigger - What started this run. A run somebody is WATCHING never
+   *   rides the bus; see the `attended-run` branch.
    * @returns The verdict the dispatch routes on.
    */
-  private assessRelayDispatch(runtimeType: string, taskId: string): RelayDispatchVerdict {
+  private assessRelayDispatch(
+    runtimeType: string,
+    taskId: string,
+    trigger: TaskRunTrigger
+  ): RelayDispatchVerdict {
+    // Asked before anything about the bus, because it is not a question about
+    // the bus. A run a person started is a run a person is waiting on, and its
+    // approval cards have to reach them — which means the turn has to happen in
+    // the process that holds the session surfaces (`session/run-projection.ts`). Handed
+    // to the relay it also runs under a delivery deadline, and the whole turn is
+    // awaited inside it: a card left standing for two minutes while somebody
+    // read it failed the run out from under them with "no receiver", for a run
+    // whose receiver had plainly received it.
+    //
+    // This is the cheap wrong answer by design — the module doc for
+    // `assessTaskDispatch` says a false negative costs nothing, and it costs
+    // nothing here: the same run, the same row, the same accounting, executed in
+    // this process.
+    if (trigger !== 'scheduled') return { deliverable: false, reason: 'attended-run' };
     if (!isRelayEnabled()) return { deliverable: false, reason: 'relay-off' };
     if (this.relay === null) return { deliverable: false, reason: 'relay-not-built' };
     return this.relayHoldsRuntime(runtimeType, taskDispatchSubject(taskId));
@@ -1225,21 +1267,72 @@ export class TaskSchedulerService {
     // A sticky task whose resolved runtime differs from the one its previous RUN
     // used starts FRESH — sessions are runtime-bound and never revised
     // (ADR-0255), so there is nothing there to resume (DOR-1615).
-    const { sessionId, hasStarted } = resolveRunSession(this.store, task, run, {
+    const { sessionId, hasStarted } = resolveRunSession(this.store, task, {
       runtimeType: execution.runtimeType,
     });
 
-    // What to write as this run's `sessionId`. For a sticky run it is the RUNTIME's
-    // own id after the turn — the id the SDK actually wrote its transcript under —
-    // so the next fire can resume it cold and so clicking the run opens the real
-    // conversation. `sessionId` (the key we passed in) is only a resume request;
-    // the SDK mints or keeps its own, and `getInternalSessionId` reads it back.
-    // Non-sticky is unchanged: the run's own id. Resolved lazily so each terminal
-    // branch — including the failure finalizer — records the freshest answer.
+    // Is somebody waiting in front of the app for this? A scheduled fire is the
+    // one trigger that has nobody: its asks are refused the moment they are
+    // raised, and it needs no live surface. Everything else — a "Run now" a
+    // person clicked, a run an agent started inside a session they can be
+    // looking at — is watched, keeps its answerable approval cards, and gets the
+    // session surfaces that make those cards reachable. One predicate, read
+    // three times below, so the two halves can never disagree about who is
+    // there.
+    const attended = run.trigger !== 'scheduled';
+    // The run's claim on its session — the chain slot, the write-lock, the
+    // stranded-turn settle, the projection and the rename-following a person's
+    // turn gets. Taken inside the `try` below so a session that never came free
+    // fails the run through the one finalizer, and released in the `finally`.
+    let turn: RunTurn | undefined;
+
+    // What to write as this run's `sessionId`: the RUNTIME's own id after the
+    // turn — the id the SDK actually wrote its transcript under — so a sticky
+    // task's next fire can resume it cold and so clicking ANY run opens the real
+    // conversation. `sessionId` (the key we passed in) is only a request; the SDK
+    // mints or keeps its own, and `getInternalSessionId` reads it back. A runtime
+    // that does not rename its own sessions answers with the id it ran under, so
+    // the same expression is right for all of them. Resolved lazily so each
+    // terminal branch — including the failure finalizer — records the freshest
+    // answer, and falls back to the requested id once the session is evicted.
     const persistedSessionId = (): string =>
-      task.sticky ? (agentManager.getInternalSessionId(sessionId) ?? sessionId) : sessionId;
+      agentManager.getInternalSessionId(sessionId) ?? sessionId;
 
     try {
+      if (attended) {
+        // So `POST /api/sessions/:id/approve` resolves the runtime this run is
+        // actually on rather than the server default — a codex or opencode task
+        // whose card is answered from the app must reach its own runtime. Filed
+        // under the id the turn starts on; the claude-code store moves the row
+        // itself when it renames the session (`rekeySessionSettings`), on the
+        // same rename this run follows below, so the two stay together.
+        // Best-effort: a binding that could not be written is not a reason to
+        // refuse the run, and an unbound session still falls back to the default.
+        await runtimeRegistry
+          .persistSessionRuntime(sessionId, execution.runtimeType)
+          .catch((err: unknown) => {
+            logger.warn(`run ${run.id}: could not bind its session to a runtime`, logError(err));
+          });
+        // Opened BEFORE the turn, so an approval raised by the very first tool
+        // call already has a projector behind its session. Resolves only once
+        // the run may safely write to the session — a sticky task whose session
+        // a person is mid-turn in waits here rather than opening a second stream
+        // into one projector (`session/run-projection.ts`).
+        turn =
+          (await claimRunTurn({
+            sessionId,
+            cwd: effectiveCwd,
+            prompt: task.prompt,
+            capabilities: execution.capabilities,
+            runtime: agentManager,
+          })) ?? undefined;
+        if (!turn) throw new Error(SESSION_BUSY_ERROR);
+        // On the row before the turn starts, not only when it ends. A run parked
+        // on an approval is exactly when a person needs to open its conversation,
+        // and the run history only offers that link once `sessionId` is set.
+        this.store.updateRun(run.id, { sessionId });
+      }
+
       // DEFENCE IN DEPTH, and deliberately not more than that. The `??` branch is
       // unreachable through the shipped store: `pulse_schedules.permission_mode`
       // is `NOT NULL DEFAULT 'acceptEdits'`, so a row always carries a mode and
@@ -1290,7 +1383,7 @@ export class TaskSchedulerService {
         // A run an AGENT started (`trigger: 'agent'`) is treated the same as a
         // manual one: it happens inside a live session a person can be looking
         // at, and its card lands in the app like any other.
-        unattended: run.trigger === 'scheduled',
+        unattended: !attended,
       });
 
       const taskAppend = buildTaskAppend(task, run);
@@ -1306,6 +1399,9 @@ export class TaskSchedulerService {
         combinedSignal,
         () => void interruptRun(agentManager, sessionId),
         (event) => {
+          // First, so the card reaches the app before anything else is done with
+          // the event. Everything below only reads.
+          turn?.observe(event);
           outcome.observe(event);
           // Emitted as it happens rather than at the end, so the feed shows the
           // run losing a tool while the run is still going — the same live shape
@@ -1410,6 +1506,11 @@ export class TaskSchedulerService {
       // The activity-feed event for this failure rides the TaskStore run-terminal
       // hook (DOR-1573), fired by the `updateRun('failed')` above.
     } finally {
+      // Closes the turn window, withdraws any ask nobody answered, and hands the
+      // session back — whichever way the run ended, including the throw above. A
+      // session left `streaming` forever, or a card left standing for a run that
+      // is over, is how a finished run keeps claiming a person's attention.
+      await turn?.finish();
       this.runs.release(run.id);
     }
   }

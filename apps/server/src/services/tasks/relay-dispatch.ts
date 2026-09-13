@@ -41,6 +41,24 @@ export interface RelayDispatchDeps {
 const DEFAULT_DISPATCH_TTL_MS = 3_600_000;
 
 /**
+ * What a person reads on a run that nothing was there to execute.
+ *
+ * Reads the run's own trigger rather than saying "scheduled" for all of them. A
+ * run somebody clicked does not ride this path at all any more (the scheduler
+ * keeps an attended run in this process, so its approval cards can reach the
+ * person waiting on it) — but this function publishes whatever it is handed, and
+ * a sentence that names the wrong kind of run sends the reader looking for a
+ * schedule that does not exist.
+ *
+ * @param trigger - What started the run.
+ */
+function noReceiverError(trigger: TaskRun['trigger']): string {
+  return trigger === 'scheduled'
+    ? 'Nothing was available to run this scheduled task, so the run never started.'
+    : 'Nothing was available to run this task, so the run never started.';
+}
+
+/**
  * Execute a run by publishing a `TaskDispatchPayload` via the Relay message bus.
  *
  * Builds an envelope with the task/run metadata and publishes to
@@ -105,7 +123,12 @@ export async function dispatchRunViaRelay(
   // A sticky task whose resolved runtime differs from the one its previous RUN
   // used starts FRESH, exactly as on the direct path — sessions are
   // runtime-bound and never revised (ADR-0255, DOR-1615).
-  const { sessionId, hasStarted } = resolveRunSession(deps.store, task, run, {
+  //
+  // Carried on EVERY envelope, sticky or not. The far side used to fall back to
+  // the run's own id for a non-sticky run, and a run id is a ULID: every session
+  // route validates a UUID, so that run's session could be opened by nobody and
+  // the id written on its row linked to a 400.
+  const { sessionId, hasStarted } = resolveRunSession(deps.store, task, {
     runtimeType: execution.runtimeType,
   });
 
@@ -132,10 +155,11 @@ export async function dispatchRunViaRelay(
     // receiver runs in another process and cannot rebuild it — the task's agent
     // and the run's trigger are not otherwise on the wire — so it travels.
     systemPromptAppend: buildTaskAppend(task, run),
-    // Sticky only: the shared session and whether it already has history to
-    // resume. Absent on a non-sticky run, where the receiver falls back to the
-    // run id and starts fresh.
-    ...(task.sticky ? { sessionId, resumeSession: hasStarted } : {}),
+    // The session this run's turn executes under, and whether it already has
+    // history to resume. `resumeSession` is false for every non-sticky run and
+    // for a sticky task's first fire.
+    sessionId,
+    resumeSession: hasStarted,
     // WHICH PROGRAM runs it (DOR-1614). Unconditional, unlike the two settings
     // below: the receiver's fallback for an absent runtime is its own default,
     // and staying silent here would run a codex task on claude-code — the
@@ -191,7 +215,7 @@ export async function dispatchRunViaRelay(
       status: 'failed',
       finishedAt: new Date().toISOString(),
       durationMs: 0,
-      error: 'No receiver for the scheduled run',
+      error: noReceiverError(run.trigger),
     });
     logger.warn(`no receiver for relay dispatch of run ${run.id}`);
     // The activity-feed event for this failure rides the TaskStore run-terminal

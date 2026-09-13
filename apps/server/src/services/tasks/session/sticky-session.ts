@@ -1,7 +1,7 @@
 /**
  * The session a STICKY scheduled task resumes every fire on (DOR-1571).
  *
- * A non-sticky run is isolated: its session id IS the run's id, so each fire
+ * A non-sticky run is isolated: it gets a session of its own, so each fire
  * starts a fresh conversation that remembers nothing. A sticky task instead
  * RESUMES one lasting conversation across every run, so the agent accumulates
  * context — "since I last ran, here is what changed". This module owns the two
@@ -28,9 +28,21 @@
  * the run row also makes "click any sticky run → open its conversation" work
  * after eviction, since the row now names the actual transcript.
  *
+ * ## Why a fresh run does not simply reuse the run's id
+ *
+ * It used to, and that made the run's session reachable by nobody. Every session
+ * route validates its `:id` as a UUID (`lib/route-utils.ts`, `parseSessionId`),
+ * and a run id is a ULID — so the event stream, the approval routes and the
+ * snapshot all answered `400` for the one session the run was actually on. A
+ * "Run now" the person was watching could raise an approval card that no window
+ * could open and no request could answer. A fresh UUID costs nothing (the id is
+ * minted once per dispatch and carried to whichever path runs it) and puts a
+ * task run's session on exactly the same footing as every other session.
+ *
  * @module services/tasks/session/sticky-session
  */
-import type { Task, TaskRun } from '@dorkos/shared/types';
+import { randomUUID } from 'node:crypto';
+import type { Task } from '@dorkos/shared/types';
 
 /** The store method {@link resolveRunSession} needs — the resume-target lookup. */
 export interface StickySessionLookup {
@@ -46,7 +58,7 @@ export interface RunSession {
   /**
    * The session id the turn runs on. For a resuming sticky run this is a real SDK
    * session id from a prior run (so the runtime finds its transcript); otherwise
-   * it is the run's own id, started fresh.
+   * it is a freshly minted UUID, started fresh.
    */
   sessionId: string;
   /**
@@ -57,13 +69,18 @@ export interface RunSession {
   hasStarted: boolean;
 }
 
+/** A session of this run's own, with no history behind it. */
+function freshSession(): RunSession {
+  return { sessionId: randomUUID(), hasStarted: false };
+}
+
 /**
  * Resolve the session a run runs on.
  *
- * Non-sticky is unchanged: the run's own id, started fresh. A sticky task resumes
- * the real SDK id of its most recent run whenever one exists; only its very first
- * fire starts fresh (under the run's own id, with the real id captured afterward
- * for the next fire to resume).
+ * A non-sticky run gets a session of its own, started fresh. A sticky task
+ * resumes the real SDK id of its most recent run whenever one exists; only its
+ * very first fire starts fresh (under a session of its own, with the real id
+ * captured afterward for the next fire to resume).
  *
  * ## …unless the runtime changed under it (DOR-1615)
  *
@@ -88,19 +105,17 @@ export interface RunSession {
  *
  * @param lookup - The resume-target lookup (the task store).
  * @param task - The task being dispatched.
- * @param run - Its run row, already opened.
  * @param opts.runtimeType - The runtime THIS run resolved to.
  * @returns The session id and whether to resume it.
  */
 export function resolveRunSession(
   lookup: StickySessionLookup,
   task: Task,
-  run: TaskRun,
   opts: { runtimeType: string }
 ): RunSession {
-  if (!task.sticky) return { sessionId: run.id, hasStarted: false };
+  if (!task.sticky) return freshSession();
   const previous = lookup.latestStickyRun(task.id);
-  if (!previous) return { sessionId: run.id, hasStarted: false };
+  if (!previous) return freshSession();
 
   // A prior run with no runtime on record — one written before the column
   // existed — is resumed exactly as it always was. "Unknown" and "different"
@@ -108,7 +123,7 @@ export function resolveRunSession(
   // sticky task older than this change and throw away the history sticky exists
   // to carry. Only a recorded runtime that DISAGREES starts over.
   if (previous.runtime !== null && previous.runtime !== opts.runtimeType) {
-    return { sessionId: run.id, hasStarted: false };
+    return freshSession();
   }
   return { sessionId: previous.sessionId, hasStarted: true };
 }

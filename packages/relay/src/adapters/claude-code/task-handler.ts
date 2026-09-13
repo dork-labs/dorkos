@@ -247,27 +247,32 @@ export async function handleTasksMessage(
     ...(payload.effort !== undefined ? { effort: payload.effort } : {}),
   };
   const effectiveCwd = cwd ?? context?.agent?.directory ?? config.defaultCwd;
-  // The session this run runs on. A STICKY task resolves a resume target on the
-  // scheduler side — the REAL SDK id of its previous run — and carries it here;
-  // every other run falls back to the run id, the isolated-per-run session this
-  // path has always used (DOR-1571). `resumeSession` is that session's
-  // `hasStarted`: resume the existing conversation, or start fresh — false for
-  // every non-sticky run and a sticky task's first fire.
-  const sessionId = payload.sessionId ?? runId;
+  // The session this run runs on, decided on the scheduler side and carried here
+  // on every envelope (DOR-1571). A STICKY task resolves a resume target — the
+  // REAL SDK id of its previous run; every other run resolves a fresh session of
+  // its own. `resumeSession` is that session's `hasStarted`: resume the existing
+  // conversation, or start fresh — false for every non-sticky run and a sticky
+  // task's first fire.
+  //
+  // The fallback is for an envelope published by an older scheduler, which
+  // carried the id only for a sticky run. It used to fall back to the RUN ID,
+  // and that is the one id it must not use: a run id is a ULID, every session
+  // route validates a UUID, and a session under one can be opened by nobody — no
+  // event stream, no approval routes, no snapshot. A fresh UUID is the same
+  // isolated-per-run session that fallback always meant, minus the dead end.
+  const sessionId = payload.sessionId ?? randomUUID();
   const hasStarted = payload.resumeSession ?? false;
-  // A run carries `payload.sessionId` only when it is sticky. For those, the id
-  // to WRITE on the run row is the runtime's own id after the turn — the id the
-  // SDK actually wrote its transcript under (`getSdkSessionId`), which the next
-  // fire resumes and which makes the run clickable to the real conversation.
-  // Non-sticky is unchanged: the run's own id. Resolved lazily so each terminal
-  // branch records the freshest answer.
+  // The id to WRITE on the run row is the runtime's own id after the turn — the
+  // id the SDK actually wrote its transcript under (`getSdkSessionId`), which a
+  // sticky task's next fire resumes and which makes any run clickable through to
+  // the real conversation. Resolved lazily so each terminal branch records the
+  // freshest answer.
   //
   // A runtime that does not rename its own sessions (codex, opencode) declares
   // no `getSdkSessionId`, and the id it ran under is already the durable one —
   // so the same expression records the right thing for it without a branch.
-  const isSticky = payload.sessionId !== undefined;
   const persistedSessionId = (): string =>
-    isSticky ? (deps.agentManager.getSdkSessionId?.(sessionId) ?? sessionId) : sessionId;
+    deps.agentManager.getSdkSessionId?.(sessionId) ?? sessionId;
 
   // Record trace span as delivered
   deps.traceStore.insertSpan({
