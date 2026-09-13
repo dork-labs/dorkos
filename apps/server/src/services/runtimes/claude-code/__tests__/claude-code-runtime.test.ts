@@ -500,9 +500,11 @@ describe('ClaudeCodeRuntime', () => {
       expect(deltaEvent).toBeDefined();
       expect((deltaEvent!.data as Record<string, unknown>).input).toBe('{"file":"test.ts"}');
 
+      // Still in flight when the model stops typing the arguments (DOR-2011):
+      // nothing has run yet, and a gated call has not even been asked about.
       const endEvent = events.find((e) => e.type === 'tool_call_end');
       expect(endEvent).toBeDefined();
-      expect((endEvent!.data as Record<string, unknown>).status).toBe('complete');
+      expect((endEvent!.data as Record<string, unknown>).status).toBe('running');
     });
 
     it('passes systemPrompt with claude_code preset to SDK query', async () => {

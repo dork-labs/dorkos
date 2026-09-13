@@ -263,21 +263,41 @@ export async function* mapMessageEvent(
             }
           }
 
-          if (resultText) {
-            const uiResourceUri = extractUiResourceUri(resultText);
-            yield {
-              type: 'tool_result',
-              data: {
-                toolCallId: block.tool_use_id,
-                toolName: toolState.toolNameById.get(block.tool_use_id) ?? '',
-                result: resultText,
-                status: 'complete',
-                // MCP App (SEP-1865): populate `ui` when the result references a
-                // ui:// resource so the client can render the app (spec §2.2).
-                ...(uiResourceUri ? { ui: { resourceUri: uiResourceUri } } : {}),
-              },
-            };
-          }
+          // THE TERMINAL FRAME, and since DOR-2011 the only one. `tool_call_end`
+          // fires when the model finishes typing the tool's arguments — before
+          // any permission prompt, before the tool runs — so it reports
+          // `running` and settles nothing. That makes this the single place a
+          // claude-code tool call can be said to have ended, which changes two
+          // things about it:
+          //
+          //  1. It is emitted for EVERY result block, not only the ones with
+          //     text. A `Read` of a PNG answers with an image and no text at
+          //     all, and a call this skipped would now spin forever. The
+          //     `result` field is simply omitted when there is nothing to put
+          //     in it, which is what the client already reads as "no output"
+          //     (and leaves any streamed `tool_progress` standing).
+          //  2. It reports `error` when the SDK says the call failed, instead
+          //     of stamping every outcome `complete`. A DENIED tool arrives
+          //     here as `is_error: true` carrying "User denied tool execution",
+          //     and used to land wearing a green check that overwrote the
+          //     `error` the denial had just set (the DOR-1293 class, at the one
+          //     door where the person's own refusal is what failed it). The
+          //     JSONL-derived history has always read `is_error` this way
+          //     (`sessions/tool-result-outcome.ts`), so this is the live stream
+          //     catching up to the transcript rather than a new opinion.
+          const uiResourceUri = resultText ? extractUiResourceUri(resultText) : undefined;
+          yield {
+            type: 'tool_result',
+            data: {
+              toolCallId: block.tool_use_id,
+              toolName: toolState.toolNameById.get(block.tool_use_id) ?? '',
+              ...(resultText ? { result: resultText } : {}),
+              status: block.is_error === true ? 'error' : 'complete',
+              // MCP App (SEP-1865): populate `ui` when the result references a
+              // ui:// resource so the client can render the app (spec §2.2).
+              ...(uiResourceUri ? { ui: { resourceUri: uiResourceUri } } : {}),
+            },
+          };
         }
       }
     }

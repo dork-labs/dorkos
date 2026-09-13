@@ -751,6 +751,14 @@ function foldPendingInteraction(parts: MessagePart[], event: InteractionEvent): 
  * composer's answer panel (`status === 'pending'`) went blind, so there was no
  * way left to answer it.
  *
+ * That frame says `running` now rather than `complete` (DOR-2011, server-side:
+ * `claude-code/sdk/event-mappers/stream-event-mapper.ts`), so it no longer
+ * forges a receipt. The guard stays, and not as a leftover: `running` would
+ * still un-pend the card, every OTHER runtime writes its own terminal status
+ * into the same frame, and a replayed turn can carry a real result that landed
+ * before its resolution. What outranks the DTO is stated below as a rule about
+ * EVIDENCE, never as a list of which runtime emits what.
+ *
  * TWO THINGS OUTRANK THE DTO, and both are the same rule
  * {@link foldInteractionResolved} applies with its own `status === 'pending'`
  * guard: an answer the turn already carries, and a result the tool already

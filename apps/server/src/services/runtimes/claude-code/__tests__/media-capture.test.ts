@@ -263,11 +263,19 @@ describe('a live turn that reads a PNG', () => {
       const events = await driveLive(store, 'sess-order', messages);
       // The whole sequence, not a membership check: the picture lands directly
       // after the tool call that produced it and well before the turn's `done`.
+      //
+      // The `tool_result` between them is this read ENDING, and it exists only
+      // since DOR-2011. `tool_call_end` reports `running` now — it fires when
+      // the model finishes typing the arguments, before any approval and before
+      // the tool runs — so the result block is what settles the call, and it is
+      // emitted even here, where the result is a picture and carries no text at
+      // all. Without it this read would spin forever.
       expect(events.map((e) => e.type)).toEqual([
         'session_status',
         'tool_call_start',
         'tool_call_delta',
         'tool_call_end',
+        'tool_result',
         'image_attachment',
         'session_status',
         'done',
