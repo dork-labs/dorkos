@@ -300,6 +300,33 @@ Failures that blame the wrong thing, each measured on this machine:
   250s → 1300s and default 5s timeouts fail 11–26 files with zero assertion
   mismatches. The discriminator: re-run the exact failed set at low load. Never
   inflate `testTimeout` to pass a gate — that is a check that cannot fail.
+- **A test that waits on a real filesystem watcher asserts through chokidar's
+  POLLING backend.** macOS drops fs events outright rather than late — measured
+  2026-09-12/13, 7 of 20 single writes under a native watch went unreported at a
+  load average of 78, and from inside a Vitest worker as few as 2 of 7 fresh
+  watches saw their file — so "I wrote the file and nothing happened" cannot tell
+  a broken handler from a dropped event, and a case resting on it reds on
+  somebody else's branch (DOR-2012). Use `watchWithPolling`
+  (`packages/relay/src/__tests__/fake-watcher.ts`, and its twin in
+  `apps/server/src/services/harness/__tests__/skills-watcher.test.ts` — one copy
+  per package, because each spies on its own resolved `chokidar`): it spreads
+  PRODUCTION's options and adds only `usePolling`, so the real file, real
+  chokidar, real event names and real handlers are all still under test and only
+  the OS notification source is substituted. Exactly one case keeps a NATIVE
+  watch — `watcher-manager.test.ts`'s real-filesystem smoke — so the suite still
+  exercises kernel delivery somewhere; it re-arms its watch on any empty window,
+  exits at once when the watch reports `EMFILE`/`ENOSPC` at arming, and skips
+  LOUDLY (never passes) when every window came back exhausted. Do not add a
+  second native one.
+- **Budgets for those waits come from `@dorkos/shared/test-budget`.** Fixed
+  millisecond ceilings are a claim about how fast the machine is, and this repo
+  runs several agents' suites at once. `loadScaledMs(base)` widens a ceiling by
+  the per-core load average and must be called WHEN THE WAIT STARTS — `loadavg()`
+  is a one-minute average, so a budget frozen at module load reads from before
+  the sweep that needed it began. A test's own timeout cannot resample, so derive
+  it from `loadCeilingMs(base)` and cap it absolutely (60-120s): a ceiling that
+  cannot be reached is a failure message lost to a bare timeout, and
+  `VITEST_RETRY=2` on the pre-push hook triples whatever you write.
 - **Exit 143 with no test summary is starvation, not a red.** The run was
   SIGTERM'd, usually by memory/CPU pressure from orphaned runners. Check
   `pgrep -fl vitest` for strays from earlier runs before concluding the gate is

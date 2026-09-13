@@ -353,19 +353,6 @@ function infoLogs(): { message: string; fields: Record<string, unknown> }[] {
 }
 
 /**
- * The `code` of every distinct watcher failure reported so far.
- *
- * `armWatch` latches one `logger.error` per code and suppresses repeats, and
- * the code is what says whether the watch merely hiccupped or has stopped
- * listening for good (`EMFILE` — the kernel is out of watch descriptors).
- */
-function watcherErrorCodes(): string[] {
-  return loggerMock.error.mock.calls
-    .filter(([message]) => String(message).includes('[watcher-error] SkillsWatcher'))
-    .map(([, fields]) => String((fields as { code?: unknown } | undefined)?.code ?? 'unknown'));
-}
-
-/**
  * Every projection the logs attribute to one trigger.
  *
  * The counting spy cannot separate a projection the SWEEP decided on from one

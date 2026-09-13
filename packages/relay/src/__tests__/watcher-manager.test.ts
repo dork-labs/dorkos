@@ -820,8 +820,17 @@ describe('WatcherManager', () => {
      * makes the case honest when it does not.
      */
     const READY_SETTLE_MS = 250;
-    /** Ceiling on ONE live `add`, and how many writes one open watch gets. */
-    const liveAttemptMs = (): number => loadScaledMs(2_000);
+    /**
+     * Ceiling on ONE live `add`, and how many writes one open watch gets.
+     *
+     * Clamped to twice the base rather than the default four: this waits for one
+     * filesystem event, not for work the machine has to do, and the whole case
+     * has to reach its verdict inside a 120s timeout that `VITEST_RETRY` can
+     * triple. At the default clamp a genuine red measured 98s — close enough to
+     * the cap that the failure message could be lost to a bare timeout.
+     */
+    const LIVE_ATTEMPT_CLAMP = 2;
+    const liveAttemptMs = (): number => loadScaledMs(2_000, LIVE_ATTEMPT_CLAMP);
     const LIVE_ATTEMPTS = 3;
     /**
      * How many times the WATCH ITSELF is re-opened, and the pause before each.
@@ -839,15 +848,24 @@ describe('WatcherManager', () => {
      *
      * The startup sweep, then every window: its backoff, its settle, and its
      * attempts. Half again on top for the setup, the assertions and the teardown.
+     *
+     * The absolute cap is 120s, against a worst MEASURED skip of 100.7s, and it
+     * is deliberately tight: `packages/relay/vitest.config.ts` honours
+     * `VITEST_RETRY`, which the lefthook pre-push hook sets to 2, so a genuine
+     * red costs three times whatever this says — on the very gate DOR-2012
+     * exists to keep survivable. The arm-time exit below is what keeps the
+     * ordinary exhausted run far under it.
      */
     const SMOKE_TEST_TIMEOUT_MS = Math.min(
-      180_000,
+      120_000,
       Math.round(
         1.5 *
           (loadCeilingMs(20_000) +
             READY_SETTLE_MS +
             (LIVE_REARMS + 1) *
-              (LIVE_REARM_BACKOFF_MS + READY_SETTLE_MS + LIVE_ATTEMPTS * loadCeilingMs(2_000)))
+              (LIVE_REARM_BACKOFF_MS +
+                READY_SETTLE_MS +
+                LIVE_ATTEMPTS * loadCeilingMs(2_000, LIVE_ATTEMPT_CLAMP)))
       )
     );
 
@@ -980,6 +998,27 @@ describe('WatcherManager', () => {
               await new Promise<void>((resolve) => setTimeout(resolve, READY_SETTLE_MS));
             }
 
+            // A watch that could not arm at all says so at ARMING, before any
+            // write. Asking here costs nothing and saves this window its three
+            // attempts: on a machine whose FSEvents is exhausted, that is the
+            // difference between ~8s and the 69.7s and 100.7s measured reaching
+            // the same skip. The window is still recorded, so the verdict below
+            // is unchanged.
+            if (watcherErrorCodesSince(smokeLogger, windowBaseline).some(isExhaustion)) {
+              emptyWindows.push({
+                line: `window ${window}: the watch never armed (${watcherErrorCodesSince(
+                  smokeLogger,
+                  windowBaseline
+                ).join(', ')})`,
+                exhausted: true,
+              });
+              // Two in a row means the machine, not this window. Re-arming a
+              // third and fourth time only spends backoff to reach the same
+              // skip, and under `VITEST_RETRY` that spend is tripled.
+              if (emptyWindows.length >= 2 && emptyWindows.every((entry) => entry.exhausted)) break;
+              continue;
+            }
+
             for (let attempt = 0; attempt < LIVE_ATTEMPTS && !liveId; attempt++) {
               const id = `msg-live-${window}-${attempt}`;
               const liveDelivered = deferred();
@@ -1037,7 +1076,7 @@ describe('WatcherManager', () => {
           const report = emptyWindows.map((entry) => entry.line).join('; ');
           expect(
             emptyWindows.every((entry) => entry.exhausted),
-            `${emptyWindows.length} fresh watches, each given ${LIVE_ATTEMPTS} writes, delivered nothing — ${report}`
+            `${emptyWindows.length} fresh watches delivered nothing — ${report}`
           ).toBe(true);
           ctx.skip(
             `watch descriptors exhausted on every one of ${emptyWindows.length} windows (${report}); the startup sweep is what covers this, and half 1 above asserts it`
