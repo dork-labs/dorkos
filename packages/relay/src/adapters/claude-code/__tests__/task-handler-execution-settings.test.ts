@@ -86,12 +86,17 @@ describe('handleTasksMessage execution settings (DOR-1615/DOR-1347)', () => {
       deps
     );
 
+    // The session id is a fresh UUID minted for this run, not the run id — what
+    // this test is about is that BOTH calls land on the SAME session.
+    const [sessionId] = vi.mocked(agentManager.ensureSession).mock.calls[0]!;
+    expect(sessionId).not.toBe('run-1');
+    expect(sessionId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
     expect(agentManager.ensureSession).toHaveBeenCalledWith(
-      'run-1',
+      sessionId,
       expect.objectContaining({ model: 'haiku', effort: 'low' })
     );
     expect(agentManager.sendMessage).toHaveBeenCalledWith(
-      'run-1',
+      sessionId,
       'do the thing',
       expect.objectContaining({ model: 'haiku', effort: 'low' })
     );

@@ -340,6 +340,10 @@ describe('the dispatching adapter binds the turn (DOR-791)', () => {
 
 describe('a scheduled task turn is bound too (DOR-791)', () => {
   const RUN_ID = 'run-1';
+  // The budget is bound to the SESSION the turn executes under, not to the run —
+  // that is the key the runtime's tool surface is handed. Today's scheduler puts
+  // a real session id on every envelope, and this file asserts on that id.
+  const SESSION_ID = '3f2c1b0a-9d8e-4c7b-8a65-1e2d3c4b5a60';
 
   /** A valid task dispatch payload for the run below. */
   function taskEnvelope(): RelayEnvelope {
@@ -353,6 +357,7 @@ describe('a scheduled task turn is bound too (DOR-791)', () => {
         type: 'task_dispatch',
         taskId: 'task-1',
         runId: RUN_ID,
+        sessionId: SESSION_ID,
         prompt: 'run the nightly report',
         cwd: null,
         permissionMode: 'default',
@@ -377,7 +382,7 @@ describe('a scheduled task turn is bound too (DOR-791)', () => {
       clock.now(),
       { defaultCwd: '/tmp' },
       {
-        agentManager: runtimeThatObserves(budgets, seen, false, RUN_ID),
+        agentManager: runtimeThatObserves(budgets, seen, false, SESSION_ID),
         traceStore,
         runningTasks: new AbortRegistry(),
         inboundBudgets: budgets,
@@ -386,7 +391,7 @@ describe('a scheduled task turn is bound too (DOR-791)', () => {
     );
 
     expect(seen[0]?.callBudgetRemaining).toBe(7);
-    expect(budgets.get(RUN_ID)).toBeUndefined();
+    expect(budgets.get(SESSION_ID)).toBeUndefined();
   });
 
   it('holds the binding when the run is stopped, exactly as the agent turn does', async () => {
@@ -409,7 +414,7 @@ describe('a scheduled task turn is bound too (DOR-791)', () => {
       ensureSession: vi.fn(),
       sendMessage: vi.fn().mockImplementation(() =>
         (async function* () {
-          seen.push(budgets.get(RUN_ID));
+          seen.push(budgets.get(SESSION_ID));
           // Never settles: the run's own deadline is the only thing that can end
           // it, and `consumeRunStream` abandons the stream when that lands. A
           // sleep here would be a bet that the runner fires a timer before it
@@ -441,7 +446,7 @@ describe('a scheduled task turn is bound too (DOR-791)', () => {
 
     // Still bound, and bound to a budget the publish gate will refuse — so a
     // late send inherits a dead chain instead of starting a fresh one.
-    const held = budgets.get(RUN_ID);
+    const held = budgets.get(SESSION_ID);
     expect(held).toBe(expiring.budget);
     expect(held!.callBudgetRemaining).toBe(7);
     expect(held!.ttl).toBeLessThanOrEqual(clock.now());

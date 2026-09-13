@@ -43,11 +43,21 @@
 import type { RelayAdapter } from '@dorkos/relay';
 
 /**
- * Why the relay cannot run a scheduled turn. Coarse enough to put on a span
- * attribute: five states, no ids, no paths, no content.
+ * Why the relay cannot run this turn. Coarse enough to put on a span attribute:
+ * six states, no ids, no paths, no content.
+ *
+ * `attended-run` is the odd one out, and deliberately lives in the same
+ * vocabulary: it is not a fault at all. A run somebody clicked runs in this
+ * process because that is where its approval cards can reach them — see the
+ * scheduler's `assessRelayDispatch`.
  */
 export type RelayDispatchRefusal =
-  'relay-off' | 'relay-not-built' | 'no-receiver' | 'receiver-not-connected' | 'runtime-not-on-bus';
+  | 'attended-run'
+  | 'relay-off'
+  | 'relay-not-built'
+  | 'no-receiver'
+  | 'receiver-not-connected'
+  | 'runtime-not-on-bus';
 
 /**
  * Whether this run may ride the bus, and — when it may not — why.
@@ -115,6 +125,8 @@ export function assessTaskDispatch(
  */
 export function describeRelayRefusal(reason: RelayDispatchRefusal): string {
   switch (reason) {
+    case 'attended-run':
+      return 'somebody is waiting on this run, so it runs here where they can answer it';
     case 'relay-off':
       return 'agent messaging is turned off';
     case 'relay-not-built':

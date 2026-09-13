@@ -77,6 +77,17 @@ function dispatchPayload(runId: string) {
   };
 }
 
+/**
+ * The session the dispatched run is actually executing under.
+ *
+ * Not the run id: a run id is a ULID, every DorkOS session route validates a
+ * UUID, and the handler mints a real session for an envelope that carries none.
+ * A stop reaches the RUNTIME by session, while the run row is keyed by the run.
+ */
+function sessionOf(agentManager: AgentRuntimeLike): string {
+  return vi.mocked(agentManager.ensureSession).mock.calls[0]![0];
+}
+
 describe('stopping a relay-dispatched run, end to end', () => {
   let tmpDir: string;
   let relay: RelayCore;
@@ -141,7 +152,10 @@ describe('stopping a relay-dispatched run, end to end', () => {
     expect(stop.deliveredTo).toBe(1);
 
     await dispatch;
-    expect(agentManager.interruptQuery).toHaveBeenCalledWith('run-1');
+    // The interrupt targets the SESSION the turn runs on, which is not the run
+    // id: a run id is a ULID and no session may be keyed by one. The run row is
+    // still keyed by the run.
+    expect(agentManager.interruptQuery).toHaveBeenCalledWith(sessionOf(agentManager));
     expect(taskStore.updateRun).toHaveBeenCalledWith(
       'run-1',
       expect.objectContaining({ status: 'cancelled', error: 'Run cancelled' })
@@ -208,7 +222,7 @@ describe('stopping a relay-dispatched run, end to end', () => {
       }
     );
     await dispatch;
-    expect(agentManager.interruptQuery).toHaveBeenCalledWith('run-1');
+    expect(agentManager.interruptQuery).toHaveBeenCalledWith(sessionOf(agentManager));
   });
 
   it('reports zero — and dead-letters nothing — for a run nobody is executing', async () => {

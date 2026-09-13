@@ -154,6 +154,13 @@ function cancelEnvelope(runId: string, payload?: unknown): RelayEnvelope {
 
 const silentLog = { warn: vi.fn(), debug: vi.fn() };
 
+/**
+ * A run id is a ULID; the session it runs under is a fresh UUID minted by
+ * `task-handler.ts`, not the run id — `interruptTurn` stops the turn by that
+ * session id, not the run id the cancel registry keys on.
+ */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 describe('handleTaskCancel', () => {
   it('stops a run this adapter is executing', () => {
     const running = new AbortRegistry();
@@ -280,8 +287,13 @@ describe('ClaudeCodeAdapter — stopping a relay-dispatched run', () => {
     const result = await delivery;
 
     expect(verdict).toBeUndefined();
-    // The runtime is told to stop, not merely marked stopped in the store.
-    expect(agentManager.interruptQuery).toHaveBeenCalledWith('run-1');
+    // The runtime is told to stop, not merely marked stopped in the store —
+    // and it is told by the run's SESSION id, since `interruptTurn` runs on
+    // the id the turn actually executes under.
+    const [sessionId] = vi.mocked(agentManager.sendMessage).mock.calls[0]!;
+    expect(sessionId).not.toBe('run-1');
+    expect(sessionId).toMatch(UUID_RE);
+    expect(agentManager.interruptQuery).toHaveBeenCalledWith(sessionId);
     expect(taskStore.updateRun).toHaveBeenCalledWith(
       'run-1',
       expect.objectContaining({ status: 'cancelled', error: 'Run cancelled' })
@@ -310,7 +322,10 @@ describe('ClaudeCodeAdapter — stopping a relay-dispatched run', () => {
     await cancelHandler()(cancelEnvelope('run-1'));
     await delivery;
 
-    expect(agentManager.interruptQuery).toHaveBeenCalledWith('run-1');
+    const [sessionId] = vi.mocked(agentManager.sendMessage).mock.calls[0]!;
+    expect(sessionId).not.toBe('run-1');
+    expect(sessionId).toMatch(UUID_RE);
+    expect(agentManager.interruptQuery).toHaveBeenCalledWith(sessionId);
   });
 
   it('still reads a deadline as a deadline, not as somebody pressing Stop', async () => {

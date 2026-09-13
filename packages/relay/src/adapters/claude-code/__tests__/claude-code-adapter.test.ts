@@ -124,6 +124,14 @@ function createTasksEnvelope(overrides?: Partial<RelayEnvelope>): RelayEnvelope 
   };
 }
 
+/**
+ * A run id is a ULID; the session it now runs under is a fresh UUID minted by
+ * the handler (`task-handler.ts`), not the run id itself — a session keyed by
+ * a ULID fails every route's UUID validation. Tests below capture the session
+ * id the code actually minted and check its shape, rather than hardcoding it.
+ */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 // === Compliance Suite ===
 // NOTE: Compliance suite not run for ClaudeCodeAdapter because it depends on
 // injected services (AgentRuntimeLike, TraceStoreLike, TasksStoreLike) and
@@ -921,8 +929,13 @@ describe('ClaudeCodeAdapter', () => {
     const result = await adapter.deliver(envelope.subject, envelope);
 
     expect(result.success).toBe(true);
+    // The turn runs under a freshly minted session, not the run id — the run
+    // id is what the store keeps below.
+    const [sessionId] = vi.mocked(agentManager.sendMessage).mock.calls[0]!;
+    expect(sessionId).not.toBe('run-1');
+    expect(sessionId).toMatch(UUID_RE);
     expect(agentManager.sendMessage).toHaveBeenCalledWith(
-      'run-1',
+      sessionId,
       'Check the budget',
       expect.anything()
     );
@@ -992,8 +1005,13 @@ describe('ClaudeCodeAdapter', () => {
     await turn.parked;
     const result = await delivery;
 
-    // The runtime is told to stop, not merely marked stopped in the store.
-    expect(agentManager.interruptQuery).toHaveBeenCalledWith('run-1');
+    // The runtime is told to stop, not merely marked stopped in the store —
+    // and it is told by the run's SESSION id, not its run id (`interrupt.ts`
+    // takes the id the turn actually runs under).
+    const [sessionId] = vi.mocked(agentManager.sendMessage).mock.calls[0]!;
+    expect(sessionId).not.toBe('run-1');
+    expect(sessionId).toMatch(UUID_RE);
+    expect(agentManager.interruptQuery).toHaveBeenCalledWith(sessionId);
     expect(taskStore.updateRun).toHaveBeenCalledWith(
       'run-1',
       expect.objectContaining({ status: 'cancelled' })
@@ -1102,8 +1120,14 @@ describe('ClaudeCodeAdapter', () => {
 
       await adapter.deliver(envelope.subject, envelope);
 
+      // The session id is a fresh UUID minted for this run, not the run id
+      // itself — only the `unattended`/`permissionMode` relationship is what
+      // this test is about.
+      const [sessionId] = vi.mocked(agentManager.ensureSession).mock.calls[0]!;
+      expect(sessionId).not.toBe('run-1');
+      expect(sessionId).toMatch(UUID_RE);
       expect(agentManager.ensureSession).toHaveBeenCalledWith(
-        'run-1',
+        sessionId,
         expect.objectContaining({ unattended: true, permissionMode: 'default' })
       );
     });
@@ -1120,8 +1144,11 @@ describe('ClaudeCodeAdapter', () => {
 
       await adapter.deliver(envelope.subject, envelope);
 
+      const [sessionId] = vi.mocked(agentManager.ensureSession).mock.calls[0]!;
+      expect(sessionId).not.toBe('run-1');
+      expect(sessionId).toMatch(UUID_RE);
       expect(agentManager.ensureSession).toHaveBeenCalledWith(
-        'run-1',
+        sessionId,
         expect.objectContaining({ unattended: false })
       );
     });
@@ -1137,8 +1164,11 @@ describe('ClaudeCodeAdapter', () => {
 
       await adapter.deliver(envelope.subject, envelope);
 
+      const [sessionId] = vi.mocked(agentManager.sendMessage).mock.calls[0]!;
+      expect(sessionId).not.toBe('run-1');
+      expect(sessionId).toMatch(UUID_RE);
       expect(agentManager.sendMessage).toHaveBeenCalledWith(
-        'run-1',
+        sessionId,
         'Check the budget',
         expect.objectContaining({
           permissionMode: 'default',

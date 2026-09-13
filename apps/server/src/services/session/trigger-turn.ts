@@ -100,6 +100,7 @@ import type { SessionStateProjector } from './session-state-projector.js';
 import type { LockActivity } from './session-lock.js';
 import { feedProjector } from './session-event-normalizer.js';
 import { settleOpenTurnBefore } from './settle-open-turn.js';
+import { createCanonicalRekey } from './turn-identity/canonical-rekey.js';
 import { assembleAdditionalContext } from './context-assembler.js';
 import { takeStagedContext } from './staged-context-store.js';
 import { uiTurnFacts } from './browser-seat/ui-turn-facts.js';
@@ -691,18 +692,10 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
   // on the first yield (or settles if the stream is empty/throws), bounding the
   // wait without polling.
   //
-  // C1 rekey is RETRIED on every yielded event until a canonical id DIFFERENT
-  // from the request id appears: the adapter's reverse-index remap (driven by
-  // the SDK init message) is NOT guaranteed to have run by the first yield —
-  // observed live (acceptance run 20260610-173202, F2), a one-shot read at
-  // first-event time raced the init and the projector stayed keyed by the
-  // request UUID for the whole first turn, leaving the canonical-id (sidebar)
-  // view a fresh empty projector. Identity must NOT disarm the retry (acceptance
-  // run 20260611-145454): the Claude adapter SEEDS `sdkSessionId === sessionId`
-  // at ensureSession time, so the first yield always sees a truthy identity
-  // mapping before the init assigns the real id. A genuinely-identity session
-  // (resume path) just keeps the retry armed all turn — one map lookup per
-  // event, harmless.
+  // The C1 rekey itself — retried on every event, why identity must not disarm
+  // it, and the two acceptance runs that settled both — is
+  // `createCanonicalRekey` in `canonical-rekey.ts`, shared with the task
+  // scheduler's own turn so the two paths cannot follow a rename differently.
   let signalFirstEvent: () => void;
   const firstEvent = new Promise<void>((resolve) => {
     signalFirstEvent = resolve;
@@ -714,30 +707,18 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
   let eventCount = 0;
   let privateDispatchClaimed = false;
   let privatePreflightStarted = false;
-  let idResolved = false;
-  const tryRekey = (): void => {
-    if (idResolved) return;
-    const canonical = deps.getInternalSessionId(sessionId);
-    if (!canonical || canonical === sessionId) return;
-    idResolved = true;
-    deps.rekeyProjector(sessionId, canonical);
-    // The projector is not the only thing keyed by session id. The client is
-    // about to start using this canonical id (the 202 hands it over), and a POST
-    // arriving under it has to meet THIS turn's chain and THIS turn's lock —
-    // otherwise the tab's own next message starts a second stream into the
-    // projector we just re-pointed (review G4).
-    if (canonical !== turnKey) {
-      sessionTurnQueue.link(canonical, turnKey);
-      // Move the write-lock rather than holding two: acquire under the new id,
-      // then drop the old. A refusal means someone else already holds the
-      // canonical id, which this turn cannot resolve — keep the lock we have and
-      // let the existing refusal paths answer.
-      if (deps.acquireLock(canonical, clientId, lifecycle, lockToken)) {
-        deps.releaseLock(turnKey, clientId, lockToken);
-        turnKey = canonical;
-      }
-    }
-  };
+  const tryRekey = createCanonicalRekey({
+    sessionId,
+    clientId,
+    holder: lifecycle,
+    lockToken,
+    deps,
+    chain: sessionTurnQueue,
+    turnKey: () => turnKey,
+    onTurnKey: (next) => {
+      turnKey = next;
+    },
+  });
   // Everything from here to `void turn` runs BEFORE anything else can release
   // the lock or the queue slot: if it throws, no turn exists to settle and no
   // `finally` will ever fire, so the release has to happen in the catch. Left

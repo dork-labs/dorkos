@@ -65,6 +65,11 @@ describe('reporting a schedule croner refuses', () => {
     ensureSession: vi.fn(),
     sendMessage: vi.fn(),
     interruptQuery: vi.fn(),
+    // The runtime never renamed this session, so the run records the id it ran under.
+    getInternalSessionId: vi.fn(() => undefined),
+    // Nobody else is writing to these sessions, so the write-lock is always free.
+    acquireLock: vi.fn(() => true),
+    releaseLock: vi.fn(),
   } as unknown as SchedulerAgentManager;
 
   beforeEach(() => {

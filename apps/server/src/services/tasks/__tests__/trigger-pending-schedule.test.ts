@@ -72,6 +72,11 @@ describe('a schedule waiting for approval can still be run once', () => {
         yield { type: 'text_delta', data: { text: 'swept' } };
       }),
       interruptQuery: vi.fn().mockResolvedValue(true),
+      // The runtime never renamed this session, so the run records the id it ran under.
+      getInternalSessionId: vi.fn(() => undefined),
+      // Nobody else is writing to these sessions, so the write-lock is always free.
+      acquireLock: vi.fn(() => true),
+      releaseLock: vi.fn(),
     } as unknown as SchedulerAgentManager;
   });
 
@@ -100,10 +105,12 @@ describe('a schedule waiting for approval can still be run once', () => {
     expect(run).not.toBeNull();
     expect(run!.trigger).toBe('manual');
     expect(store.listRuns({ taskId: task.id })).toHaveLength(1);
-    // The run is a real turn in its own session, not a simulation.
+    // The run is a real turn in its own session, not a simulation. The session
+    // is the run's own and it is a UUID, which is what every session route will
+    // accept — a trial run a person is watching has to be openable by them.
     await vi.waitFor(() => expect(agent.sendMessage).toHaveBeenCalledOnce());
     const [sessionId, prompt] = vi.mocked(agent.sendMessage).mock.calls[0]!;
-    expect(sessionId).toBe(run!.id);
+    expect(sessionId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
     expect(prompt).toContain('sweep the backlog');
 
     await service.stop();
