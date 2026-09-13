@@ -213,7 +213,11 @@ describe('mapSdkMessage', () => {
       expect((events[0].data as Record<string, unknown>).input).toBe('{"file":"test.ts"}');
     });
 
-    it('content_block_stop (in tool) emits tool_call_end', async () => {
+    // `running`, not `complete` (DOR-2011). `content_block_stop` is the model
+    // finishing the tool's ARGUMENTS; the permission prompt and the tool's own
+    // execution both still lie ahead, and the durable stream publishes this
+    // status under the terminal `tool_result` frame name.
+    it('content_block_stop (in tool) emits tool_call_end still in flight', async () => {
       const toolState = makeToolState();
       toolState.setToolState(true, 'Read', 'tc-1');
       const events = await collectEvents(
@@ -230,7 +234,7 @@ describe('mapSdkMessage', () => {
       expect(events).toHaveLength(1);
       expect(events[0].type).toBe('tool_call_end');
       expect((events[0].data as Record<string, unknown>).toolCallId).toBe('tc-1');
-      expect((events[0].data as Record<string, unknown>).status).toBe('complete');
+      expect((events[0].data as Record<string, unknown>).status).toBe('running');
     });
 
     it('task tool stop also emits task_update when buildTaskEvent returns event', async () => {

@@ -124,7 +124,32 @@ export async function* mapStreamEvent(
         data: {
           toolCallId: toolState.currentToolId,
           toolName: toolState.currentToolName,
-          status: 'complete',
+          // STILL IN FLIGHT, and this is the whole of DOR-2011. What just ended
+          // is the model typing the tool's ARGUMENTS — nothing has run. Between
+          // here and the real result sit the permission prompt (`canUseTool`)
+          // and the tool's own execution, so the honest answer to "how did this
+          // call end?" is that it has not.
+          //
+          // Saying `complete` here was a lie the durable stream then published:
+          // `session-event-normalizer.ts` projects `tool_call_end` onto the
+          // terminal `tool_result` frame, so a live turn carried
+          // `{tool_result, Write, complete}` with no `result` at all, one frame
+          // BEFORE `approval_required`. Every client keyed on that status — the
+          // app, a second window, a replay from `Last-Event-ID` — showed the
+          // write as done for the entire time the person was being asked
+          // whether to allow it.
+          //
+          // `running` rather than `pending`: `pending` is this codebase's word
+          // for an interaction a PERSON still owes an answer to (`foldApproval`
+          // sets it, the composer's answer panel scans for it), and most tool
+          // calls are never gated at all. `running` is also what the preceding
+          // `tool_call_start`/`tool_call_delta` frames already carry, so the
+          // card simply stays live until something real settles it.
+          //
+          // The settling is `message-event-mapper.ts`'s job, and it now emits a
+          // terminal `tool_result` for EVERY result block — the empty-text ones
+          // included — because this frame no longer settles anything.
+          status: 'running',
         },
       };
       toolState.setToolState(false, '', '');
