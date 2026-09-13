@@ -25,11 +25,27 @@
  * a different id than the one the drive subscribed under BEFORE the trigger
  * POST. The 202 trigger response is the first place the remap surfaces (its
  * body carries the CANONICAL id, ADR-0264) — {@link triggerAndCollect} compares
- * it against the subscribed id and, on a mismatch, swaps to a fresh
- * subscription on the canonical id before collecting. No frames are lost: the
- * new subscribe is a cold connect, and its `snapshot` reflects everything the
- * SAME underlying server-side projector has ingested so far (ADR-0267 rekeys
- * the projector instance, not its content), then goes live for the rest.
+ * it against the subscribed id and, on a mismatch, swaps to a subscription on
+ * the canonical id before collecting.
+ *
+ * THAT SWAP MUST RESUME, NOT RECONNECT COLD. This module used to claim the swap
+ * "costs no frames" because a cold connect's `snapshot` reflects everything the
+ * same projector has ingested. The snapshot carries that history as STATE, not
+ * as the individual events that produced it — so a cold re-subscribe is lossless
+ * for an oracle that reads the snapshot and lossy for every oracle that reads
+ * FRAMES. Measured on 2026-09-12: a `widget-round-trip` run re-keyed between the
+ * `/ui-action` POST and the re-subscribe, seq 400–402 (`queue_update`,
+ * `turn_start`, `status_change`) were folded into the new snapshot instead of
+ * replayed, and the oracle that looks for the `<ui_action>` trigger on a
+ * `turn_start` failed a turn the product had answered correctly.
+ *
+ * So the swap carries a resume cursor ({@link resumeSignalFrom}) and the frames
+ * the first connection already collected. The durable stream's contract is what
+ * makes that gap-free: `GET /:id/events` with a `Last-Event-ID` skips the
+ * snapshot and replays only events above the cursor, and it deliberately does
+ * NOT require the cursor to name the id being subscribed — a rekeyed projector
+ * is the SAME seq space, and the cursor's generation is what judges that
+ * (`routes/session-events-handler.ts`, ADR-0267 as amended by DOR-1262).
  *
  * @module evals/runner/drive
  */
@@ -70,6 +86,28 @@ export class DriveError extends Error {
     super(message, options);
     this.name = 'DriveError';
   }
+}
+
+/**
+ * How a re-subscribe picks up exactly where the previous connection stopped.
+ *
+ * Two forms, because the durable stream accepts two and they are not
+ * interchangeable. The frame id is the documented cursor: it names the seq space
+ * it was minted in, so the server can tell a resumable cursor from a plausible
+ * number left over from a retired counter. The bare integer is the escape hatch
+ * the real `HttpTransport` also uses — it names no seq space and is checked only
+ * against the replay window — and it is reached only when NO id-bearing frame
+ * arrived to echo, which on a cold connect means only the snapshot did.
+ *
+ * Exactly one of the two is set. A signal the server cannot serve gap-free is
+ * answered with a cold snapshot rather than a wrong replay, which is the same
+ * degradation this code had before it resumed at all.
+ */
+export interface ResumeSignal {
+  /** The last frame `id:` this stream saw, echoed back as `Last-Event-ID`. */
+  lastEventId?: string;
+  /** The snapshot's `cursor`, sent as `?after=` when no frame id was available. */
+  after?: number;
 }
 
 /**
@@ -122,6 +160,31 @@ export interface OpenStreamOptions {
    * as it did before this hook existed.
    */
   onFrames?: (frames: SseFrame[], sessionId: string) => void;
+  /**
+   * Resume this connection from where a previous one stopped, instead of cold
+   * connecting. Set only by the remap swap in {@link triggerAndCollect}.
+   *
+   * A resumed connection gets NO `snapshot` frame — the server replays the gap
+   * and goes live — so the subscribe gate opens on the response head rather than
+   * on a snapshot that is never coming.
+   */
+  resume?: ResumeSignal;
+  /**
+   * Frames an EARLIER connection for this same turn already collected, prepended
+   * to everything this stream reports.
+   *
+   * They are part of the turn and must not be dropped when the subscription
+   * moves, so they lead the resolved `frames`, and the live observers
+   * ({@link onFrames}, {@link abortWhen}) see the whole turn rather than only its
+   * tail — a per-turn cost ceiling that forgot the first half of its own turn
+   * would be a ceiling that under-counts exactly when it matters.
+   *
+   * The TERMINAL check deliberately reads only THIS connection's frames: a
+   * `turn_end` in the prefix belongs to a connection that has already closed, and
+   * treating it as this stream's terminator would settle the new subscription
+   * before it had collected anything.
+   */
+  prefixFrames?: SseFrame[];
 }
 
 /** Options for {@link driveTurn}: a message-triggered turn. */
@@ -198,6 +261,16 @@ interface LiveStream {
    * error) so the durable GET is never left open.
    */
   close: () => void;
+  /**
+   * Everything this connection has parsed so far, prefix included — readable
+   * BEFORE `done` settles and after `close()`.
+   *
+   * The remap swap needs both halves of that: the frames to carry forward into
+   * the next subscription, and the cursor to resume from, and it needs them at
+   * the moment it abandons the connection rather than from a promise that is
+   * about to be settled as `aborted`.
+   */
+  collected: () => SseFrame[];
 }
 
 /** True when a frame is the turn's terminal `turn_end` boundary. */
@@ -253,6 +326,10 @@ function openStream(opts: OpenStreamOptions): LiveStream {
   done.catch(() => {});
 
   let raw = '';
+  const prefix = opts.prefixFrames ?? [];
+  /** Every frame this turn has produced so far: the carried prefix, then ours. */
+  const collected = (): SseFrame[] =>
+    prefix.length > 0 ? [...prefix, ...parseFrames(raw)] : parseFrames(raw);
   let settled = false;
   let readySettled = false;
   // A const holder so the timer ids can be referenced by the settle helpers
@@ -311,25 +388,49 @@ function openStream(opts: OpenStreamOptions): LiveStream {
     clearTimeout(timers.turn);
     clearTimeout(timers.ready);
     req.destroy();
-    resolveDone({ frames: parseFrames(raw), outcome });
+    resolveDone({ frames: collected(), outcome });
   };
 
-  const eventsPath =
-    `/api/sessions/${opts.sessionId}/events` +
-    (opts.cwd ? `?cwd=${encodeURIComponent(opts.cwd)}` : '');
+  const query = new URLSearchParams();
+  if (opts.cwd) query.set('cwd', opts.cwd);
+  if (opts.resume?.after !== undefined) query.set('after', String(opts.resume.after));
+  const search = query.toString();
+  const eventsPath = `/api/sessions/${opts.sessionId}/events${search ? `?${search}` : ''}`;
   const req = http.request(
     {
       host: url.hostname,
       port: Number(url.port),
       path: eventsPath,
       method: 'GET',
+      ...(opts.resume?.lastEventId !== undefined
+        ? { headers: { 'Last-Event-ID': opts.resume.lastEventId } }
+        : {}),
     },
     (res) => {
       res.setEncoding('utf8');
+      if (opts.resume) {
+        // A RESUMED connection is served no snapshot — the server replays the
+        // gap and goes live — so the gate opens on the response head. Waiting
+        // for a snapshot here would reject on the ready timeout every time.
+        // The status is checked BECAUSE of that: with no snapshot to wait for,
+        // a refused resume would otherwise sit silently until the TURN timeout
+        // rather than the (much shorter) subscribe gate.
+        if (res.statusCode !== undefined && res.statusCode >= 400) {
+          return fail(
+            new DriveError(
+              `/events resume returned ${res.statusCode}`,
+              'STREAM_ERROR',
+              res.statusCode
+            )
+          );
+        }
+        markReady();
+      }
       res.on('data', (chunk: string) => {
         raw += chunk;
         if (raw.includes('event: snapshot')) markReady();
-        const frames = parseFrames(raw);
+        const own = parseFrames(raw);
+        const frames = prefix.length > 0 ? [...prefix, ...own] : own;
         if (opts.onFrames) {
           try {
             opts.onFrames(frames, opts.sessionId);
@@ -345,7 +446,8 @@ function openStream(opts: OpenStreamOptions): LiveStream {
           }
         }
         if (opts.abortWhen?.(frames)) return finish('aborted');
-        if (frames.some(isTurnEnd)) finish('done');
+        // Only THIS connection's frames terminate it — see `prefixFrames`.
+        if (own.some(isTurnEnd)) finish('done');
       });
       res.on('end', () => finish('done'));
     }
@@ -376,7 +478,33 @@ function openStream(opts: OpenStreamOptions): LiveStream {
 
   req.end();
 
-  return { ready, done, close: () => finish('aborted') };
+  return { ready, done, close: () => finish('aborted'), collected };
+}
+
+/**
+ * The cursor a re-subscribe should resume this connection's turn from.
+ *
+ * Prefers the last frame `id:` seen, because that is the documented cursor and
+ * it carries the seq space it was minted in. Falls back to the snapshot's own
+ * `cursor` as a bare `?after=` when no id-bearing frame arrived — the common
+ * case for a remap that surfaces on the 202, where the only frame collected so
+ * far is the cold snapshot itself. Returns `undefined` when neither is
+ * available, which leaves the caller cold-connecting exactly as it did before.
+ *
+ * @param frames - Everything the abandoned connection collected.
+ * @returns The resume signal, or `undefined` when there is nothing to resume from.
+ */
+function resumeSignalFrom(frames: SseFrame[]): ResumeSignal | undefined {
+  for (let i = frames.length - 1; i >= 0; i -= 1) {
+    const id = frames[i]?.id;
+    if (typeof id === 'string' && id !== '') return { lastEventId: id };
+  }
+  const snapshot = frames.find((frame) => frame.event === 'snapshot');
+  const cursor = (snapshot?.data as { cursor?: unknown } | undefined)?.cursor;
+  if (typeof cursor === 'number' && Number.isInteger(cursor) && cursor >= 0) {
+    return { after: cursor };
+  }
+  return undefined;
 }
 
 /**
@@ -392,11 +520,17 @@ function openStream(opts: OpenStreamOptions): LiveStream {
  * REMAP RE-SUBSCRIBE (DOR-397): the 202 body's `sessionId` is the CANONICAL id
  * (ADR-0264). When it differs from the id `opts` subscribed under — claude-code
  * naming a new session, or re-minting its internal id on a resume — this closes
- * the stream and opens a FRESH subscription on the canonical id, so everything
- * the harness reports afterwards is keyed by the name the session actually has.
- * A cold connect's `snapshot` carries everything the projector has ingested so
- * far, so the swap costs no frames, and the remaining timeout budget carries
- * over so a remap cannot silently double a turn's time budget.
+ * the stream and subscribes on the canonical id, so everything the harness
+ * reports afterwards is keyed by the name the session actually has. The
+ * remaining timeout budget carries over, so a remap cannot silently double a
+ * turn's time budget.
+ *
+ * THE SWAP IS GAP-FREE BECAUSE IT RESUMES. It carries the abandoned
+ * connection's frames forward as `prefixFrames` and re-subscribes from that
+ * connection's cursor ({@link resumeSignalFrom}), so an event the projector
+ * ingested while the swap was in flight is REPLAYED rather than folded into a
+ * new snapshot. The module TSDoc records the run that proved a cold
+ * re-subscribe loses those frames, and which oracle it made lie.
  *
  * It is NOT a correctness crutch, and must not be read as one: the retired id
  * resolves to the same live projector on the server (ADR-0267 as amended by
@@ -436,10 +570,20 @@ async function triggerAndCollect(
     const canonicalId = body.sessionId ?? subscribedId;
 
     if (canonicalId !== subscribedId) {
+      // Read what the abandoned connection holds BEFORE closing it: `close()`
+      // settles the stream as `aborted`, and these frames are this turn's.
+      const carried = stream.collected();
+      const resume = resumeSignalFrom(carried);
       stream.close();
       const timeoutMs = opts.timeoutMs ?? DEFAULT_TURN_TIMEOUT_MS;
       const remainingMs = Math.max(timeoutMs - (Date.now() - startedAt), 0);
-      stream = openStream({ ...opts, sessionId: canonicalId, timeoutMs: remainingMs });
+      stream = openStream({
+        ...opts,
+        sessionId: canonicalId,
+        timeoutMs: remainingMs,
+        prefixFrames: carried,
+        ...(resume ? { resume } : {}),
+      });
       subscribedId = canonicalId;
       await stream.ready;
     }
