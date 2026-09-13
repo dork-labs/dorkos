@@ -10,7 +10,7 @@ searches_performed: 47
 # Multi-repo organisation for agents
 
 **Date:** 2026-09-13
-**Why:** DorkOS just became a multi-repo project (`dork-labs/dorkos` public, a closed-source control-plane repo, plus `marketplace`, `dork-plugins`, `loop`, `homebrew-dorkos`, all cloned under `~/Keep/dork-os/`). Three questions: how do the harnesses see sibling repos, how do platforms model a project that spans repos, and should DorkOS add such a thing.
+**Why:** DorkOS just became a multi-repo project (`dork-labs/dorkos` public, a closed-source control-plane repo, plus `marketplace`, `dork-plugins`, `loop`, `homebrew-dorkos`, all cloned side by side under one parent folder). Three questions: how do the harnesses see sibling repos, how do platforms model a project that spans repos, and should DorkOS add such a thing.
 **Method:** official docs for Claude Code, Codex, Cursor, VS Code; platform docs and engineering blogs; a repo-internal map of how DorkOS models workspaces, agents, sessions and rooms today.
 
 ## 1. What the harnesses actually do (verified against official docs, 2026-09-13)
@@ -61,7 +61,7 @@ Only Buzz has a first-class Project that holds several repos. Devin and Ona get 
 
 ## 4. Patterns that recur
 
-1. The parent folder is the workspace. Every ecosystem answers "several repos, one task" with a directory that contains them. DorkOS already has one: `~/Keep/dork-os/`.
+1. The parent folder is the workspace. Every ecosystem answers "several repos, one task" with a directory that contains them. DorkOS already has one: the parent folder that holds the repos.
 2. A manifest in its own repo (Google `repo`, Buzz Project) is the durable form; it outlives any single repo.
 3. Instructions layer; permissions do not.
 4. Cloud platforms solve multi-repo by cloning extras in a setup script.
@@ -71,7 +71,7 @@ Only Buzz has a first-class Project that holds several repos. Devin and Ona get 
 
 ## 5. What works today for this multi-repo setup
 
-1. **A `CLAUDE.md` at `~/Keep/dork-os/`.** Loaded by every Claude Code session started in any sibling repo, no flag needed. Keep it short (the docs' 200-line target; it costs context in every session): the repo map with each sibling's role, remote and default branch, and the cross-repo rules. Each repo's own `AGENTS.md` keeps its detail. `claudeMdExcludes` is the escape hatch if it becomes noise somewhere.
+1. **A `CLAUDE.md` at the parent folder.** Loaded by every Claude Code session started in any sibling repo, no flag needed. Keep it short (the docs' 200-line target; it costs context in every session): the repo map with each sibling's role, remote and default branch, and the cross-repo rules. Each repo's own `AGENTS.md` keeps its detail. `claudeMdExcludes` is the escape hatch if it becomes noise somewhere.
 2. **Codex will not see that file.** Mirror the same block into `~/.codex/AGENTS.md` (machine-local, say so) and put a short "sibling repos" section in each repo's `AGENTS.md`. Do not assume parity between harnesses.
 3. **Cross-repo edits:** `claude --add-dir <sibling>` (plus the env var to load its instructions) or `codex --add-dir <sibling>`; persist with `permissions.additionalDirectories` in each repo's `.claude/settings.json`, remembering it loads no rules or skills and does not apply inside a `--worktree` session.
 4. **Make the contract a published package, not a shared folder.** the control plane depends on a versioned package from the public repo (`@dorkos/cloud-api` or a subpath of `@dorkos/shared`). A submodule or symlink invites an agent to edit across the boundary; a version number makes the boundary visible in a diff and in CI.
