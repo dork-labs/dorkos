@@ -11,17 +11,23 @@
  * @module features/profile/lib/soul-file
  */
 import type { Traits } from '@dorkos/shared/mesh-schemas';
-import { buildSoulContent, extractCustomProse } from '@dorkos/shared/convention-files';
-import { DEFAULT_TRAITS, renderTraits } from '@dorkos/shared/trait-renderer';
+import { composeSoulFile, extractCustomProse } from '@dorkos/shared/convention-files';
 
 /**
  * SOUL.md as it should be on disk for these traits and this prose.
+ *
+ * A thin argument-order wrapper over the shared composer, which is where the
+ * two halves are actually put together. **The server composes the same file the
+ * same way** on the seam `update_agent` writes through
+ * (`services/core/operator/agent-updater.ts`), and that agreement has to be
+ * structural: this used to be its own copy of the one-liner, the server had
+ * none at all, and an agent's self-edit saved a file with no trait fence in it.
  *
  * @param traits - The agent's traits, partial or whole — the rest default.
  * @param prose - What the operator wrote, without the trait block.
  */
 export function soulFile(traits: Partial<Traits> | undefined, prose: string): string {
-  return buildSoulContent(renderTraits({ ...DEFAULT_TRAITS, ...traits }), prose);
+  return composeSoulFile(prose, traits);
 }
 
 /**

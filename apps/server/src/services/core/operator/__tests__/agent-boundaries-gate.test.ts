@@ -240,7 +240,9 @@ describe('operator.update_agent no longer writes NOPE.md', () => {
 
     expect(isError).toBe(false);
     expect(payload.displayName).toBe('Warden the Careful');
-    expect(await readConventionFile(agentPath, CONVENTION_FILES.soul)).toBe('Be careful.');
+    // Composed around the personality block DorkOS owns, so the prose is there
+    // and the trait markers survive the self-edit.
+    expect(await readConventionFile(agentPath, CONVENTION_FILES.soul)).toContain('Be careful.');
   });
 });
 

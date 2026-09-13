@@ -14,6 +14,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readManifest, writeManifest } from '@dorkos/shared/manifest';
 import { readConventionFile, writeConventionFile } from '@dorkos/shared/convention-files-io';
+import {
+  buildSoulContent,
+  extractCustomProse,
+  soulProseBudget,
+  SOUL_MAX_CHARS,
+  TRAIT_SECTION_END,
+  TRAIT_SECTION_START,
+} from '@dorkos/shared/convention-files';
+import { renderTraits } from '@dorkos/shared/trait-renderer';
+import type { TraitName } from '@dorkos/shared/trait-renderer';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { updateAgentManifest } from '../agent-updater.js';
 
@@ -133,7 +143,128 @@ describe('a convention file the server will not store is a refusal, not a 200', 
   it('still writes a file that fits', async () => {
     await updateAgentManifest({ agentPath, body: { soulContent: 'Be careful.' } });
 
-    expect(await readConventionFile(agentPath, 'SOUL.md')).toBe('Be careful.');
+    expect(await readConventionFile(agentPath, 'SOUL.md')).toContain('Be careful.');
+  });
+
+  // The budget has always been the WHOLE file's, and the file is now composed
+  // rather than stored as sent — so prose that fits on the wire can still push
+  // the composed file over. Refused BEFORE anything is written.
+  it('refuses prose that only fits until the personality block is added', async () => {
+    const budget = soulProseBudget(SEED.traits as Record<TraitName, number>);
+
+    await expect(
+      updateAgentManifest({
+        agentPath,
+        body: { soulContent: 'x'.repeat(budget + 1), displayName: 'Renamed' },
+      })
+    ).rejects.toThrow(/SOUL\.md is too long/);
+
+    expect(await readConventionFile(agentPath, 'SOUL.md')).toBeNull();
+    expect((await readManifest(agentPath))?.displayName).toBe('Warden');
+  });
+
+  // The refusal has to name the number the author can act on. It used to say
+  // "4,000" — the whole file's budget — while refusing prose several hundred
+  // characters shorter than that, so trimming to the stated number was refused
+  // again. One trim, from one refusal.
+  it('names the prose budget for THIS agent, not the file budget', async () => {
+    const budget = soulProseBudget(SEED.traits as Record<TraitName, number>);
+
+    await expect(
+      updateAgentManifest({ agentPath, body: { soulContent: 'x'.repeat(budget + 1) } })
+    ).rejects.toThrow(new RegExp(`your text has to fit in ${budget.toLocaleString('en-US')} `));
+
+    // And trimming to exactly that number is accepted, first try.
+    await updateAgentManifest({ agentPath, body: { soulContent: 'x'.repeat(budget) } });
+    expect((await readConventionFile(agentPath, 'SOUL.md'))?.length).toBe(SOUL_MAX_CHARS);
+  });
+});
+
+/**
+ * An agent rewriting its own persona cannot switch its personality off.
+ *
+ * The top of SOUL.md is rendered from `traits` and fenced by markers that
+ * `agent-context.ts` regenerates in place on every turn — and does nothing about
+ * when they are absent. So a self-edit saved without them left the profile
+ * showing a personality that reached no turn ever again. `update_agent` sends
+ * exactly that shape (prose, no markers), the write was verbatim, and the
+ * `agent-self-edit` eval caught it on 2026-09-12.
+ */
+describe('a self-edit keeps the personality block SOUL.md carries', () => {
+  /** The trait block these SEED traits render to — what has to be in the file. */
+  const seedTraitBlock = () => renderTraits(SEED.traits as Record<TraitName, number>);
+
+  it('wraps prose that arrives without the trait markers', async () => {
+    // The natural `update_agent` call: the whole persona, rewritten, no markers.
+    const prose = '## Identity\n\nI am a meticulous release manager.';
+
+    await updateAgentManifest({ agentPath, body: { soulContent: prose } });
+
+    const soul = (await readConventionFile(agentPath, 'SOUL.md')) ?? '';
+    expect(soul).toContain(TRAIT_SECTION_START);
+    expect(soul).toContain(TRAIT_SECTION_END);
+    // The agent's own words, kept whole, below the block.
+    expect(extractCustomProse(soul)).toBe(prose);
+    // And the operator's dials are in the file, so the turn has a block to
+    // regenerate. Spelled out rather than compared against `renderTraits` — the
+    // seeded agent is verbosity 4 and spice 1, so a block of defaults would be
+    // the wrong personality and has to read as wrong here too.
+    expect(soul).toContain('**Verbosity** (Chatty)');
+    expect(soul).toContain('**Spice** (Corporate)');
+    expect(soul).toContain(seedTraitBlock());
+  });
+
+  // `kickoff-prompts.ts` hands every new agent the literal end marker and tells
+  // it to leave that block alone, so a persona that quotes the marker back is
+  // the ordinary case, not a contrived one. Slicing at the first END anywhere —
+  // what `extractCustomProse` does — deleted the line above the quote in
+  // silence.
+  it('keeps prose that only MENTIONS the end marker', async () => {
+    const prose = [
+      'I document my own format.',
+      `The block ends at ${TRAIT_SECTION_END}`,
+      'Then my real persona starts.',
+    ].join('\n');
+
+    await updateAgentManifest({ agentPath, body: { soulContent: prose } });
+
+    const soul = (await readConventionFile(agentPath, 'SOUL.md')) ?? '';
+    expect(soul).toContain('I document my own format.');
+    expect(soul).toContain('Then my real persona starts.');
+    expect(soul.indexOf(TRAIT_SECTION_START)).toBe(0);
+  });
+
+  it('leaves a file that already carries the markers alone', async () => {
+    const authored = buildSoulContent(seedTraitBlock(), 'I guard the changelog.');
+
+    await updateAgentManifest({ agentPath, body: { soulContent: authored } });
+
+    expect(await readConventionFile(agentPath, 'SOUL.md')).toBe(authored);
+  });
+
+  it('is idempotent — saving the file it just wrote changes nothing', async () => {
+    await updateAgentManifest({ agentPath, body: { soulContent: 'I guard the changelog.' } });
+    const first = (await readConventionFile(agentPath, 'SOUL.md')) ?? '';
+
+    await updateAgentManifest({ agentPath, body: { soulContent: first } });
+
+    expect(await readConventionFile(agentPath, 'SOUL.md')).toBe(first);
+  });
+
+  it('renders the traits this patch sets, not the ones it replaced', async () => {
+    // One call that moves a dial AND rewrites the prose is one patch, so the
+    // block has to come from the traits the patch leaves behind.
+    const traits = { ...(SEED.traits as Record<TraitName, number>), verbosity: 1 };
+
+    await updateAgentManifest({
+      agentPath,
+      body: { traits, soulContent: 'I guard the changelog.' },
+    });
+
+    const soul = (await readConventionFile(agentPath, 'SOUL.md')) ?? '';
+    expect(soul).toContain('**Verbosity** (Mime)');
+    expect(soul).not.toContain('**Verbosity** (Chatty)');
+    expect(soul).toContain(renderTraits(traits));
   });
 });
 
