@@ -196,6 +196,15 @@ export default defineConfig({
     // not widen this alias without re-measuring.
     alias: [
       {
+        // Test-only. Aliased for the same reason as the schema modules below:
+        // it is edited in `src/` and a stale `dist/` copy would silently give
+        // the watcher suites yesterday's budgets.
+        find: '@dorkos/shared/test-budget',
+        replacement: fileURLToPath(
+          new URL('../../packages/shared/src/test-budget.ts', import.meta.url)
+        ),
+      },
+      {
         find: '@dorkos/shared/config-schema',
         replacement: fileURLToPath(
           new URL('../../packages/shared/src/config-schema.ts', import.meta.url)

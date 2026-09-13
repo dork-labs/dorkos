@@ -7,7 +7,10 @@
  * hand-rolled deadline for a real fs event measures the machine's latency rather
  * than this class's behaviour, and went red under multi-agent load (DOR-1777).
  * Exactly one test — the last in the `hot-reload` block — puts the real chokidar
- * back, and it is the only wall-clock bound in the file.
+ * back over a real file, and it is the only wall-clock bound in the file. It
+ * runs that watch on chokidar's POLLING backend, which is what makes it a fact
+ * about this class rather than a wager on how macOS feels today; the reasoning
+ * and the measurements are at `watchWithPolling` in `./fake-watcher.ts`.
  *
  * @module __tests__/access-control
  */
@@ -18,8 +21,8 @@ import os from 'node:os';
 import { AccessControl } from '../access-control.js';
 import type { RelayAccessRule } from '@dorkos/shared/relay-schemas';
 import type { AccessControlLogger } from '../access-control.js';
-import { interceptChokidar, type ChokidarInterceptor } from './fake-watcher.js';
-import { loadScaledMs } from './load-budget.js';
+import { interceptChokidar, watchWithPolling, type ChokidarInterceptor } from './fake-watcher.js';
+import { loadCeilingMs, loadScaledMs } from '@dorkos/shared/test-budget';
 
 /** A spy logger satisfying the {@link AccessControlLogger} surface. */
 function createSpyLogger(): AccessControlLogger {
@@ -61,113 +64,54 @@ function wait(ms: number): Promise<void> {
 }
 
 /**
- * How long the one real-filesystem test gives the platform before giving up.
+ * How long the one real-filesystem case gives the watcher, per step.
  *
  * Deliberately generous and deliberately alone: it is the only wall-clock bound
  * left in this file, and it is paid in full only when the watcher is broken.
  * Everywhere else the watcher is injected and there is nothing to wait for.
  *
- * Scaled by load rather than fixed. Fifteen seconds is ample beside nothing and
- * not ample beside three other agents' suites, and the gap between those two
- * facts is what reddened branches that never touched the relay (DOR-2012).
+ * Scaled by load, and sampled when the wait starts rather than at import. A
+ * budget frozen at module load reads the one-minute average from before the
+ * sweep that needed it began, which is exactly the case the pre-push gate hits.
  */
-const REAL_RELOAD_TIMEOUT_MS = loadScaledMs(15_000);
-/** How often that one test re-checks while waiting. */
+const REAL_RELOAD_BASE_MS = 10_000;
+/** How often chokidar re-stats the rules file, and how often this file re-checks. */
+const WATCH_POLL_MS = 50;
 const RELOAD_POLL_MS = 50;
 /**
- * How many times the real-filesystem test re-opens its WATCH, and the pause first.
+ * The real-filesystem case's own ceiling.
  *
- * Paid only by a window that delivered nothing AND whose own watch reported that
- * the kernel is out of watch descriptors. Closing the watch hands those
- * descriptors back and the pause gives whatever else on this machine is holding
- * them a chance to do the same, so a window that alone would have been called
- * "exhausted, skip" is usually just delivered by the next one. Measured here on
- * 2026-09-12 at a load average of 18: a bare `chokidar.watch` on a fresh temp
- * file reported EMFILE and delivered nothing on five runs out of five.
+ * Sized from the WORST its waits can grow to, not from the load at import: a
+ * runner fixes a test's timeout when the test is defined and cannot resample
+ * later. Three steps, plus slack for setup and teardown, and capped absolutely
+ * so no single test can sit for minutes before saying anything.
  */
-const REAL_WATCH_REARMS = 3;
-const REAL_REARM_BACKOFF_MS = 2_000;
-/**
- * The real-filesystem case's own ceiling, derived from the budgets above.
- *
- * Every window pays its backoff and, at worst, a full reload budget waiting for
- * an `add` that never comes; the window that does deliver pays two more reload
- * budgets for `change` and `unlink`. Half again on top for setup and teardown.
- */
-const REAL_WATCH_TEST_TIMEOUT_MS = Math.round(
-  1.5 *
-    ((REAL_WATCH_REARMS + 1) * (REAL_REARM_BACKOFF_MS + REAL_RELOAD_TIMEOUT_MS) +
-      2 * REAL_RELOAD_TIMEOUT_MS)
+const REAL_WATCH_TEST_TIMEOUT_MS = Math.min(
+  120_000,
+  3 * loadCeilingMs(REAL_RELOAD_BASE_MS) + 20_000
 );
 
-/** The two `code`s that mean a watch has stopped listening for good. */
-function isExhaustion(code: string): boolean {
-  return code === 'EMFILE' || code === 'ENOSPC';
-}
-
 /**
- * The `code` of every watcher failure this logger was told about since a point.
- *
- * SINCE, not in total: an `EMFILE` from a watch that has already been closed and
- * re-armed is over, and counting it again would make every later window look
- * exhausted no matter what it actually reported.
- *
- * @param logger - The spy logger the evaluator under test was given.
- * @param since - How many `warn` calls had been made when the window opened.
- * @returns One code per reported failure, oldest first.
- */
-function watcherErrorCodesSince(logger: AccessControlLogger, since: number): string[] {
-  return vi
-    .mocked(logger.warn!)
-    .mock.calls.slice(since)
-    .filter(([message]) => String(message).includes('[watcher-error] AccessControl'))
-    .map(([, fields]) => String((fields as { code?: unknown } | undefined)?.code ?? 'unknown'));
-}
-
-/**
- * Poll until `predicate` holds, reporting whether it ever did.
+ * Poll until `predicate` holds, or fail loudly.
  *
  * The change under test is made exactly once, before this is called; only its
- * observation is outstanding. That single write is enough because
- * `whenWatcherReady()` does not resolve until the watcher is actually
- * delivering — a helper that re-applied its write to paper over a missed event
- * would report a watcher that drops events as healthy, which is the bug the
- * real-filesystem test exists to catch.
- *
- * @param predicate - The condition being waited on.
- * @param timeoutMs - Budget for this wait.
- * @returns True if the predicate held before the budget ran out.
- */
-async function settles(
-  predicate: () => boolean,
-  timeoutMs = REAL_RELOAD_TIMEOUT_MS
-): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (predicate()) return true;
-    await wait(RELOAD_POLL_MS);
-  }
-  return predicate();
-}
-
-/**
- * {@link settles}, but a miss is a failed test rather than a `false`.
- *
- * Used for every step after the watch has demonstrably delivered once: at that
- * point a dropped event is a fault in the watch, not descriptor pressure, and
- * there is nothing to re-arm.
+ * observation is outstanding. That single change is enough BECAUSE the watch
+ * under this case polls: a `stat` on an interval does not drop anything, so a
+ * change that is not picked up was not picked up. Under a native watch it would
+ * not be enough, and no amount of budget would make it so — see
+ * {@link watchWithPolling} for the measurements.
  *
  * @param predicate - The condition being waited on.
  * @param what - Named in the failure message, so a timeout says what was lost.
- * @param timeoutMs - Budget for this wait.
  */
-async function waitUntil(
-  predicate: () => boolean,
-  what: string,
-  timeoutMs = REAL_RELOAD_TIMEOUT_MS
-): Promise<void> {
-  if (await settles(predicate, timeoutMs)) return;
-  throw new Error(`timed out after ${timeoutMs}ms waiting for ${what}`);
+async function waitUntil(predicate: () => boolean, what: string): Promise<void> {
+  const deadline = Date.now() + loadScaledMs(REAL_RELOAD_BASE_MS);
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await wait(RELOAD_POLL_MS);
+  }
+  if (predicate()) return;
+  throw new Error(`timed out waiting for ${what}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -580,87 +524,53 @@ describe('AccessControl', () => {
     });
 
     // -----------------------------------------------------------------------
-    // The one test in this file that uses a real chokidar watcher and waits on
-    // the real platform.
+    // The one test in this file that uses a real chokidar watcher and a real
+    // file on a real disk.
     //
-    // The hermetic tests above prove what the class does when told a file
-    // changed. This proves it is ever told: that a watch on a single JSON path
-    // fires at all, and that `whenWatcherReady()` is a gate a caller can
-    // actually write against — the property the grace period inside it exists
-    // for, and one no injected watcher can check.
+    // The hermetic tests above are the always-asserted twin, and they are what
+    // this file's coverage rests on: they drive an injected watcher, so they run
+    // and assert on every machine whatever the platform is doing, and a handler
+    // that stops reloading reds there first. Read them as the guarantee and this
+    // case as the extra — it proves the class is ever TOLD: that chokidar, given
+    // the options `AccessControl` actually passes, reports a single JSON path
+    // appearing, changing and vanishing, and that `whenWatcherReady()` is a gate
+    // a caller can write against. No injected watcher can check any of that.
     //
     // It walks all THREE handlers the class registers — `add`, `change`,
     // `unlink` — because they are three different chokidar code paths on a
     // single-file watch, and a real watcher that delivered only some of them
-    // would leave the hermetic tests above passing over a broken class. That
-    // costs no extra budget: each step is gated on the step before it having
-    // been delivered.
+    // would leave the hermetic tests above passing over a broken class.
     //
-    // Exactly one write per step, on purpose. Re-writing to nudge a watcher
-    // that missed the first one would turn a broken gate into a passing test,
-    // which is the bug this is here to catch. The budget is generous instead.
-    //
-    // What IS retried is the WATCH, and only on one answer. A window that
-    // delivers nothing has to say why before anything is decided: if its own
-    // watch reported that the kernel is out of watch descriptors, the evaluator
-    // is closed (which hands those descriptors back), the machine is given a
-    // pause, and a fresh watch opens on a clean directory. If it reported
-    // nothing, that is a watch that is broken rather than starved, and it reds
-    // immediately — re-arming would only bury it. Measured on this machine on
-    // 2026-09-12 at a load average of 18: `chokidar.watch` reported EMFILE and
-    // delivered nothing, and this case reddened as a dropped `add` (DOR-2012).
-    //
-    // Once the `add` has arrived the watch has proved it is delivering, so the
-    // `change` and `unlink` steps get a budget and no re-arm at all.
+    // THE WATCH POLLS, and that is the one substitution in an otherwise
+    // end-to-end case. It is what makes this deterministic instead of a wager on
+    // macOS: under a native watch, a single write is reported only sometimes —
+    // as few as 2 windows in 7 from inside a Vitest worker on a loaded machine —
+    // so "the file was created and nothing happened" cannot tell a broken
+    // handler from a dropped event, and this case reddened healthy code twice in
+    // eight runs before it polled (DOR-2012 review, finding 1). What is given up
+    // is narrow and named in `watchWithPolling`; `watcher-manager.test.ts` is
+    // where a native chokidar delivery is still exercised.
     // -----------------------------------------------------------------------
     it(
       'really does see a rules file appear, change and vanish under a real watcher',
-      async (ctx) => {
+      async () => {
         chokidarSpy.restore();
-        const watchLogger = createSpyLogger();
+        const polling = watchWithPolling(WATCH_POLL_MS);
         const rulesPath = path.join(tmpDir, 'access-rules.json');
-        /** What the LAST window's own watch reported. The verdict rests on this. */
-        let windowCodes: string[] = [];
-        let rearmsTried = 0;
 
-        for (let window = 0; window <= REAL_WATCH_REARMS; window++) {
-          if (window > 0) {
-            rearmsTried++;
-            acl.close();
-            await wait(REAL_REARM_BACKOFF_MS);
-            // Back to an EMPTY directory, so the next window's first write is a
-            // real `add` and not a `change` over what this one left behind.
-            fs.rmSync(rulesPath, { force: true });
-          }
-          // Taken BEFORE the evaluator exists: arming is exactly when a machine
-          // out of watch descriptors says so, so a baseline taken afterwards
-          // would put a window's own EMFILE outside its own window.
-          const windowBaseline = vi.mocked(watchLogger.warn!).mock.calls.length;
-
+        try {
           // Start on an EMPTY directory so the first write is a real `add`.
-          acl = new AccessControl(tmpDir, watchLogger);
+          acl = new AccessControl(tmpDir, createSpyLogger());
           await acl.whenWatcherReady();
-
-          // A watch that could not arm at all says so before it goes ready — the
-          // `error` handler is what settles the gate in that case. Asked here so
-          // an exhausted machine costs one backoff per window instead of a full
-          // reload budget spent waiting for an event that was never coming: the
-          // first shape of this loop took 170s to reach the same skip.
-          windowCodes = watcherErrorCodesSince(watchLogger, windowBaseline);
-          if (windowCodes.some(isExhaustion)) continue;
 
           expect(acl.checkAccess('relay.a', 'relay.b').allowed).toBe(true);
 
           // add
           writeRulesFile(tmpDir, [makeRule('relay.a', 'relay.b', 'deny', 10)]);
-          const sawAdd = await settles(() => !acl.checkAccess('relay.a', 'relay.b').allowed);
-          if (!sawAdd) {
-            windowCodes = watcherErrorCodesSince(watchLogger, windowBaseline);
-            // Nothing delivered and no descriptor trouble reported is a fault in
-            // the watch. Stop here rather than re-arming over it.
-            if (!windowCodes.some(isExhaustion)) break;
-            continue;
-          }
+          await waitUntil(
+            () => !acl.checkAccess('relay.a', 'relay.b').allowed,
+            'the newly created rules file to be picked up'
+          );
 
           // change — a second rule against the now-existing file
           writeRulesFile(tmpDir, [makeRule('relay.x', 'relay.y', 'deny', 10)]);
@@ -677,20 +587,9 @@ describe('AccessControl', () => {
             'the deleted rules file to drop every rule'
           );
           expect(acl.listRules()).toEqual([]);
-          return;
+        } finally {
+          polling.restore();
         }
-
-        // Nothing delivered, and the last window is what answers for it.
-        const exhausted = windowCodes.filter(isExhaustion);
-        expect(
-          exhausted,
-          `the watch never saw the rules file appear and reported ${
-            windowCodes.join(', ') || 'no error'
-          } — that is a fault in the watch, not descriptor pressure`
-        ).not.toEqual([]);
-        ctx.skip(
-          `watch descriptors exhausted (${exhausted.join(', ')}) on the first window and on all ${rearmsTried} re-arms after it; every handler this case walks is asserted hermetically by the cases above it`
-        );
       },
       REAL_WATCH_TEST_TIMEOUT_MS
     );

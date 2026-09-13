@@ -21,7 +21,7 @@ import { MaildirStore } from '../maildir-store.js';
 import type { SqliteIndex } from '../sqlite-index.js';
 import type { CircuitBreakerManager } from '../circuit-breaker.js';
 import type { EndpointInfo, RelayLogger } from '../types.js';
-import { loadScaledMs } from './load-budget.js';
+import { loadCeilingMs, loadScaledMs } from '@dorkos/shared/test-budget';
 import {
   interceptChokidar,
   deferred,
@@ -792,21 +792,24 @@ describe('WatcherManager', () => {
   // Half 2 is the only wall-clock bound left in this file, and it is bounded
   // four ways over: it writes well past the ready window rather than into it,
   // waits on a barrier with a short deadline, re-arms that write inside one open
-  // watch, and then re-opens the WATCH itself a few times when — and only when —
-  // that watch reported the descriptor exhaustion that would explain the
-  // silence. A window that goes quiet reporting nothing is a red, immediately
-  // and without re-arming, because there is nothing for a re-arm to fix.
+  // watch, and then re-opens the WATCH itself a few times whenever a window came
+  // back empty. Only once every window has come back empty is a verdict reached,
+  // and what it says depends on what those windows reported: descriptor
+  // exhaustion every time is a skip, anything else is a red.
   // -------------------------------------------------------------------------
 
   describe('real filesystem smoke', () => {
     /**
      * Ceiling on the sweep's delivery — generous, and paid only on failure.
      *
-     * Scaled by load: twenty seconds is ample on a quiet machine and not ample
-     * beside three other agents' suites, which is how this reddened branches
-     * that never touched the relay (DOR-2012).
+     * Scaled by load, and SAMPLED WHEN THE WAIT STARTS rather than at import:
+     * twenty seconds is ample on a quiet machine and not ample beside three
+     * other agents' suites, which is how this reddened branches that never
+     * touched the relay (DOR-2012). A budget frozen at module load reads the
+     * one-minute average from before the sweep that needed it began, which is
+     * exactly the case the pre-push gate hits.
      */
-    const SMOKE_BUDGET_MS = loadScaledMs(20_000);
+    const smokeBudgetMs = (): number => loadScaledMs(20_000);
     /**
      * How long to let the platform's event stream warm up before the live write.
      *
@@ -818,7 +821,7 @@ describe('WatcherManager', () => {
      */
     const READY_SETTLE_MS = 250;
     /** Ceiling on ONE live `add`, and how many writes one open watch gets. */
-    const LIVE_ATTEMPT_MS = loadScaledMs(2_000);
+    const liveAttemptMs = (): number => loadScaledMs(2_000);
     const LIVE_ATTEMPTS = 3;
     /**
      * How many times the WATCH ITSELF is re-opened, and the pause before each.
@@ -837,12 +840,15 @@ describe('WatcherManager', () => {
      * The startup sweep, then every window: its backoff, its settle, and its
      * attempts. Half again on top for the setup, the assertions and the teardown.
      */
-    const SMOKE_TEST_TIMEOUT_MS = Math.round(
-      1.5 *
-        (SMOKE_BUDGET_MS +
-          READY_SETTLE_MS +
-          (LIVE_REARMS + 1) *
-            (LIVE_REARM_BACKOFF_MS + READY_SETTLE_MS + LIVE_ATTEMPTS * LIVE_ATTEMPT_MS))
+    const SMOKE_TEST_TIMEOUT_MS = Math.min(
+      180_000,
+      Math.round(
+        1.5 *
+          (loadCeilingMs(20_000) +
+            READY_SETTLE_MS +
+            (LIVE_REARMS + 1) *
+              (LIVE_REARM_BACKOFF_MS + READY_SETTLE_MS + LIVE_ATTEMPTS * loadCeilingMs(2_000)))
+      )
     );
 
     it(
@@ -891,7 +897,7 @@ describe('WatcherManager', () => {
 
           await withDeadline(
             delivered.promise,
-            SMOKE_BUDGET_MS,
+            smokeBudgetMs(),
             `a real watcher over ${newDir} delivered nothing`
           );
 
@@ -939,7 +945,8 @@ describe('WatcherManager', () => {
           await new Promise<void>((resolve) => setTimeout(resolve, READY_SETTLE_MS));
 
           let liveId: string | undefined;
-          let rearmsTried = 0;
+          /** One entry per window that came back empty, for the verdict below. */
+          const emptyWindows: { line: string; exhausted: boolean }[] = [];
           /** What the LAST window's own watch reported. The verdict rests on this. */
           let windowCodes: string[] = [];
           /**
@@ -960,7 +967,6 @@ describe('WatcherManager', () => {
 
           for (let window = 0; window <= LIVE_REARMS && !liveId; window++) {
             if (window > 0) {
-              rearmsTried++;
               windowBaseline = vi.mocked(smokeLogger.warn).mock.calls.length;
               await smokeManager.closeAll();
               await new Promise<void>((resolve) => setTimeout(resolve, LIVE_REARM_BACKOFF_MS));
@@ -986,7 +992,7 @@ describe('WatcherManager', () => {
               try {
                 await withDeadline(
                   liveDelivered.promise,
-                  LIVE_ATTEMPT_MS,
+                  liveAttemptMs(),
                   `a real chokidar 'add' on ${newDir} delivered nothing`
                 );
                 liveId = id;
@@ -999,10 +1005,21 @@ describe('WatcherManager', () => {
             }
 
             windowCodes = watcherErrorCodesSince(smokeLogger, windowBaseline);
-            // A window that delivered nothing and reported no descriptor trouble is
-            // a fault in the watch. Re-arming would only bury it, so stop here and
-            // let the assertion below say so.
-            if (!liveId && !windowCodes.some(isExhaustion)) break;
+            if (!liveId) {
+              // A window that came back empty gets another one WHATEVER it
+              // reported. Descriptor exhaustion is one reason; the other is that
+              // macOS drops the event outright and says nothing — 7 of 20 single
+              // writes under a real watcher at a load average of 78, measured
+              // 2026-09-12 — and this used to break out and red on exactly that.
+              // The verdict below is what separates the two, once every window
+              // has had its turn.
+              emptyWindows.push({
+                line: `window ${window}: ${LIVE_ATTEMPTS} writes, none delivered (${
+                  windowCodes.join(', ') || 'no error reported'
+                })`,
+                exhausted: windowCodes.some(isExhaustion),
+              });
+            }
           }
 
           if (liveId) {
@@ -1012,20 +1029,18 @@ describe('WatcherManager', () => {
             return;
           }
 
-          // Nothing delivered, and the last window is what answers for it.
-          // Acceptable ONLY if that window's own watch reported the failure that
-          // means it has stopped listening for good — the condition `sweepPending`
-          // exists for, not a fault in this code. Any other error, or none at all,
-          // is a real red.
-          const exhausted = windowCodes.filter(isExhaustion);
+          // Every window came back empty, and what that means is decided by
+          // what the windows themselves reported. Exhausted every time is the
+          // condition `sweepPending` exists for, not a fault in this code, and
+          // it skips loudly so a case that has stopped asserting is visible in
+          // the report. Anything else is a red.
+          const report = emptyWindows.map((entry) => entry.line).join('; ');
           expect(
-            exhausted,
-            `the watch delivered nothing across ${LIVE_ATTEMPTS} writes and reported ${
-              windowCodes.join(', ') || 'no error'
-            } — that is a fault in the watch, not descriptor pressure`
-          ).not.toEqual([]);
+            emptyWindows.every((entry) => entry.exhausted),
+            `${emptyWindows.length} fresh watches, each given ${LIVE_ATTEMPTS} writes, delivered nothing — ${report}`
+          ).toBe(true);
           ctx.skip(
-            `watch descriptors exhausted (${exhausted.join(', ')}) on the first window and on all ${rearmsTried} re-arms after it; the startup sweep is what covers this, and half 1 above asserts it`
+            `watch descriptors exhausted on every one of ${emptyWindows.length} windows (${report}); the startup sweep is what covers this, and half 1 above asserts it`
           );
         } finally {
           await smokeManager.closeAll();
