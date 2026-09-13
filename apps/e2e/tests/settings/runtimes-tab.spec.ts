@@ -236,9 +236,39 @@ test.describe('Settings — Runtimes tab @smoke', () => {
 
   test('Make default moves the default, and it survives a reload', async ({
     basePage,
+    page,
     settingsPage,
   }) => {
-    await settingsPage.runtimeMakeDefault(OTHER_RUNTIME).click();
+    // The one test in this file that boots the app TWICE — once in `beforeEach`
+    // and once for the reload that is its whole point — which is three times the
+    // work its siblings do inside the same 30s budget. On a loaded merge-queue
+    // shard the two boots ate the budget and the LAST click reported
+    // `locator.click: Test timeout of 30000ms exceeded` against a perfectly
+    // healthy app, ejecting two unrelated PRs (DOR-2013). `test.slow()` is
+    // Playwright's way of saying "this one legitimately does more work"; the
+    // waits below are what make the test deterministic rather than merely
+    // longer.
+    test.slow();
+
+    /**
+     * Click one card's `Make default` and wait for the write itself.
+     *
+     * The button fires a `PATCH /api/config` and the pill repaints from the
+     * refetch that follows. Waiting on the RESPONSE rather than on the repaint
+     * is what makes this a fact about the server instead of a guess about how
+     * fast this machine renders: the assertions after it are then reading state
+     * the server has already acknowledged.
+     */
+    const makeDefault = async (runtime: string): Promise<void> => {
+      const written = page.waitForResponse(
+        (response) =>
+          response.url().includes('/api/config') && response.request().method() === 'PATCH'
+      );
+      await settingsPage.runtimeMakeDefault(runtime).click();
+      expect((await written).ok()).toBe(true);
+    };
+
+    await makeDefault(OTHER_RUNTIME);
 
     await expect(settingsPage.runtimeDefaultPill(OTHER_RUNTIME)).toBeVisible();
     await expect(settingsPage.runtimeDefaultPill(DEFAULT_RUNTIME)).toBeHidden();
@@ -255,10 +285,15 @@ test.describe('Settings — Runtimes tab @smoke', () => {
 
     await expect(settingsPage.runtimeDefaultPill(OTHER_RUNTIME)).toBeVisible();
     await expect(settingsPage.runtimeDefaultPills).toHaveCount(1);
+    // Hydrated, not merely painted: the button below only exists on a card the
+    // fresh page already knows is NOT the default, so waiting for it here is
+    // what stops the click from racing the reloaded tab's first render — which
+    // is exactly where the timeout landed.
+    await expect(settingsPage.runtimeMakeDefault(DEFAULT_RUNTIME)).toBeVisible();
 
     // Put it back the same way a person would, which is also the other half of
     // the assertion: the choice moves both ways.
-    await settingsPage.runtimeMakeDefault(DEFAULT_RUNTIME).click();
+    await makeDefault(DEFAULT_RUNTIME);
     await expect(settingsPage.runtimeDefaultPill(DEFAULT_RUNTIME)).toBeVisible();
     await expect(settingsPage.runtimeDefaultPill(OTHER_RUNTIME)).toBeHidden();
   });
