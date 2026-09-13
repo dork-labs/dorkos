@@ -368,11 +368,17 @@ export const SessionEventSchema = z
     z.object({ ...seqShape, type: z.literal('thinking_delta'), ...ThinkingDeltaSchema.shape }),
     // A tool invocation (reuses the StreamEvent tool-call payload).
     z.object({ ...seqShape, type: z.literal('tool_call'), ...ToolCallEventSchema.shape }),
-    // A tool result (reuses the StreamEvent tool-call payload, which carries `result`).
+    // The last word available about a tool call so far (reuses the StreamEvent
+    // tool-call payload, which carries `result`). NOT necessarily terminal:
+    // `status` is what says so — `complete`/`error` are, `running`/`pending`
+    // are not, and claude-code emits a `running` one when the model finishes
+    // typing the call's arguments, before any approval. The full cross-runtime
+    // rule is in `session-event-normalizer.ts`, where both live members fold
+    // onto this one.
     z.object({ ...seqShape, type: z.literal('tool_result'), ...ToolCallEventSchema.shape }),
     // Incremental live output from a running tool (e.g. Bash stdout). Delta
     // semantics: clients append `content` to the tool part's progress output;
-    // the terminal `tool_result` supersedes it.
+    // a terminal `tool_result` supersedes it.
     z.object({ ...seqShape, type: z.literal('tool_progress'), ...ToolProgressEventSchema.shape }),
     // A permission approval awaiting the operator (PendingInteractionDTO `approval` shape).
     z.object({

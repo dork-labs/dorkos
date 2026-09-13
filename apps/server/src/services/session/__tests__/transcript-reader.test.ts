@@ -209,9 +209,14 @@ describe('TranscriptReader', () => {
 
       const messages = await transcriptReader.readTranscript('/vault', 'session-456');
 
+      // `running`, because this fixture carries NO paired `tool_result` line —
+      // the read started and the transcript records no ending for it. Stamping
+      // such a call `complete` is what put a green check on a tool still
+      // waiting for its permission prompt to be answered (DOR-2011); the
+      // sibling test below is the paired case, which settles to `complete`.
       expect(messages).toHaveLength(1);
       expect(messages[0].toolCalls).toEqual([
-        { toolCallId: 'tc-1', toolName: 'Read', input: '{"file":"test.ts"}', status: 'complete' },
+        { toolCallId: 'tc-1', toolName: 'Read', input: '{"file":"test.ts"}', status: 'running' },
       ]);
       expect(messages[0].parts).toEqual([
         { type: 'text', text: 'Let me read that file.' },
@@ -220,7 +225,7 @@ describe('TranscriptReader', () => {
           toolCallId: 'tc-1',
           toolName: 'Read',
           input: '{"file":"test.ts"}',
-          status: 'complete',
+          status: 'running',
         },
       ]);
     });

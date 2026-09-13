@@ -191,9 +191,13 @@ describe('streamTurnWindow — a picture a tool returned (DOR-1664)', () => {
   });
 
   it('does not call a picture-only turn a dead stream', async () => {
-    // A `tool_result` carrying only an image maps to no `tool_result` event, so
-    // without `image_attachment` counting as content this turn would close with
-    // "The agent did not respond" printed under the picture it just produced.
+    // The turn must not close with "The agent did not respond" printed under
+    // the picture it just produced. An image-only `tool_result` used to map to
+    // no `tool_result` event at all, which made `image_attachment` counting as
+    // content the only thing standing between this turn and that sentence;
+    // since DOR-2011 the terminal frame is emitted whether or not the result
+    // carried text, so two things now count. The assertion is the outcome
+    // rather than either mechanism, so it keeps holding as those shift.
     const home = mkdtempSync(join(tmpdir(), 'dorkos-pump-media-guard-'));
     try {
       const events = await runWindow(new LocalSessionAttachmentStore(home), [

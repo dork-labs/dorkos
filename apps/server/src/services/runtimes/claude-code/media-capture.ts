@@ -125,11 +125,21 @@ async function* captureClaudeCodeMedia(
  * Wrapping the mapper rather than editing both loops is what keeps the two
  * paths from drifting — the same reason `empty-stream-guard.ts` exists.
  *
- * **The drain after the loop is not belt-and-braces, it is the only one that
- * fires for the case this change exists for.** A `tool_result` whose content is
- * nothing but an image maps to ZERO stream events (the mapper emits a
- * `tool_result` only when there is text), so the in-loop drain never runs for
- * the very message that recorded the picture.
+ * **The drain after the loop is the only one that fires for a message that maps
+ * to no events at all**, and such messages exist — the in-loop drain runs after
+ * each yielded event, so a message that yields none never reaches it while
+ * still having recorded a picture. The live case is a result the SDK already
+ * resolved through `tool_use_summary`: `recordToolResultImages` runs BEFORE
+ * that skip, deliberately, because a summary replaces a result's TEXT and not
+ * its bytes.
+ *
+ * An image-only `tool_result` used to be that case too — the mapper emitted a
+ * `tool_result` only when there was text — and is not since DOR-2011, which
+ * made the terminal frame unconditional so a gated call could stop claiming to
+ * be finished. That message now yields one event, the in-loop drain fires, and
+ * the picture lands directly after it. Both drains stay: which one catches a
+ * given message is an implementation detail of a mapper this file does not own,
+ * and the cost of a missed drain is a picture that silently disappears.
  *
  * Ordering: the image is announced immediately after the events of the message
  * that produced it, so it lands in the transcript exactly where its tool call

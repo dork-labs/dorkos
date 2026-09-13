@@ -30,13 +30,21 @@ import type {
  *
  * Be precise about how much work it does: in the ORDINARY turn the tool call
  * that produced the image already emitted `tool_call_start`, which counts, so
- * the guard was never going to fire anyway. What this entry covers is the turn
- * where it did not — a `tool_result` arriving without its own start frame
+ * the guard was never going to fire anyway. What this entry covered was the
+ * turn where it did not — a `tool_result` arriving without its own start frame
  * (a re-delivered or replayed result, a window that opened mid-call), where a
- * result carrying ONLY an image maps to no `tool_result` event either, because
- * there is no text to put in one. That turn's whole visible product is the
- * picture, and without this line the guard would print "the agent did not
- * respond" underneath it — the `/compact` defect (DOR-1235) in a new costume.
+ * result carrying ONLY an image mapped to no `tool_result` event either,
+ * because there was no text to put in one.
+ *
+ * That last clause stopped being true in DOR-2011: the terminal `tool_result`
+ * is emitted for every result block now, empty text included, so an image-only
+ * result carries a counting event of its own. This entry is therefore belt-and-
+ * braces today, and it stays exactly as it is. What it protects against is
+ * printing "the agent did not respond" over a picture the person can plainly
+ * see — the `/compact` defect (DOR-1235) in a new costume — and that claim must
+ * not rest on the emission rules of a mapper in another directory, which have
+ * now changed twice. A redundant line here costs nothing; the day it is needed
+ * again, nothing will announce it.
  */
 const CONTENT_EVENT_TYPES = new Set<string>([
   'text_delta',

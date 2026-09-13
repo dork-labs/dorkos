@@ -88,8 +88,36 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
     }
 
     // tool_call_start/delta map to an in-progress tool_call; tool_call_end and
-    // tool_result map to the terminal tool_result. All reuse the ToolCallEvent
-    // payload shape, so we pass the fields straight through.
+    // tool_result both map to the tool_result member. All reuse the
+    // ToolCallEvent payload shape, so we pass the fields straight through.
+    //
+    // ## `tool_result` is the member, `status` is the claim
+    //
+    // The frame NAME does not mean the call ended, and a consumer that reads it
+    // that way will be wrong on the default runtime. What the runtimes agree on
+    // is narrower: a `tool_result` frame is the last word available about a
+    // tool call SO FAR, and its `status` says whether that word is terminal.
+    //
+    // They disagree on when they first have something to say, because they are
+    // told different things:
+    //
+    // - **codex** and **opencode** learn of a call and its outcome together, so
+    //   their `tool_call_end` carries a real terminal status and the frame is
+    //   terminal in practice.
+    // - **claude-code** streams the call as the model types it, and the SDK
+    //   closes the block (`content_block_stop`) when the ARGUMENTS are done —
+    //   before the permission prompt, before the tool runs. That
+    //   `tool_call_end` reports `running`, and the terminal frame arrives later
+    //   from the result message (DOR-2011).
+    //
+    // So the split is real and it is deliberate: forcing claude-code to
+    // withhold the frame until it had a result would drop the only signal that
+    // a call's input finished, and forcing the other two to emit a spurious
+    // in-flight frame would invent a state they never observe. Read `status`,
+    // never the member name; `complete` and `error` are terminal, `running` and
+    // `pending` are not. The client already does this
+    // (`project-session-turn.ts` copies the status through), and so does the
+    // history fold (`event-log-history.ts` takes `event.status` verbatim).
     case 'tool_call_start':
     case 'tool_call_delta': {
       const call: RawOf<'tool_call'> = { type: 'tool_call', ...toToolPayload(data) };

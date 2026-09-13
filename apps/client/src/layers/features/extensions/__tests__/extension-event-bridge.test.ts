@@ -172,6 +172,68 @@ describe('ExtensionEventBridge', () => {
       // Privacy: no event carries the tool result content.
       expect(JSON.stringify(received)).not.toContain('SECRET OUTPUT');
     });
+
+    it('says nothing while a gated tool is still waiting to be approved', () => {
+      // DOR-2011. claude-code closes the tool's content block when the model
+      // finishes typing its ARGUMENTS, and the durable stream folds that onto
+      // `tool_result` — one frame before `approval_required`, with no result on
+      // it. Forwarding that as `completed` told every extension a gated Write
+      // had already happened while the person was still being asked about it.
+      subscribeAll();
+      source.emitSessionEvent(
+        's1',
+        sessionEvent({ type: 'tool_call', toolCallId: 't1', toolName: 'Write', status: 'running' })
+      );
+      source.emitSessionEvent(
+        's1',
+        sessionEvent({
+          type: 'tool_result',
+          toolCallId: 't1',
+          toolName: 'Write',
+          status: 'running',
+        })
+      );
+
+      expect(received.filter((e) => e.kind === 'tool.activity')).toEqual([
+        { kind: 'tool.activity', sessionId: 's1', toolName: 'Write', status: 'started' },
+      ]);
+
+      // And the completion still lands once the tool really runs.
+      source.emitSessionEvent(
+        's1',
+        sessionEvent({
+          type: 'tool_result',
+          toolCallId: 't1',
+          toolName: 'Write',
+          status: 'complete',
+          result: 'File created',
+        })
+      );
+      expect(received.filter((e) => e.kind === 'tool.activity')).toHaveLength(2);
+      expect(received.at(-1)).toMatchObject({ kind: 'tool.activity', status: 'completed' });
+    });
+
+    it('reports a refused tool as ended rather than staying silent', () => {
+      // An `error` result IS the tool ending — the person said no, and the
+      // denial came back as the result. The coarse two-state has no word for
+      // "failed", so `completed` is the honest one: it means the tool produced
+      // a result, which it did.
+      subscribeAll();
+      source.emitSessionEvent(
+        's1',
+        sessionEvent({
+          type: 'tool_result',
+          toolCallId: 't1',
+          toolName: 'Write',
+          status: 'error',
+          result: 'User denied tool execution.',
+        })
+      );
+
+      expect(received.filter((e) => e.kind === 'tool.activity')).toEqual([
+        { kind: 'tool.activity', sessionId: 's1', toolName: 'Write', status: 'completed' },
+      ]);
+    });
   });
 
   describe('content exclusion (privacy boundary)', () => {

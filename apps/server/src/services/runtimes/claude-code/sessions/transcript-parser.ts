@@ -694,23 +694,38 @@ export function parseTranscript(lines: string[], images?: TranscriptImageRef[]):
             parts.push({ type: 'text', text: block.text });
           }
         } else if (block.type === 'tool_use' && block.name && block.id) {
-          // `complete` is a PLACEHOLDER here, overwritten by `applyToolResult`
+          // `running` is a PLACEHOLDER here, overwritten by `applyToolResult`
           // the moment the paired result is read — which is where the terminal
           // status is actually decided (DOR-1293).
           //
-          // A call whose result never arrives KEEPS it, and that is deliberate.
-          // The honest status would be `pending`, but `use-chat-session`'s scan
-          // treats a pending interaction anywhere in the transcript as the
-          // session waiting on you — so a question orphaned by a turn that died
-          // would leave a closed session permanently claiming it needs an
-          // answer. `questionOutcome` is a different field, which that scan
-          // never reads, so the orphan says "unresolved" there instead (below)
-          // and the lie is closed without inventing a live prompt.
+          // A call whose result never arrives KEEPS it, and the choice between
+          // the three candidates is what this paragraph is for. It was
+          // `complete` until DOR-2011, which made a page reloaded MID-APPROVAL
+          // rebuild the transcript with a green check on a tool nobody had
+          // allowed yet — the same lie the live stream was telling one layer
+          // up, arriving by the other road. `pending` is not the answer either:
+          // `use-chat-session`'s scan treats a pending interaction anywhere in
+          // the transcript as the session waiting on you, so a question
+          // orphaned by a turn that died would leave a closed session
+          // permanently claiming it needs an answer.
+          //
+          // `running` is the one that is true and costs nothing. An unpaired
+          // `tool_use` IS a call that started and has not reported back, that
+          // scan never reads it, and the live stream now says exactly the same
+          // thing for the same moment — so a reload mid-approval rebuilds the
+          // state the open tab is already showing. The one blemish it accepts:
+          // a genuine orphan, from a turn that died, reads as in-flight forever
+          // in a closed transcript. That is a tool whose ending was never
+          // recorded, which is the truth, and the DOR-1293 rule is that an
+          // unknown ending must not be drawn as a successful one.
+          //
+          // `questionOutcome` is a different field, which the scan never reads,
+          // so an orphaned question also says "unresolved" there (below).
           const tc: HistoryToolCall = {
             toolCallId: block.id,
             toolName: block.name,
             input: block.input ? JSON.stringify(block.input) : undefined,
-            status: 'complete',
+            status: 'running',
           };
           if (block.name === SDK_TOOL_NAMES.ASK_USER_QUESTION) {
             // Every question starts UNRESOLVED and stays that way unless
@@ -757,7 +772,10 @@ export function parseTranscript(lines: string[], images?: TranscriptImageRef[]):
             toolCallId: block.id,
             toolName: block.name,
             input: block.input ? JSON.stringify(block.input) : undefined,
-            status: 'complete',
+            // The same placeholder, for the same reasons, on the part the
+            // transcript renders — see `tc` above. Both are overwritten
+            // together by `applyToolResult`, so they must start together too.
+            status: 'running',
             // Keyed off the tool NAME, matching `resolveToolCall`: a question
             // whose `questions` failed to parse is still a question, and a part
             // that said otherwise would take the approval arm downstream.
