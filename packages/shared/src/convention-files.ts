@@ -6,6 +6,7 @@
  *
  * @module shared/convention-files
  */
+import { DEFAULT_TRAITS, renderTraits, type TraitName } from './trait-renderer.js';
 
 /**
  * The directory inside an agent's own folder that holds its DorkOS files.
@@ -221,6 +222,10 @@ export const TRAIT_SECTION_END = '<!-- TRAITS:END -->';
  * The trait section is delimited by HTML comments and auto-regenerated
  * on every slider change. Custom prose below is never touched.
  *
+ * **The prose is trimmed at both ends.** Blank lines a person left above or
+ * below their text do not survive a save, which is why composing is idempotent:
+ * the second pass has nothing left to trim.
+ *
  * @param traitBlock - Rendered trait directives (from `renderTraits()`)
  * @param customProse - User-written prose (everything after the trait section)
  */
@@ -247,6 +252,98 @@ export function extractCustomProse(soulContent: string): string {
     return soulContent;
   }
   return soulContent.slice(endIndex + TRAIT_SECTION_END.length).trim();
+}
+
+/**
+ * Where a SOUL.md's DorkOS-owned trait fence actually is, or `null` when the
+ * file has none.
+ *
+ * A fence is a START **followed by** an END. {@link extractCustomProse} asks
+ * only whether an END exists anywhere, which is enough for a file DorkOS wrote
+ * and wrong for one somebody typed: a persona that mentions the end marker in
+ * passing — and `kickoff-prompts.ts` teaches every new agent that exact string —
+ * has no fence at all, and slicing at that mention deletes everything above it.
+ *
+ * @param content - Full SOUL.md file content.
+ * @returns The index just past the START, and the index of the END that closes
+ *   it, or `null` when there is no fence.
+ */
+function findTraitFence(content: string): { startsAt: number; endsAt: number } | null {
+  const startsAt = content.indexOf(TRAIT_SECTION_START);
+  if (startsAt === -1) return null;
+  const endsAt = content.indexOf(TRAIT_SECTION_END, startsAt + TRAIT_SECTION_START.length);
+  if (endsAt === -1) return null;
+  return { startsAt, endsAt };
+}
+
+/**
+ * SOUL.md as it belongs on disk: the personality block DorkOS renders from an
+ * agent's traits, fenced by the trait markers, above the prose.
+ *
+ * ## One composer, because two disagreeing ones is the bug
+ *
+ * The file has two halves and only one of them is the author's. The block is
+ * rendered from `traits` and `runtimes/shared/agent-context.ts` re-renders it
+ * into the fence on every turn — but only when the fence is there, so a save
+ * that loses the markers leaves nothing to regenerate and the agent's six
+ * personality dials stop reaching it entirely. Both writers therefore have to
+ * put the file together the same way: the app's profile editors before they
+ * save, and the server before it writes what an agent sent through
+ * `update_agent`. They did it with the same one-liner in two packages until this
+ * became the one place.
+ *
+ * **Takes the whole file OR bare prose, and does the right thing with either.**
+ * Given a composed file it re-composes the same file (idempotent — the prose is
+ * already trimmed, see {@link buildSoulContent}); given prose alone it wraps it.
+ * That is what lets an editor pass a draft and a tool pass a full document to
+ * one function.
+ *
+ * **Nothing the author wrote is dropped.** Text above a real fence is kept and
+ * rejoined to the prose below it, and a file whose only marker is a passing
+ * mention has no fence at all ({@link findTraitFence}) so it is prose from end
+ * to end.
+ *
+ * @param content - The whole SOUL.md, or just the prose half.
+ * @param traits - The agent's traits; anything missing takes its default.
+ */
+export function composeSoulFile(
+  content: string,
+  traits?: Partial<Record<TraitName, number>>
+): string {
+  const fence = findTraitFence(content);
+  const prose =
+    fence === null
+      ? content
+      : [
+          content.slice(0, fence.startsAt).trim(),
+          content.slice(fence.endsAt + TRAIT_SECTION_END.length).trim(),
+        ]
+          .filter(Boolean)
+          .join('\n\n');
+  return buildSoulContent(renderTraits({ ...DEFAULT_TRAITS, ...traits }), prose);
+}
+
+/**
+ * How much prose fits in this agent's SOUL.md.
+ *
+ * {@link SOUL_MAX_CHARS} is the budget for the WHOLE file, and the personality
+ * block spends several hundred of it — a different several hundred per agent,
+ * because a dial at either extreme renders a longer directive than a balanced
+ * one. So the only number an author can act on is this one, and it has to be
+ * measured rather than guessed: an editor told "4,000" while refused at 3,500
+ * has nothing to do but trim and retry.
+ *
+ * Measured off the composer itself, so no second copy of the frame's shape can
+ * drift from the first.
+ *
+ * @param traits - The agent's traits; anything missing takes its default.
+ * @returns The largest prose length that still composes to a legal file.
+ */
+export function soulProseBudget(traits?: Partial<Record<TraitName, number>>): number {
+  // One character of prose, so the blank line that separates it from the block
+  // is counted; subtract that character back off.
+  const frame = composeSoulFile('x', traits).length - 1;
+  return Math.max(0, SOUL_MAX_CHARS - frame);
 }
 
 /**

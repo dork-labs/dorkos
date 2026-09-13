@@ -27,9 +27,11 @@ import {
 } from '@dorkos/shared/capabilities';
 import { writeConventionFile } from '@dorkos/shared/convention-files-io';
 import {
+  composeSoulFile,
   CONVENTION_FILES,
   MEMORY_MAX_CHARS,
   NOPE_MAX_CHARS,
+  soulProseBudget,
   SOUL_MAX_CHARS,
 } from '@dorkos/shared/convention-files';
 import {
@@ -78,6 +80,45 @@ export class AgentUpdateError extends Error {
 }
 
 /**
+ * The one sentence a caller gets when a convention file is over its budget.
+ *
+ * Shared by the two checks that can report it — the schema's cap on what
+ * arrived, and the cap on the composed `SOUL.md` — so a person cannot be told
+ * the limit two ways depending on which one fired.
+ *
+ * @param file - The convention file's name, as a person sees it.
+ * @param max - That file's budget in characters.
+ */
+function tooLongRefusal(file: string, max: number): string {
+  // A colon rather than a dash: this sentence is composed with the caller's own
+  // ("Couldn't save your instructions — …"), and two dashes in one line read as
+  // an aside inside an aside.
+  return `${file} is too long: the whole file has to fit in ${max.toLocaleString('en-US')} characters.`;
+}
+
+/**
+ * The refusal for prose that only fits until the personality block goes on top.
+ *
+ * It names the PROSE budget, not the file's, and that is the whole point of it
+ * existing separately. `SOUL.md` is capped as a whole file and DorkOS spends
+ * several hundred characters of that on the block it renders from the agent's
+ * traits — a different several hundred per agent — so an author refused at 3,500
+ * and told "4,000" has nothing to do but trim by guesswork and try again. The
+ * number here is measured for THIS agent's dials
+ * ({@link soulProseBudget}) and can be acted on the first time.
+ *
+ * @param budget - The prose length that actually fits, from {@link soulProseBudget}.
+ */
+function soulProseTooLongRefusal(budget: number): string {
+  return (
+    `${CONVENTION_FILES.soul} is too long: your text has to fit in ` +
+    `${budget.toLocaleString('en-US')} characters. DorkOS writes the personality block above it ` +
+    `from this agent's traits, and the whole file has to fit in ` +
+    `${SOUL_MAX_CHARS.toLocaleString('en-US')}.`
+  );
+}
+
+/**
  * Why a convention file was refused, in words an editor can put on screen.
  *
  * The one refusal a person actually hits is a file over its budget, and the
@@ -104,10 +145,7 @@ function conventionRefusal(error: z.ZodError): string {
   if (!issue) return 'Validation failed';
 
   const { file, max } = budgets[String(issue.path[0])]!;
-  // A colon rather than a dash: this sentence is composed with the caller's own
-  // ("Couldn't save your instructions — …"), and two dashes in one line read as
-  // an aside inside an aside.
-  return `${file} is too long: the whole file has to fit in ${max.toLocaleString('en-US')} characters.`;
+  return tooLongRefusal(file, max);
 }
 
 /** A JSON object, which is the only shape a nested manifest field can merge as. */
@@ -186,7 +224,9 @@ interface MeshSyncLike {
  * ({@link AGENT_WRITE_POLICY}), schema validation, existence, the tier-ceiling
  * direction check, and the system-agent identity protections.
  * `soulContent`/`nopeContent`/
- * `memoryContent` are written to their convention files; remaining fields merge into `agent.json`
+ * `memoryContent` are written to their convention files — `SOUL.md` composed
+ * around the personality block DorkOS owns rather than stored as sent
+ * ({@link composeSoulFile}); remaining fields merge into `agent.json`
  * with `null` meaning "clear this field" (JSON can't carry `undefined`), and a
  * field whose value is an object of independent leaves merging leaf by leaf so a
  * partial patch leaves its siblings alone ({@link mergedFieldValue}). After a
@@ -330,20 +370,14 @@ export async function updateAgentManifest(opts: {
   }
   const conventionUpdates = conventionsResult.data;
 
-  if (conventionUpdates.soulContent !== undefined) {
-    await writeConventionFile(agentPath, CONVENTION_FILES.soul, conventionUpdates.soulContent);
-  }
-  if (conventionUpdates.nopeContent !== undefined) {
-    await writeConventionFile(agentPath, CONVENTION_FILES.nope, conventionUpdates.nopeContent);
-  }
-  // The memory file's OTHER writable path (DOR-632). Accepting `memoryContent`
-  // on the wire and then not writing it is the DOR-1253 shape exactly: the
-  // editor reports a save, the file never changes, and the person finds out the
-  // next time they open it.
-  if (conventionUpdates.memoryContent !== undefined) {
-    await writeConventionFile(agentPath, CONVENTION_FILES.memory, conventionUpdates.memoryContent);
-  }
-
+  // The merged manifest, computed BEFORE anything is written.
+  //
+  // It used to be computed after the convention files, and the order now matters:
+  // `SOUL.md` carries a personality block rendered from `traits`, so composing it
+  // needs the traits this patch leaves behind, not the ones it replaced
+  // ({@link composeSoulFile}). A self-edit that moves a dial and rewrites the
+  // prose in one call is a single patch, and it has to land as one.
+  //
   // traits and conventions go into agent.json via the manifest update.
   //
   // **Only the keys the caller actually SENT.** `UpdateAgentRequestSchema` is
@@ -376,6 +410,51 @@ export async function updateAgentManifest(opts: {
     if (merged[key] === null) delete merged[key];
   }
   const updated = merged as AgentManifest;
+
+  // `SOUL.md` is composed, never stored as sent. The top of the file is rendered
+  // from `traits` and `agent-context.ts` re-renders it into the fence every turn
+  // — but only when the fence is there, so a save that loses the markers leaves
+  // no block to regenerate and the agent's six personality dials stop reaching it
+  // for good. An agent rewriting its own persona through `update_agent` sends
+  // prose and no markers, which is exactly what the `agent-self-edit` eval caught
+  // on 2026-09-12. `composeSoulFile` is the same composer the app's profile
+  // editors use, so both writers put the file together identically.
+  //
+  // The budget is checked on the file that will actually exist, because that is
+  // what the limit has always been about ("the whole file has to fit"): the
+  // schema bounded `soulContent` as it arrived, and the block this adds above it
+  // spends the same budget. Thrown BEFORE any write, like every other refusal
+  // here, so an over-budget file leaves nothing half-applied behind it — and the
+  // number it names is the PROSE budget, which is the only one an author can act
+  // on (`soulProseTooLongRefusal`).
+  //
+  // `updated.traits` rather than the stored ones: a self-edit that moves a dial
+  // and rewrites the prose in one call renders the dial it just set.
+  const soulFile =
+    conventionUpdates.soulContent === undefined
+      ? undefined
+      : composeSoulFile(conventionUpdates.soulContent, updated.traits);
+  if (soulFile !== undefined && soulFile.length > SOUL_MAX_CHARS) {
+    throw new AgentUpdateError(
+      'VALIDATION',
+      soulProseTooLongRefusal(soulProseBudget(updated.traits))
+    );
+  }
+
+  if (soulFile !== undefined) {
+    await writeConventionFile(agentPath, CONVENTION_FILES.soul, soulFile);
+  }
+  if (conventionUpdates.nopeContent !== undefined) {
+    await writeConventionFile(agentPath, CONVENTION_FILES.nope, conventionUpdates.nopeContent);
+  }
+  // The memory file's OTHER writable path (DOR-632). Accepting `memoryContent`
+  // on the wire and then not writing it is the DOR-1253 shape exactly: the
+  // editor reports a save, the file never changes, and the person finds out the
+  // next time they open it.
+  if (conventionUpdates.memoryContent !== undefined) {
+    await writeConventionFile(agentPath, CONVENTION_FILES.memory, conventionUpdates.memoryContent);
+  }
+
   await writeManifest(agentPath, updated);
 
   // ADR-0043: sync to Mesh DB cache (best-effort).

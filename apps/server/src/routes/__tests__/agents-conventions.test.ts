@@ -279,7 +279,12 @@ describe('Agent Convention File Operations', () => {
   });
 
   describe('PATCH /api/agents/current (convention file writes)', () => {
-    it('writes SOUL.md when soulContent is provided', async () => {
+    // The file that lands is COMPOSED, not the string that arrived: prose
+    // below the personality block DorkOS owns. A caller that sends no markers
+    // (every `update_agent` self-edit does) would otherwise save a SOUL.md with
+    // no block for the turn to regenerate, and the agent's personality dials
+    // would stop reaching it. Found by the `agent-self-edit` eval, 2026-09-12.
+    it('writes SOUL.md around the personality block when soulContent is provided', async () => {
       mockReadManifest.mockResolvedValue(mockManifest);
 
       const res = await request(server)
@@ -288,11 +293,16 @@ describe('Agent Convention File Operations', () => {
         .send({ soulContent: '## My custom soul' });
 
       expect(res.status).toBe(200);
-      expect(mockWriteConventionFile).toHaveBeenCalledWith(
-        '/home/user/project',
-        'SOUL.md',
-        '## My custom soul'
-      );
+      const [dir, file, written] = mockWriteConventionFile.mock.calls[0] as [
+        string,
+        string,
+        string,
+      ];
+      expect(dir).toBe('/home/user/project');
+      expect(file).toBe('SOUL.md');
+      expect(written.startsWith('<!-- TRAITS:START -->')).toBe(true);
+      expect(written).toContain('<!-- TRAITS:END -->');
+      expect(written.endsWith('## My custom soul')).toBe(true);
     });
 
     // Red when: the write branch is missing. Accepting the field on the wire and
@@ -425,11 +435,15 @@ describe('Agent Convention File Operations', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.displayName).toBe('Updated Agent');
-      expect(mockWriteConventionFile).toHaveBeenCalledWith(
-        '/home/user/project',
-        'SOUL.md',
-        '## Updated soul content'
-      );
+      const soulWrite = mockWriteConventionFile.mock.calls.find(
+        (call: unknown[]) => call[1] === 'SOUL.md'
+      ) as [string, string, string];
+      expect(soulWrite[0]).toBe('/home/user/project');
+      expect(soulWrite[2].startsWith('<!-- TRAITS:START -->')).toBe(true);
+      // The block above the prose is rendered, not carried over from the
+      // request (`renderTraits` is stubbed to this string at the top of the file).
+      expect(soulWrite[2]).toContain('rendered-traits');
+      expect(soulWrite[2].endsWith('## Updated soul content')).toBe(true);
       expect(mockWriteConventionFile).toHaveBeenCalledWith(
         '/home/user/project',
         'NOPE.md',

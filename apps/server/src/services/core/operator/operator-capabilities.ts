@@ -247,7 +247,25 @@ export const operatorDomain: CapabilityDomain = {
           .describe('Which convention files are injected'),
         color: z.string().nullable().optional().describe('Accent color (null clears it)'),
         icon: z.string().nullable().optional().describe('Icon name (null clears it)'),
-        soulContent: z.string().max(SOUL_MAX_CHARS).optional().describe('Full SOUL.md content'),
+        // Says what DorkOS does with it, because the honest answer is not "we
+        // store this". The personality block at the top of SOUL.md is rendered
+        // from `traits` and fenced by markers the turn regenerates in place; a
+        // file saved without them has no block to regenerate, so the six dials
+        // stop reaching the agent entirely. The server composes the file around
+        // that block either way (`agent-updater.ts`), and this sentence is what
+        // keeps a caller from spending its budget reproducing a block it does
+        // not own. Found by the `agent-self-edit` eval, 2026-09-12.
+        soulContent: z
+          .string()
+          .max(SOUL_MAX_CHARS)
+          .optional()
+          .describe(
+            'SOUL.md: who this agent is, in prose. Send the prose only — DorkOS keeps the ' +
+              'personality block at the top of the file and writes it from `traits`. That block ' +
+              `spends several hundred of the ${SOUL_MAX_CHARS.toLocaleString('en-US')}-character ` +
+              'file budget, so your text has a few hundred less than that; a refusal names the ' +
+              'exact number for this agent.'
+          ),
         // Declared so an agent can TIGHTEN its own ceiling — and, just as much,
         // so an attempt to widen one is answered instead of dropped. `z.object`
         // strips what it does not declare, so leaving this out would let an

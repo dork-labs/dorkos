@@ -81,7 +81,11 @@ beforeEach(() => {
 });
 
 describe('update_agent', () => {
-  it('applies a self-edit and writes SOUL.md for a normal agent', async () => {
+  // The seam the `agent-self-edit` eval drives. An agent rewriting its own
+  // persona sends prose and no markers, so the file it lands has to be composed
+  // around the personality block — a verbatim write leaves no block for the turn
+  // to regenerate and the agent's trait dials stop reaching it.
+  it('applies a self-edit and writes SOUL.md with its trait markers intact', async () => {
     mocks.readManifest.mockResolvedValue({
       id: '01ABC',
       name: 'my-agent',
@@ -100,11 +104,19 @@ describe('update_agent', () => {
     const payload = parsePayload<{ displayName: string; name: string }>(result);
     expect(payload.displayName).toBe('New');
     expect(payload.name).toBe('my-agent');
-    expect(mocks.writeConventionFile).toHaveBeenCalledWith(
-      '/agents/my-agent',
-      'SOUL.md',
-      'be kind'
-    );
+    const [dir, file, written] = mocks.writeConventionFile.mock.calls[0] as [
+      string,
+      string,
+      string,
+    ];
+    expect(dir).toBe('/agents/my-agent');
+    expect(file).toBe('SOUL.md');
+    expect(written).toContain('<!-- TRAITS:START -->');
+    expect(written).toContain('<!-- TRAITS:END -->');
+    // This agent has no traits of its own, so the block is the balanced default.
+    expect(written).toContain('**Verbosity** (Balanced)');
+    // And the agent's own words are the last thing in the file.
+    expect(written.endsWith('be kind')).toBe(true);
     expect(mocks.writeManifest).toHaveBeenCalledOnce();
   });
 
