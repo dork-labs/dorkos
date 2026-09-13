@@ -244,20 +244,26 @@ test.describe('Settings — Runtimes tab @smoke', () => {
     // work its siblings do inside the same 30s budget. On a loaded merge-queue
     // shard the two boots ate the budget and the LAST click reported
     // `locator.click: Test timeout of 30000ms exceeded` against a perfectly
-    // healthy app, ejecting two unrelated PRs (DOR-2013). `test.slow()` is
-    // Playwright's way of saying "this one legitimately does more work"; the
-    // waits below are what make the test deterministic rather than merely
-    // longer.
+    // healthy app, ejecting two unrelated PRs (DOR-2013).
+    //
+    // `test.slow()` TRIPLES the timeout, and that cuts both ways: a UI
+    // regression up to three times slower than today would now pass here. It is
+    // acceptable only because it is the slack and not the fix — the two waits
+    // below are what make this test deterministic, and a regression that breaks
+    // the flow rather than merely slowing it still reds at the assertions.
     test.slow();
 
     /**
      * Click one card's `Make default` and wait for the write itself.
      *
      * The button fires a `PATCH /api/config` and the pill repaints from the
-     * refetch that follows. Waiting on the RESPONSE rather than on the repaint
-     * is what makes this a fact about the server instead of a guess about how
-     * fast this machine renders: the assertions after it are then reading state
-     * the server has already acknowledged.
+     * refetch that follows. This is a SYNCHRONISATION BARRIER, not a claim that
+     * the default moved: `ok()` only says the server accepted the write, and a
+     * write that stored the wrong thing returns 200 all the same (measured —
+     * pointing the patch at a key that moves nothing still passes here, and the
+     * red lands on the pill assertion below). What it buys is that everything
+     * after it is reading state the server has already answered for, instead of
+     * guessing how fast this machine repaints.
      */
     const makeDefault = async (runtime: string): Promise<void> => {
       const written = page.waitForResponse(
