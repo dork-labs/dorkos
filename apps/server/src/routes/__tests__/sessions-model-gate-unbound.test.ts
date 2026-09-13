@@ -454,3 +454,79 @@ describe('PATCH /api/sessions/:id — the model gate on a catalog that admits it
     expect(rowFor(BOUND_OPENCODE)?.model).toBe(verified[0].value);
   });
 });
+
+// ---------------------------------------------------------------------------
+// DOR-2012. The menu and the write door read the SAME projection, which is what
+// made the live bug possible in both directions at once: the picker offered
+// `ollama/gemma4:latest` (a tag installed on the machine but absent from the
+// sidecar's catalog), so the gate saw it in the catalog and stored it, and the
+// next turn came back `model_unavailable` — telling the person to "pick another
+// one from the model menu", over the menu that had offered it.
+//
+// Driven through the REAL projection rather than a hand-written catalog, so the
+// two ends cannot agree in the test while disagreeing in production.
+// ---------------------------------------------------------------------------
+
+/** A sidecar `provider.list` payload for an ollama provider declaring one model. */
+function ollamaPayload(): Parameters<typeof projectModelOptions>[0] {
+  return {
+    all: [
+      {
+        id: 'ollama',
+        name: 'Ollama (local)',
+        env: [],
+        models: {
+          'qwen2.5-coder:7b': {
+            id: 'qwen2.5-coder:7b',
+            name: 'Qwen2.5 Coder 7B',
+            limit: { context: 32_768, output: 4_096 },
+          },
+        },
+      },
+    ],
+    default: {},
+    connected: ['ollama'],
+  } as unknown as Parameters<typeof projectModelOptions>[0];
+}
+
+/** What the picker shows when Ollama has two models pulled and the sidecar knows one. */
+const OLLAMA_MENU = projectModelOptions(ollamaPayload(), {
+  installedOllamaTags: ['qwen2.5-coder:7b', 'gemma4:latest'],
+});
+
+describe('PATCH /api/sessions/:id — the model menu and the write door agree', () => {
+  beforeEach(() => {
+    db = createTestDb();
+    registerRuntimes();
+  });
+
+  it('does not put a model the sidecar would refuse in the menu', () => {
+    expect(OLLAMA_MENU.map((option) => option.value)).toEqual(['ollama/qwen2.5-coder:7b']);
+    // The catalog is trustworthy, so the gate may convict on it — without this
+    // the refusal below would pass through the guess short-circuit instead.
+    expect(OLLAMA_MENU.some((option) => option.unverified)).toBe(false);
+  });
+
+  it('refuses to store the installed tag the sidecar has no catalog entry for', async () => {
+    bindSession(BOUND_OPENCODE, 'opencode');
+    opencode.getSupportedModels.mockResolvedValue(OLLAMA_MENU);
+
+    const res = await patch(BOUND_OPENCODE, { model: 'ollama/gemma4:latest' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('UNSUPPORTED_MODEL');
+    // And the instruction it gives is now true: the menu really does not have it.
+    expect(res.body.error).toContain('Pick one from the model menu');
+    expect(rowFor(BOUND_OPENCODE)?.model).toBeFalsy();
+  });
+
+  it('still stores the model the sidecar does declare', async () => {
+    bindSession(BOUND_OPENCODE, 'opencode');
+    opencode.getSupportedModels.mockResolvedValue(OLLAMA_MENU);
+
+    const res = await patch(BOUND_OPENCODE, { model: 'ollama/qwen2.5-coder:7b' });
+
+    expect(res.status).toBe(200);
+    expect(rowFor(BOUND_OPENCODE)?.model).toBe('ollama/qwen2.5-coder:7b');
+  });
+});

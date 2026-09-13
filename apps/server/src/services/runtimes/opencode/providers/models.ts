@@ -26,9 +26,12 @@
  *    their own heading and says why, so the answer arrives BEFORE the click —
  *    which is what the complaint asked for.
  *
- * The one thing that IS dropped is a model OpenRouter no longer serves at all
- * (below): that is not a capability judgement, it is a model that does not
- * exist, and offering it can only fail.
+ * What IS dropped is never a capability judgement — it is a model that cannot
+ * run, where offering it can only fail. There are two, and they are the same
+ * rule read against two different authorities: a model OpenRouter no longer
+ * serves at all (below), and an Ollama tag the sidecar's own catalog does not
+ * name, which OpenCode refuses with `model_unavailable` however thoroughly it
+ * is installed ({@link projectOllamaModels}, DOR-2012).
  *
  * @module services/runtimes/opencode/providers/models
  */
@@ -87,11 +90,13 @@ export interface ProjectModelOptionsInput {
   /**
    * Installed Ollama tags, from Ollama's `/api/tags` (spec §10 — honest local
    * availability). When provided, the ollama provider's catalog is intersected
-   * with these tags so the menu offers only models actually on disk: catalog
-   * metadata wins on a tag match, and installed tags absent from the catalog are
-   * appended as plain options (a custom pull). `null`/omitted means "do not
-   * filter" — the tags probe was unavailable, so the full catalog is shown
-   * rather than an empty menu (an optimistic menu beats an empty one).
+   * with these tags so the menu offers only models actually on disk. The
+   * intersection cuts BOTH ways: a catalogued model that is not installed is
+   * dropped because Ollama cannot serve it, and an installed tag the catalog
+   * does not name is dropped because the sidecar will not accept it
+   * ({@link projectOllamaModels}). `null`/omitted means "do not filter" — the
+   * tags probe was unavailable, so the full catalog is shown rather than an
+   * empty menu (an optimistic menu beats an empty one).
    */
   installedOllamaTags?: readonly string[] | null;
 
@@ -267,13 +272,42 @@ function projectCloudModel(
 }
 
 /**
- * Project the ollama provider's models, honestly filtered to what is installed
- * (spec §10). With `installedTags` present: keep catalog models whose tag is
- * installed (catalog metadata wins), then append installed tags missing from the
- * catalog as plain options (a custom pull — displayName is the tag itself).
- * With `installedTags` null the full catalog is projected (the pre-fix behavior),
- * so an unreachable tags probe degrades to an optimistic menu rather than an
- * empty one.
+ * Project the ollama provider's models: the sidecar's catalog, narrowed to the
+ * tags actually installed (spec §10).
+ *
+ * Both halves of that sentence are a filter, and they answer different
+ * questions. The sidecar's catalog is the authority on what OpenCode will
+ * ACCEPT — `session.promptAsync` refuses any model its provider catalog does
+ * not name, with `model_unavailable`. The installed tags are the authority on
+ * what Ollama can actually SERVE. A model has to pass both to be offerable, so
+ * the menu is the intersection.
+ *
+ * ## Why an installed tag the catalog does not name is dropped (DOR-2012)
+ *
+ * It used to be APPENDED, as a plain option, on the theory that a tag someone
+ * pulled themselves is a custom model the sidecar would happily run. It is not:
+ * OpenCode validates against its own catalog, so such a model is refused every
+ * time. Measured live on 1.18.30 against `ollama/gemma4:latest` — pulled, and
+ * absent from the catalog — with an `opencode.json` declaring only qwen AND
+ * with no config at all: `PATCH /api/sessions/:id` stored it (the write gate
+ * reads this same projection) and the next turn died `model_unavailable`, whose
+ * copy tells the person to pick another one from the model menu. The menu that
+ * had offered it.
+ *
+ * This is NOT the capability judgement this module's header refuses to make.
+ * That one is uncertain — models.dev lags, so `supportsToolUse: false` may be
+ * wrong and the model is badged and kept. This one is certain and comes from
+ * the sidecar itself: it is the same rule as the OpenRouter drop above (a model
+ * that cannot run is not a menu entry, it is a dead end).
+ *
+ * Nor does it cost anyone a real custom model. Adding one to your OpenCode
+ * config is what makes the sidecar able to run it, and that same config is what
+ * puts it in `provider.models` — so a properly declared custom model survives
+ * the intersection on its own merit. What is dropped is exactly the set the
+ * sidecar would refuse.
+ *
+ * With `installedTags` null the full catalog is projected, so an unreachable
+ * tags probe degrades to an optimistic menu rather than an empty one.
  */
 function projectOllamaModels(
   provider: CatalogProvider,
@@ -282,11 +316,9 @@ function projectOllamaModels(
   installedTags: readonly string[] | null | undefined
 ): ModelOption[] {
   const options: ModelOption[] = [];
-  const catalogIds = new Set<string>();
 
   for (const model of Object.values(provider.models)) {
     if (model.status === 'deprecated') continue;
-    catalogIds.add(model.id);
     // Ollama catalog model ids ARE the full Ollama tag (e.g. `qwen2.5-coder:7b`),
     // matching `/api/tags` names 1:1 — an exact tag match is the intersection.
     if (installedTags != null && !installedTags.includes(model.id)) continue;
@@ -303,22 +335,6 @@ function projectOllamaModels(
         capabilities: sidecarCapabilities(model),
       }),
     });
-  }
-
-  if (installedTags != null) {
-    for (const tag of installedTags) {
-      if (catalogIds.has(tag)) continue;
-      options.push(
-        buildModelOption({
-          providerId: provider.id,
-          providerName: provider.name,
-          modelId: tag,
-          displayName: tag,
-          isDefault: false,
-          isLocal: true,
-        })
-      );
-    }
   }
 
   return options;

@@ -161,7 +161,13 @@ describe('projectModelOptions — honest local availability (spec §10)', () => 
     expect(options[0].tier).toBe('quick-helper');
   });
 
-  it('appends installed tags missing from the catalog as plain local options (custom pull)', () => {
+  it('does not offer an installed tag the sidecar has no catalog entry for', () => {
+    // DOR-2012. Being pulled is not the same as being runnable: OpenCode only
+    // accepts a model its own provider catalog declares, so a tag on disk that
+    // the catalog does not name is refused with `model_unavailable` — measured
+    // live on 1.18.30, both with an `opencode.json` declaring only qwen and with
+    // no config at all. Offering it can only fail, and it failed with "Pick
+    // another one from the model menu" printed over the menu that offered it.
     const options = projectModelOptions(
       payload([
         {
@@ -170,15 +176,32 @@ describe('projectModelOptions — honest local availability (spec §10)', () => 
           models: [model('qwen2.5-coder:7b', 'Qwen Coder 7B')],
         },
       ]),
-      { installedOllamaTags: ['qwen2.5-coder:7b', 'my-finetune:latest'] }
+      { installedOllamaTags: ['qwen2.5-coder:7b', 'gemma4:latest'] }
     );
 
-    const byValue = Object.fromEntries(options.map((o) => [o.value, o]));
-    // The uncatalogued tag is offered, displayName is the tag itself, marked local.
-    expect(byValue['ollama/my-finetune:latest'].displayName).toBe('my-finetune:latest');
-    expect(byValue['ollama/my-finetune:latest'].local).toBe(true);
-    // Catalog model keeps its human name.
-    expect(byValue['ollama/qwen2.5-coder:7b'].displayName).toBe('Qwen Coder 7B');
+    expect(options.map((o) => o.value)).toEqual(['ollama/qwen2.5-coder:7b']);
+    expect(options[0].displayName).toBe('Qwen Coder 7B');
+  });
+
+  it('keeps a custom model the sidecar config declares, installed or not yet probed', () => {
+    // The other half of the same rule, and what keeps the drop from being a
+    // capability judgement: a model someone added to their own OpenCode config
+    // IS in the sidecar's catalog, so it survives the intersection on its own
+    // merit. The drop removes exactly the tags the sidecar will refuse.
+    const options = projectModelOptions(
+      payload([
+        {
+          id: 'ollama',
+          name: 'Ollama',
+          models: [model('my-finetune:latest', 'My Finetune')],
+        },
+      ]),
+      { installedOllamaTags: ['my-finetune:latest'] }
+    );
+
+    expect(options.map((o) => o.value)).toEqual(['ollama/my-finetune:latest']);
+    expect(options[0].displayName).toBe('My Finetune');
+    expect(options[0].local).toBe(true);
   });
 
   it('degrades to the full catalog when the tags probe is unavailable (null)', () => {
