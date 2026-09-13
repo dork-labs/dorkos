@@ -250,6 +250,13 @@ jobs:
       - name: Process-guard hook fixtures
         run: bash scripts/test-process-guard.sh
 
+      # in-project.sh is the wrapper every working-tree hook in settings.json
+      # runs through; it decides whether a hook runs at all once a session has
+      # cd-ed into a sibling repo. Hermetic (throwaway git checkouts in a temp
+      # dir) and it also asserts the anchoring rule on the real settings.json.
+      - name: In-project hook wrapper fixtures
+        run: bash scripts/test-in-project-hook.sh
+
       # assert-tests-executed.sh decides whether the `test` workflow's green
       # means anything — it is what stops a 280ms turbo cache replay being
       # reported as a passing suite. Same argument as the two suites above: the
