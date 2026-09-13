@@ -113,6 +113,11 @@ export function initSessionStreamBinding(): void {
           // the birth line survives the rekey (the common claude-code path,
           // where the canonical id resolves only after the trigger 202).
           useAgentBirthStore.getState().migrate(event.retiredSessionId, event.sessionId);
+          // And a canvas write still waiting for the session's stream, for the
+          // same reason (DOR-2016 review, finding 2). Idempotent with the
+          // 202-path re-aim in use-session-submit: whichever runs second finds
+          // nothing addressed to the retired id.
+          useAppStore.getState().carryCanvasWritesAcross(event.retiredSessionId, event.sessionId);
         }
       }
       useSessionListStore.getState().applyListEvent(event);

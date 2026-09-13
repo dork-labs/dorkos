@@ -289,6 +289,20 @@ export interface CanvasSlice {
    */
   canvasStreamAttached: boolean;
   /**
+   * Re-aim writes held for a session the first turn has just renamed.
+   *
+   * The rename is the one case where a session changes its name without
+   * changing what it is: the server has already moved the whole canvas scope
+   * across (`rekeyScope`), so a write still waiting to be sent is still
+   * meaningful — it just has to be addressed to the new name. Without this, the
+   * rebind that follows the rename discarded it in silence, with no row and no
+   * sentence, which is the failure DOR-2016 removes reappearing one door over.
+   *
+   * @param retiredSessionId - The id the client minted and the turn retired.
+   * @param canonicalSessionId - The id the session is keeping.
+   */
+  carryCanvasWritesAcross: (retiredSessionId: string, canonicalSessionId: string) => void;
+  /**
    * Bind the slice to a session and empty it, ready for the snapshot to fill.
    *
    * A RESET rather than a read: the table comes from `snapshot.canvas` on the
@@ -526,6 +540,18 @@ export function setSessionCanvasTransport(transport: SessionCanvasTransport | nu
 /** How often a focused editor refreshes its claim on a document (server TTL is 45s). */
 const EDIT_HEARTBEAT_MS = 15_000;
 
+/**
+ * How long a refused write waits for its session's stream before it gives up.
+ *
+ * The wait exists for a gap measured in hundreds of milliseconds, so thirty
+ * seconds is two orders of magnitude of headroom — and a bound rather than none
+ * is what stops a row from sitting on screen for ever when the stream is never
+ * coming (the session was deleted from another device, say). When it runs out
+ * the write is treated exactly as a refusal that was never held: the table goes
+ * back, and the person is told.
+ */
+const HELD_WRITE_MAX_WAIT_MS = 30_000;
+
 /** The live edit-lock heartbeats, keyed by document id. */
 const editHeartbeats = new Map<string, ReturnType<typeof setInterval>>();
 
@@ -618,13 +644,41 @@ export const createCanvasSlice: StateCreator<
   CanvasSlice
 > = (set, get) => {
   /**
-   * Writes the server refused because it did not know the session YET, kept in
-   * the order they were made and sent when its stream attaches (DOR-2016).
+   * One write the server refused because it did not know the session YET, kept
+   * until its stream attaches (DOR-2016).
    *
-   * Emptied on every bind, so a write can only ever land on the session it was
-   * made for.
+   * It carries the DOCUMENT it is about, because a held write is a promise about
+   * a row on screen and both of that row's other fates have to be able to cancel
+   * it: closing the tab, and the session being renamed out from under it.
    */
-  const heldWrites: { sessionId: string; retry: () => Promise<void> }[] = [];
+  interface HeldCanvasWrite {
+    /** The session it is currently aimed at — re-aimed by a first-turn rename. */
+    sessionId: string;
+    /** The row it belongs to, so closing that row cancels it. */
+    documentId: string;
+    /** Send it, at the session named. */
+    send: (sessionId: string) => Promise<void>;
+    /** Put the table back and say so, for a wait that ran out. */
+    abandon: () => void;
+    /** The deadline; cleared whenever the entry leaves the queue. */
+    timer: ReturnType<typeof setTimeout>;
+  }
+
+  /**
+   * Writes waiting for their session's stream, in the order they were made.
+   *
+   * A write only ever leaves here in one of four ways: the stream attaches and
+   * it is sent, the tab it belongs to is closed, the window binds to a DIFFERENT
+   * session, or its deadline runs out and the person is told.
+   */
+  const heldWrites: HeldCanvasWrite[] = [];
+
+  /** Take one held write out of the queue and stop its deadline. */
+  function releaseHeld(held: HeldCanvasWrite): void {
+    const at = heldWrites.indexOf(held);
+    if (at >= 0) heldWrites.splice(at, 1);
+    clearTimeout(held.timer);
+  }
 
   /**
    * Run one write against the session this slice is bound to, and put the local
@@ -633,9 +687,15 @@ export const createCanvasSlice: StateCreator<
    * Bound to the session id captured at the moment the write STARTED: a write
    * that answers after the reader has moved to another session must not be
    * applied to the table they are now looking at.
+   *
+   * @param sessionId - The session the write is for, or `null` when none is bound.
+   * @param documentId - The row it is about, so a close can cancel a held write.
+   * @param write - The request itself, given the transport and the session id.
+   * @param revert - Puts the local table back when the write is refused for good.
    */
   function writeThrough(
     sessionId: string | null,
+    documentId: string,
     write: (transport: SessionCanvasTransport, sessionId: string) => Promise<unknown>,
     revert: () => void
   ): void {
@@ -643,10 +703,14 @@ export const createCanvasSlice: StateCreator<
     // No transport bound — a test, or a shell with no server. The optimistic
     // apply stands on its own, which is exactly what this slice used to do.
     if (!transport || sessionId === null) return;
-    const attempt = (isRetry: boolean, attachedWhenSent: boolean): Promise<void> =>
-      write(transport, sessionId).then(
+    const attempt = (target: string, isRetry: boolean, attachedWhenSent: boolean): Promise<void> =>
+      write(transport, target).then(
         () => undefined,
         (err: unknown) => {
+          const giveUp = (): void => {
+            if (get().canvasSessionId === target) revert();
+            reportWriteFailure(err);
+          };
           // **Not known YET is not "not there"** (DOR-2016). A session that has
           // never taken a turn is refused until its durable stream attaches, and
           // the person who opened a file as their very first action did nothing
@@ -662,20 +726,29 @@ export const createCanvasSlice: StateCreator<
           if (
             !isRetry &&
             isSessionNotFound(err) &&
-            get().canvasSessionId === sessionId &&
+            get().canvasSessionId === target &&
             !attachedWhenSent
           ) {
             // Already attached — the snapshot landed while this was in flight,
             // so there is nothing left to wait for.
-            if (get().canvasStreamAttached) return attempt(true, true);
-            heldWrites.push({ sessionId, retry: () => attempt(true, true) });
+            if (get().canvasStreamAttached) return attempt(target, true, true);
+            const held: HeldCanvasWrite = {
+              sessionId: target,
+              documentId,
+              send: (id) => attempt(id, true, true),
+              abandon: giveUp,
+              timer: setTimeout(() => {
+                releaseHeld(held);
+                held.abandon();
+              }, HELD_WRITE_MAX_WAIT_MS),
+            };
+            heldWrites.push(held);
             return;
           }
-          if (get().canvasSessionId === sessionId) revert();
-          reportWriteFailure(err);
+          giveUp();
         }
       );
-    void attempt(false, get().canvasStreamAttached);
+    void attempt(sessionId, false, get().canvasStreamAttached);
   }
 
   /**
@@ -686,20 +759,31 @@ export const createCanvasSlice: StateCreator<
    * table evicts by recency. Firing both at once would hand the ordering to
    * whichever request happened to finish first.
    *
-   * Anything held for another session is dropped rather than carried: the slice
-   * empties on every bind, so a retry for a session this window has left would
-   * write a row nothing here is showing.
-   *
    * @param sessionId - The session whose stream has just attached.
    */
   function flushHeldWrites(sessionId: string): void {
-    if (heldWrites.length === 0) return;
     const mine = heldWrites.filter((held) => held.sessionId === sessionId);
-    heldWrites.length = 0;
+    if (mine.length === 0) return;
+    for (const held of mine) releaseHeld(held);
     void mine.reduce<Promise<void>>(
-      (previous, held) => previous.then(held.retry),
+      (previous, held) => previous.then(() => held.send(sessionId)),
       Promise.resolve()
     );
+  }
+
+  /**
+   * Cancel whatever is held for one document.
+   *
+   * Closing a tab whose open is still waiting has to take the open with it
+   * (review round 1, finding 1). Without this the close sends nothing — a
+   * `pending:` row has no server row to delete — and the held open is sent a
+   * moment later, so the server creates a row nobody asked for and the frame it
+   * publishes puts the tab back, on every device.
+   *
+   * @param documentId - The row being closed.
+   */
+  function cancelHeldWrites(documentId: string): void {
+    for (const held of heldWrites.filter((h) => h.documentId === documentId)) releaseHeld(held);
   }
 
   /**
@@ -828,6 +912,7 @@ export const createCanvasSlice: StateCreator<
 
       writeThrough(
         sessionId,
+        pendingId,
         async (transport, id) => {
           const row = await transport.openSessionCanvasDocument(id, content);
           settlePending(pendingId, row);
@@ -881,6 +966,7 @@ export const createCanvasSlice: StateCreator<
       const previous = target.content;
       writeThrough(
         before.canvasSessionId,
+        target.id,
         (transport, id) => transport.updateSessionCanvasDocument(id, target.id, { content }),
         () => restoreContent(set, target.id, previous)
       );
@@ -903,6 +989,7 @@ export const createCanvasSlice: StateCreator<
       if (isPendingId(id)) return;
       writeThrough(
         before.canvasSessionId,
+        id,
         (transport, sessionId) => transport.updateSessionCanvasDocument(sessionId, id, { content }),
         () => restoreContent(set, id, previous)
       );
@@ -935,6 +1022,7 @@ export const createCanvasSlice: StateCreator<
       if (isPendingId(id)) return;
       writeThrough(
         before.canvasSessionId,
+        id,
         (transport, sessionId) => transport.updateSessionCanvasDocument(sessionId, id, { content }),
         () => restoreContent(set, id, previous)
       );
@@ -945,6 +1033,9 @@ export const createCanvasSlice: StateCreator<
       const closed = before.openDocuments.find((d) => d.id === id);
       if (!closed) return;
       stopHeartbeat(id);
+      // Before anything else: whatever was waiting to be written for this row is
+      // a promise about a tab that is going away (review round 1, finding 1).
+      cancelHeldWrites(id);
       set((s) => {
         const documents = s.openDocuments.filter((d) => d.id !== id);
         // Closing the active document hands that view its most-recently-active
@@ -958,6 +1049,7 @@ export const createCanvasSlice: StateCreator<
       if (isPendingId(id)) return;
       writeThrough(
         before.canvasSessionId,
+        id,
         (transport, sessionId) => transport.closeSessionCanvasDocument(sessionId, id),
         () =>
           set((s) => {
@@ -1001,6 +1093,7 @@ export const createCanvasSlice: StateCreator<
       // nobody else's open tab — which view each window is showing stays here.
       writeThrough(
         before.canvasSessionId,
+        id,
         (transport, sessionId) =>
           transport.updateSessionCanvasDocument(sessionId, id, {
             activate: true,
@@ -1043,11 +1136,22 @@ export const createCanvasSlice: StateCreator<
     canvasSessionId: null,
     canvasStreamAttached: false,
 
+    carryCanvasWritesAcross: (retiredSessionId, canonicalSessionId) => {
+      if (retiredSessionId === canonicalSessionId) return;
+      for (const held of heldWrites) {
+        if (held.sessionId === retiredSessionId) held.sessionId = canonicalSessionId;
+      }
+    },
+
     loadCanvasForSession: (sessionId) => {
       for (const documentId of [...editHeartbeats.keys()]) stopHeartbeat(documentId);
-      // Whatever was held for the session being left has nothing here to land
+      // Whatever is still held for a DIFFERENT session has nothing here to land
       // for any more — this bind empties the table it would have written to.
-      heldWrites.length = 0;
+      // Writes aimed at the session being bound survive, which is the whole
+      // point of `carryCanvasWritesAcross`: a first-turn rename re-binds this
+      // slice, and the write it re-aimed a moment ago must not be thrown away by
+      // the very rebind the rename causes.
+      for (const held of heldWrites.filter((h) => h.sessionId !== sessionId)) releaseHeld(held);
       set({
         canvasOpen: false,
         openDocuments: [],
@@ -1083,8 +1187,13 @@ export const createCanvasSlice: StateCreator<
           ...reconcileActiveIds(hydrated, s),
           canvasOpen: s.canvasOpen || hydrated.length > 0,
           browserHistories: pruneBrowserHistories(s.browserHistories, hydrated),
-          // The snapshot IS the attach: the stream that carried it is the same
-          // one whose projector the server looks for before it accepts a write.
+          // What this flag really says is "the server has answered about this
+          // session", which is what a write needs to know. The stream's cold
+          // snapshot is the usual source and the strict one — attaching the
+          // stream is what creates the projector the server looks for. The
+          // one-time `localStorage` import calls this too, with a plain list
+          // result; that path only runs after its own writes returned 201, so it
+          // cannot set this while the answer would still be no.
           canvasStreamAttached: true,
         };
       });

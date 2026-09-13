@@ -49,6 +49,10 @@ const mockAppState = vi.hoisted(() => ({
   selectedCwd: '/test/cwd' as string | null,
   enableMessagePolling: false,
   pendingAccount: null as { id: string; sessionId: string } | null,
+  // The rekey branch re-aims any canvas write still waiting for this session's
+  // stream (DOR-2016). A stand-in store has to carry the actions the code under
+  // test calls, or the whole rekey branch throws before it rewrites the URL.
+  carryCanvasWritesAcross: vi.fn(),
 }));
 
 vi.mock('@/layers/shared/model', async () => {

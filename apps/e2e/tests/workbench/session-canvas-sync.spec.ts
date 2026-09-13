@@ -276,6 +276,64 @@ test.describe('A canvas survives the first-turn rename @smoke', () => {
     await expect(page.getByRole('tab', { name: IMPORTED_TAB })).toBeVisible({ timeout: 20_000 });
   });
 
+  /**
+   * The two windows this branch is about, crossed (review round 1, finding 2).
+   *
+   * A document opened before the stream attached is HELD, and the first message
+   * renames the session out from under it. The rebind that follows used to throw
+   * the held write away — no row on the server, no tab on screen, and nothing
+   * said. The socket is kept shut here so the hold is real, and the message is
+   * sent without waiting for a reply: the reply rides the stream, but the 202
+   * that carries the new name does not.
+   */
+  test('a document held for a stream that has not attached still lands after the rename', async ({
+    page,
+    rightPanel,
+  }) => {
+    await prepareTestModeLeg(page);
+    const sessionId = randomUUID();
+    const canonicalId = randomUUID();
+
+    const canvasPosts: number[] = [];
+    page.on('response', (res) => {
+      if (res.request().method() !== 'POST') return;
+      if (/\/sessions\/[^/]+\/canvas$/.test(new URL(res.url()).pathname)) {
+        canvasPosts.push(res.status());
+      }
+    });
+
+    let attachStream!: () => void;
+    const held = new Promise<void>((resolve) => (attachStream = resolve));
+    await page.routeWebSocket('**/api/sessions/**', (socket) => {
+      void held.then(() => socket.connectToServer());
+    });
+
+    await rightPanel.goto(`/session?session=${sessionId}&dir=${encodeURIComponent(agentDir)}`);
+    await rightPanel.ensureTabStripOpen();
+    await rightPanel.canvasTab.click();
+    await page.getByRole('button', { name: /^Markdown/ }).click();
+    await expect(page.getByRole('tab', { name: DOCUMENT_TAB })).toBeVisible();
+    await expect.poll(() => canvasPosts.length, { timeout: 15_000 }).toBeGreaterThan(0);
+    expect(canvasPosts[0], 'the open must have met the not-known-yet refusal').toBe(404);
+
+    await declareRename(page, sessionId, canonicalId);
+    const chat = new ChatPage(page);
+    await chat.input.fill('hello');
+    await chat.sendButton.click();
+    await expect.poll(() => page.url(), { timeout: 30_000 }).toContain(canonicalId);
+
+    // The stream comes up under the NEW name, and the write that was waiting is
+    // sent there.
+    attachStream();
+    await expect.poll(() => canvasPosts, { timeout: 30_000 }).toContain(201);
+    await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
+
+    await page.reload();
+    await rightPanel.ensureTabStripOpen();
+    await rightPanel.canvasTab.click();
+    await expect(page.getByRole('tab', { name: DOCUMENT_TAB })).toBeVisible({ timeout: 20_000 });
+  });
+
   test('a canvas still in localStorage is imported AFTER the rename and lands under the new id', async ({
     page,
     rightPanel,

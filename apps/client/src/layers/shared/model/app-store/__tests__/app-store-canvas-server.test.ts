@@ -484,6 +484,132 @@ describe('CanvasSlice — the server’s table, as this window holds it', () => 
       );
     });
 
+    /**
+     * Closing a tab has to take the write it was waiting on with it (review
+     * round 1, finding 1).
+     *
+     * A `pending:` id used to mean "nothing is outstanding for this row", so the
+     * close sent nothing and returned. With the hold it can also mean "a write
+     * is waiting" — and the held open went out a moment later, the server made a
+     * row nobody had asked for, and the frame it published put the closed tab
+     * back, on every device.
+     *
+     * Seeded defect: dropping `cancelHeldWrites(id)` from `closeCanvasDocument`
+     * reddens this on both counts — a second `open` call, and the tab returning.
+     */
+    it('closing a tab cancels the open it was waiting on', async () => {
+      const open = vi.fn().mockRejectedValue(sessionNotFound());
+      setSessionCanvasTransport(fakeTransport({ openSessionCanvasDocument: open }));
+
+      useAppStore.getState().openCanvasDocument(fileDoc('a.ts'));
+      await settle();
+      const pendingId = useAppStore.getState().openDocuments[0]!.id;
+      expect(pendingId).toMatch(/^pending:/);
+
+      // Changed their mind, before the stream ever arrived.
+      useAppStore.getState().closeCanvasDocument(pendingId);
+      expect(useAppStore.getState().openDocuments).toHaveLength(0);
+
+      useAppStore.getState().hydrateCanvasFromSnapshot(SESSION, []);
+      await settle();
+      expect(open).toHaveBeenCalledTimes(1);
+      expect(useAppStore.getState().openDocuments).toHaveLength(0);
+
+      // And nothing the server might still say about it can bring it back.
+      useAppStore.getState().applyCanvasEvent(SESSION, {
+        documentId: 'server-doc',
+        document: serverDocument({ id: 'server-doc', content: fileDoc('a.ts') }),
+      });
+      expect(useAppStore.getState().openDocuments.map((d) => d.id)).toEqual(['server-doc']);
+      expect(toast.error).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The first-turn rename must not swallow a held write (review round 1,
+     * finding 2).
+     *
+     * This is DOR-2015's composition crossed with DOR-2016's window: open a
+     * document on a fresh session, send the first message before the stream has
+     * attached. The rename rebinds this slice, and the bind used to empty the
+     * queue — so the document was gone with no row, no retry and no sentence.
+     *
+     * Seeded defect: dropping the `carryCanvasWritesAcross` call (or going back
+     * to `heldWrites.length = 0` on every bind) reddens this.
+     */
+    it('carries a held write across a first-turn rename', async () => {
+      const CANONICAL = 'sess-canonical';
+      let refuse = true;
+      const open = vi.fn().mockImplementation((id: string, content: UiCanvasContent) => {
+        if (refuse) return Promise.reject(sessionNotFound());
+        return Promise.resolve(serverDocument({ id: `server-${id}`, content }));
+      });
+      setSessionCanvasTransport(fakeTransport({ openSessionCanvasDocument: open }));
+
+      useAppStore.getState().openCanvasDocument(fileDoc('a.ts'));
+      await settle();
+      expect(open).toHaveBeenCalledTimes(1);
+
+      // The turn answers with the canonical id: the write is re-aimed, then the
+      // route moves and this slice rebinds.
+      refuse = false;
+      useAppStore.getState().carryCanvasWritesAcross(SESSION, CANONICAL);
+      useAppStore.getState().loadCanvasForSession(CANONICAL);
+      useAppStore.getState().hydrateCanvasFromSnapshot(CANONICAL, []);
+      await vi.waitFor(() => {
+        expect(open).toHaveBeenCalledTimes(2);
+      });
+      // Sent under the NEW name — the scope the server moved the canvas into.
+      expect(open).toHaveBeenLastCalledWith(CANONICAL, fileDoc('a.ts'));
+      expect(toast.error).not.toHaveBeenCalled();
+    });
+
+    it('drops a write held for a session this window has left, and says nothing', async () => {
+      setSessionCanvasTransport(
+        fakeTransport({ openSessionCanvasDocument: vi.fn().mockRejectedValue(sessionNotFound()) })
+      );
+      useAppStore.getState().openCanvasDocument(fileDoc('a.ts'));
+      await settle();
+
+      // A plain session switch, not a rename: nothing here is showing that row
+      // any more, so the write has nobody to land for.
+      useAppStore.getState().loadCanvasForSession('sess-elsewhere');
+      useAppStore.getState().hydrateCanvasFromSnapshot('sess-elsewhere', []);
+      await settle();
+      expect(useAppStore.getState().openDocuments).toHaveLength(0);
+      expect(toast.error).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The wait is bounded (review round 1, finding 4).
+     *
+     * A stream that is never coming — the session was deleted from another
+     * device while the write was held — used to leave the row on screen for
+     * ever, with nobody told. The deadline turns that back into the ordinary
+     * refusal it is.
+     */
+    it('gives up on a wait that never ends, rather than leaving a row for ever', async () => {
+      vi.useFakeTimers();
+      try {
+        setSessionCanvasTransport(
+          fakeTransport({ openSessionCanvasDocument: vi.fn().mockRejectedValue(sessionNotFound()) })
+        );
+        useAppStore.getState().openCanvasDocument(fileDoc('a.ts'));
+        await vi.advanceTimersByTimeAsync(0);
+        // Held, and still on screen: the stream just has not arrived yet.
+        expect(useAppStore.getState().openDocuments).toHaveLength(1);
+        expect(toast.error).not.toHaveBeenCalled();
+
+        await vi.advanceTimersByTimeAsync(31_000);
+        expect(useAppStore.getState().openDocuments).toHaveLength(0);
+        expect(toast.error).toHaveBeenCalledWith(
+          'That did not reach your canvas',
+          expect.objectContaining({ description: 'Session not found' })
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('gives up after one retry, rather than holding a write for ever', async () => {
       setSessionCanvasTransport(
         fakeTransport({ openSessionCanvasDocument: vi.fn().mockRejectedValue(sessionNotFound()) })
