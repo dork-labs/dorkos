@@ -151,10 +151,25 @@ export class ExtensionEventBridge {
         break;
       }
       case 'tool_result':
+        // NOT every `tool_result` is a tool finishing. The durable stream folds
+        // two different things onto this member, and claude-code emits the
+        // first one at `content_block_stop` — the model finishing the tool's
+        // ARGUMENTS, before any permission prompt and before the tool runs
+        // (DOR-2011). Announcing `completed` there told extensions a gated
+        // Write had happened while the person was still being asked about it.
+        // The in-flight frame is skipped rather than forwarded: `started` is
+        // already out (the `tool_call` frames above), and the extension API's
+        // status is a deliberately coarse two-state, so there is nothing
+        // truthful to say between them.
+        if (event.status === 'running' || event.status === 'pending') break;
         this.emit({
           kind: 'tool.activity',
           sessionId,
           toolName: event.toolName,
+          // `completed` means "produced a result" here, not "succeeded" — an
+          // `error` result IS the tool ending, and this event carries no
+          // outcome to report it with. Widening the published union is a
+          // change to the extension contract, not a fix to this bridge.
           status: 'completed',
         });
         break;

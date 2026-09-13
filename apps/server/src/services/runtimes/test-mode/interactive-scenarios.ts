@@ -139,14 +139,20 @@ const approvalGated: ScenarioFn = async function* (_content, ctx) {
   // The gate has not opened, and the tool has NOT run — but the model is done
   // streaming its input, and that is when claude-code closes the block
   // (`content_block_stop`, DOR-1269), which projects as a resultless
-  // `tool_result` marked `complete`. So a turn replayed onto a cold tab reports
-  // `complete` for a tool still waiting on a person. Emitted here so the reload
-  // test meets the state a real approval actually parks in; the branch's real
+  // `tool_result`. So a turn replayed onto a cold tab holds a tool-call part
+  // that a person is still being asked about. Emitted here so the reload test
+  // meets the state a real approval actually parks in; the branch's real
   // outcome is the second projected `tool_result`, after the decision. Their
   // relative order with the ask is a race in production (see `questionPrompt`).
+  //
+  // `running` is that state since DOR-2011 — it used to be `complete`, which is
+  // what made DOR-1269 a lie about the tool as well as about the card. The
+  // reload test keeps its teeth either way, and the reason is worth being exact
+  // about: what it catches is a replayed turn OVERWRITING the snapshot's hold,
+  // and `running` is not `pending` any more than `complete` was.
   yield {
     type: 'tool_call_end',
-    data: { toolCallId, toolName: 'Edit', status: 'complete' },
+    data: { toolCallId, toolName: 'Edit', status: 'running' },
   } as StreamEvent;
 
   const decision = await ctx.awaitApproval(toolCallId);
@@ -265,12 +271,15 @@ const questionPrompt: ScenarioFn = async function* (_content, ctx) {
   // what makes this scenario able to catch DOR-1269. claude-code closes the
   // tool's content block at `content_block_stop` — the moment the model finishes
   // STREAMING the input, long before anybody answers — and that PROJECTS as a
-  // `tool_result` with `status: 'complete'` and no result, because the
-  // normalizer maps `tool_call_end` and a real `tool_result` onto the same
-  // member. So the turn a cold hydrate replays holds `complete` for a tool that
-  // has not run. A fake that emitted only the ask would park in a state the real
-  // runtime never reaches, and the reload test resting on it would be green by
-  // omission.
+  // resultless `tool_result`, because the normalizer maps `tool_call_end` and a
+  // real `tool_result` onto the same member. So the turn a cold hydrate replays
+  // already holds a part for a tool that has not run. A fake that emitted only
+  // the ask would park in a state the real runtime never reaches, and the
+  // reload test resting on it would be green by omission.
+  //
+  // That part says `running` since DOR-2011, where it used to say `complete`.
+  // What this scenario pins is unchanged: a replayed turn must not overwrite
+  // the snapshot's `pending` hold, and neither status is `pending`.
   //
   // The ORDER of the ask and this close is a race in production — the ask drains
   // through the priority queue (`messaging/message-sender.ts`) while the close
@@ -300,7 +309,7 @@ const questionPrompt: ScenarioFn = async function* (_content, ctx) {
   } as StreamEvent;
   yield {
     type: 'tool_call_end',
-    data: { toolCallId, toolName: 'AskUserQuestion', status: 'complete' },
+    data: { toolCallId, toolName: 'AskUserQuestion', status: 'running' },
   } as StreamEvent;
 
   const answers = await ctx.awaitAnswers(toolCallId);
@@ -551,10 +560,11 @@ const questionExpires: ScenarioFn = async function* (_content, ctx) {
     },
   } as StreamEvent;
   // The resultless close claude-code emits at `content_block_stop` — see
-  // `questionPrompt` for why every question scenario has to carry it.
+  // `questionPrompt` for why every question scenario has to carry it, and why
+  // it says `running` rather than `complete` (DOR-2011).
   yield {
     type: 'tool_call_end',
-    data: { toolCallId, toolName: 'AskUserQuestion', status: 'complete' },
+    data: { toolCallId, toolName: 'AskUserQuestion', status: 'running' },
   } as StreamEvent;
 
   // Parked, and answerable, until the test says the clock ran out.
@@ -607,9 +617,12 @@ const approvalParks: ScenarioFn = async function* (_content, ctx) {
     // Already out of countdown, so the selector parks it on the first read.
     timeoutMs: 0,
   });
+  // The same resultless close as {@link approvalGated}, in flight rather than
+  // complete (DOR-2011) — a parked approval is the one state where the gap
+  // between "the model stopped typing" and "the tool ran" is measured in hours.
   yield {
     type: 'tool_call_end',
-    data: { toolCallId, toolName: 'Edit', status: 'complete' },
+    data: { toolCallId, toolName: 'Edit', status: 'running' },
   } as StreamEvent;
 
   // Waiting, and still answerable — for as long as the test takes.
