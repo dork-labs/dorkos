@@ -50,6 +50,22 @@ import { TestModeSessionRegistry } from './session-registry.js';
 import { TEST_MODE_CAPABILITIES } from './runtime-constants.js';
 
 /**
+ * Canonical ids a test has declared for a first turn, keyed by the id the client
+ * minted, plus whether the turn that reveals one has started.
+ *
+ * **Module-scoped, not per-instance**, exactly as `heldProcesses` and the
+ * scenario store are. An e2e server registers up to three TestModeRuntime
+ * instances (`test-mode`, `test-mode-b`, and a `claude-code`-typed alias), and
+ * which one a session resolves to depends on what the first write binds it to —
+ * which is decided AFTER a test has declared the rename. Holding this per
+ * instance meant the declaration landed on one object and the turn ran on
+ * another, and the session was simply never renamed, with nothing saying so.
+ *
+ * See {@link TestModeRuntime.declareCanonicalSessionId}.
+ */
+const declaredCanonicalIds = new Map<string, { canonicalId: string; revealed: boolean }>();
+
+/**
  * A zero-latency, STATELESS AgentRuntime that yields StreamEvents from the
  * scenario store and persists NOTHING natively: completed history is
  * reconstructed from the DorkOS-owned EventLog (via the session projector),
@@ -121,13 +137,17 @@ export class TestModeRuntime implements AgentRuntime {
    * absent in bare unit tests — then `getSessionEventStore()` is `undefined`
    * and only the projector is disposed, the pre-DOR-189 behavior.
    *
-   * Held processes go back too (DOR-1326). They are per-session runtime state
-   * like the projectors above, so a session id reused after a reset must not
-   * inherit the previous test's warmth — which would make a cold session report
-   * `warm` and offer a Steer nothing could take.
+   * Held processes go back too (DOR-1326), and so do declared first-turn
+   * renames. They are per-session runtime state like the projectors above, so a
+   * session id reused after a reset must not inherit the previous test's warmth
+   * — which would make a cold session report `warm` and offer a Steer nothing
+   * could take — or its rename.
    */
   resetTrackedSessions(): void {
     heldProcesses.reset();
+    // Declared first-turn renames go too: a session id reused after a reset must
+    // not inherit a rename the previous test asked for.
+    declaredCanonicalIds.clear();
     const store = getSessionEventStore();
     for (const sessionId of this.registry.ids()) {
       disposeProjector(sessionId);
@@ -172,6 +192,11 @@ export class TestModeRuntime implements AgentRuntime {
     this.registry.recordMessage(sessionId, content, {
       ...(opts?.cwd !== undefined ? { cwd: opts.cwd } : {}),
     });
+    // A declared first-turn rename becomes visible exactly here — after the
+    // message is tracked, so the rename moves a complete entry rather than
+    // racing one into existence, and after the turn has already STARTED under
+    // the id the client minted (see `declareCanonicalSessionId`).
+    this.revealCanonicalSessionId(sessionId);
     const scenario = scenarioStore.getScenario(sessionId);
     // The gate is what makes an interactive scenario possible: it hands the
     // scenario the handle it parks on, and gives `approveTool`/`submitAnswers`/
@@ -382,8 +407,41 @@ export class TestModeRuntime implements AgentRuntime {
     // No-op in test mode
   }
 
-  getInternalSessionId(_id: string): string | undefined {
-    return undefined;
+  /**
+   * Declare the canonical id this session's FIRST turn will rename it to.
+   *
+   * The scripted stand-in for the one thing about a real first turn that no
+   * browser test can otherwise reach: a brand-new claude-code session streams
+   * under the request UUID the client minted and is renamed to the SDK's own id
+   * mid-turn, which moves the projector, the lock, the route the window is on —
+   * and the session's canvas. Test mode has no SDK to mint an id, so a test
+   * names one instead and this promises to answer it.
+   *
+   * **Declared now, revealed on the first `sendMessage`.** Until the turn
+   * starts, {@link getInternalSessionId} keeps answering `undefined`, so the
+   * turn begins under the id the client minted exactly as a real one does and
+   * the rename happens mid-turn rather than before it. Declaring it is otherwise
+   * inert: nothing else in this runtime reads the map.
+   *
+   * @param sessionId - The id the client minted and is streaming under.
+   * @param canonicalId - The id the first turn will rename it to.
+   */
+  declareCanonicalSessionId(sessionId: string, canonicalId: string): void {
+    if (sessionId === canonicalId) return;
+    declaredCanonicalIds.set(sessionId, { canonicalId, revealed: false });
+  }
+
+  /** Start answering a declared canonical id, and move the tracked metadata to it. */
+  private revealCanonicalSessionId(sessionId: string): void {
+    const declared = declaredCanonicalIds.get(sessionId);
+    if (!declared || declared.revealed) return;
+    declared.revealed = true;
+    this.registry.rekey(sessionId, declared.canonicalId);
+  }
+
+  getInternalSessionId(id: string): string | undefined {
+    const declared = declaredCanonicalIds.get(id);
+    return declared?.revealed === true ? declared.canonicalId : undefined;
   }
 
   /** Required by AgentRuntimeLike (relay package) for SDK session ID lookup. */

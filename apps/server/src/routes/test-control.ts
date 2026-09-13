@@ -7,6 +7,7 @@ import { ulid } from 'ulidx';
 import { writeManifest } from '@dorkos/shared/manifest';
 import { seedAgentFace } from '@dorkos/shared/agent-face';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import type { TestModeRuntime } from '../services/runtimes/test-mode/test-mode-runtime.js';
 import {
   ConnectorAgentConnectionRequestInputSchema,
   ConnectorExecutionTargetSchema,
@@ -89,6 +90,44 @@ testControlRouter.post('/scenario', (req, res) => {
     return res.status(400).json({ error: err instanceof Error ? err.message : 'Unknown error' });
   }
   res.json({ ok: true, scenario: name });
+});
+
+const canonicalIdSchema = z.object({
+  sessionId: z.string().uuid(),
+  canonicalId: z.string().uuid(),
+});
+
+/**
+ * `POST /api/test/canonical-id` — declare the id this session's FIRST turn will
+ * rename it to (DOR-2015).
+ *
+ * A brand-new claude-code session streams under the request UUID the client
+ * minted and is renamed to the SDK's own id mid-first-turn. That rename moves
+ * the projector, the lock, the route the window is on — and the session's
+ * canvas. Test mode has no SDK to mint an id, so before this there was no way to
+ * reach the rename from a browser at all, and the canvas's survival across it
+ * was pinned only below the browser.
+ *
+ * Declaring costs nothing until the session's next turn starts: the runtime goes
+ * on reporting no canonical id, so the turn begins under the id the client
+ * minted exactly as a real one does, and the rename lands mid-turn.
+ *
+ * Refuses a session bound to a runtime that is not test-mode, for the reason
+ * `POST /persistent` gives: a silent no-op here would surface as a spec waiting
+ * for a rename that was never going to happen.
+ */
+testControlRouter.post('/canonical-id', async (req, res) => {
+  const result = canonicalIdSchema.safeParse(req.body);
+  if (!result.success) {
+    return res
+      .status(400)
+      .json({ error: 'Validation failed', details: z.flattenError(result.error) });
+  }
+  const { sessionId, canonicalId } = result.data;
+  const resolved = await resolveTestModeRuntime(sessionId);
+  if ('error' in resolved) return res.status(resolved.status).json({ error: resolved.error });
+  resolved.runtime.declareCanonicalSessionId(sessionId, canonicalId);
+  res.json({ ok: true, sessionId, canonicalId });
 });
 
 /**
@@ -199,7 +238,7 @@ const heldProcessSchema = z.object({
  */
 async function resolveTestModeRuntime(
   sessionId: string
-): Promise<{ runtime: AgentRuntime } | { status: number; error: string }> {
+): Promise<{ runtime: TestModeRuntime } | { status: number; error: string }> {
   let runtime: AgentRuntime;
   try {
     runtime = await runtimeRegistry.resolveForSession(sessionId);
