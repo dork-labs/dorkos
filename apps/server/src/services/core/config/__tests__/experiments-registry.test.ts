@@ -161,8 +161,9 @@ describe('EXPERIMENTS', () => {
    * By the sentence people actually write: `turn on **Some Title** in Settings
    * under Experiments`. A bold only counts when it is the THING BEING SWITCHED —
    * the object of a switch-on instruction (`turn on **X**`, `enable **X**`,
-   * `switch **X** on`) or the subject of a switch noun (`the **X** switch`) — and
-   * when it sits in the same sentence as the instruction.
+   * `switch **X** on`), the subject of a switch noun (`the **X** switch`), or the
+   * label announced before a colon whose clause says to turn it on (`- **X**:
+   * turn it on …`) — and when it sits in the same sentence as the instruction.
    *
    * Nearness alone was the first rule and it was wrong (DOR-2017). `Agent
    * messaging is **off by default**, and you can switch it on in Settings under
@@ -247,40 +248,85 @@ describe('EXPERIMENTS', () => {
 
     /** The split form, `turn **X** on`: the verb before, the particle after. */
     const SPLIT_VERB_BEFORE = /(?:turn|switch|flip|toggle)(?:s|ed|ing)?\s+$/i;
-    /** The particle that closes a split verb, or the noun in `the **X** switch`. */
-    const SWITCH_AFTER = /^\s*(?:on\b|switch\b|toggle\b)/i;
+    /**
+     * The noun in `the **X** switch`.
+     *
+     * Only the literal switch words. `on` used to be accepted here too, which
+     * meant `the **Browser tab** on the right` read as somebody naming a switch
+     * — `the` before, `on` after, and nothing checking that `on` was doing any
+     * work. The split verb below is where `on` belongs, and it brings its own
+     * verb with it.
+     */
+    const SWITCH_NOUN_AFTER = /^\s*(?:switch|toggle)\b/i;
+
+    /**
+     * The label-then-colon form: `- **X**: turn it on in Settings under
+     * Experiments.`
+     *
+     * The instruction's own verb sits AFTER the label instead of before it, and
+     * `configuration.mdx` already writes the tail of this shape twice, so a page
+     * that bolds the label in front of it must not go unchecked.
+     */
+    const COLON_AFTER = /^\s*[:—-]/;
+    /** The switch-on phrase that follows the colon, its object already named. */
+    const VERB_AFTER_COLON =
+      /\b(?:turn|switch|flip|toggle)(?:s|ed|ing)?\s+(?:it|this|them)\s+on\b|\benabl(?:e|es|ing)\s+(?:it|this|them)\b/i;
 
     /**
      * Whether this bold is the thing being switched, rather than something else
      * the sentence happens to emphasise.
      *
-     * Three shapes, all of them an author naming the control: the object of a
-     * switch-on verb, that verb split around the label, and the label used as the
-     * subject of the word "switch". Anything else — a state, a warning, a product
-     * name — is emphasis, and emphasis is not a claim about a label.
+     * Four shapes, all of them an author naming the control: the object of a
+     * switch-on verb, that verb split around the label, the label used as the
+     * subject of the word "switch", and the label announced before a colon whose
+     * clause then says to turn it on. Anything else — a state, a warning, a
+     * product name — is emphasis, and emphasis is not a claim about a label.
+     *
+     * Deliberately NOT rejected: a bold that ends in a full stop. `turn on
+     * **Wrong Title.**` should still red, and a rule against terminal punctuation
+     * would blind the guard to it. The warning and cross-sentence cases that
+     * motivated such a rule are handled where they belong — in
+     * {@link sentenceAround}, which now treats `.**` as the end of a sentence.
      */
-    function namesTheSwitch(text: string, bold: { startsAt: number; endsAt: number }): boolean {
+    function namesTheSwitch(
+      text: string,
+      bold: { startsAt: number; endsAt: number },
+      instructionAt: number
+    ): boolean {
       const before = text.slice(Math.max(0, bold.startsAt - 40), bold.startsAt);
       const after = text.slice(bold.endsAt, bold.endsAt + 20);
       if (VERB_BEFORE.test(before)) return true;
       if (SPLIT_VERB_BEFORE.test(before) && /^\s*on\b/i.test(after)) return true;
-      return SWITCH_AFTER.test(after) && /\bthe\s+$/i.test(before);
+      if (SWITCH_NOUN_AFTER.test(after) && /\bthe\s+$/i.test(before)) return true;
+      return (
+        COLON_AFTER.test(after) && VERB_AFTER_COLON.test(text.slice(bold.endsAt, instructionAt))
+      );
     }
 
     /**
-     * The sentence containing `at`, as offsets into `text`.
+     * Where one sentence ends: terminal punctuation, an optional closing `**`,
+     * then whitespace — or a newline.
      *
-     * A sentence ends at terminal punctuation FOLLOWED BY whitespace, or at a
-     * newline. The whitespace matters: `experiment.** A Claude Code session` would
-     * otherwise break inside the bold that ends the previous heading, and the
-     * sentence boundary is what keeps a bold in one sentence from being read as
-     * the label of an instruction in the next.
+     * Two details are load-bearing. The whitespace stops `Version 1.2 support`
+     * from splitting mid-phrase. The optional `**` is what makes a bold that
+     * CLOSES a sentence close it: without it, `enable **Developer mode.** Agent
+     * messaging lives in Settings under Experiments.` recorded no boundary at
+     * all, and the second sentence's instruction read the first sentence's bold
+     * as its label.
+     *
+     * The lookbehinds keep an abbreviation from ending a sentence. `Turn on **X**
+     * (e.g. for Codex) in Settings under Experiments.` otherwise starts its
+     * sentence after `e.g. ` — past the label — and the guard goes quiet on a
+     * wrong title.
      */
+    const SENTENCE_BREAK = /(?<!\be\.g)(?<!\bi\.e)(?<!\betc)(?<!\bvs)[.!?](?:\*\*)?\s|\n/;
+
+    /** The sentence containing `at`, as offsets into `text`. */
     function sentenceAround(text: string, at: number): { start: number; end: number } {
-      const boundaries = [...text.slice(0, at).matchAll(/[.!?]\s|\n/g)];
-      const last = boundaries.at(-1);
+      const backwards = new RegExp(SENTENCE_BREAK.source, 'g');
+      const last = [...text.slice(0, at).matchAll(backwards)].at(-1);
       const start = last === undefined ? 0 : last.index + last[0].length;
-      const closes = /[.!?](?:\s|$)|\n/.exec(text.slice(at));
+      const closes = SENTENCE_BREAK.exec(text.slice(at));
       const end = closes === null ? text.length : at + closes.index + 1;
       return { start, end };
     }
@@ -332,7 +378,7 @@ describe('EXPERIMENTS', () => {
               bold.startsAt >= sentence.start &&
               bold.endsAt <= match.index &&
               match.index - bold.endsAt <= LABEL_WINDOW_CHARS &&
-              namesTheSwitch(text, bold)
+              namesTheSwitch(text, bold, match.index)
           )
           .at(-1);
         if (last !== undefined) {
@@ -421,17 +467,23 @@ describe('EXPERIMENTS', () => {
 
       it('reds on a wrong label seeded into any page that really names one', () => {
         // The same re-seed against the live corpus, so the guard is proven on the
-        // files it actually reads and not only on fixtures.
+        // files it actually reads and not only on fixtures. Asserted per FILE and
+        // by equality: a page with two instruction sites where the re-seed only
+        // still reds at one of them would pass a `toContain`.
         expect(MENTIONS.length).toBeGreaterThan(0);
+        const byFile = new Map<string, Mention[]>();
         for (const mention of MENTIONS) {
-          const text = readFileSync(path.join(REPO_ROOT, mention.file), 'utf-8').replaceAll(
-            `**${mention.named}**`,
-            `**${WRONG}**`
-          );
+          byFile.set(mention.file, [...(byFile.get(mention.file) ?? []), mention]);
+        }
+        for (const [file, mentions] of byFile) {
+          let text = readFileSync(path.join(REPO_ROOT, file), 'utf-8');
+          for (const mention of mentions) {
+            text = text.replaceAll(`**${mention.named}**`, `**${WRONG}**`);
+          }
           expect(
-            mentionsInText(text, mention.file).map((found) => found.named),
-            mention.file
-          ).toContain(WRONG);
+            mentionsInText(text, file).map((found) => found.named),
+            file
+          ).toEqual(mentions.map(() => WRONG));
         }
       });
 
@@ -452,11 +504,60 @@ describe('EXPERIMENTS', () => {
           ).toEqual([]);
         });
 
+        it('a product name followed by the word "on"', () => {
+          // `the` before and `on` after used to be enough, because the switch-noun
+          // arm never checked that the word after the label was doing any work.
+          expect(
+            namesIn(
+              'Look at the **Browser tab** on the right, then switch it on in Settings under Experiments.'
+            )
+          ).toEqual([]);
+        });
+
+        it('a warning bolded right after the word "Enable"', () => {
+          expect(
+            namesIn(
+              'Enable **only if you trust the page.** You will find it in Settings under Experiments.'
+            )
+          ).toEqual([]);
+        });
+
+        it('a label named in the sentence BEFORE the instruction', () => {
+          expect(
+            namesIn(
+              'You must first enable **Developer mode.** Agent messaging lives in Settings under Experiments.'
+            )
+          ).toEqual([]);
+        });
+
         it('a product name that is not a switch', () => {
           expect(
             namesIn(
               'The **Browser tab** is where your agent works, and you can switch it on in Settings under Experiments.'
             )
+          ).toEqual([]);
+        });
+      });
+
+      /**
+       * The same-sentence rule and the nearness window, pinned.
+       *
+       * Both are what stops a correct bold elsewhere in the paragraph from being
+       * read as this instruction's label, and neither was tested: widening
+       * `sentence.start` to 0 or `LABEL_WINDOW_CHARS` to 100000 left the whole
+       * suite green, so a later edit could delete either silently.
+       */
+      describe('a bold outside the instruction is not its label', () => {
+        it('one sentence earlier', () => {
+          expect(
+            namesIn(`Turn on **${WRONG}** for Codex. The tab is in Settings under Experiments.`)
+          ).toEqual([]);
+        });
+
+        it('further away than the window, in the same sentence', () => {
+          const filler = 'and the rest of this clause runs on for a good long while, '.repeat(3);
+          expect(
+            namesIn(`Turn on **${WRONG}** — ${filler}which is in Settings under Experiments.`)
           ).toEqual([]);
         });
       });
@@ -480,6 +581,20 @@ describe('EXPERIMENTS', () => {
           expect(
             namesIn('Turn **Agents decide when to speak** on in Settings under Experiments.')
           ).toEqual(['Agents decide when to speak']);
+        });
+
+        it('- **X**: turn it on — the phrasing configuration.mdx already uses', () => {
+          expect(namesIn(`- **${WRONG}**: turn it on in Settings under Experiments.`)).toEqual([
+            WRONG,
+          ]);
+        });
+
+        it('an abbreviation between the label and the instruction', () => {
+          // `e.g. ` used to end the sentence, which moved the sentence start past
+          // the label and let a wrong title through.
+          expect(
+            namesIn(`Turn on **${WRONG}** (e.g. for Codex) in Settings under Experiments.`)
+          ).toEqual([WRONG]);
         });
       });
 
