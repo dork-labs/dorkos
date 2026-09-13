@@ -126,6 +126,53 @@ export function interceptChokidar(): ChokidarInterceptor {
   };
 }
 
+/**
+ * Make `chokidar.watch()` use its POLLING backend, and nothing else.
+ *
+ * For the one case per suite that wants the real thing end to end — a real
+ * file on a real disk, real chokidar, the production handlers — without resting
+ * its verdict on whether macOS feels like delivering the event.
+ *
+ * Everything about the path under test stays real. The only substitution is how
+ * chokidar NOTICES a change: `stat` on an interval instead of FSEvents. The
+ * events it then emits, their names and the paths they carry are produced by the
+ * same chokidar code either way, so a chokidar major that renamed an event or
+ * changed a path shape is still caught.
+ *
+ * That substitution is not a convenience. Measured on this machine on
+ * 2026-09-12: a standalone Node probe saw a newly created file under a native
+ * watch 12 times in 15, and the same watch driven from inside a Vitest worker on
+ * a loaded machine saw it in as few as 2 windows out of 7. Native delivery is a
+ * property of the platform, not of the code under test, and a case that rests on
+ * it reds on a loaded laptop and calls it a regression (DOR-2012).
+ *
+ * The suite does not lose native coverage entirely: `watcher-manager.test.ts`
+ * keeps one native smoke case, with the re-arms and the loud skip that an
+ * honest wager on the platform needs.
+ *
+ * @param intervalMs - How often chokidar re-stats. Small, because the test waits
+ *   on the result.
+ * @returns A handle whose `restore()` puts the untouched `chokidar.watch` back.
+ */
+export function watchWithPolling(intervalMs: number): { restore(): void } {
+  const real = chokidar.watch.bind(chokidar) as typeof chokidar.watch;
+  const spy = vi
+    .spyOn(chokidar, 'watch')
+    .mockImplementation((paths: unknown, options?: unknown): FSWatcher =>
+      real(paths as string, {
+        ...((options ?? {}) as Record<string, unknown>),
+        usePolling: true,
+        interval: intervalMs,
+        binaryInterval: intervalMs,
+      })
+    );
+  return {
+    restore(): void {
+      spy.mockRestore();
+    },
+  };
+}
+
 /** A promise plus the handle that settles it, for event-driven test barriers. */
 export interface Deferred<T> {
   /** The promise a test awaits. */

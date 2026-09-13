@@ -7,7 +7,10 @@
  * hand-rolled deadline for a real fs event measures the machine's latency rather
  * than this class's behaviour, and went red under multi-agent load (DOR-1777).
  * Exactly one test — the last in the `hot-reload` block — puts the real chokidar
- * back, and it is the only wall-clock bound in the file.
+ * back over a real file, and it is the only wall-clock bound in the file. It
+ * runs that watch on chokidar's POLLING backend, which is what makes it a fact
+ * about this class rather than a wager on how macOS feels today; the reasoning
+ * and the measurements are at `watchWithPolling` in `./fake-watcher.ts`.
  *
  * @module __tests__/access-control
  */
@@ -18,7 +21,8 @@ import os from 'node:os';
 import { AccessControl } from '../access-control.js';
 import type { RelayAccessRule } from '@dorkos/shared/relay-schemas';
 import type { AccessControlLogger } from '../access-control.js';
-import { interceptChokidar, type ChokidarInterceptor } from './fake-watcher.js';
+import { interceptChokidar, watchWithPolling, type ChokidarInterceptor } from './fake-watcher.js';
+import { loadCeilingMs, loadScaledMs } from '@dorkos/shared/test-budget';
 
 /** A spy logger satisfying the {@link AccessControlLogger} surface. */
 function createSpyLogger(): AccessControlLogger {
@@ -60,41 +64,54 @@ function wait(ms: number): Promise<void> {
 }
 
 /**
- * How long the one real-filesystem test gives the platform before giving up.
+ * How long the one real-filesystem case gives the watcher, per step.
  *
  * Deliberately generous and deliberately alone: it is the only wall-clock bound
  * left in this file, and it is paid in full only when the watcher is broken.
  * Everywhere else the watcher is injected and there is nothing to wait for.
+ *
+ * Scaled by load, and sampled when the wait starts rather than at import. A
+ * budget frozen at module load reads the one-minute average from before the
+ * sweep that needed it began, which is exactly the case the pre-push gate hits.
  */
-const REAL_RELOAD_TIMEOUT_MS = 15_000;
-/** How often that one test re-checks while waiting. */
+const REAL_RELOAD_BASE_MS = 10_000;
+/** How often chokidar re-stats the rules file, and how often this file re-checks. */
+const WATCH_POLL_MS = 50;
 const RELOAD_POLL_MS = 50;
+/**
+ * The real-filesystem case's own ceiling.
+ *
+ * Sized from the WORST its waits can grow to, not from the load at import: a
+ * runner fixes a test's timeout when the test is defined and cannot resample
+ * later. Three steps, plus slack for setup and teardown, and capped absolutely
+ * so no single test can sit for minutes before saying anything.
+ */
+const REAL_WATCH_TEST_TIMEOUT_MS = Math.min(
+  120_000,
+  3 * loadCeilingMs(REAL_RELOAD_BASE_MS) + 20_000
+);
 
 /**
  * Poll until `predicate` holds, or fail loudly.
  *
  * The change under test is made exactly once, before this is called; only its
- * observation is outstanding. That single write is enough because
- * `whenWatcherReady()` does not resolve until the watcher is actually
- * delivering — a helper that re-applied its write to paper over a missed event
- * would report a watcher that drops events as healthy, which is the bug the
- * real-filesystem test exists to catch.
+ * observation is outstanding. That single change is enough BECAUSE the watch
+ * under this case polls: a `stat` on an interval does not drop anything, so a
+ * change that is not picked up was not picked up. Under a native watch it would
+ * not be enough, and no amount of budget would make it so — see
+ * {@link watchWithPolling} for the measurements.
  *
  * @param predicate - The condition being waited on.
  * @param what - Named in the failure message, so a timeout says what was lost.
- * @param timeoutMs - Budget for this wait.
  */
-async function waitUntil(
-  predicate: () => boolean,
-  what: string,
-  timeoutMs = REAL_RELOAD_TIMEOUT_MS
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
+async function waitUntil(predicate: () => boolean, what: string): Promise<void> {
+  const deadline = Date.now() + loadScaledMs(REAL_RELOAD_BASE_MS);
   while (Date.now() < deadline) {
     if (predicate()) return;
     await wait(RELOAD_POLL_MS);
   }
-  throw new Error(`timed out after ${timeoutMs}ms waiting for ${what}`);
+  if (predicate()) return;
+  throw new Error(`timed out waiting for ${what}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -507,57 +524,75 @@ describe('AccessControl', () => {
     });
 
     // -----------------------------------------------------------------------
-    // The one test in this file that uses a real chokidar watcher and waits on
-    // the real platform.
+    // The one test in this file that uses a real chokidar watcher and a real
+    // file on a real disk.
     //
-    // The hermetic tests above prove what the class does when told a file
-    // changed. This proves it is ever told: that a watch on a single JSON path
-    // fires at all, and that `whenWatcherReady()` is a gate a caller can
-    // actually write against — the property the grace period inside it exists
-    // for, and one no injected watcher can check.
+    // The hermetic tests above are the always-asserted twin, and they are what
+    // this file's coverage rests on: they drive an injected watcher, so they run
+    // and assert on every machine whatever the platform is doing, and a handler
+    // that stops reloading reds there first. Read them as the guarantee and this
+    // case as the extra — it proves the class is ever TOLD: that chokidar, given
+    // the options `AccessControl` actually passes, reports a single JSON path
+    // appearing, changing and vanishing, and that `whenWatcherReady()` is a gate
+    // a caller can write against. No injected watcher can check any of that.
     //
     // It walks all THREE handlers the class registers — `add`, `change`,
     // `unlink` — because they are three different chokidar code paths on a
     // single-file watch, and a real watcher that delivered only some of them
-    // would leave the hermetic tests above passing over a broken class. That
-    // costs no extra budget: each step is gated on the step before it having
-    // been delivered.
+    // would leave the hermetic tests above passing over a broken class.
     //
-    // Exactly one write per step, on purpose. Re-writing to nudge a watcher
-    // that missed the first one would turn a broken gate into a passing test,
-    // which is the bug this is here to catch. The budget is generous instead.
+    // THE WATCH POLLS, and that is the one substitution in an otherwise
+    // end-to-end case. It is what makes this deterministic instead of a wager on
+    // macOS: under a native watch, a single write is reported only sometimes —
+    // as few as 2 windows in 7 from inside a Vitest worker on a loaded machine —
+    // so "the file was created and nothing happened" cannot tell a broken
+    // handler from a dropped event, and this case reddened healthy code twice in
+    // eight runs before it polled (DOR-2012 review, finding 1). What is given up
+    // is narrow and named in `watchWithPolling`; `watcher-manager.test.ts` is
+    // where a native chokidar delivery is still exercised.
     // -----------------------------------------------------------------------
-    it('really does see a rules file appear, change and vanish under a real watcher', async () => {
-      chokidarSpy.restore();
-      // Start on an EMPTY directory so the first write is a real `add`.
-      acl = new AccessControl(tmpDir);
-      await acl.whenWatcherReady();
+    it(
+      'really does see a rules file appear, change and vanish under a real watcher',
+      async () => {
+        chokidarSpy.restore();
+        const polling = watchWithPolling(WATCH_POLL_MS);
+        const rulesPath = path.join(tmpDir, 'access-rules.json');
 
-      expect(acl.checkAccess('relay.a', 'relay.b').allowed).toBe(true);
+        try {
+          // Start on an EMPTY directory so the first write is a real `add`.
+          acl = new AccessControl(tmpDir, createSpyLogger());
+          await acl.whenWatcherReady();
 
-      // add
-      writeRulesFile(tmpDir, [makeRule('relay.a', 'relay.b', 'deny', 10)]);
-      await waitUntil(
-        () => !acl.checkAccess('relay.a', 'relay.b').allowed,
-        'the newly created rules file to be picked up'
-      );
+          expect(acl.checkAccess('relay.a', 'relay.b').allowed).toBe(true);
 
-      // change — a second rule against the now-existing file
-      writeRulesFile(tmpDir, [makeRule('relay.x', 'relay.y', 'deny', 10)]);
-      await waitUntil(
-        () => acl.checkAccess('relay.a', 'relay.b').allowed,
-        'the rewritten rules file to replace the first rule'
-      );
-      expect(acl.checkAccess('relay.x', 'relay.y').allowed).toBe(false);
+          // add
+          writeRulesFile(tmpDir, [makeRule('relay.a', 'relay.b', 'deny', 10)]);
+          await waitUntil(
+            () => !acl.checkAccess('relay.a', 'relay.b').allowed,
+            'the newly created rules file to be picked up'
+          );
 
-      // unlink — deleting the file returns the machine to "nobody wrote a rule"
-      fs.rmSync(path.join(tmpDir, 'access-rules.json'));
-      await waitUntil(
-        () => acl.checkAccess('relay.x', 'relay.y').allowed,
-        'the deleted rules file to drop every rule'
-      );
-      expect(acl.listRules()).toEqual([]);
-    }, 30_000);
+          // change — a second rule against the now-existing file
+          writeRulesFile(tmpDir, [makeRule('relay.x', 'relay.y', 'deny', 10)]);
+          await waitUntil(
+            () => acl.checkAccess('relay.a', 'relay.b').allowed,
+            'the rewritten rules file to replace the first rule'
+          );
+          expect(acl.checkAccess('relay.x', 'relay.y').allowed).toBe(false);
+
+          // unlink — deleting the file returns the machine to "nobody wrote a rule"
+          fs.rmSync(rulesPath);
+          await waitUntil(
+            () => acl.checkAccess('relay.x', 'relay.y').allowed,
+            'the deleted rules file to drop every rule'
+          );
+          expect(acl.listRules()).toEqual([]);
+        } finally {
+          polling.restore();
+        }
+      },
+      REAL_WATCH_TEST_TIMEOUT_MS
+    );
   });
 
   // -------------------------------------------------------------------------

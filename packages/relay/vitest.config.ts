@@ -31,6 +31,13 @@ export default defineConfig({
         find: '@dorkos/shared/relay-schemas',
         replacement: path.resolve(__dirname, '../shared/src/relay-schemas.ts'),
       },
+      {
+        // Test-only, and aliased for the same reason: it is edited in `src/` and
+        // a stale `dist/` copy would silently give the watcher suites yesterday's
+        // budgets.
+        find: '@dorkos/shared/test-budget',
+        replacement: path.resolve(__dirname, '../shared/src/test-budget.ts'),
+      },
     ],
     // The lefthook pre-push gate sets VITEST_RETRY to absorb timing flake in
     // integration tests on a developer machine already busy with other agents.
@@ -42,9 +49,13 @@ export default defineConfig({
     // `watcher-manager.test.ts` and `access-control.test.ts` used to need it —
     // they drove real chokidar watchers against real tmpdir writes on a 5s
     // deadline and went red under multi-agent load — and no longer do: both now
-    // inject the watcher and keep exactly one real-filesystem smoke test with a
-    // deliberately generous bound (DOR-1777). See apps/server/vitest.config.ts
-    // for the original wiring.
+    // inject the watcher and keep exactly one real-filesystem case (DOR-1777).
+    // Those two cases were themselves the next round of the same problem, and
+    // each settled it a different way (DOR-2012): `access-control`'s puts its
+    // watch on chokidar's polling backend, so there is no dropped event to
+    // absorb; `watcher-manager`'s keeps a native watch and re-arms it, skipping
+    // loudly only when every window reported the kernel out of watch
+    // descriptors. See apps/server/vitest.config.ts for the original wiring.
     retry: process.env.VITEST_RETRY ? Number(process.env.VITEST_RETRY) : 0,
   },
 });

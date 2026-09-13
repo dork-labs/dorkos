@@ -348,6 +348,10 @@
     "./harness-schemas": {
       "types": "./src/harness-schemas.ts",
       "default": "./dist/harness-schemas.js"
+    },
+    "./test-budget": {
+      "types": "./src/test-budget.ts",
+      "default": "./dist/test-budget.js"
     }
   },
   "scripts": {

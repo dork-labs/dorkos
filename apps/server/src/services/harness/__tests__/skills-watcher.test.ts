@@ -85,6 +85,8 @@ import {
 } from '../skills-watcher.js';
 import { projectLockQueueDepth, withProjectLock } from '../project-with-consent.js';
 import { initBoundary } from '../../../lib/boundary.js';
+import chokidar, { type FSWatcher } from 'chokidar';
+import { loadCeilingMs, loadScaledMs } from '@dorkos/shared/test-budget';
 
 // Real chokidar on macOS reports a deletion up to two seconds after it happens
 // (measured: 1.7s for an `rm -r` of a skill directory), and several cases here
@@ -93,6 +95,54 @@ import { initBoundary } from '../../../lib/boundary.js';
 // that ABORTS mid-projection leaves work running into the next one — so the
 // budget is raised rather than the waits shortened.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
+
+/** How often the one polling watch re-stats, and how long its case waits. */
+const LIVE_POLL_MS = 50;
+const LIVE_WAIT_BASE_MS = 10_000;
+
+/**
+ * Make `chokidar.watch()` use its POLLING backend, for one case, until restored.
+ *
+ * The twin of `watchWithPolling` in `packages/relay/src/__tests__/fake-watcher.ts`
+ * — a separate copy because each package spies on its own resolved `chokidar`
+ * module object, so a shared one would patch the wrong instance.
+ *
+ * Everything about the path under test stays real: a real tree on disk, real
+ * chokidar, the real `armWatch` wiring and the real projector. The only
+ * substitution is how chokidar NOTICES a change — `stat` on an interval instead
+ * of FSEvents — and the events it then emits, their names and the paths they
+ * carry come from the same chokidar code either way.
+ *
+ * That substitution is what makes the one case below a fact rather than a wager.
+ * macOS drops filesystem events silently: measured on this machine on
+ * 2026-09-12/13, five fresh skills written under a live native watch delivered
+ * NOTHING and reported no error, in a full-suite run of healthy code, and the
+ * case that read that as "the watch is broken" went red. Widening it to three
+ * fresh watches did not settle it either — on a machine whose FSEvents is
+ * flapping, one window reports EMFILE and the next says nothing at all, and any
+ * rule that has to tell those two apart is guessing. Polling removes the
+ * question: a `stat` on an interval does not drop anything, so a projection that
+ * did not happen did not happen (DOR-2012).
+ *
+ * @param intervalMs - How often chokidar re-stats.
+ * @returns A handle whose `restore()` puts the untouched `chokidar.watch` back.
+ */
+function watchWithPolling(intervalMs: number): { restore(): void } {
+  const real = chokidar.watch.bind(chokidar) as typeof chokidar.watch;
+  const spy = vi
+    .spyOn(chokidar, 'watch')
+    .mockImplementation((paths: unknown, options?: unknown): FSWatcher =>
+      real(paths as string, {
+        ...((options ?? {}) as Record<string, unknown>),
+        usePolling: true,
+        interval: intervalMs,
+        binaryInterval: intervalMs,
+      })
+    );
+  return {
+    restore: () => spy.mockRestore(),
+  };
+}
 
 let repo = '';
 let dorkHome = '';
@@ -303,19 +353,6 @@ function infoLogs(): { message: string; fields: Record<string, unknown> }[] {
 }
 
 /**
- * The `code` of every distinct watcher failure reported so far.
- *
- * `armWatch` latches one `logger.error` per code and suppresses repeats, and
- * the code is what says whether the watch merely hiccupped or has stopped
- * listening for good (`EMFILE` — the kernel is out of watch descriptors).
- */
-function watcherErrorCodes(): string[] {
-  return loggerMock.error.mock.calls
-    .filter(([message]) => String(message).includes('[watcher-error] SkillsWatcher'))
-    .map(([, fields]) => String((fields as { code?: unknown } | undefined)?.code ?? 'unknown'));
-}
-
-/**
  * Every projection the logs attribute to one trigger.
  *
  * The counting spy cannot separate a projection the SWEEP decided on from one
@@ -492,57 +529,43 @@ describe('a skill an agent writes reaches Claude Code (SRC-06, TR-06)', () => {
     expect(isAuthoredSkillFile(join(dir, '.hidden', 'SKILL.md'), dir)).toBe(false);
   });
 
-  it('SRC-06: is the WATCH that projects when the watch is alive, not the backstop', async (ctx) => {
-    // The one case that depends on chokidar actually delivering, so "a green
-    // suite that only proves the backstop works" is not true of this file. The
-    // backstop is off, and the assertion is on the TRIGGER the firing carries.
-    //
-    // Tolerant of a dropped event on purpose, and bounded. Measured on this
-    // machine, sustained load exhausts the kernel's watch descriptors and
-    // `fs.watch` throws EMFILE, after which the watch reports nothing at all —
-    // which is the condition the backstop exists for, not a fault in this code.
-    // So the honest claim is "when the watch is alive it is what fires", and the
-    // exhausted case SKIPS rather than passes: a test that has quietly stopped
-    // asserting anything should be visible in the report.
-    const handle = await start({ sweepMs: 0, coalesceMs: 20 });
-
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const name = `live-${attempt}`;
-      // Counted per attempt, not cumulatively: a firing left over from an
-      // earlier attempt would otherwise satisfy the wait without this attempt's
-      // file having been seen at all.
-      const before = projectionsTriggeredBy('skill-file').length;
-      writeAt(join(skillsDir(), name, 'SKILL.md'), skillBody(name));
+  it(
+    'SRC-06: is the WATCH that projects, not the backstop',
+    async () => {
+      // The one case that depends on chokidar actually delivering, so "a green
+      // suite that only proves the backstop works" is not true of this file. The
+      // backstop is OFF (`sweepMs: 0`), and the assertion is on the TRIGGER the
+      // firing carries, so nothing but the watch can satisfy it.
+      //
+      // THE WATCH POLLS — see `watchWithPolling` for why, and for what that gives
+      // up. In short: under a native watch this case had to decide whether five
+      // silent writes meant a broken watch or a platform that dropped five events,
+      // and there is no honest way to tell. It reddened healthy code on exactly
+      // that (DOR-2012). Polling removes the question without removing anything
+      // the case claims: `armWatch`, the handlers it wires and the projector are
+      // all the real ones.
+      const polling = watchWithPolling(LIVE_POLL_MS);
       try {
+        const handle = await start({ sweepMs: 0, coalesceMs: 20 });
+
+        // Counted before the write, not cumulatively: a firing left over from
+        // earlier in this test would otherwise satisfy the wait without this
+        // file having been seen at all.
+        const before = projectionsTriggeredBy('skill-file').length;
+        writeAt(join(skillsDir(), 'live', 'SKILL.md'), skillBody('live'));
         await waitUntil(
           () => projectionsTriggeredBy('skill-file').length > before,
           'the watch to deliver an event',
-          3000
+          loadScaledMs(LIVE_WAIT_BASE_MS)
         );
-      } catch {
-        continue;
+        await handle.flush();
+        expect(occupied(join(repo, '.claude', 'skills', 'live'))).toBe(true);
+      } finally {
+        polling.restore();
       }
-      await handle.flush();
-      // The link for the file THIS attempt wrote — the earlier attempts' files
-      // are still on disk and would be linked by any projection at all.
-      expect(occupied(join(repo, '.claude', 'skills', name))).toBe(true);
-      return;
-    }
-
-    // Five writes, nothing delivered. Acceptable only if the watch reported the
-    // one failure that means it has stopped listening for good; any other error,
-    // or none, is a real red.
-    const exhausted = watcherErrorCodes().filter((code) => code === 'EMFILE' || code === 'ENOSPC');
-    expect(
-      exhausted,
-      `the watch delivered nothing across five writes and reported ${
-        watcherErrorCodes().join(', ') || 'no error'
-      } — that is a fault in the watch, not descriptor pressure`
-    ).not.toEqual([]);
-    ctx.skip(
-      `watch descriptors exhausted (${exhausted.join(', ')}); the comparison is what covers this, and its own cases assert it`
-    );
-  });
+    },
+    Math.min(60_000, loadCeilingMs(LIVE_WAIT_BASE_MS) + 20_000)
+  );
 
   it('TR-06: wires no addDir handler at all — a directory is never a trigger by itself', () => {
     // Read off the source rather than inferred from behaviour, because the
@@ -1162,28 +1185,63 @@ describe('harness.autoSync gates the whole trigger', () => {
 });
 
 describe('stop() gives every handle back', () => {
-  it('survives fifty start/stop cycles without leaking watch handles', async () => {
-    const baseline = watchHandleCount();
-    // One open watcher holds three handles here (the skills root and what is
-    // under it), so a `stop()` that closed nothing would leave a hundred and
-    // fifty behind. The reviewer of DOR-1854 hit EMFILE on this machine, which
-    // is why this is measured rather than assumed.
-    const open = await start();
-    expect(watchHandleCount()).toBeGreaterThan(baseline);
-    await open.stop();
-    watcher = undefined;
+  /** The most cycles worth running, and the fewest that still says "repeated". */
+  const MAX_LEAK_CYCLES = 50;
+  const MIN_LEAK_CYCLES = 5;
+  /**
+   * How long the cycling half gets before it stops and measures what it has.
+   *
+   * The count is not what the assertion rests on: the handle count is compared
+   * against the baseline taken before the FIRST watcher, so a single leaked
+   * handle already reds. Measured twice with `stop()` seeded to close nothing:
+   * one handle over baseline after fifty cycles on one machine, three on
+   * another — nowhere near fifty, because every cycle re-opens the same path.
+   * Fifty cycles were never the detector, only
+   * amplification, and at a load average of 40+ they cost ninety-eight seconds
+   * against a thirty-second limit (DOR-2012) — a red that said nothing about the
+   * watcher. So the loop is bounded by time and the leak is asserted on however
+   * many cycles ran. `cycles` is reported in the failure message rather than
+   * asserted: the loop condition already guarantees the floor, so an assertion
+   * on it could not fail.
+   */
 
-    for (let i = 0; i < 50; i++) {
-      const handle = await start();
-      await handle.stop();
+  it(
+    'survives repeated start/stop cycles without leaking watch handles',
+    async () => {
+      const baseline = watchHandleCount();
+      const open = await start();
+      expect(watchHandleCount()).toBeGreaterThan(baseline);
+      await open.stop();
       watcher = undefined;
-    }
-    await waitUntil(
-      () => watchHandleCount() <= baseline,
-      'every watch handle to be given back',
-      2000
-    );
-  });
+
+      const deadline = Date.now() + loadScaledMs(12_000);
+      let cycles = 0;
+      while (cycles < MAX_LEAK_CYCLES && (cycles < MIN_LEAK_CYCLES || Date.now() < deadline)) {
+        const handle = await start();
+        await handle.stop();
+        watcher = undefined;
+        cycles++;
+      }
+
+      try {
+        await waitUntil(
+          () => watchHandleCount() <= baseline,
+          'every watch handle to be given back',
+          loadScaledMs(4_000)
+        );
+      } catch {
+        // Counted AFTER the wait, so the number in the message is the number
+        // that was still held when the budget ran out.
+        expect.fail(
+          `after ${cycles} start/stop cycles the process still holds ` +
+            `${watchHandleCount()} watch handles; the baseline before any watcher was ${baseline}`
+        );
+      }
+    },
+    // Sized from the WORST the waits above can grow to, because a runner fixes a
+    // test's timeout when the test is defined and cannot resample the load later.
+    Math.min(90_000, loadCeilingMs(12_000) + loadCeilingMs(4_000) + 20_000)
+  );
 
   it('is deaf after stop — a skill written afterwards projects nothing', async () => {
     const handle = await start();
