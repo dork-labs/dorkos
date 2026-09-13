@@ -2,6 +2,8 @@
 
 > Positioning review deliverable (July 2026). The monetization strategy, tier ladder, and the month-by-month arc from today's unlaunched alpha to first revenue within 3-6 months. Grounded in: spec #268 (accounts-and-auth, whose decisions this doc builds on, not revisits), the shipped-in-review DOR-181/182 device-link + instance-registry work, and a deep OSS-monetization research pass (2026-07-06; sources and price verifications in the research output; aggregator-sourced prices re-verify before public use).
 
+> **Superseded on prices, 2026-09-12.** The Solo/Crew ladder and every dollar figure below are historical. The fence rules (§3), the reasons people pay (§2), and the arc (§6) still stand. The current plan is maintained privately and is announced on dorkos.ai/pricing before anyone is billed.
+
 ## 1. The model in one paragraph
 
 The MIT core stays whole and free forever; that is the trust anchor, the acquisition engine, and a one-way door we never walk back through (every license rug-pull in OSS history: HashiCorp → OpenTofu, Redis → Valkey, Elastic → OpenSearch, proves relicensing is how you fork your own community). Revenue comes from **DorkOS Cloud**: things that _inherently require our servers or coordinate multiple humans and machines_: remote access without networking skills, push, multi-instance identity, shared fleets, private registries, spend dashboards, and eventually SSO/SCIM/audit. That fence is architecturally honest (you cannot "self-host our relay infrastructure" by accident), community-accepted (the Tailscale/Grafana/n8n line), and already half-built (spec #268's account-first identity + device link are in review right now). Target: first dollars in month 4, $1-3k MRR by month 6.

@@ -18,6 +18,10 @@ World-class UI/UX **and** world-class DX, neither negotiable. Every interaction 
 
 **Decision filters:** describe what happens for the user, not how the system works internally ("get a Telegram message when your agent finishes"). Every element justifies its existence — if removing it wouldn't hurt the user, remove it. Be honest by design: no dark patterns, no hype language. Would Kai find it valuable, and does it respect Priya's flow? The product feels like a control panel, not a consumer app. (Design mentors — Jobs, Ive, Rams — in `meta/website-copy/process.md`.) All user-facing prose (changelog, release notes, READMEs, docs guides, UI copy, error messages) follows the `writing-for-humans` skill: plain enough for a smart 9th grader who doesn't code. How an agent **behaves** in a room, DM or channel shared with other people and other agents follows [meta/agent-etiquette.md](meta/agent-etiquette.md): present, useful, and mostly quiet. Over-participation, not silence, is the failure mode users complain about.
 
+## DorkOS Cloud
+
+DorkOS Cloud is the hosted, paid layer (see dorkos.ai/pricing); its control plane is closed-source and not in this repo. Everything the app needs to talk to it will be public here, as `packages/cloud-api`, and the app builds, tests and runs without the other side. Propose contract changes in an issue labelled `cloud-contract`. Never add prices, plan names, margins or supplier terms to this repo; the pricing page announces them first.
+
 ## Monorepo Structure
 
 Turborepo monorepo:
