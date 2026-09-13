@@ -120,22 +120,95 @@ async function startFakeServer(
   return `http://127.0.0.1:${port}`;
 }
 
+/** The seq space a rekeying fake server stamps its frame ids from. */
+const FAKE_EPOCH = 1_700_000_000_000;
+
+/** Build the durable stream's frame id: `<resourceId>-<epoch>-<generation>-<seq>`. */
+function frameId(resourceId: string, seq: number): string {
+  return `${resourceId}-${FAKE_EPOCH}-g0-${seq}`;
+}
+
+/** Serialize one durable SessionEvent with its `id:` line, the way the server does. */
+function idSse(resourceId: string, seq: number, event: string, data: object): string {
+  return `id: ${frameId(resourceId, seq)}\nevent: ${event}\ndata: ${JSON.stringify({ type: event, seq, ...data })}\n\n`;
+}
+
+/**
+ * The resume cursor a `/events` request carries, parsed the way the real route
+ * parses it: `Last-Event-ID` first, then the `?after=` integer. Returns
+ * `undefined` for a cold connect.
+ *
+ * Deliberately does NOT require the cursor to name the id being subscribed —
+ * that is the real route's behaviour too (`routes/session-events-handler.ts`),
+ * and it is the whole reason a rekeyed session can resume its own seq space.
+ */
+function parseResume(req: http.IncomingMessage, url: URL): number | undefined {
+  const header = req.headers['last-event-id'];
+  if (typeof header === 'string' && header !== '') {
+    const match = /-(\d+)-g\d+-(\d+)$/.exec(header);
+    if (match && Number(match[1]) === FAKE_EPOCH) return Number(match[2]);
+    return undefined;
+  }
+  const after = url.searchParams.get('after');
+  if (after !== null && after !== '' && Number.isInteger(Number(after))) return Number(after);
+  return undefined;
+}
+
+/** What a {@link startRekeyingServer} run should do to the FIRST, pre-rekey connection. */
+interface RekeyServerOptions {
+  /** The canonical id the 202 reports, different from the one the caller subscribed under. */
+  remappedId: string;
+  /**
+   * Events the server has already ingested by the time the caller re-subscribes:
+   * `{ onColdConnect }` are written to the pre-rekey connection in the SAME chunk
+   * as its snapshot (so the driver is guaranteed to hold them before it POSTs),
+   * and `{ inTheGap }` land in the projector between the 202 and the
+   * re-subscribe — delivered to nobody, replayable only from a cursor.
+   */
+  onColdConnect?: string[];
+  /** Event types ingested after the 202, before any new connection exists. */
+  inTheGap?: string[];
+}
+
 /**
  * A fake server that simulates claude-code re-minting its internal session id
- * mid-turn (DOR-397): the trigger POST's 202 body reports `remappedId` — a
- * DIFFERENT id than the one the caller subscribed under — and the turn's
- * frames stream onto a `/events` connection opened under `remappedId`, never
- * the pre-remap id. A driver that keeps collecting on its original
- * subscription would see nothing but the cold snapshot and time out; a
- * remap-robust driver re-subscribes to `remappedId` and collects there. The
- * POST handler waits for the remapped `/events` connection to arrive before
- * streaming (mirrors subscribe-before-trigger ordering, just on the NEW id).
+ * mid-turn (DOR-397) over a DURABLE stream that honours a resume cursor.
+ *
+ * The trigger POST's 202 body reports `remappedId` — a different id than the one
+ * the caller subscribed under — and the turn's frames stream onto a `/events`
+ * connection opened under `remappedId`, never the pre-rekey id. Both ids are
+ * served by ONE seq space, which is what a rekeyed projector is (ADR-0267).
+ *
+ * The two halves that make this a real test of the resume, not just of the swap:
+ *
+ * - a COLD connect gets a `snapshot` whose `cursor` is the highest seq ingested
+ *   so far and NO replay of the events behind it — history as state, exactly
+ *   like the real stream, which is what makes a cold re-subscribe lossy;
+ * - a RESUMED connect gets no snapshot and a replay of every stored event above
+ *   the cursor, then goes live.
  */
-async function startRemapFakeServer(
+async function startRekeyingServer(
   runtime: FakeAgentRuntime,
-  remappedId: string
+  opts: RekeyServerOptions
 ): Promise<string> {
   const live = new Map<string, http.ServerResponse>();
+  /** The one seq space both ids share: everything ingested, in order. */
+  const ingested: { seq: number; wire: string }[] = [];
+  let seq = 0;
+  /**
+   * Append one event to the shared seq space and return its wire text.
+   *
+   * `resourceId` is the id the frame is STAMPED with — the pre-rekey connection's
+   * frames name the pre-rekey id, exactly as the real server stamps them, so a
+   * cursor echoed back from one of them names an id this subscription no longer
+   * uses. Resuming anyway is the property under test.
+   */
+  const ingest = (event: string, resourceId = opts.remappedId): string => {
+    seq += 1;
+    const wire = idSse(resourceId, seq, event, {});
+    ingested.push({ seq, wire });
+    return wire;
+  };
   const waitForSink = (id: string): Promise<http.ServerResponse> =>
     new Promise((resolve) => {
       const poll = (): void => {
@@ -152,7 +225,18 @@ async function startRemapFakeServer(
 
     if (req.method === 'GET' && url.pathname.endsWith('/events')) {
       res.writeHead(200, { 'Content-Type': 'text/event-stream' });
-      res.write(sse('snapshot', { cursor: 0, status: { lifecycle: 'idle' } }));
+      const resume = parseResume(req, url);
+      if (resume === undefined) {
+        // Cold: state, not history. The events behind the cursor are NOT replayed.
+        const cold = sse('snapshot', { cursor: seq, status: { lifecycle: 'idle' } });
+        const seeded =
+          live.size === 0
+            ? (opts.onColdConnect ?? []).map((event) => ingest(event, sessionId)).join('')
+            : '';
+        res.write(cold + seeded);
+      } else {
+        for (const entry of ingested) if (entry.seq > resume) res.write(entry.wire);
+      }
       live.set(sessionId, res);
       return;
     }
@@ -167,18 +251,26 @@ async function startRemapFakeServer(
           headers: req.headers,
         };
         res.writeHead(202, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ sessionId: remappedId }));
-        // Stream the turn onto the REMAPPED id's /events connection only —
-        // the pre-remap subscription under `sessionId` is never written to.
+        res.end(JSON.stringify({ sessionId: opts.remappedId }));
+        // Ingested with nobody listening: the pre-rekey connection is about to
+        // be abandoned and the new one does not exist yet.
+        for (const event of opts.inTheGap ?? []) ingest(event);
+        // Then stream the rest onto the REMAPPED id's connection only.
         void (async () => {
-          const sink = await waitForSink(remappedId);
-          let seq = 1;
-          sink.write(sse('turn_start', { type: 'turn_start', seq: seq++ }));
-          for await (const ev of runtime.sendMessage(remappedId, 'x', {})) {
-            const frame = projectEvent(ev as StreamEvent, seq++);
-            if (frame) sink.write(frame);
+          const sink = await waitForSink(opts.remappedId);
+          // The turn's own opener, unless a gap event already was it — a case
+          // that puts `turn_start` in the gap is testing that the REPLAY
+          // delivers it, so emitting a second one would hide a lost first.
+          if (!(opts.inTheGap ?? []).includes('turn_start')) sink.write(ingest('turn_start'));
+          for await (const ev of runtime.sendMessage(opts.remappedId, 'x', {})) {
+            const projected = projectEvent(ev as StreamEvent, seq + 1);
+            if (projected) {
+              seq += 1;
+              ingested.push({ seq, wire: projected });
+              sink.write(projected);
+            }
           }
-          sink.write(sse('turn_end', { type: 'turn_end', seq }));
+          sink.write(ingest('turn_end'));
         })();
       });
       return;
@@ -404,7 +496,7 @@ describe('driveTurn — session-id remap (DOR-397)', () => {
         yield { type: 'done', data: {} } as StreamEvent;
       },
     ]);
-    const baseUrl = await startRemapFakeServer(runtime, 'sess-1-remapped');
+    const baseUrl = await startRekeyingServer(runtime, { remappedId: 'sess-1-remapped' });
     const destroySpy = spyOnConnectionDestroy();
 
     const result = await driveTurn({
@@ -438,7 +530,7 @@ describe('driveTurn — session-id remap (DOR-397)', () => {
         yield { type: 'done', data: {} } as StreamEvent;
       },
     ]);
-    const baseUrl = await startRemapFakeServer(runtime, 'sess-2-remapped');
+    const baseUrl = await startRekeyingServer(runtime, { remappedId: 'sess-2-remapped' });
 
     const start = Date.now();
     const result = await driveTurn({
@@ -454,6 +546,151 @@ describe('driveTurn — session-id remap (DOR-397)', () => {
     // A driver that fell back to the stale subscription would burn the whole
     // 5000ms turn timeout instead of resolving promptly off the remap.
     expect(elapsed).toBeLessThan(2000);
+  });
+
+  it('resumes from the last frame id, so frames ingested during the swap are replayed, not folded into a snapshot', async () => {
+    const runtime = new FakeAgentRuntime();
+    runtime.withScenarios([
+      async function* () {
+        yield { type: 'text_delta', data: { text: 'you selected yes' } } as StreamEvent;
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    ]);
+    // `queue_update` reaches the PRE-rekey connection in the snapshot's own
+    // chunk, so the driver holds an id-bearing frame before it POSTs; the other
+    // two land after the 202, with no connection open to receive them — the
+    // exact shape of the 2026-09-12 widget-round-trip failure.
+    const baseUrl = await startRekeyingServer(runtime, {
+      remappedId: 'sess-rekey-canonical',
+      onColdConnect: ['queue_update'],
+      inTheGap: ['turn_start', 'status_change'],
+    });
+
+    const result = await driveTurn({
+      baseUrl,
+      sessionId: 'sess-rekey',
+      content: 'continue',
+      cwd: '/tmp/proj',
+      timeoutMs: 4000,
+    });
+
+    expect(result.outcome).toBe('done');
+    expect(result.canonicalId).toBe('sess-rekey-canonical');
+    // Nothing is lost and nothing is duplicated: the pre-rekey snapshot and its
+    // frame, then the gap replayed in order, then the live tail. A cold
+    // re-subscribe reports `['snapshot', 'snapshot', 'text_delta', 'turn_end']`
+    // here — the `turn_start` that carries a widget action's trigger is gone.
+    expect(result.frames.map((f) => f.event)).toEqual([
+      'snapshot',
+      'queue_update',
+      'turn_start',
+      'status_change',
+      'text_delta',
+      'turn_end',
+    ]);
+    // Exactly one snapshot: the resumed connection was served none.
+    expect(result.frames.filter((f) => f.event === 'snapshot')).toHaveLength(1);
+  });
+
+  it('falls back to the snapshot cursor when no frame id arrived to echo, and still loses nothing', async () => {
+    const runtime = new FakeAgentRuntime();
+    runtime.withScenarios([
+      async function* () {
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    ]);
+    // The pre-rekey connection collected only the cold snapshot, so there is no
+    // frame id to echo — the resume rides that snapshot's own `cursor` instead.
+    const baseUrl = await startRekeyingServer(runtime, {
+      remappedId: 'sess-cursor-canonical',
+      inTheGap: ['turn_start', 'status_change'],
+    });
+
+    const result = await driveTurn({
+      baseUrl,
+      sessionId: 'sess-cursor',
+      content: 'continue',
+      cwd: '/tmp/proj',
+      timeoutMs: 4000,
+    });
+
+    expect(result.outcome).toBe('done');
+    expect(result.frames.map((f) => f.event)).toEqual([
+      'snapshot',
+      'turn_start',
+      'status_change',
+      'turn_end',
+    ]);
+  });
+
+  it('fails fast when the resumed subscription is refused, instead of waiting out the turn', async () => {
+    // With no snapshot to wait for, a refused resume has nothing to trip the
+    // subscribe gate — without the status check it would sit until the TURN
+    // timeout, which is the slowest possible way to report a broken stream.
+    const live = new Map<string, http.ServerResponse>();
+    server = http.createServer((req, res) => {
+      const url = new URL(req.url ?? '', 'http://x');
+      const sessionId = url.pathname.split('/')[3] as string;
+      if (req.method === 'GET' && url.pathname.endsWith('/events')) {
+        if (req.headers['last-event-id'] !== undefined || url.searchParams.has('after')) {
+          res.writeHead(500).end();
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        res.write(sse('snapshot', { cursor: 0, status: { lifecycle: 'idle' } }));
+        live.set(sessionId, res);
+        return;
+      }
+      res
+        .writeHead(202, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify({ sessionId: 'sess-refused-canonical' }));
+    });
+    await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve));
+    const { port } = server!.address() as AddressInfo;
+
+    const started = Date.now();
+    await expect(
+      driveTurn({
+        baseUrl: `http://127.0.0.1:${port}`,
+        sessionId: 'sess-refused',
+        content: 'continue',
+        cwd: '/tmp/proj',
+        timeoutMs: 8000,
+      })
+    ).rejects.toThrow(DriveError);
+    expect(Date.now() - started).toBeLessThan(4000);
+  });
+
+  it('shows every collected frame to the live observers, the carried ones included', async () => {
+    const runtime = new FakeAgentRuntime();
+    runtime.withScenarios([
+      async function* () {
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    ]);
+    const baseUrl = await startRekeyingServer(runtime, {
+      remappedId: 'sess-observe-canonical',
+      onColdConnect: ['queue_update'],
+      inTheGap: ['turn_start'],
+    });
+
+    let widest: string[] = [];
+    await driveTurn({
+      baseUrl,
+      sessionId: 'sess-observe',
+      content: 'continue',
+      cwd: '/tmp/proj',
+      timeoutMs: 4000,
+      onFrames: (frames) => {
+        if (frames.length > widest.length) widest = frames.map((f) => f.event);
+      },
+    });
+
+    // An observer that only ever saw the post-swap connection would never be
+    // shown `queue_update` — and a per-turn cost guard reading `abortWhen` off
+    // the same list would be counting half a turn.
+    expect(widest).toContain('queue_update');
+    expect(widest).toContain('turn_start');
   });
 });
 

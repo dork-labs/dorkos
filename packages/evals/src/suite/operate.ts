@@ -1,10 +1,21 @@
 /**
- * The operate-DorkOS suite (DOR-435, spec agents-as-operators §1.7): four
+ * The operate-DorkOS suite (DOR-435, spec agents-as-operators §1.7): five
  * outcome-oracle evals proving an agent can OPERATE DorkOS from natural
  * language — edit its own persona, read the activity feed, toggle a setting,
- * and install a package — through the in-session `dorkos` MCP tools landed by
- * the P1 coherence work (operator tools DOR-430, `ui.statusBar` config DOR-431,
- * in-session marketplace tools DOR-429).
+ * install a package, and say what it can do — through the in-session `dorkos`
+ * MCP tools landed by the P1 coherence work (operator tools DOR-430,
+ * `ui.statusBar` config DOR-431, in-session marketplace tools DOR-429).
+ *
+ * EVERY CASE HERE CARRIES AN `approvalPolicy`, and that is not optional
+ * bookkeeping. A credentialed turn that reaches for a tool is asked for
+ * permission, and a case with nobody to answer used to sit out the 90-second
+ * turn guard and report a runner error — measured 2026-09-12, where the three
+ * cases here with no policy were the only three in `core` that timed out.
+ * `runner/approval-driver.ts`'s watcher now fails such a case immediately and
+ * says so; the policies below are what keep it quiet. Each one names only the
+ * tools its task legitimately needs, because everything outside the allowlist is
+ * DENIED — which is what stops an agent that gives up on the right tool and
+ * hand-edits a file from making a filesystem oracle green for the wrong reason.
  *
  * WHY `claude-code-cheap`, WHY `quarantined`: these are model behavior —
  * choosing and calling the right MCP tool from a plain request — which
@@ -27,7 +38,8 @@
  * `quarantined:fail` so nobody mistakes that for coverage.
  *
  * WHAT EACH ORACLE ASSERTS (side effects on the sandbox filesystem / the
- * collected tool stream — never assistant prose):
+ * collected tool stream; the one that reads the final message reads it
+ * literally, against the server's own registry — never as prose judgment):
  * - `agent-self-edit`: the agent used `update_agent`, its seeded `SOUL.md`
  *   persona was rewritten (markers intact), and its immutable identity
  *   (`name`, `isSystem`) is unchanged.
@@ -44,6 +56,10 @@
  *   `requires_confirmation` has a way to finish, which the case could not offer
  *   before DOR-529 — it does NOT yet stop an agent that guesses the harness will
  *   approve and retries inside prompt 1 itself; see the case's own TSDoc.
+ * - `capability-discovery`: the agent's answer NAMES capabilities the running
+ *   server really registers, across several domains, and answering mutated
+ *   nothing. It reads the final message rather than a tool call, and the oracle
+ *   records why that is the honest assertion now.
  *
  * SANDBOXING: every case runs in the harness's `mkdtemp` sandbox (a fresh
  * `DORK_HOME` + project cwd, `runner/sandbox.ts`); no case reads or writes the
@@ -77,8 +93,9 @@ import {
   dirEmptyOrAbsent,
   noBackupSiblings,
 } from '../oracles/filesystem.js';
-import type { Oracle } from '../types.js';
-import { toolInvokedInStream } from '../oracles/stream.js';
+import type { Oracle, OracleResult } from '../types.js';
+import { toolInvokedInStream, toolNameMatches } from '../oracles/stream.js';
+import { finalAssistantMessage } from '../oracles/transcript.js';
 import { approvalDecided } from '../oracles/approvals.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -210,6 +227,11 @@ export const agentSelfEditCase: EvalCase = {
   // container when one is available (falls back to child-process without docker).
   preferDocker: true,
   seed: seedSelfEditAgent,
+  // The one tool the task legitimately needs. `update_agent` carries
+  // `soulContent`, so it writes SOUL.md itself — an agent that gives up and
+  // reaches for `Write` or `Bash` instead is denied, which is the correct
+  // verdict for a case whose first oracle is "it used update_agent".
+  approvalPolicy: { allowTools: ['update_agent'] },
   oracles: [
     toolInvokedInStream('update_agent', 'the agent used update_agent to edit itself'),
     fileMatches(
@@ -316,6 +338,9 @@ export const activityReadCase: EvalCase = {
   quarantined: true,
   perEvalCeilingUsd: 0.5,
   seed: seedActivityEvents,
+  // Read-only by construction: the one read tool the task needs, and a deny for
+  // everything else — which is exactly what `readOnlyOracles` then asserts held.
+  approvalPolicy: { allowTools: ['activity_list'] },
   oracles: [
     toolInvokedInStream('activity_list', 'the agent queried the activity feed'),
     ...readOnlyOracles('the summary'),
@@ -362,6 +387,10 @@ export const configToggleCase: EvalCase = {
   tags: ['core'],
   quarantined: true,
   perEvalCeilingUsd: 0.5,
+  // Read the config, then change it — the two halves of "discover the setting
+  // and set it". Nothing else: an agent that hand-edits `config.json` with a
+  // file tool would satisfy the second oracle for the wrong reason.
+  approvalPolicy: { allowTools: ['config_get', 'config_patch'] },
   oracles: [
     toolInvokedInStream('config_patch', 'the agent used config_patch to change a setting'),
     jsonFileMatches(
@@ -648,29 +677,251 @@ export const marketplaceInstallCase: EvalCase = {
 // capability-discovery
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** How many capabilities the answer must actually EVIDENCE before it is an answer. */
+const EVIDENCED_CAPABILITIES_EXPECTED = 5;
+
+/** How many distinct domains those must span, so one corner of the product is not a whole answer. */
+const NAMED_DOMAINS_EXPECTED = 3;
+
+/** Page size for the catalog read; the server caps it at `MAX_CAPABILITY_LIMIT` (200). */
+const CATALOG_PAGE_SIZE = 200;
+
+/** One capability as the ground-truth read needs it: its id and its MCP tool name. */
+interface CatalogEntry {
+  /** Stable `${domain}.${verb}` id, e.g. `marketplace.install`. */
+  id: string;
+  /** The MCP tool name the agent is actually taught, e.g. `marketplace_install`. */
+  toolName?: string;
+}
+
 /**
- * `capability-discovery` — asked "what can you do in DorkOS?", the agent reaches
- * for the self-description catalog through the `list_capabilities` tool rather
- * than guessing from memory (the Capability Registry discovery proof, spec
- * `capability-registry` §2.6). A pure read: asserts `list_capabilities` fired
- * and that answering the question mutated nothing in the workspace.
+ * Read the running server's OWN capability catalog, every page of it.
+ *
+ * The ground truth for "did the agent describe itself correctly" has to come
+ * from the product, not from a list in this file: a hard-coded roster would be
+ * a second copy of the registry, and the first thing it would do is drift.
+ *
+ * Asks for `detail=full` because the compact projection drops `surfaces`, and
+ * the MCP tool name lives there — `capabilities.list` is the id, but
+ * `list_capabilities` is what an agent writes when it names the thing.
+ *
+ * @param baseUrl - The running harness server.
+ * @returns Every registered capability's id and MCP tool name.
+ */
+async function readCapabilityCatalog(baseUrl: string): Promise<CatalogEntry[]> {
+  const entries: CatalogEntry[] = [];
+  let cursor: string | undefined;
+  do {
+    const query = new URLSearchParams({ detail: 'full', limit: String(CATALOG_PAGE_SIZE) });
+    if (cursor) query.set('cursor', cursor);
+    const res = await fetch(`${baseUrl}/api/capabilities/catalog?${query.toString()}`);
+    if (!res.ok) throw new Error(`GET /api/capabilities/catalog returned ${res.status}`);
+    const body = (await res.json()) as {
+      capabilities?: { id?: unknown; surfaces?: { mcp?: { toolName?: unknown } } }[];
+      nextCursor?: unknown;
+    };
+    for (const entry of body.capabilities ?? []) {
+      if (typeof entry.id !== 'string') continue;
+      const toolName = entry.surfaces?.mcp?.toolName;
+      entries.push({ id: entry.id, ...(typeof toolName === 'string' ? { toolName } : {}) });
+    }
+    cursor =
+      typeof body.nextCursor === 'string' && body.nextCursor !== '' ? body.nextCursor : undefined;
+  } while (cursor);
+  return entries;
+}
+
+/**
+ * Whether `answer` uses `word` as a WHOLE word, allowing a plural `s`.
+ *
+ * Both halves are load bearing. Anchored at both ends, so `ui` matches "UI" and
+ * not "build"; the optional `s`, so "rooms" satisfies `room` and "connectors"
+ * satisfies `connector` — the way a sentence is actually written. An earlier
+ * version left the end unanchored, which let `connector` and `connectors` both
+ * score off the single word "connectors".
+ *
+ * @param answer - The final assistant message, lowercased.
+ * @param word - A domain or verb segment of a capability id.
+ */
+function namesWord(answer: string, word: string): boolean {
+  const safe = word.replace(/[^a-z0-9_]/gi, '');
+  return safe.length > 0 && new RegExp(`\\b${safe}s?\\b`, 'i').test(answer);
+}
+
+/**
+ * Collapse a domain to one key, so a singular/plural pair in the registry
+ * (`connector` and `connectors` are both real) cannot count as two areas of the
+ * product in the domain-spread check.
+ */
+function domainKey(domain: string): string {
+  return domain.endsWith('s') ? domain.slice(0, -1) : domain;
+}
+
+/**
+ * Whether the answer EVIDENCES this capability: it names the identifier
+ * outright, or it names the capability's domain AND every word of its verb.
+ *
+ * The conjunction is what makes this an assertion rather than a word search.
+ * Naming an area of the product is cheap — "connectors and rooms" is two areas
+ * in four words — and saying what you can DO in that area is not. So
+ * `marketplace.install` is evidenced by "Marketplace … Install packages" and
+ * `rooms.read_history` by "Rooms … read history", which is how a real answer is
+ * written, while a fluent sentence that gestures at areas evidences nothing.
+ *
+ * @param answer - The final assistant message, lowercased.
+ * @param entry - One catalog capability.
+ */
+function evidences(answer: string, entry: CatalogEntry): boolean {
+  if (answer.includes(entry.id.toLowerCase())) return true;
+  if (entry.toolName !== undefined && answer.includes(entry.toolName.toLowerCase())) return true;
+  const [domain, verb] = entry.id.split('.');
+  if (domain === undefined || verb === undefined) return false;
+  if (!namesWord(answer, domain)) return false;
+  return verb.split('_').every((part) => namesWord(answer, part));
+}
+
+/**
+ * Oracle: the agent's answer describes capabilities it really has.
+ *
+ * ## WHY THE OUTCOME AND NOT THE TOOL CALL
+ *
+ * This case used to assert that `list_capabilities` fired. That assertion
+ * stopped describing the product: since #1080 an agent is taught its tools BY
+ * NAME in its turn context, so asked what it can do it answers from what it was
+ * given and often never calls the catalog tool. Measured 2/2 on 2026-09-12, and
+ * the answer was correct both times — the case was reporting a red about a
+ * mechanism the product had deliberately replaced with a cheaper one.
+ *
+ * Prompting around it was the alternative and it is the worse one. Wording the
+ * prompt so the model is forced to the tool ("call your catalog tool and…")
+ * would restore the green by testing whether a model follows an instruction,
+ * which is not what "can the agent describe itself" means to anybody.
+ *
+ * ## WHY IT TAKES A DOMAIN *AND* A VERB, MEASURED RATHER THAN ARGUED
+ *
+ * Two earlier versions of this oracle were both wrong, in opposite directions,
+ * and the numbers are worth keeping because they are what settled it. Scored
+ * against the two real runs on disk and three adversarial strings:
+ *
+ * | answer                                     | ids only | domains only | domain+verb |
+ * | ------------------------------------------ | -------- | ------------ | ----------- |
+ * | real run 1 (prose, every claim true)       | 0        | 5            | 32 caps / 5 |
+ * | real run 2 (every claim true)              | 0        | 6            | 37 caps / 6 |
+ * | "my capabilities in the UI, incl. rooms…"  | 0        | 5            | 0           |
+ * | "I can help with all sorts of things"      | 0        | 0            | 0           |
+ *
+ * **Identifiers alone score a correct answer ZERO.** People ask what an agent
+ * can *do* and it replies "post messages in rooms", "install packages" — prose,
+ * not symbols. A check for ids measured whether the model spells tool names,
+ * which is a style preference, not knowledge.
+ *
+ * **Domains alone let a fluent sentence through.** Naming an area is cheap:
+ * "Here are my capabilities in the UI, including connectors and rooms" scored
+ * the same 5 as a real answer, because the question's own word "capabilities"
+ * is a domain and `connector`/`connectors` are two.
+ *
+ * The conjunction separates them by two orders of magnitude — 32 against 0 —
+ * because saying what you can DO in an area is the part you cannot fake by
+ * gesturing at it. An agent that lists identifiers still passes outright.
+ *
+ * ## WHY THIS IS NOT PROSE JUDGMENT
+ *
+ * It is a literal regexp test against ids, tool names, domains and verbs READ
+ * FROM THE RUNNING SERVER. No tone, no quality, no model in the loop — the same
+ * verdict every run, and it moves when the registry moves.
+ *
+ * Whether `list_capabilities` was called is recorded as EVIDENCE rather than as
+ * a verdict, so a future run that shows the tool coming back is visible in the
+ * transcript without anyone re-reading this file to notice.
+ *
+ * ## THE DRILL
+ *
+ * 1. **Seed.** Replace this case's `prompt` with
+ *    `'What can you do? Answer in one short sentence and name nothing specific.'`
+ * 2. **Run it.** `pnpm evals -- --suite capability-discovery --tier
+ *    claude-code-cheap --isolation child-process --budget 0.50`
+ * 3. **Expect.** This oracle RED every time, with a detail reading
+ *    `evidenced 0 of` or close to it — that part is structural. The
+ *    `readOnlyOracles` beside it stay green, because a vague answer still
+ *    changes nothing; that part is not a signal either way.
+ * 4. **Reproduction vs noise.** A real drill red names an evidenced count below
+ *    the bar. A red whose detail says the catalog could not be READ is a run
+ *    that never reached the oracle at all — repeat it rather than banking it.
+ * 5. **Where to read the answer.** Selecting only quarantined cases always exits
+ *    non-zero, so the exit code says nothing. Read
+ *    `.evals-runs/<run id>/results.json`, and restore the prompt afterwards.
+ */
+const answerNamesRealCapabilities: Oracle = async (ctx): Promise<OracleResult> => {
+  const answer = finalAssistantMessage(ctx.frames).toLowerCase();
+  let catalog: CatalogEntry[];
+  try {
+    catalog = await readCapabilityCatalog(ctx.baseUrl);
+  } catch (err) {
+    return {
+      label: 'the answer describes capabilities the agent really has',
+      passed: false,
+      evidence: { error: err instanceof Error ? err.message : String(err) },
+      detail: 'could not read the capability catalog to check the answer against',
+    };
+  }
+
+  const evidenced = catalog.filter((entry) => evidences(answer, entry));
+  const domains = new Set(evidenced.map((entry) => domainKey(entry.id.split('.')[0] as string)));
+  const passed =
+    evidenced.length >= EVIDENCED_CAPABILITIES_EXPECTED && domains.size >= NAMED_DOMAINS_EXPECTED;
+
+  return {
+    label: 'the answer describes capabilities the agent really has',
+    passed,
+    evidence: {
+      registered: catalog.length,
+      evidenced: evidenced.map((entry) => entry.id).sort(),
+      domains: [...domains].sort(),
+      answerChars: answer.length,
+      // Not a verdict: the catalog tool is one way to answer, no longer the only
+      // one. Recorded so a change of behavior is readable off the transcript.
+      calledListCapabilities: ctx.frames.some((frame) =>
+        toolNameMatches(
+          (frame.data as { toolName?: string } | undefined)?.toolName,
+          'list_capabilities'
+        )
+      ),
+    },
+    ...(passed
+      ? {}
+      : {
+          detail:
+            `the answer evidenced ${evidenced.length} of the registry's ${catalog.length} ` +
+            `capabilities across ${domains.size} domain(s) (${[...domains].sort().join(', ') || 'none'}); ` +
+            `this case wants at least ${EVIDENCED_CAPABILITIES_EXPECTED} across ${NAMED_DOMAINS_EXPECTED}`,
+        }),
+  };
+};
+
+/**
+ * `capability-discovery` — asked "what can you do in DorkOS?", the agent gives an
+ * answer grounded in the capabilities it really has (the Capability Registry
+ * discovery proof, spec `capability-registry` §2.6). A pure read: asserts the
+ * answer against the registry the server serves, and that answering mutated
+ * nothing in the workspace.
+ *
+ * It asserts the OUTCOME rather than the catalog tool call, and
+ * {@link answerNamesRealCapabilities} records why — and why a capability counts
+ * only when the answer names its domain AND what it does there.
  */
 export const capabilityDiscoveryCase: EvalCase = {
   id: 'capability-discovery',
-  title: 'Capability discovery — the agent lists what it can do via list_capabilities',
+  title: 'Capability discovery — the agent describes capabilities it really has',
   prompt: 'What can you do in DorkOS? List the capabilities and actions available to you here.',
   runtimeTier: 'claude-code-cheap',
   costClass: 'cheap',
   tags: ['core'],
   quarantined: true,
   perEvalCeilingUsd: 0.5,
-  oracles: [
-    toolInvokedInStream(
-      'list_capabilities',
-      'the agent discovered its capabilities via the catalog'
-    ),
-    ...readOnlyOracles('discovering capabilities'),
-  ],
+  // Read-only: the catalog tool is allowed for an agent that still reaches for
+  // it, and everything else is denied — which is what `readOnlyOracles` asserts.
+  approvalPolicy: { allowTools: ['list_capabilities'] },
+  oracles: [answerNamesRealCapabilities, ...readOnlyOracles('discovering capabilities')],
 };
 
 /** Every operate-DorkOS case, in registration order. */

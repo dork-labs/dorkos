@@ -464,7 +464,18 @@ A case now carries an `approvalPolicy` saying what it answers
 (`runner/approval-driver.ts`). It allows the named tools past prompt 1 and
 **denies everything else**, and it decides at most one named capability at
 prompt 2 — never a blanket yes, so a "denied" case cannot inherit a "granted"
-case's approval.
+case's approval. A case with NO policy is not left to stall: the first prompt it
+receives fails it with a sentence saying which tool asked and that the case needs
+a policy.
+
+Prompt 2 also changed shape, which matters for what an oracle can read. A
+destructive capability no longer returns `approval_required` and ends the turn —
+it HOLDS (DOR-939/DOR-987), pushing the operator's card onto the session's own
+stream and resuming the same call with the answer. So the tool result the model
+receives is the ENDING (`uninstalled`, `denied`, or — since DOR-1932 —
+`approval_no_longer_valid` when nobody answered in time), and the ASK is the
+`capability_approval_required` frame on the stream. The driver still polls
+`GET /api/approvals/pending` to decide, which works either way.
 
 The harness is a legitimate decider here, not a hole in the gate. Deciding is
 refused for anyone presenting an agent identity or an approval token
@@ -559,19 +570,28 @@ statuses.
 
 ### Where each case stands
 
-Reset on 2026-07-25 to the 8-run stability sample above. The counts below are
-runs that reached the oracles with everything green, so they exclude the 2 drill
-runs, which tested the oracles rather than the cases.
+**Reset to zero on 2026-09-12, when the gate oracle was rewritten.** The counts
+below are runs that reached the oracles with everything green.
 
-| Case                          | Green verdicts | Last recorded | Evidence                              |
-| ----------------------------- | -------------- | ------------- | ------------------------------------- |
-| `governance-approval-granted` | 2 of 3         | 2026-07-25    | 3 runs, 1 timed out before any oracle |
-| `governance-approval-denied`  | 2 of 3         | 2026-07-25    | 3 runs, 1 timed out before any oracle |
-| `governance-approval-expires` | 2 of 3         | 2026-07-25    | 2 runs, both green                    |
+| Case                          | Green verdicts | Last recorded | Evidence                                           |
+| ----------------------------- | -------------- | ------------- | -------------------------------------------------- |
+| `governance-approval-granted` | 0 of 3         | 2026-09-12    | reset: the oracle that scored the old rows is gone |
+| `governance-approval-denied`  | 0 of 3         | 2026-09-12    | reset: same                                        |
+| `governance-approval-expires` | 0 of 3         | 2026-09-12    | reset: same                                        |
 
-The earlier seeded counts were dropped rather than carried forward: two of those
-greens came from the same drill session on the same day, which is one
-confirmation looked at twice.
+Why the reset rather than a carry-forward. The rows here read `2 of 3` each,
+dated 2026-07-25, and those greens were earned by `tierGateStoppedTheUninstall`
+— an oracle that read the gate's `approval_required` payload off the
+`marketplace_uninstall` result. The gate stopped answering that way when it
+learned to HOLD in-session (DOR-939/DOR-987, 2026-08-06) and the unanswered
+ending changed again with DOR-1932 (2026-09-12): a run on 2026-09-12 saw all
+three cases fail that one oracle while every other oracle in them passed and the
+product did exactly the right thing. Its replacement,
+`tierGateHeldTheUninstall`, reads the inline `capability_approval_required`
+card, and each case gained an ending oracle (`uninstallEndedWith`) for what the
+agent was actually told. A count earned by an oracle that no longer exists is not
+evidence about the one that replaced it, so the bar is re-earned from zero — the
+same rule the bar itself states for an oracle going red.
 
 **Record the run directory when you add a row.** `results.json` and the JSONL
 transcripts under `.evals-runs/<run id>/` are what let a later reader check a row
@@ -709,6 +729,17 @@ absolute pass rates will not reproduce anywhere else. Setting
 `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) is the one-line fix, and it
 is what a number worth recording should be measured under.
 
+**Be concrete about what "yours" means on that row, because a transcript will
+show it and it looks like a bug.** The turn reads your `~/.claude` in full: your
+user-level `CLAUDE.md`, your `settings.json`, and every skill, agent, command and
+plugin you have installed. So an eval transcript on a keychain run can carry a
+tool or a skill nothing in this repo defines — `statusline-setup`, say, seen on
+the 2026-09-12 run — and that is the documented behavior of this row, not a leak
+and not a harness fault. It is also a real confound: one case has already failed
+because the model spent its turn reasoning about a `SessionStart` hook from an
+unrelated plugin. If a number matters, measure it under one of the other three
+rows, all of which get the clean sandbox config directory.
+
 Nothing is copied into the sandbox except the sign-in file, and only when the run
 actually needs it — a run holding a key or a token never has a credential written
 into a directory a failed eval may deliberately keep. On the one row that does
@@ -811,7 +842,13 @@ Cases live in `src/suite/`. Register a new one in `src/suite/index.ts`. Give it
 oracles that read the API, the filesystem, or the collected stream, and start it
 `quarantined: true` until credentialed runs show it is stable — see the bar above.
 A case that drives a tool also needs an `approvalPolicy`, or its turn will park on
-the first permission prompt. Each new oracle owes a drill.
+the first permission prompt. **You will be told rather than left to wonder**: a
+case with no policy runs a watcher instead of a driver, and the first permission
+prompt it sees fails the eval immediately, naming the tool and the fix. It used
+to sit out the 90-second turn guard and report a timeout, which reads like an
+infrastructure flake and is not one — on 2026-09-12 the only three `core` cases
+with no policy were the only three that timed out, twice each, costing about 95
+seconds a run and reporting nothing. Each new oracle owes a drill.
 
 **Mind the tags, because they decide the bill.** `pnpm evals:local` runs `core`
 against a real model, so a free `test-mode` case tagged `core` would quietly

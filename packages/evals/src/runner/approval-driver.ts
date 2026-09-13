@@ -17,17 +17,27 @@
  *    agent-communication allowlists (`messaging/interactive-handlers.ts`). It
  *    emits an `approval_required` SessionEvent onto the durable stream and waits
  *    ten minutes. Answered at `POST /api/sessions/:id/approve|deny`.
- * 2. **The capability tier gate.** A `destructive` capability returns an
- *    `approval_required` PAYLOAD instead of running, and records a pending
- *    approval a person decides at `POST /api/approvals/:id/grant|deny`. Two-hour
- *    window. This is the governance mechanism itself.
+ * 2. **The capability tier gate.** A `destructive` capability records a pending
+ *    approval a person decides at `POST /api/approvals/:id/grant|deny`, with a
+ *    two-hour window. This is the governance mechanism itself. Since
+ *    DOR-939/DOR-987 the call HOLDS while that decision is outstanding and
+ *    resumes in the same turn, so what the model eventually receives is the
+ *    ENDING rather than the ask.
  *
  * They are answered differently on purpose. Prompt 1 rides the SSE stream the
  * drive loop is already collecting, so it is answered REACTIVELY from
- * {@link ApprovalDriver.observe}. Prompt 2 has no stream event of its own that is
- * reliably ahead of the agent's retry, so it is answered by POLLING
+ * {@link ApprovalDriver.observe}. Prompt 2 is answered by POLLING
  * `GET /api/approvals/pending` — the same endpoint the cockpit's "Waiting On You"
  * card is built from.
+ *
+ * The hold does now put a `capability_approval_required` frame on the same
+ * stream, and an earlier version of this note said no such event existed. The
+ * poll stays anyway, and deliberately: it is the surface a PERSON answers from,
+ * so answering there keeps the harness in the operator's posture rather than in
+ * a session-scoped one, and it also reaches an approval raised by a path that
+ * has no session to draw a card in. The frame is what the governance ORACLES
+ * read (`suite/governance.ts`), which is a different question from how the
+ * decision is sent.
  *
  * ## Why this is a legitimate decider, not a bypass
  *
@@ -420,4 +430,88 @@ export class ApprovalDriver {
 /** One-line description of an unknown thrown value. */
 function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Raised by {@link unansweredPromptWatcher} the moment a turn parks on a
+ * permission prompt its case has nobody to answer.
+ *
+ * A distinct class so the diagnosis survives the trip out through the drive
+ * loop's observer seam, which reports whatever an observer throws.
+ */
+export class UnansweredApprovalPromptError extends Error {
+  /**
+   * Build the error naming the tool whose prompt nothing was going to answer.
+   *
+   * @param toolName - The prompted tool, as the durable frame carried it.
+   */
+  constructor(readonly toolName: string) {
+    super(
+      `The turn asked permission to run "${toolName}" and this case has no approvalPolicy, so ` +
+        'nothing was going to answer it. Give the case an approvalPolicy naming the tools it ' +
+        'legitimately needs (everything else is denied); see ApprovalPolicy in types.ts and the ' +
+        '"Adding a case" section of the evals README.'
+    );
+    this.name = 'UnansweredApprovalPromptError';
+  }
+}
+
+/**
+ * The frame observer a case with NO {@link ApprovalPolicy} runs instead of a
+ * driver: it fails the eval the instant a prompt arrives that nothing will
+ * answer.
+ *
+ * WHY A WATCHER RATHER THAN A REGISTRATION-TIME RULE. Whether a case drives a
+ * tool is not knowable from its definition — it depends on what the model
+ * reaches for — so a static "credentialed cases must declare a policy" check
+ * would refuse cases that are genuinely read-only AND would still miss a case
+ * whose model surprises it. The property that actually matters is observable and
+ * exact: a prompt arrived and nobody was listening. This asserts THAT.
+ *
+ * WHY NOT A DEFAULT POLICY. An implicit allowlist would be a blanket yes nobody
+ * wrote down, and the governance suite's whole argument is that a case must name
+ * what it consents to. An implicit deny-all would keep turns moving while
+ * quietly running a weaker test than the case's author believed — which is how
+ * three `core` cases spent 90 seconds each, twice, producing nothing (measured
+ * 2026-09-12: `agent-self-edit`, `activity-read` and `config-toggle` were
+ * exactly the three cases with no policy, and exactly the three that timed out).
+ *
+ * ## IT FIRES ON EXACTLY THE FRAMES THE DRIVER WOULD HAVE ANSWERED
+ *
+ * The two read the same fields through the same {@link FRAME_K} pin and apply
+ * the same narrowing — a prompt needs BOTH a `toolCallId` and a tool name — so
+ * they are the two halves of one rule: with a policy the prompt is answered,
+ * without one it fails the case. Anything looser would be a different rule
+ * wearing the same name, and the difference would show up as a case failing on
+ * something the driver could never have answered anyway.
+ *
+ * That narrowing is not decoration. `approval_required` is the RUNTIME's
+ * per-tool permission prompt and always names one; a frame carrying the type
+ * and no tool is not a prompt this harness can answer or a case can write a
+ * policy for, so it is ignored rather than turned into a red nobody can act on.
+ * The capability tier gate's own ask is a DIFFERENT event
+ * (`capability_approval_required`) and never reaches here — which is what keeps
+ * a governance case, whose whole subject is an ask, from tripping a guard about
+ * unanswered ones. All three of those declare policies today; keep it that way.
+ *
+ * A prompt seen once is enough. The drive loop re-parses the whole buffer on
+ * every chunk, so this throws on the first parse that contains one and never
+ * needs to dedupe.
+ *
+ * @returns An `onFrames` observer for {@link OpenStreamOptions.onFrames}.
+ * @throws {UnansweredApprovalPromptError} On the first answerable permission prompt.
+ */
+export function unansweredPromptWatcher(): (frames: SseFrame[]) => void {
+  return (frames) => {
+    for (const frame of frames) {
+      const data = frame.data as ApprovalRequiredFrameData | undefined;
+      if (frame.event !== APPROVAL_REQUIRED && data?.type !== APPROVAL_REQUIRED) continue;
+      // The same two fields, read the same way, as `ApprovalDriver.observe`.
+      const rawId = data?.[FRAME_K.id];
+      if (typeof rawId !== 'string' || rawId === '') continue;
+      const rawToolName = data?.[FRAME_K.toolName];
+      if (typeof rawToolName !== 'string' || rawToolName === '') continue;
+      throw new UnansweredApprovalPromptError(rawToolName);
+    }
+  };
 }
