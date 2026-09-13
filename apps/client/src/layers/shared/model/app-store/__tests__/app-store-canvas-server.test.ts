@@ -30,6 +30,11 @@ import { MAX_CANVAS_DOCUMENTS } from '@/layers/shared/lib/constants';
 import { useAppStore } from '../app-store';
 import { setSessionCanvasTransport, type SessionCanvasTransport } from '../app-store-canvas';
 
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+
+// Imported after the mock so the spy is the one the slice calls.
+const { toast } = await import('sonner');
+
 const SESSION = 'sess-1';
 
 const fileDoc = (path: string): UiCanvasContent => ({ type: 'file', sourcePath: path });
@@ -351,6 +356,147 @@ describe('CanvasSlice — the server’s table, as this window holds it', () => 
       // optimistic apply stands on its own, which is what this slice always did.
       expect(() => useAppStore.getState().openCanvasDocument(fileDoc('a.ts'))).not.toThrow();
       expect(useAppStore.getState().openDocuments).toHaveLength(1);
+    });
+  });
+
+  /**
+   * A session the server has not heard of YET (DOR-2016).
+   *
+   * `POST /api/sessions/:id/canvas` refuses an id no projector and no runtime
+   * binding knows, which is what keeps a canvas out of a scope nothing can ever
+   * reclaim. The window it leaves open is small and completely ordinary: a
+   * session that has never taken a turn, and a person who opens a file from the
+   * tree as their very first action, before the durable stream has attached. The
+   * open was reverted and they were told "Session not found" about a session
+   * they were looking at.
+   *
+   * Seeded defects, each run red before the fix stood:
+   *
+   * - Reverting on that refusal (the old `writeThrough` catch) reddens the two
+   *   held-write cases: the tab disappears and the toast is spoken.
+   * - Replacing `openDocuments` wholesale on hydrate reddens the settle case:
+   *   the snapshot takes the optimistic row off screen and the retry's answer
+   *   has nothing left to land on.
+   * - Firing the held writes together instead of in sequence reddens the order
+   *   case about half the time; sequencing makes it deterministic.
+   */
+  describe('a session whose stream has not attached yet', () => {
+    beforeEach(() => {
+      // The slice's toast is a module-level spy shared by every test in the
+      // file, and "nobody was told anything" is an assertion about THIS test.
+      vi.mocked(toast.error).mockClear();
+    });
+
+    /**
+     * Let every pending rejection handler run.
+     *
+     * `vi.waitFor` on the call count returns while the request's own rejection
+     * is still a queued microtask, so a test that asserted straight afterwards
+     * would be measuring the moment BEFORE the slice decided anything — and
+     * would pass whatever the slice went on to do.
+     */
+    const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+    /** The refusal the route answers for an id it cannot place. */
+    function sessionNotFound(): Error & { code: string; status: number } {
+      return Object.assign(new Error('Session not found'), {
+        code: 'SESSION_NOT_FOUND',
+        status: 404,
+      });
+    }
+
+    it('keeps the document on screen and says nothing, then lands it on attach', async () => {
+      const open = vi
+        .fn()
+        .mockRejectedValueOnce(sessionNotFound())
+        .mockImplementation((_id: string, content: UiCanvasContent) =>
+          Promise.resolve(serverDocument({ id: 'server-doc', content }))
+        );
+      setSessionCanvasTransport(fakeTransport({ openSessionCanvasDocument: open }));
+
+      useAppStore.getState().openCanvasDocument(fileDoc('a.ts'));
+      await settle();
+      expect(open).toHaveBeenCalledTimes(1);
+      // Still there, still theirs, and nobody was told anything went wrong.
+      expect(useAppStore.getState().openDocuments).toHaveLength(1);
+      expect(useAppStore.getState().openDocuments[0]!.id).toMatch(/^pending:/);
+      expect(toast.error).not.toHaveBeenCalled();
+
+      // The stream attaches: an empty snapshot, because the server really does
+      // hold nothing for this session yet.
+      useAppStore.getState().hydrateCanvasFromSnapshot(SESSION, []);
+      await vi.waitFor(() => {
+        expect(useAppStore.getState().openDocuments[0]!.id).toBe('server-doc');
+      });
+      expect(open).toHaveBeenCalledTimes(2);
+      expect(toast.error).not.toHaveBeenCalled();
+      expect(useAppStore.getState().activeCanvasDocumentId).toBe('server-doc');
+    });
+
+    it('sends two held writes in the order they were made', async () => {
+      const sent: string[] = [];
+      let refuse = true;
+      const open = vi.fn().mockImplementation((_id: string, content: UiCanvasContent) => {
+        if (refuse) return Promise.reject(sessionNotFound());
+        sent.push((content as { sourcePath: string }).sourcePath);
+        return Promise.resolve(
+          serverDocument({
+            id: `server-${(content as { sourcePath: string }).sourcePath}`,
+            content,
+          })
+        );
+      });
+      setSessionCanvasTransport(fakeTransport({ openSessionCanvasDocument: open }));
+
+      useAppStore.getState().openCanvasDocument(fileDoc('first.ts'));
+      useAppStore.getState().openCanvasDocument(fileDoc('second.ts'));
+      await settle();
+      expect(open).toHaveBeenCalledTimes(2);
+      expect(useAppStore.getState().openDocuments).toHaveLength(2);
+      expect(toast.error).not.toHaveBeenCalled();
+
+      refuse = false;
+      useAppStore.getState().hydrateCanvasFromSnapshot(SESSION, []);
+      await vi.waitFor(() => {
+        expect(sent).toEqual(['first.ts', 'second.ts']);
+      });
+      expect(useAppStore.getState().openDocuments.map((d) => d.id)).toEqual([
+        'server-first.ts',
+        'server-second.ts',
+      ]);
+    });
+
+    it('reverts and says so for a session that really is not there', async () => {
+      setSessionCanvasTransport(
+        fakeTransport({ openSessionCanvasDocument: vi.fn().mockRejectedValue(sessionNotFound()) })
+      );
+      // The stream attached and the server answered: this window knows the
+      // session exists. A refusal now is the ghost-id 404 the route is for.
+      useAppStore.getState().hydrateCanvasFromSnapshot(SESSION, []);
+
+      useAppStore.getState().openCanvasDocument(fileDoc('a.ts'));
+      await vi.waitFor(() => {
+        expect(useAppStore.getState().openDocuments).toHaveLength(0);
+      });
+      expect(toast.error).toHaveBeenCalledWith(
+        'That did not reach your canvas',
+        expect.objectContaining({ description: 'Session not found' })
+      );
+    });
+
+    it('gives up after one retry, rather than holding a write for ever', async () => {
+      setSessionCanvasTransport(
+        fakeTransport({ openSessionCanvasDocument: vi.fn().mockRejectedValue(sessionNotFound()) })
+      );
+      useAppStore.getState().openCanvasDocument(fileDoc('a.ts'));
+      await settle();
+      expect(useAppStore.getState().openDocuments).toHaveLength(1);
+
+      useAppStore.getState().hydrateCanvasFromSnapshot(SESSION, []);
+      await vi.waitFor(() => {
+        expect(useAppStore.getState().openDocuments).toHaveLength(0);
+      });
+      expect(toast.error).toHaveBeenCalled();
     });
   });
 });

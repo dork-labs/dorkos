@@ -278,6 +278,17 @@ export interface CanvasSlice {
    */
   canvasSessionId: string | null;
   /**
+   * Whether the bound session's durable stream has delivered its cold snapshot
+   * yet — which is the same fact as "the server knows this session" (DOR-2016).
+   *
+   * Attaching the stream is what creates the session's projector, and the
+   * projector is what `POST /api/sessions/:id/canvas` looks for before it will
+   * mint a scope. So a write refused while this is `false` is held rather than
+   * reverted, and a write refused while it is `true` names a session that really
+   * is not there.
+   */
+  canvasStreamAttached: boolean;
+  /**
    * Bind the slice to a session and empty it, ready for the snapshot to fill.
    *
    * A RESET rather than a read: the table comes from `snapshot.canvas` on the
@@ -544,6 +555,31 @@ function isPendingId(id: string): boolean {
 }
 
 /**
+ * Whether the server refused this write because it does not know the session
+ * YET (DOR-2016).
+ *
+ * `POST /api/sessions/:id/canvas` is the one verb that can mint a scope, so it
+ * refuses an id neither a projector nor a runtime binding knows — which is the
+ * only thing keeping a canvas out of a scope nothing can ever reclaim. A session
+ * that has never taken a turn has no runtime binding, so for the moment between
+ * a window mounting and its durable stream attaching, that refusal is aimed at a
+ * session that is perfectly real.
+ *
+ * Read off the `code` rather than the sentence: the sentence is the server's
+ * prose and free to change, the code is the contract.
+ *
+ * @param err - Whatever the transport rejected with.
+ * @returns Whether this is the not-known-yet refusal.
+ */
+function isSessionNotFound(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    (err as { code?: string }).code === 'SESSION_NOT_FOUND'
+  );
+}
+
+/**
  * Fold one of the server's rows into the shape this slice holds, keeping the
  * per-viewer fields of the row it replaces.
  *
@@ -582,6 +618,15 @@ export const createCanvasSlice: StateCreator<
   CanvasSlice
 > = (set, get) => {
   /**
+   * Writes the server refused because it did not know the session YET, kept in
+   * the order they were made and sent when its stream attaches (DOR-2016).
+   *
+   * Emptied on every bind, so a write can only ever land on the session it was
+   * made for.
+   */
+  const heldWrites: { sessionId: string; retry: () => Promise<void> }[] = [];
+
+  /**
    * Run one write against the session this slice is bound to, and put the local
    * table back the way it was if it fails.
    *
@@ -598,10 +643,63 @@ export const createCanvasSlice: StateCreator<
     // No transport bound — a test, or a shell with no server. The optimistic
     // apply stands on its own, which is exactly what this slice used to do.
     if (!transport || sessionId === null) return;
-    void write(transport, sessionId).catch((err: unknown) => {
-      if (get().canvasSessionId === sessionId) revert();
-      reportWriteFailure(err);
-    });
+    const attempt = (isRetry: boolean, attachedWhenSent: boolean): Promise<void> =>
+      write(transport, sessionId).then(
+        () => undefined,
+        (err: unknown) => {
+          // **Not known YET is not "not there"** (DOR-2016). A session that has
+          // never taken a turn is refused until its durable stream attaches, and
+          // the person who opened a file as their very first action did nothing
+          // wrong. Hold the write, leave what they opened on screen, and send it
+          // the moment the snapshot says the server knows the session. Held once
+          // only: a second refusal after the stream attached really is a session
+          // that is not there, and it gets the sentence.
+          //
+          // Judged on whether the stream was attached when this was SENT, not on
+          // what is true now: a snapshot that arrives while the request is in
+          // flight would otherwise turn the same refusal into a revert, which is
+          // the race at its narrowest rather than a different case.
+          if (
+            !isRetry &&
+            isSessionNotFound(err) &&
+            get().canvasSessionId === sessionId &&
+            !attachedWhenSent
+          ) {
+            // Already attached — the snapshot landed while this was in flight,
+            // so there is nothing left to wait for.
+            if (get().canvasStreamAttached) return attempt(true, true);
+            heldWrites.push({ sessionId, retry: () => attempt(true, true) });
+            return;
+          }
+          if (get().canvasSessionId === sessionId) revert();
+          reportWriteFailure(err);
+        }
+      );
+    void attempt(false, get().canvasStreamAttached);
+  }
+
+  /**
+   * Send everything held for this session, in the order it was written.
+   *
+   * SEQUENTIAL rather than fired together: two opens in the order a person made
+   * them are two rows in that order on the server, and the LRU that caps the
+   * table evicts by recency. Firing both at once would hand the ordering to
+   * whichever request happened to finish first.
+   *
+   * Anything held for another session is dropped rather than carried: the slice
+   * empties on every bind, so a retry for a session this window has left would
+   * write a row nothing here is showing.
+   *
+   * @param sessionId - The session whose stream has just attached.
+   */
+  function flushHeldWrites(sessionId: string): void {
+    if (heldWrites.length === 0) return;
+    const mine = heldWrites.filter((held) => held.sessionId === sessionId);
+    heldWrites.length = 0;
+    void mine.reduce<Promise<void>>(
+      (previous, held) => previous.then(held.retry),
+      Promise.resolve()
+    );
   }
 
   /**
@@ -943,26 +1041,40 @@ export const createCanvasSlice: StateCreator<
     setCanvasPreferredWidth: (width) => set({ canvasPreferredWidth: width }),
 
     canvasSessionId: null,
+    canvasStreamAttached: false,
 
     loadCanvasForSession: (sessionId) => {
       for (const documentId of [...editHeartbeats.keys()]) stopHeartbeat(documentId);
+      // Whatever was held for the session being left has nothing here to land
+      // for any more — this bind empties the table it would have written to.
+      heldWrites.length = 0;
       set({
         canvasOpen: false,
         openDocuments: [],
         activeCanvasDocumentId: null,
         activeBrowserDocumentId: null,
         canvasSessionId: sessionId,
+        canvasStreamAttached: false,
         // Browser history is in-memory only; a session switch starts fresh so it
         // never carries the previous session's histories (and never unbounded).
         browserHistories: {},
       });
     },
 
-    hydrateCanvasFromSnapshot: (sessionId, documents) =>
+    hydrateCanvasFromSnapshot: (sessionId, documents) => {
       set((s) => {
         if (s.canvasSessionId !== sessionId) return {};
         const previous = new Map(s.openDocuments.map((d) => [d.id, d]));
-        const hydrated = documents.map((row) => fromServer(row, previous.get(row.id)));
+        // **Rows this window has not heard back about survive the replace**
+        // (DOR-2016). The snapshot is authoritative about what the SERVER holds,
+        // and a `pending:` row is by definition something it has not been told
+        // about yet — dropping it here would take a document off screen and then
+        // strand the answer, because the settle looks for a row that is gone.
+        const stillInFlight = s.openDocuments.filter((d) => isPendingId(d.id));
+        const hydrated = [
+          ...documents.map((row) => fromServer(row, previous.get(row.id))),
+          ...stillInFlight,
+        ];
         return {
           openDocuments: hydrated,
           // Re-derived rather than dropped: a reconnect is not a reason to
@@ -971,8 +1083,15 @@ export const createCanvasSlice: StateCreator<
           ...reconcileActiveIds(hydrated, s),
           canvasOpen: s.canvasOpen || hydrated.length > 0,
           browserHistories: pruneBrowserHistories(s.browserHistories, hydrated),
+          // The snapshot IS the attach: the stream that carried it is the same
+          // one whose projector the server looks for before it accepts a write.
+          canvasStreamAttached: true,
         };
-      }),
+      });
+      // Outside the `set` because it starts requests: a state updater that
+      // reached the network would fire again on every retried render.
+      if (get().canvasSessionId === sessionId) flushHeldWrites(sessionId);
+    },
 
     applyCanvasEvent: (sessionId, event) =>
       set((s) => {

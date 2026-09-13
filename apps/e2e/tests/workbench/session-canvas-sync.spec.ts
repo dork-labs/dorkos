@@ -308,3 +308,73 @@ test.describe('A canvas survives the first-turn rename @smoke', () => {
     await expect(page.getByRole('tab', { name: IMPORTED_TAB })).toBeVisible({ timeout: 20_000 });
   });
 });
+
+/**
+ * Opening a file as the very FIRST thing you do on a new session (DOR-2016).
+ *
+ * `POST /api/sessions/:id/canvas` refuses an id no projector and no runtime
+ * binding knows, which is what keeps a canvas out of a scope nothing can ever
+ * reclaim. A session that has never taken a turn has no binding, and the
+ * projector is created by its durable stream attaching — so between the window
+ * mounting and the socket connecting, that refusal was aimed at a session the
+ * person was looking at. The document vanished and they were told "Session not
+ * found".
+ *
+ * The window is held open here by keeping the stream's SOCKET shut, which is why
+ * this lives in a browser at all: the durable stream is a WebSocket, so the
+ * ordinary request interception never sees it, and a first version of this
+ * passed while the open quietly returned 201. The POST statuses are asserted for
+ * that reason — `404` then `201` is the whole case, and without it the test
+ * proves nothing while looking exactly the same.
+ */
+test.describe('A file opened before the session stream attaches @smoke', () => {
+  test.describe.configure({ timeout: 120_000 });
+
+  test('lands once the stream is there, and says nothing in the meantime', async ({
+    page,
+    rightPanel,
+  }) => {
+    const seeded = await page.request.post('/api/test/seed-agent');
+    expect(seeded.ok(), 'could not seed an agent to open the conversation in').toBe(true);
+    const { agentDir } = (await seeded.json()) as { agentDir: string };
+    const sessionId = randomUUID();
+
+    const canvasPosts: number[] = [];
+    page.on('response', (res) => {
+      if (res.request().method() !== 'POST') return;
+      if (/\/sessions\/[^/]+\/canvas$/.test(new URL(res.url()).pathname)) {
+        canvasPosts.push(res.status());
+      }
+    });
+
+    let attachStream!: () => void;
+    const held = new Promise<void>((resolve) => (attachStream = resolve));
+    await page.routeWebSocket('**/api/sessions/**', (socket) => {
+      void held.then(() => socket.connectToServer());
+    });
+
+    await rightPanel.goto(`/session?session=${sessionId}&dir=${encodeURIComponent(agentDir)}`);
+    await rightPanel.ensureTabStripOpen();
+    await rightPanel.canvasTab.click();
+    await page.getByRole('button', { name: /^Markdown/ }).click();
+
+    // The document is on screen, and the refusal was not made the person's
+    // problem: it is the client's to retry.
+    await expect(page.getByRole('tab', { name: DOCUMENT_TAB })).toBeVisible();
+    await expect.poll(() => canvasPosts.length, { timeout: 15_000 }).toBeGreaterThan(0);
+    expect(canvasPosts[0], 'the first open must have met the not-known-yet refusal').toBe(404);
+    await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
+    await expect(page.getByRole('tab', { name: DOCUMENT_TAB })).toBeVisible();
+
+    // The stream attaches, and the held write goes out.
+    attachStream();
+    await expect.poll(() => canvasPosts, { timeout: 20_000 }).toContain(201);
+    await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
+
+    // On the SERVER, not just on screen — and still there after a reload.
+    await page.reload();
+    await rightPanel.ensureTabStripOpen();
+    await rightPanel.canvasTab.click();
+    await expect(page.getByRole('tab', { name: DOCUMENT_TAB })).toBeVisible({ timeout: 20_000 });
+  });
+});
