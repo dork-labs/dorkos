@@ -43,7 +43,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { cpus, loadavg, tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 
 /**
@@ -93,6 +93,27 @@ import { initBoundary } from '../../../lib/boundary.js';
 // that ABORTS mid-projection leaves work running into the next one — so the
 // budget is raised rather than the waits shortened.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
+
+/**
+ * A wall-clock ceiling for a real filesystem event, widened by how busy the machine is.
+ *
+ * Every budget it produces is a CEILING on waiting for something to happen, paid
+ * in full only when that thing never happens — so widening it never makes an
+ * assertion pass, it only stops a healthy watcher from being called broken.
+ * A fixed ceiling cannot do that job here: this repo runs several agents' suites
+ * at once, and at a load average of 40-166 the same work that takes two seconds
+ * alone takes tens of seconds, which is how a thirty-second budget reddened a
+ * green watcher in a package the offending branch never touched (DOR-2012).
+ *
+ * Sampled once per module load, which is when the budgets below are computed.
+ *
+ * @param baseMs - The budget a quiet machine needs.
+ * @returns That budget multiplied by the per-core load average, clamped to 4x.
+ */
+function loadScaledMs(baseMs: number): number {
+  const perCore = loadavg()[0] / Math.max(1, cpus().length);
+  return Math.round(baseMs * Math.min(4, Math.max(1, perCore)));
+}
 
 let repo = '';
 let dorkHome = '';
@@ -1162,28 +1183,61 @@ describe('harness.autoSync gates the whole trigger', () => {
 });
 
 describe('stop() gives every handle back', () => {
-  it('survives fifty start/stop cycles without leaking watch handles', async () => {
-    const baseline = watchHandleCount();
-    // One open watcher holds three handles here (the skills root and what is
-    // under it), so a `stop()` that closed nothing would leave a hundred and
-    // fifty behind. The reviewer of DOR-1854 hit EMFILE on this machine, which
-    // is why this is measured rather than assumed.
-    const open = await start();
-    expect(watchHandleCount()).toBeGreaterThan(baseline);
-    await open.stop();
-    watcher = undefined;
+  /** The most cycles worth running, and the fewest that still says "repeated". */
+  const MAX_LEAK_CYCLES = 50;
+  const MIN_LEAK_CYCLES = 5;
+  /**
+   * How long the cycling half gets before it stops and measures what it has.
+   *
+   * The count is not what the assertion rests on: the handle count is compared
+   * against the baseline taken before the FIRST watcher, so one leaked handle
+   * from one cycle already reds. Fifty cycles were amplification, and at a load
+   * average of 40+ they cost ninety-eight seconds against a thirty-second limit
+   * (DOR-2012) — a red that said nothing about the watcher. So the loop is
+   * bounded by time and the leak is asserted on however many cycles ran.
+   */
+  const LEAK_CYCLE_BUDGET_MS = loadScaledMs(12_000);
 
-    for (let i = 0; i < 50; i++) {
-      const handle = await start();
-      await handle.stop();
+  it(
+    'survives repeated start/stop cycles without leaking watch handles',
+    async () => {
+      const baseline = watchHandleCount();
+      // One open watcher holds three handles here (the skills root and what is
+      // under it), so a `stop()` that closed nothing would leave three behind
+      // per cycle. The reviewer of DOR-1854 hit EMFILE on this machine, which
+      // is why this is measured rather than assumed.
+      const open = await start();
+      expect(watchHandleCount()).toBeGreaterThan(baseline);
+      await open.stop();
       watcher = undefined;
-    }
-    await waitUntil(
-      () => watchHandleCount() <= baseline,
-      'every watch handle to be given back',
-      2000
-    );
-  });
+
+      const deadline = Date.now() + LEAK_CYCLE_BUDGET_MS;
+      let cycles = 0;
+      while (cycles < MAX_LEAK_CYCLES && (cycles < MIN_LEAK_CYCLES || Date.now() < deadline)) {
+        const handle = await start();
+        await handle.stop();
+        watcher = undefined;
+        cycles++;
+      }
+      expect(cycles).toBeGreaterThanOrEqual(MIN_LEAK_CYCLES);
+
+      try {
+        await waitUntil(
+          () => watchHandleCount() <= baseline,
+          'every watch handle to be given back',
+          loadScaledMs(4_000)
+        );
+      } catch {
+        // Counted AFTER the wait, so the number in the message is the number
+        // that was still held when the budget ran out.
+        expect.fail(
+          `after ${cycles} start/stop cycles the process still holds ` +
+            `${watchHandleCount()} watch handles; the baseline before any watcher was ${baseline}`
+        );
+      }
+    },
+    loadScaledMs(45_000)
+  );
 
   it('is deaf after stop — a skill written afterwards projects nothing', async () => {
     const handle = await start();
