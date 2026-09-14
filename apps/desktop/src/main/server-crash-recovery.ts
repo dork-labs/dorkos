@@ -191,17 +191,19 @@ function revealLogs(): void {
  * @param port - The port the replacement server is listening on.
  */
 export function pointWindowsAtServer(port: number): void {
+  // Every window below loses the document it is showing, and the renderer
+  // supervisor is waiting on a heartbeat from one of them. Without this stamp,
+  // the discarded page's heartbeat still arrives and clears the supervisor's
+  // failure count for a load that never came up (DOR-2034). Stamped once,
+  // before the first navigation, so a later iteration's clock reading can never
+  // postdate a window this loop already navigated.
+  noteDocumentReplaced();
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;
     // A packaged build loads the renderer *from* the server, so it has to move
     // to the new origin. In dev the renderer comes from electron-vite and only
     // needs a reload, which re-reads the port over IPC — navigating it to the
     // server would strand it away from the dev server.
-    // Both branches throw the current document away, and the renderer
-    // supervisor is waiting on a heartbeat from it. Without this stamp, the
-    // discarded page's heartbeat still arrives and clears the supervisor's
-    // failure count for a load that never came up (DOR-2034).
-    noteDocumentReplaced();
     if (app.isPackaged) {
       void win.loadURL(`http://localhost:${port}`);
     } else {

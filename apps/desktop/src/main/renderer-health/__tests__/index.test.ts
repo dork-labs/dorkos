@@ -259,11 +259,12 @@ describe('renderer supervisor', () => {
       expect(health().consecutiveFailures).toBe(0);
     });
 
-    // `server-crash-recovery.ts` points every window at the restarted server,
-    // and the updater's stalled-restart recovery reaches the same code. Neither
-    // goes through the ladder, so both stamp the shared watermark themselves —
-    // otherwise the page they navigated away from can still clear the count for
-    // a load that never came up.
+    // `pointWindowsAtServer` in `server-crash-recovery.ts` sends every window to
+    // a restarted server, for whatever reason the server was restarted — a
+    // crash, the updater's stalled-restart recovery, either danger-zone button
+    // in Settings. None of those goes through the ladder, so that function
+    // stamps the shared watermark itself; otherwise the page it navigated away
+    // from can still clear the count for a load that never came up.
     it('ignores a heartbeat from a page another part of the shell navigated away from', async () => {
       const stranded = Date.now();
       seedHealth(JSON.stringify({ consecutiveFailures: 2 }));
