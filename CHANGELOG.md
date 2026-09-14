@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Desktop: the app no longer reloads its own window about ten seconds after you move to another page, or every ten seconds while a web page is open on a canvas. Each of those reloads threw away anything you had typed and not yet sent (#1860, DOR-2041)
+- Give markdown documents cleaner spacing, aligned lists, and readable tables and code in both light and dark mode.
+- Keep open documents in step with the app's colors when you switch themes.
 
 ## [0.75.0] - 2026-09-14
 
