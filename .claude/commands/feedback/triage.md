@@ -37,6 +37,10 @@ Ground rules that protect reporters (from the process design debate,
   returns `relations: null` and would silently report "nothing linked").
 - The FB team id is `81f94d0d-8c04-424c-affc-b8462769c6b0`; scope every read
   through `team(id:)` — list slugs are workspace-wide.
+- Every word a reporter reads (a decline email, a GitHub comment) follows
+  `meta/user-care.md` and is written with the `writing-to-users` skill: name one
+  detail from their report, say when they hear next, and a person approves the
+  exact text before it posts.
 
 ## Mode 1 — Triage (default)
 
