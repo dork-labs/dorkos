@@ -837,9 +837,18 @@ export function attachRendererSupervisor(win: BrowserWindow, options: CreateWind
 
   const { webContents } = win;
 
-  // Every navigation and every reload — including the window's first load, and
-  // including the ones this module issues.
-  webContents.on('did-start-loading', () => armForNewLoad());
+  // A new document in the main frame, and nothing else — the window's first
+  // load, every reload, and the ones this module issues. Electron raises
+  // `did-start-loading` for a sub-frame load and for a same-document
+  // navigation too, and neither produces a heartbeat: arming on it reloaded a
+  // healthy window ten seconds after every route change, and every ten seconds
+  // while the canvas browser had a page open (GitHub #1860, DOR-2041). A
+  // `loadURL` that differs from the current page only by its `#fragment` is
+  // same-document too and would not arm; nothing the shell loads carries a
+  // fragment, and that stays true on purpose.
+  webContents.on('did-start-navigation', (details) => {
+    if (details.isMainFrame && !details.isSameDocument) armForNewLoad();
+  });
 
   webContents.on('did-fail-load', (_event, errorCode, errorDescription, url, isMainFrame) => {
     if (!isMainFrame || errorCode === ERR_ABORTED) return;
@@ -873,10 +882,10 @@ export function attachRendererSupervisor(win: BrowserWindow, options: CreateWind
     }
   });
 
-  // Start the clock here rather than waiting for `did-start-loading`. The
-  // window is created and pointed at the renderer by one synchronous call in
-  // `window-manager.ts`, so its first load has already been issued by the time
-  // this runs — and whether that event has fired yet is Electron's business,
-  // not a thing to bet the first ten seconds of every launch on.
+  // Start the clock here rather than waiting for the first navigation event.
+  // The window is created and pointed at the renderer by one synchronous call
+  // in `window-manager.ts`, so its first load has already been issued by the
+  // time this runs — and whether that event has fired yet is Electron's
+  // business, not a thing to bet the first ten seconds of every launch on.
   armForNewLoad();
 }
