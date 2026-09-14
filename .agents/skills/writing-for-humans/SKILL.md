@@ -29,6 +29,8 @@ House punctuation rule: no em dashes. They invite run-on sentences that smuggle 
 - `contributing/` developer guides and API reference pages → `writing-developer-guides`
 - Code comments → keep them technical (`.claude/rules/conventions.md`)
 
+A reply to one person about their own report or question (a GitHub issue comment, a feedback email, a decline) follows these rules and adds its own: `writing-to-users`, which enforces the standard in `meta/user-care.md`.
+
 When a page mixes both (a user guide with a developer-reference tail), split it with a clear heading like `## Reference` and a framing sentence so the reader knows the audience just shifted.
 
 Brand voice note: `meta/brand-foundation.md` §10 has two registers. This skill is the plain-language register. Brand vocabulary (Autonomous, Orchestration, Operator) is allowed here only with an in-sentence gloss.
