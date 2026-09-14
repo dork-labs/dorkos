@@ -14,6 +14,13 @@ amends: null
 
 Accepted. Shipped in the Desktop Resilience program (DOR-1453).
 
+(2026-09-14 amendment, GitHub #1860 / DOR-2041) "at every load and every navigation" below was
+too wide, and shipped that way: the deadline was armed by `did-start-loading`, which Electron
+also fires for a sub-frame load and for a same-document navigation. Neither produces a heartbeat,
+so a healthy window was reloaded ten seconds after every route change. It is armed by
+`did-start-navigation` in the main frame with `isSameDocument` false — a new document, which is
+the only thing that owes a heartbeat. Everything else in this decision stands.
+
 ## Context
 
 The desktop shell supervised its server child with a full state machine (`server-process.ts`) and

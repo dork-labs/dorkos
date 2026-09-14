@@ -111,6 +111,31 @@ describe('renderer supervisor', () => {
     return { timeOrigin: documentCreatedAt };
   }
 
+  /** What Electron hands a `did-start-navigation` listener. */
+  interface NavigationDetails {
+    isMainFrame: boolean;
+    isSameDocument: boolean;
+    url: string;
+  }
+
+  /**
+   * Raise both of the events Electron raises for a navigation that starts from rest.
+   *
+   * Both events, because the difference between them is the whole defect:
+   * `did-start-loading` fires on the host webContents for a sub-frame load and
+   * for a same-document navigation too (measured on Electron 41.10.7), and only
+   * `did-start-navigation` says which of the three this was.
+   */
+  async function navigate(details: NavigationDetails): Promise<void> {
+    await win.webContents.emit('did-start-loading');
+    await win.webContents.emit('did-start-navigation', details);
+  }
+
+  /** The one navigation that really does replace the page being waited on. */
+  async function startMainFrameLoad(): Promise<void> {
+    await navigate({ isMainFrame: true, isSameDocument: false, url: 'http://localhost:4242/' });
+  }
+
   /**
    * Let the recovery a failure started finish.
    *
@@ -145,8 +170,8 @@ describe('renderer supervisor', () => {
     for (let i = 0; i < count; i += 1) {
       await expireDeadline();
       // Each rung's recovery issues a fresh load; only a fresh load re-opens
-      // the ladder, exactly as `did-start-loading` does in production.
-      await win.webContents.emit('did-start-loading');
+      // the ladder, exactly as a new main-frame document does in production.
+      await startMainFrameLoad();
     }
   }
 
@@ -294,6 +319,56 @@ describe('renderer supervisor', () => {
     });
   });
 
+  // GitHub #1860, reported against desktop 0.75.0 (DOR-2041). The deadline used
+  // to be armed by `did-start-loading`, which Electron also fires for an iframe
+  // load and for a same-document navigation. Neither produces a heartbeat, so
+  // ten seconds after every route change — and every ten seconds while the
+  // canvas browser was open — the shell reloaded a window that was working.
+  describe('what starts the clock', () => {
+    /** A window that has come up and reported for itself. */
+    function healthyWindow(): void {
+      send('renderer:alive', fromWindow(), reportedBy(Date.now()));
+    }
+
+    it('does not reload a healthy window because an iframe in it started loading', async () => {
+      healthyWindow();
+
+      await navigate({ isMainFrame: false, isSameDocument: false, url: 'https://dorkos.ai/' });
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_DEADLINE_MS * 2);
+      await settle();
+
+      expect(win.webContents.reload).not.toHaveBeenCalled();
+      expect(health().consecutiveFailures).toBe(0);
+    });
+
+    it('does not reload a healthy window because the app changed its route', async () => {
+      healthyWindow();
+
+      await navigate({
+        isMainFrame: true,
+        isSameDocument: true,
+        url: 'http://localhost:4242/team',
+      });
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_DEADLINE_MS * 2);
+      await settle();
+
+      expect(win.webContents.reload).not.toHaveBeenCalled();
+      expect(health().consecutiveFailures).toBe(0);
+    });
+
+    // The other half: a real new document is exactly what the deadline is for,
+    // and one that never reports alive still gets the first rung.
+    it('waits on a new document loading in the main frame', async () => {
+      healthyWindow();
+
+      await navigate({ isMainFrame: true, isSameDocument: false, url: 'http://localhost:4242/' });
+      await expireDeadline();
+
+      expect(win.webContents.reload).toHaveBeenCalledTimes(1);
+      expect(health().consecutiveFailures).toBe(1);
+    });
+  });
+
   describe('the recovery ladder', () => {
     it('reloads on the first failure', async () => {
       await expireDeadline();
@@ -419,7 +494,7 @@ describe('renderer supervisor', () => {
       expect(ignored).toContain('already replaced');
 
       // The replacement load fails the same way, and the ladder climbs.
-      await win.webContents.emit('did-start-loading');
+      await startMainFrameLoad();
       await expireDeadline();
 
       expect(health().consecutiveFailures).toBe(2);
@@ -430,7 +505,7 @@ describe('renderer supervisor', () => {
     // on, and it clears the ladder exactly as it always did.
     it('lets the page the reload produced clear the ladder', async () => {
       await expireDeadline();
-      await win.webContents.emit('did-start-loading');
+      await startMainFrameLoad();
 
       // A document that came into existence after the reload went out.
       await vi.advanceTimersByTimeAsync(200);
@@ -711,8 +786,9 @@ describe('renderer supervisor', () => {
     it('supervises the window again after it has been navigated back to the app', async () => {
       await failTimes(4);
       await navigateAwayFromFallback();
-      // A navigation the shell performs raises this exactly as any load does.
-      await win.webContents.emit('did-start-loading');
+      // A navigation the shell performs is a new main-frame document like any
+      // other load.
+      await startMainFrameLoad();
       win.webContents.reload.mockClear();
 
       await expireDeadline();
@@ -726,7 +802,7 @@ describe('renderer supervisor', () => {
       await failTimes(4);
       vi.mocked(win.loadFile).mockClear();
 
-      await win.webContents.emit('did-start-loading');
+      await startMainFrameLoad();
       await vi.advanceTimersByTimeAsync(LOADING_CEILING_MS * 2);
 
       expect(win.loadFile).not.toHaveBeenCalled();
@@ -810,7 +886,7 @@ describe('renderer supervisor', () => {
       expect(win.webContents.reload).toHaveBeenCalledTimes(1);
 
       send('renderer:alive', fromWindow());
-      await win.webContents.emit('did-start-loading');
+      await startMainFrameLoad();
       await expireDeadline();
 
       // Back to rung 1 — a reload, not the cache clear rung 2 would have done.
