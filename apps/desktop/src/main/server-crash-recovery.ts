@@ -3,6 +3,7 @@ import type { MessageBoxOptions, MessageBoxReturnValue } from 'electron';
 import log from 'electron-log';
 import { formatServerOutput } from './server-output';
 import { isQuitting } from './quit-guard';
+import { noteDocumentReplaced } from './renderer-health/document-watermark';
 
 /**
  * What the desktop shell does about a server it did not expect to lose:
@@ -196,6 +197,11 @@ export function pointWindowsAtServer(port: number): void {
     // to the new origin. In dev the renderer comes from electron-vite and only
     // needs a reload, which re-reads the port over IPC — navigating it to the
     // server would strand it away from the dev server.
+    // Both branches throw the current document away, and the renderer
+    // supervisor is waiting on a heartbeat from it. Without this stamp, the
+    // discarded page's heartbeat still arrives and clears the supervisor's
+    // failure count for a load that never came up (DOR-2034).
+    noteDocumentReplaced();
     if (app.isPackaged) {
       void win.loadURL(`http://localhost:${port}`);
     } else {

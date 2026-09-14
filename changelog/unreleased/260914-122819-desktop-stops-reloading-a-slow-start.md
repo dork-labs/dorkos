@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(desktop): ignore a heartbeat from the page the watchdog already reloaded (DOR-2034)'
+  - 'fix(desktop): stamp the watchdog watermark when anything else replaces the page (DOR-2034)'
 ---
 
 ### Fixed

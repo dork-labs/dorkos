@@ -30,6 +30,7 @@ import {
   shouldDisableHardwareAcceleration,
   type RendererHealth,
 } from '../index';
+import { noteDocumentReplaced } from '../document-watermark';
 import {
   app,
   BrowserWindow,
@@ -243,15 +244,41 @@ describe('renderer supervisor', () => {
       expect(win.webContents.reload).toHaveBeenCalledTimes(1);
     });
 
-    // The packaged smoke reads `consecutiveFailures: 0` out of a build whose
-    // preload may predate the payload entirely. No payload means no way to tell
-    // which page reported, and a renderer that came up is still the best news
-    // this module gets.
-    it('accepts a heartbeat from a preload that does not say which page it came from', async () => {
+    // Defensive, not a compatibility path: main and the preload ship in one
+    // asar built from one tree, so the only sender there is always sends the
+    // payload. This pins what happens if a bug in it ever stopped — the
+    // behaviour from before the guard existed, because a guard that reloads
+    // healthy windows is worse than the loop it was written to stop. It is also
+    // what the packaged smoke's `consecutiveFailures: 0` rests on.
+    it('accepts a heartbeat that carries no usable report', async () => {
       await expireDeadline();
       expect(health().consecutiveFailures).toBe(1);
 
       send('renderer:alive', fromWindow());
+
+      expect(health().consecutiveFailures).toBe(0);
+    });
+
+    // `server-crash-recovery.ts` points every window at the restarted server,
+    // and the updater's stalled-restart recovery reaches the same code. Neither
+    // goes through the ladder, so both stamp the shared watermark themselves —
+    // otherwise the page they navigated away from can still clear the count for
+    // a load that never came up.
+    it('ignores a heartbeat from a page another part of the shell navigated away from', async () => {
+      const stranded = Date.now();
+      seedHealth(JSON.stringify({ consecutiveFailures: 2 }));
+
+      // What `pointWindowsAtServer` does the moment the server is back.
+      await vi.advanceTimersByTimeAsync(5);
+      noteDocumentReplaced();
+
+      send('renderer:alive', fromWindow(), reportedBy(stranded));
+
+      expect(health().consecutiveFailures).toBe(2);
+
+      // The page that navigation produced still clears it.
+      await vi.advanceTimersByTimeAsync(2);
+      send('renderer:alive', fromWindow(), reportedBy(Date.now()));
 
       expect(health().consecutiveFailures).toBe(0);
     });
@@ -816,6 +843,39 @@ describe('renderer supervisor', () => {
 
       // Reloading here would throw away a window that had just recovered.
       expect(win.webContents.reload).not.toHaveBeenCalled();
+    });
+
+    // The twin of the case above, with the heartbeat the shipped preload
+    // actually sends. Without it the abort is only ever exercised through the
+    // payload-less branch, and the guard could reject every real heartbeat
+    // while this suite stayed green.
+    it('does not reload a window whose new page reported alive, payload and all', async () => {
+      let releaseClear = (): void => {};
+      session.defaultSession.clearCache = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            releaseClear = resolve;
+          })
+      );
+
+      await failTimes(1);
+      // The page rung 1's reload produced. A real Electron creates it one or
+      // two milliseconds after the reload goes out, never before.
+      await vi.advanceTimersByTimeAsync(2);
+      const replacement = Date.now();
+
+      // Trigger failure 2 and let its rung start; it parks on the clear above.
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_DEADLINE_MS);
+      await vi.advanceTimersByTimeAsync(1);
+      win.webContents.reload.mockClear();
+      expect(health().consecutiveFailures).toBe(2);
+
+      send('renderer:alive', fromWindow(), reportedBy(replacement));
+      releaseClear();
+      await settle();
+
+      expect(win.webContents.reload).not.toHaveBeenCalled();
+      expect(health().consecutiveFailures).toBe(0);
     });
   });
 

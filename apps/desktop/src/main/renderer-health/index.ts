@@ -13,6 +13,11 @@ import { saveDiagnosticReportInteractive } from '../diagnostics';
 import { loadRenderer, type CreateWindowOptions } from '../window-manager';
 import { confirmInterruptingAgents } from '../quit-guard';
 import { FALLBACK_PAGE_FILE } from '../../shared/fallback-page';
+import {
+  documentReplacedAt,
+  noteDocumentReplaced,
+  resetDocumentWatermark,
+} from './document-watermark';
 
 /**
  * The window that can never stay black.
@@ -302,15 +307,6 @@ let failuresThisSession = 0;
 let healthGeneration = 0;
 
 /**
- * When this module last threw the supervised document away, as `Date.now()`.
- *
- * Zero until it has done so. Every heartbeat older than this came from a page
- * that no longer exists, so it says nothing about the load actually being
- * waited on (DOR-2034).
- */
-let documentReplacedAt = 0;
-
-/**
  * The last GPU or network-service crash, or `null`.
  *
  * These are logged and remembered but never trigger the ladder on their own:
@@ -350,7 +346,7 @@ export function resetRendererSupervisor(): void {
   ladderInFlight = null;
   failuresThisSession = 0;
   healthGeneration = 0;
-  documentReplacedAt = 0;
+  resetDocumentWatermark();
   lastChildProcessCrash = null;
   armed = false;
 }
@@ -409,35 +405,29 @@ function isSupervisedSender(contents: WebContents): boolean {
 }
 
 /**
- * Note that the supervisor is replacing the document it was waiting on.
- *
- * Called at the instant of the replacement, never a moment earlier: a window
- * can report alive on its own while a rung is still clearing caches, and that
- * page is the live one until the reload actually goes out.
- */
-function documentReplaced(): void {
-  documentReplacedAt = Date.now();
-}
-
-/**
  * Did this heartbeat come from a page the supervisor has already discarded?
  *
  * A heartbeat that predates the current load is an echo of the page a reload
  * threw away, and treating it as recovery restarts the ladder at rung 1 against
  * conditions that have not changed (DOR-2034).
  *
- * A heartbeat that says nothing about its page is accepted, because an older
- * preload sends no payload at all and a renderer that came up is still the best
- * news this module ever gets.
+ * **A report that says nothing usable is accepted**, which is defensive rather
+ * than a compatibility path: main and the preload are built from one tree into
+ * one asar, so the only sender in existence always sends the payload. If a bug
+ * in it ever stopped doing so, the safe failure is the behaviour that shipped
+ * before this guard existed — a renderer that came up is the best news this
+ * module ever gets, and a guard that reloads healthy windows would be worse
+ * than the loop it was written to stop.
  *
  * @param report - Whatever rode along on the IPC message.
  */
 function isFromReplacedDocument(report: unknown): boolean {
-  if (documentReplacedAt === 0) return false;
+  const replacedAt = documentReplacedAt();
+  if (replacedAt === 0) return false;
   if (typeof report !== 'object' || report === null) return false;
   const { timeOrigin } = report as Partial<HeartbeatReport>;
   if (typeof timeOrigin !== 'number' || !Number.isFinite(timeOrigin)) return false;
-  return timeOrigin < documentReplacedAt;
+  return timeOrigin < replacedAt;
 }
 
 /** Stop waiting on the current load. */
@@ -491,7 +481,7 @@ function onDeadlineExpired(): void {
 /** Load the app's real entry point, whatever it is on this surface. */
 function loadRealRenderer(): void {
   if (!supervised || supervised.win.isDestroyed()) return;
-  documentReplaced();
+  noteDocumentReplaced();
   loadRenderer(supervised.win, supervised.options);
 }
 
@@ -505,7 +495,7 @@ function loadRealRenderer(): void {
 async function loadFallbackPage(): Promise<void> {
   if (!supervised || supervised.win.isDestroyed()) return;
   try {
-    documentReplaced();
+    noteDocumentReplaced();
     await supervised.win.loadFile(fallbackPagePath());
     // A recovery surface nobody can see is not a recovery surface. The window
     // is normally already visible by now (window-manager reveals it within
@@ -546,7 +536,7 @@ async function climbLadder(rung: number, generation: number): Promise<void> {
   if (stale()) return;
 
   if (rung === RUNG_RELOAD) {
-    documentReplaced();
+    noteDocumentReplaced();
     win.webContents.reload();
     return;
   }
@@ -564,7 +554,7 @@ async function climbLadder(rung: number, generation: number): Promise<void> {
       log.info('[renderer] The window came back while the cache was clearing; leaving it alone.');
       return;
     }
-    documentReplaced();
+    noteDocumentReplaced();
     win.webContents.reload();
     return;
   }
