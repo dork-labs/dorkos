@@ -36,7 +36,11 @@ Before acting, read:
    - the file is in a known flake family: harness atomic-write AP-10
      (sample-throughput guard, MIN_SAMPLES fixed at 200), RoomLiveLane
      (wall-clock boundaries), agent-activity (teardown timing),
-     palette-scope-chips (DOR-1502)
+     palette-scope-chips (DOR-1502), and the browser spec
+     `apps/e2e/tests/settings/runtimes-tab.spec.ts` "Make default moves the
+     default, and it survives a reload" (DOR-2043: `page.waitForResponse` /
+     `locator.click` 90s timeouts on merge-queue shard 2, three times on
+     2026-09-14 on diffs that cannot reach it)
    - a load-starved guard refusing to conclude is not a defect in your branch
      — re-run once before spending a cycle, and if it repeats, it belongs to
      the test's owner, not yours
