@@ -84,10 +84,10 @@ describe('renderer supervisor', () => {
   }
 
   /** Invoke the `ipcMain.on` listener registered for `channel`. */
-  function send(channel: string, event: unknown): void {
+  function send(channel: string, event: unknown, payload?: unknown): void {
     const call = ipcMain.on.mock.calls.find(([registered]) => registered === channel);
     if (!call) throw new Error(`Nothing is listening on ${channel}.`);
-    (call[1] as (event: unknown) => void)(event);
+    (call[1] as (event: unknown, payload?: unknown) => void)(event, payload);
   }
 
   /** Invoke the `ipcMain.handle` listener registered for `channel`. */
@@ -100,6 +100,14 @@ describe('renderer supervisor', () => {
   /** An IPC event shaped like one from the supervised window. */
   function fromWindow(): { sender: MockBrowserWindow['webContents'] } {
     return { sender: win.webContents };
+  }
+
+  /**
+   * What the preload sends with a heartbeat: the reporting page's
+   * `performance.timeOrigin`, which is when that document came into existence.
+   */
+  function reportedBy(documentCreatedAt: number): { timeOrigin: number } {
+    return { timeOrigin: documentCreatedAt };
   }
 
   /**
@@ -235,6 +243,19 @@ describe('renderer supervisor', () => {
       expect(win.webContents.reload).toHaveBeenCalledTimes(1);
     });
 
+    // The packaged smoke reads `consecutiveFailures: 0` out of a build whose
+    // preload may predate the payload entirely. No payload means no way to tell
+    // which page reported, and a renderer that came up is still the best news
+    // this module gets.
+    it('accepts a heartbeat from a preload that does not say which page it came from', async () => {
+      await expireDeadline();
+      expect(health().consecutiveFailures).toBe(1);
+
+      send('renderer:alive', fromWindow());
+
+      expect(health().consecutiveFailures).toBe(0);
+    });
+
     it('ignores every heartbeat when the fault-injection flag is set', async () => {
       process.env.DORKOS_DESKTOP_SUPPRESS_HEARTBEAT = '1';
 
@@ -346,6 +367,53 @@ describe('renderer supervisor', () => {
       expect(health().consecutiveFailures).toBe(1);
       expect(win.webContents.reload).toHaveBeenCalledTimes(1);
       expect(session.defaultSession.clearCache).not.toHaveBeenCalled();
+    });
+
+    // DOR-2034, reported against desktop 0.74.0: a first paint slower than the
+    // deadline gets the window reloaded, and about 110ms later the heartbeat
+    // the DISCARDED page had already sent arrives. Counting it as recovery put
+    // the failure count back to zero, so the replacement load failed as rung 1
+    // again — reload, reload, reload, never reaching the cache clear, and every
+    // cycle throwing away unsent messages and half-typed settings.
+    it('does not let the page it just reloaded put the ladder back to the start', async () => {
+      const firstDocument = Date.now();
+
+      await expireDeadline();
+      expect(win.webContents.reload).toHaveBeenCalledTimes(1);
+      expect(health().consecutiveFailures).toBe(1);
+
+      // The heartbeat that was already in flight when the reload went out.
+      await vi.advanceTimersByTimeAsync(110);
+      send('renderer:alive', fromWindow(), reportedBy(firstDocument));
+
+      expect(health().consecutiveFailures).toBe(1);
+      const ignored = log.warn.mock.calls.map((args) => String(args[0])).join('\n');
+      expect(ignored).toContain('already replaced');
+
+      // The replacement load fails the same way, and the ladder climbs.
+      await win.webContents.emit('did-start-loading');
+      await expireDeadline();
+
+      expect(health().consecutiveFailures).toBe(2);
+      expect(session.defaultSession.clearCache).toHaveBeenCalledTimes(1);
+    });
+
+    // The other half: the page the reload produced is the page being waited
+    // on, and it clears the ladder exactly as it always did.
+    it('lets the page the reload produced clear the ladder', async () => {
+      await expireDeadline();
+      await win.webContents.emit('did-start-loading');
+
+      // A document that came into existence after the reload went out.
+      await vi.advanceTimersByTimeAsync(200);
+      send('renderer:alive', fromWindow(), reportedBy(Date.now()));
+
+      expect(health().consecutiveFailures).toBe(0);
+
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_DEADLINE_MS * 2);
+
+      // Still just the one reload: the deadline was cleared, not re-armed.
+      expect(win.webContents.reload).toHaveBeenCalledTimes(1);
     });
 
     // One failure announces itself several times — a dead renderer fires
