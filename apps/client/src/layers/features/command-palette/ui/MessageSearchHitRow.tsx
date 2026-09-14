@@ -24,6 +24,18 @@ export interface MessageSearchHitRowProps {
   value: string;
   /** Open the conversation or channel this was said in. */
   onSelect: () => void;
+  /**
+   * Whether there is somewhere for this row to go.
+   *
+   * `false` for a conversation somebody had with a runtime's own command-line
+   * tool: the transcript is on this machine and the words are searchable, and
+   * DorkOS never ran it, so no session opens (DOR-2020). The row still appears
+   * — finding the message is most of the value — and says why it does not open
+   * rather than offering a link to an empty screen. It stays reachable by the
+   * arrow keys either way; see the comment on the `CommandItem` for why it is
+   * not marked disabled.
+   */
+  openable: boolean;
 }
 
 /**
@@ -50,16 +62,38 @@ export function MessageSearchHitRow({
   containerLabel,
   value,
   onSelect,
+  openable,
 }: MessageSearchHitRowProps) {
   const Icon = hit.source === 'rooms' ? Hash : MessageSquareText;
 
   return (
-    <CommandItem value={value} onSelect={onSelect} className="flex flex-col items-start gap-1 py-2">
+    <CommandItem
+      value={value}
+      onSelect={onSelect}
+      // **Selectable, and inert.** `disabled` would have been the obvious way to
+      // stop Enter here, and it is the wrong one: cmdk drops an
+      // `aria-disabled` row out of the arrow-key run, out of Home/End, and out
+      // of `aria-activedescendant` — so the one person who most needs to be
+      // told this message exists but cannot be opened is the one who can never
+      // reach the row that says it. The row stays in the run, its note is part
+      // of the text a screen reader announces with it, and Enter simply does
+      // nothing (`openHit` returns before it navigates or closes the box).
+      className="flex flex-col items-start gap-1 py-2"
+    >
       <div className="text-muted-foreground flex w-full min-w-0 items-center gap-1.5 text-xs">
         <Icon className="size-3.5 shrink-0" aria-hidden="true" />
         <span className="min-w-0 truncate">{containerLabel}</span>
         <span aria-hidden="true">·</span>
         <span className="shrink-0">{messageSearchSpeaker(hit.role)}</span>
+        {!openable && (
+          <>
+            <span aria-hidden="true">·</span>
+            {/* Said in the row rather than in a tooltip: it is the reason
+                Enter does nothing here, and a reason nobody can hover on a
+                phone is not a reason anybody reads. */}
+            <span className="shrink-0">Ran outside DorkOS</span>
+          </>
+        )}
         {hit.createdAt !== null && (
           <span className="ml-auto shrink-0 tabular-nums">{formatRelativeTime(hit.createdAt)}</span>
         )}

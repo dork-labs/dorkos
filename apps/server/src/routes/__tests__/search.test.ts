@@ -167,6 +167,12 @@ describe('GET /api/search', () => {
     expect(session).toEqual({
       source: 'claude-code',
       container: 'session-a',
+      // The DorkOS session the hit opens (DOR-2020). Equal to the container on
+      // this runtime and only on this runtime — the whole reason it is its own
+      // field is that a Codex thread id and an OpenCode `ses_…` are not what
+      // `/session` resolves. `session-links.test.ts` carries the per-runtime
+      // table; this asserts the field reaches the wire at all.
+      sessionId: 'session-a',
       containerPath: '/Users/dork/code/dorkos',
       ordinal: 1,
       role: 'assistant',

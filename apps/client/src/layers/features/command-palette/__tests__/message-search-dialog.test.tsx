@@ -46,6 +46,10 @@ const roomHit: SearchHit = {
 const sessionHit: SearchHit = {
   source: 'claude-code',
   container: 'sess-9',
+  // The DorkOS session the hit opens. Same string as `container` for this
+  // runtime and a different one for the other two, which is why the row reads
+  // this field and never the container (DOR-2020).
+  sessionId: 'sess-9',
   containerPath: '/work/api',
   ordinal: 3,
   role: 'assistant',
@@ -309,6 +313,87 @@ describe('what the box does when a hit is chosen', () => {
       to: '/session',
       search: { session: 'sess-9', dir: '/work/api' },
     });
+  });
+
+  it('opens the DorkOS session, not the id the runtime keeps its own copy under', async () => {
+    // DOR-2020. An OpenCode conversation is `ses_…` inside OpenCode and a UUID
+    // inside DorkOS, and only the second one opens anything. Red the moment the
+    // dialog goes back to passing `container` through.
+    vi.mocked(mockTransport.search).mockResolvedValue({
+      results: [
+        {
+          ...sessionHit,
+          source: 'opencode',
+          container: 'ses_7f3c1d2e9',
+          sessionId: 'd2000000-0000-4000-8000-000000000002',
+        },
+      ],
+      warnings: [],
+    });
+    open('port');
+    await pastDebounce();
+
+    fireEvent.click(await screen.findByRole('option'));
+
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/session',
+      search: { session: 'd2000000-0000-4000-8000-000000000002', dir: '/work/api' },
+    });
+  });
+
+  it('lets the keyboard reach a hit that opens nothing, and says so in the row', async () => {
+    // The row is deliberately NOT `aria-disabled`. cmdk drops a disabled row
+    // out of the arrow-key run and out of `aria-activedescendant`, so the one
+    // person who most needs to be told this message exists but cannot be
+    // opened would be the one who can never reach the row that says it. Red if
+    // anybody "fixes" the inertness by disabling the item.
+    const { sessionId: _omitted, ...bareCli } = sessionHit;
+    vi.mocked(mockTransport.search).mockResolvedValue({
+      results: [roomHit, { ...bareCli, source: 'codex', container: 'thread-3' }],
+      warnings: [],
+    });
+    open('port');
+    await pastDebounce();
+
+    const rows = await screen.findAllByRole('option');
+    const unopenable = rows[1]!;
+    expect(unopenable).not.toHaveAttribute('aria-disabled', 'true');
+    // The note rides the row's own text, which is what cmdk hands a screen
+    // reader as the option's accessible name.
+    expect(unopenable).toHaveTextContent('Ran outside DorkOS');
+
+    fireEvent.keyDown(input(), { key: 'ArrowDown' });
+    await waitFor(() => expect(unopenable).toHaveAttribute('data-selected', 'true'));
+
+    fireEvent.keyDown(input(), { key: 'Enter' });
+
+    // Enter is a no-op: no navigation, no toast, and the box stays open.
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(toastInfo).not.toHaveBeenCalled();
+    expect(useAppStore.getState().messageSearchOpen).toBe(true);
+  });
+
+  it('shows a conversation DorkOS never ran without offering to open it', async () => {
+    // The bare-command-line case: the words are indexed and worth finding, and
+    // there is no session behind them. The row appears, says why, and goes
+    // nowhere — which is the whole difference from a link to an empty screen.
+    const { sessionId: _omitted, ...bareCli } = sessionHit;
+    vi.mocked(mockTransport.search).mockResolvedValue({
+      results: [{ ...bareCli, source: 'codex', container: 'thread-3' }],
+      warnings: [],
+    });
+    open('port');
+    await pastDebounce();
+
+    const row = await screen.findByRole('option');
+    expect(row).toHaveTextContent('Ran outside DorkOS');
+
+    fireEvent.click(row);
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+    // And the box stays open, because closing it would look exactly like a
+    // navigation that happened.
+    expect(useAppStore.getState().messageSearchOpen).toBe(true);
   });
 
   it('lands on the message a conversation hit names when it carries an id', async () => {

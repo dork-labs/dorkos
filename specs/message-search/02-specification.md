@@ -424,7 +424,7 @@ Two new tables and one virtual table, all in §4. **No existing table is altered
 
 **`search_room_history` becomes a caller** (`specs/room-participation/02-specification.md` §10.3). There is exactly one search path over the room log, because two paths over the same rows that answer differently is the tolerated legacy pattern AGENTS.md refuses. The substring scan is never written, so the conversion is never a follow-up. **[Amended 2026-07-29 (DOR-672 DECOMPOSE) — `search_room_history` is RP7's to build, not this ticket's. See Amendment 5.]**
 
-**A result carries what it needs to be opened**: source, container, ordinal, role, timestamp, and a `snippet()` excerpt with the match marked. A result whose working directory no longer exists is still shown, and says so (§6.4).
+**A result carries what it needs to be opened**: source, container, the DorkOS session it opens, ordinal, role, timestamp, and a `snippet()` excerpt with the match marked. A result whose working directory no longer exists is still shown, and says so (§6.4). **[Amended 2026-09-13 (DOR-2020) — the container is the runtime's own id and is not what opens a conversation on two of the three runtimes; the session id is a separate field, and a result that has none is shown without a link. See Amendment 14.]**
 
 ## Testing Strategy
 
@@ -1136,3 +1136,51 @@ operator's home for the capture run. All three are now created `0700` before the
 directory an older release left wide open is narrowed rather than kept, and `global-setup.ts` refuses
 to run against a Playwright leg whose home anything widened — read from the filesystem, not from the
 command that was supposed to set it.
+
+## Amendment 14 — a hit opens the DorkOS session, not the runtime's own id (DOR-2020, 2026-09-13)
+
+**Status:** shipped. §8's "a result carries what it needs to be opened" was true for one runtime and
+false for two, and nothing on the wire said which.
+
+**What was wrong.** `container` is `origin_key`: the id of the store that OWNS the transcript, which
+is correct for an index whose frontier is keyed by it and whose projections compose it without
+asking DorkOS anything. The client then handed that string to `/session` as the session to open.
+That works on Claude Code, where DorkOS reads the SDK's own transcript store and uses the SDK's own
+session id — the two strings are the same. It works on neither of the others: a Codex hit's container
+is a thread id and an OpenCode hit's is a `ses_…`, and DorkOS opens those conversations by a UUID of
+its own, mapped in `codex_threads` (ADR-0309) and `opencode_sessions` (ADR-0308). Search found the
+message on all three runtimes and could open it on one — the G4 failure this feature exists to
+refuse, arriving through the exit door instead of the entrance.
+
+**The fix is one more field, not a redefinition.** `SearchHit.sessionId` carries the DorkOS session,
+and the client opens by it. `container` keeps its meaning exactly: opaque, composed per source, never
+parsed, still the coordinate `messageId` lands through and still what the frontier is keyed by.
+Redefining it would have broken the one property §4 asks of it.
+
+**Resolved when a hit is served, and deliberately not stored on the row.** The binding tables live
+in the same SQLite file as the index, so this is one small lookup over at most `limit` containers —
+the same shape and the same reasoning as the container-path lookup beside it. Writing the resolved
+id onto `messages` at index time would be a copy that goes stale silently: a rollout file exists
+before its `codex_threads` row is written, and an OpenCode conversation adopted from the TUI is bound
+the first time DorkOS lists it, so both are bindings that appear AFTER the messages they describe
+were indexed. A copy taken then would record "no session" and keep saying it until that container
+changed, which for a finished conversation is never. **It also means no index version bump and no
+rebuild**: nothing about a stored row changed, so every existing install starts answering correctly
+on its next query rather than after re-reading its whole corpus.
+
+**A hit with no session is shown, and says so.** A conversation held with a runtime's own
+command-line tool is indexed and searchable and has no DorkOS session behind it. The field is absent
+— never null, matching `messageId`'s rule — and the box draws the row with a short note and no link
+rather than a link to an empty screen. Claude Code is the exception and not a special case: its
+transcript store IS the store the session view reads, so a bare `claude` conversation opens like any
+other. A source this resolver has never heard of gets no session id, because guessing that some
+future container doubles as a session id is how this shipped broken twice.
+
+**Proven per runtime, in one table.** `search/__tests__/session-links.test.ts` seeds a real index and
+a real binding for each of the three runtimes and asserts both halves over the same rows: a bound
+session's hit carries the DorkOS id, an unbound one is still returned and carries none, a binding
+naming a different conversation resolves to nothing, and a mixed batch resolves each hit to its own
+session. The client half — that the id reaches the route — is pinned in
+`features/command-palette/__tests__/message-search-dialog.test.tsx` and
+`model/__tests__/message-search-target.test.ts`. A per-runtime test file would have been green on
+Claude Code and absent for the other two, which is the state this replaced.
