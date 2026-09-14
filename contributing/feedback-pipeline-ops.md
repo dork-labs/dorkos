@@ -184,20 +184,25 @@ Two things about reading it back, both of which have bitten:
 - **Linear rewrites a bare URL into a markdown autolink on write.** FB-22's
   stored description is literally
   `Source: [https://github.com/dork-labs/dorkos/issues/1841](<https://github.com/dork-labs/dorkos/issues/1841>)`.
-  Matching a line that starts `Source: https` therefore finds nothing, every
+  Matching a line that reads `Source: https://…` therefore finds nothing, every
   issue looks unmirrored, and the next run files a second FB issue and greets
-  the reporter twice. The test is a substring anywhere in the description:
+  the reporter twice. The test is a substring of that line:
   `github.com/dork-labs/dorkos/issues/<n>` followed by a non-digit or the end of
-  the text. The non-digit guard keeps issue 184 from matching issue 1841.
+  the line. The non-digit guard keeps issue 184 from matching issue 1841.
 - **The description does not end with the marker block.** Site-intake mirrors
   carry `Submission:`, `Product:` and `Severity:` lines too. Read the block as
   the run of `Key: value` lines at the end, and when a key appears more than
-  once, take the last one.
+  once, take the last one. The mirror test runs on the **last** `Source:` line
+  only. A reporter who pastes another issue's URL into their own report would
+  otherwise make an unmirrored issue look mirrored.
 
-The reporter's own text is quoted inside a fenced code block above that run, so
-a `Source:` or `Reporter:` line typed inside a report is never the last one and
-is ignored. `Reporter:` on a GitHub mirror is always a `@login` and never an
-email, which is what keeps the email decline path scoped to in-app reports.
+The reporter's own text is quoted above that run inside a **four-backtick**
+fence, so a `Source:` or `Reporter:` line typed inside a report is never the
+last one and is ignored. Four backticks rather than three because reports carry
+their own fenced blocks: a three-backtick wrapper is closed by the reporter's
+first inner fence and the rest of the report lands in the region the loop
+parses. `Reporter:` on a GitHub mirror is always a `@login` and never an email,
+which is what keeps the email decline path scoped to in-app reports.
 
 ### The three beats and where each reply lands
 
@@ -255,9 +260,13 @@ Do this after any change to the intake step:
    to survive.
 4. Approve the reply, then run `/feedback:triage` again. The issue must be
    skipped on both counts: already mirrored, and already greeted.
+   Then open a second throwaway issue whose body pastes the first issue's full
+   URL, and run again. The second issue must still come up as unmirrored: that
+   is the check that the matcher reads the last `Source:` line and not the whole
+   description.
 5. Run it a third time after deleting nothing. Same result. This is the check
    that catches a matcher that silently stopped matching.
-6. Clean up: cancel the FB issue, and close the GitHub one with
+6. Clean up: cancel the FB issues, and close both GitHub issues with
    `gh issue close <n> -R dork-labs/dorkos --reason "not planned"`.
 
 To test the held-approval case, run step 2 and decline the approval. The mirror
