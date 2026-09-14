@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo, useRef, Suspense } from 'react';
+import { useEffect, useState, useCallback, useMemo, Suspense } from 'react';
 import { Outlet, useRouterState } from '@tanstack/react-router';
 import {
   useAppStore,
@@ -120,54 +120,73 @@ import {
 const SERVER_HANG_DEADLINE_MS = 15_000;
 
 /**
- * The HTTP status a failed request came back with, or `undefined` when nothing
- * came back at all.
+ * What a failed request came back WITH: an HTTP status, and the message that
+ * rode with it.
  *
- * `http-client.ts` builds its error from `res.status` — so a `status` here is
- * proof a response ARRIVED and the server is running. A refused connection, a
- * dropped tunnel or the 30s request timeout throws without one, because there
- * was no response to read a status off. That is the whole difference between
- * "not there" and "there, and unhappy".
+ * `http-client.ts` can only fill these in from a response it actually read, so
+ * a status is proof that something on the other end replied. Nothing to read
+ * means nothing to report: a refused connection (nothing listening on the port)
+ * and the client's own 30s timeout both throw with no status at all, which is
+ * the difference this shell needs.
+ *
+ * **A status says a reply arrived, never that DorkOS sent it.** Remote Access
+ * runs through an ngrok tunnel, and a tunnel edge whose origin is dead answers
+ * 502 on its own account — a real "can't reach its server" wearing a status
+ * code. That is why the screen this feeds names the number and claims nothing
+ * about who produced it.
  *
  * @param error - The rejection value off a TanStack query.
  */
-function httpStatusOf(error: unknown): number | undefined {
+function failureFacts(error: unknown): { status?: number; message?: string } {
   const status = (error as { status?: unknown } | null | undefined)?.status;
-  return typeof status === 'number' ? status : undefined;
+  const message = (error as { message?: unknown } | null | undefined)?.message;
+  return {
+    ...(typeof status === 'number' ? { status } : {}),
+    ...(typeof message === 'string' && message.length > 0 ? { message } : {}),
+  };
 }
 
 /**
- * The status of the config read's most recent failure this launch, kept across
- * the retry that wipes it out.
+ * The config read's most recent failure THIS LAUNCH, as last seen.
  *
- * **The error object is not durable and `errorUpdatedAt` is.** TanStack rewinds
- * a query with NO data to `status: 'pending'` and nulls its `error` the instant
- * the next attempt starts (`fetchState` in query-core) while leaving
- * `errorUpdatedAt` standing — which is why the gate below asks the timestamp
- * whether a failure happened, and why asking the live error what KIND of failure
- * it was would answer "unknown" for the length of every in-flight retry. On a
- * screen that re-asks every five seconds, that is a window flipping between two
- * different full-page explanations of the same failure. So the status is latched
- * to the stamp: one read per distinct failure, at the render where both are
- * still in hand.
+ * **Module scope, deliberately, and the two reasons are different.**
+ *
+ * First, the error object is not durable while `errorUpdatedAt` is: TanStack
+ * rewinds a query with NO data to `status: 'pending'` and nulls its `error` the
+ * instant the next attempt starts (`fetchState` in query-core), leaving the
+ * stamp standing. That is why the gate asks the timestamp whether a failure
+ * happened, and why asking the live error what KIND of failure it was answers
+ * "unknown" for the length of every in-flight retry. On a screen that re-asks
+ * every five seconds, reading it live is a window flipping between two different
+ * full-page explanations of the same failure.
+ *
+ * Second, a component-scoped `useRef` would lose the answer on any remount — an
+ * `AuthGuard` flip, a dev-mode remount — and hand back the unreachable screen
+ * for a whole retry interval, over a server that had already replied. The fact
+ * being remembered belongs to the LAUNCH, which is what `LAUNCH_STARTED_AT`
+ * already keys every other half of this gate to, so it outlives any one mount.
+ *
+ * Writes happen only on a render that can actually see an error, and write the
+ * same thing every time for the same error, so a StrictMode double render and a
+ * discarded concurrent render both leave the same value behind.
+ */
+let lastSeenFailure: { status?: number; message?: string } = {};
+
+/**
+ * What the latest config failure of this launch came back with, or `undefined`
+ * when nothing has failed yet this launch.
  *
  * @param failedAt - `errorUpdatedAt` from the config query.
- * @param error - `error` from the same query, live.
- * @returns The status of the latest failure, `undefined` if it carried none or
- *   if nothing has failed this launch.
+ * @param error - `error` from the same query, live and possibly already cleared.
  */
-function useLatchedFailureStatus(failedAt: number, error: unknown): number | undefined {
-  const latched = useRef<{ at: number; status: number | undefined }>({
-    at: 0,
-    status: undefined,
-  });
-  // Idempotent and derived only from this render's inputs: a second render with
-  // the same stamp writes nothing, so StrictMode and a discarded concurrent
-  // render both leave the same value behind.
-  if (failedAt > latched.current.at) {
-    latched.current = { at: failedAt, status: httpStatusOf(error) };
+function latestFailure(
+  failedAt: number,
+  error: unknown
+): { status?: number; message?: string } | undefined {
+  if (error !== null && error !== undefined) {
+    lastSeenFailure = failureFacts(error);
   }
-  return failedAt > LAUNCH_STARTED_AT ? latched.current.status : undefined;
+  return failedAt > LAUNCH_STARTED_AT ? lastSeenFailure : undefined;
 }
 
 // ── Private slot types ────────────────────────────────────────
@@ -479,9 +498,11 @@ export function AppShell() {
   // answering 45 of 45 health checks on a stable PID read that and went looking
   // for ports and a dead process for an evening (issue #1841, DOR-2035). The
   // discriminator is already on the error: `http-client.ts` can only attach
-  // `status` when a response arrived, so a status means the server is there and
+  // `status` when a response arrived, so a status means SOMETHING replied and
   // the unreachable screen is the wrong page. Those get `ServerErrorScreen`,
-  // which says what actually happened and guesses at nothing.
+  // which reports the reply and guesses at nothing further — not even that
+  // DorkOS is what answered, since a tunnel edge with a dead origin replies 502
+  // on its own account.
   const {
     dataUpdatedAt: configAnsweredAt,
     errorUpdatedAt: configFailedAt,
@@ -489,7 +510,7 @@ export function AppShell() {
   } = useConfig();
   const answeredThisLaunch = configAnsweredAt > LAUNCH_STARTED_AT;
   const failedThisLaunch = configFailedAt > LAUNCH_STARTED_AT;
-  const failureStatus = useLatchedFailureStatus(configFailedAt, configError);
+  const failure = latestFailure(configFailedAt, configError);
 
   // **The wedged server never errors, so failures alone cannot see it.** A
   // server that accepts the connection and then says nothing leaves the read
@@ -510,16 +531,16 @@ export function AppShell() {
   // arrived — so a cockpit that IS talking to its server never sees this, and
   // one whose server comes back mid-screen loses it on the next answer.
   //
-  // `failureStatus === undefined` guards BOTH halves on purpose, the deadline
-  // included: a server replying 500 to every poll is not silent, and letting
-  // fifteen seconds of those roll over into "can't reach it" would put the
-  // original lie back with a timer on it.
-  const nothingAnswered = failureStatus === undefined;
+  // "Nothing replied" guards BOTH halves on purpose, the deadline included: an
+  // origin replying 500 to every poll is not silent, and letting fifteen seconds
+  // of those roll over into "can't reach it" would put the original lie back
+  // with a timer on it.
+  const nothingReplied = failure?.status === undefined;
   const isServerUnreachable =
-    !answeredThisLaunch && nothingAnswered && (failedThisLaunch || hangDeadlinePassed);
-  // The other side of the same coin: the server is there, and what it said was
-  // an error. Never both.
-  const serverErrorStatus = answeredThisLaunch ? undefined : failureStatus;
+    !answeredThisLaunch && nothingReplied && (failedThisLaunch || hangDeadlinePassed);
+  // The other side of the same coin: something replied, and what it said was an
+  // error. Never both.
+  const errorReply = answeredThisLaunch || failure?.status === undefined ? undefined : failure;
 
   // Timeout fallback: if config never loads (server unreachable, fetch hangs),
   // fall through to main app after 3 seconds — better than a blank screen forever.
@@ -611,10 +632,10 @@ export function AppShell() {
     return <ServerUnreachableScreen />;
   }
 
-  // Same reasons, one rung less certain about the cause: the server answered,
-  // so all this screen claims is that the answer was an error and which one.
-  if (serverErrorStatus !== undefined) {
-    return <ServerErrorScreen status={serverErrorStatus} />;
+  // Same reasons, one rung less certain about the cause: a reply came back, so
+  // all this screen claims is that it was an error and which one.
+  if (errorReply?.status !== undefined) {
+    return <ServerErrorScreen status={errorReply.status} message={errorReply.message} />;
   }
 
   // Gate rendering until config is loaded — prevents a flash of chat UI before

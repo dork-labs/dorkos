@@ -115,7 +115,8 @@ export async function patch(pathname: string, body: unknown): Promise<void> {
  * **A bare `waitForSelector` here reports the one thing that is never the
  * cause.** The shell is what the app renders when nothing is wrong, so its
  * absence is always a *different* screen having won — the first-run wizard, the
- * server-unreachable screen, the crash fallback, or the blank gate the shell
+ * server-unreachable screen, the server-error screen (a reply came back and it
+ * carried a status, DOR-2035), the crash fallback, or the blank gate the shell
  * holds while config loads. `attempt` swallows the failure into a single `✗
  * mobile-sessions-light skipped: Timeout 20000ms exceeded` line, and a run that
  * finishes twenty minutes later leaves nothing else to go on — which is exactly
@@ -149,6 +150,15 @@ export async function waitForAppShell(page: Page): Promise<void> {
       .count()
       .then((n) => n > 0)
       .catch(() => false);
+    // Its sibling: the shell shows this one instead when the config read was
+    // ANSWERED and the answer was an error. Probed separately, because a run
+    // that reported only `server-unreachable screen: no` on a 5xx said nothing
+    // true and nothing useful.
+    const serverError = await page
+      .locator('[data-testid="server-error"]')
+      .count()
+      .then((n) => n > 0)
+      .catch(() => false);
     const onScreen = (
       await page
         .locator('body')
@@ -169,6 +179,7 @@ export async function waitForAppShell(page: Page): Promise<void> {
     throw new Error(
       `app shell never rendered at ${page.url()} — ` +
         `server-unreachable screen: ${unreachable ? 'yes' : 'no'}; ` +
+        `server-error screen: ${serverError ? 'yes' : 'no'}; ` +
         `page text: ${JSON.stringify(onScreen.slice(0, 300)) || '(empty)'}` +
         (bootFailure === null ? '' : `; boot sentinel details: ${bootFailure}`) +
         (reported.length === 0 ? '' : `; boot sentinel console: ${reported.join(' | ')}`),

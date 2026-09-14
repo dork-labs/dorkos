@@ -12,10 +12,11 @@ import { configKeys, CONFIG_STALE_TIME_MS } from '../api/query-keys';
  * {@link useUpdateConfig} to mutate.
  *
  * @param options - `refetchInterval` re-asks on a timer for as long as the
- *   CALLER is mounted, which is how a surface that exists because the server is
- *   not answering (`ServerUnreachableScreen`) keeps asking without minting a
- *   second query for the same fact. Every observer shares one cache entry, so
- *   the answer it eventually gets is the answer every other reader gets.
+ *   CALLER is mounted, which is how a surface that exists because the config
+ *   read has not succeeded (`BootBlockedScreen`, behind both the unreachable and
+ *   the error screen) keeps asking without minting a second query for the same
+ *   fact. Every observer shares one cache entry, so the answer it eventually
+ *   gets is the answer every other reader gets.
  */
 export function useConfig(options: { refetchInterval?: number } = {}) {
   const transport = useTransport();

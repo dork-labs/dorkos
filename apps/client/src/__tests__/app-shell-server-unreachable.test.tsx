@@ -238,10 +238,11 @@ let transport: Transport;
  * the whole subject of the second suite below, so the fixture is built the way
  * the real client builds it rather than being hand-waved with a message string.
  *
- * @param status - The HTTP status the server replied with.
+ * @param status - The HTTP status the reply carried.
+ * @param message - The `error` field the server sent, when the test is about it.
  */
-function answeredWith(status: number) {
-  return Object.assign(new Error(`HTTP ${status}`), { status });
+function answeredWith(status: number, message = `HTTP ${status}`) {
+  return Object.assign(new Error(message), { status });
 }
 
 /**
@@ -262,12 +263,27 @@ async function letTimePass(ms: number) {
   });
 }
 
-function renderAppShell(seed?: (client: QueryClient) => void) {
-  const queryClient = new QueryClient({
-    // One attempt per fetch: this suite is about what the shell does with a
-    // FAILED read, not about how many times TanStack tries first.
-    defaultOptions: { queries: { retry: false } },
-  });
+/**
+ * A client that asks once per fetch.
+ *
+ * One attempt per fetch: this suite is about what the shell does with a FAILED
+ * read, not about how many times TanStack tries first.
+ */
+function makeQueryClient() {
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+}
+
+/**
+ * Mount the shell.
+ *
+ * @param seed - Optional writer that primes the cache before the first render.
+ * @param queryClient - Pass one in to mount TWICE against the same cache, which
+ *   is what a remount of the shell inside one launch really is.
+ */
+function renderAppShell(
+  seed?: (client: QueryClient) => void,
+  queryClient: QueryClient = makeQueryClient()
+) {
   seed?.(queryClient);
   return render(
     <QueryClientProvider client={queryClient}>
@@ -541,9 +557,15 @@ describe('AppShell, when the server answers with an error', () => {
     expect(screen.getByText(/HTTP 500/)).toBeInTheDocument();
   });
 
-  it('says the same of a refusal the shell cannot act on either', async () => {
-    // A 401 without the `AUTH_REQUIRED` code never reaches the AuthGuard's
-    // signal, so it lands here — and it is still a server that answered.
+  it('says the same of any other status, including ones no route sends today', async () => {
+    // **Synthetic, and worth pinning anyway.** This server's own 401 always
+    // carries `AUTH_REQUIRED`, which the transport turns into the app-wide auth
+    // signal, so `AuthGuard` swaps in the login screen and this shell never
+    // renders — no route here produces a bare 401. What can produce one is
+    // everything between the browser and the server: a proxy, a tunnel edge, a
+    // corporate sign-in page. The rule under test is that the gate reads the
+    // STATUS and not a list of statuses it knows about, so an unfamiliar one is
+    // still a reply and still not "the server is down".
     vi.mocked(transport.getConfig).mockRejectedValue(answeredWith(401));
 
     renderAppShell();
@@ -582,6 +604,47 @@ describe('AppShell, when the server answers with an error', () => {
     await vi.waitFor(() => expect(screen.getByTestId('server-error')).toBeInTheDocument());
 
     await letTimePass(HANG_DEADLINE_MS + 1000);
+
+    expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
+    expect(screen.getByTestId('server-error')).toBeInTheDocument();
+  });
+
+  it('hands a host refusal its own words, which say what to do about it', async () => {
+    // A 403 from `hostGuard` is not a fault to wait out: the address is not one
+    // this instance answers to, and the server's message names both the address
+    // and the two ways out. A bare "(HTTP 403)" plus a Try again that can never
+    // work would strand someone on the phone surface with nothing to go on.
+    const refusal =
+      'This instance does not answer to the address "phone.ngrok.app". ' +
+      'If that is how you reach DorkOS, list it in DORKOS_TRUSTED_HOSTS, or turn on login.';
+    vi.mocked(transport.getConfig).mockRejectedValue(answeredWith(403, refusal));
+
+    renderAppShell();
+
+    expect(await screen.findByText(refusal)).toBeInTheDocument();
+    expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
+  });
+
+  it('still knows what replied after the shell remounts mid-retry', async () => {
+    // **Why the latch is not a ref.** An `AuthGuard` flip or a dev-mode remount
+    // tears the shell down and builds it again on the same query cache — and
+    // the refetch the new mount starts nulls a dataless query's error on its
+    // way out. A per-mount memory would have nothing left to read and would
+    // hand back "can't reach its server" for a whole retry interval, over an
+    // origin that had already replied.
+    vi.useFakeTimers();
+    vi.mocked(transport.getConfig).mockRejectedValue(answeredWith(500));
+    const queryClient = makeQueryClient();
+
+    const first = renderAppShell(undefined, queryClient);
+    await vi.waitFor(() => expect(screen.getByTestId('server-error')).toBeInTheDocument());
+
+    // The next attempt goes out and stays out, so the error the remount wipes
+    // is never restored — the window the ref version got wrong.
+    vi.mocked(transport.getConfig).mockReturnValue(new Promise(() => {}));
+    first.unmount();
+    renderAppShell(undefined, queryClient);
+    await letTimePass(100);
 
     expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
     expect(screen.getByTestId('server-error')).toBeInTheDocument();
