@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo, Suspense } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef, Suspense } from 'react';
 import { Outlet, useRouterState } from '@tanstack/react-router';
 import {
   useAppStore,
@@ -15,6 +15,7 @@ import { useRoomDocumentTitle } from './app/use-room-document-title';
 import { TitlebarDragStrip } from './app/TitlebarDragStrip';
 import { SidebarBodyErrorBoundary } from './app/SidebarBodyErrorBoundary';
 import { ServerUnreachableScreen } from './app/ServerUnreachableScreen';
+import { ServerErrorScreen } from './app/ServerErrorScreen';
 import {
   getAgentDisplayName,
   cn,
@@ -117,6 +118,57 @@ import {
  * both, and clears itself the moment either resolves.
  */
 const SERVER_HANG_DEADLINE_MS = 15_000;
+
+/**
+ * The HTTP status a failed request came back with, or `undefined` when nothing
+ * came back at all.
+ *
+ * `http-client.ts` builds its error from `res.status` — so a `status` here is
+ * proof a response ARRIVED and the server is running. A refused connection, a
+ * dropped tunnel or the 30s request timeout throws without one, because there
+ * was no response to read a status off. That is the whole difference between
+ * "not there" and "there, and unhappy".
+ *
+ * @param error - The rejection value off a TanStack query.
+ */
+function httpStatusOf(error: unknown): number | undefined {
+  const status = (error as { status?: unknown } | null | undefined)?.status;
+  return typeof status === 'number' ? status : undefined;
+}
+
+/**
+ * The status of the config read's most recent failure this launch, kept across
+ * the retry that wipes it out.
+ *
+ * **The error object is not durable and `errorUpdatedAt` is.** TanStack rewinds
+ * a query with NO data to `status: 'pending'` and nulls its `error` the instant
+ * the next attempt starts (`fetchState` in query-core) while leaving
+ * `errorUpdatedAt` standing — which is why the gate below asks the timestamp
+ * whether a failure happened, and why asking the live error what KIND of failure
+ * it was would answer "unknown" for the length of every in-flight retry. On a
+ * screen that re-asks every five seconds, that is a window flipping between two
+ * different full-page explanations of the same failure. So the status is latched
+ * to the stamp: one read per distinct failure, at the render where both are
+ * still in hand.
+ *
+ * @param failedAt - `errorUpdatedAt` from the config query.
+ * @param error - `error` from the same query, live.
+ * @returns The status of the latest failure, `undefined` if it carried none or
+ *   if nothing has failed this launch.
+ */
+function useLatchedFailureStatus(failedAt: number, error: unknown): number | undefined {
+  const latched = useRef<{ at: number; status: number | undefined }>({
+    at: 0,
+    status: undefined,
+  });
+  // Idempotent and derived only from this render's inputs: a second render with
+  // the same stamp writes nothing, so StrictMode and a discarded concurrent
+  // render both leave the same value behind.
+  if (failedAt > latched.current.at) {
+    latched.current = { at: failedAt, status: httpStatusOf(error) };
+  }
+  return failedAt > LAUNCH_STARTED_AT ? latched.current.status : undefined;
+}
 
 // ── Private slot types ────────────────────────────────────────
 
@@ -419,9 +471,25 @@ export function AppShell() {
   // than its 30s `staleTime` means boot asks the server nothing at all —
   // measured as a 0.3s→5.3s flash on every single refresh. So both halves of
   // the test are now about THIS launch: fresh answer, or fresh failure.
-  const { dataUpdatedAt: configAnsweredAt, errorUpdatedAt: configFailedAt } = useConfig();
+  //
+  // **And a failure is not automatically a SILENCE, which is the cause this
+  // screen names.** "Can't reach its server. It may still be starting up" was
+  // shown for every rejection, including the ones the server itself wrote: a
+  // 500, a 403, a 401 that missed the auth signal. Someone whose server was
+  // answering 45 of 45 health checks on a stable PID read that and went looking
+  // for ports and a dead process for an evening (issue #1841, DOR-2035). The
+  // discriminator is already on the error: `http-client.ts` can only attach
+  // `status` when a response arrived, so a status means the server is there and
+  // the unreachable screen is the wrong page. Those get `ServerErrorScreen`,
+  // which says what actually happened and guesses at nothing.
+  const {
+    dataUpdatedAt: configAnsweredAt,
+    errorUpdatedAt: configFailedAt,
+    error: configError,
+  } = useConfig();
   const answeredThisLaunch = configAnsweredAt > LAUNCH_STARTED_AT;
   const failedThisLaunch = configFailedAt > LAUNCH_STARTED_AT;
+  const failureStatus = useLatchedFailureStatus(configFailedAt, configError);
 
   // **The wedged server never errors, so failures alone cannot see it.** A
   // server that accepts the connection and then says nothing leaves the read
@@ -438,10 +506,20 @@ export function AppShell() {
     return () => clearTimeout(timer);
   }, [answeredThisLaunch]);
 
-  // Either kind of evidence, and in both cases only while nothing fresh has
+  // Either kind of evidence, and in all cases only while nothing fresh has
   // arrived — so a cockpit that IS talking to its server never sees this, and
   // one whose server comes back mid-screen loses it on the next answer.
-  const isServerUnreachable = !answeredThisLaunch && (failedThisLaunch || hangDeadlinePassed);
+  //
+  // `failureStatus === undefined` guards BOTH halves on purpose, the deadline
+  // included: a server replying 500 to every poll is not silent, and letting
+  // fifteen seconds of those roll over into "can't reach it" would put the
+  // original lie back with a timer on it.
+  const nothingAnswered = failureStatus === undefined;
+  const isServerUnreachable =
+    !answeredThisLaunch && nothingAnswered && (failedThisLaunch || hangDeadlinePassed);
+  // The other side of the same coin: the server is there, and what it said was
+  // an error. Never both.
+  const serverErrorStatus = answeredThisLaunch ? undefined : failureStatus;
 
   // Timeout fallback: if config never loads (server unreachable, fetch hangs),
   // fall through to main app after 3 seconds — better than a blank screen forever.
@@ -531,6 +609,12 @@ export function AppShell() {
   // instead.
   if (isServerUnreachable) {
     return <ServerUnreachableScreen />;
+  }
+
+  // Same reasons, one rung less certain about the cause: the server answered,
+  // so all this screen claims is that the answer was an error and which one.
+  if (serverErrorStatus !== undefined) {
+    return <ServerErrorScreen status={serverErrorStatus} />;
   }
 
   // Gate rendering until config is loaded — prevents a flash of chat UI before

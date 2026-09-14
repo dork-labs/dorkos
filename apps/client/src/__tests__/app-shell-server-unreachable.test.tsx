@@ -231,6 +231,20 @@ function settledConfig() {
 let transport: Transport;
 
 /**
+ * The rejection an HTTP client builds from a response that ARRIVED.
+ *
+ * `http-client.ts` attaches `status` only when there was a response to read it
+ * off; a refused connection or a timeout throws without one. That difference is
+ * the whole subject of the second suite below, so the fixture is built the way
+ * the real client builds it rather than being hand-waved with a message string.
+ *
+ * @param status - The HTTP status the server replied with.
+ */
+function answeredWith(status: number) {
+  return Object.assign(new Error(`HTTP ${status}`), { status });
+}
+
+/**
  * Let the clock run and let React finish with it.
  *
  * **The whole reason the first cut of this suite could not fail.** A bare
@@ -506,5 +520,84 @@ describe('AppShell, when the server will not answer', () => {
 
     expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
     expect(screen.getByTestId('app-shell')).toBeInTheDocument();
+  });
+});
+
+describe('AppShell, when the server answers with an error', () => {
+  it('does not tell the operator a server that just replied is not there', async () => {
+    // **The defect (issue #1841).** A 500 is proof the server accepted the
+    // connection, ran, and answered — the reporter's was passing 45 of 45
+    // health checks on a stable PID — and the shell showed "DorkOS can't reach
+    // its server. It may still be starting up", a cause nothing had tested. The
+    // evening went on ports and server logs, looking for a process that was
+    // never down.
+    vi.mocked(transport.getConfig).mockRejectedValue(answeredWith(500));
+
+    renderAppShell();
+
+    expect(await screen.findByTestId('server-error')).toBeInTheDocument();
+    expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
+    // The one fact worth repeating to whoever helps next.
+    expect(screen.getByText(/HTTP 500/)).toBeInTheDocument();
+  });
+
+  it('says the same of a refusal the shell cannot act on either', async () => {
+    // A 401 without the `AUTH_REQUIRED` code never reaches the AuthGuard's
+    // signal, so it lands here — and it is still a server that answered.
+    vi.mocked(transport.getConfig).mockRejectedValue(answeredWith(401));
+
+    renderAppShell();
+
+    expect(await screen.findByTestId('server-error')).toBeInTheDocument();
+    expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
+  });
+
+  it('keeps saying so through the retry that wipes the error out from under it', async () => {
+    // **Why the status is latched.** TanStack clears a DATALESS query's error
+    // the moment the next attempt starts (`fetchState` in query-core) while
+    // leaving `errorUpdatedAt` standing. Read live, the status would vanish for
+    // the length of every in-flight retry and the shell would flip to the
+    // unreachable screen and back on a five-second cadence.
+    vi.useFakeTimers();
+    vi.mocked(transport.getConfig).mockRejectedValue(answeredWith(500));
+
+    renderAppShell();
+    await vi.waitFor(() => expect(screen.getByTestId('server-error')).toBeInTheDocument());
+
+    // The next poll goes out and does not come back yet.
+    vi.mocked(transport.getConfig).mockReturnValue(new Promise(() => {}));
+    await letTimePass(RETRY_INTERVAL_MS + 500);
+
+    expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
+    expect(screen.getByTestId('server-error')).toBeInTheDocument();
+  });
+
+  it('does not become "unreachable" just because the answers keep being errors', async () => {
+    // The hang deadline is evidence of silence. A server saying 500 every five
+    // seconds is not silent, so the deadline must not convert it into one.
+    vi.useFakeTimers();
+    vi.mocked(transport.getConfig).mockRejectedValue(answeredWith(503));
+
+    renderAppShell();
+    await vi.waitFor(() => expect(screen.getByTestId('server-error')).toBeInTheDocument());
+
+    await letTimePass(HANG_DEADLINE_MS + 1000);
+
+    expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
+    expect(screen.getByTestId('server-error')).toBeInTheDocument();
+  });
+
+  it('hands the window back when the server recovers', async () => {
+    const user = userEvent.setup();
+    vi.mocked(transport.getConfig).mockRejectedValue(answeredWith(500));
+
+    renderAppShell();
+    await screen.findByTestId('server-error');
+
+    vi.mocked(transport.getConfig).mockResolvedValue(settledConfig());
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+
+    expect(await screen.findByTestId('app-shell')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByTestId('server-error')).not.toBeInTheDocument());
   });
 });
