@@ -28,7 +28,7 @@ const eslintConfig = defineConfig([
   // short version is that the plugin resolves the version through
   // `context.getFilename()`, which ESLint 10 removed, and no released version of
   // the plugin fixes it. Keep this in step with `react` in `package.json`.
-  { settings: { react: { version: '19.2' } } },
+  { settings: { react: { version: '19.3' } } },
 
   {
     rules: {
