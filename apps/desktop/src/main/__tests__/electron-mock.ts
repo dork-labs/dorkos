@@ -194,12 +194,24 @@ class MockBrowserWindowImpl {
      */
     getURL: vi.fn((): string => this.currentUrl),
     /**
-     * Whether the page is still fetching. `false` by default — the state a
-     * finished load leaves behind — because the renderer supervisor treats a
-     * still-loading page as a slow load rather than a failed one, and a mock
-     * that answered `true` would make its whole ladder unreachable.
+     * Whether any frame in the page is still loading a document, iframes
+     * included (sub-resources such as scripts, images and `fetch()` do not count).
+     * `false` by default — the state a finished load leaves behind — because
+     * the renderer supervisor treats a still-loading page as a slow load
+     * rather than a failed one, and a mock that answered `true` would make its
+     * whole ladder unreachable.
      */
     isLoading: vi.fn((): boolean => false),
+    /**
+     * Whether the load a main-frame navigation started is still in flight,
+     * which is the narrower question and the one the renderer supervisor asks
+     * (DOR-2046). Modelled apart from {@link isLoading} because the difference
+     * between them is what a sub-frame navigation that begins after the page
+     * came up turns on: that page answers `isLoading() === true` for as long
+     * as the iframe runs while this stays `false`, and deferring a genuine
+     * renderer failure on it was the defect.
+     */
+    isLoadingMainFrame: vi.fn((): boolean => false),
     /** Test helper — not part of the real WebContents API. */
     emit: (event: string, ...args: unknown[]): Promise<void> =>
       this.webContentsBus.emit(event, ...args),

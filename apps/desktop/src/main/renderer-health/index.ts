@@ -75,15 +75,29 @@ const HEALTH_FILE_NAME = 'renderer-health.json';
 export const HEARTBEAT_DEADLINE_MS = 10_000;
 
 /**
- * Ceiling on re-arming the deadline against a page that is still loading.
+ * Ceiling on re-arming the deadline against a page whose **main frame** is
+ * still loading.
  *
  * **A slow load is not a failed load, and reloading one makes it worse** —
  * that lesson is written into the boot sentinel and it applies twice over
  * here, because a reload restarts the download from zero and the ladder would
  * do it again ten seconds later, forever. So a deadline that expires while
- * Chromium says the page is still fetching re-arms instead of counting, and
- * this bounds that patience: a fetch that hangs rather than fails would
+ * Chromium says the main frame is still fetching re-arms instead of counting,
+ * and this bounds that patience: a fetch that hangs rather than fails would
  * otherwise wait for good.
+ *
+ * **The main frame, not the page.** Electron's `isLoading()` is "whether the
+ * web page is still loading resources" — every frame in it — against
+ * `isLoadingMainFrame()`, "whether the main frame (and not just iframes or
+ * frames within it) is still loading". Measured on Electron 41, the narrower
+ * one stays `true` while the load a main-frame navigation started is still in
+ * flight anywhere in the page (an iframe in the initial HTML included), and
+ * reads `false` for a sub-frame navigation that begins after that load has
+ * finished. That second shape is the room canvas browser's by design, and it
+ * is the one this module must not wait on: a page hosting a slow or streaming
+ * iframe answered the wider question `true` for as long as it was open, and
+ * waiting on that deferred a genuine renderer failure for this whole minute
+ * before the ladder's first rung (DOR-2046).
  */
 export const LOADING_CEILING_MS = 60_000;
 
@@ -468,7 +482,11 @@ function onDeadlineExpired(): void {
   // ladder has already stopped, and the person is looking at something that
   // explains itself. Counting it would reload that page every ten seconds.
   if (isShowingFallbackPage()) return;
-  if (win.webContents.isLoading() && waitedMs < LOADING_CEILING_MS) {
+  // A document still arriving gets more time, up to the ceiling. The question
+  // is the narrower one: `isLoading()` also answers `true` for an iframe that
+  // started loading after the page came up, and that iframe owes this module
+  // nothing. See LOADING_CEILING_MS for what the two calls measure.
+  if (win.webContents.isLoadingMainFrame() && waitedMs < LOADING_CEILING_MS) {
     armDeadline();
     return;
   }

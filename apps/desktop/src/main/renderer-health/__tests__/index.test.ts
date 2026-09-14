@@ -635,8 +635,21 @@ describe('renderer supervisor', () => {
   });
 
   describe('a slow load is not a failed load', () => {
+    /**
+     * Put the window's main frame into (or out of) a fetch.
+     *
+     * Both answers are set because a real main-frame fetch reports both: a
+     * page cannot be fetching its own document without the page fetching
+     * something. Only `isLoadingMainFrame` is what the supervisor reads —
+     * `waits on the main frame only` is the case where they disagree.
+     */
+    function fetchingMainFrame(value: boolean): void {
+      win.webContents.isLoading = vi.fn(() => value);
+      win.webContents.isLoadingMainFrame = vi.fn(() => value);
+    }
+
     it('waits rather than reloading while the page is still fetching', async () => {
-      win.webContents.isLoading = vi.fn(() => true);
+      fetchingMainFrame(true);
 
       await vi.advanceTimersByTimeAsync(HEARTBEAT_DEADLINE_MS * 4);
 
@@ -645,7 +658,7 @@ describe('renderer supervisor', () => {
     });
 
     it('gives up on a fetch that hangs instead of finishing', async () => {
-      win.webContents.isLoading = vi.fn(() => true);
+      fetchingMainFrame(true);
 
       await vi.advanceTimersByTimeAsync(LOADING_CEILING_MS + HEARTBEAT_DEADLINE_MS);
       await vi.advanceTimersByTimeAsync(0);
@@ -654,14 +667,28 @@ describe('renderer supervisor', () => {
     });
 
     it('counts a failure once a slow page finishes loading without reporting alive', async () => {
-      win.webContents.isLoading = vi.fn(() => true);
+      fetchingMainFrame(true);
       await vi.advanceTimersByTimeAsync(HEARTBEAT_DEADLINE_MS * 2);
       expect(win.webContents.reload).not.toHaveBeenCalled();
 
-      win.webContents.isLoading = vi.fn(() => false);
+      fetchingMainFrame(false);
       await expireDeadline();
 
       expect(win.webContents.reload).toHaveBeenCalledTimes(1);
+    });
+
+    // The room canvas browser hosts pages that stream for as long as they are
+    // open, so `isLoading()` answers true for the whole session. Waiting on it
+    // deferred a genuine renderer failure for the full 60-second ceiling
+    // before the ladder's first rung (DOR-2046).
+    it('waits on the main frame only, not on an iframe that never finishes', async () => {
+      win.webContents.isLoading = vi.fn(() => true);
+      win.webContents.isLoadingMainFrame = vi.fn(() => false);
+
+      await expireDeadline();
+
+      expect(win.webContents.reload).toHaveBeenCalledTimes(1);
+      expect(health().consecutiveFailures).toBe(1);
     });
   });
 
