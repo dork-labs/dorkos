@@ -15,6 +15,8 @@ import { useRoomDocumentTitle } from './app/use-room-document-title';
 import { TitlebarDragStrip } from './app/TitlebarDragStrip';
 import { SidebarBodyErrorBoundary } from './app/SidebarBodyErrorBoundary';
 import { ServerUnreachableScreen } from './app/ServerUnreachableScreen';
+import { ServerErrorScreen } from './app/ServerErrorScreen';
+import { latestFailure } from './app/config-failure-memory';
 import {
   getAgentDisplayName,
   cn,
@@ -419,9 +421,27 @@ export function AppShell() {
   // than its 30s `staleTime` means boot asks the server nothing at all —
   // measured as a 0.3s→5.3s flash on every single refresh. So both halves of
   // the test are now about THIS launch: fresh answer, or fresh failure.
-  const { dataUpdatedAt: configAnsweredAt, errorUpdatedAt: configFailedAt } = useConfig();
+  //
+  // **And a failure is not automatically a SILENCE, which is the cause this
+  // screen names.** "Can't reach its server. It may still be starting up" was
+  // shown for every rejection, including the ones the server itself wrote: a
+  // 500, a 403, a 401 that missed the auth signal. Someone whose server was
+  // answering 45 of 45 health checks on a stable PID read that and went looking
+  // for ports and a dead process for an evening (issue #1841, DOR-2035). The
+  // discriminator is already on the error: `http-client.ts` can only attach
+  // `status` when a response arrived, so a status means SOMETHING replied and
+  // the unreachable screen is the wrong page. Those get `ServerErrorScreen`,
+  // which reports the reply and guesses at nothing further — not even that
+  // DorkOS is what answered, since a tunnel edge with a dead origin replies 502
+  // on its own account.
+  const {
+    dataUpdatedAt: configAnsweredAt,
+    errorUpdatedAt: configFailedAt,
+    error: configError,
+  } = useConfig();
   const answeredThisLaunch = configAnsweredAt > LAUNCH_STARTED_AT;
   const failedThisLaunch = configFailedAt > LAUNCH_STARTED_AT;
+  const failure = latestFailure(configFailedAt, configError);
 
   // **The wedged server never errors, so failures alone cannot see it.** A
   // server that accepts the connection and then says nothing leaves the read
@@ -438,10 +458,20 @@ export function AppShell() {
     return () => clearTimeout(timer);
   }, [answeredThisLaunch]);
 
-  // Either kind of evidence, and in both cases only while nothing fresh has
+  // Either kind of evidence, and in all cases only while nothing fresh has
   // arrived — so a cockpit that IS talking to its server never sees this, and
   // one whose server comes back mid-screen loses it on the next answer.
-  const isServerUnreachable = !answeredThisLaunch && (failedThisLaunch || hangDeadlinePassed);
+  //
+  // "Nothing replied" guards BOTH halves on purpose, the deadline included: an
+  // origin replying 500 to every poll is not silent, and letting fifteen seconds
+  // of those roll over into "can't reach it" would put the original lie back
+  // with a timer on it.
+  const nothingReplied = failure?.status === undefined;
+  const isServerUnreachable =
+    !answeredThisLaunch && nothingReplied && (failedThisLaunch || hangDeadlinePassed);
+  // The other side of the same coin: something replied, and what it said was an
+  // error. Never both.
+  const errorReply = answeredThisLaunch || failure?.status === undefined ? undefined : failure;
 
   // Timeout fallback: if config never loads (server unreachable, fetch hangs),
   // fall through to main app after 3 seconds — better than a blank screen forever.
@@ -531,6 +561,18 @@ export function AppShell() {
   // instead.
   if (isServerUnreachable) {
     return <ServerUnreachableScreen />;
+  }
+
+  // Same reasons, one rung less certain about the cause: a reply came back, so
+  // all this screen claims is that it was an error and which one.
+  if (errorReply?.status !== undefined) {
+    return (
+      <ServerErrorScreen
+        status={errorReply.status}
+        message={errorReply.message}
+        code={errorReply.code}
+      />
+    );
   }
 
   // Gate rendering until config is loaded — prevents a flash of chat UI before

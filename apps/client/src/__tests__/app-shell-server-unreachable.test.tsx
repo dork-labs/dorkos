@@ -207,6 +207,7 @@ vi.mock('sonner', () => ({
 // ── Import AppShell after the mocks are in place ──
 
 import { AppShell } from '../AppShell';
+import { resetFailureMemoryForTests } from '../app/config-failure-memory';
 
 /** The headline, spelled with the typographic apostrophe the screen renders. */
 const HEADLINE = 'DorkOS can’t reach its server';
@@ -231,6 +232,22 @@ function settledConfig() {
 let transport: Transport;
 
 /**
+ * The rejection an HTTP client builds from a response that ARRIVED.
+ *
+ * `http-client.ts` attaches `status` only when there was a response to read it
+ * off; a refused connection or a timeout throws without one. That difference is
+ * the whole subject of the second suite below, so the fixture is built the way
+ * the real client builds it rather than being hand-waved with a message string.
+ *
+ * @param status - The HTTP status the reply carried.
+ * @param message - The `error` field the server sent, when the test is about it.
+ * @param code - The `code` field, which only this server's own refusals carry.
+ */
+function answeredWith(status: number, message = `HTTP ${status}`, code?: string) {
+  return Object.assign(new Error(message), { status, ...(code === undefined ? {} : { code }) });
+}
+
+/**
  * Let the clock run and let React finish with it.
  *
  * **The whole reason the first cut of this suite could not fail.** A bare
@@ -248,12 +265,27 @@ async function letTimePass(ms: number) {
   });
 }
 
-function renderAppShell(seed?: (client: QueryClient) => void) {
-  const queryClient = new QueryClient({
-    // One attempt per fetch: this suite is about what the shell does with a
-    // FAILED read, not about how many times TanStack tries first.
-    defaultOptions: { queries: { retry: false } },
-  });
+/**
+ * A client that asks once per fetch.
+ *
+ * One attempt per fetch: this suite is about what the shell does with a FAILED
+ * read, not about how many times TanStack tries first.
+ */
+function makeQueryClient() {
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+}
+
+/**
+ * Mount the shell.
+ *
+ * @param seed - Optional writer that primes the cache before the first render.
+ * @param queryClient - Pass one in to mount TWICE against the same cache, which
+ *   is what a remount of the shell inside one launch really is.
+ */
+function renderAppShell(
+  seed?: (client: QueryClient) => void,
+  queryClient: QueryClient = makeQueryClient()
+) {
   seed?.(queryClient);
   return render(
     <QueryClientProvider client={queryClient}>
@@ -323,6 +355,11 @@ beforeAll(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   transport = createMockTransport();
+  // Each case is its own launch. Without this the shell's per-launch failure
+  // memory carries between them — and fake timers push `Date.now()` seconds
+  // into the future mid-case, so a later case's failure can be stamped BEHIND
+  // an earlier one's and be ignored as stale.
+  resetFailureMemoryForTests();
 });
 
 afterEach(() => {
@@ -506,5 +543,177 @@ describe('AppShell, when the server will not answer', () => {
 
     expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
     expect(screen.getByTestId('app-shell')).toBeInTheDocument();
+  });
+});
+
+describe('AppShell, when the server answers with an error', () => {
+  it('does not tell the operator a server that just replied is not there', async () => {
+    // **The defect (issue #1841).** A 500 is proof the server accepted the
+    // connection, ran, and answered — the reporter's was passing 45 of 45
+    // health checks on a stable PID — and the shell showed "DorkOS can't reach
+    // its server. It may still be starting up", a cause nothing had tested. The
+    // evening went on ports and server logs, looking for a process that was
+    // never down.
+    vi.mocked(transport.getConfig).mockRejectedValue(answeredWith(500));
+
+    renderAppShell();
+
+    expect(await screen.findByTestId('server-error')).toBeInTheDocument();
+    expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
+    // The one fact worth repeating to whoever helps next.
+    expect(screen.getByText(/HTTP 500/)).toBeInTheDocument();
+  });
+
+  it('says the same of any other status, including ones no route sends today', async () => {
+    // **Synthetic, and worth pinning anyway.** This server's own 401 always
+    // carries `AUTH_REQUIRED`, which the transport turns into the app-wide auth
+    // signal, so `AuthGuard` swaps in the login screen and this shell never
+    // renders — no route here produces a bare 401. What can produce one is
+    // everything between the browser and the server: a proxy, a tunnel edge, a
+    // corporate sign-in page. The rule under test is that the gate reads the
+    // STATUS and not a list of statuses it knows about, so an unfamiliar one is
+    // still a reply and still not "the server is down".
+    vi.mocked(transport.getConfig).mockRejectedValue(answeredWith(401));
+
+    renderAppShell();
+
+    expect(await screen.findByTestId('server-error')).toBeInTheDocument();
+    expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
+  });
+
+  it('keeps saying so through the retry that wipes the error out from under it', async () => {
+    // **Why the status is latched.** TanStack clears a DATALESS query's error
+    // the moment the next attempt starts (`fetchState` in query-core) while
+    // leaving `errorUpdatedAt` standing. Read live, the status would vanish for
+    // the length of every in-flight retry and the shell would flip to the
+    // unreachable screen and back on a five-second cadence.
+    vi.useFakeTimers();
+    vi.mocked(transport.getConfig).mockRejectedValue(answeredWith(500));
+
+    renderAppShell();
+    await vi.waitFor(() => expect(screen.getByTestId('server-error')).toBeInTheDocument());
+
+    // The next poll goes out and does not come back yet.
+    vi.mocked(transport.getConfig).mockReturnValue(new Promise(() => {}));
+    await letTimePass(RETRY_INTERVAL_MS + 500);
+
+    expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
+    expect(screen.getByTestId('server-error')).toBeInTheDocument();
+  });
+
+  it('does not become "unreachable" just because the answers keep being errors', async () => {
+    // The hang deadline is evidence of silence. A server saying 500 every five
+    // seconds is not silent, so the deadline must not convert it into one.
+    vi.useFakeTimers();
+    vi.mocked(transport.getConfig).mockRejectedValue(answeredWith(503));
+
+    renderAppShell();
+    await vi.waitFor(() => expect(screen.getByTestId('server-error')).toBeInTheDocument());
+
+    await letTimePass(HANG_DEADLINE_MS + 1000);
+
+    expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
+    expect(screen.getByTestId('server-error')).toBeInTheDocument();
+  });
+
+  it('hands a host refusal its own words, which say what to do about it', async () => {
+    // A 403 from `hostGuard` is not a fault to wait out: the address is not one
+    // this instance answers to, and the server's message names both the address
+    // and the two ways out. A bare "(HTTP 403)" plus a Try again that can never
+    // work would strand someone on the phone surface with nothing to go on.
+    const refusal =
+      'This instance does not answer to the address "phone.ngrok.app". ' +
+      'If that is how you reach DorkOS, list it in DORKOS_TRUSTED_HOSTS, or turn on login.';
+    vi.mocked(transport.getConfig).mockRejectedValue(
+      answeredWith(403, refusal, 'HOST_NOT_ALLOWED')
+    );
+
+    renderAppShell();
+
+    expect(await screen.findByText(refusal)).toBeInTheDocument();
+    expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
+  });
+
+  it('will not print a stranger’s 403 as if DorkOS wrote it', async () => {
+    // A proxy, a captive portal or a CDN can answer 403 with any body it likes,
+    // and the status alone cannot tell one from this server's host guard. Keyed
+    // on the number, the shell would have rendered that text full-screen in
+    // DorkOS chrome. Only the `code` this server sets earns the words.
+    vi.mocked(transport.getConfig).mockRejectedValue(
+      answeredWith(403, 'Access denied by CorpProxy. Sign in at portal.example.com to continue.')
+    );
+
+    renderAppShell();
+
+    expect(await screen.findByTestId('server-error')).toBeInTheDocument();
+    expect(screen.getByText(/got an error back \(HTTP 403\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/CorpProxy/)).not.toBeInTheDocument();
+  });
+
+  it('still knows what replied after the shell remounts mid-retry', async () => {
+    // **Why the latch is not a ref.** An `AuthGuard` flip or a dev-mode remount
+    // tears the shell down and builds it again on the same query cache — and
+    // the refetch the new mount starts nulls a dataless query's error on its
+    // way out. A per-mount memory would have nothing left to read and would
+    // hand back "can't reach its server" for a whole retry interval, over an
+    // origin that had already replied.
+    vi.useFakeTimers();
+    vi.mocked(transport.getConfig).mockRejectedValue(answeredWith(500));
+    const queryClient = makeQueryClient();
+
+    const first = renderAppShell(undefined, queryClient);
+    await vi.waitFor(() => expect(screen.getByTestId('server-error')).toBeInTheDocument());
+
+    // The next attempt goes out and stays out, so the error the remount wipes
+    // is never restored — the window the ref version got wrong.
+    vi.mocked(transport.getConfig).mockReturnValue(new Promise(() => {}));
+    first.unmount();
+    renderAppShell(undefined, queryClient);
+    await letTimePass(100);
+
+    expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
+    expect(screen.getByTestId('server-error')).toBeInTheDocument();
+  });
+
+  it('never describes a newer failure with an older failure’s number', async () => {
+    // **What the stamp on the memory is for.** The first failure is a 500 and
+    // is seen. The next one lands with nobody mounted to read it, and the retry
+    // that follows wipes the error before the shell comes back — so all the
+    // shell has is a fresher `errorUpdatedAt` and nothing to read. Un-stamped,
+    // the memory would still be holding 500 and would put that number on a
+    // failure it never saw. "Something newer failed and we could not see what"
+    // is exactly the unreachable case.
+    vi.mocked(transport.getConfig).mockRejectedValue(answeredWith(500));
+    const first = renderAppShell();
+    await screen.findByTestId('server-error');
+    first.unmount();
+
+    // A fresh cache carrying a warm config and a failure stamped AFTER the 500,
+    // with its error already gone. Nothing new goes out: the read hangs.
+    vi.mocked(transport.getConfig).mockReturnValue(new Promise(() => {}));
+    renderAppShell((client) => {
+      seedYesterdaysConfig(client);
+      client
+        .getQueryCache()
+        .find({ queryKey: configKeys.current() })
+        ?.setState({ errorUpdateCount: 1, errorUpdatedAt: Date.now(), error: null });
+    });
+
+    expect(await screen.findByText(HEADLINE)).toBeInTheDocument();
+    expect(screen.queryByTestId('server-error')).not.toBeInTheDocument();
+  });
+
+  it('hands the window back when the server recovers', async () => {
+    const user = userEvent.setup();
+    vi.mocked(transport.getConfig).mockRejectedValue(answeredWith(500));
+
+    renderAppShell();
+    await screen.findByTestId('server-error');
+
+    vi.mocked(transport.getConfig).mockResolvedValue(settledConfig());
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+
+    expect(await screen.findByTestId('app-shell')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByTestId('server-error')).not.toBeInTheDocument());
   });
 });
