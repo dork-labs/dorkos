@@ -42,9 +42,9 @@
     "@dorkos/typescript-config": "workspace:*",
     "@tanstack/react-query": "^5.102.8",
     "@types/express": "^5.0.6",
-    "@types/react": "^19.2.18",
+    "@types/react": "^19.3.0",
     "@types/supertest": "^7.2.1",
-    "react": "^19.2.8",
+    "react": "^19.3.0",
     "supertest": "^7.2.2",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11"
