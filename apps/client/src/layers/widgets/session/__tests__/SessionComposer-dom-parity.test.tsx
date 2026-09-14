@@ -50,6 +50,15 @@
  * attribute, no text. The `lucide-x` remove buttons in the same chips are still
  * `size-3`, because they were not part of the swap and must not silently become
  * part of it.
+ *
+ * ## The lucide alias-class amendment (2026-09-14)
+ *
+ * `lucide-react` 1.44.0 stamps every alias name of an icon onto its `svg` as a
+ * class, whichever name you import, so the alert glyph gained
+ * `lucide-alert-circle` beside `lucide-circle-alert`. Same two baselines, one
+ * token added per file, by hand, for the same reason as above. The measured
+ * diff before the edit was exactly that one `class-added` entry per file; no
+ * element, attribute, text, or other token moved.
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import React, { createRef } from 'react';

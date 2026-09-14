@@ -36,7 +36,7 @@ export default [
         // Keep this in step with the `react` version in `apps/client` and
         // `apps/site` — the plugin reads it to gate rules on React features, so
         // a stale value silently applies an older React's rule set.
-        version: '19.2',
+        version: '19.3',
       },
     },
     rules: {

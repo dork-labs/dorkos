@@ -200,6 +200,7 @@
                       "tag": "svg",
                       "classes": [
                         "lucide",
+                        "lucide-alert-circle",
                         "lucide-circle-alert",
                         "shrink-0",
                         "size-(--size-icon-xs)",

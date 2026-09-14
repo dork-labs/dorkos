@@ -53,7 +53,7 @@ Not every deliberate hold belongs in the override map. When the repo declares th
 
 **Where the pin is today, and how it got there.** Dependabot's 2026-09-06 group bump (#1577) moved the family from 1.6.23 to 1.7.2 and added the `@better-auth/utils -> 0.5.0` override that collapses the utils fork described below. It passed every gate — the tree resolves one `@better-auth/core@1.7.2` and one `@better-auth/utils@0.5.0` — but the PR did not touch this page, so for a week the ledger described a pin that no longer existed. That gap is the reason `/app:upgrade` edits this file in the same commit as any override it moves.
 
-**1.7.4 is known bad (#1847, 2026-09-14).** The next group bump proposed 1.7.4 and the server typecheck failed with `TS7056: The inferred type of this node exceeds the maximum length the compiler will serialize` at `apps/server/src/services/core/auth/index.ts`, with `BetterAuthError: Drizzle schema mismatch` across the test shards — the duplicate-instance shape below, one release later. 1.7.3 has not been measured. Re-test with the recipe at the end of this section before moving the pin again.
+**1.7.3 and 1.7.4 are known bad (DOR-2036, #1847, 2026-09-14).** The next group bump proposed 1.7.4 and the server typecheck failed with `TS7056: The inferred type of this node exceeds the maximum length the compiler will serialize` at `apps/server/src/services/core/auth/index.ts`, with `BetterAuthError: Drizzle schema mismatch` across the test shards. 1.7.3 was then measured and fails the same two ways **with a single `@better-auth/core` in the tree**, so this is not the duplicate-instance shape below: it is a real change in 1.7.3. The schema message names it: `Required columns Better Auth never writes: account.issuer`, so every sign-up insert fails and `auth.integration.test.ts` gets a 500. A newer release will probably not clear it; the fix is ours (the column's nullability plus a migration, and an explicit type on `createAuth`). `.github/dependabot.yml` ignores `>= 1.7.3` of both packages, a range rather than a version list, because ignoring only the newest bad version makes Dependabot fall back to the next-newest one; remove both entries in the PR that closes DOR-2036. One trap while holding: reverting the specs over Dependabot's lockfile still left an auto-installed `@better-auth/core@1.7.4` peer under `@better-auth/api-key`, so relock from `main`'s lockfile, not the bot's. Re-test with the recipe at the end of this section before moving the pin again.
 
 **Why 1.7.1 was skipped in the first place.** `better-auth@1.7.1` broke two things at once:
 
@@ -86,6 +86,18 @@ DORK_HOME=$(mktemp -d) node packages/cli/dist/bin/cli.js auth enable --email you
 ```
 
 `auth enable` must exit 0 and the integration test's sign-up → sign-in → `get-session` chain must pass; that chain is what 1.7.1 broke.
+
+### `@playwright/test` — pinned exact at 1.62.1 (DOR-2037)
+
+`apps/e2e` declares `@playwright/test` exactly — `"1.62.1"`, no caret — and `.github/dependabot.yml` ignores `>= 1.63.0`.
+
+**What breaks.** 1.63.0 (which ships Chrome 153.0.8010.12, against 1.62.1's Chrome 151.0.7922.34) turns `apps/e2e/tests/dev-playground/feedback-capture-focus.spec.ts` red: focus drops from the feedback dialog to `body` during "Capture app view". It ejected #1855 from the merge queue twice. Measured locally with `--repeat-each=3`, the bump's own React 19.3.0 is innocent: the #1855 tree with React put back on 19.2.8 still failed 3/3, and the same tree with only Playwright put back on 1.62.1 passed 3/3.
+
+**Why this is not only a test problem.** That spec guards a real Chromium behaviour (DOR-1956): hiding a focused subtree blurs it, and the app's capture avoids that with `opacity: 0`. If Chrome 153 changed what survives the capture's two-frame hide, people on Chrome 153 lose the caret and paste in the feedback dialog, whatever this repo pins. DOR-2037 starts by checking that by hand. Do not edit the spec to make it pass.
+
+**The same auto-installed-peer trap as `better-auth`.** `next` declares `@playwright/test` as an optional peer, reached through `better-auth`, and pnpm auto-installs it at the latest version. A relock over a lockfile that already held 1.63.0 kept that second copy; relocking from `main`'s lockfile leaves one `@playwright/test@1.62.1`.
+
+**Drop condition:** the spec passes, `--repeat-each=3`, on a Playwright at or above 1.63. Then return the spec to a caret range and remove the ignore entry in the same PR.
 
 ### `@a2a-js/sdk` — pinned exact at 1.0.1 (DOR-1549)
 
