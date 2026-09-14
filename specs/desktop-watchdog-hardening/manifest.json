@@ -3,10 +3,12 @@
   "slug": "desktop-watchdog-hardening",
   "title": "Desktop renderer watchdog hardening",
   "created": "2026-09-14",
-  "status": "specified",
-  "project": "Desktop Resilience",
+  "status": "decomposed",
+  "project": "Desktop & Obsidian Surfaces",
   "artifacts": {
     "ideation": "01-ideation.md",
-    "specification": "02-specification.md"
-  }
+    "specification": "02-specification.md",
+    "tasks": "03-tasks.json"
+  },
+  "umbrella": "DOR-2044"
 }
