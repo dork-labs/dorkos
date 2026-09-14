@@ -6,7 +6,7 @@
  * layer, so the scanner never sees them and the manifest entry is the only
  * evidence they exist. Before this, the drop only fired for a skill the scanner
  * found IN `.agents/skills` — so an entry living solely in `.claude/skills` (all
- * 13 in this repo) produced no line at all, and one present in BOTH made
+ * 14 in this repo) produced no line at all, and one present in BOTH made
  * claude-code plan a symlink over the real directory (a conflict, reproduced
  * 2026-09-07).
  *
@@ -297,15 +297,15 @@ describe('claudeOnlySkills — this repo’s own manifest', () => {
     return parseHarnessManifest(JSON.parse(readFileSync(path, 'utf8')));
   }
 
-  it('accounts for all 13 Claude-only skills per harness, by what that harness reads', () => {
+  it('accounts for all 14 Claude-only skills per harness, by what that harness reads', () => {
     // Every entry is a real directory in `.claude/skills` and none is in
     // `.agents/skills`, so each gets exactly one line per enabled harness — and
     // WHICH line is the vendor's answer, not the manifest's. Claude Code and
-    // OpenCode both read that directory (their own docs), so both load all 13;
-    // Codex does not, so all 13 are honest drops there. Not a single warning:
+    // OpenCode both read that directory (their own docs), so both load all 14;
+    // Codex does not, so all 14 are honest drops there. Not a single warning:
     // nothing about the manifest is stale, and no name breaks a rule.
     const manifest = repoManifest();
-    expect(manifest.claudeOnlySkills.length).toBe(13);
+    expect(manifest.claudeOnlySkills.length).toBe(14);
     expect(manifest.harnesses.length).toBeGreaterThan(1);
 
     const plan = planIn(manifest, (repo) => {
@@ -326,8 +326,8 @@ describe('claudeOnlySkills — this repo’s own manifest', () => {
         drops: linesFor(harness, 'drops'),
       }).toEqual({
         harness,
-        natives: reads ? 13 : 0,
-        drops: reads ? 0 : 13,
+        natives: reads ? 14 : 0,
+        drops: reads ? 0 : 14,
       });
     }
     expect(plan.warnings.filter((w) => w.artifact === 'skill')).toEqual([]);
@@ -337,7 +337,7 @@ describe('claudeOnlySkills — this repo’s own manifest', () => {
     // The manifest's `path` is now what the engine resolves, so a wrong one is
     // no longer cosmetic: it decides whether the skill is found at all.
     const manifest = repoManifest();
-    expect(manifest.claudeOnlySkills.length).toBe(13);
+    expect(manifest.claudeOnlySkills.length).toBe(14);
     for (const entry of manifest.claudeOnlySkills) {
       expect({ name: entry.name, path: entry.path }).toEqual({
         name: entry.name,
