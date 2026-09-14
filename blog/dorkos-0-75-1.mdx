@@ -1,0 +1,22 @@
+---
+title: DorkOS 0.75.1
+description: A one-fix patch for the desktop app, which could reload itself every ten seconds after a page change or while a web page was open on a canvas.
+date: 2026-09-14
+author: DorkOS Team
+category: release
+tags: [release, desktop]
+---
+
+This patch fixes one bug in the desktop app, and it is a bad one if you hit it. The window could reload itself about ten seconds after you moved to another page, and every ten seconds while a web page was open on a canvas. Each reload threw away anything you had typed and not yet sent. If your desktop app has been refreshing on its own, this release is for you.
+
+## Highlights
+
+### The desktop app stops reloading itself
+
+The desktop app keeps a safety timer that reloads the window if a page never comes up. That timer was starting on the wrong signal, so an ordinary page change or an embedded web page looked like a page that failed to start. It now starts only when a new page really begins loading, and page changes and embedded pages are left alone.
+
+## All Changes
+
+### Fixed
+
+- Desktop: the app no longer reloads its own window about ten seconds after you move to another page, or every ten seconds while a web page is open on a canvas. Each of those reloads threw away anything you had typed and not yet sent (#1860, DOR-2041)
