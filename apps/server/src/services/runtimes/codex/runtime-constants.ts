@@ -79,14 +79,22 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
         // Read-only, so it never has anything to ask about: `asks: 'never'` here
         // means "cannot ask", not "will not stop" — which is why the warning
         // tier reads `reach` too, and leaves a read-only mode alone.
+        //
+        // The promise says the refusal out loud (DOR-2019). It used to stop at
+        // "nothing on your machine changes", which is true and still left the
+        // dead end to be discovered: the stop is called "Ask first", Codex has
+        // no approval channel, so a request to edit a file is not a card to
+        // answer — it is turned down by the sandbox and reported as the agent
+        // saying it cannot. Naming that here is the whole of option 1.
         id: 'default',
         label: 'Read only',
         description:
-          'Sandboxed reads — Codex can read files and answer questions, but not edit files, run mutating commands, or access the network.',
+          'Codex can read files and answer questions. It cannot change files, run commands that change things, or reach the network.',
         stop: 'ask',
         asks: 'never',
         reach: 'read',
-        promise: 'Reads files and answers questions. Nothing on your machine changes.',
+        promise:
+          'Codex can read files but not change them. Asking it to make a change gets a no, not a prompt.',
         native: 'read-only',
       },
       {
@@ -97,24 +105,33 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
         // stop this being a surprise (spec `trust-dial`, decision 2).
         id: 'acceptEdits',
         label: 'Workspace write',
+        // "inside the workspace" is narrower than the sandbox actually is, and
+        // the copy used to inherit that: `WorkspaceWrite` grants READ over the
+        // whole disk, and its writable roots include `/tmp` and `$TMPDIR`
+        // alongside the project (codex-rs `protocol.rs`, SandboxPolicy). Say
+        // both, or a person picking this stop is told it is more contained than
+        // it is.
         description:
-          'Codex can read, edit, and run commands inside the workspace. Network access stays off.',
+          'Codex can read anything on this machine, and change files and run commands in this project and in the temporary folders the sandbox allows. It cannot reach the network.',
         stop: 'act',
         asks: 'never',
         reach: 'workspace',
-        promise: "Edits files and runs commands inside the workspace — Codex can't pause to ask.",
+        promise:
+          'Codex can read anything on this machine, and change files and run commands in this project and in temporary folders. It cannot stop to ask you first.',
         native: 'workspace-write',
       },
       {
         id: 'bypassPermissions',
         label: 'Full access',
         description:
-          'No sandbox — full file and network access. Use only in trusted or externally-sandboxed environments.',
+          'No sandbox. Codex can change anything on this machine and reach the network. Use it only where you trust everything it might do.',
         stop: 'autonomy',
         asks: 'never',
         reach: 'everything',
+        // No softening clause, for the reason claude-code's own bypass promise
+        // gives (DOR-1754): this sentence is what the consent dialog reads out.
         promise:
-          "Acts without approval prompts, anywhere on your machine, network included — and can't pause to ask.",
+          'Codex can change anything on this machine, network included. It cannot stop to ask you first.',
         native: 'danger-full-access',
       },
     ],

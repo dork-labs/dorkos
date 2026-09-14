@@ -119,7 +119,8 @@ export const PLAYGROUND_CAPABILITIES: Record<string, RuntimeCapabilities> = {
           stop: 'ask',
           asks: 'never',
           reach: 'read',
-          promise: 'Reads files and answers questions. Nothing changes.',
+          promise:
+            'Codex can read files but not change them. Asking it to make a change gets a no, not a prompt.',
           native: 'read-only',
         },
         {
@@ -128,7 +129,8 @@ export const PLAYGROUND_CAPABILITIES: Record<string, RuntimeCapabilities> = {
           stop: 'act',
           asks: 'never',
           reach: 'workspace',
-          promise: "Edits files and runs commands inside the workspace — Codex can't pause to ask.",
+          promise:
+            'Codex can read anything on this machine, and change files and run commands in this project and in temporary folders. It cannot stop to ask you first.',
           native: 'workspace-write',
         },
         {
@@ -138,7 +140,7 @@ export const PLAYGROUND_CAPABILITIES: Record<string, RuntimeCapabilities> = {
           asks: 'never',
           reach: 'everything',
           promise:
-            "Acts without approval prompts, anywhere on your machine, network included — and can't pause to ask.",
+            'Codex can change anything on this machine, network included. It cannot stop to ask you first.',
           native: 'danger-full-access',
         },
       ],

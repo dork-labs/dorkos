@@ -610,6 +610,23 @@ export const CONVERSATION_SECTIONS: PlaygroundSection[] = [
     ],
   },
   {
+    id: 'read-only-said-before-it-is-discovered',
+    title: 'Read only — said before it is discovered',
+    page: 'conversation',
+    category: 'Status',
+    keywords: [
+      'read only',
+      'codex',
+      'sandbox',
+      'permission',
+      'notice',
+      'hint',
+      'approval',
+      'dead end',
+      'bottom slot',
+    ],
+  },
+  {
     id: 'plan-a-way-of-working-beside-the-composer',
     title: 'Plan — a way of working, beside the composer',
     page: 'conversation',

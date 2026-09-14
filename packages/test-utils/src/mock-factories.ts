@@ -704,7 +704,8 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
                 stop: 'ask',
                 asks: 'never',
                 reach: 'read',
-                promise: 'Reads files and answers questions. Nothing on your machine changes.',
+                promise:
+                  'Codex can read files but not change them. Asking it to make a change gets a no, not a prompt.',
               },
               {
                 id: 'acceptEdits',
@@ -713,7 +714,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
                 asks: 'never',
                 reach: 'workspace',
                 promise:
-                  "Edits files and runs commands inside the workspace — Codex can't pause to ask.",
+                  'Codex can read anything on this machine, and change files and run commands in this project and in temporary folders. It cannot stop to ask you first.',
               },
               {
                 id: 'bypassPermissions',
@@ -722,7 +723,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
                 asks: 'never',
                 reach: 'everything',
                 promise:
-                  'Runs everything without asking, anywhere on your machine, network included.',
+                  'Codex can change anything on this machine, network included. It cannot stop to ask you first.',
               },
             ],
           },

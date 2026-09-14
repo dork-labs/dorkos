@@ -107,6 +107,7 @@ export {
   isBypassSemantics,
   isAutonomyStop,
   needsConsentRitual,
+  isSilentReadOnly,
   isWorkingMode,
   resolveTrustStops,
   findWorkingMode,

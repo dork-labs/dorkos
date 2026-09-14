@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Sparkles } from 'lucide-react';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
@@ -5,6 +6,7 @@ import { useAppStore } from '@/layers/shared/model';
 import { cn, permissionModeLabel, resolveTrustStops } from '@/layers/shared/lib';
 import { compactStatusValue } from '../lib/status-labels';
 import { STATUS_ITEM_TRIGGER_CLASS } from '../lib/status-item-classes';
+import { useSessionPermissionPicker } from '../model/permission-picker-store';
 import { MakeDefaultStopLine, type MakeDefaultStopLineProps } from './MakeDefaultStopLine';
 import {
   ResponsivePopover,
@@ -123,6 +125,22 @@ export function PermissionModeItem({
   // §6). Read unconditionally, before the early returns below.
   const setControlCenterOpen = useAppStore((s) => s.setControlCenterOpen);
 
+  // The picker's panel state lives in a store so a surface that is not the
+  // status line can ask for it — see `permission-picker-store`. Read here, above
+  // the early returns, because hooks cannot be conditional.
+  const open = useSessionPermissionPicker((s) => s.open);
+  const setOpen = useSessionPermissionPicker((s) => s.setOpen);
+  const setAvailable = useSessionPermissionPicker((s) => s.setAvailable);
+  // Whether this render puts an interactive picker on screen. The two shapes
+  // below that do not — a runtime with no modes, and a session with no first
+  // turn — publish `false`, because a caller offering a way in must be told the
+  // truth about whether there is one.
+  const interactive = !(caps && !caps.permissionModes.supported) && disabled !== true;
+  useEffect(() => {
+    setAvailable(interactive);
+    return () => setAvailable(false);
+  }, [interactive, setAvailable]);
+
   // Hide the item entirely when the runtime does not support permission modes at
   // all (some runtimes have no notion of one).
   if (caps && !caps.permissionModes.supported) {
@@ -157,6 +175,11 @@ export function PermissionModeItem({
   const trigger = (
     <button
       disabled={disabled}
+      // Named so a notice elsewhere in the panel can open this picker rather
+      // than growing a second way to write the mode — the route
+      // `ReadOnlyModeNotice` takes, and the one the model picker's own
+      // `model-config-trigger` already established (`ChatPanel`).
+      data-testid="permission-mode-trigger"
       // The full label stays the accessible name: a bounded value is a smaller
       // drawing of the same state, never a different answer to "what mode is on?".
       aria-label={`Permissions: ${fullLabel}`}
@@ -183,7 +206,13 @@ export function PermissionModeItem({
   }
 
   return (
-    <ResponsivePopover onOpenChange={onOpenChange}>
+    <ResponsivePopover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        onOpenChange?.(next);
+      }}
+    >
       <ResponsivePopoverTrigger asChild>{trigger}</ResponsivePopoverTrigger>
       <ResponsivePopoverContent
         side="top"

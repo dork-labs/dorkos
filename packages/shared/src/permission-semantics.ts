@@ -271,6 +271,32 @@ export function needsConsentRitual(descriptor: PermissionModeDescriptor): boolea
 }
 
 /**
+ * Whether a mode can neither change anything nor ask to — the dead end
+ * (DOR-2019).
+ *
+ * A mode that only reads is not itself a problem; Claude's `plan` reads too. The
+ * problem is reading with no approval channel behind it. Ask such a session to
+ * edit a file and there is no card to answer and no prompt to allow: the request
+ * is refused by the sandbox and the agent says it cannot, which reads like the
+ * agent being broken rather than like the setting the person chose. Codex's
+ * read-only sandbox is the live case, and every runtime without an approval
+ * channel lands here the same way.
+ *
+ * Declared semantics only, never a runtime name or a mode id — a runtime that
+ * gains an approval channel stops matching on the day it declares `asks` as
+ * anything but `never`, with no edit here.
+ *
+ * The mirror of {@link needsConsentRitual}'s `reach: 'read'` exclusion: that one
+ * leaves this shape alone because it is the safest thing on offer, and this one
+ * exists because being safe is not the same as being understood.
+ *
+ * @param descriptor - A mode as its runtime declared it.
+ */
+export function isSilentReadOnly(descriptor: PermissionModeDescriptor): boolean {
+  return descriptor.reach === 'read' && descriptor.asks === 'never';
+}
+
+/**
  * Whether a mode is a way of WORKING rather than a level of trust — off the
  * dial, offered beside the composer instead (spec `trust-dial`, decision 1).
  *

@@ -14,7 +14,13 @@
  */
 import { useState, type ReactNode } from 'react';
 import type { PermissionModeDescriptor, PermissionStop } from '@dorkos/shared/agent-runtime';
-import { PlanModeItem, AutonomyConfirmDialog, MakeDefaultStopLine } from '@/layers/features/status';
+import {
+  PlanModeItem,
+  AutonomyConfirmDialog,
+  MakeDefaultStopLine,
+  ReadOnlyModeNotice,
+  useSessionPermissionPicker,
+} from '@/layers/features/status';
 import { GlobalTrustRow, TrustRow, type GlobalTrustRowRuntime } from '@/layers/features/settings';
 import { Button, TrustDial, UnattendedAutonomyDialog } from '@/layers/shared/ui';
 import { needsConsentRitual } from '@/layers/shared/lib';
@@ -76,7 +82,8 @@ const CODEX: PermissionModeDescriptor[] = [
     stop: 'ask',
     asks: 'never',
     reach: 'read',
-    promise: 'Reads files and answers questions. Nothing on your machine changes.',
+    promise:
+      'Codex can read files but not change them. Asking it to make a change gets a no, not a prompt.',
     native: 'read-only',
   },
   {
@@ -85,7 +92,8 @@ const CODEX: PermissionModeDescriptor[] = [
     stop: 'act',
     asks: 'never',
     reach: 'workspace',
-    promise: "Edits files and runs commands inside the workspace — Codex can't pause to ask.",
+    promise:
+      'Codex can read anything on this machine, and change files and run commands in this project and in temporary folders. It cannot stop to ask you first.',
     native: 'workspace-write',
   },
   {
@@ -95,7 +103,7 @@ const CODEX: PermissionModeDescriptor[] = [
     asks: 'never',
     reach: 'everything',
     promise:
-      "Acts without approval prompts, anywhere on your machine, network included — and can't pause to ask.",
+      'Codex can change anything on this machine, network included. It cannot stop to ask you first.',
     native: 'danger-full-access',
   },
 ];
@@ -241,6 +249,21 @@ function UnattendedDial({
       />
     </div>
   );
+}
+
+/**
+ * Hold the shared picker handle at one value while its child is on screen, so
+ * both halves of the notice can be shown at once.
+ *
+ * The store is a singleton — one picker, one composer — so a page that draws the
+ * same card twice has to say which state each instance stands for rather than
+ * letting the last render win. Writing during render is deliberate here: it is
+ * one boolean, and an effect would settle a frame later, which is exactly long
+ * enough to see the wrong card.
+ */
+function PickerAvailability({ available, children }: { available: boolean; children: ReactNode }) {
+  useSessionPermissionPicker.setState({ available });
+  return <>{children}</>;
 }
 
 /** What a binding gives up at a stop that never asks. */
@@ -568,6 +591,27 @@ export function TrustDialShowcases() {
         </ShowcaseLabel>
         <ShowcaseDemo>
           <LiveMakeDefaultOffer />
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="Read only — said before it is discovered"
+        description="A mode that can read but never change and never ask is not the 'Ask first' stop it looks like: on Codex the sandbox refuses the write and the model reports it cannot, so there is no card to answer. This card says so before the first message, once per session, in the zone above the composer. It is drawn for any mode whose runtime declared reach 'read' and asks 'never', which is a fact about the mode, not a check on the runtime's name."
+      >
+        <ShowcaseLabel>
+          With somewhere to send them — the picker is on the status line
+        </ShowcaseLabel>
+        <ShowcaseDemo responsive>
+          <PickerAvailability available>
+            <ReadOnlyModeNotice runtimeLabel="Codex" onDismiss={() => {}} />
+          </PickerAvailability>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>With nowhere to send them — a narrow line dropped the picker</ShowcaseLabel>
+        <ShowcaseDemo responsive>
+          <PickerAvailability available={false}>
+            <ReadOnlyModeNotice runtimeLabel="Codex" onDismiss={() => {}} />
+          </PickerAvailability>
         </ShowcaseDemo>
       </PlaygroundSection>
 

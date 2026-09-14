@@ -5,6 +5,7 @@ import {
   isAutonomyStop,
   isBypassSemantics,
   isDivergent,
+  isSilentReadOnly,
   isTightening,
   isUnattendedAutonomy,
   isWorkingMode,
@@ -206,6 +207,36 @@ describe('needsConsentRitual', () => {
     expect(isAutonomyStop(neverAskingMiddle)).toBe(false);
     expect(isBypassSemantics(neverAskingMiddle)).toBe(false);
     expect(isUnattendedAutonomy(neverAskingMiddle)).toBe(false);
+  });
+});
+
+describe('isSilentReadOnly', () => {
+  it('is true only when a mode can neither change anything nor ask', () => {
+    expect(isSilentReadOnly(descriptor({ reach: 'read', asks: 'never' }))).toBe(true);
+  });
+
+  it('is false for a read-only mode that CAN ask — Claude’s plan is not a dead end', () => {
+    expect(isSilentReadOnly(descriptor({ reach: 'read', asks: 'always', axis: 'working' }))).toBe(
+      false
+    );
+  });
+
+  it('is false for a never-asking mode that can act — that one is loud, not silent', () => {
+    // Codex's workspace-write. It never asks either, but a person who asks for
+    // a change gets the change, so there is nothing unexplained to explain.
+    expect(isSilentReadOnly(descriptor({ reach: 'workspace', asks: 'never', stop: 'act' }))).toBe(
+      false
+    );
+    expect(isSilentReadOnly(descriptor({ reach: 'everything', asks: 'never' }))).toBe(false);
+  });
+
+  it('is the mirror of what needsConsentRitual waives, never an overlap', () => {
+    // The two predicates partition the never-asking modes: one earns a door
+    // before you may enter it, the other earns a sentence once you are in it.
+    // A mode that earned both would be asking for consent to do nothing.
+    const silent = descriptor({ reach: 'read', asks: 'never' });
+    expect(isSilentReadOnly(silent)).toBe(true);
+    expect(needsConsentRitual(silent)).toBe(false);
   });
 });
 

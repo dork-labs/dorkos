@@ -175,7 +175,10 @@ See [ADR 260908-153657](../decisions/260908-153657-a-live-runtime-turn-renews-co
         // Nothing to ask about: this mode cannot write, run, or fetch.
         asks: 'never',
         reach: 'read',
-        promise: 'Reads files and answers questions. Nothing on your machine changes.',
+        // Says the refusal out loud: this mode cannot ask, so a request to
+        // change a file is turned down rather than raised as a card (DOR-2019).
+        promise:
+          'Codex can read files but not change them. Asking it to make a change gets a no, not a prompt.',
         native: 'read-only',
       },
       {
@@ -185,7 +188,8 @@ See [ADR 260908-153657](../decisions/260908-153657-a-live-runtime-turn-renews-co
         // Measured: this backend cannot pause mid-turn, so it never asks.
         asks: 'never',
         reach: 'workspace',
-        promise: "Edits files and runs commands inside the workspace — Codex can't pause to ask.",
+        promise:
+          'Codex can read anything on this machine, and change files and run commands in this project and in temporary folders. It cannot stop to ask you first.',
         native: 'workspace-write',
       },
     ],
