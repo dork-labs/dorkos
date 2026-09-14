@@ -102,6 +102,15 @@ name: browser-test
 # marketplace spec's header says exactly what an empty-registry red looks like
 # and where to go). If it ever fires in anger, the decision to revisit is
 # "pin a fixture registry for CI", not "delete the specs".
+#
+# A GREEN SHARD USED TO FAIL AT ITS OWN UPLOAD (2026-09-14). Twice in 30 minutes
+# (merge-group runs 34852501966 for #1854 and 34855761786 for #1857) a shard ran
+# the whole suite green, then died at `Upload this shard's JSON report` with
+# "Failed to FinalizeArtifact: Received non-retryable error: (403) Forbidden".
+# upload-artifact does not retry that 403, the gate refused the run, and both
+# blameless PRs were ejected from the queue. Both uploads now get a second
+# attempt; the gate and assert-browser-tests-executed.sh are untouched, because
+# a missing report is still a real failure and the retry still says so.
 on:
   pull_request:
   merge_group:
@@ -423,7 +432,26 @@ jobs:
       # attempt: v4 answers 409 Conflict when the name already exists, so "Re-run
       # all jobs" after a flake would fail three green shards at their upload
       # step. A re-run is meant to replace the attempt it repeats.
+      #
+      # TWO ATTEMPTS, because the artifact service sometimes answers 403 at
+      # finalize and upload-artifact treats that as non-retryable (2026-09-14:
+      # runs 34852501966 and 34855761786, both green suites failed here). The
+      # first attempt may fail without failing the job; the second runs only
+      # when it did, with the same inputs, so a real problem — a missing
+      # results.json above all — still fails the shard on the retry.
       - name: Upload this shard's JSON report
+        id: upload-json-report
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-results-shard-${{ matrix.shard }}
+          path: apps/e2e/test-results/results.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+      - name: Upload this shard's JSON report (retry)
+        if: ${{ steps.upload-json-report.outcome == 'failure' }}
         uses: actions/upload-artifact@v7
         with:
           name: browser-results-shard-${{ matrix.shard }}
@@ -449,8 +477,24 @@ jobs:
       #
       # `overwrite: true` for the same reason as the JSON upload above: a re-run
       # of a failed attempt must replace that attempt's report, not 409 on it.
+      #
+      # Two attempts, for the same 403 as the JSON upload above (run 34855761786
+      # lost this report too). The retry repeats the status functions: a step
+      # whose `if:` names none is implicitly `success()`, which is false on the
+      # failed or cancelled job this report exists for.
       - name: Upload the Playwright report
+        id: upload-playwright-report
         if: ${{ failure() || cancelled() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-shard-${{ matrix.shard }}
+          path: apps/e2e/playwright-report/
+          overwrite: true
+          retention-days: 7
+
+      - name: Upload the Playwright report (retry)
+        if: ${{ (failure() || cancelled()) && steps.upload-playwright-report.outcome == 'failure' }}
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report-shard-${{ matrix.shard }}
