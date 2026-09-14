@@ -18,7 +18,7 @@
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
-    "@playwright/test": "^1.62.1",
+    "@playwright/test": "^1.63.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24",
     "axe-core": "^4.13.0",
