@@ -50,3 +50,18 @@ Both surfaces gather the same details, sanitize them, and open a **prefilled Git
 
 - Shared: `packages/shared/src/feedback.ts` (+ `./feedback` export). CLI: `packages/cli/src/commands/feedback.ts`. Client: `useReportIssue` (`shared/model`) + `buildClientReport` (`shared/lib`), surfaced by the `report-issue` feature's `HelpMenu` and the command palette. Templates: `.github/ISSUE_TEMPLATE/`. Triage: `.github/dorkbot-triage/`.
 - Labels: the templates use the existing GitHub defaults `bug`/`enhancement` plus `needs-triage` (created on triage enablement). There is no GitHub↔Linear label sync in this repo today, so template labels do not auto-map to Linear's `type/*` families.
+
+## Amendment (2026-09-14, DOR-2033)
+
+Two parts of decision 4 no longer hold, and the record above is left as it was
+written.
+
+- **The `needs-triage` label is gone.** It was never created in the repo, so
+  GitHub silently dropped it from every issue the templates filed, and the queue
+  it defined could not fill. The templates now apply only `bug` or
+  `enhancement`.
+- **DorkBot no longer comments.** First-touch triage runs through
+  `/feedback:triage`, which mirrors each GitHub issue into the feedback team and
+  posts the reporter's replies under per-reply human approval. The scaffold in
+  `.github/dorkbot-triage/` stays off and is now a labeling helper only; its
+  queue is open issues with no `<!-- beat:heard -->` marker comment.

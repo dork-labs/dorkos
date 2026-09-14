@@ -125,59 +125,107 @@ instead.
 ## GitHub issues
 
 The in-app dialog is not the only front door. People also open issues on
-`dork-labs/dorkos`, and the app sends them there itself: the help menu's "Report
-on GitHub…", `dorkos feedback`, the README and two docs pages all point at
-`github.com/dork-labs/dorkos/issues/new`. Until 2026-09-14 nothing read that
-door. `/feedback:triage` now does, so both doors get the treatment
-`meta/user-care.md` promises.
+`dork-labs/dorkos`, and the app points them there: the help menu's "Report on
+GitHub…", `dorkos feedback`, and the README's "File an issue" link all lead to a
+new GitHub issue. Until 2026-09-14 nothing read that door. `/feedback:triage`
+now does, so both doors get the treatment `meta/user-care.md` promises.
+
+### Two keys
+
+| Key                                       | Answers                                           | Used for                                             |
+| ----------------------------------------- | ------------------------------------------------- | ---------------------------------------------------- |
+| the FB mirror (a `Source:` URL in FB)     | has this issue been filed into Linear?            | not filing a second FB issue. Nothing else.          |
+| a beat marker comment on the GitHub issue | which replies does this person still have coming? | every reply decision, every health row, both medians |
+
+Keeping them apart is the whole design. A mirror created in a run whose approval
+was held says nothing about whether the reporter has heard from us, so the
+mirror must never gate a reply.
 
 ### Intake
 
 Step 0 of Mode 1, before the FB queue read:
 
-1. `gh issue list -R dork-labs/dorkos --state open --limit 100 --json number,title,body,author,createdAt,labels,url,comments` (without `--limit` it stops at 30, and a truncated queue looks like an empty one)
-2. Read every FB issue, **unfiltered by state**, and look for the marker line.
-   An open GitHub issue with no marker anywhere in FB has no mirror yet.
-3. File the ones with no mirror into the FB team the same way the site intake
-   does: one kind label, the title verbatim, the report quoted, and the two
-   marker lines at the end of the description.
+1. Read GitHub twice, open and closed, with `--limit 100` on both. Without
+   `--limit`, `gh` stops at 30, and a truncated queue looks like an empty one.
+   The closed read is what three health rows and both medians are computed from.
 
-The mirror scan must not be state-filtered. A mirror in Done or Canceled still
-counts; skipping those states would re-file a shipped issue and greet its
-reporter twice.
+   ```bash
+   gh issue list -R dork-labs/dorkos --state open --limit 100 \
+     --json number,title,author,createdAt,labels,url,comments
+   gh issue list -R dork-labs/dorkos --state closed --limit 100 \
+     --json number,title,url,author,createdAt,closedAt,stateReason,comments
+   ```
 
-### The `Source:` marker
+   Neither call asks for `body`: a hundred issue bodies blow the context for no
+   gain. Fetch one per issue you are actually mirroring, with
+   `gh issue view <n> -R dork-labs/dorkos --json body`. Comment objects come back
+   whole, with `body`, `createdAt` and `authorAssociation`.
 
-Two lines at the end of an FB description identify a mirrored GitHub report:
+2. Read every FB issue with `includeArchived: true` and no state filter, paging
+   on `pageInfo.hasNextPage` with `after: "<endCursor>"` until it is false. A
+   mirror in Done, Canceled or the archive is still a mirror, and a truncated
+   read re-files everything.
+
+3. File each open issue that matches nothing in FB: one kind label, the title
+   verbatim, the report fenced, and the marker block after the fence.
+
+### The `Source:` marker, and how to match it
+
+A mirrored GitHub report carries these two lines in the marker block of its
+FB description:
 
 ```
 Source: https://github.com/dork-labs/dorkos/issues/1840
 Reporter: @karlohlemann
 ```
 
-`Source:` is the idempotency key for the whole loop. It decides whether an issue
-has already been mirrored, where the replies go, and which sweep rows owe a
-GitHub comment. `Reporter:` is a GitHub handle for these, never an email; the
-email decline path belongs to in-app reports, which carry an address and a
-`Submission:` row id instead.
+Two things about reading it back, both of which have bitten:
+
+- **Linear rewrites a bare URL into a markdown autolink on write.** FB-22's
+  stored description is literally
+  `Source: [https://github.com/dork-labs/dorkos/issues/1841](<https://github.com/dork-labs/dorkos/issues/1841>)`.
+  Matching a line that starts `Source: https` therefore finds nothing, every
+  issue looks unmirrored, and the next run files a second FB issue and greets
+  the reporter twice. The test is a substring anywhere in the description:
+  `github.com/dork-labs/dorkos/issues/<n>` followed by a non-digit or the end of
+  the text. The non-digit guard keeps issue 184 from matching issue 1841.
+- **The description does not end with the marker block.** Site-intake mirrors
+  carry `Submission:`, `Product:` and `Severity:` lines too. Read the block as
+  the run of `Key: value` lines at the end, and when a key appears more than
+  once, take the last one.
+
+The reporter's own text is quoted inside a fenced code block above that run, so
+a `Source:` or `Reporter:` line typed inside a report is never the last one and
+is ignored. `Reporter:` on a GitHub mirror is always a `@login` and never an
+email, which is what keeps the email decline path scoped to in-app reports.
 
 ### The three beats and where each reply lands
 
-| Beat        | Fires when                                            | In-app report                                 | GitHub report                                                      |
-| ----------- | ----------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------ |
-| **Heard**   | intake, within one business day                       | receipt email (automatic)                     | `gh issue comment`, drafted and approved                           |
-| **Decided** | triage accepts or declines, within five business days | decline email only                            | `gh issue comment`; a decline also closes the issue as not planned |
-| **Shipped** | `--sweep`, on release day only                        | shipped email, fired by the FB → Done webhook | `gh issue comment` then `gh issue close --reason completed`        |
+`/feedback:triage` defines a business day as Monday to Friday in the operator's
+local time.
+
+| Beat        | Fires when                                            | In-app report                                   | GitHub report                                                                              |
+| ----------- | ----------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| **Heard**   | intake, within one business day                       | receipt email, if the report carried an address | a comment carrying `<!-- beat:heard -->`                                                   |
+| **Decided** | triage accepts or declines, within five business days | decline email only                              | a comment carrying `<!-- beat:decided -->`; a decline also closes the issue as not planned |
+| **Shipped** | `--sweep`, on release day only                        | shipped email, fired by the FB → Done webhook   | a comment carrying `<!-- beat:shipped -->`, then close as completed                        |
 
 Rules that hold for every one of them:
 
 - A person approves the exact text before anything posts. Silence is a hold.
+- One reply per beat. If two beats come due in the same run, they go out as one
+  comment carrying both markers, never as two comments minutes apart.
 - Comment first, close second, so no close is silent.
 - Nothing written on the Linear FB issue is visible to a reporter. The FB issue
   is our mirror, not a reply.
 - Never close a GitHub issue at merge. The person cannot install the fix until
   the release, which is why the sweep is the only place that closes one as
   completed.
+- Posts go out through `gh issue comment <n> --body-file -` fed by a heredoc, so
+  a reply never needs a temp file.
+
+Moving a GitHub mirror to Done fires no email. Nothing at all reaches that
+reporter until the shipped comment is posted on their issue.
 
 ### Auth
 
@@ -202,11 +250,19 @@ Do this after any change to the intake step:
 2. Run `/feedback:triage`. It should list the issue as having no mirror, file an
    FB issue for it, and present a drafted "heard" reply for approval.
 3. Check Linear: the new FB issue is in Triage with the `Bug` label, the title
-   verbatim, and a `Source:` line carrying your issue number.
-4. Run `/feedback:triage` again without approving anything. The issue must now
-   be skipped as already mirrored. That proves the idempotency key works.
-5. Clean up: cancel the FB issue, and close the GitHub one with
+   verbatim, and a `Source:` line carrying your issue number. Confirm the stored
+   description shows Linear's autolink form, which is the case the matcher has
+   to survive.
+4. Approve the reply, then run `/feedback:triage` again. The issue must be
+   skipped on both counts: already mirrored, and already greeted.
+5. Run it a third time after deleting nothing. Same result. This is the check
+   that catches a matcher that silently stopped matching.
+6. Clean up: cancel the FB issue, and close the GitHub one with
    `gh issue close <n> -R dork-labs/dorkos --reason "not planned"`.
+
+To test the held-approval case, run step 2 and decline the approval. The mirror
+exists and the reply does not, so the next run must still offer the reply and
+must not file a second FB issue.
 
 ## Failure modes → causes
 

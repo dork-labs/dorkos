@@ -12,10 +12,13 @@ and an owner decision, because it acts as a bot on the public repository.
 
 ## What counts as the queue
 
-Open issues with no feedback mirror yet: no issue in the Linear feedback team
-carries a `Source: https://github.com/dork-labs/dorkos/issues/<n>` line for that
-number. That is the same queue `/feedback:triage` works, so the two never
-disagree about what is new.
+Open issues with no `<!-- beat:heard -->` comment on them. That marker is the
+hidden line `/feedback:triage` puts on the first reply a reporter gets, so an
+issue without one has not been answered yet. It needs nothing but `gh`, which is
+all the setup below grants: DorkBot has no Linear access and never needs any.
+
+`/feedback:triage` owns every reply to a reporter. DorkBot only labels, and the
+command reads the label DorkBot set when it drafts that reply.
 
 ## The labels it uses
 
@@ -38,7 +41,7 @@ gh label create runtime/opencode --description "Affects the OpenCode runtime" --
    cp .github/dorkbot-triage/SKILL.md ~/.dork/agents/dorkbot/.claude/skills/dorkbot-triage/
    ```
 
-2. In a DorkBot session, ask it to triage the queue. It reads the unmirrored
+2. In a DorkBot session, ask it to triage the queue. It reads the unanswered
    issues and prints a plan. Nothing is changed on GitHub yet.
 
 3. To let it apply labels, give the session a token with `issues: write` scope

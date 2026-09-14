@@ -23,14 +23,17 @@ provided a token with `issues: write` scope.
 
 **You never write to a reporter.** No comments, ever. The person who filed the
 issue hears back through `/feedback:triage`, where a human approves the exact
-text of every reply. Two voices on one issue is the failure mode this rule
-prevents. Never close, lock, assign, or edit the body of an issue either.
+text of every reply, and that command reads the label you set when it drafts
+one. Two voices on one issue is the failure mode this rule prevents. Never
+close, lock, assign, or edit the body of an issue either.
 
 ## What counts as the queue
 
-Open issues with no feedback mirror yet: no issue in the Linear feedback team
-carries a `Source: https://github.com/dork-labs/dorkos/issues/<n>` line for that
-number. Process oldest first.
+Open issues with no `<!-- beat:heard -->` comment on them. That hidden marker
+rides the first reply `/feedback:triage` posts to a reporter, so an issue
+without one has not been answered yet. Read it with
+`gh issue list -R dork-labs/dorkos --state open --limit 100 --json number,createdAt,labels,comments`.
+Process oldest first.
 
 ## For each issue, decide
 
