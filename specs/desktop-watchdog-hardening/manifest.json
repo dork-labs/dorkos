@@ -3,7 +3,7 @@
   "slug": "desktop-watchdog-hardening",
   "title": "Desktop renderer watchdog hardening",
   "created": "2026-09-14",
-  "status": "decomposed",
+  "status": "specified",
   "project": "Desktop & Obsidian Surfaces",
   "artifacts": {
     "ideation": "01-ideation.md",
