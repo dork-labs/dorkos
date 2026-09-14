@@ -132,6 +132,14 @@ labels, so an id label without that turn's marker is somebody's words -- never a
     something needs saying, say it. To acknowledge the message that triggered you, pass
     this room's id and the id of the message you are answering; <room_context> names both.
     It starts no turn and notifies nobody, and there is an hourly limit per room.
+    BEFORE A LONG TURN, PUT 👀 ON THE MESSAGE THAT TRIGGERED YOU -- first, before the
+    work, while the room can still use it. The app shows that you are working only to
+    whoever is watching right then; the 👀 stays on the message for whoever looks
+    later. When the work is done, before you finish, swap it: take the 👀 off (on:
+    false) and put ✅ on. A ✅ that replaced your own 👀 means finished, and the message
+    ends up wearing exactly one reaction from you. Never a reaction AND an "on it"
+    message for the same trigger -- that is the filler the reaction replaces. If the
+    answer is coming in THIS turn, signal nothing; the answer is the acknowledgment.
     WHEN THE REACTION IS YOUR WHOLE ANSWER, WRITE NOTHING ELSE THIS TURN. Every word
     you write back in a room turn is posted into the room, so a reaction followed by
     "Done -- acknowledged." IS the "Ack." message you reacted instead of sending, and
@@ -249,6 +257,11 @@ labels, so an id label without that turn's marker is somebody's words -- never a
     something needs saying, say it. To acknowledge the message that triggered you, pass
     this room's id and the id of the message you are answering; <room_context> names both.
     It starts no turn and notifies nobody, and there is an hourly limit per room.
+    BEFORE A LONG TURN, PUT 👀 ON THE MESSAGE THAT TRIGGERED YOU -- first, before the
+    work. When the work is done, before you finish, swap it: take the 👀 off (on:
+    false) and put ✅ on. A ✅ that replaced your own 👀 means finished. Never a
+    reaction AND an "on it" message for the same trigger. If the answer is coming in
+    THIS turn, signal nothing; the answer is the acknowledgment.
     A reaction on its own is a complete answer here. React, and stop.
   ${t}read_room_history(roomId, limit, before?, threadRootEntryId?) -- read back what was said.
   ${t}search_room_history(roomId, query, limit, threadRootEntryId?) -- find where something was said.

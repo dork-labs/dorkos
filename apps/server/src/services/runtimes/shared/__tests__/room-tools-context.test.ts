@@ -82,3 +82,57 @@ describe('what both blocks say about a pinned document', () => {
     expect(block).toContain('#team starts with one');
   });
 });
+
+describe('what both blocks say about the early signal (DOR-1975)', () => {
+  // FB-10: an agent that takes a long turn leaves nothing on the message until
+  // it finishes. The rule has to survive a reword in BOTH reply modes, and the
+  // two wrap the same sentences at different columns, so every assertion here
+  // reads the words with the line breaks folded away.
+  it.each([
+    ['text-reply', buildRoomToolsBlock(PREFIX)],
+    ['tool-only', buildRoomToolsBlock(PREFIX, 'tool-only')],
+  ])('%s: signals BEFORE the long work, not after', (_mode, block) => {
+    // The ordering word is the part that matters: the instruction is worthless
+    // if the signal arrives with the result.
+    const words = block.replace(/\s+/g, ' ');
+    expect(words).toContain('BEFORE A LONG TURN, PUT 👀 ON THE MESSAGE THAT TRIGGERED YOU');
+    expect(words).toContain('first, before the work');
+  });
+
+  it.each([
+    ['text-reply', buildRoomToolsBlock(PREFIX)],
+    ['tool-only', buildRoomToolsBlock(PREFIX, 'tool-only')],
+  ])('%s: forbids BOTH a reaction and an "on it" message for one trigger', (_mode, block) => {
+    // The over-participation failure this rule has to not cause: two
+    // acknowledgments of the same nothing is worse than the silence it fixes.
+    expect(block.replace(/\s+/g, ' ')).toContain(
+      'Never a reaction AND an "on it" message for the same trigger'
+    );
+  });
+
+  it.each([
+    ['text-reply', buildRoomToolsBlock(PREFIX)],
+    ['tool-only', buildRoomToolsBlock(PREFIX, 'tool-only')],
+  ])(
+    '%s: swaps the 👀 for a ✅ when the work is done, and says what that ✅ means',
+    (_mode, block) => {
+      // Without the swap an agent leaves a room saying it is still working when
+      // it is not; `on: false` is the mechanism, and naming it is what makes the
+      // instruction actionable. And ✅ already means "seen" in the ack triple a
+      // few lines up, so the text has to say which ✅ this is.
+      const words = block.replace(/\s+/g, ' ');
+      expect(words).toContain('take the 👀 off (on: false) and put ✅ on');
+      expect(words).toContain('A ✅ that replaced your own 👀 means finished');
+    }
+  );
+
+  it.each([
+    ['text-reply', buildRoomToolsBlock(PREFIX)],
+    ['tool-only', buildRoomToolsBlock(PREFIX, 'tool-only')],
+  ])('%s: asks for no signal at all when the answer is coming in this turn', (_mode, block) => {
+    // The bound. Without it "signal early" becomes a progress narration in emoji.
+    expect(block.replace(/\s+/g, ' ')).toContain(
+      'If the answer is coming in THIS turn, signal nothing; the answer is the acknowledgment'
+    );
+  });
+});
