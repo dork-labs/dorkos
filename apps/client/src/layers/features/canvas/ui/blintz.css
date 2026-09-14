@@ -1,7 +1,39 @@
-/* blintz.css bundles a generic Tailwind utility set (`.hidden` etc.) that would
-   otherwise sit unlayered and beat the app's utilities — e.g. hiding the left
-   sidebar (`hidden md:block`) app-wide. Importing it into the `blintz` layer
-   (pinned between `components` and `utilities` in index.css) demotes those generic
-   utilities below the app's while keeping the editor's `.milkdown` typography above
-   the app's base preflight. */
+/* Keep editor rules above the app reset and below the app utilities. */
 @import 'blintz/styles.css' layer(blintz);
+
+/* Blintz's public variables inherit into content, menus, and code blocks.
+   DorkOS tokens contain HSL channels, so every color must be resolved here. */
+.dorkos-markdown {
+  --blintz-color-background: hsl(var(--background));
+  --blintz-color-on-background: hsl(var(--foreground));
+  --blintz-color-surface: hsl(var(--muted));
+  --blintz-color-surface-low: hsl(var(--popover));
+  --blintz-color-on-surface: hsl(var(--foreground));
+  --blintz-color-on-surface-variant: hsl(var(--muted-foreground));
+  --blintz-color-outline: hsl(var(--border));
+  --blintz-color-primary: hsl(var(--status-info-fg));
+  --blintz-color-secondary: hsl(var(--accent));
+  --blintz-color-on-secondary: hsl(var(--accent-foreground));
+  --blintz-color-inverse: hsl(var(--foreground));
+  --blintz-color-on-inverse: hsl(var(--background));
+  --blintz-color-inline-code: hsl(var(--foreground));
+  --blintz-color-error: hsl(var(--destructive));
+  --blintz-color-hover: hsl(var(--accent));
+  --blintz-color-selected: hsl(var(--status-info-bg));
+  --blintz-color-inline-area: hsl(var(--muted));
+  --blintz-font-default: var(--font-sans);
+  --blintz-font-title: var(--font-sans);
+  --blintz-font-code: var(--font-mono);
+  --blintz-code-keyword: hsl(var(--status-info-fg));
+  --blintz-code-string: hsl(var(--status-success-fg));
+  /* The warning token alone is too pale for small code in the light theme. */
+  --blintz-code-number: color-mix(
+    in srgb,
+    hsl(var(--status-warning-fg)) 60%,
+    hsl(var(--foreground))
+  );
+  --blintz-code-comment: hsl(var(--muted-foreground));
+  --blintz-code-function: hsl(var(--foreground));
+  --blintz-code-type: hsl(var(--status-info-fg));
+  --blintz-code-operator: hsl(var(--foreground));
+}

@@ -33,6 +33,21 @@
       ],
       "explorationNotes": "The room leg is deliberately absent: a prompt on a ROOM lane needs a room, an agent bound into it and a turn dispatched by the room runner, and this leg seeds none of those (its fixture is one agent directory and a chat session). The filter is unit-tested in RoomLiveLane.test.tsx, the roomId join is server-tested in session-list-broadcaster-asks, and the whole path was walked against a real room for the phase acceptance check."
     },
+    "blintz": {
+      "relatedCode": [
+        "apps/client/src/layers/features/canvas/ui/BlintzCanvas.tsx",
+        "apps/client/src/layers/features/canvas/ui/blintz.css",
+        "apps/client/src/layers/features/canvas/ui/CanvasMarkdownContent.tsx",
+        "apps/client/src/dev/showcases/MarkdownShowcases.tsx"
+      ],
+      "explorationNotes": [
+        "Uses the real editor and the production generated-document canvas at /dev/markdown. No paid turns or backend state are needed.",
+        "Runs in the default chromium CI project. Local isolation can use a temporary Playwright config pointing at a Vite-only server; no production data is touched.",
+        "Pins computed host-theme colors, syntax contrast, live app/system theme changes, single aligned list markers, narrow overflow, toolbar formatting, and draft preservation across modes.",
+        "ProseMirror model, state, and view are pinned together in the root pnpm overrides: mixed copies break DecorationGroup identity checks and can disconnect visible typing from document state. Every case refuses page errors.",
+        "After swapping a packed Blintz dependency locally, restart Vite with --force: HMR can load new CSS while retaining old optimized editor JavaScript."
+      ]
+    },
     "boot-stability": {
       "relatedCode": [
         "apps/client/src/layers/shared/lib/query-persister.ts",

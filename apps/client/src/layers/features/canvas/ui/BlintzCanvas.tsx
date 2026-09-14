@@ -23,16 +23,14 @@ export interface BlintzCanvasProps {
  * only when a markdown document renders — never for the `url` / `json` canvas
  * variants or the main bundle — and tests have one module to mock.
  *
- * Forwards the app's resolved theme as `data-theme` on the wrapper so the host's
- * explicit light/dark choice beats the OS preference in Blintz's own CSS (fixes
- * black-on-black markdown when the OS is dark but the app is light).
+ * Uses the app's resolved theme and semantic colors through Blintz's public
+ * theme contract. An open document follows theme changes without remounting.
  */
 export function BlintzCanvas({ value, editable, onChange, className }: BlintzCanvasProps) {
   const resolvedTheme = useResolvedTheme();
   return (
-    // `display: contents` — the wrapper exists only to carry `data-theme` as an
-    // ancestor of Blintz's `.milkdown`; it adds no box, so layout is unchanged.
-    <div data-theme={resolvedTheme} className="contents">
+    // The ancestor supplies inherited theme tokens without adding another inset.
+    <div data-theme={resolvedTheme} className="dorkos-markdown contents">
       {/* desktop:select-text — the desktop shell defaults chrome to
           non-selectable on every platform (index.css). Canvas documents are
           content, and in view mode (`editable={false}`) the ProseMirror surface
@@ -40,6 +38,7 @@ export function BlintzCanvas({ value, editable, onChange, className }: BlintzCan
           user-select:none would make the document unselectable (DOR-253). */}
       <MarkdownEditor
         value={value}
+        theme={resolvedTheme}
         editable={editable}
         onChange={onChange}
         className={cn('desktop:select-text', className)}

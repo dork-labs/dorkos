@@ -1,4 +1,4 @@
-import type { PlaygroundSection } from '../playground-registry';
+import type { PlaygroundSection } from '../../playground-registry';
 
 /**
  * Conversation component sections from ConversationPage.

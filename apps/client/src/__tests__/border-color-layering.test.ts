@@ -17,11 +17,12 @@ import { dirname, resolve } from 'node:path';
  *   `border-<colour>` utility Tailwind emits. `border-primary`,
  *   `border-destructive` and `border-transparent` all rendered as the same
  *   neutral line across 69 files (DOR-1750).
- * - **Above `blintz`.** `blintz.css` bundles its own Tailwind preflight
- *   (`*,:after,:before{border:0 solid}`, which resets border colour to
- *   `currentColor`), it is NOT scoped to the canvas editor, and its layer sits
+ * - **Above `blintz`.** Older `blintz.css` bundled its own Tailwind preflight
+ *   (`*,:after,:before{border:0 solid}`, which reset border colour to
+ *   `currentColor`), it was NOT scoped to the canvas editor, and its layer sat
  *   above `base`. Parked in `base`, the default was repainted app-wide the
- *   moment the lazy canvas chunk loaded (DOR-1024).
+ *   moment the lazy canvas chunk loaded (DOR-1024). Keep the stable slot for
+ *   cached chunks while current Blintz scopes every reset to its editor.
  *
  * jsdom does not implement cascade layers, so no rendering test can catch a
  * regression here. Reading the stylesheet can.
@@ -134,10 +135,9 @@ describe('the default border colour (index.css)', () => {
 
   it('stands every border-colour default down inside the canvas editor', () => {
     // This layer sits ABOVE `blintz`, which inverts — for this one property —
-    // the thing the `blintz` slot exists for. blintz declares a border colour
-    // on five selectors and the three that matter are under the editor root
-    // (`.milkdown-theme-nord blockquote`, `.milkdown-theme-nord.prose tr`);
-    // without the exclusion the app's neutral line flattens all three.
+    // the thing the `blintz` slot exists for. The editor owns the borders on
+    // its blockquotes, tables, and controls; without this exclusion the app's
+    // neutral fallback would flatten those deliberate choices.
     //
     // Asserted over every rule IN the layer rather than over the two selectors
     // this file happens to know about: each needs its own copy of the exclusion

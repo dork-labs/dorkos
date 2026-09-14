@@ -18,33 +18,17 @@ import type { APIRequestContext } from '@playwright/test';
  * 5. a runtime that is NOT the default can still have its model set, which is
  *    the capability hole this redesign closes.
  *
- * WHAT THIS SUITE CAN AND CANNOT SEE, stated plainly, because the difference is
- * a property of the machine and not of the code. A card renders its settings
- * rows (Model, Effort, Trust) only while its runtime is READY, and ready means
- * the server resolved the CLI *and* found an authentication for it. The CLI half
- * travels with the repo (Claude Code and Codex both vendor their binary through
- * `pnpm install`), but the sign-in half cannot: a CI runner has no
- * `claude auth login`, no ChatGPT login and no `CODEX_API_KEY`, so on CI every
- * card renders in its not-yet-connected state and there are no rows to drive. So:
+ * Readiness is a property of the machine: settings and Make default are only
+ * offered after a runtime is connected. Every test waits for the real
+ * requirements response and its corresponding card state, so it cannot click
+ * an optimistic control that disappears when authentication checks finish.
  *
- * - Tests 1-4 assert only what is true with nothing connected — verified that
- *   way, not assumed: run against a genuinely unconnected runtime they pass
- *   unchanged. They cover the default-runtime write end to end, because
- *   `Make default` is offered on every card regardless of readiness (pointing
- *   new conversations at a runtime you are about to connect is a legitimate
- *   thing to do, and the card then says so itself).
- * - Test 5 needs a SECOND connected runtime, and skips with a reason when Codex
- *   is not signed in here. It is the only part of the spec's flow that cannot be
- *   expressed on a machine with nothing connected, and faking it would mean
- *   faking readiness — at which point the test would prove something about the
- *   fake and nothing about the product. It runs on any machine where `codex` is
- *   signed in (it does, and passes, on a developer laptop); the same wiring
- *   under a mocked capability map is `RuntimeCard.test.tsx`.
- *
- * The test-mode server is not an escape hatch for that gap either: `TestModeRuntime`
- * declares `settings.configSection: null`, which means it has nowhere to keep a
- * per-runtime setting at all — its card says so and offers no rows to drive —
- * and its project (`chromium-mock`) is a single spec file by design.
+ * The card-state test always checks all three shipped runtimes against that
+ * response, including Connect and the absence of Make default for disconnected
+ * cards. The two write flows skip explicitly when the runtimes they need are
+ * not connected. A CI runner without credentials still checks the settled UI;
+ * a connected machine also checks the real PATCH, reload, and model writes.
+ * No authentication or requirements responses are mocked.
  *
  * SERIAL, and it has to be: two of these tests move `runtimes.default`, which is
  * one global setting on a server the whole suite shares. Run in parallel with
@@ -68,6 +52,11 @@ const DEFAULT_RUNTIME = 'claude-code';
 
 /** The non-default runtime this file drives. */
 const OTHER_RUNTIME = 'codex';
+
+/** The readiness facts returned by the same request that hydrates the cards. */
+interface RuntimeRequirementsView {
+  runtimes: Record<string, { state: 'ready' | 'connect' }>;
+}
 
 /**
  * What `GET /api/config` says about the two settings this file moves.
@@ -145,16 +134,36 @@ test.describe('Settings — Runtimes tab @smoke', () => {
    * costs one GET and means a red run is only a red run (DOR-1223).
    */
   let prior: RuntimeDefaults;
+  let requirements: RuntimeRequirementsView;
 
   test.beforeAll(async ({ request }) => {
     prior = await readRuntimeDefaults(request);
   });
 
-  test.beforeEach(async ({ basePage, settingsPage }) => {
+  test.beforeEach(async ({ basePage, page, settingsPage }) => {
+    const response = page.waitForResponse(
+      (result) =>
+        result.url().includes('/api/system/requirements') && result.request().method() === 'GET'
+    );
     await basePage.goto();
     await basePage.waitForAppReady();
     await settingsPage.open();
     await settingsPage.switchTab('Runtimes');
+    const settled = await response;
+    expect(settled.ok()).toBe(true);
+    requirements = (await settled.json()) as RuntimeRequirementsView;
+    // Receiving the network response is not yet a React render. Wait for each
+    // card's positive readiness marker before asserting an absent action.
+    for (const type of SHIPPED_RUNTIMES) {
+      expect(requirements.runtimes[type]?.state, `${type} readiness`).toMatch(/^(ready|connect)$/);
+      if (requirements.runtimes[type].state === 'ready') {
+        await expect(settingsPage.runtimeReady(type)).toBeVisible();
+      } else {
+        await expect(
+          settingsPage.runtimeCard(type).getByTestId(`runtime-card-connect-${type}`)
+        ).toBeVisible();
+      }
+    }
   });
 
   // Everything this file MOVED, put back — whether the test that moved it
@@ -200,6 +209,32 @@ test.describe('Settings — Runtimes tab @smoke', () => {
     await expect(settingsPage.runtimesRecheck).toBeVisible();
   });
 
+  test('settled cards offer setup or default selection according to real readiness', async ({
+    settingsPage,
+  }) => {
+    let checked = 0;
+    for (const type of SHIPPED_RUNTIMES) {
+      const card = settingsPage.runtimeCard(type);
+      await expect(card).toBeVisible();
+      if (requirements.runtimes[type].state === 'connect') {
+        await expect(card.getByTestId(`runtime-card-connect-${type}`)).toBeVisible();
+        await expect(card.getByTestId(`runtime-card-locked-${type}`)).toBeVisible();
+        await expect(settingsPage.runtimeReady(type)).toHaveCount(0);
+        await expect(settingsPage.runtimeMakeDefault(type)).toHaveCount(0);
+      } else {
+        await expect(settingsPage.runtimeReady(type)).toBeVisible();
+        await expect(card.getByTestId(`runtime-card-connect-${type}`)).toHaveCount(0);
+        if (type === DEFAULT_RUNTIME) {
+          await expect(settingsPage.runtimeMakeDefault(type)).toHaveCount(0);
+        } else {
+          await expect(settingsPage.runtimeMakeDefault(type)).toBeVisible();
+        }
+      }
+      checked++;
+    }
+    expect(checked).toBe(3);
+  });
+
   test('opens and closes one card without touching the others', async ({ settingsPage }) => {
     const toggle = settingsPage.runtimeCardToggle(DEFAULT_RUNTIME);
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
@@ -239,18 +274,15 @@ test.describe('Settings — Runtimes tab @smoke', () => {
     page,
     settingsPage,
   }) => {
-    // The one test in this file that boots the app TWICE — once in `beforeEach`
-    // and once for the reload that is its whole point — which is three times the
-    // work its siblings do inside the same 30s budget. On a loaded merge-queue
-    // shard the two boots ate the budget and the LAST click reported
-    // `locator.click: Test timeout of 30000ms exceeded` against a perfectly
-    // healthy app, ejecting two unrelated PRs (DOR-2013).
-    //
-    // `test.slow()` TRIPLES the timeout, and that cuts both ways: a UI
-    // regression up to three times slower than today would now pass here. It is
-    // acceptable only because it is the slack and not the fix — the two waits
-    // below are what make this test deterministic, and a regression that breaks
-    // the flow rather than merely slowing it still reds at the assertions.
+    const disconnected = [DEFAULT_RUNTIME, OTHER_RUNTIME].filter(
+      (runtime) => requirements.runtimes[runtime].state !== 'ready'
+    );
+    test.skip(
+      disconnected.length > 0,
+      `Default persistence needs both runtimes connected; unavailable here: ${disconnected.join(', ')}. Disconnected cards are covered by the settled-card test.`
+    );
+    // This flow boots twice and waits for real writes; keep the existing
+    // larger budget, but never use it to wait for a control readiness forbids.
     test.slow();
 
     /**
@@ -307,18 +339,11 @@ test.describe('Settings — Runtimes tab @smoke', () => {
   test('sets the model of a runtime that new conversations do not start on', async ({
     basePage,
     page,
-    request,
     settingsPage,
   }) => {
-    // Readiness is a fact about this machine, not about the build — see the file
-    // header. Read it from the same endpoint the tab reads rather than inferring
-    // it from the DOM, so a skip says something true about the server.
-    const requirements = (await (await request.get('/api/system/requirements')).json()) as {
-      runtimes: Record<string, { state?: string }>;
-    };
     test.skip(
-      requirements.runtimes[OTHER_RUNTIME]?.state !== 'ready',
-      `${OTHER_RUNTIME} is not connected on this machine, and a runtime's settings rows only exist once it is. This is the one step of the flow that needs a second connected runtime.`
+      requirements.runtimes[OTHER_RUNTIME].state !== 'ready',
+      `${OTHER_RUNTIME} is not connected on this machine, and model settings require a connected runtime.`
     );
 
     // The capability hole, precisely: Codex is not the default here, and before

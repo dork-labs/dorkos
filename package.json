@@ -69,6 +69,9 @@
   },
   "pnpm": {
     "overrides": {
+      "prosemirror-model": "1.25.11",
+      "prosemirror-state": "1.4.4",
+      "prosemirror-view": "1.42.3",
       "@better-auth/utils": "0.5.0",
       "@anthropic-ai/claude-agent-sdk": "0.3.268",
       "@types/node": "^24",

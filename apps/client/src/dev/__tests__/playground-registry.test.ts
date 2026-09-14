@@ -28,6 +28,7 @@ import {
   SIDEBAR_MODEL_SECTIONS,
   SIDEBAR_BOOT_SECTIONS,
   ONE_BAR_SECTIONS,
+  MARKDOWN_SECTIONS,
 } from '../playground-registry';
 import { slugify } from '../lib/slugify';
 import {
@@ -84,6 +85,7 @@ describe('playground-registry', () => {
       ...SIDEBAR_MODEL_SECTIONS,
       ...SIDEBAR_BOOT_SECTIONS,
       ...ONE_BAR_SECTIONS,
+      ...MARKDOWN_SECTIONS,
     ];
     expect(PLAYGROUND_REGISTRY).toEqual(combined);
   });

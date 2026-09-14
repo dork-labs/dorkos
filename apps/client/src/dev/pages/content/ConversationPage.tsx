@@ -1,24 +1,24 @@
-import { PlaygroundPageLayout } from '../PlaygroundPageLayout';
-import { CONVERSATION_SECTIONS } from '../playground-registry';
-import { SurfacesShowcase } from '../showcases/SurfacesShowcases';
-import { MessageShowcases } from '../showcases/MessageShowcases';
-import { TimelineShowcase } from '../showcases/TimelineShowcases';
-import { ToolShowcases } from '../showcases/ToolShowcases';
-import { AsksShowcase } from '../showcases/AsksShowcases';
-import { ApprovalCardShowcase } from '../showcases/ApprovalsShowcases';
-import { ChipShowcases } from '../showcases/ChipShowcases';
+import { PlaygroundPageLayout } from '../../PlaygroundPageLayout';
+import { CONVERSATION_SECTIONS } from '../../playground-registry';
+import { SurfacesShowcase } from '../../showcases/SurfacesShowcases';
+import { MessageShowcases } from '../../showcases/MessageShowcases';
+import { TimelineShowcase } from '../../showcases/TimelineShowcases';
+import { ToolShowcases } from '../../showcases/ToolShowcases';
+import { AsksShowcase } from '../../showcases/AsksShowcases';
+import { ApprovalCardShowcase } from '../../showcases/ApprovalsShowcases';
+import { ChipShowcases } from '../../showcases/ChipShowcases';
 import {
   ComposerShowcases,
   SlashCommandListShowcase,
   QuestionPromptShowcase,
-} from '../showcases/ComposerShowcases';
-import { StatusShowcases } from '../showcases/StatusShowcases';
-import { LiveLaneShowcase, LivePeekShowcase } from '../showcases/LiveLaneShowcases';
-import { StatusLineShowcases } from '../showcases/StatusLineShowcases';
-import { ModelPickerShowcases } from '../showcases/ModelPickerShowcases';
-import { TrustDialShowcases } from '../showcases/TrustDialShowcases';
-import { SessionInspectorShowcases } from '../showcases/SessionInspectorShowcases';
-import { MiscShowcases } from '../showcases/MiscShowcases';
+} from '../../showcases/ComposerShowcases';
+import { StatusShowcases } from '../../showcases/StatusShowcases';
+import { LiveLaneShowcase, LivePeekShowcase } from '../../showcases/LiveLaneShowcases';
+import { StatusLineShowcases } from '../../showcases/StatusLineShowcases';
+import { ModelPickerShowcases } from '../../showcases/ModelPickerShowcases';
+import { TrustDialShowcases } from '../../showcases/TrustDialShowcases';
+import { SessionInspectorShowcases } from '../../showcases/SessionInspectorShowcases';
+import { MiscShowcases } from '../../showcases/MiscShowcases';
 
 /** Conversation compound showcase page for the dev playground. */
 export function ConversationPage() {

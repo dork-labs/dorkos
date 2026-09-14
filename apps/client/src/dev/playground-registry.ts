@@ -24,7 +24,8 @@ export type Page =
   | 'tour-spotlight'
   | 'sidebar-model'
   | 'sidebar-boot'
-  | 'one-bar';
+  | 'one-bar'
+  | 'markdown';
 
 /** A single searchable/navigable section in the playground. */
 export interface PlaygroundSection {
@@ -52,7 +53,7 @@ export interface PlaygroundSection {
 export { TOKENS_SECTIONS } from './sections/tokens-sections';
 export { FORMS_SECTIONS } from './sections/forms-sections';
 export { COMPONENTS_SECTIONS } from './sections/components-sections';
-export { CONVERSATION_SECTIONS } from './sections/conversation-sections';
+export { CONVERSATION_SECTIONS } from './sections/content/conversation-sections';
 export { ENTRY_ACTIONS_SECTIONS } from './sections/entry-actions-sections';
 export { FEATURE_AGENT_SECTIONS } from './sections/features-agent-sections';
 export { FEATURE_SURFACE_SECTIONS } from './sections/features-surface-sections';
@@ -64,21 +65,24 @@ export { TOPOLOGY_SECTIONS } from './sections/topology-sections';
 export { FILTER_BAR_SECTIONS } from './sections/filter-bar-sections';
 export { ERROR_STATES_SECTIONS } from './sections/error-states-sections';
 export { ONBOARDING_SECTIONS } from './sections/onboarding-sections';
-export { TABLES_SECTIONS } from './sections/tables-sections';
+export { TABLES_SECTIONS } from './sections/content/tables-sections';
 export { SETTINGS_SECTIONS } from './sections/settings-sections';
 export { MARKETPLACE_SECTIONS } from './sections/marketplace-sections';
-export { GEN_UI_SECTIONS } from './sections/gen-ui-sections';
+export { GEN_UI_SECTIONS } from './sections/content/gen-ui-sections';
 export { ROOMS_SECTIONS } from './sections/rooms-sections';
 export { TOUR_SPOTLIGHT_SECTIONS } from './sections/tour-spotlight-sections';
 export { SIDEBAR_MODEL_SECTIONS } from './sections/sidebar-model-sections';
 export { SIDEBAR_BOOT_SECTIONS } from './sections/sidebar-boot-sections';
+export { MARKDOWN_SECTIONS } from './sections/content/markdown-sections';
 export { ONE_BAR_SECTIONS } from './sections/one-bar-sections';
+
+import { MARKDOWN_SECTIONS as markdown } from './sections/content/markdown-sections';
 
 // Imported under aliases to compose the full registry without circular re-export issues.
 import { TOKENS_SECTIONS as tokens } from './sections/tokens-sections';
 import { FORMS_SECTIONS as forms } from './sections/forms-sections';
 import { COMPONENTS_SECTIONS as components } from './sections/components-sections';
-import { CONVERSATION_SECTIONS as conversation } from './sections/conversation-sections';
+import { CONVERSATION_SECTIONS as conversation } from './sections/content/conversation-sections';
 import { ENTRY_ACTIONS_SECTIONS as entryActions } from './sections/entry-actions-sections';
 import { FEATURE_AGENT_SECTIONS as featureAgent } from './sections/features-agent-sections';
 import { FEATURE_SURFACE_SECTIONS as featureSurface } from './sections/features-surface-sections';
@@ -90,10 +94,10 @@ import { TOPOLOGY_SECTIONS as topology } from './sections/topology-sections';
 import { FILTER_BAR_SECTIONS as filterBar } from './sections/filter-bar-sections';
 import { ERROR_STATES_SECTIONS as errorStates } from './sections/error-states-sections';
 import { ONBOARDING_SECTIONS as onboarding } from './sections/onboarding-sections';
-import { TABLES_SECTIONS as tables } from './sections/tables-sections';
+import { TABLES_SECTIONS as tables } from './sections/content/tables-sections';
 import { SETTINGS_SECTIONS as settings } from './sections/settings-sections';
 import { MARKETPLACE_SECTIONS as marketplace } from './sections/marketplace-sections';
-import { GEN_UI_SECTIONS as genUi } from './sections/gen-ui-sections';
+import { GEN_UI_SECTIONS as genUi } from './sections/content/gen-ui-sections';
 import { ROOMS_SECTIONS as rooms } from './sections/rooms-sections';
 import { TOUR_SPOTLIGHT_SECTIONS as tourSpotlight } from './sections/tour-spotlight-sections';
 import { SIDEBAR_MODEL_SECTIONS as sidebarModel } from './sections/sidebar-model-sections';
@@ -130,4 +134,5 @@ export const PLAYGROUND_REGISTRY: PlaygroundSection[] = [
   ...sidebarModel,
   ...sidebarBoot,
   ...oneBar,
+  ...markdown,
 ];

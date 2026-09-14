@@ -1,6 +1,6 @@
-import { PlaygroundPageLayout } from '../PlaygroundPageLayout';
-import { GEN_UI_SECTIONS } from '../playground-registry';
-import { GenUiShowcases } from '../showcases/GenUiShowcases';
+import { PlaygroundPageLayout } from '../../PlaygroundPageLayout';
+import { GEN_UI_SECTIONS } from '../../playground-registry';
+import { GenUiShowcases } from '../../showcases/GenUiShowcases';
 
 /** Generative UI widget gallery page for the dev playground. */
 export function GenUiPage() {

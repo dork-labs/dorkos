@@ -8,8 +8,10 @@ import '@testing-library/jest-dom/vitest';
 // Stub the heavy editor — this suite verifies the data-theme wrapper and that a
 // live theme change reaches an already-mounted editor.
 vi.mock('blintz', () => ({
-  MarkdownEditor: ({ value }: { value: string }) => (
-    <div data-testid="markdown-editor">{value}</div>
+  MarkdownEditor: ({ value, theme }: { value: string; theme: string }) => (
+    <div data-testid="markdown-editor" data-editor-theme={theme}>
+      {value}
+    </div>
   ),
 }));
 
@@ -44,23 +46,27 @@ describe('BlintzCanvas theme forwarding', () => {
   it('forwards a resolved light theme as data-theme="light"', () => {
     render(<BlintzCanvas value="# hi" editable={false} />);
     expect(themeWrapper()).toHaveAttribute('data-theme', 'light');
+    expect(screen.getByTestId('markdown-editor')).toHaveAttribute('data-editor-theme', 'light');
   });
 
   it('forwards a resolved dark theme as data-theme="dark"', () => {
     act(() => useThemeStore.getState().setTheme('dark'));
     render(<BlintzCanvas value="# hi" editable={false} />);
     expect(themeWrapper()).toHaveAttribute('data-theme', 'dark');
+    expect(screen.getByTestId('markdown-editor')).toHaveAttribute('data-editor-theme', 'dark');
   });
 
   it('updates data-theme live when the store theme changes, without remounting the editor', () => {
     render(<BlintzCanvas value="# hi" editable={false} />);
     const editorBefore = screen.getByTestId('markdown-editor');
     expect(themeWrapper()).toHaveAttribute('data-theme', 'light');
+    expect(screen.getByTestId('markdown-editor')).toHaveAttribute('data-editor-theme', 'light');
 
     // A theme switch from any surface flows through the shared store (S2).
     act(() => useThemeStore.getState().setTheme('dark'));
 
     expect(themeWrapper()).toHaveAttribute('data-theme', 'dark');
+    expect(screen.getByTestId('markdown-editor')).toHaveAttribute('data-editor-theme', 'dark');
     // Same editor node — the wrapper re-rendered, the editor was not torn down.
     expect(screen.getByTestId('markdown-editor')).toBe(editorBefore);
   });

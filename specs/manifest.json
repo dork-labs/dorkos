@@ -2986,6 +2986,15 @@
       "status": "specified",
       "project": "Agents as First-Class Operators",
       "linearIssue": "DOR-1932"
+    },
+    {
+      "id": "260914-203800",
+      "slug": "blintz-editor-polish",
+      "title": "Blintz markdown polish",
+      "created": "2026-09-14",
+      "status": "implemented",
+      "project": "App Shell & Accessibility",
+      "linearIssue": "DOR-2038"
     }
   ]
 }
