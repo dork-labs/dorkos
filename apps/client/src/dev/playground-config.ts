@@ -50,6 +50,7 @@ import {
   SIDEBAR_BOOT_SECTIONS,
   SIDEBAR_MODEL_SECTIONS,
   ONE_BAR_SECTIONS,
+  MARKDOWN_SECTIONS,
 } from './playground-registry';
 
 /** Navigation group a page belongs to in the sidebar. */
@@ -138,6 +139,15 @@ function crossListed(ids: readonly string[]): PlaygroundSection[] {
  * and route parsing all derive from this array.
  */
 export const PAGE_CONFIGS: PageConfig[] = [
+  {
+    id: 'markdown',
+    label: 'Markdown',
+    description: 'The real canvas editor: typography, editing, and live themes.',
+    icon: TextCursorInput,
+    group: 'session',
+    sections: MARKDOWN_SECTIONS,
+    path: 'markdown',
+  },
   // ── Design System ──
   {
     id: 'tokens',

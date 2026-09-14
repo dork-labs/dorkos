@@ -15,7 +15,7 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { ChipShowcases } from '../showcases/ChipShowcases';
 import { SETTLED_PARTS, WORKING_PARTS } from '../showcases/chip-showcase-data';
-import { CONVERSATION_SECTIONS } from '../sections/conversation-sections';
+import { CONVERSATION_SECTIONS } from '../sections/content/conversation-sections';
 
 describe('ChipShowcases', () => {
   afterEach(() => cleanup());

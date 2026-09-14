@@ -17,13 +17,13 @@
 import type { ComponentType } from 'react';
 import { CommandPalettePage } from './pages/CommandPalettePage';
 import { ComponentsPage } from './pages/ComponentsPage';
-import { ConversationPage } from './pages/ConversationPage';
+import { ConversationPage } from './pages/content/ConversationPage';
 import { EntryActionsPage } from './pages/EntryActionsPage';
 import { ErrorStatesPage } from './pages/ErrorStatesPage';
 import { FeaturesPage, HomeInboxPage } from './pages/FeaturesPage';
 import { FilterBarPage } from './pages/FilterBarPage';
 import { FormsPage } from './pages/FormsPage';
-import { GenUiPage } from './pages/GenUiPage';
+import { GenUiPage } from './pages/content/GenUiPage';
 import { IdentityPage } from './pages/IdentityPage';
 import { MarketplacePage } from './pages/MarketplacePage';
 import { OnboardingPage } from './pages/OnboardingPage';
@@ -35,10 +35,11 @@ import { SettingsPage } from './pages/SettingsPage';
 import { SidebarBootPage } from './pages/SidebarBootPage';
 import { SidebarModelPage } from './pages/SidebarModelPage';
 import { SimulatorPage } from './pages/SimulatorPage';
-import { TablesPage } from './pages/TablesPage';
+import { TablesPage } from './pages/content/TablesPage';
 import { TokensPage } from './pages/TokensPage';
 import { TopologyPage } from './pages/TopologyPage';
 import { TourSpotlightPage } from './pages/TourSpotlightPage';
+import { MarkdownPage } from './pages/content/MarkdownPage';
 import type { Page } from './playground-registry';
 
 /**
@@ -54,6 +55,7 @@ interface PlaygroundPageProps {
 
 /** Page component lookup — maps page IDs to their React components. */
 export const PAGE_COMPONENTS: Record<string, ComponentType<PlaygroundPageProps>> = {
+  markdown: MarkdownPage,
   overview: OverviewPage as ComponentType<PlaygroundPageProps>,
   tokens: TokensPage,
   forms: FormsPage,

@@ -1,4 +1,4 @@
-import type { PlaygroundSection } from '../playground-registry';
+import type { PlaygroundSection } from '../../playground-registry';
 
 /** Registry entries for the Generative UI page. */
 export const GEN_UI_SECTIONS: PlaygroundSection[] = [

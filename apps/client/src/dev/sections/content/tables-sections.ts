@@ -1,4 +1,4 @@
-import type { PlaygroundSection } from '../playground-registry';
+import type { PlaygroundSection } from '../../playground-registry';
 
 /** Table showcase sections for the Tables playground page. */
 export const TABLES_SECTIONS: PlaygroundSection[] = [

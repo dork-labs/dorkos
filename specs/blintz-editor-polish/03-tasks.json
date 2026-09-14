@@ -1,0 +1,117 @@
+{
+  "spec": "specs/blintz-editor-polish/02-specification.md",
+  "slug": "blintz-editor-polish",
+  "generatedAt": "2026-09-14T19:19:45.059395+00:00",
+  "mode": "full",
+  "lastDecomposeDate": "2026-09-14",
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "Formatting foundation",
+      "subject": "[blintz-editor-polish] [P1] Consolidate scoped prose, semantic lists and live theme variables",
+      "description": "In Blintz remove Nord imports/setup and fixed One Dark styling; own typography within the editor boundary. Use inherited documented variables while preserving --crepe compatibility. Make list node-view hosts li elements, suppress duplicate native markers, align markers to the first text baseline and define tight/nested/loose spacing. Preserve ordered starts. Replace code surface/text/syntax colors with live variables. Acceptance: semantic tests pass and browser computed styles show exactly one marker, valid list DOM and correct nearest host light/dark colors, including OS mismatch.",
+      "activeForm": "Consolidate scoped prose, semantic lists and live theme variables",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "1.2"
+      ]
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "Formatting foundation",
+      "subject": "[blintz-editor-polish] [P1] Repair content fidelity and accessible node views",
+      "description": "In Blintz preserve inline hard breaks while removing only intended standalone legacy empty-paragraph artifacts. Make task checkboxes keyboard operable with meaningful names/state. Add accessible table labels and focus/touch access to hover controls. Contain wide tables in a positioned scrolling wrapper. Read-only images must use static captions and omit editing controls. Acceptance: parsing/roundtrip tests, keyboard tasks, read-only image checks and narrow browser overflow tests pass.",
+      "activeForm": "Repair content fidelity and accessible node views",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "1.1"
+      ]
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "Host and visual harnesses",
+      "subject": "[blintz-editor-polish] [P2] Bridge DorkOS semantic tokens and expose the real editor playground",
+      "description": "In DorkOS map semantic HSL colors and fonts at the shared BlintzCanvas boundary without remounting on theme change. Add /dev/markdown with real reading/editing/source/narrow/empty fixtures and prescribed route/navigation registration. Add browser coverage for light/dark, both opposite OS schemes, live theme roundtrip without content/selection/undo loss, prose/code/syntax/control colors, list geometry and table containment. All existing session/file/room consumers remain on the shared wrapper.",
+      "activeForm": "Bridge DorkOS semantic tokens and expose the real editor playground",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [
+        "2.2",
+        "2.3"
+      ]
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "Host and visual harnesses",
+      "subject": "[blintz-editor-polish] [P2] Build the standalone visual regression laboratory",
+      "description": "Evolve Blintz bakeoff into a deterministic standalone Markdown specimen and editing lab with explicit theme controls, read-only and editable cases, narrow/mobile layout and comparison views where useful. Add Playwright browser setup, representative screenshot baselines and computed semantic/style assertions. Cover the full Markdown grammar, list DOM/markers, task keyboard actions, source editing, hardbreak fidelity, theme instance/content/selection/undo preservation and wide tables. Add CI and document test/baseline-review commands.",
+      "activeForm": "Build the standalone visual regression laboratory",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.1",
+        "1.2"
+      ],
+      "parallelWith": [
+        "2.1",
+        "2.3"
+      ]
+    },
+    {
+      "id": "2.3",
+      "phase": 2,
+      "phaseName": "Host and visual harnesses",
+      "subject": "[blintz-editor-polish] [P2] Review and update the editor dependency graph",
+      "description": "Review current compatible dependencies in Blintz, remove packages made obsolete by the new styling, update justified versions and the lockfile, and verify build/typecheck/tests. Record meaningful compatibility findings. DorkOS consumes a released Blintz package before final validation; no committed file paths or temporary local package links are allowed.",
+      "activeForm": "Review and update the editor dependency graph",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "2.1",
+        "2.2"
+      ]
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "Acceptance and release",
+      "subject": "[blintz-editor-polish] [P3] Complete visual and behavioral acceptance in both applications",
+      "description": "Run the complete specimen in light and dark modes at desktop and narrow/mobile sizes, including both OS/host mismatch permutations. Inspect screenshots directly and test computed typography/colors, list spacing/markers, code surfaces/syntax, table overflow and interactive controls. Verify theme changes retain editor identity, Markdown, selection and undo. Iterate all observed defects within this scope; save verification commands/results and visual evidence. Run the required repository checks against final changes.",
+      "activeForm": "Complete visual and behavioral acceptance in both applications",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.1",
+        "2.2",
+        "2.3"
+      ],
+      "parallelWith": []
+    },
+    {
+      "id": "3.2",
+      "phase": 3,
+      "phaseName": "Acceptance and release",
+      "subject": "[blintz-editor-polish] [P3] Review, merge and close both repositories cleanly",
+      "description": "Obtain independent adversarial review of both final branches before opening their PRs, fix findings, run required gates, open clear evidence-backed PRs and merge only after green checks. Land/release Blintz before final DorkOS dependency verification. Finish any relevant followups, mark DOR-2038 done with evidence and agent/completed, ensure both task worktrees have no uncommitted or unpushed work, then remove them. Do not touch unrelated worktrees.",
+      "activeForm": "Review, merge and close both repositories cleanly",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "3.1"
+      ],
+      "parallelWith": []
+    }
+  ]
+}
