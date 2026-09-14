@@ -22,7 +22,7 @@ overrides:
   '@hono/node-server': ^1.19.15
   axios: ^1.15.1
   fast-uri: ^3.1.6
-  undici: ^7.29.1
+  undici: ^7.29.0
   form-data: ^4.0.6
   tar: ^7.5.21
   tmp: ^0.2.6
@@ -1532,7 +1532,7 @@ importers:
         specifier: ^2.4.1
         version: 2.4.1
       undici:
-        specifier: ^7.29.1
+        specifier: ^7.29.0
         version: 7.29.1
       zod:
         specifier: ^4.6.2
@@ -5099,7 +5099,7 @@ packages:
     resolution: {integrity: sha512-7L4adgnJtQvQgo5cfIwqHG1QuR8mdZQ/WdMScNDp6uK644ZqnHDAa4rR+vZYfZFdJ5+obCqZQ66Dad8kcwJ4Jg==}
     engines: {node: '>=20', npm: '>=9.6.4'}
     peerDependencies:
-      undici: ^7.29.1
+      undici: ^7.29.0
 
   '@slack/types@3.1.0':
     resolution: {integrity: sha512-bTzqrO3lxJ5iWedo1eJKNAs1koyEhaTwKLJUkD3KETnPeQvD978AAE4jvWstUws8Gbbc4JR6iYE6F7XjE8UGmw==}
@@ -9221,7 +9221,7 @@ packages:
       '@aws-sdk/credential-provider-node': '>=3.972.0 <4'
       '@smithy/hash-node': '>=4.3.0 <5'
       '@smithy/signature-v4': '>=5.4.0 <6'
-      undici: ^7.29.1
+      undici: ^7.29.0
       ws: ^8.21.0
       zod: ^3.25 || ^4.0
     peerDependenciesMeta:
