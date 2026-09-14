@@ -1,6 +1,6 @@
 name: Runtime issue (Claude Code, Codex, OpenCode)
 description: A problem tied to a specific agent runtime.
-labels: ['bug', 'needs-triage']
+labels: ['bug']
 body:
   - type: markdown
     attributes:

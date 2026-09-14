@@ -101,7 +101,7 @@
     },
     {
       "guide": "feedback-pipeline-ops.md",
-      "description": "Feedback pipeline runbook: the write-scoped team-restricted Linear key, Vercel env inventory, webhook config, end-to-end verification, deploy gotchas, failure modes",
+      "description": "Feedback pipeline runbook: the write-scoped team-restricted Linear key, Vercel env inventory, webhook config, GitHub issue intake and the three reply beats, end-to-end verification, deploy gotchas, failure modes",
       "patterns": [
         "apps/site/src/lib/feedback/",
         "apps/site/src/app/api/feedback/",

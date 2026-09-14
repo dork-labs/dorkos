@@ -920,7 +920,7 @@
       "created": "2026-07-11",
       "extractedFrom": null,
       "specSlug": null,
-      "lastVerified": "2026-08-06",
+      "lastVerified": "2026-09-14",
       "affects": [
         "packages/shared/src/feedback.ts",
         "packages/cli/src/commands/feedback.ts",

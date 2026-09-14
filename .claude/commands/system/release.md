@@ -587,9 +587,11 @@ Run `/feedback:triage --sweep` now. This release is the ONLY sanctioned trigger
 for the sweep: a DOR issue goes Done at merge, but the reporter's fix is only
 real once a release ships it — sweeping at any other moment emails "this
 shipped" about work nobody can install yet. The sweep moves each fully-shipped
-feedback issue to Done, which fires the reporter's "your report shipped" email
-(mind its pre-flight; rules in `contributing/feedback-pipeline-ops.md`).
-Include its result line (reporters emailed / held / skipped) in the report.
+feedback issue to Done, which fires the reporter's "your report shipped" email.
+A report that came in as a GitHub issue gets no email: the sweep posts its
+shipped reply on the issue and closes it. Mind the pre-flight; rules in
+`contributing/feedback-pipeline-ops.md`. Include its result line (reporters
+emailed / GitHub issues answered and closed / held / skipped) in the report.
 
 ---
 
