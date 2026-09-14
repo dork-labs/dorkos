@@ -20,6 +20,7 @@ export {
 export { canvasViewForContent, type CanvasView } from '@dorkos/shared/canvas-view';
 export { resolveApiBaseUrl } from './api-base-url';
 export { getDesktopAdmin, unwrapDesktopAdminResult } from './desktop-admin';
+export { getDesktopShellLogExcerpt } from './desktop-shell-log';
 export {
   captureAppShot,
   captureAppView,

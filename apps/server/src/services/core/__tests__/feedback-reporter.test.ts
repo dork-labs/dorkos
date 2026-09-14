@@ -279,6 +279,40 @@ describe('sendFeedback — durable payload shape', () => {
     expect(diagnostics.length).toBeLessThanOrEqual(8000);
   });
 
+  it("names the desktop shell's own log apart from the server's (DOR-2045)", async () => {
+    // Without a section of its own the field is inert: it would reach the route,
+    // validate, and then never appear in the report anyone reads. The two logs
+    // are labelled separately because they come from different processes and a
+    // reader has to know which one said what.
+    const fetchImpl = makeFetch('ok');
+    await sendFeedback(
+      baseOptions({
+        submission: {
+          kind: 'bug',
+          message: 'the window keeps reloading itself',
+          diagnostics: {
+            clientReport: {
+              version: '0.75.0',
+              platform: 'darwin-arm64',
+              runtimes: [],
+              flags: {},
+              shell: 'desktop-app' as const,
+            },
+            serverLogExcerpt: '2026-09-14T22:25:25.000Z warn [http] slow request',
+            shellLogExcerpt: '2026-09-14 15:25:25.123 info [renderer] Reloading the window.',
+          },
+        },
+        fetchImpl,
+      })
+    );
+
+    const diagnostics = durableBody(fetchImpl).diagnostics as string;
+    expect(diagnostics).toContain('Server log excerpt:\n2026-09-14T22:25:25.000Z warn');
+    expect(diagnostics).toContain(
+      'Desktop app log excerpt:\n2026-09-14 15:25:25.123 info [renderer] Reloading the window.'
+    );
+  });
+
   it('omits diagnostics when the submission has none', async () => {
     const fetchImpl = makeFetch('ok');
     await sendFeedback(baseOptions({ fetchImpl }));

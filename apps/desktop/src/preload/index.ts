@@ -50,6 +50,9 @@ const FULLSCREEN_CHANGE_CHANNEL = 'window:fullscreen-changed';
 /** IPC channel this renderer asks its window's fullscreen state on (mirrors `GET_FULLSCREEN_STATE_CHANNEL` in main/fullscreen/index.ts). */
 const GET_FULLSCREEN_STATE_CHANNEL = 'get-fullscreen-state';
 
+/** IPC channel a bug report asks for the shell's own log on (mirrors `SHELL_LOG_EXCERPT_CHANNEL` in main/shell-log-excerpt/index.ts). */
+const SHELL_LOG_EXCERPT_CHANNEL = 'shell:log-excerpt';
+
 /** IPC channel the main process pushes focus state on (mirrors `FOCUS_CHANGE_CHANNEL` in main/window-focus/index.ts). */
 const FOCUS_CHANGE_CHANNEL = 'window:focus-changed';
 
@@ -165,6 +168,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * meant for the person who clicked.
    */
   captureAppView: (): Promise<CaptureAppViewResult> => ipcRenderer.invoke(CAPTURE_APP_VIEW_CHANNEL),
+  /**
+   * A scrubbed, bounded tail of the shell's OWN log, for a bug report filed
+   * from the desktop app (DOR-2045).
+   *
+   * The server child writes its own structured log and the report already
+   * carries an excerpt of it. This is the other one — the Electron main
+   * process's `main.log`, which the server cannot see at all, and which is the
+   * only record of what the shell did to this window. The server child's
+   * forwarded output is filtered out of it on the main side, so the two
+   * excerpts in a report do not duplicate each other.
+   *
+   * Never rejects and never throws: an unreadable log resolves `undefined`,
+   * because no log is a reason to lose a bug report someone is trying to send.
+   */
+  getShellLogExcerpt: (): Promise<string | undefined> =>
+    ipcRenderer.invoke(SHELL_LOG_EXCERPT_CHANNEL),
   /** The current platform (darwin, win32, linux). */
   platform: process.platform,
   /**

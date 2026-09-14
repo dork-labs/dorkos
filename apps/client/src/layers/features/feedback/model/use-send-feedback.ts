@@ -16,7 +16,10 @@
  *     a crash report, the stack trace as a breadcrumb).
  *   - `includeDiagnostics` on a `kind === 'bug'` submission → sets
  *     `includeServerLogs` so the server gathers and attaches a scrubbed log
- *     excerpt (the client never reads the log file itself).
+ *     excerpt (the client never reads the log file itself). Inside the desktop
+ *     app the same reports also carry `diagnostics.shellLogExcerpt`, the SHELL's
+ *     own log — the one thing the server cannot gather, because it lives in the
+ *     Electron main process (DOR-2045).
  *   - `includeConversation` (only when a `sessionId` is resolvable from the
  *     route) → sets `sessionId` + `includeTranscript` so the server gathers and
  *     attaches a bounded, scrubbed transcript excerpt.
@@ -43,7 +46,12 @@ import {
 } from '@dorkos/shared/telemetry-events';
 import type { ServerConfig } from '@dorkos/shared/schemas';
 import { useTransport, useResolvedTheme, type ResolvedTheme } from '@/layers/shared/model';
-import { buildClientReport, captureClientEnvironment, getBreadcrumbs } from '@/layers/shared/lib';
+import {
+  buildClientReport,
+  captureClientEnvironment,
+  getBreadcrumbs,
+  getDesktopShellLogExcerpt,
+} from '@/layers/shared/lib';
 import { configKeys } from '@/layers/entities/config';
 import { buildFeedbackRoute } from '../lib/feedback-route';
 
@@ -212,12 +220,23 @@ export function useSendFeedback(): UseSendFeedback {
 
       setIsSubmitting(true);
       try {
+        // The desktop shell's own log, on exactly the reports the server log
+        // rides on (DOR-2045). Gathered HERE rather than server-side, unlike
+        // every other field in this bundle, because `main.log` belongs to the
+        // Electron main process and the server child cannot see it. `undefined`
+        // everywhere else, including on a desktop build older than the bridge
+        // method — and inside the in-flight state, because it is an IPC round
+        // trip the person should see the app waiting on.
+        const shellLogExcerpt =
+          diagnostics && includeServerLogs ? await getDesktopShellLogExcerpt() : undefined;
         const { ok } = await transport.sendFeedback({
           kind: draft.kind,
           message,
           ...(contact ? { contact } : {}),
           ...(route ? { route } : {}),
-          ...(diagnostics ? { diagnostics } : {}),
+          ...(diagnostics
+            ? { diagnostics: { ...diagnostics, ...(shellLogExcerpt ? { shellLogExcerpt } : {}) } }
+            : {}),
           ...(includeServerLogs ? { includeServerLogs: true } : {}),
           ...(attachConversation ? { sessionId, includeTranscript: true } : {}),
           ...(draft.screenshotDataUrl ? { screenshot: { dataUrl: draft.screenshotDataUrl } } : {}),

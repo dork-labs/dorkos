@@ -118,11 +118,26 @@ async function withTranscriptExcerpt(submission: FeedbackSubmission): Promise<Fe
  * submission, so an unscrubbed client value must never reach it — this is the
  * defense-in-depth boundary that keeps that true.
  *
+ * **`diagnostics.shellLogExcerpt` is the one deliberate exception**, and it
+ * survives on purpose (DOR-2045). It is the desktop shell's own `main.log`,
+ * which lives in the Electron main process: this server runs as a child of that
+ * process and cannot see that file at all, so the shell is the only thing able
+ * to gather it and the client is the only route it can travel. The alternative
+ * — handing the shell's log path to the child through the environment so
+ * `log-excerpt.ts` could read it here — was rejected as a new coupling between
+ * the shell and the server for one diagnostic, against a path that exists
+ * precisely because the shell is the authority on where its own log is. The
+ * trade is that a page can put up to `MAX_LOG_EXCERPT_LEN` characters of its own
+ * choosing into a report a person deliberately sent; the schema bound is the
+ * mitigation, and the same person is already authoring the free-text message
+ * beside it.
+ *
  * @param submission - The Zod-validated (but still client-authored) submission.
  */
 function stripServerAuthoredFields(submission: FeedbackSubmission): FeedbackSubmission {
   const { transcriptExcerpt: _clientTranscript, diagnostics, ...rest } = submission;
   if (!diagnostics) return rest;
+  // `shellLogExcerpt`, if present, rides along in `safeDiagnostics` — see above.
   const { serverLogExcerpt: _clientServerLog, ...safeDiagnostics } = diagnostics;
   return { ...rest, diagnostics: safeDiagnostics };
 }
@@ -149,6 +164,9 @@ router.post('/', async (req, res) => {
 
   // Strip any client-supplied server-authored fields BEFORE gathering, so only
   // the server can populate `transcriptExcerpt` / `diagnostics.serverLogExcerpt`.
+  // `diagnostics.shellLogExcerpt` deliberately passes through: it is the desktop
+  // shell's own log, which this process cannot read (DOR-2045 — the reasoning is
+  // on `stripServerAuthoredFields`).
   const inbound = stripServerAuthoredFields(parsed.data);
   const submission = await withTranscriptExcerpt(await withServerLogExcerpt(inbound));
 

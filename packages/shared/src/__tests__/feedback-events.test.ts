@@ -384,6 +384,32 @@ describe('feedback event registry', () => {
       expect(res.success).toBe(false);
     });
 
+    it('accepts an optional shellLogExcerpt, and bounds it like the server one', () => {
+      // The one client-attached field in this bundle (DOR-2045): the desktop
+      // shell's own log, which the server cannot read. Optional, so a browser
+      // client and every client older than it still validate; bounded, because
+      // being client-authored is exactly why the bound matters.
+      const clientReport = {
+        version: '0.75.0',
+        platform: 'darwin-arm64',
+        runtimes: [],
+        flags: {},
+      };
+      expect(
+        FeedbackDiagnosticsSchema.safeParse({
+          clientReport,
+          shellLogExcerpt: '2026-09-14 15:25:25.123 info [renderer] Reloading the window.',
+        }).success
+      ).toBe(true);
+      expect(FeedbackDiagnosticsSchema.safeParse({ clientReport }).success).toBe(true);
+      expect(
+        FeedbackDiagnosticsSchema.safeParse({
+          clientReport,
+          shellLogExcerpt: 'x'.repeat(MAX_LOG_EXCERPT_LEN + 1),
+        }).success
+      ).toBe(false);
+    });
+
     it('rejects an unknown breadcrumb kind', () => {
       const res = BreadcrumbSchema.safeParse({
         at: VALID_TIMESTAMP,

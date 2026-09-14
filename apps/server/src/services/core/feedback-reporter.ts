@@ -264,7 +264,7 @@ function renderDiagnostics(
 ): string | undefined {
   if (!diagnostics) return undefined;
 
-  const { clientReport, breadcrumbs, serverLogExcerpt } = diagnostics;
+  const { clientReport, breadcrumbs, serverLogExcerpt, shellLogExcerpt } = diagnostics;
 
   // The client's `version` is whatever the server reported to it when its config
   // query last ran, so the two agree in the normal case and there is nothing to
@@ -318,6 +318,14 @@ function renderDiagnostics(
   }
   if (serverLogExcerpt) {
     sections.push(`Server log excerpt:\n${serverLogExcerpt}`);
+  }
+  // The desktop shell's own log (DOR-2045), named apart from the server's so a
+  // reader knows which process wrote which. Present only on a report filed from
+  // the desktop app; it carries none of the server child's forwarded output,
+  // which the shell filters out precisely so this does not repeat the section
+  // above it.
+  if (shellLogExcerpt) {
+    sections.push(`Desktop app log excerpt:\n${shellLogExcerpt}`);
   }
 
   return sections.join('\n\n').slice(0, DURABLE_DIAGNOSTICS_MAX_LEN);

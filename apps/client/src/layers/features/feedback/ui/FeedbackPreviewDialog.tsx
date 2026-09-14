@@ -13,7 +13,7 @@ import {
   ScrollArea,
   Skeleton,
 } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
+import { cn, isDesktopShell } from '@/layers/shared/lib';
 import { useIsMobile } from '@/layers/shared/model';
 import { useTranscriptPreview } from '../model/use-transcript-preview';
 
@@ -137,8 +137,13 @@ function DiagnosticsPreview({
 
       {kind === 'bug' && (
         <p className="text-muted-foreground text-xs">
-          A scrubbed excerpt of recent server logs is added when you send. Home paths shown as ~,
-          tokens removed.
+          {/* In the desktop app a second log rides along: the app's own, which
+              the server cannot read (DOR-2045). Named here because the preview
+              promises what will be sent, and an unmentioned attachment is a
+              broken promise. */}
+          {isDesktopShell()
+            ? 'Scrubbed excerpts of the recent server log and of the app’s own log are added when you send. Home paths shown as ~, tokens removed.'
+            : 'A scrubbed excerpt of recent server logs is added when you send. Home paths shown as ~, tokens removed.'}
         </p>
       )}
     </div>

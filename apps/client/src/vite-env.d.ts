@@ -108,6 +108,22 @@ declare global {
      * through the DOM instead.
      */
     captureAppView?(): Promise<DesktopCaptureResult>;
+    /**
+     * A scrubbed, bounded tail of the desktop shell's OWN log, for a bug report
+     * (DOR-2045). Mirrors the desktop preload's `getShellLogExcerpt`.
+     *
+     * The report's other log excerpt comes from the server and is gathered
+     * server-side. This one cannot be: `main.log` belongs to the Electron main
+     * process, which the server child cannot see. The server child's forwarded
+     * output is filtered out of it, so the two do not duplicate each other.
+     *
+     * Resolves `undefined` when there is no readable log — never a rejection,
+     * and never a reason to lose the report. **Optional on purpose:** absent in
+     * the browser app, in the Obsidian embed, and in any desktop build predating
+     * this, so every caller must guard on it —
+     * `shared/lib/desktop-shell-log.ts` is the one place that is done.
+     */
+    getShellLogExcerpt?(): Promise<string | undefined>;
     /** The current platform (darwin, win32, linux). */
     platform: NodeJS.Platform;
     /**
