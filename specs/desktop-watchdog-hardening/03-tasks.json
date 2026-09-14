@@ -1,0 +1,104 @@
+{
+  "generatedAt": "2026-09-14T23:06:49.823332Z",
+  "lastDecomposeDate": "2026-09-14T23:06:49.823332Z",
+  "mode": "full",
+  "slug": "desktop-watchdog-hardening",
+  "spec": "specs/desktop-watchdog-hardening/02-specification.md",
+  "umbrella": "DOR-2044",
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "Next full release",
+      "subject": "[desktop-watchdog-hardening] [P1] Desktop bug reports carry the shell's own log excerpt",
+      "activeForm": "Adding the shell log excerpt to desktop bug reports",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "1.2"
+      ],
+      "issue": "DOR-2045",
+      "description": "See specs/desktop-watchdog-hardening/02-specification.md section 10 and ideation decision D8. New `shell-log-excerpt.ts`, preload method, optional schema field, client attachment gated on the desktop shell, preview row, `stripServerAuthoredFields` carve-out. Drop `[server]`-tagged lines; keep the last 200 shell-authored lines at info and above within 30 minutes."
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "Next full release",
+      "subject": "[desktop-watchdog-hardening] [P1] isLoadingMainFrame() in the ceiling path, preload heartbeat test, deadline-parity test",
+      "activeForm": "Landing the cheap independent watchdog gates",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "1.1"
+      ],
+      "issue": "DOR-2046",
+      "description": "See specs/desktop-watchdog-hardening/02-specification.md section 9 and Testing Strategy. Three gates that touch nothing 1.3 rewrites; each test shown red with its hunk reverted."
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "Next full release",
+      "subject": "[desktop-watchdog-hardening] [P1] One arming contract: supervised-load wrapper, waitingSince, disarms, reload floor, log lines, honest health record, smoke quiet window",
+      "activeForm": "Rewriting the watchdog's arming contract",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.2"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-2047",
+      "description": "See specs/desktop-watchdog-hardening/02-specification.md sections 1 to 8, 11, 12, the section 6 state table, decisions D1 to D7, D9, D10, and phase 1 acceptance criteria 2 to 9. Deletes `document-watermark.ts`. Answers open question Q1 by measurement in the PR body."
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "Later",
+      "subject": "[desktop-watchdog-hardening] [P2] Real-Electron navigation-event contract harness in CI",
+      "activeForm": "Building the real-Electron contract harness",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": [
+        "1.3"
+      ],
+      "parallelWith": [
+        "2.2"
+      ],
+      "issue": "DOR-2048",
+      "description": "See specs/desktop-watchdog-hardening/02-specification.md Testing Strategy (Phase 2) and P2-1. Produces `navigation-event-contract.json`; unit tests drive the mock from it; ubuntu + xvfb job in `desktop-smoke.yml`, not a required check."
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "Later",
+      "subject": "[desktop-watchdog-hardening] [P2] Loop detector, in-app notice, fault-injection flag",
+      "activeForm": "Adding the loop detector and notice",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": [
+        "1.3"
+      ],
+      "parallelWith": [
+        "2.1"
+      ],
+      "issue": "DOR-2049",
+      "description": "See specs/desktop-watchdog-hardening/02-specification.md P2-2 and decision D7. Trips on three replacements in five minutes each answered by a heartbeat within two seconds; stands down, never escalates; `onShellNotice` channel; `DORKOS_DESKTOP_FORCE_SPURIOUS_ARM`."
+    },
+    {
+      "id": "2.3",
+      "phase": 2,
+      "phaseName": "Later",
+      "subject": "[desktop-watchdog-hardening] [P2] Visibility-gated, content-attested keepalive",
+      "activeForm": "Adding the renderer keepalive",
+      "size": "medium",
+      "priority": "low",
+      "dependencies": [
+        "1.3"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-2050",
+      "description": "See specs/desktop-watchdog-hardening/02-specification.md P2-3. Strictly after 1.3. rAF-driven, only while `#root` has children, enforced only while visible and not minimized; 60 s liveness deadline after the boot heartbeat."
+    }
+  ]
+}

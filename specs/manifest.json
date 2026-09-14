@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "260914-230211",
+      "slug": "desktop-watchdog-hardening",
+      "title": "Desktop renderer watchdog hardening",
+      "created": "2026-09-14",
+      "status": "specified",
+      "project": "Desktop Resilience"
+    },
+    {
       "id": "260912-023441",
       "slug": "canvas-agent-seat",
       "title": "The canvas agent seat",
