@@ -22,6 +22,7 @@ Every override belongs to exactly one of these, and the map is ordered so the tw
 | `vite@7`                               | Scoped to the vite-7 consumers only; the apps stay on vite 6                                                                                                                                                                                                                                                                         |
 | `@esbuild-kit/core-utils>esbuild`      | Scoped to the one stale consumer that asks for the vulnerable `~0.18.20`. Deliberately **not** a blanket `esbuild` pin — vite 6 needs `^0.25.0` and tsx needs `~0.28.0`, so a single forced version breaks one of them                                                                                                               |
 | `jose`                                 | Deduped to keep `@better-auth/core` a single instance. See below (DOR-1538)                                                                                                                                                                                                                                                          |
+| `@better-auth/utils`                   | Deduped so `better-auth@1.7.2` and the `better-call@1.4.0` it pulls in share one copy; two copies fork `@better-auth/core` the same way `jose` does. Added by #1577. Goes when `better-auth` and `better-call` agree on a range again                                                                                                |
 
 ### `jose` — why a dedupe pin, and when it goes
 
@@ -29,7 +30,7 @@ Every override belongs to exactly one of these, and the map is ordered so the tw
 
 Two instances of that package are two different `HookEndpointContext` types, and the server typecheck fails with a wall of `better-auth` errors that name neither `jose` nor A2A. The pin collapses both back to one instance by putting every consumer on `^6.2.10`, which is inside `better-auth`'s own range — nothing is being held back.
 
-**Drop it when `better-auth` moves past 1.6.23** and the tree re-resolves to a single `@better-auth/core` on its own. That day is gated on the exact `better-auth` pin below coming off, so read that section first — `better-auth` is held at 1.6.23 on purpose. To check, remove the entry, reinstall, and run `grep -oE "^  jose@[0-9.]+" pnpm-lock.yaml | sort -u` — a single version means the pin is no longer doing anything. (Each version appears on two lines, once per lockfile section, so count versions and not lines.) `pnpm --filter @dorkos/server typecheck` is the real arbiter: that is what broke (DOR-1538).
+**Drop it when `better-auth` and `@a2a-js/sdk` agree on a `jose` range on their own** and the tree re-resolves to a single `@better-auth/core` without it. That day is gated on the exact `better-auth` pin below moving, so read that section first — `better-auth` is held at 1.7.2 on purpose, and this pin was not re-measured when #1577 moved it there. To check, remove the entry, reinstall, and run `grep -oE "^  jose@[0-9.]+" pnpm-lock.yaml | sort -u` — a single version means the pin is no longer doing anything. (Each version appears on two lines, once per lockfile section, so count versions and not lines.) `pnpm --filter @dorkos/server typecheck` is the real arbiter: that is what broke (DOR-1538).
 
 This is the shape to recognize, because the error never points at the cause: **a new dependency bumps a transitive package that is somebody else's peer, and an unrelated package's types break.** If a routine upgrade produces type errors in a package you did not touch, look for a duplicated peer in the lockfile before you look at the types.
 
@@ -46,11 +47,15 @@ Two shapes worth copying when you add to this group:
 
 Not every deliberate hold belongs in the override map. When the repo declares the package directly in every place it is used, an **exact spec in each declaring `package.json`** does the same job and is visible where a person actually looks — the file they are editing when they bump it.
 
-### `better-auth` — pinned exact at 1.6.23 (DOR-1538)
+### `better-auth` — pinned exact at 1.7.2 (DOR-1538; moved from 1.6.23 by #1577)
 
-`better-auth` and `@better-auth/api-key` are declared exact — `"1.6.23"`, not `"^1.6.23"` — in `apps/server`, `apps/site` and `packages/cli`. Do not loosen either one.
+`better-auth` and `@better-auth/api-key` are declared exact — `"1.7.2"`, not `"^1.7.2"` — in `apps/server`, `apps/site` and `packages/cli`. Do not loosen either one.
 
-**Why.** `better-auth@1.7.1` breaks two things at once:
+**Where the pin is today, and how it got there.** Dependabot's 2026-09-06 group bump (#1577) moved the family from 1.6.23 to 1.7.2 and added the `@better-auth/utils -> 0.5.0` override that collapses the utils fork described below. It passed every gate — the tree resolves one `@better-auth/core@1.7.2` and one `@better-auth/utils@0.5.0` — but the PR did not touch this page, so for a week the ledger described a pin that no longer existed. That gap is the reason `/app:upgrade` edits this file in the same commit as any override it moves.
+
+**1.7.4 is known bad (#1847, 2026-09-14).** The next group bump proposed 1.7.4 and the server typecheck failed with `TS7056: The inferred type of this node exceeds the maximum length the compiler will serialize` at `apps/server/src/services/core/auth/index.ts`, with `BetterAuthError: Drizzle schema mismatch` across the test shards — the duplicate-instance shape below, one release later. 1.7.3 has not been measured. Re-test with the recipe at the end of this section before moving the pin again.
+
+**Why 1.7.1 was skipped in the first place.** `better-auth@1.7.1` broke two things at once:
 
 - **The server typecheck**, through the duplicate-instance mechanism described above — two copies of `@better-auth/core` are two incompatible sets of types.
 - **CLI auth at runtime**, which no typecheck catches: `dorkos auth enable` exits 1, and signing in with a freshly created credential comes back `INVALID_EMAIL_OR_PASSWORD`.
@@ -59,7 +64,7 @@ Not every deliberate hold belongs in the override map. When the repo declares th
 
 **Why an exact spec and not an override.** Both were measured against a deleted lockfile and both hold, so the tie-breaker is maintenance: an override duplicating a spec the repo already declares is the redundancy rule 2 below warns about, and it would give the next bump a fourth place to remember. Add an override only if `better-auth` ever arrives transitively, through a dependency we do not declare.
 
-**How the exact spec reaches the rest of the family.** `better-auth@1.6.23` pins its own dependencies exactly — `@better-auth/core@1.6.23`, `@better-auth/utils@0.4.2`, `better-call@1.3.7` — so holding the one package holds all of them. `@better-auth/api-key` needs its own exact spec because it is a separate declaration whose peers would otherwise resolve against a newer core.
+**How the exact spec reaches the rest of the family.** `better-auth` pins its own dependencies exactly — at 1.7.2 that is `@better-auth/core@1.7.2` and `better-call@1.4.0` — so holding the one package holds them too. `@better-auth/utils` is the exception: `better-call@1.4.0` and `better-auth` disagree on it, which is why the `@better-auth/utils -> 0.5.0` override exists (it is a dedupe pin and belongs to the deliberate group above). `@better-auth/api-key` needs its own exact spec because it is a separate declaration whose peers would otherwise resolve against a newer core.
 
 **Drop it when** a `better-auth` release resolves, from a deleted lockfile, to a single `@better-auth/core` and a single `@better-auth/utils`, _and_ CLI auth still works end to end. Both halves are required — wave 1 of the 2026-08-24 dependency sweep passed neither, and the runtime half is the one no gate would have caught.
 

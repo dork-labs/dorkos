@@ -58,6 +58,11 @@
       "reason": "Likely portable but still references Claude harness paths."
     },
     {
+      "name": "maintaining-dependencies",
+      "path": ".claude/skills/maintaining-dependencies",
+      "reason": "The judgment half of /app:upgrade, a Claude command; cites the git guard, the /app:* commands and Claude-only skills by name."
+    },
+    {
       "name": "upgrading-runtime-dependencies",
       "path": ".claude/skills/upgrading-runtime-dependencies",
       "reason": "Was a real directory under .claude/skills with no manifest entry — undeclared drift found 2026-08-03, not a new decision. Declared here so the classification is stated rather than inferred from whether a symlink happens to exist."

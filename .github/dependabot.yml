@@ -34,7 +34,12 @@
 #
 # Security-CVE updates are configured separately (repo setting, enabled
 # 2026-08-24) and are NOT rate-limited by this file — a CVE fix PR opens as
-# soon as GitHub publishes the advisory, any day of the week.
+# soon as GitHub publishes the advisory, any day of the week — BUT ONLY FOR A
+# DIRECT DEPENDENCY. For a transitive one (every open alert on 2026-09-14:
+# js-yaml, hono, fflate) the security job ends with "The latest possible
+# version of <pkg> that can be installed is <current>" and opens nothing,
+# because the fix is a pnpm override and Dependabot cannot write one. Those
+# alerts are closed by /app:upgrade (its security lane), not by this file.
 version: 2
 updates:
   - package-ecosystem: npm
