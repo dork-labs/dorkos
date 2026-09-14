@@ -102,7 +102,9 @@ loop** — run it in any session. It triages new reports (dedupe → accept with
 linked DOR issue / decline with a reason / duplicates share the original's DOR
 link so both reporters ship together), refreshes the status mirror, and ends
 with an anomaly report (unlinked items, early promises, stale Triage,
-dropped-work cases needing a human). Full rules live in the command itself.
+dropped-work cases needing a human). Its first step reads the open GitHub
+issues and mirrors the new ones in, so both front doors land in the same queue
+(see "GitHub issues" below). Full rules live in the command itself.
 
 Three invariants worth restating here because breaking them lies to a reporter:
 
@@ -119,6 +121,92 @@ guaranteed as of `dork-labs/marketplace` commit `1c43bd5` (2026-09-11). A
 plugin regression there could let a DOR-team groom ingest FB issues; the repo
 cannot enforce an external plugin's behavior, so this note names the SHA
 instead.
+
+## GitHub issues
+
+The in-app dialog is not the only front door. People also open issues on
+`dork-labs/dorkos`, and the app sends them there itself: the help menu's "Report
+on GitHub…", `dorkos feedback`, the README and two docs pages all point at
+`github.com/dork-labs/dorkos/issues/new`. Until 2026-09-14 nothing read that
+door. `/feedback:triage` now does, so both doors get the treatment
+`meta/user-care.md` promises.
+
+### Intake
+
+Step 0 of Mode 1, before the FB queue read:
+
+1. `gh issue list -R dork-labs/dorkos --state open --limit 100 --json number,title,body,author,createdAt,labels,url,comments` (without `--limit` it stops at 30, and a truncated queue looks like an empty one)
+2. Read every FB issue, **unfiltered by state**, and look for the marker line.
+   An open GitHub issue with no marker anywhere in FB has no mirror yet.
+3. File the ones with no mirror into the FB team the same way the site intake
+   does: one kind label, the title verbatim, the report quoted, and the two
+   marker lines at the end of the description.
+
+The mirror scan must not be state-filtered. A mirror in Done or Canceled still
+counts; skipping those states would re-file a shipped issue and greet its
+reporter twice.
+
+### The `Source:` marker
+
+Two lines at the end of an FB description identify a mirrored GitHub report:
+
+```
+Source: https://github.com/dork-labs/dorkos/issues/1840
+Reporter: @karlohlemann
+```
+
+`Source:` is the idempotency key for the whole loop. It decides whether an issue
+has already been mirrored, where the replies go, and which sweep rows owe a
+GitHub comment. `Reporter:` is a GitHub handle for these, never an email; the
+email decline path belongs to in-app reports, which carry an address and a
+`Submission:` row id instead.
+
+### The three beats and where each reply lands
+
+| Beat        | Fires when                                            | In-app report                                 | GitHub report                                                      |
+| ----------- | ----------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------ |
+| **Heard**   | intake, within one business day                       | receipt email (automatic)                     | `gh issue comment`, drafted and approved                           |
+| **Decided** | triage accepts or declines, within five business days | decline email only                            | `gh issue comment`; a decline also closes the issue as not planned |
+| **Shipped** | `--sweep`, on release day only                        | shipped email, fired by the FB → Done webhook | `gh issue comment` then `gh issue close --reason completed`        |
+
+Rules that hold for every one of them:
+
+- A person approves the exact text before anything posts. Silence is a hold.
+- Comment first, close second, so no close is silent.
+- Nothing written on the Linear FB issue is visible to a reporter. The FB issue
+  is our mirror, not a reply.
+- Never close a GitHub issue at merge. The person cannot install the fix until
+  the release, which is why the sweep is the only place that closes one as
+  completed.
+
+### Auth
+
+`gh` runs as the operator's own GitHub login (`gh auth status` to check). There
+is no bot token and no machine account, which is deliberate: every comment this
+posts on a public repo is the operator's, so every comment is approved by hand
+first. The dormant `.github/dorkbot-triage/` scaffold is the only place a bot
+identity is discussed, and it is still off.
+
+### Verifying end to end
+
+Do this after any change to the intake step:
+
+1. Open a throwaway issue:
+
+   ```bash
+   gh issue create -R dork-labs/dorkos --label bug \
+     --title "Intake verification (will be closed)" \
+     --body "Ignore. Verifying the /feedback:triage intake step."
+   ```
+
+2. Run `/feedback:triage`. It should list the issue as having no mirror, file an
+   FB issue for it, and present a drafted "heard" reply for approval.
+3. Check Linear: the new FB issue is in Triage with the `Bug` label, the title
+   verbatim, and a `Source:` line carrying your issue number.
+4. Run `/feedback:triage` again without approving anything. The issue must now
+   be skipped as already mirrored. That proves the idempotency key works.
+5. Clean up: cancel the FB issue, and close the GitHub one with
+   `gh issue close <n> -R dork-labs/dorkos --reason "not planned"`.
 
 ## Failure modes → causes
 

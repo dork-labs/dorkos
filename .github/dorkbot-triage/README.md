@@ -1,34 +1,33 @@
 # DorkBot issue triage (off by default)
 
-This folder holds a skill that lets DorkBot do first-touch triage on incoming
-GitHub issues: label each new issue, flag likely duplicates, and ask for missing
-reproduction steps. It ships **turned off**. Nothing here runs a live bot, and
+First-touch triage on GitHub issues runs through **`/feedback:triage`**. That
+command reads the open issues, mirrors each new one into the Linear feedback
+team, and drafts the reply the reporter gets on their own issue. It is the
+process. This folder is an optional helper for the labeling half of it.
+
+`SKILL.md` lets DorkBot label incoming issues by type and runtime and flag
+likely duplicates. It ships **turned off**. Nothing here runs a live bot, and
 there is no GitHub Action. Turning it on is a deliberate step that needs a token
-and an owner decision, because it posts as a bot on the public repository.
+and an owner decision, because it acts as a bot on the public repository.
 
-## What it does
+## What counts as the queue
 
-`SKILL.md` is a prose instruction set for DorkBot. It watches for open issues
-labeled `needs-triage`, adds a type label (and a runtime label when relevant),
-notes likely duplicates for a human to confirm, and posts at most one polite
-comment asking for reproduction steps when they are missing. It never closes,
-locks, assigns, or edits issues, and it never posts more than one comment per
-issue per run. By default it only suggests actions; it applies them only when you
-explicitly allow it.
+Open issues with no feedback mirror yet: no issue in the Linear feedback team
+carries a `Source: https://github.com/dork-labs/dorkos/issues/<n>` line for that
+number. That is the same queue `/feedback:triage` works, so the two never
+disagree about what is new.
 
 ## The labels it uses
 
-The issue templates already apply `bug`, `enhancement`, and `needs-triage`. The
-triage skill also uses runtime labels. Create the ones that do not exist yet:
+The issue templates apply `bug` and `enhancement`, which are GitHub defaults and
+already exist. The triage skill also uses runtime labels. Create the ones that
+do not exist yet:
 
 ```bash
-gh label create needs-triage --description "New issue awaiting first-touch triage" --color FBCA04
 gh label create runtime/claude-code --description "Affects the Claude Code runtime" --color 5319E7
 gh label create runtime/codex --description "Affects the Codex runtime" --color 5319E7
 gh label create runtime/opencode --description "Affects the OpenCode runtime" --color 5319E7
 ```
-
-`bug` and `enhancement` are GitHub defaults and already exist.
 
 ## Turn it on for DorkBot (manual, suggest-only)
 
@@ -39,24 +38,25 @@ gh label create runtime/opencode --description "Affects the OpenCode runtime" --
    cp .github/dorkbot-triage/SKILL.md ~/.dork/agents/dorkbot/.claude/skills/dorkbot-triage/
    ```
 
-2. In a DorkBot session, ask it to triage the queue. It will read the
-   `needs-triage` issues and print a plan. Nothing is changed on GitHub yet.
+2. In a DorkBot session, ask it to triage the queue. It reads the unmirrored
+   issues and prints a plan. Nothing is changed on GitHub yet.
 
-3. To let it act (add labels, post the one comment), give the session a token with
-   `issues: write` scope and tell it acting is allowed. Start with a dry run and
-   review the plan before allowing it to apply changes.
+3. To let it apply labels, give the session a token with `issues: write` scope
+   and tell it acting is allowed. Start with a dry run and review the plan
+   first.
 
 ## Turn on the live bot later (owner decision, still off)
 
-A fully automatic bot that comments within the hour would run as a scheduled
-DorkOS Task or a GitHub Action. That is intentionally **not** included here. It
-needs a dedicated bot token, rate limits, and an owner sign-off, since it writes
-in public under the project's name. When you are ready:
+A fully automatic bot would run as a scheduled DorkOS Task or a GitHub Action.
+That is intentionally **not** included here. It needs a dedicated bot token,
+rate limits, and an owner sign-off, since it writes in public under the
+project's name. When you are ready:
 
 - Create a scoped bot token (a machine account is better than a personal one).
 - Run the skill on a schedule (a DorkOS Task) or in a workflow, acting enabled.
-- Keep the one-comment-per-issue and no-close guardrails from the skill.
+- Keep the no-close and no-comment guardrails from the skill. Replies to
+  reporters stay with `/feedback:triage`, where a person approves each one.
 - Watch the first runs closely; a noisy triage bot is worse than none.
 
-Until then, triage stays a human-in-the-loop step, which is the right default for
-an alpha.
+Until then, triage stays a human-in-the-loop step, which is the right default
+for an alpha.
