@@ -118,6 +118,25 @@ export const SearchHitSchema = z
      */
     container: z.string().min(1),
     /**
+     * The DorkOS session this hit opens in, when there is one.
+     *
+     * **Not the same string as {@link SearchHitSchema.shape.container}, and
+     * that gap is the whole reason this field exists (DOR-2020).** `container`
+     * is the id the store that owns the transcript uses — an OpenCode `ses_…`,
+     * a Codex thread id — and neither of those is what `/session` or
+     * `GET /api/sessions/:id` resolves. Handing `container` to the session
+     * route worked for Claude Code, whose two ids happen to be the same string,
+     * and opened nothing for the other two runtimes.
+     *
+     * **Absent, never null**, and absent means one thing: this hit cannot be
+     * opened. That is the honest answer for a room (a room is not a session),
+     * and for a conversation someone had with a runtime's own command-line tool
+     * that DorkOS never ran, which is indexed and searchable but has no DorkOS
+     * session behind it. A reader shows such a hit without a link rather than
+     * offering one that leads nowhere.
+     */
+    sessionId: z.string().min(1).optional(),
+    /**
      * The working directory this hit opens in, or `null` for a source that has
      * none (a room is not a directory) and for a container that never named one.
      *

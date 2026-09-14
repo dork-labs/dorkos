@@ -10923,6 +10923,10 @@
             "type": "string",
             "minLength": 1
           },
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
           "containerPath": {
             "type": [
               "string",

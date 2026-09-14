@@ -68,7 +68,18 @@ export type MessageSearchTarget =
       kind: 'session';
       to: '/session';
       search: { session: string; dir: string | undefined; message?: string };
-    };
+    }
+  /**
+   * Nowhere — this hit has no DorkOS session behind it, so the row is shown
+   * without a link (DOR-2020).
+   *
+   * The case is a conversation somebody had with a runtime's own command-line
+   * tool. The transcript is on this machine and the words are searchable, and
+   * DorkOS never ran it, so there is no session for `/session` to resolve.
+   * Saying so is the point: the alternative that shipped before was a link that
+   * opened an empty screen.
+   */
+  | { kind: 'unopenable' };
 
 /**
  * Resolve where a hit opens.
@@ -84,6 +95,12 @@ export type MessageSearchTarget =
  * route reads it as the `seq` to land on, and the team-room redirect carries it
  * across to Home. A room whose history no longer reaches that far says so
  * rather than pretending (`useEntryLanding`).
+ *
+ * **A conversation opens by `sessionId`, never by `container`.** They are the
+ * same string only for `claude-code`, whose transcript store is the one the
+ * session view reads; a Codex thread id and an OpenCode `ses_…` are ids of
+ * another program's conversation, and handing either to `/session` opened
+ * nothing (DOR-2020). A hit with no `sessionId` at all is `unopenable`.
  *
  * `dir` travels with a session because the durable stream resolves a
  * conversation's history from it; a session id arriving under whatever
@@ -102,12 +119,13 @@ export function messageSearchTarget(hit: SearchHit): MessageSearchTarget {
   if (hit.source === ROOMS_SOURCE) {
     return { kind: 'room', to: '/channels', search: { id: hit.container, entry: hit.ordinal } };
   }
+  if (hit.sessionId === undefined) return { kind: 'unopenable' };
   const lands = hit.messageId !== undefined && EXACT_LANDING_SOURCES.includes(hit.source);
   return {
     kind: 'session',
     to: '/session',
     search: {
-      session: hit.container,
+      session: hit.sessionId,
       dir: hit.containerPath ?? undefined,
       ...(lands ? { message: hit.messageId } : {}),
     },

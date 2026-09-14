@@ -17,6 +17,15 @@
  * typing, so the detail sits behind the line's own disclosure and opens itself
  * when a search comes back empty (DOR-1757).
  *
+ * **A conversation hit opens the DorkOS session it came from, whichever runtime
+ * ran it** (DOR-2020). A hit with no session behind it — a conversation held
+ * with a runtime's own command-line tool, which is indexed and searchable and
+ * was never run here — is shown with a short note and no link, rather than a
+ * link that opens an empty screen. That row stays reachable by the arrow keys:
+ * a hit somebody cannot open is still a hit they wanted to find, and marking it
+ * disabled would hide it from exactly the reader who most needs to be told it
+ * is there.
+ *
  * **Enter lands on the message in a channel, and opens the conversation for a
  * transcript** (DOR-687). The asymmetry is a coordinate one rather than a
  * priority one, and `message-search-target.ts` is where it is argued: a room
@@ -50,7 +59,11 @@ import { MessageSearchHitRow } from './MessageSearchHitRow';
 import { MessageSearchScope } from './MessageSearchScope';
 import { dialogVariants } from './palette-constants';
 import { SEARCH_PLACEHOLDER, SEARCH_TOO_SHORT } from '../model/message-search-scope';
-import { messageSearchContainerLabel, messageSearchTarget } from '../model/message-search-target';
+import {
+  messageSearchContainerLabel,
+  messageSearchTarget,
+  type MessageSearchTarget,
+} from '../model/message-search-target';
 import { useMessageSearch } from '../model/use-message-search';
 import { useMessageSearchShortcut } from '../model/use-message-search-shortcut';
 
@@ -170,8 +183,14 @@ function MessageSearchBox() {
    * true without knowing why.
    */
   const openHit = useCallback(
-    (hit: SearchHit) => {
-      const target = messageSearchTarget(hit);
+    (hit: SearchHit, target: MessageSearchTarget) => {
+      // Nowhere to go. The row stays selectable so a keyboard reader can reach
+      // it and hear why (see `MessageSearchHitRow`), which means Enter really
+      // does arrive here — and does nothing, quietly. No toast: the row already
+      // says it, and repeating it as an interruption is not new information.
+      // The box stays open, because closing it would look exactly like a
+      // navigation that happened.
+      if (target.kind === 'unopenable') return;
       close();
       void navigate({ to: target.to, search: target.search });
 
@@ -305,13 +324,17 @@ function MessageSearchBox() {
                   >
                     {results.map((hit) => {
                       const key = `${hit.source}:${hit.container}:${hit.ordinal}`;
+                      // Resolved once per row and handed to both the row and
+                      // its handler: where a hit goes is one answer, not two.
+                      const target = messageSearchTarget(hit);
                       return (
                         <MessageSearchHitRow
                           key={key}
                           value={key}
                           hit={hit}
                           containerLabel={messageSearchContainerLabel(hit, roomTitles)}
-                          onSelect={() => openHit(hit)}
+                          openable={target.kind !== 'unopenable'}
+                          onSelect={() => openHit(hit, target)}
                         />
                       );
                     })}

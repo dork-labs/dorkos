@@ -16,6 +16,11 @@
  * be a filter that has to enumerate everything, which silently starts excluding
  * things the day enumeration misses one.
  *
+ * **A hit answers with the session that OPENS it, not with the container it was
+ * indexed under.** Those are two different strings on two of the three runtimes,
+ * and `session-links.ts` is where the difference is argued. A container with no
+ * DorkOS session behind it sends none, and the box shows the hit without a link.
+ *
  * **A source nobody has scoped is owner-only.** {@link buildScopes} knows one
  * source by name, `rooms`; every other registered source is treated as session
  * history and reached only by the operator. So Codex arriving as a third
@@ -41,6 +46,7 @@ import {
 } from '@dorkos/shared/search-schemas';
 import { searchMessages, type SourceScope } from './query.js';
 import { roomsSource, SEARCH_SOURCES } from './registry.js';
+import { containerKey, resolveSessionIds } from './session-links.js';
 
 /**
  * What one caller may search, as the rooms domain and the owner check resolved
@@ -100,27 +106,36 @@ export function searchForCaller(
     excerpts: true,
   });
 
-  const paths = containerPaths(
-    db,
-    hits.map((hit) => ({ sourceId: hit.sourceId, originKey: hit.originKey }))
-  );
-  const results: SearchHit[] = hits.map((hit) => ({
-    source: hit.sourceId,
-    container: hit.originKey,
-    containerPath: paths.get(containerKey(hit.sourceId, hit.originKey)) ?? null,
-    ordinal: hit.ordinal,
-    // OMITTED rather than sent as null when the row has none (DOR-1579). The
-    // field means "this hit can be landed on exactly"; a `null` on the wire
-    // would be a second spelling of the same absence, and every reader would
-    // have to know both.
-    ...(hit.messageId === null ? {} : { messageId: hit.messageId }),
-    role: hit.role,
-    createdAt: hit.createdAt,
-    // Non-null by construction — `excerpts: true` above — and defaulted rather
-    // than asserted, because an empty string is a worse answer than a missing
-    // one only when somebody is lying about which they got.
-    excerpt: hit.excerpt ?? '',
-  }));
+  const containers = hits.map((hit) => ({ sourceId: hit.sourceId, originKey: hit.originKey }));
+  const paths = containerPaths(db, containers);
+  // Resolved here rather than read off the row: a runtime's binding can be
+  // written AFTER the messages it describes were indexed, so a copy taken at
+  // index time would say "no session" forever. See `session-links.ts`.
+  const sessions = resolveSessionIds(db, containers);
+  const results: SearchHit[] = hits.map((hit) => {
+    const sessionId = sessions.get(containerKey(hit.sourceId, hit.originKey));
+    return {
+      source: hit.sourceId,
+      container: hit.originKey,
+      // OMITTED rather than sent as null when this hit opens nothing — a room, or
+      // a conversation held with a runtime's own command-line tool that DorkOS
+      // never ran. Same rule as `messageId` below, for the same reason.
+      ...(sessionId === undefined ? {} : { sessionId }),
+      containerPath: paths.get(containerKey(hit.sourceId, hit.originKey)) ?? null,
+      ordinal: hit.ordinal,
+      // OMITTED rather than sent as null when the row has none (DOR-1579). The
+      // field means "this hit can be landed on exactly"; a `null` on the wire
+      // would be a second spelling of the same absence, and every reader would
+      // have to know both.
+      ...(hit.messageId === null ? {} : { messageId: hit.messageId }),
+      role: hit.role,
+      createdAt: hit.createdAt,
+      // Non-null by construction — `excerpts: true` above — and defaulted rather
+      // than asserted, because an empty string is a worse answer than a missing
+      // one only when somebody is lying about which they got.
+      excerpt: hit.excerpt ?? '',
+    };
+  });
 
   return { results, warnings: sourceWarnings(db, scopes) };
 }
@@ -212,18 +227,6 @@ function containerPaths(
     paths.set(containerKey(row.source_id, row.origin_key), row.container_path);
   }
   return paths;
-}
-
-/**
- * The composite key a container is looked up by, source first.
- *
- * Joined on a NUL, written as an ESCAPE rather than pasted in as a byte — a raw
- * one in the source makes git treat this whole file as binary and stop diffing
- * it. It is the right separator because `origin_key` is opaque and may hold
- * anything a projection composes, and NUL is the one character it cannot.
- */
-function containerKey(sourceId: string, originKey: string): string {
-  return `${sourceId}\u0000${originKey}`;
 }
 
 /**
