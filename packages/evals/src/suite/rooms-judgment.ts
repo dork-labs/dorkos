@@ -2,8 +2,10 @@
  * The `rooms` suite's JUDGMENT tier — what a real model does once the room stops
  * speaking for it (spec `tool-only-room-replies` §D13; DOR-1613 PR3).
  *
- * Twelve credentialed cases, every one of them quarantined, every one of them
- * driving `rooms.toolOnlyReplies` ON before it posts. They spend real money and
+ * Thirteen credentialed cases, every one of them quarantined, every one of them
+ * driving `rooms.toolOnlyReplies` ON before it posts. Every count and figure
+ * below was measured on the first twelve; the thirteenth,
+ * `rooms-signals-before-a-long-turn` (DOR-1975), has not been run. They spend real money and
  * they are not a check.
  *
  * ## What separates this file from `rooms.ts` and `rooms-tool-only.ts`
@@ -1297,6 +1299,92 @@ export const roomsDeclinesVisiblyCase: EvalCase = {
   ],
 };
 
+/**
+ * `rooms-signals-before-a-long-turn` — E15a/E15b, the early signal (DOR-1975).
+ *
+ * Raised by a user in FB-10: an agent that takes a long turn leaves nothing on
+ * the message until it finishes, which to anybody not watching the presence
+ * line at that moment is indistinguishable from not having seen it. E15a's
+ * answer is a 👀 on the trigger BEFORE the work, because a reaction is not a
+ * message — no turn, no notice, no entry — so it cannot become the noise E15
+ * guards against. E15b's is to swap that 👀 for ✅ before the turn ends.
+ *
+ * **What the oracle sees is the end state.** `agentReactedInRoom` folds the
+ * reaction frames to the last one per entry, so it reads whatever reaction is
+ * still STANDING when the drive settles — under E15b that is the ✅. A
+ * compliant agent passes. An agent that put 👀 on and never swapped it passes
+ * this oracle too; that gap is known, and the swap is read off the evidence
+ * (`reactors` plus the frames) when the case is run, not asserted yet.
+ *
+ * **The case is built so it cannot be passed by over-participating.** Reacting
+ * is necessary but not sufficient: `agentPostCount(…, 1)` pins that the agent
+ * posted the RESULT and nothing else. An agent that reacts 👀 and also says
+ * "on it" before answering scores two posts and goes red, which is exactly the
+ * E15a failure ("never both") — the reaction and the acknowledgment message are
+ * the same acknowledgment sent twice.
+ *
+ * The prompt asks for something with several steps AND says out loud that it
+ * will take a while, so the model has a stated reason to treat the turn as
+ * long rather than its own estimate doing the work: E15a is explicit that a
+ * short turn gets no signal, and a sandbox is small. The room drive does not
+ * actually wait minutes, because what is being measured is the CHOICE to
+ * signal, not the duration.
+ *
+ * **Specified, not yet run live.** The honest read on a green here is the one
+ * this whole file carries: a model might have reacted anyway. The drill that
+ * tells those apart is removing the BEFORE A LONG TURN lines from
+ * `room-tools-context.ts` and re-running — if it stays green, the guidance is
+ * not what produced the behaviour.
+ */
+export const roomsSignalsBeforeALongTurnCase: EvalCase = {
+  id: 'rooms-signals-before-a-long-turn',
+  title: 'Rooms E15a — a long turn is announced with a reaction, not a second message',
+  prompt: '',
+  runtimeTier: 'claude-code-cheap',
+  costClass: 'cheap',
+  tags: ['rooms', 'experimental'],
+  quarantined: true,
+  perEvalCeilingUsd: CREDENTIALED_CEILING_USD,
+  seed: (sandbox) => seedRoomAgents(sandbox, [ADA]),
+  roomScript: async (ctx): Promise<RoomScriptResult> =>
+    underTheFlip(ctx.baseUrl, async () => {
+      const { room, stream } = await openRoomFor(ctx, {
+        slug: 'long-turn',
+        title: 'long-turn',
+        agents: [ADA],
+        timeoutMs: CREDENTIALED_TIMEOUT_MS,
+      });
+      try {
+        const posted = await postToRoom({
+          baseUrl: ctx.baseUrl,
+          roomId: room.roomId,
+          text:
+            `${mentionOf(room, 'ada')} can you go through every file in this repo, ` +
+            'work out which ones have no tests at all, and come back with the list ' +
+            'grouped by directory? This will take you a while, so take your time.',
+        });
+        room.notes.longTurnEntryId = posted.entryId;
+        const frames = await stream.settle({ quietMs: CREDENTIALED_QUIET_MS });
+        return { frames, room };
+      } finally {
+        stream.close();
+      }
+    }),
+  oracles: [
+    roomTurnRanFor('ada', 'the mention triggered a turn'),
+    agentReactedInRoom('ada', {
+      entryIdNote: 'longTurnEntryId',
+      label: 'the agent left a reaction standing on the trigger: the ✅ that replaced its 👀',
+    }),
+    agentPostCount(
+      'ada',
+      1,
+      'and posted exactly once — the result. A second post is the "on it" message ' +
+        'the reaction exists to replace, which is the E15a failure, not a nicety'
+    ),
+  ],
+};
+
 /** Every judgment rooms case, in registration order. */
 export const roomsJudgmentCases: EvalCase[] = [
   roomsDmAnswersDirectQuestionCase,
@@ -1311,4 +1399,5 @@ export const roomsJudgmentCases: EvalCase[] = [
   roomsAnswersInOneMessageCase,
   roomsAmbientSilenceIsFreeCase,
   roomsDeclinesVisiblyCase,
+  roomsSignalsBeforeALongTurnCase,
 ];

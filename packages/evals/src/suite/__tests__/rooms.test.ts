@@ -168,11 +168,12 @@ describe('the credentialed tier', () => {
     expect(TOOL_ONLY_WHILE_DRIVING).toBe(true);
   });
 
-  it('holds the twelve judgment cases the flip added', () => {
+  it('holds the twelve judgment cases the flip added, then the early-signal case', () => {
     // The same deliberate-rather-than-drift enumeration the X-row list gets, and
     // it earns one for a sharper reason: these are the cases graduation criteria
     // 2 and 3 are written against, so a case quietly leaving the file would take
-    // a criterion with it.
+    // a criterion with it. The thirteenth (DOR-1975) came after the flip and sits
+    // last so the twelve keep the order the criteria were measured in.
     expect(roomsJudgmentCases.map((c) => c.id)).toEqual([
       'rooms-dm-answers-a-direct-question',
       'rooms-dm-answers-an-ambiguous-request',
@@ -186,8 +187,9 @@ describe('the credentialed tier', () => {
       'rooms-answers-three-questions-in-one-message',
       'rooms-ambient-silence-is-free-for-a-model-too',
       'rooms-declines-visibly-rather-than-vanishing',
+      'rooms-signals-before-a-long-turn',
     ]);
-    expect(roomsJudgmentCases).toHaveLength(12);
+    expect(roomsJudgmentCases).toHaveLength(13);
   });
 
   it('keeps the three DM answer-rate SEEDS distinct, which is what criterion 2 counts', () => {

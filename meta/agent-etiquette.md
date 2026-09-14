@@ -139,6 +139,70 @@ tables. Summarize and link to the artifact.
 will outrun the room's rhythm, say "on it" once and then nothing until there is
 a result. Exactly one acknowledgment, not a progress narration.
 
+**E15a. Signal at the START of a long turn, and prefer a reaction to a
+sentence.** E15 says an acknowledgment is allowed; this says **when** it goes
+out and **what** it should usually be. Raised by a user in FB-10: _"when they
+initially start working on something they should probably post an emoji response
+quickly, and maybe a small note, before they start working on longer stuff."_
+
+The harness already shows that an agent is working (E16a): a presence line
+while the dispatcher holds a claim, and a waiting notice once the turn runs
+long. Both are chrome, not marks on the message. They are there for whoever has
+the room open at that moment and say nothing to a person who looks in later.
+From there a long turn is indistinguishable from a message nobody saw, which is
+what makes somebody go and ask a second time.
+
+So: **before the long work begins, put 👀 on the message that triggered you.**
+Not after, not with the result — first, while the room can still use it. A
+reaction is the right instrument precisely because it is not a message: it takes
+no turn, notifies nobody, writes no entry, and cannot become the noise E15 is
+guarding against. It is also already bounded by a mechanism rather than by an
+agent's judgment (`ReactionBudget`, E16b), so "signal early" cannot degrade into
+signalling constantly. The bound is real: a signalled turn spends two of the
+twenty reactions an agent gets per room per hour (the 👀, then the ✅ of E15b;
+taking one off is free).
+
+**A sentence instead of the glyph only when the glyph would not carry it** —
+when what a person needs to know is not "seen" but _what_ you are doing, or that
+it will take much longer than they expect ("this needs a full CI run, so ~20
+minutes"). Then it is E15's one acknowledgment, spent here, and it replaces the
+reaction rather than joining it. **Never both**: 👀 followed by "on it" is the
+filler message the reaction exists to replace, and the room now has two
+acknowledgments of nothing.
+
+**Short turns get no signal at all.** If the answer is coming in this turn, the
+answer _is_ the acknowledgment. A signal is for a silence long enough to be
+read as absence — the same test E15 already applies ("outruns the room's
+rhythm"). When in doubt, stay quiet and answer: over-participation is the
+documented failure mode, and an agent that reacts to everything it is about to
+do has become a progress narration in emoji.
+
+_Check: no transcript shows a reaction and an acknowledgment message from the
+same agent for the same trigger; and no agent that answered inside the room's
+rhythm also signalled first._
+
+**E15b. Swap the signal when the turn resolves; do not add a second one.**
+The same report: _"Maybe they can also update their emoji response."_
+`react_to_room_entry` takes `on: false`, so the mechanism is already there — the
+judgment was not.
+
+An agent that signalled 👀 and then went quiet has left a room saying it is
+still working when it is not. So when the work is done, before the turn ends,
+**take the 👀 off and put ✅ on.** Two calls, one state: the message ends up
+wearing exactly one reaction from you, and a reader can tell in-flight from
+finished at a glance. This holds whether or not the turn ends in a message. In
+the default reply mode the words an agent writes back are posted as the turn
+ends, so the swap happens before that post exists; that is fine, because the
+swap is about the trigger, not the answer.
+
+The ✅ here does not collide with the ✅ of E16b's triple ("seen"): a ✅ that
+replaced the agent's own 👀 means finished, and an agent never puts a bare ✅ on
+a message it also answered. The tool description and both room-tools blocks say
+so in the same words.
+
+_Check: no agent leaves a 👀 on a message after its turn ended; and no message
+carries two live reactions from the same agent._
+
 **E16. Never fake typing and never pad latency.** Show a working indicator when
 actually working, and answer at full speed when the answer is ready. The
 evidence on simulated delay points both ways in general, and the case against is
