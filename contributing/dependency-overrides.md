@@ -87,6 +87,18 @@ DORK_HOME=$(mktemp -d) node packages/cli/dist/bin/cli.js auth enable --email you
 
 `auth enable` must exit 0 and the integration test's sign-up → sign-in → `get-session` chain must pass; that chain is what 1.7.1 broke.
 
+### `@playwright/test` — pinned exact at 1.62.1 (DOR-2037)
+
+`apps/e2e` declares `@playwright/test` exactly — `"1.62.1"`, no caret — and `.github/dependabot.yml` ignores `>= 1.63.0`.
+
+**What breaks.** 1.63.0 (which ships Chrome 153.0.8010.12, against 1.62.1's Chrome 151.0.7922.34) turns `apps/e2e/tests/dev-playground/feedback-capture-focus.spec.ts` red: focus drops from the feedback dialog to `body` during "Capture app view". It ejected #1855 from the merge queue twice. Measured locally with `--repeat-each=3`, the bump's own React 19.3.0 is innocent: the #1855 tree with React put back on 19.2.8 still failed 3/3, and the same tree with only Playwright put back on 1.62.1 passed 3/3.
+
+**Why this is not only a test problem.** That spec guards a real Chromium behaviour (DOR-1956): hiding a focused subtree blurs it, and the app's capture avoids that with `opacity: 0`. If Chrome 153 changed what survives the capture's two-frame hide, people on Chrome 153 lose the caret and paste in the feedback dialog, whatever this repo pins. DOR-2037 starts by checking that by hand. Do not edit the spec to make it pass.
+
+**The same auto-installed-peer trap as `better-auth`.** `next` declares `@playwright/test` as an optional peer, reached through `better-auth`, and pnpm auto-installs it at the latest version. A relock over a lockfile that already held 1.63.0 kept that second copy; relocking from `main`'s lockfile leaves one `@playwright/test@1.62.1`.
+
+**Drop condition:** the spec passes, `--repeat-each=3`, on a Playwright at or above 1.63. Then return the spec to a caret range and remove the ignore entry in the same PR.
+
 ### `@a2a-js/sdk` — pinned exact at 1.0.1 (DOR-1549)
 
 `packages/a2a-gateway` declares `@a2a-js/sdk` exactly — `"1.0.1"`, no caret. Protocol SDK, and 1.0 is a ground-up rewrite: a pinned version here is a verified claim about what goes on the wire, not a range (DOR-1549, PR #1293).

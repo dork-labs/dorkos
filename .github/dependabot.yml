@@ -131,6 +131,8 @@ updates:
         versions: ['>= 1.7.3'] # DOR-2036: TS7056 in auth/index.ts, sign-up 500s
       - dependency-name: '@better-auth/api-key'
         versions: ['>= 1.7.3'] # DOR-2036: moves in lockstep with better-auth
+      - dependency-name: '@playwright/test'
+        versions: ['>= 1.63.0'] # DOR-2037: Chrome 153 drops focus in feedback-capture-focus.spec.ts
     # The queue merges it; nobody needs a review ping for a patch bump that
     # 13,000 tests are about to vet anyway.
     open-pull-requests-limit: 5
