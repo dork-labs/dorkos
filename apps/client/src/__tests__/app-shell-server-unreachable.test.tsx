@@ -207,6 +207,7 @@ vi.mock('sonner', () => ({
 // ── Import AppShell after the mocks are in place ──
 
 import { AppShell } from '../AppShell';
+import { resetFailureMemoryForTests } from '../app/config-failure-memory';
 
 /** The headline, spelled with the typographic apostrophe the screen renders. */
 const HEADLINE = 'DorkOS can’t reach its server';
@@ -240,9 +241,10 @@ let transport: Transport;
  *
  * @param status - The HTTP status the reply carried.
  * @param message - The `error` field the server sent, when the test is about it.
+ * @param code - The `code` field, which only this server's own refusals carry.
  */
-function answeredWith(status: number, message = `HTTP ${status}`) {
-  return Object.assign(new Error(message), { status });
+function answeredWith(status: number, message = `HTTP ${status}`, code?: string) {
+  return Object.assign(new Error(message), { status, ...(code === undefined ? {} : { code }) });
 }
 
 /**
@@ -353,6 +355,11 @@ beforeAll(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   transport = createMockTransport();
+  // Each case is its own launch. Without this the shell's per-launch failure
+  // memory carries between them — and fake timers push `Date.now()` seconds
+  // into the future mid-case, so a later case's failure can be stamped BEHIND
+  // an earlier one's and be ignored as stale.
+  resetFailureMemoryForTests();
 });
 
 afterEach(() => {
@@ -617,12 +624,30 @@ describe('AppShell, when the server answers with an error', () => {
     const refusal =
       'This instance does not answer to the address "phone.ngrok.app". ' +
       'If that is how you reach DorkOS, list it in DORKOS_TRUSTED_HOSTS, or turn on login.';
-    vi.mocked(transport.getConfig).mockRejectedValue(answeredWith(403, refusal));
+    vi.mocked(transport.getConfig).mockRejectedValue(
+      answeredWith(403, refusal, 'HOST_NOT_ALLOWED')
+    );
 
     renderAppShell();
 
     expect(await screen.findByText(refusal)).toBeInTheDocument();
     expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
+  });
+
+  it('will not print a stranger’s 403 as if DorkOS wrote it', async () => {
+    // A proxy, a captive portal or a CDN can answer 403 with any body it likes,
+    // and the status alone cannot tell one from this server's host guard. Keyed
+    // on the number, the shell would have rendered that text full-screen in
+    // DorkOS chrome. Only the `code` this server sets earns the words.
+    vi.mocked(transport.getConfig).mockRejectedValue(
+      answeredWith(403, 'Access denied by CorpProxy. Sign in at portal.example.com to continue.')
+    );
+
+    renderAppShell();
+
+    expect(await screen.findByTestId('server-error')).toBeInTheDocument();
+    expect(screen.getByText(/got an error back \(HTTP 403\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/CorpProxy/)).not.toBeInTheDocument();
   });
 
   it('still knows what replied after the shell remounts mid-retry', async () => {
@@ -648,6 +673,34 @@ describe('AppShell, when the server answers with an error', () => {
 
     expect(screen.queryByText(HEADLINE)).not.toBeInTheDocument();
     expect(screen.getByTestId('server-error')).toBeInTheDocument();
+  });
+
+  it('never describes a newer failure with an older failure’s number', async () => {
+    // **What the stamp on the memory is for.** The first failure is a 500 and
+    // is seen. The next one lands with nobody mounted to read it, and the retry
+    // that follows wipes the error before the shell comes back — so all the
+    // shell has is a fresher `errorUpdatedAt` and nothing to read. Un-stamped,
+    // the memory would still be holding 500 and would put that number on a
+    // failure it never saw. "Something newer failed and we could not see what"
+    // is exactly the unreachable case.
+    vi.mocked(transport.getConfig).mockRejectedValue(answeredWith(500));
+    const first = renderAppShell();
+    await screen.findByTestId('server-error');
+    first.unmount();
+
+    // A fresh cache carrying a warm config and a failure stamped AFTER the 500,
+    // with its error already gone. Nothing new goes out: the read hangs.
+    vi.mocked(transport.getConfig).mockReturnValue(new Promise(() => {}));
+    renderAppShell((client) => {
+      seedYesterdaysConfig(client);
+      client
+        .getQueryCache()
+        .find({ queryKey: configKeys.current() })
+        ?.setState({ errorUpdateCount: 1, errorUpdatedAt: Date.now(), error: null });
+    });
+
+    expect(await screen.findByText(HEADLINE)).toBeInTheDocument();
+    expect(screen.queryByTestId('server-error')).not.toBeInTheDocument();
   });
 
   it('hands the window back when the server recovers', async () => {

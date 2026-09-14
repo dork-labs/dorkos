@@ -1,10 +1,33 @@
 import { BootBlockedScreen } from './BootBlockedScreen';
 
+/**
+ * The `code` this server's host guard sends with its 403.
+ *
+ * The literal, not an import: the constant is declared in
+ * `apps/server/src/middleware/host-guard.ts`, which no client module may reach.
+ * It is a wire contract either way — the code travels in the JSON body, and
+ * `http-client.ts` hangs it on the thrown error — and the server's own
+ * `host-guard.test.ts` pins the string from the other side.
+ */
+const HOST_NOT_ALLOWED_CODE = 'HOST_NOT_ALLOWED';
+
+/**
+ * The longest server-written line this screen will print.
+ *
+ * The refusal names a hostname it was handed, and a hostname can be 253
+ * characters, so even our own message has no fixed length. A full-window wall
+ * of text is not more honest than a clamped one, and the part that says what to
+ * do comes first.
+ */
+const MAX_DETAIL_CHARS = 240;
+
 interface ServerErrorScreenProps {
   /** The HTTP status the reply carried, as reported on the thrown error. */
   status: number;
-  /** The error's message, shown only where it was written for a person to act on. */
+  /** The reply's message, shown only when {@link ServerErrorScreenProps.code} vouches for it. */
   message?: string;
+  /** The reply's `code` — the only evidence that this server, not a middlebox, refused. */
+  code?: string;
 }
 
 /**
@@ -36,18 +59,26 @@ interface ServerErrorScreenProps {
  * `main.tsx` — swaps the whole app for the login screen before this shell
  * renders again.
  */
-export function ServerErrorScreen({ status, message }: ServerErrorScreenProps) {
-  // **The one refusal whose own words beat anything this file could write.** A
-  // 403 from the host guard is not a fault to wait out — it is an address this
-  // instance will not answer to, and the server's message names both the
-  // address and the two ways out (`DORKOS_TRUSTED_HOSTS`, or turn login on).
-  // Without it the screen offers a Try again that can never work and a number
-  // that leads nowhere. Raw error text stays off every other status for the
-  // reasons the frame gives.
+export function ServerErrorScreen({ status, message, code }: ServerErrorScreenProps) {
+  // **The one refusal whose own words beat anything this file could write.** The
+  // host guard's 403 is not a fault to wait out — it is an address this instance
+  // will not answer to, and its message names both the address and the two ways
+  // out (`DORKOS_TRUSTED_HOSTS`, or turn login on). Without it the screen offers
+  // a Try again that can never work and a number that leads nowhere.
+  //
+  // **The gate is the CODE, never the status.** A proxy, a captive portal or a
+  // CDN can answer 403 with any body it likes, and keying on the number alone
+  // would print a stranger's text full-screen inside DorkOS chrome — inert, but
+  // a page that looks like it is speaking for the product. Only this server
+  // sets `HOST_NOT_ALLOWED`. Raw error text stays off every other failure for
+  // the reasons the frame gives, and even this one is clamped.
+  const refusal = code === HOST_NOT_ALLOWED_CODE && message ? message : undefined;
   const detail =
-    status === 403 && message
-      ? message
-      : `DorkOS asked for your settings and got an error back (HTTP ${status}). It keeps trying, and this screen clears as soon as your settings load.`;
+    refusal === undefined
+      ? `DorkOS asked for your settings and got an error back (HTTP ${status}). It keeps trying, and this screen clears as soon as your settings load.`
+      : refusal.length > MAX_DETAIL_CHARS
+        ? `${refusal.slice(0, MAX_DETAIL_CHARS).trimEnd()}…`
+        : refusal;
 
   return (
     <BootBlockedScreen

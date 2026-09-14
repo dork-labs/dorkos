@@ -36,7 +36,7 @@ const RETRY_INTERVAL_MS = 5000;
 
 let transport: Transport;
 
-function renderScreen(props: { status: number; message?: string }) {
+function renderScreen(props: { status: number; message?: string; code?: string }) {
   const queryClient = new QueryClient({
     // One attempt per fetch, so "how many times did it ask" counts asks and not
     // TanStack's internal retries.
@@ -99,14 +99,42 @@ describe('ServerErrorScreen', () => {
   });
 
   it('shows a host refusal in the server’s own words', async () => {
-    // The one status whose message is written for the person reading it: it
+    // The one refusal whose message is written for the person reading it: it
     // names the address and the two ways out, which "(HTTP 403)" does not.
     const refusal =
       'This instance does not answer to the address "phone.ngrok.app". ' +
       'If that is how you reach DorkOS, list it in DORKOS_TRUSTED_HOSTS, or turn on login.';
-    renderScreen({ status: 403, message: refusal });
+    renderScreen({ status: 403, message: refusal, code: 'HOST_NOT_ALLOWED' });
 
     expect(await screen.findByText(refusal)).toBeInTheDocument();
+  });
+
+  it('shows nobody else’s words, whatever status they arrive under', async () => {
+    // A proxy, a captive portal or a CDN answers 403 with its own body. Keyed
+    // on the status, this screen would have printed a stranger's text
+    // full-screen in DorkOS chrome — inert, but a page that looks like it is
+    // speaking for the product. The `code` is what only this server sets.
+    renderScreen({
+      status: 403,
+      message: 'Access denied by CorpProxy. Sign in at portal.example.com to continue.',
+    });
+
+    expect(await screen.findByText(/got an error back \(HTTP 403\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/CorpProxy/)).not.toBeInTheDocument();
+  });
+
+  it('clamps even its own refusal, which carries a hostname it was handed', async () => {
+    // A hostname can be 253 characters, so the message has no fixed length and
+    // a full window of text is not more honest than a clamped one. The part
+    // that says what to do comes first.
+    const long = `This instance does not answer to the address "${'a'.repeat(253)}". Set DORKOS_TRUSTED_HOSTS.`;
+    renderScreen({ status: 403, message: long, code: 'HOST_NOT_ALLOWED' });
+    await screen.findByText(HEADLINE);
+
+    expect(screen.queryByText(long)).not.toBeInTheDocument();
+    const shown = screen.getByText(/^This instance does not answer/);
+    expect(shown.textContent?.length).toBeLessThanOrEqual(241);
+    expect(shown.textContent?.endsWith('…')).toBe(true);
   });
 
   it('asks again when the button is pressed', async () => {

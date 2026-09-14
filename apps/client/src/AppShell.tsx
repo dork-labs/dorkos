@@ -16,6 +16,7 @@ import { TitlebarDragStrip } from './app/TitlebarDragStrip';
 import { SidebarBodyErrorBoundary } from './app/SidebarBodyErrorBoundary';
 import { ServerUnreachableScreen } from './app/ServerUnreachableScreen';
 import { ServerErrorScreen } from './app/ServerErrorScreen';
+import { latestFailure } from './app/config-failure-memory';
 import {
   getAgentDisplayName,
   cn,
@@ -118,76 +119,6 @@ import {
  * both, and clears itself the moment either resolves.
  */
 const SERVER_HANG_DEADLINE_MS = 15_000;
-
-/**
- * What a failed request came back WITH: an HTTP status, and the message that
- * rode with it.
- *
- * `http-client.ts` can only fill these in from a response it actually read, so
- * a status is proof that something on the other end replied. Nothing to read
- * means nothing to report: a refused connection (nothing listening on the port)
- * and the client's own 30s timeout both throw with no status at all, which is
- * the difference this shell needs.
- *
- * **A status says a reply arrived, never that DorkOS sent it.** Remote Access
- * runs through an ngrok tunnel, and a tunnel edge whose origin is dead answers
- * 502 on its own account — a real "can't reach its server" wearing a status
- * code. That is why the screen this feeds names the number and claims nothing
- * about who produced it.
- *
- * @param error - The rejection value off a TanStack query.
- */
-function failureFacts(error: unknown): { status?: number; message?: string } {
-  const status = (error as { status?: unknown } | null | undefined)?.status;
-  const message = (error as { message?: unknown } | null | undefined)?.message;
-  return {
-    ...(typeof status === 'number' ? { status } : {}),
-    ...(typeof message === 'string' && message.length > 0 ? { message } : {}),
-  };
-}
-
-/**
- * The config read's most recent failure THIS LAUNCH, as last seen.
- *
- * **Module scope, deliberately, and the two reasons are different.**
- *
- * First, the error object is not durable while `errorUpdatedAt` is: TanStack
- * rewinds a query with NO data to `status: 'pending'` and nulls its `error` the
- * instant the next attempt starts (`fetchState` in query-core), leaving the
- * stamp standing. That is why the gate asks the timestamp whether a failure
- * happened, and why asking the live error what KIND of failure it was answers
- * "unknown" for the length of every in-flight retry. On a screen that re-asks
- * every five seconds, reading it live is a window flipping between two different
- * full-page explanations of the same failure.
- *
- * Second, a component-scoped `useRef` would lose the answer on any remount — an
- * `AuthGuard` flip, a dev-mode remount — and hand back the unreachable screen
- * for a whole retry interval, over a server that had already replied. The fact
- * being remembered belongs to the LAUNCH, which is what `LAUNCH_STARTED_AT`
- * already keys every other half of this gate to, so it outlives any one mount.
- *
- * Writes happen only on a render that can actually see an error, and write the
- * same thing every time for the same error, so a StrictMode double render and a
- * discarded concurrent render both leave the same value behind.
- */
-let lastSeenFailure: { status?: number; message?: string } = {};
-
-/**
- * What the latest config failure of this launch came back with, or `undefined`
- * when nothing has failed yet this launch.
- *
- * @param failedAt - `errorUpdatedAt` from the config query.
- * @param error - `error` from the same query, live and possibly already cleared.
- */
-function latestFailure(
-  failedAt: number,
-  error: unknown
-): { status?: number; message?: string } | undefined {
-  if (error !== null && error !== undefined) {
-    lastSeenFailure = failureFacts(error);
-  }
-  return failedAt > LAUNCH_STARTED_AT ? lastSeenFailure : undefined;
-}
 
 // ── Private slot types ────────────────────────────────────────
 
@@ -635,7 +566,13 @@ export function AppShell() {
   // Same reasons, one rung less certain about the cause: a reply came back, so
   // all this screen claims is that it was an error and which one.
   if (errorReply?.status !== undefined) {
-    return <ServerErrorScreen status={errorReply.status} message={errorReply.message} />;
+    return (
+      <ServerErrorScreen
+        status={errorReply.status}
+        message={errorReply.message}
+        code={errorReply.code}
+      />
+    );
   }
 
   // Gate rendering until config is loaded — prevents a flash of chat UI before

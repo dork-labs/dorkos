@@ -2,6 +2,7 @@
 covers:
   - 'fix(client): only say the server is unreachable when nothing answered (DOR-2035)'
   - 'fix(client): say what the server answered, and keep a host refusal readable (DOR-2035)'
+  - 'fix(client): only print a refusal this server wrote, and never a stale status (DOR-2035)'
 ---
 
 ### Fixed
