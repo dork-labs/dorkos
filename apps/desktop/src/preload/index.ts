@@ -6,6 +6,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { UpdateStatus } from '../main/auto-updater';
 import type { AdminActionResult } from '../main/admin';
 import type { CaptureAppViewResult } from '../main/capture';
+import type { HeartbeatReport } from '../main/renderer-health';
 
 /** IPC channel the main process pushes {@link UpdateStatus} events on (mirrors `UPDATE_STATUS_CHANNEL` in auto-updater.ts). */
 const UPDATE_STATUS_CHANNEL = 'update:status';
@@ -92,8 +93,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * static recovery page, so this is not optional decoration: a renderer that
    * paints and never calls this will be reloaded, then cache-cleared, then
    * relaunched.
+   *
+   * It carries `performance.timeOrigin` because the shell has to know WHICH
+   * page is reporting. A reload does not stop the page it discarded from
+   * finishing an in-flight heartbeat, and the shell counted that as the new
+   * page coming up (DOR-2034).
    */
-  reportAlive: (): void => ipcRenderer.send(ALIVE_CHANNEL),
+  reportAlive: (): void =>
+    ipcRenderer.send(ALIVE_CHANNEL, {
+      timeOrigin: performance.timeOrigin,
+    } satisfies HeartbeatReport),
   /**
    * Reload the app from the recovery page, resetting the shell's failure
    * count.

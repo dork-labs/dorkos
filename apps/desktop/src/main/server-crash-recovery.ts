@@ -3,6 +3,7 @@ import type { MessageBoxOptions, MessageBoxReturnValue } from 'electron';
 import log from 'electron-log';
 import { formatServerOutput } from './server-output';
 import { isQuitting } from './quit-guard';
+import { noteDocumentReplaced } from './renderer-health/document-watermark';
 
 /**
  * What the desktop shell does about a server it did not expect to lose:
@@ -190,6 +191,13 @@ function revealLogs(): void {
  * @param port - The port the replacement server is listening on.
  */
 export function pointWindowsAtServer(port: number): void {
+  // Every window below loses the document it is showing, and the renderer
+  // supervisor is waiting on a heartbeat from one of them. Without this stamp,
+  // the discarded page's heartbeat still arrives and clears the supervisor's
+  // failure count for a load that never came up (DOR-2034). Stamped once,
+  // before the first navigation, so a later iteration's clock reading can never
+  // postdate a window this loop already navigated.
+  noteDocumentReplaced();
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;
     // A packaged build loads the renderer *from* the server, so it has to move

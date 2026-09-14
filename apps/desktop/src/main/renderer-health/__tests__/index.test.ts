@@ -30,6 +30,7 @@ import {
   shouldDisableHardwareAcceleration,
   type RendererHealth,
 } from '../index';
+import { noteDocumentReplaced } from '../document-watermark';
 import {
   app,
   BrowserWindow,
@@ -84,10 +85,10 @@ describe('renderer supervisor', () => {
   }
 
   /** Invoke the `ipcMain.on` listener registered for `channel`. */
-  function send(channel: string, event: unknown): void {
+  function send(channel: string, event: unknown, payload?: unknown): void {
     const call = ipcMain.on.mock.calls.find(([registered]) => registered === channel);
     if (!call) throw new Error(`Nothing is listening on ${channel}.`);
-    (call[1] as (event: unknown) => void)(event);
+    (call[1] as (event: unknown, payload?: unknown) => void)(event, payload);
   }
 
   /** Invoke the `ipcMain.handle` listener registered for `channel`. */
@@ -100,6 +101,14 @@ describe('renderer supervisor', () => {
   /** An IPC event shaped like one from the supervised window. */
   function fromWindow(): { sender: MockBrowserWindow['webContents'] } {
     return { sender: win.webContents };
+  }
+
+  /**
+   * What the preload sends with a heartbeat: the reporting page's
+   * `performance.timeOrigin`, which is when that document came into existence.
+   */
+  function reportedBy(documentCreatedAt: number): { timeOrigin: number } {
+    return { timeOrigin: documentCreatedAt };
   }
 
   /**
@@ -235,6 +244,46 @@ describe('renderer supervisor', () => {
       expect(win.webContents.reload).toHaveBeenCalledTimes(1);
     });
 
+    // Defensive, not a compatibility path: main and the preload ship in one
+    // asar built from one tree, so the only sender there is always sends the
+    // payload. This pins what happens if a bug in it ever stopped — the
+    // behaviour from before the guard existed, because a guard that reloads
+    // healthy windows is worse than the loop it was written to stop. It is also
+    // what the packaged smoke's `consecutiveFailures: 0` rests on.
+    it('accepts a heartbeat that carries no usable report', async () => {
+      await expireDeadline();
+      expect(health().consecutiveFailures).toBe(1);
+
+      send('renderer:alive', fromWindow());
+
+      expect(health().consecutiveFailures).toBe(0);
+    });
+
+    // `pointWindowsAtServer` in `server-crash-recovery.ts` sends every window to
+    // a restarted server, for whatever reason the server was restarted — a
+    // crash, the updater's stalled-restart recovery, either danger-zone button
+    // in Settings. None of those goes through the ladder, so that function
+    // stamps the shared watermark itself; otherwise the page it navigated away
+    // from can still clear the count for a load that never came up.
+    it('ignores a heartbeat from a page another part of the shell navigated away from', async () => {
+      const stranded = Date.now();
+      seedHealth(JSON.stringify({ consecutiveFailures: 2 }));
+
+      // What `pointWindowsAtServer` does the moment the server is back.
+      await vi.advanceTimersByTimeAsync(5);
+      noteDocumentReplaced();
+
+      send('renderer:alive', fromWindow(), reportedBy(stranded));
+
+      expect(health().consecutiveFailures).toBe(2);
+
+      // The page that navigation produced still clears it.
+      await vi.advanceTimersByTimeAsync(2);
+      send('renderer:alive', fromWindow(), reportedBy(Date.now()));
+
+      expect(health().consecutiveFailures).toBe(0);
+    });
+
     it('ignores every heartbeat when the fault-injection flag is set', async () => {
       process.env.DORKOS_DESKTOP_SUPPRESS_HEARTBEAT = '1';
 
@@ -346,6 +395,53 @@ describe('renderer supervisor', () => {
       expect(health().consecutiveFailures).toBe(1);
       expect(win.webContents.reload).toHaveBeenCalledTimes(1);
       expect(session.defaultSession.clearCache).not.toHaveBeenCalled();
+    });
+
+    // DOR-2034, reported against desktop 0.74.0: a first paint slower than the
+    // deadline gets the window reloaded, and about 110ms later the heartbeat
+    // the DISCARDED page had already sent arrives. Counting it as recovery put
+    // the failure count back to zero, so the replacement load failed as rung 1
+    // again — reload, reload, reload, never reaching the cache clear, and every
+    // cycle throwing away unsent messages and half-typed settings.
+    it('does not let the page it just reloaded put the ladder back to the start', async () => {
+      const firstDocument = Date.now();
+
+      await expireDeadline();
+      expect(win.webContents.reload).toHaveBeenCalledTimes(1);
+      expect(health().consecutiveFailures).toBe(1);
+
+      // The heartbeat that was already in flight when the reload went out.
+      await vi.advanceTimersByTimeAsync(110);
+      send('renderer:alive', fromWindow(), reportedBy(firstDocument));
+
+      expect(health().consecutiveFailures).toBe(1);
+      const ignored = log.warn.mock.calls.map((args) => String(args[0])).join('\n');
+      expect(ignored).toContain('already replaced');
+
+      // The replacement load fails the same way, and the ladder climbs.
+      await win.webContents.emit('did-start-loading');
+      await expireDeadline();
+
+      expect(health().consecutiveFailures).toBe(2);
+      expect(session.defaultSession.clearCache).toHaveBeenCalledTimes(1);
+    });
+
+    // The other half: the page the reload produced is the page being waited
+    // on, and it clears the ladder exactly as it always did.
+    it('lets the page the reload produced clear the ladder', async () => {
+      await expireDeadline();
+      await win.webContents.emit('did-start-loading');
+
+      // A document that came into existence after the reload went out.
+      await vi.advanceTimersByTimeAsync(200);
+      send('renderer:alive', fromWindow(), reportedBy(Date.now()));
+
+      expect(health().consecutiveFailures).toBe(0);
+
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_DEADLINE_MS * 2);
+
+      // Still just the one reload: the deadline was cleared, not re-armed.
+      expect(win.webContents.reload).toHaveBeenCalledTimes(1);
     });
 
     // One failure announces itself several times — a dead renderer fires
@@ -748,6 +844,39 @@ describe('renderer supervisor', () => {
 
       // Reloading here would throw away a window that had just recovered.
       expect(win.webContents.reload).not.toHaveBeenCalled();
+    });
+
+    // The twin of the case above, with the heartbeat the shipped preload
+    // actually sends. Without it the abort is only ever exercised through the
+    // payload-less branch, and the guard could reject every real heartbeat
+    // while this suite stayed green.
+    it('does not reload a window whose new page reported alive, payload and all', async () => {
+      let releaseClear = (): void => {};
+      session.defaultSession.clearCache = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            releaseClear = resolve;
+          })
+      );
+
+      await failTimes(1);
+      // The page rung 1's reload produced. A real Electron creates it one or
+      // two milliseconds after the reload goes out, never before.
+      await vi.advanceTimersByTimeAsync(2);
+      const replacement = Date.now();
+
+      // Trigger failure 2 and let its rung start; it parks on the clear above.
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_DEADLINE_MS);
+      await vi.advanceTimersByTimeAsync(1);
+      win.webContents.reload.mockClear();
+      expect(health().consecutiveFailures).toBe(2);
+
+      send('renderer:alive', fromWindow(), reportedBy(replacement));
+      releaseClear();
+      await settle();
+
+      expect(win.webContents.reload).not.toHaveBeenCalled();
+      expect(health().consecutiveFailures).toBe(0);
     });
   });
 

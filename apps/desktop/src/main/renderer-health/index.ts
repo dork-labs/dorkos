@@ -13,6 +13,11 @@ import { saveDiagnosticReportInteractive } from '../diagnostics';
 import { loadRenderer, type CreateWindowOptions } from '../window-manager';
 import { confirmInterruptingAgents } from '../quit-guard';
 import { FALLBACK_PAGE_FILE } from '../../shared/fallback-page';
+import {
+  documentReplacedAt,
+  noteDocumentReplaced,
+  resetDocumentWatermark,
+} from './document-watermark';
 
 /**
  * The window that can never stay black.
@@ -122,6 +127,27 @@ const SUPPRESS_HEARTBEAT_ENV = 'DORKOS_DESKTOP_SUPPRESS_HEARTBEAT';
 
 /** IPC channel the renderer reports a successful mount on. */
 const ALIVE_CHANNEL = 'renderer:alive';
+
+/**
+ * What a renderer says about itself when it reports alive.
+ *
+ * One field, and it is the one that makes the report attributable: a heartbeat
+ * is IPC, and IPC from a document the supervisor has already thrown away
+ * arrives *after* the reload that threw it away (measured at about 110ms in
+ * DOR-2034). Without a way to tell those apart, that late heartbeat cleared the
+ * failure count and the replacement load failed as rung 1 again, forever.
+ *
+ * Sent by `reportAlive` on the preload bridge. A heartbeat without it is still
+ * accepted — see {@link isFromReplacedDocument}.
+ */
+export interface HeartbeatReport {
+  /**
+   * The reporting document's `performance.timeOrigin`: the Unix-epoch
+   * millisecond at which that page came into existence, which is the same
+   * clock `Date.now()` reads in the main process.
+   */
+  timeOrigin: number;
+}
 
 /** IPC channel the fallback page's "Try Again" arrives on. */
 const TRY_AGAIN_CHANNEL = 'renderer:try-again';
@@ -320,6 +346,7 @@ export function resetRendererSupervisor(): void {
   ladderInFlight = null;
   failuresThisSession = 0;
   healthGeneration = 0;
+  resetDocumentWatermark();
   lastChildProcessCrash = null;
   armed = false;
 }
@@ -377,6 +404,32 @@ function isSupervisedSender(contents: WebContents): boolean {
   return contents.id === win.webContents.id;
 }
 
+/**
+ * Did this heartbeat come from a page the supervisor has already discarded?
+ *
+ * A heartbeat that predates the current load is an echo of the page a reload
+ * threw away, and treating it as recovery restarts the ladder at rung 1 against
+ * conditions that have not changed (DOR-2034).
+ *
+ * **A report that says nothing usable is accepted**, which is defensive rather
+ * than a compatibility path: main and the preload are built from one tree into
+ * one asar, so the only sender in existence always sends the payload. If a bug
+ * in it ever stopped doing so, the safe failure is the behaviour that shipped
+ * before this guard existed — a renderer that came up is the best news this
+ * module ever gets, and a guard that reloads healthy windows would be worse
+ * than the loop it was written to stop.
+ *
+ * @param report - Whatever rode along on the IPC message.
+ */
+function isFromReplacedDocument(report: unknown): boolean {
+  const replacedAt = documentReplacedAt();
+  if (replacedAt === 0) return false;
+  if (typeof report !== 'object' || report === null) return false;
+  const { timeOrigin } = report as Partial<HeartbeatReport>;
+  if (typeof timeOrigin !== 'number' || !Number.isFinite(timeOrigin)) return false;
+  return timeOrigin < replacedAt;
+}
+
 /** Stop waiting on the current load. */
 function clearDeadline(): void {
   if (deadline) clearTimeout(deadline);
@@ -428,6 +481,7 @@ function onDeadlineExpired(): void {
 /** Load the app's real entry point, whatever it is on this surface. */
 function loadRealRenderer(): void {
   if (!supervised || supervised.win.isDestroyed()) return;
+  noteDocumentReplaced();
   loadRenderer(supervised.win, supervised.options);
 }
 
@@ -441,6 +495,7 @@ function loadRealRenderer(): void {
 async function loadFallbackPage(): Promise<void> {
   if (!supervised || supervised.win.isDestroyed()) return;
   try {
+    noteDocumentReplaced();
     await supervised.win.loadFile(fallbackPagePath());
     // A recovery surface nobody can see is not a recovery surface. The window
     // is normally already visible by now (window-manager reveals it within
@@ -481,6 +536,7 @@ async function climbLadder(rung: number, generation: number): Promise<void> {
   if (stale()) return;
 
   if (rung === RUNG_RELOAD) {
+    noteDocumentReplaced();
     win.webContents.reload();
     return;
   }
@@ -498,6 +554,7 @@ async function climbLadder(rung: number, generation: number): Promise<void> {
       log.info('[renderer] The window came back while the cache was clearing; leaving it alone.');
       return;
     }
+    noteDocumentReplaced();
     win.webContents.reload();
     return;
   }
@@ -596,14 +653,29 @@ async function recoverFrom(reason: string): Promise<void> {
  * A renderer reported a real mount. Everything the ladder was holding is
  * released.
  *
+ * **Only the page currently being waited on may do that.** See
+ * {@link isFromReplacedDocument}: a heartbeat from a page a reload already
+ * threw away would put the counter back to zero, and the ladder would answer
+ * every following failure with the same first rung forever.
+ *
  * The write is not incidental: `consecutiveFailures: 0` with a fresh
  * `updatedAt` is exactly what the packaged smoke reads to prove the app it
  * just installed actually renders (see `scripts/smoke-packaged.ts`).
+ *
+ * @param contents - The webContents that sent the heartbeat.
+ * @param report - The {@link HeartbeatReport} the preload sent with it, if any.
  */
-function onHeartbeat(contents: WebContents): void {
+function onHeartbeat(contents: WebContents, report?: unknown): void {
   if (!isSupervisedSender(contents)) return;
   if (process.env[SUPPRESS_HEARTBEAT_ENV] === '1') {
     log.warn(`[renderer] Ignoring a heartbeat: ${SUPPRESS_HEARTBEAT_ENV} is set.`);
+    return;
+  }
+  if (isFromReplacedDocument(report)) {
+    log.warn(
+      '[renderer] Ignoring a heartbeat from the page that was already replaced; it says ' +
+        'nothing about whether the load being waited on came up.'
+    );
     return;
   }
   clearDeadline();
@@ -716,7 +788,7 @@ export function setupRendererRecovery(): void {
   if (armed) return;
   armed = true;
 
-  ipcMain.on(ALIVE_CHANNEL, (event) => onHeartbeat(event.sender));
+  ipcMain.on(ALIVE_CHANNEL, (event, report: unknown) => onHeartbeat(event.sender, report));
 
   ipcMain.handle(TRY_AGAIN_CHANNEL, (event) => {
     if (!isFallbackPageSender(event.sender)) return;
