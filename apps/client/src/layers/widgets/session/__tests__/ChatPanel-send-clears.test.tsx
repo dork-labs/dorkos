@@ -76,7 +76,23 @@ vi.mock('../ui/SessionTranscript', () => ({
 }));
 vi.mock('@/layers/features/chat/ui/tasks/TaskListPanel', () => ({ TaskListPanel: () => null }));
 vi.mock('@/layers/features/chat/ui/CelebrationOverlay', () => ({ CelebrationOverlay: () => null }));
+/** Standing state for the mocked permission-picker store — see the mock below. */
+const PICKER_STUB = {
+  available: false,
+  open: false,
+  setOpen: () => {},
+  setAvailable: () => {},
+};
 vi.mock('@/layers/features/status', () => ({
+  // The panel closes the permission picker as the session changes. The stub's
+  // state object is module-level and frozen: the panel selects `setOpen` into an
+  // effect dependency, so a fresh function per call would re-run it every render.
+  useSessionPermissionPicker: (select: (s: typeof PICKER_STUB) => unknown) => select(PICKER_STUB),
+  // The panel reads this to decide whether a read-only session needs its one
+  // explanation (DOR-2019). Never eligible here: these suites are about the send
+  // path, and a card in the bottom slot is not part of it.
+  useReadOnlyModeHint: () => ({ eligible: false, runtimeLabel: 'Codex', dismiss: () => {} }),
+  ReadOnlyModeNotice: () => null,
   useRuntimeChip: () => ({ runtime: null }),
   TurnFailedNotice: () => null,
   TerminalReasonChip: () => null,

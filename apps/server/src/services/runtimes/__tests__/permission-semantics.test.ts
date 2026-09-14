@@ -16,6 +16,7 @@ import {
   isAutonomyStop,
   isBypassSemantics,
   isDivergent,
+  isSilentReadOnly,
   needsConsentRitual,
   resolveTrustStops,
 } from '@dorkos/shared/permission-semantics';
@@ -125,6 +126,36 @@ describe('declared permission-mode semantics', () => {
     expect(codexDefault?.asks).toBe('never');
     expect(codexDefault?.reach).toBe('read');
     expect(needsConsentRitual(codexDefault!)).toBe(false);
+  });
+
+  it('marks Codex’s default as the one dead end a person has to be told about', () => {
+    // DOR-2019. Read-only plus no way to ask is a mode where a request to edit
+    // a file raises no card and is simply refused, which reads as a broken
+    // agent. The client draws one explanation for exactly this shape, and it
+    // finds it through the descriptor — so this is where the shape is pinned.
+    const codexDefault = CODEX_CAPABILITIES.permissionModes.values.find(
+      (v) => v.id === CODEX_CAPABILITIES.permissionModes.default
+    );
+    expect(isSilentReadOnly(codexDefault!)).toBe(true);
+    // And the caption a person actually reads says it, rather than leaving the
+    // refusal to be discovered. The dial renders `promise` verbatim.
+    expect(codexDefault!.promise).toContain('read files but not change them');
+  });
+
+  it('leaves every other runtime’s starting mode alone', () => {
+    // The explanation is scoped by what a mode declared, not by a runtime name,
+    // and it must not appear on a runtime whose default genuinely asks — a card
+    // explaining a dead end that is not there is worse than no card.
+    for (const caps of PROFILES) {
+      if (caps.type === 'codex') continue;
+      const declaredDefault = caps.permissionModes.default;
+      if (declaredDefault === undefined) continue;
+      const descriptor = caps.permissionModes.values.find((v) => v.id === declaredDefault);
+      expect(
+        isSilentReadOnly(descriptor!),
+        `${caps.type} starts in '${declaredDefault}', which would draw the read-only explanation`
+      ).toBe(false);
+    }
   });
 });
 
@@ -266,7 +297,19 @@ describe('divergence', () => {
       (v) => v.id === 'acceptEdits'
     );
     expect(workspaceWrite?.native).toBe('workspace-write');
-    expect(workspaceWrite!.promise).toContain("can't pause to ask");
+    // The same clause claude-code's own never-asking mode uses, so one person
+    // reading two runtimes reads one sentence twice rather than two paraphrases
+    // of it (DOR-2019 reworded Codex's three promises to match).
+    expect(workspaceWrite!.promise).toContain('cannot stop to ask you first');
+    // And it does not undersell the sandbox. `WorkspaceWrite` reads the whole
+    // disk and writes to the temporary folders as well as the project
+    // (codex-rs `protocol.rs`), so copy that stopped at "inside this project"
+    // was describing something more contained than what a person is choosing.
+    expect(workspaceWrite!.promise).toContain('read anything on this machine');
+    expect(workspaceWrite!.promise).toContain('temporary folders');
+    // And it keeps the clause the caption exists to carry: running commands
+    // unprompted is THE divergence at this stop (spec `trust-dial`, decision 2).
+    expect(workspaceWrite!.promise).toContain('run commands');
   });
 
   it('never flags a mode for asking MORE often than its position promised', () => {

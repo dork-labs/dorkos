@@ -37,7 +37,12 @@ import {
 import { useCapabilitiesForRuntime, getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { useCurrentAgent } from '@/layers/entities/agent';
 import { getAgentDisplayName } from '@/layers/shared/lib';
-import { useRuntimeChip } from '@/layers/features/status';
+import {
+  ReadOnlyModeNotice,
+  useReadOnlyModeHint,
+  useRuntimeChip,
+  useSessionPermissionPicker,
+} from '@/layers/features/status';
 import { useFiles } from '@/layers/features/files';
 import { Conversation, NO_ASKS } from '@/layers/features/conversation';
 import type { ComposerInputHandle } from '@/layers/features/composer';
@@ -330,6 +335,20 @@ export function ChatPanel({
 
   const { permissionMode } = useSessionStatus(sessionId, sessionStatus, status === 'streaming');
 
+  // Whether this session's mode can read but never change and never ask — the
+  // Codex read-only dead end, decided from what the runtime declared rather than
+  // from its name (DOR-2019).
+  const readOnlyHint = useReadOnlyModeHint(sessionId, runtimeChip.runtime, permissionMode);
+
+  // A picker left open on one conversation is not open on the next. The picker
+  // itself is not keyed by session — one status line serves whichever session
+  // this panel is showing — so the panel closes it as the session changes,
+  // rather than reopening onto another session's modes.
+  const setPermissionPickerOpen = useSessionPermissionPicker((s) => s.setOpen);
+  useEffect(() => {
+    setPermissionPickerOpen(false);
+  }, [sessionId, setPermissionPickerOpen]);
+
   const { handleToolRef, focusedOptionIndex } = useToolShortcuts(activeInteraction);
 
   useChatStatusSync(status, isWaitingForUser, taskState.activeForm, isTextStreaming);
@@ -603,7 +622,10 @@ export function ChatPanel({
    * still on screen and they expire on their own the moment a turn starts or a
    * key is pressed — so nothing waits behind them for long. The permission
    * question next: it is asked once ever, it arms mid-turn when the chips are
-   * hidden anyway, and it stands until answered.
+   * hidden anyway, and it stands until answered. The read-only explanation last,
+   * and it loses nothing by being there: the two above it are answers to a turn
+   * that has happened, and this one's moment is BEFORE the first message, when
+   * neither of them qualifies (DOR-2019).
    *
    * **The extensions' chips are NOT candidates, and cannot be.** The slot's one
    * rule for callers is that a candidate's `show` must be answerable without
@@ -640,6 +662,17 @@ export function ChatPanel({
           <PermissionPrimer onAllow={allowNotifications} onNotNow={declineNotifications} />
         ),
       },
+      {
+        id: 'read-only-mode',
+        show: readOnlyHint.eligible,
+        render: () => (
+          <ReadOnlyModeNotice
+            runtimeLabel={readOnlyHint.runtimeLabel}
+            onShown={readOnlyHint.markShown}
+            onDismiss={readOnlyHint.dismiss}
+          />
+        ),
+      },
     ],
     [
       showSuggestions,
@@ -648,6 +681,7 @@ export function ChatPanel({
       primerEligible,
       allowNotifications,
       declineNotifications,
+      readOnlyHint,
     ]
   );
 

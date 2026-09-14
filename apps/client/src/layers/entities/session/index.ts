@@ -80,6 +80,7 @@ export {
   useHasConfirmedAuto,
   useHasConfirmedAutonomy,
   useHasDismissedDefaultStopOffer,
+  useReadOnlyHintProgress,
   useModeBeforePlan,
   DEFAULT_SESSION_STATE,
 } from './model/stream/session-chat-store';

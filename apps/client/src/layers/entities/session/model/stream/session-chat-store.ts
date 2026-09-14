@@ -157,6 +157,29 @@ interface SessionChatStoreState {
    * time they may well want it.
    */
   defaultStopOfferDismissed: Record<string, true>;
+  /**
+   * How far each session has got with the read-only explanation (DOR-2019):
+   * `'shown'` once the card has actually been on screen, `'spent'` once it must
+   * not appear again. A session with no entry has not seen it.
+   *
+   * **Keyed by session, and that is load-bearing.** `ChatPanel` is not keyed by
+   * session id, so one component instance serves every conversation a person
+   * switches between. The first version of this tracked "was it showing" in a
+   * ref, which therefore survived the switch: viewing a read-only session and
+   * then opening a second one at a different mode spent the SECOND session's
+   * explanation, and that session never got it.
+   *
+   * **`'shown'` is written when the card renders, not when it qualifies.** The
+   * card is one candidate in an arbitrated slot and can lose it — the
+   * notification primer outranks it and stands until answered — so a session
+   * that merely qualified may never have said anything, and spending that is
+   * spending silence.
+   *
+   * Per session and ephemeral, like the offer above it. A new conversation
+   * explains itself again, because it may be somebody else's first Codex
+   * session.
+   */
+  readOnlyHint: Record<string, 'shown' | 'spent'>;
 }
 
 /**
@@ -172,6 +195,7 @@ function forgetSession(state: SessionChatStoreState, sessionId: string): void {
   delete state.modeBeforePlan[sessionId];
   delete state.autonomyConfirmedSessions[sessionId];
   delete state.defaultStopOfferDismissed[sessionId];
+  delete state.readOnlyHint[sessionId];
 }
 
 /**
@@ -227,6 +251,10 @@ interface SessionChatStoreActions {
   recordAutonomyConfirmed: (sessionId: string) => void;
   /** Stop offering to make a stop the default in this session. */
   dismissDefaultStopOffer: (sessionId: string) => void;
+  /** Record that this session's read-only explanation reached the screen. */
+  recordReadOnlyHintShown: (sessionId: string) => void;
+  /** Stop explaining this session's read-only mode: it has been said once. */
+  spendReadOnlyHint: (sessionId: string) => void;
 }
 
 /**
@@ -245,6 +273,7 @@ export const useSessionChatStore = create<SessionChatStoreState & SessionChatSto
       modeBeforePlan: {},
       autonomyConfirmedSessions: {},
       defaultStopOfferDismissed: {},
+      readOnlyHint: {},
 
       initSession: (sessionId) => {
         // Skip store mutation if session already exists — prevents setState-during-render
@@ -347,6 +376,28 @@ export const useSessionChatStore = create<SessionChatStoreState & SessionChatSto
           false,
           'session-chat/dismissDefaultStopOffer'
         ),
+
+      recordReadOnlyHintShown: (sessionId) =>
+        set(
+          (state) => {
+            // Never downgrade: a card that rendered again after being spent is
+            // not a reason to start offering it once more.
+            if (state.readOnlyHint[sessionId] === undefined) {
+              state.readOnlyHint[sessionId] = 'shown';
+            }
+          },
+          false,
+          'session-chat/recordReadOnlyHintShown'
+        ),
+
+      spendReadOnlyHint: (sessionId) =>
+        set(
+          (state) => {
+            state.readOnlyHint[sessionId] = 'spent';
+          },
+          false,
+          'session-chat/spendReadOnlyHint'
+        ),
     })),
     { name: 'SessionChatStore', enabled: import.meta.env.DEV }
   )
@@ -412,6 +463,17 @@ export function useHasDismissedDefaultStopOffer(sessionId: string): boolean {
   return useSessionChatStore(
     useCallback((s) => s.defaultStopOfferDismissed[sessionId] === true, [sessionId])
   );
+}
+
+/**
+ * Reactive selector: how far this session has got with the read-only
+ * explanation, or `undefined` if it has not met it. Re-renders only when this
+ * session's answer changes.
+ *
+ * @param sessionId - The session to ask about.
+ */
+export function useReadOnlyHintProgress(sessionId: string): 'shown' | 'spent' | undefined {
+  return useSessionChatStore(useCallback((s) => s.readOnlyHint[sessionId], [sessionId]));
 }
 
 /**
