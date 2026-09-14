@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
+import type { ErrorComponentProps } from '@tanstack/react-router';
 
 const mockInvalidate = vi.fn();
 const mockNavigate = vi.fn();
@@ -105,6 +106,36 @@ describe('RouteErrorFallback', () => {
 
   it('renders "Try again" and not "Reload DorkOS" for a non-dynamic-import error', () => {
     render(<RouteErrorFallback {...makeErrorProps({ message: 'Test failure' })} />);
+    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /reload dorkos/i })).not.toBeInTheDocument();
+  });
+
+  // JavaScript can throw anything, so the screen that shows an error must not
+  // crash on a value that is not an `Error` (DOR-2032).
+  it('renders a thrown non-Error instead of crashing', () => {
+    render(
+      <RouteErrorFallback
+        error={'boom' as unknown as ErrorComponentProps['error']}
+        reset={vi.fn()}
+        info={{ componentStack: '' }}
+      />
+    );
+    expect(screen.getByText('Something went wrong')).toBeInTheDocument();
+    expect(screen.getByText('boom')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
+    expect(screen.queryByText('Stack trace (dev only)')).not.toBeInTheDocument();
+  });
+
+  it('never treats a thrown string as a stale chunk, even when its text matches', () => {
+    render(
+      <RouteErrorFallback
+        error={
+          'Failed to fetch dynamically imported module' as unknown as ErrorComponentProps['error']
+        }
+        reset={vi.fn()}
+        info={{ componentStack: '' }}
+      />
+    );
     expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /reload dorkos/i })).not.toBeInTheDocument();
   });

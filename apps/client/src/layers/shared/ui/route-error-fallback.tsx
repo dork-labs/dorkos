@@ -28,11 +28,17 @@ import { LinkifiedText } from './linkified-text';
 export function RouteErrorFallback({ error }: ErrorComponentProps) {
   const router = useRouter();
   const { copied, failed, copy } = useCopyFeedback();
-  const staleChunk = isDynamicImportError(error);
+  // JavaScript can throw anything (`throw 'boom'`), so narrow the way
+  // `AppCrashFallback` does rather than trusting `error` to be an `Error`.
+  const message = error instanceof Error ? error.message : String(error);
+  const stack = error instanceof Error ? error.stack : undefined;
+  // A stale chunk always arrives as a real `Error` from the module loader; a
+  // thrown non-Error is never one, even when its text happens to match.
+  const staleChunk = error instanceof Error && isDynamicImportError(error);
 
   function copyStack() {
-    if (!error.stack) return;
-    void copy(error.stack);
+    if (!stack) return;
+    void copy(stack);
   }
 
   function stackCopyIcon() {
@@ -66,13 +72,13 @@ export function RouteErrorFallback({ error }: ErrorComponentProps) {
           <>
             <p className="text-muted-foreground/60 mt-2 text-xs">Details</p>
             <p className="text-muted-foreground/80 max-w-md text-xs break-words">
-              <LinkifiedText text={error.message} />
+              <LinkifiedText text={message} />
             </p>
           </>
         )}
       </div>
 
-      {import.meta.env.DEV && error.stack && (
+      {import.meta.env.DEV && stack && (
         <details className="border-border/50 max-w-2xl rounded-md border px-4 py-2">
           <summary className="text-muted-foreground cursor-pointer text-xs">
             Stack trace (dev only)
@@ -90,7 +96,7 @@ export function RouteErrorFallback({ error }: ErrorComponentProps) {
               </span>
             </button>
             <pre className="text-muted-foreground overflow-x-auto pr-16 text-xs whitespace-pre-wrap">
-              {error.stack}
+              {stack}
             </pre>
           </div>
         </details>
