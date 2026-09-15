@@ -9,8 +9,10 @@ import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import type { AppTab } from '@/layers/shared/model';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 
 const agentByPath = vi.fn<(cwd: string | null) => AgentManifest | null>(() => null);
+const roomById = vi.fn<(roomId: string | null) => RoomWithRoster | null>(() => null);
 
 vi.mock('@/layers/entities/agent', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/agent')>()),
@@ -19,10 +21,36 @@ vi.mock('@/layers/entities/agent', async (importOriginal) => ({
   useCurrentAgent: (cwd: string | null) => ({ data: agentByPath(cwd) }),
 }));
 
+vi.mock('@/layers/entities/room', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/room')>()),
+  // Same reasoning as the agent mock above: pin the room query so the label
+  // assertions are about the strip, not about fetch timing.
+  useRoom: (roomId: string | null) => ({ data: roomById(roomId) }),
+}));
+
 import { AppTabStrip } from '../ui/AppTabStrip';
 import { APP_TAB_PANEL_ID } from '../ui/AppTabItem';
 
 const transport = createMockTransport();
+
+/** A minimal channel room, enough for {@link roomDisplayTitle} to name it. */
+function channelRoom(overrides: Partial<RoomWithRoster> = {}): RoomWithRoster {
+  return {
+    id: 'room-1',
+    kind: 'channel',
+    slug: 'general',
+    title: 'general',
+    topic: null,
+    archived: false,
+    ambientMaxEntries: 30,
+    createdAt: '2026-08-10T09:00:00.000Z',
+    lastActivityAt: '2026-08-10T09:00:00.000Z',
+    reactionFrequents: [],
+    viewerAuthorId: 'author-you',
+    members: [],
+    ...overrides,
+  } as RoomWithRoster;
+}
 
 function Wrapper({ children }: { children: React.ReactNode }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -53,10 +81,12 @@ function renderStrip(tabs: AppTab[], activeId: string | null = tabs[0]?.id ?? nu
 const DASHBOARD: AppTab = { id: 't1', href: '/' };
 const API_SESSION: AppTab = { id: 't2', href: '/session?session=abc&dir=%2FUsers%2Fkai%2Fapi' };
 const AGENTS: AppTab = { id: 't3', href: '/team' };
+const GENERAL_CHANNEL: AppTab = { id: 't4', href: '/channels?id=room-1' };
 
 beforeEach(() => {
   vi.clearAllMocks();
   agentByPath.mockReturnValue(null);
+  roomById.mockReturnValue(null);
 });
 
 afterEach(cleanup);
@@ -76,6 +106,25 @@ describe('AppTabStrip', () => {
     );
     renderStrip([API_SESSION]);
     expect(screen.getByRole('tab', { name: /Scout/ })).toBeInTheDocument();
+  });
+
+  it('names a channel tab "#slug" once the room resolves', () => {
+    roomById.mockImplementation((roomId) => (roomId === 'room-1' ? channelRoom() : null));
+    renderStrip([GENERAL_CHANNEL]);
+    expect(screen.getByRole('tab', { name: /#general/ })).toBeInTheDocument();
+  });
+
+  it('names a DM channel tab after its title, with no # mark', () => {
+    roomById.mockImplementation((roomId) =>
+      roomId === 'room-1' ? channelRoom({ kind: 'dm', slug: null, title: 'Scout' }) : null
+    );
+    renderStrip([GENERAL_CHANNEL]);
+    expect(screen.getByRole('tab', { name: 'Scout' })).toBeInTheDocument();
+  });
+
+  it('falls back to the route label before the room resolves, not a flash of "DorkOS"', () => {
+    renderStrip([GENERAL_CHANNEL]);
+    expect(screen.getByRole('tab', { name: /Channels/ })).toBeInTheDocument();
   });
 
   it('marks the active tab and points it at the content region', () => {

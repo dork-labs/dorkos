@@ -9,6 +9,7 @@ import {
   type TabActivationSource,
 } from '@/layers/shared/ui';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
+import { roomDisplayTitle, useRoom } from '@/layers/entities/room';
 import { useSessionBorderState, type SessionBorderKind } from '@/layers/entities/session';
 import { fallbackTabLabel, parseTabHref, ROUTE_ICONS } from '../lib/tab-target';
 
@@ -49,20 +50,33 @@ interface AppTabItemProps {
  *
  * Derives everything it shows from the tab's href: the route's name, or — for a
  * chat tab — the agent that lives in that project, with its emoji and a live
- * status dot. The dot reads {@link useSessionBorderState}, which merges the
- * global session-list stream in, so a tab in the background still lights up when
- * its agent starts working or needs an answer, even though only the active tab
- * holds a session stream.
+ * status dot, or — for a channel tab — the room it has open, read as it is
+ * spoken (`#general`, or a DM's title). The dot reads {@link useSessionBorderState},
+ * which merges the global session-list stream in, so a tab in the background
+ * still lights up when its agent starts working or needs an answer, even though
+ * only the active tab holds a session stream.
+ *
+ * Both the agent and the room queries share their cache entry with the rest of
+ * the app ({@link useCurrentAgent}, {@link useRoom}), so a rename anywhere else
+ * — the team page, the channel bar — updates this label too, and a tab reads
+ * its route's own name until that data resolves rather than flashing a wrong
+ * one.
  */
 export function AppTabItem({ tab, isActive, canClose, tabProps, onClose }: AppTabItemProps) {
   const target = useMemo(() => parseTabHref(tab.href), [tab.href]);
   const isSession = target.pathname === '/session';
+  const isChannel = target.pathname === '/channels';
 
   const { data: agent } = useCurrentAgent(isSession ? target.dir : null);
   const visual = useAgentVisual(agent ?? null, target.dir ?? '');
   const status = useSessionBorderState(target.sessionId ?? '');
+  const { data: room } = useRoom(isChannel ? target.roomId : null);
 
-  const label = agent ? getAgentDisplayName(agent) : fallbackTabLabel(target);
+  const label = agent
+    ? getAgentDisplayName(agent)
+    : room
+      ? roomDisplayTitle(room)
+      : fallbackTabLabel(target);
   const Icon = ROUTE_ICONS[target.pathname] ?? MessageSquare;
   const signal = isSession ? DOT_SIGNAL[status.kind] : undefined;
 

@@ -36,6 +36,8 @@ export interface TabTarget {
   sessionId: string | null;
   /** The `?dir=` project path for a chat tab, else `null`. */
   dir: string | null;
+  /** The `?id=` room id for a channel tab, else `null`. */
+  roomId: string | null;
 }
 
 /**
@@ -111,15 +113,26 @@ export function parseTabHref(href: string): TabTarget {
   try {
     url = new URL(href, PARSE_BASE);
   } catch {
-    return { pathname: '/', sessionId: null, dir: null };
+    return { pathname: '/', sessionId: null, dir: null, roomId: null };
   }
   const pathname = url.pathname.length > 1 ? url.pathname.replace(/\/+$/, '') || '/' : '/';
-  if (pathname !== '/session') return { pathname, sessionId: null, dir: null };
-  return {
-    pathname,
-    sessionId: url.searchParams.get('session') || null,
-    dir: url.searchParams.get('dir') || null,
-  };
+  if (pathname === '/session') {
+    return {
+      pathname,
+      sessionId: url.searchParams.get('session') || null,
+      dir: url.searchParams.get('dir') || null,
+      roomId: null,
+    };
+  }
+  if (pathname === '/channels') {
+    return {
+      pathname,
+      sessionId: null,
+      dir: null,
+      roomId: url.searchParams.get('id') || null,
+    };
+  }
+  return { pathname, sessionId: null, dir: null, roomId: null };
 }
 
 /**
