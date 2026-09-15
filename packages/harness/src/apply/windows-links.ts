@@ -57,7 +57,7 @@ import {
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import type { ProjectionPlan } from '../plan/types.js';
-import { isGitRepo } from './gitignore.js';
+import { gitCheckoutRoot } from './gitignore.js';
 
 /**
  * What a person is told when the links DorkOS just made are junctions and this
@@ -225,10 +225,14 @@ export function isJunctionAt(absTarget: string): boolean {
  * just made are what it answers about; `--check` asks about the links already
  * there, which is what warns somebody before they commit.
  *
- * **No `.git`, no warning.** The whole sentence is about what `git add` would
- * do, and there is nothing here to add to.
+ * **No checkout, no warning.** The whole sentence is about what `git add` would
+ * do, and there is nothing here to add to. The checkout is looked for by walking
+ * UP from the project (`gitCheckoutRoot`): a package inside a monorepo has its
+ * junctions committed by the root's git exactly as a top-level project does, and
+ * asking only about the project directory left every one of them unwarned
+ * (DOR-1957).
  *
- * @param repoRoot - absolute path to the repository root.
+ * @param repoRoot - absolute path to the project directory.
  * @param plan - the plan whose symlink targets are examined.
  * @returns one warning, or none.
  */
@@ -240,7 +244,7 @@ export function junctionCommitWarnings(repoRoot: string, plan: ProjectionPlan): 
       action.target !== undefined &&
       isJunctionAt(join(repoRoot, action.target))
   );
-  return anyJunction && isGitRepo(repoRoot) ? [JUNCTION_COMMIT_WARNING] : [];
+  return anyJunction && gitCheckoutRoot(repoRoot) !== undefined ? [JUNCTION_COMMIT_WARNING] : [];
 }
 
 /**

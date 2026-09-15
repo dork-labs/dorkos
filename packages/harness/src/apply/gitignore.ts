@@ -15,17 +15,34 @@
  * than on it: the plan is what decides which paths are ephemeral, so a field on
  * the plan would be the plan describing itself.
  *
- * 1. {@link missingGitignoreLines} — which lines this repo's root `.gitignore`
- *    is missing for the projections this plan makes.
+ * 1. {@link missingGitignoreLines} — which lines the PROJECT's own `.gitignore`
+ *    is missing for the projections this plan makes. Every function here takes
+ *    the project directory, which is not always the checkout root: see
+ *    {@link gitCheckoutRoot}.
  * 2. {@link appendGitignoreLines} — add them, append-only, under one comment.
  * 3. {@link canonicalLayerIgnoredBy} — whether `.agents/` itself is ignored, and
  *    by which file, since that changes what committing a projection even means
  *    (AP-15).
  *
- * **No `.git` directory, no answer.** Every function here returns the empty /
- * absent answer when the repo root holds no `.git`, because a `.gitignore` in a
- * directory git does not track is not a fact about anything, and telling
- * somebody to edit one would be noise.
+ * **No checkout, no answer.** Every function here returns the empty / absent
+ * answer when no `.git` is found, because a `.gitignore` in a directory git does
+ * not track is not a fact about anything, and telling somebody to edit one would
+ * be noise. The checkout is found by walking UP from the project
+ * ({@link gitCheckoutRoot}), since a DorkOS project is very often a package
+ * inside a bigger checkout — and the ignore rules that cover its projections are
+ * then read from that root DOWN to it, the way git reads them.
+ *
+ * **What is read is `.gitignore`, and only `.gitignore`.** Git consults two more
+ * sources this module does not: `.git/info/exclude`, the per-checkout untracked
+ * ignore file, and whatever `core.excludesFile` points at (a person's
+ * `~/.config/git/ignore` by default). DorkOS writes into the first one itself —
+ * a room worktree hides its projections there rather than in a tracked file
+ * (`services/rooms/repo/room-worktree-manager.ts`) — so a path this module calls
+ * uncovered may well be one git already ignores. Not reading them can only
+ * UNDER-report ignoredness, which is a line offered that nobody needed in the
+ * AP-09 half and a silence in the AP-15 one: a `.agents/` hidden through either
+ * source is not explained, and the adopt refusal that rests on it (B2) would let
+ * a move through. Closing it is DOR-2063.
  *
  * **The matcher walks the path the way git does.** A `.gitignore` is not a set
  * of patterns to test a path against — it is an ordered list applied per path
@@ -48,8 +65,8 @@
  *
  * @module apply/gitignore
  */
-import { existsSync, lstatSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { writeFileAtomic } from './atomic-write.js';
 import type { ProjectionPlan } from '../plan/types.js';
 import { getActionContent } from '../plan/content-map.js';
@@ -58,13 +75,9 @@ import { PROJECT_PLUGINS_DIR } from '../sources/installed.js';
 import { GENERATED_SIDECAR_SUFFIX } from './generated-ownership.js';
 import { GENERATED_HOOK_TARGET_HARNESSES } from '../generate/hooks.js';
 import { HARNESS_MANIFEST_PATH } from '../scaffold/manifest.js';
-import { AGENTS_SKILLS_DIR } from '../scan/scanner.js';
 
 /** The repo's root `.gitignore`, the one file this module reads and appends to. */
 const ROOT_GITIGNORE = '.gitignore';
-
-/** The canonical layer's directory — `.agents`, the parent of `.agents/skills`. */
-const CANONICAL_DIR = AGENTS_SKILLS_DIR.split('/')[0] as string;
 
 /**
  * A path INSIDE the project install root, used to ask whether that root is
@@ -119,21 +132,86 @@ export function isPathIgnored(
   relPath: string,
   leafKind: LeafKind = 'file'
 ): boolean {
+  return (
+    ignoringLayer([{ dir: '', file: ROOT_GITIGNORE, patterns }], relPath, leafKind) !== undefined
+  );
+}
+
+/**
+ * One `.gitignore` in a checkout, and the directory its lines resolve against.
+ *
+ * A `.gitignore` is not a free-floating list: every pattern in it is read
+ * relative to the directory holding the file, and it says nothing at all about
+ * anything outside that directory's subtree. A checkout therefore has a CHAIN of
+ * them over any one path, and this is one link of it.
+ */
+interface IgnoreLayer {
+  /**
+   * The directory the patterns resolve against, relative to the checkout root
+   * and slash-separated; `''` is the checkout root itself.
+   */
+  dir: string;
+  /** The file's path, relative to the checkout root, for naming it to a person. */
+  file: string;
+  /** Its usable lines, in order, blanks and comments removed. */
+  patterns: readonly string[];
+}
+
+/**
+ * Which `.gitignore` of a chain ignores a path, if any.
+ *
+ * The same per-component walk {@link isPathIgnored} describes, run over a chain
+ * rather than one file, because a project can sit below the checkout root and
+ * the rule that covers it can live anywhere above it. Two orderings decide the
+ * answer and both are git's: within a file the LAST matching line wins, and
+ * between files the DEEPEST one wins, so a package's own `.gitignore` can
+ * un-ignore what the checkout root ignored.
+ *
+ * The layer is returned rather than a boolean because "stop ignoring it" is
+ * advice nobody can act on until they know which file to open.
+ *
+ * @param layers - the chain, ordered shallowest first.
+ * @param relPath - a path relative to the CHECKOUT ROOT, slash-separated.
+ * @param leafKind - what the last component is.
+ * @returns the layer whose line decided it is ignored, or `undefined`.
+ */
+function ignoringLayer(
+  layers: readonly IgnoreLayer[],
+  relPath: string,
+  leafKind: LeafKind
+): IgnoreLayer | undefined {
   const segments = relPath.split('/').filter((segment) => segment !== '');
-  let ignored = false;
+  let decided: IgnoreLayer | undefined;
   let prefix = '';
   for (const [index, segment] of segments.entries()) {
     // An excluded directory is never descended into, so nothing inside it can be
     // re-included — git says so, and it is why negation is a per-level answer.
-    if (ignored) return true;
+    if (decided !== undefined) return decided;
     prefix = prefix === '' ? segment : `${prefix}/${segment}`;
     const isDir = index < segments.length - 1 || leafKind === 'dir';
-    for (const pattern of patterns) {
-      const decision = decidePattern(pattern, prefix, isDir);
-      if (decision !== undefined) ignored = decision;
+    for (const layer of layers) {
+      const local = pathWithin(layer.dir, prefix);
+      if (local === undefined) continue;
+      for (const pattern of layer.patterns) {
+        const decision = decidePattern(pattern, local, isDir);
+        if (decision !== undefined) decided = decision ? layer : undefined;
+      }
     }
   }
-  return ignored;
+  return decided;
+}
+
+/**
+ * A checkout-relative path expressed relative to `dir`, or `undefined` when it
+ * is not underneath it.
+ *
+ * Strictly underneath: a `.gitignore` governs its directory's CONTENTS, never
+ * the directory it sits in, so `packages/app` is outside the reach of
+ * `packages/app/.gitignore`.
+ */
+function pathWithin(dir: string, path: string): string | undefined {
+  if (dir === '') return path;
+  return path.startsWith(`${dir}/`) ? path.slice(dir.length + 1) : undefined;
 }
 
 /**
@@ -222,17 +300,206 @@ function readGitignore(absPath: string): string[] {
 }
 
 /**
- * Whether the repo root is a git checkout at all (a worktree's `.git` is a file).
+ * The root of the git checkout a project sits in, walking UP from the project.
+ *
+ * A DorkOS project is very often not the checkout root: a package inside a
+ * monorepo, or a `dorkos harness sync` run from a directory below the root. Its
+ * `.claude/skills` links are tracked by git exactly as a root project's are, and
+ * the ignore rules that cover them may live anywhere above it — so asking only
+ * whether the project directory itself holds a `.git` answered "not a git
+ * checkout" for every one of those projects, and both the junction warning and
+ * the `.gitignore` audit went silent where they were most needed (DOR-1957).
+ *
+ * `.git` is accepted as a DIRECTORY or a FILE: a linked worktree and a submodule
+ * both store a one-line file there, and both are checkouts git tracks.
+ *
+ * **The walk is PHYSICAL, the way git's is.** Git resolves a directory to its
+ * real path before it looks for a checkout, so a project reached through a link
+ * — `packages/app` pointing somewhere else entirely — belongs to whatever
+ * checkout holds the directory it really is, not to the one holding the link. A
+ * lexical walk handed such a project the linking checkout's rules and named a
+ * `.gitignore` git will never read for it (DOR-1957 review).
+ *
+ * The walk stops at the filesystem root and never throws. A parent nobody may
+ * read answers `false` rather than raising — `existsSync` swallows the `EACCES`
+ * — so an unreadable directory on the way up is a level that holds no answer,
+ * never a sync that dies.
  *
  * Exported because it is not only this module's question: whether a person is
  * about to COMMIT a Windows junction is asked of the same fact, and one notion
  * of "is this git" is better than two (`apply/windows-links.ts`).
  *
- * @param repoRoot - absolute path to the repository root.
- * @returns `true` when a `.git` entry of either shape is there.
+ * @param projectRoot - absolute path to the project directory.
+ * @returns the absolute checkout root, or `undefined` when there is none.
  */
-export function isGitRepo(repoRoot: string): boolean {
-  return existsSync(join(repoRoot, '.git'));
+export function gitCheckoutRoot(projectRoot: string): string | undefined {
+  let dir = physicalPath(projectRoot);
+  for (;;) {
+    if (existsSync(join(dir, '.git'))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+}
+
+/**
+ * A path with every link on it resolved, or the lexical path when it cannot be.
+ *
+ * A directory that is not there yet — or one this account may not resolve — has
+ * no physical form to read, and the lexical path is both the best available
+ * answer and the one this always used.
+ */
+function physicalPath(path: string): string {
+  try {
+    return realpathSync.native(path);
+  } catch {
+    return resolve(path);
+  }
+}
+
+/**
+ * Where a project sits inside its checkout: a slash-separated relative path, or
+ * `''` when it IS the checkout root.
+ *
+ * Every path this module reasons about is relative to the PROJECT — that is
+ * what a person sees and what the plan writes — while every ignore rule
+ * resolves against the checkout root. This is the one conversion between them.
+ */
+function projectPrefix(checkoutRoot: string, projectRoot: string): string {
+  const rel = relative(checkoutRoot, projectRoot);
+  return rel === '' ? '' : rel.split(sep).join('/');
+}
+
+/** A project-relative path expressed relative to the checkout root. */
+function underPrefix(prefix: string, relPath: string): string {
+  return prefix === '' ? relPath : `${prefix}/${relPath}`;
+}
+
+/** Where a project sits in its checkout, with every path on it already physical. */
+interface CheckoutContext {
+  /** Absolute path of the checkout root. */
+  root: string;
+  /** Where the project sits under it, slash-separated; `''` when it IS the root. */
+  prefix: string;
+  /** Absolute path of the project, which is what a display path is measured from. */
+  project: string;
+}
+
+/**
+ * The checkout a project belongs to, or `undefined` when it belongs to none.
+ *
+ * Resolved ONCE per call and carried, for two reasons. The walk is physical
+ * ({@link gitCheckoutRoot}), so measuring the project's position with the
+ * caller's lexical path against a physical root would produce a prefix that is
+ * a path to nowhere. And `missingGitignoreLines` asks about a dozen paths in one
+ * repo, where the walk is the same every time.
+ */
+function checkoutContext(projectRoot: string): CheckoutContext | undefined {
+  const project = physicalPath(projectRoot);
+  const root = gitCheckoutRoot(project);
+  return root === undefined ? undefined : { root, prefix: projectPrefix(root, project), project };
+}
+
+/** The `.gitignore` sitting in one directory of a checkout, read off disk. */
+function ignoreLayerAt(checkoutRoot: string, dir: string): IgnoreLayer {
+  const file = dir === '' ? ROOT_GITIGNORE : `${dir}/${ROOT_GITIGNORE}`;
+  return { dir, file, patterns: readGitignore(join(checkoutRoot, ...file.split('/'))) };
+}
+
+/**
+ * Every `.gitignore` that has a say about one path, shallowest first: the
+ * checkout root's, and one for each directory on the way down to the path's own
+ * parent.
+ *
+ * Git reads all of them, so reading only the project's own file called a package
+ * "not covered" when the monorepo root had ignored the whole shape three
+ * directories up — and the project's own `.agents/.gitignore`, which this used
+ * to reach through a hand-written special case, is simply the deepest link of
+ * the same chain.
+ *
+ * @param checkoutRoot - absolute path to the git checkout root.
+ * @param relPath - the path being judged, relative to that root.
+ * @returns the chain, ordered shallowest first.
+ */
+function ignoreChain(checkoutRoot: string, relPath: string): IgnoreLayer[] {
+  const segments = relPath.split('/').filter((segment) => segment !== '');
+  const layers: IgnoreLayer[] = [ignoreLayerAt(checkoutRoot, '')];
+  let dir = '';
+  // Every segment BUT the last: the last is the thing being judged, and a
+  // `.gitignore` never speaks about the directory it sits in.
+  for (const segment of segments.slice(0, -1)) {
+    dir = dir === '' ? segment : `${dir}/${segment}`;
+    layers.push(ignoreLayerAt(checkoutRoot, dir));
+  }
+  return layers;
+}
+
+/**
+ * Which `.gitignore` of a checkout ignores one path of it, if any.
+ *
+ * The internal half of {@link pathIgnoredBy}, taking a checkout root the caller
+ * has already walked up to — `missingGitignoreLines` asks about a dozen paths in
+ * one repo and the walk is the same every time.
+ */
+function ignoredBy(
+  checkoutRoot: string,
+  relPath: string,
+  leafKind: LeafKind
+): IgnoreLayer | undefined {
+  return ignoringLayer(ignoreChain(checkoutRoot, relPath), relPath, leafKind);
+}
+
+/**
+ * Which `.gitignore` keeps a path out of git, asked from inside a project that
+ * may be anywhere in a checkout.
+ *
+ * The engine's offline oracle for a question a person would answer with `git
+ * check-ignore`. It agrees with that command over every `.gitignore` in the
+ * chain: the checkout is found by walking up from the project, every
+ * `.gitignore` from that root down to the path's own parent is read, the
+ * deepest file that decides wins, and inside a file the last matching line does.
+ *
+ * **The chain is all it reads.** `.git/info/exclude` and whatever
+ * `core.excludesFile` names are two more sources git consults and this does not,
+ * so a path git ignores through one of those is reported here as tracked
+ * (DOR-2063). DorkOS writes into `info/exclude` itself for a room worktree, so
+ * this is a real gap rather than a theoretical one. It can only ever say
+ * "tracked" about something ignored, never the reverse — which is noise for the
+ * missing-lines half and silence for the AP-15 one.
+ *
+ * @param projectRoot - absolute path to the project directory.
+ * @param relPath - a project-relative, slash-separated path.
+ * @param leafKind - what the last component is; a file by default, which is what
+ *   git calls a symlink whatever it points at.
+ * @returns the deciding `.gitignore` as seen from the project (a monorepo root's
+ *   file reads `../../.gitignore`), or `undefined` when git would track the path
+ *   — and when this is not inside a git checkout at all.
+ */
+export function pathIgnoredBy(
+  projectRoot: string,
+  relPath: string,
+  leafKind: LeafKind = 'file'
+): string | undefined {
+  const checkout = checkoutContext(projectRoot);
+  if (checkout === undefined) return undefined;
+  const layer = ignoredBy(checkout.root, underPrefix(checkout.prefix, relPath), leafKind);
+  return layer === undefined
+    ? undefined
+    : displayGitignorePath(checkout.project, checkout.root, layer.file);
+}
+
+/**
+ * A checkout-relative `.gitignore` path as a person standing in the PROJECT
+ * should see it.
+ *
+ * The project is where they ran the command, so the file that ignores their
+ * skills is `../../.gitignore` and not an absolute path off this machine. Slash
+ * separated on every platform: this is display, not a path anything opens.
+ */
+function displayGitignorePath(projectRoot: string, checkoutRoot: string, file: string): string {
+  return relative(projectRoot, join(checkoutRoot, ...file.split('/')))
+    .split(sep)
+    .join('/');
 }
 
 /**
@@ -332,7 +599,7 @@ function readLines(content: string): string[] {
 }
 
 /**
- * The lines this repo's root `.gitignore` is missing for the plan's ephemeral
+ * The lines the PROJECT's own `.gitignore` is missing for the plan's ephemeral
  * projections, in the order {@link EPHEMERAL_GITIGNORE_PATTERNS} declares them.
  *
  * A path already covered by ANY line in the file contributes nothing — a repo
@@ -343,18 +610,24 @@ function readLines(content: string): string[] {
  * itself, so the answer is always a line a person can paste. Property P7 is what
  * says that fallback never fires.
  *
- * @param repoRoot - absolute path to the repository root.
+ * The rules are read from the CHECKOUT ROOT down, so a package inside a monorepo
+ * is not told to add a line the root already covers; the lines themselves stay
+ * relative to the project, because the project's own `.gitignore` is where
+ * {@link appendGitignoreLines} puts them.
+ *
+ * @param repoRoot - absolute path to the project directory, which may sit
+ *   anywhere inside its checkout.
  * @param plan - the plan whose projections are being checked.
  * @returns the missing lines, deduplicated; empty when nothing is missing, and
- *   empty when the root is not a git checkout.
+ *   empty when the project is not inside a git checkout.
  */
 export function missingGitignoreLines(repoRoot: string, plan: ProjectionPlan): string[] {
-  if (!isGitRepo(repoRoot)) return [];
-  const present = readGitignore(join(repoRoot, ROOT_GITIGNORE));
+  const checkout = checkoutContext(repoRoot);
+  if (checkout === undefined) return [];
   const missing = new Set<string>();
 
   for (const { path, kind } of ephemeralPaths(plan, repoRoot)) {
-    if (isPathIgnored(present, path, kind)) continue;
+    if (ignoredBy(checkout.root, underPrefix(checkout.prefix, path), kind) !== undefined) continue;
     if (selfIgnored(plan, path)) continue;
     const covering = EPHEMERAL_GITIGNORE_PATTERNS.filter((pattern) =>
       gitignorePatternMatches(pattern, path, kind)
@@ -374,8 +647,12 @@ function order(declared: readonly string[], line: string): number {
 }
 
 /**
- * Add lines to the repo's root `.gitignore` under ONE DorkOS comment, creating
+ * Add lines to the PROJECT's own `.gitignore` under ONE DorkOS comment, creating
  * the file when there is none.
+ *
+ * The project's file rather than the checkout root's, deliberately: a nested
+ * `.gitignore` is ordinary git, the project is where the person ran the command,
+ * and writing a file two directories up unasked is the bigger surprise.
  *
  * Insert-only, never a rewrite: the file is the person's, it may carry ordering
  * that matters to them, and nothing here is a reason to touch a line they wrote.
@@ -384,9 +661,9 @@ function order(declared: readonly string[], line: string): number {
  * already there rather than stamping a second copy of the same heading down the
  * file.
  *
- * @param repoRoot - absolute path to the repository root.
+ * @param repoRoot - absolute path to the project directory.
  * @param lines - the lines to add, already known to be missing.
- * @returns the repo-relative path written.
+ * @returns the path written, relative to the project.
  */
 export function appendGitignoreLines(repoRoot: string, lines: readonly string[]): string {
   const abs = join(repoRoot, ROOT_GITIGNORE);
@@ -439,22 +716,16 @@ function withGitignoreLines(existing: string, lines: readonly string[]): string 
  * two `*__*` patterns — which ignore only installed projections inside it — are
  * never mistaken for ignoring the layer.
  *
- * @param repoRoot - absolute path to the repository root.
- * @returns the repo-relative path of the `.gitignore` that ignores the canonical
- *   layer, or `undefined` when git would track it (and when this is not a git
+ * @param repoRoot - absolute path to the project directory.
+ * @returns the path of the `.gitignore` that ignores the canonical layer, as
+ *   seen from the project (so a monorepo root's file reads `../../.gitignore`),
+ *   or `undefined` when git would track it (and when this is not inside a git
  *   checkout at all).
  */
 export function canonicalLayerIgnoredBy(repoRoot: string): string | undefined {
-  if (!isGitRepo(repoRoot)) return undefined;
-  const probe = HARNESS_MANIFEST_PATH;
   // The probe is the manifest FILE; `.agents/` still matches at the directory
-  // component in front of it, which is the question being asked.
-  if (isPathIgnored(readGitignore(join(repoRoot, ROOT_GITIGNORE)), probe, 'file')) {
-    return ROOT_GITIGNORE;
-  }
-
-  const ownPath = `${CANONICAL_DIR}/${ROOT_GITIGNORE}`;
-  const own = readGitignore(join(repoRoot, ownPath));
-  const withinCanonical = probe.slice(`${CANONICAL_DIR}/`.length);
-  return isPathIgnored(own, withinCanonical, 'file') ? ownPath : undefined;
+  // component in front of it, which is the question being asked. The chain
+  // reaches `.agents/.gitignore` as the deepest link over that path, so the file
+  // a person is told to open is whichever of them really decides.
+  return pathIgnoredBy(repoRoot, HARNESS_MANIFEST_PATH, 'file');
 }

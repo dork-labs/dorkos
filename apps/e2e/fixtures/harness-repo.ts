@@ -24,9 +24,13 @@
  *
  * @module fixtures/harness-repo
  */
+import { execFile } from 'node:child_process';
 import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { promisify } from 'node:util';
 import { join } from 'node:path';
 import type { RoomsApi } from './rooms-api';
+
+const run = promisify(execFile);
 
 /**
  * The names the staged tree uses.
@@ -185,6 +189,16 @@ export class HarnessRepoApi {
       );
       orphanedLink = `.claude/skills/${HARNESS_REPO_SKILLS.deleted}`;
     }
+
+    // A real project is a git checkout, and DorkOS reads the ignore rules and
+    // junction status from the checkout root it walks up to. Without a `.git`
+    // of its own this tree sits inside the DorkOS checkout, under a `.temp`
+    // the repo gitignores, so the walk-up finds that outer `.gitignore` and
+    // reports `.agents/skills` as ignored — which refuses the adopt (S3) and
+    // is an artifact of where the fixture lives, not the scenario under test
+    // (DOR-1957). Its own `.git` stops the walk here, at a clean checkout that
+    // ignores nothing, exactly as a standalone project would.
+    await run('git', ['init', '-q'], { cwd: root });
 
     return {
       root,

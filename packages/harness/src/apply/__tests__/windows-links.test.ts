@@ -58,10 +58,25 @@ afterEach(() => {
   for (const dir of staged.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-/** A repository with `n` authored skills and a plan that links each into `.claude/skills`. */
-function stageRepo(tag: string, names: readonly string[]): { repo: string; plan: ProjectionPlan } {
-  const repo = mkdtempSync(join(tmpdir(), `harness-junction-${tag}-`));
-  staged.push(repo);
+/**
+ * A repository with `n` authored skills and a plan that links each into
+ * `.claude/skills`.
+ *
+ * `nested` puts the project two directories BELOW the checkout root, which is
+ * where a package in a monorepo lives and where the warning used to go silent:
+ * git commits those junctions exactly as it commits a top-level project's
+ * (DOR-1957). The two roots are returned separately because only a nested stage
+ * makes them different.
+ */
+function stageRepo(
+  tag: string,
+  names: readonly string[],
+  nested = false
+): { repo: string; checkout: string; plan: ProjectionPlan } {
+  const checkout = mkdtempSync(join(tmpdir(), `harness-junction-${tag}-`));
+  staged.push(checkout);
+  const repo = nested ? join(checkout, 'packages', 'app') : checkout;
+  mkdirSync(repo, { recursive: true });
   for (const name of names) {
     mkdirSync(join(repo, '.agents', 'skills', name), { recursive: true });
     writeFileSync(join(repo, '.agents', 'skills', name, 'SKILL.md'), `# ${name}\n`);
@@ -69,6 +84,7 @@ function stageRepo(tag: string, names: readonly string[]): { repo: string; plan:
   mkdirSync(join(repo, '.claude', 'skills'), { recursive: true });
   return {
     repo,
+    checkout,
     plan: {
       actions: names.map((name) => ({
         kind: 'symlink' as const,
@@ -95,9 +111,17 @@ function stageJunction(repo: string, name: string): void {
   symlinkSync(join(repo, '.agents', 'skills', name), join(repo, '.claude', 'skills', name));
 }
 
-/** Make `repo` look like a git checkout, which is what the warning is about. */
-function stageGitDir(repo: string): void {
-  mkdirSync(join(repo, '.git'), { recursive: true });
+/** Make `root` look like a git checkout, which is what the warning is about. */
+function stageGitDir(root: string): void {
+  mkdirSync(join(root, '.git'), { recursive: true });
+}
+
+/**
+ * Make `root` look like a linked WORKTREE, whose `.git` is a one-line FILE
+ * rather than a directory — the shape a submodule stores too.
+ */
+function stageGitFile(root: string): void {
+  writeFileSync(join(root, '.git'), 'gitdir: /elsewhere/.git/worktrees/app\n');
 }
 
 describe('the Windows directory-link capability', () => {
@@ -157,6 +181,29 @@ describe('what a person is told about committing junctions', () => {
     // machine without Developer Mode still goes clean.
     expect(checkPlan(repo, plan).drifted).toEqual([]);
     expect(checkPlan(repo, plan).clean).toBe(true);
+  });
+
+  it('AP-06: warns when the project is a package inside a bigger checkout', () => {
+    // Seeded defect (DOR-1957): the check was `.git` in the PROJECT directory,
+    // so a package in a monorepo — or any sync run from below the checkout root
+    // — got no warning at all, while git tracked the files inside every one of
+    // its junctions.
+    const { repo, checkout, plan } = stageRepo('nested', ['alpha'], true);
+    stageJunction(repo, 'alpha');
+    stageGitDir(checkout);
+
+    expect(applyPlan(repo, plan).warnings).toEqual([JUNCTION_COMMIT_WARNING]);
+    expect(checkPlan(repo, plan).warnings).toEqual([JUNCTION_COMMIT_WARNING]);
+  });
+
+  it('AP-06: warns when the checkout above is a worktree, whose `.git` is a file', () => {
+    // A linked worktree and a submodule both store a one-line FILE there. At the
+    // project root that always answered yes; two directories up it never did.
+    const { repo, checkout, plan } = stageRepo('worktree', ['alpha'], true);
+    stageJunction(repo, 'alpha');
+    stageGitFile(checkout);
+
+    expect(checkPlan(repo, plan).warnings).toEqual([JUNCTION_COMMIT_WARNING]);
   });
 
   it('AP-06: says nothing outside a git repository, where there is nothing to commit', () => {
