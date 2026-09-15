@@ -254,11 +254,12 @@ describe.skipIf(!hasGit())('the matcher against real git', () => {
       }
     }
     // One real `git init` and one real `git check-ignore` PER CASE, so this one
-    // test spawns four dozen processes. The 5s default is not a budget that
-    // means anything here — it timed out on a machine running the rest of the
-    // monorepo's suites beside it, which is the ordinary condition in this repo,
-    // not a slow case worth knowing about.
-  }, 60_000);
+    // test spawns four dozen processes: 0.6s on an idle machine, 7.8s with the
+    // rest of the monorepo's suites running beside it — which is the ordinary
+    // condition in this repo, and is what timed it out against the 5s default.
+    // 20s leaves room for a worse load without turning into a budget that would
+    // let a genuine hang sit for a minute.
+  }, 20_000);
 });
 
 /** The parent directory of a repo-relative path, or `.` when it has none. */
