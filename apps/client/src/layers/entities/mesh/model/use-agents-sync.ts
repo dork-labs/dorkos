@@ -4,8 +4,11 @@
  *
  * @module entities/mesh/model/use-agents-sync
  */
-import { useEventSubscription } from '@/layers/shared/model';
-import { useCoalescedInvalidation, type QueryInvalidation } from '@/layers/shared/model';
+import {
+  useEventSubscription,
+  useCoalescedInvalidation,
+  type QueryInvalidation,
+} from '@/layers/shared/model';
 
 /**
  * Every cache an agent's identity can move, spelled as literals.

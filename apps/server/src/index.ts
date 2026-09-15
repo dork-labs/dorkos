@@ -1811,8 +1811,9 @@ async function start() {
     // invisible until someone reloaded the page (DOR-2052).
     //
     // GLOBAL audience, unlike `config_changed` below: an agent's own roster
-    // changing is legitimate news for agents too, and the payload is names and
-    // ids — never the manifest body.
+    // changing is legitimate news for agents too. The payload is names, ids and
+    // the project path — never the manifest body, and never more than
+    // `GET /api/mesh/agents/paths` already serves any caller.
     meshCore.onAgentsChanged((change) =>
       eventFanOut.broadcast('agents_changed', {
         ...change,
