@@ -394,6 +394,11 @@ export async function register(
   const manifest: AgentManifest = {
     id,
     name: overrides?.name ?? candidate.hints.suggestedName,
+    // The display name rides with the slug, or the agent's whole identity is
+    // the slug. It was the one identity field this builder dropped, so a
+    // caller that sent both got an agent named `dorkos-cloud` and nothing to
+    // show a person (DOR-2054).
+    displayName: overrides?.displayName,
     description: overrides?.description ?? candidate.hints.description ?? '',
     runtime: overrides?.runtime ?? candidate.hints.detectedRuntime,
     capabilities: overrides?.capabilities ?? candidate.hints.inferredCapabilities ?? [],
@@ -471,6 +476,8 @@ export async function registerByPath(
   const manifest: AgentManifest = {
     id,
     name,
+    // See `register` above — same field, same reason (DOR-2054).
+    displayName: partial.displayName,
     description: partial.description ?? '',
     runtime,
     capabilities: partial.capabilities ?? [],

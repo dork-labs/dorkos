@@ -170,3 +170,25 @@ export function isSingleEmoji(value: string): boolean {
   if (!trimmed) return false;
   return /^\p{Extended_Pictographic}[\u{FE0F}\u{200D}\p{Extended_Pictographic}]*$/u.test(trimmed);
 }
+
+/**
+ * True when a string is a hex colour a face can be painted with — `#rgb` or
+ * `#rrggbb`, case-insensitive.
+ *
+ * The colour half of {@link isSingleEmoji}'s job, and it exists for the same
+ * reason: the manifest's `color` field is typed as a plain string (it is a CSS
+ * colour, and the client renders whatever is there), so a write surface that
+ * takes a colour from OUTSIDE — an agent calling `mesh_register`, say — has
+ * nothing to check against and would store `"pinkish"` as an agent's face.
+ *
+ * Deliberately narrower than CSS: every colour {@link AGENT_COLOR_PRESETS}
+ * offers and every colour the picker can show as selected is a hex literal, so
+ * accepting `rgb()` or a named colour would let a caller write a face the
+ * picker cannot round-trip. Callers that only need a gap filled should pass
+ * nothing and let {@link seedAgentFace} choose.
+ *
+ * @param value - Candidate colour string.
+ */
+export function isHexColor(value: string): boolean {
+  return /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(value.trim());
+}

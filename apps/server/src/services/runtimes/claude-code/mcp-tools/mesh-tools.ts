@@ -2,6 +2,8 @@ import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { readManifest } from '@dorkos/shared/manifest';
 import { AgentRuntimeSchema } from '@dorkos/shared/mesh-schemas';
+import { isSingleEmoji, isHexColor } from '@dorkos/shared/agent-face';
+import { slugifyAgentName } from '@dorkos/shared/validation';
 import {
   validateBoundary,
   validateBoundaryOrDorkHome,
@@ -90,11 +92,22 @@ export function createMeshDiscoverHandler(deps: McpToolDeps) {
   };
 }
 
-/** Register an agent from a filesystem path. */
+/**
+ * Register an agent from a filesystem path.
+ *
+ * `name` is the agent's immutable slug — the segment its relay subject is built
+ * from — not a label. A caller that sends a display-style name gets it
+ * slugified and kept as `displayName`, because the alternative is what actually
+ * happened: DorkBot registered an agent as "DorkOS Cloud" and the manifest
+ * stored that string, spaces and all, as the slug (DOR-2054).
+ */
 export function createMeshRegisterHandler(deps: McpToolDeps) {
   return async (args: {
     path: string;
     name?: string;
+    displayName?: string;
+    icon?: string;
+    color?: string;
     description?: string;
     runtime?: string;
     capabilities?: string[];
@@ -122,6 +135,38 @@ export function createMeshRegisterHandler(deps: McpToolDeps) {
       );
     }
 
+    // Same reason the runtime is checked here: the manifest types `icon` and
+    // `color` as plain strings, so an unchecked value is written to disk and
+    // renders as a broken face nothing explains. Refused by name, with an
+    // example, rather than silently dropped.
+    if (args.icon !== undefined && !isSingleEmoji(args.icon)) {
+      return jsonContent(
+        {
+          error: `Invalid icon ${JSON.stringify(args.icon)}. An agent's icon is exactly one emoji, e.g. "\u{1F52E}". Omit it to have one picked.`,
+          code: 'INVALID_ICON',
+        },
+        true
+      );
+    }
+    if (args.color !== undefined && !isHexColor(args.color)) {
+      return jsonContent(
+        {
+          error: `Invalid color ${JSON.stringify(args.color)}. Use a hex colour like "#ec4899". Omit it to have one picked.`,
+          code: 'INVALID_COLOR',
+        },
+        true
+      );
+    }
+
+    // The slug the relay subject is built from. A display-style name is
+    // slugified here rather than stored verbatim, and the original is kept as
+    // the display name so nothing the caller typed is thrown away. A caller
+    // that already passed a valid slug sees no change: `slugifyAgentName` is
+    // idempotent on one, so `displayName` stays absent.
+    const requestedName = args.name ?? resolvedPath.split('/').pop() ?? 'unnamed';
+    const slug = slugifyAgentName(requestedName);
+    const displayName = args.displayName ?? (slug === requestedName ? undefined : requestedName);
+
     try {
       // Registration adopts rather than overwrites (DOR-1019), so a system
       // agent's manifest is safe from the write either way. This refuses the
@@ -137,10 +182,13 @@ export function createMeshRegisterHandler(deps: McpToolDeps) {
       const agent = await deps.meshCore!.registerByPath(
         resolvedPath,
         {
-          name: args.name ?? resolvedPath.split('/').pop() ?? 'unnamed',
+          name: slug,
           runtime: runtimeResult.data,
+          ...(displayName && { displayName }),
           ...(args.description && { description: args.description }),
           ...(args.capabilities && { capabilities: args.capabilities }),
+          ...(args.icon && { icon: args.icon }),
+          ...(args.color && { color: args.color }),
         },
         'mcp-tool'
       );
@@ -347,10 +395,30 @@ export function meshToolDefinitions(deps: McpToolDeps) {
         'runtime.',
       {
         path: z.string().describe('Filesystem path to the agent directory'),
-        name: z.string().optional().describe('Display name override'),
+        name: z
+          .string()
+          .optional()
+          .describe(
+            'Immutable kebab-case slug, and the segment the relay subject is built from. Not ' +
+              'a label — a name with spaces or capitals is slugified ("DorkOS Cloud" becomes ' +
+              '"dorkos-cloud") and the original is kept as the displayName. Defaults to the ' +
+              'directory name.'
+          ),
+        displayName: z
+          .string()
+          .optional()
+          .describe('Human-readable name shown in the app, e.g. "DorkOS Cloud"'),
         description: z.string().optional().describe('Agent description'),
         runtime: z.string().optional().describe('Runtime: claude-code, cursor, codex, or other'),
         capabilities: z.array(z.string()).optional().describe('Agent capabilities'),
+        icon: z
+          .string()
+          .optional()
+          .describe('Exactly one emoji for the agent avatar. Omit to have one picked.'),
+        color: z
+          .string()
+          .optional()
+          .describe('Hex colour for the agent avatar, e.g. "#ec4899". Omit to have one picked.'),
       },
       createMeshRegisterHandler(deps)
     ),

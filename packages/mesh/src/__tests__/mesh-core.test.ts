@@ -310,6 +310,33 @@ describe('registerByPath', () => {
 
     mesh.close();
   });
+
+  it('carries a display name onto the manifest, the file, and the registry row', async () => {
+    // It was the one identity field the builder dropped, so an agent
+    // registered with both a slug and a display name had only the slug to show
+    // a person anywhere (DOR-2054).
+    const base = await makeTempDir();
+    const projectDir = path.join(base, 'named-project');
+    await fs.mkdir(projectDir, { recursive: true });
+
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
+
+    const manifest = await mesh.registerByPath(projectDir, {
+      name: 'dorkos-cloud',
+      displayName: 'DorkOS Cloud',
+      runtime: 'claude-code',
+    });
+
+    expect(manifest.displayName).toBe('DorkOS Cloud');
+
+    const onDisk = JSON.parse(
+      await fs.readFile(path.join(projectDir, '.dork', 'agent.json'), 'utf-8')
+    ) as AgentManifest;
+    expect(onDisk.displayName).toBe('DorkOS Cloud');
+    expect(mesh.list()[0].displayName).toBe('DorkOS Cloud');
+
+    mesh.close();
+  });
 });
 
 // ---------------------------------------------------------------------------

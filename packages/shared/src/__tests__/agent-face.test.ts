@@ -3,6 +3,7 @@ import {
   seedAgentFace,
   fnv1aHash,
   isSingleEmoji,
+  isHexColor,
   AGENT_COLOR_PRESETS,
   AGENT_EMOJI_SET,
 } from '../agent-face.js';
@@ -123,6 +124,27 @@ describe('isSingleEmoji', () => {
     expect(isSingleEmoji('')).toBe(false);
     expect(isSingleEmoji('  ')).toBe(false);
     expect(isSingleEmoji('🦊 and more')).toBe(false);
+  });
+});
+
+describe('isHexColor', () => {
+  it('accepts both hex spellings, in either case', () => {
+    expect(isHexColor('#ec4899')).toBe(true);
+    expect(isHexColor('#EC4899')).toBe(true);
+    expect(isHexColor('#abc')).toBe(true);
+    expect(isHexColor('  #abc  ')).toBe(true);
+  });
+
+  it('accepts every colour the palette offers', () => {
+    for (const preset of AGENT_COLOR_PRESETS) expect(isHexColor(preset.hex)).toBe(true);
+  });
+
+  it('refuses what a caller may send instead', () => {
+    expect(isHexColor('ec4899')).toBe(false);
+    expect(isHexColor('pinkish')).toBe(false);
+    expect(isHexColor('rgb(236, 72, 153)')).toBe(false);
+    expect(isHexColor('#ec48991')).toBe(false);
+    expect(isHexColor('')).toBe(false);
   });
 });
 
