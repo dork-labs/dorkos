@@ -166,10 +166,19 @@ describe('SK-12 — one name in two folders one tool reads', () => {
     stageSkill('.codex/skills/review-pr');
     const p = plan();
 
+    const tail =
+      'all of those folders. Its own documentation does not say which one wins. Keep one.';
     expect(warningsAbout(p, 'cursor', '.cursor/skills/review-pr')).toEqual([
-      'other skills named "review-pr" are in .claude/skills and .codex/skills, and Cursor reads ' +
-        'all of those folders. Its own documentation does not say which one wins. Keep one.',
+      `other skills named "review-pr" are in .claude/skills and .codex/skills, and Cursor reads ${tail}`,
     ]);
+    expect(warningsAbout(p, 'cursor', '.claude/skills/review-pr')).toEqual([
+      `other skills named "review-pr" are in .codex/skills and .cursor/skills, and Cursor reads ${tail}`,
+    ]);
+    expect(warningsAbout(p, 'cursor', '.codex/skills/review-pr')).toEqual([
+      `other skills named "review-pr" are in .claude/skills and .cursor/skills, and Cursor reads ${tail}`,
+    ]);
+    // Three copies, three sentences — and no fourth from anywhere else.
+    expect(p.warnings.filter((w) => w.reason.includes('Keep one.'))).toHaveLength(3);
   });
 
   it('SK-12: leaves the `.agents/skills` twin to the line that already answers for it', () => {

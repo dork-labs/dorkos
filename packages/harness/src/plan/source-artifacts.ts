@@ -463,6 +463,12 @@ export type SkillRootCollisionOutcome = keyof typeof SKILL_ROOT_COLLISION_OUTCOM
  * real paths, so both survive it. The shape it does collapse — one folder
  * reached twice — is SK-12's other half and is not what this reports.
  *
+ * Two of the three outcomes are unreachable through any tree today, and that is
+ * a fact about the table rather than about this function: every harness reading
+ * more than one project skills root is `dedupe: 'unknown'`. `collapses` and
+ * `both-load` become reachable the day the H tier settles a cell (SK-12,
+ * DOR-1856), which is why they are checked at this mapping.
+ *
  * A fifth `dedupe` value has to fail the TYPE here rather than fall through to a
  * plausible-looking sentence.
  *
@@ -506,9 +512,14 @@ export function skillRootCollisionOutcome(dedupe: SkillDedupe): SkillRootCollisi
  *   copy naming the same two files and giving the same way out, and a second
  *   sentence saying it again is noise in every repo that keeps a skill in both.
  *
- * The key is the DIRECTORY name, which is the honest key for every harness that
- * can reach this at all: the ones reading more than one project root either key
- * by directory (Cursor) or require the frontmatter name to equal it (OpenCode).
+ * The key is the DIRECTORY name, and what justifies that is not the same on
+ * every row. Cursor keys by directory and OpenCode requires the frontmatter name
+ * to equal it, so for those two it is the vendor's own key. Gemini and Copilot
+ * state neither (`identity: 'unknown'`, `nameMustMatchDir: 'unknown'`), so the
+ * directory name is simply the only handle there is — which is the same reading
+ * of silence `skill-rules.ts` takes for them, and it errs toward reporting a
+ * collision that may turn out not to be one rather than staying quiet about one
+ * that is.
  *
  * @param input - the harness, the inventoried skills, and the canonical names.
  * @returns one warning per copy, empty when no name is in two folders it reads.

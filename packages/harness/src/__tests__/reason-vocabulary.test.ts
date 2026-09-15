@@ -221,9 +221,15 @@ function stageFixture(): { repoRoot: string; dorkHome: string } {
   // The canonical layer, and a skill kept where only Claude Code looks.
   write(join(repoRoot, '.agents', 'skills', 'ship-it', 'SKILL.md'), '# ship-it\n');
   write(join(repoRoot, '.claude', 'skills', 'claude-only', 'SKILL.md'), '# claude-only\n');
-  // The same name again in a folder OpenCode reads as well, so the collision
-  // sentence is produced here and not only enumerated below.
+  // The same name again in three more folders, so BOTH collision sentences are
+  // produced here rather than enumerated. OpenCode reads two of the four
+  // (`.claude` and `.opencode`) and gets the two-folder wording; Cursor reads
+  // three of them (`.claude`, `.cursor`, `.codex`) and gets the plural one. The
+  // plural opener is a different string with its own retired-word risk, and a
+  // fixture reaching only the singular would leave it unchecked.
   write(join(repoRoot, '.opencode', 'skills', 'claude-only', 'SKILL.md'), '# claude-only\n');
+  write(join(repoRoot, '.cursor', 'skills', 'claude-only', 'SKILL.md'), '# claude-only\n');
+  write(join(repoRoot, '.codex', 'skills', 'claude-only', 'SKILL.md'), '# claude-only\n');
 
   // The kinds the engine reports rather than projects.
   write(join(repoRoot, '.claude', 'agents', 'reviewer.md'), '# reviewer\n');
@@ -469,7 +475,10 @@ describe('VC-02 — the sentences the engine shows a person', () => {
         true
       );
     }
+    // Both openers, because they are two strings: one names a single other
+    // folder, the other lists several and counts them.
     expect(all.some((text) => text.includes('and OpenCode reads both folders.'))).toBe(true);
+    expect(all.some((text) => text.includes('and Cursor reads all of those folders.'))).toBe(true);
     // All nine labels, not a sample: each is one layer's whole sentence.
     expect(reasons.filter((reason) => reason.family === 'marketplace-label')).toHaveLength(
       Object.keys(LAYER_LABELS).length
