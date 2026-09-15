@@ -267,4 +267,49 @@ describe('SessionHeader', () => {
     renderBar({ agentName: 'dorkbot', agentVisual: VISUAL });
     expect(screen.queryByLabelText(/^Origin:/)).not.toBeInTheDocument();
   });
+
+  // --- Room origin's `#` (DOR-2073) ---
+  //
+  // A room's own `originLabel` already carries its `#` (`room-store.ts`'s
+  // `resolveRoomOrigins`, the same rule `roomDisplayTitle` follows), and the
+  // Hash glyph beside it draws the same mark. Printing both reads
+  // "# #proj-trame" — the defect FB-30 reported.
+
+  it('does not double the `#` a room-origin session carries in its own label', () => {
+    renderBar({
+      agentName: 'dorkbot',
+      agentVisual: VISUAL,
+      origin: 'room',
+      originLabel: '#proj-trame',
+    });
+    // The visible (non-sr-only) text drops the leading `#` the glyph already
+    // draws; the full `#proj-trame` form still exists, but only sr-only.
+    expect(screen.getByText('proj-trame', { selector: ':not(.sr-only)' })).toBeInTheDocument();
+    expect(
+      screen.queryByText('#proj-trame', { selector: ':not(.sr-only)' })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('# #proj-trame')).not.toBeInTheDocument();
+  });
+
+  it('keeps the spoken room name reachable for assistive technology', () => {
+    renderBar({
+      agentName: 'dorkbot',
+      agentVisual: VISUAL,
+      origin: 'room',
+      originLabel: '#proj-trame',
+    });
+    // The glyph is decorative (aria-hidden) in this chip, so the `#` has to
+    // survive somewhere audible — an sr-only node beside the visible text.
+    expect(screen.getByText('#proj-trame', { selector: '.sr-only' })).toBeInTheDocument();
+  });
+
+  it('guards against stripping a DM title that carries no leading `#`', () => {
+    renderBar({
+      agentName: 'dorkbot',
+      agentVisual: VISUAL,
+      origin: 'room',
+      originLabel: 'Ana & DorkBot',
+    });
+    expect(screen.getByText('Ana & DorkBot')).toBeInTheDocument();
+  });
 });
