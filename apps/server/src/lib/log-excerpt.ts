@@ -22,7 +22,7 @@
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 
-import { redactPaths, redactTokens } from '@dorkos/shared/error-report';
+import { redactPaths, redactTokens, redactUrlQueries } from '@dorkos/shared/error-report';
 import { MAX_LOG_EXCERPT_LEN } from '@dorkos/shared/telemetry-events';
 
 import { getLogDir } from './logger.js';
@@ -156,7 +156,11 @@ export async function getRecentLogExcerpt(
   if (matched.length === 0) return undefined;
 
   const tail = matched.slice(-maxLines);
-  const scrubbed = redactTokens(redactPaths(tail.map(formatLine).join('\n')));
+  // `redactUrlQueries` first: a URL's query can carry a session id or an OAuth
+  // credential, and `redactPaths` would otherwise chew the path into something
+  // the query rules no longer recognise. Shared with the desktop shell's
+  // excerpt so both halves of a report follow one rule (DOR-2045).
+  const scrubbed = redactTokens(redactPaths(redactUrlQueries(tail.map(formatLine).join('\n'))));
 
   // Cut from the FRONT, not the back (DOR-1976). `slice(-maxLines)` above has
   // already decided the newest lines are the ones worth keeping, and a report

@@ -7,6 +7,7 @@ import {
   raceWithTimeout,
   redactPaths,
   redactTokens,
+  redactUrlQueries,
   scrubFilename,
   scrubMessage,
   scrubStack,
@@ -67,6 +68,34 @@ describe('redactTokens', () => {
     );
     // ...and an ordinary word ending in "code" is not a credential.
     expect(redactTokens('exit code=1')).toBe('exit code=1');
+  });
+});
+
+describe('redactUrlQueries', () => {
+  it('keeps the scheme, host and path and drops everything after them', () => {
+    expect(redactUrlQueries('Denied "clipboard-read" to https://bank.example/login?t=abc')).toBe(
+      'Denied "clipboard-read" to https://bank.example/login'
+    );
+    expect(redactUrlQueries('loading https://mail.example.org/u/0/#inbox/FMfcgz')).toBe(
+      'loading https://mail.example.org/u/0/'
+    );
+    expect(redactUrlQueries('plain http://localhost:4242/api/health')).toBe(
+      'plain http://localhost:4242/api/health'
+    );
+  });
+
+  it('leaves the punctuation around a URL where it was', () => {
+    // A URL is quoted, parenthesised and put at the end of a sentence in real
+    // log prose. Swallowing the bracket or the comma corrupts the line around
+    // it, which is a different kind of wrong from leaking the query.
+    expect(redactUrlQueries('(https://a.example/p?q=1)')).toBe('(https://a.example/p)');
+    expect(redactUrlQueries('https://x.example/a/b#frag, then more')).toBe(
+      'https://x.example/a/b, then more'
+    );
+    expect(redactUrlQueries('See https://a.example/p?q=1.')).toBe('See https://a.example/p.');
+    expect(redactUrlQueries('at https://a.example/p?q=1; retrying')).toBe(
+      'at https://a.example/p; retrying'
+    );
   });
 });
 

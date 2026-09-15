@@ -165,6 +165,22 @@ describe('getShellLogExcerpt', () => {
     expect(excerpt).not.toContain('FMfcgz');
   });
 
+  it('leaves the punctuation around a URL where the line had it', () => {
+    // Real log prose parenthesises URLs and ends sentences with them. Eating
+    // the bracket or the comma corrupts the line, which is its own defect.
+    writeLiveLog([
+      line('info', '[renderer] opened (https://a.example/p?q=1) in a tab'),
+      line('warn', '[updater] feed https://x.example/a/b#frag, then gave up'),
+      line('info', '[tunnel] live at https://dorkos-kai.example/s?token=zz.'),
+    ]);
+
+    const excerpt = getShellLogExcerpt();
+
+    expect(excerpt).toContain('opened (https://a.example/p) in a tab');
+    expect(excerpt).toContain('feed https://x.example/a/b, then gave up');
+    expect(excerpt).toContain('live at https://dorkos-kai.example/s.');
+  });
+
   it("keeps the shell's own info-level lines", () => {
     writeLiveLog([
       line('info', '[renderer] Reloading the window.'),

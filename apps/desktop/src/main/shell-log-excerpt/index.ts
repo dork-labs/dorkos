@@ -2,7 +2,7 @@ import { ipcMain } from 'electron';
 import { closeSync, fstatSync, openSync, readSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import log from 'electron-log';
-import { redactPaths, redactTokens } from '@dorkos/shared/error-report';
+import { redactPaths, redactTokens, redactUrlQueries } from '@dorkos/shared/error-report';
 import { MAX_LOG_EXCERPT_LEN } from '@dorkos/shared/telemetry-events';
 import { isCockpitSender } from '../window-manager';
 
@@ -236,34 +236,6 @@ function keepShellAuthored(entries: ShellLogEntry[], cutoffMs: number): ShellLog
 }
 
 /**
- * Any `http(s)` URL, up to the first character that cannot be part of one.
- *
- * Intentionally greedy about the tail: everything from the `?` or `#` onward is
- * thrown away, so the pattern only has to find where a URL starts.
- */
-const HTTP_URL = /\bhttps?:\/\/[^\s<>"'`]+/g;
-
-/**
- * Drop the query string and fragment from every URL in `text`, keeping the
- * scheme, host and path.
- *
- * The shell logs URLs it did not write: `permissions/index.ts` records the page
- * that asked for a permission, and in the canvas browser that is any site the
- * person opened. Their query strings carry session ids, account numbers, search
- * terms and — measured in review — OAuth credentials. `redactTokens` catches
- * the credential shapes it knows; this removes the whole class ahead of it,
- * because the query string is never the part of a URL a bug report needs.
- *
- * Runs BEFORE {@link redactPaths}, whose `/…/…` rules would otherwise chew a
- * URL's path into a relative-looking fragment.
- *
- * @param text - Lines already joined, before any other scrubbing.
- */
-function stripUrlQueries(text: string): string {
-  return text.replace(HTTP_URL, (url) => url.replace(/[?#].*$/, ''));
-}
-
-/**
  * Render one entry the way `log-excerpt.ts` renders the server's: `time level
  * text`, with its continuation lines underneath, unchanged.
  *
@@ -292,10 +264,12 @@ function formatEntry(entry: ShellLogEntry): string {
  * @param maxAgeMs - How far back (from now) an entry may be to qualify. Defaults
  *   to {@link DEFAULT_SHELL_EXCERPT_MAX_AGE_MS}.
  * @returns The scrubbed, bounded excerpt, or `undefined` when there is no log
- *   file, or nothing in it the report wants. Scrubbed means home directories
- *   and absolute paths removed, URL queries and fragments dropped, and known
- *   token shapes replaced — a filter over free-form prose, not a proof that
- *   nothing sensitive can survive it.
+ *   file, or nothing in it the report wants. Scrubbed means HOME directories
+ *   rewritten to `~` and `node_modules` prefixes trimmed (`redactPaths` does
+ *   that and no more, so `/Applications/…`, `/Volumes/…` and `/private/var/…`
+ *   survive as written), URL queries and fragments dropped, and known token
+ *   shapes replaced — a filter over free-form prose, not a proof that nothing
+ *   sensitive can survive it.
  */
 export function getShellLogExcerpt(
   maxLines: number = DEFAULT_SHELL_EXCERPT_MAX_LINES,
@@ -322,7 +296,7 @@ export function getShellLogExcerpt(
     if (kept.length === 0) return undefined;
 
     const scrubbed = redactTokens(
-      redactPaths(stripUrlQueries(kept.slice(-maxLines).map(formatEntry).join('\n')))
+      redactPaths(redactUrlQueries(kept.slice(-maxLines).map(formatEntry).join('\n')))
     );
 
     // Cut from the FRONT with a leading ellipsis, exactly as `log-excerpt.ts`
@@ -353,11 +327,12 @@ export function getShellLogExcerpt(
  * 8,000-character log tail is a lower-value target than the diagnostics archive
  * the recovery page can already write to the Desktop.
  *
- * **What "scrubbed" does and does not promise.** Home directories and absolute
- * paths are removed structurally, URL queries and fragments are dropped whole,
- * and token shapes `redactTokens` knows are replaced. It is a filter over
- * free-form prose, not a proof: a secret in a shape nothing recognises, inside
- * a message some other module chose to log, can still come through. That is the
+ * **What "scrubbed" does and does not promise.** Home directories become `~`,
+ * URL queries and fragments are dropped whole, and token shapes `redactTokens`
+ * knows are replaced. Absolute paths OUTSIDE a home directory — `/Applications`,
+ * `/Volumes`, `/private/var` — are left as written, and a secret in a shape
+ * nothing recognises, inside a message some other module chose to log, still
+ * comes through. It is a filter over free-form prose, not a proof. That is the
  * same guarantee the server's own excerpt gives, and it is why this is attached
  * only to a report a person deliberately sent.
  *

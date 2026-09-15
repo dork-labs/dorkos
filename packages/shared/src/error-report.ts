@@ -135,6 +135,55 @@ export function redactPaths(text: string): string {
 }
 
 /**
+ * An `http(s)` URL, up to the first character that cannot be part of one.
+ *
+ * Deliberately greedy: it only has to find where a URL STARTS, because
+ * {@link redactUrlQueries} throws the tail away anyway. The trailing sentence
+ * punctuation it over-matches is handled separately — see there.
+ */
+const HTTP_URL = /\bhttps?:\/\/[^\s<>"'`]+/g;
+
+/**
+ * Punctuation that follows a URL in prose rather than belonging to it.
+ *
+ * A log line reads "opened (https://a.example/p?q=1) in a tab" or ends a
+ * sentence on a URL, and eating the bracket or the full stop corrupts the line
+ * around it — a different defect from the one this is here to prevent. The
+ * trade is a real URL that genuinely ends in one of these (a Wikipedia
+ * `…_(disambiguation)`), which loses its last character and stays legible.
+ */
+const URL_TRAILING_PUNCTUATION = /[).,;:]+$/;
+
+/**
+ * Drop the query string and fragment from every `http(s)` URL in `text`,
+ * keeping the scheme, host and path.
+ *
+ * Logs carry URLs the app did not author — the page that asked for a
+ * permission, an upstream a request failed against — and their query strings
+ * carry session ids, account numbers, search terms and, measured on a real
+ * install, OAuth credentials (DOR-2045). {@link redactTokens} catches the
+ * credential shapes it knows; this removes the whole class ahead of it, because
+ * the query string is never the part of a URL a bug report needs.
+ *
+ * Applied by both log excerpts a bug report can carry — the server's
+ * (`apps/server/src/lib/log-excerpt.ts`) and the desktop shell's
+ * (`apps/desktop/src/main/shell-log-excerpt/`) — so the promise the feedback
+ * dialog makes about web addresses is true of the whole report.
+ *
+ * Run it BEFORE {@link redactPaths}, whose `/…/…` rules would otherwise chew a
+ * URL's path into a relative-looking fragment.
+ *
+ * @param text - Arbitrary text that may embed URLs.
+ */
+export function redactUrlQueries(text: string): string {
+  return text.replace(HTTP_URL, (url) => {
+    const trailing = URL_TRAILING_PUNCTUATION.exec(url)?.[0] ?? '';
+    const withoutTrailing = url.slice(0, url.length - trailing.length);
+    return `${withoutTrailing.replace(/[?#][^\s<>"'`]*$/, '')}${trailing}`;
+  });
+}
+
+/**
  * Redact secret-shaped tokens from a string.
  *
  * @param text - Arbitrary text that may embed credentials.

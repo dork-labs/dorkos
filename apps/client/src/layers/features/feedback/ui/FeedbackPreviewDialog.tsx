@@ -143,7 +143,7 @@ function DiagnosticsPreview({
               broken promise. */}
           {isDesktopShell()
             ? 'Scrubbed excerpts of the recent server log and of the app’s own log are added when you send. Home paths shown as ~, tokens removed, web addresses cut back to the page.'
-            : 'A scrubbed excerpt of recent server logs is added when you send. Home paths shown as ~, tokens removed.'}
+            : 'A scrubbed excerpt of recent server logs is added when you send. Home paths shown as ~, tokens removed, web addresses cut back to the page.'}
         </p>
       )}
     </div>

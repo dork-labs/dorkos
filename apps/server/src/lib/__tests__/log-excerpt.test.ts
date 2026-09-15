@@ -76,6 +76,22 @@ describe('getRecentLogExcerpt', () => {
     expect(result).not.toContain('sk-live-abcdefgh12345678');
   });
 
+  it("drops a URL's query and fragment, keeping the page it names (DOR-2045)", async () => {
+    // The same rule the desktop shell's excerpt follows, through the same
+    // helper — so the feedback dialog's promise ("web addresses cut back to the
+    // page") is true of BOTH excerpts in a report, not just one of them.
+    loggerModule.initLogger({ logDir, level: 5 });
+    loggerModule.logger.warn(
+      'upstream https://api.partner.example/v1/sync?session=s-8821&key=zz refused (403)'
+    );
+
+    const result = await logExcerptModule.getRecentLogExcerpt();
+
+    expect(result).toContain('https://api.partner.example/v1/sync');
+    expect(result).not.toContain('s-8821');
+    expect(result).toContain('refused (403)');
+  });
+
   it('drops lines older than maxAgeMs', async () => {
     loggerModule.initLogger({ logDir, level: 5 });
     const oldLine =
