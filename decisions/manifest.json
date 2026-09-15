@@ -2,6 +2,14 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260915-205815",
+      "slug": "admin-console-moves-to-the-control-plane",
+      "title": "The admin console and the account surface move to the control plane",
+      "status": "accepted",
+      "created": "2026-09-15",
+      "supersedes": "260707-122350"
+    },
+    {
       "id": "260912-025249",
       "slug": "the-session-canvas-is-server-owned",
       "title": "The session canvas is server-owned, and the localStorage slice is retired",
@@ -3948,11 +3956,12 @@
       "id": "260707-122350",
       "slug": "admin-console-lives-in-site",
       "title": "The admin console lives in apps/site now, extracted to its own app only on a trigger",
-      "status": "accepted",
+      "status": "superseded",
       "created": "2026-07-07",
       "specSlug": "cloud-account-management",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/site/src/app/admin/**", "apps/site/src/layers/features/admin/**"]
+      "affects": ["apps/site/src/app/admin/**", "apps/site/src/layers/features/admin/**"],
+      "supersededBy": "260915-205815"
     },
     {
       "id": "260708-111459",
