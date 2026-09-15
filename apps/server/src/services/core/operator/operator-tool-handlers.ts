@@ -1,7 +1,8 @@
 /**
  * Transport-neutral handlers for the self-service & observability MCP tools
  * (`update_agent`, `update_agent_boundaries`, `activity_list`, `config_get`,
- * `config_patch`, `check_update`, `agents_recent_activity`).
+ * `config_patch`, `sidebar_add_to_group`, `sidebar_remove_from_group`,
+ * `check_update`, `agents_recent_activity`).
  *
  * Each handler is a thin wrapper over existing service logic — the agent-update
  * service, `ActivityService`, `ConfigManager` (via the shared config-patch
@@ -18,13 +19,30 @@ import path from 'node:path';
 import { z } from 'zod';
 import { ListActivityQuerySchema } from '@dorkos/shared/activity-schemas';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
+import type { SidebarItemRef, SidebarPrefs } from '@dorkos/shared/config-schema';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
+import type { DisplayNameWriter } from '../../identity/display-name-provenance.js';
 import { validateBoundaryOrDorkHome, BoundaryError } from '../../../lib/boundary.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
+import { configManager } from '../config-manager.js';
 import { updateAgentManifest, AgentUpdateError } from './agent-updater.js';
 import { sanitizedConfigSnapshot } from './config-patch.js';
-import { applyGuardedConfigWrite, OPERATOR_TOOL_AUTHORITY } from './config-write.js';
+import {
+  applyGuardedConfigWrite,
+  OPERATOR_TOOL_AUTHORITY,
+  type GuardedConfigWriteResult,
+} from './config-write.js';
+import {
+  addSidebarItems,
+  appendSidebarGroup,
+  describeDuplicateMemberships,
+  newSidebarGroup,
+  removeSidebarItems,
+  replaceSidebarGroup,
+  resolveSidebarGroup,
+  storedSidebarPrefs,
+} from './sidebar-groups.js';
 import { getLatestVersion } from '../update-checker.js';
 import { listRecentSessions } from '../../session/index.js';
 
@@ -365,6 +383,27 @@ export function createConfigGetHandler() {
 }
 
 /**
+ * Name the agent making a config write, for the writer field every guarded write
+ * carries.
+ *
+ * The directory name is the legible handle when an identity carries no display
+ * name — the same fallback `capability-attribution.ts` uses for the same reason,
+ * so the Activity feed and a display-name receipt cannot name one agent two
+ * different ways. `null` when the surface resolved nobody, which is a fact
+ * rather than an omission: an unresolved identity writes the same config and
+ * simply cannot be named.
+ *
+ * @param identity - The calling agent, when the surface resolved one.
+ * @returns The writer every config-writing operator handler passes.
+ */
+function agentWriter(identity?: AgentIdentity): DisplayNameWriter {
+  return {
+    kind: 'agent',
+    agentName: identity ? identity.displayName || path.basename(identity.agentPath) : null,
+  };
+}
+
+/**
  * `config_patch` — deep-merge a partial config and persist it through
  * {@link applyGuardedConfigWrite}, the same guarded step `PATCH /api/config` and
  * `dorkos config set` go through. A user-settings mutation: the tool description
@@ -400,14 +439,7 @@ export function createConfigPatchHandler(identity?: AgentIdentity) {
       patch: args.patch,
       authority: OPERATOR_TOOL_AUTHORITY,
       source: 'the config_patch tool',
-      writer: {
-        kind: 'agent',
-        // The directory name is the legible handle when an identity carries no
-        // display name — the same fallback `capability-attribution.ts` uses for
-        // the same reason, so the Activity feed and this receipt cannot name one
-        // agent two different ways.
-        agentName: identity ? identity.displayName || path.basename(identity.agentPath) : null,
-      },
+      writer: agentWriter(identity),
     });
     if (!result.ok) {
       if (result.kind === 'invalid') {
@@ -428,6 +460,169 @@ export function createConfigPatchHandler(identity?: AgentIdentity) {
     return jsonResult({
       success: true,
       config: sanitizedConfigSnapshot(result.config),
+      ...(result.warnings.length > 0 && { warnings: result.warnings }),
+    });
+  };
+}
+
+/** The sidebar section a caller names, and the members it wants filed there. */
+export interface SidebarAddToGroupArgs {
+  /** The section, by id or by name (name matched without case). */
+  group: string;
+  /** The agents and rooms to file there. */
+  items: SidebarItemRef[];
+  /** Make the section when no section answers to `group`. */
+  createIfMissing?: boolean;
+}
+
+/** The sidebar section a caller names, and the members it wants out of it. */
+export interface SidebarRemoveFromGroupArgs {
+  /** The section, by id or by name (name matched without case). */
+  group: string;
+  /** The agents and rooms to take out of it. */
+  items: SidebarItemRef[];
+}
+
+/**
+ * Persist an edited `ui.sidebar` through the one guarded write path.
+ *
+ * ## Why the WHOLE section goes back, on a capability whose point is narrowness
+ *
+ * Because that is the key's write contract, and it is not this module's to
+ * change: `ui.sidebar` is stored as one value, `deepMerge` replaces arrays
+ * rather than merging them, and the client sends the complete section on every
+ * drag (the header of `entities/config/model/use-sidebar-prefs.ts`). What these
+ * capabilities narrow is the READ-MODIFY step — the config is read HERE, at call
+ * time, so the payload can never be a snapshot a model took several turns ago.
+ *
+ * ## Why the patch names nothing but `ui.sidebar`
+ *
+ * `applyGuardedConfigWrite` refuses a patch that so much as NAMES an
+ * operator-only setting, and refuses it whole. Building the patch here, from a
+ * config this process just read, means no argument a caller sends can put a
+ * second section in it: `group` and `items` are the only inputs, and neither is
+ * a config path. So the person-only guard on these two capabilities is
+ * structural rather than checked, which is the strongest form it can take.
+ *
+ * @param next - The complete sidebar prefs to store.
+ * @param source - How this write reached DorkOS, for the audit line.
+ * @param identity - The calling agent, when the surface resolved one.
+ * @returns The guarded write's own result, for the caller to answer with.
+ */
+function writeSidebarPrefs(
+  next: SidebarPrefs,
+  source: string,
+  identity?: AgentIdentity
+): GuardedConfigWriteResult {
+  return applyGuardedConfigWrite({
+    patch: { ui: { sidebar: next } },
+    authority: OPERATOR_TOOL_AUTHORITY,
+    source,
+    writer: agentWriter(identity),
+  });
+}
+
+/** Turn a refused or invalid sidebar write into the `isError` payload a model reads. */
+function sidebarWriteFailure(result: GuardedConfigWriteResult): OperatorToolResult {
+  if (result.ok) throw new Error('sidebarWriteFailure called on a write that succeeded.');
+  if (result.kind === 'invalid') {
+    return jsonResult(
+      { error: result.error, ...(result.details ? { details: result.details } : {}) },
+      true
+    );
+  }
+  const { error, code, paths, message } = result.refusal;
+  return jsonResult({ error, code, paths, message }, true);
+}
+
+/**
+ * `sidebar_add_to_group` — file agents and rooms under one sidebar section,
+ * leaving every other section exactly as it was (DOR-2055).
+ *
+ * The defect this replaces: to add three agents to one section an agent had to
+ * re-send the entire `ui.sidebar.groups` array through `config_patch`, because
+ * arrays replace wholesale. A drag the person made in between would have been
+ * overwritten in silence, and one mistyped section in that payload would have
+ * deleted every other section they had.
+ *
+ * @param identity - The calling agent, when the surface resolved one. Read only
+ *   for the audit line's writer field; nothing about the write depends on it.
+ * @returns The bound handler.
+ */
+export function createSidebarAddToGroupHandler(identity?: AgentIdentity) {
+  return async (args: SidebarAddToGroupArgs): Promise<OperatorToolResult> => {
+    // Read at CALL time, never from anything the caller sent: the whole point is
+    // that the sections this write preserves are the ones stored right now.
+    const prefs = storedSidebarPrefs(configManager.get('ui'));
+    const found = resolveSidebarGroup(prefs.groups, args.group);
+
+    // A section nobody has is a refusal unless the caller said to make one — and
+    // `createIfMissing` answers only THAT refusal. An ambiguous name or a smart
+    // section is a different question, and creating a second section called
+    // "DorkOS" because two already exist is the opposite of what was asked.
+    if (!found.ok && !(found.code === 'SIDEBAR_GROUP_NOT_FOUND' && args.createIfMissing)) {
+      return jsonResult({ error: found.error, code: found.code, sections: found.sections }, true);
+    }
+
+    const created = found.ok ? undefined : newSidebarGroup(args.group.trim());
+    const target = found.ok ? found.group : created!;
+    const { items, added, alreadyPresent } = addSidebarItems(target.items, args.items);
+    const group = { ...target, items };
+    const next = created ? appendSidebarGroup(prefs, group) : replaceSidebarGroup(prefs, group);
+
+    const result = writeSidebarPrefs(next, 'the sidebar_add_to_group tool', identity);
+    if (!result.ok) return sidebarWriteFailure(result);
+
+    const warnings = [
+      ...result.warnings,
+      ...describeDuplicateMemberships(next.groups, group.id, added),
+    ];
+    return jsonResult({
+      success: true,
+      group,
+      created: created !== undefined,
+      added,
+      alreadyPresent,
+      ...(warnings.length > 0 && { warnings }),
+    });
+  };
+}
+
+/**
+ * `sidebar_remove_from_group` — take agents and rooms out of one sidebar
+ * section, leaving every other section exactly as it was (DOR-2055).
+ *
+ * The symmetric half of {@link createSidebarAddToGroupHandler}, minus
+ * `createIfMissing`: there is nothing to make when the section a caller wants to
+ * empty does not exist. Taking the last member out leaves the section standing
+ * and empty — see {@link removeSidebarItems} for why deleting it would be a
+ * second change nobody asked for.
+ *
+ * @param identity - The calling agent, when the surface resolved one.
+ * @returns The bound handler.
+ */
+export function createSidebarRemoveFromGroupHandler(identity?: AgentIdentity) {
+  return async (args: SidebarRemoveFromGroupArgs): Promise<OperatorToolResult> => {
+    const prefs = storedSidebarPrefs(configManager.get('ui'));
+    const found = resolveSidebarGroup(prefs.groups, args.group);
+    if (!found.ok) {
+      return jsonResult({ error: found.error, code: found.code, sections: found.sections }, true);
+    }
+
+    const { items, removed, notPresent } = removeSidebarItems(found.group.items, args.items);
+    const group = { ...found.group, items };
+    const result = writeSidebarPrefs(
+      replaceSidebarGroup(prefs, group),
+      'the sidebar_remove_from_group tool',
+      identity
+    );
+    if (!result.ok) return sidebarWriteFailure(result);
+
+    return jsonResult({
+      success: true,
+      group,
+      removed,
+      notPresent,
       ...(result.warnings.length > 0 && { warnings: result.warnings }),
     });
   };

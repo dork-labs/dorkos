@@ -37,9 +37,11 @@ const registry = composeRegistry([operatorDomain, marketplaceDomain], {
 /**
  * The exact tool set both MCP servers advertise.
  *
- * It started as the pre-migration set and has grown by exactly one since:
+ * It started as the pre-migration set and has grown by three since:
  * `update_agent_boundaries`, the NOPE.md write split out of `update_agent` so it
- * can be tier `destructive` (DOR-1698).
+ * can be tier `destructive` (DOR-1698), and the two sidebar-section writes that
+ * replace re-sending the whole `ui.sidebar.groups` array through `config_patch`
+ * (DOR-2055).
  */
 const EXPECTED_TOOL_NAMES = [
   'activity_list',
@@ -49,6 +51,8 @@ const EXPECTED_TOOL_NAMES = [
   'update_agent',
   'update_agent_boundaries',
   'config_patch',
+  'sidebar_add_to_group',
+  'sidebar_remove_from_group',
   'marketplace_search',
   'marketplace_get',
   'marketplace_list_marketplaces',
@@ -134,6 +138,18 @@ const EXPECTED_ANNOTATIONS: Record<string, ToolAnnotations> = {
     idempotentHint: true,
     openWorldHint: false,
   },
+  sidebar_add_to_group: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
+  sidebar_remove_from_group: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
   // mutateDeleteLocal — a NOPE.md write replaces the whole file, so the text it
   // overwrites is gone (DOR-1698). `destructiveHint` is derived from the tier,
   // and that derivation is the assertion worth having here.
@@ -180,14 +196,14 @@ const EXPECTED_CARVE_OUT = [
 ].sort();
 
 describe('operator + marketplace MCP projection', () => {
-  it('advertises the same 15 tools on the in-session server', () => {
+  it('advertises the same 17 tools on the in-session server', () => {
     const names = capabilitiesForMcpServer(registry, 'in-session')
       .map((c) => c.surfaces.mcp!.toolName)
       .sort();
     expect(names).toEqual(EXPECTED_TOOL_NAMES);
   });
 
-  it('advertises the same 15 tools on the external server', () => {
+  it('advertises the same 17 tools on the external server', () => {
     const names = capabilitiesForMcpServer(registry, 'external')
       .map((c) => c.surfaces.mcp!.toolName)
       .sort();

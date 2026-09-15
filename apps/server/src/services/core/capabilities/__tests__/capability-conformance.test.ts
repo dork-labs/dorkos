@@ -486,6 +486,20 @@ capabilityConformance(registry, {
     // refuse this" (DOR-1698).
     'operator.update_agent_boundaries': { cwd: SANDBOX_CWD, nopeContent: 'Never do that.' },
     'operator.config_patch': { patch: { ui: { sidebar: { collapsed: true } } } },
+    // Both sidebar verbs need a PARSEABLE fixture — `group` and `items` are
+    // required, so `{}` would raise a ZodError and read as a wiring failure. The
+    // section named here does not exist and `createIfMissing` is absent, so each
+    // reaches its handler and answers the structured SIDEBAR_GROUP_NOT_FOUND:
+    // wired and reachable, which is what this suite asks, without writing to the
+    // config store the whole suite shares (DOR-2055).
+    'operator.sidebar_add_to_group': {
+      group: 'no-such-conformance-section',
+      items: [{ kind: 'agent', path: SANDBOX_CWD }],
+    },
+    'operator.sidebar_remove_from_group': {
+      group: 'no-such-conformance-section',
+      items: [{ kind: 'agent', path: SANDBOX_CWD }],
+    },
     'marketplace.get': { name: 'nonexistent-conformance-pkg' },
     'marketplace.recommend': { context: 'observability for a next.js app' },
     'marketplace.install': { name: 'nonexistent-conformance-pkg' },

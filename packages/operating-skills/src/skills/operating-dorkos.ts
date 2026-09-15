@@ -157,9 +157,11 @@ The \`patch\` wrapper is required. Deep-merge semantics: nested objects merge, a
 replace wholesale. It runs the same validation as the settings UI, so an unknown key
 or a bad value is rejected. Only change settings when the user asked.
 
-Status-line items are pinned, not toggled: \`ui.statusBar.pins\` is a list of item ids
-(\`cwd\`, \`git\`, \`runtime\`, \`model\`, \`context\`, \`usage\`, \`permission\`), and because
-arrays replace, patching \`pins\` sets the whole list.
+Status-line items are pinned, not toggled: \`ui.statusBar.pins\` lists item ids (\`cwd\`,
+\`git\`, \`runtime\`, \`model\`, \`context\`, \`usage\`, \`permission\`), and patching it sets
+the whole list. To put an agent or a room in a sidebar section, use the tools whose
+names end in \`sidebar_add_to_group\` and \`sidebar_remove_from_group\`: they touch that
+one section, where a patch of \`ui.sidebar.groups\` rewrites every section at once.
 
 ## Rules of engagement
 

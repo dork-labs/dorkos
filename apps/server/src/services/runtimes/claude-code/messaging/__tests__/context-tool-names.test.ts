@@ -450,7 +450,11 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // — the agent learns there is anything to read from `get_ui_state`, which is
     // a tool call of its own — so it stays deferred and unprefixed, and the
     // prefixed count below does NOT move with it.
-    expect(advertised.size).toBe(101);
+    //
+    // 101 -> 103 for `sidebar_add_to_group` and `sidebar_remove_from_group`
+    // (DOR-2055). No prompt block names either, so they stay deferred and
+    // unprefixed, and the prefixed count below does NOT move with them.
+    expect(advertised.size).toBe(103);
     expect(advertised.has('react_to_room_entry')).toBe(true);
     expect(
       [

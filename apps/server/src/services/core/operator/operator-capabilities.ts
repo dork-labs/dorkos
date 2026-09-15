@@ -12,15 +12,17 @@
  * surface, per ADR 260723-013236 (superseded by 260725-152018).
  *
  * The four read-only observability capabilities carry `readOnlyCarveOut: true`;
- * the three mutations (`operator.update_agent`,
- * `operator.update_agent_boundaries`, `operator.config_patch`) do not — they
- * require the local token on the login-off external `/mcp` surface.
+ * the five mutations (`operator.update_agent`,
+ * `operator.update_agent_boundaries`, `operator.config_patch`,
+ * `operator.sidebar_add_to_group`, `operator.sidebar_remove_from_group`) do not
+ * — they require the local token on the login-off external `/mcp` surface.
  *
  * @module services/core/operator/operator-capabilities
  */
 import { z } from 'zod';
 import { ListActivityQuerySchema } from '@dorkos/shared/activity-schemas';
 import { RecentSessionsQuerySchema } from '@dorkos/shared/schemas';
+import { SidebarItemRefSchema } from '@dorkos/shared/config-schema';
 import { TraitsSchema } from '@dorkos/shared/mesh-schemas';
 import { NOPE_MAX_CHARS, SOUL_MAX_CHARS } from '@dorkos/shared/convention-files';
 import { CAPABILITY_TIERS } from '@dorkos/shared/capabilities';
@@ -37,8 +39,12 @@ import {
   createConfigPatchHandler,
   createCheckUpdateHandler,
   createAgentsRecentActivityHandler,
+  createSidebarAddToGroupHandler,
+  createSidebarRemoveFromGroupHandler,
   type UpdateAgentArgs,
   type UpdateAgentBoundariesArgs,
+  type SidebarAddToGroupArgs,
+  type SidebarRemoveFromGroupArgs,
 } from './operator-tool-handlers.js';
 
 /**
@@ -68,6 +74,31 @@ function requireOperatorDeps(deps: CapabilityDeps): McpToolDeps {
   }
   return deps.operatorDeps;
 }
+
+/**
+ * Selector shared by the two capabilities that edit one sidebar section's
+ * membership (DOR-2055).
+ *
+ * The field is `group` because that is what the schema, the config path and
+ * every identifier in this repo call it; the prose a model reads says "sidebar
+ * section", which is what a person calls it (AGENTS.md).
+ */
+const sidebarGroupSelectorSchema = {
+  group: z
+    .string()
+    .min(1)
+    .describe(
+      'The sidebar section to change: its id, or its name (matched without regard to case). ' +
+        'An id always wins over a name.'
+    ),
+  items: z
+    .array(SidebarItemRefSchema)
+    .min(1)
+    .describe(
+      'The agents and rooms to move. An agent is {"kind":"agent","path":"<its project ' +
+        'directory>"}; a room is {"kind":"room","roomId":"<its id>"}.'
+    ),
+};
 
 /** Agent selector shared by capabilities that address one agent by id or directory. */
 const agentSelectorSchema = {
@@ -424,6 +455,92 @@ export const operatorDomain: CapabilityDomain = {
         unwrapMcpEnvelope(
           await createConfigPatchHandler(context.identity)(
             input as { patch?: Record<string, unknown> }
+          )
+        ),
+    }),
+    // The two sidebar capabilities are `act` and live beside `config_patch`
+    // rather than inside it, because the problem is the SHAPE of the write and
+    // not the permission to make it (DOR-2055). `ui.sidebar.groups` is an array,
+    // every general-purpose config write replaces an array wholesale, and so the
+    // only way to add one agent to one section through the settings door is to
+    // re-send every section. That is a read-modify-write across a turn boundary
+    // with a model holding the copy: a drag the person makes in between is
+    // overwritten with no error anywhere, and one mistyped section deletes all
+    // the others. Reproduced on the operator's own install on 2026-09-15.
+    //
+    // Both write through the same guarded step `config_patch` does, so the
+    // person-only policy, the audit line and the schema validation are the same
+    // ones. What they do NOT have is a caller-supplied path: the patch is built
+    // in the handler from a config read at call time, so it can never carry a
+    // setting other than `ui.sidebar`.
+    defineCapability({
+      id: 'operator.sidebar_add_to_group',
+      title: 'Add to a sidebar section',
+      description:
+        'Put agents and rooms into ONE section of the sidebar, leaving every other section ' +
+        'exactly as it is. Name the section in `group` by its id or its name, and list what to ' +
+        'file there in `items`. Anything already in that section is left alone, so calling ' +
+        'twice adds nothing twice. Set createIfMissing to true to make the section when nothing ' +
+        'answers to the name you sent; without it you get a refusal that names the sections ' +
+        'that do exist. Prefer this over sending `ui.sidebar.groups` to the settings tool whose ' +
+        // Named as a searchable ENDING, never bare: this same string is served to
+        // the external `/mcp` server, where a person's harness chooses the
+        // prefix, so a bare name is uncallable on claude-code and unreliable
+        // everywhere else (DOR-1292). Enforced by
+        // `messaging/__tests__/context-tool-names.test.ts`.
+        'name ends in `config_patch` — that array replaces wholesale, so a copy taken a moment ' +
+        'ago silently drops whatever the person changed since. To take something out again, use ' +
+        'the tool whose name ends in `sidebar_remove_from_group`. This rearranges the ' +
+        "user's own sidebar, so only do it when they have asked for it.",
+      tier: 'act',
+      input: z.object({
+        ...sidebarGroupSelectorSchema,
+        createIfMissing: z
+          .boolean()
+          .optional()
+          .describe(
+            'Make a new hand-sorted section with this name when no section answers to `group`. ' +
+              'Ignored when one does.'
+          ),
+      }),
+      output: z.unknown(),
+      surfaces: {
+        mcp: {
+          toolName: 'sidebar_add_to_group',
+          servers: ['in-session', 'external'],
+          annotations: { idempotentHint: true },
+        },
+      },
+      invoke: async (_deps, input, context) =>
+        unwrapMcpEnvelope(
+          await createSidebarAddToGroupHandler(context.identity)(input as SidebarAddToGroupArgs)
+        ),
+    }),
+    defineCapability({
+      id: 'operator.sidebar_remove_from_group',
+      title: 'Remove from a sidebar section',
+      description:
+        'Take agents and rooms out of ONE section of the sidebar, leaving every other section ' +
+        'exactly as it is. Name the section in `group` by its id or its name, and list what to ' +
+        'take out in `items`. Anything that was not in that section is reported back and ' +
+        'nothing else happens to it. Taking the last member out leaves the section there and ' +
+        'empty; only a person removes a section. To file something instead, use the tool whose ' +
+        "name ends in `sidebar_add_to_group`. This rearranges the user's own sidebar, so only " +
+        'do it when they have asked for it.',
+      tier: 'act',
+      input: z.object(sidebarGroupSelectorSchema),
+      output: z.unknown(),
+      surfaces: {
+        mcp: {
+          toolName: 'sidebar_remove_from_group',
+          servers: ['in-session', 'external'],
+          annotations: { idempotentHint: true },
+        },
+      },
+      invoke: async (_deps, input, context) =>
+        unwrapMcpEnvelope(
+          await createSidebarRemoveFromGroupHandler(context.identity)(
+            input as SidebarRemoveFromGroupArgs
           )
         ),
     }),
