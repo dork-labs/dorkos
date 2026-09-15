@@ -22,6 +22,7 @@ import {
 import { buildQueryString } from './http-client';
 import { streamSocketFrames } from './stream-socket-iterator';
 import {
+  createUnreadablePromptReporter,
   createUnreadableSnapshotReporter,
   parseSessionEvent,
   parseSessionSnapshot,
@@ -54,6 +55,7 @@ export const SESSION_LIST_EVENT_TYPES = new Set([
  */
 export function createSessionStreamMethods(baseUrl: string) {
   const reportUnreadableSnapshot = createUnreadableSnapshotReporter('Transport');
+  const reportUnreadablePrompt = createUnreadablePromptReporter('Transport');
   return {
     /**
      * Fetch the authoritative session snapshot for hydration.
@@ -133,10 +135,7 @@ export function createSessionStreamMethods(baseUrl: string) {
           continue;
         }
         if (result.unreadable) {
-          console.warn('[Transport] showing a placeholder for an unreadable prompt', {
-            sessionId,
-            unreadable: result.unreadable,
-          });
+          reportUnreadablePrompt(sessionId, result.event.seq, result.unreadable);
         }
         yield result.event;
       }

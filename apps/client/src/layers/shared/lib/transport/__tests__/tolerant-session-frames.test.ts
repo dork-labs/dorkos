@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { isNonFatalErrorCode, UNREADABLE_ENTRY_ERROR_CODE } from '@dorkos/shared/run-outcome';
 import type { SessionSnapshot, SessionStatus } from '@dorkos/shared/session-stream';
 
 import {
   UNREADABLE_MESSAGE_TEXT,
   UNREADABLE_PROMPT_TEXT,
+  createUnreadablePromptReporter,
   createUnreadableSnapshotReporter,
+  parsePendingInteractionsResponse,
   parseSessionEvent,
   parseSessionSnapshot,
 } from '../tolerant-session-frames';
@@ -20,6 +23,17 @@ const STATUS: SessionStatus = {
   runningSubagentCount: 0,
   lifecycle: 'idle',
   lastError: null,
+};
+
+const PLACEHOLDER = {
+  type: 'error',
+  message: UNREADABLE_MESSAGE_TEXT,
+  code: UNREADABLE_ENTRY_ERROR_CODE,
+};
+const PROMPT_NOTE = {
+  type: 'error',
+  message: UNREADABLE_PROMPT_TEXT,
+  code: UNREADABLE_ENTRY_ERROR_CODE,
 };
 
 const GOOD_BEFORE = {
@@ -46,6 +60,12 @@ function snapshotWith(overrides: Record<string, unknown>): Record<string, unknow
     ...overrides,
   };
 }
+
+describe('the unreadable-entry code', () => {
+  it('is non-fatal, so a stand-in can never count as the turn failing', () => {
+    expect(isNonFatalErrorCode(UNREADABLE_ENTRY_ERROR_CODE)).toBe(true);
+  });
+});
 
 describe('parseSessionSnapshot', () => {
   it('returns a fully valid snapshot unchanged, with nothing unreadable', () => {
@@ -82,7 +102,7 @@ describe('parseSessionSnapshot', () => {
     expect(result.snapshot.messages.map((m) => m.id)).toEqual(['m1', 'm2', 'm3']);
     expect(result.snapshot.messages[1]!.parts).toEqual([
       { type: 'text', text: 'Let me ask' },
-      { type: 'error', message: UNREADABLE_MESSAGE_TEXT },
+      PLACEHOLDER,
     ]);
     expect(result.unreadable).toHaveLength(1);
     expect(result.unreadable[0]!.path).toMatch(/^messages\.1\.parts\.1\./);
@@ -102,38 +122,48 @@ describe('parseSessionSnapshot', () => {
       id: 'm2',
       role: 'assistant',
       content: '',
-      parts: [{ type: 'error', message: UNREADABLE_MESSAGE_TEXT }],
+      parts: [PLACEHOLDER],
     });
     expect(result.snapshot.messages[2]).toEqual(GOOD_AFTER);
   });
 
-  it('drops unreadable pending interactions but keeps the rest of the snapshot', () => {
+  it('shows a note for an unreadable pending interaction the turn does not show', () => {
+    // A session still blocked after turn_end has no in-progress turn: without
+    // the note, the person is told the agent waits on them with nothing to answer.
     const result = parseSessionSnapshot(
-      snapshotWith({ messages: [GOOD_BEFORE], pendingInteractions: [{ nope: true }] })
+      snapshotWith({
+        messages: [GOOD_BEFORE],
+        pendingInteractions: [{ type: 'question', id: 'q9', questions: 'unreadable' }],
+      })
     );
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.snapshot.pendingInteractions).toEqual([]);
-    expect(result.snapshot.messages).toEqual([GOOD_BEFORE]);
+    expect(result.snapshot.messages).toEqual([
+      GOOD_BEFORE,
+      { id: 'unreadable-interaction-q9', role: 'assistant', content: '', parts: [PROMPT_NOTE] },
+    ]);
     expect(result.unreadable[0]!.path).toMatch(/^pendingInteractions\.0/);
   });
 
-  it('turns an unreadable question in the in-progress turn into an inline notice', () => {
+  it('adds no second note when the in-progress turn already carries that prompt', () => {
     const result = parseSessionSnapshot(
       snapshotWith({
         inProgressTurn: [
           { type: 'turn_start', seq: 4 },
           { type: 'question_prompt', seq: 5, id: 'q1', questions: 'unreadable' },
         ],
+        pendingInteractions: [{ type: 'question', id: 'q1', questions: 'unreadable' }],
       })
     );
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    expect(result.snapshot.messages).toEqual([]);
     expect(result.snapshot.inProgressTurn).toEqual([
       { type: 'turn_start', seq: 4 },
-      { type: 'error', seq: 5, message: UNREADABLE_PROMPT_TEXT },
+      { seq: 5, ...PROMPT_NOTE },
     ]);
   });
 
@@ -154,13 +184,13 @@ describe('parseSessionEvent', () => {
   });
 
   it.each(['question_prompt', 'approval_required', 'elicitation_prompt'])(
-    'shows an unreadable %s as an inline notice at the same seq',
+    'shows an unreadable %s as a tagged inline notice at the same seq',
     (type) => {
       const result = parseSessionEvent({ type, seq: 9, id: 'x' });
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.event).toEqual({ type: 'error', seq: 9, message: UNREADABLE_PROMPT_TEXT });
+      expect(result.event).toEqual({ seq: 9, ...PROMPT_NOTE });
       expect(result.unreadable?.path.startsWith(type)).toBe(true);
     }
   );
@@ -174,12 +204,35 @@ describe('parseSessionEvent', () => {
   });
 });
 
-describe('createUnreadableSnapshotReporter', () => {
+describe('parsePendingInteractionsResponse', () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('warns once per session, and never for a clean snapshot', () => {
+  it('keeps readable entries and drops an unreadable one', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const result = parsePendingInteractionsResponse({
+      interactions: [{ sessionId: 's1', interaction: { type: 'question', id: 'q' } }],
+      warnings: ['one runtime is offline'],
+    });
+
+    expect(result).toEqual({ interactions: [], warnings: ['one runtime is offline'] });
+    expect(console.warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns a valid response untouched and throws on a body that is not a list', () => {
+    expect(parsePendingInteractionsResponse({ interactions: [] })).toEqual({ interactions: [] });
+    expect(() => parsePendingInteractionsResponse({ nope: true })).toThrow();
+  });
+});
+
+describe('unreadable-entry reporters', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('warns once per session for snapshots, and never for a clean snapshot', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const report = createUnreadableSnapshotReporter('Test');
     const entry = { path: 'messages.1', message: 'bad' };
@@ -188,6 +241,18 @@ describe('createUnreadableSnapshotReporter', () => {
     report('a', [entry]);
     report('a', [entry]);
     report('b', [entry]);
+
+    expect(warn).toHaveBeenCalledTimes(2);
+  });
+
+  it('warns once per prompt, however often a replay re-delivers it', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const report = createUnreadablePromptReporter('Test');
+    const entry = { path: 'question_prompt.questions', message: 'bad' };
+
+    report('a', 3, entry);
+    report('a', 3, entry);
+    report('a', 4, entry);
 
     expect(warn).toHaveBeenCalledTimes(2);
   });

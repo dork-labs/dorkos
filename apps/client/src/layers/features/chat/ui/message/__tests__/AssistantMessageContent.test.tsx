@@ -392,6 +392,29 @@ describe('AssistantMessageContent — error parts keep the server-authored messa
   });
 });
 
+describe('AssistantMessageContent — unreadable-entry placeholders (DOR-2078)', () => {
+  it('renders a quiet note, not an error card, for a tagged placeholder', () => {
+    // Real failure mode: an old damaged message read as the agent having failed.
+    render(
+      <AssistantMessageContent
+        message={makeMessage([
+          {
+            type: 'error' as const,
+            message: 'This part of the conversation couldn’t be shown.',
+            code: 'unreadable_entry',
+          },
+        ])}
+      />
+    );
+
+    expect(screen.getByTestId('unreadable-entry-note')).toHaveTextContent(
+      'This part of the conversation couldn’t be shown.'
+    );
+    expect(screen.queryByTestId('error-message-block')).not.toBeInTheDocument();
+    expect(screen.queryByText('Error')).not.toBeInTheDocument();
+  });
+});
+
 /**
  * The renderer used to end with a bare comment asserting "at this point
  * part.type === 'tool_call'". Adding a member to `MessagePartSchema` made that

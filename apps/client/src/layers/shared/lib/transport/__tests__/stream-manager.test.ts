@@ -239,7 +239,11 @@ describe('StreamManager', () => {
     const snapshot = onSnapshot.mock.calls[0]![1] as SessionSnapshot;
     expect(snapshot.messages.map((m) => m.id)).toEqual(['m1', 'm2', 'm3']);
     expect(snapshot.messages[1]!.parts).toEqual([
-      { type: 'error', message: expect.stringContaining('couldn’t be shown') },
+      {
+        type: 'error',
+        message: expect.stringContaining('couldn’t be shown'),
+        code: 'unreadable_entry',
+      },
     ]);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0]![1]).toMatchObject({
@@ -259,12 +263,14 @@ describe('StreamManager', () => {
     manager.attachSession('sess-a');
 
     connections[0]!.push('question_prompt', { type: 'question_prompt', seq: 3, id: 'q1' });
+    // A replay from Last-Event-ID re-delivers the same frame: same note, one warning.
+    connections[0]!.push('question_prompt', { type: 'question_prompt', seq: 3, id: 'q1' });
 
     expect(onSessionEvent).toHaveBeenCalledWith(
       'sess-a',
-      expect.objectContaining({ type: 'error', seq: 3 })
+      expect.objectContaining({ type: 'error', seq: 3, code: 'unreadable_entry' })
     );
-    expect(warn).toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
   });
 

@@ -41,6 +41,7 @@ import type { ClientContext } from '@dorkos/shared/additional-context';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { COMMAND_INTENT_REQUEST_TIMEOUT_MS } from '@dorkos/shared/command-intents';
 import { fetchJSON, buildQueryString } from './http-client';
+import { parsePendingInteractionsResponse } from './tolerant-session-frames';
 
 // Interaction requests use a longer timeout (10 min) to match the server-side
 // INTERACTION_TIMEOUT_MS: an approval or a question waits on a person, and the
@@ -496,8 +497,13 @@ export function createSessionMethods(
      * Read once per window mount and on reconnect, never polled: after the seed,
      * `interaction_pending` and `interaction_resolved` keep the list current.
      */
-    listPendingInteractions(): Promise<PendingInteractionsResponse> {
-      return fetchJSON<PendingInteractionsResponse>(baseUrl, '/sessions/pending-interactions');
+    async listPendingInteractions(): Promise<PendingInteractionsResponse> {
+      // Parsed per entry (DOR-2078). This was a bare cast, so one unreadable
+      // prompt reached the header pill, home and the sidebar as whatever shape
+      // it had; now it is dropped with a warning and every other one still shows.
+      return parsePendingInteractionsResponse(
+        await fetchJSON<unknown>(baseUrl, '/sessions/pending-interactions')
+      );
     },
 
     approveTool(

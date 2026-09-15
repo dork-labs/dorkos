@@ -68,6 +68,7 @@ import {
 import { addBreadcrumb } from '../breadcrumbs';
 import { SESSION_LIST_EVENT_TYPES } from './session-stream-methods';
 import {
+  createUnreadablePromptReporter,
   createUnreadableSnapshotReporter,
   parseSessionEvent,
   parseSessionSnapshot,
@@ -425,6 +426,8 @@ export class StreamManager {
   private listFailedAttempts = 0;
   /** Warns once per session about snapshot entries shown as placeholders (DOR-2078). */
   private readonly reportUnreadableSnapshot = createUnreadableSnapshotReporter('StreamManager');
+  /** Warns once per unreadable prompt, however often a replay re-delivers it. */
+  private readonly reportUnreadablePrompt = createUnreadablePromptReporter('StreamManager');
   private listStateListeners = new Set<(state: ConnectionState, failedAttempts: number) => void>();
 
   /**
@@ -1039,10 +1042,7 @@ export class StreamManager {
       return;
     }
     if (result.unreadable) {
-      console.warn('[StreamManager] showing a placeholder for an unreadable prompt', {
-        sessionId,
-        unreadable: result.unreadable,
-      });
+      this.reportUnreadablePrompt(sessionId, result.event.seq, result.unreadable);
     }
     const event = result.event;
     this.listeners.onSessionEvent?.(sessionId, event);

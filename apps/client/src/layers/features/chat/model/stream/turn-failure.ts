@@ -18,6 +18,7 @@
  *
  * @module features/chat/model/stream/turn-failure
  */
+import { UNREADABLE_ENTRY_ERROR_CODE } from '@dorkos/shared/run-outcome';
 import type { ChatMessage, ChatStatus, TransportErrorInfo } from '../chat-types';
 
 /**
@@ -50,5 +51,9 @@ export function shouldShowTurnFailedNotice(
     }
   }
   const tail = messages.slice(lastUserIdx + 1);
-  return !tail.some((m) => m.parts.some((p) => p.type === 'error'));
+  // A placeholder for an unreadable entry is a note, not a failure affordance:
+  // counting it would hide the notice for a turn that really failed (DOR-2078).
+  return !tail.some((m) =>
+    m.parts.some((p) => p.type === 'error' && p.code !== UNREADABLE_ENTRY_ERROR_CODE)
+  );
 }

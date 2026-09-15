@@ -732,20 +732,29 @@ describe('projectInProgressTurn', () => {
   });
 
   it('folds the error code into the details string — [code] prefix, event-log-history parity', () => {
-    // Purpose: ErrorPart carries no `code` field, so the code folds into
-    // details exactly as the server's event-log-history.ts does — the live
-    // part must match the post-turn history reload byte-for-byte.
+    // Purpose: the code folds into details exactly as the server's
+    // event-log-history.ts does — the live part must match the post-turn
+    // history reload byte-for-byte. It ALSO rides the part's own `code` field
+    // (DOR-2078), which is what lets a renderer tell a survivable note from a
+    // failure without parsing the details string.
     const withBoth = projectInProgressTurn([
       { seq: 1, type: 'error', message: 'm', code: 'overloaded_error', details: 'HTTP 529' },
     ]);
     expect(withBoth).toEqual([
-      { type: 'error', message: 'm', details: '[overloaded_error] HTTP 529' },
+      {
+        type: 'error',
+        message: 'm',
+        details: '[overloaded_error] HTTP 529',
+        code: 'overloaded_error',
+      },
     ]);
 
     const codeOnly = projectInProgressTurn([
       { seq: 1, type: 'error', message: 'm', code: 'overloaded_error' },
     ]);
-    expect(codeOnly).toEqual([{ type: 'error', message: 'm', details: '[overloaded_error]' }]);
+    expect(codeOnly).toEqual([
+      { type: 'error', message: 'm', details: '[overloaded_error]', code: 'overloaded_error' },
+    ]);
 
     const detailsOnly = projectInProgressTurn([
       { seq: 1, type: 'error', message: 'm', details: 'HTTP 529' },

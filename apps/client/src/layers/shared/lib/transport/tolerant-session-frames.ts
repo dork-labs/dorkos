@@ -7,11 +7,14 @@
  * one bad entry cost that entry:
  *
  * - **Snapshot messages** are salvaged part by part, then message by message. An
- *   unreadable part or message is replaced by a visible placeholder in the same
- *   position, so the reader can see something is missing rather than a silent gap.
- * - **Other snapshot lists** (pending interactions, queued messages, canvas) keep
- *   their valid items and drop the rest: none of them has a transcript position a
- *   placeholder could hold, and each is re-derived by the server on the next frame.
+ *   unreadable part or message is replaced by a placeholder in the same position,
+ *   so the reader can see something is missing rather than a silent gap.
+ * - **Pending interactions** keep their valid items. An unreadable one that the
+ *   in-progress turn does not already show gets a trailing note: the session is
+ *   still waiting on the person, and without a card or a note it would read as
+ *   "waiting on you" with nothing to answer.
+ * - **Queued messages and canvas** keep their valid items and drop the rest: they
+ *   have no transcript position, and the server re-derives both on the next frame.
  * - **The snapshot envelope** (`status`, `cursor`) is not salvageable. Without a
  *   trustworthy cursor there is no gap-free resume point, so the frame is still
  *   rejected exactly as before.
@@ -22,15 +25,25 @@
  *   transient — the settled turn arrives through history, where the per-message
  *   tolerance above applies — so dropping it with a warning stays correct.
  *
+ * Every placeholder and stand-in carries {@link UNREADABLE_ENTRY_ERROR_CODE}, which
+ * is what renders it as a quiet note, keeps it out of `status.lastError`, and stops
+ * it from hiding the turn-failed notice.
+ *
  * @module shared/lib/transport/tolerant-session-frames
  */
 import type { ZodError, ZodType } from 'zod';
+import { UNREADABLE_ENTRY_ERROR_CODE } from '@dorkos/shared/run-outcome';
 import {
   HistoryMessageSchema,
   MessagePartSchema,
   type HistoryMessage,
   type MessagePart,
 } from '@dorkos/shared/schemas';
+import {
+  InteractionPendingEventSchema,
+  PendingInteractionsResponseSchema,
+  type PendingInteractionsResponse,
+} from '@dorkos/shared/interaction-events';
 import {
   SessionEventSchema,
   SessionSnapshotSchema,
@@ -70,7 +83,11 @@ export type SessionEventParseResult =
   | { ok: true; event: SessionEvent; unreadable: UnreadableEntry | null }
   | { ok: false; error: ZodError };
 
-const PLACEHOLDER_PART: MessagePart = { type: 'error', message: UNREADABLE_MESSAGE_TEXT };
+const PLACEHOLDER_PART: MessagePart = {
+  type: 'error',
+  message: UNREADABLE_MESSAGE_TEXT,
+  code: UNREADABLE_ENTRY_ERROR_CODE,
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -95,6 +112,21 @@ function salvageParts(rawParts: unknown[]): MessagePart[] {
   return parts;
 }
 
+/**
+ * A transcript row holding only a note. Always an assistant row: a user row
+ * renders its `content` as if the person had typed it, which a note must never
+ * read as.
+ */
+function noteMessage(id: string, part: MessagePart, timestamp?: unknown): HistoryMessage {
+  return {
+    id,
+    role: 'assistant',
+    content: '',
+    parts: [part],
+    ...(typeof timestamp === 'string' ? { timestamp } : {}),
+  };
+}
+
 function salvageMessage(
   raw: unknown,
   index: number,
@@ -111,15 +143,8 @@ function salvageMessage(
     const retry = HistoryMessageSchema.safeParse({ ...record, parts: salvageParts(record.parts) });
     if (retry.success) return retry.data;
   }
-  // Always an assistant row: a user row renders its `content` as if the person
-  // had typed it, which a placeholder must never read as.
-  return {
-    id: typeof record.id === 'string' ? record.id : `unreadable-message-${index}`,
-    role: 'assistant',
-    content: '',
-    parts: [PLACEHOLDER_PART],
-    ...(typeof record.timestamp === 'string' ? { timestamp: record.timestamp } : {}),
-  };
+  const id = typeof record.id === 'string' ? record.id : `unreadable-message-${index}`;
+  return noteMessage(id, PLACEHOLDER_PART, record.timestamp);
 }
 
 /** Keep the valid items of a list field; a non-array is returned untouched so the envelope check still fails it. */
@@ -159,6 +184,37 @@ function salvageTurnEvents(raw: unknown, unreadable: UnreadableEntry[]): unknown
   return kept;
 }
 
+/** Whether the raw in-progress turn already carries an entry for this interaction id. */
+function turnMentions(rawTurn: unknown, id: unknown): boolean {
+  if (typeof id !== 'string' || !Array.isArray(rawTurn)) return false;
+  return rawTurn.some((event) => isRecord(event) && (event.id === id || event.toolCallId === id));
+}
+
+/**
+ * Notes for unreadable pending interactions the turn does not show. A session
+ * still blocked after `turn_end` has no turn at all, so this is the only place
+ * such a prompt could surface (see `foldPendingInteractions`).
+ */
+function orphanedPromptNotes(raw: Record<string, unknown>): HistoryMessage[] {
+  if (!Array.isArray(raw.pendingInteractions)) return [];
+  const shape = SessionSnapshotSchema.shape;
+  const notes: HistoryMessage[] = [];
+  raw.pendingInteractions.forEach((item, index) => {
+    if (shape.pendingInteractions.element.safeParse(item).success) return;
+    const id = isRecord(item) ? item.id : undefined;
+    if (turnMentions(raw.inProgressTurn, id)) return;
+    const noteId = `unreadable-interaction-${typeof id === 'string' ? id : index}`;
+    notes.push(
+      noteMessage(noteId, {
+        type: 'error',
+        message: UNREADABLE_PROMPT_TEXT,
+        code: UNREADABLE_ENTRY_ERROR_CODE,
+      })
+    );
+  });
+  return notes;
+}
+
 /**
  * Validate a snapshot frame, salvaging what can be salvaged when the whole-frame
  * parse fails. A fully valid frame takes the fast path and comes back exactly as
@@ -178,7 +234,10 @@ export function parseSessionSnapshot(data: unknown): SnapshotParseResult {
   const candidate = {
     ...data,
     messages: Array.isArray(data.messages)
-      ? data.messages.map((message, index) => salvageMessage(message, index, unreadable))
+      ? [
+          ...data.messages.map((message, index) => salvageMessage(message, index, unreadable)),
+          ...orphanedPromptNotes(data),
+        ]
       : data.messages,
     inProgressTurn: salvageTurnEvents(data.inProgressTurn, unreadable),
     pendingInteractions: keepValidItems(
@@ -216,6 +275,7 @@ export function parseSessionEvent(data: unknown): SessionEventParseResult {
       type: 'error',
       seq: data.seq,
       message: UNREADABLE_PROMPT_TEXT,
+      code: UNREADABLE_ENTRY_ERROR_CODE,
     });
     if (standIn.success) {
       return {
@@ -226,6 +286,43 @@ export function parseSessionEvent(data: unknown): SessionEventParseResult {
     }
   }
   return { ok: false, error: parsed.error };
+}
+
+/**
+ * Validate the fleet-wide pending-interactions list, keeping every readable
+ * entry. One unreadable prompt must not blank the list for the rest.
+ *
+ * @param data - The raw `GET /sessions/pending-interactions` body.
+ * @throws ZodError when the body is not a list response at all.
+ */
+export function parsePendingInteractionsResponse(data: unknown): PendingInteractionsResponse {
+  const whole = PendingInteractionsResponseSchema.safeParse(data);
+  if (whole.success) return whole.data;
+  if (!isRecord(data) || !Array.isArray(data.interactions)) throw whole.error;
+  const unreadable: UnreadableEntry[] = [];
+  const interactions = keepValidItems(
+    InteractionPendingEventSchema,
+    data.interactions,
+    'interactions',
+    unreadable
+  );
+  const retry = PendingInteractionsResponseSchema.safeParse({ ...data, interactions });
+  if (!retry.success) throw retry.error;
+  console.warn('[Transport] skipped unreadable pending interactions', { unreadable });
+  return retry.data;
+}
+
+/** A warner that reports each key once for the life of the page. */
+function createOnceWarner(
+  scope: string,
+  text: string
+): (key: string, payload: Record<string, unknown>) => void {
+  const reported = new Set<string>();
+  return (key, payload) => {
+    if (reported.has(key)) return;
+    reported.add(key);
+    console.warn(`[${scope}] ${text}`, payload);
+  };
 }
 
 /**
@@ -240,13 +337,24 @@ export function parseSessionEvent(data: unknown): SessionEventParseResult {
 export function createUnreadableSnapshotReporter(
   scope: string
 ): (sessionId: string, unreadable: UnreadableEntry[]) => void {
-  const reported = new Set<string>();
+  const warn = createOnceWarner(scope, 'showing placeholders for unreadable snapshot entries');
   return (sessionId, unreadable) => {
-    if (unreadable.length === 0 || reported.has(sessionId)) return;
-    reported.add(sessionId);
-    console.warn(`[${scope}] showing placeholders for unreadable snapshot entries`, {
-      sessionId,
-      unreadable,
-    });
+    if (unreadable.length === 0) return;
+    warn(sessionId, { sessionId, unreadable });
+  };
+}
+
+/**
+ * Build a warner that reports each unreadable live prompt once, keyed by session
+ * and `seq`, so a replay from `Last-Event-ID` does not repeat it.
+ *
+ * @param scope - The log prefix, e.g. `StreamManager`.
+ */
+export function createUnreadablePromptReporter(
+  scope: string
+): (sessionId: string, seq: number, unreadable: UnreadableEntry) => void {
+  const warn = createOnceWarner(scope, 'showing a placeholder for an unreadable prompt');
+  return (sessionId, seq, unreadable) => {
+    warn(`${sessionId}:${seq}`, { sessionId, seq, unreadable });
   };
 }

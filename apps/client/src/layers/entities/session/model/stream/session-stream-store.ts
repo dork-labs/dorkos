@@ -42,6 +42,7 @@ import { isInterruptedTerminalReason } from '@dorkos/shared/schemas';
 import {
   isAbsolvingTerminalReason,
   isNonFatalErrorCode,
+  UNREADABLE_ENTRY_ERROR_CODE,
   isUnrequestedAbortFailure,
 } from '@dorkos/shared/run-outcome';
 import type { MessageDeliveryOutcome, QueuedMessage } from '@dorkos/shared/schemas';
@@ -917,7 +918,11 @@ function projectEvent(session: SessionStreamState, event: SessionEvent): void {
       // Deliberately does NOT touch lifecycle: non-terminal errors exist, so
       // terminal settling stays owned by the turn_end derivation.
       session.inProgressTurn.push(event);
-      if (session.status) {
+      // A client-side stand-in for an unreadable prompt (DOR-2078) is a note,
+      // not the turn's failure. The server never sees it, so a cold snapshot's
+      // lastError never carries it either; mirroring it here would make a live
+      // window and a reloaded one disagree.
+      if (session.status && event.code !== UNREADABLE_ENTRY_ERROR_CODE) {
         session.status.lastError = {
           message: event.message,
           ...(event.code !== undefined ? { code: event.code } : {}),

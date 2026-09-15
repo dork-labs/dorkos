@@ -4,6 +4,11 @@ import { BackgroundTaskShowcases } from './BackgroundTaskShowcases';
 import { SubagentBlock } from '@/layers/features/chat/ui/message/SubagentBlock';
 import { ThinkingBlock } from '@/layers/features/chat/ui/message/ThinkingBlock';
 import { CollapsibleRun } from '@/layers/features/chat/ui/message/CollapsibleRun';
+import { UnreadableEntryNote } from '@/layers/features/chat/ui/message/UnreadableEntryNote';
+import {
+  UNREADABLE_MESSAGE_TEXT,
+  UNREADABLE_PROMPT_TEXT,
+} from '@/layers/shared/lib/transport/tolerant-session-frames';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -156,6 +161,20 @@ export function ToolShowcases() {
             details={ERROR_PARTS.execution_error.details}
             onRetry={() => console.log('[Showcase] Retry clicked')}
           />
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="UnreadableEntryNote"
+        description="The quiet note shown where a stored message or a prompt could not be read — deliberately not an error card."
+      >
+        <ShowcaseLabel>Unreadable message</ShowcaseLabel>
+        <ShowcaseDemo>
+          <UnreadableEntryNote message={UNREADABLE_MESSAGE_TEXT} />
+        </ShowcaseDemo>
+        <ShowcaseLabel>Unreadable prompt</ShowcaseLabel>
+        <ShowcaseDemo>
+          <UnreadableEntryNote message={UNREADABLE_PROMPT_TEXT} />
         </ShowcaseDemo>
       </PlaygroundSection>
 
