@@ -17,7 +17,7 @@
 import { describe, it, expect } from 'vitest';
 import { AGENT_IDENTITY_CACHES } from '@/layers/entities/mesh';
 import { agentKeys } from '@/layers/entities/agent';
-import { TEAM_ROSTER_KEY } from '@/layers/entities/team';
+import { TEAM_ROSTER_KEY, memberRoomsKey } from '@/layers/entities/team';
 
 describe('useAgentsSync sweeps the real caches', () => {
   it('its `agents` prefix is the one `agentKeys` is rooted at', () => {
@@ -29,12 +29,14 @@ describe('useAgentsSync sweeps the real caches', () => {
     expect(agentKeys.resolved(['/a']).slice(0, 1)).toEqual([...agentKeys.all]);
   });
 
-  it('its `team` key is the roster key, and matches it EXACTLY', () => {
+  it('its `team` key is the roster key, swept as a PREFIX like its siblings', () => {
     const target = AGENT_IDENTITY_CACHES.find((t) => t.queryKey[0] === 'team');
     expect(target?.queryKey).toEqual([...TEAM_ROSTER_KEY]);
-    // Exact, because `['team']` is a prefix of one member's rooms, which holds
-    // a different shape.
-    expect(target?.exact).toBe(true);
+    // A prefix, so one member's rooms refresh with the roster — which
+    // `entities/team` documents as the intent, and which the three mesh
+    // mutations that sweep `['team']` have always done.
+    expect(target?.exact).toBeFalsy();
+    expect(memberRoomsKey('m1').slice(0, 1)).toEqual([...TEAM_ROSTER_KEY]);
   });
 
   it('its `mesh` prefix covers the key the sidebar actually draws rows from', () => {

@@ -12,18 +12,24 @@
  * database, real manifests on a real disk, the routes mounted as the server
  * mounts them — and counts the broadcasts.
  *
- * It also carries the exact one line `index.ts` adds:
- *
- * ```ts
- * meshCore.onAgentsChanged(e => eventFanOut.broadcast('agents_changed', { ...e, changedAt }))
- * ```
- *
- * because a test that subscribed to `onAgentsChanged` directly would prove the
- * seam and not the wire — the same gap `unregister-cascade.integration.test.ts`
- * was written to close for `onUnregister`. That the line is really in `index.ts`
- * is held by `services/core/__tests__/sse-event-allowlist.test.ts`, which scans
- * the server tree for the literal and fails if `GENERIC_EVENTS` lists a name
+ * It drives the REAL wiring, `wireLiveChangeBroadcasts`, rather than
+ * subscribing to `onAgentsChanged` directly — which would prove the seam and
+ * not the wire, the same gap `unregister-cascade.integration.test.ts` was
+ * written to close for `onUnregister`. The payload decisions that wiring makes
+ * are probed next door in `services/core/__tests__/live-change-broadcasts.test.ts`;
+ * this file is about which WRITES reach it. That `index.ts` really calls it is
+ * held by `services/core/__tests__/sse-event-allowlist.test.ts`, which scans the
+ * server tree for the literal names and fails if `GENERIC_EVENTS` lists one
  * nothing broadcasts.
+ *
+ * **Run it with a fresh `@dorkos/mesh` build.** `pnpm test` gets one from
+ * turbo's `^build`, but the targeted `pnpm vitest run <path>` loop does not, and
+ * `apps/server/vitest.config.ts` does not alias this package — by that file's
+ * own rule, which scopes aliases to modules whose SOURCE TEXT is the subject of
+ * a test, and mesh here is a dependency being exercised rather than read. So a
+ * stale dist can hand this file yesterday's observer and pass. If you are
+ * changing `packages/mesh` and running this alone:
+ * `pnpm --filter @dorkos/mesh build` first.
  *
  * ## The number that matters is ONE
  *
@@ -76,6 +82,7 @@ import { createMeshRouter } from '../mesh.js';
 import { createAgentsRouter } from '../agents.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { setOnAgentCreated } from '../../services/core/agent-created-hook.js';
+import { wireLiveChangeBroadcasts } from '../../services/core/streams/live-change-broadcasts.js';
 import { createMeshRegisterHandler } from '../../services/runtimes/claude-code/mcp-tools/mesh-tools.js';
 import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
 
@@ -114,10 +121,13 @@ beforeEach(async () => {
     if (eventName === 'agents_changed') broadcasts.push(data as Record<string, unknown>);
   });
 
-  // The one line index.ts adds, verbatim.
-  mesh.onAgentsChanged((change) =>
-    eventFanOut.broadcast('agents_changed', { ...change, changedAt: new Date().toISOString() })
-  );
+  // The REAL wiring, the same call `index.ts` makes. No config manager is
+  // needed here — this file is about agent writes — so it gets an inert one.
+  wireLiveChangeBroadcasts({
+    meshCore: mesh,
+    configManager: { onChange: () => () => {} },
+    eventFanOut,
+  });
 
   // The agent-created seam is module-level and set by index.ts; nothing here
   // needs it, and leaving another suite's listener attached would run it.
@@ -169,7 +179,6 @@ describe('every agent mutation entry point broadcasts agents_changed exactly onc
     expect(broadcasts[0]).toMatchObject({
       kind: 'registered',
       agentId: res.body.id,
-      projectPath: dir,
       name: 'http-register',
     });
     expect(typeof broadcasts[0].changedAt).toBe('string');
@@ -192,13 +201,16 @@ describe('every agent mutation entry point broadcasts agents_changed exactly onc
   });
 
   it('DELETE /api/mesh/agents/:id', async () => {
-    const { id, dir } = await registerAndReset('http-delete');
+    const { id } = await registerAndReset('http-delete');
 
     const res = await request(fixtureServer).delete(`/api/mesh/agents/${id}`);
 
     expect(res.status).toBe(200);
     expect(broadcasts).toHaveLength(1);
-    expect(broadcasts[0]).toMatchObject({ kind: 'removed', agentId: id, projectPath: dir });
+    expect(broadcasts[0]).toMatchObject({ kind: 'removed', agentId: id, name: 'http-delete' });
+    // The row really is gone, so the event is not describing a write that did
+    // not happen.
+    expect(mesh.get(id)).toBeUndefined();
   });
 
   it('POST /api/agents — the create-by-writing-a-manifest route', async () => {
@@ -271,7 +283,7 @@ describe('every agent mutation entry point broadcasts agents_changed exactly onc
     expect(broadcasts[0]).toMatchObject({
       kind: 'registered',
       agentId: '01JKADOPTED00000000000000',
-      projectPath: adopted,
+      name: 'adopted',
     });
 
     // …and the passes after it say NOTHING, because re-seeing a known agent is
@@ -290,25 +302,32 @@ describe('every agent mutation entry point broadcasts agents_changed exactly onc
 
     expect(result.isError).toBeFalsy();
     expect(broadcasts).toHaveLength(1);
-    expect(broadcasts[0]).toMatchObject({
-      kind: 'registered',
-      projectPath: dir,
-      name: 'mcp-register',
-    });
+    expect(broadcasts[0]).toMatchObject({ kind: 'registered', name: 'mcp-register' });
   });
 });
 
 describe('what must NOT reach the wire', () => {
   it('a heartbeat says nothing — it happens on every message an agent sends', async () => {
-    const { id } = await registerAndReset('heartbeat');
+    const { id, dir } = await registerAndReset('heartbeat');
 
     await request(fixtureServer).post(`/api/mesh/agents/${id}/heartbeat`).send({});
     mesh.updateLastSeen(id, 'message_sent');
 
     expect(broadcasts).toEqual([]);
+    // Two controls, because silence proves nothing on its own. First: the
+    // health write really landed, so this is the contract and not a no-op
+    // passing for one. Second: this fixture CAN still speak — an identity write
+    // on the same agent, right after, is heard. Without the second, a broken
+    // subscription would pass this case.
+    expect(mesh.agentRegistry.getWithHealth(id)!.lastSeenEvent).toBe('message_sent');
+    await request(fixtureServer)
+      .patch('/api/agents/current')
+      .query({ path: dir })
+      .send({ displayName: 'Still Listening' });
+    expect(broadcasts).toHaveLength(1);
   });
 
-  it('the payload carries names and ids, never the manifest body', async () => {
+  it('the payload carries names and ids — not the manifest body, not the path', async () => {
     const dir = await makeProjectDir('payload-shape');
     await request(fixtureServer)
       .post('/api/mesh/agents')
@@ -329,9 +348,13 @@ describe('what must NOT reach the wire', () => {
       'displayName',
       'kind',
       'name',
-      'projectPath',
     ]);
     expect(JSON.stringify(broadcasts[0])).not.toContain('a description nobody');
     expect(JSON.stringify(broadcasts[0])).not.toContain('code-review');
+    // The directory is on the IN-PROCESS event and off the wire: this frame is
+    // global, an agent's connection receives it, and nothing on the client
+    // reads the payload at all.
+    expect(JSON.stringify(broadcasts[0])).not.toContain(dir);
+    expect(mesh.getProjectPath((broadcasts[0] as { agentId: string }).agentId)).toBe(dir);
   });
 });

@@ -303,12 +303,14 @@ export const GENERIC_EVENTS = [
   // receives neither.
   'notification',
   'notification_read',
-  // An agent was registered, renamed or removed, by any path — the routes, the
-  // `mesh_register`/`mesh_unregister` tools, `create_agent`, a marketplace
-  // install, an agent editing itself, or the reconciler adopting a manifest it
-  // found on disk. `useAgentsSync` (entities/mesh) reads it and refreshes the
-  // agent caches, so a registration shows up in every open window instead of
-  // waiting out a 30-second stale time (DOR-2052). Names and ids only.
+  // An agent was registered, renamed or removed, by any path that reaches the
+  // mesh registry — the routes, the `mesh_register`/`mesh_unregister` tools,
+  // `create_agent`, a marketplace install, an agent editing itself, or the
+  // reconciler adopting a manifest it found on disk. `useAgentsSync`
+  // (entities/mesh) reads it and refreshes the agent caches, so a registration
+  // shows up in every open window instead of waiting out a 30-second stale time
+  // (DOR-2052). Names and ids only — no directory, no manifest; the hook
+  // invalidates and refetches rather than reading the payload at all.
   'agents_changed',
   // Settings were written — `PATCH /api/config`, `dorkos config set`, an
   // agent's `config_patch`. `useConfigSync` (entities/config) reads it and

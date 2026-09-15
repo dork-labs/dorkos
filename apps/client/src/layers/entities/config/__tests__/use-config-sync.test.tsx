@@ -121,6 +121,49 @@ describe('useConfigSync', () => {
     expect(invalidateSpy).not.toHaveBeenCalled();
   });
 
+  it('DEFERS the re-read rather than dropping it — it lands once the write settles', async () => {
+    // The bug this pins, found in adversarial review: the first cut cleared the
+    // pending keys before asking the veto, so a vetoed flush threw them away.
+    // Three config mutations invalidate on `onSuccess` ALONE
+    // (`useUpdateConfig`, `useAgentContextConfig`, `useMeshScanRoots`), so a
+    // REFUSED write re-reads nothing — and a dropped broadcast from another
+    // window would then leave this one showing a value nothing ever corrects.
+    const { queryClient, wrapper } = createWrapper();
+    renderHook(() => useConfigSync(COALESCE_MS), { wrapper });
+
+    // Built before `execute`, so the settle handle exists whatever order the
+    // mutation cache calls things in.
+    let settle!: () => void;
+    const refused = new Promise<void>((_resolve, reject) => {
+      settle = () => reject(new Error('refused'));
+    });
+    const mutation = queryClient.getMutationCache().build(queryClient, {
+      mutationKey: [...CONFIG_WRITE_MUTATION_KEY],
+      // REJECTING, not resolving: this is the refused write whose own handler
+      // will not invalidate anything.
+      mutationFn: () => refused,
+    });
+    void mutation.execute(undefined).catch(() => {});
+    expect(queryClient.isMutating({ mutationKey: CONFIG_WRITE_MUTATION_KEY })).toBe(1);
+
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    handlers.get('config_changed')!({ sections: ['ui'], changedAt: 'now' });
+
+    // Vetoed: nothing yet, even well past the window.
+    vi.advanceTimersByTime(COALESCE_MS * 3);
+    expect(invalidateSpy).not.toHaveBeenCalled();
+
+    // The write settles (refused). Now the held keys must flush on the next
+    // re-armed window — this is the assertion the old code failed.
+    settle!();
+    await vi.waitFor(() =>
+      expect(queryClient.isMutating({ mutationKey: CONFIG_WRITE_MUTATION_KEY })).toBe(0)
+    );
+    vi.advanceTimersByTime(COALESCE_MS);
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: configKeys.current() });
+  });
+
   it('cancels a pending flush on unmount', () => {
     const { queryClient, wrapper } = createWrapper();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');

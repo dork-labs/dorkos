@@ -49,8 +49,15 @@ export type UpsertResult = 'registered' | 'duplicate-id';
  *
  * `registered` is an id the registry had never held, `updated` is a field on an
  * id it already held (a rename, a new icon, a move), `removed` is a row that is
- * gone. Names and ids only: a subscriber that wants the manifest reads it back,
- * so this can never be a second, drifting copy of it.
+ * gone. Names and ids: a subscriber that wants the manifest reads it back, so
+ * this can never be a second, drifting copy of it.
+ *
+ * **This is the IN-PROCESS shape, and it is wider than the wire.** A server-side
+ * subscriber gets `projectPath` because it is genuinely useful in-process and
+ * costs nothing to pass. The `agents_changed` broadcast built from it does NOT
+ * carry it: that frame goes to every connection on the global stream, including
+ * an agent's, nothing on the client reads it, and the narrower payload is the
+ * one that needs no argument (`services/core/streams/live-change-broadcasts.ts`).
  */
 export interface AgentIdentityChange {
   /** What happened to the row. */
@@ -74,10 +81,14 @@ export interface AgentRegistryOptions {
    * Called once after each committed write that CHANGED an agent's identity —
    * `upsert`, `update`, `remove`, `relocate`.
    *
-   * **Health and liveness writes deliberately do not reach it.**
-   * `updateHealth` fires on every message an agent sends, and
-   * `markUnreachable`/`markReachable` already have `mesh_liveness_changed`; a
-   * roster does not redraw for either.
+   * **Health and liveness writes deliberately do not reach it, and not because
+   * nothing draws them.** The Team page and the topology view both render
+   * `healthStatus`, so health IS on screen. The reason is volume and ownership:
+   * `updateHealth` fires on every single message an agent sends, which is a
+   * per-message write rate no roster invalidation should ride; and
+   * `markUnreachable`/`markReachable` already have an event of their own,
+   * `mesh_liveness_changed`, which is what the surfaces that care subscribe to.
+   * Two events with two cadences, not one event carrying both.
    *
    * **A write that changes nothing is not a change.** The unified scanner
    * re-yields every manifest-bearing directory it walks past and the reconciler

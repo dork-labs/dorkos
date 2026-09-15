@@ -14,5 +14,5 @@ covers:
   a project you registered from a terminal, from a second window, or by asking DorkBot simply
   was not there. The same goes for settings: rearrange your sidebar in one window and the other
   follows (DOR-2052)
-- Removing an agent clears its row straight away instead of leaving it on screen for up to half
-  a minute (DOR-2052)
+- The Remove button on an agent now clears its row on the spot, instead of leaving it on screen
+  for up to half a minute in the window you clicked it in (DOR-2052)

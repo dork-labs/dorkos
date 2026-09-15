@@ -31,15 +31,19 @@ const COALESCE_MS = 500;
  * other, and what makes `dorkos config set` or an agent's `config_patch` land
  * without anyone reloading (DOR-2052).
  *
- * **It stands down while this window is mid-write.** Every config write in the
- * entity layer carries {@link CONFIG_WRITE_MUTATION_KEY}, and the sidebar's is
- * OPTIMISTIC: it paints the next state, sends the whole `ui.sidebar`, and
- * re-reads on settle. A drag is a rapid sequence of those, so a refetch fired by
- * the broadcast of an earlier write in the sequence would answer with a state
- * the later writes have already moved past, and the tail of the gesture would
- * appear to revert. Dropping the flush costs nothing: the mutation's own
- * `onSettled` invalidates the same key, so the re-read still happens, just at
- * the end of the burst rather than inside it.
+ * **It stands down while this window is mid-write, and then catches up.** Every
+ * config write in the entity layer carries {@link CONFIG_WRITE_MUTATION_KEY},
+ * and the sidebar's is OPTIMISTIC: it paints the next state, sends the whole
+ * `ui.sidebar`, and re-reads on settle. A drag is a rapid sequence of those, so
+ * a refetch fired by the broadcast of an earlier write in the sequence would
+ * answer with a state the later writes have already moved past, and the tail of
+ * the gesture would appear to revert.
+ *
+ * The veto DEFERS rather than drops — see
+ * {@link CoalescedInvalidationOptions.shouldFlush}, which holds the pending keys
+ * and re-arms. It has to: three config mutations invalidate on `onSuccess`
+ * alone, so "the mutation will re-read anyway" is false for a REFUSED write, and
+ * a dropped broadcast would leave this window showing a value nothing corrects.
  *
  * Mount once near the app root, beside the other `*Sync` hooks. In embedded
  * mode (Obsidian) the in-process transport yields no generic events, so the

@@ -28,13 +28,20 @@ import {
  * - `['agents']` — also a prefix, covering both `agentKeys.resolved` and
  *   `agentKeys.byPath`, which is where the status bar reads the manifest a new
  *   session will run under.
- * - `['team']` — **exact**. It is a prefix of `['team','rooms',<memberId>]`,
- *   which holds a different shape; the roster is the one entry meant here.
+ * - `['team']` — also a prefix, matching what `useRegisterAgent`,
+ *   `useUnregisterAgent` and `useDeleteAgentData` already sweep. `entities/team`
+ *   nests one member's rooms under it deliberately, and says so: everything
+ *   that invalidates the roster can change who is in a room, "so a prefix match
+ *   refreshing both is the behaviour rather than a side effect". An earlier cut
+ *   of this file pinned it `exact` on the theory that a prefix would reset a
+ *   live list — it would not; invalidation marks stale and refetches, it does
+ *   not clear. Nothing writes THROUGH this prefix (`setQueriesData` over a
+ *   mixed-shape family would be the real trap), which is what makes it safe.
  */
 const AGENT_IDENTITY_CACHES: readonly QueryInvalidation[] = [
   { queryKey: ['mesh'] },
   { queryKey: ['agents'] },
-  { queryKey: ['team'], exact: true },
+  { queryKey: ['team'] },
 ];
 
 /**

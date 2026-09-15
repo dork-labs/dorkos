@@ -68,9 +68,10 @@ describe('useAgentsSync', () => {
     // (`['agents','byPath',…]`, `['agents','resolved',…]`) sit under them.
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['mesh'] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['agents'] });
-    // `['team']` is EXACT: it is a prefix of `['team','rooms',<memberId>]`,
-    // which holds a different shape.
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['team'], exact: true });
+    // `['team']` is a prefix too: `entities/team` nests one member's rooms under
+    // it on purpose, and the three mesh mutations that sweep the roster already
+    // sweep it the same way.
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['team'] });
     expect(invalidateSpy).toHaveBeenCalledTimes(3);
   });
 

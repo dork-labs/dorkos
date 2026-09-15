@@ -107,6 +107,24 @@ test.describe(
           await secondBase.goto();
           await secondBase.waitForAppReady();
           await secondBase.ensureSidebarOpen();
+
+          // A sentinel on each window, planted AFTER the last navigation this
+          // test performs. Any reload — by the app, by a stray `goto`, by
+          // anything — replaces the document and takes it with it. The check at
+          // the end says why the obvious `performance` reading cannot do this.
+          for (const target of [page, second]) {
+            await target.evaluate(() => {
+              const w = window as unknown as { __dor2052: string; __dor2052Wakes: number };
+              w.__dor2052 = 'same document';
+              // The OTHER way TanStack Query refetches a stale query: the focus
+              // manager listens for `visibilitychange`. Counting them closes the
+              // last hole in this test — a pass explained by the window waking
+              // up rather than by the broadcast.
+              w.__dor2052Wakes = 0;
+              window.addEventListener('visibilitychange', () => (w.__dor2052Wakes += 1));
+              window.addEventListener('focus', () => (w.__dor2052Wakes += 1));
+            });
+          }
         });
 
         // Read the config AFTER both windows are up, so the restore below puts
@@ -198,19 +216,46 @@ test.describe(
           ).toBeVisible({ timeout: LIVE_MS });
         });
 
-        // Nothing was reloaded: prove it rather than assert it in prose. A
-        // navigation would have reset these counters to 1.
+        // Nothing was reloaded: prove it rather than assert it in prose, because
+        // a reload would make every assertion above pass for the wrong reason.
+        //
+        // **Not by counting navigation entries.** The first cut of this check
+        // asserted `performance.getEntriesByType('navigation').length === 1`,
+        // which is 1 before a reload AND 1 after it — a reload replaces the
+        // document and its performance timeline rather than appending to it, so
+        // the count never moves. That check could not fail, and review measured
+        // it failing to fail.
+        //
+        // Two things CAN tell the difference: the navigation entry's own `type`,
+        // which a reload sets to `'reload'`, and a sentinel planted on `window`
+        // after the last deliberate navigation, which a fresh document does not
+        // have.
         for (const [which, target] of [
           ['window 1', page],
           ['window 2', second],
         ] as Array<[string, Page]>) {
-          const navigations = await target.evaluate(
-            () => performance.getEntriesByType('navigation').length
-          );
+          const state = await target.evaluate(() => ({
+            navigationType: (
+              performance.getEntriesByType('navigation')[0] as
+                PerformanceNavigationTiming | undefined
+            )?.type,
+            sentinel: (window as unknown as { __dor2052?: string }).__dor2052,
+            wakes: (window as unknown as { __dor2052Wakes?: number }).__dor2052Wakes,
+          }));
           expect(
-            navigations,
-            `${which} navigated during the test, which would fake every pass`
-          ).toBe(1);
+            state.navigationType,
+            `${which} reports a reload navigation, which would fake every pass above`
+          ).not.toBe('reload');
+          expect(
+            state.sentinel,
+            `${which} lost its page-lifetime sentinel, so its document was replaced ` +
+              'and every assertion above proved nothing'
+          ).toBe('same document');
+          expect(
+            state.wakes,
+            `${which} was focused or made visible during the test, so a focus refetch ` +
+              'could explain the pass instead of the broadcast'
+          ).toBe(0);
         }
       } finally {
         if (sidebarBefore !== undefined) {

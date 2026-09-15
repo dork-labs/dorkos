@@ -323,24 +323,31 @@ export class MeshCore {
 
   /**
    * Register a callback fired once after every committed write that changed an
-   * agent's IDENTITY — registered, renamed, re-iconed, moved, removed — by any
-   * path: the HTTP routes, the in-session and external `mesh_register` /
-   * `mesh_unregister` tools, `create_agent`, a marketplace install, an agent
-   * editing itself, `syncFromDisk`, and the five-minute reconciler adopting a
-   * `.dork/agent.json`. `AgentRegistry` is the seam every one of them passes
-   * through, which is why the observer lives there rather than on each route
-   * (the eighth route would forget).
+   * agent's IDENTITY — registered, renamed, re-iconed, moved, removed — by
+   * every path that goes through the registry: the HTTP routes, the in-session
+   * and external `mesh_register` / `mesh_unregister` tools, `create_agent`, a
+   * marketplace install, an agent editing itself, `syncFromDisk`, and the
+   * five-minute reconciler adopting a `.dork/agent.json`. `AgentRegistry` is
+   * the seam every one of them passes through, which is why the observer lives
+   * there rather than on each route (the eighth route would forget).
+   *
+   * **One known path does NOT go through the registry**, so it is honest to
+   * name it rather than let "any path" quietly cover it: a marketplace agent
+   * UNINSTALL deletes `.dork/agent.json` directly, with no mesh call
+   * (`services/marketplace/flows/uninstall.ts`), so nothing fires until the
+   * reconciler's next sweep notices the manifest is gone. That is a gap in the
+   * uninstall flow rather than in this seam, and it has its own follow-up.
    *
    * The DorkOS server wires this to the `/api/events` fan-out as
    * `agents_changed`, so a sidebar in every open window follows a registration
    * immediately instead of waiting out a 30-second stale time (DOR-2052).
    *
-   * **Identity only, and only when something moved.** Health
-   * (`updateHealth`, on every message) and liveness
-   * (`markUnreachable`/`markReachable`, which already have
-   * `mesh_liveness_changed`) never reach it, and neither does a re-upsert that
-   * wrote the same values — the reconciler's scan does exactly that to every
-   * agent every five minutes.
+   * **Identity only, and only when something moved.** Health and liveness stay
+   * out — not because nothing draws them (the Team page renders `healthStatus`)
+   * but because `updateHealth` fires per message and
+   * `markUnreachable`/`markReachable` already have `mesh_liveness_changed`. A
+   * re-upsert that wrote the same values stays out too: the reconciler's scan
+   * does exactly that to every agent every five minutes.
    *
    * Callbacks are synchronous and their throws are logged and swallowed: a
    * reaction must never abort the write it rode in on.

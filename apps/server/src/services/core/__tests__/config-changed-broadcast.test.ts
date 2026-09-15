@@ -11,17 +11,26 @@
  * broken: it will work exactly as well, while writing secrets to every reader on
  * a bus that also serves the phone over a public tunnel.
  *
- * `ConfigManager.onChange` already reports `{ sections }` and nothing else, so
- * this file's job is to pin that the WIRING does not widen it — the one line
- * `index.ts` adds is carried here verbatim and driven through a real
- * `ConfigManager` writing a real file.
+ * ## What this file adds over its unit-test sibling
+ *
+ * `live-change-broadcasts.test.ts` drives the wiring with fakes and probes the
+ * decisions. This one drives the REAL `ConfigManager` — a real file on disk, a
+ * real `set`, a real dotted-path `setDot` — through the REAL
+ * {@link wireLiveChangeBroadcasts} into the REAL `eventFanOut`, with real
+ * clients attached. So it answers the question the fakes cannot: does a
+ * genuine settings write, of a genuine secret, actually put nothing but section
+ * names on the socket.
+ *
+ * Neither file copies the wiring any more. The first version of this one did,
+ * and adversarial review measured what that was worth: deleting
+ * `operatorAudience` from `index.ts` left it green.
  *
  * ## And it is addressed, not broadcast
  *
  * Settings are a person's surface. An agent holding an `/api/events` connection
- * has no business learning that somebody rearranged their sidebar, so the line
- * passes `operatorAudience` — the same gate `notification` uses. Proven here
- * with two connected clients rather than by reading the call site.
+ * has no business learning that somebody rearranged their sidebar, so the
+ * wiring passes `operatorAudience` — the same gate `notification` uses. Proven
+ * here with connected clients of each kind.
  *
  * @vitest-environment node
  */
@@ -32,7 +41,7 @@ import path from 'node:path';
 
 import { ConfigManager } from '../config-manager.js';
 import { eventFanOut, type EncodedBroadcast, type FanOutClient } from '../event-fan-out.js';
-import { operatorAudience } from '../../notifications/notification-entitlement.js';
+import { wireLiveChangeBroadcasts } from '../streams/live-change-broadcasts.js';
 import type { CallerPrincipal } from '../../../lib/caller-principal.js';
 
 /** A connected reader that just keeps what it was sent. */
@@ -70,16 +79,10 @@ beforeEach(async () => {
   manager = new ConfigManager(dir);
   detach = [];
 
-  // The one line index.ts adds, verbatim.
-  detach.push(
-    manager.onChange((change) =>
-      eventFanOut.broadcast(
-        'config_changed',
-        { sections: change.sections, changedAt: new Date().toISOString() },
-        operatorAudience
-      )
-    )
-  );
+  // The REAL wiring, the same call `index.ts` makes. No mesh: this file is
+  // about settings, and `wireLiveChangeBroadcasts` takes `undefined` there for
+  // the server-without-mesh case it already has to support.
+  wireLiveChangeBroadcasts({ meshCore: undefined, configManager: manager, eventFanOut });
 });
 
 afterEach(async () => {

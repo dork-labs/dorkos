@@ -56,7 +56,7 @@ import { TaskStore } from './services/tasks/task-store.js';
 import { createNotificationsRouter } from './routes/notifications.js';
 import { createPushRouter } from './routes/push.js';
 import { NotificationStore } from './services/notifications/notification-store.js';
-import { operatorAudience } from './services/notifications/notification-entitlement.js';
+import { wireLiveChangeBroadcasts } from './services/core/streams/live-change-broadcasts.js';
 import { NOTIFICATION_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
 import { PushSubscriptionStore } from './services/notifications/push-subscription-store.js';
 import { WebPushChannel } from './services/notifications/channels/web-push.js';
@@ -1803,24 +1803,6 @@ async function start() {
     // without either owning the other.
     meshCore.onLivenessChange(agentLivenessObserver(meshCore.agentRegistry));
 
-    // An agent was registered, renamed or removed — by ANY path (the routes,
-    // the `mesh_register`/`mesh_unregister` tools, `create_agent`, a
-    // marketplace install, an agent editing itself, the reconciler adopting a
-    // manifest on disk). Every window redraws its agent list from this instead
-    // of waiting out a 30-second stale time, which is what made a registration
-    // invisible until someone reloaded the page (DOR-2052).
-    //
-    // GLOBAL audience, unlike `config_changed` below: an agent's own roster
-    // changing is legitimate news for agents too. The payload is names, ids and
-    // the project path — never the manifest body, and never more than
-    // `GET /api/mesh/agents/paths` already serves any caller.
-    meshCore.onAgentsChanged((change) =>
-      eventFanOut.broadcast('agents_changed', {
-        ...change,
-        changedAt: new Date().toISOString(),
-      })
-    );
-
     // Start periodic reconciliation (every 5 minutes)
     meshCore.startPeriodicReconciliation(300_000);
   } catch (err) {
@@ -1865,25 +1847,12 @@ async function start() {
   // goes to the new one, without a restart.
   watchDefaultAgent(teamRoomDeps, { onChange: (listener) => configManager.onChange(listener) });
 
-  // Settings moved, so every open window re-reads them — the sidebar's sections,
-  // pins and order follow a `PATCH /api/config` from another window, the CLI, or
-  // an agent's `config_patch`, instead of waiting out a stale time (DOR-2052).
-  //
-  // SECTION NAMES ONLY, never a value: config holds credentials, and this bus
-  // reaches anything that can hold a connection. A subscriber that cares reads
-  // the value back off `GET /api/config`, which is also what keeps this event
-  // from going stale between the write and the read.
-  //
-  // Addressed with `operatorAudience`, the same gate `notification` uses:
-  // settings are a person's surface, and an agent holding an `/api/events`
-  // connection has no business learning that somebody rearranged their sidebar.
-  configManager.onChange((change) =>
-    eventFanOut.broadcast(
-      'config_changed',
-      { sections: change.sections, changedAt: new Date().toISOString() },
-      operatorAudience
-    )
-  );
+  // An agent registered, renamed or removed, and a settings write, each reaching
+  // every window that should hear it (DOR-2052). Both decisions — the global
+  // audience on one, `operatorAudience` on the other, and what each payload may
+  // carry — live in the module, where a test can drive them; a one-line wiring
+  // here could only ever be tested by a test that copied it.
+  wireLiveChangeBroadcasts({ meshCore, configManager, eventFanOut });
 
   // The milestones #team marks (team-room-home spec D5.1). Two seams feed them
   // and NEITHER is a timer: the agent-created seam below, and the activity log
