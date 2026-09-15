@@ -205,7 +205,22 @@ allow git push -u origin HEAD
 allow git log --oneline -20
 allow git stash-like-tool run
 allow gh pr create --title "chore: guard git stash and git checkout --"
+# --- quoting: bash never expands `...` or $(...) inside single quotes. ---
+allow git commit -m 'never use `git stash` here'
+allow git commit -m 'undo with $(git checkout -- x) is refused'
+allow gh pr create --body 'it'\''s `git stash pop` that ate the tree'
+# Double quotes DO substitute, so the same text there still runs it.
+block-stash git commit -m "never use `git stash` here"
+block-stash git commit -m "$(git stash)"
+block-checkout git commit -m "it's $(git checkout -- x)"
+block-stash git commit -m 'unterminated `git stash`
 CASES
+
+# --- heredocs: a quoted delimiter turns expansion off, an unquoted one does not. ---
+check 'quoted heredoc commit message naming git stash' allow \
+  "$(verdict $'git commit -m "$(cat <<\'EOF\'\nRefuses `git stash` and `git checkout -- x`.\nEOF\n)"')"
+check 'unquoted heredoc commit message runs its substitution' block-stash \
+  "$(verdict $'git commit -m "$(cat <<EOF\nRefuses `git stash` now.\nEOF\n)"')"
 
 # Quoted text that merely NAMES a blocked command must not trip the guard, or
 # writing the commit that ships this guard becomes impossible.

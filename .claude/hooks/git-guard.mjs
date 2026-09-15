@@ -91,7 +91,11 @@
  * `bash -c` and `$(...)`; subshells `( ... )`, brace groups `{ ...; }`, and
  * `for` / `while` / `if` bodies; compound splitting on `&& || ; | |& &` and
  * newlines; whitespace collapsing; and quoting, so
- * `git commit -m "ran git stash"` is not a false positive.
+ * `git commit -m "ran git stash"` is not a false positive. Substitutions follow
+ * bash too: a code span inside single quotes or a quoted heredoc (`<<'EOF'`) is
+ * text and is not inspected, while double quotes and an unquoted heredoc still
+ * are. Unreadable quoting (an unterminated quote, a heredoc that never closes)
+ * falls back to inspecting every substitution-shaped span.
  *
  * It also never sees commands run by OTHER hooks: PreToolUse fires on tool
  * calls in the agentic loop only. That is why `create-checkpoint.sh` can keep

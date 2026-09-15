@@ -126,7 +126,48 @@ allow grep -rn "pkill" scripts/
 allow node scripts/killswitch.mjs
 allow ./bin/kill-switch --dry-run
 allow curl -s http://localhost:4242/api/health
+# --- quoting: bash never expands `...` or $(...) inside single quotes. ---
+# A PR body or commit message that names a kill in a markdown code span is
+# text, not a command. Blocking it made those bodies impossible to write.
+allow gh pr create --body 'blocks `pkill` and `killall`'
+allow gh pr create --body 'see $(pkill -f x)'
+allow echo 'it'\''s `pkill`'
+allow echo "it's fine" 'and `pkill -f x` is quoted'
+# Double quotes DO substitute, so the same text there still runs the kill.
+block-name echo "`pkill -f x`"
+block-name echo "$(pkill -f x)"
+block-name echo "it's $(pkill -f x)"
+block-name gh pr create --body "blocks `pkill`"
+# A backtick between two escaped quotes sits outside every quote.
+block-name echo 'a'\' `pkill -f x` \''b'
+# Malformed quoting keeps the strict reading rather than guessing.
+block-name echo 'unterminated `pkill -f x`
 CASES
+
+# --- heredocs: a quoted delimiter turns expansion off, an unquoted one does not. ---
+# These span lines, so they cannot ride the one-line CASES table above.
+check 'quoted heredoc PR body naming a kill' allow \
+  "$(verdict $'gh pr create --body "$(cat <<\'EOF\'\nblocks `pkill`\nEOF\n)"')"
+check 'double-quoted heredoc delimiter' allow \
+  "$(verdict $'cat <<"EOF" >notes.md\nsee $(pkill -f x) and `killall`\nEOF')"
+check 'backslash-quoted heredoc delimiter' allow \
+  "$(verdict $'cat <<\\EOF >notes.md\nsee `pkill -f x`\nEOF')"
+check 'tab-stripped quoted heredoc' allow \
+  "$(verdict $'cat <<-\'EOF\' >notes.md\n\tsee `pkill -f x`\n\tEOF')"
+check 'two quoted heredocs on one line' allow \
+  "$(verdict $'cat <<\'A\' <<\'B\'\n`pkill`\nA\n$(pkill -f x)\nB')"
+check 'unquoted heredoc body with backticks' block-name \
+  "$(verdict $'cat <<EOF >notes.md\nsee `pkill -f x`\nEOF')"
+check 'unquoted heredoc body with $(...)' block-name \
+  "$(verdict $'cat <<EOF >notes.md\nsee $(pkill -f x)\nEOF')"
+check 'single quotes are literal inside an unquoted heredoc' block-name \
+  "$(verdict $'cat <<EOF >notes.md\nsee \'$(pkill -f x)\'\nEOF')"
+check 'unquoted heredoc after a quoted one on the same line' block-name \
+  "$(verdict $'cat <<\'A\' <<B\n`pkill`\nA\n$(pkill -f x)\nB')"
+check 'a live substitution after a quoted heredoc ends' block-name \
+  "$(verdict $'cat <<\'EOF\' >notes.md\n`pkill`\nEOF\necho $(pkill -f x)')"
+check 'quoted heredoc that never closes stays strict' block-name \
+  "$(verdict $'cat <<\'EOF\' >notes.md\nsee `pkill -f x`')"
 
 echo "process-guard fixtures: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
