@@ -36,6 +36,13 @@ export { ContinueStrategy } from './strategies/continue-strategy.js';
 // Persistence
 export { AgentRegistry } from './agent-registry.js';
 export type { AgentRegistryEntry } from './agent-registry.js';
+// What `MeshCore.onAgentsChanged` hands its callbacks — the server's
+// `agents_changed` broadcast is exactly this shape plus a timestamp (DOR-2052).
+export type {
+  AgentIdentityChange,
+  AgentIdentityObserver,
+  AgentRegistryOptions,
+} from './agent-registry.js';
 
 // The strip every public agent listing goes through — `projectPath`, `namespace`
 // and `scanRoot` never leave this package. Exported so a consumer that has to

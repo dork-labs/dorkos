@@ -45,7 +45,16 @@ export { useClaudeAccounts } from './server-config/use-claude-accounts';
 // The one `/config` query key, here rather than in `entities/config` because
 // `shared/` reads config too and may not import an entity. `entities/config`
 // re-exports it, so nothing above changes its import.
-export { configKeys, CONFIG_STALE_TIME_MS } from './server-config/query-keys';
+export {
+  configKeys,
+  CONFIG_STALE_TIME_MS,
+  CONFIG_WRITE_MUTATION_KEY,
+} from './server-config/query-keys';
+export { useCoalescedInvalidation } from './query/use-coalesced-invalidation';
+export type {
+  QueryInvalidation,
+  CoalescedInvalidationOptions,
+} from './query/use-coalesced-invalidation';
 export { useNow } from './use-now';
 // "Has the read answered?" — `isLoading` corrected for the persisted cache. Read
 // its doc before reaching for `isLoading` on any surface that renders an

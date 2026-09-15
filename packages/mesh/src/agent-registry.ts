@@ -44,6 +44,68 @@ export interface AgentListFilters {
  */
 export type UpsertResult = 'registered' | 'duplicate-id';
 
+/**
+ * One committed change to an agent's IDENTITY — the facts a roster draws with.
+ *
+ * `registered` is an id the registry had never held, `updated` is a field on an
+ * id it already held (a rename, a new icon, a move), `removed` is a row that is
+ * gone. Names and ids: a subscriber that wants the manifest reads it back, so
+ * this can never be a second, drifting copy of it.
+ *
+ * **This is the IN-PROCESS shape, and it is wider than the wire.** A server-side
+ * subscriber gets `projectPath` because it is genuinely useful in-process and
+ * costs nothing to pass. The `agents_changed` broadcast built from it does NOT
+ * carry it: that frame goes to every connection on the global stream, including
+ * an agent's, nothing on the client reads it, and the narrower payload is the
+ * one that needs no argument (`services/core/streams/live-change-broadcasts.ts`).
+ */
+export interface AgentIdentityChange {
+  /** What happened to the row. */
+  kind: 'registered' | 'updated' | 'removed';
+  /** The agent's ULID. */
+  agentId: string;
+  /** Where the agent lives — absent only when a removed row could not be read first. */
+  projectPath?: string;
+  /** The agent's slug (its relay subject), when known. */
+  name?: string;
+  /** The agent's display name, when it has one. */
+  displayName?: string;
+}
+
+/** Called once per committed identity write. See {@link AgentRegistryOptions.onIdentityChange}. */
+export type AgentIdentityObserver = (change: AgentIdentityChange) => void;
+
+/** Optional collaborators for {@link AgentRegistry}. */
+export interface AgentRegistryOptions {
+  /**
+   * Called once after each committed write that CHANGED an agent's identity —
+   * `upsert`, `update`, `remove`, `relocate`.
+   *
+   * **Health and liveness writes deliberately do not reach it, and not because
+   * nothing draws them.** The Team page and the topology view both render
+   * `healthStatus`, so health IS on screen. The reason is volume and ownership:
+   * `updateHealth` fires on every single message an agent sends, which is a
+   * per-message write rate no roster invalidation should ride; and
+   * `markUnreachable`/`markReachable` already have an event of their own,
+   * `mesh_liveness_changed`, which is what the surfaces that care subscribe to.
+   * Two events with two cadences, not one event carrying both.
+   *
+   * **A write that changes nothing is not a change.** The unified scanner
+   * re-yields every manifest-bearing directory it walks past and the reconciler
+   * scans every five minutes, so `upsert` is called for every registered agent
+   * on a five-minute cadence with byte-identical values. Firing on those would
+   * make this a periodic timer wearing an event's name. So each write compares
+   * the row before and after (`updatedAt` excluded, since every write moves it)
+   * and stays silent when nothing moved.
+   *
+   * Synchronous, and its throws are caught and logged: a reaction must never
+   * abort the write it rode in on.
+   */
+  onIdentityChange?: AgentIdentityObserver;
+  /** Where a throwing observer is reported. Defaults to `console`. */
+  logger?: import('@dorkos/shared/logger').Logger;
+}
+
 /** An agent entry with computed health status. */
 export interface AgentHealthEntry extends AgentRegistryEntry {
   lastSeenAt: string | null;
@@ -87,8 +149,49 @@ export class AgentRegistry {
    * Create an AgentRegistry backed by a Drizzle database instance.
    *
    * @param db - Drizzle database instance from createDb()
+   * @param options - Optional identity observer and logger.
    */
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly options: AgentRegistryOptions = {}
+  ) {}
+
+  /**
+   * Tell the identity observer that a write landed, without letting it break
+   * the write.
+   *
+   * @param change - What committed.
+   */
+  private notifyIdentityChange(change: AgentIdentityChange): void {
+    const observer = this.options.onIdentityChange;
+    if (!observer) return;
+    try {
+      observer(change);
+    } catch (err) {
+      (this.options.logger ?? console).warn('[Mesh] an agent identity observer threw', {
+        err,
+        agentId: change.agentId,
+      });
+    }
+  }
+
+  /**
+   * The row as the identity observer cares about it, serialized for comparison.
+   *
+   * `updatedAt` is dropped because every write moves it, which would make every
+   * no-op re-upsert look like a change — the exact thing the suppression exists
+   * to stop. Everything else stays in, `status` included: a re-registration
+   * clearing `unreachable` is a row coming back, and a roster wants to hear it.
+   *
+   * @param id - The agent's ULID.
+   * @returns The serialized row, or `undefined` when no row carries that id.
+   */
+  private identitySnapshot(id: string): string | undefined {
+    const row = this.db.select().from(agents).where(eq(agents.id, id)).all()[0];
+    if (!row) return undefined;
+    const { updatedAt: _updatedAt, ...rest } = row;
+    return JSON.stringify(rest);
+  }
 
   /**
    * Insert or update an agent in the registry — and refuse, writing nothing at
@@ -126,8 +229,15 @@ export class AgentRegistry {
     // Check for path conflict: different agent ID at same path
     const existingAtPath = this.getByPath(agent.projectPath);
     if (existingAtPath && existingAtPath.id !== agent.id) {
+      // Fires its own `removed`: that row is genuinely gone, and a roster
+      // drawing it has to stop.
       this.remove(existingAtPath.id);
     }
+
+    // Read the row BEFORE the write, so an upsert that changes nothing — which
+    // is what the five-minute reconciler scan does to every registered agent —
+    // stays silent. See `AgentRegistryOptions.onIdentityChange`.
+    const before = existingById ? this.identitySnapshot(agent.id) : undefined;
 
     this.db
       .insert(agents)
@@ -180,6 +290,16 @@ export class AgentRegistry {
       })
       .run();
 
+    if (this.identitySnapshot(agent.id) !== before) {
+      this.notifyIdentityChange({
+        kind: existingById ? 'updated' : 'registered',
+        agentId: agent.id,
+        projectPath: agent.projectPath,
+        name: agent.name,
+        displayName: agent.displayName,
+      });
+    }
+
     return 'registered';
   }
 
@@ -211,18 +331,41 @@ export class AgentRegistry {
     if (existing.projectPath === newPath) return true;
 
     const now = new Date().toISOString();
-    return this.db.transaction((tx) => {
+    const outcome = this.db.transaction((tx) => {
       const incumbent = tx.select().from(agents).where(eq(agents.projectPath, newPath)).all()[0];
-      if (incumbent && incumbent.id !== id) {
-        tx.delete(agents).where(eq(agents.id, incumbent.id)).run();
+      const displaced = incumbent && incumbent.id !== id ? incumbent : undefined;
+      if (displaced) {
+        tx.delete(agents).where(eq(agents.id, displaced.id)).run();
       }
       const result = tx
         .update(agents)
         .set({ projectPath: newPath, updatedAt: now, status: 'active' })
         .where(eq(agents.id, id))
         .run();
-      return result.changes > 0;
+      return { moved: result.changes > 0, displaced };
     });
+
+    // Both notifications happen AFTER the transaction commits, so a subscriber
+    // that reads the registry back never sees a row the move had not landed yet.
+    if (outcome.displaced) {
+      this.notifyIdentityChange({
+        kind: 'removed',
+        agentId: outcome.displaced.id,
+        projectPath: outcome.displaced.projectPath,
+        name: outcome.displaced.name,
+        displayName: outcome.displaced.displayName ?? undefined,
+      });
+    }
+    if (outcome.moved) {
+      this.notifyIdentityChange({
+        kind: 'updated',
+        agentId: id,
+        projectPath: newPath,
+        name: existing.name,
+        displayName: existing.displayName,
+      });
+    }
+    return outcome.moved;
   }
 
   /**
@@ -291,6 +434,7 @@ export class AgentRegistry {
 
     const merged = { ...existing, ...partial, id };
     const now = new Date().toISOString();
+    const before = this.identitySnapshot(id);
     const result = this.db
       .update(agents)
       .set({
@@ -314,17 +458,39 @@ export class AgentRegistry {
       })
       .where(eq(agents.id, id))
       .run();
+    if (result.changes > 0 && this.identitySnapshot(id) !== before) {
+      this.notifyIdentityChange({
+        kind: 'updated',
+        agentId: id,
+        projectPath: existing.projectPath,
+        name: merged.name,
+        displayName: merged.displayName,
+      });
+    }
     return result.changes > 0;
   }
 
   /**
    * Remove an agent from the registry.
    *
+   * The row is read before the delete so the identity observer can be told WHO
+   * left — after the delete there is nothing left to ask.
+   *
    * @param id - The agent's ULID
    * @returns `true` if the agent was removed, `false` if not found
    */
   remove(id: string): boolean {
+    const existing = this.options.onIdentityChange ? this.get(id) : undefined;
     const result = this.db.delete(agents).where(eq(agents.id, id)).run();
+    if (result.changes > 0) {
+      this.notifyIdentityChange({
+        kind: 'removed',
+        agentId: id,
+        projectPath: existing?.projectPath,
+        name: existing?.name,
+        displayName: existing?.displayName,
+      });
+    }
     return result.changes > 0;
   }
 

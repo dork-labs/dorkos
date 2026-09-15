@@ -218,8 +218,26 @@ export interface OperatingSkill {
  *   20 rather than 19 for the reason the entry above states, and this is the
  *   fourth time: DOR-2054 landed on `main` while this branch was in review and
  *   took 19, exactly as DOR-2055 took 18 before it. Re-bump, never keep-mine.
+ * - 21: the app updates on its own, so stop telling people to refresh (DOR-2052).
+ *   Versions 1 to 20 left `managing-agents` saying only that agent EDITS show up
+ *   live, which was a half-truth: a REGISTRATION did not, because nothing
+ *   broadcast one and every window drew its agent list from a 30-second stale
+ *   time. So the advice an agent actually reached for was "if they don't show
+ *   up, refresh the page" — observed, twice in one conversation, from DorkBot.
+ *   The server now broadcasts `agents_changed` on every identity write, so the
+ *   sentence is true; the page says so, and says plainly that a reload is never
+ *   the answer. An agent seeded at 20 keeps the half-truth and keeps giving that
+ *   advice, which is worse than an omission: the person follows it, the reload
+ *   works, and they learn that the app needs one.
+ *
+ *   21 rather than 20 for the reason the 5-then-6, 13-then-14, 18-then-19 and
+ *   19-then-20 entries above record, and this is the FIFTH time in one
+ *   programme: DOR-2055, DOR-2054 and DOR-2056 each landed on `main` while this
+ *   branch was in review, taking 18, 19 and 20 between them. `seed.ts` upgrades
+ *   only on a strictly LOWER stored stamp, so a version merely EQUAL to what
+ *   `main` ships delivers none of the four pages. Re-bump, never keep-mine.
  */
-export const OPERATING_SKILLS_VERSION = 20;
+export const OPERATING_SKILLS_VERSION = 21;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

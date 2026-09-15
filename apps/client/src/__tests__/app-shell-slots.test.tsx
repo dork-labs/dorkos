@@ -456,6 +456,21 @@ vi.mock('@/layers/entities/tunnel', async (importOriginal) => ({
   useRemoteAccessAnnouncer: () => {},
 }));
 
+// Agents and settings ride the same stream (DOR-2052): `useAgentsSync` refreshes
+// the agent caches on `agents_changed` and `useConfigSync` re-reads settings on
+// `config_changed`. No-op'd here for the same reason as the *Sync hooks above —
+// this suite mounts the shell with no `EventStreamProvider`, and
+// `useEventSubscription` throws without one.
+vi.mock('@/layers/entities/mesh', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/mesh')>()),
+  useAgentsSync: () => {},
+}));
+
+vi.mock('@/layers/entities/config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/config')>()),
+  useConfigSync: () => {},
+}));
+
 // ── Mock shared model hooks ──
 
 const mockMarkMomentShown = vi.fn();

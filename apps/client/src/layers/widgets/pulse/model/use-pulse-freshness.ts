@@ -41,7 +41,8 @@
  * So this hook is a **freshness bridge**: on any subscribed broadcast it
  * invalidates exactly the caches that broadcast can change, coalescing a burst
  * into a single trailing-edge flush so a flurry of events can't stampede the
- * queries.
+ * queries. The coalescing itself is `shared/model/query/use-coalesced-invalidation`,
+ * which this hook and the two `*Sync` hooks in `entities/` all share.
  *
  * Mount ONCE, high in the tree (the app shell), alongside the other
  * `/api/events` sync hooks. In embedded mode (Obsidian) the in-process transport
@@ -49,9 +50,12 @@
  *
  * @module widgets/pulse/model/use-pulse-freshness
  */
-import { useCallback, useEffect, useRef } from 'react';
-import { useQueryClient, type QueryKey } from '@tanstack/react-query';
-import { useEventSubscription, type KnownEvent } from '@/layers/shared/model';
+import type { QueryKey } from '@tanstack/react-query';
+import {
+  useEventSubscription,
+  useCoalescedInvalidation,
+  type KnownEvent,
+} from '@/layers/shared/model';
 import { DASHBOARD_ACTIVITY_QUERY_KEY } from '@/layers/features/dashboard-activity';
 import { ACTIVITY_QUERY_KEY } from '@/layers/features/activity-feed-page';
 import { TASK_RUNS_KEY } from '@/layers/entities/tasks';
@@ -122,42 +126,14 @@ const COALESCE_MS = 1_200;
  *   parameterised for deterministic testing.
  */
 export function usePulseFreshness(coalesceMs: number = COALESCE_MS): void {
-  const queryClient = useQueryClient();
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Query keys awaiting invalidation, de-duplicated by their serialized form so a
-  // burst touching the same cache twice still flushes it once.
-  const pendingRef = useRef(new Map<string, QueryKey>());
-
-  const flush = useCallback(() => {
-    timerRef.current = null;
-    const pending = pendingRef.current;
-    pendingRef.current = new Map();
-    // Invalidating an inactive query (e.g. the full /activity feed when off-route)
-    // only marks it stale — it refetches on next mount, never wastefully now.
-    for (const queryKey of pending.values()) {
-      void queryClient.invalidateQueries({ queryKey });
-    }
-  }, [queryClient]);
-
-  // Trailing-edge debounce: each event pushes the flush out to `coalesceMs` from
-  // now, so a burst settles into a single invalidation pass once the burst ends.
-  const schedule = useCallback(
-    (keys: readonly QueryKey[]) => {
-      for (const key of keys) pendingRef.current.set(JSON.stringify(key), key);
-      if (timerRef.current !== null) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(flush, coalesceMs);
-    },
-    [flush, coalesceMs]
-  );
-
-  // Cancel any pending flush on unmount so a fired timer can't touch an unmounted
-  // tree's query client.
-  useEffect(
-    () => () => {
-      if (timerRef.current !== null) clearTimeout(timerRef.current);
-    },
-    []
-  );
+  // The trailing-edge debounce, the de-duplication and the unmount cancel all
+  // live in `useCoalescedInvalidation` now (DOR-2052). This hook had its own
+  // byte-for-byte copy of them until the shared one existed; two copies of a
+  // timing primitive is exactly the kind of thing that drifts silently, so the
+  // copy is gone rather than tolerated.
+  const invalidate = useCoalescedInvalidation({ coalesceMs });
+  const schedule = (keys: readonly QueryKey[]) =>
+    invalidate(keys.map((queryKey) => ({ queryKey })));
 
   // One subscription per event name (fixed count → rules-of-hooks safe). Every
   // handler funnels into the same coalesced `schedule` with that event's caches.

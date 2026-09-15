@@ -489,6 +489,10 @@ The `EventStreamProvider` manages a single connection to `/api/events` shared ac
 - `relay_signal` — relay control signal
 - `interaction_pending` — an agent is parked on something only a person can answer (a tool approval, a question, or an MCP elicitation), fired once when the prompt appears — see `specs/unified-conversation` §3
 - `interaction_resolved` — that prompt was answered, cancelled, or timed out
+- `agents_changed` — an agent was registered, renamed or removed, by any path that reaches the mesh registry. Names and ids only, and only when the write changed something; `useAgentsSync` invalidates the agent caches rather than reading the payload (DOR-2052)
+- `config_changed` — settings were written. **Section names only, never a value** — config holds credentials, and this one is ADDRESSED (`operatorAudience`), so an agent's connection never receives it. `useConfigSync` re-reads `GET /api/config` (DOR-2052)
+
+This list is not automatic. `GENERIC_EVENTS` in `shared/lib/transport/stream-manager.ts` is the machine-checked one (`services/core/__tests__/sse-event-allowlist.test.ts` compares it against every name the server broadcasts); keeping the prose here in step is part of shipping a generic event, per `specs/unified-conversation/04-implementation.md`.
 
 **Example** (from `use-tunnel-sync.ts`):
 

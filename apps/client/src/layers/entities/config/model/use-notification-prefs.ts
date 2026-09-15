@@ -13,7 +13,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { NotificationPrefs } from '@dorkos/shared/config-schema';
 import { NOTIFICATION_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
 import type { ServerConfig } from '@dorkos/shared/types';
-import { useTransport } from '@/layers/shared/model';
+import { useTransport, CONFIG_WRITE_MUTATION_KEY } from '@/layers/shared/model';
 import { configKeys } from '../api/query-keys';
 import { useConfig } from './use-config';
 
@@ -125,6 +125,7 @@ export function useNotificationPrefs(): NotificationPrefsState {
     NotificationPrefsPatch,
     { previous: ServerConfig | undefined }
   >({
+    mutationKey: CONFIG_WRITE_MUTATION_KEY,
     mutationFn: (patch) => transport.updateConfig({ notifications: patch }),
     onMutate: async (patch) => {
       await queryClient.cancelQueries({ queryKey: configKeys.current() });

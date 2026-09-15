@@ -303,6 +303,23 @@ export const GENERIC_EVENTS = [
   // receives neither.
   'notification',
   'notification_read',
+  // An agent was registered, renamed or removed, by any path that reaches the
+  // mesh registry — the routes, the `mesh_register`/`mesh_unregister` tools,
+  // `create_agent`, a marketplace install, an agent editing itself, or the
+  // reconciler adopting a manifest it found on disk. `useAgentsSync`
+  // (entities/mesh) reads it and refreshes the agent caches, so a registration
+  // shows up in every open window instead of waiting out a 30-second stale time
+  // (DOR-2052). Names and ids only — no directory, no manifest; the hook
+  // invalidates and refetches rather than reading the payload at all.
+  'agents_changed',
+  // Settings were written — `PATCH /api/config`, `dorkos config set`, an
+  // agent's `config_patch`. `useConfigSync` (entities/config) reads it and
+  // re-reads the config, which is what makes the sidebar's sections, pins and
+  // order follow a change made in another window. ADDRESSED like the two
+  // `notification` events above: settings are a person's surface. The payload
+  // carries the SECTION NAMES only — never a value, because config holds
+  // credentials.
+  'config_changed',
 ] as const;
 
 /** A member of {@link GENERIC_EVENTS}. */

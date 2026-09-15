@@ -56,6 +56,7 @@ import { TaskStore } from './services/tasks/task-store.js';
 import { createNotificationsRouter } from './routes/notifications.js';
 import { createPushRouter } from './routes/push.js';
 import { NotificationStore } from './services/notifications/notification-store.js';
+import { wireLiveChangeBroadcasts } from './services/core/streams/live-change-broadcasts.js';
 import { NOTIFICATION_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
 import { PushSubscriptionStore } from './services/notifications/push-subscription-store.js';
 import { WebPushChannel } from './services/notifications/channels/web-push.js';
@@ -1845,6 +1846,13 @@ async function start() {
   // change the default agent in Settings and the next thing you type in #team
   // goes to the new one, without a restart.
   watchDefaultAgent(teamRoomDeps, { onChange: (listener) => configManager.onChange(listener) });
+
+  // An agent registered, renamed or removed, and a settings write, each reaching
+  // every window that should hear it (DOR-2052). Both decisions — the global
+  // audience on one, `operatorAudience` on the other, and what each payload may
+  // carry — live in the module, where a test can drive them; a one-line wiring
+  // here could only ever be tested by a test that copied it.
+  wireLiveChangeBroadcasts({ meshCore, configManager, eventFanOut });
 
   // The milestones #team marks (team-room-home spec D5.1). Two seams feed them
   // and NEITHER is a timer: the agent-created seam below, and the activity log

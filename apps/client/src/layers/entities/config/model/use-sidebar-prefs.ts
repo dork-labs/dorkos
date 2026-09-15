@@ -22,7 +22,7 @@ import type {
   SidebarDisplayFilter,
 } from '@dorkos/shared/config-schema';
 import { SIDEBAR_PREFS_DEFAULTS, sameSidebarItem } from '@dorkos/shared/config-schema';
-import { useTransport } from '@/layers/shared/model';
+import { useTransport, CONFIG_WRITE_MUTATION_KEY } from '@/layers/shared/model';
 import { configKeys } from '../api/query-keys';
 import { useConfig } from './use-config';
 
@@ -91,6 +91,7 @@ export function useUpdateSidebarPrefs(): UpdateSidebarPrefs {
   const inFlightRef = useRef(0);
 
   const mutation = useMutation<void, Error, SidebarPrefs, { previous: ServerConfig | undefined }>({
+    mutationKey: CONFIG_WRITE_MUTATION_KEY,
     mutationFn: (next) => transport.updateConfig({ ui: { sidebar: next } }),
     onMutate: async (next) => {
       await queryClient.cancelQueries({ queryKey: configKeys.current() });

@@ -42,3 +42,22 @@ export const configKeys = {
  * have to tolerate.
  */
 export const CONFIG_STALE_TIME_MS = 30_000;
+
+/**
+ * The mutation key every config WRITE carries.
+ *
+ * TanStack Query does not track mutations by what they write, so without one
+ * shared key there is no way to ask "is this window mid-write?" — and that
+ * question is what `useConfigSync` needs before it refetches settings on
+ * somebody else's `config_changed`. The sidebar's write is optimistic and a drag
+ * is a rapid sequence of them, so a refetch fired inside the gesture answers
+ * with a state the later writes have already moved past.
+ *
+ * It lives beside {@link configKeys}, in `shared/`, for the same reason that key
+ * does: config is written from `entities/config` AND from `entities/mesh`
+ * (`useMeshScanRoots`), and one entity may not import another's constant.
+ *
+ * Carrying it costs a mutation nothing else — nothing keys a cache or a
+ * deduplication off it, and `useMutation` treats it as a label.
+ */
+export const CONFIG_WRITE_MUTATION_KEY = ['config', 'write'] as const;

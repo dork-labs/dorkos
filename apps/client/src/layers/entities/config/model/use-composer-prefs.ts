@@ -16,7 +16,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { ServerConfig } from '@dorkos/shared/types';
 import type { ComposerPrefs } from '@dorkos/shared/config-schema';
 import { COMPOSER_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
-import { useTransport } from '@/layers/shared/model';
+import { useTransport, CONFIG_WRITE_MUTATION_KEY } from '@/layers/shared/model';
 import { configKeys } from '../api/query-keys';
 import { useConfig } from './use-config';
 
@@ -69,6 +69,7 @@ export function useUpdateComposerPrefs(): UpdateComposerPrefs {
   const queryClient = useQueryClient();
 
   const mutation = useMutation<void, Error, boolean, { previous: ServerConfig | undefined }>({
+    mutationKey: CONFIG_WRITE_MUTATION_KEY,
     mutationFn: (richText) => transport.updateConfig({ ui: { composer: { richText } } }),
     onMutate: async (richText) => {
       await queryClient.cancelQueries({ queryKey: configKeys.current() });

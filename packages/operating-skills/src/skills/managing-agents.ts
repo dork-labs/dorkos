@@ -121,7 +121,7 @@ first. Changing another agent's identity is a bigger action than tuning your own
 ## Remove an agent (tier: destructive)
 
 \`mesh_unregister\` is the only tool you have for removing an agent (a person can
-also do it from the cockpit), and it takes more than its name suggests: it
+also do it from the DorkOS app), and it takes more than its name suggests: it
 deletes the agent's \`.dork/agent.json\` from disk, tears down its
 message endpoint (undelivered messages included), and turns off its scheduled
 tasks. It is \`destructive\` tier, so it does NOT run until a person approves it. The
@@ -143,5 +143,11 @@ work around the guard: it is enforced server-side and will return an error.
 ## After you change an agent
 
 Report what changed in plain terms ("Renamed the review bot to 'Critic' and made
-it terser"). The cockpit reflects agent edits live, so the user sees it too.`,
+it terser").
+
+**Never tell anyone to refresh the page.** Registering, renaming or removing an
+agent updates the DorkOS app on its own, in every window that is open. The
+sidebar, the Team page and the agent's own card all follow within about a
+second. If you have just done one of those and someone says they cannot see it,
+something is wrong and the honest answer is to say so, not to suggest a reload.`,
 };
