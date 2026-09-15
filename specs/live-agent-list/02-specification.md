@@ -59,7 +59,7 @@ In `apps/server/src/services/runtimes/claude-code/mcp-tools/mesh-tools.ts` (and 
 
 Two `act`-tier operator capabilities in `operator-capabilities.ts`, backed by the same validated write path as `config_patch`:
 
-- `operator.sidebar_add_to_group { group: string (name or id), items: SidebarItemRef[], createIfMissing?: boolean }` — reads config fresh, finds the group by id then case-insensitive name, appends items not already present (`sameSidebarItem` from `@dorkos/shared/config-schema`), writes back the **whole `ui.sidebar` section** (the write contract), leaves every other group untouched. Returns the group as saved.
+- `operator.sidebar_add_to_group { group: string (name or id), items: SidebarItemRef[], createIfMissing?: boolean }` — reads config fresh, finds the group by id then case-insensitive name, appends items not already present (`sameSidebarItem` from `@dorkos/shared/config-schema`), writes back the **whole `ui.sidebar` section** (the write contract). Membership is single-parent, so an item already in another manual group is **moved**: it is lifted out of every other group exactly as the client's `moveToGroup` does, and the groups it left come back as `movedFrom: [{ groupId, name }]`. Apart from those, every other group is untouched. Returns the group as saved.
 - `operator.sidebar_remove_from_group { group, items }` — symmetric.
 
 Person-only settings guard applies as for `config_patch`. Update `mcp-server.test.ts` tool counts and `tool-exposure.ts` if these should be visible by default (they should: DorkBot organising the sidebar is the "Ask DorkBot" use case). Skill pack: prefer these over `config_patch` for sidebar changes.
