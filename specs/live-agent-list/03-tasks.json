@@ -1,0 +1,87 @@
+{
+  "spec": "specs/live-agent-list/02-specification.md",
+  "slug": "live-agent-list",
+  "generatedAt": "2026-09-15T12:40:00.000Z",
+  "mode": "full",
+  "lastDecomposeDate": "2026-09-15",
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "P1 \u2014 Live agents and settings",
+      "subject": "[live-agent-list] [P1] agents_changed + config_changed on /api/events, client sync hooks, browser proof",
+      "description": "Implement spec \u00a72.1\u2013\u00a72.6 as ONE PR: (a) `AgentRegistry` identity-write observer surfaced as `MeshCore.onAgentsChanged`, fired after `upsert`/`update`/`remove`/`relocate` and NEVER from `updateHealth`/`markUnreachable`/`markReachable` (pinned by a test); wired in `index.ts` to `eventFanOut.broadcast('agents_changed', {kind, agentId, projectPath, name, displayName, changedAt})`; (b) `configManager.onChange` \u2192 `eventFanOut.broadcast('config_changed', {sections, changedAt}, operatorAudience)`, payload never carries a config value (test); (c) both names on `GENERIC_EVENTS` (sse-event-allowlist test green) and in `docs/integrations/sse-protocol.mdx`; (d) `useAgentsSync` (entities/mesh) invalidating ['mesh'], ['agents'], ['team'] exact, coalesced; `useConfigSync` (entities/config) invalidating `configKeys.current()` unless a config mutation is in flight; both mounted in AppShell beside `useTasksSync`; (e) `use-mesh-unregister.ts` also invalidates ['mesh','agent-paths'] and ['agents']; (f) a coverage test driving every mutation entry point (routes, self-edit, syncFromDisk, reconciler, in-session tool) and asserting one broadcast each; (g) browser proof per \u00a72.5 \u2014 register/rename/delete via API and PATCH /api/config, rows follow with no reload, two windows follow; (h) skill pack sentence in `packages/operating-skills/src/skills/managing-agents.ts` + version bump in `pack.ts`; (i) changelog fragment.\n\nAcceptance: all of the above with `pnpm verify` green in the worktree and the browser proof attached to the PR.",
+      "activeForm": "Making agent and settings changes reach every open window live",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "1.2",
+        "1.3"
+      ],
+      "issue": "DOR-2052"
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "P1 \u2014 DorkBot tooling",
+      "subject": "[live-agent-list] [P1] list_capabilities accepts a call without limit",
+      "description": "Spec \u00a73.1. Reproduce through the in-session projection (`capability-mcp-tools.ts` \u2192 Agent SDK `tool()` with `capabilityInputShape`) by calling `list_capabilities` with `{}`; observed on 0.75.1: `MCP error -32602 \u2026 limit: expected nonoptional, received undefined` even though `catalog-projection.ts:204` gives `limit` a Zod `.default`. Find where the default is lost (the shape helper, the Agent SDK raw-shape wrapper, or a JSON-schema round trip) and fix at the cause. Sweep every capability input that uses `.default` and add a test that invokes each projected tool with `{}`. Changelog fragment.\n\nAcceptance: the reproduction test fails before the fix and passes after; no `.optional()` sprinkled as a workaround.",
+      "activeForm": "Fixing list_capabilities rejecting calls without limit",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "1.1",
+        "1.3"
+      ],
+      "issue": "DOR-2053"
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "P1 \u2014 DorkBot tooling",
+      "subject": "[live-agent-list] [P1] mesh_register accepts displayName, icon and color; name is honestly the slug",
+      "description": "Spec \u00a73.2. In `services/runtimes/claude-code/mcp-tools/mesh-tools.ts` (and wherever the external `/mcp` server projects the same definition) add optional `displayName`, `icon` (one emoji) and `color` (hex) and pass them through `registerByPath`'s partial. Rewrite the `name` description: it is the immutable slug (relay subject); when a caller passes a display-style name with spaces, store a slug derived the same way `createAgentWorkspace` does and put the original in `displayName`. HTTP `RegisterAgentRequestSchema.overrides` already accepts the fields. Skill pack: `managing-agents.ts` mentions the three fields; bump `pack.ts` version. Tests + changelog fragment.\n\nAcceptance: registering with `{name:'DorkOS Cloud', icon:'\ud83d\udd2e'}` yields slug `dorkos-cloud`, displayName `DorkOS Cloud`, icon \ud83d\udd2e; existing callers unchanged.",
+      "activeForm": "Giving mesh_register identity fields",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": [],
+      "parallelWith": [
+        "1.1",
+        "1.2"
+      ],
+      "issue": "DOR-2054"
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "P2 \u2014 DorkBot tooling (operator capabilities)",
+      "subject": "[live-agent-list] [P2] sidebar_add_to_group / sidebar_remove_from_group capabilities",
+      "description": "Spec \u00a73.3. Two `act`-tier operator capabilities in `services/core/operator/operator-capabilities.ts`, backed by the same validated write path as `config_patch` (`config-write.ts` / `config-patch.ts`): `operator.sidebar_add_to_group {group, items: SidebarItemRef[], createIfMissing?}` and `operator.sidebar_remove_from_group {group, items}`. Read config fresh, match group by id then case-insensitive name, dedupe with `sameSidebarItem`, write the whole `ui.sidebar` section, leave other groups byte-identical (test). Update `mcp-server.test.ts` counts and `tool-exposure.ts` (visible by default). Skill pack: prefer these over `config_patch` for sidebar edits; bump version. Changelog fragment.\n\nAcceptance: adding three items to 'DorkOS' touches only that group; a missing group with createIfMissing creates it; refused without it.",
+      "activeForm": "Adding targeted sidebar-group capabilities",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-2055"
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "P2 \u2014 DorkBot tooling (operator capabilities)",
+      "subject": "[live-agent-list] [P2] feedback_draft capability returning the prefilled report link",
+      "description": "Spec \u00a73.4. `operator.feedback_draft {kind:'bug'|'feature'|'runtime', title?, body?}` tier `observe`; gathers the server-side report (version, OS, runtimes, sanitised flags via `sanitizeFlags`) and calls the existing `buildIssueUrl` in `packages/shared/src/feedback.ts` \u2014 no third URL builder. Returns `{url, filledFields}`. Update tool counts/exposure. Skill pack `answering-dorkos-questions.ts`: how to answer 'can you file a bug' \u2014 draft, show the link, never claim the CLI is off-limits; bump version. Changelog fragment. Stack on 2.1's branch if it is still in the queue.\n\nAcceptance: the URL equals what `dorkos feedback --print` prints for the same inputs (shared test), no secret or path reaches it.",
+      "activeForm": "Adding the feedback_draft capability",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": [
+        "2.1"
+      ],
+      "parallelWith": [],
+      "issue": "DOR-2056"
+    }
+  ]
+}
