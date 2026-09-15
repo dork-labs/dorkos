@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(sessions): a session started from a room titles itself, not the prompt that started it (DOR-2083)'
+  - "fix(sessions): Claude Code sessions use the SDK's ai-title, not the first prompt (DOR-2083)"
 ---
 
 ### Fixed

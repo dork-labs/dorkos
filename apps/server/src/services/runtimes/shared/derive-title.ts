@@ -24,11 +24,38 @@ const PURE_COURTESY_LINE =
  * A leading `@handle` a room delivers at the very start of a message that
  * addressed this agent — `@meeting-notes please review…` — see
  * `packages/shared/src/handle.ts` for the full charset a handle allows.
- * Stripped before derivation so the mention that routed the message here
- * never becomes the session's title; only one leading mention is stripped,
- * since the pattern is anchored and matches once.
+ * Stripped before derivation, ONLY when the caller opts in via
+ * {@link DeriveSessionTitleOptions.stripLeadingMention}, so the mention that
+ * routed the message here never becomes the session's title; only one leading
+ * mention is stripped, since the pattern is anchored and matches once.
+ *
+ * This pattern is syntactically indistinguishable from plenty of real,
+ * non-mention content that also opens a line with `@word` — `@override this
+ * method…`, `@media queries…`, `@ts-expect-error…`, `@import rules…`, `@echo
+ * off…` all match it. A room mention and a doc-comment tag or a shell/CSS/TS
+ * directive look identical from here; only the caller knows which one it has.
+ * That is why this is opt-in rather than automatic (DOR-2083 review).
  */
 const LEADING_MENTION = /^@[a-z0-9](?:[a-z0-9._-]{0,30}[a-z0-9])?[,:]?\s+/i;
+
+/** Options for {@link deriveSessionTitle}. */
+export interface DeriveSessionTitleOptions {
+  /**
+   * Strip a leading room `@mention` before deriving. Pass this ONLY when the
+   * caller positively knows the message is a room turn that opened with a
+   * mention — e.g. a room-bound trigger that read the addressing off the room
+   * entry itself, never a generic first-message reading. No caller in this
+   * repo has that knowledge at the point it calls this function today (the
+   * claude-code transcript reader derives a title before a session's `room`
+   * origin is known — that overlay runs later, on the aggregated list — and
+   * the codex/opencode/test-mode registries have no room concept at all), so
+   * this defaults to `false` and nothing currently opts in. A future caller
+   * that CAN prove room-turn origin should pass `true`; everyone else must
+   * leave real `@override`/`@media`/`@ts-expect-error`/`@import`/`@echo`
+   * content alone.
+   */
+  stripLeadingMention?: boolean;
+}
 
 /** Word budget for a derived title — matches the sidebar row grammar's target. */
 const MAX_WORDS = 6;
@@ -65,19 +92,28 @@ function capitalizeFirst(text: string): string {
  * Shared across every runtime's fallback-title path so the app titles
  * sessions one way (DOR-1055). SDK/runtime-generated titles stay
  * authoritative — this runs only when no real title exists. Behavior: a
- * leading `@handle` a room delivered to address this agent is stripped
- * first, then the first content line wins (a line that is only "Please,"
- * defers to the next line), stacked courtesy openers are stripped, the
- * result is cut at a word boundary within a {@link MAX_WORDS}-word budget
- * and {@link TRANSCRIPT.TITLE_MAX_LENGTH} codepoints, capitalized, and
- * marked with an ellipsis only when words were actually dropped from that
- * line.
+ * leading room `@mention` is stripped first, but ONLY when
+ * `options.stripLeadingMention` is `true` (see its TSDoc — the pattern also
+ * matches real content like `@override`/`@media`/`@ts-expect-error`, so
+ * stripping it is never safe as a default); then the first content line wins
+ * (a line that is only "Please," defers to the next line), stacked courtesy
+ * openers are stripped, the result is cut at a word boundary within a
+ * {@link MAX_WORDS}-word budget and {@link TRANSCRIPT.TITLE_MAX_LENGTH}
+ * codepoints, capitalized, and marked with an ellipsis only when words were
+ * actually dropped from that line.
  *
  * @param firstUserMessage - The cleaned first user message text (may be empty)
+ * @param options - See {@link DeriveSessionTitleOptions}.
  * @returns The derived title, or `''` when the message is empty/whitespace
  */
-export function deriveSessionTitle(firstUserMessage: string): string {
-  const lines = firstUserMessage.replace(LEADING_MENTION, '').split('\n');
+export function deriveSessionTitle(
+  firstUserMessage: string,
+  options?: DeriveSessionTitleOptions
+): string {
+  const source = options?.stripLeadingMention
+    ? firstUserMessage.replace(LEADING_MENTION, '')
+    : firstUserMessage;
+  const lines = source.split('\n');
 
   for (const raw of lines) {
     const line = raw.trim();

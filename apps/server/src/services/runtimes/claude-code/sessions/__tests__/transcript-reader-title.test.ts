@@ -57,6 +57,11 @@ describe('TranscriptReader title precedence (DOR-2083)', () => {
     reader = new TranscriptReader();
     dir = await mkdtemp(join(tmpdir(), 'transcript-title-'));
     hoisted.sdkInfo = undefined;
+    // Reset alongside sdkInfo — a value leaked from the '/rename still wins'
+    // test would make an UNRELATED session's transcript directory read as the
+    // active account in a later test, silently arming the SDK customTitle path
+    // it must not reach.
+    hoisted.configDirForActive = '';
   });
 
   afterEach(async () => {
@@ -92,11 +97,23 @@ describe('TranscriptReader title precedence (DOR-2083)', () => {
     expect(session?.title).toBe('Portugal capital, history, and culture');
   });
 
-  it('derives from the first message (mention stripped) when no title record exists at all', async () => {
-    await writeTranscript(dir, 'sess-none', [userLine('@agent do the thing')]);
+  it('derives from the first message verbatim when no title record exists at all', async () => {
+    // Purpose: DOR-2083 review — the reader does not know at derivation time
+    // whether a message came from a room (that overlay runs later, on the
+    // aggregated session list), so it must NOT opt into mention-stripping;
+    // a leading @-token that happens to be real content (`@override`,
+    // `@media`, …) must survive untouched, same as any other fallback title.
+    await writeTranscript(dir, 'sess-none', [userLine('do the thing')]);
 
     const [session] = await reader.listSessionsInDir(dir);
     expect(session?.title).toBe('Do the thing');
+  });
+
+  it('does not strip a leading @-token from the fallback derivation (no room-turn signal at read time)', async () => {
+    await writeTranscript(dir, 'sess-mention-kept', [userLine('@agent do the thing')]);
+
+    const [session] = await reader.listSessionsInDir(dir);
+    expect(session?.title).toBe('@agent do the thing');
   });
 
   it('/rename still wins over a later ai-title', async () => {
@@ -121,12 +138,31 @@ describe('TranscriptReader title precedence (DOR-2083)', () => {
     expect(session?.title).toBe('Renamed in the app');
   });
 
+  it('/rename still wins on a NON-active account, even with a newer ai-title', async () => {
+    // Purpose: the SDK-backed customTitle lookup (resolveSdkTitle) is gated to
+    // the active account (D8) and returns {} here on purpose — configDirForActive
+    // is left at '' by beforeEach, so this transcript's account can never match
+    // it. Without reading the transcript's OWN `custom-title` record, a rename
+    // on this account would fall through past customTitle straight to
+    // tailStatus.aiTitle, which is newer and would silently win — the DOR-2083
+    // review bug. `hoisted.sdkInfo` is also left undefined so nothing besides
+    // the transcript itself can be supplying the rename.
+    await writeTranscript(dir, 'sess-nonactive-renamed', [
+      userLine('@meeting-notes please review all of our notes'),
+      customTitleLine('sess-nonactive-renamed', 'Renamed in the app'),
+      aiTitleLine('sess-nonactive-renamed', 'Review meeting notes'),
+    ]);
+
+    const [session] = await reader.listSessionsInDir(dir);
+    expect(session?.title).toBe('Renamed in the app');
+  });
+
   it('updates the title live when a fresh ai-title lands, with no stale echo on re-read', async () => {
     // Purpose: DOR-2083 task 3 — the session-list watcher's rescan re-reads
     // metadata via the SAME mtime-keyed cache exercised here; the fix must not
     // require a reload to pick up a title that changed after the first list.
     const filePath = await writeTranscript(dir, 'sess-live', [
-      userLine('@meeting-notes please review all of our notes'),
+      userLine('please review all of our notes'),
     ]);
 
     const [before] = await reader.listSessionsInDir(dir);
