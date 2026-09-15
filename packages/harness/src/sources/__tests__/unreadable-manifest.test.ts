@@ -21,7 +21,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { scanInstalledSources } from '../installed.js';
 import { globalSkillsDir, projectGlobal } from '../../plan/global-projector.js';
 import { findGlobalOrphans } from '../../apply/global-apply.js';
@@ -81,6 +81,11 @@ describe('SRC-04 — a manifest DorkOS cannot read is named, not dropped', () =>
     const scan = scanInstalledSources({ dorkHome });
 
     expect(scan.plugins.map((p) => p.name)).toEqual(['goodpkg']);
+    // A GLOBAL record's path is a real file on this machine, so it is `join`ed
+    // and carries this OS's separators throughout. Composing it from the
+    // package's `/`-joined display prefix spelled one path two ways on Windows —
+    // `C:\…\plugins\badmanifest/.dork/manifest.json` (DOR-1933, measured on
+    // the `harness-windows` runner). Asserted with `join`, never normalised.
     expect(scan.unreadableManifests).toEqual([
       {
         package: 'badmanifest',
@@ -88,6 +93,11 @@ describe('SRC-04 — a manifest DorkOS cannot read is named, not dropped', () =>
         scope: 'global',
       },
     ]);
+    // The same rule said in a way that is checkable on both platforms rather
+    // than only on the one that has two separators: every separator in it is
+    // this platform's.
+    const recorded = scan.unreadableManifests[0]?.path ?? '';
+    expect(recorded.includes('/')).toBe(sep === '/');
   });
 
   it('SRC-04: the global plan warns once, agnostically, and does not enumerate the package', () => {
@@ -98,7 +108,10 @@ describe('SRC-04 — a manifest DorkOS cannot read is named, not dropped', () =>
     const about = plan.warnings.filter((w) => w.name === 'badmanifest');
     expect(about).toHaveLength(1);
     expect(about[0]?.harnessAgnostic).toBe(true);
+    // Native, for the reason the case above gives: this is a global package, so
+    // the warning names a file somebody can open.
     expect(about[0]?.source).toBe(join(brokenDir, '.dork', 'manifest.json'));
+    expect(about[0]?.source?.includes('/')).toBe(sep === '/');
     expect(about[0]?.reason).toContain(join(brokenDir, '.dork', 'manifest.json'));
     // The package is named by the warning, once: the terminal and the page both
     // draw `name` beside the sentence, so saying it again read as
@@ -145,6 +158,11 @@ describe('SRC-04 — a manifest DorkOS cannot read is named, not dropped', () =>
     const about = plan.warnings.filter((w) => w.name === 'badmanifest');
     expect(about).toHaveLength(1);
     expect(about[0]?.harnessAgnostic).toBe(true);
+    // The PROJECT spelling, and the opposite rule: a repo-relative path is a
+    // display convention rather than a path this machine opens, so it is
+    // `/`-joined on every platform — the same spelling `relDir` and every
+    // `sourceDir` beside it use. This assertion is a literal, so it holds
+    // Windows to it too.
     expect(about[0]?.source).toBe('.dork/plugins/badmanifest/.dork/manifest.json');
   });
 });

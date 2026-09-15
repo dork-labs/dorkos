@@ -226,8 +226,17 @@ export interface UnreadablePackageManifest {
    */
   package: string;
   /**
-   * The manifest file, spelled the way this package's own paths are spelled —
-   * repo-relative under a project install, absolute under a global one.
+   * The manifest file: the absolute path the OS spells under a global install,
+   * and the repo-relative display path under a project one.
+   *
+   * **Two spellings, because they are two different things, and mixing them
+   * produced a path with both separators in it on Windows** — `C:\…\plugins\badmanifest/.dork/manifest.json`
+   * (measured on the `harness-windows` runner, DOR-1933). A global package has
+   * no repository, so what a person is shown is a real path they can open, and
+   * a real path is `join`ed. A project package's paths are repo-relative, which
+   * is a display convention rather than a filesystem one and is `/`-joined on
+   * every platform, exactly as `InstalledLocation.relDir` and every `sourceDir`
+   * beside it are.
    */
   path: string;
   /** Which install root it came from. */
@@ -285,6 +294,21 @@ interface PluginIdentity {
 }
 
 /**
+ * Where a package's DorkOS manifest is, as a real path this machine can open.
+ *
+ * One function so the file the reader OPENS and the file a failure REPORTS are
+ * provably the same one, and so neither is ever composed by hand: a `/`-joined
+ * tail under a `\`-separated Windows root is a path spelled two ways at once
+ * (DOR-1933).
+ *
+ * @param pluginDir - the package's install directory, absolute.
+ * @returns the absolute manifest path, separators as this OS writes them.
+ */
+function dorkManifestPath(pluginDir: string): string {
+  return join(pluginDir, '.dork', 'manifest.json');
+}
+
+/**
  * Read + validate a plugin's identity: `.dork/manifest.json` first, falling
  * back to the Claude Code plugin manifest (`.claude-plugin/plugin.json`) for
  * CC-native packages installed without a DorkOS manifest — the marketplace
@@ -302,7 +326,7 @@ interface PluginIdentity {
  * around. `undefined` means neither manifest is present or valid.
  */
 function readPluginManifest(pluginDir: string): PluginIdentity | 'unreadable' | undefined {
-  const manifestPath = join(pluginDir, '.dork', 'manifest.json');
+  const manifestPath = dorkManifestPath(pluginDir);
   if (!existsSync(manifestPath)) return readCcPluginManifest(pluginDir);
   let raw: unknown;
   try {
@@ -676,7 +700,16 @@ function scanPluginsRoot(
     if (manifest === 'unreadable') {
       unreadableManifests.push({
         package: entry.name,
-        path: `${sourcePrefix}/.dork/manifest.json`,
+        // NOT `sourcePrefix`, and this is the one asset that must not use it.
+        // `sourcePrefix` is `/`-joined at both scopes on purpose (see above), so
+        // under a global install — where the prefix is a real absolute
+        // directory — appending a `/` tail spells one path two ways on Windows.
+        // A global record names the file the OS names; a project record stays a
+        // repo-relative display path.
+        path:
+          location.scope === 'global'
+            ? dorkManifestPath(pluginDir)
+            : `${location.relDir}/.dork/manifest.json`,
         scope,
       });
       continue;

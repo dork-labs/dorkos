@@ -5,6 +5,7 @@ covers:
   - "fix(server,tasks): a packaged skill's schedule ends when its link does (DOR-1934)"
   - 'fix(server,tasks): one surviving link no longer keeps a swept skill armed (DOR-1934)'
   - 'fix(harness): a report line names the package or the folder once (DOR-1933, DOR-1935)'
+  - "fix(harness): the unreadable manifest's path is spelled the way the OS does (DOR-1933)"
 ---
 
 ### Fixed
