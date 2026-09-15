@@ -334,7 +334,14 @@ describe('DOR-1938 — an inventory warning is a sentence, not an errno', () => 
     stageErrnoTree();
 
     const { unreadable } = inventorySourceTree(repo);
-    expect(unreadable.length).toBeGreaterThanOrEqual(CAN_MAKE_UNREADABLE ? 3 : 2);
+    // Exactly what this tree stages, not "at least": a floor passes just as
+    // happily over a walk that stopped early, which is the failure the records
+    // themselves exist to end.
+    expect(unreadable.map((record) => record.source).sort()).toEqual(
+      CAN_MAKE_UNREADABLE
+        ? ['.agents/skills', '.claude/agents', '.claude/settings.json']
+        : ['.agents/skills', '.claude/settings.json']
+    );
     for (const record of unreadable) {
       expect(record.reason, `${record.source}: ${record.reason}`).not.toContain(repo);
       expect(record.reason, `${record.source}: ${record.reason}`).not.toMatch(/E[A-Z]+:/);
