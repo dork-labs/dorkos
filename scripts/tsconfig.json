@@ -25,6 +25,8 @@
     "__tests__/**/*.ts",
     "vitest.config.ts",
     "check-vocab-gate.ts",
+    "measure-agent-hours.ts",
+    "agent-hours/**/*.ts",
     "check-copy-spec-drift.ts",
     "vitest-flake-reporter.ts"
   ]
