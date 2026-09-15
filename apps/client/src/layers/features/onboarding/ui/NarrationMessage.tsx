@@ -21,7 +21,7 @@
  * the timestamp, the hover background and the hover capsule;
  * `NARRATION_CAPABILITIES` turns off everything the compound offers; and the
  * body renderer's assistant path for a lone text part is exactly the
- * `msg-assistant` wrapper and {@link StreamingText} call this makes.
+ * `msg-prose` wrapper and {@link StreamingText} call this makes.
  *
  * @module features/onboarding/ui/NarrationMessage
  */
@@ -81,7 +81,7 @@ export function NarrationMessage({ message, grouping, author }: NarrationMessage
           {/* The assistant's typography, from the same class the session's body
               renderer wraps its text parts in — the narration and a real reply
               read identically because they are styled by one rule. */}
-          <div className="msg-assistant">
+          <div className="msg-prose">
             <StreamingText content={message.content} />
           </div>
         </Message.Content>

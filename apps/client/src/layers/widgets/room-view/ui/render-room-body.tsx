@@ -87,6 +87,11 @@ function RoomBody({ entry, authors }: RoomBodyProps) {
     <MentionRosterProvider authors={authors}>
       <MarkdownContent
         content={markdown}
+        // The same prose typography the session transcript and onboarding's
+        // narrated line put on their own Streamdown output (`StreamingText`,
+        // `NarrationMessage`) — list indent, table margins, link and code
+        // color (`.msg-prose` in `index.css`).
+        className="msg-prose"
         allowedTags={MENTION_ALLOWED_TAGS}
         literalTagContent={MENTION_LITERAL_TAG_CONTENT}
         components={mentionComponents}

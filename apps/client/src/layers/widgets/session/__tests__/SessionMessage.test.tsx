@@ -367,7 +367,7 @@ describe('SessionMessage', () => {
     );
   });
 
-  it('uses msg-assistant class and max-width on content container', () => {
+  it('uses msg-prose class and max-width on content container', () => {
     const msg = {
       id: '1',
       role: 'assistant' as const,
@@ -383,12 +383,12 @@ describe('SessionMessage', () => {
         {...authorProps(msg)}
       />
     );
-    const el = container.querySelector('.msg-assistant');
+    const el = container.querySelector('.msg-prose');
     expect(el).not.toBeNull();
     // content container uses TV slot class (max-w-[var(--msg-content-max-width)])
     const contentContainer = container.querySelector('[data-slot="message-content"]');
     expect(contentContainer?.className).toContain('max-w-[var(--msg-content-max-width)]');
-    expect(contentContainer?.querySelector('.msg-assistant')).not.toBeNull();
+    expect(contentContainer?.querySelector('.msg-prose')).not.toBeNull();
   });
 
   it('applies tight vertical padding to a mid-group row', () => {
