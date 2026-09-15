@@ -3,7 +3,7 @@
   "slug": "live-agent-list",
   "title": "Live agent list: agent and settings changes reach every open window without a reload",
   "created": "2026-09-15",
-  "status": "specified",
+  "status": "implemented",
   "project": "Live Agent List & DorkBot Tools",
   "artifacts": {
     "ideation": "01-ideation.md",
