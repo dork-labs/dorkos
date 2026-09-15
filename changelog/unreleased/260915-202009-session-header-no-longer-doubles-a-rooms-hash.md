@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(client): the session header no longer doubles a room's `#` (DOR-2073)"
+  - 'fix(client): clarify the `#` strip and the DM guard test (DOR-2073)'
 ---
 
 ### Fixed
