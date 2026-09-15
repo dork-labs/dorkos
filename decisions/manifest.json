@@ -5678,6 +5678,26 @@
         "apps/server/src/services/runtimes/shared/approval-verdict-block.ts",
         "apps/server/src/index.ts"
       ]
+    },
+    {
+      "id": "260915-202228",
+      "slug": "a-warm-process-ends-only-when-it-is-quiet",
+      "title": "A warm process ends only when it is quiet, and everything it says is projected",
+      "status": "proposed",
+      "created": "2026-09-15",
+      "extractedFrom": "spec",
+      "specSlug": "warm-process-lifecycle",
+      "amends": ["260812-134510"],
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/runtimes/claude-code/sessions/persistent-dispatch.ts",
+        "apps/server/src/services/runtimes/claude-code/sessions/session-pump.ts",
+        "apps/server/src/services/runtimes/claude-code/sessions/session-pump-registry.ts",
+        "apps/server/src/services/runtimes/claude-code/sessions/session-turn-windows.ts",
+        "apps/server/src/services/runtimes/claude-code/messaging/turn-liveness.ts",
+        "packages/shared/src/agent-runtime.ts",
+        "packages/shared/src/session-stream.ts"
+      ]
     }
   ]
 }
