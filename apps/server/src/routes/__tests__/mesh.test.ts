@@ -272,6 +272,27 @@ describe('Mesh routes', () => {
         );
       });
 
+      it.each(['144mono', '144x.co', 'doriancollier.com', 'next_starter', '日本語'])(
+        'leaves the address %s exactly as it came',
+        async (name) => {
+          // The Discovery view sends the directory basename AS `overrides.name`
+          // (`buildRegistrationOverrides` → `candidate.hints.suggestedName`), so
+          // this is the door those four measured addresses actually arrive at.
+          meshCore.registerByPath.mockResolvedValue(MOCK_MANIFEST);
+
+          await request(fixtureServer)
+            .post('/api/mesh/agents')
+            .send({
+              path: '/home/user/project',
+              overrides: { name, runtime: 'claude-code' },
+            });
+
+          const partial = meshCore.registerByPath.mock.calls[0][1] as Record<string, unknown>;
+          expect(partial.name).toBe(name);
+          expect(partial).not.toHaveProperty('displayName');
+        }
+      );
+
       it('stores a face in the one spelling the picker can match', async () => {
         meshCore.registerByPath.mockResolvedValue(MOCK_MANIFEST);
 

@@ -8,7 +8,7 @@ import {
   BoundaryError,
 } from '../../../../lib/boundary.js';
 import { notifyAgentCreated } from '../../../core/agent-created-hook.js';
-import { resolveAgentIdentity } from '../../../mesh/normalize-agent-identity.js';
+import { resolveNamedAgentIdentity } from '../../../mesh/normalize-agent-identity.js';
 import type { McpToolDeps } from './types.js';
 import { jsonContent, structuredJsonContent } from './types.js';
 
@@ -94,15 +94,16 @@ export function createMeshDiscoverHandler(deps: McpToolDeps) {
 /**
  * Register an agent from a filesystem path.
  *
- * `name` is the agent's immutable slug, not a label: it is what the agent's
+ * `name` is the agent's immutable address, not a label: it is what the agent's
  * `@handle` in a room is derived from (`deriveHandle(name) ?? deriveHandle(displayName)`
- * in `services/rooms/author-registry.ts`). A caller that sends a display-style
- * name gets it slugified and kept as `displayName`, because the alternative is
- * what actually happened: DorkBot registered an agent as "DorkOS Cloud" and the
- * manifest stored that string, spaces and all, as the slug (DOR-2054).
+ * in `services/rooms/author-registry.ts`). A caller that sends a name with
+ * whitespace in it gets it slugified and kept as `displayName`, because the
+ * alternative is what actually happened: DorkBot registered an agent as
+ * "DorkOS Cloud" and the manifest stored that string, spaces and all (DOR-2054).
  *
- * Every check and every normalisation lives in {@link resolveAgentIdentity},
- * which the two HTTP register routes share — three doors, one answer.
+ * Every check and every normalisation lives in `resolveAgentIdentity`, which the
+ * two HTTP register routes share — three doors, one answer. Read its header for
+ * why whitespace is the whole test, and what a wider one would have moved.
  */
 export function createMeshRegisterHandler(deps: McpToolDeps) {
   return async (args: {
@@ -142,20 +143,18 @@ export function createMeshRegisterHandler(deps: McpToolDeps) {
     // refusal is written for the model that will read it. A caller that already
     // passed a valid slug sees no change — slugifying one is a no-op, so no
     // `displayName` is invented for it.
-    const fallbackName = resolvedPath.split('/').pop() || 'unnamed';
-    const identity = resolveAgentIdentity(
+    const identity = resolveNamedAgentIdentity(
       {
         name: args.name,
         displayName: args.displayName,
         icon: args.icon,
         color: args.color,
       },
-      fallbackName
+      resolvedPath.split('/').pop() || 'unnamed'
     );
     if (!identity.ok) {
       return jsonContent({ error: identity.error, code: identity.code }, true);
     }
-    const { name: slug, ...face } = identity.identity;
 
     try {
       // Registration adopts rather than overwrites (DOR-1019), so a system
@@ -172,11 +171,8 @@ export function createMeshRegisterHandler(deps: McpToolDeps) {
       const agent = await deps.meshCore!.registerByPath(
         resolvedPath,
         {
-          // Always set: a fallback name was given above, and a name nothing
-          // can be made of is refused rather than quietly defaulted.
-          name: slug ?? fallbackName,
+          ...identity.identity,
           runtime: runtimeResult.data,
-          ...face,
           ...(args.description && { description: args.description }),
           ...(args.capabilities && { capabilities: args.capabilities }),
         },
@@ -389,10 +385,11 @@ export function meshToolDefinitions(deps: McpToolDeps) {
           .string()
           .optional()
           .describe(
-            "Immutable kebab-case slug: it is what the agent's @handle in a room is derived " +
-              'from. Not a label — a name with spaces or capitals is slugified ("DorkOS ' +
-              'Cloud" becomes "dorkos-cloud") and the original is kept as the displayName. ' +
-              'Defaults to the directory name.'
+            'The agent address: immutable, and what its @handle in a room is derived ' +
+              'from. Not a label — a name with a SPACE in it is read as one, slugified ' +
+              '("DorkOS Cloud" becomes "dorkos-cloud") and kept as the displayName. A name ' +
+              'with no whitespace is stored exactly as you send it. Defaults to the ' +
+              'directory name.'
           ),
         displayName: z
           .string()

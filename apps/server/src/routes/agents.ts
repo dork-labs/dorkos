@@ -42,7 +42,7 @@ import { validateBoundaryOrDorkHome, BoundaryError } from '../lib/boundary.js';
 import { createAgentWorkspace, AgentCreationError } from '../services/core/agent-creator.js';
 import { updateAgentManifest, AgentUpdateError } from '../services/core/operator/agent-updater.js';
 import { notifyAgentCreated } from '../services/core/agent-created-hook.js';
-import { resolveAgentIdentity } from '../services/mesh/normalize-agent-identity.js';
+import { resolveNamedAgentIdentity } from '../services/mesh/normalize-agent-identity.js';
 import { logger } from '../lib/logger.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
@@ -149,7 +149,7 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
       // the request schema and then dropped on the floor, and `name` was written
       // through unslugified, so a person naming an agent "My Bot" from this
       // route got that string as the immutable slug an `@handle` derives from.
-      const identity = resolveAgentIdentity({ name, displayName }, path.basename(agentPath));
+      const identity = resolveNamedAgentIdentity({ name, displayName }, path.basename(agentPath));
       if (!identity.ok) {
         return res.status(400).json({ error: identity.error, code: identity.code });
       }
@@ -157,9 +157,7 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
       const id = ulid();
       const manifest: AgentManifest = {
         id,
-        // Always set: a fallback name was passed above, and a name nothing can
-        // be made of is refused rather than quietly defaulted.
-        name: identity.identity.name ?? path.basename(agentPath),
+        name: identity.identity.name,
         displayName: identity.identity.displayName,
         description: description ?? '',
         runtime: runtime ?? 'claude-code',
@@ -185,10 +183,7 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
       // Display name first, the same order `createAgentWorkspace` uses: SOUL.md
       // opens with "You are <name>", and now that `name` is slugified that has to
       // be the name a person wrote, not `my-custom-agent` (DOR-2054).
-      const soulContent = defaultSoulTemplate(
-        manifest.displayName ?? manifest.name ?? 'agent',
-        traitBlock
-      );
+      const soulContent = defaultSoulTemplate(manifest.displayName ?? manifest.name, traitBlock);
       const nopeContent = defaultNopeTemplate();
 
       await writeConventionFile(agentPath, CONVENTION_FILES.soul, soulContent);

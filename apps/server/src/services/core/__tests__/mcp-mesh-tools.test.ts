@@ -147,11 +147,12 @@ describe('Mesh MCP Tools', () => {
       );
     });
 
-    // DOR-2054. `name` is the immutable slug the relay subject is built from,
-    // but the tool used to describe it as a "display name override" and wrote
-    // whatever it was given straight into the manifest — so DorkBot registered
-    // an agent whose slug was the string "DorkOS Cloud", spaces and all, with a
-    // seeded face nobody chose.
+    // DOR-2054. `name` is the immutable address an agent's `@handle` in a room
+    // is derived from (`deriveHandle(name) ?? deriveHandle(displayName)` in
+    // `services/rooms/author-registry.ts`), but the tool described it as a
+    // "display name override" and wrote whatever it was given straight into the
+    // manifest — so DorkBot registered an agent whose name was the string
+    // "DorkOS Cloud", spaces and all, with a seeded face nobody chose.
     describe('identity fields', () => {
       it('slugifies a display-style name and keeps the original as the display name', async () => {
         const deps = createMockDeps(true);
@@ -295,6 +296,25 @@ describe('Mesh MCP Tools', () => {
         expect(JSON.parse(result.content[0].text)).toMatchObject({ code: 'INVALID_NAME' });
         expect(meshCore.registerByPath).not.toHaveBeenCalled();
       });
+
+      it.each(['144x.co', 'next_starter', '日本語'])(
+        'leaves the directory name %s exactly as it came',
+        async (dirName) => {
+          // `slugifyAgentName` would move all three (`a-144x-co`, `next-starter`,
+          // `agent`), and `handle.ts` measured what that costs: `mintHandle`
+          // reads `name` first, so a rewritten name is a moved address.
+          const deps = createMockDeps(true);
+          const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+          meshCore.registerByPath.mockResolvedValue({ id: 'a1', name: dirName });
+
+          const handler = createMeshRegisterHandler(deps);
+          await handler({ path: `/test/${dirName}` });
+
+          const partial = meshCore.registerByPath.mock.calls[0][1] as Record<string, unknown>;
+          expect(partial.name).toBe(dirName);
+          expect(partial).not.toHaveProperty('displayName');
+        }
+      );
 
       it('slugifies the directory name it falls back to when no name is given', async () => {
         const deps = createMockDeps(true);

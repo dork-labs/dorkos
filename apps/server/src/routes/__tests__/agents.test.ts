@@ -286,16 +286,30 @@ describe('Agents Routes', () => {
       expect(res.body.displayName).toBe('The Custom');
     });
 
-    it('refuses a name nothing can be made of, rather than calling it "agent"', async () => {
+    it('refuses a blank name rather than writing one nobody chose', async () => {
       mockReadManifest.mockResolvedValue(null);
 
       const res = await request(testServer)
         .post('/api/agents')
-        .send({ path: '/home/user/my-project', name: '!!!' });
+        .send({ path: '/home/user/my-project', name: '   ' });
 
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('INVALID_NAME');
       expect(mockWriteManifest).not.toHaveBeenCalled();
+    });
+
+    it('leaves a name that is an address, not a label, exactly as it came', async () => {
+      // `slugifyAgentName` would make this `doriancollier-com`, and `mintHandle`
+      // reads `name` first — so rewriting it moves an address somebody types.
+      mockReadManifest.mockResolvedValue(null);
+
+      const res = await request(testServer)
+        .post('/api/agents')
+        .send({ path: '/home/user/my-project', name: 'doriancollier.com' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.name).toBe('doriancollier.com');
+      expect(res.body.displayName).toBeUndefined();
     });
 
     it('returns 409 when agent already exists', async () => {

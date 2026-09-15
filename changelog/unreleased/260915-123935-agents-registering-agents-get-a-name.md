@@ -1,7 +1,8 @@
 ---
 covers:
   - 'feat(server,mesh): an agent registering an agent can give it a name, an emoji and a colour (DOR-2054)'
-  - 'fix(server,mesh): every path that registers an agent turns a name into a slug the same way (DOR-2054)'
+  - 'fix(server,mesh): one identity gate for every path that registers an agent (DOR-2054)'
+  - 'fix(server,mesh): only a name with a space in it is read as a label (DOR-2054)'
 ---
 
 ### Added

@@ -7,12 +7,27 @@
  * three used to write whatever they were handed, and all three got it wrong in
  * the same way (DOR-2054):
  *
- * - **`name` is a slug, not a label.** It is immutable, and it is what an
+ * - **`name` is an address, not a label.** It is immutable, and it is what an
  *   agent's `@handle` in a room is derived from
  *   (`services/rooms/author-registry.ts`: `deriveHandle(name) ?? deriveHandle(displayName)`).
  *   DorkBot sent `"DorkOS Cloud"` and the manifest stored that string, spaces
- *   and all. A display-style name is slugified here and kept as the display
- *   name, so the caller loses nothing and the slug stays addressable.
+ *   and all. A name with whitespace in it is slugified here and kept as the
+ *   display name, so the caller loses nothing and the slug stays addressable.
+ *
+ *   **Whitespace is the whole test, and it is deliberately narrow.** A name is
+ *   a label when it has a space in it and an address otherwise: `AGENT_NAME_REGEX`
+ *   forbids whitespace, so nothing that was already a valid slug can be caught
+ *   by it. Widening the test to "not already kebab-case" would rewrite names
+ *   that work: `slugifyAgentName` flattens `.` and `_` and prefixes a leading
+ *   digit, which `packages/shared/src/handle.ts` measured against a real
+ *   fleet — `144mono`, `144x.co`, `doriancollier.com` and `next_starter` all
+ *   change under it, and `mintHandle` derives from `name` FIRST, so changing
+ *   one moves an address somebody already types. A name written entirely
+ *   outside the Latin charset (`日本語`, `проект`) is likewise left exactly as
+ *   it came: `author-registry.ts` calls such a name an ordinary thing to have,
+ *   and its handle falls back to the display name rather than being refused.
+ *   Every one of those registers byte-for-byte as it did before this module
+ *   existed, and derives the same handle it always did.
  * - **A face has to be a face.** The manifest types `icon` and `color` as plain
  *   strings, so `"pinkish"` was storable, and a colour stored as `"  #ABC  "`
  *   can never show as selected in the picker, which compares against
@@ -76,34 +91,33 @@ export type AgentIdentityResult =
 /**
  * Check and normalise the identity fields a caller sent.
  *
- * @param input - What the caller sent. Every field is optional.
- * @param fallbackName - The name to use when the caller sent none, normally the
- *   agent directory's basename. Omit it where the caller's own path already
- *   handles a missing name (adoption ignores every override), and `name` comes
- *   back absent instead of invented.
+ * @param input - What the caller sent. Every field is optional; `name` absent
+ *   means the caller named nothing, and nothing is invented for them.
  * @returns The normalised fields, or the one refusal that stopped them.
  */
-export function resolveAgentIdentity(
-  input: AgentIdentityInput,
-  fallbackName?: string
-): AgentIdentityResult {
+export function resolveAgentIdentity(input: AgentIdentityInput): AgentIdentityResult {
   const identity: AgentIdentityFields = {};
 
-  const requested = (input.name ?? fallbackName)?.trim();
+  const requested = input.name?.trim();
   if (requested !== undefined) {
-    // A slug needs something to be made of. `slugifyAgentName` answers 'agent'
-    // for a name with no letters or digits in it, which is a silent rename to
-    // a name the caller never chose — worse than saying no.
-    if (!/[a-z0-9]/i.test(requested)) {
+    // Empty is the one name that cannot be stored at all — `registerByPath`
+    // has always thrown on it, several layers below anyone who could say why.
+    if (!requested) {
       return {
         ok: false,
         code: 'INVALID_NAME',
         error:
-          `Invalid name ${JSON.stringify(input.name ?? fallbackName)}. A name needs at least ` +
-          'one letter or digit: it becomes the immutable slug the agent is addressed by.',
+          'A name cannot be blank. Omit it to take the directory name, or send the address ' +
+          'you want this agent to answer to.',
       };
     }
-    identity.name = slugifyAgentName(requested);
+    // Whitespace, and nothing else, marks a label — see this module's header
+    // for the four real addresses that a wider test would have moved. A label
+    // with no Latin characters to slugify (a CJK or Cyrillic name with a space
+    // in it) is left alone too: there is no slug to make of it, and 'agent' is
+    // not a name anybody chose.
+    const isLabel = /\s/.test(requested) && /[a-z0-9]/i.test(requested);
+    identity.name = isLabel ? slugifyAgentName(requested) : requested;
   }
 
   if (input.displayName !== undefined) {
@@ -132,7 +146,11 @@ export function resolveAgentIdentity(
     // what the manifest holds: truncating is the friendlier half of the same
     // decision that refuses an explicit one, because nobody typed this string
     // as a display name and refusing would fail a call over a long folder name.
-    identity.displayName = requested.slice(0, AGENT_DISPLAY_NAME_MAX).trim();
+    //
+    // `Array.from` rather than `slice`: a cut at a code UNIT can land inside a
+    // surrogate pair and write half an emoji to disk, which no renderer can
+    // show and no equality check can match.
+    identity.displayName = Array.from(requested).slice(0, AGENT_DISPLAY_NAME_MAX).join('').trim();
   }
 
   if (input.icon !== undefined) {
@@ -162,4 +180,52 @@ export function resolveAgentIdentity(
   }
 
   return { ok: true, identity };
+}
+
+/** The normalised fields for a path that always ends up with a name. */
+export interface NamedAgentIdentityFields extends AgentIdentityFields {
+  /** The name to store. Always present. */
+  name: string;
+}
+
+/** {@link AgentIdentityResult} for a caller that supplied a fallback name. */
+export type NamedAgentIdentityResult =
+  | { ok: true; identity: NamedAgentIdentityFields }
+  | { ok: false; code: AgentIdentityErrorCode; error: string };
+
+/**
+ * {@link resolveAgentIdentity} for the two creation paths that must end up with
+ * a name whatever the caller sent.
+ *
+ * The fallback is folded into `name` rather than handled separately, so a
+ * directory basename is treated exactly as an explicitly sent name is — which
+ * matters, because the Discovery view sends the basename AS `overrides.name`
+ * (`buildRegistrationOverrides` passes `candidate.hints.suggestedName`, which
+ * every strategy sets to `path.basename(dir)`). A rule that only guarded the
+ * explicit argument would leave the app's main registration door doing the
+ * thing this module exists to stop.
+ *
+ * It exists for the type as much as the fallback: it narrows `name` to
+ * `string`, so no caller has to write a `?? basename` that can never run and
+ * would write an unslugified name if it somehow did.
+ *
+ * @param input - What the caller sent. `name` wins over `fallbackName`.
+ * @param fallbackName - The name to use when the caller sent none, normally the
+ *   agent directory's basename.
+ * @returns The normalised fields with a name, or the refusal that stopped them.
+ */
+export function resolveNamedAgentIdentity(
+  input: AgentIdentityInput,
+  fallbackName: string
+): NamedAgentIdentityResult {
+  const result = resolveAgentIdentity({ ...input, name: input.name ?? fallbackName });
+  if (!result.ok) return result;
+  const { name } = result.identity;
+  if (name === undefined) {
+    // Unreachable: a name went in, so a name comes out. Stated as an invariant
+    // rather than papered over with a fallback that would write the raw
+    // directory name straight past every check above it.
+    throw new Error('resolveAgentIdentity returned no name for an input that carried one');
+  }
+  return { ok: true, identity: { ...result.identity, name } };
 }
