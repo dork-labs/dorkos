@@ -19,7 +19,8 @@ guard=${GUARD:-$repo_root/.claude/hooks/process-guard.mjs}
 
 payload_dir=$(mktemp -d -t process-guard-payload.XXXXXX)
 export PROCESS_GUARD_FIXTURE_PAYLOAD=$payload_dir/payload.json
-trap 'rm -rf "$payload_dir"' EXIT
+diff_dir=$(mktemp -d -t process-guard-diff.XXXXXX)
+trap 'rm -rf "$payload_dir" "$diff_dir"' EXIT
 
 pass=0
 fail=0
@@ -68,10 +69,49 @@ verdict() {
 
 # Each line is `<expected-verdict> <command>`. Comments record why a case is
 # here, so a future edit that flips one has to argue with the reason.
+# --- Differential: a fixture a real shell RUNS must never be allowed. ---
+# A hand-written verdict only proves what its author believed the shell does.
+# So every fixture naming pkill/killall is also run through /bin/bash (3.2 on
+# macOS) and zsh with both words pointing at a shim that only touches a marker
+# file, in an empty directory, with a bare PATH and HOME. If a shell reached the
+# shim, the guard must have blocked it. Fixtures that reach the `kill` builtin
+# or sudo are never run, and the real destructive command never is.
+mkdir -p "$diff_dir/shim" "$diff_dir/run"
+printf '#!/bin/sh\n: >"%s/marker"\n' "$diff_dir" >"$diff_dir/shim/__ran"
+chmod +x "$diff_dir/shim/__ran"
+diff_shells=(/bin/bash)
+if command -v zsh >/dev/null 2>&1; then diff_shells+=("$(command -v zsh)"); fi
+
+differential() {
+  local command=$1 actual=$2 standin shell
+  case "$command" in *pkill* | *killall*) ;; *) return ;; esac
+  standin=${command//pkill/__ran}
+  standin=${standin//killall/__ran}
+  if printf '%s' "$standin" | grep -Eq '(^|[^[:alnum:]_])(kill|sudo)([^[:alnum:]_]|$)'; then
+    return
+  fi
+  for shell in "${diff_shells[@]}"; do
+    rm -f "$diff_dir/marker"
+    (cd "$diff_dir/run" && env -i PATH="$diff_dir/shim:/usr/bin:/bin" HOME="$diff_dir/run" \
+      "$shell" -c "$standin" </dev/null >/dev/null 2>&1)
+    if [ -e "$diff_dir/marker" ]; then
+      check "differential: $shell runs it, so it must block: $command" block "${actual%%-*}"
+    fi
+  done
+}
+
+# Run one fixture through the hook, assert its verdict, then cross-check it.
+case_check() {
+  local name=$1 expected=$2 command=$3 actual
+  actual=$(verdict "$command")
+  check "$name" "$expected" "$actual"
+  differential "$command" "$actual"
+}
+
 while read -r expected command; do
   [ -n "${expected:-}" ] || continue
   case "$expected" in \#*) continue ;; esac
-  check "$command" "$expected" "$(verdict "$command")"
+  case_check "$command" "$expected" "$command"
 done <<'CASES'
 # --- kill by name: the incident, and every spelling of the same reflex. ---
 block-name pkill -f "tsx src/index.ts"
@@ -142,32 +182,59 @@ block-name gh pr create --body "blocks `pkill`"
 block-name echo 'a'\' `pkill -f x` \''b'
 # Malformed quoting keeps the strict reading rather than guessing.
 block-name echo 'unterminated `pkill -f x`
+# A wrapper or eval runs its single-quoted argument, so the quotes protect nothing.
+block-name bash -c 'echo $(pkill -f x)'
+block-name zsh -c 'echo $(pkill -f x)'
+block-name bash -c 'x=$(pkill -f x)'
+block-name sudo bash -c 'echo `pkill -f x`'
+block-name eval '$(pkill -f x)'
+block-name eval 'pkill -f x'
+# Inside $'...' a \' does not close the quote; read as strict, not modelled.
+block-name echo $'\'' $(pkill -f x) '\'
+block-name echo $'\'' `pkill -f x` '\'
+# Inside backticks the next backtick ends the substitution whatever the quotes say.
+block-name echo `echo it's` $(pkill -f x) `echo ok'`
 CASES
 
 # --- heredocs: a quoted delimiter turns expansion off, an unquoted one does not. ---
 # These span lines, so they cannot ride the one-line CASES table above.
-check 'quoted heredoc PR body naming a kill' allow \
-  "$(verdict $'gh pr create --body "$(cat <<\'EOF\'\nblocks `pkill`\nEOF\n)"')"
-check 'double-quoted heredoc delimiter' allow \
-  "$(verdict $'cat <<"EOF" >notes.md\nsee $(pkill -f x) and `killall`\nEOF')"
-check 'backslash-quoted heredoc delimiter' allow \
-  "$(verdict $'cat <<\\EOF >notes.md\nsee `pkill -f x`\nEOF')"
-check 'tab-stripped quoted heredoc' allow \
-  "$(verdict $'cat <<-\'EOF\' >notes.md\n\tsee `pkill -f x`\n\tEOF')"
-check 'two quoted heredocs on one line' allow \
-  "$(verdict $'cat <<\'A\' <<\'B\'\n`pkill`\nA\n$(pkill -f x)\nB')"
-check 'unquoted heredoc body with backticks' block-name \
-  "$(verdict $'cat <<EOF >notes.md\nsee `pkill -f x`\nEOF')"
-check 'unquoted heredoc body with $(...)' block-name \
-  "$(verdict $'cat <<EOF >notes.md\nsee $(pkill -f x)\nEOF')"
-check 'single quotes are literal inside an unquoted heredoc' block-name \
-  "$(verdict $'cat <<EOF >notes.md\nsee \'$(pkill -f x)\'\nEOF')"
-check 'unquoted heredoc after a quoted one on the same line' block-name \
-  "$(verdict $'cat <<\'A\' <<B\n`pkill`\nA\n$(pkill -f x)\nB')"
-check 'a live substitution after a quoted heredoc ends' block-name \
-  "$(verdict $'cat <<\'EOF\' >notes.md\n`pkill`\nEOF\necho $(pkill -f x)')"
-check 'quoted heredoc that never closes stays strict' block-name \
-  "$(verdict $'cat <<\'EOF\' >notes.md\nsee `pkill -f x`')"
+case_check 'quoted heredoc PR body naming a kill' allow \
+  $'gh pr create --body "$(cat <<\'EOF\'\nblocks `pkill`\nEOF\n)"'
+case_check 'double-quoted heredoc delimiter' allow \
+  $'cat <<"EOF" >notes.md\nsee $(pkill -f x) and `killall`\nEOF'
+case_check 'backslash-quoted heredoc delimiter' allow \
+  $'cat <<\\EOF >notes.md\nsee `pkill -f x`\nEOF'
+case_check 'tab-stripped quoted heredoc' allow \
+  $'cat <<-\'EOF\' >notes.md\n\tsee `pkill -f x`\n\tEOF'
+case_check 'two quoted heredocs on one line' allow \
+  $'cat <<\'A\' <<\'B\'\n`pkill`\nA\n$(pkill -f x)\nB'
+case_check 'unquoted heredoc body with backticks' block-name \
+  $'cat <<EOF >notes.md\nsee `pkill -f x`\nEOF'
+case_check 'unquoted heredoc body with $(...)' block-name \
+  $'cat <<EOF >notes.md\nsee $(pkill -f x)\nEOF'
+case_check 'single quotes are literal inside an unquoted heredoc' block-name \
+  $'cat <<EOF >notes.md\nsee \'$(pkill -f x)\'\nEOF'
+case_check 'unquoted heredoc after a quoted one on the same line' block-name \
+  $'cat <<\'A\' <<B\n`pkill`\nA\n$(pkill -f x)\nB'
+case_check 'a live substitution after a quoted heredoc ends' block-name \
+  $'cat <<\'EOF\' >notes.md\n`pkill`\nEOF\necho $(pkill -f x)'
+case_check 'quoted heredoc that never closes stays strict' block-name \
+  $'cat <<\'EOF\' >notes.md\nsee `pkill -f x`'
+# Comments: an apostrophe or a heredoc marker after `#` is not quoting.
+case_check 'apostrophe in a trailing comment' block-name \
+  $'echo hi # it\'s\necho $(pkill -f x) # \''
+case_check 'apostrophes in whole-line comments' block-name \
+  $'# don\'t\necho $(pkill -f x)\n# won\'t'
+case_check 'heredoc marker inside a comment' block-name \
+  $'echo x # <<\'EOF\'\necho $(pkill -f x)\nEOF'
+case_check 'heredoc marker flush against a comment' block-name \
+  $'echo x #<<\'EOF\'\n`pkill -f x`\nEOF'
+# bash 3.2 ends $(...) at the first `)`, even inside a quoted heredoc body.
+case_check 'heredoc body closing its substitution early' block-name \
+  $'x=$(cat <<\'EOF\'\nhi\n)\necho $(pkill -f x)\nEOF\n)'
+# Inside $(...), a quoted heredoc body with an apostrophe is not vouched for.
+case_check 'apostrophe in a heredoc body inside a substitution' block-name \
+  $'gh pr create --body "$(cat <<\'EOF\'\nit\'s `pkill`\nEOF\n)"'
 
 echo "process-guard fixtures: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

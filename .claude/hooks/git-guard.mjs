@@ -91,11 +91,18 @@
  * `bash -c` and `$(...)`; subshells `( ... )`, brace groups `{ ...; }`, and
  * `for` / `while` / `if` bodies; compound splitting on `&& || ; | |& &` and
  * newlines; whitespace collapsing; and quoting, so
- * `git commit -m "ran git stash"` is not a false positive. Substitutions follow
- * bash too: a code span inside single quotes or a quoted heredoc (`<<'EOF'`) is
- * text and is not inspected, while double quotes and an unquoted heredoc still
- * are. Unreadable quoting (an unterminated quote, a heredoc that never closes)
- * falls back to inspecting every substitution-shaped span.
+ * `git commit -m "ran git stash"` is not a false positive. It also unwraps the
+ * literal argument of `eval '...'` the way it unwraps `sh -c`.
+ *
+ * A substitution inside single quotes or a quoted heredoc (`<<'EOF'`) is
+ * treated as text, so a PR body naming `git stash` in a code span is allowed.
+ * That is a reader for plain lines, not a model of bash, and it errs strict:
+ * it inspects every substitution-shaped span, quoted or not, whenever the line
+ * holds a `#` comment, `$'...'`, a quote inside backticks, `case` inside
+ * `$(...)`, a heredoc inside backticks or one inside `$(...)` whose body has
+ * quotes or parentheses, an unterminated quote, a heredoc that never closes,
+ * or an `sh -c` / `eval` whose quotes protect nothing. Those lines can still
+ * be refused for merely naming a blocked command; that is the chosen cost.
  *
  * It also never sees commands run by OTHER hooks: PreToolUse fires on tool
  * calls in the agentic loop only. That is why `create-checkpoint.sh` can keep
@@ -110,11 +117,11 @@
 
 import path from 'path';
 import {
-  SHELL_WRAPPERS,
   splitSegments,
   extractSubstitutions,
   tokenize,
   stripCommandPrefixes,
+  readWrappedCommand,
 } from './lib/shell-command.mjs';
 
 const { basename } = path;
@@ -325,11 +332,8 @@ function inspectSegment(segment, depth) {
 
   const name = basename(tokens[0]);
 
-  if (SHELL_WRAPPERS.has(name) && depth < 2) {
-    const flagIndex = tokens.indexOf('-c');
-    const inner = flagIndex !== -1 ? tokens[flagIndex + 1] : null;
-    return inner ? inspectCommand(inner, depth + 1) : null;
-  }
+  const wrapped = readWrappedCommand(segment);
+  if (wrapped !== null) return depth < 2 ? inspectCommand(wrapped, depth + 1) : null;
 
   if (name !== 'git') return null;
 

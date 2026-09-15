@@ -214,6 +214,15 @@ block-stash git commit -m "never use `git stash` here"
 block-stash git commit -m "$(git stash)"
 block-checkout git commit -m "it's $(git checkout -- x)"
 block-stash git commit -m 'unterminated `git stash`
+# A wrapper or eval runs its single-quoted argument, so the quotes protect nothing.
+block-stash bash -c 'echo $(git stash)'
+block-stash zsh -c 'x=$(git stash)'
+block-stash eval '$(git stash)'
+block-stash eval 'git stash pop'
+# Inside $'...' a \' does not close the quote; read as strict, not modelled.
+block-stash echo $'\'' $(git stash) '\'
+# Inside backticks the next backtick ends the substitution whatever the quotes say.
+block-stash echo `echo it's` $(git stash) `echo ok'`
 CASES
 
 # --- heredocs: a quoted delimiter turns expansion off, an unquoted one does not. ---
@@ -221,6 +230,14 @@ check 'quoted heredoc commit message naming git stash' allow \
   "$(verdict $'git commit -m "$(cat <<\'EOF\'\nRefuses `git stash` and `git checkout -- x`.\nEOF\n)"')"
 check 'unquoted heredoc commit message runs its substitution' block-stash \
   "$(verdict $'git commit -m "$(cat <<EOF\nRefuses `git stash` now.\nEOF\n)"')"
+check 'apostrophe in a trailing comment' block-stash \
+  "$(verdict $'echo hi # it\'s\necho $(git stash) # \'')"
+check 'apostrophes in whole-line comments' block-stash \
+  "$(verdict $'# don\'t\necho $(git stash)\n# won\'t')"
+check 'heredoc marker inside a comment' block-stash \
+  "$(verdict $'echo x # <<\'EOF\'\necho $(git stash)\nEOF')"
+check 'heredoc body closing its substitution early' block-stash \
+  "$(verdict $'x=$(cat <<\'EOF\'\nhi\n)\necho $(git stash)\nEOF\n)')"
 
 # Quoted text that merely NAMES a blocked command must not trip the guard, or
 # writing the commit that ships this guard becomes impossible.

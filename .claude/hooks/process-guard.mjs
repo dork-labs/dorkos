@@ -64,11 +64,11 @@
 
 import path from 'path';
 import {
-  SHELL_WRAPPERS,
   splitSegments,
   extractSubstitutions,
   tokenize,
   stripCommandPrefixes,
+  readWrappedCommand,
 } from './lib/shell-command.mjs';
 
 const { basename } = path;
@@ -173,11 +173,8 @@ function inspectSegment(segment, depth) {
 
   const name = basename(tokens[0]);
 
-  if (SHELL_WRAPPERS.has(name) && depth < 2) {
-    const flagIndex = tokens.indexOf('-c');
-    const inner = flagIndex !== -1 ? tokens[flagIndex + 1] : null;
-    return inner ? inspectCommand(inner, depth + 1) : null;
-  }
+  const wrapped = readWrappedCommand(segment);
+  if (wrapped !== null) return depth < 2 ? inspectCommand(wrapped, depth + 1) : null;
 
   if (KILL_BY_NAME.has(name)) return NAME_MESSAGE;
   if (name === 'kill') return checkKill(tokens.slice(1));
