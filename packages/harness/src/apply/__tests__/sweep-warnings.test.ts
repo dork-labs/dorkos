@@ -21,6 +21,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { project } from '../../engine.js';
 import { applyPlan, checkPlan } from '../apply.js';
+import { unlistableSweptDirs } from '../sweep-warnings.js';
 import { writeFileAt, writeJsonAt } from '../../__tests__/journeys/stage.js';
 
 /** Whether this machine can stage a folder nobody may read. */
@@ -102,12 +103,13 @@ describe('AP-07, VC-02 — a folder a sweep could not look inside', () => {
   it.skipIf(!CAN_MAKE_UNREADABLE)('reaches a wrapper directory one level down', () => {
     // `.claude/commands/<pkg>` is walked by the Claude wrapper sweep, which is
     // the one sweep that enumerates by wildcard AND deletes a directory it finds
-    // empty — so a folder it cannot list is the one it most needs to say so about.
+    // empty — so a folder it cannot list is the one it most needs to say so
+    // about. The inventory reads that folder too, so the rendered sentence is
+    // the plan's; what this pins is that the SWEEP walks it.
     const { repo, dorkHome } = stageBlindSweep('.claude/commands/acme');
 
-    expect(checkPlan(repo, project(repo, { dorkHome })).warnings).toEqual([
-      expect.stringContaining('`.claude/commands/acme`'),
-    ]);
+    expect(unlistableSweptDirs(repo)).toEqual(['.claude/commands/acme']);
+    expect(checkPlan(repo, project(repo, { dorkHome })).warnings).toEqual([]);
   });
 
   it('says nothing about a folder that is simply not there', () => {
@@ -123,5 +125,40 @@ describe('AP-07, VC-02 — a folder a sweep could not look inside', () => {
     });
 
     expect(checkPlan(repo, project(repo, { dorkHome })).warnings).toEqual([]);
+  });
+});
+
+describe('AP-07 — every folder the sweeps walk is pinned', () => {
+  // F6: two of the four {@link SWEPT_DIRS} entries had no case of their own, so
+  // deleting either from the list redded nothing. Asked of the complete list
+  // rather than of the rendered sentence, because the rendered one drops a
+  // folder the plan already names — and the plan names three of these four.
+  for (const folder of ['.claude/skills', '.agents/skills', '.opencode/commands'] as const) {
+    it.skipIf(!CAN_MAKE_UNREADABLE)(`walks ${folder}`, () => {
+      const { repo } = stageBlindSweep(folder);
+
+      expect(unlistableSweptDirs(repo)).toEqual([folder]);
+    });
+  }
+
+  it.skipIf(!CAN_MAKE_UNREADABLE)('says one sentence about one folder, not two', () => {
+    // A mode-000 `.claude/skills` is read by the INVENTORY as well as walked by
+    // two sweeps, so the plan already carries a sentence naming it. A second one
+    // from this module put the same folder on screen twice, in two voices. The
+    // plan's own sentence wins: it is drawn first, it names the folder already,
+    // and it answers what could not be READ rather than what was therefore not
+    // removed.
+    const { repo, dorkHome } = stageBlindSweep('.claude/skills');
+    const plan = project(repo, { dorkHome });
+
+    // The folder IS one the sweeps walk — the fact above is unchanged …
+    expect(unlistableSweptDirs(repo)).toEqual(['.claude/skills']);
+    // … and a person is told about it exactly once.
+    const named = [
+      ...plan.warnings.filter((w) => w.reason.includes('.claude/skills')),
+      ...checkPlan(repo, plan).warnings.filter((w) => w.includes('.claude/skills')),
+    ];
+    expect(named.length).toBe(1);
+    expect(checkPlan(repo, plan).warnings).toEqual([]);
   });
 });

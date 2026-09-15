@@ -886,15 +886,25 @@ function projectLevelEntries(
 /**
  * One thing that is true about this run, as a project-level entry.
  *
- * The `name` is a label rather than a path, and which label depends on what the
- * sentence is about. The junction one is decided by IDENTITY — it is a frozen
- * constant, so comparing against it cannot drift when somebody rewords it — and
- * it is one sentence per RUN rather than one per link, so naming any single
- * `.claude/skills/<x>` would say the problem is that file's.
+ * The `name` is a label, and which label depends on what the sentence is about.
+ * Two rules, because there are two kinds of subject.
  *
- * `skill` is the artifact for both: skill links are the only thing the engine
- * projects as a directory link, which is the only shape a junction can be, and
- * every folder the other sentence can be about holds a skill link or a command
+ * The junction one is decided by IDENTITY — it is a frozen constant, so
+ * comparing against it cannot drift when somebody rewords it — and it earns a
+ * label rather than a path because it is one sentence per RUN rather than one
+ * per link: naming any single `.claude/skills/<x>` would say the problem is
+ * that file's.
+ *
+ * Every other run warning opens by naming its subject in backticks — the folder
+ * that could not be listed, or the path that would have been removed — so that
+ * path IS the name, and the row reads as being about a place rather than about
+ * a category somebody invented. A single hard-coded label described only the
+ * first of them: `Could not look` sat over a blocked-removal row that is about
+ * a link DorkOS looked at perfectly well and may not delete.
+ *
+ * `skill` is the artifact for all of them: skill links are the only thing the
+ * engine projects as a directory link, which is the only shape a junction can
+ * be, and every path the others can be about holds a skill link or a command
  * wrapper. The page has no icon for a computer or for a folder.
  *
  * @param reason - the engine's own sentence, unchanged.
@@ -904,9 +914,25 @@ function runWarningEntry(reason: string): HarnessProjectEntry {
   return {
     kind: 'warning',
     artifact: 'skill',
-    name: reason === JUNCTION_COMMIT_WARNING ? 'Windows junctions' : 'Could not look',
+    name: reason === JUNCTION_COMMIT_WARNING ? 'Windows junctions' : subjectOf(reason),
     reason,
   };
+}
+
+/**
+ * The first backticked path in a sentence — what it is about.
+ *
+ * A fallback rather than a throw when there is none: a future warning written
+ * without one is a row with a general label, never a crash on somebody's status
+ * page. The junction sentence never reaches here, and would answer wrongly if it
+ * did — its only backticked span is a COMMAND — which is why identity decides
+ * that one above.
+ *
+ * @param reason - the engine's sentence.
+ * @returns the path it names, or a neutral label.
+ */
+function subjectOf(reason: string): string {
+  return /`([^`]+)`/.exec(reason)?.[1] ?? 'This run';
 }
 
 /**

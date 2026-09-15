@@ -94,6 +94,7 @@ import { INSTALLED_PROJECTION_MARKER } from '../scan/scanner.js';
 import { listDir, occupantKind, pathExists } from './link-state.js';
 import { directoryWriteBlock, writePathDirs, writePathReason } from './write-path-occupants.js';
 import { SWEEP_REASONS } from './sweep-reasons.js';
+import { partitionRemovable, removableOf } from './sweep-warnings.js';
 import { blockingSymlinkOccupant, linkCheckFor, linkMatchesPlan } from './symlink-occupants.js';
 import { symlinkTypeFor, waitForSymlinkRemoval } from './windows-links.js';
 
@@ -229,29 +230,25 @@ function plannedTargets(plan: GlobalProjectionPlan): Set<string> {
 }
 
 /**
- * Everything a global sweep would remove, without removing any of it.
+ * Every candidate the global sweep owns, mapped to the sentence saying why it
+ * would go — before the removal probe is asked.
  *
- * The read-only twin of {@link sweepGlobalOrphans}, and equal to the `swept`
- * list the next `applyGlobalPlan(..., { sweepOrphans: true })` returns —
- * equality in both directions, joining the contract DOR-1889 set for the six
- * project sweeps rather than being retro-fitted to it later.
- *
- * Each path carries the one sentence saying why it goes, from the same
- * `sweep-reasons.ts` the six project sweeps read — and the global sweep has two
- * causes, not one: the package was uninstalled, or the package is still there
- * and no longer has a skill of that name. A person reading a list of deletions
- * is owed the difference.
+ * The whole of the sweep's own predicate, in one place, so
+ * {@link findGlobalOrphans} and {@link findBlockedGlobalRemovals} are two views
+ * of one set rather than two searches that have to agree.
  *
  * @param plan - the current global plan (its symlink targets are kept).
  * @param roots - the roots the plan was built from.
- * @returns the absolute paths a sweep would remove with their reasons, sorted by
- *   path and unique.
+ * @returns each absolute path with its reason, in listing order.
  */
-export function findGlobalOrphans(plan: GlobalProjectionPlan, roots: GlobalPlanRoots): SweptPath[] {
+function globalOrphanCandidates(
+  plan: GlobalProjectionPlan,
+  roots: GlobalPlanRoots
+): Map<string, string> {
   // A plan built from a folder nobody could read is evidence of nothing, and a
   // sweep run on it removes everything. Answered here rather than at each
   // caller so `--check`, the apply and every future reader get the rule.
-  if (plan.unreadableRoot !== undefined) return [];
+  if (plan.unreadableRoot !== undefined) return new Map();
 
   const pluginsRoot = resolve(globalPluginsDir(roots.dorkHome));
   const planned = plannedTargets(plan);
@@ -290,9 +287,78 @@ export function findGlobalOrphans(plan: GlobalProjectionPlan, roots: GlobalPlanR
       );
     }
   }
+  return orphans;
+}
+
+/**
+ * Everything a global sweep would remove, without removing any of it.
+ *
+ * The read-only twin of {@link sweepGlobalOrphans}, and equal to the `swept`
+ * list the next `applyGlobalPlan(..., { sweepOrphans: true })` returns —
+ * equality in both directions, joining the contract DOR-1889 set for the six
+ * project sweeps rather than being retro-fitted to it later.
+ *
+ * Each path carries the one sentence saying why it goes, from the same
+ * `sweep-reasons.ts` the six project sweeps read — and the global sweep has two
+ * causes, not one: the package was uninstalled, or the package is still there
+ * and no longer has a skill of that name. A person reading a list of deletions
+ * is owed the difference.
+ *
+ * @param plan - the current global plan (its symlink targets are kept).
+ * @param roots - the roots the plan was built from.
+ * @returns the absolute paths a sweep would remove with their reasons, sorted by
+ *   path and unique.
+ *
+ * A candidate whose folder refuses the write `rmSync` makes is NOT here: it is
+ * a removal DorkOS cannot promise, and {@link findBlockedGlobalRemovals} names
+ * it instead (DOR-1941).
+ */
+export function findGlobalOrphans(plan: GlobalProjectionPlan, roots: GlobalPlanRoots): SweptPath[] {
+  const orphans = globalOrphanCandidates(plan, roots);
+  // The folder has to take the write `rmSync` makes, exactly as it does at
+  // project scope: a mode-0555 `<dorkHome>/skills` holding one of our links
+  // promised the removal and then raised EACCES out of the apply. `''` as the
+  // root because these paths are already absolute — the spelling rule
+  // `DriftResult.orphans` states (DOR-1941).
+  const removable = new Set(removableOf('', [...orphans.keys()]));
   return [...orphans.entries()]
+    .filter(([path]) => removable.has(path))
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([path, reason]) => ({ path, reason }));
+}
+
+/**
+ * The removals a global sweep may not make, as sentences.
+ *
+ * The twin of `apply.ts`'s own: {@link findGlobalOrphans} drops these on its way
+ * out, so the blocked half is recovered by asking the same partition the other
+ * way. One derivation, so `checkGlobalPlan` and `applyGlobalPlan` name the same
+ * links.
+ *
+ * @param plan - the current global plan.
+ * @param roots - the roots the plan was built from.
+ * @returns one sentence per blocked removal, in path order.
+ */
+export function findBlockedGlobalRemovals(
+  plan: GlobalProjectionPlan,
+  roots: GlobalPlanRoots
+): string[] {
+  if (plan.unreadableRoot !== undefined) return [];
+  return partitionRemovable('', rawGlobalOrphanPaths(plan, roots)).warnings;
+}
+
+/**
+ * Every link a global sweep owns and would take if the folder let it.
+ *
+ * {@link findGlobalOrphans} is this filtered by the removal probe, so the two
+ * halves are one partition of one set and no link can fall between them.
+ *
+ * @param plan - the current global plan.
+ * @param roots - the roots the plan was built from.
+ * @returns the absolute paths, sorted.
+ */
+function rawGlobalOrphanPaths(plan: GlobalProjectionPlan, roots: GlobalPlanRoots): string[] {
+  return [...globalOrphanCandidates(plan, roots).keys()].sort();
 }
 
 /**
@@ -606,10 +672,12 @@ export function applyGlobalPlan(
     swept: removals.map(({ path }) => path),
     removals,
     leftAlone: [],
-    // A global run has no folder to be blind inside: `findGlobalOrphans` walks
-    // only the roots the plan itself declares, and one it cannot list is
-    // already the `unreadableRoot` that stops the whole sweep.
-    warnings: [],
+    // A global run has no folder to be BLIND inside — `findGlobalOrphans` walks
+    // only the roots the plan itself declares, and one it cannot list is already
+    // the `unreadableRoot` that stops the whole sweep. It can still meet a
+    // folder that lists and refuses a write, which is a different question and
+    // the one `--check` answers below (DOR-1941 F5).
+    warnings: opts?.sweepOrphans ? findBlockedGlobalRemovals(plan, roots) : [],
   };
 }
 
@@ -656,20 +724,26 @@ export function checkGlobalPlan(plan: GlobalProjectionPlan, roots: GlobalPlanRoo
     if (reason !== undefined) blocked.push({ ...action, reason });
   }
   const removals = findGlobalOrphans(plan, roots);
+  const blockedRemovals = findBlockedGlobalRemovals(plan, roots);
   return {
     drifted,
     blocked,
     orphans: removals.map(({ path }) => path),
     removals,
     leftAlone: [],
-    // Always empty, and by nature rather than by omission. Neither producer can
-    // reach a global plan: the junction warning is about committing a link, and
-    // these targets are in somebody's home directory, which no git checkout
-    // tracks (`apply/windows-links.ts`); and there is no folder to be blind
-    // inside, since `findGlobalOrphans` walks only the roots the plan itself
-    // declares and one it cannot list is already the `unreadableRoot` that
-    // stops the whole sweep.
-    warnings: [],
-    clean: drifted.length === 0 && blocked.length === 0 && removals.length === 0,
+    // The junction family cannot reach a global plan at all, and by nature
+    // rather than by omission: it is about COMMITTING a link, and these targets
+    // are in somebody's home directory, which no git checkout tracks
+    // (`apply/windows-links.ts`). What CAN reach one is a removal the folder
+    // refuses.
+    warnings: blockedRemovals,
+    // A blocked removal counts against `clean` for the reason a blocked write
+    // does: it is a link DorkOS can see, has decided not to take, and cannot
+    // take on a re-run (DOR-1941).
+    clean:
+      drifted.length === 0 &&
+      blocked.length === 0 &&
+      removals.length === 0 &&
+      blockedRemovals.length === 0,
   };
 }

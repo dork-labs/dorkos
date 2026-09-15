@@ -42,7 +42,7 @@
  * @module apply/sweep-warnings
  */
 import { accessSync, constants } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import type { ProjectionPlan } from '../plan/types.js';
 import { AGENTS_SKILLS_DIR } from '../scan/scanner.js';
 import {
@@ -105,6 +105,39 @@ export function sweepBlindWarning(relDir: string): string {
 export function sweepScanWarnings(repoRoot: string, plan: ProjectionPlan): string[] {
   if (plan.narrowedTo !== undefined) return [];
 
+  // A folder the PLAN already has a sentence about gets no second one here.
+  // Three of the four folders below are read by the INVENTORY as well as walked
+  // by a sweep, so a mode-000 `.claude/skills` put one folder on screen twice,
+  // in two voices — the failure every table in this directory is written down
+  // once to avoid. The plan's sentence wins: it is drawn first, it names the
+  // folder already, and it answers the more fundamental of the two questions
+  // (what could not be READ, rather than what was therefore not removed).
+  //
+  // The dedupe is deliberately at the RENDERED answer and not in
+  // {@link unlistableSweptDirs}, which stays the complete list: what the sweeps
+  // walk is a fact about this engine, and it must not quietly shrink because
+  // another pass happens to name the same folder today.
+  const alreadySaid = new Set(
+    plan.warnings.flatMap((warning) => [warning.source, warning.name].filter(named))
+  );
+  return unlistableSweptDirs(repoRoot)
+    .filter((rel) => !alreadySaid.has(rel))
+    .map(sweepBlindWarning);
+}
+
+/**
+ * Every folder a sweep of this tree would have walked and cannot list, whatever
+ * anything else has already said about it.
+ *
+ * Exported so each {@link SWEPT_DIRS} entry can be pinned on its own: the
+ * rendered answer above drops a folder the plan already names, which is right
+ * for a person and wrong for a guard — an entry deleted from the list would
+ * have redded nothing, because the inventory names three of the four anyway.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @returns the repo-relative folders, outermost first.
+ */
+export function unlistableSweptDirs(repoRoot: string): string[] {
   const blind: string[] = [];
   for (const rel of SWEPT_DIRS) {
     const abs = join(repoRoot, rel);
@@ -125,7 +158,7 @@ export function sweepScanWarnings(repoRoot: string, plan: ProjectionPlan): strin
       if (tryListDir(join(abs, sub.name)) === undefined) blind.push(`${rel}/${sub.name}`);
     }
   }
-  return blind.map(sweepBlindWarning);
+  return blind;
 }
 
 /**
@@ -161,7 +194,7 @@ export function blockedRemovalWarning(rel: string, relDir: string): string {
 }
 
 /**
- * Whether the folder holding `rel` refuses the write `rmSync` needs.
+ * Whether the folder holding `absPath` refuses the write a removal makes.
  *
  * **`rmSync` needs the write bit on the PARENT, not on the entry**, which is
  * why nothing else in this engine had asked: every other probe here is about
@@ -174,31 +207,26 @@ export function blockedRemovalWarning(rel: string, relDir: string): string {
  * folder DorkOS may not create a link in and a folder it may not remove one from
  * are the same question asked twice rather than two answers about one mode bit.
  *
- * @param repoRoot - absolute path to the repository root.
- * @param rel - the repo-relative path a sweep would remove.
+ * @param absPath - the absolute path a sweep would remove.
  * @param probed - a memo of folders already answered for; siblings share one.
  * @returns the folder that refuses, or `undefined` when the removal may proceed.
  */
-function unwritableParent(
-  repoRoot: string,
-  rel: string,
-  probed: Map<string, boolean>
-): string | undefined {
+function unwritableParent(absPath: string, probed: Map<string, boolean>): string | undefined {
   if (!CAN_ASK_ABOUT_WRITING) return undefined;
-  const relDir = dirname(rel);
-  const cached = probed.get(relDir);
-  if (cached !== undefined) return cached ? relDir : undefined;
+  const absDir = dirname(absPath);
+  const cached = probed.get(absDir);
+  if (cached !== undefined) return cached ? absDir : undefined;
   let refuses: boolean;
   try {
-    accessSync(join(repoRoot, relDir), constants.W_OK | constants.X_OK);
+    accessSync(absDir, constants.W_OK | constants.X_OK);
     refuses = false;
   } catch {
     // A folder that is not there at all cannot hold anything to remove, so the
     // caller never asks about one — every path here came out of a listing.
     refuses = true;
   }
-  probed.set(relDir, refuses);
-  return refuses ? relDir : undefined;
+  probed.set(absDir, refuses);
+  return refuses ? absDir : undefined;
 }
 
 /**
@@ -210,8 +238,15 @@ function unwritableParent(
  * and the sweep skips exactly what the preview declined to promise (AP-07's
  * equality contract, DOR-1889).
  *
- * @param repoRoot - absolute path to the repository root.
- * @param paths - the repo-relative paths one sweep named, in its own order.
+ * The sentence names the paths in the CALLER's own spelling — repo-relative for
+ * a project sweep, absolute for a global one — which is the rule
+ * {@link ../plan/types.js#DriftResult.orphans} already states about the list
+ * beside it. `repoRoot` is what does the translating, and a global caller passes
+ * the empty string because its paths are already absolute.
+ *
+ * @param repoRoot - absolute path to the repository root, or `''` when `paths`
+ *   are already absolute (global scope).
+ * @param paths - the paths one sweep named, in its own order and spelling.
  * @returns the paths that may be removed, and one sentence per path that may not.
  */
 export function partitionRemovable(
@@ -221,22 +256,39 @@ export function partitionRemovable(
   const removable: string[] = [];
   const warnings: string[] = [];
   const probed = new Map<string, boolean>();
-  for (const rel of paths) {
-    const relDir = unwritableParent(repoRoot, rel, probed);
-    if (relDir === undefined) removable.push(rel);
-    else warnings.push(blockedRemovalWarning(rel, relDir));
+  for (const path of paths) {
+    const absDir = unwritableParent(join(repoRoot, path), probed);
+    if (absDir === undefined) removable.push(path);
+    else warnings.push(blockedRemovalWarning(path, spell(repoRoot, absDir)));
   }
   return { removable, warnings };
+}
+
+/**
+ * The folder's name in the same spelling the path beside it uses.
+ *
+ * @param repoRoot - the root the caller's paths are relative to, or `''`.
+ * @param absDir - the absolute folder.
+ * @returns the repo-relative folder, or the absolute one at global scope.
+ */
+function spell(repoRoot: string, absDir: string): string {
+  if (repoRoot === '') return absDir;
+  return relative(repoRoot, absDir).split(sep).join('/');
 }
 
 /**
  * The paths a sweep may really take — the half of {@link partitionRemovable}
  * every `find*` returns.
  *
- * @param repoRoot - absolute path to the repository root.
- * @param paths - the repo-relative paths one sweep named.
+ * @param repoRoot - absolute path to the repository root, or `''` for absolute paths.
+ * @param paths - the paths one sweep named.
  * @returns the ones whose folder will take the write.
  */
 export function removableOf(repoRoot: string, paths: readonly string[]): string[] {
   return partitionRemovable(repoRoot, paths).removable;
+}
+
+/** A narrowing type guard for the optional path fields on a plan warning. */
+function named(value: string | undefined): value is string {
+  return value !== undefined;
 }

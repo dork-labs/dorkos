@@ -1359,7 +1359,9 @@ describe('VC-01, AP-07 — a folder the sweep could not look inside', () => {
         {
           kind: 'warning',
           artifact: 'skill',
-          name: 'Could not look',
+          // The folder it is about, read out of the sentence — not a category
+          // label that would sit just as happily over a blocked removal.
+          name: '.opencode/commands',
           reason:
             'DorkOS could not look inside `.opencode/commands`, so it does not know whether ' +
             'anything a sync would remove is in there. Nothing was taken out of it. If it ' +
@@ -1371,6 +1373,43 @@ describe('VC-01, AP-07 — a folder the sweep could not look inside', () => {
       expect(status.counts.conflicts).toBe(0);
     } finally {
       chmodSync(blind, 0o755);
+    }
+  });
+});
+
+describe('VC-01, AP-07 — a removal DorkOS may not make', () => {
+  /** Whether this machine can stage a folder that lists and refuses a write. */
+  const CAN_MAKE_READ_ONLY = process.platform !== 'win32' && process.getuid?.() !== 0;
+
+  it.skipIf(!CAN_MAKE_READ_ONLY)('is a project-level warning named for the link', () => {
+    // The second kind of run warning, and the reason the row's name is read out
+    // of the sentence: this one is about a link DorkOS looked at perfectly well
+    // and may not delete, so "Could not look" would have been false about it
+    // (DOR-1941, F3).
+    const { repo, home } = stageBare('blocked-removal', ['claude-code']);
+    const skills = join(repo, '.claude', 'skills');
+    mkdirSync(skills, { recursive: true });
+    symlinkSync(join(repo, '.agents', 'skills', 'gone'), join(skills, 'gone'));
+    chmodSync(skills, 0o555);
+
+    try {
+      const status = statusOf(repo, home);
+
+      expect(
+        status.projectLevel.filter((entry) => entry.reason.includes('would be removed'))
+      ).toEqual([
+        {
+          kind: 'warning',
+          artifact: 'skill',
+          name: '.claude/skills/gone',
+          reason:
+            '`.claude/skills/gone` would be removed, and DorkOS may not write in ' +
+            '`.claude/skills` (permission denied), so it was left exactly as it is. Fix the ' +
+            'folder’s permissions, then re-run.',
+        },
+      ]);
+    } finally {
+      chmodSync(skills, 0o755);
     }
   });
 });

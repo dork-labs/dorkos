@@ -520,13 +520,52 @@ export function sweepGeneratedCommandOrphans(repoRoot: string, plan: ProjectionP
   // apart, and only a real empty listing is a wrapper dir worth tidying away.
   // (Measured before: `rmSync` on a mode-000 dir does not quietly decline, it
   // throws EACCES out of the middle of an apply.)
-  const commandsDir = join(repoRoot, CLAUDE_COMMANDS_DIR);
-  for (const sub of listDirEntries(commandsDir)) {
-    if (!sub.isDirectory()) continue;
-    const subAbs = join(commandsDir, sub.name);
-    if (tryListDir(subAbs)?.length === 0) rmSync(subAbs, { recursive: true, force: true });
+  //
+  // And the folder ABOVE has to take the write, exactly as it does for the files
+  // this sweep just removed. It did not have to before, because nothing here
+  // ever asked: `rmSync` on `.claude/commands/<pkg>` writes `.claude/commands`,
+  // and a mode-0555 one raised EACCES out of the middle of the apply — after
+  // `ship.md` was already gone, and before the two sweeps that follow this one
+  // ever ran (DOR-1941 F1). `emptiedWrapperDirs` is what `--check` previews, so
+  // the two modes decline the same directories.
+  for (const rel of removableOf(repoRoot, emptiedWrapperDirs(repoRoot, plan))) {
+    rmSync(join(repoRoot, rel), { recursive: true, force: true });
   }
   return orphans;
+}
+
+/**
+ * The wrapper directories this sweep's tidy-up would remove.
+ *
+ * A `.claude/commands/<pkg>` goes when nothing is left in it — which, run after
+ * the file sweep, means every entry it holds is one this sweep is taking, or it
+ * holds nothing already. Predicted from the FILTERED orphan list rather than the
+ * raw one, because a file the sweep declines to remove is a file still in the
+ * folder, and a folder that keeps a file keeps itself.
+ *
+ * Its own function so `--check` can name the same directories without deleting
+ * anything: the tidy-up is the one place in the engine that removes a DIRECTORY,
+ * and until DOR-1941 it was the one removal no probe and no preview covered.
+ *
+ * `tryListDir`, never `listDir`: an empty array from a failed read is a folder
+ * whose contents nobody saw, and this decides a deletion on emptiness.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param plan - the current projection plan (its generate targets are kept).
+ * @returns the repo-relative wrapper directories, sorted.
+ */
+function emptiedWrapperDirs(repoRoot: string, plan: ProjectionPlan): string[] {
+  const commandsDir = join(repoRoot, CLAUDE_COMMANDS_DIR);
+  const taking = new Set(findGeneratedCommandOrphans(repoRoot, plan));
+  const dirs: string[] = [];
+  for (const sub of listDirEntries(commandsDir)) {
+    if (!sub.isDirectory()) continue;
+    const rel = `${CLAUDE_COMMANDS_DIR}/${sub.name}`;
+    const listing = tryListDir(join(commandsDir, sub.name));
+    if (listing === undefined) continue; // nobody could look — `sweepScanWarnings` says so
+    if (listing.every((entry) => taking.has(`${rel}/${entry}`))) dirs.push(rel);
+  }
+  return dirs.sort();
 }
 
 /**
@@ -925,15 +964,18 @@ export function applyPlan(
     swept: removals.map(({ path }) => path),
     removals,
     leftAlone,
-    // Three subjects, one list. The junction sentence is asked LAST, so it
-    // answers about the links this run just made rather than about the tree it
-    // found; the other two are about a folder it could not look inside and a
-    // path it may not remove. `checkPlan` asks the same three functions off the
-    // same plan, which is what keeps the two modes saying one thing.
+    // Three subjects, one list, and the junction one sits OUTSIDE the sweep
+    // guard on purpose: it is true of the links this run made whether or not a
+    // sweep ran. The other two are about what a SWEEP found, so a run that
+    // swept nothing says nothing about what it declined to remove — that would
+    // be a sentence about a run that did not happen. `checkPlan` asks the same
+    // three functions off the same plan, which is what keeps the two modes
+    // saying one thing.
     warnings: [
       ...junctionCommitWarnings(repoRoot, plan),
-      ...sweepScanWarnings(repoRoot, plan),
-      ...blockedRemovalWarnings(repoRoot, plan),
+      ...(opts?.sweepOrphans
+        ? [...sweepScanWarnings(repoRoot, plan), ...blockedRemovalWarnings(repoRoot, plan)]
+        : []),
     ],
   };
 }
@@ -1078,6 +1120,9 @@ function blockedRemovalWarnings(repoRoot: string, plan: ProjectionPlan): string[
     ...allGeneratedCommandOrphans(repoRoot, plan),
     ...allOpencodeCommandOrphans(repoRoot, plan),
     ...allSettingsHooksOrphan(repoRoot, plan),
+    // The one removal that is a DIRECTORY rather than a file, and the one the
+    // preview never covered (DOR-1941 F1).
+    ...emptiedWrapperDirs(repoRoot, plan),
   ];
   return partitionRemovable(repoRoot, [...new Set(raw)].sort()).warnings;
 }
@@ -1145,6 +1190,7 @@ export function checkPlan(repoRoot: string, plan: ProjectionPlan): DriftResult {
     ...findBlockedSymlinkTargets(repoRoot, plan).filter((a) => !onBlockedPath(a)),
   ];
   const removals = plan.narrowedTo === undefined ? findOrphans(repoRoot, plan) : [];
+  const blockedRemovals = blockedRemovalWarnings(repoRoot, plan);
   return {
     drifted,
     blocked,
@@ -1159,17 +1205,25 @@ export function checkPlan(repoRoot: string, plan: ProjectionPlan): DriftResult {
     warnings: [
       ...junctionCommitWarnings(repoRoot, plan),
       ...sweepScanWarnings(repoRoot, plan),
-      ...blockedRemovalWarnings(repoRoot, plan),
+      ...blockedRemovals,
     ],
     // A skill folder nobody could read is the fourth way this answer is not
     // "everything is as the plan says": the sweeps stood down over it, so the
     // tree may hold links a readable folder would have settled either way, and
     // saying `clean` over that is the same lie as saying it over nine files a
     // sync would delete (DOR-1882).
+    // A BLOCKED REMOVAL is the fifth: the engine already answers `false` for a
+    // blocked WRITE, and a stale projection DorkOS can see and has decided not
+    // to remove is the same kind of fact — "every projection already matches
+    // the plan" must never print over one. A BLIND folder is not: nothing is
+    // known to be wrong in there, and redding a tree over a folder whose
+    // contents nobody has seen would make `--check` unusable on a machine with
+    // one odd permission (DOR-1939 stays a warning, DOR-1941 does not).
     clean:
       drifted.length === 0 &&
       blocked.length === 0 &&
       removals.length === 0 &&
+      blockedRemovals.length === 0 &&
       !skillSourcesUnreadable(plan),
   };
 }
