@@ -51,7 +51,10 @@ vi.mock('@tanstack/react-router', () => ({
 //
 // Everything below is scenery for this suite: it exists so the shell can mount,
 // and nothing here is under test. The one module deliberately left REAL is
-// `@/layers/entities/config` — the query whose states this suite is about.
+// `@/layers/entities/config` — the query whose states this suite is about. It is
+// mocked only PARTIALLY, for its `useConfigSync` stream subscriber, which needs
+// an `EventStreamProvider` this suite does not mount; everything the suite reads
+// is the real thing.
 
 vi.mock('@/layers/widgets/one-bar', () => ({
   resolveRouteHeader: () => null,
@@ -163,6 +166,23 @@ vi.mock('@/layers/entities/unattended-autonomy', async (importOriginal) => ({
 vi.mock('@/layers/entities/tasks', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/tasks')>()),
   useTasksSync: () => {},
+}));
+
+// Agents and settings ride the same stream (DOR-2052): `useAgentsSync` refreshes
+// the agent caches on `agents_changed` and `useConfigSync` re-reads settings on
+// `config_changed`. No-op'd here for the same reason as the *Sync hooks above.
+vi.mock('@/layers/entities/mesh', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/mesh')>()),
+  useAgentsSync: () => {},
+}));
+
+// `@/layers/entities/config` stays REAL apart from this ONE export — the config
+// query is the thing this suite is about, and a partial mock leaves `useConfig`,
+// `configKeys` and everything else exactly as they are. Only the stream
+// subscriber is stubbed, and it reads nothing this suite asserts on.
+vi.mock('@/layers/entities/config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/config')>()),
+  useConfigSync: () => {},
 }));
 
 // Remote access rides the same stream (DOR-1743): `useTunnelSync` refreshes the
