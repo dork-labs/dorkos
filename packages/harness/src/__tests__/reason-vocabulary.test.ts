@@ -42,8 +42,12 @@
  *
  * ## The one sentence here that is not the engine's
  *
- * `@dorkos/marketplace`'s {@link LAYER_LABELS} are checked too, and they are
- * checked HERE rather than in their own package for two reasons. The loader
+ * `@dorkos/marketplace`'s {@link LAYER_LABELS} are checked too — and, for the
+ * same reason and on the same terms, its {@link CATEGORY_LABELS} and
+ * {@link CATEGORY_DESCRIPTIONS}, which the site draws on every
+ * `/marketplace/category/<slug>` page, in its `sitemap`, in `llms.txt` and into
+ * an OpenGraph image. They are checked HERE rather than in their own package for
+ * two reasons. The loader
  * above lives at the repository root, outside `packages/marketplace`'s pinned
  * `rootDir`, so a test there cannot import it; and this file already holds the
  * labels, because their KEYS are the ADR's carve-out. Their VALUES are ordinary
@@ -51,8 +55,15 @@
  * and no gate reaches them: `check-vocab-gate.ts` counts a string in a property
  * position as copy only when the property NAME is one it knows (`label`,
  * `description`, …), and these are keyed by layer name, so pointing that gate at
- * the package finds nothing (measured 2026-09-15, DOR-1936). One of the nine had
- * been reading `Installs messaging adapters` since before the ADR.
+ * the package finds nothing (measured 2026-09-15, DOR-1936). One of the nine
+ * labels had been reading `Installs messaging adapters` since before the ADR, and
+ * one category had been `Integrations` / `Connectors and adapters for outside
+ * services.` — three retired nouns in two strings, on the most public surface
+ * either package has.
+ *
+ * The category SLUGS are untouched and out of scope: `integrations` is a URL and
+ * a record key, which is an identifier (AGENTS.md), and renaming it would break
+ * every link to that page.
  *
  * What it does NOT cover, and does not need to:
  *
@@ -78,7 +89,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { LAYER_LABELS } from '@dorkos/marketplace';
+import { CATEGORY_DESCRIPTIONS, CATEGORY_LABELS, LAYER_LABELS } from '@dorkos/marketplace';
 import {
   loadBannedTerms,
   termMatcher,
@@ -349,6 +360,10 @@ function collectReasons(repoRoot: string, dorkHome: string): Reason[] {
   // header gives. A `marketplace-label` family of its own, so a failure names
   // the package the string really lives in.
   for (const label of Object.values(LAYER_LABELS)) add('marketplace-label', label);
+  // And the category labels and their one-line descriptions, drawn on the
+  // marketplace's own public pages.
+  for (const label of Object.values(CATEGORY_LABELS)) add('marketplace-category', label);
+  for (const text of Object.values(CATEGORY_DESCRIPTIONS)) add('marketplace-category', text);
 
   // `plan.notEnabled` is deliberately NOT collected. Its entries carry a
   // `signal` — `.gemini/`, `.github/copilot-instructions.md` — which is a PATH,
@@ -446,6 +461,7 @@ describe('VC-02 — the sentences the engine shows a person', () => {
       'blocked',
       'drop',
       'manifest-notice',
+      'marketplace-category',
       'marketplace-label',
       'sweep',
       'warning',
@@ -483,6 +499,11 @@ describe('VC-02 — the sentences the engine shows a person', () => {
     expect(reasons.filter((reason) => reason.family === 'marketplace-label')).toHaveLength(
       Object.keys(LAYER_LABELS).length
     );
+    // Both halves of every category, for the same reason: a label and its
+    // description are two sentences on one page and either can rot alone.
+    expect(reasons.filter((reason) => reason.family === 'marketplace-category')).toHaveLength(
+      Object.keys(CATEGORY_LABELS).length + Object.keys(CATEGORY_DESCRIPTIONS).length
+    );
   });
 
   it('VC-02: uses no retired user-facing word outside a quoted package-layer name', () => {
@@ -499,7 +520,8 @@ describe('VC-02 — the sentences the engine shows a person', () => {
       offenders,
       'A sentence the app draws verbatim uses a word this product retired. Rewrite it where it ' +
         'lives: packages/harness for every family but one — the CLI prints the same string, so the ' +
-        'fix reaches both surfaces at once — and packages/marketplace for a `marketplace-label`. ' +
+        'fix reaches both surfaces at once — and packages/marketplace for a `marketplace-label` ' +
+        'or a `marketplace-category`. ' +
         'The one legitimate use is a marketplace layer NAME in quotes (ADR 260804-021140).'
     ).toEqual([]);
   });

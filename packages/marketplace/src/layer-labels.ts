@@ -18,10 +18,16 @@ export const LAYER_LABELS: Readonly<Record<string, string>> = {
   extensions: 'Installs UI extensions',
   // The KEY is the layer name a package author writes in their own manifest,
   // which ADR 260804-021140 keeps; the label a person reads is Connections
-  // language, because that is the page this lands them on. Plural on purpose:
-  // "connection" on its own is retired copy (DOR-855), "Connections" is the
-  // domain.
-  adapters: 'Adds messaging connections',
+  // language, because that is the page this lands them on.
+  //
+  // Not "messaging": this layer is BOTH regions of that page. `scaffolder.ts`
+  // gives every `type: 'adapter'` package `layers: ['adapters']`, and an adapter
+  // whose `adapterType` is `connector` (`CONNECTOR_ADAPTER_TYPE`) is an Accounts
+  // backend, not a Telegram or Slack hookup — `connector-composio` would have
+  // read "messaging". The umbrella is the honest word for a layer that carries
+  // both. Plural on purpose: "connection" on its own is retired copy (DOR-855),
+  // "Connections" is the domain.
+  adapters: 'Adds connections',
   'mcp-servers': 'Adds MCP servers',
   'lsp-servers': 'Adds LSP servers',
   agents: 'Adds agent definitions',
