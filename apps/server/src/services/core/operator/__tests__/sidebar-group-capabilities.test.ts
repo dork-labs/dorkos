@@ -23,7 +23,7 @@
  *
  * @vitest-environment node
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -32,6 +32,8 @@ import { SidebarGroupSchema, type SidebarGroup } from '@dorkos/shared/config-sch
 import type { ConfigManager } from '../../config-manager.js';
 import type { GuardedConfigWrite } from '../config-write.js';
 import type { OperatorToolResult } from '../operator-tool-handlers.js';
+import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
+import type { SidebarItemRefInput } from '../sidebar-item-refs.js';
 
 /** Every guarded write the handlers made, in order, as production built it. */
 const { writes } = vi.hoisted(() => ({ writes: [] as GuardedConfigWrite[] }));
@@ -52,12 +54,51 @@ function group(over: Partial<SidebarGroup> & Pick<SidebarGroup, 'id' | 'name'>):
   return { ...SidebarGroupSchema.parse({ id: over.id, name: over.name }), ...over };
 }
 
+// The STORED shape, which is what every assertion about the config compares
+// against. A caller never sends these — it sends a name, an id or a path, and
+// the handler resolves it to exactly this (`sidebar-item-refs.ts`).
 const AGENT_A = { kind: 'agent', path: '/projects/alpha' } as const;
 const AGENT_B = { kind: 'agent', path: '/projects/beta' } as const;
 const AGENT_C = { kind: 'agent', path: '/projects/gamma' } as const;
 const ROOM = { kind: 'room', roomId: '01JROOM' } as const;
 /** A room in no section at all, so filing it can move nothing. */
 const LOOSE_ROOM = { kind: 'room', roomId: '01JROOM2' } as const;
+
+/**
+ * The roster the handlers resolve against: three agents and two open rooms,
+ * matching the fixtures above so a test can name any of them the way a model
+ * would.
+ */
+const ROSTER_AGENTS = [
+  {
+    id: '01JAGENTALPHA',
+    name: 'alpha',
+    displayName: 'Alpha Scout',
+    projectPath: '/projects/alpha',
+  },
+  { id: '01JAGENTBETA', name: 'beta', projectPath: '/projects/beta' },
+  { id: '01JAGENTGAMMA', name: 'gamma', displayName: 'Gamma', projectPath: '/projects/gamma' },
+];
+
+const ROSTER_ROOMS = [
+  { roomId: '01JROOM', name: 'Lab notes', slug: 'lab' },
+  { roomId: '01JROOM2', name: 'General', slug: 'general' },
+];
+
+/**
+ * Tool deps carrying just the two rosters a reference is checked against.
+ *
+ * `listOperatorRooms` is a FUNCTION here as it is in production, because the
+ * handler calls it per invocation — a room archived between two calls has to
+ * disappear from the answer.
+ */
+function deps(over: Partial<McpToolDeps> = {}): McpToolDeps {
+  return {
+    meshCore: { listWithPaths: () => ROSTER_AGENTS } as unknown as McpToolDeps['meshCore'],
+    listOperatorRooms: () => [...ROSTER_ROOMS],
+    ...over,
+  } as McpToolDeps;
+}
 
 describe('the sidebar-section capabilities', () => {
   let tmpDir: string;
@@ -69,17 +110,33 @@ describe('the sidebar-section capabilities', () => {
     typeof import('../operator-tool-handlers.js').createSidebarRemoveFromGroupHandler
   >;
 
-  beforeEach(async () => {
+  /** The two modules under test, imported once — see the note on `beforeAll`. */
+  let handlers: typeof import('../operator-tool-handlers.js');
+  let initConfigManager: typeof import('../../config-manager.js').initConfigManager;
+
+  // Imported ONCE rather than per test. The handler factories capture only their
+  // deps and the caller identity; the config store is read through the live
+  // `configManager` binding at call time, so a handler built here still sees the
+  // store each test initializes below.
+  //
+  // The explicit timeout is not padding for slow code. This graph reaches
+  // `config-manager.ts` and the session fan-out, and this repo is routinely
+  // several agents deep on one machine — the import measured 1.3s idle and blew
+  // the 10s default at load average 388. A hook that fails on how busy the
+  // machine is tells you nothing about the code, so it gets a budget it cannot
+  // lose to a neighbour.
+  beforeAll(async () => {
+    handlers = await import('../operator-tool-handlers.js');
+    initConfigManager = (await import('../../config-manager.js')).initConfigManager;
+  }, 60_000);
+
+  beforeEach(() => {
     writes.length = 0;
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-sidebar-groups-'));
     process.env.DORK_HOME = tmpDir;
-
-    const configModule = await import('../../config-manager.js');
-    configManager = configModule.initConfigManager(tmpDir);
-
-    const handlers = await import('../operator-tool-handlers.js');
-    addToGroup = handlers.createSidebarAddToGroupHandler();
-    removeFromGroup = handlers.createSidebarRemoveFromGroupHandler();
+    configManager = initConfigManager(tmpDir);
+    addToGroup = handlers.createSidebarAddToGroupHandler(deps());
+    removeFromGroup = handlers.createSidebarRemoveFromGroupHandler(deps());
   });
 
   // Deliberately NO `vi.resetModules()`. The mock factory's result is cached
@@ -323,6 +380,190 @@ describe('the sidebar-section capabilities', () => {
       expect(stored('g-dorkos')!.items).toEqual([AGENT_A, AGENT_B]);
       expect(body.added).toEqual([AGENT_B]);
       expect(body.alreadyPresent).toEqual([AGENT_B]);
+    });
+  });
+
+  describe('naming an item', () => {
+    // The defect this whole block exists for: the sidebar resolves a stored ref
+    // by exact string and never prunes a stale one, so an unchecked reference is
+    // a member of the section forever that draws nothing, reported as success.
+    it.each<[string, SidebarItemRefInput]>([
+      ['its short name', { kind: 'agent', name: 'alpha' }],
+      ['its display name, without case', { kind: 'agent', name: 'alpha scout' }],
+      ['its id', { kind: 'agent', agentId: '01JAGENTALPHA' }],
+      ['its directory', { kind: 'agent', path: '/projects/alpha' }],
+      ['its directory with a trailing slash', { kind: 'agent', path: '/projects/alpha/' }],
+    ])('resolves an agent named by %s to the stored path', async (_label, ref) => {
+      seed([group({ id: 'g-1', name: 'Work' })]);
+      const { isError } = await call(addToGroup({ group: 'Work', items: [ref] }));
+
+      expect(isError).toBe(false);
+      // Whatever was sent, what is STORED is the roster's own projectPath —
+      // the only string the sidebar will ever match on.
+      expect(stored('g-1')!.items).toEqual([AGENT_A]);
+    });
+
+    it.each<[string, SidebarItemRefInput]>([
+      ['its id', { kind: 'room', roomId: '01JROOM' }],
+      ['its channel name', { kind: 'room', name: 'lab' }],
+      ['its title, without case', { kind: 'room', name: 'LAB NOTES' }],
+    ])('resolves a room named by %s to the stored id', async (_label, ref) => {
+      seed([group({ id: 'g-1', name: 'Work' })]);
+      const { isError } = await call(addToGroup({ group: 'Work', items: [ref] }));
+
+      expect(isError).toBe(false);
+      expect(stored('g-1')!.items).toEqual([ROOM]);
+    });
+
+    it('refuses an agent nobody has registered, and offers the roster', async () => {
+      // The reported shape: `path: "scout"` used to answer `success: true` and
+      // put a row in the section that renders nothing, forever.
+      seed([group({ id: 'g-1', name: 'Work' })]);
+      const { isError, body } = await call(
+        addToGroup({ group: 'Work', items: [{ kind: 'agent', path: 'scout' }] })
+      );
+
+      expect(isError).toBe(true);
+      expect(body.code).toBe('SIDEBAR_ITEM_NOT_FOUND');
+      expect(String(body.error)).toContain('"scout"');
+      // A refusal a model can act on names what DOES exist.
+      expect(String(body.error)).toContain('alpha');
+      expect(stored('g-1')!.items).toEqual([]);
+      expect(writes).toHaveLength(0);
+    });
+
+    it('refuses a name no agent answers to, however it was sent', async () => {
+      seed([group({ id: 'g-1', name: 'Work' })]);
+      const misses: SidebarItemRefInput[] = [
+        { kind: 'agent', name: 'nobody' },
+        { kind: 'agent', agentId: '01JNOTREAL' },
+        { kind: 'agent' },
+      ];
+      for (const ref of misses) {
+        const { isError, body } = await call(addToGroup({ group: 'Work', items: [ref] }));
+        expect(isError).toBe(true);
+        expect(body.code).toBe('SIDEBAR_ITEM_NOT_FOUND');
+      }
+      expect(writes).toHaveLength(0);
+    });
+
+    it('refuses an archived room, because the seam never lists one', async () => {
+      // Production passes `includeArchived: false` when it builds this roster
+      // (`index.ts`), so an archived room is simply absent from it — which is
+      // the same answer the sidebar gives, since it renders open rooms only.
+      seed([group({ id: 'g-1', name: 'Work' })]);
+      const { isError, body } = await call(
+        addToGroup({ group: 'Work', items: [{ kind: 'room', roomId: '01JARCHIVED' }] })
+      );
+
+      expect(isError).toBe(true);
+      expect(body.code).toBe('SIDEBAR_ITEM_NOT_FOUND');
+      expect(String(body.error)).toContain('archived');
+      expect(writes).toHaveLength(0);
+    });
+
+    it('refuses an ambiguous room name rather than picking one', async () => {
+      const twoGenerals = handlers.createSidebarAddToGroupHandler(
+        deps({
+          listOperatorRooms: () => [
+            { roomId: '01JROOMX', name: 'General', slug: null },
+            { roomId: '01JROOMY', name: 'General', slug: null },
+          ],
+        })
+      );
+      seed([group({ id: 'g-1', name: 'Work' })]);
+
+      const { isError, body } = await call(
+        twoGenerals({ group: 'Work', items: [{ kind: 'room', name: 'General' }] })
+      );
+
+      expect(isError).toBe(true);
+      expect(body.code).toBe('SIDEBAR_ITEM_NOT_FOUND');
+      expect(String(body.error)).toContain('roomId');
+      expect(writes).toHaveLength(0);
+    });
+
+    it('refuses an ambiguous agent name rather than picking one', async () => {
+      const twins = handlers.createSidebarAddToGroupHandler(
+        deps({
+          meshCore: {
+            listWithPaths: () => [
+              { id: '01JX', name: 'scout', projectPath: '/projects/one' },
+              { id: '01JY', name: 'other', displayName: 'Scout', projectPath: '/projects/two' },
+            ],
+          } as unknown as McpToolDeps['meshCore'],
+        })
+      );
+      seed([group({ id: 'g-1', name: 'Work' })]);
+
+      const { isError, body } = await call(
+        twins({ group: 'Work', items: [{ kind: 'agent', name: 'scout' }] })
+      );
+
+      expect(isError).toBe(true);
+      expect(String(body.error)).toContain('agentId');
+      expect(writes).toHaveLength(0);
+    });
+
+    it('refuses the WHOLE call when one of several items misses', async () => {
+      // No partial write: a model told "three filed" when one is missing has no
+      // way to find out which, and neither has the person.
+      seed([group({ id: 'g-1', name: 'Work' })]);
+      const { isError } = await call(
+        addToGroup({
+          group: 'Work',
+          items: [
+            { kind: 'agent', name: 'alpha' },
+            { kind: 'agent', name: 'nobody' },
+          ],
+        })
+      );
+
+      expect(isError).toBe(true);
+      expect(stored('g-1')!.items).toEqual([]);
+      expect(writes).toHaveLength(0);
+    });
+
+    it('refuses a room reference when this DorkOS has no rooms wired', async () => {
+      // `undefined` is "cannot answer", never "no rooms" — storing an unchecked
+      // ref because the checker is missing is the failure, not the fallback.
+      const roomless = handlers.createSidebarAddToGroupHandler(
+        deps({ listOperatorRooms: undefined })
+      );
+      seed([group({ id: 'g-1', name: 'Work' })]);
+
+      const { isError, body } = await call(
+        roomless({ group: 'Work', items: [{ kind: 'room', roomId: '01JROOM' }] })
+      );
+
+      expect(isError).toBe(true);
+      expect(String(body.error)).toContain('rooms are not available');
+      expect(writes).toHaveLength(0);
+    });
+
+    it('resolves the same way on the way OUT of a section', async () => {
+      // Without this the stored ref is a path and the caller's slug matches
+      // nothing, so the item would be reported "not present" while sitting in
+      // the section untouched.
+      seed([group({ id: 'g-1', name: 'Work', items: [AGENT_A, AGENT_B] })]);
+      const { body } = await call(
+        removeFromGroup({ group: 'Work', items: [{ kind: 'agent', name: 'Alpha Scout' }] })
+      );
+
+      expect(body.removed).toEqual([AGENT_A]);
+      expect(stored('g-1')!.items).toEqual([AGENT_B]);
+    });
+
+    it('refuses an unknown item on the way out too, and writes nothing', async () => {
+      seed([group({ id: 'g-1', name: 'Work', items: [AGENT_A] })]);
+      const { isError, body } = await call(
+        removeFromGroup({ group: 'Work', items: [{ kind: 'agent', name: 'nobody' }] })
+      );
+
+      expect(isError).toBe(true);
+      expect(body.code).toBe('SIDEBAR_ITEM_NOT_FOUND');
+      expect(stored('g-1')!.items).toEqual([AGENT_A]);
+      expect(writes).toHaveLength(0);
     });
   });
 

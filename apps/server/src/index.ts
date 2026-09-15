@@ -2903,6 +2903,15 @@ async function start() {
       // The DorkOS-DM fallback, hoisted above so the notification pipeline's
       // relay channel shares this one seam rather than building a second.
       ...(notifyDm && { notifyDm }),
+      // What the two sidebar-section capabilities check a room reference against
+      // before they store one (DOR-2055). Resolved per call, because a room can
+      // be archived between two turns of the same conversation, and read as the
+      // OPERATOR rather than the caller: the sidebar being edited is the
+      // person's, so it legitimately holds rooms the calling agent never joined.
+      listOperatorRooms: () =>
+        roomService
+          .listRooms(resolveOperatorAuthorId(), { includeArchived: false })
+          .map((room) => ({ roomId: room.id, name: room.title, slug: room.slug })),
     };
     claudeRuntime.setMcpServerFactory((session, sessionId) =>
       // Managed servers first and `dorkos` last so it can never be shadowed —

@@ -272,6 +272,16 @@ export function removeSidebarItems(
  * section made by a person must be indistinguishable on disk, and a default that
  * moved in the schema would otherwise split the two silently.
  *
+ * ## How that claim is actually held, since it spans two packages
+ *
+ * In two hops, because no one test can see both sides. This function is pinned
+ * against `SidebarGroupSchema`'s defaults in
+ * `__tests__/sidebar-group-capabilities.test.ts`, and `createGroup` is pinned
+ * against the same schema in the client's own
+ * `entities/config/__tests__/use-sidebar-prefs.test.tsx` (DOR-2055). The schema
+ * is the shared middle, so either side drifting reds one of the two — which is
+ * what makes the sentence above a fact rather than a hope.
+ *
  * @param name - The display name the caller asked for.
  * @returns A new, empty, expanded, manually-sorted section.
  */

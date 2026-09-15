@@ -22,7 +22,6 @@
 import { z } from 'zod';
 import { ListActivityQuerySchema } from '@dorkos/shared/activity-schemas';
 import { RecentSessionsQuerySchema } from '@dorkos/shared/schemas';
-import { SidebarItemRefSchema } from '@dorkos/shared/config-schema';
 import { TraitsSchema } from '@dorkos/shared/mesh-schemas';
 import { NOPE_MAX_CHARS, SOUL_MAX_CHARS } from '@dorkos/shared/convention-files';
 import { CAPABILITY_TIERS } from '@dorkos/shared/capabilities';
@@ -76,12 +75,60 @@ function requireOperatorDeps(deps: CapabilityDeps): McpToolDeps {
 }
 
 /**
+ * How a caller names one agent or one room (DOR-2055).
+ *
+ * **Deliberately not `SidebarItemRefSchema`**, which is the STORED shape. That
+ * one carries an agent as its `projectPath`, and a model usually cannot get
+ * hold of one: `AgentManifest` does not carry a path, so neither `mesh_list` nor
+ * `mesh_inspect` returns it, and the one tool that does drops every agent with
+ * no recent session. Accepting only the stored shape would make the capability
+ * unusable for the agent somebody has just registered — which is the case it
+ * exists for. So three identifiers are accepted here and every one of them is
+ * resolved against the live roster, with the canonical ref stored; see
+ * `sidebar-item-refs.ts` for why a reference is never stored as sent.
+ *
+ * Every field is optional so a reference naming nothing reaches the handler and
+ * gets a sentence about what to send, rather than a raw Zod error from the
+ * registry's own parse — the same trade, for the same reason, that
+ * `update_agent_boundaries` documents on its empty-patch guard.
+ */
+const sidebarItemRefInputSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('agent'),
+    path: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("The agent's project directory, exactly as DorkOS registered it"),
+    agentId: z.string().min(1).optional().describe("The agent's ULID"),
+    name: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("The agent's short name, or its display name (either, without regard to case)"),
+  }),
+  z.object({
+    kind: z.literal('room'),
+    roomId: z.string().min(1).optional().describe("The room's id"),
+    name: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("A channel's name, or a room's title (without regard to case)"),
+  }),
+]);
+
+/**
  * Selector shared by the two capabilities that edit one sidebar section's
  * membership (DOR-2055).
  *
  * The field is `group` because that is what the schema, the config path and
  * every identifier in this repo call it; the prose a model reads says "sidebar
  * section", which is what a person calls it (AGENTS.md).
+ *
+ * `items` is NOT shared: the two verbs describe the same shape as opposite acts,
+ * and one `.describe()` saying "to move" was being served verbatim to the verb
+ * that takes things out.
  */
 const sidebarGroupSelectorSchema = {
   group: z
@@ -91,14 +138,24 @@ const sidebarGroupSelectorSchema = {
       'The sidebar section to change: its id, or its name (matched without regard to case). ' +
         'An id always wins over a name.'
     ),
-  items: z
-    .array(SidebarItemRefSchema)
+};
+
+/**
+ * The `items` field, worded for the verb it belongs to.
+ *
+ * @param what - What this verb does with them, as a phrase.
+ * @returns The `items` schema for that verb.
+ */
+function sidebarItemsSchema(what: string) {
+  return z
+    .array(sidebarItemRefInputSchema)
     .min(1)
     .describe(
-      'The agents and rooms to move. An agent is {"kind":"agent","path":"<its project ' +
-        'directory>"}; a room is {"kind":"room","roomId":"<its id>"}.'
-    ),
-};
+      `The agents and rooms to ${what}. An agent is {"kind":"agent"} plus ONE of name, agentId ` +
+        'or path; a room is {"kind":"room"} plus roomId or name. Every one is looked up before ' +
+        'anything is written, and a name DorkOS does not know refuses the whole call.'
+    );
+}
 
 /** Agent selector shared by capabilities that address one agent by id or directory. */
 const agentSelectorSchema = {
@@ -478,7 +535,10 @@ export const operatorDomain: CapabilityDomain = {
       title: 'Add to a sidebar section',
       description:
         'Put agents and rooms into ONE section of the sidebar. Name the section in `group` by ' +
-        'its id or its name, and list what to file there in `items`. An item lives in one ' +
+        'its id or its name, and list what to file there in `items` — an agent by its name, its ' +
+        'id or its directory, a room by its id or its name. Everything is looked up before ' +
+        'anything is written, so a name DorkOS does not know refuses the whole call and tells ' +
+        'you which agents it does have. An item lives in one ' +
         'section at a time, so this MOVES it if it is already in another section: the section ' +
         'it came out of is named in `movedFrom`, and no other section is touched. Anything ' +
         'already in the section you named is left alone, so calling twice adds nothing twice. ' +
@@ -497,6 +557,7 @@ export const operatorDomain: CapabilityDomain = {
       tier: 'act',
       input: z.object({
         ...sidebarGroupSelectorSchema,
+        items: sidebarItemsSchema('file there'),
         createIfMissing: z
           .boolean()
           .optional()
@@ -513,9 +574,12 @@ export const operatorDomain: CapabilityDomain = {
           annotations: { idempotentHint: true },
         },
       },
-      invoke: async (_deps, input, context) =>
+      invoke: async (deps, input, context) =>
         unwrapMcpEnvelope(
-          await createSidebarAddToGroupHandler(context.identity)(input as SidebarAddToGroupArgs)
+          await createSidebarAddToGroupHandler(
+            requireOperatorDeps(deps),
+            context.identity
+          )(input as SidebarAddToGroupArgs)
         ),
     }),
     defineCapability({
@@ -524,13 +588,18 @@ export const operatorDomain: CapabilityDomain = {
       description:
         'Take agents and rooms out of ONE section of the sidebar, leaving every other section ' +
         'exactly as it is. Name the section in `group` by its id or its name, and list what to ' +
-        'take out in `items`. Anything that was not in that section is reported back and ' +
+        'take out in `items` — an agent by its name, its id or its directory, a room by its id ' +
+        'or its name, looked up the same way the filing verb looks them up. Anything that was ' +
+        'not in that section is reported back and ' +
         'nothing else happens to it. Taking the last member out leaves the section there and ' +
         'empty; only a person removes a section. To file something instead, use the tool whose ' +
         "name ends in `sidebar_add_to_group`. This rearranges the user's own sidebar, so only " +
         'do it when they have asked for it.',
       tier: 'act',
-      input: z.object(sidebarGroupSelectorSchema),
+      input: z.object({
+        ...sidebarGroupSelectorSchema,
+        items: sidebarItemsSchema('take out'),
+      }),
       output: z.unknown(),
       surfaces: {
         mcp: {
@@ -539,11 +608,12 @@ export const operatorDomain: CapabilityDomain = {
           annotations: { idempotentHint: true },
         },
       },
-      invoke: async (_deps, input, context) =>
+      invoke: async (deps, input, context) =>
         unwrapMcpEnvelope(
-          await createSidebarRemoveFromGroupHandler(context.identity)(
-            input as SidebarRemoveFromGroupArgs
-          )
+          await createSidebarRemoveFromGroupHandler(
+            requireOperatorDeps(deps),
+            context.identity
+          )(input as SidebarRemoveFromGroupArgs)
         ),
     }),
   ],

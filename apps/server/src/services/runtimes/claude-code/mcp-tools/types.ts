@@ -100,6 +100,26 @@ export interface McpToolDeps {
   /** Optional MeshCore — undefined when Mesh is disabled */
   meshCore?: MeshCore;
   /**
+   * The rooms a person can still see, for the two sidebar-section capabilities
+   * that have to check a room reference before storing one (DOR-2055).
+   *
+   * A function returning plain data rather than the rooms service itself, and
+   * that is the point of its shape. The operator domain has no business holding
+   * `RoomService` — it would inherit a whole domain's surface to ask one
+   * yes-or-no question — and the answer it needs is per-call, because a room can
+   * be archived between two turns of the same conversation.
+   *
+   * It is the OPERATOR'S view, not the caller's, and the difference is
+   * load-bearing: an agent sees only the rooms it belongs to, while the sidebar
+   * being edited is the person's and legitimately holds rooms that agent has
+   * never joined. Validating against the caller would refuse correct references.
+   *
+   * Undefined when rooms are not wired, which a caller must read as "cannot
+   * answer" rather than "no rooms" — see `SidebarRoster` in
+   * `core/operator/sidebar-item-refs.ts`.
+   */
+  listOperatorRooms?: () => { roomId: string; name: string; slug: string | null }[];
+  /**
    * Optional rooms seam for the first-party fallback `relay_notify_user` takes
    * when no external chat integration can carry a proactive message: the
    * caller's own direct message with the operator (DOR-1209). Undefined when

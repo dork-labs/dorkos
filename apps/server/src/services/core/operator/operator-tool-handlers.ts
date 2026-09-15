@@ -43,6 +43,11 @@ import {
   resolveSidebarGroup,
   storedSidebarPrefs,
 } from './sidebar-groups.js';
+import {
+  resolveSidebarItems,
+  type SidebarItemRefInput,
+  type SidebarRoster,
+} from './sidebar-item-refs.js';
 import { getLatestVersion } from '../update-checker.js';
 import { listRecentSessions } from '../../session/index.js';
 
@@ -469,8 +474,8 @@ export function createConfigPatchHandler(identity?: AgentIdentity) {
 export interface SidebarAddToGroupArgs {
   /** The section, by id or by name (name matched without case). */
   group: string;
-  /** The agents and rooms to file there. */
-  items: SidebarItemRef[];
+  /** The agents and rooms to file there, however the caller names them. */
+  items: SidebarItemRefInput[];
   /** Make the section when no section answers to `group`. */
   createIfMissing?: boolean;
 }
@@ -479,8 +484,29 @@ export interface SidebarAddToGroupArgs {
 export interface SidebarRemoveFromGroupArgs {
   /** The section, by id or by name (name matched without case). */
   group: string;
-  /** The agents and rooms to take out of it. */
-  items: SidebarItemRef[];
+  /** The agents and rooms to take out of it, however the caller names them. */
+  items: SidebarItemRefInput[];
+}
+
+/**
+ * What this install can currently see, for {@link resolveSidebarItems}.
+ *
+ * Read fresh on every call, like the config beside it: a roster captured once
+ * would refuse the agent somebody registered thirty seconds ago, which is the
+ * exact moment this capability exists for.
+ *
+ * `rooms: undefined` when no rooms seam is wired. That is not an empty roster
+ * and the resolver does not read it as one — it refuses a room reference with
+ * that reason rather than storing one nobody checked.
+ *
+ * @param deps - The operator service handles.
+ * @returns The roster to resolve against.
+ */
+function sidebarRoster(deps: McpToolDeps): SidebarRoster {
+  return {
+    agents: deps.meshCore ? deps.meshCore.listWithPaths() : [],
+    rooms: deps.listOperatorRooms?.(),
+  };
 }
 
 /**
@@ -551,11 +577,13 @@ function sidebarWriteFailure(result: GuardedConfigWriteResult): OperatorToolResu
  * other surface assumes; the sections it left come back as `movedFrom` so the
  * answer says where it went from. See {@link liftFromOtherGroups}.
  *
+ * @param deps - Tool deps: `meshCore` for the agent roster, `listOperatorRooms`
+ *   for the room one. Both are what a reference is checked against.
  * @param identity - The calling agent, when the surface resolved one. Read only
  *   for the audit line's writer field; nothing about the write depends on it.
  * @returns The bound handler.
  */
-export function createSidebarAddToGroupHandler(identity?: AgentIdentity) {
+export function createSidebarAddToGroupHandler(deps: McpToolDeps, identity?: AgentIdentity) {
   return async (args: SidebarAddToGroupArgs): Promise<OperatorToolResult> => {
     // Read at CALL time, never from anything the caller sent: the whole point is
     // that the sections this write preserves are the ones stored right now.
@@ -570,9 +598,21 @@ export function createSidebarAddToGroupHandler(identity?: AgentIdentity) {
       return jsonResult({ error: found.error, code: found.code, sections: found.sections }, true);
     }
 
+    // Resolved to what the SIDEBAR matches on, before anything is written. A ref
+    // the client cannot resolve is not an error anywhere downstream — it is a
+    // member of the section forever that draws nothing — so a miss refuses the
+    // whole call. See `sidebar-item-refs.ts`.
+    const resolved = resolveSidebarItems(args.items, sidebarRoster(deps));
+    if (!resolved.ok) {
+      return jsonResult(
+        { error: resolved.error, code: resolved.code, unresolved: resolved.unresolved },
+        true
+      );
+    }
+
     const created = found.ok ? undefined : newSidebarGroup(args.group.trim());
     const target = found.ok ? found.group : created!;
-    const { items, added, alreadyPresent } = addSidebarItems(target.items, args.items);
+    const { items, added, alreadyPresent } = addSidebarItems(target.items, resolved.items);
     const group = { ...target, items };
     const filed = created ? appendSidebarGroup(prefs, group) : replaceSidebarGroup(prefs, group);
 
@@ -580,7 +620,7 @@ export function createSidebarAddToGroupHandler(identity?: AgentIdentity) {
     // this call each named item is in the section that was asked for and in no
     // other, which is also what makes a repeated call a no-op rather than a
     // slow drift back into two homes.
-    const { groups, movedFrom } = liftFromOtherGroups(filed.groups, group.id, args.items);
+    const { groups, movedFrom } = liftFromOtherGroups(filed.groups, group.id, resolved.items);
     const next = { ...filed, groups };
 
     const result = writeSidebarPrefs(next, 'the sidebar_add_to_group tool', identity);
@@ -608,10 +648,11 @@ export function createSidebarAddToGroupHandler(identity?: AgentIdentity) {
  * and empty — see {@link removeSidebarItems} for why deleting it would be a
  * second change nobody asked for.
  *
+ * @param deps - Tool deps: the same two rosters the add verb resolves against.
  * @param identity - The calling agent, when the surface resolved one.
  * @returns The bound handler.
  */
-export function createSidebarRemoveFromGroupHandler(identity?: AgentIdentity) {
+export function createSidebarRemoveFromGroupHandler(deps: McpToolDeps, identity?: AgentIdentity) {
   return async (args: SidebarRemoveFromGroupArgs): Promise<OperatorToolResult> => {
     const prefs = storedSidebarPrefs(configManager.get('ui'));
     const found = resolveSidebarGroup(prefs.groups, args.group);
@@ -619,7 +660,19 @@ export function createSidebarRemoveFromGroupHandler(identity?: AgentIdentity) {
       return jsonResult({ error: found.error, code: found.code, sections: found.sections }, true);
     }
 
-    const { items, removed, notPresent } = removeSidebarItems(found.group.items, args.items);
+    // Resolved the same way the add verb resolves, and for a reason beyond
+    // symmetry: the stored ref is a canonical path or room id, so a caller that
+    // named the agent by slug would otherwise match nothing and be told the item
+    // was "not present" while it sat in the section untouched.
+    const resolved = resolveSidebarItems(args.items, sidebarRoster(deps));
+    if (!resolved.ok) {
+      return jsonResult(
+        { error: resolved.error, code: resolved.code, unresolved: resolved.unresolved },
+        true
+      );
+    }
+
+    const { items, removed, notPresent } = removeSidebarItems(found.group.items, resolved.items);
     const group = { ...found.group, items };
     const result = writeSidebarPrefs(
       replaceSidebarGroup(prefs, group),

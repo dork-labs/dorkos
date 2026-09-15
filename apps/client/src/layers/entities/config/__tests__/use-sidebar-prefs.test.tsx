@@ -8,7 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { ServerConfig } from '@dorkos/shared/types';
 import type { SidebarPrefs, SidebarGroup, SidebarItemRef } from '@dorkos/shared/config-schema';
-import { SIDEBAR_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
+import { SIDEBAR_PREFS_DEFAULTS, SidebarGroupSchema } from '@dorkos/shared/config-schema';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { configKeys } from '../api/query-keys';
@@ -209,6 +209,18 @@ describe('sidebar prefs pure helpers', () => {
         displayFilter: 'all',
         muted: false,
       });
+    });
+
+    it('createGroup mints exactly what the schema defaults to (DOR-2055)', () => {
+      // The literal above and `SidebarGroupSchema`'s defaults are two
+      // independent statements of the same fact, and until this they were only
+      // ever asserted apart. The server's `newSidebarGroup` — which an agent
+      // uses to create a section through `sidebar_add_to_group` — is pinned
+      // against the SCHEMA, so without this bridge the two could drift and a
+      // section made by an agent would differ from one made by a person with
+      // nothing going red.
+      const { next, id } = createGroup(prefs(), 'Clients');
+      expect(next.groups[0]).toEqual(SidebarGroupSchema.parse({ id, name: 'Clients' }));
     });
 
     // --- Smart groups (DOR-338) ---
