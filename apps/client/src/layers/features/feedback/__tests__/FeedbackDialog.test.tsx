@@ -362,6 +362,28 @@ describe('FeedbackDialog', () => {
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
   });
 
+  it('scrolls the form body independently of the footer, so Send stays reachable (DOR-2076)', () => {
+    // jsdom reports every box as 0×0 (testing.md), so the real "does it fit on
+    // a short screen" claim is only settled by the Playwright screenshots this
+    // ticket's browser pass took. What a unit test CAN pin is the structural
+    // contract that makes that possible: the form fields sit inside the one
+    // scrolling region (`ResponsiveDialogBody`, `overflow-y-auto`), and the
+    // Send button sits outside it, in the fixed footer — so growing the fields
+    // (an expanded "Attachments & details" panel, an attached screenshot)
+    // scrolls the fields and never pushes Send off screen. Reverting the
+    // ResponsiveDialogBody wrapper back to a plain `<form>` div turns this red.
+    renderDialog();
+
+    const scrollRegion = screen
+      .getByPlaceholderText(/what works, what does not/i)
+      .closest('[data-slot="responsive-dialog-body"]');
+    expect(scrollRegion).not.toBeNull();
+    expect(scrollRegion).toHaveClass('overflow-y-auto');
+
+    const sendButton = screen.getByRole('button', { name: 'Send' });
+    expect(scrollRegion).not.toContainElement(sendButton);
+  });
+
   it('attaches diagnostics + asks for server logs for a Bug (both default-on)', async () => {
     addBreadcrumb('console_error', 'TypeError: boom');
     const transport = createMockTransport();

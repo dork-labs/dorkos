@@ -18,6 +18,7 @@ import {
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
   ResponsiveDialogDescription,
+  ResponsiveDialogBody,
   ResponsiveDialogFooter,
   Button,
   Textarea,
@@ -358,7 +359,15 @@ export function FeedbackDialog({
         <ResponsiveDialogContent
           {...captureHandlers}
           className={cn(
-            'max-h-[85vh]',
+            // `!min-h-0` overrides ResponsiveDialogContent's own `min-h-[50vh]` so
+            // this panel can shrink to fit under `max-h-[85vh]` — the same pairing
+            // every other dialog with an inner scroll region uses (see
+            // InstallConfirmationDialog). Without it, the panel refused to
+            // shrink and the form below had nowhere to put its own scrollbar,
+            // so a tall "Attachments & details" panel plus a screenshot pushed
+            // Send off the bottom of the screen with no way to reach it
+            // (DOR-2076).
+            'max-h-[85vh] !min-h-0',
             isDesktop && 'max-w-md',
             screenshot.isDraggingOver && 'ring-primary ring-2'
           )}
@@ -372,167 +381,188 @@ export function FeedbackDialog({
             </ResponsiveDialogDescription>
           </ResponsiveDialogHeader>
 
-          <form onSubmit={onSubmit} className="flex flex-col gap-4 px-4 pb-1 sm:px-0">
-            {/* Kind selector */}
-            <div
-              role="radiogroup"
-              aria-label="What kind of feedback"
-              className="bg-muted/50 grid grid-cols-3 gap-1 rounded-lg p-1"
-            >
-              {KINDS.map(({ value, label, icon: Icon }) => {
-                const selected = kind === value;
-                return (
-                  <button
-                    key={value}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    onClick={() => onKindChange(value)}
-                    className={cn(
-                      'focus-visible:ring-ring flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none',
-                      selected
-                        ? 'bg-background text-foreground shadow-xs'
-                        : 'text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    <Icon className="size-3.5" aria-hidden />
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Message */}
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="feedback-message" className="sr-only">
-                Your message
-              </Label>
-              <Textarea
-                id="feedback-message"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                placeholder={PLACEHOLDER[kind]}
-                rows={5}
-                maxLength={4000}
-                className="resize-none"
-              />
-            </div>
-
-            {/* Identity line (only when a signed-in user is resolvable) */}
-            {currentUser && (
-              <div className="flex flex-col gap-1">
-                <div className="text-muted-foreground flex items-center gap-1.5 text-xs">
-                  {anonymous ? (
-                    <VenetianMask className="size-3.5 shrink-0" aria-hidden />
-                  ) : (
-                    <User className="size-3.5 shrink-0" aria-hidden />
-                  )}
-                  <span className="min-w-0 flex-1 truncate">
-                    {anonymous ? 'Sending anonymously' : `Sending as ${currentUser.email}`}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setAnonymous((a) => !a)}
-                    className="text-muted-foreground hover:text-foreground focus-visible:ring-ring shrink-0 rounded-sm underline underline-offset-2 transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
-                  >
-                    {anonymous ? 'Use my account' : 'Send anonymously'}
-                  </button>
-                </div>
-                {anonymous && (
-                  <p className="text-muted-foreground text-xs">
-                    Your report won’t include your name or email. You can still track it in this
-                    app; add a contact below if you’d like a reply.
-                  </p>
-                )}
+          {/* `min-h-0` lets the form shrink below its content's natural height so
+              its ResponsiveDialogBody child can become the one scrolling region —
+              the footer below stays outside that region so Send is reachable at
+              any viewport height. */}
+          <form onSubmit={onSubmit} className="flex min-h-0 flex-1 flex-col gap-4">
+            {/* No horizontal padding override here: `ResponsiveDialogBody`'s
+                own default `px-4` stays, exactly as `InstallConfirmationDialog`
+                and every other dialog with a scroll region leave it. The
+                earlier `px-0` on desktop shaved the body flush with its own
+                overflow boundary, which clipped the 3px focus ring on the
+                textarea and inputs at the left/right/bottom edge and pushed
+                the scrollbar against their border (DOR-2076 review). */}
+            <ResponsiveDialogBody className="flex flex-col gap-4">
+              {/* Kind selector */}
+              <div
+                role="radiogroup"
+                aria-label="What kind of feedback"
+                className="bg-muted/50 grid grid-cols-3 gap-1 rounded-lg p-1"
+              >
+                {KINDS.map(({ value, label, icon: Icon }) => {
+                  const selected = kind === value;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => onKindChange(value)}
+                      className={cn(
+                        'focus-visible:ring-ring flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none',
+                        selected
+                          ? 'bg-background text-foreground shadow-xs'
+                          : 'text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      <Icon className="size-3.5" aria-hidden />
+                      {label}
+                    </button>
+                  );
+                })}
               </div>
-            )}
 
-            {/* Attachments & details */}
-            <Collapsible open={panelOpen} onOpenChange={setPanelOpen}>
-              <CollapsibleTrigger className="text-muted-foreground hover:text-foreground focus-visible:ring-ring flex w-full items-center justify-between rounded-md text-xs font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none">
-                <span>Attachments &amp; details</span>
-                <span className="flex items-center gap-1.5">
-                  {panelSummary && <span className="text-muted-foreground">{panelSummary}</span>}
-                  <ChevronDown
-                    className={cn(
-                      'size-3.5 transition-transform duration-150',
-                      panelOpen && 'rotate-180'
+              {/* Message */}
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="feedback-message" className="sr-only">
+                  Your message
+                </Label>
+                <Textarea
+                  id="feedback-message"
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  placeholder={PLACEHOLDER[kind]}
+                  rows={5}
+                  maxLength={4000}
+                  className="resize-none"
+                />
+              </div>
+
+              {/* Identity line (only when a signed-in user is resolvable) */}
+              {currentUser && (
+                <div className="flex flex-col gap-1">
+                  <div className="text-muted-foreground flex items-center gap-1.5 text-xs">
+                    {anonymous ? (
+                      <VenetianMask className="size-3.5 shrink-0" aria-hidden />
+                    ) : (
+                      <User className="size-3.5 shrink-0" aria-hidden />
                     )}
-                    aria-hidden
-                  />
-                </span>
-              </CollapsibleTrigger>
-              <CollapsibleContent className="flex flex-col gap-3 pt-3">
-                {/* Screenshot slot. Absent under the in-process transport, which
-                  drops the field on the way out (feedback-attachments §8). */}
-                {showScreenshot && (
-                  <ScreenshotField
-                    dataUrl={screenshot.dataUrl}
-                    isPreparing={screenshot.isPreparing}
-                    isDraggingOver={screenshot.isDraggingOver}
-                    onPick={(file) => void screenshot.attach(file)}
-                    onCapture={() => void screenshot.capture()}
-                    onPointAtElement={() => setPointPhase('picking')}
-                    onRemove={screenshot.clear}
-                    onPreview={() => openPreview('screenshot')}
-                    isMobile={!isDesktop}
-                  />
-                )}
+                    <span className="min-w-0 flex-1 truncate">
+                      {anonymous ? 'Sending anonymously' : `Sending as ${currentUser.email}`}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setAnonymous((a) => !a)}
+                      className="text-muted-foreground hover:text-foreground focus-visible:ring-ring shrink-0 rounded-sm underline underline-offset-2 transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+                    >
+                      {anonymous ? 'Use my account' : 'Send anonymously'}
+                    </button>
+                  </div>
+                  {anonymous && (
+                    <p className="text-muted-foreground text-xs">
+                      Your report won’t include your name or email. You can still track it in this
+                      app; add a contact below if you’d like a reply.
+                    </p>
+                  )}
+                </div>
+              )}
 
-                {/* Two side-by-side toggles */}
-                <div className={cn('grid gap-2', showConversation ? 'grid-cols-2' : 'grid-cols-1')}>
-                  <AttachmentToggle
-                    id="feedback-diagnostics"
-                    icon={Stethoscope}
-                    label="Diagnostics"
-                    summary="Version, window size, browser, and recent errors."
-                    checked={includeDiagnostics}
-                    onCheckedChange={(next) => {
-                      setAttachmentsTouched(true);
-                      setIncludeDiagnostics(next);
-                    }}
-                    onPreview={() => openPreview('diagnostics')}
-                  />
-                  {showConversation && (
-                    <AttachmentToggle
-                      id="feedback-conversation"
-                      icon={MessagesSquare}
-                      label="Conversation"
-                      summary="So we can see what led to the bug."
-                      checked={includeConversation}
-                      onCheckedChange={(next) => {
-                        setAttachmentsTouched(true);
-                        setIncludeConversation(next);
-                      }}
-                      onPreview={() => openPreview('conversation')}
+              {/* Attachments & details */}
+              <Collapsible open={panelOpen} onOpenChange={setPanelOpen}>
+                <CollapsibleTrigger className="text-muted-foreground hover:text-foreground focus-visible:ring-ring flex w-full items-center justify-between rounded-md text-xs font-medium transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none">
+                  <span>Attachments &amp; details</span>
+                  <span className="flex items-center gap-1.5">
+                    {panelSummary && <span className="text-muted-foreground">{panelSummary}</span>}
+                    <ChevronDown
+                      className={cn(
+                        'size-3.5 transition-transform duration-150',
+                        panelOpen && 'rotate-180'
+                      )}
+                      aria-hidden
+                    />
+                  </span>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="flex flex-col gap-3 pt-3">
+                  {/* Screenshot slot. Absent under the in-process transport, which
+                    drops the field on the way out (feedback-attachments §8). */}
+                  {showScreenshot && (
+                    <ScreenshotField
+                      dataUrl={screenshot.dataUrl}
+                      isPreparing={screenshot.isPreparing}
+                      isDraggingOver={screenshot.isDraggingOver}
+                      onPick={(file) => void screenshot.attach(file)}
+                      onCapture={() => void screenshot.capture()}
+                      onPointAtElement={() => setPointPhase('picking')}
+                      onRemove={screenshot.clear}
+                      onPreview={() => openPreview('screenshot')}
+                      isMobile={!isDesktop}
                     />
                   )}
-                </div>
 
-                {/* Privacy line */}
-                <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
-                  <Lock className="size-3 shrink-0" aria-hidden />
-                  Private. Only the DorkOS core team sees these. Never public.
-                </p>
-              </CollapsibleContent>
-            </Collapsible>
+                  {/* Two side-by-side toggles */}
+                  <div
+                    className={cn('grid gap-2', showConversation ? 'grid-cols-2' : 'grid-cols-1')}
+                  >
+                    <AttachmentToggle
+                      id="feedback-diagnostics"
+                      icon={Stethoscope}
+                      label="Diagnostics"
+                      summary="Version, window size, browser, and recent errors."
+                      checked={includeDiagnostics}
+                      onCheckedChange={(next) => {
+                        setAttachmentsTouched(true);
+                        setIncludeDiagnostics(next);
+                      }}
+                      onPreview={() => openPreview('diagnostics')}
+                    />
+                    {showConversation && (
+                      <AttachmentToggle
+                        id="feedback-conversation"
+                        icon={MessagesSquare}
+                        label="Conversation"
+                        summary="So we can see what led to the bug."
+                        checked={includeConversation}
+                        onCheckedChange={(next) => {
+                          setAttachmentsTouched(true);
+                          setIncludeConversation(next);
+                        }}
+                        onPreview={() => openPreview('conversation')}
+                      />
+                    )}
+                  </div>
 
-            {/* Optional contact */}
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="feedback-contact" className="text-muted-foreground text-xs">
-                Contact (optional)
-              </Label>
-              <Input
-                id="feedback-contact"
-                value={contact}
-                onChange={(e) => setContact(e.target.value)}
-                placeholder="Email or handle, if you’d like a reply"
-                maxLength={254}
-                autoComplete="off"
-              />
-            </div>
+                  {/* Privacy line */}
+                  <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
+                    <Lock className="size-3 shrink-0" aria-hidden />
+                    Private. Only the DorkOS core team sees these. Never public.
+                  </p>
+                </CollapsibleContent>
+              </Collapsible>
 
-            <ResponsiveDialogFooter className="px-0">
+              {/* Optional contact */}
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="feedback-contact" className="text-muted-foreground text-xs">
+                  Contact (optional)
+                </Label>
+                <Input
+                  id="feedback-contact"
+                  value={contact}
+                  onChange={(e) => setContact(e.target.value)}
+                  placeholder="Email or handle, if you’d like a reply"
+                  maxLength={254}
+                  autoComplete="off"
+                />
+              </div>
+            </ResponsiveDialogBody>
+
+            {/* No horizontal padding override here either — `DialogFooter`
+                already sits inside the dialog's own `p-6`, and `DrawerFooter`
+                carries its own `p-4`; a custom `px-4 sm:px-0` just fought
+                those defaults. `gap-4` on the form above is what puts a full
+                row of space between the last field and Send, matching every
+                other dialog's spacing (DOR-2076 review). */}
+            <ResponsiveDialogFooter className="shrink-0">
               <Button type="submit" disabled={!canSend}>
                 {isSubmitting ? 'Sending…' : 'Send'}
               </Button>
