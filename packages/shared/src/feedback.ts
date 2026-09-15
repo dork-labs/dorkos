@@ -264,6 +264,12 @@ export function redactSecrets(value: string): string {
       .replace(/(?<![\w:.])(?:[A-Fa-f0-9]{1,4})?(?::[A-Fa-f0-9]{0,4}){2,}(?![\w:.])/g, '[ip]')
       // UNC network paths (\\host\share\...).
       .replace(/\\\\[^\s\\]+(?:\\[^\s\\]+)+/g, '[path]')
+      // The same thing with forward slashes (`//fileserver/private/clients`),
+      // which is how URLs and a lot of tooling spell it. Anchored so that the
+      // `//` follows a word boundary and NOT a scheme colon, which is the one
+      // distinction that matters here: `//host/share` names somebody's network,
+      // `https://dorkos.ai/docs/...` names a public page and stays readable.
+      .replace(/(^|[\s"'`(<[{])\/\/[^\s"'`)>\]}/]+\/[^\s"'`)>\]}]+/g, '$1[path]')
       // Windows drive paths (C:\...), greedy to end of line to catch spaces.
       .replace(/\b[A-Za-z]:\\[^\r\n]*/g, '[path]')
       // Unix home directories, then any remaining ABSOLUTE path.
@@ -276,7 +282,14 @@ export function redactSecrets(value: string): string {
       // most useful line (DOR-2056 review). An absolute path is the one this
       // module has to catch, because that is what names somebody's home
       // directory; a repo-relative path names nothing about the machine.
-      .replace(/(^|[\s"'`(<[{])(~|\/(?:Users|home))\/[^\s"'`)>\]}]+/g, '$1[home]')
+      // The home rule's anchor also admits `/` and `:`, which the general rule
+      // below must not. A home directory reached through a URL or a drive
+      // (`file:///Users/dorian/...`, `file:///C:/Users/dorian/...`) is preceded
+      // by one of those and leaked the account name in the clear until this was
+      // measured (DOR-2056 delta review). Widening is safe HERE and only here
+      // because this rule matches three literal heads and nothing else, so
+      // `apps/server/src/index.ts` still has no head to match.
+      .replace(/(^|[\s"'`(<[{/:])(~|\/(?:Users|home))\/[^\s"'`)>\]}]+/g, '$1[home]')
       .replace(/(^|[\s"'`(<[{])\/[\w.-]+(?:\/[\w.-]*)+/g, '$1[path]')
       // Long high-entropy tokens, with a DIGIT required somewhere in the run.
       //
@@ -454,17 +467,6 @@ function renderBody(report: FeedbackReport): string {
   ].join('\n');
 }
 
-/**
- * Build a prefilled GitHub "new issue" URL from a feedback report.
- *
- * The returned URL opens the GitHub issue editor with a title, body, and labels
- * already filled in. Every value passes through {@link redactSecrets}, including
- * a written `title` or `body`; read the module docblock for how far that reaches
- * on free-form prose and what actually backstops it.
- *
- * @param report - The sanitized report (build `flags` with {@link sanitizeFlags})
- * @returns A `github.com/.../issues/new?...` URL as a string
- */
 /** Assemble the URL for one report, with no size check. */
 function renderUrl(report: FeedbackReport): string {
   const written = report.title?.trim();
@@ -524,10 +526,9 @@ export interface FeedbackDraft {
  *
  * Only the WRITTEN body is ever shortened. The environment block is left whole:
  * it is the part DorkOS vouches for, it is bounded by the flag allowlist, and
- * dropping half of it would produce a report that reads complete and is not. If
- * the environment alone ever exceeded the budget the address comes back over
- * length with `truncated` set, because reporting the overrun is honest and
- * silently returning a link that 414s is not.
+ * dropping half of it would produce a report that reads complete and is not. So
+ * a report with no body is returned as built with `truncated: false`, whatever
+ * its size: the flag means "your body was cut", and there was no body to cut.
  *
  * The search is over CODE POINTS rather than bytes, so a cut lands between
  * characters and never inside an emoji or a surrogate pair.
@@ -545,6 +546,14 @@ export function buildIssueDraft(
   if (byteLength(url) <= maxBytes) return { url, truncated: false };
 
   const written = report.body?.trim() ?? '';
+  // Nothing written means nothing to shorten. The environment block is never
+  // truncated, so the only honest answer here is the address as built and
+  // `truncated: false`: the flag says "your body was cut", and claiming it over
+  // a report that has no body would send an agent hunting for a `fullBody` that
+  // says nothing (DOR-2056 delta review). Reachable only if the environment
+  // block alone outgrew the budget, which the flag allowlist bounds.
+  if (!written) return { url, truncated: false };
+
   const points = Array.from(written).length;
 
   // Largest prefix that still fits, found by bisection: the relationship between

@@ -401,6 +401,16 @@ describe('the URL fits what the far end will accept', () => {
     expect(bytes(draft.url)).toBeLessThanOrEqual(FEEDBACK_URL_MAX_BYTES);
   });
 
+  it('does not claim a shortened body when there was no body', () => {
+    // The environment block is never truncated, so an overrun with nothing
+    // written has nothing to cut. Forced with an absurdly small ceiling, since
+    // the real environment block cannot reach 6 KB.
+    const draft = buildIssueDraft(base, 10);
+    expect(draft.truncated).toBe(false);
+    expect(draft.fullBody).toBeUndefined();
+    expect(draft.url).toBe(buildIssueUrl(base));
+  });
+
   it('leaves an ordinary report alone, flag and all', () => {
     const draft = buildIssueDraft({ ...base, body: 'It broke when I pressed the button.' });
     expect(draft.truncated).toBe(false);
@@ -480,6 +490,39 @@ describe('redactSecrets over prose a person would actually write', () => {
   it('still redacts the absolute path that names somebody', () => {
     expect(redactSecrets('see /Users/dorian/code/private/notes.md')).toBe('see [home]');
     expect(redactSecrets('see ~/code/private/notes.md')).toContain('[home]');
+  });
+
+  // The regression the anchoring above introduced and the delta review caught: a
+  // home directory reached through a URL or a drive is preceded by `/` or `:`,
+  // neither of which was in the anchor class, so a stack trace or a devtools URL
+  // printed the account name in the clear.
+  it.each([
+    ['a file:// URL', 'at file:///Users/dorian/Keep/dork-os/app.js:12', 'dorian'],
+    ['a Linux file:// URL', 'at file:///home/dorian/app.js:12', 'dorian'],
+    ['a file:// URL with a drive', 'see file:///C:/Users/dorian/x.txt', 'dorian'],
+  ])('redacts a home directory reached through %s', (_name, input, mustBeGone) => {
+    const out = redactSecrets(input);
+    expect(out).not.toContain(mustBeGone);
+    expect(out).toContain('[home]');
+  });
+
+  it.each([
+    ['a network share', 'mounted //fileserver/private/clients here', 'fileserver'],
+    ['a short share', 'see //share/private now', 'share/private'],
+  ])('redacts %s spelled with forward slashes', (_name, input, mustBeGone) => {
+    const out = redactSecrets(input);
+    expect(out).not.toContain(mustBeGone);
+    expect(out).toContain('[path]');
+  });
+
+  // The other side of that rule, and the reason it is anchored on a word
+  // boundary rather than on `//`: a scheme colon means a public address, not
+  // somebody's network, and a bug report that names a docs page should keep it.
+  it.each([
+    ['https', 'see https://dorkos.ai/docs/guides/agents'],
+    ['http', 'see http://dorkos.ai/docs/guides'],
+  ])('leaves a public %s URL readable', (_name, input) => {
+    expect(redactSecrets(input)).toBe(input);
   });
 
   it('redacts a compressed IPv6 address, which the long-form rule never saw', () => {

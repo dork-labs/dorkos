@@ -2,6 +2,7 @@
 covers:
   - 'feat(server): agents can draft a bug report and hand you the link (DOR-2056)'
   - 'fix(server,shared): the feedback link fits, and its environment block cannot be forged (DOR-2056)'
+  - 'fix(shared): a home directory reached through a file:// URL is redacted again (DOR-2056)'
 ---
 
 ### Added
