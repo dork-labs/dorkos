@@ -739,9 +739,12 @@ export function parseTranscript(lines: string[], images?: TranscriptImageRef[]):
           if (block.name === SDK_TOOL_NAMES.ASK_USER_QUESTION && block.input) {
             // The transcript holds the model's RAW input, so check it here
             // rather than cast it. A question that fails the schema would fail
-            // the whole session snapshot on the client (DOR-2075); dropping
-            // just these questions keeps the call a question and the rest of
-            // the history loadable. Parsing also fills `multiSelect`/`header`.
+            // the whole session snapshot on the client (DOR-2075). The parse is
+            // all-or-nothing on purpose: one unreadable question drops ALL of
+            // this call's questions, because keeping the readable ones would
+            // shift the positions index-keyed answers point at. The call stays
+            // a question and the rest of the history loads. Parsing also fills
+            // `multiSelect`/`header`.
             const questions = QuestionItemSchema.array().safeParse(block.input.questions);
             if (questions.success) {
               tc.questions = questions.data;

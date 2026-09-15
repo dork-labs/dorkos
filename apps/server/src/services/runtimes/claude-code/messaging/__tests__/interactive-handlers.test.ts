@@ -611,6 +611,29 @@ describe('pending interaction snapshots', () => {
     expect(timed.remainingMs).toBeGreaterThan(0);
   });
 
+  it('fills multiSelect and header on a LIVE question the model sent without them (DOR-2075)', () => {
+    // The model's raw input can omit both. Cast straight through, the live
+    // question_prompt failed the client's schema and never showed, and the
+    // parked notice and snapshot read `multiSelect` as undefined.
+    const session = makeBareSession();
+    const rawQuestions = [{ question: 'Which one?', options: [{ label: 'A' }, { label: 'B' }] }];
+
+    void handleAskUserQuestion(session, 'question-live-defaults', { questions: rawQuestions });
+
+    const pushed = session.eventQueue.find((e) => e.type === 'question_prompt');
+    const data = pushed?.data as { questions?: QuestionItem[] } | undefined;
+    expect(data?.questions?.[0]).toMatchObject({ multiSelect: false, header: '' });
+
+    const member = toRawSessionEvent(pushed as StreamEvent) as unknown as {
+      questions?: QuestionItem[];
+    };
+    expect(member.questions?.[0]).toMatchObject({ multiSelect: false, header: '' });
+
+    const snapshot = session.pendingInteractions.get('question-live-defaults')?.snapshot as
+      { questions?: QuestionItem[] } | undefined;
+    expect(snapshot?.questions?.[0]).toMatchObject({ multiSelect: false, header: '' });
+  });
+
   it('cancels a pending question when the SDK aborts it (F5 — steer/interrupt)', async () => {
     // Acceptance run 20260610-173202, F5: a mid-turn steered message cancels a
     // pending AskUserQuestion SDK-side. This handler had NO abort wiring, so

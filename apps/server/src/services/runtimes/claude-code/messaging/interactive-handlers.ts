@@ -5,7 +5,7 @@ import type {
   ElicitationResult,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { QuestionItem } from '@dorkos/shared/types';
-import { UI_COMMAND_REACH, UiCommandSchema } from '@dorkos/shared/schemas';
+import { QuestionItemSchema, UI_COMMAND_REACH, UiCommandSchema } from '@dorkos/shared/schemas';
 import { PermissionModeSchema, type PermissionModeId } from '@dorkos/shared/schemas';
 import { createInSessionContextResolver } from '../../../core/agent-identity/index.js';
 import { SESSIONS } from '../../../../config/constants.js';
@@ -636,7 +636,14 @@ export function handleAskUserQuestion(
   input: Record<string, unknown>,
   signal?: AbortSignal
 ): Promise<PermissionResult> {
-  const questions = input.questions as QuestionItem[];
+  // Parse rather than cast, so the live `question_prompt` event, the parked
+  // notice and the snapshot carry the same defaults (`multiSelect: false`,
+  // `header: ''`) history does. Without them the client's schema rejected the
+  // live event outright (DOR-2075). An input the schema cannot read keeps the
+  // raw value: the SDK has already validated it, and refusing here would
+  // strand the turn over a shape question.
+  const parsed = QuestionItemSchema.array().safeParse(input.questions);
+  const questions = parsed.success ? parsed.data : (input.questions as QuestionItem[]);
   if (session.unattended === true) {
     refuseWithNobodyToAsk(session, {
       interactionId: toolUseId,

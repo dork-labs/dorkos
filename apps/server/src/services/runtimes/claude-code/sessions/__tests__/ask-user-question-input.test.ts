@@ -66,6 +66,31 @@ describe('parseTranscript — AskUserQuestion input', () => {
     }
   });
 
+  it("drops all of a call's questions when one of them is unreadable", () => {
+    // All-or-nothing on purpose: keeping Q1 alone would shift the positions
+    // index-keyed answers point at.
+    const messages = parseTranscript(
+      askLines([
+        {
+          question: 'Which library should we use?',
+          header: 'Library',
+          options: [{ label: 'date-fns' }, { label: 'luxon' }],
+          multiSelect: false,
+        },
+        { header: 'Broken' },
+      ])
+    );
+
+    const part = questionPart(messages);
+    expect(part.interactiveType).toBe('question');
+    expect(part.questions).toBeUndefined();
+    expect(messages.flatMap((m) => m.toolCalls ?? [])[0]?.questions).toBeUndefined();
+    expect(messages.some((m) => m.role === 'user')).toBe(true);
+    for (const message of messages) {
+      expect(HistoryMessageSchema.safeParse(message).success).toBe(true);
+    }
+  });
+
   it('keeps a question it cannot read as a question, without taking the history down', () => {
     // No question text and no options: there is nothing to render, but the
     // call is still a question, and every other message must still load.
