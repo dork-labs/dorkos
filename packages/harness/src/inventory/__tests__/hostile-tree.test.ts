@@ -13,13 +13,21 @@
  * whole command down over somebody's dangling symlink.
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inventorySourceTree } from '../index.js';
 import { project } from '../../engine.js';
 import { applyPlan, checkPlan } from '../../apply/apply.js';
 import { writeFileAt, writeJsonAt } from '../../__tests__/journeys/stage.js';
+
+/**
+ * Whether this machine can stage a folder nobody may read.
+ *
+ * Not Windows, whose permission model does not carry POSIX mode bits, and not
+ * root, for whom mode 000 is no obstacle at all.
+ */
+const CAN_MAKE_UNREADABLE = process.platform !== 'win32' && process.getuid?.() !== 0;
 
 let repo = '';
 let dorkHome = '';
@@ -189,5 +197,168 @@ describe('a hostile source tree', () => {
       '.claude/settings.json',
       '.claude/settings.local.json',
     ]);
+  });
+
+  it('says why a `.mcp.json` cannot be parsed in the parser’s own words', () => {
+    // The one call site that keeps `err.message`: what the parser says about
+    // where the JSON went wrong IS the finding, and a plain phrase in its place
+    // would throw the only useful part away.
+    repo = mkdtempSync(join(tmpdir(), 'harness-hostile-parse-'));
+    writeFileAt(join(repo, '.mcp.json'), '{ "mcpServers": ');
+
+    const [record] = inventorySourceTree(repo).unreadable;
+    expect(record?.reason).toContain('.mcp.json is not valid JSON (');
+    expect(record?.reason).not.toContain(repo);
+  });
+});
+
+describe('DOR-1949 — a skill folder DorkOS cannot open', () => {
+  /**
+   * A repository whose only skill is one nobody may look inside.
+   *
+   * Mode 000 on the FOLDER, which is the shape a person really produces (a
+   * `chmod -R` that caught one directory, a checkout restored from a backup
+   * with the wrong umask). The scanner's `existsSync` on the `SKILL.md` inside
+   * answers `false` through it, so the folder used to reach no list at all.
+   */
+  function stageLockedSkill(): void {
+    repo = mkdtempSync(join(tmpdir(), 'harness-locked-repo-'));
+    dorkHome = mkdtempSync(join(tmpdir(), 'harness-locked-home-'));
+    writeJsonAt(join(repo, '.agents', 'harness.manifest.json'), {
+      version: 1,
+      harnesses: ['claude-code'],
+    });
+    writeFileAt(
+      join(repo, '.claude', 'skills', 'locked', 'SKILL.md'),
+      '---\nname: locked\ndescription: A locked skill\n---\n\n# locked\n'
+    );
+    chmodSync(join(repo, '.claude', 'skills', 'locked'), 0o000);
+  }
+
+  afterEach(() => {
+    if (repo) {
+      try {
+        chmodSync(join(repo, '.claude', 'skills', 'locked'), 0o755);
+      } catch {
+        // never staged — the afterEach above removes whatever is there
+      }
+    }
+  });
+
+  it.skipIf(!CAN_MAKE_UNREADABLE)('records it instead of dropping it in silence', () => {
+    // Seeded defect: `inventorySkills` walks only what `scanSkillDirs` hands
+    // back. A mode-000 folder is in neither list, so the tree answers
+    // `{ skills: 0, unreadable: 0 }` — a repository with a skill in it reads
+    // exactly like a repository with none (DOR-1949).
+    stageLockedSkill();
+
+    const inventory = inventorySourceTree(repo);
+
+    expect({
+      skills: inventory.skills.length,
+      unreadable: inventory.unreadable.map((entry) => `${entry.kind}:${entry.source}`),
+    }).toEqual({ skills: 0, unreadable: ['skill:.claude/skills/locked'] });
+    const [record] = inventory.unreadable;
+    expect(record?.reason).toContain('nobody may read it');
+    expect(record?.reason).not.toContain(repo);
+    expect(record?.reason).not.toMatch(/E[A-Z]+:/);
+  });
+
+  it.skipIf(!CAN_MAKE_UNREADABLE)('turns it into a warning the report can draw', () => {
+    stageLockedSkill();
+
+    const plan = project(repo, { dorkHome });
+
+    expect(
+      plan.warnings.filter((w) => w.source === '.claude/skills/locked').map((w) => w.artifact)
+    ).toEqual(['skill']);
+    expect(() => checkPlan(repo, plan)).not.toThrow();
+  });
+
+  it('says nothing about an ordinary folder that simply holds no skill', () => {
+    // The silence that must survive: `.claude/skills/notes` with no `SKILL.md`
+    // is not a skill and not a fault, and a probe that reported every directory
+    // it could not turn into a skill would bury the one that matters.
+    repo = mkdtempSync(join(tmpdir(), 'harness-nonskill-repo-'));
+    mkdirSync(join(repo, '.claude', 'skills', 'notes'), { recursive: true });
+
+    expect(inventorySourceTree(repo).unreadable).toEqual([]);
+  });
+});
+
+describe('DOR-1938 — an inventory warning is a sentence, not an errno', () => {
+  /**
+   * Every hostile shape that reaches a `causeOf` call site, in one tree.
+   *
+   * A file where a folder belongs (ENOTDIR out of `readdir`), a folder nobody
+   * may read (EACCES out of the same call), and a link whose target moved
+   * (ENOENT out of `readFile`) — the three errnos the map is for, staged
+   * together so one assertion covers all of them.
+   */
+  function stageErrnoTree(): void {
+    repo = mkdtempSync(join(tmpdir(), 'harness-errno-repo-'));
+    writeJsonAt(join(repo, '.agents', 'harness.manifest.json'), {
+      version: 1,
+      harnesses: ['claude-code'],
+    });
+    // ENOTDIR: a file where `.agents/skills` belongs.
+    writeFileAt(join(repo, '.agents', 'skills'), 'notes\n');
+    // ENOENT through a link: settings kept elsewhere, and the elsewhere moved.
+    // `lstat` sees the link, so this is not the silent absent case — it is a
+    // file the walk really tried to open.
+    const claude = join(repo, '.claude');
+    mkdirSync(claude, { recursive: true });
+    symlinkSync('../moved/settings.json', join(claude, 'settings.json'));
+    // EACCES: a subagent folder nobody may list.
+    const agents = join(repo, '.claude', 'agents');
+    mkdirSync(agents, { recursive: true });
+    if (CAN_MAKE_UNREADABLE) chmodSync(agents, 0o000);
+  }
+
+  afterEach(() => {
+    if (repo) {
+      const agents = join(repo, '.claude', 'agents');
+      try {
+        chmodSync(agents, 0o755);
+      } catch {
+        // never staged, or already gone — the cleanup above removes the tree
+      }
+    }
+  });
+
+  it('names no absolute path and prints no errno in any inventory warning', () => {
+    // Seeded defect: `causeOf` returns `err.message`. Every sentence then reads
+    // `(ENOTDIR: not a directory, scandir '/Users/…/.agents/skills')`, which is
+    // a stack trace wearing a sentence's clothes — and it spells out a path
+    // that belongs to whoever ran the command, not to the repository.
+    stageErrnoTree();
+
+    const { unreadable } = inventorySourceTree(repo);
+    // Exactly what this tree stages, not "at least": a floor passes just as
+    // happily over a walk that stopped early, which is the failure the records
+    // themselves exist to end.
+    expect(unreadable.map((record) => record.source).sort()).toEqual(
+      CAN_MAKE_UNREADABLE
+        ? ['.agents/skills', '.claude/agents', '.claude/settings.json']
+        : ['.agents/skills', '.claude/settings.json']
+    );
+    for (const record of unreadable) {
+      expect(record.reason, `${record.source}: ${record.reason}`).not.toContain(repo);
+      expect(record.reason, `${record.source}: ${record.reason}`).not.toMatch(/E[A-Z]+:/);
+    }
+  });
+
+  it('says which of the three things is wrong, in words', () => {
+    stageErrnoTree();
+
+    const { unreadable } = inventorySourceTree(repo);
+    const reasonOf = (source: string): string =>
+      unreadable.find((record) => record.source === source)?.reason ?? `nothing for ${source}`;
+
+    expect(reasonOf('.agents/skills')).toContain('it is a file, not a folder');
+    expect(reasonOf('.claude/settings.json')).toContain('the link points at nothing');
+    if (CAN_MAKE_UNREADABLE) {
+      expect(reasonOf('.claude/agents')).toContain('nobody may read it');
+    }
   });
 });

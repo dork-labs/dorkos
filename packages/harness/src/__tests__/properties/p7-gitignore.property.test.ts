@@ -31,6 +31,7 @@ import fc from 'fast-check';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { project } from '../../engine.js';
+import { blockedWritePath } from '../../apply/write-path-occupants.js';
 import { applyPlan } from '../../apply/apply.js';
 import { gitignorePatternMatches, missingGitignoreLines } from '../../apply/gitignore.js';
 import { EPHEMERAL_GITIGNORE_PATTERNS } from '../../sources/resolve-roots.js';
@@ -141,7 +142,19 @@ describe('P7 — every ephemeral projection has a way to stay out of git', () =>
             }
 
             const uncovered = ephemeralTargets(plan).filter(
-              (target) => !coveredByRepo(repoRoot, target) && !selfIgnoredOnDisk(repoRoot, target)
+              (target) =>
+                // A projection whose write path is blocked is never written at
+                // all — not the wrapper, and not the self-ignoring `.gitignore`
+                // beside it (DOR-1882) — so there is nothing on disk for git to
+                // pick up and nothing to tell anybody to ignore. The engine's
+                // `selfIgnored` reads the PLAN and answers correctly here; this
+                // oracle reads the DISK, and without this clause it counts a
+                // file that is never going to be there. Reached once the
+                // generator gained a field and reshuffled which path the
+                // `hostile` arbitrary lands on (DOR-1942).
+                blockedWritePath(repoRoot, target) === undefined &&
+                !coveredByRepo(repoRoot, target) &&
+                !selfIgnoredOnDisk(repoRoot, target)
             );
             if (missing.length === 0) {
               silent += 1;

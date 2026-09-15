@@ -252,6 +252,10 @@ describe('runHarnessAdopt', () => {
     ]);
   });
 
+  // Two full six-harness syncs plus an adopt and a check: 3160 ms before this branch,
+  // 4229 ms at HEAD in isolation, so vitest's 5000 ms default is a coin toss the
+  // moment the machine is shared. The budget is the fix; the engine stays as eager as
+  // it is.
   it('SRC-07: says S15 naming .claude/skills for a skill taken out of another folder', async () => {
     // The link is Claude Code's projection of a canonical skill, not a link back
     // to the folder the skill came out of — so a repository that runs Claude
@@ -278,8 +282,12 @@ describe('runHarnessAdopt', () => {
     logSpy.mockClear();
     expect(await runHarnessSync(parseHarnessSyncArgs(['--check']))).toEqual({ exitCode: 0 });
     expect(printed()).toContain('No drift — every projection already matches the plan.');
-  });
+  }, 20_000);
 
+  // Two full six-harness syncs plus an adopt and a check: 3160 ms before this branch,
+  // 4229 ms at HEAD in isolation, so vitest's 5000 ms default is a coin toss the
+  // moment the machine is shared. The budget is the fix; the engine stays as eager as
+  // it is.
   it('SRC-07: says S15b, and writes no link, when the project does not run Claude Code', async () => {
     // The mirror image: a `.claude/skills` skill in a repository that never
     // enabled Claude Code. A link there would be a path DorkOS wrote that no
@@ -304,7 +312,7 @@ describe('runHarnessAdopt', () => {
     logSpy.mockClear();
     expect(await runHarnessSync(parseHarnessSyncArgs(['--check']))).toEqual({ exitCode: 0 });
     expect(printed()).toContain('No drift — every projection already matches the plan.');
-  });
+  }, 20_000);
 
   it('SRC-07: exits 1 on a refusal, and the tree is byte-for-byte what it was', async () => {
     writeRepo(repo);

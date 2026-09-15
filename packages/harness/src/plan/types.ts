@@ -368,15 +368,26 @@ export interface DriftResult {
    */
   leftAlone: string[];
   /**
-   * Something true about this RUN that no path of its own — one sentence, or
-   * none (DOR-1883).
+   * Something true about this RUN that has no path of its own — one sentence,
+   * or none.
    *
-   * Today there is exactly one: the links at this plan's targets are Windows
-   * junctions and the repository is a git checkout, so `git add` would commit
-   * the files inside them instead of the links (`apply/windows-links.ts`). It
-   * is not drift and never an exit code — a junction resolves where the plan
-   * says, and every agent tool reading it gets the right files. It is about
-   * what COMMITTING one would do, which is why a person is told before they do.
+   * THREE producers, and they are three different subjects:
+   *
+   * - the links at this plan's targets are Windows junctions and the repository
+   *   is a git checkout, so `git add` would commit the files inside them instead
+   *   of the links (`apply/windows-links.ts`, DOR-1883). A fact about the
+   *   computer;
+   * - a folder a sweep would have walked and could not list
+   *   (`apply/sweep-warnings.ts`, DOR-1939). "Nothing to do" and "could not
+   *   look" are opposite facts, and the report said the first about both;
+   * - a path a sweep would have removed and may not, because the folder holding
+   *   it refuses the write (DOR-1941).
+   *
+   * None of the three is drift and none is a conflict. The first two are never
+   * an exit code either — a junction resolves where the plan says, and a sweep
+   * that cannot look removes nothing, which is the safe direction. The THIRD
+   * one does count against {@link clean}: it is a projection DorkOS can see,
+   * has decided not to take, and will not take on a re-run.
    *
    * `applyPlan` answers the same list off the same function, so `--check` and
    * `--fix` say one thing.

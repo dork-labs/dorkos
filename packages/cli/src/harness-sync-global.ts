@@ -166,7 +166,12 @@ export async function runGlobalSync(args: { fix: boolean }, dorkHome: string): P
     console.log('  Nothing is shared with any other agent tool until DorkOS can read your answer.');
   }
 
-  const warningBlock = formatWarnings(plan);
+  // The RUN's own warnings ride the same block as the plan's, exactly as they do
+  // in the project command. `drift` is the right source rather than the apply's:
+  // this block is printed BEFORE anything is written, and both halves derive
+  // from one function, so a person reads the same sentence whether the sync then
+  // runs or not (DOR-1941).
+  const warningBlock = formatWarnings(plan, drift.warnings);
   if (warningBlock) {
     console.log('');
     console.log(warningBlock);

@@ -665,6 +665,42 @@ describe('dorkos harness global — sharing your all-projects packages', () => {
     });
   });
 
+  describe('F5: a link a global sweep may not remove', () => {
+    /** Whether this machine can stage a folder that lists and refuses a write. */
+    const CAN_MAKE_READ_ONLY = process.platform !== 'win32' && process.getuid?.() !== 0;
+
+    it.skipIf(!CAN_MAKE_READ_ONLY)('is printed, not silently skipped', async () => {
+      // Seeded defect: call `formatWarnings(plan)` with one argument, which is
+      // what this surface did until DOR-1941 — so a run that declined a removal
+      // said nothing at all about it, while the project command said it plainly.
+      installGlobal('globex', ['greet']);
+      await runHarnessGlobal(parseHarnessGlobalArgs(['--enable', 'codex']));
+      // An uninstall leaves an orphan. Its folder is found rather than assumed:
+      // the link lives in the USER tier, and `<dorkHome>/skills` holds its own
+      // copy — locking the wrong one of the two is a test that proves nothing.
+      fs.rmSync(path.join(dorkHome, 'plugins', 'globex'), { recursive: true, force: true });
+      const orphan = path.join(agentsSkillsDir(), 'globex__greet');
+      expect(fs.lstatSync(orphan, { throwIfNoEntry: false })).toBeDefined();
+      const skills = path.dirname(orphan);
+      fs.chmodSync(skills, 0o555);
+      logSpy.mockClear();
+
+      try {
+        await runHarnessSync(syncArgs({ global: true, fix: true }));
+
+        const out = printed();
+        expect(out).toContain('this run:');
+        expect(out).toContain('could not be removed');
+        expect(out).toContain(orphan);
+        expect(out).toContain('may not write in');
+        // And the link really is still there, which is what the sentence says.
+        expect(fs.lstatSync(orphan, { throwIfNoEntry: false })).toBeDefined();
+      } finally {
+        fs.chmodSync(skills, 0o755);
+      }
+    });
+  });
+
   describe('the restart caveat', () => {
     it('prints once when the run created a skills folder that was not there before', async () => {
       installGlobal('globex', ['greet']);

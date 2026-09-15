@@ -187,8 +187,11 @@ describe('IN-05 global: the sweep and the check agree', () => {
       orphans: [],
       removals: [],
       leftAlone: [],
-      // A global plan writes into somebody's home directory, which no git
-      // checkout tracks, so the one warning a run can carry cannot arise here.
+      // Neither producer can reach a global plan: its targets are in somebody's
+      // home directory, which no git checkout tracks, and there is no folder to
+      // be blind inside — the only root it walks is the plan's own, and one it
+      // cannot list stops the whole sweep as `unreadableRoot` long before this
+      // (DOR-1883, DOR-1939).
       warnings: [],
       clean: true,
     });

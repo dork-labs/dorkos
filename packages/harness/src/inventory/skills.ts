@@ -36,9 +36,10 @@
  *
  * @module inventory/skills
  */
-import { lstatSync, realpathSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from 'node:fs';
+import type { Dirent } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
-import { scanSkillDirs, AGENTS_SKILLS_DIR } from '../scan/scanner.js';
+import { scanSkillDirs, AGENTS_SKILLS_DIR, INSTALLED_PROJECTION_MARKER } from '../scan/scanner.js';
 import { CLAUDE_SKILLS_DIR } from '../plan/installed-projector.js';
 import { readRawFrontmatter } from '@dorkos/skills/parser';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
@@ -196,8 +197,9 @@ function collect(
   const probe = readDirEntries(absRoot, root, 'skill');
   if (probe.unreadable) return { skills: [], unreadable: [probe.unreadable] };
 
+  const scanned = scanSkillDirs(absRoot, root, options);
   const skills: SkillInventoryEntry[] = [];
-  for (const skill of scanSkillDirs(absRoot, root, options)) {
+  for (const skill of scanned) {
     const absEntry = join(repoRoot, skill.sourceDir);
     const isSymlink = lstatSync(absEntry, { throwIfNoEntry: false })?.isSymbolicLink() === true;
     if (root === CLAUDE_SKILLS_DIR && isSymlink && isManagedProjection(repoRoot, absEntry))
@@ -213,5 +215,114 @@ function collect(
       ...(declared === undefined ? {} : { frontmatterName: declared }),
     });
   }
-  return { skills, unreadable: [] };
+  return {
+    skills,
+    unreadable: lockedSkillFolders(
+      absRoot,
+      root,
+      probe.entries,
+      new Set(scanned.map((skill) => skill.name)),
+      options
+    ),
+  };
+}
+
+/**
+ * The reason for a skill folder the walk could not open, by which half of the
+ * open failed.
+ *
+ * Plain and repo-relative, DOR-1938's rule — and each one says what to do,
+ * because both shapes are a permission a person can change.
+ */
+const LOCKED_SKILL_REASONS = {
+  folder:
+    'nobody may read it, so the skill in it was not inventoried. Fix the folder’s permissions, then re-run',
+  file: 'nobody may read what is in it, so the skill in it was not inventoried. Fix the folder’s permissions, then re-run',
+} as const;
+
+/** Which half of opening a skill folder failed, or `undefined` when neither did. */
+type LockedSkillCause = keyof typeof LOCKED_SKILL_REASONS;
+
+/**
+ * Every entry under a skills root that IS a skill folder and could not be
+ * opened — the record `scanSkillDirs` cannot make.
+ *
+ * The scanner's job is to hand back what it can see, and its test for a skill is
+ * `existsSync(<entry>/SKILL.md)`. Both halves of that answer `false` for a folder
+ * nobody may look in, so a `chmod 000` on `.claude/skills/locked` produced a tree
+ * that read exactly like a tree with no skill in it: no entry, no record, and
+ * `dorkos harness adopt locked` answering "there is no skill called locked",
+ * which is false about the person's own repository (DOR-1949).
+ *
+ * **The silence it must keep is the ordinary folder.** `.claude/skills/notes`
+ * with nothing in it is not a skill and not a fault, so only the two shapes that
+ * are really a permission problem are recorded: a folder that will not LIST, and
+ * one that lists and whose `SKILL.md` cannot be reached (mode 0644 on the folder
+ * — `readdir` succeeds and every `access` through it fails).
+ *
+ * The scanner's own exclusions are applied first, so a managed `<pkg>__<name>`
+ * projection is not reported as somebody's unreadable skill.
+ *
+ * @param absRoot - absolute path of the skills root.
+ * @param root - its repo-relative path.
+ * @param entries - the root's immediate entries, already listed.
+ * @param found - the names the scanner already returned as skills.
+ * @param options - the scanner's own view of this root.
+ * @returns one record per unreadable skill folder, in listing order.
+ */
+function lockedSkillFolders(
+  absRoot: string,
+  root: SkillRoot,
+  entries: readonly Dirent[],
+  found: ReadonlySet<string>,
+  options: { includeManagedProjections: boolean }
+): UnreadableSource[] {
+  const records: UnreadableSource[] = [];
+  for (const entry of entries) {
+    if (found.has(entry.name)) continue;
+    const isLink = entry.isSymbolicLink();
+    if (
+      isLink &&
+      entry.name.includes(INSTALLED_PROJECTION_MARKER) &&
+      !options.includeManagedProjections
+    )
+      continue;
+    const cause = lockedSkillCause(join(absRoot, entry.name));
+    if (cause === undefined) continue;
+    records.push({
+      kind: 'skill',
+      source: relPath(root, entry.name),
+      reason: `${relPath(root, entry.name)} could not be opened — ${LOCKED_SKILL_REASONS[cause]}`,
+    });
+  }
+  return records;
+}
+
+/**
+ * Why one entry that is not in the scanner's list could not be opened, or
+ * `undefined` when there is nothing to report about it.
+ *
+ * @param absEntry - absolute path of the entry under the skills root.
+ * @returns the cause, or `undefined` for anything that is simply not a skill.
+ */
+function lockedSkillCause(absEntry: string): LockedSkillCause | undefined {
+  let stats;
+  try {
+    // Follows a link on purpose: a linked-in skill folder is a skill folder, and
+    // a link resolving to nothing is a dangling link rather than a locked skill.
+    stats = statSync(absEntry);
+  } catch {
+    return undefined;
+  }
+  if (!stats.isDirectory()) return undefined;
+  let listing: string[];
+  try {
+    listing = readdirSync(absEntry);
+  } catch {
+    return 'folder';
+  }
+  // It lists, so the only remaining reason the scanner passed it over is that
+  // it holds no `SKILL.md` — silent — or that it holds one nothing may reach.
+  if (!listing.includes(SKILL_FILENAME)) return undefined;
+  return existsSync(join(absEntry, SKILL_FILENAME)) ? undefined : 'file';
 }

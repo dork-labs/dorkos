@@ -251,6 +251,12 @@ describe('P4b — a sweep never removes a link whose source folder was unlistabl
             let madeUnreadable: string | undefined;
             try {
               if (chosen.how === 'file') {
+                // The generator may have left this folder at mode 0555
+                // (`readOnlyCanonicalSkills`), which refuses the property's own
+                // `rmSync` with ENOTEMPTY — its setup failing, not the engine.
+                // The mode is about to be irrelevant anyway: a FILE goes where
+                // the folder was.
+                chmodSync(abs, 0o755);
                 rmSync(abs, { recursive: true, force: true });
                 writeFileAt(abs, 'not a folder\n');
               } else {

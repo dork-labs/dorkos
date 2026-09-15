@@ -30,7 +30,7 @@
  * @module services/harness/__tests__/status-model
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { diffSnapshots, snapshotTree } from '@dorkos/harness/journeys';
@@ -1333,5 +1333,83 @@ describe('VC-01 — what is true about the machine rather than about a tool', ()
     const status = statusOf(repo, home);
 
     expect(status.projectLevel.map((entry) => entry.reason)).not.toContain(JUNCTION_COMMIT_WARNING);
+  });
+});
+
+describe('VC-01, AP-07 — a folder the sweep could not look inside', () => {
+  /** Whether this machine can stage a folder nobody may read. */
+  const CAN_MAKE_UNREADABLE = process.platform !== 'win32' && process.getuid?.() !== 0;
+
+  it.skipIf(!CAN_MAKE_UNREADABLE)('is a project-level warning, and not a fault', () => {
+    // Seeded defect: leave `checkPlan().warnings` out of `projectLevelEntries`.
+    // The page then shows a tree that looks perfectly synced while a sync
+    // silently declined to walk a folder that may hold projections it would
+    // otherwise remove (DOR-1939).
+    const { repo, home } = stageBare('blind-sweep', ['claude-code']);
+    const blind = join(repo, '.opencode', 'commands');
+    mkdirSync(blind, { recursive: true });
+    chmodSync(blind, 0o000);
+
+    try {
+      const status = statusOf(repo, home);
+
+      expect(
+        status.projectLevel.filter((entry) => entry.reason.includes('.opencode/commands'))
+      ).toEqual([
+        {
+          kind: 'warning',
+          artifact: 'skill',
+          // The folder it is about, read out of the sentence — not a category
+          // label that would sit just as happily over a blocked removal.
+          name: '.opencode/commands',
+          reason:
+            'DorkOS could not look inside `.opencode/commands`, so it does not know whether ' +
+            'anything a sync would remove is in there. Nothing was taken out of it. If it ' +
+            'should be a folder DorkOS can read, fix it and re-run.',
+        },
+      ]);
+      // It is about what could not be seen, not about anything being wrong:
+      // nothing is drifted and nothing is in conflict.
+      expect(status.counts.conflicts).toBe(0);
+    } finally {
+      chmodSync(blind, 0o755);
+    }
+  });
+});
+
+describe('VC-01, AP-07 — a removal DorkOS may not make', () => {
+  /** Whether this machine can stage a folder that lists and refuses a write. */
+  const CAN_MAKE_READ_ONLY = process.platform !== 'win32' && process.getuid?.() !== 0;
+
+  it.skipIf(!CAN_MAKE_READ_ONLY)('is a project-level warning named for the link', () => {
+    // The second kind of run warning, and the reason the row's name is read out
+    // of the sentence: this one is about a link DorkOS looked at perfectly well
+    // and may not delete, so "Could not look" would have been false about it
+    // (DOR-1941, F3).
+    const { repo, home } = stageBare('blocked-removal', ['claude-code']);
+    const skills = join(repo, '.claude', 'skills');
+    mkdirSync(skills, { recursive: true });
+    symlinkSync(join(repo, '.agents', 'skills', 'gone'), join(skills, 'gone'));
+    chmodSync(skills, 0o555);
+
+    try {
+      const status = statusOf(repo, home);
+
+      expect(
+        status.projectLevel.filter((entry) => entry.reason.includes('would be removed'))
+      ).toEqual([
+        {
+          kind: 'warning',
+          artifact: 'skill',
+          name: '.claude/skills/gone',
+          reason:
+            '`.claude/skills/gone` would be removed, and DorkOS may not write in ' +
+            '`.claude/skills` (permission denied), so it was left exactly as it is. Fix the ' +
+            'folder’s permissions, then re-run.',
+        },
+      ]);
+    } finally {
+      chmodSync(skills, 0o755);
+    }
   });
 });

@@ -96,11 +96,15 @@ import {
   type BannedTerm,
 } from '../../../../scripts/check-vocab-gate.js';
 import { loadManifest, project } from '../engine.js';
+import { unreachableNativeReason } from '../plan/projector.js';
+import { UNREADABLE_GLOBAL_ROOT_REASONS } from '../plan/global-projector.js';
+import { WRITE_PATH_REASONS, writePathReason } from '../apply/write-path-occupants.js';
 import { checkPlan } from '../apply/apply.js';
 import { manifestNotices } from '../manifest/notices.js';
 import { SWEEP_REASONS } from '../apply/sweep-reasons.js';
 import { GENERATE_DIRECTORY_REASON, GENERATE_SYMLINK_REASON } from '../apply/generate-occupants.js';
 import { HAND_WRITTEN_HOOKS_REASON } from '../apply/generated-ownership.js';
+import { blockedRemovalWarning, sweepBlindWarning } from '../apply/sweep-warnings.js';
 import {
   SYMLINKS_OFF_REASON,
   SYMLINK_DIRECTORY_REASON,
@@ -364,6 +368,30 @@ function collectReasons(repoRoot: string, dorkHome: string): Reason[] {
   // marketplace's own public pages.
   for (const label of Object.values(CATEGORY_LABELS)) add('marketplace-category', label);
   for (const text of Object.values(CATEGORY_DESCRIPTIONS)) add('marketplace-category', text);
+  // The run's own warnings, from both halves. What this tree PRODUCES is
+  // whatever it happens to be blind inside — nothing, most runs — so the
+  // sentence is enumerated as well, for the reason the two tables above are: it
+  // is drawn verbatim in the terminal's Warnings block and in the app's
+  // project-level notices, and which tree trips it is an accident of somebody's
+  // permissions (DOR-1939).
+  for (const warning of drift.warnings) add('warning', warning);
+  add('warning', sweepBlindWarning('.opencode/commands'));
+  add('warning', blockedRemovalWarning('.claude/skills/gone', '.claude/skills'));
+  // Both halves of the global plan's own "could not read" answer (DOR-1937).
+  // Neither is produced by any tree here — both need somebody to have broken
+  // their own dork home — and both are printed verbatim by `dorkos harness
+  // global` and `dorkos harness sync --global`.
+  for (const sentence of Object.values(UNREADABLE_GLOBAL_ROOT_REASONS)) {
+    add('warning', sentence('<dorkHome>/skills'));
+  }
+  // The write-path table in full, and the drop that quotes it: an installed
+  // skill's `native` degrades to a drop naming the folder that stopped the link
+  // it rides (DOR-1942), and which of the five causes a tree trips is an
+  // accident of what somebody left at `.agents/skills`.
+  for (const cause of Object.keys(WRITE_PATH_REASONS) as (keyof typeof WRITE_PATH_REASONS)[]) {
+    add('blocked', writePathReason('.agents/skills', cause));
+    add('drop', unreachableNativeReason('opencode', writePathReason('.agents/skills', cause)));
+  }
 
   // `plan.notEnabled` is deliberately NOT collected. Its entries carry a
   // `signal` — `.gemini/`, `.github/copilot-instructions.md` — which is a PATH,

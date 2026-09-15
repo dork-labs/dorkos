@@ -45,12 +45,14 @@
  * @module services/harness/status
  */
 import {
+  JUNCTION_COMMIT_WARNING,
   checkPlan,
   globalInstallDropReason,
   HARNESS_MANIFEST_PATH,
   HARNESS_NATIVE_SKILL_ROOTS,
   inventorySourceTree,
   loadManifest,
+  lockedSkills,
   manifestNotices,
   scanInstalledPlugins,
   type ArtifactType,
@@ -339,8 +341,15 @@ export function adoptableSkillSources(
   const canonicalNames = new Set(
     inventory.skills.filter((s) => s.root === CANONICAL_SKILLS_ROOT).map((s) => s.name)
   );
+  // A skill folder nobody may open is offered too, and comes from the engine's
+  // own helper rather than from a second reading of `inventory.unreadable`:
+  // `readAdoptCandidates` offers exactly this set, and a candidate one reader
+  // invented alone is the drift `adoptable-agreement.test.ts` exists to catch
+  // (DOR-1949). What a person gets on clicking it is R2's refusal naming the
+  // folder — true about their tree, where "there is no skill called that" was
+  // not.
   return new Set(
-    inventory.skills
+    [...inventory.skills, ...lockedSkills(inventory)]
       .filter(
         (s) =>
           HARNESS_OWNED_SKILL_ROOTS.has(s.root) &&
@@ -835,11 +844,13 @@ function isAboutEnabledHarness(
  * the drop lists are built by walking `manifest.harnesses` — and if that ever
  * stops being true this is where the case belongs.
  *
- * The RUN's own warnings land here last, and they are the one population that
- * is about the machine rather than about a file: today, that the links here are
- * Windows junctions and git would commit the files inside them instead of the
- * links (DOR-1883). There is no cell for a computer, and the terminal files the
- * same sentence under its own `this machine:` heading.
+ * The RUN's own warnings land here last, and they are the one population that is
+ * not about a file a tool reads. Two subjects today: the machine — the links
+ * here are Windows junctions and git would commit the files inside them instead
+ * of the links (DOR-1883) — and this repository, where a folder a sweep would
+ * have walked could not be listed (DOR-1939). There is no cell for a computer
+ * and none for a folder nobody looked in, and the terminal files the same
+ * sentences under its own `this machine:` and `this run:` headings.
  */
 function projectLevelEntries(
   plan: ProjectionPlan,
@@ -868,24 +879,60 @@ function projectLevelEntries(
       .filter((w) => !isAboutEnabledHarness(w, enabled))
       .map((w) => entry('warning', w)),
     ...plan.actions.filter(isUnattributedWrite(enabled)).map((a) => entry('write', a)),
-    ...runWarnings.map(machineWarningEntry),
+    ...runWarnings.map(runWarningEntry),
   ];
 }
 
 /**
- * One thing that is true about this machine, as a project-level entry.
+ * One thing that is true about this run, as a project-level entry.
  *
- * The `name` is the shape rather than a path, and deliberately: the sentence is
- * one per RUN and not one per link, so naming any single `.claude/skills/<x>`
- * would say the problem is that file's. `skill` is the artifact because skill
- * links are the only thing the engine projects as a directory link, which is
- * the only shape a junction can be.
+ * The `name` is a label, and which label depends on what the sentence is about.
+ * Two rules, because there are two kinds of subject.
+ *
+ * The junction one is decided by IDENTITY — it is a frozen constant, so
+ * comparing against it cannot drift when somebody rewords it — and it earns a
+ * label rather than a path because it is one sentence per RUN rather than one
+ * per link: naming any single `.claude/skills/<x>` would say the problem is
+ * that file's.
+ *
+ * Every other run warning opens by naming its subject in backticks — the folder
+ * that could not be listed, or the path that would have been removed — so that
+ * path IS the name, and the row reads as being about a place rather than about
+ * a category somebody invented. A single hard-coded label described only the
+ * first of them: `Could not look` sat over a blocked-removal row that is about
+ * a link DorkOS looked at perfectly well and may not delete.
+ *
+ * `skill` is the artifact for all of them: skill links are the only thing the
+ * engine projects as a directory link, which is the only shape a junction can
+ * be, and every path the others can be about holds a skill link or a command
+ * wrapper. The page has no icon for a computer or for a folder.
  *
  * @param reason - the engine's own sentence, unchanged.
  * @returns the entry the page draws.
  */
-function machineWarningEntry(reason: string): HarnessProjectEntry {
-  return { kind: 'warning', artifact: 'skill', name: 'Windows junctions', reason };
+function runWarningEntry(reason: string): HarnessProjectEntry {
+  return {
+    kind: 'warning',
+    artifact: 'skill',
+    name: reason === JUNCTION_COMMIT_WARNING ? 'Windows junctions' : subjectOf(reason),
+    reason,
+  };
+}
+
+/**
+ * The first backticked path in a sentence — what it is about.
+ *
+ * A fallback rather than a throw when there is none: a future warning written
+ * without one is a row with a general label, never a crash on somebody's status
+ * page. The junction sentence never reaches here, and would answer wrongly if it
+ * did — its only backticked span is a COMMAND — which is why identity decides
+ * that one above.
+ *
+ * @param reason - the engine's sentence.
+ * @returns the path it names, or a neutral label.
+ */
+function subjectOf(reason: string): string {
+  return /`([^`]+)`/.exec(reason)?.[1] ?? 'This run';
 }
 
 /**

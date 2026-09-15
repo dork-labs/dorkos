@@ -334,7 +334,7 @@ describe('inventorySourceTree', () => {
     expect(unreadable.map((entry) => ({ kind: entry.kind, source: entry.source }))).toEqual([
       { kind: 'skill', source: '.opencode/skills' },
     ]);
-    expect(unreadable[0]?.reason).toContain('.opencode/skills could not be listed as a directory');
+    expect(unreadable[0]?.reason).toContain('.opencode/skills could not be listed');
   });
 
   it('XA-07: counts the servers in another tool’s MCP config and records no name and no value', () => {

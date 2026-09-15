@@ -50,7 +50,11 @@ import { AGENTS_SKILLS_DIR, INSTALLED_PROJECTION_MARKER } from '../scan/scanner.
 import type { ClaudeHooksConfig } from '../generate/hooks.js';
 import { isAtomicTempName, isStaleAtomicTemp, writeFileAtomic } from './atomic-write.js';
 import { HAND_WRITTEN_HOOKS_REASON, readFileIfPresent } from './generated-ownership.js';
-import { findOrphanedAuthoredLinks, sweepAuthoredOrphans } from './authored-orphans.js';
+import {
+  allOrphanedAuthoredLinks,
+  findOrphanedAuthoredLinks,
+  sweepAuthoredOrphans,
+} from './authored-orphans.js';
 import {
   isDanglingSymlink,
   isSymlink,
@@ -70,6 +74,7 @@ import { junctionCommitWarnings, symlinkTypeFor, waitForSymlinkRemoval } from '.
 import {
   applyGeneratedHookFile,
   findBlockedGenerateTargets,
+  allGeneratedOrphans,
   findGeneratedOrphans,
   findLeftAloneGeneratedHookFiles,
   generatedHookOutcome,
@@ -78,6 +83,7 @@ import {
 } from './generated-targets.js';
 import { blockingGenerateOccupant } from './generate-occupants.js';
 import { findBlockedWritePaths, findUnwritableTargets } from './write-path-occupants.js';
+import { partitionRemovable, removableOf, sweepScanWarnings } from './sweep-warnings.js';
 import {
   CLAUDE_COMMANDS_DIR,
   CLAUDE_SKILLS_DIR,
@@ -360,6 +366,22 @@ function applyMerge(repoRoot: string, action: ProjectionAction): boolean {
  * @returns the repo-relative paths a sweep would remove.
  */
 export function findInstalledOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
+  return removableOf(repoRoot, allInstalledOrphans(repoRoot, plan));
+}
+
+/**
+ * The same search with the removal probe NOT applied — every path this sweep
+ * owns and would take if the folder let it.
+ *
+ * Its own function so the blocked half can be recovered from the same predicate
+ * rather than from a second one: `find*` is this filtered, and
+ * {@link blockedRemovalWarnings} is this minus that (DOR-1941).
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param plan - the current projection plan (every symlink target is kept).
+ * @returns the repo-relative paths, before the folder is asked.
+ */
+function allInstalledOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
   // A plan built over a skill folder nobody could read is not evidence of what
   // is installed — see `skillSourcesUnreadable`.
   if (skillSourcesUnreadable(plan)) return [];
@@ -425,6 +447,18 @@ export function sweepInstalledOrphans(repoRoot: string, plan: ProjectionPlan): s
  * @returns the repo-relative paths a sweep would remove.
  */
 export function findGeneratedCommandOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
+  return removableOf(repoRoot, allGeneratedCommandOrphans(repoRoot, plan));
+}
+
+/**
+ * The same search with the removal probe NOT applied — see
+ * {@link allInstalledOrphans} for why each finder has one.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param plan - the current projection plan (its generate targets are kept).
+ * @returns the repo-relative paths, before the folder is asked.
+ */
+function allGeneratedCommandOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
   const kept = new Set(
     plan.actions
       .filter((a) => a.kind === 'generate' && a.target?.startsWith(`${CLAUDE_COMMANDS_DIR}/`))
@@ -486,13 +520,52 @@ export function sweepGeneratedCommandOrphans(repoRoot: string, plan: ProjectionP
   // apart, and only a real empty listing is a wrapper dir worth tidying away.
   // (Measured before: `rmSync` on a mode-000 dir does not quietly decline, it
   // throws EACCES out of the middle of an apply.)
-  const commandsDir = join(repoRoot, CLAUDE_COMMANDS_DIR);
-  for (const sub of listDirEntries(commandsDir)) {
-    if (!sub.isDirectory()) continue;
-    const subAbs = join(commandsDir, sub.name);
-    if (tryListDir(subAbs)?.length === 0) rmSync(subAbs, { recursive: true, force: true });
+  //
+  // And the folder ABOVE has to take the write, exactly as it does for the files
+  // this sweep just removed. It did not have to before, because nothing here
+  // ever asked: `rmSync` on `.claude/commands/<pkg>` writes `.claude/commands`,
+  // and a mode-0555 one raised EACCES out of the middle of the apply — after
+  // `ship.md` was already gone, and before the two sweeps that follow this one
+  // ever ran (DOR-1941 F1). `emptiedWrapperDirs` is what `--check` previews, so
+  // the two modes decline the same directories.
+  for (const rel of removableOf(repoRoot, emptiedWrapperDirs(repoRoot, plan))) {
+    rmSync(join(repoRoot, rel), { recursive: true, force: true });
   }
   return orphans;
+}
+
+/**
+ * The wrapper directories this sweep's tidy-up would remove.
+ *
+ * A `.claude/commands/<pkg>` goes when nothing is left in it — which, run after
+ * the file sweep, means every entry it holds is one this sweep is taking, or it
+ * holds nothing already. Predicted from the FILTERED orphan list rather than the
+ * raw one, because a file the sweep declines to remove is a file still in the
+ * folder, and a folder that keeps a file keeps itself.
+ *
+ * Its own function so `--check` can name the same directories without deleting
+ * anything: the tidy-up is the one place in the engine that removes a DIRECTORY,
+ * and until DOR-1941 it was the one removal no probe and no preview covered.
+ *
+ * `tryListDir`, never `listDir`: an empty array from a failed read is a folder
+ * whose contents nobody saw, and this decides a deletion on emptiness.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param plan - the current projection plan (its generate targets are kept).
+ * @returns the repo-relative wrapper directories, sorted.
+ */
+function emptiedWrapperDirs(repoRoot: string, plan: ProjectionPlan): string[] {
+  const commandsDir = join(repoRoot, CLAUDE_COMMANDS_DIR);
+  const taking = new Set(findGeneratedCommandOrphans(repoRoot, plan));
+  const dirs: string[] = [];
+  for (const sub of listDirEntries(commandsDir)) {
+    if (!sub.isDirectory()) continue;
+    const rel = `${CLAUDE_COMMANDS_DIR}/${sub.name}`;
+    const listing = tryListDir(join(commandsDir, sub.name));
+    if (listing === undefined) continue; // nobody could look — `sweepScanWarnings` says so
+    if (listing.every((entry) => taking.has(`${rel}/${entry}`))) dirs.push(rel);
+  }
+  return dirs.sort();
 }
 
 /**
@@ -511,6 +584,18 @@ export function sweepGeneratedCommandOrphans(repoRoot: string, plan: ProjectionP
  * @returns the repo-relative paths a sweep would remove.
  */
 export function findOpencodeCommandOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
+  return removableOf(repoRoot, allOpencodeCommandOrphans(repoRoot, plan));
+}
+
+/**
+ * The same search with the removal probe NOT applied — see
+ * {@link allInstalledOrphans} for why each finder has one.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param plan - the current projection plan (its generate targets are kept).
+ * @returns the repo-relative paths, before the folder is asked.
+ */
+function allOpencodeCommandOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
   const kept = new Set(
     plan.actions
       .filter((a) => a.kind === 'generate' && a.target?.startsWith(`${OPENCODE_COMMANDS_DIR}/`))
@@ -669,6 +754,18 @@ function findBlockedOpencodeCommandFiles(repoRoot: string, plan: ProjectionPlan)
  * @returns the repo-relative path a sweep would rewrite (one entry) or empty.
  */
 export function findSettingsHooksOrphan(repoRoot: string, plan: ProjectionPlan): string[] {
+  return removableOf(repoRoot, allSettingsHooksOrphan(repoRoot, plan));
+}
+
+/**
+ * The same search with the removal probe NOT applied — see
+ * {@link allInstalledOrphans} for why each finder has one.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param plan - the current projection plan.
+ * @returns the one repo-relative path, or none.
+ */
+function allSettingsHooksOrphan(repoRoot: string, plan: ProjectionPlan): string[] {
   const hasMerge = plan.actions.some(
     (a) => a.kind === 'merge' && a.target === CLAUDE_SETTINGS_LOCAL_TARGET
   );
@@ -867,10 +964,19 @@ export function applyPlan(
     swept: removals.map(({ path }) => path),
     removals,
     leftAlone,
-    // Asked LAST, so it answers about the links this run just made rather than
-    // about the tree it found. `checkPlan` asks the same function off the same
-    // plan, which is what keeps the two modes saying one thing.
-    warnings: junctionCommitWarnings(repoRoot, plan),
+    // Three subjects, one list, and the junction one sits OUTSIDE the sweep
+    // guard on purpose: it is true of the links this run made whether or not a
+    // sweep ran. The other two are about what a SWEEP found, so a run that
+    // swept nothing says nothing about what it declined to remove — that would
+    // be a sentence about a run that did not happen. `checkPlan` asks the same
+    // three functions off the same plan, which is what keeps the two modes
+    // saying one thing.
+    warnings: [
+      ...junctionCommitWarnings(repoRoot, plan),
+      ...(opts?.sweepOrphans
+        ? [...sweepScanWarnings(repoRoot, plan), ...blockedRemovalWarnings(repoRoot, plan)]
+        : []),
+    ],
   };
 }
 
@@ -992,6 +1098,36 @@ function findOrphans(repoRoot: string, plan: ProjectionPlan): SweptPath[] {
 }
 
 /**
+ * Every removal this plan would make and DorkOS may not, as sentences.
+ *
+ * The six finders drop these on their way out — that is what stops `--check`
+ * promising a removal `--fix` cannot make — so the blocked half is recovered
+ * from the six UNFILTERED searches beside them rather than from a second set of
+ * predicates. Each `find*` is its `all*` twin filtered by `removableOf`, and
+ * this is the same twin split the other way, so the two halves are one partition
+ * of one set by construction and no path can fall between them.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param plan - the current projection plan.
+ * @returns one sentence per blocked removal, sorted by path.
+ */
+function blockedRemovalWarnings(repoRoot: string, plan: ProjectionPlan): string[] {
+  if (plan.narrowedTo !== undefined) return [];
+  const raw = [
+    ...allInstalledOrphans(repoRoot, plan),
+    ...allOrphanedAuthoredLinks(repoRoot, plan),
+    ...allGeneratedOrphans(repoRoot, plan),
+    ...allGeneratedCommandOrphans(repoRoot, plan),
+    ...allOpencodeCommandOrphans(repoRoot, plan),
+    ...allSettingsHooksOrphan(repoRoot, plan),
+    // The one removal that is a DIRECTORY rather than a file, and the one the
+    // preview never covered (DOR-1941 F1).
+    ...emptiedWrapperDirs(repoRoot, plan),
+  ];
+  return partitionRemovable(repoRoot, [...new Set(raw)].sort()).warnings;
+}
+
+/**
  * Diff a projection plan against the current on-disk state without mutating it.
  *
  * Four answers, deliberately kept apart: what is stale and a re-run would fix
@@ -1054,25 +1190,40 @@ export function checkPlan(repoRoot: string, plan: ProjectionPlan): DriftResult {
     ...findBlockedSymlinkTargets(repoRoot, plan).filter((a) => !onBlockedPath(a)),
   ];
   const removals = plan.narrowedTo === undefined ? findOrphans(repoRoot, plan) : [];
+  const blockedRemovals = blockedRemovalWarnings(repoRoot, plan);
   return {
     drifted,
     blocked,
     orphans: removals.map(({ path }) => path),
     removals,
     leftAlone: findLeftAloneGeneratedHookFiles(repoRoot, plan),
-    // Not drift, and never an exit code: a junction resolves where the plan
-    // says. It is what COMMITTING one would do that a person has to be told,
-    // and told before they commit, which is why `--check` answers it too.
-    warnings: junctionCommitWarnings(repoRoot, plan),
+    // Not drift, and the first two are never an exit code either: a junction
+    // resolves where the plan says, and a sweep that cannot look removes
+    // nothing. It is what COMMITTING a junction would do that a person has to
+    // be told, and told before they commit, which is why `--check` answers it
+    // too. The THIRD one does count — see `clean` below.
+    warnings: [
+      ...junctionCommitWarnings(repoRoot, plan),
+      ...sweepScanWarnings(repoRoot, plan),
+      ...blockedRemovals,
+    ],
     // A skill folder nobody could read is the fourth way this answer is not
     // "everything is as the plan says": the sweeps stood down over it, so the
     // tree may hold links a readable folder would have settled either way, and
     // saying `clean` over that is the same lie as saying it over nine files a
     // sync would delete (DOR-1882).
+    // A BLOCKED REMOVAL is the fifth: the engine already answers `false` for a
+    // blocked WRITE, and a stale projection DorkOS can see and has decided not
+    // to remove is the same kind of fact — "every projection already matches
+    // the plan" must never print over one. A BLIND folder is not: nothing is
+    // known to be wrong in there, and redding a tree over a folder whose
+    // contents nobody has seen would make `--check` unusable on a machine with
+    // one odd permission (DOR-1939 stays a warning, DOR-1941 does not).
     clean:
       drifted.length === 0 &&
       blocked.length === 0 &&
       removals.length === 0 &&
+      blockedRemovals.length === 0 &&
       !skillSourcesUnreadable(plan),
   };
 }

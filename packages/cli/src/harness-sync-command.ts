@@ -782,7 +782,8 @@ function reportCheck(
   console.log(formatDropList(plan));
   // The run's own warnings ride the same block as the plan's, so a person reads
   // one list of "things you should know" rather than hunting two — and `--check`
-  // says it BEFORE anybody commits, which is the whole point of it (DOR-1883).
+  // says it BEFORE anybody commits, and before anybody runs the sync that would
+  // otherwise have stood down silently (DOR-1883, DOR-1939).
   const warningBlock = formatWarnings(plan, drift.warnings);
   if (warningBlock) {
     console.log('');
@@ -879,7 +880,7 @@ function reportFix(
   console.log(summarizeActions(plan.actions, withheld, manifest.harnesses));
   console.log('');
   console.log(formatDropList(plan));
-  // Whatever this run just wrote is what these are about — the same block, the
+  // Whatever this run just did is what these are about — the same block, the
   // same words, so `--fix` and `--check` never disagree in print.
   const warningBlock = formatWarnings(plan, warnings);
   if (warningBlock) {

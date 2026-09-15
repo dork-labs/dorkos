@@ -52,7 +52,15 @@
  */
 import fc from 'fast-check';
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { HARNESS_IDS, type HarnessId } from '../../manifest/schema.js';
@@ -258,6 +266,38 @@ export interface RepoSpec {
    */
   personLink: boolean;
   /**
+   * Whether the FIRST installed skill's canonical link is staged dead — a
+   * symlink at exactly `.agents/skills/<pkg>__<name>`, pointing at a directory
+   * inside the package that is not there.
+   *
+   * {@link DANGLING_TARGETS}'s `skill` shape is `.claude/skills/zz-gone`, which
+   * no plan action names; this is a dead link AT a path the plan wants, which
+   * is a different question and the one a `native` claim turns on. Paired with
+   * {@link readOnlyCanonicalSkills} it is the shape that says a claim must ride
+   * a LIVE link: the repair is refused, so a plan that read "already there" off
+   * `lstat` would promise that OpenCode reads a link pointing at nothing
+   * (DOR-1942).
+   *
+   * Staged before the mode change, so the folder can still take the link.
+   */
+  deadInstalledLink: boolean;
+  /**
+   * Whether `.agents/skills` is left at mode 0555 — a folder that lists
+   * perfectly and refuses a write.
+   *
+   * The shape a `chmod -R` catches, and the one no generated repo had: every
+   * other hostile shape here is about SHAPE (a file, a dangling link, a folder
+   * nobody may read), and `blockedWritePath` answers all of those. PERMISSION is
+   * a different probe with a different answer, and until DOR-1942 a `native`
+   * claim riding a link into this folder survived while the link itself was a
+   * conflict — a false native no property could reach, because no generated tree
+   * could produce one.
+   *
+   * Applied AFTER everything below it is written, so the skills themselves are
+   * staged normally and only the writes INTO the folder are refused.
+   */
+  readOnlyCanonicalSkills: boolean;
+  /**
    * Which folder to put a plain FILE at, as an index into the candidates this
    * spec makes interesting ({@link hostileCandidates}) — or `null` for none.
    *
@@ -455,54 +495,87 @@ export const PERSON_SKILL_LINK = '.claude/skills/mine';
  * @returns an arbitrary over {@link RepoSpec}.
  */
 export function arbRepo(): fc.Arbitrary<RepoSpec> {
-  return fc.record({
-    skills: fc.uniqueArray(fc.constantFrom(...SKILL_NAMES), { maxLength: 4 }),
-    plugins: fc.uniqueArray(
-      fc.record({
-        name: fc.constantFrom('acme', 'flow'),
-        skills: fc.uniqueArray(fc.constantFrom(...SKILL_NAMES), { maxLength: 2 }),
-        hooks: fc.boolean(),
-        commands: fc.integer({ min: 0, max: 1 }),
+  return fc
+    .record({
+      skills: fc.uniqueArray(fc.constantFrom(...SKILL_NAMES), { maxLength: 4 }),
+      plugins: fc.uniqueArray(
+        fc.record({
+          name: fc.constantFrom('acme', 'flow'),
+          skills: fc.uniqueArray(fc.constantFrom(...SKILL_NAMES), { maxLength: 2 }),
+          hooks: fc.boolean(),
+          commands: fc.integer({ min: 0, max: 1 }),
+        }),
+        { maxLength: 2, selector: (p) => p.name }
+      ),
+      authoredHooks: fc.boolean(),
+      agentsMd: fc.boolean(),
+      claudeCommands: fc.constantFrom<CommandDirState>(...COMMAND_DIR_STATES),
+      opencodeCommands: fc.constantFrom<CommandDirState>(...COMMAND_DIR_STATES),
+      rules: fc.uniqueArray(
+        fc.record({ name: fc.constantFrom(...RULE_NAMES), paths: fc.boolean() }),
+        { maxLength: 3, selector: (r) => r.name }
+      ),
+      agents: fc.uniqueArray(fc.constantFrom(...AGENT_NAMES), { maxLength: 3 }),
+      mcpServers: fc.option(fc.uniqueArray(fc.constantFrom(...MCP_NAMES), { maxLength: 2 }), {
+        nil: null,
       }),
-      { maxLength: 2, selector: (p) => p.name }
-    ),
-    authoredHooks: fc.boolean(),
-    agentsMd: fc.boolean(),
-    claudeCommands: fc.constantFrom<CommandDirState>(...COMMAND_DIR_STATES),
-    opencodeCommands: fc.constantFrom<CommandDirState>(...COMMAND_DIR_STATES),
-    rules: fc.uniqueArray(
-      fc.record({ name: fc.constantFrom(...RULE_NAMES), paths: fc.boolean() }),
-      { maxLength: 3, selector: (r) => r.name }
-    ),
-    agents: fc.uniqueArray(fc.constantFrom(...AGENT_NAMES), { maxLength: 3 }),
-    mcpServers: fc.option(fc.uniqueArray(fc.constantFrom(...MCP_NAMES), { maxLength: 2 }), {
-      nil: null,
-    }),
-    localSettingsHooks: fc.boolean(),
-    skillFrontmatterHooks: fc.boolean(),
-    linkedRulesDir: fc.boolean(),
-    deadAgentLink: fc.boolean(),
-    personSkillLink: fc.boolean(),
-    claudeSkills: fc.uniqueArray(fc.constantFrom(...CLAUDE_SKILL_DIRS), { maxLength: 3 }),
-    opencodeOwnFiles: fc.boolean(),
-    harnesses: fc.subarray([...HARNESS_IDS]),
-    occupant: fc.option(
-      fc.record({
-        target: fc.constantFrom(CODEX_HOOKS_TARGET, CURSOR_HOOKS_TARGET, COPILOT_HOOKS_TARGET),
-        sidecar: fc.constantFrom<SidecarState>('none', 'matching', 'stale'),
-        shape: fc.constantFrom<OccupantShape>('vendor', 'bare'),
+      localSettingsHooks: fc.boolean(),
+      skillFrontmatterHooks: fc.boolean(),
+      linkedRulesDir: fc.boolean(),
+      deadAgentLink: fc.boolean(),
+      personSkillLink: fc.boolean(),
+      claudeSkills: fc.uniqueArray(fc.constantFrom(...CLAUDE_SKILL_DIRS), { maxLength: 3 }),
+      opencodeOwnFiles: fc.boolean(),
+      harnesses: fc.subarray([...HARNESS_IDS]),
+      occupant: fc.option(
+        fc.record({
+          target: fc.constantFrom(CODEX_HOOKS_TARGET, CURSOR_HOOKS_TARGET, COPILOT_HOOKS_TARGET),
+          sidecar: fc.constantFrom<SidecarState>('none', 'matching', 'stale'),
+          shape: fc.constantFrom<OccupantShape>('vendor', 'bare'),
+        }),
+        { nil: null }
+      ),
+      widowedSidecar: fc.boolean(),
+      dirOccupant: fc.boolean(),
+      dangling: fc.option(fc.constantFrom<DanglingKind>('generate', 'scaffold', 'skill'), {
+        nil: null,
       }),
-      { nil: null }
-    ),
-    widowedSidecar: fc.boolean(),
-    dirOccupant: fc.boolean(),
-    dangling: fc.option(fc.constantFrom<DanglingKind>('generate', 'scaffold', 'skill'), {
-      nil: null,
-    }),
-    personLink: fc.boolean(),
-    gitignore: fc.option(fc.subarray([...EPHEMERAL_GITIGNORE_PATTERNS]), { nil: null }),
-    hostile: fc.option(fc.nat({ max: 64 }), { nil: null }),
-  });
+      personLink: fc.boolean(),
+      deadInstalledLink: fc.boolean(),
+      // Off on a platform that cannot mean it, so a case that stages nothing is
+      // never a case that asserts nothing.
+      readOnlyCanonicalSkills: CAN_STAGE_UNREADABLE ? fc.boolean() : fc.constant(false),
+      gitignore: fc.option(fc.subarray([...EPHEMERAL_GITIGNORE_PATTERNS]), { nil: null }),
+      hostile: fc.option(fc.nat({ max: 64 }), { nil: null }),
+    })
+    .map((spec) => ({
+      // A read-only canonical layer is staged only in a repository with no
+      // AUTHORED skill in it, and the reason is about the PROPERTIES rather than
+      // about the engine: several of them mutate `.agents/skills` themselves to
+      // simulate a person deleting or renaming a skill, and a folder that refuses
+      // a write refuses theirs too — the case would then fail in its own setup
+      // rather than in the code under test. Every claim the shape exists for is
+      // about an INSTALLED package's link into that folder, which the engine
+      // writes and no property removes by hand.
+      ...spec,
+      readOnlyCanonicalSkills:
+        spec.skills.length === 0 &&
+        // Paired rather than left to chance when a dead canonical link is
+        // staged too. The claim this shape exists for needs BOTH — a link that
+        // points at nothing AND a folder that refuses the repair — and the two
+        // drawn independently met in roughly one case in thirty, which is a
+        // shape forty runs does not really cover (measured: a mutant that read
+        // existence instead of liveness survived the whole property). With
+        // authored skills present the mode stays off for the reason above, so
+        // the healthy case — a dead link a writable folder lets the engine
+        // repair — is still generated.
+        (spec.readOnlyCanonicalSkills || hasInstalledSkill(spec)),
+    }));
+}
+
+/** Whether this spec stages a dead canonical link for a package that ships one. */
+function hasInstalledSkill(spec: Pick<RepoSpec, 'plugins' | 'deadInstalledLink'>): boolean {
+  return spec.deadInstalledLink && spec.plugins.some((plugin) => plugin.skills.length > 0);
 }
 
 /**
@@ -794,6 +867,18 @@ function materialise(spec: RepoSpec): MaterialisedRepo {
     linkInto(repoRoot, PERSON_LINK_PATH, PERSON_LINK_TEXT);
   }
 
+  // A dead link where the plan wants the canonical one. Only where the path is
+  // free: the engine writes that link itself on a healthy tree, and two shapes
+  // at one path make every assertion about it ambiguous.
+  const firstInstalled = spec.plugins.find((plugin) => plugin.skills.length > 0);
+  if (spec.deadInstalledLink && firstInstalled !== undefined) {
+    const named = `${firstInstalled.name}__${firstInstalled.skills[0] as string}`;
+    const rel = `.agents/skills/${named}`;
+    if (!existsSync(join(repoRoot, rel))) {
+      linkInto(repoRoot, rel, `../../.dork/plugins/${firstInstalled.name}/skills/moved-away`);
+    }
+  }
+
   // The dead link goes on last, and only where nothing else is: two hostile
   // shapes at one path would make every assertion about that path ambiguous.
   let dangling: StagedDangling | undefined;
@@ -825,6 +910,26 @@ function materialise(spec: RepoSpec): MaterialisedRepo {
         // shapes — a file at `.claude/commands` under a candidate
         // `.claude/commands/acme`, or a mode-000 directory. Try the next one.
       }
+    }
+  }
+
+  // Last of all, after every skill and every person's link is in place: the
+  // folder lists exactly as it did and takes no new entry, which is the
+  // permission half of DOR-1882 and the half DOR-1942 turns on.
+  if (spec.readOnlyCanonicalSkills) {
+    // Made if it is not there: an empty folder somebody chmod'd is the shape,
+    // and the generator only sets this for a repo with no authored skill in it
+    // (see `arbRepo`), so there is often nothing to have created it.
+    //
+    // Unless the `hostile` arbitrary already put a FILE there, which is a
+    // different shape entirely and wins: two hostile things at one path make
+    // every assertion about that path ambiguous, which is the rule the dead
+    // link above follows too.
+    const canonical = join(repoRoot, '.agents', 'skills');
+    if (!existsSync(canonical) || statSync(canonical).isDirectory()) {
+      mkdirSync(canonical, { recursive: true });
+      chmodSync(canonical, 0o555);
+      unreadable.push(canonical);
     }
   }
 

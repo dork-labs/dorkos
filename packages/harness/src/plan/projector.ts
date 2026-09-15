@@ -15,6 +15,7 @@
  *
  * @module plan/projector
  */
+import { realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { HARNESS_LABELS, type HarnessId, type HarnessManifest } from '../manifest/schema.js';
 import type {
@@ -66,6 +67,11 @@ import {
 } from './source-artifacts.js';
 import { commandDropReason } from './command-formats.js';
 import { inventorySourceTree, type SourceInventory } from '../inventory/index.js';
+import {
+  blockedWritePath,
+  unwritableWritePath,
+  type WritePathCause,
+} from '../apply/write-path-occupants.js';
 
 /** The authored slash-command directory Claude Code reads (namespaced by subdirectory). */
 const CLAUDE_COMMANDS_SOURCE = CLAUDE_COMMANDS_DIR;
@@ -538,26 +544,38 @@ export function buildPlan(input: {
   // inside. It is still projected and its links are still kept — what it earns
   // here is the line saying so (DOR-1935). No sweep stands down for one: the
   // root read fine, and every other skill in it is ordinary evidence.
-  warnings.push(
-    ...planUnreadableSkillWarnings([
-      ...authored.unreadableSkills,
-      ...installedPlugins.flatMap((plugin) => plugin.unreadableSkills ?? []),
-    ])
-  );
+  const unreadableSkillDirs = [
+    ...authored.unreadableSkills,
+    ...installedPlugins.flatMap((plugin) => plugin.unreadableSkills ?? []),
+  ];
+  warnings.push(...planUnreadableSkillWarnings(unreadableSkillDirs));
 
   // Say what the tree holds and could not be read — a `.mcp.json` that will not
   // parse, a file where `.claude/agents` should be a directory. Once per source,
   // ahead of every harness, for the reason `planUnreadableHookWarnings` gives.
   //
-  // A skills root the line above already named is dropped here, so one folder
-  // gets one line. The inventory's sentence is the strictly smaller of the two —
-  // it says nothing was read from the folder, while the skill-root line says
-  // that AND what the engine did about it — and two surfaces describing one fact
-  // is how a person stops reading either.
-  const namedSkillRoots = new Set(unreadableSkillRoots);
+  // A path either line above already named is dropped here, so one folder gets
+  // one line. The inventory's sentence is the strictly smaller of the two — it
+  // says nothing was read from the folder, while the other says that AND what
+  // the engine did about it — and two surfaces describing one fact is how a
+  // person stops reading either.
+  //
+  // ROOTS alone was right only while roots were the only paths with a line of
+  // their own. DOR-1935 gave one to a skill FOLDER a level down, and DOR-1949
+  // gave the inventory a record of the same folder, so on the merged tree a
+  // mode-000 `.agents/skills/<x>` drew both. The set is now every path either
+  // line can name.
+  //
+  // The inventory's record is NOT redundant in general, and dropping it wholesale
+  // would undo the ticket that added it: nothing but the inventory walks
+  // `.claude/skills`, so a locked folder there has no other line at all. Both
+  // sides spell paths repo-relative with `/`, which is what lets one set hold
+  // them; if that ever stops being true this filter is the one place to
+  // normalise.
+  const alreadyNamed = new Set([...unreadableSkillRoots, ...unreadableSkillDirs]);
   warnings.push(
     ...planInventoryWarnings(inventory).filter(
-      (warning) => warning.source === undefined || !namedSkillRoots.has(warning.source)
+      (warning) => warning.source === undefined || !alreadyNamed.has(warning.source)
     )
   );
 
@@ -743,13 +761,160 @@ export function buildPlan(input: {
     })
   );
 
+  // A `native` claim that rides a link this tree will not take is a claim about
+  // a file that is never going to be there — the last shape of the false native
+  // DOR-1847 closed everywhere else (DOR-1942).
+  const settled = degradeUnreachableNatives(repoRoot, all);
+
   return {
-    actions: all.filter((a) => a.kind !== 'drop'),
-    drops: all.filter((a) => a.kind === 'drop'),
+    actions: settled.filter((a) => a.kind !== 'drop'),
+    drops: settled.filter((a) => a.kind === 'drop'),
     warnings,
     notEnabled: notEnabledHarnesses(manifest.harnesses, detectedHarnesses, dorkosHarness),
     ...(unreadableSkillRoots.length > 0 ? { unreadableSkillRoots } : {}),
   };
+}
+
+/**
+ * Turn every `native` claim whose enabling link cannot be written into a drop
+ * that names the folder in the way (DOR-1942).
+ *
+ * An installed package's skill is `native` for OpenCode — and for Cursor, Gemini
+ * CLI and Copilot — because ANOTHER action writes the
+ * `.agents/skills/<pkg>__<name>` link all four of them read
+ * ({@link planCanonicalSkillLinks}, or Codex's own target). The claim is true
+ * exactly as long as that link is. After DOR-1882 the write can be a blocked
+ * conflict — a plain file where `.agents/skills` belongs, or a folder DorkOS may
+ * not write in — and the plan still said "OpenCode reads it" about a link
+ * nothing ever wrote. Measured by property P9b: the coverage walk discovers
+ * nothing at all for such a tree.
+ *
+ * **The same predicate `applyPlan` and `checkPlan` act on**, called here so the
+ * degrade is in the PLAN: the terminal, the Skills page cell and `--check` all
+ * read the plan, and computing it in three places is three chances for them to
+ * disagree about one link.
+ *
+ * Scoped to the claims that really ride a link. An AUTHORED skill's `native` is
+ * about a file the person wrote and DorkOS never touches, so nothing about a
+ * write path can make it false.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param all - every action and drop the plan has built, before the split.
+ * @returns the same list, with each unreachable `native` replaced by a drop.
+ */
+function degradeUnreachableNatives(
+  repoRoot: string,
+  all: readonly ProjectionAction[]
+): ProjectionAction[] {
+  const rides = all.some((a) => a.kind === 'native' && isCanonicalLinkNative(a));
+  if (!rides) return [...all];
+
+  // Shared with nothing else on purpose: this pass and the apply's own pre-pass
+  // ask the same function, and each memoises within its own run. A repository
+  // with forty installed skills asks about `.agents/skills` once here.
+  const probed = new Map<string, WritePathCause | undefined>();
+  return all.map((action) => {
+    if (action.kind !== 'native' || !isCanonicalLinkNative(action)) return action;
+    const link = `${AGENTS_SKILLS_DIR}/${action.name}`;
+    const blocked =
+      blockedWritePath(repoRoot, link, probed) ??
+      (action.source === undefined
+        ? undefined
+        : refusedByPermission(repoRoot, link, action.source));
+    if (blocked === undefined) return action;
+    return { ...action, kind: 'drop', reason: unreachableNativeReason(action.harness, blocked) };
+  });
+}
+
+/**
+ * Whether the folder that would hold this link refuses the write on
+ * PERMISSION — the second half of the same question, and the one
+ * `blockedWritePath` cannot answer.
+ *
+ * `blockedWritePath` is about SHAPE: a file, a link to a file, a link that will
+ * not follow, a folder nobody may read. A folder that lists perfectly and
+ * refuses a write raises EACCES from `symlinkSync` and is a `read-only` cause,
+ * which only {@link unwritableWritePath} asks about — so `.agents/skills` at
+ * mode 0555 left the `native` claim standing while the link beside it was a
+ * conflict (DOR-1942).
+ *
+ * **Asked only of a link that is not already DOING the job**, which is
+ * `unwritableWritePath`'s own doctrine applied to this caller: somebody who
+ * chmods `.agents/skills` read-only after a sync still has a link every one of
+ * those four tools reads perfectly well, and nothing is about to be written to
+ * it.
+ *
+ * "Doing the job" is liveness, not existence, and the difference is a whole
+ * false claim. `pathExists` is `lstat`-based, so a DANGLING link counted as
+ * already there: the plan carried `native opencode acme__a` while the apply
+ * reported the very same path as a conflict, which together say OpenCode reads
+ * a link that points at nothing and DorkOS may not repair it. A link that
+ * resolves somewhere OTHER than this skill is the same kind of wrong — a write
+ * is needed to repair it, and a folder that refuses the write leaves the claim
+ * false. So the entry keeps the claim only when it really reaches the source.
+ *
+ * A SHAPE block needs no such guard: a file where `.agents/skills` belongs
+ * means the link cannot be there at all.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param link - the repo-relative link the claim rides.
+ * @param source - the repo-relative skill directory the link must reach.
+ * @returns the reason, or `undefined` when the claim still holds.
+ */
+function refusedByPermission(repoRoot: string, link: string, source: string): string | undefined {
+  if (linkAlreadyReaches(repoRoot, link, source)) return undefined;
+  return unwritableWritePath(repoRoot, link);
+}
+
+/**
+ * Whether what is at `link` already resolves to `source`.
+ *
+ * Both sides are resolved through the operating system, for the reason
+ * `inventory/skills.ts` gives about the same comparison: every test tree is a
+ * `mkdtemp` under macOS's `/var -> /private/var`, so comparing a resolved
+ * target against an unresolved path matches nothing and every live link reads
+ * as broken.
+ *
+ * A path that does not resolve — a dangling link, or nothing at all — answers
+ * `false`, which is the whole point.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param link - the repo-relative link.
+ * @param source - the repo-relative directory it must reach.
+ * @returns `true` only when the link is live and lands on the source.
+ */
+function linkAlreadyReaches(repoRoot: string, link: string, source: string): boolean {
+  try {
+    return realpathSync(join(repoRoot, link)) === realpathSync(join(repoRoot, source));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The sentence a degraded `native` carries.
+ *
+ * Exported so `__tests__/reason-vocabulary.test.ts` can enumerate it: it is drawn
+ * verbatim in the drop list, in the Skills page cell and in `--check`, and
+ * whether a tree produces it depends on what somebody left at `.agents/skills`.
+ *
+ * The blocked half is DOR-1882's own words, unchanged, so a person reads one
+ * description of the folder rather than two.
+ *
+ * @param harness - the harness that would have read the link.
+ * @param blockedReason - `blockedWritePath`'s sentence about the folder in the way.
+ * @returns the drop's reason.
+ */
+export function unreachableNativeReason(harness: HarnessId, blockedReason: string): string {
+  return (
+    `${HARNESS_LABELS[harness]} reads ${AGENTS_SKILLS_DIR}, and the link this skill needs ` +
+    `there is ${blockedReason}.`
+  );
+}
+
+/** Whether a `native` action is one an `.agents/skills` link is what makes true. */
+function isCanonicalLinkNative(action: ProjectionAction): boolean {
+  return action.artifact === 'skill' && action.provenance === 'installed';
 }
 
 /**
