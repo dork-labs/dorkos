@@ -196,6 +196,12 @@ const GIT_CASES: ReadonlyArray<{
   // `?? .claude/skills/acme__greet`).
   { gitignore: '*__*/\n', path: '.claude/skills/acme__greet', kind: 'symlink' },
   { gitignore: '*__*/\n', path: '.claude/skills/acme__greet', kind: 'dir' },
+  // The same rule in the other two spellings a person writes it in — anchored
+  // to the folder, and as a bare name matching at any depth (DOR-1947). One
+  // trailing-slash case cannot tell those apart, and the answer has to be the
+  // same for all three: git tracks the link.
+  { gitignore: '.claude/skills/*__*/\n', path: '.claude/skills/acme__greet', kind: 'symlink' },
+  { gitignore: 'acme__greet/\n', path: '.claude/skills/acme__greet', kind: 'symlink' },
   { gitignore: 'hooks.json/\n', path: '.codex/hooks.json', kind: 'file' },
   { gitignore: 'plugins/\n', path: '.dork/plugins', kind: 'dir' },
   { gitignore: '.claude/skills/*__*\n', path: '.claude/skills/acme__greet' },
@@ -247,7 +253,13 @@ describe.skipIf(!hasGit())('the matcher against real git', () => {
         rmSync(root, { recursive: true, force: true });
       }
     }
-  });
+    // One real `git init` and one real `git check-ignore` PER CASE, so this one
+    // test spawns four dozen processes: 0.6s on an idle machine, 7.8s with the
+    // rest of the monorepo's suites running beside it — which is the ordinary
+    // condition in this repo, and is what timed it out against the 5s default.
+    // 20s leaves room for a worse load without turning into a budget that would
+    // let a genuine hang sit for a minute.
+  }, 20_000);
 });
 
 /** The parent directory of a repo-relative path, or `.` when it has none. */
@@ -321,6 +333,12 @@ describe('missingGitignoreLines', () => {
       '.agents/skills/*__*',
       '.claude/skills/*__*',
     ]);
+
+    // The same rule WITHOUT the slash does cover them, which is what says this
+    // case is about the trailing slash and not about the glob beside it
+    // (DOR-1947).
+    stageRepo({ plugin: true, gitignore: '.dork/plugins/\n*__*\n' });
+    expect(missingGitignoreLines(repo, plan())).toEqual([]);
   });
 
   it('AP-09: accepts a broader rule the person already wrote', () => {

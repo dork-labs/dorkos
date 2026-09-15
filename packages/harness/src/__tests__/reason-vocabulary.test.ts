@@ -40,6 +40,31 @@
  * enumerated whole as well as produced by the fixture: which entry a tree trips
  * depends on what somebody happened to leave lying at a target.
  *
+ * ## The one sentence here that is not the engine's
+ *
+ * `@dorkos/marketplace`'s {@link LAYER_LABELS} are checked too — and, for the
+ * same reason and on the same terms, its {@link CATEGORY_LABELS} and
+ * {@link CATEGORY_DESCRIPTIONS}, which the site draws on every
+ * `/marketplace/category/<slug>` page, in its `sitemap`, in `llms.txt` and into
+ * an OpenGraph image. They are checked HERE rather than in their own package for
+ * two reasons. The loader
+ * above lives at the repository root, outside `packages/marketplace`'s pinned
+ * `rootDir`, so a test there cannot import it; and this file already holds the
+ * labels, because their KEYS are the ADR's carve-out. Their VALUES are ordinary
+ * product copy — the install preview draws them, on the site and in the app —
+ * and no gate reaches them: `check-vocab-gate.ts` counts a string in a property
+ * position as copy only when the property NAME is one it knows (`label`,
+ * `description`, …), and these are keyed by layer name, so pointing that gate at
+ * the package finds nothing (measured 2026-09-15, DOR-1936). One of the nine
+ * labels had been reading `Installs messaging adapters` since before the ADR, and
+ * one category had been `Integrations` / `Connectors and adapters for outside
+ * services.` — three retired nouns in two strings, on the most public surface
+ * either package has.
+ *
+ * The category SLUGS are untouched and out of scope: `integrations` is a URL and
+ * a record key, which is an identifier (AGENTS.md), and renaming it would break
+ * every link to that page.
+ *
  * What it does NOT cover, and does not need to:
  *
  * - **Anything the client writes.** The seven chip words, the "Not shared with
@@ -64,7 +89,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { LAYER_LABELS } from '@dorkos/marketplace';
+import { CATEGORY_DESCRIPTIONS, CATEGORY_LABELS, LAYER_LABELS } from '@dorkos/marketplace';
 import {
   loadBannedTerms,
   termMatcher,
@@ -82,6 +107,7 @@ import {
   SYMLINK_FILE_REASON,
 } from '../apply/symlink-occupants.js';
 import { JUNCTION_COMMIT_WARNING } from '../apply/windows-links.js';
+import { SKILL_ROOT_COLLISION_OUTCOMES } from '../plan/source-artifacts.js';
 
 /** Where the term list lives, relative to this file. Its own constant so a seeded defect can move it. */
 const BANNED_TERMS_PATH = join(
@@ -206,6 +232,15 @@ function stageFixture(): { repoRoot: string; dorkHome: string } {
   // The canonical layer, and a skill kept where only Claude Code looks.
   write(join(repoRoot, '.agents', 'skills', 'ship-it', 'SKILL.md'), '# ship-it\n');
   write(join(repoRoot, '.claude', 'skills', 'claude-only', 'SKILL.md'), '# claude-only\n');
+  // The same name again in three more folders, so BOTH collision sentences are
+  // produced here rather than enumerated. OpenCode reads two of the four
+  // (`.claude` and `.opencode`) and gets the two-folder wording; Cursor reads
+  // three of them (`.claude`, `.cursor`, `.codex`) and gets the plural one. The
+  // plural opener is a different string with its own retired-word risk, and a
+  // fixture reaching only the singular would leave it unchecked.
+  write(join(repoRoot, '.opencode', 'skills', 'claude-only', 'SKILL.md'), '# claude-only\n');
+  write(join(repoRoot, '.cursor', 'skills', 'claude-only', 'SKILL.md'), '# claude-only\n');
+  write(join(repoRoot, '.codex', 'skills', 'claude-only', 'SKILL.md'), '# claude-only\n');
 
   // The kinds the engine reports rather than projects.
   write(join(repoRoot, '.claude', 'agents', 'reviewer.md'), '# reviewer\n');
@@ -314,6 +349,21 @@ function collectReasons(repoRoot: string, dorkHome: string): Reason[] {
   // project-level notices — and no tree on this platform can produce it, since
   // it is only ever true on Windows (`apply/windows-links.ts`).
   add('warning', JUNCTION_COMMIT_WARNING);
+  // The third table: the three sentences a `dedupe` cell earns when one name is
+  // in two folders one tool reads. The fixture produces the `unknown` one, and
+  // the other two are not reachable through any tree today — every harness that
+  // reads more than one project skills root has an `unknown` cell — so all three
+  // are enumerated, exactly as the two tables above are.
+  for (const outcome of Object.values(SKILL_ROOT_COLLISION_OUTCOMES)) add('warning', outcome);
+
+  // The nine labels a person reads in the install preview, for the reason the
+  // header gives. A `marketplace-label` family of its own, so a failure names
+  // the package the string really lives in.
+  for (const label of Object.values(LAYER_LABELS)) add('marketplace-label', label);
+  // And the category labels and their one-line descriptions, drawn on the
+  // marketplace's own public pages.
+  for (const label of Object.values(CATEGORY_LABELS)) add('marketplace-category', label);
+  for (const text of Object.values(CATEGORY_DESCRIPTIONS)) add('marketplace-category', text);
 
   // `plan.notEnabled` is deliberately NOT collected. Its entries carry a
   // `signal` — `.gemini/`, `.github/copilot-instructions.md` — which is a PATH,
@@ -402,13 +452,17 @@ describe('VC-02 — the sentences the engine shows a person', () => {
     // A count alone can be met by one family repeated. Six families, and each
     // is a different producer with a different failure mode: the note on an
     // action, the reason on a drop, a warning, what is in the way of a write,
-    // what a sweep removes, and what is wrong with the manifest itself.
+    // what a sweep removes, and what is wrong with the manifest itself. The
+    // seventh is the marketplace's own labels, enumerated whole for the reason
+    // the header gives.
     const families = new Set(reasons.map((reason) => reason.family));
     expect([...families].sort()).toEqual([
       'action',
       'blocked',
       'drop',
       'manifest-notice',
+      'marketplace-category',
+      'marketplace-label',
       'sweep',
       'warning',
     ]);
@@ -437,6 +491,19 @@ describe('VC-02 — the sentences the engine shows a person', () => {
         true
       );
     }
+    // Both openers, because they are two strings: one names a single other
+    // folder, the other lists several and counts them.
+    expect(all.some((text) => text.includes('and OpenCode reads both folders.'))).toBe(true);
+    expect(all.some((text) => text.includes('and Cursor reads all of those folders.'))).toBe(true);
+    // All nine labels, not a sample: each is one layer's whole sentence.
+    expect(reasons.filter((reason) => reason.family === 'marketplace-label')).toHaveLength(
+      Object.keys(LAYER_LABELS).length
+    );
+    // Both halves of every category, for the same reason: a label and its
+    // description are two sentences on one page and either can rot alone.
+    expect(reasons.filter((reason) => reason.family === 'marketplace-category')).toHaveLength(
+      Object.keys(CATEGORY_LABELS).length + Object.keys(CATEGORY_DESCRIPTIONS).length
+    );
   });
 
   it('VC-02: uses no retired user-facing word outside a quoted package-layer name', () => {
@@ -451,8 +518,10 @@ describe('VC-02 — the sentences the engine shows a person', () => {
 
     expect(
       offenders,
-      'A reason the app draws verbatim uses a word this product retired. Rewrite the sentence in ' +
-        'packages/harness — the CLI prints the same string, so the fix reaches both surfaces at once. ' +
+      'A sentence the app draws verbatim uses a word this product retired. Rewrite it where it ' +
+        'lives: packages/harness for every family but one — the CLI prints the same string, so the ' +
+        'fix reaches both surfaces at once — and packages/marketplace for a `marketplace-label` ' +
+        'or a `marketplace-category`. ' +
         'The one legitimate use is a marketplace layer NAME in quotes (ADR 260804-021140).'
     ).toEqual([]);
   });

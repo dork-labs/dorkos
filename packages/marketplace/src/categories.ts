@@ -63,7 +63,10 @@ export const CATEGORY_LABELS: Record<MarketplaceCategory, string> = {
   'agent-ops': 'Agent Ops',
   'project-management': 'Project Management',
   'dev-tools': 'Developer Tools',
-  integrations: 'Integrations',
+  // The SLUG stays `integrations` — it is a URL and a record key, and every
+  // link to that page is built from it. The words a person reads are the ADR's
+  // (260804-021140).
+  integrations: 'Connections',
   productivity: 'Productivity',
   marketing: 'Marketing',
   'sales-crm': 'Sales & CRM',
@@ -87,7 +90,7 @@ export const CATEGORY_DESCRIPTIONS: Record<MarketplaceCategory, string> = {
   'agent-ops': 'Orchestrating, scheduling, and coordinating agents.',
   'project-management': 'Issue tracking, boards, and planning.',
   'dev-tools': 'Tooling for building on and extending DorkOS.',
-  integrations: 'Connectors and adapters for outside services.',
+  integrations: 'Ways to hook DorkOS up to outside services.',
   productivity: 'Personal planning and knowledge work.',
   marketing: 'Content marketing, campaigns, and outreach.',
   'sales-crm': 'Contacts, pipeline, and follow-ups.',

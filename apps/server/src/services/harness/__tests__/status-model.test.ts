@@ -507,6 +507,38 @@ describe('VC-01 — the status model derives eight states from five reads', () =
     expect(status.counts.adoptable).toBe(1);
   });
 
+  it('VC-01, SK-12: one name in two folders warns on BOTH rows without unseating either native cell', () => {
+    // Seeded defect: emit the collision as a row of its own, or let it replace
+    // the `native` cell. Both copies really do load, so a cell that stopped
+    // saying `native` would be a claim the vendor has not made — and a row of
+    // its own would separate the sentence from the file it is about.
+    const { repo, home } = stageBare('collision', ['claude-code', 'opencode']);
+    writeSkill(join(repo, '.claude', 'skills', 'review-pr'), 'review-pr');
+    writeSkill(join(repo, '.opencode', 'skills', 'review-pr'), 'review-pr');
+
+    const status = statusOf(repo, home);
+
+    const tail = 'Its own documentation does not say which one wins. Keep one.';
+    const collision: Record<string, string> = {
+      '.claude/skills/review-pr': `another skill named "review-pr" is in .opencode/skills, and OpenCode reads both folders. ${tail}`,
+      '.opencode/skills/review-pr': `another skill named "review-pr" is in .claude/skills, and OpenCode reads both folders. ${tail}`,
+    };
+    for (const source of Object.keys(collision)) {
+      const cell = row(status, 'skill', source, 'review-pr').cells['opencode'];
+      expect({ source, state: cell?.state, warnings: cell?.warnings }).toEqual({
+        source,
+        state: 'native',
+        warnings: [collision[source]],
+      });
+    }
+    // Two files, two rows — and Claude Code, which reads one of the two folders,
+    // is told nothing about a collision it cannot have.
+    expect(status.counts.skills).toBe(2);
+    expect(
+      allCells(status).filter((c) => (c?.warnings ?? []).some((w) => w.includes('Keep one.')))
+    ).toHaveLength(2);
+  });
+
   it('VC-01, XA-07: another tool’s MCP config is one project-level drop and no row at all', () => {
     // Seeded defect: let it become a row. `adoptable` means "you could move this
     // into the canonical layer", and there is nowhere to move an `opencode.json`

@@ -49,6 +49,7 @@ import {
   VENDOR_FACTS_FETCHED_AT,
 } from '../vendor-facts/index.js';
 import { evaluateSkillRules, summariseSkillRules } from '../vendor-facts/skill-rules.js';
+import type { SkillDedupe } from '../vendor-facts/types.js';
 
 /**
  * The day every vendor page behind the tables in this module was read.
@@ -429,6 +430,147 @@ export function planForeignMcpDrops(inventory: SourceInventory): ProjectionActio
   }));
 }
 
+/**
+ * The three things a harness's `dedupe` cell can say about one skill NAME found
+ * in two of the project skills folders that harness reads — one frozen sentence
+ * each, because a person reads these verbatim.
+ *
+ * Three and no more, because the cell has three answers and not four: the tool
+ * keys duplicates by name and keeps one, the tool keeps both, or its own page
+ * never said. Guessing on behalf of the fourth-of-six rows that say nothing is
+ * exactly what this must not do — SK-12 lists that outcome as unverified, and a
+ * sentence claiming otherwise would be the engine inventing a vendor fact.
+ *
+ * Every sentence ends at the outcome; the way out ("Keep one.") is added once by
+ * {@link planSkillRootCollisions}, so it cannot drift between the three.
+ */
+export const SKILL_ROOT_COLLISION_OUTCOMES = {
+  collapses: 'Only one of them loads, and which one is not something you choose.',
+  'both-load': 'Both of them load, under the same name.',
+  undocumented: 'Its own documentation does not say which one wins.',
+} as const;
+
+/** One of the three outcomes {@link SKILL_ROOT_COLLISION_OUTCOMES} spells out. */
+export type SkillRootCollisionOutcome = keyof typeof SKILL_ROOT_COLLISION_OUTCOMES;
+
+/**
+ * Which outcome a harness's `dedupe` cell means for two DIFFERENT folders that
+ * happen to hold the same name.
+ *
+ * `by-realpath` lands with `none` rather than with `collapses`, and that is the
+ * one mapping worth reading twice: a realpath rule collapses ONE directory
+ * reached through two read paths, and two separate directories are two separate
+ * real paths, so both survive it. The shape it does collapse — one folder
+ * reached twice — is SK-12's other half and is not what this reports.
+ *
+ * Two of the three outcomes are unreachable through any tree today, and that is
+ * a fact about the table rather than about this function: every harness reading
+ * more than one project skills root is `dedupe: 'unknown'`. `collapses` and
+ * `both-load` become reachable the day the H tier settles a cell (SK-12,
+ * DOR-1856), which is why they are checked at this mapping.
+ *
+ * A fifth `dedupe` value has to fail the TYPE here rather than fall through to a
+ * plausible-looking sentence.
+ *
+ * @param dedupe - the harness's `skills.dedupe` cell from `vendor-facts`.
+ * @returns which of the three sentences that cell earns.
+ */
+export function skillRootCollisionOutcome(dedupe: SkillDedupe): SkillRootCollisionOutcome {
+  if (dedupe === 'by-name') return 'collapses';
+  if (dedupe === 'none' || dedupe === 'by-realpath') return 'both-load';
+  if (dedupe === 'unknown') return 'undocumented';
+  const unhandled: never = dedupe;
+  throw new Error(`unhandled dedupe rule: ${String(unhandled)}`);
+}
+
+/**
+ * One name, two folders, one tool that reads both — reported once per copy
+ * (SK-12).
+ *
+ * `planSkillNameCollisions` answers the INSTALLED half of this: two packaged
+ * skills whose frontmatter agrees. This is the authored half, and it is about
+ * folders rather than frontmatter: DOR-1902 taught the inventory to walk another
+ * tool's own skills directory, and `.claude/skills/x` beside `.opencode/skills/x`
+ * then gave OpenCode two `native` lines and no word about there being two files
+ * under one name.
+ *
+ * Three decisions worth stating:
+ *
+ * - **A warning beside both lines, never instead of them.** Both copies are
+ *   really there and, on four of the six rows, nobody knows which one the tool
+ *   picks — so taking away a `native` line would be a claim the vendor has not
+ *   made. Each copy carries its own warning, keyed by its own `source`, which is
+ *   what puts the sentence on that file's row in the app — and each is written
+ *   from that copy's point of view, naming the OTHER folder, so two lines under
+ *   one harness heading in the terminal are two readable sentences rather than
+ *   the same sentence twice.
+ * - **Readers-of-both come off the vendor table**, never off the folder's name:
+ *   OpenCode reads two of these roots and Cursor four, and `.codex/skills` is a
+ *   path CURSOR documents while Codex's own row does not list it.
+ * - **A name that is also in `.agents/skills` is left alone.**
+ *   `planAuthoredRootSkill`'s canonical-twin branch already writes a line per
+ *   copy naming the same two files and giving the same way out, and a second
+ *   sentence saying it again is noise in every repo that keeps a skill in both.
+ *
+ * The key is the DIRECTORY name, and what justifies that is not the same on
+ * every row. Cursor keys by directory and OpenCode requires the frontmatter name
+ * to equal it, so for those two it is the vendor's own key. Gemini and Copilot
+ * state neither (`identity: 'unknown'`, `nameMustMatchDir: 'unknown'`), so the
+ * directory name is simply the only handle there is — which is the same reading
+ * of silence `skill-rules.ts` takes for them, and it errs toward reporting a
+ * collision that may turn out not to be one rather than staying quiet about one
+ * that is.
+ *
+ * @param input - the harness, the inventoried skills, and the canonical names.
+ * @returns one warning per copy, empty when no name is in two folders it reads.
+ */
+export function planSkillRootCollisions(input: {
+  /** The harness the warnings are for. */
+  harness: HarnessId;
+  /** Every authored skill the inventory found, in every root. */
+  skills: readonly SkillInventoryEntry[];
+  /** The skill names found in `.agents/skills`, which this leaves alone. */
+  agentsSkillNames: ReadonlySet<string>;
+}): ProjectionWarning[] {
+  const facts = skillsFactsFor(input.harness);
+  const readRoots = new Set<string>(facts.readPaths.project);
+  const byName = new Map<string, SkillInventoryEntry[]>();
+  for (const skill of input.skills) {
+    if (!readRoots.has(skill.root) || input.agentsSkillNames.has(skill.name)) continue;
+    byName.set(skill.name, [...(byName.get(skill.name) ?? []), skill]);
+  }
+
+  const label = HARNESS_LABELS[input.harness];
+  const outcome = SKILL_ROOT_COLLISION_OUTCOMES[skillRootCollisionOutcome(facts.dedupe)];
+  const warnings: ProjectionWarning[] = [];
+  for (const [name, copies] of byName) {
+    const roots = [...new Set(copies.map((copy) => copy.root))].sort();
+    if (roots.length < 2) continue;
+    for (const copy of [...copies].sort((a, b) => a.source.localeCompare(b.source))) {
+      const others = roots.filter((root) => root !== copy.root);
+      const where = others.length === 1 ? (others[0] as string) : listed(others);
+      const opener =
+        others.length === 1
+          ? `another skill named "${name}" is in ${where}, and ${label} reads both folders.`
+          : `other skills named "${name}" are in ${where}, and ${label} reads all of those folders.`;
+      warnings.push({
+        artifact: 'skill',
+        harness: input.harness,
+        name,
+        source: copy.source,
+        reason: `${opener} ${outcome} Keep one.`,
+      });
+    }
+  }
+  return warnings;
+}
+
+/** Two or more things in one readable clause: `a, b and c`. */
+function listed(items: readonly string[]): string {
+  if (items.length < 2) return items.join('');
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1] as string}`;
+}
+
 /** Build one action from a placement, so every table entry is turned into a line the same way. */
 function actionFrom(
   placement: Placement,
@@ -568,6 +710,13 @@ export function planInventoriedArtifacts(input: InventoriedArtifactInput): {
     actions.push(...placed.actions);
     warnings.push(...placed.warnings);
   }
+
+  // One NAME in two folders this harness reads — said once per copy, after the
+  // per-copy lines above, so the sentence lands beside them rather than instead
+  // of them.
+  warnings.push(
+    ...planSkillRootCollisions({ harness, skills: inventory.skills, agentsSkillNames })
+  );
 
   return { actions, warnings };
 }
