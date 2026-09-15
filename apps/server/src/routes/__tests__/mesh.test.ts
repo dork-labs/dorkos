@@ -235,7 +235,7 @@ describe('Mesh routes', () => {
         .post('/api/mesh/agents')
         .send({
           path: '/home/user/project',
-          overrides: { name: 'Test Agent', runtime: 'claude-code' },
+          overrides: { name: 'test-agent', runtime: 'claude-code' },
         });
 
       expect(res.status).toBe(201);
@@ -243,10 +243,105 @@ describe('Mesh routes', () => {
       expect(res.body.name).toBe('Test Agent');
       expect(meshCore.registerByPath).toHaveBeenCalledWith(
         '/home/user/project',
-        expect.objectContaining({ name: 'Test Agent', runtime: 'claude-code' }),
+        expect.objectContaining({ name: 'test-agent', runtime: 'claude-code' }),
         undefined,
         undefined
       );
+    });
+
+    // DOR-2054. This route is open to agents by its own comment, and it handed
+    // `overrides` to `registerByPath` untouched: a display-style name became the
+    // immutable slug, and a colour that is not a colour was written to disk.
+    describe('identity fields', () => {
+      it('slugifies a display-style name and keeps the original as the display name', async () => {
+        meshCore.registerByPath.mockResolvedValue(MOCK_MANIFEST);
+
+        const res = await request(fixtureServer)
+          .post('/api/mesh/agents')
+          .send({
+            path: '/home/user/project',
+            overrides: { name: 'DorkOS Cloud', runtime: 'claude-code' },
+          });
+
+        expect(res.status).toBe(201);
+        expect(meshCore.registerByPath).toHaveBeenCalledWith(
+          '/home/user/project',
+          expect.objectContaining({ name: 'dorkos-cloud', displayName: 'DorkOS Cloud' }),
+          undefined,
+          undefined
+        );
+      });
+
+      it('stores a face in the one spelling the picker can match', async () => {
+        meshCore.registerByPath.mockResolvedValue(MOCK_MANIFEST);
+
+        await request(fixtureServer)
+          .post('/api/mesh/agents')
+          .send({
+            path: '/home/user/project',
+            overrides: {
+              name: 'test-agent',
+              runtime: 'claude-code',
+              color: '  #ABC  ',
+              icon: ' 🔮 ',
+            },
+          });
+
+        expect(meshCore.registerByPath).toHaveBeenCalledWith(
+          '/home/user/project',
+          expect.objectContaining({ color: '#aabbcc', icon: '🔮' }),
+          undefined,
+          undefined
+        );
+      });
+
+      it('refuses a colour that is not hex with 400 and never registers', async () => {
+        const res = await request(fixtureServer)
+          .post('/api/mesh/agents')
+          .send({
+            path: '/home/user/project',
+            overrides: { name: 'test-agent', runtime: 'claude-code', color: 'pinkish' },
+          });
+
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('INVALID_COLOR');
+        expect(meshCore.registerByPath).not.toHaveBeenCalled();
+      });
+
+      it('refuses an icon that is not one emoji with 400 and never registers', async () => {
+        const res = await request(fixtureServer)
+          .post('/api/mesh/agents')
+          .send({
+            path: '/home/user/project',
+            overrides: { name: 'test-agent', runtime: 'claude-code', icon: 'sparkles' },
+          });
+
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('INVALID_ICON');
+        expect(meshCore.registerByPath).not.toHaveBeenCalled();
+      });
+
+      it('invents no name when the caller sent none, so the re-register recovery still adopts', async () => {
+        // The "Undo" on an unregister toast sends a bare `{ path }` (DOR-1019).
+        // Nothing may be named into that: adoption ignores every override, and
+        // a slug conjured from the directory would be a lie if it ever landed.
+        const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'mesh-route-')));
+        await fs.mkdir(path.join(dir, '.dork'), { recursive: true });
+        await fs.writeFile(
+          path.join(dir, '.dork', 'agent.json'),
+          JSON.stringify({ ...MOCK_MANIFEST, id: '01ANA0000000000000000000B' }),
+          'utf-8'
+        );
+        meshCore.registerByPath.mockResolvedValue(MOCK_MANIFEST);
+
+        const res = await request(fixtureServer).post('/api/mesh/agents').send({ path: dir });
+
+        expect(res.status).toBe(201);
+        const partial = meshCore.registerByPath.mock.calls[0][1] as Record<string, unknown>;
+        expect(partial).not.toHaveProperty('name');
+        expect(partial).not.toHaveProperty('displayName');
+        await fs.rm(dir, { recursive: true, force: true });
+      });
     });
 
     it('passes approver to registerByPath', async () => {
@@ -256,13 +351,13 @@ describe('Mesh routes', () => {
         .post('/api/mesh/agents')
         .send({
           path: '/home/user/project',
-          overrides: { name: 'Test Agent', runtime: 'claude-code' },
+          overrides: { name: 'test-agent', runtime: 'claude-code' },
           approver: 'admin-user',
         });
 
       expect(meshCore.registerByPath).toHaveBeenCalledWith(
         '/home/user/project',
-        expect.objectContaining({ name: 'Test Agent', runtime: 'claude-code' }),
+        expect.objectContaining({ name: 'test-agent', runtime: 'claude-code' }),
         'admin-user',
         undefined
       );
@@ -275,7 +370,7 @@ describe('Mesh routes', () => {
         .post('/api/mesh/agents')
         .send({
           path: '/home/user/projects/dorkos/core',
-          overrides: { name: 'Test Agent', runtime: 'claude-code' },
+          overrides: { name: 'test-agent', runtime: 'claude-code' },
           scanRoot: '/home/user/projects',
         });
 
@@ -283,7 +378,7 @@ describe('Mesh routes', () => {
       // as the fourth positional argument.
       expect(meshCore.registerByPath).toHaveBeenCalledWith(
         '/home/user/projects/dorkos/core',
-        expect.objectContaining({ name: 'Test Agent', runtime: 'claude-code' }),
+        expect.objectContaining({ name: 'test-agent', runtime: 'claude-code' }),
         undefined,
         '/home/user/projects'
       );
@@ -296,14 +391,14 @@ describe('Mesh routes', () => {
         .post('/api/mesh/agents')
         .send({
           path: '/home/user/project',
-          overrides: { name: 'Test Agent', runtime: 'claude-code' },
+          overrides: { name: 'test-agent', runtime: 'claude-code' },
           scanRoot: '/home/user/project',
         });
 
       expect(res.status).toBe(201);
       expect(meshCore.registerByPath).toHaveBeenCalledWith(
         '/home/user/project',
-        expect.objectContaining({ name: 'Test Agent', runtime: 'claude-code' }),
+        expect.objectContaining({ name: 'test-agent', runtime: 'claude-code' }),
         undefined,
         '/home/user/project'
       );
@@ -314,7 +409,7 @@ describe('Mesh routes', () => {
         .post('/api/mesh/agents')
         .send({
           path: '/home/user/projects/dorkos/core',
-          overrides: { name: 'Test Agent', runtime: 'claude-code' },
+          overrides: { name: 'test-agent', runtime: 'claude-code' },
           scanRoot: '/home/user/other',
         });
 
@@ -336,7 +431,7 @@ describe('Mesh routes', () => {
         .post('/api/mesh/agents')
         .send({
           path: '/home/user/project',
-          overrides: { name: 'Test Agent', runtime: 'claude-code' },
+          overrides: { name: 'test-agent', runtime: 'claude-code' },
           scanRoot: '/etc',
         });
 
@@ -393,7 +488,7 @@ describe('Mesh routes', () => {
         .post('/api/mesh/agents')
         .send({
           path: '/home/user/project',
-          overrides: { name: 'Test Agent' },
+          overrides: { name: 'test-agent' },
         });
 
       expect(res.status).toBe(400);
@@ -407,7 +502,7 @@ describe('Mesh routes', () => {
         .post('/api/mesh/agents')
         .send({
           path: '/home/user/project',
-          overrides: { name: 'Test Agent', runtime: 'claude-code' },
+          overrides: { name: 'test-agent', runtime: 'claude-code' },
         });
 
       expect(res.status).toBe(422);
@@ -449,7 +544,7 @@ describe('Mesh routes', () => {
         .post('/api/mesh/agents')
         .send({
           path: '/home/user/project',
-          overrides: { name: 'Test Agent', runtime: 'claude-code' },
+          overrides: { name: 'test-agent', runtime: 'claude-code' },
         });
 
       expect(res.status).toBe(201);
@@ -474,7 +569,7 @@ describe('Mesh routes', () => {
         .post('/api/mesh/agents')
         .send({
           path: '/home/user/project',
-          overrides: { name: 'Test Agent', runtime: 'claude-code' },
+          overrides: { name: 'test-agent', runtime: 'claude-code' },
         });
 
       expect(res.status).toBe(201);
@@ -496,7 +591,7 @@ describe('Mesh routes', () => {
         .post('/api/mesh/agents')
         .send({
           path: '/home/user/project',
-          overrides: { name: 'Test Agent', runtime: 'claude-code' },
+          overrides: { name: 'test-agent', runtime: 'claude-code' },
         });
 
       expect(res.status).toBe(201);
@@ -513,7 +608,7 @@ describe('Mesh routes', () => {
         .post('/api/mesh/agents')
         .send({
           path: '/home/user/project',
-          overrides: { name: 'Test Agent', runtime: 'claude-code' },
+          overrides: { name: 'test-agent', runtime: 'claude-code' },
         });
 
       expect(res.status).toBe(422);

@@ -244,7 +244,7 @@ Register an agent directly:
 mesh_register({ path: "/home/user/projects/research", name: "research-agent", runtime: "claude-code", capabilities: ["web-search"] })
 ```
 
-`name` is the agent's permanent slug, not a label: it is the segment its messaging address is built from. A name with spaces or capitals is turned into a slug (`"Research Bot"` becomes `research-bot`) and kept as the display name. Pass `displayName`, `icon` (one emoji) and `color` (a hex colour) to choose the rest of its identity; leave the last two out and DorkOS picks a face.
+`name` is the agent's permanent slug, not a label: it is what the agent's `@handle` in a room is derived from. A name with spaces or capitals is turned into a slug (`"Research Bot"` becomes `research-bot`) and kept as the display name. Pass `displayName`, `icon` (one emoji) and `color` (a hex colour) to choose the rest of its identity; leave the last two out and DorkOS picks a face.
 
 When an agent creates a registration via MCP tools, the manifest is written to `.dork/agent.json` in the project directory (or adopted as-is if one is already there, per the note above) and the agent becomes available in the registry right away.
 

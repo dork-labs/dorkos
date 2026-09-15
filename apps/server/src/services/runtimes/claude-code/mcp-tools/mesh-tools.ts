@@ -2,14 +2,13 @@ import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { readManifest } from '@dorkos/shared/manifest';
 import { AgentRuntimeSchema } from '@dorkos/shared/mesh-schemas';
-import { isSingleEmoji, isHexColor } from '@dorkos/shared/agent-face';
-import { slugifyAgentName } from '@dorkos/shared/validation';
 import {
   validateBoundary,
   validateBoundaryOrDorkHome,
   BoundaryError,
 } from '../../../../lib/boundary.js';
 import { notifyAgentCreated } from '../../../core/agent-created-hook.js';
+import { resolveAgentIdentity } from '../../../mesh/normalize-agent-identity.js';
 import type { McpToolDeps } from './types.js';
 import { jsonContent, structuredJsonContent } from './types.js';
 
@@ -95,11 +94,15 @@ export function createMeshDiscoverHandler(deps: McpToolDeps) {
 /**
  * Register an agent from a filesystem path.
  *
- * `name` is the agent's immutable slug — the segment its relay subject is built
- * from — not a label. A caller that sends a display-style name gets it
- * slugified and kept as `displayName`, because the alternative is what actually
- * happened: DorkBot registered an agent as "DorkOS Cloud" and the manifest
- * stored that string, spaces and all, as the slug (DOR-2054).
+ * `name` is the agent's immutable slug, not a label: it is what the agent's
+ * `@handle` in a room is derived from (`deriveHandle(name) ?? deriveHandle(displayName)`
+ * in `services/rooms/author-registry.ts`). A caller that sends a display-style
+ * name gets it slugified and kept as `displayName`, because the alternative is
+ * what actually happened: DorkBot registered an agent as "DorkOS Cloud" and the
+ * manifest stored that string, spaces and all, as the slug (DOR-2054).
+ *
+ * Every check and every normalisation lives in {@link resolveAgentIdentity},
+ * which the two HTTP register routes share — three doors, one answer.
  */
 export function createMeshRegisterHandler(deps: McpToolDeps) {
   return async (args: {
@@ -135,37 +138,24 @@ export function createMeshRegisterHandler(deps: McpToolDeps) {
       );
     }
 
-    // Same reason the runtime is checked here: the manifest types `icon` and
-    // `color` as plain strings, so an unchecked value is written to disk and
-    // renders as a broken face nothing explains. Refused by name, with an
-    // example, rather than silently dropped.
-    if (args.icon !== undefined && !isSingleEmoji(args.icon)) {
-      return jsonContent(
-        {
-          error: `Invalid icon ${JSON.stringify(args.icon)}. An agent's icon is exactly one emoji, e.g. "\u{1F52E}". Omit it to have one picked.`,
-          code: 'INVALID_ICON',
-        },
-        true
-      );
+    // Same reason the runtime is checked here rather than in the schema: the
+    // refusal is written for the model that will read it. A caller that already
+    // passed a valid slug sees no change — slugifying one is a no-op, so no
+    // `displayName` is invented for it.
+    const fallbackName = resolvedPath.split('/').pop() || 'unnamed';
+    const identity = resolveAgentIdentity(
+      {
+        name: args.name,
+        displayName: args.displayName,
+        icon: args.icon,
+        color: args.color,
+      },
+      fallbackName
+    );
+    if (!identity.ok) {
+      return jsonContent({ error: identity.error, code: identity.code }, true);
     }
-    if (args.color !== undefined && !isHexColor(args.color)) {
-      return jsonContent(
-        {
-          error: `Invalid color ${JSON.stringify(args.color)}. Use a hex colour like "#ec4899". Omit it to have one picked.`,
-          code: 'INVALID_COLOR',
-        },
-        true
-      );
-    }
-
-    // The slug the relay subject is built from. A display-style name is
-    // slugified here rather than stored verbatim, and the original is kept as
-    // the display name so nothing the caller typed is thrown away. A caller
-    // that already passed a valid slug sees no change: `slugifyAgentName` is
-    // idempotent on one, so `displayName` stays absent.
-    const requestedName = args.name ?? resolvedPath.split('/').pop() ?? 'unnamed';
-    const slug = slugifyAgentName(requestedName);
-    const displayName = args.displayName ?? (slug === requestedName ? undefined : requestedName);
+    const { name: slug, ...face } = identity.identity;
 
     try {
       // Registration adopts rather than overwrites (DOR-1019), so a system
@@ -182,13 +172,13 @@ export function createMeshRegisterHandler(deps: McpToolDeps) {
       const agent = await deps.meshCore!.registerByPath(
         resolvedPath,
         {
-          name: slug,
+          // Always set: a fallback name was given above, and a name nothing
+          // can be made of is refused rather than quietly defaulted.
+          name: slug ?? fallbackName,
           runtime: runtimeResult.data,
-          ...(displayName && { displayName }),
+          ...face,
           ...(args.description && { description: args.description }),
           ...(args.capabilities && { capabilities: args.capabilities }),
-          ...(args.icon && { icon: args.icon }),
-          ...(args.color && { color: args.color }),
         },
         'mcp-tool'
       );
@@ -399,10 +389,10 @@ export function meshToolDefinitions(deps: McpToolDeps) {
           .string()
           .optional()
           .describe(
-            'Immutable kebab-case slug, and the segment the relay subject is built from. Not ' +
-              'a label — a name with spaces or capitals is slugified ("DorkOS Cloud" becomes ' +
-              '"dorkos-cloud") and the original is kept as the displayName. Defaults to the ' +
-              'directory name.'
+            "Immutable kebab-case slug: it is what the agent's @handle in a room is derived " +
+              'from. Not a label — a name with spaces or capitals is slugified ("DorkOS ' +
+              'Cloud" becomes "dorkos-cloud") and the original is kept as the displayName. ' +
+              'Defaults to the directory name.'
           ),
         displayName: z
           .string()

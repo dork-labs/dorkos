@@ -50,10 +50,10 @@ the answer, not the one you asked for.
 
 For a directory with no manifest yet, four fields shape who the new agent is:
 
-- \`name\` is the slug, and it is permanent: kebab-case, and the address other
-  agents send to. It is not a label. Send a name with spaces or capitals and
-  DorkOS turns it into a slug ("DorkOS Cloud" becomes "dorkos-cloud") and keeps
-  what you typed as the display name.
+- \`name\` is the slug, and it is permanent: kebab-case, and what the agent's
+  @handle in a room is made from. It is not a label. Send a name with spaces or
+  capitals and DorkOS turns it into a slug ("DorkOS Cloud" becomes "dorkos-cloud")
+  and keeps what you typed as the display name.
 - \`displayName\` is the name a person reads in the app.
 - \`icon\` is exactly one emoji.
 - \`color\` is a hex colour, like "#ec4899".

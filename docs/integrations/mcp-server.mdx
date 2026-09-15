@@ -148,7 +148,7 @@ Every tool is registered with [MCP tool annotations](https://modelcontextprotoco
 
 - **`readOnlyHint`**: the tool only reads state; it never mutates anything.
 - **`destructiveHint`**: the tool deletes or unregisters a resource.
-- **`idempotentHint`**: calling it again with the same input converges rather than compounding (a second `mesh_register` call for the same path still creates a new agent record, so registration is _not_ idempotent; a second `mesh_deny` for the same path is).
+- **`idempotentHint`**: calling it again with the same input converges rather than compounding. A second `mesh_register` call for the same path adopts the manifest the first one wrote instead of minting a second agent, so registration _is_ idempotent, and so is a second `mesh_deny` for the same path.
 - **`openWorldHint`**: the tool reaches an external system (a configured marketplace source, an external adapter) rather than only local DorkOS state.
 
 Most tools return plain text content, matching the underlying handler. A handful of read/list tools also declare a Zod `outputSchema` and return matching `structuredContent`, so a client can parse the result directly instead of scraping text:

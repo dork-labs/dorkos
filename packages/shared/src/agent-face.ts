@@ -192,3 +192,43 @@ export function isSingleEmoji(value: string): boolean {
 export function isHexColor(value: string): boolean {
   return /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(value.trim());
 }
+
+/**
+ * The one spelling of a hex colour a face is stored in: trimmed, lowercase,
+ * and expanded to six digits.
+ *
+ * Validation and storage are separate steps for a reason. {@link isHexColor}
+ * accepts `"  #ABC  "` because a caller typing that meant a real colour and
+ * refusing it would be pedantic; but the picker matches a stored colour against
+ * {@link AGENT_COLOR_PRESETS} by string equality, so the same colour stored in
+ * a second spelling can never show as selected. Everything that writes a colour
+ * a caller chose puts it through here first.
+ *
+ * Only meaningful for a value {@link isHexColor} has already accepted; anything
+ * else comes back trimmed and lowercased and still wrong.
+ *
+ * @param value - A hex colour that passed {@link isHexColor}.
+ * @returns The `#rrggbb` form.
+ */
+export function normalizeHexColor(value: string): string {
+  const trimmed = value.trim().toLowerCase();
+  if (trimmed.length !== 4) return trimmed;
+  const [, r, g, b] = trimmed;
+  return `#${r}${r}${g}${g}${b}${b}`;
+}
+
+/**
+ * The one spelling of an emoji a face is stored in.
+ *
+ * The counterpart to {@link normalizeHexColor}, and it exists so that the two
+ * halves of a face are normalised the same way at the same call site rather
+ * than one being trimmed and the other not. {@link isSingleEmoji} trims before
+ * it tests, so an emoji that passed validation may still carry the whitespace
+ * around it into storage without this.
+ *
+ * @param value - An icon that passed {@link isSingleEmoji}.
+ * @returns The emoji with surrounding whitespace removed.
+ */
+export function normalizeAgentIcon(value: string): string {
+  return value.trim();
+}

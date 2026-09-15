@@ -401,11 +401,24 @@ describe('agent face at registration', () => {
 
     expect({ color: manifest.color, icon: manifest.icon }).toEqual(seedAgentFace(manifest.id));
 
-    // The override arm of the same seam: an explicit face wins over the seed.
+    // The override arm of the same seam: an explicit face wins over the seed,
+    // and the display name rides with it. `register` dropped `displayName` on
+    // the floor exactly as `registerByPath` did (DOR-2054), so it is pinned
+    // here beside the two fields that always worked.
     const other = candidates.find((c) => c.path !== projectA);
-    const overridden = await mesh.register(other!, { icon: '🦕', color: '#123456' });
+    const overridden = await mesh.register(other!, {
+      icon: '🦕',
+      color: '#123456',
+      displayName: 'The Other One',
+    });
     expect(overridden.icon).toBe('🦕');
     expect(overridden.color).toBe('#123456');
+    expect(overridden.displayName).toBe('The Other One');
+
+    const onDisk = JSON.parse(
+      await fs.readFile(path.join(other!.path, '.dork', 'agent.json'), 'utf-8')
+    ) as AgentManifest;
+    expect(onDisk.displayName).toBe('The Other One');
 
     mesh.close();
   });

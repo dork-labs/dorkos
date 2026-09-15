@@ -236,6 +236,66 @@ describe('Mesh MCP Tools', () => {
         expect(meshCore.registerByPath).not.toHaveBeenCalled();
       });
 
+      it('stores a face in the one spelling the picker can match', async () => {
+        const deps = createMockDeps(true);
+        const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+        meshCore.registerByPath.mockResolvedValue({ id: 'a1', name: 'bot' });
+
+        const handler = createMeshRegisterHandler(deps);
+        await handler({ path: '/test/bot', name: 'bot', icon: ' \u{1F52E} ', color: '  #ABC  ' });
+
+        expect(meshCore.registerByPath).toHaveBeenCalledWith(
+          '/test/bot',
+          expect.objectContaining({ icon: '\u{1F52E}', color: '#aabbcc' }),
+          'mcp-tool'
+        );
+      });
+
+      it('refuses a display name longer than the manifest holds', async () => {
+        const deps = createMockDeps(true);
+        const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+
+        const handler = createMeshRegisterHandler(deps);
+        const result = await handler({
+          path: '/test/bot',
+          name: 'bot',
+          displayName: 'x'.repeat(101),
+        });
+
+        expect(result.isError).toBe(true);
+        const data = JSON.parse(result.content[0].text) as { error: string; code: string };
+        expect(data.code).toBe('INVALID_DISPLAY_NAME');
+        expect(data.error).toContain('100');
+        // The refusal is the point: `writeManifest` would have failed with a raw
+        // Zod blob several layers below anybody who could explain it.
+        expect(meshCore.registerByPath).not.toHaveBeenCalled();
+      });
+
+      it('truncates a display name it DERIVED rather than failing the call', async () => {
+        const deps = createMockDeps(true);
+        const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+        meshCore.registerByPath.mockResolvedValue({ id: 'a1', name: 'long' });
+
+        const handler = createMeshRegisterHandler(deps);
+        const result = await handler({ path: '/test/bot', name: `${'Long Name '.repeat(20)}end` });
+
+        expect(result.isError).toBeUndefined();
+        const partial = meshCore.registerByPath.mock.calls[0][1] as { displayName: string };
+        expect(partial.displayName.length).toBeLessThanOrEqual(100);
+      });
+
+      it('refuses a name nothing can be made of, rather than calling it "agent"', async () => {
+        const deps = createMockDeps(true);
+        const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+
+        const handler = createMeshRegisterHandler(deps);
+        const result = await handler({ path: '/test/bot', name: '' });
+
+        expect(result.isError).toBe(true);
+        expect(JSON.parse(result.content[0].text)).toMatchObject({ code: 'INVALID_NAME' });
+        expect(meshCore.registerByPath).not.toHaveBeenCalled();
+      });
+
       it('slugifies the directory name it falls back to when no name is given', async () => {
         const deps = createMockDeps(true);
         const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;

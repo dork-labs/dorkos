@@ -42,6 +42,7 @@ import { validateBoundaryOrDorkHome, BoundaryError } from '../lib/boundary.js';
 import { createAgentWorkspace, AgentCreationError } from '../services/core/agent-creator.js';
 import { updateAgentManifest, AgentUpdateError } from '../services/core/operator/agent-updater.js';
 import { notifyAgentCreated } from '../services/core/agent-created-hook.js';
+import { resolveAgentIdentity } from '../services/mesh/normalize-agent-identity.js';
 import { logger } from '../lib/logger.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
@@ -132,7 +133,7 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
           .status(400)
           .json({ error: 'Validation failed', details: z.flattenError(result.error) });
       }
-      const { path: rawAgentPath, name, description, runtime } = result.data;
+      const { path: rawAgentPath, name, displayName, description, runtime } = result.data;
       const agentPath = await validateBoundaryOrDorkHome(rawAgentPath);
 
       // Check if agent already exists
@@ -143,10 +144,23 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
           .json({ error: 'Agent already exists at this path', agent: existing });
       }
 
+      // The same identity gate the mesh register route and the `mesh_register`
+      // tool use. Two bugs here, both DOR-2054: `displayName` was accepted by
+      // the request schema and then dropped on the floor, and `name` was written
+      // through unslugified, so a person naming an agent "My Bot" from this
+      // route got that string as the immutable slug an `@handle` derives from.
+      const identity = resolveAgentIdentity({ name, displayName }, path.basename(agentPath));
+      if (!identity.ok) {
+        return res.status(400).json({ error: identity.error, code: identity.code });
+      }
+
       const id = ulid();
       const manifest: AgentManifest = {
         id,
-        name: name ?? path.basename(agentPath),
+        // Always set: a fallback name was passed above, and a name nothing can
+        // be made of is refused rather than quietly defaulted.
+        name: identity.identity.name ?? path.basename(agentPath),
+        displayName: identity.identity.displayName,
         description: description ?? '',
         runtime: runtime ?? 'claude-code',
         capabilities: [],
@@ -168,7 +182,13 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
 
       // Scaffold convention files with sensible defaults
       const traitBlock = renderTraits(DEFAULT_TRAITS);
-      const soulContent = defaultSoulTemplate(manifest.name ?? 'agent', traitBlock);
+      // Display name first, the same order `createAgentWorkspace` uses: SOUL.md
+      // opens with "You are <name>", and now that `name` is slugified that has to
+      // be the name a person wrote, not `my-custom-agent` (DOR-2054).
+      const soulContent = defaultSoulTemplate(
+        manifest.displayName ?? manifest.name ?? 'agent',
+        traitBlock
+      );
       const nopeContent = defaultNopeTemplate();
 
       await writeConventionFile(agentPath, CONVENTION_FILES.soul, soulContent);
