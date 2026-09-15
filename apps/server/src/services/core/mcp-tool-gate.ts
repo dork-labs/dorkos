@@ -364,6 +364,17 @@ async function runGatedInSession(call: GateRun, run: HandlerRun): Promise<CallTo
 /**
  * The advertised input schema for a tool, with the approval-token argument added
  * when the tool is `destructive`.
+ *
+ * Deliberately NOT normalized the way a capability's shape is (DOR-2053). A
+ * capability's arguments are parsed twice — once by the MCP SDK, then again by
+ * `registry.invoke` against the capability's own schema — so a `.default(…)`
+ * re-advertised as optional still gets filled in. A hand-registered tool is
+ * parsed once and its handler receives whatever the SDK produced, so rewriting a
+ * default here would trade a loud failure for a silent `undefined`. A
+ * hand-registered tool must therefore not default an argument at all; apply the
+ * fallback inside the handler, or define the tool as a capability. The drift
+ * guard in `runtimes/claude-code/mcp-tools/__tests__/mcp-default-arguments.test.ts`
+ * fails if one ever does.
  */
 function gatedInputSchema(action: GatedAction, schema: z.ZodRawShape): z.ZodRawShape {
   return action.tier === 'destructive' ? { ...schema, ...approvalTokenArgument() } : schema;
