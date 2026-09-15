@@ -1055,6 +1055,27 @@ describe('VC-01 — the envelope', () => {
     ]);
   });
 
+  it('VC-01: a package whose manifest will not parse reaches projectLevel by name', () => {
+    // DOR-1933. Seeded defect: the scan skipped such a package entirely, so it
+    // reached no row, no notice and no line here — a package somebody installed
+    // simply stopped being mentioned on the page. The entry is agnostic, so it
+    // belongs to no column and cannot be hidden by one.
+    const { repo, home } = stageBare('badmanifest', ['claude-code']);
+    writeAt(join(repo, '.dork', 'plugins', 'badpkg', '.dork', 'manifest.json'), '{ not json');
+    writeSkill(join(repo, '.dork', 'plugins', 'badpkg', 'skills', 'greet'), 'greet');
+
+    const status = statusOf(repo, home);
+
+    const entries = status.projectLevel.filter((e) => e.name === 'badpkg');
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.kind).toBe('warning');
+    expect(entries[0]?.source).toBe('.dork/plugins/badpkg/.dork/manifest.json');
+    expect(entries[0]?.reason).toContain('.dork/plugins/badpkg/.dork/manifest.json');
+    // And it reaches no per-tool cell: an agnostic entry belongs to the project,
+    // not to Claude Code.
+    expect(status.rows.some((row) => row.name === 'badpkg')).toBe(false);
+  });
+
   it('VC-01: a manifest with nothing wrong with it produces no notices', () => {
     // The floor under the case above: without it, an implementation that emitted
     // a notice for every manifest — or one line per enabled harness — passes the

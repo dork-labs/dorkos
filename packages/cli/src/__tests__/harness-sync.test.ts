@@ -2849,6 +2849,78 @@ describe('runHarnessSync --global — the packages installed for all your projec
     expect(snapshotTree(homeDir).some((p) => p.startsWith('skills'))).toBe(false);
   });
 
+  it('SRC-04: a package whose manifest will not parse is named, and its links stay', async () => {
+    // DOR-1933. Seeded defect: `readPluginManifest` answering `undefined` for a
+    // manifest that is THERE and will not parse. The package then reached no
+    // line of this report at all — the sweep kept its links (clause 4) and the
+    // person watching the terminal was told nothing about either fact.
+    installGlobal('badmanifest', [{ name: 'greet' }]);
+    await runHarnessSync(syncArgs({ fix: true, global: true }));
+    const linked = path.join(homeDir, 'skills', 'badmanifest__greet');
+    expect(fs.lstatSync(linked, { throwIfNoEntry: false })).toBeDefined();
+    logSpy.mockClear();
+
+    const manifest = path.join(homeDir, 'plugins', 'badmanifest', '.dork', 'manifest.json');
+    fs.writeFileSync(manifest, '{ not json');
+
+    const result = await runHarnessSync(syncArgs({ fix: true, global: true }));
+
+    expect(result.exitCode).toBe(0);
+    const output = printed();
+    expect(output).toContain(manifest);
+    expect(output).toContain('were left exactly as they are');
+    // The package is named ONCE on the line: the heading `plugin "badmanifest":`
+    // is the naming, and the sentence after it does not repeat it. Measured
+    // before: `plugin "badmanifest": badmanifest has a file …`.
+    const line = output.split('\n').find((l) => l.includes('plugin "badmanifest"'));
+    expect(line).toBeDefined();
+    expect(line).toContain('plugin "badmanifest": This package has a file');
+    // The sentence and the disk agree: nothing was removed.
+    expect(fs.lstatSync(linked, { throwIfNoEntry: false })).toBeDefined();
+    expect(output).not.toContain('Removed 1 link(s)');
+  });
+
+  it.skipIf(!CAN_MAKE_UNREADABLE)(
+    'SK-03: a skill folder it cannot look inside keeps its link, and says which folder',
+    async () => {
+      // DOR-1935. Seeded defect: let the scan decide "is this a skill?" with
+      // `existsSync(<dir>/SKILL.md)`, which needs `x` on `<dir>`. The folder then
+      // is not a skill, the plan stops naming its link, and clause 4 of the sweep
+      // — the package is on disk AND the plan enumerated it — removes the link
+      // with nothing printed.
+      installGlobal('globex', [{ name: 'greet', timed: true }, { name: 'wave' }]);
+      await runHarnessSync(syncArgs({ fix: true, global: true }));
+      const linked = path.join(homeDir, 'skills', 'globex__greet');
+      expect(fs.lstatSync(linked, { throwIfNoEntry: false })).toBeDefined();
+      logSpy.mockClear();
+
+      const skillDir = path.join(homeDir, 'plugins', 'globex', 'skills', 'greet');
+      fs.chmodSync(skillDir, 0o000);
+      try {
+        const result = await runHarnessSync(syncArgs({ fix: true, global: true }));
+
+        expect(result.exitCode).toBe(0);
+        expect(printed()).toContain('could not look inside');
+        // The folder is named ONCE on the line. Measured before: an absolute
+        // path printed twice, as the entry's name and again in the sentence.
+        const line = printed()
+          .split('\n')
+          .find((l) => l.includes(skillDir));
+        expect(line).toBeDefined();
+        expect(line?.split(skillDir)).toHaveLength(2);
+        expect(printed()).not.toContain('Removed 1 link(s)');
+        expect(fs.lstatSync(linked, { throwIfNoEntry: false })).toBeDefined();
+        // The sibling is untouched, so this is containment rather than a sweep
+        // switched off.
+        expect(
+          fs.lstatSync(path.join(homeDir, 'skills', 'globex__wave'), { throwIfNoEntry: false })
+        ).toBeDefined();
+      } finally {
+        fs.chmodSync(skillDir, 0o755);
+      }
+    }
+  );
+
   it.skipIf(!CAN_MAKE_UNREADABLE)(
     'SK-03: a packages folder it cannot read stops the run and removes nothing',
     async () => {

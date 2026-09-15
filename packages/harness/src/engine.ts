@@ -18,7 +18,7 @@ import { buildPlan } from './plan/projector.js';
 import { CLAUDE_COMMANDS_DIR, CLAUDE_SKILLS_DIR } from './plan/installed-projector.js';
 import type { ClaudeOnlySkillLocation, ProjectionPlan } from './plan/types.js';
 import type { ClaudeHooksConfig } from './generate/hooks.js';
-import { scanInstalledPlugins } from './sources/installed.js';
+import { scanInstalledSources } from './sources/installed.js';
 import { inventorySourceTree } from './inventory/index.js';
 import { detectHarnessFootprints } from './scaffold/manifest.js';
 
@@ -183,7 +183,7 @@ export function project(
     sharedWithTools?: boolean;
   }
 ): ProjectionPlan {
-  const installedPlugins = scanInstalledPlugins({
+  const installed = scanInstalledSources({
     dorkHome: opts?.dorkHome,
     projectRoot: repoRoot,
   });
@@ -196,7 +196,8 @@ export function project(
     agentsMdExists: agentsMdExists(repoRoot),
     claudeCommandsExist: claudeCommandsExist(repoRoot),
     claudeOnlySkills: scanClaudeOnlySkills(repoRoot, manifest),
-    installedPlugins,
+    installedPlugins: installed.plugins,
+    unreadableManifests: installed.unreadableManifests,
     // Detection is not a one-shot scaffold question any more. Every plan asks
     // the repo which harnesses it can see, so one added after the manifest was
     // written is reported instead of silently never projected to (TR-11).

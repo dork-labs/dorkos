@@ -184,8 +184,77 @@ export interface InstalledPlugin {
    * like an orphan and the next sync deleted all of them (DOR-1882).
    */
   unreadableSkillRoots?: string[];
+  /**
+   * This package's individual skill DIRECTORIES that could not be looked into,
+   * spelled the way {@link skills} spells its paths.
+   *
+   * Present only when there is one, and every entry here is also in
+   * {@link skills} carrying `unreadable` — the list exists so a report can name
+   * the folder, never so a reader can subtract it. One level below
+   * {@link unreadableSkillRoots} and for the same reason: the plan is the
+   * sweep's only evidence of what this package installs, and a skill folder
+   * nobody could look into used to answer "not a skill" and take its live
+   * `<pkg>__<name>` links with it, silently (DOR-1935).
+   */
+  unreadableSkills?: string[];
   /** Declared content layers from the manifest (informational). */
   layers: string[];
+}
+
+/**
+ * A package on disk whose `.dork/manifest.json` is there and will not parse.
+ *
+ * The package is not projected — there is no name, type or layer list to
+ * project it by — but it is not silent either. Without this record the package
+ * was simply skipped, and it then had no trace in the scan, the plan, the drop
+ * list, the status model or the terminal: somebody who broke a manifest half an
+ * hour ago was told nothing, and a package they installed just stopped being
+ * mentioned (DOR-1933).
+ *
+ * It travels BESIDE {@link InstalledSourceScan.plugins} rather than in it, and
+ * that separation is load-bearing: the global sweep keeps every link of a
+ * package still on disk that the plan did not enumerate (clause 4), so a broken
+ * package joining the enumerated list would have its links deleted the moment
+ * the manifest rotted.
+ */
+export interface UnreadablePackageManifest {
+  /**
+   * The package's folder name under the plugins root.
+   *
+   * The folder rather than the manifest `name`, because the manifest is the
+   * thing that would not parse: the folder name is the only name there is.
+   */
+  package: string;
+  /**
+   * The manifest file: the absolute path the OS spells under a global install,
+   * and the repo-relative display path under a project one.
+   *
+   * **Two spellings, because they are two different things, and mixing them
+   * produced a path with both separators in it on Windows** — `C:\…\plugins\badmanifest/.dork/manifest.json`
+   * (measured on the `harness-windows` runner, DOR-1933). A global package has
+   * no repository, so what a person is shown is a real path they can open, and
+   * a real path is `join`ed. A project package's paths are repo-relative, which
+   * is a display convention rather than a filesystem one and is `/`-joined on
+   * every platform, exactly as `InstalledLocation.relDir` and every `sourceDir`
+   * beside it are.
+   */
+  path: string;
+  /** Which install root it came from. */
+  scope: InstalledScope;
+}
+
+/**
+ * One scan of the install roots: what it read, and what it could not.
+ *
+ * Two lists rather than one, for the reason {@link UnreadablePackageManifest}
+ * gives — a package the scan could not read is evidence about nothing, and the
+ * sweep's keep-set is built from the first list alone.
+ */
+export interface InstalledSourceScan {
+  /** Every package the scan read, global first then project, each group sorted by name. */
+  plugins: InstalledPlugin[];
+  /** Every package whose `.dork/manifest.json` is there and will not parse. */
+  unreadableManifests: UnreadablePackageManifest[];
 }
 
 /**
@@ -225,25 +294,48 @@ interface PluginIdentity {
 }
 
 /**
+ * Where a package's DorkOS manifest is, as a real path this machine can open.
+ *
+ * One function so the file the reader OPENS and the file a failure REPORTS are
+ * provably the same one, and so neither is ever composed by hand: a `/`-joined
+ * tail under a `\`-separated Windows root is a path spelled two ways at once
+ * (DOR-1933).
+ *
+ * @param pluginDir - the package's install directory, absolute.
+ * @returns the absolute manifest path, separators as this OS writes them.
+ */
+function dorkManifestPath(pluginDir: string): string {
+  return join(pluginDir, '.dork', 'manifest.json');
+}
+
+/**
  * Read + validate a plugin's identity: `.dork/manifest.json` first, falling
  * back to the Claude Code plugin manifest (`.claude-plugin/plugin.json`) for
  * CC-native packages installed without a DorkOS manifest — the marketplace
  * installer copies such packages verbatim, so nothing on disk ever gains a
  * `.dork/manifest.json`. Without this fallback every CC-native plugin was
  * invisible to projection and Harness Sync silently applied zero files
- * (DOR-264). Returns `undefined` when neither manifest is present or valid.
+ * (DOR-264).
+ *
+ * Three answers, because "there is no DorkOS manifest" and "there is one and it
+ * will not parse" are opposite facts about a package and used to be the same
+ * `undefined`. A manifest that is THERE and unusable answers `'unreadable'`, so
+ * the caller can name the package instead of dropping it in silence (DOR-1933);
+ * the Claude Code fallback is reached only when the DorkOS manifest is absent,
+ * because a broken file is something to fix rather than something to route
+ * around. `undefined` means neither manifest is present or valid.
  */
-function readPluginManifest(pluginDir: string): PluginIdentity | undefined {
-  const manifestPath = join(pluginDir, '.dork', 'manifest.json');
+function readPluginManifest(pluginDir: string): PluginIdentity | 'unreadable' | undefined {
+  const manifestPath = dorkManifestPath(pluginDir);
   if (!existsSync(manifestPath)) return readCcPluginManifest(pluginDir);
   let raw: unknown;
   try {
     raw = JSON.parse(readFileSync(manifestPath, 'utf8'));
   } catch {
-    return undefined;
+    return 'unreadable';
   }
   const parsed = MarketplacePackageManifestSchema.safeParse(raw);
-  if (!parsed.success) return undefined;
+  if (!parsed.success) return 'unreadable';
   return { name: parsed.data.name, type: parsed.data.type, layers: parsed.data.layers };
 }
 
@@ -498,7 +590,7 @@ function collectPortableSkills(
   pluginDir: string,
   sourcePrefix: string,
   dorkHomeLink?: (skillName: string) => boolean
-): { skills: InstalledSkill[]; unreadableRoots: string[] } {
+): { skills: InstalledSkill[]; unreadableRoots: string[]; unreadableSkills: string[] } {
   const skillsRoot = join(pluginDir, 'skills');
   const tasksRoot = join(pluginDir, '.dork', 'tasks');
   const contained = { followSymlinks: false } as const;
@@ -523,6 +615,13 @@ function collectPortableSkills(
       ...(skillsListing.unreadable ? [skillsRel] : []),
       ...(tasksListing.unreadable ? [tasksRel] : []),
     ],
+    // Only the entries that survived de-duplication: a `.dork/tasks/<name>` a
+    // same-named `skills/<name>` won over is not in the plan, so naming it would
+    // point somebody at a folder nothing was decided from.
+    unreadableSkills: [...byName.values()]
+      .filter((entry) => entry.unreadable === true)
+      .map((entry) => entry.sourceDir)
+      .sort(),
   };
 }
 
@@ -578,15 +677,13 @@ function scanPluginsRoot(
   pluginsRoot: string,
   scope: InstalledScope,
   dorkHome?: string
-): InstalledPlugin[] {
-  if (!existsSync(pluginsRoot)) return [];
+): InstalledSourceScan {
+  if (!existsSync(pluginsRoot)) return { plugins: [], unreadableManifests: [] };
   const plugins: InstalledPlugin[] = [];
+  const unreadableManifests: UnreadablePackageManifest[] = [];
   for (const entry of readdirSync(pluginsRoot, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     const pluginDir = join(pluginsRoot, entry.name);
-    const manifest = readPluginManifest(pluginDir);
-    if (!manifest) continue;
-
     const location: InstalledLocation =
       scope === 'global'
         ? { scope, absDir: pluginDir }
@@ -596,6 +693,28 @@ function scanPluginsRoot(
     // mixed-separator path on Windows, and a person reading the drop gets one
     // path rather than two spellings of it.
     const sourcePrefix = location.scope === 'global' ? location.absDir : location.relDir;
+    const manifest = readPluginManifest(pluginDir);
+    // A manifest that is there and will not parse: the package cannot be
+    // projected, and the person is told which file to fix rather than watching
+    // the package disappear from every report (DOR-1933).
+    if (manifest === 'unreadable') {
+      unreadableManifests.push({
+        package: entry.name,
+        // NOT `sourcePrefix`, and this is the one asset that must not use it.
+        // `sourcePrefix` is `/`-joined at both scopes on purpose (see above), so
+        // under a global install — where the prefix is a real absolute
+        // directory — appending a `/` tail spells one path two ways on Windows.
+        // A global record names the file the OS names; a project record stays a
+        // repo-relative display path.
+        path:
+          location.scope === 'global'
+            ? dorkManifestPath(pluginDir)
+            : `${location.relDir}/.dork/manifest.json`,
+        scope,
+      });
+      continue;
+    }
+    if (!manifest) continue;
     const { hooks, unreadable } = readPluginHooks(pluginDir, sourcePrefix);
     // Whether a global sync has already linked each of this package's skills.
     // `lstat`, not `existsSync`: a link whose package was mid-reinstall is still
@@ -619,10 +738,16 @@ function scanPluginsRoot(
       ...(portable.unreadableRoots.length > 0
         ? { unreadableSkillRoots: portable.unreadableRoots }
         : {}),
+      ...(portable.unreadableSkills.length > 0
+        ? { unreadableSkills: portable.unreadableSkills }
+        : {}),
       layers: manifest.layers,
     });
   }
-  return plugins.sort((a, b) => a.name.localeCompare(b.name));
+  return {
+    plugins: plugins.sort((a, b) => a.name.localeCompare(b.name)),
+    unreadableManifests: unreadableManifests.sort((a, b) => a.package.localeCompare(b.package)),
+  };
 }
 
 /**
@@ -653,11 +778,36 @@ function scanPluginsRoot(
 export function scanInstalledPlugins(
   opts: { projectRoot: string; dorkHome?: string } | { projectRoot?: string; dorkHome: string }
 ): InstalledPlugin[] {
-  const globalPlugins = opts.dorkHome
+  return scanInstalledSources(opts).plugins;
+}
+
+/**
+ * The same discovery, plus every package it could NOT read.
+ *
+ * {@link scanInstalledPlugins} is this function's first field, and the reason
+ * both exist is that most callers want the packages and nothing else. The two
+ * that want the rest are the planners: a package whose `.dork/manifest.json`
+ * will not parse is not projectable, and it has to be named all the same, or it
+ * vanishes from the scan, the plan, the report and the screen at once
+ * (DOR-1933).
+ *
+ * @param opts - a project root, a dork home, or both, exactly as
+ *   {@link scanInstalledPlugins} takes them.
+ * @returns the packages that were read, and one record per manifest that would
+ *   not parse — global roots first, each group sorted by name.
+ */
+export function scanInstalledSources(
+  opts: { projectRoot: string; dorkHome?: string } | { projectRoot?: string; dorkHome: string }
+): InstalledSourceScan {
+  const empty: InstalledSourceScan = { plugins: [], unreadableManifests: [] };
+  const global = opts.dorkHome
     ? scanPluginsRoot(join(opts.dorkHome, 'plugins'), 'global', opts.dorkHome)
-    : [];
-  const projectPlugins = opts.projectRoot
+    : empty;
+  const project = opts.projectRoot
     ? scanPluginsRoot(join(opts.projectRoot, PROJECT_PLUGINS_DIR), 'project')
-    : [];
-  return [...globalPlugins, ...projectPlugins];
+    : empty;
+  return {
+    plugins: [...global.plugins, ...project.plugins],
+    unreadableManifests: [...global.unreadableManifests, ...project.unreadableManifests],
+  };
 }

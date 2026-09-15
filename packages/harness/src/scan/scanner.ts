@@ -7,7 +7,7 @@
  *
  * @module scan/scanner
  */
-import { existsSync, lstatSync, readdirSync, statSync, type Dirent } from 'node:fs';
+import { lstatSync, readdirSync, statSync, type Dirent } from 'node:fs';
 import { join } from 'node:path';
 
 /** A single authored skill discovered under `.agents/skills`. */
@@ -16,6 +16,21 @@ export interface SkillEntry {
   name: string;
   /** Repo-relative source directory, e.g. `.agents/skills/<name>`. */
   sourceDir: string;
+  /**
+   * True when the entry is a directory the scan could not look INSIDE, so
+   * whether it holds a `SKILL.md` is unknown.
+   *
+   * Such an entry counts as a skill anyway, and that is the whole point: the
+   * plan is the sweeps' keep-set, so a folder that lost its permissions — or one
+   * an `rm -rf` is halfway through — used to answer "not a skill" and take its
+   * live `<pkg>__<name>` links with it, in silence (DOR-1935). Present is the
+   * only safe reading of "could not look", exactly as it is for a skills ROOT
+   * one level up (`SkillDirListing.unreadable`, DOR-1882).
+   *
+   * Absent means the entry was read: it has a `SKILL.md`, and everything about
+   * it that a reader wants is on disk to be read.
+   */
+  unreadable?: true;
 }
 
 /**
@@ -157,10 +172,20 @@ function entryIsThere(absPath: string): boolean {
   return lstatSync(absPath, { throwIfNoEntry: false }) !== undefined;
 }
 
-/** What {@link listSkillDirs} found: the skills, and whether the folder was readable. */
+/** What {@link listSkillDirs} found: the skills, and what it could not read. */
 export interface SkillDirListing {
   /** The skills found, sorted by name. Empty for an absent root and an unreadable one alike. */
   skills: SkillEntry[];
+  /**
+   * The skill directories inside this root that could not be looked into, each
+   * spelled `<relPrefix>/<name>` — the same paths their entries carry.
+   *
+   * Each one is ALSO in {@link skills}, flagged: this list exists so a report
+   * can name the folder, not so a caller can subtract it. Empty is the ordinary
+   * case, and it is a different fact from {@link unreadable}, which is about
+   * this root rather than about anything in it.
+   */
+  unreadableSkills: string[];
   /**
    * True when something occupies the root and it could not be listed — a file
    * where the folder belongs, a folder nobody may read, a link to neither.
@@ -184,7 +209,8 @@ export interface SkillDirListing {
  * @param absRoot - absolute path to the directory to scan.
  * @param relPrefix - repo-relative prefix prepended to each entry's name.
  * @param options - see {@link ScanSkillDirsOptions}; defaults to the planner's view.
- * @returns the skills found and whether the root was unreadable.
+ * @returns the skills found, whether the root was unreadable, and which skill
+ *   directories inside it could not be looked into.
  */
 export function listSkillDirs(
   absRoot: string,
@@ -193,6 +219,7 @@ export function listSkillDirs(
 ): SkillDirListing {
   const { entries, unreadable } = listEntries(absRoot);
   const skills: SkillEntry[] = [];
+  const unreadableSkills: string[] = [];
   for (const entry of entries) {
     const isLink = entry.isSymbolicLink();
     if (isLink && options.followSymlinks === false) continue;
@@ -200,10 +227,48 @@ export function listSkillDirs(
     if (isManagedProjection && !options.includeManagedProjections) continue;
     const absEntry = join(absRoot, entry.name);
     if (!resolvesToDirectory(absEntry, entry)) continue;
-    if (!existsSync(join(absEntry, 'SKILL.md'))) continue;
-    skills.push({ name: entry.name, sourceDir: `${relPrefix}/${entry.name}` });
+    const sourceDir = `${relPrefix}/${entry.name}`;
+    const marker = skillMarkerState(absEntry);
+    if (marker === 'absent') continue;
+    if (marker === 'unreadable') unreadableSkills.push(sourceDir);
+    skills.push({
+      name: entry.name,
+      sourceDir,
+      ...(marker === 'unreadable' ? { unreadable: true as const } : {}),
+    });
   }
-  return { skills: skills.sort((a, b) => a.name.localeCompare(b.name)), unreadable };
+  return {
+    skills: skills.sort((a, b) => a.name.localeCompare(b.name)),
+    unreadable,
+    unreadableSkills: unreadableSkills.sort(),
+  };
+}
+
+/**
+ * Whether a directory holds a `SKILL.md`, told apart from not being able to
+ * look.
+ *
+ * `existsSync` collapses the two — reading `<dir>/SKILL.md` needs `x` on `<dir>`,
+ * and a directory at mode 000 answers `false` exactly as an empty one does. The
+ * two are opposite facts about a skill and the difference is a measured
+ * deletion: the plan is the sweeps' keep-set, so "not a skill" took the folder's
+ * live links with it (DOR-1935).
+ *
+ * `throwIfNoEntry: false` suppresses ENOENT and nothing else, so a missing file
+ * is `undefined` and a permission error still throws — which is the whole
+ * distinction, made by the call rather than by inspecting an errno.
+ *
+ * @param absEntry - the absolute skill directory to look in.
+ * @returns `present`, `absent`, or `unreadable` when nobody could look.
+ */
+function skillMarkerState(absEntry: string): 'present' | 'absent' | 'unreadable' {
+  try {
+    return statSync(join(absEntry, 'SKILL.md'), { throwIfNoEntry: false }) === undefined
+      ? 'absent'
+      : 'present';
+  } catch {
+    return 'unreadable';
+  }
 }
 
 /**
@@ -228,8 +293,15 @@ export function listSkillDirs(
  * **An empty result is ambiguous here** — absent and unreadable both answer `[]`
  * — so a caller that would treat "nothing found" as "nothing exists" must use
  * {@link listSkillDirs} instead. The readers that keep this narrower form only
- * ever show what they can see (the Codex palette, `dorkos://skills`), where the
- * two answers really are the same.
+ * ever show what they can see (the Codex palette, `dorkos://skills`, the source
+ * inventory behind the adopt list), where the two answers really are the same.
+ *
+ * That is why a skill DIRECTORY nobody could look inside is dropped here and
+ * kept there (DOR-1935). The planner has to keep it, because the plan is the
+ * sweeps' keep-set and dropping it deletes its live links; a list somebody
+ * READS has to drop it, because there is nothing to show — no frontmatter, no
+ * description, and an adopt candidate whose source cannot be opened is an offer
+ * that cannot be honoured.
  *
  * @param absRoot - absolute path to the directory to scan.
  * @param relPrefix - repo-relative prefix prepended to each entry's name.
@@ -242,7 +314,9 @@ export function scanSkillDirs(
   relPrefix: string,
   options: ScanSkillDirsOptions = {}
 ): SkillEntry[] {
-  return listSkillDirs(absRoot, relPrefix, options).skills;
+  return listSkillDirs(absRoot, relPrefix, options).skills.filter(
+    (skill) => skill.unreadable !== true
+  );
 }
 
 /**

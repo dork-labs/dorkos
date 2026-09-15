@@ -19,6 +19,8 @@ export * from './plan/installed-projector.js';
 export * from './plan/global-projector.js';
 export * from './plan/global-installs.js';
 export * from './plan/unreadable-hooks.js';
+export * from './plan/unreadable-manifests.js';
+export * from './plan/unreadable-skills.js';
 export * from './plan/source-artifacts.js';
 export * from './inventory/index.js';
 export * from './scan/scanner.js';

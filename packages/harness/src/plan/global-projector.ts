@@ -29,7 +29,13 @@
  */
 import { join } from 'node:path';
 import type { HarnessId } from '../manifest/schema.js';
-import { scanInstalledPlugins, type InstalledPlugin } from '../sources/installed.js';
+import {
+  scanInstalledSources,
+  type InstalledPlugin,
+  type UnreadablePackageManifest,
+} from '../sources/installed.js';
+import { planUnreadableManifestWarnings } from './unreadable-manifests.js';
+import { planUnreadableSkillWarnings } from './unreadable-skills.js';
 import { PLUGIN_ROOT_SKILL_WARNING_REASON } from './installed-projector.js';
 import type { ProjectionAction, ProjectionPlan, ProjectionWarning } from './types.js';
 
@@ -132,6 +138,16 @@ export interface GlobalPlanInput {
   roots: GlobalPlanRoots;
   /** The globally installed packages, already scanned. {@link projectGlobal} fills this in. */
   packages: readonly InstalledPlugin[];
+  /**
+   * Every global package whose `.dork/manifest.json` would not parse, which
+   * {@link projectGlobal} fills in beside {@link packages}.
+   *
+   * Separate from `packages` on purpose: such a package is projected by nothing
+   * and enumerated by nothing — the sweep keeps its links precisely because the
+   * plan does not name it — and it still earns one warning saying so (DOR-1933).
+   * Omitted means every manifest parsed.
+   */
+  unreadableManifests?: readonly UnreadablePackageManifest[];
   /**
    * The agent tools this machine shares global packages with.
    *
@@ -455,7 +471,22 @@ function globalPlanTiers(input: Omit<GlobalPlanInput, 'packages'>): GlobalPlanTi
  */
 export function buildGlobalPlan(input: GlobalPlanInput): GlobalProjectionPlan {
   const actions: ProjectionAction[] = [];
-  const warnings: ProjectionWarning[] = [];
+  // A package DorkOS could not read comes first, because it is the one line on
+  // the report that is about something being broken rather than about what was
+  // linked.
+  const warnings: ProjectionWarning[] = planUnreadableManifestWarnings(
+    input.unreadableManifests ?? []
+  );
+  // A skill folder inside a package that nobody could look into. It is planned
+  // and kept like any other — an unreadable skill is present, not absent — and
+  // this is the line saying so (DOR-1935).
+  warnings.push(
+    ...planUnreadableSkillWarnings(
+      input.packages
+        .filter((plugin) => plugin.location.scope === 'global')
+        .flatMap((plugin) => plugin.unreadableSkills ?? [])
+    )
+  );
   // One action per TARGET PATH. Two packages cannot collide (the namespace is
   // the package name) but a package's own `skills/` and `.dork/tasks/` are
   // already de-duplicated by the scan, and a keep-set the apply and the sweep
@@ -519,9 +550,10 @@ export function buildGlobalPlan(input: GlobalPlanInput): GlobalProjectionPlan {
  * Read `<dorkHome>/plugins` and plan from it — the global twin of `project()`,
  * and the only half that touches a disk.
  *
- * Never throws. `scanInstalledPlugins` already swallows a package it cannot make
- * sense of (an unparseable manifest leaves the package out, following
- * `inventory/read.ts`), and the one failure it does not own is the plugins root
+ * Never throws. `scanInstalledSources` already contains a package it cannot make
+ * sense of: an unparseable manifest leaves the package out of the plan and puts
+ * it on `unreadableManifests` instead, which becomes one warning naming the file
+ * (DOR-1933). The one failure the scan does not own is the plugins root
  * itself being unreadable — a permission error on `<dorkHome>/plugins`. That
  * becomes a warning, an empty plan and {@link GlobalProjectionPlan.unreadableRoot}
  * rather than an exception, because the command a person runs to be told what
@@ -540,9 +572,12 @@ export function buildGlobalPlan(input: GlobalPlanInput): GlobalProjectionPlan {
  */
 export function projectGlobal(input: Omit<GlobalPlanInput, 'packages'>): GlobalProjectionPlan {
   const pluginsRoot = globalPluginsDir(input.roots.dorkHome);
-  let packages: readonly InstalledPlugin[];
+  let scan: {
+    plugins: readonly InstalledPlugin[];
+    unreadableManifests: readonly UnreadablePackageManifest[];
+  };
   try {
-    packages = scanInstalledPlugins({ dorkHome: input.roots.dorkHome });
+    scan = scanInstalledSources({ dorkHome: input.roots.dorkHome });
   } catch (err) {
     return {
       actions: [],
@@ -564,5 +599,9 @@ export function projectGlobal(input: Omit<GlobalPlanInput, 'packages'>): GlobalP
       enumeratedPackages: [],
     };
   }
-  return buildGlobalPlan({ ...input, packages });
+  return buildGlobalPlan({
+    ...input,
+    packages: scan.plugins,
+    unreadableManifests: scan.unreadableManifests,
+  });
 }

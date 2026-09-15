@@ -419,3 +419,51 @@ describe('AP-05 global: the finders never throw for what they find', () => {
     expect(checkGlobalPlan(plan, roots).clean).toBe(true);
   });
 });
+
+/**
+ * The sweep against a skill directory nobody can read (DOR-1935).
+ *
+ * The package is enumerated, the plan is built, and one of its skill folders
+ * cannot be listed. Under the old scan that folder simply was not a skill, so
+ * the plan did not name its link, and clause 4 of the sweep predicate — the
+ * package is still on disk AND the plan enumerated it — read the live link as an
+ * orphan and deleted it.
+ */
+describe('SK-03 global: a skill folder nobody can read', () => {
+  /** Whether this platform can stage an unreadable directory: not Windows, not root. */
+  const CAN_MAKE_UNREADABLE = process.platform !== 'win32' && process.getuid?.() !== 0;
+
+  it.skipIf(!CAN_MAKE_UNREADABLE)('SK-03: keeps the link and says which folder it is', () => {
+    const dorkHome = stageDorkHome([
+      { name: 'globex', skills: [{ name: 'greet' }, { name: 'wave' }] },
+    ]);
+    const roots = rootsFor(dorkHome);
+    applyGlobalPlan(projectGlobal({ roots, harnesses: [] }), roots, { sweepOrphans: true });
+    const link = join(globalSkillsDir(dorkHome), 'globex__greet');
+    expect(existsOnDisk(link)).toBe(true);
+
+    const skillDir = join(dorkHome, 'plugins', 'globex', 'skills', 'greet');
+    chmodSync(skillDir, 0o000);
+    try {
+      const plan = projectGlobal({ roots, harnesses: [] });
+
+      // Nothing to remove: an unreadable skill is present, not absent.
+      expect(findGlobalOrphans(plan, roots)).toEqual([]);
+      const { removals } = applyGlobalPlan(plan, roots, { sweepOrphans: true });
+      expect(removals).toEqual([]);
+      expect(existsOnDisk(link)).toBe(true);
+
+      // And one line naming the folder, so the tree that is deliberately not
+      // tidied is explained rather than left to be discovered.
+      const named = plan.warnings.filter((w) => w.name === skillDir);
+      expect(named).toHaveLength(1);
+      expect(named[0]?.harnessAgnostic).toBe(true);
+      expect(named[0]?.source).toBe(skillDir);
+      // Named once. An absolute path repeated inside the sentence printed it
+      // twice on one line of a global run's report.
+      expect(named[0]?.reason).not.toContain(skillDir);
+    } finally {
+      chmodSync(skillDir, 0o755);
+    }
+  });
+});

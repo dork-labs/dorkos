@@ -138,6 +138,57 @@ describe('formatWarnings', () => {
     expect(out).not.toContain('claude-code:');
   });
 
+  it('files a global package’s broken manifest under "plugin layers", not "this project"', () => {
+    // DOR-1933. Seeded defect: decide the heading by PATH first. A global
+    // package's paths are absolute — there is no repository for them to be
+    // relative to — so the `.dork/plugins/` prefix never matches, and a run with
+    // no project at all printed `this project:` over a package in the person's
+    // data directory.
+    const out = formatWarnings({
+      actions: [],
+      drops: [],
+      warnings: [
+        {
+          artifact: 'plugin',
+          harness: 'claude-code',
+          harnessAgnostic: true,
+          name: 'badmanifest',
+          source: '/home/someone/.dork/plugins/badmanifest/.dork/manifest.json',
+          reason: 'This package has a file DorkOS could not read …',
+        },
+      ],
+      notEnabled: [],
+    });
+    expect(out).toContain('plugin layers:');
+    expect(out).not.toContain('this project:');
+    expect(out).not.toContain('claude-code:');
+  });
+
+  it('files a global package’s unreadable skill folder under "plugin layers"', () => {
+    // DOR-1935. The same heading question one artifact down: this is a `skill`,
+    // so the kind does not answer it, and the path is absolute because a global
+    // package has no repository to be relative to. Seeded defect: decide it by
+    // the repo-relative prefix alone and a run with no project prints
+    // `this project:` over a folder in the person's data directory.
+    const out = formatWarnings({
+      actions: [],
+      drops: [],
+      warnings: [
+        {
+          artifact: 'skill',
+          harness: 'claude-code',
+          harnessAgnostic: true,
+          name: '/home/someone/.dork/plugins/globex/skills/greet',
+          source: '/home/someone/.dork/plugins/globex/skills/greet',
+          reason: 'DorkOS could not look inside this folder …',
+        },
+      ],
+      notEnabled: [],
+    });
+    expect(out).toContain('plugin layers:');
+    expect(out).not.toContain('this project:');
+  });
+
   it('returns an empty string when there are no warnings', () => {
     // Callers omit the block entirely when empty.
     expect(formatWarnings({ actions: [], drops: [], warnings: [], notEnabled: [] })).toBe('');

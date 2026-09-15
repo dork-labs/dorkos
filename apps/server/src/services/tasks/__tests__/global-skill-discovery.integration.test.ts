@@ -91,19 +91,21 @@ describe('a scheduled skill installed for all projects', () => {
     await rm(dorkHome, { recursive: true, force: true });
   });
 
-  /** Install a package for all projects, holding one skill that runs on a timer. */
-  async function installGlobalPackage(name: string, skill: string): Promise<void> {
+  /** Install a package for all projects, holding one or more skills that run on a timer. */
+  async function installGlobalPackage(name: string, ...skills: string[]): Promise<void> {
     const dir = path.join(dorkHome, 'plugins', name);
     await mkdir(path.join(dir, '.dork'), { recursive: true });
     await writeFile(
       path.join(dir, '.dork', 'manifest.json'),
       JSON.stringify({ name, version: '1.0.0', type: 'plugin', description: name })
     );
-    await mkdir(path.join(dir, 'skills', skill), { recursive: true });
-    await writeFile(
-      path.join(dir, 'skills', skill, 'SKILL.md'),
-      `---\nname: ${skill}\ndescription: A skill named ${skill}\nschedule:\n  cron: '0 9 * * *'\n---\nDo the thing.\n`
-    );
+    for (const skill of skills) {
+      await mkdir(path.join(dir, 'skills', skill), { recursive: true });
+      await writeFile(
+        path.join(dir, 'skills', skill, 'SKILL.md'),
+        `---\nname: ${skill}\ndescription: A skill named ${skill}\nschedule:\n  cron: '0 9 * * *'\n---\nDo the thing.\n`
+      );
+    }
   }
 
   it('is discovered as a schedule once a global sync has linked it', async () => {
@@ -157,19 +159,24 @@ describe('a scheduled skill installed for all projects', () => {
       lstatSync(path.join(dorkHome, 'skills', 'globex__daily-sweep'), { throwIfNoEntry: false })
     ).toBeUndefined();
 
+    // The row the LIVE store is holding is retired in the same pass (DOR-1934).
+    // It used to survive: the reconciler only retires a row whose file sits in a
+    // directory the pass enumerated, and a packaged skill's row is keyed on its
+    // RESOLVED path — `<dorkHome>/plugins/<pkg>/skills/<name>/SKILL.md`, which is
+    // under no watched root at all. Once the link was swept there was nothing
+    // left to testify about it, so the schedule stayed on the clock for a
+    // package that is not installed any more.
+    await reconciler.reconcile();
+    const retired = store.getTasks();
+    expect(retired).toHaveLength(1);
+    expect({ status: retired[0]?.status, enabled: retired[0]?.enabled }).toEqual({
+      status: 'paused',
+      enabled: false,
+    });
+
     // The skill is no longer DISCOVERABLE: a store that has never seen it finds
     // nothing in the same root. Asserting `status === 'active'` is empty was
-    // vacuous — a discovered schedule parks as `pending_approval` — and so is
-    // asserting on the existing row, for a reason worth writing down.
-    //
-    // **The existing row is not retired, and that is a pre-existing gap rather
-    // than this sweep's.** `TaskReconciler` only retires a row whose file sits
-    // in a directory THIS pass enumerated, and a packaged skill's row is keyed
-    // on its RESOLVED path — `<dorkHome>/plugins/<pkg>/skills/<name>/SKILL.md`,
-    // which is not under any watched root. The same is true of every
-    // project-scoped plugin skill (`.agents/skills/<pkg>__<name>` resolving into
-    // `.dork/plugins`), so it predates global scope and is filed rather than
-    // fixed here.
+    // vacuous — a discovered schedule parks as `pending_approval`.
     const fresh = new TaskStore(createTestDb());
     const freshReconciler = new TaskReconciler(
       fresh,
@@ -179,6 +186,82 @@ describe('a scheduled skill installed for all projects', () => {
     for (const root of globalTaskRoots(dorkHome)) freshReconciler.addRoot(root);
     await freshReconciler.reconcile();
     expect(fresh.getTasks()).toEqual([]);
+  });
+
+  it('retires the row when the link goes and the package stays', async () => {
+    // DOR-1934, the other half. A link can go for reasons that have nothing to
+    // do with an uninstall — the plan stopped naming it, a folder stopped being
+    // shared, somebody tidied the directory — and the file at the end of it is
+    // still on disk. The row must still retire, because what made the skill a
+    // schedule was being reachable from a watched root, and it is not any more.
+    // Keying retirement on the FILE's existence answers "the file is right
+    // there" and leaves the row firing for a skill nothing can reach.
+    await installGlobalPackage('globex', 'daily-sweep');
+    const roots = { dorkHome };
+    applyGlobalPlan(projectGlobal({ roots, harnesses: [] }), roots, { sweepOrphans: true });
+    await reconciler.reconcile();
+    expect(store.getTasks()).toHaveLength(1);
+
+    await rm(path.join(dorkHome, 'skills', 'globex__daily-sweep'), { force: true });
+    // The package, and the file the row is keyed on, are both still there.
+    expect(
+      lstatSync(path.join(dorkHome, 'plugins', 'globex', 'skills', 'daily-sweep', 'SKILL.md'), {
+        throwIfNoEntry: false,
+      })
+    ).toBeDefined();
+
+    await reconciler.reconcile();
+
+    const rows = store.getTasks();
+    expect(rows).toHaveLength(1);
+    expect({ status: rows[0]?.status, enabled: rows[0]?.enabled }).toEqual({
+      status: 'paused',
+      enabled: false,
+    });
+  });
+
+  it('retires one skill’s row while its sibling in the same package keeps firing', async () => {
+    // The hole gate 1 leaves open, and the reason the unreachable rule may not
+    // be gated behind it. `scannedDirs` records the PARENT of every directory a
+    // link points into — `<pkg>/skills` — so one surviving sibling link makes
+    // "this pass enumerated the directory" true for every row in the package,
+    // and a row whose own link was swept read as merely skipped by the scan.
+    // Seeded defect: `!enumerated && isInsideAny(…)`. Then `daily` stays armed
+    // for as long as `weekly` exists.
+    await installGlobalPackage('globex', 'daily-sweep', 'weekly-sweep');
+    const roots = { dorkHome };
+    applyGlobalPlan(projectGlobal({ roots, harnesses: [] }), roots, { sweepOrphans: true });
+    await reconciler.reconcile();
+    expect(store.getTasks()).toHaveLength(2);
+
+    await rm(path.join(dorkHome, 'skills', 'globex__daily-sweep'), { force: true });
+    await reconciler.reconcile();
+
+    const byName = new Map(store.getTasks().map((t) => [t.name, t]));
+    expect({
+      daily: byName.get('daily-sweep')?.status,
+      weekly: byName.get('weekly-sweep')?.status,
+    }).toEqual({ daily: 'paused', weekly: 'pending_approval' });
+  });
+
+  it('leaves a row alone while its link is still there', async () => {
+    // The floor under both cases above, and the one that keeps "unreachable"
+    // from becoming "retire everything the pass did not walk into". Seeded
+    // defect: treat any row under a plugins folder as unreachable without
+    // asking whether a link still resolves to it.
+    await installGlobalPackage('globex', 'daily-sweep');
+    const roots = { dorkHome };
+    applyGlobalPlan(projectGlobal({ roots, harnesses: [] }), roots, { sweepOrphans: true });
+    await reconciler.reconcile();
+    const before = store.getTasks();
+    expect(before).toHaveLength(1);
+
+    await reconciler.reconcile();
+    await reconciler.reconcile();
+
+    expect(
+      store.getTasks().map((t) => ({ id: t.id, status: t.status, enabled: t.enabled }))
+    ).toEqual(before.map((t) => ({ id: t.id, status: t.status, enabled: t.enabled })));
   });
 
   it.skipIf(!CAN_MAKE_UNREADABLE)(

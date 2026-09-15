@@ -232,6 +232,52 @@ describe('a skills folder DorkOS cannot read', () => {
   });
 });
 
+describe('one skill folder inside a readable root (DOR-1935)', () => {
+  it.skipIf(!CAN_MAKE_UNREADABLE)(
+    'AP-07, SK-03: a package’s skill DIRECTORY at mode 000 keeps its links and is named',
+    () => {
+      // One level below the cases above, and the hole between them: the package's
+      // `skills/` lists fine, so nothing stood the sweeps down, and `greet` was
+      // simply not a skill because `existsSync(greet/SKILL.md)` needs `x` on
+      // `greet`. Measured before the fix: `swept: ['.agents/skills/acme__greet',
+      // '.claude/skills/acme__greet']`, with nothing printed.
+      stageRepo();
+      sync();
+      makeUnreadable('.dork/plugins/acme/skills/greet');
+
+      const broken = plan();
+
+      // The ROOT read fine, so the sweeps are NOT stood down — the other three
+      // links are still governed normally.
+      expect(broken.unreadableSkillRoots).toBeUndefined();
+
+      // The skill is still planned for both directories, because an unreadable
+      // skill is present rather than absent.
+      const targets = broken.actions
+        .filter((a) => a.name === 'acme__greet')
+        .map((a) => a.target)
+        .sort();
+      expect(targets).toEqual(['.agents/skills/acme__greet', '.claude/skills/acme__greet']);
+
+      // One line naming the folder.
+      const named = broken.warnings.filter((w) => w.name === '.dork/plugins/acme/skills/greet');
+      expect(named).toHaveLength(1);
+      expect(named[0]?.harnessAgnostic).toBe(true);
+      expect(named[0]?.source).toBe('.dork/plugins/acme/skills/greet');
+      // The folder is named by the warning, once. Repeating it inside the
+      // sentence printed the path twice on one terminal line.
+      expect(named[0]?.reason).not.toContain('.dork/plugins/acme/skills/greet');
+      expect(named[0]?.reason).toContain('left exactly as it is');
+
+      // And nothing goes.
+      expect(checkPlan(repo, broken).orphans).toEqual([]);
+      const before = snapshotTree(repo);
+      expect(sync().swept).toEqual([]);
+      expect(diffSnapshots(before, snapshotTree(repo)).removed).toEqual([]);
+    }
+  );
+});
+
 describe('what a readable tree still gets', () => {
   it('AP-07: an ABSENT skills folder is silent, and the sweeps still run', () => {
     // The negative that keeps the marker from becoming "never sweep": absent is

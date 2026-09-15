@@ -7,6 +7,7 @@
  *
  * @module report/drop-list
  */
+import { isAbsolute } from 'node:path';
 import type { ProjectionAction, ProjectionPlan } from '../plan/types.js';
 
 /**
@@ -41,23 +42,38 @@ const PLUGIN_DIR_PREFIX = '.dork/plugins/';
  * Whether an agnostic entry is about an installed package rather than about the
  * person's own tree.
  *
- * Sourced entries answer by path — a `hooks/hooks.json` under `.dork/plugins/` is
- * a package's, a `.mcp.json` at the root is the project's. The sourceless ones
- * are all `artifact: 'plugin'` (a whole package, one of its layers, or a global
- * package whose hooks file could not be read, whose path is absolute and so has
- * no repo-relative form to carry) and have nothing but their kind to go on,
- * which is enough because nothing else emits that artifact without a source.
+ * The KIND decides it first: `artifact: 'plugin'` is a whole package, one of its
+ * layers, or a file inside one, and nothing else emits that artifact at all. The
+ * path is the second question, and only for the other kinds — a
+ * `hooks/hooks.json` under `.dork/plugins/` is a package's, a `.mcp.json` at the
+ * root is the project's.
  *
- * So this leans on every agnostic emitter carrying a `source` when it has one to
- * carry, which is the same property that lets a warning be matched to the
- * artifact it concerns. An emitter that forgets lands its entry here, under a
- * heading about the person's own tree — wrong, and quiet. Both halves are pinned
- * in `__tests__/drop-list.test.ts`.
+ * Asking the kind first is what makes this work at BOTH scopes. A global
+ * package's paths are absolute — it has no repository to be relative to — so a
+ * path-first rule filed a global package's broken manifest under a heading about
+ * "this project" in a run that has no project at all (DOR-1933). The repo-
+ * relative prefix cannot be widened to cover an absolute install directory
+ * without knowing the dork home, which this formatter is not given and should
+ * not be — so the absolute-ness itself is the answer for every other kind
+ * (DOR-1935), because a project plan spells every path it carries relative to
+ * the repository and only the global planner spells one out in full.
+ *
+ * For every other kind this still leans on an agnostic emitter carrying a
+ * `source` when it has one, which is the same property that lets a warning be
+ * matched to the artifact it concerns. An emitter that forgets lands its entry
+ * here, under a heading about the person's own tree — wrong, and quiet. Both
+ * halves are pinned in `__tests__/drop-list.test.ts`.
  */
 function isAboutAPackage(entry: { artifact: string; source?: string }): boolean {
-  return entry.source === undefined
-    ? entry.artifact === 'plugin'
-    : entry.source.startsWith(PLUGIN_DIR_PREFIX);
+  if (entry.artifact === 'plugin') return true;
+  if (entry.source === undefined) return false;
+  // An ABSOLUTE source cannot be about the person's repository: every path a
+  // project plan carries is repo-relative, and the one planner that spells paths
+  // out in full is the global one, which reads `<dorkHome>/plugins` and nothing
+  // else. So this is the same "not this project" answer the prefix gives, for
+  // the scope where the prefix cannot exist (DOR-1935: a global package's
+  // unreadable skill folder read `this project:` in a run with no project).
+  return isAbsolute(entry.source) || entry.source.startsWith(PLUGIN_DIR_PREFIX);
 }
 
 /** The heading each entry is filed under: its harness, or one of the two agnostic ones. */
