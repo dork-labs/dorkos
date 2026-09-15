@@ -208,6 +208,14 @@ interface SessionBundle {
    * a Stop two turns ago.
    */
   closedByStop: boolean;
+  /**
+   * Every background `task_type` the running process has reported, so each is
+   * logged once per process ({@link noteTaskTypes}). Which types a Monitor or a
+   * future task kind carries is not verified against a real CLI, and a real
+   * session's log is where that answer comes from (spec `warm-process-lifecycle`
+   * D1). Emptied when the process dies; a replacement process gets a fresh bundle.
+   */
+  seenTaskTypes: Set<string>;
 }
 
 /** What one dispatch needs beyond the session itself. */
@@ -908,6 +916,7 @@ export class PersistentDispatch {
       plan: undefined,
       booting: false,
       closedByStop: false,
+      seenTaskTypes: new Set<string>(),
     } as unknown as SessionBundle;
 
     bundle.pump = this.registry.acquire(key, {
@@ -935,7 +944,10 @@ export class PersistentDispatch {
           bundle.fingerprint = fingerprint;
         }
       ),
-      onMessage: (message) => bundle.windows.onMessage(message),
+      onMessage: (message) => {
+        noteTaskTypes(key, bundle.seenTaskTypes, message);
+        bundle.windows.onMessage(message);
+      },
       onCrash: (crash) => {
         // Whether DorkOS itself killed this process, answered HERE because this
         // is the only place that holds both halves: the session carrying the
@@ -959,6 +971,8 @@ export class PersistentDispatch {
         // announces the crash, and that transition disarms it above.
         bundle.live = undefined;
         bundle.fingerprint = undefined;
+        // The relaunch is a new process, and "once per process" starts over.
+        bundle.seenTaskTypes.clear();
         bundle.recovery.handleCrash(stopRequested ? { ...crash, stopRequested } : crash);
       },
       onStateChange: (change) => {
@@ -1061,6 +1075,37 @@ function enrichDeliveredContent(content: string, additionalContext?: AdditionalC
   const contextBlocks = (additionalContext ?? []).map(renderContextEntry).filter(Boolean);
   if (contextBlocks.length === 0) return content;
   return `${contextBlocks.join('\n\n')}\n\n${content}`;
+}
+
+/**
+ * Log each background `task_type` the first time this process reports it
+ * (spec `warm-process-lifecycle` D1, DOR-2064).
+ *
+ * Only `local_agent` is known to hold a process today, and whether a Monitor
+ * appears on the level frame, and under what type, has never been watched. So
+ * nothing here decides anything: it records what a real CLI actually sends,
+ * once per type per process, so the next real session answers the question.
+ * Defensive for the same reason `turn-liveness.ts` is: this runs inside the
+ * pump's message loop, where a throw would read as the process dying.
+ *
+ * @param sessionId - The session the process belongs to
+ * @param seen - The types already logged for this process
+ * @param message - One frame the process just produced
+ */
+function noteTaskTypes(sessionId: string, seen: Set<string>, message: SDKMessage): void {
+  if (message.type !== 'system') return;
+  if ((message as { subtype?: unknown }).subtype !== 'background_tasks_changed') return;
+  const tasks = (message as { tasks?: unknown }).tasks;
+  if (!Array.isArray(tasks)) return;
+  for (const task of tasks) {
+    const taskType = (task as { task_type?: unknown } | null)?.task_type;
+    if (typeof taskType !== 'string' || seen.has(taskType)) continue;
+    seen.add(taskType);
+    logger.info('[persistent-dispatch] a background task type appeared on this process', {
+      session: sessionId,
+      taskType,
+    });
+  }
 }
 
 /**

@@ -208,6 +208,39 @@ export class FakeCliProcess {
     this.emit(resultMessage(messageId));
   }
 
+  /**
+   * End a turn with NOTHING in it — a `result` naming `messageId` and no word
+   * before it (DOR-2064). The shape a relaunched CLI produces when it drains its
+   * own queued notification first and answers the person's message only in the
+   * segment after it.
+   *
+   * @param messageId - The id the `result` names, or undefined for one naming nothing
+   */
+  closeEmpty(messageId: string | undefined): void {
+    this.emit(resultMessage(messageId));
+  }
+
+  /** Open a new query segment, as the CLI does after a `result` when it has more to run. */
+  startSegment(): void {
+    this.emit(initMessage(this.sdkSessionId));
+  }
+
+  /**
+   * Report the full set of live background tasks, as the CLI's level frame
+   * (`system/background_tasks_changed`) does — any `task_type`, known or not.
+   *
+   * @param tasks - Every task running right now
+   */
+  reportTasks(tasks: ReadonlyArray<{ task_id: string; task_type: string }>): void {
+    this.emit({
+      type: 'system',
+      subtype: 'background_tasks_changed',
+      tasks: tasks.map((task) => ({ ...task, status: 'running', description: task.task_type })),
+      session_id: this.sdkSessionId,
+      uuid: `tasks-${tasks.map((task) => task.task_id).join('+') || 'none'}`,
+    } as unknown as SDKMessage);
+  }
+
   /** The subprocess exited: stdin closed, or it simply went away. */
   endStream(): void {
     this.ended = true;

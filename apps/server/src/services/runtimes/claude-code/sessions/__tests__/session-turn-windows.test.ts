@@ -234,6 +234,7 @@ function harness(
     onWindowClose?: (window: TurnWindow) => void;
     graceMs?: number;
     capMs?: number;
+    emptyCloseCapMs?: number;
   } = {}
 ): Harness {
   const queries: FakeQuery[] = [];
@@ -293,6 +294,7 @@ function harness(
     // once hangs the test if it starts waiting.
     ...(hooks.graceMs !== undefined ? { continuationGraceMs: hooks.graceMs } : {}),
     ...(hooks.capMs !== undefined ? { continuationCapMs: hooks.capMs } : {}),
+    ...(hooks.emptyCloseCapMs !== undefined ? { emptyCloseCapMs: hooks.emptyCloseCapMs } : {}),
     onWindowOpen: (window) => {
       opened.push(window);
       projected.push(project(window));
@@ -1345,6 +1347,9 @@ describe('SessionTurnWindows — a late result cannot strand the open window (DO
     const ref: { windows?: SessionTurnWindows } = {};
     const windows = new SessionTurnWindows({
       sessionId: SESSION_ID,
+      // The fast turn carries no words, so it waits out the empty-turn grace
+      // before closing (DOR-2064). Short, so the close lands well inside the poll.
+      continuationGraceMs: 20,
       pump: {
         // The result lands INSIDE the dispatch, exactly as a turn answered
         // during the launch does.
@@ -1888,6 +1893,9 @@ describe('a steered window waits for the continuation, and only for that (DOR-13
     // hand finished its turn — it was only waiting to see whether more was
     // coming — so it settles on the CLI's own `result`.
     await h.dispatch([{ content: 'next thing', messageId: 'm2' }]);
+    // The successor says something: an EMPTY turn waits for its answer
+    // (DOR-2064), and this case's hour-long grace would hang on that wait.
+    h.live().emit(textDeltaMessage('on it'));
     h.live().emit(resultMessage('m2'));
     await settled(h, 2);
 
@@ -1929,5 +1937,103 @@ describe('a steered window waits for the continuation, and only for that (DOR-13
     expect(windows).toHaveLength(1);
     expect(windows[0]!.types.filter((t) => t === 'turn_end')).toHaveLength(1);
     expect(h.rawStream().some((e) => e.type === 'error')).toBe(true);
+  });
+});
+
+// Spec `warm-process-lifecycle` D5, tests T1–T2 (DOR-2064). A relaunched CLI
+// drains its own queued notification before it answers the person, so the
+// dispatched window's first `result` can arrive with nothing in the turn.
+describe('an empty dispatched window waits for its answer (DOR-2064)', () => {
+  it('T1: carries the answer that runs after an early zero-content result the dispatch named', async () => {
+    const h = harness({ graceMs: 40, emptyCloseCapMs: 5_000 });
+    await h.dispatch([{ content: 'what did the helper find?', messageId: 'm1' }]);
+    h.live().emit(resultMessage('m1'));
+    // The next segment's first frame: not content, but proof of life.
+    h.live().emit(initMessage());
+
+    // Well past the 40ms grace: only the extension to the empty-close cap keeps
+    // the window open across it. The sleep IS the gap under test.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    h.live().emit(textDeltaMessage('three tests fail'));
+    h.live().emit(resultMessage('m1'));
+
+    await settled(h, 1);
+    const windows = h.windowsOnStream();
+    expect(windows).toHaveLength(1);
+    expect(windows[0]!.origin).toBeUndefined();
+    expect(
+      windows[0]!.events.some((e) => e.type === 'text_delta' && e.text === 'three tests fail')
+    ).toBe(true);
+    expect(windows[0]!.types.filter((t) => t === 'turn_end')).toHaveLength(1);
+    expect(h.rawStream().some((e) => e.type === 'error')).toBe(false);
+  });
+
+  it('T1: waits the same way when the early result names nothing', async () => {
+    const h = harness({ graceMs: 40, emptyCloseCapMs: 5_000 });
+    await h.dispatch([{ content: 'what did the helper find?', messageId: 'm1' }]);
+    h.live().emit(resultMessage());
+    h.live().emit(initMessage());
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    h.live().emit(textDeltaMessage('three tests fail'));
+    h.live().emit(resultMessage('m1'));
+
+    await settled(h, 1);
+    const windows = h.windowsOnStream();
+    expect(windows).toHaveLength(1);
+    expect(
+      windows[0]!.events.some((e) => e.type === 'text_delta' && e.text === 'three tests fail')
+    ).toBe(true);
+  });
+
+  it('T2: a genuinely empty turn still closes at the cap, on its own result, and says why', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    try {
+      const h = harness({ graceMs: 40, emptyCloseCapMs: 250 });
+      await h.dispatch([{ content: 'are you there?', messageId: 'm1' }]);
+      h.live().emit(resultMessage('m1', { result_index: 1 }));
+
+      // Chatter that never becomes content re-arms within the cap, never past it.
+      const startedAt = Date.now();
+      const chatter = setInterval(() => h.live().emit(apiRetryMessage(20)), 20);
+      try {
+        await settled(h, 1);
+        await vi.waitFor(() => expect(h.closedWindows).toHaveLength(1));
+      } finally {
+        clearInterval(chatter);
+      }
+      // A duration floor, deliberately: closing before the cap is the defect.
+      expect(Date.now() - startedAt).toBeGreaterThanOrEqual(200);
+
+      const windows = h.windowsOnStream();
+      expect(windows).toHaveLength(1);
+      expect(windows[0]!.types.at(-1)).toBe('turn_end');
+      const line = warn.mock.calls.find((call) =>
+        String(call[0]).includes('closed a turn with nothing in it')
+      );
+      expect(line?.[1]).toMatchObject({ sessionId: SESSION_ID, answered: ['m1'], resultIndex: 1 });
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('T2: never waits on an error result', async () => {
+    // A long grace makes a wrongful wait hang the test rather than pass.
+    const h = harness({ graceMs: 3_600_000, emptyCloseCapMs: 3_600_000 });
+    await h.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
+    h.live().emit(errorResultMessage());
+
+    await settled(h, 1);
+    await vi.waitFor(() => expect(h.closedWindows).toHaveLength(1));
+    expect(h.windowsOnStream()).toHaveLength(1);
+  });
+
+  it('T2: never waits on an aborted result', async () => {
+    const h = harness({ graceMs: 3_600_000, emptyCloseCapMs: 3_600_000 });
+    await h.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
+    h.live().emit(abortedResultMessage('m1'));
+
+    await settled(h, 1);
+    await vi.waitFor(() => expect(h.closedWindows).toHaveLength(1));
   });
 });
