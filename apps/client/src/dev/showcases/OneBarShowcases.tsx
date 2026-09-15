@@ -508,6 +508,22 @@ export function OneBarShowcases() {
           />
         </ShowcaseDemo>
 
+        <ShowcaseLabel>
+          A turn an agent took in one of this machine's own rooms — the label already carries the
+          room's own `#`, so the chip draws it once, not twice (DOR-2073)
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <SessionBarDemo
+            state={{
+              agentName: 'DorkBot',
+              agentVisual: DEMO_AGENT_VISUAL,
+              sessionTitle: 'Rename the project',
+              origin: 'room',
+              originLabel: '#proj-trame',
+            }}
+          />
+        </ShowcaseDemo>
+
         <ShowcaseLabel>An origin that names itself — a message from Telegram</ShowcaseLabel>
         <ShowcaseDemo>
           <SessionBarDemo

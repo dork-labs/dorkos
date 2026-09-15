@@ -56,6 +56,17 @@ export function SessionHeader() {
   );
   const descriptor = getOriginDescriptor(origin);
   const originText = originLabel ?? descriptor?.label;
+  // A room's own `originLabel` already carries its `#` — `room-store.ts`'s
+  // `resolveRoomOrigins` follows the same rule `roomDisplayTitle` does — and
+  // the room origin's own glyph (`ORIGIN_GLYPH.room`) IS a literal `#`. Two
+  // marks printed side by side read "# #proj-trame" (DOR-2073). Only the room
+  // origin collides with its own glyph this way, so only its label is split;
+  // the visible text drops the leading `#` the icon already draws, and the
+  // full, spoken form survives for assistive technology in the sr-only node
+  // below (the same split `RoomTitle` uses for the identical defect,
+  // DOR-583).
+  const bareOriginText =
+    origin === 'room' && originText?.startsWith('#') ? originText.slice(1) : originText;
   // A session with no registered agent — and none ever seen — is a bare
   // directory, and the honest name for it is the directory's. The favicon's
   // hash-a-face-from-cwd fallback is deliberately NOT reached for: a face
@@ -120,9 +131,22 @@ export function SessionHeader() {
                 that is allowed to get smaller. */}
             <span className="inline-flex min-w-0 items-center gap-1 @max-md/bar:hidden">
               <SessionOriginMark origin={origin} label={originText} decorative />
-              <span className="min-w-0 truncate" title={originText}>
-                {originText}
-              </span>
+              {bareOriginText === originText ? (
+                <span className="min-w-0 truncate" title={originText}>
+                  {originText}
+                </span>
+              ) : (
+                <>
+                  {/* `select-none` so the mark a screen reader hears never
+                      lands in a copied selection or matches find-in-page —
+                      the same reasoning `RoomTitle` documents for the
+                      identical split. */}
+                  <span className="sr-only select-none">{originText}</span>
+                  <span className="min-w-0 truncate" aria-hidden title={originText}>
+                    {bareOriginText}
+                  </span>
+                </>
+              )}
             </span>
             <span className="hidden @max-md/bar:inline-flex">
               <SessionOriginMark origin={origin} label={originText} />
