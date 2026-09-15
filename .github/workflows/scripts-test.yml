@@ -176,6 +176,14 @@ on:
       - '.github/workflows/merge-tail.yml'
       - '.github/workflows/operating-skills-version-check.yml'
       - '.github/workflows/test.yml'
+      # credential-free-build.yml is in the filter because
+      # scripts/__tests__/credential-free-workflow.test.ts asserts against it
+      # (DOR-2081): the check has to declare BOTH triggers or it can never be
+      # required, and every command it runs has to go through the scrub or the
+      # job silently stops being credential-free. Both regressions take the same
+      # PR shape — an edit to that workflow alone — and nothing else in CI would
+      # fire on it.
+      - '.github/workflows/credential-free-build.yml'
       - '.github/dependabot.yml'
   push:
     branches: [main]
@@ -203,6 +211,14 @@ on:
       - '.github/workflows/merge-tail.yml'
       - '.github/workflows/operating-skills-version-check.yml'
       - '.github/workflows/test.yml'
+      # credential-free-build.yml is in the filter because
+      # scripts/__tests__/credential-free-workflow.test.ts asserts against it
+      # (DOR-2081): the check has to declare BOTH triggers or it can never be
+      # required, and every command it runs has to go through the scrub or the
+      # job silently stops being credential-free. Both regressions take the same
+      # PR shape — an edit to that workflow alone — and nothing else in CI would
+      # fire on it.
+      - '.github/workflows/credential-free-build.yml'
       - '.github/dependabot.yml'
 
 # Opt into Node 24 for JavaScript-based actions (checkout) ahead of GitHub's
@@ -372,6 +388,20 @@ jobs:
       # `pnpm install`, and takes about half a minute.
       - name: Pre-push watchdog fixtures
         run: bash scripts/test-pre-push-watchdog.sh
+
+      # run-credential-free.sh (DOR-2081) is the environment scrub behind the
+      # `credential-free-build` check, and it is the only thing standing behind
+      # this repo's promise that it clones, builds, tests and runs with no
+      # hosted-side credentials. It fails silently in the direction that
+      # matters: a family that stops matching leaves that variable set, the
+      # build goes green, and the check certifies a property it never tested —
+      # which is also exactly what an "unset" written as `env: FOO: ''` would
+      # do, since that leaves the NAME present in `process.env`. The fixtures
+      # pin both that distinction and the opposite failure, a scrub broad enough
+      # to take PATH, CI or the GITHUB_* plumbing with it. Hermetic: synthetic
+      # environments built with `env -i`, a bash probe for a command, no pnpm.
+      - name: Credential-free environment scrub fixtures
+        run: bash scripts/test-run-credential-free.sh
 
       # test-watch-prs.sh pins watch-prs.sh's classify() vocabulary AND (as of
       # DOR-1630) a probe-seam tier that drives its real `gh pr checks`
