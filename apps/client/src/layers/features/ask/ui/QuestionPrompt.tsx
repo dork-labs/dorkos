@@ -435,7 +435,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
             {/* Step indicator + Back/Next buttons */}
             <div className="mb-2 flex items-center justify-between">
               <span className="text-muted-foreground text-xs">
-                {questions[Number(activeTab)].header ??
+                {questions[Number(activeTab)].header ||
                   `Question ${Number(activeTab) + 1} of ${questions.length}`}
               </span>
               <div className="flex items-center gap-1.5">

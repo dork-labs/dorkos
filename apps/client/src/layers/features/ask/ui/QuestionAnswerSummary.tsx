@@ -152,7 +152,11 @@ export function QuestionAnswerSummary({
       <CompactResultRow
         data-testid="question-prompt-submitted"
         icon={checkIcon}
-        label={<span className="truncate">{`${answered[0].header}: ${answered[0].value}`}</span>}
+        label={
+          <span className="truncate">
+            {answered[0].header ? `${answered[0].header}: ${answered[0].value}` : answered[0].value}
+          </span>
+        }
       />
     );
   }
@@ -167,7 +171,7 @@ export function QuestionAnswerSummary({
       <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 pl-6 text-xs">
         {answered.map(({ idx, header, value }) => (
           <Fragment key={idx}>
-            <dt className="text-muted-foreground">{header}</dt>
+            <dt className="text-muted-foreground">{header || `Question ${idx + 1}`}</dt>
             <dd className="text-foreground break-words">{value}</dd>
           </Fragment>
         ))}
