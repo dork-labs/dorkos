@@ -2036,4 +2036,95 @@ describe('an empty dispatched window waits for its answer (DOR-2064)', () => {
     await settled(h, 1);
     await vi.waitFor(() => expect(h.closedWindows).toHaveLength(1));
   });
+
+  it('T1: waits through silence when the early result does not name the dispatch', async () => {
+    // The incident shape: the early `result` answers the CLI's own notification,
+    // so the person's message is still owed and the reply request is already in
+    // flight with nothing arriving for seconds. A 40ms grace must not end it.
+    const h = harness({ graceMs: 40, emptyCloseCapMs: 5_000 });
+    await h.dispatch([{ content: 'what did the helper find?', messageId: 'm1' }]);
+    h.live().emit(resultMessage());
+
+    // Silence well past the grace, with no frame at all. The sleep IS the gap.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    h.live().emit(textDeltaMessage('three tests fail'));
+    h.live().emit(resultMessage('m1'));
+
+    await settled(h, 1);
+    const windows = h.windowsOnStream();
+    expect(windows).toHaveLength(1);
+    expect(
+      windows[0]!.events.some((e) => e.type === 'text_delta' && e.text === 'three tests fail')
+    ).toBe(true);
+    expect(h.rawStream().some((e) => e.type === 'error')).toBe(false);
+  });
+
+  it('T1: a bare message_start is not content, so the empty turn still waits', async () => {
+    // `message_start` maps to nothing the empty-stream guard counts. Counting it
+    // here closed the window while the guard still reported "did not respond".
+    const h = harness({ graceMs: 40, emptyCloseCapMs: 5_000 });
+    await h.dispatch([{ content: 'what did the helper find?', messageId: 'm1' }]);
+    h.live().emit({
+      type: 'stream_event',
+      event: { type: 'message_start', message: { content: [] } },
+    } as unknown as SDKMessage);
+    h.live().emit(resultMessage());
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    h.live().emit(textDeltaMessage('three tests fail'));
+    h.live().emit(resultMessage('m1'));
+
+    await settled(h, 1);
+    const windows = h.windowsOnStream();
+    expect(windows).toHaveLength(1);
+    expect(
+      windows[0]!.events.some((e) => e.type === 'text_delta' && e.text === 'three tests fail')
+    ).toBe(true);
+  });
+
+  it('closes at once on a local command result, which has no reply to wait for', async () => {
+    const h = harness({ graceMs: 3_600_000, emptyCloseCapMs: 3_600_000 });
+    await h.dispatch([{ content: '/compact', messageId: 'm1' }]);
+    h.live().emit(resultMessage('m1', { local_command: '/compact' }));
+
+    await settled(h, 1);
+    await vi.waitFor(() => expect(h.closedWindows).toHaveLength(1));
+  });
+
+  it('never files an id answered earlier in the same launch, even behind a later result', async () => {
+    const closed: TurnWindow[] = [];
+    const ref: { windows?: SessionTurnWindows } = {};
+    const windows = new SessionTurnWindows({
+      sessionId: SESSION_ID,
+      continuationGraceMs: 20,
+      emptyCloseCapMs: 20,
+      pump: {
+        // Two `result`s land during the dispatch await: the one that answers the
+        // dispatch, then one naming nothing. The window holds the LATER one.
+        dispatch: (batch) => {
+          if (batch[0]!.messageId === 'm-fast') {
+            ref.windows!.onMessage(resultMessage('m-fast'));
+            ref.windows!.onMessage(resultMessage());
+          }
+          return Promise.resolve();
+        },
+        endTurn: () => {},
+        controlQuery: undefined,
+      },
+      onWindowOpen: (w) =>
+        void (async () => {
+          for await (const _m of w.messages) void _m;
+        })(),
+      onWindowClose: (w) => closed.push(w),
+    });
+    ref.windows = windows;
+
+    await windows.dispatch([{ content: 'answered instantly', messageId: 'm-fast' }], CWD);
+    await vi.waitFor(() => expect(closed).toHaveLength(1));
+
+    await windows.dispatch([{ content: 'the real next turn', messageId: 'm2' }], CWD);
+    windows.onMessage(resultMessage('m-fast'));
+
+    expect(windows.openWindow?.ids).toEqual(['m2']);
+  });
 });
