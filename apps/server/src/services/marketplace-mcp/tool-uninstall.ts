@@ -112,9 +112,16 @@ export function createUninstallHandler(deps: MarketplaceMcpDeps) {
     if (!PackageNameSchema.safeParse(args.name).success) {
       return errorContent(new Error(`Invalid package name: ${args.name}`), 'INVALID_NAME');
     }
+    //    Confining `projectPath` returns its canonical path, which is what the
+    //    uninstall flow receives, as with the HTTP route's `confineProjectPath`.
+    //    The confirmation below keeps `args.projectPath`, because an approval
+    //    binds to the arguments as the caller sent them, and so does the
+    //    post-change notification, because its listeners key on the path the way
+    //    the person spelled it (DOR-711).
+    let projectPath: string | undefined;
     if (args.projectPath !== undefined) {
       try {
-        await validateBoundary(args.projectPath);
+        projectPath = await validateBoundary(args.projectPath);
       } catch (err) {
         if (err instanceof BoundaryError) {
           return errorContent(
@@ -168,25 +175,12 @@ export function createUninstallHandler(deps: MarketplaceMcpDeps) {
     }
 
     // 2. Approved — run the rollback-safe uninstall flow.
+    let result: UninstallResult;
     try {
-      const result: UninstallResult = await deps.uninstallFlow.uninstall({
+      result = await deps.uninstallFlow.uninstall({
         name: args.name,
         purge: args.purge ?? false,
-        projectPath: args.projectPath,
-      });
-      // `UninstallResult` does not carry a `type` field today — the spec
-      // text references `result.type` aspirationally. Omit the field from
-      // the response rather than fabricating a value: external clients that
-      // need the type can call `marketplace_get` after the uninstall and we
-      // avoid lying about agent packages by labeling them `plugin`.
-      return jsonContent({
-        status: 'uninstalled',
-        package: {
-          name: result.packageName,
-        },
-        removedFiles: result.removedFiles,
-        purgedPaths: [],
-        preservedPaths: result.preservedData ?? [],
+        projectPath,
       });
     } catch (err) {
       if (err instanceof PackageNotInstalledError) {
@@ -194,5 +188,37 @@ export function createUninstallHandler(deps: MarketplaceMcpDeps) {
       }
       return errorContent(err, 'UNINSTALL_FAILED');
     }
+
+    // 3. Clean up after the package, exactly as the HTTP uninstall route does:
+    //    refresh the runtime's plugin list and prune the package's harness
+    //    projections (DOR-2057). The files are already gone, so a notifier that
+    //    throws is logged and the uninstall is still reported as what it is.
+    //    The RAW project path, as the HTTP route sends it (DOR-711).
+    try {
+      deps.onPluginsChanged({
+        projectPath: args.projectPath,
+        packageName: result.packageName,
+        action: 'uninstall',
+      });
+    } catch (err) {
+      deps.logger.warn('[marketplace_uninstall] post-uninstall notification failed', {
+        packageName: result.packageName,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    // `UninstallResult` does not carry a `type` field today — the spec
+    // text references `result.type` aspirationally. Omit the field from
+    // the response rather than fabricating a value: external clients that
+    // need the type can call `marketplace_get` after the uninstall and we
+    // avoid lying about agent packages by labeling them `plugin`.
+    return jsonContent({
+      status: 'uninstalled',
+      package: {
+        name: result.packageName,
+      },
+      removedFiles: result.removedFiles,
+      purgedPaths: [],
+      preservedPaths: result.preservedData ?? [],
+    });
   };
 }

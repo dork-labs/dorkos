@@ -3913,6 +3913,33 @@ async function start() {
         name: a.displayName ?? a.name,
       }));
 
+    // The one post-change notifier, handed to BOTH surfaces that mutate installed
+    // packages: the HTTP router below and the marketplace MCP tools
+    // (`marketplaceMcpDeps`). It is required on both deps types, so a surface
+    // cannot be wired without it — an agent's `marketplace_install` used to skip
+    // it entirely and leave the plugin unprojected (DOR-2057).
+    const onPluginsChanged: MarketplaceMcpDeps['onPluginsChanged'] = (ctx) => {
+      // Never throws into the caller: it runs after a mutation already succeeded,
+      // and a failed follow-up must not be reported as a failed install.
+      try {
+        // Pass the project path (when the change was project-scoped) so the
+        // runtime drops that cwd's cached command list and re-warms it with
+        // the merged per-cwd plugin set.
+        claudeRuntime?.refreshActivatedPlugins(ctx.projectPath).catch((err) => {
+          logger.warn('[Marketplace] Post-install plugin refresh failed', { err });
+        });
+        // Harness Sync auto-projection (GAP-4): project the changed plugin's
+        // assets to the project's other harnesses. Fire-and-forget; the
+        // service is internally best-effort and never throws, but we still
+        // catch here to honor the no-floating-promise convention.
+        runAutoProjection(ctx, { dorkHome, approvals: approvalService }).catch((err) => {
+          logger.warn('[Marketplace] Harness auto-projection failed', { err });
+        });
+      } catch (err) {
+        logger.warn('[Marketplace] Post-change notification failed', { err });
+      }
+    };
+
     app.use(
       '/api/marketplace',
       createMarketplaceRouter({
@@ -3928,21 +3955,7 @@ async function start() {
         updateFlow: marketplaceUpdateFlow,
         dorkHome,
         listAgentScopes,
-        onPluginsChanged: (ctx) => {
-          // Pass the project path (when the change was project-scoped) so the
-          // runtime drops that cwd's cached command list and re-warms it with
-          // the merged per-cwd plugin set.
-          claudeRuntime?.refreshActivatedPlugins(ctx.projectPath).catch((err) => {
-            logger.warn('[Marketplace] Post-install plugin refresh failed', { err });
-          });
-          // Harness Sync auto-projection (GAP-4): project the changed plugin's
-          // assets to the project's other harnesses. Fire-and-forget; the
-          // service is internally best-effort and never throws, but we still
-          // catch here to honor the no-floating-promise convention.
-          runAutoProjection(ctx, { dorkHome, approvals: approvalService }).catch((err) => {
-            logger.warn('[Marketplace] Harness auto-projection failed', { err });
-          });
-        },
+        onPluginsChanged,
       })
     );
     mountedRouters.push('marketplace');
@@ -4002,6 +4015,7 @@ async function start() {
       cache: marketplaceCache,
       uninstallFlow: marketplaceUninstallFlow,
       confirmationProvider,
+      onPluginsChanged,
       listAgentScopes,
       logger,
     };

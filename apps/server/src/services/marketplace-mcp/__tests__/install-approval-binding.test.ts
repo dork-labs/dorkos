@@ -114,6 +114,7 @@ describe('a marketplace install approval binds the commands it disclosed', () =>
     handler = createInstallHandler({
       installer,
       confirmationProvider: new TokenConfirmationProvider(approvals),
+      onPluginsChanged: () => {},
     } as unknown as MarketplaceMcpDeps);
   });
 

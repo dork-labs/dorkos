@@ -71,6 +71,7 @@ function buildDeps(opts: {
     cache: {} as MarketplaceMcpDeps['cache'],
     uninstallFlow: {} as MarketplaceMcpDeps['uninstallFlow'],
     confirmationProvider: {} as MarketplaceMcpDeps['confirmationProvider'],
+    onPluginsChanged: vi.fn(),
     logger,
   } satisfies MarketplaceMcpDeps;
 

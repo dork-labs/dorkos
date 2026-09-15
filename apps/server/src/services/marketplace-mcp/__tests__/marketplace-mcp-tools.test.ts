@@ -30,6 +30,7 @@ function createStubDeps(): MarketplaceMcpDeps {
     cache: {} as MarketplaceMcpDeps['cache'],
     uninstallFlow: {} as MarketplaceMcpDeps['uninstallFlow'],
     confirmationProvider: {} as MarketplaceMcpDeps['confirmationProvider'],
+    onPluginsChanged: vi.fn(),
     logger: {
       info: vi.fn(),
       warn: vi.fn(),

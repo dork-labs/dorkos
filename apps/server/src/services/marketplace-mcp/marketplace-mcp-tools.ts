@@ -25,6 +25,7 @@ import type { PackageFetcher } from '../marketplace/package-fetcher.js';
 import type { MarketplaceCache } from '../marketplace/marketplace-cache.js';
 import type { UninstallFlow } from '../marketplace/flows/uninstall.js';
 import type { AgentScopeRef } from '../marketplace/installed-scanner.js';
+import type { NotifyPluginsChanged } from '../marketplace/types.js';
 
 import type { ConfirmationProvider } from './confirmation-provider.js';
 
@@ -52,6 +53,12 @@ export interface MarketplaceMcpDeps {
   uninstallFlow: UninstallFlow;
   /** Confirmation provider that gates mutation tools. */
   confirmationProvider: ConfirmationProvider;
+  /**
+   * Fired after an approved `marketplace_install` / `marketplace_uninstall`
+   * succeeds, so a package an agent installs is set up exactly as one installed
+   * from the app. The same notifier the HTTP router receives (DOR-2057).
+   */
+  onPluginsChanged: NotifyPluginsChanged;
   /**
    * Registered agent scopes whose `.dork/plugins` the cross-scope installed
    * listing should walk (typically `meshCore.listWithPaths()`). Resolved lazily

@@ -73,6 +73,7 @@ function buildDeps(options: {
     cache: {} as MarketplaceMcpDeps['cache'],
     uninstallFlow: {} as MarketplaceMcpDeps['uninstallFlow'],
     confirmationProvider: {} as MarketplaceMcpDeps['confirmationProvider'],
+    onPluginsChanged: vi.fn(),
     logger: options.logger ?? buildLogger(),
   };
 }

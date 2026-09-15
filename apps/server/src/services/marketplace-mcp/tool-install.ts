@@ -157,9 +157,19 @@ export function createInstallHandler(deps: MarketplaceMcpDeps) {
     //    directory on the machine. Ahead of the preview because the preview
     //    clones the package to disk and then asks a person to approve it —
     //    neither is worth doing for a request that cannot be honored.
+    //
+    //    The canonical path it returns is what the preview and the install
+    //    receive, exactly as the HTTP route's `confineProjectPath` does, so a
+    //    symlinked, relative or `..` spelling of a repo installs into the same
+    //    repo an HTTP install would. Two things deliberately keep the caller's
+    //    own spelling: the confirmation, because an approval binds to the
+    //    arguments as the caller sent them; and the post-change notification,
+    //    because its listeners key on the project path the way the person picked
+    //    it, and the HTTP route sends the raw spelling too (DOR-711).
+    let projectPath: string | undefined;
     if (args.projectPath !== undefined) {
       try {
-        await validateBoundary(args.projectPath);
+        projectPath = await validateBoundary(args.projectPath);
       } catch (err) {
         if (err instanceof BoundaryError) {
           return errorContent(
@@ -180,7 +190,7 @@ export function createInstallHandler(deps: MarketplaceMcpDeps) {
       preview = await deps.installer.preview({
         name: args.name,
         marketplace: args.marketplace,
-        projectPath: args.projectPath,
+        projectPath,
       });
     } catch (err) {
       return errorContent(err, 'INSTALL_FAILED');
@@ -212,27 +222,18 @@ export function createInstallHandler(deps: MarketplaceMcpDeps) {
     }
 
     // 3. Approved — run the rollback-safe install pipeline.
+    let result: InstallResult;
     try {
-      const result: InstallResult = await deps.installer.install({
+      result = await deps.installer.install({
         name: args.name,
         marketplace: args.marketplace,
-        projectPath: args.projectPath,
+        projectPath,
         // What the approval actually covered. `install()` resolves the package a
         // second time and re-checks its own resolve against this before writing
         // anything, which closes the window between THIS preview and that one
         // (DOR-647). Passed even on the `preApproved` path: the tier gate's yes is
         // still a yes about the package as it stood when this preview was built.
         approvedDisclosure: disclosedEffectsOf(preview.preview),
-      });
-      return jsonContent({
-        status: 'installed',
-        package: {
-          name: result.packageName,
-          version: result.version,
-          type: result.type,
-        },
-        installPath: result.installPath,
-        warnings: result.warnings,
       });
     } catch (err) {
       // The package that resolved for the install is not the one that was
@@ -252,5 +253,34 @@ export function createInstallHandler(deps: MarketplaceMcpDeps) {
       }
       return errorContent(err, 'INSTALL_FAILED');
     }
+
+    // 4. Set the package up, exactly as the HTTP install route does: refresh the
+    //    runtime's plugin list and project it to the project's harnesses
+    //    (DOR-2057). The package is on disk by now, so a notifier that throws is
+    //    logged and the install is still reported as what it is: installed. The
+    //    RESOLVED name, never `args.name`, which may be an install identifier
+    //    (DOR-264); the RAW project path, as the HTTP route sends it (DOR-711).
+    try {
+      deps.onPluginsChanged({
+        projectPath: args.projectPath,
+        packageName: result.packageName,
+        action: 'install',
+      });
+    } catch (err) {
+      deps.logger.warn('[marketplace_install] post-install notification failed', {
+        packageName: result.packageName,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return jsonContent({
+      status: 'installed',
+      package: {
+        name: result.packageName,
+        version: result.version,
+        type: result.type,
+      },
+      installPath: result.installPath,
+      warnings: result.warnings,
+    });
   };
 }

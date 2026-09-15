@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -75,6 +75,7 @@ function createStubUninstallFlow(canned: {
 function createStubDeps(opts: {
   confirmationProvider: ConfirmationProvider;
   uninstallFlow: MarketplaceMcpDeps['uninstallFlow'];
+  onPluginsChanged?: MarketplaceMcpDeps['onPluginsChanged'];
 }): MarketplaceMcpDeps {
   return {
     dorkHome: '/tmp/.dork-test',
@@ -84,6 +85,7 @@ function createStubDeps(opts: {
     cache: {} as MarketplaceMcpDeps['cache'],
     uninstallFlow: opts.uninstallFlow,
     confirmationProvider: opts.confirmationProvider,
+    onPluginsChanged: opts.onPluginsChanged ?? vi.fn(),
     logger: {
       info: vi.fn(),
       warn: vi.fn(),
@@ -424,8 +426,9 @@ describe('createUninstallHandler — purge flag', () => {
     const deps = createStubDeps({ confirmationProvider, uninstallFlow });
 
     // An in-bounds project path: the handler confines projectPath the same way
-    // the HTTP route does, so the boundary has to contain it.
-    const boundary = await mkdtemp(join(tmpdir(), 'mcp-uninstall-boundary-'));
+    // the HTTP route does, so the boundary has to contain it. Realpath'd, because
+    // the flow receives the canonical path and macOS's tmpdir is a symlink.
+    const boundary = await realpath(await mkdtemp(join(tmpdir(), 'mcp-uninstall-boundary-')));
     await initBoundary(boundary);
     const projectPath = join(boundary, 'some-project');
 
@@ -494,5 +497,172 @@ describe('createUninstallHandler — tier gate cooperation', () => {
 
     expect(parseToolPayload<{ status: string }>(result).status).toBe('requires_confirmation');
     expect(uninstallFlow.uninstall).not.toHaveBeenCalled();
+  });
+});
+
+// DOR-2057: an uninstall the agent drives through this tool must clean up the
+// plugin's harness projections and refresh the runtime, exactly as the app's
+// Uninstall button does. Both hang off the `onPluginsChanged` notification.
+describe('createUninstallHandler — plugins-changed notification (DOR-2057)', () => {
+  let confirmationProvider: FakeConfirmationProvider;
+  let onPluginsChanged: ReturnType<typeof vi.fn>;
+  let boundaryRoot: string;
+
+  beforeEach(async () => {
+    confirmationProvider = new FakeConfirmationProvider();
+    onPluginsChanged = vi.fn();
+    // Realpath'd: the handler notifies with the canonical path, and macOS's
+    // tmpdir (`/var/…`) is a symlink to `/private/var/…`.
+    boundaryRoot = await realpath(await mkdtemp(join(tmpdir(), 'mcp-uninstall-notify-')));
+    await initBoundary(boundaryRoot);
+  });
+
+  function depsWith(uninstallFlow: MarketplaceMcpDeps['uninstallFlow']): MarketplaceMcpDeps {
+    return createStubDeps({ confirmationProvider, uninstallFlow, onPluginsChanged });
+  }
+
+  it('fires once with the uninstall context after an approved uninstall', async () => {
+    const projectPath = join(boundaryRoot, 'some-project');
+    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
+    const uninstallFlow = createStubUninstallFlow({
+      result: uninstallResult({ packageName: 'flow' }),
+    });
+
+    const result = await createUninstallHandler(depsWith(uninstallFlow))({
+      name: 'flow',
+      projectPath,
+    });
+
+    expect(parseToolPayload<{ status: string }>(result).status).toBe('uninstalled');
+    expect(onPluginsChanged).toHaveBeenCalledTimes(1);
+    expect(onPluginsChanged).toHaveBeenCalledWith({
+      projectPath,
+      packageName: 'flow',
+      action: 'uninstall',
+    });
+  });
+
+  it('fires when the tier gate already approved the call', async () => {
+    const uninstallFlow = createStubUninstallFlow({
+      result: uninstallResult({ packageName: 'flow' }),
+    });
+
+    await createUninstallHandler(depsWith(uninstallFlow))({ name: 'flow' }, { preApproved: true });
+
+    expect(onPluginsChanged).toHaveBeenCalledWith({
+      projectPath: undefined,
+      packageName: 'flow',
+      action: 'uninstall',
+    });
+  });
+
+  it('does NOT fire while the uninstall is waiting for confirmation', async () => {
+    confirmationProvider.requestInstallConfirmation.mockResolvedValue({
+      status: 'pending',
+      token: 'tok-1',
+    });
+    const uninstallFlow = createStubUninstallFlow({
+      result: uninstallResult({ packageName: 'flow' }),
+    });
+
+    await createUninstallHandler(depsWith(uninstallFlow))({ name: 'flow' });
+
+    expect(onPluginsChanged).not.toHaveBeenCalled();
+  });
+
+  it('does NOT fire when the uninstall is declined', async () => {
+    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'declined' });
+    const uninstallFlow = createStubUninstallFlow({
+      result: uninstallResult({ packageName: 'flow' }),
+    });
+
+    await createUninstallHandler(depsWith(uninstallFlow))({ name: 'flow' });
+
+    expect(onPluginsChanged).not.toHaveBeenCalled();
+  });
+
+  it('does NOT fire when the approved uninstall fails', async () => {
+    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
+    const uninstallFlow = createStubUninstallFlow({
+      error: new PackageNotInstalledError('flow'),
+    });
+
+    const result = await createUninstallHandler(depsWith(uninstallFlow))({ name: 'flow' });
+
+    expect(result.isError).toBe(true);
+    expect(onPluginsChanged).not.toHaveBeenCalled();
+  });
+
+  it('does NOT fire when the approved uninstall fails for any other reason', async () => {
+    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
+    const uninstallFlow = createStubUninstallFlow({ error: new Error('disk on fire') });
+
+    const result = await createUninstallHandler(depsWith(uninstallFlow))({ name: 'flow' });
+
+    expect(parseToolPayload<{ code: string }>(result).code).toBe('UNINSTALL_FAILED');
+    expect(onPluginsChanged).not.toHaveBeenCalled();
+  });
+
+  it('still reports the uninstall as uninstalled when the notifier throws', async () => {
+    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
+    const uninstallFlow = createStubUninstallFlow({
+      result: uninstallResult({ packageName: 'flow' }),
+    });
+    const deps = createStubDeps({
+      confirmationProvider,
+      uninstallFlow,
+      onPluginsChanged: vi.fn(() => {
+        throw new Error('boom');
+      }),
+    });
+
+    const result = await createUninstallHandler(deps)({ name: 'flow' });
+
+    // The files are already gone; a failed follow-up is not a failed uninstall.
+    expect(result.isError).toBeUndefined();
+    expect(parseToolPayload<{ status: string }>(result).status).toBe('uninstalled');
+    expect(deps.logger.warn).toHaveBeenCalledTimes(1);
+  });
+});
+
+// DOR-2057 follow-up: the uninstall and its notification receive the CANONICAL
+// project path, while the approval stays bound to the raw arguments.
+describe('createUninstallHandler — canonical project path (DOR-2057)', () => {
+  it('uninstalls from the realpath of a symlinked projectPath, but approves and notifies with the raw spelling', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'mcp-uninstall-canonical-')));
+    await initBoundary(root);
+    const repo = join(root, 'real-repo');
+    await mkdir(repo);
+    const link = join(root, 'link-to-repo');
+    await symlink(repo, link);
+
+    const confirmationProvider = new FakeConfirmationProvider();
+    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
+    const onPluginsChanged = vi.fn();
+    const uninstallFlow = createStubUninstallFlow({
+      result: uninstallResult({ packageName: 'flow' }),
+    });
+
+    try {
+      const result = await createUninstallHandler(
+        createStubDeps({ confirmationProvider, uninstallFlow, onPluginsChanged })
+      )({ name: 'flow', projectPath: link });
+
+      expect(parseToolPayload<{ status: string }>(result).status).toBe('uninstalled');
+      expect(confirmationProvider.requestInstallConfirmation).toHaveBeenCalledWith(
+        expect.objectContaining({ projectPath: link })
+      );
+      expect(uninstallFlow.uninstall).toHaveBeenCalledWith(
+        expect.objectContaining({ projectPath: repo })
+      );
+      // The RAW spelling, as the HTTP route sends it (DOR-711).
+      expect(onPluginsChanged).toHaveBeenCalledWith({
+        projectPath: link,
+        packageName: 'flow',
+        action: 'uninstall',
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

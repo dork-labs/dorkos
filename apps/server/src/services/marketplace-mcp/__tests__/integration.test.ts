@@ -357,6 +357,7 @@ function buildIntegrationDeps(opts: {
     cache: opts.cache,
     uninstallFlow: opts.uninstallFlow,
     confirmationProvider: opts.confirmationProvider,
+    onPluginsChanged: vi.fn(),
     logger: opts.logger,
   };
 }
