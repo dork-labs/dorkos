@@ -20,6 +20,16 @@ const COURTESY_PREFIXES =
 const PURE_COURTESY_LINE =
   /^(?:please|can you|could you|would you|will you|i want you to|i need you to|i['’]d like you to|let['’]?s|lets|help me)[,!.\s]*$/i;
 
+/**
+ * A leading `@handle` a room delivers at the very start of a message that
+ * addressed this agent — `@meeting-notes please review…` — see
+ * `packages/shared/src/handle.ts` for the full charset a handle allows.
+ * Stripped before derivation so the mention that routed the message here
+ * never becomes the session's title; only one leading mention is stripped,
+ * since the pattern is anchored and matches once.
+ */
+const LEADING_MENTION = /^@[a-z0-9](?:[a-z0-9._-]{0,30}[a-z0-9])?[,:]?\s+/i;
+
 /** Word budget for a derived title — matches the sidebar row grammar's target. */
 const MAX_WORDS = 6;
 
@@ -52,20 +62,22 @@ function capitalizeFirst(text: string): string {
 /**
  * Derive a short session title from the first user message.
  *
- * Shared across every runtime's fallback-title path so the multi-runtime
- * cockpit titles sessions one way (DOR-1055). SDK/runtime-generated titles
- * stay authoritative — this runs only when no real title exists. Behavior:
- * first content line wins (a line that is only "Please," defers to the next
- * line), stacked courtesy openers are stripped, the result is cut at a word
- * boundary within a {@link MAX_WORDS}-word budget and
- * {@link TRANSCRIPT.TITLE_MAX_LENGTH} codepoints, capitalized, and marked
- * with an ellipsis only when words were actually dropped from that line.
+ * Shared across every runtime's fallback-title path so the app titles
+ * sessions one way (DOR-1055). SDK/runtime-generated titles stay
+ * authoritative — this runs only when no real title exists. Behavior: a
+ * leading `@handle` a room delivered to address this agent is stripped
+ * first, then the first content line wins (a line that is only "Please,"
+ * defers to the next line), stacked courtesy openers are stripped, the
+ * result is cut at a word boundary within a {@link MAX_WORDS}-word budget
+ * and {@link TRANSCRIPT.TITLE_MAX_LENGTH} codepoints, capitalized, and
+ * marked with an ellipsis only when words were actually dropped from that
+ * line.
  *
  * @param firstUserMessage - The cleaned first user message text (may be empty)
  * @returns The derived title, or `''` when the message is empty/whitespace
  */
 export function deriveSessionTitle(firstUserMessage: string): string {
-  const lines = firstUserMessage.split('\n');
+  const lines = firstUserMessage.replace(LEADING_MENTION, '').split('\n');
 
   for (const raw of lines) {
     const line = raw.trim();

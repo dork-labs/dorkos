@@ -73,4 +73,30 @@ describe('deriveSessionTitle', () => {
     const derived = deriveSessionTitle('one two three four five six seven');
     expect(derived).toBe('One two three four five six…');
   });
+
+  it('strips a leading room @mention before deriving', () => {
+    expect(deriveSessionTitle('@agent do the thing')).toBe('Do the thing');
+  });
+
+  it('strips a leading room @mention followed by a courtesy opener (DOR-2083)', () => {
+    expect(deriveSessionTitle('@meeting-notes please review all of our notes')).toBe(
+      'Review all of our notes'
+    );
+  });
+
+  it('strips a hyphenated leading @mention with a comma', () => {
+    expect(deriveSessionTitle('@meeting-notes, can you summarize this')).toBe('Summarize this');
+  });
+
+  it('leaves an email-shaped mid-message @ alone (not a leading mention)', () => {
+    expect(deriveSessionTitle('email me at dorian@dorkos.ai please')).toBe(
+      'Email me at dorian@dorkos.ai please'
+    );
+  });
+
+  it('treats a bare @ with no handle as real content, not a mention', () => {
+    expect(deriveSessionTitle('@ is not a valid handle by itself')).toBe(
+      '@ is not a valid handle…'
+    );
+  });
 });
