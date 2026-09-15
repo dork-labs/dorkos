@@ -12,11 +12,13 @@ amends: [260812-134510]
 
 ## Status
 
-Proposed. Amends [ADR 260812-134510](260812-134510-persistent-streaming-input-sessions.md), which stays accepted.
-Retired clauses: a pin change replaces the process at the next dispatch unconditionally ("a pin that moved is not a
-request"); eviction always implies an unconditional reap; windows nobody dispatched are "drained, never projected". Its
-claim that a reap is invisible now holds only for a quiet process. The two-timer model, the warm ceiling, the pin list and
-a conversation's fixed account stand.
+Proposed. Amends [ADR 260812-134510](260812-134510-persistent-streaming-input-sessions.md), which stays accepted; its
+Status section quotes each retired passage. In short: a relaunch pin change no longer replaces the process at the next
+dispatch whatever it is doing; eviction no longer tears down a process holding background work; "a reap costs nothing
+observable" now holds only for a quiet process; a process holding background work is not reclaimable for the warm
+ceiling. This ADR also retires an implementation rule that was never in the parent's text: the
+`persistent-dispatch.ts` module doc's "runtime windows are drained, never projected". The two-timer model, the warm
+ceiling, the pin list and a conversation's fixed account stand.
 
 ## Context
 

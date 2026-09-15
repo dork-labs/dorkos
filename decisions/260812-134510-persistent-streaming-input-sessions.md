@@ -15,6 +15,18 @@ superseded-by: null
 
 Accepted — implemented by spec `persistent-session-runtime` phase P3 (PRs #975, #976, #979, #980, #981, #982, #983, #993).
 
+**Amended by** [260915-202228](260915-202228-a-warm-process-ends-only-when-it-is-quiet.md) (A warm process ends only when it is quiet, and everything it says is projected). That ADR is `proposed`; these retirements take effect when it is accepted.
+
+**Exactly these passages are retired:**
+
+- In "The two-timer model": "**Eviction implies a reap; a reap never implies eviction.** When a session record is evicted, its process is reaped first." A session whose process is holding background work (a live helper agent, Monitor or unknown task, an owed notification, or an open runtime turn) is no longer evicted until that work ends or a 4-hour ceiling passes. Eviction still implies a reap once it happens.
+- In "The two-timer model": "a reap costs nothing observable" and "the only visible consequence is that the next turn pays a resume it would otherwise have skipped". These now hold only for a **quiet** process. A reap or relaunch that would end live background work waits instead.
+- In "The relaunch pin list": "**relaunch** (a change forces reap-and-relaunch)", read as "at the next dispatch, whatever the process is doing". A relaunch pin change now waits for the process to be quiet, holding the message as a gated queue row, unless the operator chooses Switch now. A change to the session's own account credentials stops the process when the configuration changes.
+- In "The warm ceiling": "a host is only refused when nothing is reclaimable — every process either mid-turn or parked on a person". A process holding background work is also not reclaimable.
+- The Positive bullet "A reap is invisible, so the 5-minute idle window is aggressive without being risky, and the warm ceiling can bound subprocess count without ever refusing a session." A busy process can now hold a warm slot for up to the ceiling, so the warm ceiling can refuse a new session.
+
+**Everything else here stands and is still the governing decision:** one persistent `query()` per active session; `WARM` as a real state; resume as the recovery path; the per-session opt-in; the two timers and their owners; separate warm and session ceilings; the exhaustive pin list and each pin's relaunch-or-live disposition; the account pin as a security control, compared first and unconditionally; the DOR-1309 amendment and the DOR-1291 note. **That is why this ADR stays `accepted` rather than `superseded`.**
+
 This is the process-model half of the persistent-session work. Its companion is [ADR 260811-184735](260811-184735-server-owned-durable-message-queue.md) (the server-owned durable message queue, "ADR-c"), which owns the queue that survives the reap this ADR introduces. Read together: the queue makes a message durable, and this ADR makes the process that consumes it warm. Neither is safe without the other — a warm process that dropped queued work on a reap, or a durable queue feeding a cold subprocess every turn, would each miss the point.
 
 ## Context
