@@ -656,7 +656,7 @@ describe('MCP Tool Handlers', () => {
       expect(server.version).toBe('1.0.0');
     });
 
-    it('registers 44 tools (32 legacy + 9 operator + list_capabilities + memory_write + read_canvas_document)', () => {
+    it('registers 45 tools (32 legacy + 10 operator + list_capabilities + memory_write + read_canvas_document)', () => {
       // Purpose: regression guard against accidental tool omissions or additions.
       // This count changes intentionally when new MCP tools are added. 32 legacy
       // (4 core + 5 tasks + 8 relay + 1 agent + 2 ui + 3 devtools + 6 browser
@@ -684,8 +684,12 @@ describe('MCP Tool Handlers', () => {
       // the two targeted sidebar-section writes that replace re-sending the
       // whole `ui.sidebar.groups` array through `config_patch` (DOR-2055).
       // They take the operator capabilities from 7 to 9.
+      //
+      // 44 -> 45 for `feedback_draft`, which builds the prefilled GitHub issue
+      // link `dorkos feedback` builds and sends nothing (DOR-2056). Operator
+      // capabilities go from 9 to 10.
       const server = createDorkOsToolServer(makeMockDeps()) as unknown as MockServer;
-      expect(server.tools).toHaveLength(44);
+      expect(server.tools).toHaveLength(45);
     });
 
     it('registers tools with correct names', () => {

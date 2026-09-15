@@ -84,6 +84,11 @@ vi.mock('../../config-manager.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../config-manager.js')>()),
   configManager: {
     get: (section: string) => (section === 'auth' ? { enabled: false } : undefined),
+    // `feedback_draft` reads allowlisted on/off settings by DOTTED path, the way
+    // the CLI's own gatherer does, so the fake needs the same reader the real
+    // manager has (DOR-2056). Answering `undefined` is a real state: every flag
+    // is then dropped and the draft reports "(none available)".
+    getDot: () => undefined,
     set: () => {},
   },
 }));

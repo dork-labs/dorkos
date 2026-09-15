@@ -18,8 +18,7 @@ import os from 'node:os';
 import { execFile } from 'node:child_process';
 import {
   buildIssueUrl,
-  sanitizeFlags,
-  FEEDBACK_FLAG_ALLOWLIST,
+  gatherFeedbackReport,
   type FeedbackKind,
   type FeedbackReport,
 } from '@dorkos/shared/feedback';
@@ -51,31 +50,14 @@ export interface FeedbackDeps {
   openUrl: (url: string) => boolean;
 }
 
-/** Read a boolean config value, or `undefined` when unset or the wrong type. */
-function readBool(store: ConfigStore | null, key: string): boolean | undefined {
-  const value = store?.getDot(key);
-  return typeof value === 'boolean' ? value : undefined;
-}
-
-/** The runtimes configured on this host (claude-code is always available). */
-function configuredRuntimes(store: ConfigStore | null): string[] {
-  const runtimes = ['claude-code'];
-  if (readBool(store, 'runtimes.codex.enabled') !== false) runtimes.push('codex');
-  if (readBool(store, 'runtimes.opencode.enabled') !== false) runtimes.push('opencode');
-  return runtimes;
-}
-
-/** Build the raw flag record (keyed by allowlist paths) from the config store. */
-function readRawFlags(store: ConfigStore | null): Record<string, unknown> {
-  const raw: Record<string, unknown> = {};
-  for (const key of Object.keys(FEEDBACK_FLAG_ALLOWLIST)) {
-    raw[key] = store?.getDot(key);
-  }
-  return raw;
-}
-
 /**
  * Gather a sanitized feedback report from the local environment and config.
+ *
+ * Everything but the two host facts comes from `gatherFeedbackReport` in
+ * `@dorkos/shared/feedback`, which the server-side `feedback_draft` operator
+ * capability calls too. That shared call is the whole reason an agent can hand a
+ * person the link this command would have printed: one gatherer, one allowlist,
+ * one URL builder, and `surface` the only field the two surfaces disagree on.
  *
  * @param kind - Which template the report maps to
  * @param version - The DorkOS version string
@@ -87,14 +69,13 @@ export function gatherCliReport(
   version: string,
   store: ConfigStore | null
 ): FeedbackReport {
-  return {
+  return gatherFeedbackReport({
     kind,
     version,
     platform: `${os.platform()}-${os.arch()}`,
-    runtimes: configuredRuntimes(store),
     surface: 'cli',
-    flags: sanitizeFlags(readRawFlags(store)),
-  };
+    readConfigValue: (key) => store?.getDot(key),
+  });
 }
 
 /** Parse the argv slice after `feedback` into a kind and print flag. */

@@ -160,6 +160,17 @@ export default defineConfig({
     //   scanners never look. The test used to import the schema from the package
     //   ROOT; it now takes the narrow subpath so the alias can be a single
     //   zod-only module instead of the whole package index.
+    // - `feedback` backs the redaction half of `operator/__tests__/feedback-draft.test.ts`.
+    //   Same family as `untrusted-text`: `redactSecrets` is a SANITIZER, and it is
+    //   the only machine check between prose a model wrote and a URL handed to a
+    //   person, so its source text is the subject of the test. Measured on
+    //   DOR-2056 review: with `redactSecrets` reduced to the identity function in
+    //   `src/` and `dist/` left stale, ALL NINE of that file's tests passed
+    //   without this alias — including the one whose whole name is "scrubs a
+    //   token, a home path and an email out of what the agent wrote" — and 1
+    //   failed with it. The shared package's own `feedback.test.ts` catches the
+    //   same seed, but it is a different package's suite; the server test claimed
+    //   to be checking the capability's output and was checking yesterday's.
     // - `mesh-schemas` and `connector-schemas` back the no-`z.record()` constraint
     //   on in-session tool schemas, which `mcp-tools/__tests__/tool-exposure.test.ts`
     //   enforces by listing every tool off the LIVE SDK MCP server. A record
@@ -226,6 +237,12 @@ export default defineConfig({
         find: '@dorkos/shared/connector-schemas',
         replacement: fileURLToPath(
           new URL('../../packages/shared/src/connector-schemas.ts', import.meta.url)
+        ),
+      },
+      {
+        find: '@dorkos/shared/feedback',
+        replacement: fileURLToPath(
+          new URL('../../packages/shared/src/feedback.ts', import.meta.url)
         ),
       },
       {

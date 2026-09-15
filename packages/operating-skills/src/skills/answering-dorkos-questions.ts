@@ -42,7 +42,9 @@ export const answeringDorkosQuestions: OperatingSkill = {
     'subsystem is, how a feature behaves, how to install, configure, secure, or self-host it, ' +
     'what a setting or an error means, or where something is covered in the docs. Teaches how ' +
     'to search the DorkOS documentation and read the one page that answers, instead of ' +
-    'answering from memory. NOT for questions about this instance and its live state (which ' +
+    'answering from memory. Also use when they want to report a bug, request a feature, or ' +
+    'send feedback about DorkOS: it says how to draft the report and hand them a link to ' +
+    'review and submit. NOT for questions about this instance and its live state (which ' +
     'agents exist, what ran last night, whether a task succeeded): those are tool reads, see ' +
     'operating-dorkos and reading-activity.',
   body: `# Answering questions about DorkOS
@@ -60,7 +62,7 @@ Three places, and only the last one costs a request.
 **Your sibling skills.** operating-dorkos, managing-agents, scheduling-tasks,
 using-the-marketplace, reading-activity and working-in-room-repos are seeded beside this one and give
 exact tool names, tiers and gates. When one of them covers the question, answer
-from it. It is more precise than the docs and it costs nothing.
+from it: more precise than the docs, and free.
 
 **This instance, right now.** Read it with tools. Never look it up.
 
@@ -76,12 +78,10 @@ and setup, self-hosting, integrations, settings, troubleshooting.
 - "What is Mesh for?"
 - "How do I use DorkOS from my phone?"
 - "How do I put DorkOS behind a reverse proxy?"
-- "What does DorkOS send home about me?"
 
 Fetching a web page to answer a question about the user's own machine is a
 mistake, and so is guessing at something the docs state plainly. When a question
-is both ("why didn't my task run?"), read the live state first, then look up the
-behaviour that explains what you found.
+is both ("why didn't my task run?"), read the live state first, then the docs.
 
 ## Where the docs live: derive it, never type it
 
@@ -92,18 +92,15 @@ They hold a real address where \`<base>\` stands in this skill:
     Full docs: <base>/docs
 
 Take the first line and drop the trailing \`/llms.txt\`. What is left is the
-**documentation base**. Build every URL below from that value, read fresh from
-the block on THIS turn.
+**documentation base**. Build every URL below from it, read fresh on THIS turn.
 
 Never paste a remembered production URL into a request, however familiar it
-looks. An instance can serve its own documentation site, and a hardcoded address
-would answer questions about a different build than the one the person is
-running.
+looks. An instance can serve its own documentation site, so a hardcoded address
+answers about a different build than the one the person is running.
 
 If there is no \`<dorkos_context>\` block in your context at all, you have no base
 and no lookup. Say you cannot check the docs from this session, and that the
-agent's "DorkOS Knowledge Base" setting is what turns that block back on. Do not
-substitute an address you remember.
+agent's "DorkOS Knowledge Base" setting turns that block back on. Do not guess.
 
 The search endpoint is NOT named in the block. It is \`<base>/api/search\`. Derive
 it from the same base.
@@ -112,78 +109,85 @@ it from the same base.
 
 **Step 1. Search the two or three words that name the thing**, never the person's
 whole sentence. Every extra word widens the match set: \`reverse proxy\` comes back
-about 12 KB, the same question as a sentence over 140 KB. URL-encode them as the
-\`query\` parameter:
+about 12 KB, the same question as a sentence over 140 KB. URL-encode as \`query\`:
 
     <base>/api/search?query=reverse%20proxy
 
 You get back a ranked JSON array:
 
-    [{ "id": "/docs/self-hosting/reverse-proxy", "type": "page",
-       "content": "Reverse Proxy", "breadcrumbs": ["Documentation", "Self-hosting"],
-       "url": "/docs/self-hosting/reverse-proxy" },
-     { "id": "/docs/self-hosting/reverse-proxy-8", "type": "text",
-       "content": "...", "url": "/docs/self-hosting/reverse-proxy#nginx" }]
+    [{ "type": "page", "content": "Reverse Proxy", "url": "/docs/self-hosting/reverse-proxy",
+       "breadcrumbs": ["Documentation", "Self-hosting"] },
+     { "type": "text", "content": "...", "url": "/docs/self-hosting/reverse-proxy#nginx" }]
 
 A \`page\` hit is a whole page. \`text\` and \`heading\` hits are matches inside one,
 and their \`url\` carries a \`#anchor\`. Read \`breadcrumbs\` and \`url\` down the list
-and pick the page that answers the question. Do not just take row one: the
-ranking favours long pages, so \`/docs/integrations/mcp-server\` tops many searches
-it has no business topping, and the right page often sits several rows down.
+and pick the page that answers. Do not just take row one: the ranking favours
+long pages, so \`/docs/integrations/mcp-server\` tops searches it has no business
+topping, and the right page often sits several rows down.
 
 **Step 2. Fetch that one page as markdown.** Take its \`url\`, strip any \`#anchor\`,
 and put \`/llms.mdx\` in front:
 
     <base>/llms.mdx/docs/self-hosting/reverse-proxy
 
-That returns clean markdown, roughly 10 to 18 KB for a full page. The plain
-\`<base>/docs/...\` address returns rendered HTML instead, so keep the \`llms.mdx\`
-prefix on anything you fetch.
+That returns clean markdown, 10 to 18 KB for a full page; the plain
+\`<base>/docs/...\` address returns rendered HTML, so keep the \`llms.mdx\` prefix.
 
 **Step 3. Answer from what you read**, and say which page it came from.
 
-Use whichever fetch tool your session has. In a Claude Code session \`WebFetch\` is
-read-only and auto-approved, so neither step stops to ask a person. From a
-session with no web tool, \`curl -s "<base>/api/search?query=..."\` does the same
-job.
+Use whichever fetch tool your session has: in Claude Code \`WebFetch\` is read-only
+and auto-approved; with none, \`curl -s "<base>/api/search?query=..."\` does it.
 
 ## Never fetch the whole corpus
 
 \`<base>/llms-full.txt\` is every documentation page in one file: about 875 KB,
-well over 200,000 tokens. Fetching it fills your context window and leaves
-nothing to answer with. No question is worth that.
+well over 200,000 tokens. It fills your context and leaves nothing to answer
+with.
 
 \`<base>/llms.txt\` is the index: about 30 KB listing every page with its title, a
 one-line summary and a link. Reach for it, rather than searching again, in three
 cases: the search came back empty, its hits all look wrong, or the response came
 back far bigger than you expected. That last one means too many words went into
-the query, and searching the same way again costs the same again. Picking a page
-by title beats picking one by rank.
-
-Budget a few words per search, and one or two pages per question.
+the query; picking a page by title beats picking one by rank. Budget a few words
+per search, one or two pages per question.
 
 ## When the docs do not answer
 
 This happens. The array comes back empty, or nothing in it is about the question.
 Search again with different words: matching is whole-word, with no stemming and
 no tolerance for typos, so "scheduling" and "schedule" are two different searches
-and one wrong letter returns nothing. If that is empty too, the honest answer is
-a short one: say the documentation does not cover it, say what you searched for,
-and stop there.
+and one wrong letter returns nothing. If that is empty too, say the documentation
+does not cover it, say what you searched for, and stop there.
 
 What NOT to do, hardest to resist first:
 
 - **Do not fill the gap from memory.** A confident wrong answer is worse than no
   answer, because the person has no way to tell the difference.
 - **Do not promise that a feature works.** Parts of DorkOS are documented ahead
-  of being proven end to end. Report what the page says and attribute it ("the
-  docs describe X"), rather than vouching for the behaviour yourself.
-- **Do not go hunting the wider web.** Blog posts and forum threads about DorkOS
-  are not its documentation and are usually out of date.
+  of being proven. Report what the page says ("the docs describe X"), rather
+  than vouching for the behaviour yourself.
+- **Do not go hunting the wider web.** Blog posts and forum threads are not the
+  documentation, and are usually out of date.
 
 Offer a real next step instead: name the closest page you did find, offer to try
-the thing and report what actually happens, or say this one is worth raising with
-the DorkOS project.
+the thing and report what happens, or draft them a report.
+
+## When they want to report it
+
+"Can you file a bug?", "report this", "send feedback" -> call the tool whose name
+ends in \`feedback_draft\`, with \`kind\` set to \`bug\`, \`feature\` or \`runtime\` and a
+\`title\` and \`body\` in their words. It sends nothing and files nothing: you get
+back a GitHub link already carrying their version, OS, runtimes and settings.
+Give them that link and say they open it, read it, edit out anything they would
+rather not share, and press submit. Never report their issue as filed. If
+\`truncated\` comes back true the link could not hold the whole body, so hand them
+\`fullBody\` as well.
+
+If they would rather do it themselves: **Send feedback** in the app goes straight
+to the DorkOS team; **Help and feedback > Report on GitHub** opens this same
+page; \`dorkos feedback\` does it from a terminal. Neither that command nor this
+tool is off limits to you, so never say it is, and never file an issue on their
+behalf through some other tool.
 
 ## Answering well
 
@@ -191,7 +195,6 @@ the DorkOS project.
 - Write for someone who does not read code. Explain a term the first time.
 - Name your source: the page title plus its \`<base>/docs/...\` link, so they can
   read it themselves. Link the readable page, never the \`llms.mdx\` one.
-- Copy commands, flags and settings exactly from the page. Do not reconstruct
-  them from memory.
+- Copy commands, flags and settings from the page, never from memory.
 - If the page contradicts what you remember, the page wins.`,
 };

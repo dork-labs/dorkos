@@ -206,8 +206,20 @@ export interface OperatingSkill {
  *   this branch was in review and took 18. `seed.ts` upgrades only on a strictly
  *   LOWER stored stamp, so a version merely EQUAL to what `main` ships delivers
  *   neither page. Re-bump, never keep-mine.
+ * - 20: an agent can draft a bug report now, and `answering-dorkos-questions`
+ *   says how (DOR-2056). Versions 1 to 19 gave it no way to help with "can you
+ *   report this", and the observed behaviour when a model has no tool for a
+ *   request is not silence: asked on 2026-09-15, DorkBot invented a rule saying
+ *   it was "not allowed to run the dorkos command", then offered to open a
+ *   public GitHub issue itself. A bump is what reaches an agent seeded at 19,
+ *   which would otherwise keep answering that way with the tool sitting right
+ *   there in its list.
+ *
+ *   20 rather than 19 for the reason the entry above states, and this is the
+ *   fourth time: DOR-2054 landed on `main` while this branch was in review and
+ *   took 19, exactly as DOR-2055 took 18 before it. Re-bump, never keep-mine.
  */
-export const OPERATING_SKILLS_VERSION = 19;
+export const OPERATING_SKILLS_VERSION = 20;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

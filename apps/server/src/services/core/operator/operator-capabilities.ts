@@ -11,7 +11,7 @@
  * MCP adapters re-wrap it). Redaction stays inside the handlers, on every
  * surface, per ADR 260723-013236 (superseded by 260725-152018).
  *
- * The four read-only observability capabilities carry `readOnlyCarveOut: true`;
+ * The five read-only observability capabilities carry `readOnlyCarveOut: true`;
  * the five mutations (`operator.update_agent`,
  * `operator.update_agent_boundaries`, `operator.config_patch`,
  * `operator.sidebar_add_to_group`, `operator.sidebar_remove_from_group`) do not
@@ -40,11 +40,25 @@ import {
   createAgentsRecentActivityHandler,
   createSidebarAddToGroupHandler,
   createSidebarRemoveFromGroupHandler,
+  createFeedbackDraftHandler,
   type UpdateAgentArgs,
   type UpdateAgentBoundariesArgs,
   type SidebarAddToGroupArgs,
   type SidebarRemoveFromGroupArgs,
+  type FeedbackDraftArgs,
 } from './operator-tool-handlers.js';
+
+/**
+ * Caps on the two free-form fields `feedback_draft` accepts.
+ *
+ * Not a safety limit (redaction is), a usability one: the whole payload has to
+ * survive as a query string in a URL a person opens. Newlines cost three
+ * characters each once encoded, so a body of a few thousand characters is
+ * already a long address bar, and a model handed no ceiling will happily paste a
+ * transcript. A report worth reading is short anyway.
+ */
+const FEEDBACK_TITLE_MAX_CHARS = 120;
+const FEEDBACK_BODY_MAX_CHARS = 4000;
 
 /**
  * Extend the shared dependency bag with the operator domain's service handles.
@@ -267,6 +281,91 @@ export const operatorDomain: CapabilityDomain = {
         unwrapMcpEnvelope(
           await createAgentsRecentActivityHandler(requireOperatorDeps(deps))(input)
         ),
+    }),
+    // `observe` because it sends NOTHING: no write, no request to github.com, no
+    // side effect at all. It reads this host's version, platform and allowlisted
+    // on/off settings, assembles a URL string, and hands it back for a person to
+    // open (DOR-2056). The tier is the honest one rather than a cautious one,
+    // and the description below has to carry the same fact, because a model that
+    // thinks this files an issue will either refuse to use it or tell the person
+    // their bug is reported when nothing left the machine.
+    defineCapability({
+      id: 'operator.feedback_draft',
+      title: 'Draft a bug report or feature request',
+      description:
+        'Draft a bug report or a feature request about DorkOS itself and hand back a link. ' +
+        'This SENDS NOTHING and files nothing: it builds a GitHub issue page with the details ' +
+        'already written in, and the person opens that link, reads it, edits anything they do ' +
+        'not want to share, and presses submit themselves. Give them the link and say so ' +
+        'plainly; never report their issue as filed. ' +
+        'Set kind to bug (the default), feature, or runtime for a problem with Claude Code, ' +
+        'Codex or OpenCode. Write title and body yourself when you know what went wrong, in ' +
+        'their words; leave both out and the page opens with blank questions for them to fill ' +
+        'in. DorkOS fills in the version, the OS, which runtimes are set up and the on/off ' +
+        'settings either way. What you write is scrubbed first: anything shaped like a file ' +
+        'path, a token, an email or an IP address is replaced before the link is built, so ' +
+        'describe what happened in words rather than pasting logs, paths or session ' +
+        'transcripts. ' +
+        // The routes a PERSON has, named because the defect this capability exists
+        // to close was an agent inventing a rule instead: DorkBot told the operator
+        // it was "not allowed to run the dorkos command" when no such rule exists.
+        // So the last sentence says the opposite in as many words.
+        //
+        // The menu path is exact, and it was wrong here first (DOR-2056 review).
+        // "Report a bug" directly under Help and feedback opens the IN-APP form
+        // that goes to the DorkOS team; the GitHub page this tool links to is one
+        // level deeper, under "Report on GitHub…". Both are real and they are not
+        // the same thing, so naming the wrong one sends somebody to a form they
+        // did not ask for (`HelpMenuItems.tsx`).
+        'You get back the url, the kind, filledFields naming the parts already written in, ' +
+        'and truncated. When truncated is true the body was too long for a web address and ' +
+        'the link carries a shortened copy; fullBody then holds the whole text, so give them ' +
+        'that too rather than letting the end of their own report go missing. ' +
+        'If they would rather do it themselves: Send feedback in the app goes straight to the ' +
+        'DorkOS team, Help and feedback > Report on GitHub opens this same page, and ' +
+        '`dorkos feedback` does it from a terminal. Nothing stops you running that command either.',
+      tier: 'observe',
+      input: z.object({
+        kind: z
+          .enum(['bug', 'feature', 'runtime'])
+          .default('bug')
+          .describe(
+            "What to report: 'bug' for something broken in DorkOS, 'feature' for something " +
+              "you want it to do, 'runtime' for a problem with Claude Code, Codex or OpenCode."
+          ),
+        title: z
+          .string()
+          .max(FEEDBACK_TITLE_MAX_CHARS)
+          .optional()
+          .describe(
+            'One line saying what this is about. Left out, the page opens with a placeholder ' +
+              'title for the person to replace.'
+          ),
+        body: z
+          .string()
+          .max(FEEDBACK_BODY_MAX_CHARS)
+          .optional()
+          .describe(
+            'What happened, what they expected, and how to make it happen again. Markdown is ' +
+              'fine. Left out, the page opens with those questions blank.'
+          ),
+      }),
+      output: z.unknown(),
+      surfaces: {
+        mcp: {
+          toolName: 'feedback_draft',
+          servers: ['in-session', 'external'],
+          // Tokenless on the login-off external server, beside the other four
+          // reads. It discloses strictly less than `config_get`, which is
+          // already in the carve-out: the same allowlisted on/off settings, the
+          // same version, and no credential flags at all. Withholding the flag
+          // here would guard a subset of what the tool next to it hands over.
+          readOnlyCarveOut: true,
+          annotations: { idempotentHint: true },
+        },
+      },
+      invoke: async (_deps, input) =>
+        unwrapMcpEnvelope(await createFeedbackDraftHandler()(input as FeedbackDraftArgs)),
     }),
 
     // ── Mutations (NOT in the read-only carve-out) ──────────────────────────

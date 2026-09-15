@@ -37,17 +37,19 @@ const registry = composeRegistry([operatorDomain, marketplaceDomain], {
 /**
  * The exact tool set both MCP servers advertise.
  *
- * It started as the pre-migration set and has grown by three since:
+ * It started as the pre-migration set and has grown by four since:
  * `update_agent_boundaries`, the NOPE.md write split out of `update_agent` so it
- * can be tier `destructive` (DOR-1698), and the two sidebar-section writes that
+ * can be tier `destructive` (DOR-1698), the two sidebar-section writes that
  * replace re-sending the whole `ui.sidebar.groups` array through `config_patch`
- * (DOR-2055).
+ * (DOR-2055), and `feedback_draft`, which builds the prefilled GitHub issue link
+ * `dorkos feedback` builds and sends nothing (DOR-2056).
  */
 const EXPECTED_TOOL_NAMES = [
   'activity_list',
   'config_get',
   'check_update',
   'agents_recent_activity',
+  'feedback_draft',
   'update_agent',
   'update_agent_boundaries',
   'config_patch',
@@ -83,6 +85,15 @@ const EXPECTED_ANNOTATIONS: Record<string, ToolAnnotations> = {
     openWorldHint: false,
   },
   agents_recent_activity: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
+  // Local, despite naming github.com in its output: it assembles a URL string
+  // and never requests one, which is exactly what `openWorldHint: false` claims
+  // (DOR-2056).
+  feedback_draft: {
     readOnlyHint: true,
     destructiveHint: false,
     idempotentHint: true,
@@ -182,12 +193,13 @@ const EXPECTED_ANNOTATIONS: Record<string, ToolAnnotations> = {
   },
 };
 
-/** The five marketplace + four operator read-only lookups in the carve-out. */
+/** The five marketplace + five operator read-only lookups in the carve-out. */
 const EXPECTED_CARVE_OUT = [
   'activity_list',
   'config_get',
   'check_update',
   'agents_recent_activity',
+  'feedback_draft',
   'marketplace_search',
   'marketplace_get',
   'marketplace_list_marketplaces',
@@ -196,14 +208,14 @@ const EXPECTED_CARVE_OUT = [
 ].sort();
 
 describe('operator + marketplace MCP projection', () => {
-  it('advertises the same 17 tools on the in-session server', () => {
+  it('advertises the same 18 tools on the in-session server', () => {
     const names = capabilitiesForMcpServer(registry, 'in-session')
       .map((c) => c.surfaces.mcp!.toolName)
       .sort();
     expect(names).toEqual(EXPECTED_TOOL_NAMES);
   });
 
-  it('advertises the same 17 tools on the external server', () => {
+  it('advertises the same 18 tools on the external server', () => {
     const names = capabilitiesForMcpServer(registry, 'external')
       .map((c) => c.surfaces.mcp!.toolName)
       .sort();
