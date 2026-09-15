@@ -213,6 +213,61 @@ describe('StreamManager', () => {
     warn.mockRestore();
   });
 
+  it('hydrates a snapshot with one unreadable message, showing a placeholder in its place (DOR-2078)', () => {
+    // Real failure mode: one malformed field anywhere in history dropped the
+    // whole snapshot frame and the session never loaded ("Session not found").
+    const onSnapshot = vi.fn();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { manager, connections } = setup();
+    manager.setListeners({ onSnapshot });
+    manager.attachSession('sess-a');
+    const frame = {
+      ...SNAPSHOT,
+      messages: [
+        { id: 'm1', role: 'user', content: 'Hello' },
+        { id: 'm2', role: 'assistant', content: 'x', parts: [{ type: 'tool_call' }] },
+        { id: 'm3', role: 'assistant', content: 'Done' },
+      ],
+    };
+
+    connections[0]!.push('snapshot', frame);
+    // A reconnect re-delivers the same history: it must hydrate again, but the
+    // defect is only logged once for the session.
+    connections[0]!.push('snapshot', frame);
+
+    expect(onSnapshot).toHaveBeenCalledTimes(2);
+    const snapshot = onSnapshot.mock.calls[0]![1] as SessionSnapshot;
+    expect(snapshot.messages.map((m) => m.id)).toEqual(['m1', 'm2', 'm3']);
+    expect(snapshot.messages[1]!.parts).toEqual([
+      { type: 'error', message: expect.stringContaining('couldn’t be shown') },
+    ]);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]![1]).toMatchObject({
+      sessionId: 'sess-a',
+      unreadable: [expect.objectContaining({ path: expect.stringMatching(/^messages\.1\./) })],
+    });
+    warn.mockRestore();
+  });
+
+  it('shows an unreadable live question as an inline notice instead of nothing (DOR-2078)', () => {
+    // Real failure mode: a question_prompt the schema rejected was dropped, so
+    // the turn sat waiting on a card nobody could see.
+    const onSessionEvent = vi.fn();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { manager, connections } = setup();
+    manager.setListeners({ onSessionEvent });
+    manager.attachSession('sess-a');
+
+    connections[0]!.push('question_prompt', { type: 'question_prompt', seq: 3, id: 'q1' });
+
+    expect(onSessionEvent).toHaveBeenCalledWith(
+      'sess-a',
+      expect.objectContaining({ type: 'error', seq: 3 })
+    );
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it('propagates the session connection state through onSessionConnectionState', () => {
     // Real failure mode: the UI's connection indicator depends on state changes
     // flowing through to the listener with the right session id.

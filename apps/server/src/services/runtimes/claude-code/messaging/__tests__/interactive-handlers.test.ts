@@ -634,6 +634,39 @@ describe('pending interaction snapshots', () => {
     expect(snapshot?.questions?.[0]).toMatchObject({ multiSelect: false, header: '' });
   });
 
+  it('warns with the failing path when a question input cannot be read (DOR-2078)', () => {
+    // The raw input still passes through (refusing would strand the turn), and
+    // the client shows a placeholder — so the server log is the only place the
+    // defect behind that placeholder is recorded.
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const session = makeBareSession();
+
+    void handleAskUserQuestion(session, 'question-unreadable', {
+      questions: [{ options: [{ label: 'A' }] }],
+    });
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('[handleAskUserQuestion]'),
+      expect.objectContaining({
+        toolUseId: 'question-unreadable',
+        issues: expect.arrayContaining([expect.objectContaining({ path: '0.question' })]),
+      })
+    );
+    warn.mockRestore();
+  });
+
+  it('does not warn for a readable question input', () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const session = makeBareSession();
+
+    void handleAskUserQuestion(session, 'question-readable', {
+      questions: [{ question: 'Which one?', options: [{ label: 'A' }, { label: 'B' }] }],
+    });
+
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it('cancels a pending question when the SDK aborts it (F5 — steer/interrupt)', async () => {
     // Acceptance run 20260610-173202, F5: a mid-turn steered message cancels a
     // pending AskUserQuestion SDK-side. This handler had NO abort wiring, so

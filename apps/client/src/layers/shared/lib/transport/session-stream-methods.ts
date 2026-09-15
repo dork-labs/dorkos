@@ -13,8 +13,6 @@
  * @module shared/lib/transport/session-stream-methods
  */
 import {
-  SessionSnapshotSchema,
-  SessionEventSchema,
   SessionListEventSchema,
   StaleResumeCursorError,
   type SessionSnapshot,
@@ -23,6 +21,11 @@ import {
 } from '@dorkos/shared/session-stream';
 import { buildQueryString } from './http-client';
 import { streamSocketFrames } from './stream-socket-iterator';
+import {
+  createUnreadableSnapshotReporter,
+  parseSessionEvent,
+  parseSessionSnapshot,
+} from './tolerant-session-frames';
 
 /**
  * The {@link SessionListEvent} discriminants. The unified `/events` stream also
@@ -50,6 +53,7 @@ export const SESSION_LIST_EVENT_TYPES = new Set([
  * @param baseUrl - Server base URL (e.g. `/api` or `http://localhost:4242/api`)
  */
 export function createSessionStreamMethods(baseUrl: string) {
+  const reportUnreadableSnapshot = createUnreadableSnapshotReporter('Transport');
   return {
     /**
      * Fetch the authoritative session snapshot for hydration.
@@ -75,7 +79,12 @@ export function createSessionStreamMethods(baseUrl: string) {
           if (frame.event !== 'snapshot') {
             throw new Error(`expected leading snapshot frame, got "${frame.event}"`);
           }
-          return SessionSnapshotSchema.parse(frame.data);
+          // Same per-entry tolerance as the StreamManager (DOR-2078): one
+          // unreadable message is a placeholder, not a failed hydration.
+          const result = parseSessionSnapshot(frame.data);
+          if (!result.ok) throw result.error;
+          reportUnreadableSnapshot(sessionId, result.unreadable);
+          return result.snapshot;
         }
         throw new Error('stream ended before a snapshot frame arrived');
       } finally {
@@ -115,15 +124,21 @@ export function createSessionStreamMethods(baseUrl: string) {
           }
           continue;
         }
-        const parsed = SessionEventSchema.safeParse(frame.data);
-        if (!parsed.success) {
+        const result = parseSessionEvent(frame.data);
+        if (!result.ok) {
           console.warn('[Transport] dropping malformed session-event frame', {
             sessionId,
-            issues: parsed.error.issues,
+            issues: result.error.issues,
           });
           continue;
         }
-        yield parsed.data;
+        if (result.unreadable) {
+          console.warn('[Transport] showing a placeholder for an unreadable prompt', {
+            sessionId,
+            unreadable: result.unreadable,
+          });
+        }
+        yield result.event;
       }
     },
 

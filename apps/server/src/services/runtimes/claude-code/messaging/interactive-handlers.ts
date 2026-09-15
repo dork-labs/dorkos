@@ -643,6 +643,17 @@ export function handleAskUserQuestion(
   // raw value: the SDK has already validated it, and refusing here would
   // strand the turn over a shape question.
   const parsed = QuestionItemSchema.array().safeParse(input.questions);
+  if (!parsed.success) {
+    // The client cannot render this question and shows a placeholder instead
+    // (DOR-2078), so this line is where the defect behind it gets found.
+    logger.warn('[handleAskUserQuestion] question input does not match the schema', {
+      toolUseId,
+      issues: parsed.error.issues.map((issue) => ({
+        path: issue.path.map(String).join('.'),
+        message: issue.message,
+      })),
+    });
+  }
   const questions = parsed.success ? parsed.data : (input.questions as QuestionItem[]);
   if (session.unattended === true) {
     refuseWithNobodyToAsk(session, {
