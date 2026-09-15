@@ -14,6 +14,30 @@ import type { NpmDependency } from './lib/npm-dependencies.js';
 import type { DisclosedEffects } from './disclosed-effects.js';
 
 /**
+ * Describes a package install, uninstall or applied update that just succeeded,
+ * passed to {@link NotifyPluginsChanged}.
+ */
+export interface PluginsChangedContext {
+  /** The project root the change targeted, or `undefined` for a global change. */
+  projectPath?: string;
+  /** The RESOLVED manifest name of the package, never the raw install identifier. */
+  packageName: string;
+  /** Whether the change was an install (applied updates count) or an uninstall. */
+  action: 'install' | 'uninstall';
+}
+
+/**
+ * The post-change notification every surface that mutates installed packages
+ * must fire after a successful mutation: it refreshes the Claude runtime's plugin
+ * list for the project and runs Harness Sync auto-projection (GAP-4). Built once
+ * in `index.ts` and required by both the HTTP router and the marketplace MCP
+ * tools, so no surface can install a plugin without setting it up.
+ *
+ * Fire-and-forget: the implementation never throws and never makes the caller wait.
+ */
+export type NotifyPluginsChanged = (ctx: PluginsChangedContext) => void;
+
+/**
  * How much a scheduled job may do on its own once it fires.
  *
  * Derived from the Shape manifest's own schedule schema

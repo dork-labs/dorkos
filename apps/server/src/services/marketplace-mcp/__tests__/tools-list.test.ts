@@ -99,6 +99,7 @@ function buildStubDeps(): MarketplaceMcpDeps {
       requestInstallConfirmation: vi.fn(explode('confirmationProvider.requestInstallConfirmation')),
       resolve: vi.fn(explode('confirmationProvider.resolve')),
     } as unknown as MarketplaceMcpDeps['confirmationProvider'],
+    onPluginsChanged: vi.fn(explode('onPluginsChanged')),
     logger: {
       info: vi.fn(),
       warn: vi.fn(),

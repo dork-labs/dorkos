@@ -72,6 +72,7 @@ describe('marketplace install → cockpit approval → retry', () => {
     handler = createInstallHandler({
       installer,
       confirmationProvider: new TokenConfirmationProvider(approvals),
+      onPluginsChanged: () => {},
     } as unknown as MarketplaceMcpDeps);
 
     app = express();

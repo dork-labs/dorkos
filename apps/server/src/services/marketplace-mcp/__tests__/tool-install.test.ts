@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
@@ -173,6 +173,7 @@ function createStubInstaller(canned: {
 function createStubDeps(opts: {
   confirmationProvider: ConfirmationProvider;
   installer: InstallerLike;
+  onPluginsChanged?: MarketplaceMcpDeps['onPluginsChanged'];
 }): MarketplaceMcpDeps {
   return {
     dorkHome: '/tmp/.dork-test',
@@ -182,6 +183,7 @@ function createStubDeps(opts: {
     cache: {} as MarketplaceMcpDeps['cache'],
     uninstallFlow: {} as MarketplaceMcpDeps['uninstallFlow'],
     confirmationProvider: opts.confirmationProvider,
+    onPluginsChanged: opts.onPluginsChanged ?? vi.fn(),
     logger: {
       info: vi.fn(),
       warn: vi.fn(),
@@ -205,7 +207,9 @@ function parseToolPayload<T = unknown>(result: { content: { type: 'text'; text: 
  * way the HTTP route does, so tests that pass one have to be inside a boundary.
  */
 async function boundedProjectPath(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), 'mcp-install-boundary-'));
+  // Realpath'd, because the handler hands its effects the canonical path and
+  // macOS's tmpdir (`/var/…`) is itself a symlink to `/private/var/…`.
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'mcp-install-boundary-')));
   await initBoundary(root);
   return join(root, 'some-project');
 }
@@ -584,5 +588,235 @@ describe('createInstallHandler — error mapping', () => {
     expect(payload.error).toContain('package not found');
     expect(provider.requestInstallConfirmation).not.toHaveBeenCalled();
     expect(installer.install).not.toHaveBeenCalled();
+  });
+});
+
+// DOR-2057: an install the agent drives through this tool must set the plugin
+// up exactly as the app's Install button does — refresh the runtime's plugin
+// list and project the plugin to the project's harnesses. Both hang off the
+// same `onPluginsChanged` notification the HTTP route fires.
+describe('createInstallHandler — plugins-changed notification (DOR-2057)', () => {
+  let confirmationProvider: FakeConfirmationProvider;
+  let onPluginsChanged: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    confirmationProvider = new FakeConfirmationProvider();
+    onPluginsChanged = vi.fn();
+  });
+
+  function depsWith(installer: InstallerLike): MarketplaceMcpDeps {
+    return createStubDeps({ confirmationProvider, installer, onPluginsChanged });
+  }
+
+  it('still reports the install as installed when the notifier throws', async () => {
+    const projectPath = await boundedProjectPath();
+    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
+    const installer = createStubInstaller({
+      preview: previewResult({ name: 'flow' }),
+      install: installResult({ packageName: 'flow' }),
+    });
+    const deps = createStubDeps({
+      confirmationProvider,
+      installer,
+      onPluginsChanged: vi.fn(() => {
+        throw new Error('boom');
+      }),
+    });
+
+    const result = await createInstallHandler(deps)({ name: 'flow', projectPath });
+
+    // The package is on disk by the time the notifier runs; a failed follow-up
+    // must never be reported as a failed install.
+    expect(result.isError).toBeUndefined();
+    expect(parseToolPayload<{ status: string }>(result).status).toBe('installed');
+    expect(deps.logger.warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('fires once with the install context after an approved install', async () => {
+    const projectPath = await boundedProjectPath();
+    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
+    // The identifier the agent passed is not the package name; the notification
+    // carries the RESOLVED manifest name, as the HTTP route does (DOR-264).
+    const installer = createStubInstaller({
+      preview: previewResult({ name: 'flow' }),
+      install: installResult({ packageName: 'flow' }),
+    });
+
+    const result = await createInstallHandler(depsWith(installer))({
+      name: 'github:dork-labs/flow',
+      projectPath,
+    });
+
+    expect(parseToolPayload<{ status: string }>(result).status).toBe('installed');
+    expect(onPluginsChanged).toHaveBeenCalledTimes(1);
+    expect(onPluginsChanged).toHaveBeenCalledWith({
+      projectPath,
+      packageName: 'flow',
+      action: 'install',
+    });
+  });
+
+  it('fires with projectPath undefined for a global install', async () => {
+    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
+    const installer = createStubInstaller({
+      preview: previewResult({ name: 'flow' }),
+      install: installResult({ packageName: 'flow' }),
+    });
+
+    await createInstallHandler(depsWith(installer))({ name: 'flow' });
+
+    expect(onPluginsChanged).toHaveBeenCalledWith({
+      projectPath: undefined,
+      packageName: 'flow',
+      action: 'install',
+    });
+  });
+
+  it('fires when the tier gate already approved the call', async () => {
+    const installer = createStubInstaller({
+      preview: previewResult({ name: 'flow' }),
+      install: installResult({ packageName: 'flow' }),
+    });
+
+    await createInstallHandler(depsWith(installer))({ name: 'flow' }, { preApproved: true });
+
+    expect(onPluginsChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT fire while the install is waiting for confirmation', async () => {
+    confirmationProvider.requestInstallConfirmation.mockResolvedValue({
+      status: 'pending',
+      token: 'tok-1',
+    });
+    const installer = createStubInstaller({
+      preview: previewResult({ name: 'flow' }),
+      install: installResult({ packageName: 'flow' }),
+    });
+
+    const result = await createInstallHandler(depsWith(installer))({ name: 'flow' });
+
+    expect(parseToolPayload<{ status: string }>(result).status).toBe('requires_confirmation');
+    expect(onPluginsChanged).not.toHaveBeenCalled();
+  });
+
+  it('does NOT fire when the install is declined', async () => {
+    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'declined' });
+    const installer = createStubInstaller({
+      preview: previewResult({ name: 'flow' }),
+      install: installResult({ packageName: 'flow' }),
+    });
+
+    const result = await createInstallHandler(depsWith(installer))({ name: 'flow' });
+
+    expect(parseToolPayload<{ status: string }>(result).status).toBe('declined');
+    expect(onPluginsChanged).not.toHaveBeenCalled();
+  });
+
+  it('does NOT fire when the approved install fails', async () => {
+    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
+    const installer = createStubInstaller({
+      preview: previewResult({ name: 'flow' }),
+      install: new Error('disk full'),
+    });
+
+    const result = await createInstallHandler(depsWith(installer))({ name: 'flow' });
+
+    expect(result.isError).toBe(true);
+    expect(onPluginsChanged).not.toHaveBeenCalled();
+  });
+
+  it('does NOT fire when the preview fails', async () => {
+    const installer = createStubInstaller({ preview: new Error('not found') });
+
+    const result = await createInstallHandler(depsWith(installer))({ name: 'flow' });
+
+    expect(result.isError).toBe(true);
+    expect(onPluginsChanged).not.toHaveBeenCalled();
+  });
+});
+
+// DOR-2057 follow-up: the effects receive the CANONICAL project path, as the HTTP
+// route's `confineProjectPath` hands them, while the approval stays bound to the
+// arguments exactly as the agent sent them.
+describe('createInstallHandler — canonical project path (DOR-2057)', () => {
+  it('installs into the realpath of a symlinked projectPath, but approves and notifies with the raw spelling', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'mcp-install-canonical-')));
+    await initBoundary(root);
+    const repo = join(root, 'real-repo');
+    await mkdir(repo);
+    const link = join(root, 'link-to-repo');
+    await symlink(repo, link);
+
+    const { provider, grantPending } = buildTokenProvider();
+    const onPluginsChanged = vi.fn();
+    const installer = createStubInstaller({
+      preview: previewResult({ name: 'flow' }),
+      install: installResult({ packageName: 'flow' }),
+    });
+    const handler = createInstallHandler(
+      createStubDeps({ confirmationProvider: provider, installer, onPluginsChanged })
+    );
+
+    try {
+      const first = await handler({ name: 'flow', projectPath: link });
+      const pending = parseToolPayload<{ status: string; confirmationToken: string }>(first);
+      expect(pending.status).toBe('requires_confirmation');
+      expect(onPluginsChanged).not.toHaveBeenCalled();
+
+      grantPending();
+      // The retry repeats the raw spelling; the token was minted over it.
+      const second = await handler({
+        name: 'flow',
+        projectPath: link,
+        confirmationToken: pending.confirmationToken,
+      });
+
+      expect(parseToolPayload<{ status: string }>(second).status).toBe('installed');
+      expect(installer.preview).toHaveBeenCalledWith(
+        expect.objectContaining({ projectPath: repo })
+      );
+      expect(installer.install).toHaveBeenCalledWith(
+        expect.objectContaining({ projectPath: repo })
+      );
+      expect(onPluginsChanged).toHaveBeenCalledTimes(1);
+      // The RAW spelling, as the HTTP route sends it: listeners key on the path
+      // the way the person picked it (DOR-711), so the two surfaces must agree.
+      expect(onPluginsChanged).toHaveBeenCalledWith({
+        projectPath: link,
+        packageName: 'flow',
+        action: 'install',
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('asks the confirmation provider with the raw projectPath, not the canonical one', async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'mcp-install-raw-binding-')));
+    await initBoundary(root);
+    const repo = join(root, 'real-repo');
+    await mkdir(repo);
+    const link = join(root, 'link-to-repo');
+    await symlink(repo, link);
+
+    const confirmationProvider = new FakeConfirmationProvider();
+    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
+    const installer = createStubInstaller({
+      preview: previewResult({ name: 'flow' }),
+      install: installResult({ packageName: 'flow' }),
+    });
+
+    try {
+      await createInstallHandler(createStubDeps({ confirmationProvider, installer }))({
+        name: 'flow',
+        projectPath: link,
+      });
+
+      expect(confirmationProvider.requestInstallConfirmation).toHaveBeenCalledWith(
+        expect.objectContaining({ projectPath: link })
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

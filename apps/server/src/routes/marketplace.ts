@@ -50,7 +50,7 @@ import {
   enrichWithInstallCounts,
 } from '../services/marketplace/install-counts.js';
 import { updatedAtProvider, enrichWithUpdatedAt } from '../services/marketplace/updated-at.js';
-import type { MarketplaceSource } from '../services/marketplace/types.js';
+import type { MarketplaceSource, NotifyPluginsChanged } from '../services/marketplace/types.js';
 import {
   scanInstalledPackages,
   scanInstallationsAcrossScopes,
@@ -112,14 +112,15 @@ export interface MarketplaceRouteDeps {
    */
   capabilityRegistry: () => CapabilityRegistry | undefined;
   /**
-   * Optional callback fired after a successful install/uninstall. Carries the
+   * Fired after a successful install, uninstall or applied update. Carries the
    * change context (which package, which action, and the project root for a
    * project-scoped change) so the handler can both refresh the runtime plugin
    * cache and project the plugin's assets to the project's other harnesses
    * (Harness Sync auto-projection, GAP-4). `projectPath` is `undefined` for a
-   * global install/uninstall.
+   * global install/uninstall. Required, and the same notifier the marketplace
+   * MCP tools receive, so neither surface can skip it (DOR-2057).
    */
-  onPluginsChanged?: (ctx: PluginsChangedContext) => void;
+  onPluginsChanged: NotifyPluginsChanged;
   /**
    * List the registered agents whose project directories the cross-scope
    * installed scan should walk (typically `meshCore.listWithPaths()`). When
@@ -127,19 +128,6 @@ export interface MarketplaceRouteDeps {
    * falls back to global scopes only.
    */
   listAgentScopes?: () => AgentScopeRef[];
-}
-
-/**
- * Context passed to {@link MarketplaceRouteDeps.onPluginsChanged} describing the
- * install/uninstall that just succeeded.
- */
-export interface PluginsChangedContext {
-  /** The project root the change targeted, or `undefined` for a global change. */
-  projectPath?: string;
-  /** The marketplace package name that was installed or uninstalled. */
-  packageName: string;
-  /** Whether the change was an install or an uninstall. */
-  action: 'install' | 'uninstall';
 }
 
 export type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
@@ -784,7 +772,7 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       // For `dorkos install ./local/path` or `github:user/repo` the param is
       // an install identifier, not the package name, and consumers (Harness
       // Sync auto-projection) look up `.dork/plugins/<packageName>` (DOR-264).
-      onPluginsChanged?.({
+      onPluginsChanged({
         projectPath: parsed.data.projectPath,
         packageName: result.packageName,
         action: 'install',
@@ -842,7 +830,7 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
         ...(confined.projectPath !== undefined && { projectPath: confined.projectPath }),
       });
       // Resolved name, not the raw route param — see the install route (DOR-264).
-      onPluginsChanged?.({
+      onPluginsChanged({
         projectPath: parsed.data.projectPath,
         packageName: result.packageName,
         action: 'uninstall',
@@ -892,7 +880,7 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       // (never the raw route param, which may be empty or an identifier —
       // DOR-264); a bulk `apply` can reinstall several packages.
       for (const applied of result.applied) {
-        onPluginsChanged?.({
+        onPluginsChanged({
           projectPath: parsed.data.projectPath,
           packageName: applied.packageName,
           action: 'install',
