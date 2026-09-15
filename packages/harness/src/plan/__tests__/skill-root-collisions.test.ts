@@ -18,7 +18,7 @@
  * Each case states the seeded defect that reds it.
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { project } from '../../engine.js';
@@ -30,11 +30,30 @@ import { SKILL_ROOT_COLLISION_OUTCOMES, skillRootCollisionOutcome } from '../sou
 let repo = '';
 let dorkHome = '';
 
+/** Directories sealed by a case, unsealed before the cleanup that has to read them. */
+const locked: string[] = [];
+
 afterEach(() => {
+  for (const dir of locked.splice(0)) {
+    try {
+      chmodSync(dir, 0o755);
+    } catch {
+      // Already gone, or never sealed — neither is this test's business.
+    }
+  }
   for (const dir of [repo, dorkHome]) if (dir) rmSync(dir, { recursive: true, force: true });
   repo = '';
   dorkHome = '';
 });
+
+/**
+ * Whether this machine can make a directory genuinely unreadable.
+ *
+ * Root ignores mode bits and Windows has no equivalent, so the case below is
+ * skipped rather than faked there — same predicate `reason-vocabulary.test.ts`
+ * uses for the same reason.
+ */
+const CAN_MAKE_UNREADABLE = process.platform !== 'win32' && process.getuid?.() !== 0;
 
 /** Stage a repository whose manifest enables `harnesses`. */
 function stage(harnesses: readonly HarnessId[]): void {
@@ -155,6 +174,32 @@ describe('SK-12 — one name in two folders one tool reads', () => {
 
     expect(p.warnings.filter((w) => w.reason.includes('Keep one.'))).toEqual([]);
   });
+
+  it.skipIf(!CAN_MAKE_UNREADABLE)(
+    'SK-12: a folder nobody can read is not half of a collision',
+    () => {
+      // The cross-check DOR-1933/1934/1935 made worth making: those changes taught
+      // the engine to keep and NAME what it could not read, and a collision line
+      // is a claim about two files a tool will load. A folder the engine could not
+      // open is not evidence of a second skill — saying "two skills are named x"
+      // about it would send somebody to delete a directory nobody has read.
+      //
+      // Seeded defect: inventory an unreadable skill directory as an ordinary
+      // entry. The line comes back, naming a folder whose SKILL.md was never read.
+      stage(['claude-code', 'opencode']);
+      stageSkill('.claude/skills/review-pr');
+      stageSkill('.opencode/skills/review-pr');
+      const sealed = join(repo, '.claude', 'skills', 'review-pr');
+      chmodSync(sealed, 0o000);
+      locked.push(sealed);
+
+      const p = plan();
+
+      expect(p.warnings.filter((w) => w.reason.includes('Keep one.'))).toEqual([]);
+      // And the copy that CAN be read keeps its own honest line.
+      expect(nativeAbout(p, 'opencode', '.opencode/skills/review-pr')).toHaveLength(1);
+    }
+  );
 
   it('SK-12: names every other folder when a tool reads more than two of them', () => {
     // Seeded defect: hard-code "both folders". Cursor reads four project skills
