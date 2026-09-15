@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(harness): a project inside a bigger checkout is told about its junctions and its ignore rules (DOR-1957)'
+  - 'fix(harness): the checkout walk-up follows links to where a project really is, like git (DOR-1957)'
 ---
 
 ### Fixed

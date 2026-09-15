@@ -24,6 +24,7 @@ import { join } from 'node:path';
 import {
   appendGitignoreLines,
   canonicalLayerIgnoredBy,
+  gitCheckoutRoot,
   gitignorePatternMatches,
   isPathIgnored,
   missingGitignoreLines,
@@ -74,6 +75,11 @@ interface StageOptions {
 function stageRepo(opts: StageOptions = {}): string {
   checkout = mkdtempSync(join(tmpdir(), 'harness-gitignore-repo-'));
   dorkHome = mkdtempSync(join(tmpdir(), 'harness-gitignore-home-'));
+  // The walk-up leaves this suite's staging at the mercy of where TMPDIR is: a
+  // `.git` anywhere above it would make every "not a git checkout" case stage
+  // something else than it says. Fail loudly on that rather than quietly mean
+  // something new (DOR-1957 review).
+  expect(gitCheckoutRoot(checkout)).toBeUndefined();
   repo = opts.nest === undefined ? checkout : join(checkout, ...opts.nest.split('/'));
   mkdirSync(repo, { recursive: true });
   writeJsonAt(join(repo, '.agents', 'harness.manifest.json'), {
@@ -174,6 +180,27 @@ describe('gitignorePatternMatches', () => {
 });
 
 /**
+ * The environment every real `git` call here runs in.
+ *
+ * Git reads a global and a system config, and `core.excludesFile` in either one
+ * points at a personal ignore file (`~/.config/git/ignore` by default) whose
+ * lines apply to every repository on the machine. A contributor who ignores
+ * `.claude/` there would watch these cases go red for a rule that is not in any
+ * fixture — so both config files are pointed at `/dev/null` and the comparison
+ * is against the `.gitignore` files the case actually wrote, which is what the
+ * engine reads (DOR-1957 review).
+ */
+const SEALED_GIT_ENV = {
+  // The environment of a CHILD PROCESS, not this package's configuration: git
+  // needs the real PATH to be found at all, and the two names below are the only
+  // things being decided here.
+  // eslint-disable-next-line no-restricted-syntax
+  ...process.env,
+  GIT_CONFIG_GLOBAL: '/dev/null',
+  GIT_CONFIG_SYSTEM: '/dev/null',
+};
+
+/**
  * Whether git is on PATH, so the conformance block below can run for real.
  *
  * Skipped rather than faked when it is not: a matcher checked only against the
@@ -251,7 +278,7 @@ describe.skipIf(!hasGit())('the matcher against real git', () => {
       const root = mkdtempSync(join(tmpdir(), 'harness-gitignore-git-'));
       const kind = testCase.kind ?? 'file';
       try {
-        execFileSync('git', ['init', '-q'], { cwd: root, stdio: 'ignore' });
+        execFileSync('git', ['init', '-q'], { cwd: root, stdio: 'ignore', env: SEALED_GIT_ENV });
         writeFileSync(join(root, '.gitignore'), testCase.gitignore);
         // `check-ignore` reads the tree, so each leaf is staged as what it is.
         mkdirSync(join(root, kind === 'dir' ? testCase.path : dirOf(testCase.path)), {
@@ -390,7 +417,7 @@ describe.skipIf(!hasGit())('the matcher for a project inside a bigger checkout',
       const projectDir = join(root, ...NEST.split('/'));
       const kind = testCase.kind ?? 'file';
       try {
-        execFileSync('git', ['init', '-q'], { cwd: root, stdio: 'ignore' });
+        execFileSync('git', ['init', '-q'], { cwd: root, stdio: 'ignore', env: SEALED_GIT_ENV });
         mkdirSync(projectDir, { recursive: true });
         if (testCase.root !== undefined) writeFileSync(join(root, '.gitignore'), testCase.root);
         if (testCase.mid !== undefined) {
@@ -432,7 +459,7 @@ describe.skipIf(!hasGit())('the matcher for a project inside a bigger checkout',
     const root = mkdtempSync(join(tmpdir(), 'harness-gitignore-named-'));
     const projectDir = join(root, ...NEST.split('/'));
     try {
-      execFileSync('git', ['init', '-q'], { cwd: root, stdio: 'ignore' });
+      execFileSync('git', ['init', '-q'], { cwd: root, stdio: 'ignore', env: SEALED_GIT_ENV });
       mkdirSync(projectDir, { recursive: true });
       writeFileSync(join(root, '.gitignore'), 'packages/app/.agents/\n');
       expect(canonicalLayerIgnoredBy(projectDir)).toBe('../../.gitignore');
@@ -459,10 +486,28 @@ function readLines(body: string): string[] {
 /** git's own verdict: `check-ignore -q` exits 0 for ignored, 1 for tracked. */
 function gitSaysIgnored(root: string, path: string): boolean {
   try {
-    execFileSync('git', ['check-ignore', '-q', '--', path], { cwd: root, stdio: 'ignore' });
+    execFileSync('git', ['check-ignore', '-q', '--', path], {
+      cwd: root,
+      stdio: 'ignore',
+      env: SEALED_GIT_ENV,
+    });
     return true;
   } catch {
     return false;
+  }
+}
+
+/** git's own verdict on whether a directory is in a checkout at all. */
+function gitSaysNoRepo(dir: string): boolean {
+  try {
+    execFileSync('git', ['rev-parse', '--git-dir'], {
+      cwd: dir,
+      stdio: 'ignore',
+      env: SEALED_GIT_ENV,
+    });
+    return false;
+  } catch {
+    return true;
   }
 }
 
@@ -681,6 +726,36 @@ describe('canonicalLayerIgnoredBy', () => {
     });
     expect(canonicalLayerIgnoredBy(repo)).toBe('../../.gitignore');
   });
+
+  it.skipIf(process.platform === 'win32')(
+    'AP-15: walks the PHYSICAL path, as git does, so a link out of a checkout is outside it',
+    () => {
+      // Seeded defect (DOR-1957 review, F3): the walk-up was lexical, so a
+      // project REACHED through a link inside a checkout — `packages/app` ->
+      // somewhere else entirely — was handed that checkout's rules, and named a
+      // `.gitignore` git will never read for it. Git resolves the physical path;
+      // this asserts against git's own refusal rather than against an opinion.
+      const inside = mkdtempSync(join(tmpdir(), 'harness-gitignore-inside-'));
+      const outside = mkdtempSync(join(tmpdir(), 'harness-gitignore-outside-'));
+      try {
+        execFileSync('git', ['init', '-q'], { cwd: inside, stdio: 'ignore', env: SEALED_GIT_ENV });
+        writeFileSync(join(inside, '.gitignore'), '.agents/\n');
+        mkdirSync(join(inside, 'packages'), { recursive: true });
+        const real = join(outside, 'real-project');
+        mkdirSync(join(real, '.agents'), { recursive: true });
+        const link = join(inside, 'packages', 'app');
+        symlinkSync(real, link);
+
+        // Git's own verdict, asked from the link: the physical directory is not
+        // in any checkout, so there is nothing to answer with.
+        expect(gitSaysNoRepo(link)).toBe(true);
+        expect(gitCheckoutRoot(link)).toBeUndefined();
+        expect(canonicalLayerIgnoredBy(link)).toBeUndefined();
+      } finally {
+        for (const d of [inside, outside]) rmSync(d, { recursive: true, force: true });
+      }
+    }
+  );
 
   it('AP-15: answers nothing outside a git checkout, whatever a `.gitignore` says', () => {
     stageRepo({ git: false, gitignore: '.agents/\n' });
