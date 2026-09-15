@@ -79,10 +79,61 @@ verdict() {
 
 # Each line is `<expected-verdict> <command>`. The comments record why the case
 # is here, so a future edit that flips one has to argue with the reason.
+# --- Differential: a fixture a real shell RUNS must never be allowed. ---
+# Every fixture naming git is also run through /bin/bash (3.2 on macOS) and zsh
+# in an empty directory with a bare PATH whose `git` is a stand-in: it touches a
+# marker for a mutating `git stash`, and for `git rebase -x` it runs the -x
+# command the way rebase would. If a shell reached the marker, the guard must
+# have blocked the line. Real git is never run. `checkout` and `restore` are
+# left out of the stand-in on purpose: which of their spellings discard work is
+# the guard's own argument logic, and re-deriving it here would test the stand-in.
+diff_dir=$payload_dir/diff
+mkdir -p "$diff_dir/shim" "$diff_dir/run"
+cat >"$diff_dir/shim/git" <<SHIM
+#!/bin/sh
+while [ \$# -gt 0 ]; do case "\$1" in -C | -c) shift 2 ;; -*) shift ;; *) break ;; esac; done
+case "\$1" in
+  stash) case "\$2" in list | show) ;; *) : >"$diff_dir/marker" ;; esac ;;
+  rebase)
+    shift
+    while [ \$# -gt 0 ]; do
+      case "\$1" in -x | --exec) sh -c "\$2"; shift 2 ;; *) shift ;; esac
+    done
+    ;;
+esac
+SHIM
+chmod +x "$diff_dir/shim/git"
+diff_shells=(/bin/bash)
+if command -v zsh >/dev/null 2>&1; then diff_shells+=("$(command -v zsh)"); fi
+
+differential() {
+  local command=$1 actual=$2 shell
+  case "$command" in *git*) ;; *) return ;; esac
+  if printf '%s' "$command" | grep -Eq '(^|[^[:alnum:]_])(kill|sudo)([^[:alnum:]_]|$)'; then
+    return
+  fi
+  for shell in "${diff_shells[@]}"; do
+    rm -f "$diff_dir/marker"
+    (cd "$diff_dir/run" && env -i PATH="$diff_dir/shim:/usr/bin:/bin" HOME="$diff_dir/run" \
+      "$shell" -c "$command" </dev/null >/dev/null 2>&1)
+    if [ -e "$diff_dir/marker" ]; then
+      check "differential: $shell runs it, so it must block: $command" block "${actual%%-*}"
+    fi
+  done
+}
+
+# Run one fixture through the hook, assert its verdict, then cross-check it.
+case_check() {
+  local name=$1 expected=$2 command=$3 actual
+  actual=$(verdict "$command")
+  check "$name" "$expected" "$actual"
+  differential "$command" "$actual"
+}
+
 while read -r expected command; do
   [ -n "${expected:-}" ] || continue
   case "$expected" in \#*) continue ;; esac
-  check "$command" "$expected" "$(verdict "$command")"
+  case_check "$command" "$expected" "$command"
 done <<'CASES'
 # --- stash: the shared stack. Bare and every mutating subcommand. ---
 block-stash git stash
@@ -205,7 +256,58 @@ allow git push -u origin HEAD
 allow git log --oneline -20
 allow git stash-like-tool run
 allow gh pr create --title "chore: guard git stash and git checkout --"
+# --- quoting: bash never expands `...` or $(...) inside single quotes. ---
+allow git commit -m 'never use `git stash` here'
+allow git commit -m 'undo with $(git checkout -- x) is refused'
+allow gh pr create --body 'it'\''s `git stash pop` that ate the tree'
+# Double quotes DO substitute, so the same text there still runs it.
+block-stash git commit -m "never use `git stash` here"
+block-stash git commit -m "$(git stash)"
+block-checkout git commit -m "it's $(git checkout -- x)"
+block-stash git commit -m 'unterminated `git stash`
+# A wrapper or eval runs its single-quoted argument, so the quotes protect nothing.
+block-stash bash -c 'echo $(git stash)'
+block-stash zsh -c 'x=$(git stash)'
+block-stash eval '$(git stash)'
+block-stash eval 'git stash pop'
+# Inside $'...' a \' does not close the quote; read as strict, not modelled.
+block-stash echo $'\'' $(git stash) '\'
+# Inside backticks the next backtick ends the substitution whatever the quotes say.
+block-stash echo `echo it's` $(git stash) `echo ok'`
+# --- Quotes are only trusted on a line made entirely of known text-takers. ---
+# Plenty of commands run their quoted argument, and `git commit` being a
+# text-taker must not make `git rebase -x` one.
+block-stash bash -lc 'echo $(git stash)'
+block-stash sh -xc 'echo `git stash`'
+block-stash exec sh -c 'echo $(git stash)'
+block-stash if bash -c 'echo $(git stash)'; then :; fi
+block-stash nice -n 5 sh -c 'echo $(git stash)'
+block-stash env -i PATH="$PATH" sh -c 'echo $(git stash)'
+block-stash timeout 5 bash -c 'echo $(git stash)'
+block-stash echo a | xargs sh -c 'echo $(git stash)'
+block-stash find . -maxdepth 0 -exec sh -c 'echo $(git stash)' \;
+block-stash trap 'echo $(git stash)' EXIT
+block-stash git rebase -x 'echo $(git stash)' HEAD~1
+block-stash node -e 'require("child_process").execSync("echo $(git stash)")'
+block-stash echo "$(bash -c 'echo $(git stash)')"
 CASES
+
+# --- heredocs: a quoted delimiter turns expansion off, an unquoted one does not. ---
+case_check 'quoted heredoc commit message naming git stash' allow \
+  $'git commit -m "$(cat <<\'EOF\'\nRefuses `git stash` and `git checkout -- x`.\nEOF\n)"'
+case_check 'unquoted heredoc commit message runs its substitution' block-stash \
+  $'git commit -m "$(cat <<EOF\nRefuses `git stash` now.\nEOF\n)"'
+case_check 'apostrophe in a trailing comment' block-stash \
+  $'echo hi # it\'s\necho $(git stash) # \''
+case_check 'apostrophes in whole-line comments' block-stash \
+  $'# don\'t\necho $(git stash)\n# won\'t'
+case_check 'heredoc marker inside a comment' block-stash \
+  $'echo x # <<\'EOF\'\necho $(git stash)\nEOF'
+case_check 'heredoc body closing its substitution early' block-stash \
+  $'x=$(cat <<\'EOF\'\nhi\n)\necho $(git stash)\nEOF\n)'
+# bash 3.2 reads the delimiter LINE inside $(...) as syntax too.
+case_check 'quoted delimiter with an apostrophe inside a substitution' block-stash \
+  $'echo $(cat <<"it\'s"\nhi\nit\'s\n); cat <<\'X\'\n\'); echo $(git stash)\nX'
 
 # Quoted text that merely NAMES a blocked command must not trip the guard, or
 # writing the commit that ships this guard becomes impossible.
