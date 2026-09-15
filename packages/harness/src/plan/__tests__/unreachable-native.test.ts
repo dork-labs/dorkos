@@ -13,7 +13,7 @@
  * `harnessCoverage('opencode')` discovering nothing at all.
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { project } from '../../engine.js';
@@ -21,8 +21,19 @@ import { applyPlan, checkPlan } from '../../apply/apply.js';
 import { harnessCoverage } from '../../vendor-facts/coverage.js';
 import { writeFileAt, writeJsonAt } from '../../__tests__/journeys/stage.js';
 
+/** Whether this machine can stage a folder that lists and refuses a write. */
+const CAN_MAKE_UNREADABLE = process.platform !== 'win32' && process.getuid?.() !== 0;
+
 const staged: string[] = [];
+const relaxed: string[] = [];
 afterEach(() => {
+  for (const dir of relaxed.splice(0)) {
+    try {
+      chmodSync(dir, 0o755);
+    } catch {
+      // already gone
+    }
+  }
   for (const dir of staged.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
@@ -33,7 +44,10 @@ afterEach(() => {
  * @param blocker - what to put at `.agents/skills`, or nothing at all.
  * @returns the repository root and its dork home.
  */
-function stageOpencodeProject(blocker?: 'file'): { repo: string; dorkHome: string } {
+function stageOpencodeProject(blocker?: 'file' | 'read-only'): {
+  repo: string;
+  dorkHome: string;
+} {
   const repo = mkdtempSync(join(tmpdir(), 'harness-native-repo-'));
   const dorkHome = mkdtempSync(join(tmpdir(), 'harness-native-home-'));
   staged.push(repo, dorkHome);
@@ -55,6 +69,12 @@ function stageOpencodeProject(blocker?: 'file'): { repo: string; dorkHome: strin
     '---\nname: a\ndescription: A packaged skill\n---\n\n# a\n'
   );
   if (blocker === 'file') writeFileAt(join(repo, '.agents', 'skills'), 'somebody wrote this\n');
+  if (blocker === 'read-only') {
+    const skills = join(repo, '.agents', 'skills');
+    mkdirSync(skills, { recursive: true });
+    chmodSync(skills, 0o555);
+    relaxed.push(skills);
+  }
   return { repo, dorkHome };
 }
 
@@ -103,6 +123,48 @@ describe('AP-11, SK-05, SK-09 — a native the tree cannot make true', () => {
 
     expect(
       plan.actions.filter((a) => a.kind === 'native' && a.harness === 'opencode').map((a) => a.name)
+    ).toEqual(['acme__a']);
+  });
+});
+
+describe('AP-11, SK-05, SK-09 — the permission half of the same question', () => {
+  it.skipIf(!CAN_MAKE_UNREADABLE)('degrades when the folder refuses the write', () => {
+    // Seeded defect: ask only `blockedWritePath`. It answers about SHAPE and
+    // cannot answer `read-only` at all, so a mode-0555 `.agents/skills` left
+    // the `native` claim standing while the link beside it was a conflict —
+    // the same false native one probe further along (DOR-1942 F2).
+    const { repo, dorkHome } = stageOpencodeProject('read-only');
+
+    const plan = project(repo, { dorkHome });
+
+    expect(plan.actions.filter((a) => a.kind === 'native')).toEqual([]);
+    expect(
+      plan.drops
+        .filter((d) => d.harness === 'opencode' && d.name === 'acme__a')
+        .map((d) => d.reason)
+    ).toEqual([
+      'OpenCode reads .agents/skills, and the link this skill needs there is blocked by ' +
+        '`.agents/skills`, which is a folder DorkOS may not write in (permission denied). ' +
+        'Fix the folder’s permissions, then re-run.',
+    ]);
+  });
+
+  it.skipIf(!CAN_MAKE_UNREADABLE)('keeps the claim when the link is already there', () => {
+    // The silence that must survive, and the reason the permission half is
+    // asked only of a link that is not already on disk: somebody who chmods
+    // `.agents/skills` read-only AFTER a sync still has a link every one of
+    // those four tools reads perfectly well. Nothing is about to be written,
+    // so the folder's mode is nobody's business (`unwritableWritePath`).
+    const { repo, dorkHome } = stageOpencodeProject();
+    applyPlan(repo, project(repo, { dorkHome }));
+    const skills = join(repo, '.agents', 'skills');
+    chmodSync(skills, 0o555);
+    relaxed.push(skills);
+
+    expect(
+      project(repo, { dorkHome })
+        .actions.filter((a) => a.kind === 'native' && a.harness === 'opencode')
+        .map((a) => a.name)
     ).toEqual(['acme__a']);
   });
 });

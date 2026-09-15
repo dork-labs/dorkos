@@ -66,7 +66,12 @@ import {
 } from './source-artifacts.js';
 import { commandDropReason } from './command-formats.js';
 import { inventorySourceTree, type SourceInventory } from '../inventory/index.js';
-import { blockedWritePath, type WritePathCause } from '../apply/write-path-occupants.js';
+import {
+  blockedWritePath,
+  unwritableWritePath,
+  type WritePathCause,
+} from '../apply/write-path-occupants.js';
+import { pathExists } from '../apply/link-state.js';
 
 /** The authored slash-command directory Claude Code reads (namespaced by subdirectory). */
 const CLAUDE_COMMANDS_SOURCE = CLAUDE_COMMANDS_DIR;
@@ -799,10 +804,38 @@ function degradeUnreachableNatives(
   return all.map((action) => {
     if (action.kind !== 'native' || !isCanonicalLinkNative(action)) return action;
     const link = `${AGENTS_SKILLS_DIR}/${action.name}`;
-    const blocked = blockedWritePath(repoRoot, link, probed);
+    const blocked = blockedWritePath(repoRoot, link, probed) ?? refusedByPermission(repoRoot, link);
     if (blocked === undefined) return action;
     return { ...action, kind: 'drop', reason: unreachableNativeReason(action.harness, blocked) };
   });
+}
+
+/**
+ * Whether the folder that would hold this link refuses the write on
+ * PERMISSION — the second half of the same question, and the one
+ * `blockedWritePath` cannot answer.
+ *
+ * `blockedWritePath` is about SHAPE: a file, a link to a file, a link that will
+ * not follow, a folder nobody may read. A folder that lists perfectly and
+ * refuses a write raises EACCES from `symlinkSync` and is a `read-only` cause,
+ * which only {@link unwritableWritePath} asks about — so `.agents/skills` at
+ * mode 0555 left the `native` claim standing while the link beside it was a
+ * conflict (DOR-1942 F2).
+ *
+ * **Asked only of a link that is not already there**, which is
+ * `unwritableWritePath`'s own doctrine applied to this caller: somebody who
+ * chmods `.agents/skills` read-only AFTER a sync still has a link every one of
+ * those four tools reads perfectly well, and nothing is about to be written to
+ * it. A SHAPE block needs no such guard — a file where `.agents/skills` belongs
+ * means the link cannot be there at all.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param link - the repo-relative link the claim rides.
+ * @returns the reason, or `undefined` when the claim still holds.
+ */
+function refusedByPermission(repoRoot: string, link: string): string | undefined {
+  if (pathExists(join(repoRoot, link))) return undefined;
+  return unwritableWritePath(repoRoot, link);
 }
 
 /**
