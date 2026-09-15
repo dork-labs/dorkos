@@ -248,11 +248,68 @@ describe('Agents Routes', () => {
 
       const res = await request(testServer)
         .post('/api/agents')
-        .send({ path: '/home/user/my-project', name: 'Custom Agent', description: 'Does things' });
+        .send({ path: '/home/user/my-project', name: 'custom-agent', description: 'Does things' });
 
       expect(res.status).toBe(201);
-      expect(res.body.name).toBe('Custom Agent');
+      expect(res.body.name).toBe('custom-agent');
       expect(res.body.description).toBe('Does things');
+    });
+
+    // DOR-2054. The request schema has accepted `displayName` all along and this
+    // route dropped it, and it wrote `name` through unslugified — so a person
+    // naming an agent "Custom Agent" got that string as the immutable slug its
+    // `@handle` derives from, and no display name at all.
+    it('slugifies a display-style name and keeps the original as the display name', async () => {
+      mockReadManifest.mockResolvedValue(null);
+
+      const res = await request(testServer)
+        .post('/api/agents')
+        .send({ path: '/home/user/my-project', name: 'Custom Agent' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.name).toBe('custom-agent');
+      expect(res.body.displayName).toBe('Custom Agent');
+      expect(mockWriteManifest).toHaveBeenCalledWith(
+        '/home/user/my-project',
+        expect.objectContaining({ name: 'custom-agent', displayName: 'Custom Agent' })
+      );
+    });
+
+    it('keeps an explicit displayName instead of dropping it', async () => {
+      mockReadManifest.mockResolvedValue(null);
+
+      const res = await request(testServer)
+        .post('/api/agents')
+        .send({ path: '/home/user/my-project', name: 'custom-agent', displayName: 'The Custom' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.displayName).toBe('The Custom');
+    });
+
+    it('refuses a blank name rather than writing one nobody chose', async () => {
+      mockReadManifest.mockResolvedValue(null);
+
+      const res = await request(testServer)
+        .post('/api/agents')
+        .send({ path: '/home/user/my-project', name: '   ' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('INVALID_NAME');
+      expect(mockWriteManifest).not.toHaveBeenCalled();
+    });
+
+    it('leaves a name that is an address, not a label, exactly as it came', async () => {
+      // `slugifyAgentName` would make this `doriancollier-com`, and `mintHandle`
+      // reads `name` first — so rewriting it moves an address somebody types.
+      mockReadManifest.mockResolvedValue(null);
+
+      const res = await request(testServer)
+        .post('/api/agents')
+        .send({ path: '/home/user/my-project', name: 'doriancollier.com' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.name).toBe('doriancollier.com');
+      expect(res.body.displayName).toBeUndefined();
     });
 
     it('returns 409 when agent already exists', async () => {

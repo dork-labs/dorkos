@@ -190,8 +190,24 @@ export interface OperatingSkill {
  *   failure is silent and lands on the person, not the agent. A drag they made
  *   while the model was composing its payload is overwritten with no error
  *   anywhere, and one mistyped section in it deletes all the others.
+ * - 19: `mesh_register` takes a display name, an emoji and a colour, and its
+ *   `name` is an address rather than a label (DOR-2054). `managing-agents` never
+ *   taught the tool at all, which is how DorkBot came to call it with
+ *   `{ name: "DorkOS Cloud" }` and register an agent whose permanent name was
+ *   that string, spaces included, wearing a face nobody chose. The tool now
+ *   reads a name with a space in it as a label, slugifies it and keeps the
+ *   original as the display name, so the same call is no longer destructive —
+ *   but an agent seeded at 18 has no page saying the three identity fields
+ *   exist, so it would keep putting a label in the address field and keep
+ *   leaving every new agent nameless and faceless in the app.
+ *
+ *   It is 19 rather than 18 for the reason the 5-then-6 and 13-then-14 entries
+ *   above record, and this is the third time: DOR-2055 landed on `main` while
+ *   this branch was in review and took 18. `seed.ts` upgrades only on a strictly
+ *   LOWER stored stamp, so a version merely EQUAL to what `main` ships delivers
+ *   neither page. Re-bump, never keep-mine.
  */
-export const OPERATING_SKILLS_VERSION = 18;
+export const OPERATING_SKILLS_VERSION = 19;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

@@ -41,6 +41,28 @@ Creation scaffolds the workspace (manifest, SOUL.md, NOPE.md, cross-harness
 instruction files) and seeds this Operating DorkOS skill pack into the new
 agent's \`.agents/skills/\`, so every new agent knows how to run DorkOS too.
 
+## Register a directory that already exists
+
+\`mesh_register\` adds a directory on this machine to DorkOS as an agent. Give it
+\`path\`. A directory that already holds a \`.dork/agent.json\` is adopted exactly as
+it is, and everything else you send is ignored, so the agent that comes back is
+the answer, not the one you asked for.
+
+For a directory with no manifest yet, four fields shape who the new agent is:
+
+- \`name\` is the address, and it is permanent: it is what the agent's @handle
+  in a room is made from. It is not a label. Send a name with a SPACE in it and
+  DorkOS reads it as a label: it becomes a slug ("DorkOS Cloud" becomes
+  "dorkos-cloud") and what you typed is kept as the display name. A name with no
+  spaces is stored exactly as you send it, so send the address you want.
+- \`displayName\` is the name a person reads in the app.
+- \`icon\` is exactly one emoji.
+- \`color\` is a hex colour, like "#ec4899".
+
+Leave \`icon\` and \`color\` out and DorkOS picks a face. Send something that is not
+one emoji, or a colour that is not hex, and the call is refused and tells you
+what it wanted, so nothing broken is stored.
+
 ## Edit an agent (tier: act)
 
 Use \`update_agent\` (in-session), \`dorkos agent update\` (CLI), or

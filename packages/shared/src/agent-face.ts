@@ -170,3 +170,65 @@ export function isSingleEmoji(value: string): boolean {
   if (!trimmed) return false;
   return /^\p{Extended_Pictographic}[\u{FE0F}\u{200D}\p{Extended_Pictographic}]*$/u.test(trimmed);
 }
+
+/**
+ * True when a string is a hex colour a face can be painted with — `#rgb` or
+ * `#rrggbb`, case-insensitive.
+ *
+ * The colour half of {@link isSingleEmoji}'s job, and it exists for the same
+ * reason: the manifest's `color` field is typed as a plain string (it is a CSS
+ * colour, and the client renders whatever is there), so a write surface that
+ * takes a colour from OUTSIDE — an agent calling `mesh_register`, say — has
+ * nothing to check against and would store `"pinkish"` as an agent's face.
+ *
+ * Deliberately narrower than CSS: every colour {@link AGENT_COLOR_PRESETS}
+ * offers and every colour the picker can show as selected is a hex literal, so
+ * accepting `rgb()` or a named colour would let a caller write a face the
+ * picker cannot round-trip. Callers that only need a gap filled should pass
+ * nothing and let {@link seedAgentFace} choose.
+ *
+ * @param value - Candidate colour string.
+ */
+export function isHexColor(value: string): boolean {
+  return /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(value.trim());
+}
+
+/**
+ * The one spelling of a hex colour a face is stored in: trimmed, lowercase,
+ * and expanded to six digits.
+ *
+ * Validation and storage are separate steps for a reason. {@link isHexColor}
+ * accepts `"  #ABC  "` because a caller typing that meant a real colour and
+ * refusing it would be pedantic; but the picker matches a stored colour against
+ * {@link AGENT_COLOR_PRESETS} by string equality, so the same colour stored in
+ * a second spelling can never show as selected. Everything that writes a colour
+ * a caller chose puts it through here first.
+ *
+ * Only meaningful for a value {@link isHexColor} has already accepted; anything
+ * else comes back trimmed and lowercased and still wrong.
+ *
+ * @param value - A hex colour that passed {@link isHexColor}.
+ * @returns The `#rrggbb` form.
+ */
+export function normalizeHexColor(value: string): string {
+  const trimmed = value.trim().toLowerCase();
+  if (trimmed.length !== 4) return trimmed;
+  const [, r, g, b] = trimmed;
+  return `#${r}${r}${g}${g}${b}${b}`;
+}
+
+/**
+ * The one spelling of an emoji a face is stored in.
+ *
+ * The counterpart to {@link normalizeHexColor}, and it exists so that the two
+ * halves of a face are normalised the same way at the same call site rather
+ * than one being trimmed and the other not. {@link isSingleEmoji} trims before
+ * it tests, so an emoji that passed validation may still carry the whitespace
+ * around it into storage without this.
+ *
+ * @param value - An icon that passed {@link isSingleEmoji}.
+ * @returns The emoji with surrounding whitespace removed.
+ */
+export function normalizeAgentIcon(value: string): string {
+  return value.trim();
+}

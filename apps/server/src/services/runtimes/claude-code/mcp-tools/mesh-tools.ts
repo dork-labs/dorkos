@@ -8,6 +8,7 @@ import {
   BoundaryError,
 } from '../../../../lib/boundary.js';
 import { notifyAgentCreated } from '../../../core/agent-created-hook.js';
+import { resolveNamedAgentIdentity } from '../../../mesh/normalize-agent-identity.js';
 import type { McpToolDeps } from './types.js';
 import { jsonContent, structuredJsonContent } from './types.js';
 
@@ -90,11 +91,27 @@ export function createMeshDiscoverHandler(deps: McpToolDeps) {
   };
 }
 
-/** Register an agent from a filesystem path. */
+/**
+ * Register an agent from a filesystem path.
+ *
+ * `name` is the agent's immutable address, not a label: it is what the agent's
+ * `@handle` in a room is derived from (`deriveHandle(name) ?? deriveHandle(displayName)`
+ * in `services/rooms/author-registry.ts`). A caller that sends a name with
+ * whitespace in it gets it slugified and kept as `displayName`, because the
+ * alternative is what actually happened: DorkBot registered an agent as
+ * "DorkOS Cloud" and the manifest stored that string, spaces and all (DOR-2054).
+ *
+ * Every check and every normalisation lives in `resolveAgentIdentity`, which the
+ * two HTTP register routes share — three doors, one answer. Read its header for
+ * why whitespace is the whole test, and what a wider one would have moved.
+ */
 export function createMeshRegisterHandler(deps: McpToolDeps) {
   return async (args: {
     path: string;
     name?: string;
+    displayName?: string;
+    icon?: string;
+    color?: string;
     description?: string;
     runtime?: string;
     capabilities?: string[];
@@ -122,6 +139,23 @@ export function createMeshRegisterHandler(deps: McpToolDeps) {
       );
     }
 
+    // Same reason the runtime is checked here rather than in the schema: the
+    // refusal is written for the model that will read it. A caller that already
+    // passed a valid slug sees no change — slugifying one is a no-op, so no
+    // `displayName` is invented for it.
+    const identity = resolveNamedAgentIdentity(
+      {
+        name: args.name,
+        displayName: args.displayName,
+        icon: args.icon,
+        color: args.color,
+      },
+      resolvedPath.split('/').pop() || 'unnamed'
+    );
+    if (!identity.ok) {
+      return jsonContent({ error: identity.error, code: identity.code }, true);
+    }
+
     try {
       // Registration adopts rather than overwrites (DOR-1019), so a system
       // agent's manifest is safe from the write either way. This refuses the
@@ -137,7 +171,7 @@ export function createMeshRegisterHandler(deps: McpToolDeps) {
       const agent = await deps.meshCore!.registerByPath(
         resolvedPath,
         {
-          name: args.name ?? resolvedPath.split('/').pop() ?? 'unnamed',
+          ...identity.identity,
           runtime: runtimeResult.data,
           ...(args.description && { description: args.description }),
           ...(args.capabilities && { capabilities: args.capabilities }),
@@ -347,10 +381,31 @@ export function meshToolDefinitions(deps: McpToolDeps) {
         'runtime.',
       {
         path: z.string().describe('Filesystem path to the agent directory'),
-        name: z.string().optional().describe('Display name override'),
+        name: z
+          .string()
+          .optional()
+          .describe(
+            'The agent address: immutable, and what its @handle in a room is derived ' +
+              'from. Not a label — a name with a SPACE in it is read as one, slugified ' +
+              '("DorkOS Cloud" becomes "dorkos-cloud") and kept as the displayName. A name ' +
+              'with no whitespace is stored exactly as you send it. Defaults to the ' +
+              'directory name.'
+          ),
+        displayName: z
+          .string()
+          .optional()
+          .describe('Human-readable name shown in the app, e.g. "DorkOS Cloud"'),
         description: z.string().optional().describe('Agent description'),
         runtime: z.string().optional().describe('Runtime: claude-code, cursor, codex, or other'),
         capabilities: z.array(z.string()).optional().describe('Agent capabilities'),
+        icon: z
+          .string()
+          .optional()
+          .describe('Exactly one emoji for the agent avatar. Omit to have one picked.'),
+        color: z
+          .string()
+          .optional()
+          .describe('Hex colour for the agent avatar, e.g. "#ec4899". Omit to have one picked.'),
       },
       createMeshRegisterHandler(deps)
     ),

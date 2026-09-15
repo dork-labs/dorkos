@@ -3,6 +3,9 @@ import {
   seedAgentFace,
   fnv1aHash,
   isSingleEmoji,
+  isHexColor,
+  normalizeHexColor,
+  normalizeAgentIcon,
   AGENT_COLOR_PRESETS,
   AGENT_EMOJI_SET,
 } from '../agent-face.js';
@@ -123,6 +126,51 @@ describe('isSingleEmoji', () => {
     expect(isSingleEmoji('')).toBe(false);
     expect(isSingleEmoji('  ')).toBe(false);
     expect(isSingleEmoji('🦊 and more')).toBe(false);
+  });
+});
+
+describe('isHexColor', () => {
+  it('accepts both hex spellings, in either case', () => {
+    // Accepting is deliberately looser than storing: what a caller typed is a
+    // real colour, and `normalizeHexColor` is what settles the one spelling it
+    // is written in.
+    expect(isHexColor('#ec4899')).toBe(true);
+    expect(isHexColor('#EC4899')).toBe(true);
+    expect(isHexColor('#abc')).toBe(true);
+    expect(isHexColor('  #abc  ')).toBe(true);
+  });
+
+  it('accepts every colour the palette offers', () => {
+    for (const preset of AGENT_COLOR_PRESETS) expect(isHexColor(preset.hex)).toBe(true);
+  });
+
+  it('refuses what a caller may send instead', () => {
+    expect(isHexColor('ec4899')).toBe(false);
+    expect(isHexColor('pinkish')).toBe(false);
+    expect(isHexColor('rgb(236, 72, 153)')).toBe(false);
+    expect(isHexColor('#ec48991')).toBe(false);
+    expect(isHexColor('')).toBe(false);
+  });
+});
+
+describe('normalizeHexColor', () => {
+  it('trims, lowercases, and expands three digits to six', () => {
+    expect(normalizeHexColor('  #ABC  ')).toBe('#aabbcc');
+    expect(normalizeHexColor('#EC4899')).toBe('#ec4899');
+    expect(normalizeHexColor('#ec4899')).toBe('#ec4899');
+  });
+
+  it('leaves a palette colour byte-identical, which is what the picker matches on', () => {
+    for (const preset of AGENT_COLOR_PRESETS) {
+      expect(normalizeHexColor(preset.hex)).toBe(preset.hex);
+    }
+  });
+});
+
+describe('normalizeAgentIcon', () => {
+  it('drops the whitespace `isSingleEmoji` looked past', () => {
+    expect(normalizeAgentIcon(' 🦊 ')).toBe('🦊');
+    expect(normalizeAgentIcon('🦊')).toBe('🦊');
   });
 });
 

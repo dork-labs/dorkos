@@ -45,6 +45,7 @@ import { validateBoundary, validateBoundaryOrDorkHome } from '../lib/boundary.js
 import { logger } from '../lib/logger.js';
 import { logOrphanedInstalls } from '../services/mesh/orphaned-installs.js';
 import { notifyAgentCreated } from '../services/core/agent-created-hook.js';
+import { resolveAgentIdentity } from '../services/mesh/normalize-agent-identity.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 
@@ -330,10 +331,26 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
       });
     }
 
+    // The same identity gate the `mesh_register` MCP tool uses, and for the same
+    // reason it exists at all: an agent reaches this route too, `name` is the
+    // immutable slug an `@handle` is derived from rather than a label, and a
+    // face has to be a face (DOR-2054). No fallback name is passed — a bare
+    // `{ path }` is the documented re-register recovery, and adoption ignores
+    // every override, so there is nothing here to name.
+    const identity = resolveAgentIdentity({
+      name: overrides?.name,
+      displayName: overrides?.displayName,
+      icon: overrides?.icon,
+      color: overrides?.color,
+    });
+    if (!identity.ok) {
+      return res.status(400).json({ error: identity.error, code: identity.code });
+    }
+
     try {
       const manifest = await meshCore.registerByPath(
         validatedPath,
-        { ...overrides },
+        { ...overrides, ...identity.identity },
         approver,
         validatedScanRoot
       );

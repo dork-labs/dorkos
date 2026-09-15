@@ -137,14 +137,199 @@ describe('Mesh MCP Tools', () => {
       meshCore.registerByPath.mockResolvedValue(mockAgent);
 
       const handler = createMeshRegisterHandler(deps);
-      const result = await handler({ path: '/test/bot', name: 'Bot' });
+      const result = await handler({ path: '/test/bot', name: 'bot' });
       const data = JSON.parse(result.content[0].text);
       expect(data.agent.id).toBe('a1');
       expect(meshCore.registerByPath).toHaveBeenCalledWith(
         '/test/bot',
-        expect.objectContaining({ name: 'Bot', runtime: 'claude-code' }),
+        expect.objectContaining({ name: 'bot', runtime: 'claude-code' }),
         'mcp-tool'
       );
+    });
+
+    // DOR-2054. `name` is the immutable address an agent's `@handle` in a room
+    // is derived from (`deriveHandle(name) ?? deriveHandle(displayName)` in
+    // `services/rooms/author-registry.ts`), but the tool described it as a
+    // "display name override" and wrote whatever it was given straight into the
+    // manifest — so DorkBot registered an agent whose name was the string
+    // "DorkOS Cloud", spaces and all, with a seeded face nobody chose.
+    describe('identity fields', () => {
+      it('slugifies a display-style name and keeps the original as the display name', async () => {
+        const deps = createMockDeps(true);
+        const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+        meshCore.registerByPath.mockResolvedValue({ id: 'a1', name: 'dorkos-cloud' });
+
+        const handler = createMeshRegisterHandler(deps);
+        const result = await handler({
+          path: '/test/cloud',
+          name: 'DorkOS Cloud',
+          icon: '\u{1F52E}',
+          color: '#ec4899',
+        });
+
+        expect(result.isError).toBeUndefined();
+        expect(meshCore.registerByPath).toHaveBeenCalledWith(
+          '/test/cloud',
+          expect.objectContaining({
+            name: 'dorkos-cloud',
+            displayName: 'DorkOS Cloud',
+            icon: '\u{1F52E}',
+            color: '#ec4899',
+          }),
+          'mcp-tool'
+        );
+      });
+
+      it('leaves a name that is already a slug alone, and adds no display name', async () => {
+        const deps = createMockDeps(true);
+        const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+        meshCore.registerByPath.mockResolvedValue({ id: 'a1', name: 'dorkos-cloud' });
+
+        const handler = createMeshRegisterHandler(deps);
+        await handler({ path: '/test/cloud', name: 'dorkos-cloud' });
+
+        const partial = meshCore.registerByPath.mock.calls[0][1] as Record<string, unknown>;
+        expect(partial.name).toBe('dorkos-cloud');
+        expect(partial).not.toHaveProperty('displayName');
+      });
+
+      it('prefers an explicit displayName over the one derived from the name', async () => {
+        const deps = createMockDeps(true);
+        const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+        meshCore.registerByPath.mockResolvedValue({ id: 'a1', name: 'dorkos-cloud' });
+
+        const handler = createMeshRegisterHandler(deps);
+        await handler({ path: '/test/cloud', name: 'DorkOS Cloud', displayName: 'The Cloud' });
+
+        expect(meshCore.registerByPath).toHaveBeenCalledWith(
+          '/test/cloud',
+          expect.objectContaining({ name: 'dorkos-cloud', displayName: 'The Cloud' }),
+          'mcp-tool'
+        );
+      });
+
+      it('refuses an icon that is not exactly one emoji, and says what one is', async () => {
+        const deps = createMockDeps(true);
+        const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+
+        const handler = createMeshRegisterHandler(deps);
+        const result = await handler({ path: '/test/bot', name: 'bot', icon: 'sparkles' });
+
+        expect(result.isError).toBe(true);
+        const data = JSON.parse(result.content[0].text) as { error: string; code: string };
+        expect(data.code).toBe('INVALID_ICON');
+        expect(data.error).toContain('exactly one emoji');
+        // Never reaches the registry — no unrenderable face is written.
+        expect(meshCore.registerByPath).not.toHaveBeenCalled();
+      });
+
+      it('refuses a colour that is not hex, and says what one looks like', async () => {
+        const deps = createMockDeps(true);
+        const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+
+        const handler = createMeshRegisterHandler(deps);
+        const result = await handler({ path: '/test/bot', name: 'bot', color: 'pinkish' });
+
+        expect(result.isError).toBe(true);
+        const data = JSON.parse(result.content[0].text) as { error: string; code: string };
+        expect(data.code).toBe('INVALID_COLOR');
+        expect(data.error).toContain('#ec4899');
+        expect(meshCore.registerByPath).not.toHaveBeenCalled();
+      });
+
+      it('stores a face in the one spelling the picker can match', async () => {
+        const deps = createMockDeps(true);
+        const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+        meshCore.registerByPath.mockResolvedValue({ id: 'a1', name: 'bot' });
+
+        const handler = createMeshRegisterHandler(deps);
+        await handler({ path: '/test/bot', name: 'bot', icon: ' \u{1F52E} ', color: '  #ABC  ' });
+
+        expect(meshCore.registerByPath).toHaveBeenCalledWith(
+          '/test/bot',
+          expect.objectContaining({ icon: '\u{1F52E}', color: '#aabbcc' }),
+          'mcp-tool'
+        );
+      });
+
+      it('refuses a display name longer than the manifest holds', async () => {
+        const deps = createMockDeps(true);
+        const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+
+        const handler = createMeshRegisterHandler(deps);
+        const result = await handler({
+          path: '/test/bot',
+          name: 'bot',
+          displayName: 'x'.repeat(101),
+        });
+
+        expect(result.isError).toBe(true);
+        const data = JSON.parse(result.content[0].text) as { error: string; code: string };
+        expect(data.code).toBe('INVALID_DISPLAY_NAME');
+        expect(data.error).toContain('100');
+        // The refusal is the point: `writeManifest` would have failed with a raw
+        // Zod blob several layers below anybody who could explain it.
+        expect(meshCore.registerByPath).not.toHaveBeenCalled();
+      });
+
+      it('truncates a display name it DERIVED rather than failing the call', async () => {
+        const deps = createMockDeps(true);
+        const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+        meshCore.registerByPath.mockResolvedValue({ id: 'a1', name: 'long' });
+
+        const handler = createMeshRegisterHandler(deps);
+        const result = await handler({ path: '/test/bot', name: `${'Long Name '.repeat(20)}end` });
+
+        expect(result.isError).toBeUndefined();
+        const partial = meshCore.registerByPath.mock.calls[0][1] as { displayName: string };
+        expect(partial.displayName.length).toBeLessThanOrEqual(100);
+      });
+
+      it('refuses a name nothing can be made of, rather than calling it "agent"', async () => {
+        const deps = createMockDeps(true);
+        const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+
+        const handler = createMeshRegisterHandler(deps);
+        const result = await handler({ path: '/test/bot', name: '' });
+
+        expect(result.isError).toBe(true);
+        expect(JSON.parse(result.content[0].text)).toMatchObject({ code: 'INVALID_NAME' });
+        expect(meshCore.registerByPath).not.toHaveBeenCalled();
+      });
+
+      it.each(['144x.co', 'next_starter', '日本語'])(
+        'leaves the directory name %s exactly as it came',
+        async (dirName) => {
+          // `slugifyAgentName` would move all three (`a-144x-co`, `next-starter`,
+          // `agent`), and `handle.ts` measured what that costs: `mintHandle`
+          // reads `name` first, so a rewritten name is a moved address.
+          const deps = createMockDeps(true);
+          const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+          meshCore.registerByPath.mockResolvedValue({ id: 'a1', name: dirName });
+
+          const handler = createMeshRegisterHandler(deps);
+          await handler({ path: `/test/${dirName}` });
+
+          const partial = meshCore.registerByPath.mock.calls[0][1] as Record<string, unknown>;
+          expect(partial.name).toBe(dirName);
+          expect(partial).not.toHaveProperty('displayName');
+        }
+      );
+
+      it('slugifies the directory name it falls back to when no name is given', async () => {
+        const deps = createMockDeps(true);
+        const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+        meshCore.registerByPath.mockResolvedValue({ id: 'a1', name: 'my-project' });
+
+        const handler = createMeshRegisterHandler(deps);
+        await handler({ path: '/test/My Project' });
+
+        expect(meshCore.registerByPath).toHaveBeenCalledWith(
+          '/test/My Project',
+          expect.objectContaining({ name: 'my-project', displayName: 'My Project' }),
+          'mcp-tool'
+        );
+      });
     });
 
     it('mesh_register notifies the agent-created seam, so the agent takes its #team seat now', async () => {
