@@ -135,9 +135,8 @@ That returns clean markdown, 10 to 18 KB for a full page; the plain
 
 **Step 3. Answer from what you read**, and say which page it came from.
 
-Use whichever fetch tool your session has. In a Claude Code session \`WebFetch\` is
-read-only and auto-approved, so neither step stops to ask a person. With no web
-tool, \`curl -s "<base>/api/search?query=..."\` does the same job.
+Use whichever fetch tool your session has: in Claude Code \`WebFetch\` is read-only
+and auto-approved; with none, \`curl -s "<base>/api/search?query=..."\` does it.
 
 ## Never fetch the whole corpus
 
@@ -149,9 +148,8 @@ with.
 one-line summary and a link. Reach for it, rather than searching again, in three
 cases: the search came back empty, its hits all look wrong, or the response came
 back far bigger than you expected. That last one means too many words went into
-the query, and searching again costs the same again; picking a page by title
-beats picking one by rank. Budget a few words per search, one or two pages per
-question.
+the query; picking a page by title beats picking one by rank. Budget a few words
+per search, one or two pages per question.
 
 ## When the docs do not answer
 
@@ -166,8 +164,8 @@ What NOT to do, hardest to resist first:
 - **Do not fill the gap from memory.** A confident wrong answer is worse than no
   answer, because the person has no way to tell the difference.
 - **Do not promise that a feature works.** Parts of DorkOS are documented ahead
-  of being proven end to end. Report what the page says and attribute it ("the
-  docs describe X"), rather than vouching for the behaviour yourself.
+  of being proven. Report what the page says ("the docs describe X"), rather
+  than vouching for the behaviour yourself.
 - **Do not go hunting the wider web.** Blog posts and forum threads are not the
   documentation, and are usually out of date.
 
@@ -179,15 +177,17 @@ the thing and report what happens, or draft them a report.
 "Can you file a bug?", "report this", "send feedback" -> call the tool whose name
 ends in \`feedback_draft\`, with \`kind\` set to \`bug\`, \`feature\` or \`runtime\` and a
 \`title\` and \`body\` in their words. It sends nothing and files nothing: you get
-back a GitHub link already carrying their version, OS, runtimes and on/off
-settings. Give them that link and say plainly that they open it, read it, edit
-out anything they would rather not share, and press submit. Never report their
-issue as filed.
+back a GitHub link already carrying their version, OS, runtimes and settings.
+Give them that link and say they open it, read it, edit out anything they would
+rather not share, and press submit. Never report their issue as filed. If
+\`truncated\` comes back true the link could not hold the whole body, so hand them
+\`fullBody\` as well.
 
-If they would rather do it themselves: in the app, **Send feedback** (Cmd+K) or
-**Report a bug** under Help and feedback; in a terminal, \`dorkos feedback\`.
-Neither that command nor this tool is off limits to you, so never say it is, and
-never file an issue on their behalf through some other tool.
+If they would rather do it themselves: **Send feedback** in the app goes straight
+to the DorkOS team; **Help and feedback > Report on GitHub** opens this same
+page; \`dorkos feedback\` does it from a terminal. Neither that command nor this
+tool is off limits to you, so never say it is, and never file an issue on their
+behalf through some other tool.
 
 ## Answering well
 

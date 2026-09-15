@@ -306,17 +306,24 @@ export const operatorDomain: CapabilityDomain = {
         'path, a token, an email or an IP address is replaced before the link is built, so ' +
         'describe what happened in words rather than pasting logs, paths or session ' +
         'transcripts. ' +
-        // The three routes a PERSON has, named because the defect this capability
-        // exists to close was an agent inventing a rule instead: DorkBot told the
-        // operator it was "not allowed to run the dorkos command" when no such
-        // rule exists. So the last sentence says the opposite in as many words.
-        // "Send feedback" is first because it is the only one of the three that
-        // reaches the DorkOS team directly (meta/user-care.md); the other two open
-        // GitHub, which is where this tool's link goes too.
-        'You get back the url, the kind, and filledFields, which names the parts already ' +
-        'written in. If they would rather do it themselves: Send feedback in the app ' +
-        '(Cmd+K finds it), Report a bug under Help and feedback for the GitHub route, or ' +
-        '`dorkos feedback` in a terminal. Nothing stops you running that command either.',
+        // The routes a PERSON has, named because the defect this capability exists
+        // to close was an agent inventing a rule instead: DorkBot told the operator
+        // it was "not allowed to run the dorkos command" when no such rule exists.
+        // So the last sentence says the opposite in as many words.
+        //
+        // The menu path is exact, and it was wrong here first (DOR-2056 review).
+        // "Report a bug" directly under Help and feedback opens the IN-APP form
+        // that goes to the DorkOS team; the GitHub page this tool links to is one
+        // level deeper, under "Report on GitHub…". Both are real and they are not
+        // the same thing, so naming the wrong one sends somebody to a form they
+        // did not ask for (`HelpMenuItems.tsx`).
+        'You get back the url, the kind, filledFields naming the parts already written in, ' +
+        'and truncated. When truncated is true the body was too long for a web address and ' +
+        'the link carries a shortened copy; fullBody then holds the whole text, so give them ' +
+        'that too rather than letting the end of their own report go missing. ' +
+        'If they would rather do it themselves: Send feedback in the app goes straight to the ' +
+        'DorkOS team, Help and feedback > Report on GitHub opens this same page, and ' +
+        '`dorkos feedback` does it from a terminal. Nothing stops you running that command either.',
       tier: 'observe',
       input: z.object({
         kind: z

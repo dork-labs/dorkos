@@ -20,7 +20,7 @@ import { z } from 'zod';
 import { ListActivityQuerySchema } from '@dorkos/shared/activity-schemas';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import type { SidebarPrefs } from '@dorkos/shared/config-schema';
-import { buildIssueUrl, gatherFeedbackReport, type FeedbackKind } from '@dorkos/shared/feedback';
+import { buildIssueDraft, gatherFeedbackReport, type FeedbackKind } from '@dorkos/shared/feedback';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
 import type { CapabilityHandlerContext } from '../capabilities/registry.js';
@@ -809,7 +809,19 @@ export function createFeedbackDraftHandler() {
       ...(Object.keys(report.flags).length > 0 ? ['settings'] : []),
     ];
 
-    return jsonResult({ url: buildIssueUrl(report), kind, filledFields });
+    // `buildIssueDraft`, not `buildIssueUrl`: the same link either way, but this
+    // one says whether the body had to be shortened to fit the address. A model
+    // that cannot tell would hand somebody a link quietly missing the end of
+    // their own report (DOR-2056 review).
+    const draft = buildIssueDraft(report);
+
+    return jsonResult({
+      url: draft.url,
+      kind,
+      filledFields,
+      truncated: draft.truncated,
+      ...(draft.fullBody !== undefined && { fullBody: draft.fullBody }),
+    });
   };
 }
 

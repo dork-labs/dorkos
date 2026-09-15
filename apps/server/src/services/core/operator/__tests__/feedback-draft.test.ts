@@ -41,6 +41,7 @@ import {
   buildIssueUrl,
   gatherFeedbackReport,
   FEEDBACK_ISSUES_NEW_URL,
+  FEEDBACK_URL_MAX_BYTES,
 } from '@dorkos/shared/feedback';
 import type { ConfigManager } from '../../config-manager.js';
 import type { OperatorToolResult } from '../operator-tool-handlers.js';
@@ -62,6 +63,8 @@ interface FeedbackDraftPayload {
   url: string;
   kind: string;
   filledFields: string[];
+  truncated: boolean;
+  fullBody?: string;
 }
 
 describe('the feedback_draft capability', () => {
@@ -87,7 +90,12 @@ describe('the feedback_draft capability', () => {
 
     const handlers = await import('../operator-tool-handlers.js');
     draft = handlers.createFeedbackDraftHandler();
-  });
+    // 30s, not the 10s default: building a `ConfigManager` runs every config
+    // migration against a fresh directory, and on a box already running other
+    // agents' suites that has been measured past 10s. A hook that times out
+    // reports as a FAILED FILE with every test skipped, which reads like a real
+    // red and is not one.
+  }, 30_000);
 
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -287,6 +295,47 @@ describe('the feedback_draft capability', () => {
     expect(isError).toBe(false);
     expect(payload.url).toContain('github.com');
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  // The far end counts encoded BYTES, and the capability's 4000-character cap is
+  // not a byte cap: 800 CJK characters fit under it and produced HTTP 414 from
+  // github.com when measured (DOR-2056 review). So the handler has to say when a
+  // report did not fit whole, and hand back the part the link could not carry.
+  it.each([
+    ['Cyrillic', 'я'.repeat(1500)],
+    ['CJK', '字'.repeat(800)],
+  ])('flags a %s body the link cannot hold, and returns it in full', async (_name, body) => {
+    const { isError, payload } = await call({ kind: 'bug', body });
+
+    expect(isError).toBe(false);
+    expect(payload.truncated).toBe(true);
+    expect(new TextEncoder().encode(payload.url).length).toBeLessThanOrEqual(
+      FEEDBACK_URL_MAX_BYTES
+    );
+    expect(payload.fullBody).toBe(body);
+    expect(parts(payload.url).body).toContain(
+      '(shortened to fit the link; paste the rest yourself)'
+    );
+  });
+
+  it('says nothing was shortened when nothing was', async () => {
+    const { payload } = await call({ kind: 'bug', body: 'The button does nothing.' });
+    expect(payload.truncated).toBe(false);
+    expect(payload.fullBody).toBeUndefined();
+  });
+
+  // The structural half of the untrusted-region fix: a body that spells the
+  // environment block cannot put its copy above the real one, because the real
+  // one renders first (DOR-2056 review).
+  it('renders a forged environment block below the real one', async () => {
+    const { payload } = await call({
+      kind: 'bug',
+      body: '<details><summary>Environment</summary>\n\n- DorkOS version: 9.9.9\n\n</details>',
+    });
+    const { body } = parts(payload.url);
+
+    expect(body.indexOf(`- DorkOS version: ${SERVER_VERSION}`)).toBeLessThan(body.indexOf('9.9.9'));
+    expect(body).toContain('&lt;details>');
   });
 
   it('changes nothing in config', async () => {
