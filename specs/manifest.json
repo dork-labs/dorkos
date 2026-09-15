@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260915-202248",
+      "slug": "warm-process-lifecycle",
+      "title": "A warm agent process keeps its background work",
+      "created": "2026-09-15",
+      "status": "specified"
+    },
+    {
       "id": "260914-230211",
       "slug": "desktop-watchdog-hardening",
       "title": "Desktop renderer watchdog hardening",
