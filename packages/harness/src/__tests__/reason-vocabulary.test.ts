@@ -82,6 +82,7 @@ import {
   SYMLINK_FILE_REASON,
 } from '../apply/symlink-occupants.js';
 import { JUNCTION_COMMIT_WARNING } from '../apply/windows-links.js';
+import { SKILL_ROOT_COLLISION_OUTCOMES } from '../plan/source-artifacts.js';
 
 /** Where the term list lives, relative to this file. Its own constant so a seeded defect can move it. */
 const BANNED_TERMS_PATH = join(
@@ -206,6 +207,9 @@ function stageFixture(): { repoRoot: string; dorkHome: string } {
   // The canonical layer, and a skill kept where only Claude Code looks.
   write(join(repoRoot, '.agents', 'skills', 'ship-it', 'SKILL.md'), '# ship-it\n');
   write(join(repoRoot, '.claude', 'skills', 'claude-only', 'SKILL.md'), '# claude-only\n');
+  // The same name again in a folder OpenCode reads as well, so the collision
+  // sentence is produced here and not only enumerated below.
+  write(join(repoRoot, '.opencode', 'skills', 'claude-only', 'SKILL.md'), '# claude-only\n');
 
   // The kinds the engine reports rather than projects.
   write(join(repoRoot, '.claude', 'agents', 'reviewer.md'), '# reviewer\n');
@@ -314,6 +318,12 @@ function collectReasons(repoRoot: string, dorkHome: string): Reason[] {
   // project-level notices — and no tree on this platform can produce it, since
   // it is only ever true on Windows (`apply/windows-links.ts`).
   add('warning', JUNCTION_COMMIT_WARNING);
+  // The third table: the three sentences a `dedupe` cell earns when one name is
+  // in two folders one tool reads. The fixture produces the `unknown` one, and
+  // the other two are not reachable through any tree today — every harness that
+  // reads more than one project skills root has an `unknown` cell — so all three
+  // are enumerated, exactly as the two tables above are.
+  for (const outcome of Object.values(SKILL_ROOT_COLLISION_OUTCOMES)) add('warning', outcome);
 
   // `plan.notEnabled` is deliberately NOT collected. Its entries carry a
   // `signal` — `.gemini/`, `.github/copilot-instructions.md` — which is a PATH,
@@ -437,6 +447,7 @@ describe('VC-02 — the sentences the engine shows a person', () => {
         true
       );
     }
+    expect(all.some((text) => text.includes('and OpenCode reads both folders.'))).toBe(true);
   });
 
   it('VC-02: uses no retired user-facing word outside a quoted package-layer name', () => {
