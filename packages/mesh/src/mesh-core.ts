@@ -23,6 +23,7 @@ import type {
 import type { RelayCore, SignalEmitter } from '@dorkos/relay';
 import type { DiscoveryStrategy } from './types.js';
 import { AgentRegistry } from './agent-registry.js';
+import type { AgentIdentityChange } from './agent-registry.js';
 import { DenialList } from './denial-list.js';
 import { RelayBridge } from './relay-bridge.js';
 import { NamespaceRuleStore } from './namespace-rule-store.js';
@@ -106,6 +107,7 @@ export class MeshCore {
     [];
   private readonly onLivenessChangeCallbacks: Array<(result: ReconcileResult) => void> = [];
   private readonly onAgentAdoptedCallbacks: Array<(agent: AdoptedAgent) => void> = [];
+  private readonly onAgentsChangedCallbacks: Array<(change: AgentIdentityChange) => void> = [];
 
   /**
    * Create the Mesh coordination core.
@@ -113,7 +115,14 @@ export class MeshCore {
    * @param options - Configuration options
    */
   constructor(options: MeshOptions) {
-    const registry = new AgentRegistry(options.db);
+    const logger = options.logger ?? console;
+    // Per-callback try/catch inside `notifyAgentsChanged`, and the registry
+    // catches a throw from this arrow too — an identity write must never fail
+    // because something downstream of it did.
+    const registry = new AgentRegistry(options.db, {
+      logger,
+      onIdentityChange: (change) => this.notifyAgentsChanged(change),
+    });
     const denialList = new DenialList(options.db);
     const relayBridge = new RelayBridge(options.relayCore, options.signalEmitter);
     const namespaceRuleStore = new NamespaceRuleStore(options.db);
@@ -128,7 +137,6 @@ export class MeshCore {
     // matches the Mesh-owned source of truth (mesh #16).
     topology.syncNamespaceRulesFromRelay();
     const defaultScanRoot = options.defaultScanRoot ?? os.homedir();
-    const logger = options.logger ?? console;
     const strategies = options.strategies ?? [
       new ClaudeCodeStrategy(),
       new CursorStrategy(),
@@ -311,6 +319,52 @@ export class MeshCore {
    */
   onAgentAdopted(callback: (agent: AdoptedAgent) => void): void {
     this.onAgentAdoptedCallbacks.push(callback);
+  }
+
+  /**
+   * Register a callback fired once after every committed write that changed an
+   * agent's IDENTITY — registered, renamed, re-iconed, moved, removed — by any
+   * path: the HTTP routes, the in-session and external `mesh_register` /
+   * `mesh_unregister` tools, `create_agent`, a marketplace install, an agent
+   * editing itself, `syncFromDisk`, and the five-minute reconciler adopting a
+   * `.dork/agent.json`. `AgentRegistry` is the seam every one of them passes
+   * through, which is why the observer lives there rather than on each route
+   * (the eighth route would forget).
+   *
+   * The DorkOS server wires this to the `/api/events` fan-out as
+   * `agents_changed`, so a sidebar in every open window follows a registration
+   * immediately instead of waiting out a 30-second stale time (DOR-2052).
+   *
+   * **Identity only, and only when something moved.** Health
+   * (`updateHealth`, on every message) and liveness
+   * (`markUnreachable`/`markReachable`, which already have
+   * `mesh_liveness_changed`) never reach it, and neither does a re-upsert that
+   * wrote the same values — the reconciler's scan does exactly that to every
+   * agent every five minutes.
+   *
+   * Callbacks are synchronous and their throws are logged and swallowed: a
+   * reaction must never abort the write it rode in on.
+   *
+   * @param callback - Invoked with the committed identity change.
+   */
+  onAgentsChanged(callback: (change: AgentIdentityChange) => void): void {
+    this.onAgentsChangedCallbacks.push(callback);
+  }
+
+  /**
+   * Invoke every registered identity observer, isolating failures so one bad
+   * listener cannot cost the others theirs or break the write.
+   *
+   * @param change - The committed identity change.
+   */
+  private notifyAgentsChanged(change: AgentIdentityChange): void {
+    for (const callback of this.onAgentsChangedCallbacks) {
+      try {
+        callback(change);
+      } catch (err) {
+        this.logger.warn('[Mesh] onAgentsChanged callback threw', { err, agentId: change.agentId });
+      }
+    }
   }
 
   // --- Query ---
