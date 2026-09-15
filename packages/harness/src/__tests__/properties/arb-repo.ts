@@ -70,6 +70,7 @@ import {
   COPILOT_HOOKS_TARGET,
 } from '../../generate/hooks.js';
 import { EPHEMERAL_GITIGNORE_PATTERNS } from '../../sources/resolve-roots.js';
+import { gitCheckoutRoot } from '../../apply/gitignore.js';
 import { writeFileAt, writeJsonAt } from '../journeys/stage.js';
 
 /** The sidecar suffix the engine writes beside a generated hook file. */
@@ -702,6 +703,15 @@ function stageCommandDir(
 function materialise(spec: RepoSpec): MaterialisedRepo {
   const repoRoot = mkdtempSync(join(tmpdir(), 'harness-prop-repo-'));
   const dorkHome = mkdtempSync(join(tmpdir(), 'harness-prop-home-'));
+  // P7's `gitignore: null` cases claim "not a git checkout", and since the
+  // checkout is found by walking UP (DOR-1957) that claim now rests on TMPDIR
+  // having no `.git` above it. Say so out loud rather than let the property mean
+  // something else on a machine where it does.
+  if (gitCheckoutRoot(repoRoot) !== undefined) {
+    throw new Error(
+      `TMPDIR is inside a git checkout (${repoRoot}); P7's "not a checkout" cases cannot be staged there.`
+    );
+  }
 
   writeJsonAt(join(repoRoot, '.agents', 'harness.manifest.json'), {
     version: 1,
