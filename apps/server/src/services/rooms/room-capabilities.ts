@@ -334,6 +334,11 @@ function requireMergeDeps(deps: CapabilityDeps): RoomMergeService {
  * as the wider fact. Measured with real tokens before the test landed: a revoked
  * token read room history `200`, and an expired one posted `200`.
  *
+ * **Exported, and the export is the point** (DOR-2055). The sidebar-section
+ * capabilities have to resolve a room reference as the CALLER, and a second
+ * copy of this ladder is the copy that gets it wrong — so `index.ts` wires their
+ * lookup through this function rather than restating any part of it.
+ *
  * @param rooms - The rooms service, for its author registry.
  * @param context - What the registry resolved about this call.
  * @returns The author these verbs act as.
@@ -341,7 +346,7 @@ function requireMergeDeps(deps: CapabilityDeps): RoomMergeService {
  *   agent token this machine could not verify, and `UNIDENTIFIED_CALLER` when
  *   login is on and the surface named neither an agent nor a person.
  */
-function callerAuthor(rooms: RoomService, context: CapabilityHandlerContext): AuthorRecord {
+export function callerAuthor(rooms: RoomService, context: CapabilityHandlerContext): AuthorRecord {
   const registry = rooms.authorRegistry;
   // `!context.identity.inactive` is what keeps branch 2 doing its job through a
   // change one domain over (DOR-486). Resolution used to answer `undefined` for a

@@ -19,9 +19,10 @@ import path from 'node:path';
 import { z } from 'zod';
 import { ListActivityQuerySchema } from '@dorkos/shared/activity-schemas';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
-import type { SidebarItemRef, SidebarPrefs } from '@dorkos/shared/config-schema';
+import type { SidebarPrefs } from '@dorkos/shared/config-schema';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
+import type { CapabilityHandlerContext } from '../capabilities/registry.js';
 import type { DisplayNameWriter } from '../../identity/display-name-provenance.js';
 import { validateBoundaryOrDorkHome, BoundaryError } from '../../../lib/boundary.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
@@ -489,23 +490,33 @@ export interface SidebarRemoveFromGroupArgs {
 }
 
 /**
- * What this install can currently see, for {@link resolveSidebarItems}.
+ * What THIS CALLER can currently see, for {@link resolveSidebarItems}.
  *
  * Read fresh on every call, like the config beside it: a roster captured once
  * would refuse the agent somebody registered thirty seconds ago, which is the
- * exact moment this capability exists for.
+ * exact moment this capability exists for — and a room the caller was removed
+ * from would go on resolving.
  *
- * `rooms: undefined` when no rooms seam is wired. That is not an empty roster
- * and the resolver does not read it as one — it refuses a room reference with
- * that reason rather than storing one nobody checked.
+ * **The two halves are scoped differently on purpose.** Agents are install-wide:
+ * they are not secret, and `mesh_list` already lists every one of them. Rooms
+ * are the caller's own view, because reporting on a room the caller cannot see
+ * is an existence oracle over the operator's private conversations — the one
+ * `room-visibility.ts` closes deliberately. See `sidebar-item-refs.ts`.
+ *
+ * `rooms: undefined` when the question cannot be put at all (no rooms seam, or
+ * an identity that could not be verified). That is not an empty roster and the
+ * resolver does not read it as one — it refuses a room reference rather than
+ * storing one nobody checked.
  *
  * @param deps - The operator service handles.
+ * @param context - What the registry resolved about this call, which is what the
+ *   rooms half is scoped to. Absent only in a direct unit call.
  * @returns The roster to resolve against.
  */
-function sidebarRoster(deps: McpToolDeps): SidebarRoster {
+function sidebarRoster(deps: McpToolDeps, context?: CapabilityHandlerContext): SidebarRoster {
   return {
     agents: deps.meshCore ? deps.meshCore.listWithPaths() : [],
-    rooms: deps.listOperatorRooms?.(),
+    rooms: context ? deps.listVisibleRooms?.(context) : undefined,
   };
 }
 
@@ -577,13 +588,18 @@ function sidebarWriteFailure(result: GuardedConfigWriteResult): OperatorToolResu
  * other surface assumes; the sections it left come back as `movedFrom` so the
  * answer says where it went from. See {@link liftFromOtherGroups}.
  *
- * @param deps - Tool deps: `meshCore` for the agent roster, `listOperatorRooms`
+ * @param deps - Tool deps: `meshCore` for the agent roster, `listVisibleRooms`
  *   for the room one. Both are what a reference is checked against.
- * @param identity - The calling agent, when the surface resolved one. Read only
- *   for the audit line's writer field; nothing about the write depends on it.
+ * @param context - What the registry resolved about this call. It names the
+ *   agent for the audit line's writer field, and — the part that matters — it is
+ *   what the room lookup is SCOPED to, so this verb sees exactly what its caller
+ *   sees.
  * @returns The bound handler.
  */
-export function createSidebarAddToGroupHandler(deps: McpToolDeps, identity?: AgentIdentity) {
+export function createSidebarAddToGroupHandler(
+  deps: McpToolDeps,
+  context?: CapabilityHandlerContext
+) {
   return async (args: SidebarAddToGroupArgs): Promise<OperatorToolResult> => {
     // Read at CALL time, never from anything the caller sent: the whole point is
     // that the sections this write preserves are the ones stored right now.
@@ -602,7 +618,7 @@ export function createSidebarAddToGroupHandler(deps: McpToolDeps, identity?: Age
     // the client cannot resolve is not an error anywhere downstream — it is a
     // member of the section forever that draws nothing — so a miss refuses the
     // whole call. See `sidebar-item-refs.ts`.
-    const resolved = resolveSidebarItems(args.items, sidebarRoster(deps));
+    const resolved = resolveSidebarItems(args.items, sidebarRoster(deps, context));
     if (!resolved.ok) {
       return jsonResult(
         { error: resolved.error, code: resolved.code, unresolved: resolved.unresolved },
@@ -623,7 +639,7 @@ export function createSidebarAddToGroupHandler(deps: McpToolDeps, identity?: Age
     const { groups, movedFrom } = liftFromOtherGroups(filed.groups, group.id, resolved.items);
     const next = { ...filed, groups };
 
-    const result = writeSidebarPrefs(next, 'the sidebar_add_to_group tool', identity);
+    const result = writeSidebarPrefs(next, 'the sidebar_add_to_group tool', context?.identity);
     if (!result.ok) return sidebarWriteFailure(result);
 
     return jsonResult({
@@ -649,10 +665,14 @@ export function createSidebarAddToGroupHandler(deps: McpToolDeps, identity?: Age
  * second change nobody asked for.
  *
  * @param deps - Tool deps: the same two rosters the add verb resolves against.
- * @param identity - The calling agent, when the surface resolved one.
+ * @param context - What the registry resolved about this call; the room lookup
+ *   is scoped to it, exactly as the add verb's is.
  * @returns The bound handler.
  */
-export function createSidebarRemoveFromGroupHandler(deps: McpToolDeps, identity?: AgentIdentity) {
+export function createSidebarRemoveFromGroupHandler(
+  deps: McpToolDeps,
+  context?: CapabilityHandlerContext
+) {
   return async (args: SidebarRemoveFromGroupArgs): Promise<OperatorToolResult> => {
     const prefs = storedSidebarPrefs(configManager.get('ui'));
     const found = resolveSidebarGroup(prefs.groups, args.group);
@@ -664,7 +684,7 @@ export function createSidebarRemoveFromGroupHandler(deps: McpToolDeps, identity?
     // symmetry: the stored ref is a canonical path or room id, so a caller that
     // named the agent by slug would otherwise match nothing and be told the item
     // was "not present" while it sat in the section untouched.
-    const resolved = resolveSidebarItems(args.items, sidebarRoster(deps));
+    const resolved = resolveSidebarItems(args.items, sidebarRoster(deps, context));
     if (!resolved.ok) {
       return jsonResult(
         { error: resolved.error, code: resolved.code, unresolved: resolved.unresolved },
@@ -677,7 +697,7 @@ export function createSidebarRemoveFromGroupHandler(deps: McpToolDeps, identity?
     const result = writeSidebarPrefs(
       replaceSidebarGroup(prefs, group),
       'the sidebar_remove_from_group tool',
-      identity
+      context?.identity
     );
     if (!result.ok) return sidebarWriteFailure(result);
 

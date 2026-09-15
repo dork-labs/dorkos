@@ -538,7 +538,9 @@ export const operatorDomain: CapabilityDomain = {
         'its id or its name, and list what to file there in `items` — an agent by its name, its ' +
         'id or its directory, a room by its id or its name. Everything is looked up before ' +
         'anything is written, so a name DorkOS does not know refuses the whole call and tells ' +
-        'you which agents it does have. An item lives in one ' +
+        'you which agents it does have. You can only file rooms you can see: a room you are ' +
+        'not in answers exactly like a room that does not exist, so do not read a refusal as ' +
+        'evidence either way. An item lives in one ' +
         'section at a time, so this MOVES it if it is already in another section: the section ' +
         'it came out of is named in `movedFrom`, and no other section is touched. Anything ' +
         'already in the section you named is left alone, so calling twice adds nothing twice. ' +
@@ -578,7 +580,7 @@ export const operatorDomain: CapabilityDomain = {
         unwrapMcpEnvelope(
           await createSidebarAddToGroupHandler(
             requireOperatorDeps(deps),
-            context.identity
+            context
           )(input as SidebarAddToGroupArgs)
         ),
     }),
@@ -589,7 +591,8 @@ export const operatorDomain: CapabilityDomain = {
         'Take agents and rooms out of ONE section of the sidebar, leaving every other section ' +
         'exactly as it is. Name the section in `group` by its id or its name, and list what to ' +
         'take out in `items` — an agent by its name, its id or its directory, a room by its id ' +
-        'or its name, looked up the same way the filing verb looks them up. Anything that was ' +
+        'or its name, looked up the same way the filing verb looks them up — including that you ' +
+        'can only name rooms you can see. Anything that was ' +
         'not in that section is reported back and ' +
         'nothing else happens to it. Taking the last member out leaves the section there and ' +
         'empty; only a person removes a section. To file something instead, use the tool whose ' +
@@ -612,7 +615,7 @@ export const operatorDomain: CapabilityDomain = {
         unwrapMcpEnvelope(
           await createSidebarRemoveFromGroupHandler(
             requireOperatorDeps(deps),
-            context.identity
+            context
           )(input as SidebarRemoveFromGroupArgs)
         ),
     }),

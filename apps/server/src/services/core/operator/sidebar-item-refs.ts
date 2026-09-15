@@ -31,6 +31,24 @@
  * Rooms are the same shape one identifier down: by `roomId`, or by name (slug or
  * title, without case) when exactly one non-archived room answers to it.
  *
+ * ## Rooms are matched against what the CALLER can see, and say nothing else
+ *
+ * `services/rooms/service/room-visibility.ts` deliberately answers the same
+ * `ROOM_NOT_FOUND` for "no such room" and "you cannot see that room": a room id
+ * is never a capability, so a caller holding one must not be able to confirm
+ * that the operator's DM with another agent exists. A resolver that matched
+ * against a WIDER set than its caller can see and then reported the outcome
+ * would reopen that oracle through a side door — guess a DM title, read a real
+ * room id back out of the answer.
+ *
+ * So the room roster handed to this module is the caller's own
+ * (`McpToolDeps.listVisibleRooms`), and every room miss answers with ONE
+ * sentence carrying nothing learned from the store: no id, no count, no title.
+ * A room that does not exist and a room the caller may not see are
+ * byte-identical here. The caller's OWN words are echoed back, because a refusal
+ * that cannot say which of five items failed is not usable — but nothing the
+ * store knows and the caller did not is ever added to it.
+ *
  * ## Why an unresolved ref refuses the WHOLE call
  *
  * Partial success on a membership write is unreadable: the model reports three
@@ -79,7 +97,7 @@ export interface SidebarRosterAgent {
   projectPath: string;
 }
 
-/** One room a person can still see: never archived, never a stale row. */
+/** One room THIS CALLER can see: never archived, never a stale row. */
 export interface SidebarRosterRoom {
   /** The room's id — the only thing ever stored. */
   roomId: string;
@@ -94,14 +112,20 @@ export interface SidebarRosterRoom {
  * against.
  *
  * `rooms: undefined` is not an empty roster and must not be read as one: it
- * means this process has no rooms seam wired, so "does that room exist" is a
- * question nobody here can answer. A room ref then refuses with that reason
- * rather than being waved through or reported as missing.
+ * means the question cannot be answered for this caller at all — no rooms seam
+ * is wired, or the caller presented an identity that could not be verified. A
+ * room ref then refuses rather than being waved through.
  */
 export interface SidebarRoster {
-  /** Every registered agent, or `[]` when Mesh is off. */
+  /**
+   * Every registered agent, or `[]` when Mesh is off. Install-wide on purpose:
+   * agents are not secret, and `mesh_list` already lists every one of them.
+   */
   agents: readonly SidebarRosterAgent[];
-  /** Every non-archived room the operator can see, or `undefined` when rooms are not wired. */
+  /**
+   * Every non-archived room THIS CALLER can see, or `undefined` when the
+   * question cannot be answered for them.
+   */
   rooms: readonly SidebarRosterRoom[] | undefined;
 }
 
@@ -112,6 +136,25 @@ export type SidebarItemResolution =
 
 /** How many roster names a refusal offers as candidates. */
 const SUGGESTION_LIMIT = 5;
+
+/** What a room answer says when the question could not be put at all. */
+const ROOM_UNCHECKABLE =
+  'could not be checked: this DorkOS cannot say which rooms you can see right now';
+
+/**
+ * The ONE thing any room miss ever says.
+ *
+ * A single constant rather than a sentence per branch, so "no such room", "you
+ * are not in that room" and "that name matches more than one" come out as the
+ * same bytes. `room-visibility.ts` keeps the first two indistinguishable
+ * everywhere else in this codebase for the reason its header gives; this is that
+ * rule arriving here, and one constant is the cheapest way to make it impossible
+ * to break by editing a single branch.
+ */
+const ROOM_MISS =
+  'did not match one room you can see. Rooms you are not in, and rooms that do not exist, ' +
+  'answer the same way. Send roomId if you have it, and ask the person to put you in the room ' +
+  'if you should be in it.';
 
 /** Compare two paths ignoring a trailing separator, which no roster entry carries. */
 function samePath(a: string, b: string): boolean {
@@ -232,17 +275,14 @@ function resolveRoomRef(
     ? rooms.filter((room) => room.roomId === ref.roomId)
     : rooms.filter((room) => sameName(room.slug, ref.name!) || sameName(room.name, ref.name!));
 
-  if (matches.length === 1)
+  if (matches.length === 1) {
     return { ok: true, stored: { kind: 'room', roomId: matches[0]!.roomId } };
-  if (matches.length > 1) {
-    return {
-      ok: false,
-      why: `matches ${matches.length} rooms; send roomId instead`,
-    };
   }
-  // One sentence for both misses, because from here they are the same fact and
-  // the difference leaks a room the caller may not be allowed to know about.
-  return { ok: false, why: 'matches no room that is still open (archived rooms do not count)' };
+  // Every branch below answers identically, the ambiguous one included. That one
+  // could safely carry a count — `rooms` is already this caller's own view — but
+  // a second shape is a second thing to compare, and the whole value of the rule
+  // is that no room answer can be told apart from another.
+  return { ok: false, why: ROOM_MISS };
 }
 
 /**
@@ -263,7 +303,7 @@ export function resolveSidebarItems(
 
   for (const ref of refs) {
     if (ref.kind === 'room' && roster.rooms === undefined) {
-      unresolved.push(`${describeRef(ref)} — rooms are not available on this DorkOS`);
+      unresolved.push(`${describeRef(ref)} — ${ROOM_UNCHECKABLE}`);
       continue;
     }
     const outcome =

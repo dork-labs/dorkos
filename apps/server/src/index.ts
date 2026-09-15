@@ -357,6 +357,7 @@ import {
   setRoomWorktreeManager,
   setRoomMergeService,
 } from './services/rooms/index.js';
+import { callerAuthor as roomCallerAuthor } from './services/rooms/room-capabilities.js';
 import { roomSessionPlace } from './services/rooms/repo/room-worktree-cwd.js';
 import {
   readRoomRepoConfig,
@@ -2905,13 +2906,29 @@ async function start() {
       ...(notifyDm && { notifyDm }),
       // What the two sidebar-section capabilities check a room reference against
       // before they store one (DOR-2055). Resolved per call, because a room can
-      // be archived between two turns of the same conversation, and read as the
-      // OPERATOR rather than the caller: the sidebar being edited is the
-      // person's, so it legitimately holds rooms the calling agent never joined.
-      listOperatorRooms: () =>
-        roomService
-          .listRooms(resolveOperatorAuthorId(), { includeArchived: false })
-          .map((room) => ({ roomId: room.id, name: room.title, slug: room.slug })),
+      // be archived — or an agent removed from it — between two turns of one
+      // conversation.
+      //
+      // Scoped to the CALLER, through the rooms domain's own `callerAuthor` and
+      // its own `listRooms`, so the tool sees exactly what its caller sees and
+      // every grant those two already encode carries over without being
+      // restated. The owner still resolves every room on the install; an agent
+      // resolves the rooms it is seated in. Nothing here re-implements
+      // visibility — see `room-visibility.ts` for why "not visible" and "no such
+      // room" must remain indistinguishable.
+      //
+      // A caller whose identity cannot be verified raises `RoomError` out of
+      // `callerAuthor`, and that is "cannot answer" rather than "no rooms": the
+      // capability refuses the reference instead of storing one nobody checked.
+      listVisibleRooms: (caller) => {
+        try {
+          return roomService
+            .listRooms(roomCallerAuthor(roomService, caller).id, { includeArchived: false })
+            .map((room) => ({ roomId: room.id, name: room.title, slug: room.slug }));
+        } catch {
+          return undefined;
+        }
+      },
     };
     claudeRuntime.setMcpServerFactory((session, sessionId) =>
       // Managed servers first and `dorkos` last so it can never be shadowed —

@@ -14,6 +14,7 @@ import type { ExtensionManager } from '../../../extensions/extension-manager.js'
 import type { RuntimeRegistry } from '../../../core/runtime-registry.js';
 import type { ActivityService } from '../../../activity/activity-service.js';
 import type { ApprovalService } from '../../../core/approvals/index.js';
+import type { CapabilityHandlerContext } from '../../../core/capabilities/registry.js';
 import type { StreamEvent } from '@dorkos/shared/types';
 
 /**
@@ -100,25 +101,47 @@ export interface McpToolDeps {
   /** Optional MeshCore — undefined when Mesh is disabled */
   meshCore?: MeshCore;
   /**
-   * The rooms a person can still see, for the two sidebar-section capabilities
-   * that have to check a room reference before storing one (DOR-2055).
+   * The rooms THIS CALLER can see, for the two sidebar-section capabilities that
+   * have to check a room reference before storing one (DOR-2055).
    *
-   * A function returning plain data rather than the rooms service itself, and
-   * that is the point of its shape. The operator domain has no business holding
-   * `RoomService` — it would inherit a whole domain's surface to ask one
-   * yes-or-no question — and the answer it needs is per-call, because a room can
-   * be archived between two turns of the same conversation.
+   * ## Why it is scoped to the caller and not to the operator
    *
-   * It is the OPERATOR'S view, not the caller's, and the difference is
-   * load-bearing: an agent sees only the rooms it belongs to, while the sidebar
-   * being edited is the person's and legitimately holds rooms that agent has
-   * never joined. Validating against the caller would refuse correct references.
+   * The first version asked the OWNER's view, on the reasoning that the sidebar
+   * being edited is the person's and may legitimately hold rooms the calling
+   * agent never joined. That reasoning is true and it was still the wrong
+   * answer, because the verbs REPORT what they resolved: an agent could guess a
+   * DM title, get back `notPresent: [{ roomId: <the real id> }]`, and learn that
+   * the operator's private conversation exists. `room-visibility.ts` closes
+   * exactly that oracle on purpose — "not visible" and "no such room" answer
+   * identically, because a room id is never a capability — and a second seam
+   * that answers a wider question reopens it.
    *
-   * Undefined when rooms are not wired, which a caller must read as "cannot
-   * answer" rather than "no rooms" — see `SidebarRoster` in
-   * `core/operator/sidebar-item-refs.ts`.
+   * So this tool sees exactly what its caller sees. The owner still resolves
+   * every room on the install (`seesEveryRoom`), so the person's own path is
+   * unchanged; an agent resolves the rooms it is on the roster of and no others,
+   * and a room it cannot see is refused with the same words a room that never
+   * existed gets. The AGENT roster next door stays install-wide deliberately:
+   * agents are not secret, and `mesh_list` already lists them all.
+   *
+   * ## Shape
+   *
+   * A function of the caller returning plain rows, rather than the rooms service
+   * itself: the operator domain has no business holding `RoomService` to ask one
+   * yes-or-no question, and the answer is per-call anyway — a room can be
+   * archived, or an agent removed from it, between two turns of one
+   * conversation. The visibility rule itself is NOT restated here; the wiring in
+   * `index.ts` resolves the caller through the rooms domain's own `callerAuthor`
+   * and lists through `RoomService.listRooms`, so every grant those already
+   * encode carries over by construction.
+   *
+   * `undefined` means this process cannot answer for this caller — rooms are not
+   * wired, or the caller presented an identity that could not be verified. It is
+   * never "no rooms": a room reference is then refused rather than stored
+   * unchecked. See `SidebarRoster` in `core/operator/sidebar-item-refs.ts`.
    */
-  listOperatorRooms?: () => { roomId: string; name: string; slug: string | null }[];
+  listVisibleRooms?: (
+    caller: CapabilityHandlerContext
+  ) => { roomId: string; name: string; slug: string | null }[] | undefined;
   /**
    * Optional rooms seam for the first-party fallback `relay_notify_user` takes
    * when no external chat integration can carry a proactive message: the

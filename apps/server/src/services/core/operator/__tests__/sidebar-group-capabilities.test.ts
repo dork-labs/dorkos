@@ -34,6 +34,7 @@ import type { GuardedConfigWrite } from '../config-write.js';
 import type { OperatorToolResult } from '../operator-tool-handlers.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
 import type { SidebarItemRefInput } from '../sidebar-item-refs.js';
+import type { CapabilityHandlerContext } from '../../capabilities/registry.js';
 
 /** Every guarded write the handlers made, in order, as production built it. */
 const { writes } = vi.hoisted(() => ({ writes: [] as GuardedConfigWrite[] }));
@@ -86,6 +87,16 @@ const ROSTER_ROOMS = [
 ];
 
 /**
+ * A room the caller in these tests is NOT in — the operator's private DM.
+ *
+ * It is never in any roster this file hands a handler, because the production
+ * seam hands each caller only the rooms that caller can see
+ * (`RoomService.listRooms` behind `callerAuthor`). Naming it is how the leak
+ * tests below ask "can an agent learn this exists?".
+ */
+const UNSEEN_DM = { roomId: '01JPRIVATEDM', name: 'Dorian and Scout', slug: null };
+
+/**
  * Tool deps carrying just the two rosters a reference is checked against.
  *
  * `listOperatorRooms` is a FUNCTION here as it is in production, because the
@@ -95,9 +106,21 @@ const ROSTER_ROOMS = [
 function deps(over: Partial<McpToolDeps> = {}): McpToolDeps {
   return {
     meshCore: { listWithPaths: () => ROSTER_AGENTS } as unknown as McpToolDeps['meshCore'],
-    listOperatorRooms: () => [...ROSTER_ROOMS],
+    listVisibleRooms: () => [...ROSTER_ROOMS],
     ...over,
   } as McpToolDeps;
+}
+
+/** An agent principal, as the registry resolves one onto the caller context. */
+const AGENT_IDENTITY = {
+  agentId: '01JAGENTBETA',
+  agentPath: '/projects/beta',
+  displayName: 'beta',
+} as unknown as NonNullable<CapabilityHandlerContext['identity']>;
+
+/** A caller context, as the registry hands one to `invoke`. */
+function caller(over: Partial<CapabilityHandlerContext> = {}): CapabilityHandlerContext {
+  return over;
 }
 
 describe('the sidebar-section capabilities', () => {
@@ -135,8 +158,8 @@ describe('the sidebar-section capabilities', () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-sidebar-groups-'));
     process.env.DORK_HOME = tmpDir;
     configManager = initConfigManager(tmpDir);
-    addToGroup = handlers.createSidebarAddToGroupHandler(deps());
-    removeFromGroup = handlers.createSidebarRemoveFromGroupHandler(deps());
+    addToGroup = handlers.createSidebarAddToGroupHandler(deps(), caller());
+    removeFromGroup = handlers.createSidebarRemoveFromGroupHandler(deps(), caller());
   });
 
   // Deliberately NO `vi.resetModules()`. The mock factory's result is cached
@@ -447,29 +470,40 @@ describe('the sidebar-section capabilities', () => {
       expect(writes).toHaveLength(0);
     });
 
-    it('refuses an archived room, because the seam never lists one', async () => {
+    it('refuses an archived room, indistinguishably from one that never existed', async () => {
       // Production passes `includeArchived: false` when it builds this roster
-      // (`index.ts`), so an archived room is simply absent from it — which is
-      // the same answer the sidebar gives, since it renders open rooms only.
+      // (`index.ts`), so an archived room is simply absent from it — the same
+      // answer the sidebar gives, since it renders open rooms only.
+      //
+      // The refusal deliberately does NOT say "archived". Every room miss here
+      // is one sentence carrying nothing from the store, so archived, hidden and
+      // nonexistent cannot be told apart. Saying "that one is archived" would be
+      // a smaller version of the existence oracle the block below is about.
       seed([group({ id: 'g-1', name: 'Work' })]);
-      const { isError, body } = await call(
+      const archived = await call(
         addToGroup({ group: 'Work', items: [{ kind: 'room', roomId: '01JARCHIVED' }] })
       );
+      const invented = await call(
+        addToGroup({ group: 'Work', items: [{ kind: 'room', roomId: '01JNEVEREXISTED' }] })
+      );
 
-      expect(isError).toBe(true);
-      expect(body.code).toBe('SIDEBAR_ITEM_NOT_FOUND');
-      expect(String(body.error)).toContain('archived');
+      expect(archived.isError).toBe(true);
+      expect(archived.body.code).toBe('SIDEBAR_ITEM_NOT_FOUND');
+      expect((archived.body.unresolved as string[])[0]!.split(' — ')[1]).toBe(
+        (invented.body.unresolved as string[])[0]!.split(' — ')[1]
+      );
       expect(writes).toHaveLength(0);
     });
 
     it('refuses an ambiguous room name rather than picking one', async () => {
       const twoGenerals = handlers.createSidebarAddToGroupHandler(
         deps({
-          listOperatorRooms: () => [
+          listVisibleRooms: () => [
             { roomId: '01JROOMX', name: 'General', slug: null },
             { roomId: '01JROOMY', name: 'General', slug: null },
           ],
-        })
+        }),
+        caller()
       );
       seed([group({ id: 'g-1', name: 'Work' })]);
 
@@ -492,7 +526,8 @@ describe('the sidebar-section capabilities', () => {
               { id: '01JY', name: 'other', displayName: 'Scout', projectPath: '/projects/two' },
             ],
           } as unknown as McpToolDeps['meshCore'],
-        })
+        }),
+        caller()
       );
       seed([group({ id: 'g-1', name: 'Work' })]);
 
@@ -528,7 +563,8 @@ describe('the sidebar-section capabilities', () => {
       // `undefined` is "cannot answer", never "no rooms" — storing an unchecked
       // ref because the checker is missing is the failure, not the fallback.
       const roomless = handlers.createSidebarAddToGroupHandler(
-        deps({ listOperatorRooms: undefined })
+        deps({ listVisibleRooms: undefined }),
+        caller()
       );
       seed([group({ id: 'g-1', name: 'Work' })]);
 
@@ -537,7 +573,7 @@ describe('the sidebar-section capabilities', () => {
       );
 
       expect(isError).toBe(true);
-      expect(String(body.error)).toContain('rooms are not available');
+      expect(String(body.error)).toContain('cannot say which rooms you can see');
       expect(writes).toHaveLength(0);
     });
 
@@ -564,6 +600,141 @@ describe('the sidebar-section capabilities', () => {
       expect(body.code).toBe('SIDEBAR_ITEM_NOT_FOUND');
       expect(stored('g-1')!.items).toEqual([AGENT_A]);
       expect(writes).toHaveLength(0);
+    });
+  });
+
+  describe('a room the caller cannot see', () => {
+    /**
+     * The handlers a NON-MEMBER gets: the same agent roster, and a room roster
+     * that simply does not contain the operator's DM.
+     *
+     * That is the production shape, not a simplification. `listVisibleRooms` is
+     * wired through the rooms domain's own `callerAuthor` + `RoomService.listRooms`
+     * (`index.ts`), so a caller is handed its own visible set and an unseen room
+     * is absent rather than filtered later — which is exactly why no branch in
+     * this module can tell "not yours" from "not there".
+     */
+    function asNonMember() {
+      return {
+        add: handlers.createSidebarAddToGroupHandler(deps(), caller({ identity: AGENT_IDENTITY })),
+        remove: handlers.createSidebarRemoveFromGroupHandler(
+          deps(),
+          caller({ identity: AGENT_IDENTITY })
+        ),
+      };
+    }
+
+    /** The same handlers for the owner, whose view holds every room. */
+    function asOwner() {
+      const owner = deps({ listVisibleRooms: () => [...ROSTER_ROOMS, UNSEEN_DM] });
+      return {
+        add: handlers.createSidebarAddToGroupHandler(owner, caller()),
+        remove: handlers.createSidebarRemoveFromGroupHandler(owner, caller()),
+      };
+    }
+
+    it('cannot be resolved by name or by id, through either verb', async () => {
+      seed([
+        group({ id: 'g-1', name: 'Work', items: [{ kind: 'room', roomId: UNSEEN_DM.roomId }] }),
+      ]);
+      const { add, remove } = asNonMember();
+
+      for (const ref of [
+        { kind: 'room', roomId: UNSEEN_DM.roomId },
+        { kind: 'room', name: UNSEEN_DM.name },
+      ] as SidebarItemRefInput[]) {
+        expect((await call(add({ group: 'Work', items: [ref] }))).isError).toBe(true);
+        expect((await call(remove({ group: 'Work', items: [ref] }))).isError).toBe(true);
+      }
+      // The DM is still in the section, untouched, and nothing was written.
+      expect(stored('g-1')!.items).toEqual([{ kind: 'room', roomId: UNSEEN_DM.roomId }]);
+      expect(writes).toHaveLength(0);
+    });
+
+    it('answers a real hidden room byte-identically to a room that never existed', async () => {
+      // The oracle this closes: `sidebar_remove_from_group` used to answer a
+      // guessed DM title with `success: true` and `notPresent: [{roomId: <the
+      // real id>}]`, which confirms the room exists. `room-visibility.ts` keeps
+      // "not visible" and "no such room" indistinguishable for that reason, and
+      // a second seam that answered a wider question reopened it here.
+      seed([group({ id: 'g-1', name: 'Work' })]);
+      const { add, remove } = asNonMember();
+
+      const hidden = await call(
+        add({ group: 'Work', items: [{ kind: 'room', name: 'Dorian and Scout' }] })
+      );
+      const absent = await call(
+        add({ group: 'Work', items: [{ kind: 'room', name: 'Dorian and Scout' }] })
+      );
+      // Same words for a room that exists-but-is-hidden and one nobody has.
+      const invented = await call(
+        add({ group: 'Work', items: [{ kind: 'room', name: 'No Such Conversation' }] })
+      );
+
+      expect(hidden.body).toEqual(absent.body);
+      // Only the caller's own echoed words differ; the REASON is the same bytes.
+      expect((hidden.body.unresolved as string[])[0]!.split(' — ')[1]).toBe(
+        (invented.body.unresolved as string[])[0]!.split(' — ')[1]
+      );
+      // And neither answer carries the id, a count, or the room's own title.
+      expect(JSON.stringify(hidden.body)).not.toContain(UNSEEN_DM.roomId);
+
+      const byId = await call(
+        remove({ group: 'Work', items: [{ kind: 'room', roomId: UNSEEN_DM.roomId }] })
+      );
+      const byMadeUpId = await call(
+        remove({ group: 'Work', items: [{ kind: 'room', roomId: '01JNOTAROOMATALL' }] })
+      );
+      expect((byId.body.unresolved as string[])[0]!.split(' — ')[1]).toBe(
+        (byMadeUpId.body.unresolved as string[])[0]!.split(' — ')[1]
+      );
+    });
+
+    it('still resolves for the owner, whose view holds every room', async () => {
+      // The scoping must narrow the agent without breaking the person: the
+      // sidebar being edited is theirs, and `seesEveryRoom` is why their own
+      // path is unchanged.
+      seed([group({ id: 'g-1', name: 'Work' })]);
+      const { add } = asOwner();
+
+      const { isError } = await call(
+        add({ group: 'Work', items: [{ kind: 'room', name: 'Dorian and Scout' }] })
+      );
+
+      expect(isError).toBe(false);
+      expect(stored('g-1')!.items).toEqual([{ kind: 'room', roomId: UNSEEN_DM.roomId }]);
+    });
+
+    it('is the SEAM that scopes it, not a filter a mutation could skip', async () => {
+      // The probe: hand the non-member handler the owner's roster and the same
+      // call succeeds. That is what says the refusal above comes from the caller
+      // scoping and from nothing else in this module — so deleting the scoping
+      // in `index.ts` is a change this suite would catch by inversion.
+      seed([group({ id: 'g-1', name: 'Work' })]);
+      const widened = handlers.createSidebarAddToGroupHandler(
+        deps({ listVisibleRooms: () => [...ROSTER_ROOMS, UNSEEN_DM] }),
+        caller({ identity: AGENT_IDENTITY })
+      );
+
+      const { isError } = await call(
+        widened({ group: 'Work', items: [{ kind: 'room', name: 'Dorian and Scout' }] })
+      );
+
+      expect(isError).toBe(false);
+    });
+
+    it('scopes rooms but NOT agents, which are not secret', async () => {
+      // `mesh_list` already lists every agent on the install, so narrowing the
+      // agent roster per caller would buy nothing and refuse correct references.
+      seed([group({ id: 'g-1', name: 'Work' })]);
+      const { add } = asNonMember();
+
+      const { isError } = await call(
+        add({ group: 'Work', items: [{ kind: 'agent', name: 'gamma' }] })
+      );
+
+      expect(isError).toBe(false);
+      expect(stored('g-1')!.items).toEqual([AGENT_C]);
     });
   });
 
