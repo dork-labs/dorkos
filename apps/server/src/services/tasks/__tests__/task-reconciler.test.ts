@@ -502,8 +502,10 @@ describe('TaskReconciler', () => {
     });
 
     it('leaves the row alone while the link is still there', async () => {
-      // The floor: "unreachable" must not become "anything under a plugins
-      // folder". Seeded defect: drop the `linkedFiles` check.
+      // The floor: a pass over an unchanged tree must decide nothing. It pins
+      // the ordinary path — the scan reads the file through the link, so the row
+      // is seen and never reaches the retirement loop at all — which is what
+      // makes every case below a statement about rows the scan did NOT return.
       const { repo, recon } = await projectReconciler();
       const { filePath } = await installProjectPackage(repo, 'acme', 'daily');
       await recon.reconcile();
@@ -511,6 +513,91 @@ describe('TaskReconciler', () => {
 
       expect(store.getByFilePath(filePath)?.status).toBe('pending_approval');
       await fs.rm(repo, { recursive: true, force: true });
+    });
+
+    it.skipIf(process.getuid?.() === 0)(
+      'keeps a row whose FILE cannot be read while its link is still there',
+      async () => {
+        // The case `linkedFiles` is actually load-bearing for, and the one that
+        // kills the mutant the floor above cannot: a file the scan could not
+        // read comes back from no scan, so the row reaches the retirement loop —
+        // and it is still reachable, because something in a watched root still
+        // points at it. Seeded defect: drop `!linkedFiles.has(task.filePath)`.
+        // `fs.access` answers F_OK on a mode-000 file, so gate 2 says the file
+        // is there, and the row is paused for a skill nothing is wrong with
+        // except its permissions.
+        const { repo, recon } = await projectReconciler();
+        const { filePath } = await installProjectPackage(repo, 'acme', 'daily');
+        await recon.reconcile();
+        expect(store.getByFilePath(filePath)?.status).toBe('pending_approval');
+
+        await fs.chmod(filePath, 0o000);
+        try {
+          await recon.reconcile();
+
+          expect(store.getByFilePath(filePath)?.status).toBe('pending_approval');
+        } finally {
+          await fs.chmod(filePath, 0o644);
+          await fs.rm(repo, { recursive: true, force: true });
+        }
+      }
+    );
+
+    it('never retires a row whose surviving link is in a root this pass did not read', async () => {
+      // The single-root pass `sweepUnwatchedRoots` runs. `linkedFiles` only ever
+      // holds the links of the roots THIS pass read, so a pass over one root
+      // knows nothing about a link in another — and answering "unreachable" from
+      // that is the same mistake as answering it from a directory nobody
+      // enumerated. Seeded defect: let a partial pass judge reachability.
+      //
+      // The second link is staged BY HAND. Harness Sync never writes two links
+      // to one packaged skill today (a project install projects into that
+      // project, a global one into the dork home), so this is a rule about what
+      // the pass may CONCLUDE rather than about a shape the engine produces.
+      const { repo, recon } = await projectReconciler();
+      const { filePath } = await installProjectPackage(repo, 'acme', 'daily');
+      const second = path.join(dorkHome, 'skills', 'acme__daily');
+      await fs.symlink(path.join(repo, '.dork', 'plugins', 'acme', 'skills', 'daily'), second);
+      // Both roots are registered on one reconciler, and only the project one is
+      // swept, standing in for a root whose watch has died.
+      recon.addRoot(skillsRoot(skillsDir, 'global'));
+      const unwatched = new TaskReconciler(
+        store,
+        new TaskRegistrar({ store, scheduler }),
+        new ScheduleIdentityRegistry(),
+        { rootsWithoutLiveWatch: () => [path.join(repo, '.agents', 'skills')] }
+      );
+      unwatched.addRoot(
+        skillsRoot(path.join(repo, '.agents', 'skills'), 'project', repo, 'agent-1')
+      );
+      unwatched.addRoot(skillsRoot(skillsDir, 'global'));
+      await recon.reconcile();
+      expect(store.getByFilePath(filePath)?.status).toBe('pending_approval');
+
+      // The project link goes; the one in the global root still reaches the file.
+      await fs.rm(path.join(repo, '.agents', 'skills', 'acme__daily'), { force: true });
+      await unwatched.sweepUnwatchedRoots();
+
+      expect(store.getByFilePath(filePath)?.status).toBe('pending_approval');
+      await fs.rm(repo, { recursive: true, force: true });
+    });
+
+    it('does not mistake a neighbouring folder for the packages folder', async () => {
+      // Containment is a path-segment test. `<dorkHome>/plugins-backup` is
+      // somebody's own directory whatever it is called, and a row in it is not
+      // this pass's to speak about. Seeded defect: `isInsideAny` written with a
+      // bare `startsWith` — it survived every other case here.
+      const realHome = await fs.realpath(dorkHome);
+      const stranger = store.createTask({
+        name: 'in-a-neighbour',
+        description: 'beside the packages folder, not in it',
+        prompt: 'in-a-neighbour',
+        filePath: path.join(realHome, 'plugins-backup', 'acme', 'skills', 'x', 'SKILL.md'),
+      });
+
+      await reconciler.reconcile();
+
+      expect(store.getTask(stranger.id)?.status).toBe('active');
     });
 
     it('never retires a row in a project nobody registered', async () => {

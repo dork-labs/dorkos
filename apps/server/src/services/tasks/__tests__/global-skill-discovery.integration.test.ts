@@ -91,19 +91,21 @@ describe('a scheduled skill installed for all projects', () => {
     await rm(dorkHome, { recursive: true, force: true });
   });
 
-  /** Install a package for all projects, holding one skill that runs on a timer. */
-  async function installGlobalPackage(name: string, skill: string): Promise<void> {
+  /** Install a package for all projects, holding one or more skills that run on a timer. */
+  async function installGlobalPackage(name: string, ...skills: string[]): Promise<void> {
     const dir = path.join(dorkHome, 'plugins', name);
     await mkdir(path.join(dir, '.dork'), { recursive: true });
     await writeFile(
       path.join(dir, '.dork', 'manifest.json'),
       JSON.stringify({ name, version: '1.0.0', type: 'plugin', description: name })
     );
-    await mkdir(path.join(dir, 'skills', skill), { recursive: true });
-    await writeFile(
-      path.join(dir, 'skills', skill, 'SKILL.md'),
-      `---\nname: ${skill}\ndescription: A skill named ${skill}\nschedule:\n  cron: '0 9 * * *'\n---\nDo the thing.\n`
-    );
+    for (const skill of skills) {
+      await mkdir(path.join(dir, 'skills', skill), { recursive: true });
+      await writeFile(
+        path.join(dir, 'skills', skill, 'SKILL.md'),
+        `---\nname: ${skill}\ndescription: A skill named ${skill}\nschedule:\n  cron: '0 9 * * *'\n---\nDo the thing.\n`
+      );
+    }
   }
 
   it('is discovered as a schedule once a global sync has linked it', async () => {
@@ -216,6 +218,30 @@ describe('a scheduled skill installed for all projects', () => {
       status: 'paused',
       enabled: false,
     });
+  });
+
+  it('retires one skill’s row while its sibling in the same package keeps firing', async () => {
+    // The hole gate 1 leaves open, and the reason the unreachable rule may not
+    // be gated behind it. `scannedDirs` records the PARENT of every directory a
+    // link points into — `<pkg>/skills` — so one surviving sibling link makes
+    // "this pass enumerated the directory" true for every row in the package,
+    // and a row whose own link was swept read as merely skipped by the scan.
+    // Seeded defect: `!enumerated && isInsideAny(…)`. Then `daily` stays armed
+    // for as long as `weekly` exists.
+    await installGlobalPackage('globex', 'daily-sweep', 'weekly-sweep');
+    const roots = { dorkHome };
+    applyGlobalPlan(projectGlobal({ roots, harnesses: [] }), roots, { sweepOrphans: true });
+    await reconciler.reconcile();
+    expect(store.getTasks()).toHaveLength(2);
+
+    await rm(path.join(dorkHome, 'skills', 'globex__daily-sweep'), { force: true });
+    await reconciler.reconcile();
+
+    const byName = new Map(store.getTasks().map((t) => [t.name, t]));
+    expect({
+      daily: byName.get('daily-sweep')?.status,
+      weekly: byName.get('weekly-sweep')?.status,
+    }).toEqual({ daily: 'paused', weekly: 'pending_approval' });
   });
 
   it('leaves a row alone while its link is still there', async () => {

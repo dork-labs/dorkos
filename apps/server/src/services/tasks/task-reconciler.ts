@@ -438,6 +438,12 @@ export class TaskReconciler {
    * a single-root pass can repair that root and can never retire anything
    * outside it.
    *
+   * The reachability gate needs a second answer for the same reason, and cannot
+   * borrow the first one: "no link anywhere points at this file" is a statement
+   * about EVERY root, and a partial pass has only read some of them. So it is
+   * asked only when this pass covers every registered root, and a single-root
+   * sweep repairs its root without judging what is reachable from the others.
+   *
    * @param roots - The roots to read.
    */
   private async reconcilePass(
@@ -457,6 +463,16 @@ export class TaskReconciler {
     // "still reachable" means for a packaged skill: not that the file is there,
     // but that something in a watched root still points at it (DOR-1934).
     const linkedFiles = new Set<string>();
+    // Whether this pass read EVERY registered root, which is what it takes to
+    // say a file is reachable from none of them. `sweepUnwatchedRoots` runs
+    // single-root passes, and `linkedFiles` then holds one root's links — so a
+    // partial pass that judged reachability would pause a row whose surviving
+    // link is in a root it did not open, which is the same mistake as speaking
+    // about a directory nobody enumerated. Compared by directory rather than by
+    // count, because a caller may pass a copy of the list.
+    const coversEveryRoot = this.roots.every((registered) =>
+      roots.some((read) => read.dir === registered.dir)
+    );
 
     for (const root of roots) {
       let results;
@@ -575,12 +591,16 @@ export class TaskReconciler {
     //    whose agent registered after startup, and one whose agent was
     //    unregistered (its directory is dropped, its rows are not).
     // 1b. …or the row's file sits in a packages directory feeding a root this
-    //    pass DID read, and no link in those roots resolves to it any more. A
-    //    packaged skill's row is keyed inside `plugins/`, which is not a root
+    //    pass read, and no link in ANY registered root resolves to it any more.
+    //    A packaged skill's row is keyed inside `plugins/`, which is not a root
     //    and which nothing enumerates, so gate 1 alone could never speak about
     //    one after its link was swept — and it went on firing for a package
     //    that had been uninstalled (DOR-1934). Such a row PAUSES while its file
-    //    is still there and follows the ordinary ladder when it is not.
+    //    is still there and follows the ordinary ladder when it is not. Two
+    //    limits keep it inside what this pass looked at: it is asked only on a
+    //    pass that read every registered root, and containment is a
+    //    path-segment test, so `<dorkHome>/plugins-backup` is somebody's own
+    //    folder whatever it is called.
     // 2. The file is genuinely not on disk. Being absent from `seenFilePaths`
     //    only means the scan did not return it, and the scan skips slots it
     //    enumerated fine (reserved names, dotfiles, symlinked directories) —
@@ -605,11 +625,23 @@ export class TaskReconciler {
       // directory, which is not a root and which no scan enumerates — so once
       // the `<pkg>__<name>` link that made it discoverable is swept, gate 1
       // never passes again and the row runs forever for a skill nothing can
-      // reach (DOR-1934). This pass DID walk the only directory such a link can
-      // live in, so it may speak: a row in a packages directory it read, that no
-      // link in those roots resolves to any more, is unreachable.
+      // reach (DOR-1934). This pass DID walk the only directories such a link
+      // can live in, so it may speak: a row in a packages directory it read,
+      // that no link in any of those roots resolves to any more, is
+      // unreachable.
+      //
+      // **Asked independently of gate 1, never behind it.** `scannedDirs` holds
+      // the PARENT of every directory a link points into — `<pkg>/skills` — so
+      // one surviving sibling link makes gate 1 true for every row in the
+      // package, and a skill whose own link was swept read as one the scan had
+      // merely skipped. Uninstalling one skill from a two-skill package left it
+      // armed for as long as its sibling existed. Nothing is lost by asking
+      // both: a row that is genuinely still reachable was added to
+      // `seenFilePaths` by the scan above and never reaches this line.
       const unreachable =
-        !enumerated && isInsideAny(task.filePath, pluginRoots) && !linkedFiles.has(task.filePath);
+        coversEveryRoot &&
+        isInsideAny(task.filePath, pluginRoots) &&
+        !linkedFiles.has(task.filePath);
       if (!enumerated && !unreachable) continue;
 
       // Gate 2. One stat per candidate — rows already believed missing — so
