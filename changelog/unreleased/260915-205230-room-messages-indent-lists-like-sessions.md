@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(client): room messages indent lists like session messages do (DOR-2074)'
+  - 'fix(client): rename msg-assistant to msg-prose and fix seeded changelog fragment (DOR-2074)'
 ---
 
 ### Fixed
