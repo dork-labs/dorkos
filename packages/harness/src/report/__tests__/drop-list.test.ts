@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { formatDropList, formatWarnings } from '../drop-list.js';
 import type { ProjectionPlan } from '../../plan/types.js';
 import { JUNCTION_COMMIT_WARNING } from '../../apply/windows-links.js';
-import { sweepBlindWarning } from '../../apply/sweep-warnings.js';
+import { blockedRemovalWarning, sweepBlindWarning } from '../../apply/sweep-warnings.js';
 
 describe('formatDropList', () => {
   it('VC-01, VC-02: groups drops by harness with their reasons', () => {
@@ -247,6 +247,28 @@ describe('formatWarnings', () => {
           ])
         )
       ).toBe('Warnings (may not commit as a link, or could not be looked inside):');
+    });
+
+    it('VC-01: files everything about this repository under ONE heading', () => {
+      // Seeded defect: one `SECTIONS` row per family, each pushing its own
+      // heading. Two families share `this run:`, so the block printed the
+      // heading twice with a blank line between — two sections that are one
+      // subject, which reads as though the second list is about something else.
+      const out = formatWarnings({ ...withPlanWarning, warnings: [] }, [
+        sweepBlindWarning('.opencode/commands'),
+        blockedRemovalWarning('.claude/skills/gone', '.claude/skills'),
+        JUNCTION_COMMIT_WARNING,
+      ]);
+
+      expect(out.split('this run:').length).toBe(2);
+      // Counted as whole LINES, not as substrings: the junction sentence itself
+      // says "from this machine:", so splitting the block on that text finds it
+      // twice for a reason that has nothing to do with headings.
+      expect(out.split('\n').filter((line) => line === 'this machine:').length).toBe(1);
+      expect(out.split('\n').filter((line) => line === 'this run:').length).toBe(1);
+      // And the family order inside the section is the declared one, so one
+      // tree reads the same way twice.
+      expect(out.indexOf('.opencode/commands')).toBeLessThan(out.indexOf('.claude/skills/gone'));
     });
 
     it('VC-01: files the machine and the repository under different headings', () => {

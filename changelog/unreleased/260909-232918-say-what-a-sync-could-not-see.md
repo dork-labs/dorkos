@@ -24,6 +24,9 @@ covers:
   # sentence about the same folder and a person read both. Nobody could have
   # seen either version.
   - 'fix(harness): one locked skill folder gets one sentence, not two (DOR-1949)'
+  # Folds in here too: the warnings block printed its own heading twice when a
+  # run had both kinds of sweep sentence. Before anybody could have read one.
+  - 'fix(harness): one heading per section in the warnings block (DOR-1939)'
 ---
 
 ### Fixed

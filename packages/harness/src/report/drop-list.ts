@@ -215,17 +215,27 @@ const MACHINE_HEADING = 'this machine:';
 const RUN_HEADING = 'this run:';
 
 /**
- * Which heading each run family is filed under, in print order.
+ * Which heading each run family is filed under.
+ *
+ * A MAP rather than a list of pairs, because two of the three families share a
+ * heading and the block is written per HEADING: a list of pairs printed the
+ * shared one twice, with a blank line between, which reads as though the second
+ * list is about a different subject (DOR-1939).
+ */
+const SECTION_OF: Record<RunWarningFamily, string> = {
+  junction: MACHINE_HEADING,
+  blind: RUN_HEADING,
+  'blocked-removal': RUN_HEADING,
+};
+
+/**
+ * The headings, in print order, each appearing once.
  *
  * The machine first: it is the one a person can do nothing about from inside
  * this repository, and burying it under the tree's own findings is how it gets
  * skipped.
  */
-const SECTIONS: readonly (readonly [string, RunWarningFamily])[] = [
-  [MACHINE_HEADING, 'junction'],
-  [RUN_HEADING, 'blind'],
-  [RUN_HEADING, 'blocked-removal'],
-] as const;
+const SECTION_ORDER: readonly string[] = [MACHINE_HEADING, RUN_HEADING];
 
 /**
  * Render the warnings a run carries as a readable block grouped by heading.
@@ -279,9 +289,13 @@ export function formatWarnings(plan: ProjectionPlan, runWarnings: readonly strin
   }
   // LAST, whatever the harness headings sorted to, and in two sections: the
   // tool sections read as a list of one kind of thing, and a fact about the
-  // computer is not a fact about this repository.
-  for (const [heading, family] of SECTIONS) {
-    const inSection = runWarnings.filter((warning) => runWarningFamily(warning) === family);
+  // computer is not a fact about this repository. One heading per section, with
+  // every family under it collected — `present` is already in declared family
+  // order, so the order inside a section is the same for one tree twice.
+  for (const heading of SECTION_ORDER) {
+    const inSection = present
+      .filter((family) => SECTION_OF[family] === heading)
+      .flatMap((family) => runWarnings.filter((warning) => runWarningFamily(warning) === family));
     if (inSection.length === 0) continue;
     lines.push('', heading);
     for (const warning of inSection) lines.push(`  - ${warning}`);
