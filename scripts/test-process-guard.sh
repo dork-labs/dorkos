@@ -194,6 +194,29 @@ block-name echo $'\'' $(pkill -f x) '\'
 block-name echo $'\'' `pkill -f x` '\'
 # Inside backticks the next backtick ends the substitution whatever the quotes say.
 block-name echo `echo it's` $(pkill -f x) `echo ok'`
+# --- Quotes are only trusted on a line made entirely of known text-takers. ---
+# Plenty of commands run their quoted argument. Every one below reached a real
+# shell's kill when an earlier version trusted quotes unless it recognised the
+# runner, so trusting is now the exception, not the rule.
+block-name bash -lc 'echo $(pkill -f x)'
+block-name bash -ec 'echo $(pkill -f x)'
+block-name sh -xc 'echo `pkill -f x`'
+block-name bash -c -- 'echo $(pkill -f x)'
+block-name exec sh -c 'echo $(pkill -f x)'
+block-name if bash -c 'echo $(pkill -f x)'; then :; fi
+block-name while sh -c 'echo $(pkill -f x)'; do break; done
+block-name until sh -c 'echo $(pkill -f x)'; do :; done
+block-name nice -n 5 sh -c 'echo $(pkill -f x)'
+block-name env -i PATH="$PATH" sh -c 'echo $(pkill -f x)'
+block-name timeout 5 bash -c 'echo $(pkill -f x)'
+block-name echo a | xargs sh -c 'echo $(pkill -f x)'
+block-name find . -maxdepth 0 -exec sh -c 'echo $(pkill -f x)' \;
+block-name trap 'echo $(pkill -f x)' EXIT
+block-name node -e 'require("child_process").execSync("echo $(pkill -f x)")'
+# A text-taker's substitution is itself a command, so its quotes are not trusted.
+block-name echo $(bash -c 'echo $(pkill -f x)')
+block-name echo "$(bash -c 'echo $(pkill -f x)')"
+block-name echo `bash -c 'echo $(pkill -f x)'`
 CASES
 
 # --- heredocs: a quoted delimiter turns expansion off, an unquoted one does not. ---
@@ -235,6 +258,12 @@ case_check 'heredoc body closing its substitution early' block-name \
 # Inside $(...), a quoted heredoc body with an apostrophe is not vouched for.
 case_check 'apostrophe in a heredoc body inside a substitution' block-name \
   $'gh pr create --body "$(cat <<\'EOF\'\nit\'s `pkill`\nEOF\n)"'
+# bash 3.2 reads the delimiter LINE inside $(...) as syntax too, so an
+# apostrophe there shifts where the substitution ends. Both reached the kill.
+case_check 'quoted delimiter with an apostrophe inside a substitution' block-name \
+  $'echo $(cat <<"it\'s"\nhi\nit\'s\n); cat <<\'X\'\n\'); echo $(pkill -f x)\nX'
+case_check 'backslash-quoted delimiter with an apostrophe inside a substitution' block-name \
+  $'echo $(cat <<\\it\\\'s\nhi\nit\'s\n) \'\n); echo $(pkill -f x)\n\''
 
 echo "process-guard fixtures: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

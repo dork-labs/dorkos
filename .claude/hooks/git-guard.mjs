@@ -71,8 +71,9 @@
  * the model submits, so it does not see:
  *   - a destructive git command inside a script on disk (`./do-it.sh`), a
  *     shell function, an alias, or `eval "$VAR"`;
- *   - `xargs git ...`, `find -exec git ...`, or `git` reached under another
- *     name;
+ *   - a bare `xargs git ...` or `find -exec git ...`, or `git` reached under
+ *     another name (a substitution inside their quoted arguments IS caught,
+ *     because neither is a text-taker, so the line is scanned strictly);
  *   - `$(...)` nested more than one level deep, or inside `$( )` containing
  *     its own parentheses, or `sh -c` nested past two levels;
  *   - `git checkout <ambiguous-path>` when it is the ONLY positional and has
@@ -95,14 +96,20 @@
  * literal argument of `eval '...'` the way it unwraps `sh -c`.
  *
  * A substitution inside single quotes or a quoted heredoc (`<<'EOF'`) is
- * treated as text, so a PR body naming `git stash` in a code span is allowed.
- * That is a reader for plain lines, not a model of bash, and it errs strict:
- * it inspects every substitution-shaped span, quoted or not, whenever the line
- * holds a `#` comment, `$'...'`, a quote inside backticks, `case` inside
- * `$(...)`, a heredoc inside backticks or one inside `$(...)` whose body has
- * quotes or parentheses, an unterminated quote, a heredoc that never closes,
- * or an `sh -c` / `eval` whose quotes protect nothing. Those lines can still
- * be refused for merely naming a blocked command; that is the chosen cost.
+ * treated as text ONLY when every command on the line is a known text-taker
+ * (`echo`, `printf`, `cat`, `tee`, `git commit`, `git tag`, and the `gh pr` /
+ * `gh issue` / `gh release` commands that post text; the list is `TEXT_TAKERS`
+ * in lib/shell-command.mjs). So `git commit -m 'never use `git stash`'` and a
+ * `gh pr create --body "$(cat <<'EOF' ... EOF)"` naming it are allowed, while
+ * `trap`, `xargs`, `find -exec`, `git rebase -x`, `sh -c`, `eval` and anything
+ * unlisted get every substitution-shaped span inspected, quoted or not. Even
+ * a text-taker line goes strict when it holds a `#` comment, `$'...'`, a quote
+ * inside backticks, a single quote inside `$(...)`, `case` inside `$(...)`, a
+ * heredoc with a delimiter other than letters, digits and `_`, a heredoc
+ * inside `$(...)` that is not the whole `cat <<'WORD'` substitution with a
+ * plain body, an unterminated quote, or a heredoc that never closes. Those
+ * lines can still be refused for merely naming a blocked command; that is the
+ * chosen cost.
  *
  * It also never sees commands run by OTHER hooks: PreToolUse fires on tool
  * calls in the agentic loop only. That is why `create-checkpoint.sh` can keep

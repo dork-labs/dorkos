@@ -10,19 +10,25 @@
  * fixed for both — the fixture suites in `scripts/test-git-guard.sh` and
  * `scripts/test-process-guard.sh` both run against this module.
  *
- * Substitutions inside single quotes and quoted heredocs are skipped, because
- * a PR body or commit message naming a blocked command there is text. That
- * skip is deliberately NOT a model of bash: it only applies when the line is
- * plain enough to read with confidence. Comments, `$'...'`, quotes inside
- * backticks, a heredoc inside a substitution whose body has quotes or
- * parentheses, `case` inside `$(...)`, unterminated quotes, a heredoc that
- * never closes, and any line that hands text to `sh -c` / `eval` all fall back
- * to inspecting every substitution-shaped span, quoted or not.
+ * QUOTED TEXT IS TRUSTED BY ALLOWLIST, NEVER BY DEFAULT
+ *
+ * A substitution inside single quotes or a quoted heredoc is text to bash, so
+ * a PR body naming a blocked command in a code span should not be refused.
+ * But plenty of commands run their quoted argument later — `sh -c`, `eval`,
+ * `trap`, `xargs`, `find -exec`, `git rebase -x`, `ssh`, `node -e` — and an
+ * earlier version that trusted quotes unless it recognised the runner was
+ * beaten by every runner it had not listed. So quotes are trusted only when
+ * EVERY command on the line is a known text-taker (`TEXT_TAKERS`) and the line
+ * is plain enough to read with confidence. Everything else — any other
+ * command, anything unknown, and every construct `maskUnexpandedText` refuses
+ * to guess about — gets the strict reading, where every substitution-shaped
+ * span is inspected, quoted or not, exactly as before quotes were considered.
  *
  * Coverage limits are the guards' own contract (see the header comment in
  * git-guard.mjs): this reads the command string the model submits and one
  * level of substitution, and does not see scripts on disk, aliases, `eval` of
- * a variable, `xargs`, or substitutions nested more than one level deep.
+ * a variable, a bare `xargs git ...`, or substitutions nested more than one
+ * level deep.
  */
 
 import path from 'path';
@@ -58,8 +64,37 @@ const COMMAND_PREFIXES = new Set([
   '{',
 ]);
 
+/**
+ * The commands whose quoted arguments are only ever text: they print, store or
+ * send it, and never run it. Matched on the leading words of a segment, in
+ * full, so `git commit` is a text-taker and `git rebase` (whose `-x` runs its
+ * argument) is not. Keep this list short on purpose: a command belongs here
+ * only if no flag of it executes its arguments, and anything not here is read
+ * strictly, which is always safe.
+ */
+const TEXT_TAKERS = new Set([
+  'echo',
+  'printf',
+  'cat',
+  'tee',
+  'git commit',
+  'git tag',
+  'gh pr create',
+  'gh pr edit',
+  'gh pr comment',
+  'gh pr review',
+  'gh issue create',
+  'gh issue edit',
+  'gh issue comment',
+  'gh release create',
+  'gh release edit',
+]);
+
 /** Characters that end a shell word, so what follows starts a new one. */
 const WORD_BOUNDARY = /[\s;&|()<>]/;
+
+/** The only heredoc delimiter spelling trusted: nothing a parser could misread. */
+const INERT_DELIMITER = /^[A-Za-z0-9_]+$/;
 
 /**
  * Split a command line into the individual commands it runs, ignoring
@@ -184,37 +219,39 @@ function findHeredocEnd(command, start, heredoc) {
  *
  * bash 3.2 (still `/bin/bash` on macOS) matches the parentheses of `$(...)`
  * without knowing about heredocs, so a `)` in the body can end the
- * substitution early and a quote or `#` can knock the rest of the line out of
- * step. Measured: backticks in such a body are left alone, apostrophes and
- * parentheses are not. Anything that could move 3.2's reading is refused.
+ * substitution early and a quote, `#` or nested expansion can knock the rest
+ * of the line out of step. Measured: backticks in such a body are left alone,
+ * apostrophes and parentheses are not. Anything that could move 3.2's reading
+ * is refused.
  *
  * @param {string} body - The heredoc body text.
  * @returns {boolean} True when no shell reads this body differently.
  */
 function isInertSubstitutionHeredocBody(body) {
-  if (/['"()\\#]/.test(body)) return false;
+  if (/['"()\\#]|\$[{[]/.test(body)) return false;
   return (body.match(/`/g) ?? []).length % 2 === 0;
 }
 
 /**
- * Blank out the text bash never expands — single-quoted strings and the bodies
- * of quoted heredocs — keeping every index in place.
- *
- * Without this, a PR body in `--body '...'` or a commit message written
- * through `<<'EOF'` reads as running the command its markdown merely names,
- * and the guard refuses a PR body that describes the guard. Double quotes and
- * unquoted heredocs are left alone because bash DOES substitute inside them.
- * Contexts are tracked as a stack because the quoting rules change inside a
- * substitution: an apostrophe is literal in `"it's"` but opens a real quote
- * in `"$(echo 'x')"`.
+ * Blank out the text bash never expands — single-quoted strings at the top
+ * level, and the bodies and delimiter lines of quoted heredocs — keeping every
+ * index in place.
  *
  * This is a reader for plain lines, not a bash parser, and every construct it
  * does not model returns null rather than a guess: a misread that stays in
- * step with itself is exactly how a live substitution gets blanked. So `$'...'`
- * (where `\'` does not close the quote), a `#` comment (an apostrophe in it is
- * not a quote), a quote inside backticks (the next backtick ends the
- * substitution regardless), a heredoc opened inside backticks, and `case`
- * inside `$(...)` (its `)` patterns) all mean "cannot tell".
+ * step with itself is exactly how a live substitution gets blanked. It refuses:
+ *   - `$'...'`, where `\'` does not close the quote;
+ *   - a word-initial `#`, since an apostrophe in a comment is not a quote;
+ *   - any quote inside backticks, where the next backtick ends the
+ *     substitution regardless, and any single quote inside `$(...)`, because
+ *     a substitution is itself a command that may run its quoted text;
+ *   - `case` inside `$(...)`, whose `)` patterns end it early;
+ *   - a heredoc with a delimiter other than letters, digits and `_`, which
+ *     bash 3.2 misreads inside `$(...)`;
+ *   - a heredoc inside backticks, and inside `$(...)` anything but the whole
+ *     substitution being `cat <<'WORD'` with an inert body — the
+ *     `--body "$(cat <<'EOF' ... EOF)"` shape;
+ *   - an unterminated quote, or a heredoc that never closes.
  *
  * @param {string} command - Raw command line.
  * @returns {string | null} The masked line (same length), or null when the
@@ -240,7 +277,7 @@ function maskUnexpandedText(command) {
       continue;
     }
     if (char === '$' && command[i + 1] === '(') {
-      stack.push({ kind: 'sub', depth: 0 });
+      stack.push({ kind: 'sub', depth: 0, start: i + 2, heredoc: false });
       i += 2;
       continue;
     }
@@ -256,12 +293,13 @@ function maskUnexpandedText(command) {
     // early null below is a construct this reader refuses to guess about.
     if (char === '$' && command[i + 1] === "'") return null;
     if (char === '#' && atWordStart(i)) return null;
-    if (context.kind === 'bt' && (char === "'" || char === '"')) return null;
+    if (context.kind === 'bt' && char === '"') return null;
     if (context.kind === 'sub' && atWordStart(i) && /^case(?![\w-])/.test(command.slice(i))) {
       return null;
     }
 
     if (char === "'") {
+      if (context.kind !== 'top') return null;
       const close = command.indexOf("'", i + 1);
       if (close === -1) return null;
       blank(i + 1, close);
@@ -298,7 +336,16 @@ function maskUnexpandedText(command) {
     if (command.startsWith('<<', i)) {
       if (context.kind === 'bt') return null;
       const heredoc = readHeredocOperator(command, i + 2);
-      if (!heredoc) return null;
+      if (!heredoc || !INERT_DELIMITER.test(heredoc.delimiter)) return null;
+      if (context.kind === 'sub') {
+        const wholeSubstitution =
+          heredoc.quoted &&
+          !context.heredoc &&
+          /^\s*cat\s*$/.test(command.slice(context.start, i)) &&
+          /^[ \t]*\n/.test(command.slice(heredoc.end));
+        if (!wholeSubstitution) return null;
+        context.heredoc = true;
+      }
       pending.push({ ...heredoc, inSubstitution: context.kind === 'sub' });
       i = heredoc.end;
       continue;
@@ -307,13 +354,17 @@ function maskUnexpandedText(command) {
     // unquoted body is skipped without being masked: quotes inside it are
     // literal, so its substitutions stay visible to the caller.
     if (char === '\n' && pending.length > 0) {
+      if (pending.length > 1 && pending.some((heredoc) => heredoc.inSubstitution)) return null;
       let cursor = i + 1;
       for (const heredoc of pending) {
         const end = findHeredocEnd(command, cursor, heredoc);
         if (!end) return null;
-        const body = command.slice(cursor, end.bodyEnd);
-        if (heredoc.inSubstitution && !isInertSubstitutionHeredocBody(body)) return null;
-        if (heredoc.quoted) blank(cursor, end.bodyEnd);
+        if (heredoc.inSubstitution) {
+          const body = command.slice(cursor, end.bodyEnd);
+          if (!isInertSubstitutionHeredocBody(body)) return null;
+          if (!/^\s*\)/.test(command.slice(end.next))) return null;
+        }
+        if (heredoc.quoted) blank(cursor, end.next);
         cursor = end.next;
       }
       pending = [];
@@ -328,30 +379,42 @@ function maskUnexpandedText(command) {
 }
 
 /**
+ * Decide whether one command segment is a known text-taker.
+ *
+ * A leading `VAR=value` assignment disqualifies the segment rather than being
+ * skipped: `GIT_EDITOR='sh -c ...' git commit` runs that value.
+ *
+ * @param {string} segment - One command segment, already masked.
+ * @returns {boolean} True when the segment's leading words are in `TEXT_TAKERS`.
+ */
+function isTextTaker(segment) {
+  const words = tokenize(segment);
+  return [1, 2, 3].some(
+    (count) => words.length >= count && TEXT_TAKERS.has(words.slice(0, count).join(' '))
+  );
+}
+
+/**
  * Pull out the bodies of one level of `$(...)` and backtick substitution so
  * `echo $(git stash pop)` is inspected rather than skipped as an `echo`.
  *
  * Substitutions inside single quotes or a quoted heredoc are skipped as text
- * (see `maskUnexpandedText`), with two ways back to the strict reading where
- * every substitution-shaped span counts: a line the masker will not vouch
- * for, and a line that hands quoted text to another parser (`bash -c '...'`,
- * `eval '...'`), where the quotes protect nothing. A guard that misses a real
- * command is worse than one that refuses a harmless line.
+ * only when the line reads cleanly AND every command on it is a text-taker
+ * (see the file header). Every other line is read strictly: every
+ * substitution-shaped span counts, because a guard that misses a real command
+ * is worse than one that refuses a harmless line.
  *
  * @param {string} command - Raw command line.
  * @returns {string[]} Substitution bodies, which may be empty.
  */
 function extractSubstitutions(command) {
-  const runsQuotedText = splitSegments(command).some(
-    (segment) => readWrappedCommand(segment) !== null
-  );
-  const masked = runsQuotedText ? null : maskUnexpandedText(command);
+  const masked = maskUnexpandedText(command);
+  const trusted = masked !== null && splitSegments(masked).every(isTextTaker);
 
   // Strict: the two shapes are searched separately over the raw text. One
   // alternation would let a `$(...)` match swallow a backtick span inside it,
-  // and the body's own pass would then re-mask that span as if it were a
-  // plain top-level heredoc — losing the strict reading this line earned.
-  if (masked === null) {
+  // and the body's own pass could then read that span as trusted text.
+  if (!trusted) {
     return [
       ...[...command.matchAll(/\$\(([^()]*)\)/g)].map((match) => match[1]),
       ...[...command.matchAll(/`([^`]*)`/g)].map((match) => match[1]),
@@ -468,14 +531,16 @@ function stripCommandPrefixes(tokens) {
 
 /**
  * Return the command line a segment hands to another shell parser: the `-c`
- * argument of `sh` / `bash` / `zsh` / `dash` / `ksh`, or the arguments of
- * `eval` joined back together.
+ * argument of `sh` / `bash` / `zsh` / `dash` / `ksh` (also when combined, as
+ * in `-lc`, or followed by `--`), or the arguments of `eval` joined back up.
  *
- * Read from the raw tokens on purpose. `stripCommandPrefixes` trims a trailing
- * `)` off the last token, which cuts `bash -c 'echo $(pkill x)'` down to
- * `echo $(pkill x` so the substitution no longer matches at all. Leaving extra
- * punctuation on (`(bash -c '...')` keeps its closing `)`) only ever gives the
- * inspection more text, never less.
+ * This is what lets a guard see a BARE command in a payload
+ * (`sh -c 'git stash'`), which no substitution scan finds. It can only ever
+ * add a refusal, never remove one, so a wrapper it misses costs coverage of
+ * that bare form and nothing else: substitutions inside the payload are
+ * already caught, because a wrapper is not a text-taker. Read from the raw
+ * tokens on purpose — `stripCommandPrefixes` trims a trailing `)`, which
+ * would cut `echo $(x)` down to `echo $(x`.
  *
  * @param {string} segment - One command segment.
  * @returns {string | null} The wrapped command line, or null when the segment
@@ -490,8 +555,12 @@ function readWrappedCommand(segment) {
   const args = tokens.slice(index + 1);
   if (name === 'eval') return args.length > 0 ? args.join(' ') : null;
   if (!SHELL_WRAPPERS.has(name)) return null;
-  const flagIndex = args.indexOf('-c');
-  return flagIndex !== -1 && flagIndex + 1 < args.length ? args[flagIndex + 1] : null;
+
+  const flagIndex = args.findIndex((arg) => /^-[A-Za-z]*c[A-Za-z]*$/.test(arg));
+  if (flagIndex === -1) return null;
+  let payloadIndex = flagIndex + 1;
+  if (args[payloadIndex] === '--') payloadIndex++;
+  return payloadIndex < args.length ? args[payloadIndex] : null;
 }
 
 export {
