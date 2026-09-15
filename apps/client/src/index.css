@@ -308,7 +308,7 @@
   --package-connector-fg: 189 94% 26%;
 
   /* === Message tokens === */
-  --msg-assistant-bg: transparent;
+  --msg-prose-bg: transparent;
   --msg-system-bg: 0 0% 96%;
   --msg-command-fg: var(--muted-foreground);
   --msg-compaction-fg: 0 0% 32%;
@@ -316,8 +316,8 @@
   /* === Typography tokens === */
   --msg-user-font-weight: 400;
   --msg-user-line-height: 1.6;
-  --msg-assistant-font-weight: 300;
-  --msg-assistant-line-height: 1.75;
+  --msg-prose-font-weight: 300;
+  --msg-prose-line-height: 1.75;
   --msg-timestamp-color: hsl(var(--muted-foreground) / 0.6);
 
   /* === Spacing tokens (density-aware) === */
@@ -542,7 +542,7 @@
   --package-connector-border: 189 94% 24%;
   --package-connector-fg: 189 94% 60%;
 
-  --msg-assistant-bg: transparent;
+  --msg-prose-bg: transparent;
   --msg-system-bg: 0 0% 9%;
   --msg-command-fg: var(--muted-foreground);
   --msg-compaction-fg: 0 0% 64%;
@@ -1832,57 +1832,57 @@ body {
   }
 }
 
-/* Assistant message typography */
-.msg-assistant p + p {
+/* Message body prose: session transcript, onboarding narration, and room posts */
+.msg-prose p + p {
   margin-top: 1em;
 }
 
-.msg-assistant a,
-.msg-assistant [data-streamdown='link'] {
+.msg-prose a,
+.msg-prose [data-streamdown='link'] {
   color: hsl(var(--ring));
   text-decoration: underline;
 }
 
-.msg-assistant code {
+.msg-prose code {
   color: hsl(var(--ring));
 }
 
-.msg-assistant ul {
+.msg-prose ul {
   list-style: disc;
   padding-left: 1.5em;
   margin-bottom: 1em;
 }
 
-.msg-assistant ol {
+.msg-prose ol {
   list-style: decimal;
   padding-left: 1.5em;
   margin-bottom: 1em;
 }
 
-.msg-assistant li {
+.msg-prose li {
   margin-top: -0.25em;
 }
 
-.msg-assistant th {
+.msg-prose th {
   text-align: left;
 }
 
-.msg-assistant hr {
+.msg-prose hr {
   margin-top: 1.5em;
   margin-bottom: 1.5em;
 }
 
-.msg-assistant table {
+.msg-prose table {
   margin-top: 1em;
   margin-bottom: 1em;
 }
 
 /* Table action icons: overlay in top-right of table header, show on hover */
-.msg-assistant div:has(> div > [data-streamdown='table']) {
+.msg-prose div:has(> div > [data-streamdown='table']) {
   position: relative;
 }
 
-.msg-assistant div:has(> div > [data-streamdown='table']) > div:first-child:not(:has(table)) {
+.msg-prose div:has(> div > [data-streamdown='table']) > div:first-child:not(:has(table)) {
   position: absolute;
   top: 0;
   right: 8px;
@@ -1897,7 +1897,7 @@ body {
   pointer-events: none;
 }
 
-.msg-assistant div:has(> div > [data-streamdown='table']):hover > div:first-child:not(:has(table)) {
+.msg-prose div:has(> div > [data-streamdown='table']):hover > div:first-child:not(:has(table)) {
   opacity: 1;
   pointer-events: auto;
 }
@@ -1973,7 +1973,7 @@ body {
   }
 
   /* Table action overlay -- always visible on mobile */
-  .msg-assistant div:has(> div > [data-streamdown='table']) > div:first-child:not(:has(table)) {
+  .msg-prose div:has(> div > [data-streamdown='table']) > div:first-child:not(:has(table)) {
     opacity: 0.6;
     pointer-events: auto;
   }

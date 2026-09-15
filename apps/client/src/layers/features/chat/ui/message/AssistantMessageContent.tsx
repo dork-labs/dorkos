@@ -85,7 +85,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
   function renderPart(part: (typeof parts)[number], i: number): React.ReactNode {
     if (part.type === 'text') {
       return (
-        <div key={`text-${i}`} className="msg-assistant">
+        <div key={`text-${i}`} className="msg-prose">
           <StreamingText
             content={part.text}
             isStreaming={isStreaming && i === lastTextPartIndex}

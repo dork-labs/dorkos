@@ -82,10 +82,10 @@ describe('NarrationMessage', () => {
     const content = screen
       .getByTestId('message-item')
       .querySelector('[data-slot="message-content"]');
-    // `msg-assistant` is the class the session's body renderer wraps a text
+    // `msg-prose` is the class the session's body renderer wraps a text
     // part in, and the only thing that makes a story line and a real reply
     // read identically. Dropping it is invisible in jsdom except right here.
-    const styled = content?.querySelector('.msg-assistant');
+    const styled = content?.querySelector('.msg-prose');
     expect(styled).not.toBeNull();
     expect(styled?.textContent).toBe('Hey — I’m DorkBot.');
   });
