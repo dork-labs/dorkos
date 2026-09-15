@@ -1,17 +1,19 @@
 ---
 id: 260707-122350
 title: The admin console lives in apps/site now, extracted to its own app only on a trigger
-status: accepted
+status: superseded
 created: 2026-07-07
 spec: null
-superseded-by: null
+superseded-by: 260915-205815
 ---
 
 # 260707-122350. The admin console lives in apps/site now, extracted to its own app only on a trigger
 
 ## Status
 
-Accepted
+**Superseded by [260915-205815](260915-205815-admin-console-moves-to-the-control-plane.md)** on 2026-09-15.
+
+The choice this ADR made — a guarded `/admin` route group inside `apps/site`, extracted only on a trigger — no longer applies. The admin console, together with the rest of the account surface (accounts, device link, the instance registry, managed connections), moves to the control plane as part of the cloud programme. The extraction triggers below are moot: the console is already off the public site. `apps/site` keeps marketing, docs, the blog, the pricing page, the newsletter, and feedback and telemetry intake.
 
 ## Context
 
