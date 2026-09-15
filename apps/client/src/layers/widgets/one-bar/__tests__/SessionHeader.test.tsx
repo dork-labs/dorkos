@@ -303,7 +303,7 @@ describe('SessionHeader', () => {
     expect(screen.getByText('#proj-trame', { selector: '.sr-only' })).toBeInTheDocument();
   });
 
-  it('does not touch a room title with no slug (a direct message)', () => {
+  it('guards against stripping a DM title that carries no leading `#`', () => {
     renderBar({
       agentName: 'dorkbot',
       agentVisual: VISUAL,

@@ -65,6 +65,10 @@ export function SessionHeader() {
   // full, spoken form survives for assistive technology in the sr-only node
   // below (the same split `RoomTitle` uses for the identical defect,
   // DOR-583).
+  // Strips any leading `#`, not only a `#slug` — the client only ever has the
+  // label, never the room object, so it can't tell a channel's slug from a DM
+  // title that happens to start with `#`. The sr-only node below keeps the
+  // full form either way.
   const bareOriginText =
     origin === 'room' && originText?.startsWith('#') ? originText.slice(1) : originText;
   // A session with no registered agent — and none ever seen — is a bare
