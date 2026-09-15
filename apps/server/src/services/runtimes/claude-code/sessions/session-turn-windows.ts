@@ -174,6 +174,16 @@
  * - **Something else needs the window NOW** — a dispatch, a `settleOpenTurn`, a
  *   crash. Each takes the deferred `result` with it.
  *
+ * **An empty dispatched window waits the same way** (spec
+ * `warm-process-lifecycle` D5, DOR-2064). A `result` that would close a
+ * dispatched window that has carried no content frame — whether it names the
+ * dispatch or names nothing — is held on the same two-tier clock, capped at
+ * {@link EMPTY_CLOSE_CONTINUATION_CAP_MS}. A relaunched CLI drains its own
+ * queued notification before it answers the person, and closing on that first
+ * `result` stranded the real answer and reported the agent as unresponsive. An
+ * error or aborted `result` never waits, and every empty close says at `warn`
+ * which frame closed it.
+ *
  * **The deferred `result` is never dropped while the window lives.** Only the
  * TIMER is cancellable. That is what keeps every one of those exits honest, and
  * it is what makes the re-arm above safe: however many times the clock is reset
@@ -311,6 +321,25 @@ const CONTINUATION_GRACE_MS = 500;
  */
 const CONTINUATION_CAP_MS = 5_000;
 
+/**
+ * The MOST a dispatched window that has carried nothing yet may defer its
+ * close on a `result` (spec `warm-process-lifecycle` D5, DOR-2064).
+ *
+ * A relaunched CLI drains its own queued notification before it reads the
+ * person's message, so the window's first `result` can arrive within seconds
+ * with no word in the turn, and the real answer runs in the segment after it.
+ * The incident's gap between the two was 12.5 s. Closing on that first `result`
+ * reported "the agent did not respond" and sent the answer into a window nothing
+ * projects.
+ *
+ * The same two-tier clock as a steer's wait: {@link CONTINUATION_GRACE_MS} while
+ * the process is silent, extended to THIS by any frame that proves it is still
+ * working. Measured from the first empty `result`, and never reset by a second
+ * one, so a process that keeps closing empty turns cannot hold one open for
+ * longer than this. Reaching it closes on the held `result`, exactly as today.
+ */
+const EMPTY_CLOSE_CONTINUATION_CAP_MS = 30_000;
+
 /** The per-window accounting fetched from the still-live process at its close. */
 export interface WindowUsage {
   /** The authoritative per-category context breakdown, when the fetch answered. */
@@ -394,6 +423,8 @@ export interface SessionTurnWindowsOptions {
   continuationGraceMs?: number;
   /** Override {@link CONTINUATION_CAP_MS}, for tests that drive it directly. */
   continuationCapMs?: number;
+  /** Override {@link EMPTY_CLOSE_CONTINUATION_CAP_MS}, for tests that drive it directly. */
+  emptyCloseCapMs?: number;
 }
 
 /** A buffered stream of SDK messages with an explicit end. */
@@ -463,6 +494,25 @@ interface WindowRecord {
   graceDeadline?: number;
   /** The `result` that would have closed this window, held for the grace. */
   deferred?: SDKMessage;
+  /**
+   * How many frames carrying something a person can see ({@link carriesVisibleContent})
+   * this window has carried. Zero is what makes a `result` an EMPTY close
+   * (DOR-2064), and it is counted by the same rule the empty-stream guard uses
+   * downstream, so a window this layer calls full is never one the guard calls empty.
+   */
+  contentFrames: number;
+  /**
+   * Every id a `result` named while this window was open. Filled in
+   * {@link SessionTurnWindows.onResult}, so a dispatch that returns after its
+   * window already heard several `result`s never files a spent id as unanswered.
+   */
+  answeredIds: Set<string>;
+  /**
+   * True while the deferral is an empty close's rather than a steer's, so the
+   * wait is capped by {@link EMPTY_CLOSE_CONTINUATION_CAP_MS} and a second empty
+   * `result` does not restart it. Cleared with the rest of the grace state.
+   */
+  emptyClose?: boolean;
 }
 
 /** Build a window record and the public handle onto it. */
@@ -474,7 +524,62 @@ function createRecord(ids: string[], origin: TurnOrigin): WindowRecord {
     channel,
     window: { ids, origin, messages: channel.drain() },
     steered: new Set<string>(),
+    contentFrames: 0,
+    answeredIds: new Set<string>(),
   };
+}
+
+/**
+ * Whether a `result` reports a FAILED or cut-short turn, which closes its window
+ * at once even when the window carried nothing (spec `warm-process-lifecycle`
+ * D5). An error has already said what went wrong, and a Stop must not wait.
+ *
+ * @param message - The `result` about to close a window
+ */
+function closesWithAFailure(message: SDKMessage): boolean {
+  return (message as { is_error?: unknown }).is_error === true || closesAnAbortedTurn(message);
+}
+
+/** Why an empty dispatched window closed on its `result` at once rather than waiting. */
+type ImmediateCloseReason = 'failure-result' | 'aborted' | 'local-command';
+
+/**
+ * Whether, and how long, a dispatched window with nothing in it waits after a
+ * `result` (spec `warm-process-lifecycle` D5, DOR-2064).
+ *
+ * - `'close'` — the window carried content, is not a dispatched one, or the
+ *   `result` is a failure, an abort or a local command (`/compact` and the like
+ *   never enter the model loop, so there is no reply to wait for).
+ * - `'grace'` — the `result` named one of this window's ids: the CLI says it
+ *   answered the message, so only proof of life extends the short clock.
+ * - `'until-cap'` — the `result` named nothing of this window's: the person's
+ *   message is still owed, so silence is not evidence it is not coming.
+ *
+ * @param record - The window the `result` would close
+ * @param result - The `result`
+ * @param answered - The ids the `result` named
+ */
+function emptyCloseOutlook(
+  record: WindowRecord,
+  result: SDKMessage,
+  answered: readonly string[]
+): 'close' | 'grace' | 'until-cap' {
+  if (record.origin !== 'user' || record.contentFrames > 0) return 'close';
+  if (closesWithAFailure(result) || readTurnProvenance(result).localCommand !== undefined) {
+    return 'close';
+  }
+  return namesAny(record, answered) ? 'grace' : 'until-cap';
+}
+
+/**
+ * Name the reason an empty dispatched window closed on its `result` at once.
+ *
+ * @param result - The `result` that closed it
+ */
+function immediateCloseReason(result: SDKMessage): ImmediateCloseReason {
+  if (closesAnAbortedTurn(result)) return 'aborted';
+  if (readTurnProvenance(result).localCommand !== undefined) return 'local-command';
+  return 'failure-result';
 }
 
 /**
@@ -708,6 +813,91 @@ function stoppedResult(crash: PumpCrash): SDKMessage {
  */
 function beginsATurn(message: SDKMessage): boolean {
   return message.type === 'assistant' || message.type === 'stream_event';
+}
+
+/** Delta types the stream mapper turns into `text_delta` or `thinking_delta`. */
+const VISIBLE_DELTA_TYPES: ReadonlySet<string> = new Set(['text_delta', 'thinking_delta']);
+
+/**
+ * Whether a `stream_event` maps to a content event: a text or thinking delta, or
+ * a `tool_use` block starting (`tool_call_start`). A `server_tool_use` start,
+ * `message_start`, `ping` and block stops map to nothing the guard counts.
+ *
+ * @param message - A `stream_event` from the main thread
+ */
+function streamEventCarriesContent(message: SDKMessage): boolean {
+  const event = (
+    message as { event?: { type?: unknown; delta?: unknown; content_block?: unknown } }
+  ).event;
+  if (event?.type === 'content_block_delta') {
+    const deltaType = (event.delta as { type?: unknown } | undefined)?.type;
+    return typeof deltaType === 'string' && VISIBLE_DELTA_TYPES.has(deltaType);
+  }
+  if (event?.type === 'content_block_start') {
+    return (event.content_block as { type?: unknown } | undefined)?.type === 'tool_use';
+  }
+  return false;
+}
+
+/**
+ * Whether a `user` message maps to a `tool_result`: a live (not replayed)
+ * message whose block list holds a tool result naming its call.
+ *
+ * @param message - A `user` message from the main thread
+ */
+function userMessageCarriesToolResult(message: SDKMessage): boolean {
+  if ((message as { isReplay?: unknown }).isReplay) return false;
+  const content = (message as { message?: { content?: unknown } }).message?.content;
+  if (!Array.isArray(content)) return false;
+  return content.some((block) => {
+    const b = block as { type?: unknown; tool_use_id?: unknown } | null;
+    return b?.type === 'tool_result' && typeof b.tool_use_id === 'string';
+  });
+}
+
+/**
+ * Whether this frame carries something a person can see: the question the
+ * empty-stream guard (`messaging/empty-stream-guard.ts`) asks of the MAPPED
+ * events, asked here of the raw frame so the two layers agree (DOR-2064).
+ * `session-turn-windows-content-parity.test.ts` pushes every shape through the
+ * production mapper and fails the moment the two answers part.
+ *
+ * What counts, row for row with the mappers:
+ *
+ * - a main-thread `stream_event` text or thinking delta, or a `tool_use` start;
+ * - a main-thread, non-replayed `user` message carrying a tool result;
+ * - a `tool_use_summary` naming at least one call (each becomes a `tool_result`);
+ * - a MANUAL `compact_boundary`, which is the whole answer to `/compact`.
+ *
+ * What does not: anything forwarded from a subagent (`parent_tool_use_id`), a
+ * complete `assistant` message (the live text already arrived as deltas, so the
+ * mapper yields only bookkeeping for it), an automatic compaction, and every
+ * other `system` line. Image attachments are announced from a tool result that
+ * already counts, so they need no row of their own here.
+ *
+ * @param message - The message the process just produced
+ * @internal Exported for the parity test.
+ */
+export function carriesVisibleContent(message: SDKMessage): boolean {
+  if ((message as { parent_tool_use_id?: unknown }).parent_tool_use_id) return false;
+  switch (message.type) {
+    case 'stream_event':
+      return streamEventCarriesContent(message);
+    case 'user':
+      return userMessageCarriesToolResult(message);
+    case 'tool_use_summary': {
+      const calls = (message as { preceding_tool_use_ids?: unknown }).preceding_tool_use_ids;
+      return Array.isArray(calls) && calls.length > 0;
+    }
+    case 'system':
+      return (
+        (message as { subtype?: unknown }).subtype === 'compact_boundary' &&
+        (message as { compact_metadata?: { trigger?: unknown } }).compact_metadata?.trigger ===
+          'manual'
+      );
+    default:
+      return false;
+  }
 }
 
 /**
@@ -956,6 +1146,11 @@ export class SessionTurnWindows {
     //
     // A person steering is a discrete new reason to expect a continuation, not
     // the process's own chatter, so the cap starts over with it.
+    //
+    // That includes a window held as an EMPTY close (DOR-2064), deliberately:
+    // unlike a second empty `result`, a steer is the person adding to what they
+    // are owed, so resetting the cap there is the same bound a steer always
+    // earns, and each reset needs a new message from the person.
     if (this.current.grace !== undefined) {
       this.current.graceDeadline = undefined;
       this.armGrace(this.current, 'grace');
@@ -1126,7 +1321,15 @@ export class SessionTurnWindows {
     // and it closed this window already. Remembering the ids then would file
     // them as UNANSWERED when the process has already spoken for them, arming
     // the `sentEarlier` branch to close some future window on a spent id.
-    if (this.current === record) this.rememberSent(record.ids);
+    //
+    // Still open is not the same as still unanswered, though: an empty window
+    // HOLDS its fast `result` rather than closing on it (DOR-2064), so the ids
+    // that ANY `result` named while this window was open are spent and are never
+    // filed — not only the last one held, since a later `result` naming nothing
+    // replaces the held terminal without un-answering anything.
+    if (this.current === record) {
+      this.rememberSent(record.ids.filter((id) => !record.answeredIds.has(id)));
+    }
     this.opts.onWindowOpen?.(record.window);
     return record.window;
   }
@@ -1175,6 +1378,7 @@ export class SessionTurnWindows {
           this.armGrace(this.current, 'until-cap');
         }
       }
+      if (carriesVisibleContent(message)) this.current.contentFrames += 1;
       this.current.channel.push(message);
       return;
     }
@@ -1243,7 +1447,11 @@ export class SessionTurnWindows {
       if (this.awaitingResult.delete(id)) sentEarlier = true;
     }
     if (record !== undefined && (answered.length === 0 || namesAny(record, answered))) {
-      for (const id of answered) record.steered.delete(id);
+      for (const id of answered) {
+        record.steered.delete(id);
+        // Remembered for the dispatch ledger: spent, whatever this window does next.
+        record.answeredIds.add(id);
+      }
       // A steer this window pushed that the CLI has NOT named. The CLI queues a
       // message pushed at the tail of a turn and answers it in the NEXT turn it
       // runs, so this `result` may not be the end of what the person is owed —
@@ -1269,7 +1477,28 @@ export class SessionTurnWindows {
         this.holdForContinuation(record, result, outlook);
         return;
       }
+      // A dispatched window with nothing in it yet is not finished just because
+      // a `result` arrived: a relaunched CLI drains its own queued notification
+      // first and answers the person in the segment after (DOR-2064).
+      //
+      // How long it waits depends on what the `result` answered. One naming
+      // nothing of this window's has not answered the person's message, which
+      // is still owed and whose reply request may already be in flight with
+      // nothing arriving for seconds (the incident's gap was 12.5 s of silence),
+      // so it waits toward the cap at once — the same evidence-backed wait
+      // `queued_turn_count > 0` earns a steer. One naming the dispatch keeps the
+      // short grace, extended only by proof of life. If the incident's `result`
+      // DID name the dispatch, the grace still closes it, and the `warn` line
+      // {@link noteEmptyClose} writes is how a real session will tell us.
+      const emptyWait = emptyCloseOutlook(record, result, answered);
+      if (emptyWait !== 'close') {
+        this.holdForEmptyClose(record, result, emptyWait);
+        return;
+      }
       this.current = undefined;
+      if (record.origin === 'user' && record.contentFrames === 0) {
+        this.noteEmptyClose(record, result, immediateCloseReason(result));
+      }
       this.finalizeGrace(record);
       this.finish(record, result);
       return;
@@ -1371,6 +1600,77 @@ export class SessionTurnWindows {
   }
 
   /**
+   * Hold a dispatched window that has carried nothing yet, to see whether the
+   * answer is still coming (spec `warm-process-lifecycle` D5, DOR-2064).
+   *
+   * The same machinery as {@link holdForContinuation}, on a longer cap
+   * ({@link EMPTY_CLOSE_CONTINUATION_CAP_MS}): the short grace while the process
+   * is silent, the cap once any frame proves it is working, and a frame that
+   * starts a turn stops the clock so the window closes on the next `result`.
+   *
+   * A second empty `result` swaps in as the terminal but does NOT restart the
+   * cap, unlike a steer's: a process that keeps ending empty turns is not new
+   * evidence that an answer is coming, and the wait must stay bounded.
+   *
+   * @param record - The empty dispatched window
+   * @param result - The `result` to close it with if nothing more arrives
+   * @param wait - `'grace'` when the `result` named this window's dispatch,
+   *   `'until-cap'` when it named nothing of this window's
+   *   ({@link emptyCloseOutlook})
+   */
+  private holdForEmptyClose(
+    record: WindowRecord,
+    result: SDKMessage,
+    wait: 'grace' | 'until-cap'
+  ): void {
+    record.deferred = result;
+    if (record.emptyClose !== true) {
+      record.emptyClose = true;
+      record.graceDeadline = undefined;
+      logger.debug('[SessionTurnWindows] an empty turn is waiting for its answer', {
+        sessionId: this.opts.sessionId,
+        open: record.ids,
+        answered: readAnsweredIds(result),
+        wait,
+      });
+    }
+    this.armGrace(record, wait);
+  }
+
+  /**
+   * Say that a dispatched window closed with nothing in it, and on which frame
+   * (DOR-2064). Before this, both a `result` that named the dispatch and one
+   * that named nothing closed an empty turn in silence, so the incident log
+   * could not say which frame ended the turn.
+   *
+   * At `warn` for the closes that may be the incident's shape. A Stop and a
+   * local command are empty by design, so those two are said at `info`.
+   *
+   * @param record - The window closing empty
+   * @param result - The `result` it closes on
+   * @param closedBy - What decided the close
+   */
+  private noteEmptyClose(
+    record: WindowRecord,
+    result: SDKMessage,
+    closedBy: ImmediateCloseReason | 'grace-expired' | 'cap-reached' | 'next-dispatch'
+  ): void {
+    const context = {
+      sessionId: this.opts.sessionId,
+      open: record.ids,
+      answered: readAnsweredIds(result),
+      subtype: (result as { subtype?: unknown }).subtype,
+      closedBy,
+      ...readTurnProvenance(result),
+    };
+    if (closedBy === 'aborted' || closedBy === 'local-command') {
+      logger.info('[SessionTurnWindows] closed a turn with nothing in it', context);
+      return;
+    }
+    logger.warn('[SessionTurnWindows] closed a turn with nothing in it', context);
+  }
+
+  /**
    * Start (or restart) the wait for a continuation to begin, never past this
    * window's absolute cap ({@link CONTINUATION_CAP_MS}).
    *
@@ -1396,7 +1696,10 @@ export class SessionTurnWindows {
   private armGrace(record: WindowRecord, wait: 'grace' | 'until-cap'): void {
     this.stopGrace(record);
     const grace = this.opts.continuationGraceMs ?? CONTINUATION_GRACE_MS;
-    const cap = this.opts.continuationCapMs ?? CONTINUATION_CAP_MS;
+    const cap =
+      record.emptyClose === true
+        ? (this.opts.emptyCloseCapMs ?? EMPTY_CLOSE_CONTINUATION_CAP_MS)
+        : (this.opts.continuationCapMs ?? CONTINUATION_CAP_MS);
     record.graceDeadline ??= Date.now() + cap;
     // Never negative. A cap already spent arms a zero-delay timer rather than
     // closing inline, because this runs inside the pump's synchronous read loop
@@ -1424,11 +1727,15 @@ export class SessionTurnWindows {
       if (this.current !== record) return;
       const deferred = record.deferred;
       if (deferred === undefined) return;
-      logger.debug('[SessionTurnWindows] no continuation began; closing the steered turn', {
-        sessionId: this.opts.sessionId,
-        steered: [...record.steered],
-        capped,
-      });
+      if (record.contentFrames === 0) {
+        this.noteEmptyClose(record, deferred, capped ? 'cap-reached' : 'grace-expired');
+      } else {
+        logger.debug('[SessionTurnWindows] no continuation began; closing the steered turn', {
+          sessionId: this.opts.sessionId,
+          steered: [...record.steered],
+          capped,
+        });
+      }
       this.finalizeGrace(record);
       this.current = undefined;
       this.finish(record, deferred);
@@ -1464,6 +1771,7 @@ export class SessionTurnWindows {
     this.stopGrace(record);
     record.deferred = undefined;
     record.graceDeadline = undefined;
+    record.emptyClose = undefined;
   }
 
   /**
@@ -1486,9 +1794,13 @@ export class SessionTurnWindows {
    * @returns True when a deferred close was taken, false when this window was
    *   not holding one
    */
-  private settleDeferredNow(record: WindowRecord): boolean {
+  private settleDeferredNow(
+    record: WindowRecord,
+    closedBy: 'next-dispatch' | 'aborted' = 'next-dispatch'
+  ): boolean {
     const deferred = record.deferred;
     if (deferred === undefined) return false;
+    if (record.contentFrames === 0) this.noteEmptyClose(record, deferred, closedBy);
     this.finalizeGrace(record);
     this.current = undefined;
     record.channel.push(deferred);
@@ -1496,6 +1808,24 @@ export class SessionTurnWindows {
     this.opts.pump.endTurn();
     this.opts.onWindowClose?.(record.window);
     return true;
+  }
+
+  /**
+   * Close the open window on the `result` it is holding, because the person
+   * stopped the turn (DOR-2064).
+   *
+   * A held window is waiting for an answer the CLI may still send. An idle CLI
+   * that acknowledges an interrupt sends nothing more, so the hold would run to
+   * its cap and the Stop would look ignored. Settling on the real `result` ends
+   * the turn now, and the stop record the session already carries keeps the
+   * empty-stream guard from calling it a failure. A window holding nothing is
+   * left alone: a turn still running ends on the CLI's own aborted `result`.
+   *
+   * @returns True when a held window was settled
+   */
+  settleHeldClose(): boolean {
+    if (this.current === undefined) return false;
+    return this.settleDeferredNow(this.current, 'aborted');
   }
 
   /**
@@ -1677,7 +2007,10 @@ export class SessionTurnWindows {
 
   /** Move everything held into the window that just opened. */
   private flushHeld(record: WindowRecord): void {
-    for (const message of this.held) record.channel.push(message);
+    for (const message of this.held) {
+      if (carriesVisibleContent(message)) record.contentFrames += 1;
+      record.channel.push(message);
+    }
     this.held.length = 0;
   }
 }

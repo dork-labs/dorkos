@@ -432,6 +432,37 @@ describe('Stop reaches a turn, never a process that is merely warm', () => {
     await running;
   });
 
+  it('settles a held empty turn as soon as a Stop is acknowledged (DOR-2064)', async () => {
+    const { logger } = await import('../../../../../lib/logger.js');
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.goSilent();
+    vi.mocked(logger.debug).mockClear();
+
+    const running = turn(sessionId, 'are you there?');
+    await vi.waitFor(() => expect(process.received).toHaveLength(2));
+    // A `result` naming nothing: the turn is held toward its 30 s cap.
+    process.closeEmpty(undefined);
+    await vi.waitFor(() =>
+      expect(
+        vi
+          .mocked(logger.debug)
+          .mock.calls.some((call) => String(call[0]).includes('an empty turn is waiting'))
+      ).toBe(true)
+    );
+
+    // The CLI is idle, so the acked interrupt sends nothing more.
+    const stoppedAt = Date.now();
+    expect((await runtime.interruptQuery(sessionId)).outcome).toBe('acked');
+    const events = await running;
+
+    // A duration budget, deliberately: without the settle this waits the full cap.
+    expect(Date.now() - stoppedAt).toBeLessThan(3_000);
+    expect(events.filter((e) => e.type === 'error')).toHaveLength(0);
+    expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+  });
+
   // DOR-1191. The first turn of a cold session passes warming -> warm ->
   // running, and only reaches running once `system/init` arrives — up to
   // INIT_TIMEOUT_MS later. `session.activeQuery` arms on that running edge, so a
@@ -1866,5 +1897,81 @@ describe('what a drained runtime window is reported as (DOR-1314)', () => {
       content: 1,
       census: { stream_event: 1, result: 1 },
     });
+  });
+});
+
+// DOR-2064, spec `warm-process-lifecycle` T1. A relaunched CLI drains its own
+// queued notification first: a `result` lands within seconds with nothing in
+// the turn, and the answer to the person's message runs in the segment AFTER
+// it. Closing on that first `result` reported "stopped unexpectedly" and sent
+// the real answer into a window nothing projects.
+describe('an empty turn waits for its answer (DOR-2064)', () => {
+  beforeEach(() => {
+    optIn.persistentSession = true;
+  });
+
+  it('carries the answer that arrives after an early empty result, with no error', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.goSilent();
+
+    const running = turn(sessionId, 'what did the helper find?');
+    await vi.waitFor(() => expect(process.received).toHaveLength(2));
+    process.closeEmpty(process.received[1]!);
+    // The next segment's first frame, straight behind the empty `result`: proof
+    // the process is still working, which extends the wait past the short grace.
+    process.startSegment();
+    // Longer than the 500ms grace on purpose: the answer has to survive a gap
+    // the short clock alone would have closed the turn across.
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    process.answer(process.received[1]!, 'the helper found three failing tests');
+
+    const events = await running;
+    expect(spokenText(events)).toContain('the helper found three failing tests');
+    expect(events.filter((e) => e.type === 'error')).toHaveLength(0);
+    expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+  });
+
+  it('still says the agent did not respond when nothing ever comes', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.goSilent();
+
+    const running = turn(sessionId, 'are you there?');
+    await vi.waitFor(() => expect(process.received).toHaveLength(2));
+    process.closeEmpty(process.received[1]!);
+
+    const events = await running;
+    const error = events.find((e) => e.type === 'error');
+    expect(error).toBeDefined();
+    expect((error!.data as Record<string, unknown>).message).toContain('did not respond');
+  });
+
+  it('logs each background task type once per process, including unknown ones', async () => {
+    const { logger } = await import('../../../../../lib/logger.js');
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    vi.mocked(logger.info).mockClear();
+
+    process.reportTasks([{ task_id: 't1', task_type: 'monitor' }]);
+    process.reportTasks([
+      { task_id: 't1', task_type: 'monitor' },
+      { task_id: 't2', task_type: 'local_agent' },
+    ]);
+    process.reportTasks([{ task_id: 't3', task_type: 'monitor' }]);
+
+    const typeLines = (): Array<Record<string, unknown>> =>
+      vi
+        .mocked(logger.info)
+        .mock.calls.filter((call) => String(call[0]).includes('background task type'))
+        .map((call) => call[1] as Record<string, unknown>);
+    await vi.waitFor(() => expect(typeLines()).toHaveLength(2));
+    expect(typeLines()).toEqual([
+      expect.objectContaining({ session: sessionId, taskType: 'monitor' }),
+      expect.objectContaining({ session: sessionId, taskType: 'local_agent' }),
+    ]);
   });
 });

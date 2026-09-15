@@ -74,6 +74,14 @@ function resultMessage(answers?: string): SDKMessage {
   } as unknown as SDKMessage;
 }
 
+/** The model saying something: content, so a `result` behind it closes the window at once. */
+function textDeltaMessage(text: string): SDKMessage {
+  return {
+    type: 'stream_event',
+    event: { type: 'content_block_delta', delta: { type: 'text_delta', text } },
+  } as unknown as SDKMessage;
+}
+
 /** The pump slice the windower drives; no process, because none is needed here. */
 function fakePump(): WindowedPump & { turnsEnded: number } {
   return {
@@ -195,7 +203,9 @@ describe('the stall watchdog over turn windows', () => {
     await h.windows.dispatch([{ content: 'do the thing', messageId: 'm1' }], CWD);
     await flush();
 
-    // The correlated result closes the window: RUNNING → WARM.
+    // The correlated result closes the window: RUNNING → WARM. The turn says
+    // something first, because an EMPTY turn waits for its answer (DOR-2064).
+    h.windows.onMessage(textDeltaMessage('done'));
     h.windows.onMessage(resultMessage('m1'));
     await flush();
     expect(h.pump.turnsEnded).toBe(1);
@@ -274,6 +284,9 @@ describe('the stall watchdog over turn windows', () => {
     await dispatchStarted;
     await flush();
 
+    // A whole turn in the gap: words, then the result. An EMPTY turn would wait
+    // for its answer instead of closing here (DOR-2064).
+    h.windows.onMessage(textDeltaMessage('done'));
     h.windows.onMessage(resultMessage('m1'));
     await flush();
     releaseDispatch();
