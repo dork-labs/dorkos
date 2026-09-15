@@ -571,6 +571,26 @@ export class PersistentDispatch {
   }
 
   /**
+   * Settle a turn this session is only HOLDING open, after a Stop the CLI
+   * acknowledged (DOR-2064).
+   *
+   * A window can sit on a real `result` for up to 30 s while it waits for an
+   * answer that may still come. If the CLI was idle when the Stop landed, the
+   * interrupt produces no further `result`, so without this the person's Stop
+   * would appear to do nothing until the cap. A window with no held `result`
+   * is left alone: a live turn still ends on the CLI's own aborted `result`.
+   *
+   * @param sessionId - The stopped session, in any id it answers to
+   * @returns True when a held turn was settled
+   */
+  settleHeldTurn(sessionId: string): boolean {
+    const key = this.sessionKeyOf(sessionId);
+    const bundle = this.bundles.get(key);
+    if (bundle === undefined || this.registry.peek(key) !== bundle.pump) return false;
+    return bundle.windows.settleHeldClose();
+  }
+
+  /**
    * Steer a message into a session's OPEN turn — the claude-code half of P4's
    * `deliverIntoTurn(mode: 'steer')` (spec §2.3, task 4.1).
    *

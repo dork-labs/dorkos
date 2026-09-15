@@ -815,54 +815,89 @@ function beginsATurn(message: SDKMessage): boolean {
   return message.type === 'assistant' || message.type === 'stream_event';
 }
 
-/** Content block types that map to something the empty-stream guard counts. */
-const VISIBLE_BLOCK_TYPES: ReadonlySet<string> = new Set([
-  'text',
-  'thinking',
-  'tool_use',
-  'server_tool_use',
-  'tool_result',
-]);
-
 /** Delta types the stream mapper turns into `text_delta` or `thinking_delta`. */
 const VISIBLE_DELTA_TYPES: ReadonlySet<string> = new Set(['text_delta', 'thinking_delta']);
 
 /**
- * Whether this frame carries something a person can see — the question the
- * empty-stream guard (`messaging/empty-stream-guard.ts`) asks of the MAPPED
- * events, asked here of the raw frame so the two layers agree (DOR-2064).
+ * Whether a `stream_event` maps to a content event: a text or thinking delta, or
+ * a `tool_use` block starting (`tool_call_start`). A `server_tool_use` start,
+ * `message_start`, `ping` and block stops map to nothing the guard counts.
  *
- * Deliberately narrower than {@link beginsATurn}. A bare `message_start`, a
- * `ping` or a `content_block_stop` starts a turn but maps to nothing the guard
- * counts; counting it here closed an empty window at once while the guard still
- * reported "the agent did not respond". What counts: a text or thinking delta, a
- * tool-use block starting, an `assistant` or `user` message holding a text,
- * thinking, tool-use or tool-result block.
- *
- * @param message - The message the process just produced
+ * @param message - A `stream_event` from the main thread
  */
-function carriesVisibleContent(message: SDKMessage): boolean {
-  if (message.type === 'stream_event') {
-    const event = (
-      message as { event?: { type?: unknown; delta?: unknown; content_block?: unknown } }
-    ).event;
-    if (event?.type === 'content_block_delta') {
-      const deltaType = (event.delta as { type?: unknown } | undefined)?.type;
-      return typeof deltaType === 'string' && VISIBLE_DELTA_TYPES.has(deltaType);
-    }
-    if (event?.type === 'content_block_start') {
-      const blockType = (event.content_block as { type?: unknown } | undefined)?.type;
-      return blockType === 'tool_use' || blockType === 'server_tool_use';
-    }
-    return false;
+function streamEventCarriesContent(message: SDKMessage): boolean {
+  const event = (
+    message as { event?: { type?: unknown; delta?: unknown; content_block?: unknown } }
+  ).event;
+  if (event?.type === 'content_block_delta') {
+    const deltaType = (event.delta as { type?: unknown } | undefined)?.type;
+    return typeof deltaType === 'string' && VISIBLE_DELTA_TYPES.has(deltaType);
   }
-  if (message.type !== 'assistant' && message.type !== 'user') return false;
+  if (event?.type === 'content_block_start') {
+    return (event.content_block as { type?: unknown } | undefined)?.type === 'tool_use';
+  }
+  return false;
+}
+
+/**
+ * Whether a `user` message maps to a `tool_result`: a live (not replayed)
+ * message whose block list holds a tool result naming its call.
+ *
+ * @param message - A `user` message from the main thread
+ */
+function userMessageCarriesToolResult(message: SDKMessage): boolean {
+  if ((message as { isReplay?: unknown }).isReplay) return false;
   const content = (message as { message?: { content?: unknown } }).message?.content;
   if (!Array.isArray(content)) return false;
   return content.some((block) => {
-    const type = (block as { type?: unknown } | null)?.type;
-    return typeof type === 'string' && VISIBLE_BLOCK_TYPES.has(type);
+    const b = block as { type?: unknown; tool_use_id?: unknown } | null;
+    return b?.type === 'tool_result' && typeof b.tool_use_id === 'string';
   });
+}
+
+/**
+ * Whether this frame carries something a person can see: the question the
+ * empty-stream guard (`messaging/empty-stream-guard.ts`) asks of the MAPPED
+ * events, asked here of the raw frame so the two layers agree (DOR-2064).
+ * `session-turn-windows-content-parity.test.ts` pushes every shape through the
+ * production mapper and fails the moment the two answers part.
+ *
+ * What counts, row for row with the mappers:
+ *
+ * - a main-thread `stream_event` text or thinking delta, or a `tool_use` start;
+ * - a main-thread, non-replayed `user` message carrying a tool result;
+ * - a `tool_use_summary` naming at least one call (each becomes a `tool_result`);
+ * - a MANUAL `compact_boundary`, which is the whole answer to `/compact`.
+ *
+ * What does not: anything forwarded from a subagent (`parent_tool_use_id`), a
+ * complete `assistant` message (the live text already arrived as deltas, so the
+ * mapper yields only bookkeeping for it), an automatic compaction, and every
+ * other `system` line. Image attachments are announced from a tool result that
+ * already counts, so they need no row of their own here.
+ *
+ * @param message - The message the process just produced
+ * @internal Exported for the parity test.
+ */
+export function carriesVisibleContent(message: SDKMessage): boolean {
+  if ((message as { parent_tool_use_id?: unknown }).parent_tool_use_id) return false;
+  switch (message.type) {
+    case 'stream_event':
+      return streamEventCarriesContent(message);
+    case 'user':
+      return userMessageCarriesToolResult(message);
+    case 'tool_use_summary': {
+      const calls = (message as { preceding_tool_use_ids?: unknown }).preceding_tool_use_ids;
+      return Array.isArray(calls) && calls.length > 0;
+    }
+    case 'system':
+      return (
+        (message as { subtype?: unknown }).subtype === 'compact_boundary' &&
+        (message as { compact_metadata?: { trigger?: unknown } }).compact_metadata?.trigger ===
+          'manual'
+      );
+    default:
+      return false;
+  }
 }
 
 /**
@@ -1759,10 +1794,13 @@ export class SessionTurnWindows {
    * @returns True when a deferred close was taken, false when this window was
    *   not holding one
    */
-  private settleDeferredNow(record: WindowRecord): boolean {
+  private settleDeferredNow(
+    record: WindowRecord,
+    closedBy: 'next-dispatch' | 'aborted' = 'next-dispatch'
+  ): boolean {
     const deferred = record.deferred;
     if (deferred === undefined) return false;
-    if (record.contentFrames === 0) this.noteEmptyClose(record, deferred, 'next-dispatch');
+    if (record.contentFrames === 0) this.noteEmptyClose(record, deferred, closedBy);
     this.finalizeGrace(record);
     this.current = undefined;
     record.channel.push(deferred);
@@ -1770,6 +1808,24 @@ export class SessionTurnWindows {
     this.opts.pump.endTurn();
     this.opts.onWindowClose?.(record.window);
     return true;
+  }
+
+  /**
+   * Close the open window on the `result` it is holding, because the person
+   * stopped the turn (DOR-2064).
+   *
+   * A held window is waiting for an answer the CLI may still send. An idle CLI
+   * that acknowledges an interrupt sends nothing more, so the hold would run to
+   * its cap and the Stop would look ignored. Settling on the real `result` ends
+   * the turn now, and the stop record the session already carries keeps the
+   * empty-stream guard from calling it a failure. A window holding nothing is
+   * left alone: a turn still running ends on the CLI's own aborted `result`.
+   *
+   * @returns True when a held window was settled
+   */
+  settleHeldClose(): boolean {
+    if (this.current === undefined) return false;
+    return this.settleDeferredNow(this.current, 'aborted');
   }
 
   /**

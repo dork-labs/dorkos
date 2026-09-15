@@ -432,6 +432,37 @@ describe('Stop reaches a turn, never a process that is merely warm', () => {
     await running;
   });
 
+  it('settles a held empty turn as soon as a Stop is acknowledged (DOR-2064)', async () => {
+    const { logger } = await import('../../../../../lib/logger.js');
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.goSilent();
+    vi.mocked(logger.debug).mockClear();
+
+    const running = turn(sessionId, 'are you there?');
+    await vi.waitFor(() => expect(process.received).toHaveLength(2));
+    // A `result` naming nothing: the turn is held toward its 30 s cap.
+    process.closeEmpty(undefined);
+    await vi.waitFor(() =>
+      expect(
+        vi
+          .mocked(logger.debug)
+          .mock.calls.some((call) => String(call[0]).includes('an empty turn is waiting'))
+      ).toBe(true)
+    );
+
+    // The CLI is idle, so the acked interrupt sends nothing more.
+    const stoppedAt = Date.now();
+    expect((await runtime.interruptQuery(sessionId)).outcome).toBe('acked');
+    const events = await running;
+
+    // A duration budget, deliberately: without the settle this waits the full cap.
+    expect(Date.now() - stoppedAt).toBeLessThan(3_000);
+    expect(events.filter((e) => e.type === 'error')).toHaveLength(0);
+    expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+  });
+
   // DOR-1191. The first turn of a cold session passes warming -> warm ->
   // running, and only reaches running once `system/init` arrives — up to
   // INIT_TIMEOUT_MS later. `session.activeQuery` arms on that running edge, so a

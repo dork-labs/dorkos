@@ -1059,6 +1059,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     const connectorCancellation = this.sessionStore.findSession(sessionId)?.connectorTurn?.cancel();
     const receipt = await this.sessionStore.interruptQuery(sessionId);
     await connectorCancellation;
+    // A turn DorkOS is only HOLDING open, waiting for an answer the CLI may
+    // still send (DOR-2064), has nothing left for an idle CLI to wind down: an
+    // acknowledged interrupt produces no `result`, so the hold would run to its
+    // 30 s cap and the Stop would look ignored. Settle it on the `result` it holds.
+    if (receipt.outcome === 'acked') this.persistent.settleHeldTurn(sessionId);
     // Only `not-running` falls through. A stop that reached a live query and
     // then failed is a fact about THAT query, and re-aiming it at the booting
     // one would report the second attempt's ending for the first attempt's turn.
