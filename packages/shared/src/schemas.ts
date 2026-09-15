@@ -232,12 +232,21 @@ export const QuestionOptionSchema = z
 
 export type QuestionOption = z.infer<typeof QuestionOptionSchema>;
 
+/**
+ * One question from an `AskUserQuestion` call.
+ *
+ * `header` and `multiSelect` default rather than being required, because a
+ * transcript holds the model's raw tool input and the model does not always
+ * send both. A required field here failed the whole session snapshot on one
+ * such question, and the session never loaded (DOR-2075). An empty `header`
+ * means "no chip"; a missing `multiSelect` means single-choice.
+ */
 export const QuestionItemSchema = z
   .object({
-    header: z.string(),
+    header: z.string().default(''),
     question: z.string(),
     options: z.array(QuestionOptionSchema),
-    multiSelect: z.boolean(),
+    multiSelect: z.boolean().default(false),
   })
   .openapi('QuestionItem');
 

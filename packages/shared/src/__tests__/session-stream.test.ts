@@ -407,6 +407,45 @@ describe('SessionSnapshotSchema', () => {
     expect(SessionSnapshotSchema.parse(snapshot)).toEqual(snapshot);
   });
 
+  it('hydrates a history whose question omits multiSelect and header (DOR-2075)', () => {
+    // Purpose: a transcript records the model's raw AskUserQuestion input, and
+    // the model does not always send every field. One such question used to
+    // fail the WHOLE snapshot, so the session never loaded at all.
+    const snapshot = {
+      messages: [
+        {
+          id: 'a-1',
+          role: 'assistant' as const,
+          content: '',
+          toolCalls: [
+            {
+              toolCallId: 'toolu_q_1',
+              toolName: 'AskUserQuestion',
+              status: 'complete' as const,
+              questions: [
+                {
+                  question: 'Which library should we use?',
+                  options: [{ label: 'date-fns' }, { label: 'luxon' }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      inProgressTurn: null,
+      status: coldStatus,
+      pendingInteractions: [],
+      queuedMessages: [],
+      canvas: [],
+      cursor: 0,
+    };
+    const parsed = SessionSnapshotSchema.safeParse(snapshot);
+    expect(parsed.success).toBe(true);
+    const question = parsed.data?.messages[0]?.toolCalls?.[0]?.questions?.[0];
+    expect(question?.multiSelect).toBe(false);
+    expect(question?.header).toBe('');
+  });
+
   it('requires queuedMessages — hydration must say what is waiting', () => {
     // Purpose: a snapshot is a reconnecting window's WHOLE picture of the
     // session. If the queue were optional, a producer that forgot it would be

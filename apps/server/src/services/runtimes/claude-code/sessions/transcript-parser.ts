@@ -9,6 +9,7 @@ import type {
   CompactMetadata,
 } from '@dorkos/shared/types';
 import { SDK_TOOL_NAMES } from '@dorkos/shared/constants';
+import { QuestionItemSchema } from '@dorkos/shared/schemas';
 import { CONTEXT_TAG, stripInjectedTagBlocks } from '@dorkos/shared/additional-context';
 import { extractToolResultImages, type ToolResultImage } from '../tool-result-images.js';
 import { apiErrorCode, buildApiErrorPart, isApiErrorRecord } from '../sdk/api-error-record.js';
@@ -736,8 +737,14 @@ export function parseTranscript(lines: string[], images?: TranscriptImageRef[]):
             tc.questionOutcome = 'unresolved';
           }
           if (block.name === SDK_TOOL_NAMES.ASK_USER_QUESTION && block.input) {
-            if (Array.isArray(block.input.questions)) {
-              tc.questions = block.input.questions as QuestionItem[];
+            // The transcript holds the model's RAW input, so check it here
+            // rather than cast it. A question that fails the schema would fail
+            // the whole session snapshot on the client (DOR-2075); dropping
+            // just these questions keeps the call a question and the rest of
+            // the history loadable. Parsing also fills `multiSelect`/`header`.
+            const questions = QuestionItemSchema.array().safeParse(block.input.questions);
+            if (questions.success) {
+              tc.questions = questions.data;
             }
             if (block.input.answers && typeof block.input.answers === 'object') {
               // Recorded answers (post-fix) are keyed by question text. Normalize

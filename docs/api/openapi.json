@@ -1074,7 +1074,8 @@
         "type": "object",
         "properties": {
           "header": {
-            "type": "string"
+            "type": "string",
+            "default": ""
           },
           "question": {
             "type": "string"
@@ -1086,14 +1087,13 @@
             }
           },
           "multiSelect": {
-            "type": "boolean"
+            "type": "boolean",
+            "default": false
           }
         },
         "required": [
-          "header",
           "question",
-          "options",
-          "multiSelect"
+          "options"
         ]
       },
       "QuestionOption": {

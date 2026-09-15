@@ -591,6 +591,19 @@ describe('Answer summary layout', () => {
     expect(screen.getByText('Approach: Reschedule the internal meeting')).toBeDefined();
   });
 
+  // A recorded question can arrive with no header (DOR-2075); the summary must
+  // show the answer alone rather than a dangling ": answer".
+  it('shows just the answer when the question has no header', () => {
+    render(
+      <QuestionPrompt
+        {...baseProps}
+        questions={[{ ...singleSelectQuestion, header: '' }]}
+        answers={{ '0': 'Reschedule the internal meeting' }}
+      />
+    );
+    expect(screen.getByText('Reschedule the internal meeting')).toBeDefined();
+  });
+
   // A single-select freeform answer that looks like JSON must display verbatim —
   // the JSON tolerance is multi-select-only.
   it('shows a single-select answer that looks like JSON verbatim', () => {
