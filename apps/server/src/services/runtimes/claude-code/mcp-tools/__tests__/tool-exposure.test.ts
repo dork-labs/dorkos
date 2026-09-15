@@ -405,8 +405,14 @@ describe('in-session tool exposure', () => {
     // to be tidied — a turn that can afford a search, unlike a room reply with
     // somebody waiting. Both counts move by the same two, which is what says
     // nothing else came with them.
-    expect(tools).toHaveLength(103);
-    expect(deferred).toHaveLength(94);
+    //
+    // 103 -> 104 for `feedback_draft` (DOR-2056), and it lands DEFERRED for the
+    // same reason: no prompt block names it, and the turn that wants it is a
+    // person saying "this is broken, can you report it" — a turn with room for a
+    // search, unlike a room reply with somebody waiting. Both counts move by the
+    // same one.
+    expect(tools).toHaveLength(104);
+    expect(deferred).toHaveLength(95);
     const retiredConnectorTools = [
       'connector_list_accounts',
       'connector_start_connect',

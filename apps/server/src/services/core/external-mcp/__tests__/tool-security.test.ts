@@ -159,14 +159,18 @@ async function fetchLiveTools(): Promise<ToolListEntry[]> {
 }
 
 describe('READ_ONLY_MCP_TOOL_NAMES drift guard', () => {
-  it('has exactly 31 members (the audited read-only set)', () => {
+  it('has exactly 32 members (the audited read-only set)', () => {
     // A hard count anchors the constant against silent additions/removals.
-    // 18 legacy (`LEGACY_READ_ONLY_TOOL_NAMES`) + 13 registry-derived carve-outs:
-    // 4 operator, 5 marketplace, 2 connector, `mcp_list_server` from the
+    // 18 legacy (`LEGACY_READ_ONLY_TOOL_NAMES`) + 14 registry-derived carve-outs:
+    // 5 operator, 5 marketplace, 2 connector, `mcp_list_server` from the
     // MCP-server-management domain, plus `list_capabilities` from the
     // self-description domain. A carve-out only counts when its tool reaches the
     // `external` server, which is what `readOnlyCarveOutToolNames` checks.
-    expect(READ_ONLY_MCP_TOOL_NAMES.size).toBe(31);
+    //
+    // 31 -> 32 for `feedback_draft` (DOR-2056). It is tokenless on the login-off
+    // external server deliberately: it discloses a strict SUBSET of `config_get`,
+    // which is already in this set, and it sends nothing.
+    expect(READ_ONLY_MCP_TOOL_NAMES.size).toBe(32);
   });
 
   it('every live tool with readOnlyHint === true is accounted for', async () => {

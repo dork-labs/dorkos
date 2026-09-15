@@ -2,7 +2,7 @@
  * Transport-neutral handlers for the self-service & observability MCP tools
  * (`update_agent`, `update_agent_boundaries`, `activity_list`, `config_get`,
  * `config_patch`, `sidebar_add_to_group`, `sidebar_remove_from_group`,
- * `check_update`, `agents_recent_activity`).
+ * `check_update`, `agents_recent_activity`, `feedback_draft`).
  *
  * Each handler is a thin wrapper over existing service logic — the agent-update
  * service, `ActivityService`, `ConfigManager` (via the shared config-patch
@@ -20,6 +20,7 @@ import { z } from 'zod';
 import { ListActivityQuerySchema } from '@dorkos/shared/activity-schemas';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import type { SidebarPrefs } from '@dorkos/shared/config-schema';
+import { buildIssueUrl, gatherFeedbackReport, type FeedbackKind } from '@dorkos/shared/feedback';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
 import type { CapabilityHandlerContext } from '../capabilities/registry.js';
@@ -722,6 +723,93 @@ export function createCheckUpdateHandler() {
   return async (): Promise<OperatorToolResult> => {
     const latestVersion = await getLatestVersion();
     return jsonResult({ version: SERVER_VERSION, latestVersion });
+  };
+}
+
+/** What `feedback_draft` accepts. `kind` defaults to `bug`. */
+export interface FeedbackDraftArgs {
+  /** Which GitHub issue template the draft maps to. */
+  kind?: FeedbackKind;
+  /** A written issue title, replacing the per-kind placeholder. */
+  title?: string;
+  /** Written prose describing the issue, replacing the blank headings. */
+  body?: string;
+}
+
+/**
+ * The surface name this capability writes into the report's "Reported from"
+ * line. Its two siblings are `cli` and `web <route>`, and the value matters to
+ * whoever reads the issue on GitHub: it says a person was handed this link by an
+ * agent rather than opening it themselves.
+ */
+const FEEDBACK_SURFACE = 'agent';
+
+/**
+ * `feedback_draft` — build the prefilled GitHub issue link `dorkos feedback`
+ * builds, and hand it back (DOR-2056).
+ *
+ * The defect this closes, from the operator's own install on 2026-09-15: asked
+ * "can you submit feedback or bug reports?", DorkBot found no capability, then
+ * claimed it was "not allowed to run the dorkos command" (no such rule exists
+ * anywhere) and offered to open a public GitHub issue itself. So the honest
+ * answer to a person wanting to report something was an invented refusal plus an
+ * offer nobody should accept.
+ *
+ * It SENDS NOTHING, which is what makes it tier `observe` rather than `act`:
+ * there is no write, no request to github.com, and no side effect of any kind.
+ * It reads this host's own version, platform and allowlisted on/off settings,
+ * assembles a URL string and returns it. The person opens the link, reads what
+ * is in it, edits it and presses submit, or does not.
+ *
+ * The report comes from `gatherFeedbackReport` in `@dorkos/shared/feedback`, the
+ * same call `gatherCliReport` makes, and the URL from the same `buildIssueUrl`.
+ * There is no second gatherer and no second builder here on purpose: an agent
+ * that hands someone a link claiming to be "what the CLI would print" must be
+ * handing them exactly that, and the only way to keep that true is for both to
+ * be one code path. `surface` is the single field the two disagree on.
+ *
+ * On `title` and `body`: both are free-form prose the model wrote, and both are
+ * defended by `redactSecrets` alone, not by the flag allowlist. That is stated
+ * rather than glossed because the allowlist is a guarantee and this is not. What
+ * backstops it is the surface itself, which never submits anything: the last
+ * reader before GitHub sees this text is the person it was written for.
+ *
+ * @returns The bound handler (no deps; it reads the config manager directly, as
+ *   `config_get` does).
+ */
+export function createFeedbackDraftHandler() {
+  return async (args: FeedbackDraftArgs): Promise<OperatorToolResult> => {
+    const kind = args.kind ?? 'bug';
+    const report = gatherFeedbackReport({
+      kind,
+      version: SERVER_VERSION,
+      platform: `${process.platform}-${process.arch}`,
+      surface: FEEDBACK_SURFACE,
+      readConfigValue: (key) => configManager.getDot(key),
+      title: args.title,
+      body: args.body,
+    });
+
+    // What the draft already carries, so the agent can tell the person what they
+    // are about to read instead of guessing at it. Named after the parts of the
+    // issue a person sees, not after the report's field names: `flags` appears
+    // only when at least one survived the allowlist, because claiming a settings
+    // section that rendered as "(none available)" is the small lie that makes
+    // every other line here untrustworthy.
+    //
+    // Trimmed for the same reason, and with the same rule `buildIssueUrl` uses:
+    // a whitespace-only title falls back to the placeholder there, so claiming it
+    // here would describe a draft that does not exist.
+    const filledFields = [
+      ...(report.title?.trim() ? ['title'] : []),
+      ...(report.body?.trim() ? ['body'] : []),
+      'version',
+      'platform',
+      'runtimes',
+      ...(Object.keys(report.flags).length > 0 ? ['settings'] : []),
+    ];
+
+    return jsonResult({ url: buildIssueUrl(report), kind, filledFields });
   };
 }
 

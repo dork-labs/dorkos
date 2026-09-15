@@ -454,7 +454,10 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // 101 -> 103 for `sidebar_add_to_group` and `sidebar_remove_from_group`
     // (DOR-2055). No prompt block names either, so they stay deferred and
     // unprefixed, and the prefixed count below does NOT move with them.
-    expect(advertised.size).toBe(103);
+    //
+    // 103 -> 104 for `feedback_draft` (DOR-2056), on the same terms: no prompt
+    // block names it, so it stays deferred and unprefixed too.
+    expect(advertised.size).toBe(104);
     expect(advertised.has('react_to_room_entry')).toBe(true);
     expect(
       [

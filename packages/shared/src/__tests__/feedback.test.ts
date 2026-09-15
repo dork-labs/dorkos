@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildIssueUrl,
+  gatherFeedbackReport,
   redactSecrets,
   sanitizeFlags,
+  FEEDBACK_FLAG_ALLOWLIST,
   FEEDBACK_ISSUES_NEW_URL,
   type FeedbackReport,
 } from '../feedback.js';
@@ -176,5 +178,165 @@ describe('buildIssueUrl', () => {
     expect(decoded).not.toContain('ghp_abcdefghijklmnopqrstuvwxyz');
     expect(decoded).not.toContain('dorian@dorkian.com');
     expect(decoded).not.toContain('dorian');
+  });
+});
+
+describe('gatherFeedbackReport', () => {
+  /** A config reader backed by a dotted-key map, like the CLI's store. */
+  function reader(values: Record<string, unknown>) {
+    return (key: string) => values[key];
+  }
+
+  const host = { version: '0.45.1', platform: 'darwin-arm64', surface: 'cli' } as const;
+
+  it('reads only allowlisted paths, and reads every one of them', () => {
+    const asked: string[] = [];
+    gatherFeedbackReport({
+      kind: 'bug',
+      ...host,
+      readConfigValue: (key) => {
+        asked.push(key);
+        return undefined;
+      },
+    });
+    // Set equality in both directions: a gatherer that skipped a flag would
+    // silently under-report, and one that reached for a key outside the
+    // allowlist is the bug the allowlist exists to make impossible.
+    expect(new Set(asked)).toEqual(
+      new Set([
+        ...Object.keys(FEEDBACK_FLAG_ALLOWLIST),
+        'runtimes.codex.enabled',
+        'runtimes.opencode.enabled',
+      ])
+    );
+  });
+
+  it('includes codex and opencode unless they are explicitly off', () => {
+    expect(
+      gatherFeedbackReport({ kind: 'bug', ...host, readConfigValue: reader({}) }).runtimes
+    ).toEqual(['claude-code', 'codex', 'opencode']);
+
+    expect(
+      gatherFeedbackReport({
+        kind: 'bug',
+        ...host,
+        readConfigValue: reader({ 'runtimes.opencode.enabled': false }),
+      }).runtimes
+    ).toEqual(['claude-code', 'codex']);
+  });
+
+  it('sanitizes what it read, so an unsafe config value cannot reach the report', () => {
+    const report = gatherFeedbackReport({
+      kind: 'bug',
+      ...host,
+      readConfigValue: reader({
+        'tunnel.enabled': true,
+        // On the allowlist, but not a member of its known enum set.
+        'ui.theme': 'midnight-custom',
+        // Not on the allowlist at all.
+        'tunnel.authtoken': 'ngrok-secret-token',
+      }),
+    });
+    expect(report.flags).toEqual({ 'tunnel.enabled': true });
+    expect(JSON.stringify(report)).not.toContain('ngrok-secret-token');
+  });
+
+  it('omits title and body entirely when none were written', () => {
+    const report = gatherFeedbackReport({ kind: 'bug', ...host, readConfigValue: reader({}) });
+    expect('title' in report).toBe(false);
+    expect('body' in report).toBe(false);
+  });
+
+  it('differs by exactly one line between two surfaces on the same host', () => {
+    // The claim `feedback_draft` rests on: an agent hands a person the link
+    // `dorkos feedback --print` would have printed, and `Reported from` is the
+    // only line in it that knows the difference (DOR-2056).
+    const values = { 'tunnel.enabled': false, 'logging.level': 'info' };
+    const cli = buildIssueUrl(
+      gatherFeedbackReport({ kind: 'bug', ...host, readConfigValue: reader(values) })
+    );
+    const agent = buildIssueUrl(
+      gatherFeedbackReport({
+        kind: 'bug',
+        ...host,
+        surface: 'agent',
+        readConfigValue: reader(values),
+      })
+    );
+
+    const bodyOf = (url: string) => (new URL(url).searchParams.get('body') ?? '').split('\n');
+    const differing = bodyOf(cli)
+      .map((line, i) => [line, bodyOf(agent)[i]] as const)
+      .filter(([a, b]) => a !== b);
+
+    expect(differing).toEqual([['- Reported from: cli', '- Reported from: agent']]);
+    expect(bodyOf(cli)).toHaveLength(bodyOf(agent).length);
+  });
+});
+
+describe('a written title and body', () => {
+  const base = {
+    kind: 'bug' as const,
+    version: '0.45.1',
+    platform: 'darwin-arm64',
+    runtimes: ['claude-code'],
+    surface: 'agent',
+    flags: {},
+  };
+
+  const parts = (report: FeedbackReport) => {
+    const params = new URL(buildIssueUrl(report)).searchParams;
+    return { title: params.get('title') ?? '', body: params.get('body') ?? '' };
+  };
+
+  it('replaces the placeholder title and the blank questions', () => {
+    const { title, body } = parts({
+      ...base,
+      title: 'Sessions stop streaming after a sleep',
+      body: 'The reply stops mid-sentence and never resumes.',
+    });
+    expect(title).toBe('Sessions stop streaming after a sleep');
+    expect(body).toContain('The reply stops mid-sentence and never resumes.');
+    expect(body).not.toContain('## What happened?');
+    // The environment block still rides along underneath.
+    expect(body).toContain('- DorkOS version: 0.45.1');
+  });
+
+  it('falls back to the blank questions for an empty or whitespace-only write', () => {
+    const { title, body } = parts({ ...base, title: '   ', body: '\n  \n' });
+    expect(title).toBe('Bug: (describe what went wrong)');
+    expect(body).toContain('## What happened?');
+  });
+
+  // The behaviour DOR-2056 asks for by name, asserted against what
+  // `redactSecrets` ACTUALLY does rather than against its docblock's promise.
+  it('scrubs a token, an absolute path and an email out of written prose', () => {
+    const { title, body } = parts({
+      ...base,
+      title: 'Crash from dorian@dorkian.example',
+      body: [
+        'Ran with token ghp_abc123DEF456ghi789JKL012mno345 and it died.',
+        'Stack points at /Users/dorian/Keep/dork-os/dorkos/apps/server/src/index.ts',
+        'The box at 10.0.0.1 is fine.',
+      ].join('\n'),
+    });
+    const decoded = `${title}\n${body}`;
+
+    expect(decoded).not.toContain('ghp_abc123DEF456ghi789JKL012mno345');
+    expect(decoded).not.toContain('/Users/dorian');
+    expect(decoded).not.toContain('dorian@dorkian.example');
+    expect(decoded).not.toContain('10.0.0.1');
+    // And the prose around them survives, or the scrub would be useless.
+    expect(decoded).toContain('and it died.');
+    expect(decoded).toContain('Stack points at');
+  });
+
+  // The limit the module docblock states, pinned so nobody upgrades the claim.
+  // `redactSecrets` is a defence over free-form prose, not a guarantee: an
+  // internal hostname has no shape it recognizes and survives untouched. What
+  // stops this reaching GitHub is the person who opens the link and reads it.
+  it('does NOT catch everything a written body can carry', () => {
+    const { body } = parts({ ...base, body: 'It only fails on build-07.corp.internal.' });
+    expect(body).toContain('build-07.corp.internal');
   });
 });
