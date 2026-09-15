@@ -8,9 +8,13 @@
  * `config_patch`. The defect is that the only available shape was re-sending the
  * WHOLE `ui.sidebar.groups` array, so a correct-looking call could destroy
  * sections nobody mentioned and overwrite a drag the person made mid-turn. So
- * the assertions that matter are about what a call leaves ALONE: every other
- * section comes out byte-identical, and the write carries nothing but
- * `ui.sidebar`.
+ * the assertions that matter are about what a call leaves ALONE: a section
+ * changes only when this call moved a member into or out of it, and the write
+ * carries nothing but `ui.sidebar`.
+ *
+ * Membership is single-parent, so filing something that already sits elsewhere
+ * is a MOVE — the section it left is the one other section a call may change,
+ * and it must lose the member and nothing else.
  *
  * The guarded write is wrapped rather than mocked — the real function runs, and
  * the wrapper only records what it was handed — so "the patch names one section
@@ -52,6 +56,8 @@ const AGENT_A = { kind: 'agent', path: '/projects/alpha' } as const;
 const AGENT_B = { kind: 'agent', path: '/projects/beta' } as const;
 const AGENT_C = { kind: 'agent', path: '/projects/gamma' } as const;
 const ROOM = { kind: 'room', roomId: '01JROOM' } as const;
+/** A room in no section at all, so filing it can move nothing. */
+const LOOSE_ROOM = { kind: 'room', roomId: '01JROOM2' } as const;
 
 describe('the sidebar-section capabilities', () => {
   let tmpDir: string;
@@ -126,16 +132,18 @@ describe('the sidebar-section capabilities', () => {
 
       // Three items, one of which ("alpha") is already filed there — the exact
       // shape of the call that started this: DorkBot asked to add three agents
-      // to "DorkOS" and had to re-send every section to do it.
+      // to "DorkOS" and had to re-send every section to do it. None of the three
+      // lives in another section, so this call may move nothing.
       const { isError, body } = await call(
-        addToGroup({ group: 'DorkOS', items: [AGENT_A, AGENT_B, ROOM] })
+        addToGroup({ group: 'DorkOS', items: [AGENT_A, AGENT_B, LOOSE_ROOM] })
       );
 
       expect(isError).toBe(false);
-      expect(stored('g-dorkos')!.items).toEqual([AGENT_A, AGENT_B, ROOM]);
-      expect(body.added).toEqual([AGENT_B, ROOM]);
+      expect(stored('g-dorkos')!.items).toEqual([AGENT_A, AGENT_B, LOOSE_ROOM]);
+      expect(body.added).toEqual([AGENT_B, LOOSE_ROOM]);
       expect(body.alreadyPresent).toEqual([AGENT_A]);
       expect(body.created).toBe(false);
+      expect(body.movedFrom).toEqual([]);
       // The whole point: the two sections nobody named are the same bytes.
       expect(JSON.stringify(storedGroups().filter((g) => g.id !== 'g-dorkos'))).toBe(before);
       // …and their ORDER did not move either, which a set comparison would miss.
@@ -245,15 +253,68 @@ describe('the sidebar-section capabilities', () => {
       expect(writes).toHaveLength(0);
     });
 
-    it('says so when an item is now in two sections at once', async () => {
+    it('MOVES an item that is already in another section, and says where from', async () => {
+      // Membership is single-parent everywhere the app writes it — the client's
+      // own `moveToGroup` lifts a ref out of every section before filing it, and
+      // `build-library-sections.ts` assumes that when it works out who is still
+      // ungrouped. An append would put one row in two sections, a state no
+      // surface in the app can produce and none knows how to undo.
       seed(THREE_SECTIONS());
+      const clientsBefore = stored('g-clients')!;
+
       const { body } = await call(addToGroup({ group: 'DorkOS', items: [AGENT_C] }));
 
-      // Membership is single-parent everywhere the app writes it, but this
-      // capability may not touch a section it was not pointed at — so it files
-      // the item and says what the person will see.
-      expect(stored('g-clients')!.items).toEqual([AGENT_C]);
-      expect((body.warnings as string[]).join(' ')).toContain('"Clients"');
+      expect(stored('g-dorkos')!.items).toEqual([AGENT_A, AGENT_C]);
+      expect(body.movedFrom).toEqual([{ groupId: 'g-clients', name: 'Clients' }]);
+      // The section it left loses the member and NOTHING else: same name, same
+      // fold state, same sort, same place in the list.
+      expect(stored('g-clients')!.items).toEqual([]);
+      expect({ ...stored('g-clients')!, items: [] }).toEqual({ ...clientsBefore, items: [] });
+      expect(storedGroups().map((g) => g.id)).toEqual(['g-clients', 'g-dorkos', 'g-lab']);
+      // …and the section that had nothing to do with it is untouched.
+      expect(stored('g-lab')!.items).toEqual([ROOM]);
+    });
+
+    it('moves a room out of its section too, and never out of a smart one', async () => {
+      seed([
+        ...THREE_SECTIONS(),
+        group({
+          id: 'g-smart',
+          name: 'Codex',
+          kind: 'smart',
+          sortMode: 'recent',
+          rules: { runtimes: ['codex'] },
+          items: [ROOM],
+        }),
+      ]);
+
+      const { body } = await call(addToGroup({ group: 'Clients', items: [ROOM] }));
+
+      expect(stored('g-clients')!.items).toEqual([AGENT_C, ROOM]);
+      expect(stored('g-lab')!.items).toEqual([]);
+      expect(body.movedFrom).toEqual([{ groupId: 'g-lab', name: 'Lab' }]);
+      // A smart section's `items` is not what the sidebar renders, so lifting
+      // from one would change nothing on screen while quietly editing the list a
+      // later "convert to manual" materializes.
+      expect(stored('g-smart')!.items).toEqual([ROOM]);
+    });
+
+    it('moves an item the target already holds out of its other section', async () => {
+      // The lift covers every ref the caller NAMED, not only the ones newly
+      // appended — otherwise a second call would leave a stale second home
+      // standing forever.
+      seed([
+        group({ id: 'g-a', name: 'A', items: [AGENT_A] }),
+        group({ id: 'g-b', name: 'B', items: [AGENT_A, AGENT_B] }),
+      ]);
+
+      const { body } = await call(addToGroup({ group: 'A', items: [AGENT_A] }));
+
+      expect(body.alreadyPresent).toEqual([AGENT_A]);
+      expect(body.added).toEqual([]);
+      expect(body.movedFrom).toEqual([{ groupId: 'g-b', name: 'B' }]);
+      expect(stored('g-a')!.items).toEqual([AGENT_A]);
+      expect(stored('g-b')!.items).toEqual([AGENT_B]);
     });
 
     it('adds nothing twice when the same item is sent twice in one call', async () => {

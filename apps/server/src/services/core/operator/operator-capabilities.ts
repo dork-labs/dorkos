@@ -477,10 +477,12 @@ export const operatorDomain: CapabilityDomain = {
       id: 'operator.sidebar_add_to_group',
       title: 'Add to a sidebar section',
       description:
-        'Put agents and rooms into ONE section of the sidebar, leaving every other section ' +
-        'exactly as it is. Name the section in `group` by its id or its name, and list what to ' +
-        'file there in `items`. Anything already in that section is left alone, so calling ' +
-        'twice adds nothing twice. Set createIfMissing to true to make the section when nothing ' +
+        'Put agents and rooms into ONE section of the sidebar. Name the section in `group` by ' +
+        'its id or its name, and list what to file there in `items`. An item lives in one ' +
+        'section at a time, so this MOVES it if it is already in another section: the section ' +
+        'it came out of is named in `movedFrom`, and no other section is touched. Anything ' +
+        'already in the section you named is left alone, so calling twice adds nothing twice. ' +
+        'Set createIfMissing to true to make the section when nothing ' +
         'answers to the name you sent; without it you get a refusal that names the sections ' +
         'that do exist. Prefer this over sending `ui.sidebar.groups` to the settings tool whose ' +
         // Named as a searchable ENDING, never bare: this same string is served to

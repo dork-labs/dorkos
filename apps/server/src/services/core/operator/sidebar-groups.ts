@@ -19,6 +19,14 @@
  * reference — so "we left the others alone" is a fact about the data rather than
  * a promise in prose.
  *
+ * The one exception is deliberate and is the app's own rule rather than this
+ * module's: filing an item that already sits in another hand-sorted section
+ * MOVES it, so that section loses the member. Sidebar membership is
+ * single-parent everywhere the app writes it, and an append that left the old
+ * membership standing would put one row in two sections — a state no surface can
+ * produce and none knows how to undo. See {@link liftFromOtherGroups}. A section
+ * still only ever changes because this call moved a member out of it.
+ *
  * ## The write contract is still the WHOLE section
  *
  * Narrow reads, whole-section write. `ui.sidebar` is persisted as one value and
@@ -312,37 +320,62 @@ export function appendSidebarGroup(prefs: SidebarPrefs, group: SidebarGroup): Si
   return { ...prefs, groups: [...prefs.groups, group] };
 }
 
+/** One section an item was lifted out of on its way into another. */
+export interface SidebarItemMove {
+  /** The section it left. */
+  groupId: string;
+  /** That section's display name, so a model can say where it came from. */
+  name: string;
+}
+
+/** A move's outcome: the sections after the lift, and which ones lost a member. */
+export interface SidebarLiftResult {
+  /** The sections, with the named refs gone from everywhere but the target. */
+  groups: SidebarGroup[];
+  /** One entry per section that lost a member, in stored order. */
+  movedFrom: SidebarItemMove[];
+}
+
 /**
- * The names of the OTHER hand-sorted sections that already hold one of these refs.
+ * Lift these refs out of every OTHER hand-sorted section, so filing something is
+ * a MOVE rather than a second copy.
  *
- * Membership is single-parent everywhere the app writes it — the client's own
- * `moveToGroup` lifts a ref out of every section before filing it — but this
- * capability is specified to leave every other section byte-identical, so it
- * cannot quietly evict anything. The honest resolution is to file the item where
- * it was asked to and SAY that the person will now see it twice, which is a
- * sentence a model can pass on and a person can act on.
+ * ## Why a move and not an append
  *
- * @param groups - The stored sections, in order.
- * @param exceptGroupId - The section being written, which is never reported.
- * @param refs - The refs just filed.
- * @returns One note per other section holding one of them, empty when there are none.
+ * Sidebar membership is single-parent everywhere the app writes it: the client's
+ * own `moveToGroup`
+ * (`apps/client/src/layers/entities/config/model/use-sidebar-prefs.ts`) filters a
+ * ref out of every section before filing it, and `build-library-sections.ts`
+ * assumes that when it decides which agents are still ungrouped. An append that
+ * left the old membership in place would put one row in two sections, which is a
+ * state no surface in the app can produce and no surface knows how to undo — so
+ * "leave every other section alone" has to yield to the invariant. What stays
+ * true is the part that matters: a section loses a member only when THIS call
+ * moved that member, and every other section is the exact object that came out
+ * of the store.
+ *
+ * Smart sections are skipped. Their membership is derived from `rules` and their
+ * `items` array is not what the sidebar renders, so removing a ref from one
+ * would change nothing on screen while quietly editing the list a later
+ * "convert to manual" would materialize.
+ *
+ * @param groups - The sections, with the target already edited into place.
+ * @param exceptGroupId - The section being filed into, which is never lifted from.
+ * @param refs - The refs being filed.
+ * @returns The sections after the lift, and the ones a member left.
  */
-export function describeDuplicateMemberships(
+export function liftFromOtherGroups(
   groups: readonly SidebarGroup[],
   exceptGroupId: string,
   refs: readonly SidebarItemRef[]
-): string[] {
-  const notes: string[] = [];
-  for (const group of groups) {
-    if (group.id === exceptGroupId || group.kind === 'smart') continue;
-    const shared = refs.filter((ref) => group.items.some((member) => sameSidebarItem(member, ref)));
-    if (shared.length === 0) continue;
-    notes.push(
-      `${shared.length === 1 ? 'One of these is' : `${shared.length} of these are`} also in the ` +
-        `sidebar section "${group.name}", so the person will see ${
-          shared.length === 1 ? 'it' : 'them'
-        } in both places.`
-    );
-  }
-  return notes;
+): SidebarLiftResult {
+  const movedFrom: SidebarItemMove[] = [];
+  const next = groups.map((group) => {
+    if (group.id === exceptGroupId || group.kind === 'smart') return group;
+    const items = group.items.filter((member) => !refs.some((ref) => sameSidebarItem(member, ref)));
+    if (items.length === group.items.length) return group;
+    movedFrom.push({ groupId: group.id, name: group.name });
+    return { ...group, items };
+  });
+  return { groups: next, movedFrom };
 }

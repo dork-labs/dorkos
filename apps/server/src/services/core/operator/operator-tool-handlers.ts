@@ -36,7 +36,7 @@ import {
 import {
   addSidebarItems,
   appendSidebarGroup,
-  describeDuplicateMemberships,
+  liftFromOtherGroups,
   newSidebarGroup,
   removeSidebarItems,
   replaceSidebarGroup,
@@ -537,13 +537,19 @@ function sidebarWriteFailure(result: GuardedConfigWriteResult): OperatorToolResu
 
 /**
  * `sidebar_add_to_group` — file agents and rooms under one sidebar section,
- * leaving every other section exactly as it was (DOR-2055).
+ * touching no section but that one and whichever one an item moved out of
+ * (DOR-2055).
  *
  * The defect this replaces: to add three agents to one section an agent had to
  * re-send the entire `ui.sidebar.groups` array through `config_patch`, because
  * arrays replace wholesale. A drag the person made in between would have been
  * overwritten in silence, and one mistyped section in that payload would have
  * deleted every other section they had.
+ *
+ * Filing something that already sits in another hand-sorted section is a MOVE,
+ * matching the client's `moveToGroup` and the single-parent membership every
+ * other surface assumes; the sections it left come back as `movedFrom` so the
+ * answer says where it went from. See {@link liftFromOtherGroups}.
  *
  * @param identity - The calling agent, when the surface resolved one. Read only
  *   for the audit line's writer field; nothing about the write depends on it.
@@ -568,22 +574,26 @@ export function createSidebarAddToGroupHandler(identity?: AgentIdentity) {
     const target = found.ok ? found.group : created!;
     const { items, added, alreadyPresent } = addSidebarItems(target.items, args.items);
     const group = { ...target, items };
-    const next = created ? appendSidebarGroup(prefs, group) : replaceSidebarGroup(prefs, group);
+    const filed = created ? appendSidebarGroup(prefs, group) : replaceSidebarGroup(prefs, group);
+
+    // Lift EVERY ref the caller named, not only the ones newly appended: after
+    // this call each named item is in the section that was asked for and in no
+    // other, which is also what makes a repeated call a no-op rather than a
+    // slow drift back into two homes.
+    const { groups, movedFrom } = liftFromOtherGroups(filed.groups, group.id, args.items);
+    const next = { ...filed, groups };
 
     const result = writeSidebarPrefs(next, 'the sidebar_add_to_group tool', identity);
     if (!result.ok) return sidebarWriteFailure(result);
 
-    const warnings = [
-      ...result.warnings,
-      ...describeDuplicateMemberships(next.groups, group.id, added),
-    ];
     return jsonResult({
       success: true,
       group,
       created: created !== undefined,
       added,
       alreadyPresent,
-      ...(warnings.length > 0 && { warnings }),
+      movedFrom,
+      ...(result.warnings.length > 0 && { warnings: result.warnings }),
     });
   };
 }
