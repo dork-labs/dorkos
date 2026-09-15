@@ -40,6 +40,20 @@
  * enumerated whole as well as produced by the fixture: which entry a tree trips
  * depends on what somebody happened to leave lying at a target.
  *
+ * ## The one sentence here that is not the engine's
+ *
+ * `@dorkos/marketplace`'s {@link LAYER_LABELS} are checked too, and they are
+ * checked HERE rather than in their own package for two reasons. The loader
+ * above lives at the repository root, outside `packages/marketplace`'s pinned
+ * `rootDir`, so a test there cannot import it; and this file already holds the
+ * labels, because their KEYS are the ADR's carve-out. Their VALUES are ordinary
+ * product copy — the install preview draws them, on the site and in the app —
+ * and no gate reaches them: `check-vocab-gate.ts` counts a string in a property
+ * position as copy only when the property NAME is one it knows (`label`,
+ * `description`, …), and these are keyed by layer name, so pointing that gate at
+ * the package finds nothing (measured 2026-09-15, DOR-1936). One of the nine had
+ * been reading `Installs messaging adapters` since before the ADR.
+ *
  * What it does NOT cover, and does not need to:
  *
  * - **Anything the client writes.** The seven chip words, the "Not shared with
@@ -325,6 +339,11 @@ function collectReasons(repoRoot: string, dorkHome: string): Reason[] {
   // are enumerated, exactly as the two tables above are.
   for (const outcome of Object.values(SKILL_ROOT_COLLISION_OUTCOMES)) add('warning', outcome);
 
+  // The nine labels a person reads in the install preview, for the reason the
+  // header gives. A `marketplace-label` family of its own, so a failure names
+  // the package the string really lives in.
+  for (const label of Object.values(LAYER_LABELS)) add('marketplace-label', label);
+
   // `plan.notEnabled` is deliberately NOT collected. Its entries carry a
   // `signal` — `.gemini/`, `.github/copilot-instructions.md` — which is a PATH,
   // not a sentence: the words a person reads there are written by the client
@@ -412,13 +431,16 @@ describe('VC-02 — the sentences the engine shows a person', () => {
     // A count alone can be met by one family repeated. Six families, and each
     // is a different producer with a different failure mode: the note on an
     // action, the reason on a drop, a warning, what is in the way of a write,
-    // what a sweep removes, and what is wrong with the manifest itself.
+    // what a sweep removes, and what is wrong with the manifest itself. The
+    // seventh is the marketplace's own labels, enumerated whole for the reason
+    // the header gives.
     const families = new Set(reasons.map((reason) => reason.family));
     expect([...families].sort()).toEqual([
       'action',
       'blocked',
       'drop',
       'manifest-notice',
+      'marketplace-label',
       'sweep',
       'warning',
     ]);
@@ -448,6 +470,10 @@ describe('VC-02 — the sentences the engine shows a person', () => {
       );
     }
     expect(all.some((text) => text.includes('and OpenCode reads both folders.'))).toBe(true);
+    // All nine labels, not a sample: each is one layer's whole sentence.
+    expect(reasons.filter((reason) => reason.family === 'marketplace-label')).toHaveLength(
+      Object.keys(LAYER_LABELS).length
+    );
   });
 
   it('VC-02: uses no retired user-facing word outside a quoted package-layer name', () => {
@@ -462,8 +488,9 @@ describe('VC-02 — the sentences the engine shows a person', () => {
 
     expect(
       offenders,
-      'A reason the app draws verbatim uses a word this product retired. Rewrite the sentence in ' +
-        'packages/harness — the CLI prints the same string, so the fix reaches both surfaces at once. ' +
+      'A sentence the app draws verbatim uses a word this product retired. Rewrite it where it ' +
+        'lives: packages/harness for every family but one — the CLI prints the same string, so the ' +
+        'fix reaches both surfaces at once — and packages/marketplace for a `marketplace-label`. ' +
         'The one legitimate use is a marketplace layer NAME in quotes (ADR 260804-021140).'
     ).toEqual([]);
   });

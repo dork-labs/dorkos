@@ -16,7 +16,12 @@ export const LAYER_LABELS: Readonly<Record<string, string>> = {
   commands: 'Adds slash commands',
   hooks: 'Installs lifecycle hooks',
   extensions: 'Installs UI extensions',
-  adapters: 'Installs messaging adapters',
+  // The KEY is the layer name a package author writes in their own manifest,
+  // which ADR 260804-021140 keeps; the label a person reads is Connections
+  // language, because that is the page this lands them on. Plural on purpose:
+  // "connection" on its own is retired copy (DOR-855), "Connections" is the
+  // domain.
+  adapters: 'Adds messaging connections',
   'mcp-servers': 'Adds MCP servers',
   'lsp-servers': 'Adds LSP servers',
   agents: 'Adds agent definitions',
