@@ -7,6 +7,7 @@ import {
   raceWithTimeout,
   redactPaths,
   redactTokens,
+  redactUrlQueries,
   scrubFilename,
   scrubMessage,
   scrubStack,
@@ -46,6 +47,55 @@ describe('redactTokens', () => {
       'bare [redacted] end'
     );
     expect(redactTokens(`key dork_${'0123abcd'.repeat(6)} end`)).toBe('key [redacted] end');
+  });
+
+  it('redacts the OAuth-shaped credentials a URL carries in its query string', () => {
+    // `token=` alone never matched these: the rule needs a word boundary before
+    // `token`, and `_` is a word character, so `access_token=…` sailed through.
+    // These arrive for real — a page in the canvas browser can put any URL of
+    // its own into the log (DOR-2045).
+    expect(redactTokens('https://bank.example/login?access_token=abc123def456')).not.toContain(
+      'abc123def456'
+    );
+    expect(redactTokens('refresh_token: rt-0987654321')).not.toContain('rt-0987654321');
+    expect(redactTokens('id_token=eyJhbGciOi')).toContain('[redacted]');
+    expect(redactTokens('access-token = at-112233')).not.toContain('at-112233');
+    // An OAuth authorization code is single-use but still a credential in
+    // flight, and it only ever appears as a URL parameter — hence the
+    // parameter-shaped rule rather than a bare-word one.
+    expect(redactTokens('https://app.example/cb?code=4/0AY0e-g7&state=xyz')).not.toContain(
+      '4/0AY0e-g7'
+    );
+    // ...and an ordinary word ending in "code" is not a credential.
+    expect(redactTokens('exit code=1')).toBe('exit code=1');
+  });
+});
+
+describe('redactUrlQueries', () => {
+  it('keeps the scheme, host and path and drops everything after them', () => {
+    expect(redactUrlQueries('Denied "clipboard-read" to https://bank.example/login?t=abc')).toBe(
+      'Denied "clipboard-read" to https://bank.example/login'
+    );
+    expect(redactUrlQueries('loading https://mail.example.org/u/0/#inbox/FMfcgz')).toBe(
+      'loading https://mail.example.org/u/0/'
+    );
+    expect(redactUrlQueries('plain http://localhost:4242/api/health')).toBe(
+      'plain http://localhost:4242/api/health'
+    );
+  });
+
+  it('leaves the punctuation around a URL where it was', () => {
+    // A URL is quoted, parenthesised and put at the end of a sentence in real
+    // log prose. Swallowing the bracket or the comma corrupts the line around
+    // it, which is a different kind of wrong from leaking the query.
+    expect(redactUrlQueries('(https://a.example/p?q=1)')).toBe('(https://a.example/p)');
+    expect(redactUrlQueries('https://x.example/a/b#frag, then more')).toBe(
+      'https://x.example/a/b, then more'
+    );
+    expect(redactUrlQueries('See https://a.example/p?q=1.')).toBe('See https://a.example/p.');
+    expect(redactUrlQueries('at https://a.example/p?q=1; retrying')).toBe(
+      'at https://a.example/p; retrying'
+    );
   });
 });
 

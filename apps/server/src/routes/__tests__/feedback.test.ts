@@ -303,6 +303,38 @@ describe('feedback route', () => {
       expect(submitted.submission.diagnostics?.serverLogExcerpt).toBeUndefined();
     });
 
+    it('forwards a client-supplied shellLogExcerpt (the shell is its only author)', async () => {
+      // The one deliberate exception to "the server authors the diagnostics"
+      // (DOR-2045): `main.log` belongs to the Electron main process, which the
+      // server child cannot see at all, so the desktop shell gathers this one
+      // and the client carries it. Widening the strip to cover it turns this red.
+      mockSend.mockResolvedValue({ ok: true });
+      mockGetTranscript.mockResolvedValue(undefined);
+      mockGetLogExcerpt.mockResolvedValue(undefined);
+
+      await request(fixtureTarget.mount(buildApp()))
+        .post('/api/feedback')
+        .send({
+          kind: 'bug',
+          message: 'the window keeps reloading itself',
+          includeServerLogs: true,
+          diagnostics: {
+            clientReport: { version: '0.75.0', platform: 'darwin-arm64', runtimes: [], flags: {} },
+            serverLogExcerpt: 'CLIENT log leak /Users/dorian/.env',
+            shellLogExcerpt: '2026-09-14 15:25:25.123 info [renderer] Reloading the window.',
+          },
+        });
+
+      const submitted = mockSend.mock.calls[0][0] as {
+        submission: { diagnostics?: { serverLogExcerpt?: string; shellLogExcerpt?: string } };
+      };
+      expect(submitted.submission.diagnostics?.shellLogExcerpt).toBe(
+        '2026-09-14 15:25:25.123 info [renderer] Reloading the window.'
+      );
+      // ...and its server-authored sibling is still stripped beside it.
+      expect(submitted.submission.diagnostics?.serverLogExcerpt).toBeUndefined();
+    });
+
     it('replaces a client-supplied transcriptExcerpt with the server-gathered one', async () => {
       mockSend.mockResolvedValue({ ok: true });
       mockGetTranscript.mockResolvedValue('user: it broke\nassistant: looking');

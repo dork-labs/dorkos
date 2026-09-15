@@ -102,6 +102,13 @@ const TOKEN_PATTERNS: RegExp[] = [
   /\bAKIA[0-9A-Z]{16}\b/g, // AWS access key id
   /\bBearer\s+[A-Za-z0-9._-]+/gi, // bearer tokens
   /\b(?:authorization|api[_-]?key|token|secret|password)\s*[:=]\s*\S+/gi, // key: value secrets
+  // OAuth credentials, which the rule above misses: it needs a word boundary
+  // before `token`, and `_` is a word character, so `access_token=…` was never
+  // matched. These arrive through URLs the app did not author (DOR-2045).
+  /\b(?:access|refresh|id)[_-]?token\s*[:=]\s*\S+/gi,
+  // An OAuth authorization code, only ever a URL parameter — so the rule is
+  // parameter-shaped rather than a bare word, which would redact "exit code=1".
+  /[?&]code=[^&\s"']+/gi,
   /\b(?:keychain|env|file):[^\s"']+/g, // DorkOS credential references
   /\bdork_[A-Za-z0-9_]*[0-9a-f]{32,}\b/g, // DorkOS API + per-instance MCP tokens
   /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9._-]+/g, // JWTs
@@ -128,6 +135,56 @@ export function redactPaths(text: string): string {
 }
 
 /**
+ * An `http(s)` URL, up to the first character that cannot be part of one.
+ *
+ * Deliberately greedy: it only has to find where a URL STARTS, because
+ * {@link redactUrlQueries} throws the tail away anyway. The trailing sentence
+ * punctuation it over-matches is handled separately — see there.
+ */
+const HTTP_URL = /\bhttps?:\/\/[^\s<>"'`]+/g;
+
+/**
+ * Punctuation that follows a URL in prose rather than belonging to it.
+ *
+ * A log line reads "opened (https://a.example/p?q=1) in a tab" or ends a
+ * sentence on a URL, and eating the bracket or the full stop corrupts the line
+ * around it — a different defect from the one this is here to prevent. The
+ * run is put back after the cut, so a real URL that genuinely ends in one of
+ * these (a Wikipedia `…_(disambiguation)`) survives whole when it carries no
+ * query, and loses only the query when it does.
+ */
+const URL_TRAILING_PUNCTUATION = /[).,;:]+$/;
+
+/**
+ * Drop the query string and fragment from every `http(s)` URL in `text`,
+ * keeping the scheme, host and path.
+ *
+ * Logs carry URLs the app did not author — the page that asked for a
+ * permission, an upstream a request failed against — and their query strings
+ * carry session ids, account numbers, search terms and, measured on a real
+ * install, OAuth credentials (DOR-2045). {@link redactTokens} catches the
+ * credential shapes it knows; this removes the whole class ahead of it, because
+ * the query string is never the part of a URL a bug report needs.
+ *
+ * Applied by both log excerpts a bug report can carry — the server's
+ * (`apps/server/src/lib/log-excerpt.ts`) and the desktop shell's
+ * (`apps/desktop/src/main/shell-log-excerpt/`) — so the promise the feedback
+ * dialog makes about web addresses is true of the whole report.
+ *
+ * Run it BEFORE {@link redactPaths}, whose `/…/…` rules would otherwise chew a
+ * URL's path into a relative-looking fragment.
+ *
+ * @param text - Arbitrary text that may embed URLs.
+ */
+export function redactUrlQueries(text: string): string {
+  return text.replace(HTTP_URL, (url) => {
+    const trailing = URL_TRAILING_PUNCTUATION.exec(url)?.[0] ?? '';
+    const withoutTrailing = url.slice(0, url.length - trailing.length);
+    return `${withoutTrailing.replace(/[?#][^\s<>"'`]*$/, '')}${trailing}`;
+  });
+}
+
+/**
  * Redact secret-shaped tokens from a string.
  *
  * @param text - Arbitrary text that may embed credentials.
@@ -143,7 +200,11 @@ export function redactTokens(text: string): string {
 /**
  * Scrub a free-form error message: redact tokens and paths, then cap length.
  * Applied to the error's `.message` (which can contain arbitrary interpolated
- * data) so no secret or absolute path rides along.
+ * data) so no secret-shaped token or home-directory path rides along; paths
+ * outside the home directory stay as written, the same as everywhere
+ * `redactPaths` runs. Deliberately does not call {@link redactUrlQueries}: a
+ * crash report's message is where a URL's query can be the diagnosis, and
+ * widening the crash pipeline is its own decision.
  *
  * @param message - The raw error message.
  */

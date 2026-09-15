@@ -235,6 +235,137 @@ interface DurableFeedbackPayload {
   hasTranscript?: boolean;
 }
 
+/** What separates two sections of the rendered diagnostics block. */
+const SECTION_SEPARATOR = '\n\n';
+
+/** Join rendered sections into the block the durable route receives. */
+function joinSections(sections: string[]): string {
+  return sections.join(SECTION_SEPARATOR);
+}
+
+/** One labelled, newest-last excerpt awaiting a budget. `text` absent means "not attached". */
+interface BudgetedSection {
+  /** The heading a reader sees, without its colon. */
+  label: string;
+  /** The body, oldest first, already bounded by whoever gathered it. */
+  text: string | undefined;
+}
+
+/** What a section's heading says when there was no room for any of its body. */
+const OMITTED_SUFFIX = ': (omitted, no room)';
+
+/**
+ * Divide `available` characters between sections that each want `costs[i]`.
+ *
+ * Max-min fair: everyone gets an equal share, whatever the sections that need
+ * less than their share do not use is handed back to the ones that want more,
+ * and the total can never exceed `available`. So a five-line server excerpt
+ * does not cost the desktop excerpt half the block, and two full-size excerpts
+ * get half each.
+ *
+ * @param costs - How many characters each section would use unbounded.
+ * @param available - Characters left for all of them together.
+ */
+function shareBudget(costs: number[], available: number): number[] {
+  if (costs.length === 0) return [];
+  const share = Math.floor(Math.max(0, available) / costs.length);
+  const slack = costs.reduce((sum, cost) => sum + Math.max(0, share - cost), 0);
+  const overBudget = costs.filter((cost) => cost > share).length;
+  const bonus = overBudget > 0 ? Math.floor(slack / overBudget) : 0;
+  return costs.map((cost) => (cost <= share ? cost : share + bonus));
+}
+
+/**
+ * The smallest section worth emitting, in characters.
+ *
+ * Below this a section is a label and a few characters of a line nobody can
+ * read, which is worse than saying nothing: it looks like the log was empty
+ * rather than like it did not fit.
+ */
+const MIN_LOG_SECTION_LEN = 200;
+
+/**
+ * Render the block's variable-length sections, each within its own share of
+ * what the header left.
+ *
+ * **Why this is not one slice over the whole block.** Every section here is
+ * bounded on its own — the two log excerpts at `MAX_LOG_EXCERPT_LEN` (8,000),
+ * the breadcrumbs at 50 × 300 — while the rendered block is capped at
+ * {@link DURABLE_DIAGNOSTICS_MAX_LEN} (8,000). So "more than fits" is the
+ * ordinary shape of a report from an app that has been running a while, not an
+ * edge case. A single head slice across the joined block deleted whichever
+ * sections came last, label and all, so the report did not even say it had been
+ * cut; at smaller sizes it cut those sections' TAILS, which is their newest end
+ * and the half a report is filed about. Both were measured in review
+ * (DOR-2045), the second round of which found breadcrumbs doing it to BOTH
+ * logs at 23 maximum-size crumbs.
+ *
+ * Each section is therefore cut from the FRONT with a leading ellipsis, which
+ * is how the excerpts were bounded by their own gatherers (`log-excerpt.ts` and
+ * the shell's `shell-log-excerpt`) and for the same reason: a report is filed
+ * about the moment at the end of the log, and the newest breadcrumb is the one
+ * next to the crash.
+ *
+ * **A section that does not fit says so.** Saying "omitted" is itself a section
+ * and costs characters, so that cost is reserved for every attached section
+ * before anything is shared out — a report that silently drops its logs reads
+ * as "there were no logs", which sends triage looking in the wrong place.
+ *
+ * @param candidates - The labelled sections, in the order they should appear.
+ * @param available - Characters left after the header.
+ * @returns The rendered sections, each either whole, front-cut, or a one-line
+ *   marker saying it did not fit.
+ */
+function renderBudgetedSections(candidates: BudgetedSection[], available: number): string[] {
+  const attached = candidates.filter((section): section is BudgetedSection & { text: string } =>
+    Boolean(section.text)
+  );
+  if (attached.length === 0) return [];
+
+  // Each section costs its label line plus the separator that precedes it...
+  const overheads = attached.map((s) => `${s.label}:\n`.length + SECTION_SEPARATOR.length);
+  // ...and, at minimum, the cost of admitting it did not fit.
+  const markers = attached.map((s) => `${s.label}${OMITTED_SUFFIX}`);
+  const floors = markers.map((marker) => marker.length + SECTION_SEPARATOR.length);
+  const reserved = floors.reduce((sum, floor) => sum + floor, 0);
+
+  // Not even room to say what was dropped: the header alone has taken the whole
+  // block, which is only reachable through the uncapped `flags` record.
+  if (available < reserved) {
+    logger.warn('[Feedback] No room in the diagnostics block for any excerpt', {
+      omitted: attached.map((s) => s.label),
+    });
+    return [];
+  }
+
+  const extras = shareBudget(
+    attached.map((s, i) => Math.max(0, s.text.length + overheads[i] - floors[i])),
+    available - reserved
+  );
+
+  const rendered: string[] = [];
+  const omitted: string[] = [];
+  for (const [i, section] of attached.entries()) {
+    const room = floors[i] + extras[i] - overheads[i];
+    // Fits whole — the common case, and the one the minimum below must not
+    // touch: a five-line server excerpt is short, not squeezed.
+    if (section.text.length <= room) {
+      rendered.push(`${section.label}:\n${section.text}`);
+      continue;
+    }
+    if (room < MIN_LOG_SECTION_LEN) {
+      rendered.push(markers[i]);
+      omitted.push(section.label);
+      continue;
+    }
+    rendered.push(`${section.label}:\n…${section.text.slice(-(room - 1))}`);
+  }
+  if (omitted.length > 0) {
+    logger.warn('[Feedback] Dropped a diagnostics section with no room left', { omitted });
+  }
+  return rendered;
+}
+
 /**
  * Render the bounded {@link FeedbackDiagnostics} bundle into the opaque
  * text block the durable route's `diagnostics` field expects — that route
@@ -242,17 +373,16 @@ interface DurableFeedbackPayload {
  * (see that route's module doc), so this is free-form as long as it stays
  * within {@link DURABLE_DIAGNOSTICS_MAX_LEN}.
  *
- * The environment lines are emitted BEFORE the `Flags` line and before the
- * breadcrumb and server-log sections. That ordering is what protects them:
- * breadcrumbs alone can reach ~17,000 characters (50 × a 300-char message), so
- * the final {@link DURABLE_DIAGNOSTICS_MAX_LEN} slice is a live possibility,
- * and a tail slice can only ever reach text that comes AFTER what it keeps.
+ * The environment lines are emitted BEFORE the `Flags` line, and the header as
+ * a whole before every other section. That ordering is what protects them: the
+ * header is the one part no budget can shrink, so it has to come first, and
+ * within it the bounded environment lines precede the unbounded `flags` record.
  *
- * Note the property claimed here is *ordering*, not a total size budget: the
- * `flags` record is `z.record()` with no cap on how many keys it carries, so
- * the header as a whole has no bound worth quoting. The environment lines do
- * have one — nine lines, the largest a 300-char user-agent — and they precede
- * the unbounded part, which is the whole point.
+ * Everything after the header — breadcrumbs and the two log excerpts — shares
+ * one budget and is cut from the FRONT, so no section can starve another and a
+ * section that could not fit says so. See {@link renderBudgetedSections};
+ * breadcrumbs alone can reach ~17,000 characters (50 × a 300-char message),
+ * which is how they came to delete both logs from a report (DOR-2045).
  *
  * @param diagnostics - The submission's optional diagnostics bundle.
  * @param serverVersion - This server's own version, for the upgrade-skew line.
@@ -264,7 +394,7 @@ function renderDiagnostics(
 ): string | undefined {
   if (!diagnostics) return undefined;
 
-  const { clientReport, breadcrumbs, serverLogExcerpt } = diagnostics;
+  const { clientReport, breadcrumbs, serverLogExcerpt, shellLogExcerpt } = diagnostics;
 
   // The client's `version` is whatever the server reported to it when its config
   // query last ran, so the two agree in the normal case and there is nothing to
@@ -311,16 +441,35 @@ function renderDiagnostics(
     );
   }
 
+  // The header is the only unbudgeted section: it is the part that has to
+  // survive, and it is emitted first for that reason.
   const sections = [headerLines.join('\n')];
-  if (breadcrumbs && breadcrumbs.length > 0) {
-    const breadcrumbLines = breadcrumbs.map((b) => `[${b.at}] ${b.kind}: ${b.message}`);
-    sections.push(`Breadcrumbs:\n${breadcrumbLines.join('\n')}`);
-  }
-  if (serverLogExcerpt) {
-    sections.push(`Server log excerpt:\n${serverLogExcerpt}`);
-  }
 
-  return sections.join('\n\n').slice(0, DURABLE_DIAGNOSTICS_MAX_LEN);
+  // Everything else shares what the header leaves, each front-cut on its own.
+  // Breadcrumbs are in here rather than emitted ahead of the budget: 23
+  // maximum-size crumbs are enough to spend the whole block, and they used to
+  // take both logs down with them and say nothing about it.
+  const budgeted: BudgetedSection[] = [
+    {
+      label: 'Breadcrumbs',
+      text:
+        breadcrumbs && breadcrumbs.length > 0
+          ? breadcrumbs.map((b) => `[${b.at}] ${b.kind}: ${b.message}`).join('\n')
+          : undefined,
+    },
+    { label: 'Server log excerpt', text: serverLogExcerpt },
+    // The desktop shell's own log (DOR-2045), named apart from the server's so
+    // a reader knows which process wrote which. Present only on a report filed
+    // from the desktop app; it carries none of the server child's forwarded
+    // output, which the shell filters out precisely so this does not repeat the
+    // section above it.
+    { label: 'Desktop app log excerpt', text: shellLogExcerpt },
+  ];
+  sections.push(
+    ...renderBudgetedSections(budgeted, DURABLE_DIAGNOSTICS_MAX_LEN - joinSections(sections).length)
+  );
+
+  return joinSections(sections).slice(0, DURABLE_DIAGNOSTICS_MAX_LEN);
 }
 
 /**

@@ -325,7 +325,9 @@ export type Breadcrumb = z.infer<typeof BreadcrumbSchema>;
  * `serverLogExcerpt` are both optional and gathered independently — the former
  * client-side, the latter server-side (see `getRecentLogExcerpt` in
  * `apps/server/src/lib/log-excerpt.ts`); the client never sends
- * `serverLogExcerpt` itself.
+ * `serverLogExcerpt` itself. `shellLogExcerpt` is the exception that proves that
+ * rule: the desktop shell's log lives in the Electron main process, which the
+ * server cannot read, so that one field travels from the client.
  *
  * The `viewport`/`browser`/`shell`/`theme`/`locale`/`timezone` fields (DOR-1960)
  * are the "what was on screen" half of the same bundle: everything triage needs
@@ -361,6 +363,22 @@ export const FeedbackDiagnosticsSchema = z
     breadcrumbs: z.array(BreadcrumbSchema).max(MAX_BREADCRUMBS).optional(),
     /** A scrubbed, bounded slice of recent server logs. Server-attached only. */
     serverLogExcerpt: z.string().max(MAX_LOG_EXCERPT_LEN).optional(),
+    /**
+     * A scrubbed, bounded slice of the desktop shell's own log — the Electron
+     * main process's `main.log`, minus the server child's forwarded output
+     * (DOR-2045).
+     *
+     * **The one client-attached field in this bundle**, and deliberately so: the
+     * server child does not run in the Electron main process and cannot see that
+     * file at all, so the shell is the only process that can gather it. It
+     * arrives already scrubbed and bounded by
+     * `apps/desktop/src/main/shell-log-excerpt/index.ts`; this bound is the wire-level
+     * mitigation for a field the server did not author.
+     *
+     * Absent everywhere but the desktop app, and absent on a desktop build older
+     * than the bridge method that gathers it.
+     */
+    shellLogExcerpt: z.string().max(MAX_LOG_EXCERPT_LEN).optional(),
   })
   .strict();
 

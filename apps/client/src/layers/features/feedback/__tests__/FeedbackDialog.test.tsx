@@ -399,6 +399,74 @@ describe('FeedbackDialog', () => {
     expect(submitted.sessionId).toBeUndefined();
   });
 
+  describe("the desktop shell's own log (DOR-2045)", () => {
+    /**
+     * Pretend to be the desktop app.
+     *
+     * `isDesktopShell()` feature-detects `getServerPort`, so a bridge without it
+     * is not the shell however many other methods it carries — which is also how
+     * a desktop build older than this one is modelled: bridge present,
+     * `getShellLogExcerpt` absent.
+     */
+    function mountBridge(bridge: Partial<ElectronAPI>): void {
+      (window as { electronAPI?: Partial<ElectronAPI> }).electronAPI = bridge;
+    }
+
+    afterEach(() => {
+      delete (window as { electronAPI?: unknown }).electronAPI;
+    });
+
+    /** Type a bug message and press Send, returning what went out. */
+    async function sendBug(transport = createMockTransport()) {
+      const sendFeedback = vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
+      renderDialog(transport);
+      await waitFor(() => expect(transport.getConfig).toHaveBeenCalled());
+      await act(async () => {});
+
+      fireEvent.click(screen.getByRole('radio', { name: 'Bug' }));
+      fireEvent.change(screen.getByPlaceholderText(/what happened/i), {
+        target: { value: 'the window keeps reloading itself' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+      await waitFor(() => expect(sendFeedback).toHaveBeenCalledTimes(1));
+      return sendFeedback.mock.calls[0][0];
+    }
+
+    it("attaches the shell's own log excerpt when running in the desktop app", async () => {
+      const getShellLogExcerpt = vi
+        .fn()
+        .mockResolvedValue('2026-09-14 15:25:25.123 info [renderer] Reloading the window.');
+      mountBridge({ getServerPort: () => 4242, getShellLogExcerpt });
+
+      const submitted = await sendBug();
+
+      expect(getShellLogExcerpt).toHaveBeenCalledTimes(1);
+      expect(submitted.diagnostics?.shellLogExcerpt).toBe(
+        '2026-09-14 15:25:25.123 info [renderer] Reloading the window.'
+      );
+    });
+
+    it('attaches nothing in a browser, where there is no shell log to read', async () => {
+      const submitted = await sendBug();
+
+      expect(submitted.diagnostics?.clientReport).toBeDefined();
+      expect(submitted.diagnostics?.shellLogExcerpt).toBeUndefined();
+    });
+
+    it('sends the report anyway when the shell cannot produce an excerpt', async () => {
+      // A desktop build older than this one has no such method, and a shell
+      // whose log is unreadable answers `undefined`. Neither may cost a person
+      // their bug report.
+      mountBridge({ getServerPort: () => 4242 });
+
+      const submitted = await sendBug();
+
+      expect(submitted.diagnostics?.shellLogExcerpt).toBeUndefined();
+      expect(submitted.includeServerLogs).toBe(true);
+    });
+  });
+
   it('does NOT attach diagnostics for a non-bug submission', async () => {
     const transport = createMockTransport();
     const sendFeedback = vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
