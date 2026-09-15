@@ -156,6 +156,8 @@ So: **drop `[server]`-tagged lines entirely, then keep the last 200 shell-author
 
 Raising the watchdog's own lines to `warn` so that a warn-and-above filter would catch them was considered and rejected: a level is a claim about severity, and "a new page started loading" is not a warning. The filter is the right place to encode which lines matter.
 
+> **Amended 2026-09-15.** The counts above (1,240 info, 365 error, 321 `[server]`, 16 `[renderer]`) were measured on a `main.log` that desktop vitest runs had polluted (DOR-2042), and the shell's own line rate is not low: the filter as built keeps about 7,000 of 11,700 lines, dominated by 5,619 `[permissions]` entries. The decision stands on which lines carry the cause, not on the counts, and the prefix to drop is `[server:` rather than `[server]`. See `02-specification.md` A2(c) and A6.
+
 ### D9. `loopDetected` is honest on the day it ships.
 
 The phase-2 loop detector is what the field was designed for, but the phase-1 floor observes the same signature in its minimal form: a page that reported alive, replaced by the shell, and about to be replaced again inside a minute. So the floor sets it, phase 2's detector tightens the rule (three or more replacements in five minutes, each followed by a heartbeat within two seconds) and adds the stand-down and the notice. The field is never written `true` by anything weaker.
