@@ -15,6 +15,11 @@ covers:
   # whether something was IN the way, and a folder that simply will not take a
   # new file is the other half of the same question.
   - 'fix(harness): a native claim is degraded on permission too (DOR-1942)'
+  # And its own correction, folded for the same reason: the bullet said the
+  # skill is listed as not reaching a tool when the folder will not take the
+  # link, and a DEAD link in that folder is the last way that could still be
+  # untrue. Nobody could have read the first version.
+  - 'fix(harness): a dead link under a read-only folder does not keep a native claim (DOR-1942)'
 ---
 
 ### Fixed

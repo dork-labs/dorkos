@@ -13,7 +13,7 @@
  * `harnessCoverage('opencode')` discovering nothing at all.
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { project } from '../../engine.js';
@@ -44,7 +44,7 @@ afterEach(() => {
  * @param blocker - what to put at `.agents/skills`, or nothing at all.
  * @returns the repository root and its dork home.
  */
-function stageOpencodeProject(blocker?: 'file' | 'read-only'): {
+function stageOpencodeProject(blocker?: 'file' | 'read-only' | 'dead-link-read-only'): {
   repo: string;
   dorkHome: string;
 } {
@@ -72,6 +72,18 @@ function stageOpencodeProject(blocker?: 'file' | 'read-only'): {
   if (blocker === 'read-only') {
     const skills = join(repo, '.agents', 'skills');
     mkdirSync(skills, { recursive: true });
+    chmodSync(skills, 0o555);
+    relaxed.push(skills);
+  }
+  if (blocker === 'dead-link-read-only') {
+    // A link at exactly the path the plan wants, pointing at nothing, inside a
+    // folder DorkOS may not write in — so the repair is refused as well.
+    const skills = join(repo, '.agents', 'skills');
+    mkdirSync(skills, { recursive: true });
+    symlinkSync(
+      join(repo, '.dork', 'plugins', 'acme', 'skills', 'moved-away'),
+      join(skills, 'acme__a')
+    );
     chmodSync(skills, 0o555);
     relaxed.push(skills);
   }
@@ -155,6 +167,54 @@ describe('AP-11, SK-05, SK-09 — the permission half of the same question', () 
     // `.agents/skills` read-only AFTER a sync still has a link every one of
     // those four tools reads perfectly well. Nothing is about to be written,
     // so the folder's mode is nobody's business (`unwritableWritePath`).
+    const { repo, dorkHome } = stageOpencodeProject();
+    applyPlan(repo, project(repo, { dorkHome }));
+    const skills = join(repo, '.agents', 'skills');
+    chmodSync(skills, 0o555);
+    relaxed.push(skills);
+
+    expect(
+      project(repo, { dorkHome })
+        .actions.filter((a) => a.kind === 'native' && a.harness === 'opencode')
+        .map((a) => a.name)
+    ).toEqual(['acme__a']);
+  });
+});
+
+describe('AP-11, SK-05, SK-09 — a dead link is not a link a harness reads', () => {
+  it.skipIf(!CAN_MAKE_UNREADABLE)('degrades when the link there points at nothing', () => {
+    // Seeded defect: guard the permission probe on `pathExists`, which is
+    // `lstat`-based — so a DANGLING link counts as "already there". Measured:
+    // the plan carried `native opencode acme__a` AND the apply reported
+    // `.agents/skills/acme__a` as a conflict at the same time, which says
+    // OpenCode reads a link that points at nothing and DorkOS may not repair
+    // it. Liveness, not existence, is what makes the claim true.
+    const { repo, dorkHome } = stageOpencodeProject('dead-link-read-only');
+
+    const plan = project(repo, { dorkHome });
+
+    expect(plan.actions.filter((a) => a.kind === 'native')).toEqual([]);
+    expect(
+      plan.drops
+        .filter((d) => d.harness === 'opencode' && d.name === 'acme__a')
+        .map((d) => d.reason)
+    ).toEqual([
+      'OpenCode reads .agents/skills, and the link this skill needs there is blocked by ' +
+        '`.agents/skills`, which is a folder DorkOS may not write in (permission denied). ' +
+        'Fix the folder’s permissions, then re-run.',
+    ]);
+
+    // The two answers agree: the link is a conflict the apply will not repair,
+    // and no claim rides it.
+    const { conflicts } = applyPlan(repo, plan);
+    expect(conflicts.map((c) => c.target)).toEqual(['.agents/skills/acme__a']);
+    expect(harnessCoverage('opencode', repo).discovered).toEqual([]);
+  });
+
+  it.skipIf(!CAN_MAKE_UNREADABLE)('keeps the claim for a LIVE link in the same folder', () => {
+    // The other side of liveness, and the silence that must survive: a folder
+    // chmod'd read-only after a sync still holds a link all four of those tools
+    // read, so nothing is about to be written and the claim stands.
     const { repo, dorkHome } = stageOpencodeProject();
     applyPlan(repo, project(repo, { dorkHome }));
     const skills = join(repo, '.agents', 'skills');

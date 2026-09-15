@@ -68,6 +68,13 @@ function isManagedLink(repoRoot: string, dir: string, entry: string): boolean {
   return inside !== '' && !inside.startsWith('..') && !isAbsolute(inside);
 }
 
+/** The targets an apply reported as conflicts — paths it deliberately did not touch. */
+function blockedTargets(result: { conflicts: { target?: string }[] }): ReadonlySet<string> {
+  return new Set(
+    result.conflicts.flatMap((action) => (action.target === undefined ? [] : [action.target]))
+  );
+}
+
 /**
  * Assert that every managed link in the tree is named by the plan and resolves.
  *
@@ -75,7 +82,11 @@ function isManagedLink(repoRoot: string, dir: string, entry: string): boolean {
  * @param plan - the plan that was just applied.
  * @returns how many managed links were examined (so a vacuous pass is visible).
  */
-function expectNoOrphans(repoRoot: string, plan: ProjectionPlan): number {
+function expectNoOrphans(
+  repoRoot: string,
+  plan: ProjectionPlan,
+  blocked: ReadonlySet<string> = new Set()
+): number {
   const planned = new Set(
     plan.actions.filter((a) => a.kind === 'symlink' && a.target).map((a) => a.target as string)
   );
@@ -89,8 +100,17 @@ function expectNoOrphans(repoRoot: string, plan: ProjectionPlan): number {
     if (!statSync(dirAbs, { throwIfNoEntry: false })?.isDirectory()) continue;
     for (const entry of readdirSync(dirAbs)) {
       if (!isManagedLink(repoRoot, dir, entry)) continue;
-      examined += 1;
       const path = `${dir}/${entry}`;
+      // A link the apply REFUSED is not an orphan it left behind. The generator
+      // can stage a dead link at a path the plan wants inside a folder DorkOS
+      // may not write in, and the engine's answer to that is a reported
+      // conflict — it will not delete or replace a link through a folder whose
+      // permissions say no. "Every managed link resolves" is not a claim such a
+      // tree can make, exactly as it is not one an unreadable skill root can
+      // make (the guard above). What IS asserted about it lives in
+      // `unreachable-native.test.ts`: no `native` claim rides it (DOR-1942).
+      if (blocked.has(path)) continue;
+      examined += 1;
       expect({ path, planned: planned.has(path), resolves: resolves(join(dirAbs, entry)) }).toEqual(
         {
           path,
@@ -118,8 +138,12 @@ describe('P2 — every managed link resolves to a source the current plan names'
             // P4b in `apply-ownership.property.test.ts` asserts exactly that, and
             // "no orphans" is not a claim this tree can make.
             if ((firstPlan.unreadableSkillRoots?.length ?? 0) > 0) return;
-            applyPlan(repoRoot, firstPlan, { sweepOrphans: true });
-            examined += expectNoOrphans(repoRoot, firstPlan);
+            const firstBlocked = blockedTargets(
+              applyPlan(repoRoot, firstPlan, {
+                sweepOrphans: true,
+              })
+            );
+            examined += expectNoOrphans(repoRoot, firstPlan, firstBlocked);
 
             // Move a source out from under the projection, the way a person does.
             if (spec.skills.length > 0) {
@@ -130,8 +154,12 @@ describe('P2 — every managed link resolves to a source the current plan names'
             }
 
             const secondPlan = project(repoRoot, { dorkHome });
-            applyPlan(repoRoot, secondPlan, { sweepOrphans: true });
-            examined += expectNoOrphans(repoRoot, secondPlan);
+            const secondBlocked = blockedTargets(
+              applyPlan(repoRoot, secondPlan, {
+                sweepOrphans: true,
+              })
+            );
+            examined += expectNoOrphans(repoRoot, secondPlan, secondBlocked);
           });
         }),
         RUNS

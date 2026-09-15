@@ -15,6 +15,7 @@
  *
  * @module plan/projector
  */
+import { realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { HARNESS_LABELS, type HarnessId, type HarnessManifest } from '../manifest/schema.js';
 import type {
@@ -71,7 +72,6 @@ import {
   unwritableWritePath,
   type WritePathCause,
 } from '../apply/write-path-occupants.js';
-import { pathExists } from '../apply/link-state.js';
 
 /** The authored slash-command directory Claude Code reads (namespaced by subdirectory). */
 const CLAUDE_COMMANDS_SOURCE = CLAUDE_COMMANDS_DIR;
@@ -804,7 +804,11 @@ function degradeUnreachableNatives(
   return all.map((action) => {
     if (action.kind !== 'native' || !isCanonicalLinkNative(action)) return action;
     const link = `${AGENTS_SKILLS_DIR}/${action.name}`;
-    const blocked = blockedWritePath(repoRoot, link, probed) ?? refusedByPermission(repoRoot, link);
+    const blocked =
+      blockedWritePath(repoRoot, link, probed) ??
+      (action.source === undefined
+        ? undefined
+        : refusedByPermission(repoRoot, link, action.source));
     if (blocked === undefined) return action;
     return { ...action, kind: 'drop', reason: unreachableNativeReason(action.harness, blocked) };
   });
@@ -820,22 +824,59 @@ function degradeUnreachableNatives(
  * refuses a write raises EACCES from `symlinkSync` and is a `read-only` cause,
  * which only {@link unwritableWritePath} asks about — so `.agents/skills` at
  * mode 0555 left the `native` claim standing while the link beside it was a
- * conflict (DOR-1942 F2).
+ * conflict (DOR-1942).
  *
- * **Asked only of a link that is not already there**, which is
+ * **Asked only of a link that is not already DOING the job**, which is
  * `unwritableWritePath`'s own doctrine applied to this caller: somebody who
- * chmods `.agents/skills` read-only AFTER a sync still has a link every one of
+ * chmods `.agents/skills` read-only after a sync still has a link every one of
  * those four tools reads perfectly well, and nothing is about to be written to
- * it. A SHAPE block needs no such guard — a file where `.agents/skills` belongs
+ * it.
+ *
+ * "Doing the job" is liveness, not existence, and the difference is a whole
+ * false claim. `pathExists` is `lstat`-based, so a DANGLING link counted as
+ * already there: the plan carried `native opencode acme__a` while the apply
+ * reported the very same path as a conflict, which together say OpenCode reads
+ * a link that points at nothing and DorkOS may not repair it. A link that
+ * resolves somewhere OTHER than this skill is the same kind of wrong — a write
+ * is needed to repair it, and a folder that refuses the write leaves the claim
+ * false. So the entry keeps the claim only when it really reaches the source.
+ *
+ * A SHAPE block needs no such guard: a file where `.agents/skills` belongs
  * means the link cannot be there at all.
  *
  * @param repoRoot - absolute path to the repository root.
  * @param link - the repo-relative link the claim rides.
+ * @param source - the repo-relative skill directory the link must reach.
  * @returns the reason, or `undefined` when the claim still holds.
  */
-function refusedByPermission(repoRoot: string, link: string): string | undefined {
-  if (pathExists(join(repoRoot, link))) return undefined;
+function refusedByPermission(repoRoot: string, link: string, source: string): string | undefined {
+  if (linkAlreadyReaches(repoRoot, link, source)) return undefined;
   return unwritableWritePath(repoRoot, link);
+}
+
+/**
+ * Whether what is at `link` already resolves to `source`.
+ *
+ * Both sides are resolved through the operating system, for the reason
+ * `inventory/skills.ts` gives about the same comparison: every test tree is a
+ * `mkdtemp` under macOS's `/var -> /private/var`, so comparing a resolved
+ * target against an unresolved path matches nothing and every live link reads
+ * as broken.
+ *
+ * A path that does not resolve — a dangling link, or nothing at all — answers
+ * `false`, which is the whole point.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param link - the repo-relative link.
+ * @param source - the repo-relative directory it must reach.
+ * @returns `true` only when the link is live and lands on the source.
+ */
+function linkAlreadyReaches(repoRoot: string, link: string, source: string): boolean {
+  try {
+    return realpathSync(join(repoRoot, link)) === realpathSync(join(repoRoot, source));
+  } catch {
+    return false;
+  }
 }
 
 /**

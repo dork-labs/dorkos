@@ -266,6 +266,22 @@ export interface RepoSpec {
    */
   personLink: boolean;
   /**
+   * Whether the FIRST installed skill's canonical link is staged dead — a
+   * symlink at exactly `.agents/skills/<pkg>__<name>`, pointing at a directory
+   * inside the package that is not there.
+   *
+   * {@link DANGLING_TARGETS}'s `skill` shape is `.claude/skills/zz-gone`, which
+   * no plan action names; this is a dead link AT a path the plan wants, which
+   * is a different question and the one a `native` claim turns on. Paired with
+   * {@link readOnlyCanonicalSkills} it is the shape that says a claim must ride
+   * a LIVE link: the repair is refused, so a plan that read "already there" off
+   * `lstat` would promise that OpenCode reads a link pointing at nothing
+   * (DOR-1942).
+   *
+   * Staged before the mode change, so the folder can still take the link.
+   */
+  deadInstalledLink: boolean;
+  /**
    * Whether `.agents/skills` is left at mode 0555 — a folder that lists
    * perfectly and refuses a write.
    *
@@ -525,6 +541,7 @@ export function arbRepo(): fc.Arbitrary<RepoSpec> {
         nil: null,
       }),
       personLink: fc.boolean(),
+      deadInstalledLink: fc.boolean(),
       // Off on a platform that cannot mean it, so a case that stages nothing is
       // never a case that asserts nothing.
       readOnlyCanonicalSkills: CAN_STAGE_UNREADABLE ? fc.boolean() : fc.constant(false),
@@ -541,8 +558,24 @@ export function arbRepo(): fc.Arbitrary<RepoSpec> {
       // about an INSTALLED package's link into that folder, which the engine
       // writes and no property removes by hand.
       ...spec,
-      readOnlyCanonicalSkills: spec.skills.length === 0 && spec.readOnlyCanonicalSkills,
+      readOnlyCanonicalSkills:
+        spec.skills.length === 0 &&
+        // Paired rather than left to chance when a dead canonical link is
+        // staged too. The claim this shape exists for needs BOTH — a link that
+        // points at nothing AND a folder that refuses the repair — and the two
+        // drawn independently met in roughly one case in thirty, which is a
+        // shape forty runs does not really cover (measured: a mutant that read
+        // existence instead of liveness survived the whole property). With
+        // authored skills present the mode stays off for the reason above, so
+        // the healthy case — a dead link a writable folder lets the engine
+        // repair — is still generated.
+        (spec.readOnlyCanonicalSkills || hasInstalledSkill(spec)),
     }));
+}
+
+/** Whether this spec stages a dead canonical link for a package that ships one. */
+function hasInstalledSkill(spec: Pick<RepoSpec, 'plugins' | 'deadInstalledLink'>): boolean {
+  return spec.deadInstalledLink && spec.plugins.some((plugin) => plugin.skills.length > 0);
 }
 
 /**
@@ -832,6 +865,18 @@ function materialise(spec: RepoSpec): MaterialisedRepo {
 
   if (spec.personLink) {
     linkInto(repoRoot, PERSON_LINK_PATH, PERSON_LINK_TEXT);
+  }
+
+  // A dead link where the plan wants the canonical one. Only where the path is
+  // free: the engine writes that link itself on a healthy tree, and two shapes
+  // at one path make every assertion about it ambiguous.
+  const firstInstalled = spec.plugins.find((plugin) => plugin.skills.length > 0);
+  if (spec.deadInstalledLink && firstInstalled !== undefined) {
+    const named = `${firstInstalled.name}__${firstInstalled.skills[0] as string}`;
+    const rel = `.agents/skills/${named}`;
+    if (!existsSync(join(repoRoot, rel))) {
+      linkInto(repoRoot, rel, `../../.dork/plugins/${firstInstalled.name}/skills/moved-away`);
+    }
   }
 
   // The dead link goes on last, and only where nothing else is: two hostile

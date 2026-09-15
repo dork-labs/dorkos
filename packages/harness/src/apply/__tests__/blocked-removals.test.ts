@@ -289,3 +289,63 @@ describe('AP-07 global — a link DorkOS may not remove from a home directory', 
     expect(applied.warnings).toEqual([]);
   });
 });
+
+describe('AP-07 — the tidy-up reads what the sweep really took', () => {
+  /**
+   * A wrapper file the sweep may NOT take, inside a wrapper directory that the
+   * tidy-up may take.
+   *
+   * `.claude/commands` is writable, so `rmSync` on `acme` itself would succeed;
+   * `.claude/commands/acme` is 0555, so it lists perfectly and refuses to give
+   * up `ship.md`. The two permissions pull in opposite directions, which is what
+   * makes this the case that tells the filtered orphan list from the raw one: a
+   * directory is only emptied by entries the sweep ACTUALLY removes, and
+   * `ship.md` is not one of them.
+   *
+   * A mutant reading the unfiltered list calls `acme` emptied, finds its own
+   * parent writable, and calls `rmSync(acme, { recursive: true })` on a
+   * directory that still holds a file it may not unlink. It survived all 773
+   * tests in this package.
+   *
+   * @returns the repository root and its dork home.
+   */
+  function stageUnremovableWrapper(): { repo: string; dorkHome: string } {
+    const repo = mkdtempSync(join(tmpdir(), 'harness-ro-wrapper-repo-'));
+    const dorkHome = mkdtempSync(join(tmpdir(), 'harness-ro-wrapper-home-'));
+    staged.push(repo, dorkHome);
+    writeJsonAt(join(repo, '.agents', 'harness.manifest.json'), {
+      version: 1,
+      harnesses: ['claude-code'],
+    });
+    writeFileAt(join(repo, 'AGENTS.md'), '# agents\n');
+    const acme = join(repo, '.claude', 'commands', 'acme');
+    mkdirSync(acme, { recursive: true });
+    writeFileAt(join(acme, 'ship.md'), `${GENERATED_COMMAND_MARKER}\n\n# ship\n`);
+    chmodSync(acme, 0o555);
+    relaxed.push(acme);
+    return { repo, dorkHome };
+  }
+
+  it.skipIf(!CAN_MAKE_READ_ONLY)('leaves a directory whose file it could not take', () => {
+    const { repo, dorkHome } = stageUnremovableWrapper();
+    const plan = project(repo, { dorkHome });
+
+    const result = applyPlan(repo, plan, { sweepOrphans: true });
+
+    // Nothing removed, nothing thrown, and both paths still on disk.
+    expect(result.swept).toEqual([]);
+    expect({
+      wrapper: existsSync(join(repo, '.claude', 'commands', 'acme', 'ship.md')),
+      dir: existsSync(join(repo, '.claude', 'commands', 'acme')),
+    }).toEqual({ wrapper: true, dir: true });
+
+    // One sentence, naming the file that would have gone and the folder that
+    // would not give it up.
+    expect(result.warnings).toEqual([
+      '`.claude/commands/acme/ship.md` would be removed, and DorkOS may not write in ' +
+        '`.claude/commands/acme` (permission denied), so it was left exactly as it is. Fix the ' +
+        'folder’s permissions, then re-run.',
+    ]);
+    expect(checkPlan(repo, plan).warnings).toEqual(result.warnings);
+  });
+});

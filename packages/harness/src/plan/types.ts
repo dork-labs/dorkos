@@ -368,8 +368,8 @@ export interface DriftResult {
    */
   leftAlone: string[];
   /**
-   * Something true about this RUN that no path of its own — one sentence, or
-   * none.
+   * Something true about this RUN that has no path of its own — one sentence,
+   * or none.
    *
    * THREE producers, and they are three different subjects:
    *
