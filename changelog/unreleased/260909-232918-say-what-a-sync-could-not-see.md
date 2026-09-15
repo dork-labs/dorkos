@@ -20,6 +20,10 @@ covers:
   # link, and a DEAD link in that folder is the last way that could still be
   # untrue. Nobody could have read the first version.
   - 'fix(harness): a dead link under a read-only folder does not keep a native claim (DOR-1942)'
+  # Folds in here: on the merged tree the first bullet's record met DOR-1935's
+  # sentence about the same folder and a person read both. Nobody could have
+  # seen either version.
+  - 'fix(harness): one locked skill folder gets one sentence, not two (DOR-1949)'
 ---
 
 ### Fixed

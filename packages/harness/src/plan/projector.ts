@@ -544,26 +544,38 @@ export function buildPlan(input: {
   // inside. It is still projected and its links are still kept — what it earns
   // here is the line saying so (DOR-1935). No sweep stands down for one: the
   // root read fine, and every other skill in it is ordinary evidence.
-  warnings.push(
-    ...planUnreadableSkillWarnings([
-      ...authored.unreadableSkills,
-      ...installedPlugins.flatMap((plugin) => plugin.unreadableSkills ?? []),
-    ])
-  );
+  const unreadableSkillDirs = [
+    ...authored.unreadableSkills,
+    ...installedPlugins.flatMap((plugin) => plugin.unreadableSkills ?? []),
+  ];
+  warnings.push(...planUnreadableSkillWarnings(unreadableSkillDirs));
 
   // Say what the tree holds and could not be read — a `.mcp.json` that will not
   // parse, a file where `.claude/agents` should be a directory. Once per source,
   // ahead of every harness, for the reason `planUnreadableHookWarnings` gives.
   //
-  // A skills root the line above already named is dropped here, so one folder
-  // gets one line. The inventory's sentence is the strictly smaller of the two —
-  // it says nothing was read from the folder, while the skill-root line says
-  // that AND what the engine did about it — and two surfaces describing one fact
-  // is how a person stops reading either.
-  const namedSkillRoots = new Set(unreadableSkillRoots);
+  // A path either line above already named is dropped here, so one folder gets
+  // one line. The inventory's sentence is the strictly smaller of the two — it
+  // says nothing was read from the folder, while the other says that AND what
+  // the engine did about it — and two surfaces describing one fact is how a
+  // person stops reading either.
+  //
+  // ROOTS alone was right only while roots were the only paths with a line of
+  // their own. DOR-1935 gave one to a skill FOLDER a level down, and DOR-1949
+  // gave the inventory a record of the same folder, so on the merged tree a
+  // mode-000 `.agents/skills/<x>` drew both. The set is now every path either
+  // line can name.
+  //
+  // The inventory's record is NOT redundant in general, and dropping it wholesale
+  // would undo the ticket that added it: nothing but the inventory walks
+  // `.claude/skills`, so a locked folder there has no other line at all. Both
+  // sides spell paths repo-relative with `/`, which is what lets one set hold
+  // them; if that ever stops being true this filter is the one place to
+  // normalise.
+  const alreadyNamed = new Set([...unreadableSkillRoots, ...unreadableSkillDirs]);
   warnings.push(
     ...planInventoryWarnings(inventory).filter(
-      (warning) => warning.source === undefined || !namedSkillRoots.has(warning.source)
+      (warning) => warning.source === undefined || !alreadyNamed.has(warning.source)
     )
   );
 
