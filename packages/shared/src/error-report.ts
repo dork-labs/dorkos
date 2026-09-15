@@ -149,8 +149,9 @@ const HTTP_URL = /\bhttps?:\/\/[^\s<>"'`]+/g;
  * A log line reads "opened (https://a.example/p?q=1) in a tab" or ends a
  * sentence on a URL, and eating the bracket or the full stop corrupts the line
  * around it — a different defect from the one this is here to prevent. The
- * trade is a real URL that genuinely ends in one of these (a Wikipedia
- * `…_(disambiguation)`), which loses its last character and stays legible.
+ * run is put back after the cut, so a real URL that genuinely ends in one of
+ * these (a Wikipedia `…_(disambiguation)`) survives whole when it carries no
+ * query, and loses only the query when it does.
  */
 const URL_TRAILING_PUNCTUATION = /[).,;:]+$/;
 
@@ -199,7 +200,11 @@ export function redactTokens(text: string): string {
 /**
  * Scrub a free-form error message: redact tokens and paths, then cap length.
  * Applied to the error's `.message` (which can contain arbitrary interpolated
- * data) so no secret or absolute path rides along.
+ * data) so no secret-shaped token or home-directory path rides along; paths
+ * outside the home directory stay as written, the same as everywhere
+ * `redactPaths` runs. Deliberately does not call {@link redactUrlQueries}: a
+ * crash report's message is where a URL's query can be the diagnosis, and
+ * widening the crash pipeline is its own decision.
  *
  * @param message - The raw error message.
  */
