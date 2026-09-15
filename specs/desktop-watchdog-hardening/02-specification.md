@@ -80,6 +80,8 @@ Two consequences worth stating because they are load-bearing:
 - `diagnostics/index.ts` may now import `health-file.ts` to collect `renderer-health.json` without closing the cycle it would close by importing the supervisor.
 - `shouldDisableHardwareAcceleration()` moves to `health-file.ts`, so the top of `main/index.ts` (which must call it before `app.whenReady()`) stops pulling the whole supervisor, and with it `diagnostics`, into the pre-ready path.
 
+> **Amended 2026-09-15, A2(a).** Both new leaves must stay under `renderer-health/`, as written here. `apps/desktop/src/main` already holds 25 loose `.ts` files and the DOR-2045 review treated that as its ceiling, which is why the shell log excerpt became a folder module.
+
 ### 2. The supervised-load wrapper
 
 ```
@@ -280,9 +282,13 @@ With these lines, #1860 reads as `by=navigation mainFrame=false` (which under th
 
 `onDeadlineExpired` reads `win.webContents.isLoading()`. Change it to `win.webContents.isLoadingMainFrame()` and add `isLoadingMainFrame` to `apps/desktop/src/main/__tests__/electron-mock.ts` beside the existing `isLoading`. One word plus one mock method. Without it, a page with a slow, streaming or perpetually open iframe (the canvas browser again) reports `isLoading() === true` indefinitely and a genuine renderer failure on it is deferred for the full 60-second ceiling before the first rung.
 
+> **Amended 2026-09-15, A1. Shipped as DOR-2046 / PR #1867.** The change is right and this sentence's reason for it is not: `isLoadingMainFrame()` does not mean "the main frame's own document is still fetching". Read A1 before quoting this paragraph.
+
 ### 10. The shell log excerpt in bug reports
 
 **New module `apps/desktop/src/main/shell-log-excerpt.ts`.**
+
+> **Amended 2026-09-15, A2(a).** Built as `apps/desktop/src/main/shell-log-excerpt/index.ts`, a folder module.
 
 ```
 /** How many shell-authored lines a bug report carries. */
@@ -293,6 +299,7 @@ export const DEFAULT_SHELL_EXCERPT_MAX_AGE_MS = 30 * 60 * 1000;
 export const SHELL_LOG_EXCERPT_CHANNEL = 'shell:log-excerpt';
 
 export function getShellLogExcerpt(maxLines?: number, maxAgeMs?: number): string | undefined;
+// Amended 2026-09-15, A2(b): built as registerShellLogExcerptHandler(getRendererUrl).
 export function registerShellLogExcerptHandler(isOwnOrigin: (url: string) => boolean): void;
 ```
 
@@ -301,13 +308,30 @@ Reading and filtering, in order:
 1. Take the tail of `log.transports.file.getFile().path`. When the number of matching entries is below `maxLines`, fold in the sibling `main.old.log` ahead of it, oldest first, mirroring `findPriorRotatedFile` in `log-excerpt.ts`. electron-log rotates at 1 MiB, so a report filed just after a rotation would otherwise see almost nothing.
 2. Parse each line as `[YYYY-MM-DD HH:MM:SS.mmm] [level]  rest`. A line that does not match is a continuation (a stack frame) and is attached to the entry above it, capped at 20 continuation lines per entry, so a shell-authored stack survives intact.
 3. **Drop every entry whose `rest` begins with `[server]`.** This is the one place this module deliberately differs from `log-excerpt.ts`, and it is measured rather than assumed: on a real install, of the last 2,000 lines of `main.log`, 1,240 were `info` and 365 were `error`, and 321 of those errors carried `[server]`, which is the server child's forwarded stdout and stderr. The same report already carries the server's own log as `serverLogExcerpt`, gathered from the structured NDJSON where the levels mean what they say. Re-sending the child's stream here would duplicate it and displace the shell's own lines, of which the whole 342 KB file contained 16.
+
+   > **Amended 2026-09-15, A2(c) and A6.** The prefix to drop is `[server:`, not `[server]`: twelve shell call sites write their own `[server]` prose that a report needs. The line counts in this step were measured on a log polluted by test output; the conclusion does not rest on them.
+
 4. Keep levels `error`, `warn` and `info`. The shell's own line rate is low by construction, and the `[renderer]` lines that name the cause are at `info`: a warn-and-above filter on this file returns almost nothing useful. Raising the watchdog's own lines to `warn` so a warn-and-above filter would catch them was considered and rejected, because a level is a claim about severity and "a new page started loading" is not a warning.
+
+   > **Amended 2026-09-15, A6.** "The shell's own line rate is low by construction" is false. The filter keeps roughly 7,000 of 11,700 lines on the operator's log. Keeping `info` is still right, for the reason in the second half of this step.
+
 5. Keep entries whose timestamp is within `maxAgeMs`. The timestamps are local time with no zone, which `new Date('2026-09-14 15:25:25.123')` parses as local, so no conversion is needed and none may be added.
+
+   > **Amended 2026-09-15, A2(d) and A2(e).** True, and untestable on a UTC runner without the timezone pin A2(e) describes. Split lines on `\r?\n`, not `\n`, or the Windows build returns nothing.
+
 6. Take the last `maxLines`, join, then `redactTokens(redactPaths(...))`.
+
+   > **Amended 2026-09-15, A2(f).** Three passes, not two: `redactTokens(redactPaths(stripUrlQueries(...)))`. What that does and does not scrub is A2(f).
+
 7. Bound to `MAX_LOG_EXCERPT_LEN` (8,000), **cutting from the front with a leading ellipsis**, exactly as `log-excerpt.ts` does and for the same reason (DOR-1976): a report is filed about the moment at the end of the log.
+
+   > **Amended 2026-09-15, A2(h).** This is the bound that binds. `DEFAULT_SHELL_EXCERPT_MAX_LINES` never does: 8,000 characters is about 87 lines of this log.
+
 8. Never throw. A missing file, an unreadable directory or an unparseable line all resolve to `undefined`.
 
 **Who may ask.** `registerShellLogExcerptHandler` answers only a sender on the app's own origin, using the same `isOwnOrigin` accessor `window-manager.ts` gives its link and permission policies. That is a weaker gate than the three recovery actions get, and deliberately so: the feedback dialog lives in the app's own page, not on the recovery page.
+
+> **Amended 2026-09-15, A2(b).** The gate is `window-manager.ts`'s existing `isCockpitSender(event, getRendererUrl)`, not a bare origin predicate; the handler takes `getRendererUrl`. The paragraph's reasoning is unchanged.
 
 **The bridge.** `apps/desktop/src/preload/index.ts` gains:
 
@@ -320,6 +344,8 @@ getShellLogExcerpt: (): Promise<string | undefined> => ipcRenderer.invoke(SHELL_
 **The client.** `apps/client/src/layers/features/feedback/model/use-send-feedback.ts` attaches it when the report is a bug, `includeServerLogs` is on, and `isDesktopShell()` is true. `FeedbackPreviewDialog.tsx` shows it, because the preview promises the exact payload that will be sent.
 
 **The server.** `stripServerAuthoredFields` in `apps/server/src/routes/feedback.ts` strips `transcriptExcerpt` and `diagnostics.serverLogExcerpt` and must **not** strip `shellLogExcerpt`. This is the one deliberate exception to that module's "the server authors the diagnostics" doctrine and it needs its reason written at the call site: the server child does not run in the Electron main process and cannot see `main.log` at all, so the shell is the only process that can gather it. The alternative, injecting the shell's log path into the server child through the environment so `log-excerpt.ts` could gather it server-side, was rejected as a new coupling between the shell and the server for one diagnostic, against a path (`log-location.ts`) that exists precisely because the shell is the authority on where its own log is. The trade is that a page can put up to 8,000 characters of its own choosing into a report a person deliberately sent; the schema bound is the mitigation, and the same person is already authoring the free-text message beside it.
+
+> **Amended 2026-09-15, A2(g).** Incomplete: the durable render in `feedback-reporter.ts` also had to change, or the desktop section is deleted outright whenever the server excerpt is at its bound.
 
 ### 11. The diagnostics archive
 
@@ -395,6 +421,8 @@ New `describe('the log')`:
 
 ### New file: `apps/desktop/src/main/__tests__/shell-log-excerpt.test.ts`
 
+> **Amended 2026-09-15, A2(a).** Written as `apps/desktop/src/main/shell-log-excerpt/__tests__/index.test.ts`.
+
 - `'drops the server child's forwarded output'`
 - `'keeps the shell's own info-level lines'`
 - `'keeps a stack trace with the entry it belongs to'`
@@ -414,9 +442,13 @@ There is no test at all over `apps/desktop/src/preload/` today, and `isFromRepla
 
 - `'holds the boot sentinel's deadline equal to the supervisor's'`: reads `BOOT_DEADLINE_MS` out of `apps/client/index.html` by regex, from a path resolved off `import.meta.url`, and compares it to `HEARTBEAT_DEADLINE_MS`. The two constants are held equal today by a comment in each file and nothing else; ADR `260829-085851` lists this under Consequences/Negative and it still holds.
 
+> **Amended 2026-09-15, A5. Shipped as DOR-2046 / PR #1867.** There is a third copy of the constant, in `apps/client/src/__tests__/boot-sentinel.test.ts`, which this test does not reach. PR 3 closes it.
+
 ### Mocking strategy
 
 Unchanged: `apps/desktop/src/main/__tests__/electron-mock.ts` gains `isLoadingMainFrame` on its `webContents` double and nothing else. Phase 2 is what stops the mock being only as right as its author's belief about the platform.
+
+> **Amended 2026-09-15, A7.** Two further gaps the phase 1 reviews named and nothing in this spec closes: no test derives the log line format from electron-log itself, and nothing in CI executes any of this on Windows.
 
 ### Phase 2: the real-Electron contract harness
 
@@ -444,6 +476,9 @@ Unchanged: `apps/desktop/src/main/__tests__/electron-mock.ts` gains `isLoadingMa
 ## Security Considerations
 
 - `getShellLogExcerpt` answers only a sender on the app's own origin and returns content already run through `redactPaths` and `redactTokens`, so no home directory, absolute path or secret-shaped token leaves the main process. Marketplace extension code runs as ordinary modules in that page and can therefore call it; that is already true of every bridge method, and a scrubbed, 8,000-character log tail is a lower-value target than the diagnostics archive the recovery page can already write to the Desktop.
+
+  > **Amended 2026-09-15, A3.** "No home directory, absolute path or secret-shaped token leaves the main process" overclaims. A3 carries the replacement sentence; use it, not this one.
+
 - `shellLogExcerpt` is the one client-authored field in a diagnostics payload whose siblings are server-authored. Bounded by the schema at `MAX_LOG_EXCERPT_LEN`, and only ever attached to a report a person deliberately sent.
 - The three recovery-page actions keep their strict `isFallbackPageSender` gate. Nothing in this work widens it.
 - The phase-2 fault-injection flag `DORKOS_DESKTOP_FORCE_SPURIOUS_ARM` is read at module scope in the main process only, like `DORKOS_DESKTOP_SUPPRESS_HEARTBEAT` before it, so the shipped preload carries no test-only branch.
@@ -477,6 +512,9 @@ Three pull requests, deliberately ordered so that the largest one is the last an
 6. Every site that replaces the supervised document goes through `replaceSupervisedDocument`. Demonstrated by a test that fails when any one of the seven call sites is reverted to a direct `reload`/`loadURL`/`loadFile`.
 7. The packaged smoke fails on a synthetic health record showing `reloadsThisSession > 0` after the quiet window, proven by the unit test over `rendererQuietFailure`.
 8. `pnpm --filter @dorkos/desktop typecheck`, `pnpm --filter @dorkos/desktop lint` and `pnpm vitest run apps/desktop/src/main` are clean; `desktop-smoke.yml` is green on each PR that touches `apps/desktop/**`.
+
+   > **Amended 2026-09-15, A4.** The test command must be `pnpm vitest run apps/desktop/src`. `.../src/main` never reaches `src/preload`.
+
 9. Open question Q1 is answered in PR 3's body, by measurement, whatever the answer is.
 
 **Rollback**
@@ -526,3 +564,75 @@ Each of the three is independently revertible and none is a dependency of the ot
 - `specs/desktop-renderer-supervision/02-specification.md`: the original supervisor design.
 - `plans/desktop-resilience-program.md` sections 1 and 4: the programme this belongs to.
 - Electron `docs/api/web-contents.md`, `docs/api/web-frame-main.md`; Chromium `docs/navigation_concepts.md`, `content/public/browser/web_contents_observer.h`, `content/browser/renderer_host/frame_tree.cc`: the platform contracts quoted in the ideation and in Background.
+
+## Amendments (2026-09-15)
+
+Phase 1's first two pull requests went through adversarial review, and the reviewers measured several things this specification asserted. Where a claim was wrong, the amendment below carries the corrected one and the sentence it replaces keeps a one-line pointer in place, rather than being quietly rewritten: a reader who quoted the original deserves to find out that they did.
+
+**Status of phase 1 at the time of writing:** PR 2 (DOR-2046) merged as #1867. PR 1 (DOR-2045) is in review on `fix/dor-2045-shell-log-excerpt`. PR 3 (DOR-2047) has not been written, and A8 is the list of things it must carry forward.
+
+### A1. What `isLoadingMainFrame()` actually measures (section 9; DOR-2046, PR #1867, merged)
+
+Section 9 justified the change with "a page with a slow, streaming or perpetually open iframe reports `isLoading() === true` indefinitely". The change is correct and that reason is not what the predicate does. Measured by the reviewer on Electron 41.10.7:
+
+- `isLoadingMainFrame()` is **not** "the main frame's own document is still fetching". It stays `true` for the whole load a main-frame navigation started, including the stretch where only an iframe **declared in the initial HTML** is still fetching. An iframe in the first response therefore holds it `true` exactly as it always did.
+- It reads `false` only for a **sub-frame navigation that begins after that load finished**. That is the canvas browser's shape, and it is the shape both incidents were about, which is why the fix is right for this product's sequence.
+- The slow-load grace survives intact where it has to: a main-frame navigation hanging before headers, a committed main frame still streaming its body, a redirect chain and late headers all read `true` under both predicates.
+- Both predicates read `false` for post-load dynamic `import()`, `<script src>`, `fetch()` and `<img>`. Neither has ever waited on those and neither does now.
+- A normal settled page and the `file://` recovery page read `false` under both.
+
+The rule for anyone writing about this again: say what the predicate measures, which is "a load that a main-frame navigation started is still in flight", not "the main frame's document is still arriving".
+
+### A2. The shell log excerpt as built (section 10; DOR-2045, in review)
+
+**(a) It is a folder module.** `apps/desktop/src/main/shell-log-excerpt/index.ts`, with `__tests__/index.test.ts` beside it, not the flat `shell-log-excerpt.ts` section 10 names. `apps/desktop/src/main` already holds 25 loose `.ts` files and the review treated that as the ceiling. **This binds PR 3:** `supervised-load.ts` and `health-file.ts` go under `renderer-health/`, which is where section 1's table already puts them. Do not flatten them into `main/`.
+
+**(b) The handler is gated through the existing sender check.** `registerShellLogExcerptHandler(getRendererUrl)`, gated by `window-manager.ts`'s `isCockpitSender(event, getRendererUrl)`, not by a bare `isOwnOrigin(url)` predicate the module composes for itself. Same security property, one fewer way for two origin tests to drift apart.
+
+**(c) `[server]` is not exclusive to the forwarded child output, and this was the sharpest correction of the round.** Twelve shell call sites across `server-process.ts`, `server-crash-recovery.ts`, `server-port.ts`, `server-cwd.ts`, `shell-path.ts` and `server-spawn.ts` write their own `[server]` prose, and "the server stopped unexpectedly" is precisely the line a bug report needs. Dropping every `[server]` entry, as step 3 says, would have thrown away the shell's own account of the failure it was written to explain. So the forwarder now tags relayed child output `[server:stdout]` and `[server:stderr]`, and the filter drops the **`[server:` prefix only**. The shell's own `[server]` prose has no colon and is kept.
+
+**(d) Lines split on `\r?\n`, not `\n`.** electron-log writes `os.EOL`, so on Windows every line would keep a trailing `\r`, no line would match the parser, and the excerpt would come back empty on the one platform nothing in CI executes.
+
+**(e) The local-time parse needs a pinned zone to be testable.** Step 5's "the timestamps are local time" is true and its test is vacuous on a UTC runner. `apps/desktop/vitest.config.ts` now pins `TZ=Etc/GMT-3`, set on `process.env` as well as through `test.env` (Node reads `TZ` before `test.env` is applied), unconditionally rather than with `??=` so a runner exporting `TZ=UTC` cannot silently take its own zone back.
+
+**(f) Redaction is three passes, and its scope is narrower than section 10 and Security Considerations imply.** In order: `stripUrlQueries` (http and https query strings and fragments removed), then `redactPaths`, then `redactTokens`. `TOKEN_PATTERNS` in `@dorkos/shared/error-report` gained `(access|refresh|id)[_-]?token` (the existing `\btoken` pattern never matched `access_token=` because `_` is a word character) and a parameter-shaped URL `code=` (parameter-shaped on purpose, so it does not redact "exit code=1"). What is **not** scrubbed, the same as the server excerpt and stated here so nobody has to rediscover it: absolute paths outside the home directory (`/Applications`, `/Volumes`, `/private/var`), email addresses, and tunnel hostnames. `stripUrlQueries` may end up shared with the server excerpt; **PR 3 should check where it lives** before importing it.
+
+**(g) The durable render had to change too, and section 10 does not mention it.** `feedback-reporter.ts` now budgets the header, the breadcrumbs, the server excerpt and the shell excerpt by max-min fair share of `DURABLE_DIAGNOSTICS_MAX_LEN`, with each log section front-cut so its newest end survives. Without it the old head slice deleted the desktop section **entirely** whenever the server excerpt was at its bound, which is the case a desktop bug report is most likely to be in. A diagnostics field that is attached and then silently dropped downstream is worse than one that was never added.
+
+**(h) `DEFAULT_SHELL_EXCERPT_MAX_LINES` never binds.** `MAX_LOG_EXCERPT_LEN` (8,000 characters) binds first, at about 87 lines of the real log against the 200-line nominal. The constant stays as a ceiling; nothing should be reasoned from it.
+
+### A3. Security Considerations, replacement text
+
+Replace the first bullet's claim with this. It is the honest scope, and it is the same scope the server excerpt has always had:
+
+> `getShellLogExcerpt` answers only a sender the `isCockpitSender` check accepts, and returns content already run through `stripUrlQueries`, `redactPaths` and `redactTokens`, so no home directory, no URL query string or fragment, and no secret-shaped token leaves the main process. It is **not** a general anonymiser: absolute paths outside the home directory, email addresses and tunnel hostnames survive, exactly as they do in `serverLogExcerpt`, and any surface offering this excerpt must not describe it as safe to send unread.
+
+### A4. Phase 1 acceptance criterion 8, replacement command
+
+The test command is `pnpm vitest run apps/desktop/src`, the whole desktop suite. `pnpm vitest run apps/desktop/src/main` never reaches `apps/desktop/src/preload/__tests__/`, where the heartbeat payload test this spec asks for actually lives, so the criterion as written would have been satisfied by a run that could not execute one of its own deliverables.
+
+### A5. A third copy of the boot deadline (Testing Strategy; DOR-2046 review)
+
+`deadlines.test.ts` ties `apps/client/index.html`'s `BOOT_DEADLINE_MS` to `HEARTBEAT_DEADLINE_MS`, and shipped. `apps/client/src/__tests__/boot-sentinel.test.ts` declares its **own** `BOOT_DEADLINE_MS = 10_000`, a third copy that the parity test does not reach and that would keep a stale value green. PR 3 either reads it from `index.html` there too, or all three import one shared constant. The parity test also reads the source `index.html` rather than the built artifact, which is a smaller gap and is recorded rather than fixed.
+
+### A6. The D8 line counts were measured on a polluted log (ideation D8, section 10 steps 3 and 4)
+
+The counts quoted in the ideation's D8 and in section 10 step 3 (1,240 `info`, 365 `error`, 321 `[server]`, 16 `[renderer]`) came from a `main.log` that desktop vitest runs had been writing into: the test suite emits real lines and stack frames into the operator's own log (DOR-2042). On the same log, the filter as built keeps roughly 7,000 of about 11,700 lines, dominated by 5,619 `[permissions]` entries that are themselves mostly test pollution. So "the shell's own line rate is low by construction" is wrong.
+
+**The conclusion is unchanged and rests on something else.** Keeping `info` and dropping the child's relayed output is right because of **which lines carry the cause**, not because of how many there are: the `[renderer]` lines that name a reload loop are at `info`, and the child's relayed stream already travels in the same report as `serverLogExcerpt` from the structured log where levels mean what they say. An argument from counts was never the strong form of it, and A2(c) is the proof: the counts would also have justified dropping the shell's own `[server]` prose, which would have been a mistake.
+
+### A7. Two gaps the reviews named and nothing here closes
+
+1. **No test derives the log line format from electron-log itself.** Every fixture in `shell-log-excerpt` shares the parser's own belief about how a line is shaped, so an electron-log upgrade that changes the prefix goes green here and empty in a user's bug report. This is the same class as the mock-vocabulary gap the phase-2 contract harness exists for, in a different file.
+2. **Nothing in CI executes any of this on Windows**, which is the platform A2(d) exists for. The Windows desktop build rides the release train as an early alpha and has no smoke.
+
+Neither is in phase 1 or phase 2 scope. They are recorded so the next person does not mistake green for covered.
+
+### A8. What PR 3 (DOR-2047) must carry forward
+
+1. New leaves go under `renderer-health/`, per A2(a). Do not add loose files to `apps/desktop/src/main`.
+2. Check where `stripUrlQueries` lives before importing it, per A2(f).
+3. Close the third copy of `BOOT_DEADLINE_MS`, per A5.
+4. Use `pnpm vitest run apps/desktop/src` as the acceptance command, per A4.
+5. Quote A3's sentence, not the original, wherever the excerpt's scrubbing scope is described.
+6. Sections 1 through 8, 11 and 12 are otherwise unamended. Nothing the reviews measured touches the arming contract, the identity tolerance, the disarm sources, the reload floor, the log lines or the health record.
