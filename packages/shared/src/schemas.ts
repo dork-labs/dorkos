@@ -2717,6 +2717,12 @@ export const ErrorPartSchema = z
     message: z.string(),
     category: ErrorCategorySchema.optional(),
     details: z.string().optional(),
+    /**
+     * The originating `error` event's code, when it had one. Carried so a
+     * renderer can tell a survivable note (see `NON_FATAL_ERROR_CODES`) from a
+     * failure without parsing `details`.
+     */
+    code: z.string().optional(),
   })
   .openapi('ErrorPart');
 

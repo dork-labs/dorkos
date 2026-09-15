@@ -238,6 +238,13 @@ export const CONVERSATION_SECTIONS: PlaygroundSection[] = [
     keywords: ['error', 'message', 'block', 'failure', 'category', 'execution'],
   },
   {
+    id: 'unreadableentrynote',
+    title: 'UnreadableEntryNote',
+    page: 'conversation',
+    category: 'Tools',
+    keywords: ['unreadable', 'placeholder', 'note', 'missing', 'snapshot', 'prompt'],
+  },
+  {
     id: 'thinkingblock',
     title: 'ThinkingBlock',
     page: 'conversation',

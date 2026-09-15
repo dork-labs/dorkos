@@ -53,8 +53,6 @@
  */
 import type { ConnectionState, UiCommand } from '@dorkos/shared/types';
 import {
-  SessionEventSchema,
-  SessionSnapshotSchema,
   SessionListEventSchema,
   type SessionEvent,
   type SessionSnapshot,
@@ -69,6 +67,12 @@ import {
 } from './transport-stream-pump';
 import { addBreadcrumb } from '../breadcrumbs';
 import { SESSION_LIST_EVENT_TYPES } from './session-stream-methods';
+import {
+  createUnreadablePromptReporter,
+  createUnreadableSnapshotReporter,
+  parseSessionEvent,
+  parseSessionSnapshot,
+} from './tolerant-session-frames';
 
 /**
  * Minimal surface of {@link WSConnection} StreamManager depends on. Defining it
@@ -420,6 +424,10 @@ export class StreamManager {
   // can observe it without owning the connection.
   private listConnectionState: ConnectionState = 'connecting';
   private listFailedAttempts = 0;
+  /** Warns once per session about snapshot entries shown as placeholders (DOR-2078). */
+  private readonly reportUnreadableSnapshot = createUnreadableSnapshotReporter('StreamManager');
+  /** Warns once per unreadable prompt, however often a replay re-delivers it. */
+  private readonly reportUnreadablePrompt = createUnreadablePromptReporter('StreamManager');
   private listStateListeners = new Set<(state: ConnectionState, failedAttempts: number) => void>();
 
   /**
@@ -1009,38 +1017,46 @@ export class StreamManager {
   }
 
   private handleSnapshot(sessionId: string, data: unknown): void {
-    const parsed = SessionSnapshotSchema.safeParse(data);
-    if (!parsed.success) {
+    // Tolerant per entry: one unreadable message becomes a placeholder instead
+    // of costing the whole session (DOR-2078). Only an unreadable envelope
+    // (status, cursor) still drops the frame.
+    const result = parseSessionSnapshot(data);
+    if (!result.ok) {
       console.warn('[StreamManager] dropping malformed snapshot frame', {
         sessionId,
-        issues: parsed.error.issues,
+        issues: result.error.issues,
       });
       return;
     }
-    this.listeners.onSnapshot?.(sessionId, parsed.data);
+    this.reportUnreadableSnapshot(sessionId, result.unreadable);
+    this.listeners.onSnapshot?.(sessionId, result.snapshot);
   }
 
   private handleSessionEvent(sessionId: string, data: unknown): void {
-    const parsed = SessionEventSchema.safeParse(data);
-    if (!parsed.success) {
+    const result = parseSessionEvent(data);
+    if (!result.ok) {
       console.warn('[StreamManager] dropping malformed session-event frame', {
         sessionId,
-        issues: parsed.error.issues,
+        issues: result.error.issues,
       });
       return;
     }
-    this.listeners.onSessionEvent?.(sessionId, parsed.data);
+    if (result.unreadable) {
+      this.reportUnreadablePrompt(sessionId, result.event.seq, result.unreadable);
+    }
+    const event = result.event;
+    this.listeners.onSessionEvent?.(sessionId, event);
     // A `ui_command` is an imperative side effect, not state — the store fold
     // above only advances its seq watermark. Dispatch the side effect here, but
     // ONLY for the attached (foreground) session so a background agent cannot
     // pop UI over the session the operator is watching.
-    if (parsed.data.type === 'ui_command' && sessionId === this.attachedSessionId) {
-      for (const handler of this.uiCommandListeners) handler(parsed.data.command, sessionId);
+    if (event.type === 'ui_command' && sessionId === this.attachedSessionId) {
+      for (const handler of this.uiCommandListeners) handler(event.command, sessionId);
     }
     // Side-channel taps (extension event bridge) — gated to the attached
     // session, same rationale as `ui_command`.
     if (sessionId === this.attachedSessionId) {
-      for (const listener of this.sessionEventListeners) listener(sessionId, parsed.data);
+      for (const listener of this.sessionEventListeners) listener(sessionId, event);
     }
   }
 

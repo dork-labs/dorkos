@@ -622,6 +622,24 @@ describe('useSessionStreamStore', () => {
       details: 'HTTP 529',
     };
 
+    it('an unreadable-prompt stand-in rides the turn but never becomes lastError (DOR-2078)', () => {
+      // Real failure mode: the stand-in mirrored into lastError, so a live window
+      // showed it as the turn's failure while a reloaded one (whose snapshot the
+      // server built without it) did not.
+      const store = useSessionStreamStore.getState();
+      store.applySnapshot(SID, snapshot({ cursor: 0 }));
+      store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+      store.applyEvent(SID, {
+        type: 'error',
+        seq: 2,
+        message: 'The agent asked you something here, but it couldn’t be shown.',
+        code: 'unreadable_entry',
+      });
+      const s = useSessionStreamStore.getState().getSession(SID);
+      expect(s.inProgressTurn.some((e) => e.type === 'error')).toBe(true);
+      expect(s.status?.lastError ?? null).toBeNull();
+    });
+
     it('an error event rides the turn AND mirrors into status.lastError', () => {
       // Real failure mode: without the mirror, a reconnecting client (whose
       // snapshot carries only status) has no failure details to render — and

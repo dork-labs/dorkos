@@ -128,6 +128,26 @@ describe('createSessionStreamMethods', () => {
       expect(openedPath()).toBe('/api/sessions/sess-a/events?cwd=%2Fproj');
     });
 
+    it('resolves a snapshot with one unreadable message, with a placeholder in its place (DOR-2078)', async () => {
+      // Real failure mode: the embedded pump hydrates through this call, and a
+      // whole-frame parse rejected the snapshot over one bad message.
+      const methods = createSessionStreamMethods('/api');
+      const frame = {
+        ...SNAPSHOT,
+        messages: [
+          { id: 'm1', role: 'user', content: 'Hello' },
+          { id: 'm2', role: 'robot', content: 'x' },
+        ],
+      };
+
+      const snapshot = await script([['snapshot', frame]], () =>
+        methods.getSessionSnapshot('sess-a')
+      );
+
+      expect(snapshot.messages.map((m) => m.id)).toEqual(['m1', 'm2']);
+      expect(snapshot.messages[1]!.parts?.[0]).toMatchObject({ type: 'error' });
+    });
+
     it('throws when the leading frame is not a snapshot (protocol violation)', async () => {
       const methods = createSessionStreamMethods('/api');
 
@@ -163,6 +183,20 @@ describe('createSessionStreamMethods', () => {
       );
 
       expect(events).toEqual([TURN_START]);
+    });
+
+    it('yields an unreadable question as an inline notice at the same seq (DOR-2078)', async () => {
+      const methods = createSessionStreamMethods('/api');
+
+      const events: SessionEvent[] = [];
+      await script(
+        [['question_prompt', { type: 'question_prompt', seq: 8, id: 'q' }]],
+        async () => {
+          for await (const event of methods.subscribeSession('sess-a', 7)) events.push(event);
+        }
+      );
+
+      expect(events).toEqual([expect.objectContaining({ type: 'error', seq: 8 })]);
     });
 
     it('passes the resume cursor as ?after= alongside cwd', async () => {

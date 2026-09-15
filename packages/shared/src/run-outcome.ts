@@ -179,7 +179,12 @@ const ABSOLVING_TERMINAL_REASONS: ReadonlySet<string> = new Set([
  * run's row gives and the answer a live session's lifecycle gives are one
  * answer.
  */
-export const NON_FATAL_ERROR_CODES: ReadonlySet<string> = new Set(['hook_failure']);
+export const NON_FATAL_ERROR_CODES: ReadonlySet<string> = new Set([
+  'hook_failure',
+  // Spelled out rather than referencing UNREADABLE_ENTRY_ERROR_CODE below: the
+  // set is built at module load, before that constant exists.
+  'unreadable_entry',
+]);
 
 /**
  * Whether an `error` event's code marks it as survivable rather than turn-fatal.
@@ -189,6 +194,13 @@ export const NON_FATAL_ERROR_CODES: ReadonlySet<string> = new Set(['hook_failure
 export function isNonFatalErrorCode(code: string | undefined): boolean {
   return code !== undefined && NON_FATAL_ERROR_CODES.has(code);
 }
+
+/**
+ * The code on a client-side stand-in for a stored message or prompt the client
+ * could not read (DOR-2078). It marks a note, never a failure: it is non-fatal,
+ * never mirrored into `status.lastError`, and never hides the turn-failed notice.
+ */
+export const UNREADABLE_ENTRY_ERROR_CODE = 'unreadable_entry';
 
 /**
  * Whether a terminal reason says the turn DID its work — so an error frame it

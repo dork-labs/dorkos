@@ -14,7 +14,9 @@ import {
 } from '@/layers/features/ask';
 import { useMessageContext } from './MessageContext';
 import { SubagentBlock } from './SubagentBlock';
+import { UNREADABLE_ENTRY_ERROR_CODE } from '@dorkos/shared/run-outcome';
 import { ErrorMessageBlock } from './ErrorMessageBlock';
+import { UnreadableEntryNote } from './UnreadableEntryNote';
 import { MemoryRecallBlock } from './MemoryRecallBlock';
 import { PermissionDeniedChip } from './PermissionDeniedChip';
 import { CapabilityApprovalTimedOut } from './CapabilityApprovalTimedOut';
@@ -98,6 +100,9 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
     }
     if (part.type === 'background_task') {
       return <SubagentBlock key={part.taskId} part={part} />;
+    }
+    if (part.type === 'error' && part.code === UNREADABLE_ENTRY_ERROR_CODE) {
+      return <UnreadableEntryNote key={`unreadable-${i}`} message={part.message} />;
     }
     if (part.type === 'error') {
       return (
