@@ -1185,7 +1185,7 @@ export class TaskStore {
     // What a file on disk may do to this row, decided in one place so the
     // permission clamp and the arm gate cannot disagree — see
     // `file-sync-gates.ts` and `schedule-permission-clamp.ts`.
-    const { permissionMode, arm } = this.fileGates.resolve(def, existing, options);
+    const { permissionMode, arm, keepsRowEnabled } = this.fileGates.resolve(def, existing, options);
 
     if (existing) {
       this.db
@@ -1198,7 +1198,12 @@ export class TaskStore {
           cron: incomingCron,
           timezone: schedule.timezone,
           agentId: agentId ?? null,
-          enabled: schedule.enabled,
+          // The file's switch, unless the row is the only place a person's own
+          // can live: a schedule inside an installed package is one DorkOS
+          // refuses to write, so switching it on is recorded on the row and
+          // this sync must not copy `enabled: false` back over it (FB-26).
+          // `file-sync-gates.ts` owns that condition.
+          ...(keepsRowEnabled ? {} : { enabled: schedule.enabled }),
           sticky: schedule.sticky,
           maxRuntime: maxRuntimeMs,
           permissionMode,
@@ -1318,6 +1323,14 @@ export class TaskStore {
    * stop a pause laundering a missing approval, and that special case is now
    * unnecessary.
    *
+   * `enabled` is left alone for the same reason. `paused` alone stops the clock
+   * (the scheduler needs `enabled` AND `active`), and `enabled` is a person's
+   * switch, not the server's. For most files the returning file's own switch is
+   * copied back anyway, but a schedule shipped in an installed package keeps its
+   * switch on the row (FB-26, `file-sync-gates.ts`), and a package update looks
+   * like the file going away and coming back. Writing `false` here erased the
+   * person's approval with nothing anywhere saying why.
+   *
    * @param filePath - Absolute path to the SKILL.md that is no longer on disk
    * @returns The number of tasks marked as removed (0 or 1)
    */
@@ -1327,7 +1340,7 @@ export class TaskStore {
     const now = new Date().toISOString();
     const result = this.db
       .update(pulseSchedules)
-      .set({ enabled: false, status: 'paused', updatedAt: now })
+      .set({ status: 'paused', updatedAt: now })
       .where(eq(pulseSchedules.filePath, filePath))
       .run();
     return result.changes;

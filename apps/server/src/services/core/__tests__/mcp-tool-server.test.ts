@@ -503,6 +503,63 @@ describe('MCP Tool Handlers', () => {
       expect(patch).not.toHaveProperty('permissionMode');
     });
 
+    // FB-26: a package schedule is switched on the row alone and `enabled` is
+    // agent-writable, so an agent switching one back on must leave a trace the
+    // person can see, naming the agent.
+    describe('switching a schedule back on', () => {
+      const switchedOff = {
+        id: 'u1',
+        name: 'nightly-sweep',
+        prompt: 'the approved prompt',
+        cron: '0 2 * * *',
+        permissionMode: 'acceptEdits',
+        status: 'active',
+        enabled: false,
+      };
+
+      function depsWithActivity(existing: Record<string, unknown>, enabledAfter: boolean) {
+        const emit = vi.fn();
+        const deps = {
+          ...makeTasksDeps({
+            getTask: vi.fn().mockReturnValue(existing),
+            updateTask: vi.fn().mockReturnValue({ ...existing, enabled: enabledAfter }),
+          }),
+          activityService: { emit },
+        } as unknown as McpToolDeps;
+        return { deps, emit };
+      }
+
+      it('records it in the Activity feed as the agent that did it', async () => {
+        const { deps, emit } = depsWithActivity(switchedOff, true);
+        const handler = createUpdateScheduleHandler(deps, () => ({
+          agentPath: '/Users/dev/agents/researcher',
+        }));
+
+        const result = await handler({ id: 'u1', enabled: true });
+
+        expect(result.isError).toBeUndefined();
+        expect(emit).toHaveBeenCalledTimes(1);
+        expect(emit).toHaveBeenCalledWith(
+          expect.objectContaining({
+            actorType: 'agent',
+            actorId: '/Users/dev/agents/researcher',
+            eventType: 'tasks.task_resumed',
+            resourceId: 'u1',
+          })
+        );
+      });
+
+      it('records nothing when the schedule was already on, or is being switched off', async () => {
+        const alreadyOn = depsWithActivity({ ...switchedOff, enabled: true }, true);
+        await createUpdateScheduleHandler(alreadyOn.deps)({ id: 'u1', enabled: true });
+        expect(alreadyOn.emit).not.toHaveBeenCalled();
+
+        const turningOff = depsWithActivity({ ...switchedOff, enabled: true }, false);
+        await createUpdateScheduleHandler(turningOff.deps)({ id: 'u1', enabled: false });
+        expect(turningOff.emit).not.toHaveBeenCalled();
+      });
+    });
+
     it('returns error when Tasks disabled', async () => {
       const handler = createUpdateScheduleHandler(makeMockDeps());
       const result = await handler({ id: 'x' });

@@ -32,6 +32,15 @@ export interface FileSyncSource {
   source?: 'operator' | 'discovery';
   /** The validation complaint to park with, when there is one. */
   problem?: string | null;
+  /**
+   * Whether an installed package owns this file — `isPackageOwnedInRoot`, asked
+   * by whoever found it.
+   *
+   * Answered by the caller rather than here because it is a question about the
+   * filesystem and this is a synchronous gate. Discovery asks it; a route or an
+   * install does not need to, because the write it is making is a person's.
+   */
+  packageOwned?: boolean;
 }
 
 /** What the gates decided about one incoming file. */
@@ -43,6 +52,14 @@ export interface FileSyncVerdict {
    * (an operator write, whose status the store leaves alone).
    */
   arm: FileArmVerdict | null;
+  /**
+   * Whether the ROW's `enabled` stands and the file's is not copied over it.
+   *
+   * True for one case only — see {@link FileSyncGates.keepsRowEnabled} — and
+   * false everywhere else, because the file is the source of truth for every
+   * scheduling column and that does not change.
+   */
+  keepsRowEnabled: boolean;
 }
 
 /**
@@ -100,7 +117,51 @@ export class FileSyncGates {
         ? resolveFileArmStatus(approved, incoming, options.problem)
         : null;
 
-    return { permissionMode, arm };
+    return { permissionMode, arm, keepsRowEnabled: this.keepsRowEnabled(existing, arm, options) };
+  }
+
+  /**
+   * Whether this row's own `enabled` survives the sync instead of being
+   * overwritten from the file (FB-26).
+   *
+   * **The file is the source of truth for every scheduling column, including
+   * this one — unless DorkOS refuses to write the file.** A schedule shipped
+   * inside an installed package is exactly that case: the update door will not
+   * edit somebody else's checkout, so a person switching the schedule on has
+   * nowhere to be recorded but the row, and copying the package's `enabled:
+   * false` back over it would undo their approval at the next sweep with
+   * nothing anywhere saying why. For those files, and only those, the switch
+   * belongs to the row.
+   *
+   * It belongs to the row only while the row's approval stands, which is what
+   * the arm gate says: **it leaves the row `active` only when the file's prompt
+   * and cron are still the ones the person approved.** A row being re-parked is
+   * a row whose content changed under it, and a person's "yes, run this" does
+   * not carry over to work they have not read; the package's own switch governs
+   * again until they approve the new content. A parked row never keeps its
+   * switch, so switching a package schedule on without approving it arms
+   * nothing and is undone by the next sweep (DOR-607).
+   *
+   * A row coming back from `paused` is NOT an exception. A package update is an
+   * unlink and a reappearance; `markRemovedByFilePath` only pauses and leaves
+   * `enabled` as the person set it, and the approval the arm gate just
+   * re-checked decides whether that switch still stands. An earlier version of
+   * this rule took the file's value on a paused return, which left an updated
+   * package's schedule `active` and switched off with no card and no
+   * notification: the FB-26 symptom back, quieter.
+   *
+   * @param existing - The row the file is landing on, when there is one.
+   * @param arm - What the arm gate decided, or `null` for an operator write.
+   * @param options - Where the write came from, and whether a package owns it.
+   * @returns True when the store must leave `enabled` alone.
+   */
+  private keepsRowEnabled(
+    existing: typeof pulseSchedules.$inferSelect | undefined,
+    arm: FileArmVerdict | null,
+    options?: FileSyncSource
+  ): boolean {
+    if (options?.packageOwned !== true || existing === undefined) return false;
+    return arm?.status === 'active';
   }
 
   /** Forget what was said about a path, because its file went away. */

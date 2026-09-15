@@ -132,6 +132,19 @@ const ROUTES: Array<{ name: string; drive: Drive; expectStatus: number }> = [
         .send({ enabled: false }),
   },
   {
+    // FB-26: `enabled` is agent-writable, and a package schedule is switched on
+    // the row alone, so switching one back ON has to name who did it too.
+    name: 'PATCH /api/tasks/:id (switch back on)',
+    expectStatus: 200,
+    drive: async (headers) => {
+      store.updateTask(schedule.id, { enabled: false });
+      return request(fixtureServer)
+        .patch(`/api/tasks/${schedule.id}`)
+        .set(headers)
+        .send({ enabled: true });
+    },
+  },
+  {
     name: 'DELETE /api/tasks/:id',
     expectStatus: 200,
     drive: (headers) => request(fixtureServer).delete(`/api/tasks/${schedule.id}`).set(headers),

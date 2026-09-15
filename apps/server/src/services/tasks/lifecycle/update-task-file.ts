@@ -31,10 +31,11 @@ import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import {
   describeArmBlocker,
+  fileBackedChanges,
   isPackageOwned,
+  landsOnRowAlone,
   packageOwnershipContext,
   planTaskFileUpdate,
-  touchesFile,
 } from '../task-file-update.js';
 import { logger } from '../../../lib/logger.js';
 
@@ -61,12 +62,18 @@ export interface TaskFileUpdateRefusal {
 export interface TaskFileUpdateSuccess {
   ok: true;
   /**
-   * Whether this request changes anything that lives in the SKILL.md.
+   * Whether this request WROTE the SKILL.md.
    *
    * Returned rather than recomputed by the caller because `PATCH /api/tasks/:id`
    * needs the same answer twice more after the write — to re-assert the status a
    * watcher event may have parked, and to decide whether a person's own edit
    * re-approves the schedule — and asking twice would let the two uses disagree.
+   *
+   * Usually the same thing as "changes something that lives in the file", which
+   * is how it is computed. The one case where it is not is the reason it is
+   * phrased this way: switching a PACKAGE-OWNED schedule on or off changes a
+   * file-backed field and deliberately writes no file (FB-26), and both uses
+   * above exist to compensate for a write. No write, nothing to compensate for.
    */
   changesFile: boolean;
 }
@@ -129,14 +136,17 @@ function describeTaskFileFailure(
  * @param existing - The task as it stands, whose `filePath` is being rewritten.
  * @param content - The file's current bytes.
  * @param data - The fields the request carries.
- * @returns Nothing on success, or the refusal to report.
+ * @param changed - Which file-backed fields this request changes.
+ * @returns What to tell the caller: a refusal, or a success saying whether the
+ *   file was written.
  */
 async function rewriteTaskFile(
   deps: TaskFileUpdateDeps,
   existing: Task,
   content: string,
-  data: UpdateTaskRequest
-): Promise<TaskFileUpdateRefusal | null> {
+  data: UpdateTaskRequest,
+  changed: readonly string[]
+): Promise<TaskFileUpdateOutcome> {
   // A file the skill schema cannot read is the silent-success defect DOR-1481
   // closed: the update used to skip the write, change the row, and report
   // success. It refuses.
@@ -161,6 +171,14 @@ async function rewriteTaskFile(
       packageOwnershipContext(deps.dorkHome, agentDir ?? undefined)
     )
   ) {
+    // **The refusal's own promise, kept.** Switching a schedule on or off is a
+    // decision about a file DorkOS will not write, so it lands on the row and
+    // the file is left exactly as the package shipped it — which is why
+    // `enabled` being file-backed used to make every Approve on a packaged
+    // schedule answer 409 with the sentence that offers the thing it refused
+    // (FB-26). The row is then authoritative for that switch, and the sync
+    // keeps it (`file-sync-gates.ts`).
+    if (landsOnRowAlone(changed)) return { ok: true, changesFile: false };
     return {
       ok: false,
       status: 409,
@@ -193,7 +211,7 @@ async function rewriteTaskFile(
       error: describeTaskFileFailure('save', existing.filePath, diskReason(err)),
     };
   }
-  return null;
+  return { ok: true, changesFile: true };
 }
 
 /**
@@ -228,7 +246,8 @@ export async function applyTaskFileUpdate(
   // Arming is the one thing a person can ask for that the FILE can refuse, so it
   // opens the file even when nothing in the file changes.
   const arming = data.status === 'active' && existing.status === 'pending_approval';
-  const changesFile = touchesFile(data, existing);
+  const changed = fileBackedChanges(data, existing);
+  const changesFile = changed.length > 0;
   if (!existing.filePath || !(changesFile || arming)) return { ok: true, changesFile };
 
   // No initializer: every catch path returns, so a value here could never be
@@ -280,6 +299,5 @@ export async function applyTaskFileUpdate(
 
   if (!changesFile) return { ok: true, changesFile };
 
-  const refusal = await rewriteTaskFile(deps, existing, content, data);
-  return refusal ?? { ok: true, changesFile };
+  return rewriteTaskFile(deps, existing, content, data, changed);
 }

@@ -466,6 +466,30 @@ export function createTasksRouter(
       });
     }
 
+    // ...and switching one back ON, which is the direction a person most needs to
+    // see: a schedule that came with an installed package is switched on the row
+    // alone (FB-26), and `enabled` is agent-writable, so an agent can turn a
+    // schedule back on that its owner switched off. Approval is left out because
+    // it already writes its own history row below.
+    if (
+      data.enabled === true &&
+      !existing.enabled &&
+      updated.enabled &&
+      existing.status !== 'pending_approval' &&
+      activityService
+    ) {
+      activityService.emit({
+        ...readActivityActor(req, res),
+        category: 'tasks',
+        eventType: 'tasks.task_resumed',
+        resourceType: 'schedule',
+        resourceId: req.params.id,
+        resourceLabel: updated.displayName ?? updated.name,
+        summary: `Switched on scheduled task ${updated.displayName ?? updated.name}`,
+        linkPath: '/',
+      });
+    }
+
     // A schedule leaving `pending_approval` for `active` IS the approval — there
     // is no separate endpoint for it, so this transition is where the parked
     // condition ends and its history row is written.

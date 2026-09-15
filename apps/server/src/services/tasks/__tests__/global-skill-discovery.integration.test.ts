@@ -169,10 +169,8 @@ describe('a scheduled skill installed for all projects', () => {
     await reconciler.reconcile();
     const retired = store.getTasks();
     expect(retired).toHaveLength(1);
-    expect({ status: retired[0]?.status, enabled: retired[0]?.enabled }).toEqual({
-      status: 'paused',
-      enabled: false,
-    });
+    // Paused stops the clock; the person's own switch is left as it was (FB-26).
+    expect(retired[0]?.status).toBe('paused');
 
     // The skill is no longer DISCOVERABLE: a store that has never seen it finds
     // nothing in the same root. Asserting `status === 'active'` is empty was
@@ -214,10 +212,7 @@ describe('a scheduled skill installed for all projects', () => {
 
     const rows = store.getTasks();
     expect(rows).toHaveLength(1);
-    expect({ status: rows[0]?.status, enabled: rows[0]?.enabled }).toEqual({
-      status: 'paused',
-      enabled: false,
-    });
+    expect(rows[0]?.status).toBe('paused');
   });
 
   it('retires one skill’s row while its sibling in the same package keeps firing', async () => {

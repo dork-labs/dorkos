@@ -383,6 +383,24 @@ describe('Topology enrichment — Tasks agent linking', () => {
     expect(agent.taskCount).toBe(2);
   });
 
+  it('does not count a paused task whose switch is still on (FB-26)', async () => {
+    // A removed schedule keeps the person's `enabled`; `paused` is what says
+    // it is not a live schedule.
+    meshCore.getTopology.mockReturnValue(SINGLE_AGENT_TOPOLOGY);
+
+    buildApp({
+      getTasks: vi.fn().mockReturnValue([
+        { agentId: 'agent-1', enabled: true, status: 'active' },
+        { agentId: 'agent-1', enabled: true, status: 'paused' },
+      ]),
+    });
+
+    const res = await request(app).get('/api/mesh/topology');
+
+    expect(res.status).toBe(200);
+    expect(res.body.namespaces[0].agents[0].taskCount).toBe(1);
+  });
+
   it('returns 0 when no tasks are linked to the agent', async () => {
     meshCore.getTopology.mockReturnValue(SINGLE_AGENT_TOPOLOGY);
 

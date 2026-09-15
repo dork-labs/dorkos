@@ -506,7 +506,10 @@ export function createCreateScheduleHandler(
  * `PATCH /api/tasks/:id` always wrote the file, and now both doors do it through
  * the same seam ({@link applyTaskFileUpdate}).
  */
-export function createUpdateScheduleHandler(deps: McpToolDeps) {
+export function createUpdateScheduleHandler(
+  deps: McpToolDeps,
+  resolveProvenance?: TaskProvenanceResolver
+) {
   return async (args: {
     id: string;
     name?: string;
@@ -667,6 +670,27 @@ export function createUpdateScheduleHandler(deps: McpToolDeps) {
     deps.resolveTaskRegistrar?.()?.syncTask(updated.id);
     broadcastTasksChanged();
 
+    // An agent switching a schedule back ON is recorded where the person will see
+    // it. A schedule that came with an installed package is switched on the row
+    // alone (FB-26), so this is the one trace that an agent, not its owner, turned
+    // it back on. Attributed as `tasks_create` attributes its proposals: by the
+    // agent's project path when the session has one, "An agent" otherwise.
+    if (args.enabled === true && !existing.enabled && updated.enabled) {
+      const provenance = resolveProvenance?.() ?? {};
+      deps.activityService?.emit({
+        actorType: 'agent',
+        actorLabel: 'An agent',
+        ...(provenance.agentPath ? { actorId: provenance.agentPath } : {}),
+        category: 'tasks',
+        eventType: 'tasks.task_resumed',
+        resourceType: 'schedule',
+        resourceId: updated.id,
+        resourceLabel: updated.displayName ?? updated.name,
+        summary: `Switched on scheduled task ${updated.displayName ?? updated.name}`,
+        linkPath: '/',
+      });
+    }
+
     // The row this hands back still says `active`, and within minutes it will
     // not be — so say so here rather than let an agent report a live schedule
     // that is about to stop. Only a task that HELD an approval can lose one; a
@@ -800,7 +824,7 @@ export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvena
         target: z.string().optional().describe(REFUSED_UPDATE_TARGET_DESCRIPTION),
         agentId: z.string().optional().describe(REFUSED_AGENT_ID_DESCRIPTION),
       },
-      createUpdateScheduleHandler(deps)
+      createUpdateScheduleHandler(deps, resolveProvenance)
     ),
     tool(
       'tasks_delete',
