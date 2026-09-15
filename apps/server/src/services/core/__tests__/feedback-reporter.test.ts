@@ -313,6 +313,96 @@ describe('sendFeedback — durable payload shape', () => {
     );
   });
 
+  it('keeps both log excerpts, newest end first, when each is at its own bound', async () => {
+    // The durable route caps the rendered block at 8,000 characters, and BOTH
+    // log excerpts are individually bounded at 8,000 — so "both at once" is not
+    // an edge case, it is the shape of a bug report from a desktop app that has
+    // been running a while. A single head slice across the whole block deleted
+    // the desktop section outright, label included, and at smaller server sizes
+    // it cut the desktop excerpt's NEWEST end, which is the half a report is
+    // filed about.
+    const fetchImpl = makeFetch('ok');
+    const serverLogExcerpt = Array.from(
+      { length: 200 },
+      (_, i) => `2026-09-14T22:25:${String(i % 60).padStart(2, '0')}.000Z warn [http] slow ${i}`
+    )
+      .join('\n')
+      .slice(-8000);
+    const shellLines = Array.from(
+      { length: 200 },
+      (_, i) => `2026-09-14 15:25:25.123 info [renderer] shell line ${i} ${'z'.repeat(20)}`
+    );
+    const shellLogExcerpt = shellLines.join('\n').slice(-8000);
+
+    await sendFeedback(
+      baseOptions({
+        submission: {
+          kind: 'bug',
+          message: 'the window keeps reloading itself',
+          diagnostics: {
+            clientReport: {
+              version: '0.75.0',
+              platform: 'darwin-arm64',
+              runtimes: [],
+              flags: {},
+              shell: 'desktop-app' as const,
+            },
+            serverLogExcerpt,
+            shellLogExcerpt,
+          },
+        },
+        fetchImpl,
+      })
+    );
+
+    const diagnostics = durableBody(fetchImpl).diagnostics as string;
+    expect(diagnostics.length).toBeLessThanOrEqual(8000);
+    // Both sections survive, each labelled.
+    expect(diagnostics).toContain('Server log excerpt:');
+    expect(diagnostics).toContain('Desktop app log excerpt:');
+    // Each keeps its NEWEST end: the block ends on the last shell line, and the
+    // server section still carries its own last line.
+    expect(diagnostics.endsWith(shellLines[shellLines.length - 1])).toBe(true);
+    expect(diagnostics).toContain('[http] slow 199');
+    // Each is cut from the front, so each says where it was cut.
+    expect(diagnostics.split('\n').filter((l) => l.startsWith('…'))).toHaveLength(2);
+  });
+
+  it('gives a short server excerpt the space it does not use to the desktop one', async () => {
+    // The budget is a floor for each section, not a fixed half: a five-line
+    // server excerpt must not cost the desktop excerpt 4,000 characters.
+    const fetchImpl = makeFetch('ok');
+    const shellLines = Array.from(
+      { length: 200 },
+      (_, i) => `2026-09-14 15:25:25.123 info [renderer] shell line ${i} ${'z'.repeat(20)}`
+    );
+
+    await sendFeedback(
+      baseOptions({
+        submission: {
+          kind: 'bug',
+          message: 'the window keeps reloading itself',
+          diagnostics: {
+            clientReport: {
+              version: '0.75.0',
+              platform: 'darwin-arm64',
+              runtimes: [],
+              flags: {},
+            },
+            serverLogExcerpt: 'warn [http] one slow request',
+            shellLogExcerpt: shellLines.join('\n').slice(-8000),
+          },
+        },
+        fetchImpl,
+      })
+    );
+
+    const diagnostics = durableBody(fetchImpl).diagnostics as string;
+    const shellSection = diagnostics.slice(diagnostics.indexOf('Desktop app log excerpt:'));
+    expect(diagnostics).toContain('one slow request');
+    expect(shellSection.length).toBeGreaterThan(6000);
+  });
+
   it('omits diagnostics when the submission has none', async () => {
     const fetchImpl = makeFetch('ok');
     await sendFeedback(baseOptions({ fetchImpl }));
