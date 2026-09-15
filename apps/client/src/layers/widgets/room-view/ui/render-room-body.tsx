@@ -87,6 +87,16 @@ function RoomBody({ entry, authors }: RoomBodyProps) {
     <MentionRosterProvider authors={authors}>
       <MarkdownContent
         content={markdown}
+        // The same typography hook the session transcript and onboarding's
+        // narrated line put on their own Streamdown output (`StreamingText`,
+        // `NarrationMessage`) — list indent, table margins, link and code
+        // color (`index.css`). Without it a room body fell back to
+        // Streamdown's own bare defaults, which draw a top-level list with
+        // `list-style-position: inside` and no left padding: the marker sits
+        // flush with the text column instead of indented from it (DOR-2074).
+        // Reusing the selector rather than copying its rules is what keeps
+        // this one style instead of two that can drift apart.
+        className="msg-assistant"
         allowedTags={MENTION_ALLOWED_TAGS}
         literalTagContent={MENTION_LITERAL_TAG_CONTENT}
         components={mentionComponents}

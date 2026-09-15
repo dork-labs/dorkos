@@ -520,6 +520,23 @@ describe('RoomMessage — the action surface', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   });
 
+  it('indents a list the same way the session transcript does (DOR-2074)', () => {
+    // `render-room-body.tsx` puts `msg-assistant` on the body's `MarkdownContent`
+    // — the same typography hook `StreamingText` (session) and `NarrationMessage`
+    // (onboarding) put on theirs, `index.css`'s `.msg-assistant ol/ul` rule being
+    // what gives a list its left padding and outside marker position. Without
+    // it, Streamdown's own bare default (`list-style-position: inside`, no
+    // padding) draws a list flush with the text column instead of indented from
+    // it — the room body sat with no left margin while the session's didn't.
+    // jsdom does not apply the stylesheet, so this pins the CLASS the CSS rule
+    // keys on rather than the computed padding itself.
+    renderRow(entry({ body: { text: '1. one\n2. two' } }));
+    const row = screen.getByTestId('room-entry');
+    const list = within(row).getByRole('list');
+
+    expect(list.closest('.msg-assistant')).not.toBeNull();
+  });
+
   it('opens the thread panel when the reply button is pressed', () => {
     renderRow(entry({ id: 'reply-9', parentEntryId: 'root-1', threadRootEntryId: 'root-1' }));
 
