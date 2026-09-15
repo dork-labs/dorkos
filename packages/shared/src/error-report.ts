@@ -102,6 +102,13 @@ const TOKEN_PATTERNS: RegExp[] = [
   /\bAKIA[0-9A-Z]{16}\b/g, // AWS access key id
   /\bBearer\s+[A-Za-z0-9._-]+/gi, // bearer tokens
   /\b(?:authorization|api[_-]?key|token|secret|password)\s*[:=]\s*\S+/gi, // key: value secrets
+  // OAuth credentials, which the rule above misses: it needs a word boundary
+  // before `token`, and `_` is a word character, so `access_token=…` was never
+  // matched. These arrive through URLs the app did not author (DOR-2045).
+  /\b(?:access|refresh|id)[_-]?token\s*[:=]\s*\S+/gi,
+  // An OAuth authorization code, only ever a URL parameter — so the rule is
+  // parameter-shaped rather than a bare word, which would redact "exit code=1".
+  /[?&]code=[^&\s"']+/gi,
   /\b(?:keychain|env|file):[^\s"']+/g, // DorkOS credential references
   /\bdork_[A-Za-z0-9_]*[0-9a-f]{32,}\b/g, // DorkOS API + per-instance MCP tokens
   /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9._-]+/g, // JWTs

@@ -244,19 +244,28 @@ function resolveTsxBin(): string {
  * process (a packaged app has no terminal). Requires the child to have been
  * spawned with `stdio: 'pipe'` for stdout/stderr — a `null` stream (any
  * other stdio mode) is a silent no-op.
+ *
+ * **The tag names the stream, not just the child** (`[server:stdout]`,
+ * `[server:stderr]`), and that distinction is load-bearing rather than
+ * decorative: `[server]` is also the shell's OWN tag on a dozen messages about
+ * the server ("The server stopped unexpectedly", "Restarting the server
+ * failed"), so anything reading this file cannot tell relayed output from the
+ * shell's account of it by the tag alone. `shell-log-excerpt.ts` drops the
+ * relayed lines from a bug report and keeps the prose, which is only possible
+ * because the two are spelled differently.
  */
 function forwardOutputToLog(
   stdout: NodeJS.ReadableStream | null,
   stderr: NodeJS.ReadableStream | null,
   tail: StderrTail
 ): void {
-  const logLines = (level: 'info' | 'error') => (chunk: Buffer | string) => {
+  const logLines = (level: 'info' | 'error', tag: string) => (chunk: Buffer | string) => {
     for (const line of chunk.toString().split('\n')) {
-      if (line.trim()) log[level]('[server]', line);
+      if (line.trim()) log[level](tag, line);
     }
   };
-  const logErrors = logLines('error');
-  stdout?.on('data', logLines('info'));
+  const logErrors = logLines('error', '[server:stderr]');
+  stdout?.on('data', logLines('info', '[server:stdout]'));
   // One stream, two consumers: the log file, for diagnosing after the fact,
   // and a bounded tail the supervisor can put in front of the user right now.
   stderr?.on('data', (chunk: Buffer | string) => {

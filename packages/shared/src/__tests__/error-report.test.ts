@@ -47,6 +47,27 @@ describe('redactTokens', () => {
     );
     expect(redactTokens(`key dork_${'0123abcd'.repeat(6)} end`)).toBe('key [redacted] end');
   });
+
+  it('redacts the OAuth-shaped credentials a URL carries in its query string', () => {
+    // `token=` alone never matched these: the rule needs a word boundary before
+    // `token`, and `_` is a word character, so `access_token=…` sailed through.
+    // These arrive for real — a page in the canvas browser can put any URL of
+    // its own into the log (DOR-2045).
+    expect(redactTokens('https://bank.example/login?access_token=abc123def456')).not.toContain(
+      'abc123def456'
+    );
+    expect(redactTokens('refresh_token: rt-0987654321')).not.toContain('rt-0987654321');
+    expect(redactTokens('id_token=eyJhbGciOi')).toContain('[redacted]');
+    expect(redactTokens('access-token = at-112233')).not.toContain('at-112233');
+    // An OAuth authorization code is single-use but still a credential in
+    // flight, and it only ever appears as a URL parameter — hence the
+    // parameter-shaped rule rather than a bare-word one.
+    expect(redactTokens('https://app.example/cb?code=4/0AY0e-g7&state=xyz')).not.toContain(
+      '4/0AY0e-g7'
+    );
+    // ...and an ordinary word ending in "code" is not a credential.
+    expect(redactTokens('exit code=1')).toBe('exit code=1');
+  });
 });
 
 describe('scrubMessage', () => {

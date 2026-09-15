@@ -20,19 +20,35 @@ import { isCockpitSender } from '../window-manager';
  * call site too.
  *
  * **What it deliberately leaves out.** Everything the server child writes is
- * forwarded into this same file tagged `[server]` (`server-spawn.ts`), and on a
- * real install that is most of it: of the last 2,000 lines measured, 1,561 came
- * from the child. The same report already carries the server's own log as
- * `serverLogExcerpt`, gathered from the structured NDJSON where the levels mean
- * what they say, so re-sending the child's stream here would duplicate it and
- * displace the shell's own lines — of which that whole 342 KB file held 16.
+ * forwarded into this same file, and on a real install that is most of it. The
+ * same report already carries the server's own log as `serverLogExcerpt`,
+ * gathered from the structured NDJSON where the levels mean what they say, so
+ * re-sending the child's stream here would duplicate it and displace the
+ * shell's own lines.
+ *
+ * The forwarder marks those lines `[server:stdout]` / `[server:stderr]`
+ * (`server-spawn.ts`) precisely so this filter can find them. **A plain
+ * `[server]` line is the shell's own prose and is kept** — twelve call sites
+ * write one, including "The server stopped unexpectedly" and "Restarting the
+ * server failed", which are exactly the lines a desktop bug report is filed
+ * about. Dropping those was a real defect, caught in review: the tag looked
+ * like the forwarder's and was not.
  *
  * **Why `info` and not `warn`.** The sibling excerpt in `log-excerpt.ts` keeps
- * `warn` and above, which is right for the server. It is wrong here: the shell's
- * own line rate is low by construction, and the `[renderer]` lines that name the
- * cause of a reload loop are at `info`. Raising those lines to `warn` so a
- * warn-and-above filter would catch them was considered and rejected — a level
- * is a claim about severity, and "a new page started loading" is not a warning.
+ * `warn` and above, which is right for the server and wrong here: the
+ * `[renderer]` lines that name the cause of a reload loop are written at `info`,
+ * so a warn-and-above filter returns everything except the answer. Raising those
+ * lines to `warn` so such a filter would catch them was considered and rejected
+ * — a level is a claim about severity, and "a new page started loading" is not a
+ * warning.
+ *
+ * The cost of that choice is volume, and it is real: on the operator's own
+ * machine this filter keeps roughly 7,000 of 11,700 lines, most of them
+ * `[permissions]`. {@link MAX_LOG_EXCERPT_LEN} is what actually bounds the
+ * result, and it keeps the newest end. (Some of that volume is unit-test output
+ * written into the real log, DOR-2042, which also polluted the sample the
+ * original info-vs-warn measurement was taken on — the conclusion survives
+ * because it rests on WHICH lines carry the cause, not on how many there are.)
  *
  * Nothing here may throw. A missing file, an unreadable directory or a line in a
  * shape this does not know all end as `undefined`, because none of them is a
@@ -41,7 +57,15 @@ import { isCockpitSender } from '../window-manager';
  * @module main/shell-log-excerpt/index
  */
 
-/** How many shell-authored entries a bug report carries, newest last. */
+/**
+ * How many shell-authored entries a bug report carries, newest last.
+ *
+ * A ceiling, not the usual bound: at any realistic line length 200 entries
+ * exceed {@link MAX_LOG_EXCERPT_LEN}, so the character cap is what normally
+ * decides (a default run against the operator's real log returned 87 lines, cut
+ * by the character cap). This one matters for a log of unusually short lines,
+ * and keeps the work bounded regardless.
+ */
 export const DEFAULT_SHELL_EXCERPT_MAX_LINES = 200;
 
 /** How far back (from now) an entry may be to qualify: 30 minutes. */
@@ -73,6 +97,11 @@ const KEPT_LEVELS = new Set(['error', 'warn', 'info']);
  * One line of electron-log's file format:
  * `[{y}-{m}-{d} {h}:{i}:{s}.{ms}] [{level}]{scope} {text}`.
  *
+ * Applied to lines already split on `\r?\n`, because the transport ends them
+ * with `os.EOL`: on Windows that is `\r\n`, and a trailing `\r` left on every
+ * line matches nothing here, which returned an empty excerpt on that platform
+ * for every report (caught in review).
+ *
  * The timestamp carries no zone, which is correct rather than a gap:
  * `new Date('2026-09-14 15:25:25.123')` parses as local time, which is the
  * timezone the transport wrote it in. No conversion is needed here and none may
@@ -80,8 +109,15 @@ const KEPT_LEVELS = new Set(['error', 'warn', 'info']);
  */
 const ENTRY_LINE = /^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\] \[([a-z]+)\][ \t]*(.*)$/;
 
-/** Text that marks an entry as the server child's forwarded stdout/stderr. */
-const SERVER_CHILD_TAG = '[server]';
+/**
+ * Prefix the forwarder stamps on a line it relayed from the server child
+ * (`[server:stdout]`, `[server:stderr]`) — mirrors `server-spawn.ts`.
+ *
+ * Matched as a PREFIX rather than as either whole tag, so a third stream added
+ * later is filtered without a second edit here. It deliberately does not match
+ * the shell's own `[server]` prose, which has no colon.
+ */
+const FORWARDED_OUTPUT_TAG = '[server:';
 
 /**
  * How many unparsed lines may attach to one entry.
@@ -154,7 +190,9 @@ function readTail(filePath: string, maxBytes: number): string {
  */
 function parseEntries(contents: string): ShellLogEntry[] {
   const entries: ShellLogEntry[] = [];
-  for (const raw of contents.split('\n')) {
+  // `\r?\n`, not `\n`: electron-log writes `os.EOL`, so on Windows the separator
+  // is `\r\n` and splitting on `\n` alone leaves a `\r` on the end of every line.
+  for (const raw of contents.split(/\r?\n/)) {
     const match = ENTRY_LINE.exec(raw);
     if (match) {
       const [, timestamp, level, text] = match;
@@ -172,7 +210,9 @@ function parseEntries(contents: string): ShellLogEntry[] {
     // read starts on, a continuation of nothing, which is dropped.
     const current = entries[entries.length - 1];
     if (current && current.continuations.length < MAX_CONTINUATION_LINES) {
-      current.continuations.push(raw);
+      // A lone trailing `\r` survives the split only on a final line with no
+      // newline after it; stripped so a Windows excerpt is byte-identical.
+      current.continuations.push(raw.replace(/\r$/, ''));
     }
   }
   return entries;
@@ -188,11 +228,39 @@ function parseEntries(contents: string): ShellLogEntry[] {
 function keepShellAuthored(entries: ShellLogEntry[], cutoffMs: number): ShellLogEntry[] {
   return entries.filter(
     (entry) =>
-      !entry.text.startsWith(SERVER_CHILD_TAG) &&
+      !entry.text.startsWith(FORWARDED_OUTPUT_TAG) &&
       KEPT_LEVELS.has(entry.level) &&
       Number.isFinite(entry.at) &&
       entry.at >= cutoffMs
   );
+}
+
+/**
+ * Any `http(s)` URL, up to the first character that cannot be part of one.
+ *
+ * Intentionally greedy about the tail: everything from the `?` or `#` onward is
+ * thrown away, so the pattern only has to find where a URL starts.
+ */
+const HTTP_URL = /\bhttps?:\/\/[^\s<>"'`]+/g;
+
+/**
+ * Drop the query string and fragment from every URL in `text`, keeping the
+ * scheme, host and path.
+ *
+ * The shell logs URLs it did not write: `permissions/index.ts` records the page
+ * that asked for a permission, and in the canvas browser that is any site the
+ * person opened. Their query strings carry session ids, account numbers, search
+ * terms and — measured in review — OAuth credentials. `redactTokens` catches
+ * the credential shapes it knows; this removes the whole class ahead of it,
+ * because the query string is never the part of a URL a bug report needs.
+ *
+ * Runs BEFORE {@link redactPaths}, whose `/…/…` rules would otherwise chew a
+ * URL's path into a relative-looking fragment.
+ *
+ * @param text - Lines already joined, before any other scrubbing.
+ */
+function stripUrlQueries(text: string): string {
+  return text.replace(HTTP_URL, (url) => url.replace(/[?#].*$/, ''));
 }
 
 /**
@@ -223,9 +291,11 @@ function formatEntry(entry: ShellLogEntry): string {
  *   {@link DEFAULT_SHELL_EXCERPT_MAX_LINES}.
  * @param maxAgeMs - How far back (from now) an entry may be to qualify. Defaults
  *   to {@link DEFAULT_SHELL_EXCERPT_MAX_AGE_MS}.
- * @returns The scrubbed, bounded excerpt — never containing a home directory,
- *   absolute path or secret-shaped token — or `undefined` when there is no log
- *   file, or nothing in it the report wants.
+ * @returns The scrubbed, bounded excerpt, or `undefined` when there is no log
+ *   file, or nothing in it the report wants. Scrubbed means home directories
+ *   and absolute paths removed, URL queries and fragments dropped, and known
+ *   token shapes replaced — a filter over free-form prose, not a proof that
+ *   nothing sensitive can survive it.
  */
 export function getShellLogExcerpt(
   maxLines: number = DEFAULT_SHELL_EXCERPT_MAX_LINES,
@@ -251,7 +321,9 @@ export function getShellLogExcerpt(
 
     if (kept.length === 0) return undefined;
 
-    const scrubbed = redactTokens(redactPaths(kept.slice(-maxLines).map(formatEntry).join('\n')));
+    const scrubbed = redactTokens(
+      redactPaths(stripUrlQueries(kept.slice(-maxLines).map(formatEntry).join('\n')))
+    );
 
     // Cut from the FRONT with a leading ellipsis, exactly as `log-excerpt.ts`
     // does and for the same reason (DOR-1976): the slice above has already
@@ -280,6 +352,14 @@ export function getShellLogExcerpt(
  * therefore reach this — already true of every bridge method, and a scrubbed
  * 8,000-character log tail is a lower-value target than the diagnostics archive
  * the recovery page can already write to the Desktop.
+ *
+ * **What "scrubbed" does and does not promise.** Home directories and absolute
+ * paths are removed structurally, URL queries and fragments are dropped whole,
+ * and token shapes `redactTokens` knows are replaced. It is a filter over
+ * free-form prose, not a proof: a secret in a shape nothing recognises, inside
+ * a message some other module chose to log, can still come through. That is the
+ * same guarantee the server's own excerpt gives, and it is why this is attached
+ * only to a report a person deliberately sent.
  *
  * @param getRendererUrl - Live accessor for the app's own origin, shared with
  *   the windows themselves so "is this our own page?" has one answer. Read fresh

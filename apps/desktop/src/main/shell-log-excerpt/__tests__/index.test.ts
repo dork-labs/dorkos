@@ -63,6 +63,13 @@ function writeRotatedLog(lines: string[]): void {
   writeFileSync(join(logDir, 'main.old.log'), `${lines.join('\n')}\n`);
 }
 
+/** The same file as {@link writeLiveLog}, with the line endings electron-log writes on Windows. */
+function writeLiveLogCrlf(lines: string[]): void {
+  const path = join(logDir, 'main.log');
+  writeFileSync(path, `${lines.join('\r\n')}\r\n`);
+  log.transports.file.getFile = () => ({ path });
+}
+
 beforeEach(() => {
   resetElectronMock();
   resetLogMock();
@@ -76,16 +83,86 @@ afterEach(() => {
 describe('getShellLogExcerpt', () => {
   it("drops the server child's forwarded output", () => {
     writeLiveLog([
-      line('error', '[server] Error: ECONNREFUSED /Users/kai/.dork/db.sqlite'),
+      line('error', '[server:stderr] Error: ECONNREFUSED /Users/kai/.dork/db.sqlite'),
       line('info', '[renderer] A new page started loading.'),
-      line('error', '[server] at Object.<anonymous> (server.js:1:1)'),
+      line('error', '[server:stderr] at Object.<anonymous> (server.js:1:1)'),
     ]);
 
     const excerpt = getShellLogExcerpt();
 
     expect(excerpt).toContain('[renderer] A new page started loading.');
-    expect(excerpt).not.toContain('[server]');
+    expect(excerpt).not.toContain('[server:');
     expect(excerpt).not.toContain('ECONNREFUSED');
+  });
+
+  it("keeps the shell's own [server] prose and drops only the child's forwarded output", () => {
+    // `[server]` is the shell's OWN tag on twelve call sites — "the server
+    // stopped unexpectedly" and "restarting the server failed" among them,
+    // which are exactly the lines a desktop bug report is filed about. Only the
+    // forwarder in `server-spawn.ts` may be dropped, so it marks its lines
+    // apart from the prose.
+    writeLiveLog([
+      line('error', '[server] The server stopped unexpectedly (exit code 1).'),
+      line('warn', '[server] Port 4242 is in use, so this session is on 4243.'),
+      line('error', '[server:stderr] Error: ECONNREFUSED'),
+      '    at Socket.emit (node:events:519:28)',
+      line('info', '[server:stdout] listening on 4243'),
+    ]);
+
+    const excerpt = getShellLogExcerpt();
+
+    expect(excerpt).toContain('The server stopped unexpectedly (exit code 1).');
+    expect(excerpt).toContain('Port 4242 is in use');
+    expect(excerpt).not.toContain('ECONNREFUSED');
+    expect(excerpt).not.toContain('listening on 4243');
+    // A dropped entry takes its stack frames with it.
+    expect(excerpt).not.toContain('at Socket.emit');
+  });
+
+  it('reads a Windows log, where every line ends with CRLF', () => {
+    // electron-log writes `os.EOL`. On Windows that is `\r\n`, which left a
+    // trailing `\r` on every line, matched nothing, and made the whole feature
+    // return nothing at all on that platform.
+    const lines = [
+      line('info', '[renderer] Reloading the window.'),
+      line('error', '[renderer] Could not load the fallback page.'),
+      '    at loadFallback (main.js:10:5)',
+      line('error', '[server:stderr] Error: ECONNREFUSED'),
+    ];
+    writeLiveLog(lines);
+    const withLf = getShellLogExcerpt();
+    writeLiveLogCrlf(lines);
+
+    const withCrlf = getShellLogExcerpt();
+
+    expect(withCrlf).toBe(withLf);
+    expect(withCrlf).toContain('Reloading the window.');
+    expect(withCrlf).toContain('at loadFallback (main.js:10:5)');
+    expect(withCrlf).not.toContain('\r');
+  });
+
+  it('strips the query and fragment from a URL a page put in the log', () => {
+    // `permissions/index.ts` logs the requesting page's URL at info, and in the
+    // canvas browser that can be any third-party page — including one carrying
+    // a credential in its query string. The host and path are what a report
+    // needs; the query never is.
+    writeLiveLog([
+      line(
+        'info',
+        '[permissions] Denied "clipboard-read" to https://bank.example/login?access_token=abc123def456'
+      ),
+      line('info', '[permissions] Denied "geolocation" to https://clinic.example/p?case=88213'),
+      line('info', '[renderer] loading https://mail.example.org/u/0/#inbox/FMfcgz'),
+    ]);
+
+    const excerpt = getShellLogExcerpt();
+
+    expect(excerpt).toContain('https://bank.example/login');
+    expect(excerpt).toContain('https://clinic.example/p');
+    expect(excerpt).toContain('https://mail.example.org/u/0/');
+    expect(excerpt).not.toContain('abc123def456');
+    expect(excerpt).not.toContain('case=88213');
+    expect(excerpt).not.toContain('FMfcgz');
   });
 
   it("keeps the shell's own info-level lines", () => {
@@ -203,7 +280,7 @@ describe('getShellLogExcerpt', () => {
 
   it('returns undefined when nothing survives the filter', () => {
     writeLiveLog([
-      line('error', '[server] Only the child said anything.'),
+      line('error', '[server:stderr] Only the child said anything.'),
       line('debug', '[renderer] And this is below the floor.'),
     ]);
 
