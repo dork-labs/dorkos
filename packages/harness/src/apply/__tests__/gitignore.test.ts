@@ -196,6 +196,12 @@ const GIT_CASES: ReadonlyArray<{
   // `?? .claude/skills/acme__greet`).
   { gitignore: '*__*/\n', path: '.claude/skills/acme__greet', kind: 'symlink' },
   { gitignore: '*__*/\n', path: '.claude/skills/acme__greet', kind: 'dir' },
+  // The same rule in the other two spellings a person writes it in — anchored
+  // to the folder, and as a bare name matching at any depth (DOR-1947). One
+  // trailing-slash case cannot tell those apart, and the answer has to be the
+  // same for all three: git tracks the link.
+  { gitignore: '.claude/skills/*__*/\n', path: '.claude/skills/acme__greet', kind: 'symlink' },
+  { gitignore: 'acme__greet/\n', path: '.claude/skills/acme__greet', kind: 'symlink' },
   { gitignore: 'hooks.json/\n', path: '.codex/hooks.json', kind: 'file' },
   { gitignore: 'plugins/\n', path: '.dork/plugins', kind: 'dir' },
   { gitignore: '.claude/skills/*__*\n', path: '.claude/skills/acme__greet' },
@@ -247,7 +253,12 @@ describe.skipIf(!hasGit())('the matcher against real git', () => {
         rmSync(root, { recursive: true, force: true });
       }
     }
-  });
+    // One real `git init` and one real `git check-ignore` PER CASE, so this one
+    // test spawns four dozen processes. The 5s default is not a budget that
+    // means anything here — it timed out on a machine running the rest of the
+    // monorepo's suites beside it, which is the ordinary condition in this repo,
+    // not a slow case worth knowing about.
+  }, 60_000);
 });
 
 /** The parent directory of a repo-relative path, or `.` when it has none. */
@@ -321,6 +332,12 @@ describe('missingGitignoreLines', () => {
       '.agents/skills/*__*',
       '.claude/skills/*__*',
     ]);
+
+    // The same rule WITHOUT the slash does cover them, which is what says this
+    // case is about the trailing slash and not about the glob beside it
+    // (DOR-1947).
+    stageRepo({ plugin: true, gitignore: '.dork/plugins/\n*__*\n' });
+    expect(missingGitignoreLines(repo, plan())).toEqual([]);
   });
 
   it('AP-09: accepts a broader rule the person already wrote', () => {
