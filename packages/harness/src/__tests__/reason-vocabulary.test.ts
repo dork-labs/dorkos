@@ -61,7 +61,7 @@
  * @module __tests__/reason-vocabulary
  */
 import { afterAll, describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LAYER_LABELS } from '@dorkos/marketplace';
@@ -113,9 +113,31 @@ const BLOCKED_REASONS = [
 
 /** Everything staged on disk, removed once the suite is done with it. */
 const staged: string[] = [];
+/** Directories the fixture locked, restored before the trees are removed. */
+const locked: string[] = [];
 afterAll(() => {
+  // Modes first: `rmSync -r` has to read a directory to empty it, so a mode-000
+  // one would survive the cleanup and leak the whole temp tree.
+  for (const dir of locked) {
+    try {
+      chmodSync(dir, 0o755);
+    } catch {
+      /* already gone */
+    }
+  }
   for (const dir of staged) rmSync(dir, { recursive: true, force: true });
 });
+
+/**
+ * Whether this platform can stage an unreadable directory: not Windows, where
+ * POSIX modes do not mean this, and not root, who reads everything anyway.
+ *
+ * On either, the locked skill folder below is simply readable and contributes
+ * no sentence. That costs nothing: every assertion here is a floor or a
+ * universal, so a fixture that says one thing less still checks everything it
+ * did produce.
+ */
+const CAN_MAKE_UNREADABLE = process.platform !== 'win32' && process.getuid?.() !== 0;
 
 /** Write a file, creating the directories above it. */
 function write(path: string, text: string): void {
@@ -229,6 +251,26 @@ function stageFixture(): { repoRoot: string; dorkHome: string } {
   stagePackage(join(dorkHome, 'plugins', 'both-scopes'), 'both-scopes', ['skills'], ['packaged']);
   stagePackage(join(dorkHome, 'plugins', 'everywhere'), 'everywhere', ['skills'], ['broadcast']);
   stagePackage(join(dorkHome, 'plugins', 'nothing-here'), 'nothing-here', ['commands'], []);
+
+  // A package whose own manifest will not parse, so the sentence naming the file
+  // and saying the links were left alone is PRODUCED rather than only written
+  // (DOR-1933). Its skill is staged too, because a package on disk is what the
+  // sweep would otherwise be deciding about.
+  const brokenPkg = join(repoRoot, '.dork', 'plugins', 'bad-manifest');
+  write(join(brokenPkg, '.dork', 'manifest.json'), '{ not json');
+  write(join(brokenPkg, 'skills', 'stranded', 'SKILL.md'), '# stranded\n');
+
+  // ...and one skill folder nobody can look inside, for the sentence that says
+  // it still counts and its links were left alone (DOR-1935). The package around
+  // it is readable, which is the whole shape: the root lists fine and one entry
+  // in it does not.
+  const lockedPkg = join(repoRoot, '.dork', 'plugins', 'locked-skill');
+  stagePackage(lockedPkg, 'locked-skill', ['skills'], ['readable', 'sealed']);
+  if (CAN_MAKE_UNREADABLE) {
+    const sealed = join(lockedPkg, 'skills', 'sealed');
+    chmodSync(sealed, 0o000);
+    locked.push(sealed);
+  }
 
   // Two harnesses whose own files are here and which the manifest leaves off.
   write(join(repoRoot, '.gemini', 'settings.json'), '{}');
@@ -385,6 +427,16 @@ describe('VC-02 — the sentences the engine shows a person', () => {
     expect(all.some((text) => text.startsWith('plugin layer "adapters"'))).toBe(true);
     expect(all.some((text) => text.includes('installed for all your projects'))).toBe(true);
     expect(all.some((text) => text.includes('is installed twice'))).toBe(true);
+    // The two read-time losses this fixture stages on purpose. Without them the
+    // guard would be checking a vocabulary it had never been shown: each
+    // sentence is written in exactly one module, and no other shape in this tree
+    // produces either.
+    expect(all.some((text) => text.startsWith('This package has a file'))).toBe(true);
+    if (CAN_MAKE_UNREADABLE) {
+      expect(all.some((text) => text.startsWith('DorkOS could not look inside this folder'))).toBe(
+        true
+      );
+    }
   });
 
   it('VC-02: uses no retired user-facing word outside a quoted package-layer name', () => {

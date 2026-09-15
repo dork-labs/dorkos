@@ -3,6 +3,8 @@ covers:
   - 'fix(harness): a package whose manifest will not parse is named, not vanished (DOR-1933)'
   - 'fix(harness): a skill folder DorkOS cannot look inside keeps its links (DOR-1935)'
   - "fix(server,tasks): a packaged skill's schedule ends when its link does (DOR-1934)"
+  - 'fix(server,tasks): one surviving link no longer keeps a swept skill armed (DOR-1934)'
+  - 'fix(harness): a report line names the package or the folder once (DOR-1933, DOR-1935)'
 ---
 
 ### Fixed
@@ -16,4 +18,5 @@ covers:
   folder to look at (DOR-1935)
 - Stop a timer running for a skill that is no longer there. Uninstalling a package used to leave
   its scheduled skill on the clock forever; DorkOS now pauses it in the same pass, whether the
-  package went or only the link to it (DOR-1934)
+  package went or only the link to it, and whether or not other skills from the same package are
+  still around (DOR-1934)

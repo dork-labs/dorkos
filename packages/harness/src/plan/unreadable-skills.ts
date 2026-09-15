@@ -38,10 +38,18 @@ const UNREADABLE_SKILL_ATTRIBUTION: HarnessId = 'claude-code';
 /**
  * One warning per skill folder the scan could not look inside.
  *
- * The sentence names the folder, says what DorkOS decided about it, and gives
- * the way out. "Treated as installed" is the load-bearing half: the tree is
- * deliberately not tidied, and a line that only named the folder would leave
- * somebody to work that out from the links that did not go.
+ * The sentence says what DorkOS decided about the folder and gives the way out.
+ * The decision is the load-bearing half: the tree is deliberately not tidied,
+ * and a line that only named the folder would leave somebody to work that out
+ * from the links that did not go.
+ *
+ * **The folder is named once, by the warning rather than inside the sentence.**
+ * `name` and `source` both carry it, which the terminal renders as
+ * `- skill "<dir>": <reason>` and the Skills page draws above the sentence, so
+ * repeating it printed an absolute path twice on one line (measured on the
+ * built CLI). And the sentence says "a skill you have" rather than "installed",
+ * because the same folder can be one somebody wrote in their own repository —
+ * `.agents/skills/<name>` goes through this too, and nobody installed that.
  *
  * @param dirs - the skill directories that could not be read, spelled the way
  *   the scan that found them spells its paths.
@@ -55,8 +63,8 @@ export function planUnreadableSkillWarnings(dirs: readonly string[]): Projection
     name: dir,
     source: dir,
     reason:
-      `DorkOS could not look inside ${dir}, so it does not know what is in there. ` +
-      `The skill still counts as installed and every link to it was left exactly as it is. ` +
+      `DorkOS could not look inside this folder, so it does not know what is in there. ` +
+      `It still counts as a skill you have, and every link to it was left exactly as it is. ` +
       `Fix the folder, then re-run.`,
   }));
 }

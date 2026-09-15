@@ -35,18 +35,24 @@ const UNREADABLE_MANIFEST_ATTRIBUTION: HarnessId = 'claude-code';
  * The one sentence a person reads about a package DorkOS could not make sense
  * of.
  *
- * Three claims, and all three are load-bearing: which package, which file, and
- * what DorkOS did about it. The last one is the half a bare "could not read
- * this file" would leave somebody to work out — the sweep deliberately keeps
- * every link such a package already has (clause 4 of the global predicate), so
- * the tree they are looking at is not tidied and that is on purpose.
+ * Two claims, and both are load-bearing: which file, and what DorkOS did about
+ * it. The second one is the half a bare "could not read this file" would leave
+ * somebody to work out — the sweep deliberately keeps every link such a package
+ * already has (clause 4 of the global predicate), so the tree they are looking
+ * at is not tidied and that is on purpose.
+ *
+ * **It does not name the package, because every surface that prints it already
+ * has.** The warning carries the package as its `name`, which the terminal
+ * renders as `- plugin "<name>": <reason>` and the Skills page draws above the
+ * sentence — so saying it again read as `plugin "badmanifest": badmanifest has a
+ * file …`, measured on the built CLI.
  *
  * @param record - the package and the file that would not parse.
  * @returns the sentence, the same words in the terminal and on the screen.
  */
-export function unreadableManifestReason(record: UnreadablePackageManifest): string {
+function unreadableManifestReason(record: UnreadablePackageManifest): string {
   return (
-    `${record.package} has a file DorkOS could not read: ${record.path}. ` +
+    `This package has a file DorkOS could not read: ${record.path}. ` +
     `Nothing from it is shared until that file is fixed, and the links it already has ` +
     `were left exactly as they are.`
   );

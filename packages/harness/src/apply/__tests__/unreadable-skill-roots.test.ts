@@ -263,7 +263,11 @@ describe('one skill folder inside a readable root (DOR-1935)', () => {
       const named = broken.warnings.filter((w) => w.name === '.dork/plugins/acme/skills/greet');
       expect(named).toHaveLength(1);
       expect(named[0]?.harnessAgnostic).toBe(true);
-      expect(named[0]?.reason).toContain('.dork/plugins/acme/skills/greet');
+      expect(named[0]?.source).toBe('.dork/plugins/acme/skills/greet');
+      // The folder is named by the warning, once. Repeating it inside the
+      // sentence printed the path twice on one terminal line.
+      expect(named[0]?.reason).not.toContain('.dork/plugins/acme/skills/greet');
+      expect(named[0]?.reason).toContain('left exactly as it is');
 
       // And nothing goes.
       expect(checkPlan(repo, broken).orphans).toEqual([]);

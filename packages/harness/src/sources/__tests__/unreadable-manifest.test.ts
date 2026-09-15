@@ -99,8 +99,15 @@ describe('SRC-04 — a manifest DorkOS cannot read is named, not dropped', () =>
     expect(about).toHaveLength(1);
     expect(about[0]?.harnessAgnostic).toBe(true);
     expect(about[0]?.source).toBe(join(brokenDir, '.dork', 'manifest.json'));
-    expect(about[0]?.reason).toContain('badmanifest');
     expect(about[0]?.reason).toContain(join(brokenDir, '.dork', 'manifest.json'));
+    // The package is named by the warning, once: the terminal and the page both
+    // draw `name` beside the sentence, so saying it again read as
+    // `plugin "badmanifest": badmanifest has a file …`. The only place the name
+    // may appear in the sentence is inside the path, which is a different fact.
+    expect(about[0]?.reason.startsWith('This package has a file')).toBe(true);
+    expect(about[0]?.reason.replace(join(brokenDir, '.dork', 'manifest.json'), '')).not.toContain(
+      'badmanifest'
+    );
 
     // The plan is evidence only about packages it could read, and the sweep
     // reads `enumeratedPackages` as exactly that. A broken manifest joining this

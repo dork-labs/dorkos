@@ -2867,9 +2867,14 @@ describe('runHarnessSync --global — the packages installed for all your projec
 
     expect(result.exitCode).toBe(0);
     const output = printed();
-    expect(output).toContain('badmanifest');
     expect(output).toContain(manifest);
     expect(output).toContain('were left exactly as they are');
+    // The package is named ONCE on the line: the heading `plugin "badmanifest":`
+    // is the naming, and the sentence after it does not repeat it. Measured
+    // before: `plugin "badmanifest": badmanifest has a file …`.
+    const line = output.split('\n').find((l) => l.includes('plugin "badmanifest"'));
+    expect(line).toBeDefined();
+    expect(line).toContain('plugin "badmanifest": This package has a file');
     // The sentence and the disk agree: nothing was removed.
     expect(fs.lstatSync(linked, { throwIfNoEntry: false })).toBeDefined();
     expect(output).not.toContain('Removed 1 link(s)');
@@ -2895,8 +2900,14 @@ describe('runHarnessSync --global — the packages installed for all your projec
         const result = await runHarnessSync(syncArgs({ fix: true, global: true }));
 
         expect(result.exitCode).toBe(0);
-        expect(printed()).toContain(skillDir);
         expect(printed()).toContain('could not look inside');
+        // The folder is named ONCE on the line. Measured before: an absolute
+        // path printed twice, as the entry's name and again in the sentence.
+        const line = printed()
+          .split('\n')
+          .find((l) => l.includes(skillDir));
+        expect(line).toBeDefined();
+        expect(line?.split(skillDir)).toHaveLength(2);
         expect(printed()).not.toContain('Removed 1 link(s)');
         expect(fs.lstatSync(linked, { throwIfNoEntry: false })).toBeDefined();
         // The sibling is untouched, so this is containment rather than a sweep

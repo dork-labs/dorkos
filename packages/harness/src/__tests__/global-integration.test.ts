@@ -455,9 +455,13 @@ describe('SK-03 global: a skill folder nobody can read', () => {
 
       // And one line naming the folder, so the tree that is deliberately not
       // tidied is explained rather than left to be discovered.
-      const named = plan.warnings.filter((w) => w.reason.includes(skillDir));
+      const named = plan.warnings.filter((w) => w.name === skillDir);
       expect(named).toHaveLength(1);
       expect(named[0]?.harnessAgnostic).toBe(true);
+      expect(named[0]?.source).toBe(skillDir);
+      // Named once. An absolute path repeated inside the sentence printed it
+      // twice on one line of a global run's report.
+      expect(named[0]?.reason).not.toContain(skillDir);
     } finally {
       chmodSync(skillDir, 0o755);
     }
