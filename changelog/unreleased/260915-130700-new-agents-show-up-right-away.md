@@ -5,6 +5,7 @@ covers:
   - 'feat(client): agent and settings changes land in every open window (DOR-2052)'
   - 'test(server): pin the agents_changed coverage claim and the config_changed payload (DOR-2052)'
   - 'feat(skills): the app updates on its own, so stop telling people to refresh (DOR-2052)'
+  - 'fix(client,server): address the adversarial review of the live agent list (DOR-2052)'
 ---
 
 ### Fixed
