@@ -181,8 +181,21 @@ function substitutingDefault(
  * `runtimes/claude-code/mcp-tools/__tests__/mcp-default-arguments.test.ts` holds
  * the drift guard for both halves — it lives there because only that directory
  * may import the Agent SDK, and the guard has to fail against the real SDK rather
- * than against a restatement of it. No tool on either MCP surface may advertise a
- * field on the middle rung.
+ * than against a restatement of it. The invariant it pins is about RAW FIELD MAPS,
+ * not about tools: no raw field map crossing to the Agent SDK may carry a field on
+ * the middle rung. A capability that hands over a whole `ZodObject` instead is
+ * outside it and needs nothing from this function — the object is parsed by the
+ * schema's own `run`, so `optin` is never consulted. That is why the seven
+ * `CONNECTOR_RUNTIME_CAPABILITY_IDS`, one of which defaults `requestedEvents`, are
+ * safe while declaring `surfaces: {}` and never reaching here.
+ *
+ * Still required as of `@anthropic-ai/claude-agent-sdk@0.3.272` (the latest
+ * release on 2026-09-15): its bundle contains no `"defaulted"` string and still
+ * asks `optin === "optional"`, and a raw `.default(…)` field run through its
+ * `tool()` still fails the same way. Which points at the real retirement: the
+ * cause is the raw field map, so registering these capabilities with their full
+ * `ZodObject` — the way `registerClaudeConnectorCapabilityTools` already does —
+ * would remove the need for this function altogether.
  *
  * @param shape - The advertised field map.
  * @returns The same map, with every substituting field re-labelled optional.
@@ -367,6 +380,9 @@ export async function invokeCapabilityAsMcpResult(
     // The card is drawn from the SUCCESSFUL result and nothing else: a refusal
     // or a throw produced no sign-in link, so there is nothing to put on screen.
     if (surface && capability?.inSessionCard) {
+      // `input` is what the caller SENT, not what the registry parsed, so a card
+      // reading a field the capability defaults would see `undefined` — neither
+      // card capability has one today (DOR-2053).
       return textResult(
         projectInSessionCard(capability.inSessionCard, surface.session, input, plain)
       );

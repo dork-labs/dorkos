@@ -52,6 +52,8 @@ import type {
   CapabilityDeps,
   CapabilityRegistry,
 } from '../../../../core/capabilities/index.js';
+import { defineCapability } from '../../../../core/capabilities/index.js';
+import { CONNECTOR_RUNTIME_CAPABILITY_IDS } from '../../../../connectors/runtime-capability-scope.js';
 import { composeDorkOsCapabilityRegistry } from '../../../../core/self-description/dorkos-registry.js';
 import { registerCapabilitiesAsMcpTools } from '../../../../core/external-mcp/capability-mcp-tools.js';
 import { DEFAULT_CAPABILITY_LIMIT } from '../../../../core/self-description/catalog-projection.js';
@@ -196,6 +198,10 @@ describe('a defaulted argument may be omitted (DOR-2053)', () => {
     await close();
   });
 
+  // This surface never had the bug — it builds its object with OUR Zod, which
+  // knows the middle rung — so this case went green before the fix too. It is
+  // here to pin that the rewrite introduced none: a field re-advertised as
+  // optional must still come back with its default applied where it already was.
   it('answers list_capabilities with no arguments on the external /mcp surface too', async () => {
     const registry = createFullRegistry();
     const server = new McpServer({ name: 'dorkos-external', version: '0.0.0' });
@@ -286,7 +292,7 @@ describe('a defaulted argument may be omitted (DOR-2053)', () => {
     await close();
   });
 
-  it('puts no tool on either MCP surface on the middle rung', () => {
+  it('puts no RAW field map crossing to the Agent SDK on the middle rung', () => {
     const registry = createFullRegistry();
     const stranded = [
       ...handRegisteredInSessionTools(createFullDeps()).flatMap((entry) =>
@@ -311,5 +317,85 @@ describe('a defaulted argument may be omitted (DOR-2053)', () => {
     // there is nothing that could fill the default in afterwards: apply the
     // fallback inside the handler, or define the tool as a capability.
     expect(stranded).toEqual([]);
+  });
+
+  it('hands the connector capabilities over as whole objects, not as field maps', () => {
+    const registry = createFullRegistry();
+
+    // These seven declare `surfaces: {}` and are registered by
+    // `registerClaudeConnectorCapabilityTools` with `capability.input` itself, so
+    // the guard above cannot see them — and does not need to. A whole `ZodObject`
+    // crosses to the Agent SDK intact and is parsed by its own `run`, which never
+    // consults the optionality rung, which is why
+    // `connectors.request_connection` can default `requestedEvents` and still
+    // answer a call that omits it. That safety is entirely a property of handing
+    // over an object, so this pins the object.
+    for (const id of CONNECTOR_RUNTIME_CAPABILITY_IDS) {
+      expect(registry.get(id)?.input, id).toBeInstanceOf(z.ZodObject);
+    }
+    // The premise the paragraph above rests on: at least one of them really does
+    // default a field, so this is not a vacuous guard over schemas that would be
+    // safe either way.
+    const defaulted = CONNECTOR_RUNTIME_CAPABILITY_IDS.flatMap((id) =>
+      Object.entries((registry.get(id)!.input as z.ZodObject<z.ZodRawShape>).shape)
+        .filter(([, field]) => rungOf(field) === 'defaulted')
+        .map(([key]) => `${id}.${key}`)
+    );
+    expect(defaulted).toContain('connectors.request_connection.requestedEvents');
+  });
+
+  it('re-labels a prefaulted field, and a default hidden under an optional', async () => {
+    // Neither spelling is in the product today, and both are one `instanceof`
+    // branch of `substitutingDefault` that nothing else reaches: delete either
+    // branch and the matching probe below goes red rather than silently shipping
+    // a field the Agent SDK reads as required.
+    const fixture = defineCapability({
+      id: 'fixture.substituting',
+      title: 'Substituting field fixture',
+      description: 'Exercises the two substituting wrappers the product does not use yet.',
+      tier: 'observe',
+      input: z.object({
+        prefaulted: z.coerce.number().int().min(1).prefault(7).describe('a prefaulted field'),
+        defaultedThenOptional: z.array(z.string()).default([]).optional().describe('both wrappers'),
+      }),
+      output: z.object({ ok: z.boolean() }),
+      surfaces: {},
+      invoke: async () => ({ ok: true }),
+    });
+
+    const shape = capabilityInputShape(fixture);
+    const probe = tool(
+      'fixture_substituting',
+      'probe',
+      shape,
+      async (args: Record<string, unknown>) => ({
+        content: [{ type: 'text' as const, text: JSON.stringify(args) }],
+      })
+    );
+    const server = createSdkMcpServer({
+      name: 'dor-2053-fixture',
+      version: '0.0.0',
+      tools: [probe],
+    });
+    const { client, close } = await connect(server.instance);
+
+    const result = (await client.callTool({
+      name: 'fixture_substituting',
+      arguments: {},
+    })) as CallToolResult;
+    expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
+
+    // And the substituted value still reaches the model as a JSON Schema default,
+    // which is the half a bare `.optional()` rewrite would have thrown away.
+    const advertised = (await client.listTools()).tools.find(
+      (entry) => entry.name === 'fixture_substituting'
+    )?.inputSchema as unknown as {
+      properties: Record<string, { default?: unknown }>;
+      required?: string[];
+    };
+    expect(advertised.properties.prefaulted?.default).toBe(7);
+    expect(advertised.properties.defaultedThenOptional?.default).toEqual([]);
+    expect(advertised.required ?? []).toEqual([]);
+    await close();
   });
 });
