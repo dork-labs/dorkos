@@ -17,8 +17,30 @@ import { roomKeys } from '../api/query-keys';
 import { useRoomListStream } from '../model/use-room-list-stream';
 import { useRoomWorkingStore } from '../model/live/use-room-working';
 
-/** Handlers registered by the hook, keyed by the event they wait for. */
-const handlers = new Map<string, (payload?: unknown) => void>();
+/**
+ * Handlers registered by the hook, keyed by the event they wait for.
+ *
+ * The real stream is multi-subscriber (`StreamManager.subscribeEvent`), and
+ * `useRoomListStream` now registers TWO listeners for `room_updated` — the
+ * shared list refresh, and a dedicated one that invalidates the open room's
+ * own cache entry. A single-slot `Map` would let the second registration
+ * silently clobber the first, so this keeps every handler an event receives
+ * and `handlers.get(event)!(payload)` fires all of them, in registration
+ * order — the same fan-out the real subscription gives every listener.
+ */
+const registry = new Map<string, Array<(payload?: unknown) => void>>();
+const handlers = {
+  clear: () => registry.clear(),
+  set: (event: string, handler: (payload?: unknown) => void) => {
+    registry.set(event, [...(registry.get(event) ?? []), handler]);
+  },
+  get: (event: string): ((payload?: unknown) => void) | undefined => {
+    const list = registry.get(event);
+    if (!list) return undefined;
+    return (payload?: unknown) => list.forEach((h) => h(payload));
+  },
+  keys: () => registry.keys(),
+};
 
 vi.mock('@/layers/shared/model', () => ({
   useEventSubscription: (event: string, handler: (payload?: unknown) => void) => {
@@ -119,6 +141,41 @@ describe('useRoomListStream', () => {
     handlers.get('room_presence')!({ roomId: 'room-1', working: 2 });
     expect(useRoomWorkingStore.getState().rooms['room-1']?.working).toBe(2);
     expect(invalidated).toEqual([]);
+  });
+
+  it('invalidates the open room itself on room_updated, not just the list row', () => {
+    // A rename or archive from another device or an agent broadcasts
+    // `room_updated`, and `useRoom` pins `staleTime: Infinity` — nothing else
+    // was ever going to refetch its cache entry. Without the dedicated
+    // subscription this stays green (only the list-row keys get invalidated)
+    // and the channel bar, the `/channels` header and a desktop tab keep
+    // showing the old name until the room is closed and reopened.
+    const { invalidated, queryClient } = setup();
+    seedOpenRoom(queryClient, 'me', 0);
+
+    handlers.get('room_updated')!({ roomId: 'room-1', title: 'renamed', archived: false });
+
+    expect(invalidated).toContainEqual(roomKeys.detail('room-1'));
+  });
+
+  it('leaves a room nobody has open alone on room_updated, minting no cache entry', () => {
+    const { queryClient } = setup();
+
+    handlers.get('room_updated')!({ roomId: 'room-9', title: 'renamed', archived: false });
+
+    // Invalidating an entry that was never fetched is a no-op, not a mint —
+    // there is nothing here to assert beyond "this does not throw", so the
+    // real assertion is the absence of a planted cache entry.
+    expect(queryClient.getQueryData(roomKeys.detail('room-9'))).toBeUndefined();
+  });
+
+  it('drops a malformed room_updated payload instead of invalidating nothing in particular', () => {
+    const { invalidated } = setup();
+
+    handlers.get('room_updated')!({ title: 'no id at all' });
+    handlers.get('room_updated')!(null);
+
+    expect(invalidated.filter((key) => Array.isArray(key) && key[1] === 'detail')).toEqual([]);
   });
 
   it('refreshes both lists when a member is removed', () => {

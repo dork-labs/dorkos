@@ -1,5 +1,27 @@
 import type { Transport } from '@dorkos/shared/transport';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
+import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
+
+/**
+ * The one room `getRoom` answers for — everything the `AppTabStrip` showcase
+ * needs to demo a channel tab reading "#general", the way the real
+ * `/channels` header does ({@link roomDisplayTitle} in
+ * `entities/room/lib/room-display.ts`).
+ */
+export const PLAYGROUND_ROOM: RoomWithRoster = {
+  id: 'room-general',
+  kind: 'channel',
+  slug: 'general',
+  title: 'general',
+  topic: null,
+  archived: false,
+  ambientMaxEntries: 30,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  lastActivityAt: '2026-01-01T00:00:00.000Z',
+  reactionFrequents: [],
+  viewerAuthorId: 'author-you',
+  members: [],
+} as unknown as RoomWithRoster;
 
 /**
  * Runtime capabilities the playground answers `getCapabilities` with — a mirror of
@@ -246,6 +268,13 @@ export function createPlaygroundTransport(): Transport {
       }
       if (prop === 'stopTunnel') {
         return async () => undefined;
+      }
+      // One named room, so the `AppTabStrip` showcase can demo a channel tab
+      // reading "#general" the way the real header does — every other id
+      // still falls through to the `null` default below, the honest answer
+      // for a playground with no server.
+      if (prop === 'getRoom') {
+        return async (roomId: string) => (roomId === PLAYGROUND_ROOM.id ? PLAYGROUND_ROOM : null);
       }
       // A room's files answer with a LISTING, and `null` is not one —
       // the room panel's Files section would map over it and turn the whole

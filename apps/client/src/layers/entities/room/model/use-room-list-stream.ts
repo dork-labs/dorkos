@@ -27,6 +27,29 @@ const ROOM_LIST_EVENTS = [
 ] as const;
 
 /**
+ * What a `room_updated` broadcast says: which room changed. The server sends
+ * more (`title`, `archived`), but this only needs the id — the cache entry is
+ * invalidated and refetched rather than patched from the payload, so it stays
+ * correct for fields the broadcast does not carry at all (`topic`, the room
+ * limits `use-room-settings.ts` documents as absent from this same event).
+ */
+interface RoomUpdated {
+  roomId: string;
+}
+
+/**
+ * Is this a `room_updated` broadcast?
+ *
+ * The payload arrives as `unknown`, like every event on this fan-out — see
+ * {@link isReadCursorMoved} for why it is checked rather than trusted.
+ */
+function isRoomUpdated(payload: unknown): payload is RoomUpdated {
+  if (typeof payload !== 'object' || payload === null) return false;
+  const { roomId } = payload as Record<string, unknown>;
+  return typeof roomId === 'string' && roomId.length > 0;
+}
+
+/**
  * What a `read_cursor` broadcast says: whose cursor moved, in what, and to
  * where.
  *
@@ -209,6 +232,15 @@ function applyReadCursor(queryClient: QueryClient, event: ReadCursorMoved): void
  * Two events here are handled rather than refetched, each because the payload
  * already carries the whole answer: presence, and a read cursor moving on
  * another device.
+ *
+ * `room_updated` gets a second subscription beyond the shared `refresh` above:
+ * the list refresh keeps a sidebar row honest, but nothing here used to touch
+ * the OPEN room's own cache entry (`roomKeys.detail`) — `useRoom`, which the
+ * `/channels` header, the channel bar, the message-search result, and a
+ * desktop tab (`AppTabItem`) all read, pins `staleTime: Infinity` so nothing
+ * else was going to refetch it either. A rename by an agent, or from another
+ * device, left every one of those readers showing the old name until the
+ * reader closed and reopened the room.
  */
 export function useRoomListStream(): void {
   const queryClient = useQueryClient();
@@ -235,6 +267,16 @@ export function useRoomListStream(): void {
   useEventSubscription(ROOM_LIST_EVENTS[2], refresh);
   useEventSubscription(ROOM_LIST_EVENTS[3], refresh);
   useEventSubscription(ROOM_LIST_EVENTS[4], refresh);
+
+  // The open room's own cache entry, kept honest independently of the list
+  // above: `useRoom` never refetches on its own (`staleTime: Infinity` —
+  // its own TSDoc says the stream owns that entry), so a rename that did not
+  // originate in THIS client's own mutation (`use-room-settings.ts` already
+  // invalidates the detail query it just wrote) needs this to ever reach it.
+  useEventSubscription('room_updated', (payload) => {
+    if (!isRoomUpdated(payload)) return;
+    void queryClient.invalidateQueries({ queryKey: roomKeys.detail(payload.roomId) });
+  });
 
   // Presence is the one room-list event that must NOT refetch. It fires when a
   // claim is taken and again every ten seconds while the work runs, so treating
