@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
-import { configKeys } from '@/layers/shared/model';
+import { configKeys, CONFIG_WRITE_MUTATION_KEY } from '@/layers/shared/model';
 
 /**
  * Manage mesh scan roots — reads from server config with boundary fallback,
@@ -24,6 +24,7 @@ export function useMeshScanRoots() {
   const roots = scanRoots.length > 0 ? scanRoots : boundary ? [boundary] : [];
 
   const { mutate: saveScanRoots, isPending: isSaving } = useMutation({
+    mutationKey: CONFIG_WRITE_MUTATION_KEY,
     mutationFn: async (newRoots: string[]) => {
       await transport.updateConfig({ mesh: { scanRoots: newRoots } });
     },

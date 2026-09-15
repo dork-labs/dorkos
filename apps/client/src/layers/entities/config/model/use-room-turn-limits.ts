@@ -6,7 +6,7 @@
 import { useCallback } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { ServerConfig } from '@dorkos/shared/types';
-import { useTransport } from '@/layers/shared/model';
+import { useTransport, CONFIG_WRITE_MUTATION_KEY } from '@/layers/shared/model';
 import { configKeys } from '../api/query-keys';
 import { useConfig } from './use-config';
 
@@ -132,6 +132,7 @@ export function useRoomTurnLimits(): RoomTurnLimitsState {
     Partial<RoomTurnLimits>,
     { previous: ServerConfig | undefined }
   >({
+    mutationKey: CONFIG_WRITE_MUTATION_KEY,
     mutationFn: (patch) => transport.updateConfig({ rooms: patch }),
     onMutate: async (patch) => {
       await queryClient.cancelQueries({ queryKey: configKeys.current() });

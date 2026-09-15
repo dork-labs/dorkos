@@ -28,3 +28,4 @@ export {
 } from './ui/OpenMeshSwitch';
 export type { OpenMeshRowProps } from './ui/OpenMeshSwitch';
 export { useMeshScanRoots } from './model/use-mesh-scan-roots';
+export { useAgentsSync, AGENT_IDENTITY_CACHES } from './model/use-agents-sync';

@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useTransport } from '@/layers/shared/model';
+import { useTransport, CONFIG_WRITE_MUTATION_KEY } from '@/layers/shared/model';
 import { configKeys } from '../api/query-keys';
 
 /**
@@ -18,6 +18,7 @@ export function useUpdateConfig() {
   const queryClient = useQueryClient();
 
   return useMutation<void, Error, Record<string, unknown>>({
+    mutationKey: CONFIG_WRITE_MUTATION_KEY,
     mutationFn: (patch) => transport.updateConfig(patch),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: configKeys.current() });

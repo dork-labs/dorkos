@@ -288,6 +288,29 @@ describe('useUnregisterAgent', () => {
     });
   });
 
+  it('sweeps the sidebar rows and the manifest caches too, not just the listing', async () => {
+    // DOR-2052. This used to sweep `['mesh','agents']` and `['team']` only —
+    // and the sidebar, the one surface a person is looking at while they click
+    // Remove, draws its rows from `['mesh','agent-paths']`. So the agent stayed
+    // on screen for that key's 30-second stale time and the button looked
+    // broken. `['agents']` is the manifest prefix the status bar reads.
+    const transport = createMockTransport({
+      unregisterMeshAgent: vi.fn().mockResolvedValue({ success: true }),
+    });
+    const { Wrapper, queryClient } = createWrapper(transport);
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(() => useUnregisterAgent(), { wrapper: Wrapper });
+    result.current.mutate('agent-1');
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const asked = invalidate.mock.calls.map(([filters]) => JSON.stringify(filters?.queryKey));
+    expect(asked).toContain(JSON.stringify(['mesh', 'agents']));
+    expect(asked).toContain(JSON.stringify(['mesh', 'agent-paths']));
+    expect(asked).toContain(JSON.stringify(['agents']));
+    expect(asked).toContain(JSON.stringify(['team']));
+  });
+
   it('exposes error state on transport failure', async () => {
     const transport = createMockTransport({
       unregisterMeshAgent: vi.fn().mockRejectedValue(new Error('Unregister failed')),

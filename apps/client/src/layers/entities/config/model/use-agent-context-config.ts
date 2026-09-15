@@ -13,7 +13,7 @@
  */
 import { useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useTransport } from '@/layers/shared/model';
+import { useTransport, CONFIG_WRITE_MUTATION_KEY } from '@/layers/shared/model';
 import { configKeys } from '../api/query-keys';
 
 /** The tool families an agent's context can carry. */
@@ -57,6 +57,7 @@ export function useAgentContextConfig() {
   };
 
   const mutation = useMutation({
+    mutationKey: CONFIG_WRITE_MUTATION_KEY,
     mutationFn: (patch: Partial<AgentContextConfig>) =>
       transport.updateConfig({ agentContext: { ...config, ...patch } }),
     onSuccess: () => {

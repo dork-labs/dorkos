@@ -17,7 +17,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { ServerConfig } from '@dorkos/shared/types';
 import type { StatusBarPin, StatusBarPrefs } from '@dorkos/shared/config-schema';
 import { STATUS_BAR_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
-import { useTransport } from '@/layers/shared/model';
+import { useTransport, CONFIG_WRITE_MUTATION_KEY } from '@/layers/shared/model';
 import { configKeys } from '../api/query-keys';
 import { useConfig } from './use-config';
 
@@ -65,6 +65,7 @@ export function useUpdateStatusBarPrefs(): UpdateStatusBarPrefs {
     readonly StatusBarPin[],
     { previous: ServerConfig | undefined }
   >({
+    mutationKey: CONFIG_WRITE_MUTATION_KEY,
     mutationFn: (pins) => transport.updateConfig({ ui: { statusBar: { pins: [...pins] } } }),
     onMutate: async (pins) => {
       await queryClient.cancelQueries({ queryKey: configKeys.current() });

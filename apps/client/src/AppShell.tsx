@@ -35,7 +35,8 @@ import {
   useSessionDetail,
 } from '@/layers/entities/session';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
-import { useConfig } from '@/layers/entities/config';
+import { useConfig, useConfigSync } from '@/layers/entities/config';
+import { useAgentsSync } from '@/layers/entities/mesh';
 import { useCommandsSync } from '@/layers/entities/command';
 import { useBindingsSync } from '@/layers/entities/binding';
 import { useRelayAdaptersSync } from '@/layers/entities/relay';
@@ -325,6 +326,13 @@ export function AppShell() {
   // Live task list (DOR-1380): a schedule an agent proposes via MCP parks at
   // pending_approval and otherwise sits invisible until the next reload.
   useTasksSync();
+  // Live agent list and live settings (DOR-2052). An agent registered, renamed
+  // or removed by ANY path — a terminal, a second window, DorkBot — and any
+  // settings write reach every open window here. Without them the sidebar drew
+  // agents and sections from stale times that only refetch on window focus, so
+  // staying in one window meant the list quietly lied.
+  useAgentsSync();
+  useConfigSync();
   // Remote access, live and audible — the two halves that must happen exactly
   // once for the whole app (DOR-1743). `useTunnelSync` refreshes the config
   // read from other tabs and from the server's `tunnel_status` stream, which

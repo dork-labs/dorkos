@@ -9,6 +9,7 @@
 
 export { configKeys, CONFIG_STALE_TIME_MS } from './api/query-keys';
 export { useConfig } from './model/use-config';
+export { useConfigSync } from './model/use-config-sync';
 export { useAgentContextConfig } from './model/use-agent-context-config';
 export { useLocalCaller } from './model/use-local-caller';
 export { useEngagedWindow } from './model/use-engaged-window';
