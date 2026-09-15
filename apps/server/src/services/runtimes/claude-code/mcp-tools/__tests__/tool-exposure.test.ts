@@ -398,8 +398,15 @@ describe('in-session tool exposure', () => {
     // its own canvas — `get_ui_state` is where an agent learns there is anything
     // to read, and that is a tool call too. Both counts move by exactly one,
     // which is what says nothing else came with it.
-    expect(tools).toHaveLength(101);
-    expect(deferred).toHaveLength(92);
+    //
+    // 101 -> 103 for `sidebar_add_to_group` and `sidebar_remove_from_group`
+    // (DOR-2055), and both land DEFERRED. Nothing in the turn-1 prompt names
+    // either, and the turn that wants one is a person asking for their sidebar
+    // to be tidied — a turn that can afford a search, unlike a room reply with
+    // somebody waiting. Both counts move by the same two, which is what says
+    // nothing else came with them.
+    expect(tools).toHaveLength(103);
+    expect(deferred).toHaveLength(94);
     const retiredConnectorTools = [
       'connector_list_accounts',
       'connector_start_connect',

@@ -181,8 +181,17 @@ export interface OperatingSkill {
  *   does work, its two fields, and the approval it waits on, only reaches it on a
  *   bump.
  * - 17: teach injected Accounts discovery across all runtimes and verified CLI fallback (DOR-1988).
+ * - 18: filing something under a sidebar section has its own two verbs now, and
+ *   `operating-dorkos` says to use them (DOR-2055). Versions 1 to 17 taught one
+ *   way to change any setting, and for `ui.sidebar.groups` that way is a trap:
+ *   arrays replace wholesale, so adding one agent to one section means re-sending
+ *   every section, and an agent seeded at 17 will keep doing exactly that. It is
+ *   not a wrong sentence, which is why the omission still needs a bump — the
+ *   failure is silent and lands on the person, not the agent. A drag they made
+ *   while the model was composing its payload is overwritten with no error
+ *   anywhere, and one mistyped section in it deletes all the others.
  */
-export const OPERATING_SKILLS_VERSION = 17;
+export const OPERATING_SKILLS_VERSION = 18;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

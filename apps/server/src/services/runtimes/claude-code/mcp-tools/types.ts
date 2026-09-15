@@ -14,6 +14,7 @@ import type { ExtensionManager } from '../../../extensions/extension-manager.js'
 import type { RuntimeRegistry } from '../../../core/runtime-registry.js';
 import type { ActivityService } from '../../../activity/activity-service.js';
 import type { ApprovalService } from '../../../core/approvals/index.js';
+import type { CapabilityHandlerContext } from '../../../core/capabilities/registry.js';
 import type { StreamEvent } from '@dorkos/shared/types';
 
 /**
@@ -99,6 +100,61 @@ export interface McpToolDeps {
   bridgeStore?: BridgeStore;
   /** Optional MeshCore — undefined when Mesh is disabled */
   meshCore?: MeshCore;
+  /**
+   * The rooms THIS CALLER can see, for the two sidebar-section capabilities that
+   * have to check a room reference before storing one (DOR-2055).
+   *
+   * ## Why it is scoped to the caller and not to the operator
+   *
+   * The first version asked the OWNER's view, on the reasoning that the sidebar
+   * being edited is the person's and may legitimately hold rooms the calling
+   * agent never joined. That reasoning is true and it was still the wrong
+   * answer, because the verbs REPORT what they resolved: an agent could guess a
+   * DM title, get back `notPresent: [{ roomId: <the real id> }]`, and learn that
+   * the operator's private conversation exists. `room-visibility.ts` closes
+   * exactly that oracle on purpose — "not visible" and "no such room" answer
+   * identically, because a room id is never a capability — and a second seam
+   * that answers a wider question reopens it.
+   *
+   * So this tool sees exactly what its caller sees. The owner still resolves
+   * every room on the install (`seesEveryRoom`), so the person's own path is
+   * unchanged; an agent resolves the rooms it is on the roster of and no others,
+   * and a room it cannot see is refused with the same words a room that never
+   * existed gets. The AGENT roster next door stays install-wide deliberately:
+   * agents are not secret, and `mesh_list` already lists them all.
+   *
+   * ## Shape
+   *
+   * A function of the caller returning plain rows, rather than the rooms service
+   * itself: the operator domain has no business holding `RoomService` to ask one
+   * yes-or-no question, and the answer is per-call anyway — a room can be
+   * archived, or an agent removed from it, between two turns of one
+   * conversation. The visibility rule itself is NOT restated here; the
+   * implementation is `rooms/visible-rooms-for-caller.ts`, which resolves the
+   * caller through the rooms domain's own `callerAuthor` and lists through
+   * `RoomService.listRooms`, so every grant those already encode carries over by
+   * construction.
+   *
+   * **Calling this WRITES.** Resolving the caller upserts an author row —
+   * `callerAuthor` goes through `resolveAgent` / `localHuman` / `bindOwner`, all
+   * of which mint a row the first time this database sees a principal. It is the
+   * same write every room verb already performs, so nothing new happens on any
+   * path that has already run one; it is stated because a lookup that writes is
+   * worth knowing about, and because it means this cannot be called against a
+   * read-only database.
+   *
+   * `undefined` means this process cannot answer for this caller — rooms are not
+   * wired, the caller presented an identity that could not be verified, or the
+   * lookup failed some other way. The implementation's `catch` is TOTAL by
+   * design: this feeds a "may I store a reference to that room" decision, so it
+   * fails closed, and any failure becomes "cannot answer" rather than an empty
+   * list that would read as "no such room". It is never "no rooms": a room
+   * reference is then refused rather than stored unchecked. See `SidebarRoster`
+   * in `core/operator/sidebar-item-refs.ts`.
+   */
+  listVisibleRooms?: (
+    caller: CapabilityHandlerContext
+  ) => { roomId: string; name: string; slug: string | null }[] | undefined;
   /**
    * Optional rooms seam for the first-party fallback `relay_notify_user` takes
    * when no external chat integration can carry a proactive message: the

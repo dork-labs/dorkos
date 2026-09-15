@@ -357,6 +357,7 @@ import {
   setRoomWorktreeManager,
   setRoomMergeService,
 } from './services/rooms/index.js';
+import { visibleRoomsForCaller } from './services/rooms/visible-rooms-for-caller.js';
 import { roomSessionPlace } from './services/rooms/repo/room-worktree-cwd.js';
 import {
   readRoomRepoConfig,
@@ -2903,6 +2904,14 @@ async function start() {
       // The DorkOS-DM fallback, hoisted above so the notification pipeline's
       // relay channel shares this one seam rather than building a second.
       ...(notifyDm && { notifyDm }),
+      // What the two sidebar-section capabilities check a room reference against
+      // before they store one (DOR-2055). Scoped to the CALLER, resolved per
+      // call, and failing closed — all three decisions live in the named unit,
+      // with `rooms/__tests__/visible-rooms-for-caller.test.ts` driving it
+      // against a real `RoomService`. It is a unit rather than a closure here
+      // precisely so something executes it: as three lines of wiring, reverting
+      // the caller resolution to the owner's left 712 tests green.
+      listVisibleRooms: (caller) => visibleRoomsForCaller(roomService, caller),
     };
     claudeRuntime.setMcpServerFactory((session, sessionId) =>
       // Managed servers first and `dorkos` last so it can never be shadowed —
