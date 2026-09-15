@@ -15,7 +15,7 @@
  * '<dorkHome>/skills/flow__capture')`.
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { projectGlobal, globalPluginsDir, globalSkillsDir } from '../global-projector.js';
@@ -68,6 +68,36 @@ describe('SK-03, SRC-04 — the folder a global plan names', () => {
     // sends a person to a folder that is perfectly readable, with an errno
     // about a different one in parentheses (DOR-1937).
     const dorkHome = stageDorkHome();
+    writeFileAt(globalSkillsDir(dorkHome), 'somebody put notes here\n');
+
+    const plan = projectGlobal({ roots: { dorkHome }, harnesses: [] });
+
+    expect(plan.unreadableRoot).toBe(globalSkillsDir(dorkHome));
+    expect(plan.actions).toEqual([]);
+    expect(plan.warnings.map((w) => w.reason)).toEqual([
+      `DorkOS could not read the folder your all-projects skills are linked into: ` +
+        `${globalSkillsDir(dorkHome)}. Nothing was linked, and nothing was removed.`,
+    ]);
+  });
+
+  it('names it when NOTHING under it is ever probed', () => {
+    // The shape that tells the ROOT probe from the nested one, on every OS.
+    //
+    // With a package installed, the scan `lstat`s `<dorkHome>/skills/<pkg>__<x>`
+    // to answer whether that skill is already linked — and on POSIX a stat under
+    // a FILE raises ENOTDIR, so the catch fires and blames the right root even
+    // with no root probe at all. Windows answers ENOENT for the same call, which
+    // `throwIfNoEntry: false` swallows, so the scan sees "not linked", never
+    // throws, and the plan carried on as though the folder were fine (PR #1875,
+    // `harness-windows`).
+    //
+    // An EMPTY plugins folder removes that accident entirely: there is no skill
+    // to probe for, nothing under the file is ever touched, and the only thing
+    // that can notice it is the root probe itself. Seeded defect: drop the
+    // probe, and this reds on every platform rather than on Windows alone.
+    const dorkHome = mkdtempSync(join(tmpdir(), 'harness-global-blame-empty-'));
+    staged.push(dorkHome);
+    mkdirSync(globalPluginsDir(dorkHome), { recursive: true });
     writeFileAt(globalSkillsDir(dorkHome), 'somebody put notes here\n');
 
     const plan = projectGlobal({ roots: { dorkHome }, harnesses: [] });

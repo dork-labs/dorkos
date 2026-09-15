@@ -27,6 +27,10 @@ covers:
   # Folds in here too: the warnings block printed its own heading twice when a
   # run had both kinds of sweep sentence. Before anybody could have read one.
   - 'fix(harness): one heading per section in the warnings block (DOR-1939)'
+  # Folds into the global-folder bullet: it made that sentence true on Windows
+  # too, where the scan noticed the folder only by an errno POSIX raises and
+  # Windows does not.
+  - 'fix(harness): a file where the all-projects skills folder should be is named on every OS (DOR-1937)'
 ---
 
 ### Fixed

@@ -572,6 +572,24 @@ export function buildGlobalPlan(input: GlobalPlanInput): GlobalProjectionPlan {
  * @returns the plan for what is installed for every project right now.
  */
 export function projectGlobal(input: Omit<GlobalPlanInput, 'packages'>): GlobalProjectionPlan {
+  // ASKED BEFORE THE SCAN, not only after it throws.
+  //
+  // The scan notices a hostile root by accident: it `lstat`s
+  // `<dorkHome>/skills/<pkg>__<name>` to answer whether each skill is already
+  // linked, and on POSIX a stat UNDER a file raises ENOTDIR, which lands in the
+  // catch below. **Windows answers ENOENT for that same call**, and
+  // `throwIfNoEntry: false` swallows it — so the scan reads "not linked", never
+  // throws, and the plan carried on as though a file where the folder belongs
+  // were fine (PR #1875, the `harness-windows` leg). The accident is not
+  // available at all when the packages folder is empty: with no skill to probe
+  // for, nothing under the file is ever touched on any platform.
+  //
+  // So the roots are probed on their own terms, in the order the scan reads
+  // them, and the answer does not depend on which errno an operating system
+  // chooses for a path below a file.
+  const blocked = rootInTheWay(input.roots.dorkHome);
+  if (blocked !== undefined) return blockedGlobalPlan(blocked);
+
   let scan: {
     plugins: readonly InstalledPlugin[];
     unreadableManifests: readonly UnreadablePackageManifest[];
@@ -579,23 +597,12 @@ export function projectGlobal(input: Omit<GlobalPlanInput, 'packages'>): GlobalP
   try {
     scan = scanInstalledSources({ dorkHome: input.roots.dorkHome });
   } catch {
-    const blamed = rootInTheWay(input.roots.dorkHome);
-    return {
-      actions: [],
-      drops: [],
-      warnings: [
-        {
-          artifact: 'plugin',
-          harness: GLOBAL_LINK_ATTRIBUTION,
-          harnessAgnostic: true,
-          name: blamed.root,
-          reason: `${blamed.sentence} Nothing was linked, and nothing was removed.`,
-        },
-      ],
-      notEnabled: [],
-      unreadableRoot: blamed.root,
-      enumeratedPackages: [],
-    };
+    // Still here, and still needed: a root can become hostile between the probe
+    // above and the read, and a scan can fail for a reason no root's shape
+    // explains.
+    return blockedGlobalPlan(
+      rootInTheWay(input.roots.dorkHome) ?? packagesRootByDefault(input.roots.dorkHome)
+    );
   }
   return buildGlobalPlan({
     ...input,
@@ -645,23 +652,59 @@ export const UNREADABLE_GLOBAL_ROOT_REASONS = {
  * @param dorkHome - the DorkOS data directory, absolute.
  * @returns the folder to name, and the sentence naming it.
  */
-function rootInTheWay(dorkHome: string): { root: string; sentence: string } {
+function rootInTheWay(dorkHome: string): { root: string; sentence: string } | undefined {
   const pluginsRoot = globalPluginsDir(dorkHome);
-  const skillsRoot = globalSkillsDir(dorkHome);
-  if (
-    directoryWriteBlock(pluginsRoot) === undefined &&
-    directoryWriteBlock(skillsRoot) !== undefined
-  ) {
-    return {
-      root: skillsRoot,
-      sentence: UNREADABLE_GLOBAL_ROOT_REASONS.skills(skillsRoot),
-    };
+  if (directoryWriteBlock(pluginsRoot) !== undefined) {
+    return { root: pluginsRoot, sentence: UNREADABLE_GLOBAL_ROOT_REASONS.packages(pluginsRoot) };
   }
-  // The packages root, and the fallback for a failure neither probe explains —
-  // enumerating that folder is what this scan is FOR, so naming it is the
-  // honest answer when nothing more specific is known.
+  const skillsRoot = globalSkillsDir(dorkHome);
+  if (directoryWriteBlock(skillsRoot) !== undefined) {
+    return { root: skillsRoot, sentence: UNREADABLE_GLOBAL_ROOT_REASONS.skills(skillsRoot) };
+  }
+  return undefined;
+}
+
+/**
+ * The packages root, named as the honest answer for a failure neither probe
+ * explains.
+ *
+ * Enumerating that folder is what this scan is FOR, so when it throws for a
+ * reason no root's shape accounts for — a transient I/O error, something a
+ * future scan reads that this does not know about — that is the folder to send
+ * a person to.
+ *
+ * @param dorkHome - the DorkOS data directory, absolute.
+ * @returns the folder to name, and the sentence naming it.
+ */
+function packagesRootByDefault(dorkHome: string): { root: string; sentence: string } {
+  const pluginsRoot = globalPluginsDir(dorkHome);
+  return { root: pluginsRoot, sentence: UNREADABLE_GLOBAL_ROOT_REASONS.packages(pluginsRoot) };
+}
+
+/**
+ * An empty plan that names the folder in the way, and says nothing else.
+ *
+ * The one shape both callers below return, so the warning, the marker and the
+ * empty action list cannot drift apart between the two.
+ *
+ * @param blamed - the folder and the sentence about it.
+ * @returns the plan.
+ */
+function blockedGlobalPlan(blamed: { root: string; sentence: string }): GlobalProjectionPlan {
   return {
-    root: pluginsRoot,
-    sentence: UNREADABLE_GLOBAL_ROOT_REASONS.packages(pluginsRoot),
+    actions: [],
+    drops: [],
+    warnings: [
+      {
+        artifact: 'plugin',
+        harness: GLOBAL_LINK_ATTRIBUTION,
+        harnessAgnostic: true,
+        name: blamed.root,
+        reason: `${blamed.sentence} Nothing was linked, and nothing was removed.`,
+      },
+    ],
+    notEnabled: [],
+    unreadableRoot: blamed.root,
+    enumeratedPackages: [],
   };
 }
