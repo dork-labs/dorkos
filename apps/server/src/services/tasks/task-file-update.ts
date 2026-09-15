@@ -49,6 +49,7 @@ import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace/constants';
 import { installRootsUnder, projectScopeRoot } from '../marketplace/lib/install-roots.js';
 import { INSTALL_METADATA_PATH } from '../marketplace/installed-metadata.js';
 import { mergeTaskFrontmatter, type TaskFrontmatterWrite } from './task-frontmatter-merge.js';
+import type { TaskRoot } from './skills-roots.js';
 import { describeScheduleProblem } from './cron-validation.js';
 
 /**
@@ -120,16 +121,74 @@ export interface FileBackedRow {
  * @returns True when the file has to be rewritten.
  */
 export function touchesFile(data: Record<string, unknown>, existing?: FileBackedRow): boolean {
-  if (data.maxRuntime !== undefined) return true;
-  return Object.entries(FILE_BACKED_COLUMN).some(([field, column]) => {
-    const value = data[field];
-    if (value === undefined) return false;
-    if (!existing) return true;
-    const current = existing[column as keyof FileBackedRow];
-    // `null` in a request means "clear it"; the row spells an absent optional
-    // as `null` too, so the two compare directly.
-    return value !== current;
-  });
+  return fileBackedChanges(data, existing).length > 0;
+}
+
+/**
+ * WHICH file-backed fields this request changes, by request-field name.
+ *
+ * The same comparison {@link touchesFile} makes, kept rather than reduced to a
+ * boolean, because one caller needs to know what changed and not merely that
+ * something did: a schedule an installed package owns may still be switched on
+ * and off, and telling that request apart from a cron edit is exactly the
+ * difference between the two (FB-26). See {@link landsOnRowAlone}.
+ *
+ * `maxRuntime` reports as changed whenever it is present, for the reason
+ * {@link FILE_BACKED_COLUMN} gives: the request spells it as a duration string
+ * and the row holds milliseconds, so the two cannot be compared here.
+ *
+ * @param data - The validated update request body.
+ * @param existing - The row as it stands, or undefined to skip comparison.
+ * @returns The changed fields, in {@link FILE_BACKED_COLUMN} order.
+ */
+export function fileBackedChanges(
+  data: Record<string, unknown>,
+  existing?: FileBackedRow
+): string[] {
+  const changed = Object.entries(FILE_BACKED_COLUMN)
+    .filter(([field, column]) => {
+      const value = data[field];
+      if (value === undefined) return false;
+      if (!existing) return true;
+      const current = existing[column as keyof FileBackedRow];
+      // `null` in a request means "clear it"; the row spells an absent optional
+      // as `null` too, so the two compare directly.
+      return value !== current;
+    })
+    .map(([field]) => field);
+  return data.maxRuntime !== undefined ? [...changed, 'maxRuntime'] : changed;
+}
+
+/**
+ * The file-backed fields a PACKAGE-OWNED schedule may still change, because
+ * they can be applied to the row alone.
+ *
+ * One field, and the reasoning is the refusal's own promise: "you can switch
+ * this schedule on or off here; to change what it does, edit the package". The
+ * switch is the person's decision about a schedule they did not write, and it
+ * has nowhere to live but the row — DorkOS never writes a file inside somebody
+ * else's checkout. Everything else in {@link FILE_BACKED_COLUMN} describes what
+ * the schedule DOES, which is the package's to say and stays refused.
+ *
+ * `status` is absent because it was never here: it lives in the row and nowhere
+ * else, so approving and parking never touched the file in the first place.
+ */
+const ROW_ONLY_WHEN_PACKAGE_OWNED: ReadonlySet<string> = new Set(['enabled']);
+
+/**
+ * Whether a package-owned schedule can take this change without its file being
+ * written (FB-26).
+ *
+ * Asked only of a file an installed package owns. Every field has to qualify:
+ * a request that switches a schedule off AND re-writes its cron is still a
+ * request to edit the package, and letting the row-only half through would
+ * apply half of what the caller asked for.
+ *
+ * @param changed - The changed file-backed fields, from {@link fileBackedChanges}.
+ * @returns True when the row can absorb all of them.
+ */
+export function landsOnRowAlone(changed: readonly string[]): boolean {
+  return changed.every((field) => ROW_ONLY_WHEN_PACKAGE_OWNED.has(field));
 }
 
 /**
@@ -207,6 +266,59 @@ export function packageOwnershipContext(
     sharedInstallRoots: roots.filter((r) => !r.packagesOnly).map((r) => r.dir),
     ...(agentDir ? { agentDir } : {}),
   };
+}
+
+/**
+ * The ownership context for a file found in a SKILLS ROOT, derived from the
+ * root itself.
+ *
+ * Discovery has no `dorkHome` and no mesh — it has the root it is walking — so
+ * it cannot build {@link packageOwnershipContext} the way a route does. It does
+ * not need to: a skills root is fed by the installs of its OWN scope, which is
+ * the pairing `pluginsRootFor` already writes down for the reconciler's
+ * retirement gate (DOR-1934). The global root `<dorkHome>/skills` is fed by
+ * `<dorkHome>/…`, and a project's `.agents/skills` by that project's `.dork/…`.
+ *
+ * The agent probe rides along for a project root, where the project path IS the
+ * agent's own directory — the same value `meshCore.getProjectPath` hands the
+ * route — so a schedule shipped inside an installed agent package is recognised
+ * here too.
+ *
+ * @param root - The skills root the file was discovered in.
+ * @returns The roots to search and the directory to probe.
+ */
+export function rootPackageOwnershipContext(root: TaskRoot): PackageOwnershipContext {
+  if (root.scope === 'global') return packageOwnershipContext(path.dirname(root.dir));
+  // A project root that does not say which project it belongs to can answer
+  // nothing, and `packageOwnershipContext` with no scope of its own would
+  // search the filesystem root. An empty context answers `false`, which is the
+  // conservative direction for a read: the file is treated as ordinary.
+  if (root.projectPath === undefined) {
+    return { packageOnlyRoots: [], sharedInstallRoots: [] };
+  }
+  const roots = installRootsUnder(projectScopeRoot(root.projectPath));
+  return {
+    packageOnlyRoots: roots.filter((r) => r.packagesOnly).map((r) => r.dir),
+    sharedInstallRoots: roots.filter((r) => !r.packagesOnly).map((r) => r.dir),
+    agentDir: root.projectPath,
+  };
+}
+
+/**
+ * Whether a file discovered in a skills root belongs to an installed package —
+ * {@link isPackageOwned}, asked the way discovery can ask it.
+ *
+ * Discovery asks because ownership decides more than whether DorkOS may WRITE
+ * the file: a file DorkOS refuses to write can never record a person's decision
+ * to switch its schedule on, so that decision lives on the row and the sync must
+ * not overwrite it (FB-26, `file-sync-gates.ts`).
+ *
+ * @param filePath - The schedule's file, already resolved by discovery.
+ * @param root - The skills root it was discovered in.
+ * @returns True when an installed package owns it.
+ */
+export async function isPackageOwnedInRoot(filePath: string, root: TaskRoot): Promise<boolean> {
+  return isPackageOwned(filePath, rootPackageOwnershipContext(root));
 }
 
 /**

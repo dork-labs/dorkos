@@ -159,6 +159,43 @@ describe('ScheduleRow', () => {
     expect(screen.getByRole('switch')).toBeTruthy();
   });
 
+  // A removed schedule keeps the person's `enabled` (FB-26) but runs nothing, so
+  // the row must not read as switched on.
+  describe('a paused schedule whose file is gone', () => {
+    const removedSchedule: Task = { ...activeSchedule, id: 'sched-6', status: 'paused' };
+
+    it('shows its switch off and not flippable, even though enabled is still true', () => {
+      renderScheduleRow(removedSchedule);
+
+      const toggle = screen.getByRole('switch');
+      expect(toggle).toHaveAttribute('aria-checked', 'false');
+      expect(toggle).toBeDisabled();
+    });
+
+    it('keeps an active schedule switched on and flippable', () => {
+      renderScheduleRow(activeSchedule);
+
+      const toggle = screen.getByRole('switch');
+      expect(toggle).toHaveAttribute('aria-checked', 'true');
+      expect(toggle).not.toBeDisabled();
+    });
+
+    it('offers no Run Now', async () => {
+      renderScheduleRow(removedSchedule);
+
+      const trigger = screen.getByLabelText(`Actions for ${removedSchedule.name}`);
+      await act(async () => {
+        fireEvent.pointerDown(trigger);
+        fireEvent.mouseDown(trigger);
+        fireEvent.click(trigger);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByRole('menuitem', { name: /Run Now/i })).toHaveAttribute('data-disabled');
+      });
+    });
+  });
+
   it('shows Approve and Reject buttons for pending_approval schedules', () => {
     renderScheduleRow(pendingSchedule);
 

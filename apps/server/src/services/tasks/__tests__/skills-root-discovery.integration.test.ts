@@ -236,8 +236,8 @@ describe('schedules discovered in skills roots', () => {
       await writeFile(filePath, plainSkill('was-scheduled'), 'utf-8');
       await reconciler.reconcile();
 
+      // Paused is what stops the clock; the person's switch is left as it was.
       expect(store.getTask(row.id)?.status).toBe('paused');
-      expect(store.getTask(row.id)?.enabled).toBe(false);
       expect(scheduler.isRegistered(row.id)).toBe(false);
       // Paused, never deleted: the file is still there and the run history is
       // the person's, not the block's.

@@ -39,6 +39,7 @@ import {
   taskRootShape,
 } from './skills-root-discovery.js';
 import { pluginsRootFor, type TaskRoot } from './skills-roots.js';
+import { isPackageOwnedInRoot } from './task-file-update.js';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { UNWATCHED_ROOT_SWEEP_SECONDS, type TaskWatchHealth } from './task-file-watcher.js';
 import { resolveParkedScheduleRemoved } from '../notifications/emitters/schedule-park.js';
@@ -568,6 +569,9 @@ export class TaskReconciler {
           const task = this.store.upsertFromFile(discovered.def, root.agentId, {
             source: 'discovery',
             problem: discovered.problem,
+            // See the watcher's call: the same rule, on the pass that catches
+            // what the watcher missed (FB-26).
+            packageOwned: await isPackageOwnedInRoot(discovered.def.filePath, root),
           });
           // Carry the repair through to the clock. This pass exists to catch
           // what the watcher missed, and what the watcher missed was never only

@@ -23,7 +23,7 @@ export const taskFilterSchema = createFilterSchema<Task>({
   status: enumFilter({
     field: (t) => {
       if (t.status === 'pending_approval') return 'pending_approval';
-      if (!t.enabled) return 'paused';
+      if (!t.enabled || t.status === 'paused') return 'paused';
       return 'active';
     },
     options: ['active', 'paused', 'pending_approval'],
@@ -60,7 +60,7 @@ export const taskSortOptions = createSortOptions<Task>({
     label: 'Status',
     accessor: (t) => {
       if (t.status === 'pending_approval') return 'pending_approval';
-      if (!t.enabled) return 'paused';
+      if (!t.enabled || t.status === 'paused') return 'paused';
       return 'active';
     },
   },

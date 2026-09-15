@@ -81,6 +81,7 @@ import type { TaskRegistrar } from './task-registrar.js';
 import type { ScheduleIdentityRegistry } from './schedule-identity.js';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { readTaskRootFile, scanTaskRoot, type ReadOutcome } from './skills-root-discovery.js';
+import { isPackageOwnedInRoot } from './task-file-update.js';
 import { reservedDirsFor, type TaskRoot } from './skills-roots.js';
 import { logger } from '../../lib/logger.js';
 
@@ -580,6 +581,9 @@ export class TaskFileWatcher implements TaskWatchHealth {
     const task = this.store.upsertFromFile(discovered.def, root.agentId, {
       source: 'discovery',
       problem: discovered.problem,
+      // A schedule an installed package owns keeps the switch a person set on
+      // the row, because its file is one DorkOS never writes (FB-26).
+      packageOwned: await isPackageOwnedInRoot(discovered.def.filePath, root),
     });
     this.registrar.syncTask(task.id);
   }

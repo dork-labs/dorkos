@@ -270,18 +270,17 @@ describe('TaskReconciler', () => {
       await expect(fs.access(filePath)).resolves.toBeUndefined();
     });
 
-    it('switches a waiting schedule off when its file goes, and back on when it returns', async () => {
+    it('pauses a waiting schedule when its file goes, and resumes it when it returns', async () => {
       const filePath = await writeTask('flaky-file', 'flaky-file');
       await reconciler.reconcile();
       const created = store.getTasks()[0];
 
       await fs.rm(filePath);
       await reconciler.reconcile();
-      // Paused and switched off. This says nothing about approval either way —
-      // the arm grant is a stored key now, so no status write can imply consent,
-      // and this method is free to mean exactly what it says again.
+      // Paused, which is what stops the clock. This says nothing about approval
+      // either way — the arm grant is a stored key now, so no status write can
+      // imply consent — and the person's own switch is left as it was (FB-26).
       expect(store.getTask(created.id)?.status).toBe('paused');
-      expect(store.getTask(created.id)?.enabled).toBe(false);
 
       // The file comes back before the grace period expires.
       await writeTask('flaky-file', 'flaky-file');
@@ -491,10 +490,7 @@ describe('TaskReconciler', () => {
       await recon.reconcile();
 
       const row = store.getByFilePath(filePath);
-      expect({ status: row?.status, enabled: row?.enabled }).toEqual({
-        status: 'paused',
-        enabled: false,
-      });
+      expect(row?.status).toBe('paused');
       // The file is untouched: pausing is the end for a skill that still exists
       // and is merely unreachable, and its history is the person's.
       await fs.access(filePath);

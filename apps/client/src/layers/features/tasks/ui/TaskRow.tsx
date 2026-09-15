@@ -83,7 +83,11 @@ function StatusDot({ task }: { task: Task }) {
   // The shared vocabulary, so a waiting task is the same amber a waiting agent
   // is, and a paused one is neutral rather than a second grey.
   const tone: StatusTone =
-    task.status === 'pending_approval' ? 'warning' : !task.enabled ? 'neutral' : 'success';
+    task.status === 'pending_approval'
+      ? 'warning'
+      : !task.enabled || task.status === 'paused'
+        ? 'neutral'
+        : 'success';
 
   return <span className={cn('inline-block size-2 rounded-full', STATUS_TONE_DOT[tone])} />;
 }
@@ -290,7 +294,11 @@ export function TaskRow({
             <div className="flex items-center gap-2">
               {task.cron ? (
                 <Switch
-                  checked={task.enabled}
+                  // A paused row's file is gone, so nothing will run whatever
+                  // `enabled` says; the switch reads off and cannot be flipped
+                  // until the file comes back.
+                  checked={task.enabled && task.status !== 'paused'}
+                  disabled={task.status === 'paused'}
                   onCheckedChange={(checked) => {
                     updateTask.mutate({ id: task.id, enabled: checked });
                   }}
@@ -322,7 +330,10 @@ export function TaskRow({
                     <Pencil className="mr-2 size-3.5" />
                     Edit
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleRunNow} disabled={!task.enabled}>
+                  <DropdownMenuItem
+                    onClick={handleRunNow}
+                    disabled={!task.enabled || task.status === 'paused'}
+                  >
                     <Play className="mr-2 size-3.5" />
                     Run Now
                   </DropdownMenuItem>

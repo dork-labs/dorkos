@@ -857,7 +857,8 @@ describe('TaskStore', () => {
       expect(store.markRemovedByFilePath(globalPath)).toBe(1);
 
       expect(store.getTask(globalTask.id)?.status).toBe('paused');
-      expect(store.getTask(globalTask.id)?.enabled).toBe(false);
+      // Paused, with the person's own switch left as it was (FB-26).
+      expect(store.getTask(globalTask.id)?.enabled).toBe(true);
       // The live task in the other checkout is untouched.
       expect(store.getTask(projectTask.id)?.status).toBe('active');
       expect(store.getTask(projectTask.id)?.enabled).toBe(true);
