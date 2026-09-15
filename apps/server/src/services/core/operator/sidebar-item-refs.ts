@@ -154,7 +154,9 @@ const ROOM_UNCHECKABLE =
 const ROOM_MISS =
   'did not match one room you can see. Rooms you are not in, and rooms that do not exist, ' +
   'answer the same way. Send roomId if you have it, and ask the person to put you in the room ' +
-  'if you should be in it.';
+  // No trailing period: the caller joins these with "; " and then appends its
+  // own sentence, so one here produced "…in it.. An item has to…".
+  'if you should be in it';
 
 /** Compare two paths ignoring a trailing separator, which no roster entry carries. */
 function samePath(a: string, b: string): boolean {

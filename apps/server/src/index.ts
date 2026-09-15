@@ -357,7 +357,7 @@ import {
   setRoomWorktreeManager,
   setRoomMergeService,
 } from './services/rooms/index.js';
-import { callerAuthor as roomCallerAuthor } from './services/rooms/room-capabilities.js';
+import { visibleRoomsForCaller } from './services/rooms/visible-rooms-for-caller.js';
 import { roomSessionPlace } from './services/rooms/repo/room-worktree-cwd.js';
 import {
   readRoomRepoConfig,
@@ -2905,30 +2905,13 @@ async function start() {
       // relay channel shares this one seam rather than building a second.
       ...(notifyDm && { notifyDm }),
       // What the two sidebar-section capabilities check a room reference against
-      // before they store one (DOR-2055). Resolved per call, because a room can
-      // be archived — or an agent removed from it — between two turns of one
-      // conversation.
-      //
-      // Scoped to the CALLER, through the rooms domain's own `callerAuthor` and
-      // its own `listRooms`, so the tool sees exactly what its caller sees and
-      // every grant those two already encode carries over without being
-      // restated. The owner still resolves every room on the install; an agent
-      // resolves the rooms it is seated in. Nothing here re-implements
-      // visibility — see `room-visibility.ts` for why "not visible" and "no such
-      // room" must remain indistinguishable.
-      //
-      // A caller whose identity cannot be verified raises `RoomError` out of
-      // `callerAuthor`, and that is "cannot answer" rather than "no rooms": the
-      // capability refuses the reference instead of storing one nobody checked.
-      listVisibleRooms: (caller) => {
-        try {
-          return roomService
-            .listRooms(roomCallerAuthor(roomService, caller).id, { includeArchived: false })
-            .map((room) => ({ roomId: room.id, name: room.title, slug: room.slug }));
-        } catch {
-          return undefined;
-        }
-      },
+      // before they store one (DOR-2055). Scoped to the CALLER, resolved per
+      // call, and failing closed — all three decisions live in the named unit,
+      // with `rooms/__tests__/visible-rooms-for-caller.test.ts` driving it
+      // against a real `RoomService`. It is a unit rather than a closure here
+      // precisely so something executes it: as three lines of wiring, reverting
+      // the caller resolution to the owner's left 712 tests green.
+      listVisibleRooms: (caller) => visibleRoomsForCaller(roomService, caller),
     };
     claudeRuntime.setMcpServerFactory((session, sessionId) =>
       // Managed servers first and `dorkos` last so it can never be shadowed —

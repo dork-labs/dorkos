@@ -489,6 +489,9 @@ describe('the sidebar-section capabilities', () => {
 
       expect(archived.isError).toBe(true);
       expect(archived.body.code).toBe('SIDEBAR_ITEM_NOT_FOUND');
+      // The per-item reasons are joined and then a sentence is appended, so a
+      // reason that ended in a period produced "…in it.. An item has to…".
+      expect(String(archived.body.error)).not.toContain('..');
       expect((archived.body.unresolved as string[])[0]!.split(' — ')[1]).toBe(
         (invented.body.unresolved as string[])[0]!.split(' — ')[1]
       );
@@ -705,11 +708,19 @@ describe('the sidebar-section capabilities', () => {
       expect(stored('g-1')!.items).toEqual([{ kind: 'room', roomId: UNSEEN_DM.roomId }]);
     });
 
-    it('is the SEAM that scopes it, not a filter a mutation could skip', async () => {
-      // The probe: hand the non-member handler the owner's roster and the same
-      // call succeeds. That is what says the refusal above comes from the caller
-      // scoping and from nothing else in this module — so deleting the scoping
-      // in `index.ts` is a change this suite would catch by inversion.
+    it('refuses because of the ROSTER it was handed, not something else in the module', async () => {
+      // An inversion probe, and it is worth being exact about its reach, because
+      // an earlier version of this comment over-claimed. Handing the SAME
+      // handler a wider roster makes the same call succeed, so the refusals
+      // above are caused by the roster contents and by nothing else here.
+      //
+      // What it does NOT pin is the wiring that decides whose roster that is:
+      // every test in this file injects its own `listVisibleRooms` fake, so none
+      // of them executes the caller resolution. Reverting that line to the
+      // owner's author id left 712 tests green, which is why it now lives in a
+      // named unit with its own suite —
+      // `services/rooms/__tests__/visible-rooms-for-caller.test.ts`, where the
+      // real `RoomService` is driven and the same mutation kills 7 of 10 cases.
       seed([group({ id: 'g-1', name: 'Work' })]);
       const widened = handlers.createSidebarAddToGroupHandler(
         deps({ listVisibleRooms: () => [...ROSTER_ROOMS, UNSEEN_DM] }),

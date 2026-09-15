@@ -129,15 +129,28 @@ export interface McpToolDeps {
    * itself: the operator domain has no business holding `RoomService` to ask one
    * yes-or-no question, and the answer is per-call anyway — a room can be
    * archived, or an agent removed from it, between two turns of one
-   * conversation. The visibility rule itself is NOT restated here; the wiring in
-   * `index.ts` resolves the caller through the rooms domain's own `callerAuthor`
-   * and lists through `RoomService.listRooms`, so every grant those already
-   * encode carries over by construction.
+   * conversation. The visibility rule itself is NOT restated here; the
+   * implementation is `rooms/visible-rooms-for-caller.ts`, which resolves the
+   * caller through the rooms domain's own `callerAuthor` and lists through
+   * `RoomService.listRooms`, so every grant those already encode carries over by
+   * construction.
+   *
+   * **Calling this WRITES.** Resolving the caller upserts an author row —
+   * `callerAuthor` goes through `resolveAgent` / `localHuman` / `bindOwner`, all
+   * of which mint a row the first time this database sees a principal. It is the
+   * same write every room verb already performs, so nothing new happens on any
+   * path that has already run one; it is stated because a lookup that writes is
+   * worth knowing about, and because it means this cannot be called against a
+   * read-only database.
    *
    * `undefined` means this process cannot answer for this caller — rooms are not
-   * wired, or the caller presented an identity that could not be verified. It is
-   * never "no rooms": a room reference is then refused rather than stored
-   * unchecked. See `SidebarRoster` in `core/operator/sidebar-item-refs.ts`.
+   * wired, the caller presented an identity that could not be verified, or the
+   * lookup failed some other way. The implementation's `catch` is TOTAL by
+   * design: this feeds a "may I store a reference to that room" decision, so it
+   * fails closed, and any failure becomes "cannot answer" rather than an empty
+   * list that would read as "no such room". It is never "no rooms": a room
+   * reference is then refused rather than stored unchecked. See `SidebarRoster`
+   * in `core/operator/sidebar-item-refs.ts`.
    */
   listVisibleRooms?: (
     caller: CapabilityHandlerContext
