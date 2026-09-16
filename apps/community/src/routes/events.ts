@@ -290,6 +290,7 @@ export function registerEventRoutes(
           try {
             while (!closed) {
               const state = await checkAccess();
+              if (closed) return;
               if (
                 !state?.active ||
                 !state.joined ||
