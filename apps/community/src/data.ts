@@ -168,13 +168,19 @@ export async function assertPrincipalCurrentInTransaction(
     );
     if (current.rowCount) return;
   } else if (sessionId) {
-    const current = await client.query(
-      `SELECT 1 FROM session s JOIN members m ON m.user_id=s."userId"
-       WHERE s.id=$1 AND m.id=$2 AND s."expiresAt">now() AND m.active
-       FOR SHARE OF s,m`,
-      [sessionId, principal.id]
+    // Member removal locks M then deletes S. Take those row locks in the same
+    // order; a joined FOR SHARE can lock S first and deadlock with removal.
+    const member = await client.query<{ user_id: string }>(
+      'SELECT user_id FROM members WHERE id=$1 AND active FOR SHARE',
+      [principal.id]
     );
-    if (current.rowCount) return;
+    if (member.rows[0]) {
+      const current = await client.query(
+        'SELECT 1 FROM session WHERE id=$1 AND "userId"=$2 AND "expiresAt">now() FOR SHARE',
+        [sessionId, member.rows[0].user_id]
+      );
+      if (current.rowCount) return;
+    }
   }
   throw new ApiError(401, 'UNAUTHENTICATED', 'This credential is unavailable.');
 }
