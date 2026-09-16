@@ -25,6 +25,7 @@ const secrets = [randomBytes(32).toString('hex'), randomBytes(32).toString('hex'
 const environment = {
   PATH: process.env.PATH,
   HOME: '/data/home',
+  PLAYWRIGHT_BROWSERS_PATH: '/opt/playwright',
   NODE_ENV: 'production',
 };
 await mkdir(environment.HOME, { recursive: true, mode: 0o700 });
