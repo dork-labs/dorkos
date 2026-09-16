@@ -84,6 +84,15 @@ vi.mock('../community-connections.js', () => ({
 vi.mock('../../services/communities/remote/state.js', () => ({
   getRemoteCommunityAdapter: () => fixture.adapter,
   getRemoteConnectionStore: () => ({ get: async () => ({ remoteCommunityId: 'community-a' }) }),
+  getRemoteCommunityOriginIdempotencyKey: (
+    ref: string,
+    roomId: string,
+    owner: string,
+    entryId: string
+  ) =>
+    ref === fixture.ref && roomId === 'room-a' && owner === 'owner-a' && entryId === 'entry-a'
+      ? 'delivery-origin-a'
+      : null,
   getRemoteCommunityDeliverySnapshot: () => ({
     community: fixture.ref,
     roomId: 'room-a',
@@ -117,6 +126,7 @@ vi.mock('../../services/communities/remote/state.js', () => ({
   getRemoteCommunityLifecycle: () => ({
     haltRoom: vi.fn(async () => 1),
     haltAgent: vi.fn(async () => 1),
+    refreshSubscriptions: vi.fn(),
   }),
   onRemoteCommunityDeliveryChange: () => () => undefined,
 }));
@@ -167,7 +177,11 @@ describe('qualified remote community writes and live projections', () => {
       text: 'hello',
       idempotencyKey: 'retry-a',
     });
-    expect(accepted.body.entry).toMatchObject({ remoteSeq: 1, authorKind: 'human' });
+    expect(accepted.body.entry).toMatchObject({
+      remoteSeq: 1,
+      authorKind: 'human',
+      originIdempotencyKey: 'delivery-origin-a',
+    });
   });
 
   it('relays bounded attachment bytes without returning a remote storage URL', async () => {

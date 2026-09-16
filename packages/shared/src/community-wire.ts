@@ -262,6 +262,14 @@ export const CommunityWireEventSchema = z.discriminatedUnion('type', [
     type: z.literal('snapshot'),
     channel: CommunityWireChannelSchema,
     entries: z.array(CommunityWireEntrySchema).max(100),
+    /** Authoritative channel sequence captured before this subscription's replay query. */
+    capturedSeq: z.number().int().nonnegative(),
+    cursor,
+  }),
+  /** Native consumers use this durable boundary to distinguish bounded replay from new work. */
+  z.strictObject({
+    type: z.literal('replay_complete'),
+    capturedSeq: z.number().int().nonnegative(),
     cursor,
   }),
   z.strictObject({ type: z.literal('entry'), entry: CommunityWireEntrySchema, cursor }),

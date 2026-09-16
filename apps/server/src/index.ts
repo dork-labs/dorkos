@@ -320,6 +320,7 @@ import {
   startApprovalVerdictDelivery,
 } from './services/core/approvals/index.js';
 import { createMcpRouter } from './routes/mcp.js';
+import { setRemoteCommunitySubscriptionProbe } from './routes/test-control.js';
 import { createMcpAuth } from './middleware/mcp-auth.js';
 import { validateMcpOrigin } from './middleware/mcp-origin.js';
 import { requireMcpEnabled } from './middleware/mcp-enabled.js';
@@ -345,6 +346,7 @@ import {
 } from './services/communities/remote/state.js';
 import { CommunityOutboxRuntime } from './services/communities/remote/community-outbox-runtime.js';
 import { RemoteRoomSubscriptionBridge } from './services/communities/remote/remote-room-subscription-bridge.js';
+import { RemoteRoomSubscriptionRuntime } from './services/communities/remote/remote-room-subscription-runtime.js';
 import { INTERVALS } from './config/constants.js';
 import { resolveDorkHome } from './lib/dork-home.js';
 import { acquireInstanceLock } from './lib/instance-lock.js';
@@ -499,6 +501,7 @@ let meshCore: MeshCore | undefined;
 let agentMcpServerService: AgentMcpServerService | undefined;
 let agentMcpOAuthService: AgentMcpOAuthService | undefined;
 let remoteCommunityRuntime: CommunityOutboxRuntime | undefined;
+let remoteCommunitySubscriptions: RemoteRoomSubscriptionRuntime | undefined;
 let extensionManager: ExtensionManager | undefined;
 let connectorRuntimeMcpListener: ConnectorRuntimeMcpListener | undefined;
 let testComposioFixture:
@@ -1348,8 +1351,27 @@ async function start() {
     undefined,
     remoteCommunityRuntime.outbox
   );
-  setRemoteCommunityLifecycle(remoteCommunityBridge.current);
+  remoteCommunitySubscriptions = new RemoteRoomSubscriptionRuntime({
+    bridge: remoteCommunityBridge.current,
+    enrollments: remoteCommunityRuntime.enrollments,
+    adapters: (communityRef, ownerAuthorId) =>
+      getRemoteCommunityAdapter(communityRef, ownerAuthorId),
+    resolveLocalAgentAuthor: (localAgentId) =>
+      roomAuthors.getById(localAgentId)?.kind === 'agent' ? localAgentId : null,
+  });
+  setRemoteCommunityLifecycle(remoteCommunitySubscriptions);
   remoteCommunityRuntime.start();
+  remoteCommunitySubscriptions.start();
+  if (env.DORKOS_TEST_RUNTIME) {
+    setRemoteCommunitySubscriptionProbe(
+      (ref, roomId) =>
+        remoteCommunitySubscriptions?.observation(
+          ref as import('@dorkos/shared/community-adapter').CommunityRef,
+          roomId,
+          resolveOperatorAuthor(roomAuthors).id
+        ) ?? null
+    );
+  }
   // What your agents may say when you come back (team-room-home §D5.2). The
   // read-state route is what tells it somebody is here, so it is registered
   // beside the service that route already reaches for.
@@ -4673,6 +4695,9 @@ async function start() {
 // Extracted so the admin router can invoke it before a restart.
 async function shutdownServices() {
   logger.info('[DorkOS] shutting down services');
+  remoteCommunitySubscriptions?.stop();
+  remoteCommunitySubscriptions = undefined;
+  setRemoteCommunitySubscriptionProbe(undefined);
   remoteCommunityRuntime?.stop();
   remoteCommunityRuntime = undefined;
   await testComposioFixture?.close();

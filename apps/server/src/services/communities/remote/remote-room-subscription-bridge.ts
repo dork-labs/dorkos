@@ -45,6 +45,7 @@ export interface LocalAgentAuthorResolver {
 /** Server-only bridge from a native remote stream into the existing room dispatcher. */
 export class RemoteRoomSubscriptionBridge {
   private readonly confirmedNativeOrigins = new Set<string>();
+  private readonly dispatchesSinceBoot = new Map<string, number>();
 
   constructor(
     private readonly mirrors: RemoteMirrorStore,
@@ -169,6 +170,8 @@ export class RemoteRoomSubscriptionBridge {
       return;
     }
     this.service.dispatchImportedRemoteEntry(local.id, this.dispatchEntry(room, event, saved));
+    const dispatchKey = `${room.communityRef}:${room.ownerAuthorId}:${room.remoteRoomId}`;
+    this.dispatchesSinceBoot.set(dispatchKey, (this.dispatchesSinceBoot.get(dispatchKey) ?? 0) + 1);
   }
 
   /**
@@ -189,6 +192,25 @@ export class RemoteRoomSubscriptionBridge {
       .roomIdsForOwner(communityRef, ownerAuthorId)
       .map((localRoomId) => this.service.haltAgent(localRoomId, authorId, ownerAuthorId));
     await Promise.all(stops);
+  }
+
+  /** Apply a successful owner-qualified room discovery before any stream frame can dispatch. */
+  authorizeRoom(room: MirrorRoomInput): void {
+    this.mirrors.ensureRoom(room);
+  }
+
+  /** Count successful inbound dispatch claims for one owner-qualified stream since this process booted. */
+  dispatchCount(
+    communityRef: MirrorRoomInput['communityRef'],
+    remoteRoomId: string,
+    ownerAuthorId: string
+  ): number {
+    return this.dispatchesSinceBoot.get(`${communityRef}:${ownerAuthorId}:${remoteRoomId}`) ?? 0;
+  }
+
+  /** Mark cached rooms stale after the owner-qualified background stream becomes unavailable. */
+  markStale(communityRef: MirrorRoomInput['communityRef'], ownerAuthorId: string): void {
+    this.mirrors.markStale(communityRef, ownerAuthorId);
   }
 
   /** Stop all locally enrolled agents in one qualified mirror without network access. */
