@@ -436,11 +436,13 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
         const iterator = stream[Symbol.asyncIterator]();
         return {
           next: (...value: [] | [unknown]) => iterator.next(...value),
-          return: async () => {
+          return: () => {
             cancelled.abort();
-            return iterator.return
-              ? iterator.return()
-              : { done: true as const, value: undefined as never };
+            // Closing a generic port subscriber must not wait for a parked
+            // native `next()`. The abort unblocks pinnedSse; its eventual
+            // iterator cleanup is intentionally detached from this consumer.
+            void iterator.return?.().catch(() => undefined);
+            return Promise.resolve({ done: true as const, value: undefined as never });
           },
         };
       },

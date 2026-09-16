@@ -14,6 +14,7 @@ import { CommunityOutboxPolicy } from '../community-outbox-policy.js';
 import { CommunityOutboxProjection } from '../community-outbox-projection.js';
 import { CommunityOutboxStore, type CommunityOutboxItem } from '../community-outbox-store.js';
 import { CommunityOutboxWorker } from '../community-outbox-worker.js';
+import { CommunityOutboxRuntime } from '../community-outbox-runtime.js';
 import { RemoteMirrorStore } from '../mirror-store.js';
 
 const REF = 'remote_outbox' as CommunityRef;
@@ -385,6 +386,60 @@ describe('community outbox', () => {
         idempotencyKey: owned.idempotencyKey,
       })
     ).toBe('terminal');
+  });
+
+  it('keeps retry owner-qualified and refuses missing enrollment or revoked mirror authority', () => {
+    const harness = createRoomHarness({
+      agents: agentLookupFor({ '/agents/a': { name: 'Agent A' } }),
+    });
+    const agent = harness.authors.resolveAgent('/agents/a', 'Agent A');
+    const runtime = new CommunityOutboxRuntime({
+      db: harness.db,
+      roomStore: harness.store,
+      authors: harness.authors,
+      attachmentRows: {} as never,
+      attachmentBytes: {} as never,
+      adapters: () => ({}) as never,
+      confirmNativePostOrigin: () => undefined,
+      now: () => NOW,
+    });
+    runtime.mirrors.ensureRoom({
+      communityRef: REF,
+      remoteRoomId: 'general',
+      title: 'General',
+      topic: null,
+      ownerAuthorId: harness.human,
+      accessors: [{ authorId: agent.id, responseMode: 'always' }],
+      authorizedAt: new Date(NOW).toISOString(),
+    });
+    const item = outboxItem({
+      ownerAuthorId: harness.human,
+      localAgentId: agent.mintedForManifestId!,
+      attempts: 1,
+      nextAttemptAt: new Date(NOW + 10_000).toISOString(),
+    });
+    harness.db.transaction((tx) => runtime.outbox.enqueue(item, tx));
+    const input = {
+      communityRef: REF,
+      remoteRoomId: item.remoteRoomId,
+      ownerAuthorId: harness.human,
+      idempotencyKey: item.idempotencyKey,
+    };
+    expect(runtime.retryNow(input)).toBe('terminal');
+    expect(runtime.outbox.isPending(item.id)).toBe(true);
+
+    runtime.enrollments.activate({
+      communityRef: REF,
+      localAgentId: item.localAgentId,
+      remoteMemberId: 'remote-a',
+      ownerAuthorId: harness.human,
+    });
+    expect(runtime.retryNow({ ...input, ownerAuthorId: 'other-owner' })).toBe('missing');
+    expect(runtime.outbox.isPending(item.id)).toBe(true);
+
+    runtime.mirrors.revokeAbsentRooms(REF, harness.human, new Set());
+    expect(runtime.retryNow(input)).toBe('terminal');
+    expect(runtime.outbox.isPending(item.id)).toBe(true);
   });
 
   it('publishes an owner replacement when expiry alone removes a pending delivery', async () => {
