@@ -12,7 +12,15 @@ import {
   type CommunityWireChannel,
 } from '@dorkos/shared/community-wire';
 import type { CommunityAuth } from '../auth.js';
-import { lockChannel, requireLiveRole, requireMember, transaction, type Member } from '../data.js';
+import {
+  lockChannel,
+  requireLiveRole,
+  requireMember,
+  requirePrincipal,
+  transaction,
+  type Member,
+  type Principal,
+} from '../data.js';
 import { ApiError, json, readJson } from '../http.js';
 
 interface ChannelRow {
@@ -39,17 +47,18 @@ function project(row: ChannelRow): CommunityWireChannel {
   };
 }
 
-async function channelProjection(pool: Pool, id: string, member: Member) {
+async function channelProjection(pool: Pool, id: string, member: Member | Principal) {
+  const agent = 'kind' in member && member.kind === 'agent';
   const result = await pool.query<ChannelRow>(
     `SELECT c.id,c.name,c.description,c.visibility,c.archived,c.created_at,
-      EXISTS(SELECT 1 FROM channel_members cm WHERE cm.channel_id=c.id AND cm.member_id=$2) AS joined,
+      EXISTS(SELECT 1 FROM ${agent ? 'agent_channel_members' : 'channel_members'} cm WHERE cm.channel_id=c.id AND cm.${agent ? 'agent_id' : 'member_id'}=$2) AS joined,
       GREATEST(c.last_seq-COALESCE(rc.seq,0),0)::text AS unread_count
      FROM channels c LEFT JOIN read_cursors rc ON rc.channel_id=c.id AND rc.member_id=$2
      WHERE c.id=$1 AND c.community_id=$3`,
     [id, member.id, member.community_id]
   );
   const row = result.rows[0];
-  if (!row || (row.visibility === 'private' && !row.joined)) {
+  if (!row || (agent && !row.joined) || (row.visibility === 'private' && !row.joined)) {
     throw new ApiError(404, 'NOT_FOUND', 'Channel not found.');
   }
   return project(row);
@@ -61,15 +70,16 @@ export function registerChannelRoutes(
   { pool, auth }: { pool: Pool; auth: CommunityAuth }
 ) {
   app.get('/api/v1/channels', async (c) => {
-    const member = await requireMember(c, auth, pool);
+    const member = await requirePrincipal(c, auth, pool, 'read');
+    const agent = member.kind === 'agent';
     const result = await pool.query<ChannelRow>(
       `SELECT c.id,c.name,c.description,c.visibility,c.archived,c.created_at,
-        (cm.member_id IS NOT NULL) AS joined,
+        (cm.${agent ? 'agent_id' : 'member_id'} IS NOT NULL) AS joined,
         GREATEST(c.last_seq-COALESCE(rc.seq,0),0)::text AS unread_count
        FROM channels c
-       LEFT JOIN channel_members cm ON cm.channel_id=c.id AND cm.member_id=$1
+       LEFT JOIN ${agent ? 'agent_channel_members' : 'channel_members'} cm ON cm.channel_id=c.id AND cm.${agent ? 'agent_id' : 'member_id'}=$1
        LEFT JOIN read_cursors rc ON rc.channel_id=c.id AND rc.member_id=$1
-       WHERE c.community_id=$2 AND (c.visibility='public' OR cm.member_id IS NOT NULL)
+       WHERE c.community_id=$2 AND ${agent ? 'cm.agent_id IS NOT NULL' : "(c.visibility='public' OR cm.member_id IS NOT NULL)"}
        ORDER BY c.created_at,c.id`,
       [member.id, member.community_id]
     );
@@ -97,7 +107,7 @@ export function registerChannelRoutes(
   });
 
   app.get('/api/v1/channels/:id', async (c) => {
-    const member = await requireMember(c, auth, pool);
+    const member = await requirePrincipal(c, auth, pool, 'read');
     return json(c, CommunityWireChannelResponseSchema, {
       channel: await channelProjection(pool, c.req.param('id'), member),
     });
@@ -160,28 +170,36 @@ export function registerChannelRoutes(
   });
 
   app.get('/api/v1/channels/:id/members', async (c) => {
-    const member = await requireMember(c, auth, pool);
+    const member = await requirePrincipal(c, auth, pool, 'read');
     const channel = await channelProjection(pool, c.req.param('id'), member);
     if (!channel.joined) throw new ApiError(403, 'FORBIDDEN', 'Join this channel first.');
     const rows = await pool.query<{
       id: string;
       display_name: string;
       handle: string;
-      role: Member['role'];
+      role: Member['role'] | null;
+      owner_member_id: string | null;
+      kind: 'human' | 'agent';
       joined_at: Date;
     }>(
-      `SELECT m.id,m.display_name,m.handle,m.role,cm.joined_at FROM channel_members cm JOIN members m ON m.id=cm.member_id
-       WHERE cm.channel_id=$1 AND m.active ORDER BY cm.joined_at`,
+      `SELECT m.id,m.display_name,m.handle,m.role,NULL::uuid AS owner_member_id,'human' AS kind,cm.joined_at
+       FROM channel_members cm JOIN members m ON m.id=cm.member_id
+       WHERE cm.channel_id=$1 AND m.active
+       UNION ALL SELECT a.id,a.display_name,a.handle,NULL::text AS role,a.owner_member_id,'agent' AS kind,acm.joined_at
+       FROM agent_channel_members acm JOIN agents a ON a.id=acm.agent_id
+       JOIN members owner ON owner.id=a.owner_member_id
+       WHERE acm.channel_id=$1 AND a.active AND owner.active
+       ORDER BY joined_at,id`,
       [channel.id]
     );
     return json(c, CommunityWireMemberListResponseSchema, {
       members: rows.rows.map((row) => ({
         memberId: row.id,
-        kind: 'human' as const,
+        kind: row.kind,
         displayName: row.display_name,
         handle: row.handle,
         role: row.role,
-        ownerMemberId: null,
+        ownerMemberId: row.owner_member_id,
         joinedAt: row.joined_at.toISOString(),
       })),
     });
@@ -252,6 +270,10 @@ export function registerChannelRoutes(
         [body.role, c.req.param('id'), actor.community_id]
       );
       if (!result.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Member not found.');
+      await client.query(
+        'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
+        [actor.community_id, actor.id, 'member.role', result.rows[0].id]
+      );
       return result.rows[0];
     });
     return json(c, CommunityWireMemberResponseSchema, {

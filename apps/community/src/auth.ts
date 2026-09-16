@@ -19,7 +19,11 @@ export function createCommunityAuth(pool: Pool, config: CommunityConfig) {
     const pending = verifyValue(readCookie(cookieHeader, 'community_admission'), config.authSecret);
     if (pending) {
       const result = await pool.query(
-        'SELECT 1 FROM pending_admissions WHERE token_hash=$1 AND expires_at>now()',
+        `SELECT 1 FROM pending_admissions p JOIN invites i ON i.id=p.invite_id
+         JOIN members m ON m.id=i.issuer_member_id
+         WHERE p.token_hash=$1 AND p.expires_at>now() AND i.expires_at>now()
+           AND i.revoked_at IS NULL
+           AND m.active AND m.role IN ('owner','admin')`,
         [hashSecret(pending)]
       );
       if (result.rowCount) return true;

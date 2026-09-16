@@ -19,6 +19,10 @@ import { mintHandle } from './handles.js';
 import { registerChannelRoutes } from './routes/channels.js';
 import { registerEntryRoutes } from './routes/entries.js';
 import { registerEventRoutes } from './routes/events.js';
+import { registerInviteRoutes } from './routes/invites.js';
+import { registerMemberRoutes } from './routes/members.js';
+import { registerPairingRoutes } from './routes/pairings.js';
+import { registerAgentRoutes } from './routes/agents.js';
 import { communities } from './schema.js';
 
 /** Assemble the injectable HTTP app without reading environment variables. */
@@ -191,5 +195,20 @@ export function createCommunityApp({
   registerChannelRoutes(app, { pool, auth });
   registerEntryRoutes(app, { pool, auth, config });
   registerEventRoutes(app, { pool, auth, config, hooks });
+  registerInviteRoutes(app, {
+    pool,
+    auth,
+    config,
+    limitPreview: (c) =>
+      limitAttempts(`invite-preview:${peer(c)}`, config.limits.invitePreviewAttemptsPerMinute),
+  });
+  registerMemberRoutes(app, { pool, auth });
+  registerPairingRoutes(app, {
+    pool,
+    auth,
+    config,
+    limitStart: (c) => limitAttempts(`pairing:${peer(c)}`, config.limits.pairingAttemptsPerMinute),
+  });
+  registerAgentRoutes(app, { pool, auth, config });
   return app;
 }

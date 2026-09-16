@@ -39,10 +39,12 @@ export const COMMUNITY_API_V1_ROUTES = {
   pairingStart: '/api/v1/pairings/start',
   pairingApprove: '/api/v1/pairings/approve',
   pairingPoll: '/api/v1/pairings/poll',
+  pairingCancel: '/api/v1/pairings/cancel',
   pairingExchange: '/api/v1/pairings/exchange',
   channels: '/api/v1/channels',
   channel: '/api/v1/channels/:id',
   channelMembers: '/api/v1/channels/:id/members',
+  channelAgents: '/api/v1/channels/:id/agents',
   entries: '/api/v1/channels/:id/entries',
   channelAttachments: '/api/v1/channels/:id/attachments',
   channelReadCursor: '/api/v1/channels/:id/read-cursor',
@@ -147,6 +149,12 @@ export const CommunityWireChannelResponseSchema = z.strictObject({
 });
 /** Add a named member to a channel; the server verifies role authority. */
 export const CommunityWireChannelMemberRequestSchema = z.strictObject({ memberId: id });
+/** Join or remove an agent by its actual community member ID. */
+export const CommunityWireAgentChannelMembershipRequestSchema = z.strictObject({ agentId: id });
+/** Receipt for a successful agent channel join; removal returns empty 204. */
+export const CommunityWireAgentChannelMembershipResponseSchema = z.strictObject({
+  joined: z.literal(true),
+});
 
 /** Authorized attachment metadata. Storage keys and paths are intentionally absent. */
 export const CommunityWireAttachmentSchema = z.strictObject({
@@ -261,6 +269,14 @@ export const CommunityWireInviteCreateResponseSchema = z.strictObject({
   invite: CommunityWireInviteSchema,
   token: id,
 });
+/** Ordinary invite listings contain metadata but never a reusable token. */
+export const CommunityWireInviteListResponseSchema = z.strictObject({
+  invites: z.array(CommunityWireInviteSchema),
+});
+/** Invite preflight only confirms admission eligibility. */
+export const CommunityWireInvitePreflightResponseSchema = z.strictObject({
+  granted: z.literal(true),
+});
 /** Preview and redeem consume a fragment token through same-origin POST. */
 export const CommunityWireInviteTokenRequestSchema = z.strictObject({ token: id });
 /** Rate-limited preview reveals only name, inviter and optional channel. */
@@ -286,6 +302,17 @@ export const CommunityWirePairingStartResponseSchema = z.strictObject({
 });
 /** Human approval acts on a pending request through their authenticated session. */
 export const CommunityWirePairingApproveRequestSchema = z.strictObject({ pairingId: id });
+/** Human approval receipt without a verifier, code or bearer. */
+export const CommunityWirePairingApproveResponseSchema = z.strictObject({
+  approved: z.literal(true),
+});
+/** The requesting local server must prove its verifier to poll a pairing. */
+export const CommunityWirePairingPollRequestSchema = z.strictObject({
+  pairingId: id,
+  verifier: id,
+});
+/** Cancellation uses the same verifier-bound identity as polling. */
+export const CommunityWirePairingCancelRequestSchema = CommunityWirePairingPollRequestSchema;
 /** Browser-safe pairing status; neither code nor bearer appears here. */
 export const CommunityWirePairingStatusResponseSchema = z.strictObject({
   pairingId: id,
@@ -304,6 +331,7 @@ export const CommunityWirePairingExchangeRequestSchema = z.strictObject({
 export const CommunityWireGrantSchema = z.strictObject({
   id,
   memberId: id,
+  installName: z.string().min(1).max(120),
   scopes: z.array(z.enum(['read', 'post', 'enroll-agent'])),
   createdAt: timestamp,
 });
@@ -341,6 +369,8 @@ export const CommunityWireOwnerTransferRequestSchema = z.strictObject({
   successorMemberId: id,
   password: id,
 });
+/** Transfer receipt with the new current owner identity. */
+export const CommunityWireOwnerTransferResponseSchema = z.strictObject({ ownerMemberId: id });
 /** Archive manifest metadata; archive bytes use an authorized download stream. */
 export const CommunityWireExportResponseSchema = z.strictObject({
   archiveId: id,
