@@ -444,7 +444,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         await localPage.evaluate(
           () =>
             new Promise<void>((resolve) =>
-              requestAnimationFrame(() => requestAnimationFrame(resolve))
+              requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
             )
         );
         await expect(
