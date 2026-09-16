@@ -382,7 +382,7 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
           }
         }
       } catch (error) {
-        if (cancelled.signal.aborted) return;
+        if (cancelled.signal.aborted || signal?.aborted) return;
         throw remoteRoomError(error, community, roomId);
       }
     })();

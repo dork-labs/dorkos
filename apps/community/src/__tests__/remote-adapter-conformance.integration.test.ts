@@ -387,6 +387,28 @@ describe('RemoteCommunityAdapter immutable community cursor scope', () => {
   });
 });
 
+describe('RemoteCommunityAdapter caller stream cancellation', () => {
+  it('ends a parked caller-aborted stream after its snapshot', async () => {
+    const adapter = new RemoteCommunityAdapter(ref, ownerKey, store);
+    await adapter.connect();
+    const roomId = await seedRoom(adapter);
+    const controller = new AbortController();
+    const iterator = adapter
+      .subscribeRoom(roomId, undefined, controller.signal)
+      [Symbol.asyncIterator]();
+    try {
+      const snapshot = await iterator.next();
+      expect(snapshot.done).toBe(false);
+      expect(snapshot.value?.type).toBe('snapshot');
+
+      controller.abort();
+      await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined });
+    } finally {
+      await iterator.return?.();
+    }
+  });
+});
+
 describe('RemoteCommunityAdapter native sequence metadata', () => {
   it('retains wire sequence for history, snapshot, and live entry projections', async () => {
     const adapter = new RemoteCommunityAdapter(ref, ownerKey, store);
