@@ -255,6 +255,8 @@ export function createPlaygroundTransport(): Transport {
       // its infinite query reads `nextCursor` off the page it is handed, which
       // threw on `null` and turned every bar into a red error card. An empty
       // page is the honest answer for a playground with no server: a quiet bell.
+      // The community list also mounts in Messaging; no server means no connections.
+      if (prop === 'listCommunityConnections') return async () => [];
       if (prop === 'listNotifications') {
         return async () => ({ notifications: [], nextCursor: null, unreadCount: 0 });
       }
