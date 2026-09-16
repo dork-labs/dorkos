@@ -7,6 +7,7 @@ import {
   settleUntil,
 } from '../../../rooms/__tests__/room-test-harness.js';
 import { CommunityAgentEnrollmentStore } from '../agent-enrollment-store.js';
+import { CommunityOutboxStore } from '../community-outbox-store.js';
 import { RemoteMirrorStore } from '../mirror-store.js';
 import {
   RemoteRoomSubscriptionBridge,
@@ -47,6 +48,87 @@ function live(value: CommunityEntry, seq: number): RemoteLiveEntry {
 }
 
 describe('RemoteRoomSubscriptionRuntime', () => {
+  it('preserves persisted grants and pending work until Mesh becomes authoritative after restart', async () => {
+    const harness = createRoomHarness({
+      agents: agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } }),
+    });
+    const agent = harness.authors.resolveAgent('/agents/ana', 'Ana');
+    const enrollments = new CommunityAgentEnrollmentStore(harness.db);
+    enrollments.activate({
+      communityRef: REF,
+      localAgentId: 'mesh-manifest-ana',
+      remoteMemberId: 'remote-ana',
+      ownerAuthorId: harness.human,
+    });
+    const mirrors = new RemoteMirrorStore(harness.db, harness.store, harness.authors);
+    const outbox = new CommunityOutboxStore(harness.db);
+    const bridge = new RemoteRoomSubscriptionBridge(
+      mirrors,
+      harness.service,
+      enrollments,
+      (id) => (id === 'mesh-manifest-ana' ? agent.id : null),
+      undefined,
+      outbox
+    );
+    bridge.authorizeRoom({
+      communityRef: REF,
+      remoteRoomId: ROOM_ID,
+      title: 'General',
+      topic: null,
+      ownerAuthorId: harness.human,
+      accessors: [{ authorId: agent.id, responseMode: 'always' }],
+      authorizedAt: '2026-09-16T00:00:00.000Z',
+    });
+    harness.db.transaction((tx) =>
+      outbox.enqueue(
+        {
+          id: 'pending-restart',
+          communityRef: REF,
+          remoteRoomId: ROOM_ID,
+          ownerAuthorId: harness.human,
+          localEntryId: 'local-entry',
+          localParentEntryId: null,
+          localAgentId: 'mesh-manifest-ana',
+          attachmentIds: '[]',
+          idempotencyKey: 'restart-key',
+          state: 'pending',
+          createdAt: '2026-09-16T00:00:00.000Z',
+          expiresAt: '2026-09-16T00:05:00.000Z',
+          remoteEntryId: null,
+          failure: null,
+          attempts: 0,
+          nextAttemptAt: '2026-09-16T00:00:00.000Z',
+        },
+        tx
+      )
+    );
+    let meshReady = false;
+    const runtime = new RemoteRoomSubscriptionRuntime({
+      bridge,
+      enrollments,
+      adapters: () => ({
+        listRooms: async () => [],
+        subscribeNativeRoom: () => (async function* () {})(),
+      }),
+      resolveLocalAgentAuthor: (id) => (id === 'mesh-manifest-ana' ? agent.id : null),
+      isReady: () => meshReady,
+      retryMs: 1,
+    });
+    const localRoomId = mirrors.localRoomIdForOwner(REF, ROOM_ID, harness.human)!;
+    runtime.start();
+    expect(mirrors.isActivelyAuthorized(localRoomId, harness.human)).toBe(true);
+    expect(outbox.isPending('pending-restart')).toBe(true);
+
+    meshReady = true;
+    runtime.start();
+    await settleUntil(
+      () => !outbox.isPending('pending-restart'),
+      'the first authoritative refresh'
+    );
+    expect(mirrors.isActivelyAuthorized(localRoomId, harness.human)).toBe(false);
+    runtime.stop();
+  });
+
   it('imports a captured replay without turns, then dispatches one fresh human mention without a browser', async () => {
     const harness = createRoomHarness({
       agents: agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } }),

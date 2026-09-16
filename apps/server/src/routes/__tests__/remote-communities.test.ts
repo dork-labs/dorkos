@@ -272,6 +272,10 @@ describe('qualified remote community writes and live projections', () => {
       state: 'pending',
       retryable: true,
     });
+    const malformed = await request(testServer).post(
+      `/api/communities/bad%21/rooms/room-a/deliveries/delivery-retry-a/retry`
+    );
+    expect(malformed.status).toBe(400);
   });
 
   it('stops local remote-room work through the owner-qualified lifecycle without a remote request', async () => {

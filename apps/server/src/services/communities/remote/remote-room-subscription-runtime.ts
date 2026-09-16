@@ -49,6 +49,8 @@ export interface RemoteRoomSubscriptionRuntimeDeps {
   isRoomJoined?: (room: CommunityRoom) => boolean;
   /** Test seam for native private entry metadata retained by the adapter. */
   toLiveEntry?: (entry: CommunityEntry) => RemoteLiveEntry | null;
+  /** Mesh is authoritative only after startup reconciliation completes. */
+  isReady?: () => boolean;
 }
 
 interface DesiredSubscription {
@@ -103,7 +105,10 @@ export class RemoteRoomSubscriptionRuntime {
 
   /** Discover active owner-qualified enrollment streams and begin consuming them. */
   start(): void {
-    if (!this.stopped) return;
+    if (!this.stopped) {
+      this.refresh();
+      return;
+    }
     this.stopped = false;
     this.refresh();
     this.timer = setInterval(() => this.refresh(), this.deps.retryMs ?? 5_000);
@@ -161,7 +166,7 @@ export class RemoteRoomSubscriptionRuntime {
   }
 
   private refresh(): void {
-    if (this.stopped || this.reconciling) return;
+    if (this.stopped || this.reconciling || this.deps.isReady?.() === false) return;
     this.reconciling = this.reconcile().finally(() => {
       this.reconciling = undefined;
     });
