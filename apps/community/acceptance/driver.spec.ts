@@ -586,6 +586,8 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       // snapshot while the Community keeps returning 503. Releasing then
       // proves that the original key confirms exactly once.
       const retryMarker = `retry-now-${crypto.randomUUID()}`;
+      const retryTurnBeforeStart = await sessionSpine(recoveredTurnSessionId);
+      expect(retryTurnBeforeStart.lifecycle).toBe('idle');
       const entriesBeforeRetry = await agentEntries();
       await json(`${env.communityA}/api/test/delivery-receipt-gate`, {
         method: 'POST',
@@ -666,6 +668,11 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       expect(
         retryConfirmed.filter((entry) => entry.originIdempotencyKey === retryIdempotencyKey)
       ).toHaveLength(1);
+      await waitForTurnToSettle(
+        recoveredTurnSessionId,
+        turnEndCount(retryTurnBeforeStart),
+        'the retryable attachment turn did not settle before the after-persistence delivery'
+      );
       await expect(retryNow).toHaveCount(0);
       await localPage.goto(
         `${env.local}/channels?community=${encodeURIComponent(refA)}&id=${encodeURIComponent(roomA!.roomId)}`
