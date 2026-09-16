@@ -153,4 +153,27 @@ export class CommunityAgentEnrollmentStore {
         }
       : null;
   }
+
+  /** List only active local agent bindings owned by this install authority. */
+  activeForOwner(
+    communityRef: CommunityRef,
+    ownerAuthorId: string
+  ): readonly CommunityAgentEnrollment[] {
+    return this.db
+      .select()
+      .from(communityAgentEnrollments)
+      .where(
+        and(
+          eq(communityAgentEnrollments.communityRef, communityRef),
+          eq(communityAgentEnrollments.ownerAuthorId, ownerAuthorId),
+          eq(communityAgentEnrollments.state, 'active')
+        )
+      )
+      .all()
+      .map((row) => ({
+        ...row,
+        communityRef: row.communityRef as CommunityRef,
+        state: row.state as CommunityAgentEnrollment['state'],
+      }));
+  }
 }

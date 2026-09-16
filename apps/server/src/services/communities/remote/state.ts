@@ -16,7 +16,22 @@ let store: RemoteConnectionStore | undefined;
 let pairing: RemoteCommunityPairingService | undefined;
 let db: Db | undefined;
 let enrollments: CommunityAgentEnrollmentStore | undefined;
+let lifecycle: RemoteCommunityLifecycle | undefined;
 const adapters = new Map<string, RemoteCommunityAdapter>();
+
+/** The locally durable stop surface; it never requires the remote service to be reachable. */
+export interface RemoteCommunityLifecycle {
+  haltRoom(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    ownerAuthorId: string
+  ): Promise<number>;
+  haltAgent(
+    communityRef: CommunityRef,
+    localAgentId: string,
+    ownerAuthorId: string
+  ): Promise<number>;
+}
 
 /** The encrypted credential and owner-scoped metadata store for remote communities. */
 export function getRemoteConnectionStore(): RemoteConnectionStore {
@@ -39,6 +54,17 @@ export function getRemoteCommunityEnrollmentStore(): CommunityAgentEnrollmentSto
   if (!enrollments || !db)
     throw new Error('Remote community enrollment store requires startup database wiring');
   return enrollments;
+}
+
+/** Bind the production mirror lifecycle after the room subsystem is constructed. */
+export function setRemoteCommunityLifecycle(next: RemoteCommunityLifecycle): void {
+  lifecycle = next;
+}
+
+/** Read the native stop lifecycle. Startup wiring is required before routes serve requests. */
+export function getRemoteCommunityLifecycle(): RemoteCommunityLifecycle {
+  if (!lifecycle) throw new Error('Remote community lifecycle requires startup wiring');
+  return lifecycle;
 }
 
 /** Construct the one native adapter shape used by connection lifecycle and qualified routes. */

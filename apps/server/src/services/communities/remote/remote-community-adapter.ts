@@ -628,6 +628,25 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     }));
   }
 
+  /** List active remotely enrolled agents visible through this owner's personal grant. */
+  async listEnrolledAgents(): Promise<CommunityMember[]> {
+    const data = CommunityWireAgentListResponseSchema.parse(
+      await this.request(COMMUNITY_API_V1_ROUTES.agents, undefined, undefined, 'GET')
+    );
+    return data.agents
+      .filter((agent) => agent.active)
+      .map((agent) => ({
+        community: this.community,
+        memberId: agent.memberId,
+        kind: 'agent' as const,
+        displayName: agent.displayName,
+        handle: agent.handle,
+        role: null,
+        ownerMemberId: agent.ownerMemberId,
+        joinedAt: new Date().toISOString(),
+      }));
+  }
+
   async addMember(
     roomId: string,
     memberId: string,
@@ -704,7 +723,9 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
   }
 
   /** Enroll once, reusing a verified durable credential after an adapter restart. */
-  private async admitAgentUnshared(input: AdmitAgentInput): Promise<CommunityMember> {
+  private async admitAgentUnshared(
+    input: AdmitAgentInput & { handle?: string }
+  ): Promise<CommunityMember> {
     const admitted =
       this.admittedAgents.get(input.agentId) ?? (await this.verifiedEnrolledAgent(input.agentId));
     // A durable enrollment is only reusable after the remote accepts its bearer.
@@ -716,6 +737,7 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
       await this.request(COMMUNITY_API_V1_ROUTES.agents, {
         localAgentId: input.agentId,
         displayName: input.displayName,
+        ...(input.handle ? { handle: input.handle } : {}),
       })
     );
     await this.store.saveAgentToken(this.community, this.ownerKey, data.agent.memberId, data.token);
@@ -754,7 +776,7 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
   }
 
   /** Recover an explicitly requested missing or rejected bearer; ordinary retries never rotate it. */
-  async recoverAgent(input: AdmitAgentInput): Promise<CommunityMember> {
+  async recoverAgent(input: AdmitAgentInput & { handle?: string }): Promise<CommunityMember> {
     const binding = this.enrollments?.findRemoteMember(
       this.community,
       input.agentId,
@@ -767,7 +789,13 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
           binding
             ? `/api/v1/agents/${encodeURIComponent(binding.remoteMemberId)}/rotate`
             : '/api/v1/agents/recover',
-          binding ? undefined : { localAgentId: input.agentId, displayName: input.displayName },
+          binding
+            ? undefined
+            : {
+                localAgentId: input.agentId,
+                displayName: input.displayName,
+                ...(input.handle ? { handle: input.handle } : {}),
+              },
           undefined,
           'POST'
         )
