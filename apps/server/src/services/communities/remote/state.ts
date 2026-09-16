@@ -16,6 +16,10 @@ import { RemoteCommunityPairingService } from './pairing-service.js';
 import { RemoteCommunityAdapter } from './remote-community-adapter.js';
 import { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
 import type { CommunityOutboxProjection } from './community-outbox-projection.js';
+import type {
+  CommunityOutboxRetryInput,
+  CommunityOutboxRetryResult,
+} from './community-outbox-worker.js';
 
 let store: RemoteConnectionStore | undefined;
 let pairing: RemoteCommunityPairingService | undefined;
@@ -23,6 +27,7 @@ let db: Db | undefined;
 let enrollments: CommunityAgentEnrollmentStore | undefined;
 let lifecycle: RemoteCommunityLifecycle | undefined;
 let deliveryProjection: CommunityOutboxProjection | undefined;
+let deliveryRetry: ((input: CommunityOutboxRetryInput) => CommunityOutboxRetryResult) | undefined;
 const deliveryListeners = new Set<(ownerAuthorId: string) => void>();
 let localAgentResolver: RemoteCommunityLocalAgentResolver | undefined;
 const adapters = new Map<string, RemoteCommunityAdapter>();
@@ -109,6 +114,21 @@ export function getRemoteCommunityLifecycle(): RemoteCommunityLifecycle {
   return lifecycle;
 }
 
+/** Bind the one in-process retry gate owned by the native delivery worker. */
+export function setRemoteCommunityDeliveryRetry(
+  retry: (input: CommunityOutboxRetryInput) => CommunityOutboxRetryResult
+): void {
+  deliveryRetry = retry;
+}
+
+/** Release one owner-qualified transient delivery backoff through the sole worker. */
+export function retryRemoteCommunityDelivery(
+  input: CommunityOutboxRetryInput
+): CommunityOutboxRetryResult {
+  if (!deliveryRetry) throw new Error('Remote community delivery retry requires startup wiring');
+  return deliveryRetry(input);
+}
+
 /** Bind the browser-safe outbox projection after the room subsystem exists. */
 export function setRemoteCommunityDeliveryProjection(next: CommunityOutboxProjection): void {
   deliveryProjection = next;
@@ -149,7 +169,7 @@ export function getRemoteCommunityDeliverySnapshot(
         byteSize: attachment.size,
       })),
       ...(item.state === 'pending'
-        ? { state: 'pending' as const, failure: null }
+        ? { state: 'pending' as const, failure: null, retryable: item.retryable }
         : {
             state: 'failed' as const,
             failure: item.failure === 'expired' ? ('expired' as const) : ('not-confirmed' as const),

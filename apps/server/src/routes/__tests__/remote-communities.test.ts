@@ -110,6 +110,7 @@ vi.mock('../../services/communities/remote/state.js', () => ({
         attachments: [],
         state: 'pending',
         failure: null,
+        retryable: true,
       },
     ],
   }),
@@ -134,6 +135,7 @@ vi.mock('../../services/communities/remote/state.js', () => ({
     refreshSubscriptions: vi.fn(),
   }),
   onRemoteCommunityDeliveryChange: () => () => undefined,
+  retryRemoteCommunityDelivery: () => 'retried',
   resolveRemoteCommunityLocalAgent: (localAgentId: string) =>
     localAgentId === 'mesh-manifest-a'
       ? { authorId: 'opaque-local-author-a', displayName: 'Build Agent' }
@@ -258,6 +260,18 @@ describe('qualified remote community writes and live projections', () => {
       .send({});
     expect(unknown.status).toBe(404);
     expect(fixture.adapter.recoverAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases only an owner-qualified pending delivery through the worker retry gate', async () => {
+    const response = await request(testServer).post(
+      `/api/communities/${fixture.ref}/rooms/room-a/deliveries/delivery-retry-a/retry`
+    );
+    expect(response.status).toBe(200);
+    expect(response.body.deliveries[0]).toMatchObject({
+      idempotencyKey: 'delivery-retry-a',
+      state: 'pending',
+      retryable: true,
+    });
   });
 
   it('stops local remote-room work through the owner-qualified lifecycle without a remote request', async () => {

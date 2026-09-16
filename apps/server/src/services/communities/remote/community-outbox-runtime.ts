@@ -140,6 +140,30 @@ export class CommunityOutboxRuntime {
 
   /** Ask this runtime's sole worker to release one genuine pending backoff immediately. */
   retryNow(input: CommunityOutboxRetryInput): CommunityOutboxRetryResult {
+    const item = this.outbox.deliveryForOwner(
+      input.communityRef,
+      input.remoteRoomId,
+      input.ownerAuthorId,
+      input.idempotencyKey
+    );
+    if (!item) return 'missing';
+    const localRoomId = this.mirrors.localRoomIdForOwner(
+      item.communityRef,
+      item.remoteRoomId,
+      item.ownerAuthorId
+    );
+    const authorId = this.authors
+      .listActive('agent')
+      .find((author) => author.mintedForManifestId === item.localAgentId)?.id;
+    if (
+      !localRoomId ||
+      !authorId ||
+      !this.mirrors.isActivelyAuthorized(localRoomId, item.ownerAuthorId) ||
+      this.mirrors.canRead(localRoomId, authorId) !== true ||
+      !this.enrollments.findRemoteMember(item.communityRef, item.localAgentId, item.ownerAuthorId)
+    ) {
+      return 'terminal';
+    }
     return this.worker.retryNow(input);
   }
 }
