@@ -812,7 +812,9 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       // button must terminate it before the barrier can release, proving Stop
       // does more than hide a later remote delivery.
       const stoppableScenario = await request.post(`${env.local}/api/test/scenario`, {
-        data: { name: 'stoppable-turn' },
+        // The room owns one retained (room, agent) session. Set its fixture
+        // directly so this barrier does not depend on the global default.
+        data: { name: 'stoppable-turn', sessionId: recoveredTurnSessionId },
       });
       expect(
         stoppableScenario.ok(),
@@ -887,7 +889,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       );
 
       const restoredAttachmentScenario = await request.post(`${env.local}/api/test/scenario`, {
-        data: { name: 'rooms-post-attachment' },
+        data: { name: 'rooms-post-attachment', sessionId: recoveredTurnSessionId },
       });
       expect(
         restoredAttachmentScenario.ok(),
