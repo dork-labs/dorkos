@@ -97,7 +97,18 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
     private readonly db: Db,
     private readonly roomsStore: RoomStore,
     private readonly authors: AuthorRegistry
-  ) {}
+  ) {
+    // A RoomStore is shared with ordinary rooms, whose hot reads must stay on
+    // their `(room_id, seq)` indexes. Restore the persisted remote-room set
+    // when this mirror facade is recreated so a late history page cannot make
+    // a restarted process fall back to local insertion order.
+    for (const row of this.db
+      .select({ localRoomId: communityRoomMirrors.localRoomId })
+      .from(communityRoomMirrors)
+      .all()) {
+      this.roomsStore.registerRemoteTimelineRoom(row.localRoomId);
+    }
+  }
 
   /** Create or refresh one authorized mirror and its local read grants. */
   ensureRoom(input: MirrorRoomInput): Room {
@@ -106,6 +117,7 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
       this.refreshAccess(existing.localRoomId, input);
       const room = this.roomsStore.getRoom(existing.localRoomId);
       if (!room) throw new Error('A community mirror mapping points to a missing local room');
+      this.roomsStore.registerRemoteTimelineRoom(existing.localRoomId);
       return room;
     }
 
@@ -113,7 +125,7 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
     const createdAt = input.authorizedAt;
     const localRoomId = ulid();
     try {
-      return this.roomsStore.createRoom(
+      const room = this.roomsStore.createRoom(
         {
           id: localRoomId,
           kind: 'channel',
@@ -145,6 +157,8 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
           }
         }
       );
+      this.roomsStore.registerRemoteTimelineRoom(room.id);
+      return room;
     } catch (error) {
       // `createRoom`'s callback is transactional. A competing cache import
       // therefore leaves no stray local room; adopt the mapping that won.
@@ -153,6 +167,7 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
       this.refreshAccess(raced.localRoomId, input);
       const room = this.roomsStore.getRoom(raced.localRoomId);
       if (!room) throw error;
+      this.roomsStore.registerRemoteTimelineRoom(raced.localRoomId);
       return room;
     }
   }

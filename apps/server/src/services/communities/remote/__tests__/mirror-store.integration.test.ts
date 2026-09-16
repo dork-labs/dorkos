@@ -12,6 +12,7 @@ import { communityMirrorEntries, eq } from '@dorkos/db';
 import type { CommunityEntry, CommunityRef } from '@dorkos/shared/community-adapter';
 import { describe, expect, it, vi } from 'vitest';
 import { authorOrigin } from '../../../rooms/author-registry.js';
+import { RoomStore } from '../../../rooms/room-store.js';
 import {
   agentLookupFor,
   createRoomHarness,
@@ -874,5 +875,18 @@ describe('RemoteMirrorStore', () => {
       'on it',
     ]);
     expect(harness.store.getEntryById(room.id, local?.id ?? '')?.body.text).toBe('local question');
+
+    // The native sequence mapping is persisted, but the room store's choice of
+    // indexed local or native remote ordering is process-local. Recreating both
+    // sides proves startup restores that choice before a cached history read.
+    const restartedStore = new RoomStore(harness.db);
+    new RemoteMirrorStore(harness.db, restartedStore, harness.authors);
+    expect(
+      restartedStore.listEntries(room.id, { limit: 200 }).map((entry) => entry.body.text)
+    ).toEqual([
+      ...Array.from({ length: 151 }, (_, index) => `remote ${index + 1}`),
+      'local question',
+      'on it',
+    ]);
   });
 });

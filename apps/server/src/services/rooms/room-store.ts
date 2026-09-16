@@ -114,8 +114,8 @@ function importedRemoteSeq(): SQL<number | null> {
   )`;
 }
 
-/** Order a room timeline by remote authority first, then local pending rows. */
-function timelineOrder(direction: 'asc' | 'desc'): [SQL, SQL, SQL] {
+/** Order a mirrored room timeline by remote authority first, then local pending rows. */
+function remoteTimelineOrder(direction: 'asc' | 'desc'): [SQL, SQL, SQL] {
   const remoteSeq = importedRemoteSeq();
   const kind = sql`CASE WHEN ${remoteSeq} IS NULL THEN 1 ELSE 0 END`;
   if (direction === 'asc') return [kind, remoteSeq, sql`${roomEntries.seq}`];
@@ -188,6 +188,26 @@ function dmMemberKeyFor(
 
 /** Persistence for rooms, memberships, entries, and per-room agent sessions. */
 export class RoomStore {
+  private readonly remoteTimelineRoomIds = new Set<string>();
+
+  /**
+   * Mark a room as a persisted remote mirror whose timeline follows native sequence.
+   *
+   * RemoteMirrorStore is the only production caller. Keeping the registration in
+   * memory lets ordinary local-room reads retain their indexed `seq` ordering
+   * without making every row lookup consult the mirror-entry table.
+   *
+   * @param roomId - The local room id backed by a remote mirror.
+   */
+  registerRemoteTimelineRoom(roomId: string): void {
+    this.remoteTimelineRoomIds.add(roomId);
+  }
+
+  /** Select the authoritative order for one room's timeline. */
+  private timelineOrder(roomId: string, direction: 'asc' | 'desc'): SQL[] {
+    if (this.remoteTimelineRoomIds.has(roomId)) return remoteTimelineOrder(direction);
+    return direction === 'asc' ? [sql`${roomEntries.seq}`] : [desc(roomEntries.seq)];
+  }
   /**
    * Session-id-keyed reads, and the memory of which ids the projector has
    * retired. Public because the convergence paths address `room_sessions` by
@@ -1058,7 +1078,7 @@ export class RoomStore {
       .select()
       .from(roomEntries)
       .where(and(...conditions))
-      .orderBy(...timelineOrder('desc'))
+      .orderBy(...this.timelineOrder(roomId, 'desc'))
       .limit(opts.limit)
       .all();
     return rows.reverse().map(toEntry);
@@ -1074,6 +1094,7 @@ export class RoomStore {
    * precede local pending rows, and remote rows compare by native sequence.
    */
   private beforeTimelineEntry(roomId: string, beforeSeq: number): SQL {
+    if (!this.remoteTimelineRoomIds.has(roomId)) return lt(roomEntries.seq, beforeSeq);
     const anchor = this.db
       .select({ remoteSeq: communityMirrorEntries.remoteSeq })
       .from(roomEntries)
@@ -1090,6 +1111,7 @@ export class RoomStore {
 
   /** Resolve a numeric forward cursor into its timeline position. */
   private afterTimelineEntry(roomId: string, afterSeq: number): SQL {
+    if (!this.remoteTimelineRoomIds.has(roomId)) return gt(roomEntries.seq, afterSeq);
     const anchor = this.db
       .select({ remoteSeq: communityMirrorEntries.remoteSeq })
       .from(roomEntries)
@@ -1150,7 +1172,7 @@ export class RoomStore {
       .select()
       .from(roomEntries)
       .where(and(eq(roomEntries.roomId, roomId), inArray(roomEntries.id, wanted)))
-      .orderBy(...timelineOrder('asc'))
+      .orderBy(...this.timelineOrder(roomId, 'asc'))
       .all()
       .map(toEntry);
   }
@@ -1249,7 +1271,7 @@ export class RoomStore {
           sql`json_extract(${roomEntries.body}, '$.subjectAuthorId') IS NOT ${opts.excludeAuthorId}`
         )
       )
-      .orderBy(...timelineOrder('desc'))
+      .orderBy(...this.timelineOrder(roomId, 'desc'))
       .limit(opts.limit)
       .all();
     return rows.reverse().map(toEntry);
@@ -1306,7 +1328,7 @@ export class RoomStore {
       .select()
       .from(roomEntries)
       .where(topLevelWindow(roomId, opts))
-      .orderBy(...timelineOrder('desc'))
+      .orderBy(...this.timelineOrder(roomId, 'desc'))
       .limit(opts.limit)
       .all();
     return rows.reverse().map(toEntry);
@@ -1351,7 +1373,7 @@ export class RoomStore {
       .select()
       .from(roomEntries)
       .where(and(eq(roomEntries.roomId, roomId), eq(roomEntries.authorId, authorId)))
-      .orderBy(...timelineOrder('desc'))
+      .orderBy(...this.timelineOrder(roomId, 'desc'))
       .limit(limit)
       .all();
     return rows.reverse().map(toEntry);
@@ -1430,7 +1452,7 @@ export class RoomStore {
           )
         )
       )
-      .orderBy(...timelineOrder('desc'))
+      .orderBy(...this.timelineOrder(roomId, 'desc'))
       .limit(opts.limit)
       .all();
     return rows.map(toEntry);
@@ -1483,7 +1505,7 @@ export class RoomStore {
             : eq(roomEntries.threadRootEntryId, opts.threadRootEntryId)
         )
       )
-      .orderBy(...timelineOrder('asc'))
+      .orderBy(...this.timelineOrder(roomId, 'asc'))
       .limit(opts.limit)
       .all();
     return rows.map(toEntry);
@@ -1575,7 +1597,7 @@ export class RoomStore {
       .select()
       .from(roomEntries)
       .where(and(eq(roomEntries.roomId, roomId), this.afterTimelineEntry(roomId, opts.afterSeq)))
-      .orderBy(...timelineOrder('asc'))
+      .orderBy(...this.timelineOrder(roomId, 'asc'))
       .limit(opts.limit)
       .all();
     return rows.map(toEntry);
@@ -1674,7 +1696,7 @@ export class RoomStore {
       .select({ createdAt: roomEntries.createdAt, body: roomEntries.body })
       .from(roomEntries)
       .where(eq(roomEntries.roomId, roomId))
-      .orderBy(...timelineOrder('desc'))
+      .orderBy(...this.timelineOrder(roomId, 'desc'))
       .limit(scan)
       .all();
     for (const row of rows) {
