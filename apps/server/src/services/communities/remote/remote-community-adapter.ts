@@ -92,6 +92,7 @@ const remoteAuthorMetadata = new WeakMap<
   CommunityEntry,
   Readonly<{ displayName: string; kind: 'human' | 'agent' }>
 >();
+const remoteOriginIdempotencyKeys = new WeakMap<CommunityEntry, string>();
 const communityUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const activeAdmissions = new Map<string, Promise<CommunityMember>>();
 const remoteRoomMetadata = new WeakMap<
@@ -119,6 +120,11 @@ export function remoteAuthorOf(
   projected: CommunityEntry
 ): Readonly<{ displayName: string; kind: 'human' | 'agent' }> | undefined {
   return remoteAuthorMetadata.get(projected);
+}
+
+/** Read an owner-authorized native agent-post correlation key retained outside the portable DTO. */
+export function remoteOriginIdempotencyKeyOf(projected: CommunityEntry): string | undefined {
+  return remoteOriginIdempotencyKeys.get(projected);
 }
 
 /** Read private native visibility and joined state for a projected remote room. */
@@ -194,6 +200,7 @@ function entry(
       byteSize: number;
       checksum: string;
     }>;
+    originIdempotencyKey?: string;
   }
 ): CommunityEntry {
   const projected: CommunityEntry = {
@@ -215,6 +222,8 @@ function entry(
     displayName: value.authorDisplayName,
     kind: value.authorKind,
   });
+  if (value.originIdempotencyKey)
+    remoteOriginIdempotencyKeys.set(projected, value.originIdempotencyKey);
   return projected;
 }
 

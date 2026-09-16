@@ -20,7 +20,7 @@ import {
   type Principal,
 } from '../data.js';
 import { ApiError, json, readJson } from '../http.js';
-import { entryProjection } from './entries.js';
+import { entryProjection, originKeyForPrincipal } from './entries.js';
 import { attachmentsForEntries } from './attachments.js';
 
 interface LiveChannel {
@@ -192,10 +192,10 @@ export function registerEventRoutes(
     const snapshotRows = (
       await pool.query(
         resume
-          ? `SELECT id,channel_id,seq,COALESCE(author_member_id,author_agent_id) AS author_member_id,author_agent_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,created_at
-             FROM entries WHERE channel_id=$1 AND seq>$2 AND seq<=$3 ORDER BY seq LIMIT 100`
-          : `SELECT id,channel_id,seq,COALESCE(author_member_id,author_agent_id) AS author_member_id,author_agent_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,created_at
-             FROM (SELECT * FROM entries WHERE channel_id=$1 AND seq<=$2 ORDER BY seq DESC LIMIT 100) e ORDER BY seq`,
+          ? `SELECT e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,e.mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id
+             FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id WHERE e.channel_id=$1 AND e.seq>$2 AND e.seq<=$3 ORDER BY e.seq LIMIT 100`
+          : `SELECT e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,e.mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id
+             FROM (SELECT * FROM entries WHERE channel_id=$1 AND seq<=$2 ORDER BY seq DESC LIMIT 100) e LEFT JOIN agents a ON a.id=e.author_agent_id ORDER BY e.seq`,
         resume ? [channel.id, position, capturedSeq] : [channel.id, position]
       )
     ).rows;
@@ -300,7 +300,8 @@ export function registerEventRoutes(
                 channel.epoch,
                 config,
                 snapshotAttachments.get(row.id),
-                principal.community_id
+                principal.community_id,
+                originKeyForPrincipal(row, principal)
               )
             ),
             capturedSeq,
@@ -386,8 +387,8 @@ export function registerEventRoutes(
                 return;
               }
               const result = await pool.query(
-                `SELECT id,channel_id,seq,COALESCE(author_member_id,author_agent_id) AS author_member_id,author_agent_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,created_at
-               FROM entries WHERE channel_id=$1 AND seq>$2 ORDER BY seq LIMIT 1`,
+                `SELECT e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,e.mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id
+               FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id WHERE e.channel_id=$1 AND e.seq>$2 ORDER BY e.seq LIMIT 1`,
                 [channel.id, position]
               );
               if (closed) return;
@@ -418,7 +419,8 @@ export function registerEventRoutes(
                   channel.epoch,
                   config,
                   attachmentMap.get(row.id),
-                  principal.community_id
+                  principal.community_id,
+                  originKeyForPrincipal(row, principal)
                 );
                 writeEvent(controller, { type: 'entry', entry, cursor: entry.cursor });
                 return;

@@ -549,6 +549,68 @@ describe('owner foundation over real HTTP and Postgres', () => {
     ).toBe(409);
   });
 
+  it('projects an agent post key only to its authenticated owner across history and snapshots', async () => {
+    const created = await post('/api/v1/channels', { name: 'Owner correlation' }, ownerCookie);
+    expect(created.status).toBe(201);
+    const id = (await created.json()).channel.id as string;
+    expect(
+      (
+        await request(`/api/v1/channels/${id}/join`, {
+          method: 'POST',
+          headers: { cookie: bobCookie },
+        })
+      ).status
+    ).toBe(200);
+    const communityId = (await pool.query<{ id: string }>('SELECT id FROM communities')).rows[0]!
+      .id;
+    const agent = await pool.query<{ id: string }>(
+      `INSERT INTO agents(community_id,owner_member_id,display_name,handle,local_agent_id)
+       VALUES($1,$2,'Owner worker','owner-worker','owner-worker-local') RETURNING id`,
+      [communityId, ownerMemberId]
+    );
+    await pool.query('INSERT INTO agent_channel_members(channel_id,agent_id) VALUES($1,$2)', [
+      id,
+      agent.rows[0]!.id,
+    ]);
+    const sequence = await pool.query<{ last_seq: string }>(
+      'UPDATE channels SET last_seq=last_seq+1 WHERE id=$1 RETURNING last_seq',
+      [id]
+    );
+    await pool.query(
+      `INSERT INTO entries(channel_id,seq,author_member_id,author_agent_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,idempotency_key,payload_hash)
+       VALUES($1,$2,NULL,$3,'Owner worker','private correlation',ARRAY[]::uuid[],NULL,NULL,'owner-wire-key','test-hash')`,
+      [id, sequence.rows[0]!.last_seq, agent.rows[0]!.id]
+    );
+
+    const [ownerHistory, bobHistory] = await Promise.all([
+      request(`/api/v1/channels/${id}/entries`, { headers: { cookie: ownerCookie } }),
+      request(`/api/v1/channels/${id}/entries`, { headers: { cookie: bobCookie } }),
+    ]);
+    expect(ownerHistory.status).toBe(200);
+    expect(bobHistory.status).toBe(200);
+    expect((await ownerHistory.json()).entries[0].originIdempotencyKey).toBe('owner-wire-key');
+    expect((await bobHistory.json()).entries[0].originIdempotencyKey).toBeUndefined();
+
+    const [ownerEvents, bobEvents] = await Promise.all([
+      request(`/api/v1/channels/${id}/events`, { headers: { cookie: ownerCookie } }),
+      request(`/api/v1/channels/${id}/events`, { headers: { cookie: bobCookie } }),
+    ]);
+    const ownerReader = ownerEvents.body!.getReader();
+    const bobReader = bobEvents.body!.getReader();
+    expect((await nextSse(ownerReader)).data.entries[0].originIdempotencyKey).toBe(
+      'owner-wire-key'
+    );
+    expect((await nextSse(bobReader)).data.entries[0].originIdempotencyKey).toBeUndefined();
+    await ownerReader.cancel();
+    await bobReader.cancel();
+    await pool.query('DELETE FROM entries WHERE channel_id=$1', [id]);
+    await pool.query('DELETE FROM agent_channel_members WHERE channel_id=$1 AND agent_id=$2', [
+      id,
+      agent.rows[0]!.id,
+    ]);
+    await pool.query('DELETE FROM agents WHERE id=$1', [agent.rows[0]!.id]);
+  });
+
   it('rejects a channel create if admin authority is removed while the insert waits', async () => {
     expect(
       (

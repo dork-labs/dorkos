@@ -34,6 +34,7 @@ const fixture = vi.hoisted(() => {
   };
   const adapter = {
     postEntry: vi.fn(async () => entry),
+    listEntriesWithThreadRoot: vi.fn(async () => ({ entries: [entry], nextCursor: null })),
     uploadAttachment: vi.fn(async (_room: string, input: { bytes: AsyncIterable<Uint8Array> }) => {
       const bytes: Uint8Array[] = [];
       for await (const chunk of input.bytes) bytes.push(chunk);
@@ -167,9 +168,11 @@ vi.mock('../../services/communities/remote/state.js', () => ({
 vi.mock('../../services/communities/remote/remote-community-adapter.js', () => ({
   remoteSequenceOf: () => 1,
   remoteAuthorOf: (entry: { id: string }) =>
-    entry.id === 'agent-echo-a'
+    entry.id === 'agent-wire-a'
       ? { displayName: 'Build Agent', kind: 'agent' as const }
       : { displayName: 'Owner', kind: 'human' as const },
+  remoteOriginIdempotencyKeyOf: (entry: { id: string }) =>
+    entry.id === 'agent-wire-a' ? 'wire-owned-key' : undefined,
   remoteRoomAccessOf: () => ({ visibility: 'public', joined: true }),
 }));
 vi.mock('../../services/rooms/index.js', () => ({
@@ -267,10 +270,44 @@ describe('qualified remote community writes and live projections', () => {
     ]);
   });
 
+  it('projects the authenticated wire key in history and an opening snapshot before any receipt', async () => {
+    const agentEntry = {
+      ...fixture.entry,
+      id: 'agent-wire-a',
+      authorId: 'remote-agent-a',
+      text: 'agent output',
+    };
+    fixture.adapter.listEntriesWithThreadRoot.mockResolvedValueOnce({
+      entries: [agentEntry],
+      nextCursor: null,
+    });
+    fixture.adapter.subscribeRoom.mockImplementationOnce((() =>
+      (async function* () {
+        yield {
+          type: 'snapshot' as const,
+          room: fixture.room,
+          entries: [agentEntry],
+          cursor: 'cursor-a',
+        };
+      })()) as never);
+
+    const [history, events] = await Promise.all([
+      request(testServer).get(`/api/communities/${fixture.ref}/rooms/room-a/entries`),
+      request(testServer).get(`/api/communities/${fixture.ref}/rooms/room-a/events`),
+    ]);
+    expect(history.status).toBe(200);
+    expect(history.body.entries).toEqual([
+      expect.objectContaining({ id: 'agent-wire-a', originIdempotencyKey: 'wire-owned-key' }),
+    ]);
+    expect(events.status).toBe(200);
+    expect(events.text).toContain('"id":"agent-wire-a"');
+    expect(events.text).toContain('"originIdempotencyKey":"wire-owned-key"');
+  });
+
   it('buffers an early agent echo until the receipt barrier releases its origin-keyed entry', async () => {
     const agentEntry = {
       ...fixture.entry,
-      id: 'agent-echo-a',
+      id: 'agent-wire-a',
       authorId: 'remote-agent-a',
       text: 'agent output',
     };
@@ -293,8 +330,8 @@ describe('qualified remote community writes and live projections', () => {
       `/api/communities/${fixture.ref}/rooms/room-a/events`
     );
     expect(events.status).toBe(200);
-    expect(events.text.match(/"id":"agent-echo-a"/g)).toHaveLength(1);
-    expect(events.text).toContain('"originIdempotencyKey":"delivery-origin-a"');
+    expect(events.text.match(/"id":"agent-wire-a"/g)).toHaveLength(1);
+    expect(events.text).toContain('"originIdempotencyKey":"wire-owned-key"');
   });
 
   it('enrolls the browser Mesh manifest id through trusted server-side author resolution', async () => {
