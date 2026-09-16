@@ -343,6 +343,7 @@ import {
   setRemoteCommunityDeliveryProjection,
   setRemoteCommunityEnrollmentStore,
   setRemoteCommunityLifecycle,
+  setRemoteCommunityLocalAgentResolver,
 } from './services/communities/remote/state.js';
 import { CommunityOutboxRuntime } from './services/communities/remote/community-outbox-runtime.js';
 import { RemoteRoomSubscriptionBridge } from './services/communities/remote/remote-room-subscription-bridge.js';
@@ -1343,11 +1344,23 @@ async function start() {
   if (!remoteCommunityRuntime) throw new Error('Remote community runtime was not composed');
   setRemoteCommunityEnrollmentStore(remoteCommunityRuntime.enrollments);
   setRemoteCommunityDeliveryProjection(remoteCommunityRuntime.projection);
+  // The public native-community API names an agent by its Mesh manifest id.
+  // Resolve that id through Mesh to its server-only project path before the
+  // author registry mints or reads the local room principal; neither the
+  // browser nor a remote community supplies a path or opaque author id.
+  const resolveRemoteLocalAgent = (localAgentId: string) => {
+    const agent = meshCore?.get(localAgentId);
+    const projectPath = meshCore?.getProjectPath(localAgentId);
+    if (!agent || !projectPath) return null;
+    const author = roomAuthors.resolveAgent(projectPath, agent.displayName ?? agent.name);
+    return { authorId: author.id, displayName: author.displayName };
+  };
+  setRemoteCommunityLocalAgentResolver(resolveRemoteLocalAgent);
   remoteCommunityBridge.current = new RemoteRoomSubscriptionBridge(
     remoteCommunityRuntime.mirrors,
     roomService,
     remoteCommunityRuntime.enrollments,
-    (localAgentId) => (roomAuthors.getById(localAgentId)?.kind === 'agent' ? localAgentId : null),
+    (localAgentId) => resolveRemoteLocalAgent(localAgentId)?.authorId ?? null,
     undefined,
     remoteCommunityRuntime.outbox
   );
@@ -1357,7 +1370,7 @@ async function start() {
     adapters: (communityRef, ownerAuthorId) =>
       getRemoteCommunityAdapter(communityRef, ownerAuthorId),
     resolveLocalAgentAuthor: (localAgentId) =>
-      roomAuthors.getById(localAgentId)?.kind === 'agent' ? localAgentId : null,
+      resolveRemoteLocalAgent(localAgentId)?.authorId ?? null,
   });
   setRemoteCommunityLifecycle(remoteCommunitySubscriptions);
   remoteCommunityRuntime.start();

@@ -164,11 +164,18 @@ describe('RemoteRoomSubscriptionRuntime', () => {
       (localAgentId) => (localAgentId === ana.id || localAgentId === bob.id ? localAgentId : null)
     );
     const room = testRoom();
+    const streamMembers: string[] = [];
     const adapter: RemoteRoomSubscriptionAdapter = {
       async listRooms(context) {
         return context?.actingMemberId === 'remote-ana' ? [room] : [];
       },
-      subscribeNativeRoom(): AsyncIterable<RemoteNativeRoomEvent> {
+      subscribeNativeRoom(
+        _roomId,
+        _cursor,
+        _signal,
+        context
+      ): AsyncIterable<RemoteNativeRoomEvent> {
+        streamMembers.push(context?.actingMemberId ?? 'missing');
         return (async function* () {
           yield snapshot(room, [entry(1)], 1);
           yield { type: 'replay_complete' as const, capturedSeq: 1 };
@@ -197,6 +204,77 @@ describe('RemoteRoomSubscriptionRuntime', () => {
     await harness.service.triggersIdle();
     expect(harness.runner.turns).toHaveLength(1);
     expect(harness.runner.turns[0]?.authorId).toBe(ana.id);
+    expect(streamMembers).toEqual(['remote-ana']);
+    runtime.stop();
+  });
+
+  it('revokes a persisted mirror and aborts its agent stream when the fresh agent directory removes the room', async () => {
+    const harness = createRoomHarness({
+      agents: agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } }),
+    });
+    const agent = harness.authors.resolveAgent('/agents/ana', 'Ana');
+    const enrollments = new CommunityAgentEnrollmentStore(harness.db);
+    enrollments.activate({
+      communityRef: REF,
+      localAgentId: 'mesh-manifest-ana',
+      remoteMemberId: 'remote-ana',
+      ownerAuthorId: harness.human,
+    });
+    const mirrors = new RemoteMirrorStore(harness.db, harness.store, harness.authors);
+    const bridge = new RemoteRoomSubscriptionBridge(
+      mirrors,
+      harness.service,
+      enrollments,
+      (localAgentId) => (localAgentId === 'mesh-manifest-ana' ? agent.id : null)
+    );
+    const room = testRoom();
+    let joined = true;
+    let aborted = false;
+    const adapter: RemoteRoomSubscriptionAdapter = {
+      async listRooms() {
+        return joined ? [room] : [];
+      },
+      subscribeNativeRoom(_roomId, _cursor, signal, context): AsyncIterable<RemoteNativeRoomEvent> {
+        expect(context).toEqual({ actingMemberId: 'remote-ana' });
+        return (async function* () {
+          yield snapshot(room, [entry(1)], 1);
+          yield { type: 'replay_complete' as const, capturedSeq: 1 };
+          await new Promise<void>((resolve) => {
+            signal?.addEventListener('abort', () => {
+              aborted = true;
+              resolve();
+            });
+          });
+        })();
+      },
+    };
+    const runtime = new RemoteRoomSubscriptionRuntime({
+      bridge,
+      enrollments,
+      adapters: () => adapter,
+      resolveLocalAgentAuthor: (localAgentId) =>
+        localAgentId === 'mesh-manifest-ana' ? agent.id : null,
+      isRoomJoined: () => true,
+      toLiveEntry: (value) => live(value, Number(value.id.slice('entry-'.length))),
+      retryMs: 1,
+    });
+
+    runtime.start();
+    await settleUntil(
+      () => runtime.observation(REF, ROOM_ID, harness.human)?.replayComplete === true,
+      'the enrolled agent stream is ready'
+    );
+    const localRoomId = mirrors.localRoomIdForOwner(REF, ROOM_ID, harness.human);
+    expect(localRoomId).not.toBeNull();
+    expect(mirrors.canRead(localRoomId!, agent.id)).toBe(true);
+
+    joined = false;
+    runtime.refreshSubscriptions();
+    await settleUntil(
+      () => mirrors.canRead(localRoomId!, agent.id) === false && aborted,
+      'the removed agent loses its persisted grant and stream'
+    );
+    expect(mirrors.isActivelyAuthorized(localRoomId!, harness.human)).toBe(false);
     runtime.stop();
   });
 

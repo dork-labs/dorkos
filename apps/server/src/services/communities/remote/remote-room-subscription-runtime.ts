@@ -8,6 +8,7 @@ import type {
   CommunityEntry,
   CommunityRoom,
   CommunityRef,
+  CommunityReadContext,
 } from '@dorkos/shared/community-adapter';
 import {
   remoteAuthorOf,
@@ -28,7 +29,8 @@ export interface RemoteRoomSubscriptionAdapter extends Pick<CommunityAdapter, 'l
   subscribeNativeRoom(
     roomId: string,
     sinceCursor?: CommunityEntry['cursor'],
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    context?: CommunityReadContext
   ): AsyncIterable<RemoteNativeRoomEvent>;
 }
 
@@ -54,6 +56,13 @@ interface DesiredSubscription {
   signature: string;
   adapter: RemoteRoomSubscriptionAdapter;
   room: MirrorRoomInput;
+  context: CommunityReadContext;
+}
+
+interface DiscoveredRoom {
+  room: CommunityRoom;
+  accessors: MirrorRoomInput['accessors'];
+  members: Array<{ authorId: string; localAgentId: string; remoteMemberId: string }>;
 }
 
 interface RunningSubscription {
@@ -164,35 +173,52 @@ export class RemoteRoomSubscriptionRuntime {
       const adapter = this.deps.adapters(connection.communityRef, connection.ownerAuthorId);
       if (!adapter) continue;
       try {
-        const rooms = new Map<
-          string,
-          { room: CommunityRoom; accessors: MirrorRoomInput['accessors'] }
-        >();
+        const rooms = new Map<string, DiscoveredRoom>();
         for (const enrollment of this.deps.enrollments.activeForOwner(
           connection.communityRef,
           connection.ownerAuthorId
         )) {
           const authorId = this.deps.resolveLocalAgentAuthor(enrollment.localAgentId);
           if (!authorId) continue;
-          // Read as the enrolled agent, not as the human owner. A room in the
-          // owner's directory is not authority to dispatch an agent that has
-          // not joined that room.
+          // Read as the enrolled agent, not as the owner. A single owner token
+          // must never keep a stream open for an agent removed from the room.
           for (const room of await adapter.listRooms({
             actingMemberId: enrollment.remoteMemberId,
           })) {
             if (!this.isJoinedRoom(room)) continue;
             const existing = rooms.get(room.roomId);
+            const member = {
+              authorId,
+              localAgentId: enrollment.localAgentId,
+              remoteMemberId: enrollment.remoteMemberId,
+            };
             if (existing) {
-              existing.accessors = [...existing.accessors, { authorId, responseMode: 'always' }];
+              if (!existing.members.some((item) => item.localAgentId === member.localAgentId)) {
+                existing.members.push(member);
+                existing.accessors = [
+                  ...existing.accessors,
+                  { authorId: member.authorId, responseMode: 'always' },
+                ];
+              }
             } else {
               rooms.set(room.roomId, {
                 room,
                 accessors: [{ authorId, responseMode: 'always' }],
+                members: [member],
               });
             }
           }
         }
-        for (const { room, accessors } of rooms.values()) {
+
+        // The complete set of successful enrolled-agent directory reads is
+        // authoritative. Any old room absent from it loses its persisted grant
+        // and its held turns/outbound work before streams are reconciled.
+        await this.deps.bridge.revokeAbsentRooms(
+          connection.communityRef,
+          connection.ownerAuthorId,
+          new Set(rooms.keys())
+        );
+        for (const { room, accessors, members } of rooms.values()) {
           const input: MirrorRoomInput = {
             communityRef: connection.communityRef,
             remoteRoomId: room.roomId,
@@ -205,16 +231,16 @@ export class RemoteRoomSubscriptionRuntime {
           // This fresh enrolled-agent directory read is the only path that may
           // renew a stale mirror; delayed stream snapshots never do so.
           this.deps.bridge.authorizeRoom(input);
-          const key = subscriptionKey(input);
-          desired.set(key, {
-            key,
-            signature: `${key}:${accessors
-              .map((agent) => agent.authorId)
-              .sort()
-              .join(',')}`,
-            adapter,
-            room: input,
-          });
+          for (const member of members) {
+            const key = `${subscriptionKey(input)}:${member.localAgentId}`;
+            desired.set(key, {
+              key,
+              signature: `${key}:${member.remoteMemberId}`,
+              adapter,
+              room: input,
+              context: { actingMemberId: member.remoteMemberId },
+            });
+          }
         }
       } catch {
         this.deps.bridge.markStale(connection.communityRef, connection.ownerAuthorId);
@@ -255,7 +281,8 @@ export class RemoteRoomSubscriptionRuntime {
               desired.adapter.subscribeNativeRoom(
                 desired.room.remoteRoomId,
                 undefined,
-                abort.signal
+                abort.signal,
+                desired.context
               ),
               {
                 snapshotComplete: () => {

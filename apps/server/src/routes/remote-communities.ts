@@ -39,6 +39,7 @@ import {
   getRemoteCommunityLifecycle,
   getRemoteCommunityOriginIdempotencyKey,
   onRemoteCommunityDeliveryChange,
+  resolveRemoteCommunityLocalAgent,
 } from '../services/communities/remote/state.js';
 import { getRoomService } from '../services/rooms/index.js';
 import {
@@ -469,13 +470,14 @@ export function createRemoteCommunitiesRouter(): Router {
       return;
     }
     try {
-      const author = getRoomService().authorRegistry.getById(req.params.localAgentId);
-      if (!author || author.kind !== 'agent')
-        return res.status(404).json({ error: 'Local agent not found.' });
+      const localAgent = resolveRemoteCommunityLocalAgent(req.params.localAgentId);
+      if (!localAgent) return res.status(404).json({ error: 'Local agent not found.' });
       const adapter = getRemoteCommunityAdapter(ref.data, owner);
       const member = await adapter.recoverAgent({
+        // Keep the public Mesh manifest id durable. The local author id is
+        // intentionally private and is resolved again at dispatch time.
         agentId: req.params.localAgentId,
-        displayName: author.displayName,
+        displayName: localAgent.displayName,
         ...(input.data.handle ? { handle: input.data.handle } : {}),
       });
       getRemoteCommunityLifecycle().refreshSubscriptions();
