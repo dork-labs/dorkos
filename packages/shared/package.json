@@ -153,6 +153,10 @@
       "types": "./src/community-private-wire.ts",
       "default": "./dist/community-private-wire.js"
     },
+    "./community-connections": {
+      "types": "./src/community-connections.ts",
+      "default": "./dist/community-connections.js"
+    },
     "./memory-provider": {
       "types": "./src/memory-provider.ts",
       "default": "./dist/memory-provider.js"
