@@ -183,6 +183,18 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       const localAgentId = registered.id;
       const handle = 'attachment-agent';
       const ownedAgentLabel = `${agentDisplayName} · owned by You`;
+      type EnrollmentSnapshot = {
+        community: string;
+        agents: Array<{
+          localAgentId: string;
+          remoteMemberId: string;
+          displayName: string;
+          roomIds: string[];
+          active: boolean;
+        }>;
+      };
+      const readEnrollments = () =>
+        json<EnrollmentSnapshot>(`${env.local}/api/communities/${refA}/agents`);
       const localConfig = await json<{ dorkHome: string }>(`${env.local}/api/config`);
       expect(localConfig.dorkHome).toBe(join(env.root, 'local-home'));
       const now = new Date().toISOString();
@@ -227,6 +239,14 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       await expect(
         agentControls.getByRole('button', { name: 'Leave channel', exact: true })
       ).toBeVisible();
+      await eventually(
+        readEnrollments,
+        (result) =>
+          result.agents.some(
+            (agent) => agent.localAgentId === localAgentId && agent.roomIds.includes(roomA!.roomId)
+          ),
+        'the joined channel did not appear in the browser-enrolled agent projection'
+      );
       const leftResponse = localPage.waitForResponse(
         (response) =>
           response.request().method() === 'DELETE' &&
@@ -234,10 +254,20 @@ test.describe('Packaged Community local-agent proof @integration', () => {
             `/api/communities/${refA}/rooms/${roomA!.roomId}/agents/${encodeURIComponent(localAgentId)}/membership`
       );
       await agentControls.getByRole('button', { name: 'Leave channel', exact: true }).click();
-      expect((await leftResponse).status()).toBe(204);
+      const leftResult = await leftResponse;
+      expect(leftResult.status()).toBe(200);
+      await expect(leftResult.json()).resolves.toEqual({ localRevoked: true, remoteRevoked: true });
       await expect(
         agentControls.getByRole('button', { name: 'Join channel', exact: true })
       ).toBeVisible();
+      await eventually(
+        readEnrollments,
+        (result) =>
+          result.agents.some(
+            (agent) => agent.localAgentId === localAgentId && !agent.roomIds.includes(roomA!.roomId)
+          ),
+        'the left channel remained in the browser-enrolled agent projection'
+      );
       const rejoinedResponse = localPage.waitForResponse(
         (response) =>
           response.request().method() === 'POST' &&
@@ -250,19 +280,15 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         agentControls.getByRole('button', { name: 'Leave channel', exact: true })
       ).toBeVisible();
       const enrollment = await eventually(
-        () =>
-          json<{
-            community: string;
-            agents: Array<{
-              localAgentId: string;
-              remoteMemberId: string;
-              displayName: string;
-              active: boolean;
-            }>;
-          }>(`${env.local}/api/communities/${refA}/agents`),
+        readEnrollments,
         (result) =>
           result.community === refA &&
-          result.agents.some((agent) => agent.localAgentId === localAgentId && agent.active),
+          result.agents.some(
+            (agent) =>
+              agent.localAgentId === localAgentId &&
+              agent.active &&
+              agent.roomIds.includes(roomA!.roomId)
+          ),
         'the browser-enrolled local agent was not retained under Community A'
       );
       const enrolledAgent = enrollment.agents.find((agent) => agent.localAgentId === localAgentId)!;
