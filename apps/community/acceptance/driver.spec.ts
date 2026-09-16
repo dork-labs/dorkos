@@ -224,6 +224,31 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       );
       await agentControls.getByRole('button', { name: 'Join channel', exact: true }).click();
       expect((await joinedResponse).status()).toBe(204);
+      await expect(
+        agentControls.getByRole('button', { name: 'Leave channel', exact: true })
+      ).toBeVisible();
+      const leftResponse = localPage.waitForResponse(
+        (response) =>
+          response.request().method() === 'DELETE' &&
+          new URL(response.url()).pathname ===
+            `/api/communities/${refA}/rooms/${roomA!.roomId}/agents/${encodeURIComponent(localAgentId)}/membership`
+      );
+      await agentControls.getByRole('button', { name: 'Leave channel', exact: true }).click();
+      expect((await leftResponse).status()).toBe(204);
+      await expect(
+        agentControls.getByRole('button', { name: 'Join channel', exact: true })
+      ).toBeVisible();
+      const rejoinedResponse = localPage.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          new URL(response.url()).pathname ===
+            `/api/communities/${refA}/rooms/${roomA!.roomId}/agents/${encodeURIComponent(localAgentId)}/membership`
+      );
+      await agentControls.getByRole('button', { name: 'Join channel', exact: true }).click();
+      expect((await rejoinedResponse).status()).toBe(204);
+      await expect(
+        agentControls.getByRole('button', { name: 'Leave channel', exact: true })
+      ).toBeVisible();
       const enrollment = await eventually(
         () =>
           json<{
