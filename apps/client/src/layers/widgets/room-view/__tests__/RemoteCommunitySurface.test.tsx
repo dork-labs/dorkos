@@ -140,6 +140,7 @@ describe('remote community surface', () => {
       attachments: [{ name: 'proof.png', contentType: 'image/png', byteSize: 42 }],
       state: 'pending' as const,
       failure: null,
+      retryable: false,
     };
     act(() =>
       view.emit({
@@ -158,7 +159,17 @@ describe('remote community surface', () => {
         type: 'deliveries',
         community: room.community,
         roomId: room.roomId,
-        deliveries: [{ ...delivery, state: 'failed', failure: 'expired' }],
+        deliveries: [
+          {
+            idempotencyKey: delivery.idempotencyKey,
+            author: delivery.author,
+            text: delivery.text,
+            parentEntryId: delivery.parentEntryId,
+            attachments: delivery.attachments,
+            state: 'failed',
+            failure: 'expired',
+          },
+        ],
       })
     );
     expect(
@@ -174,6 +185,77 @@ describe('remote community surface', () => {
       })
     );
     expect(screen.queryByText('Local agent output')).not.toBeInTheDocument();
+  });
+
+  it('offers retry only for eligible agent deliveries and refreshes after the qualified request', async () => {
+    const view = mount();
+    await waitFor(() =>
+      expect(view.transport.subscribeRemoteCommunityRoom).toHaveBeenCalledTimes(1)
+    );
+    const delivery = {
+      idempotencyKey: 'agent-retry',
+      author: { kind: 'agent' as const, displayName: 'Builder' },
+      text: 'Unconfirmed output',
+      parentEntryId: null,
+      attachments: [],
+      state: 'pending' as const,
+      failure: null,
+      retryable: false,
+    };
+    const snapshot = {
+      type: 'deliveries' as const,
+      community: room.community,
+      roomId: room.roomId,
+      deliveries: [delivery],
+    };
+    act(() => view.emit(snapshot));
+    expect(screen.queryByRole('button', { name: 'Retry now' })).not.toBeInTheDocument();
+    act(() => view.emit({ ...snapshot, deliveries: [{ ...delivery, retryable: true }] }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry now' }));
+    await waitFor(() =>
+      expect(view.transport.retryRemoteCommunityDelivery).toHaveBeenCalledWith(
+        'a',
+        'same',
+        'agent-retry'
+      )
+    );
+    await waitFor(() =>
+      expect(view.transport.subscribeRemoteCommunityRoom).toHaveBeenCalledTimes(2)
+    );
+    expect(screen.queryByText('Unconfirmed output')).not.toBeInTheDocument();
+  });
+
+  it('keeps an unconfirmed delivery visible when the retry is refused', async () => {
+    const view = mount();
+    vi.mocked(view.transport.retryRemoteCommunityDelivery).mockRejectedValue(
+      new Error('The retry window has ended.')
+    );
+    await waitFor(() =>
+      expect(view.transport.subscribeRemoteCommunityRoom).toHaveBeenCalledTimes(1)
+    );
+    act(() =>
+      view.emit({
+        type: 'deliveries',
+        community: room.community,
+        roomId: room.roomId,
+        deliveries: [
+          {
+            idempotencyKey: 'refused-retry',
+            author: { kind: 'agent', displayName: 'Builder' },
+            text: 'Still unconfirmed',
+            parentEntryId: null,
+            attachments: [],
+            state: 'pending',
+            failure: null,
+            retryable: true,
+          },
+        ],
+      })
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Retry now' }));
+    expect(await screen.findByText('The retry window has ended.')).toBeInTheDocument();
+    expect(screen.getByText('Still unconfirmed')).toBeInTheDocument();
+    expect(view.transport.subscribeRemoteCommunityRoom).toHaveBeenCalledTimes(1);
   });
 
   it('sends only through the qualified remote transport and leaves local room APIs unused', async () => {

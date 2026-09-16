@@ -5,7 +5,10 @@
  * @module shared/community-views
  */
 import { z } from 'zod';
-import { CommunityDeliverySnapshotSchema } from './community-deliveries.js';
+import {
+  CommunityDeliverySnapshotSchema,
+  type CommunityDeliverySnapshot,
+} from './community-deliveries.js';
 import type { HaltRoomResponse } from './room-schemas.js';
 import {
   CommunityWireEntryPostRequestSchema,
@@ -264,6 +267,12 @@ export interface RemoteCommunityTransport {
     roomId: string,
     localAgentId: string
   ): Promise<HaltRoomResponse>;
+  /** Retry one eligible owned delivery without replacing its original idempotency key or expiry. */
+  retryRemoteCommunityDelivery(
+    ref: string,
+    roomId: string,
+    idempotencyKey: string
+  ): Promise<CommunityDeliverySnapshot>;
   /** Upload bounded bytes through the local server, with a stable retry key. */
   uploadRemoteCommunityAttachment(
     ref: string,

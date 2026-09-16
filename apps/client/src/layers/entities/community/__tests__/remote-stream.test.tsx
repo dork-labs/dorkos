@@ -158,6 +158,7 @@ describe('remote room stream lifecycle', () => {
       attachments: [],
       state: 'pending' as const,
       failure: null,
+      retryable: false,
     };
     const pending: RemoteCommunityEvent = {
       type: 'deliveries',
@@ -185,7 +186,15 @@ describe('remote room stream lifecycle', () => {
       streams[0].emit({
         ...pending,
         deliveries: [
-          { ...delivery, idempotencyKey: 'another', state: 'failed', failure: 'expired' },
+          {
+            idempotencyKey: 'another',
+            author: delivery.author,
+            text: delivery.text,
+            parentEntryId: delivery.parentEntryId,
+            attachments: delivery.attachments,
+            state: 'failed',
+            failure: 'expired',
+          },
         ],
       })
     );
@@ -210,6 +219,7 @@ describe('remote room stream lifecycle', () => {
           attachments: [],
           state: 'pending',
           failure: null,
+          retryable: false,
         },
       ],
     };

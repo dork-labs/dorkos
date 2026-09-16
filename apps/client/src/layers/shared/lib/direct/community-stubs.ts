@@ -31,6 +31,7 @@ export const communityStubs: CommunityConnectionTransport & RemoteCommunityTrans
   leaveRemoteCommunityAgentRoom: unavailable,
   haltRemoteCommunityRoom: unavailable,
   haltRemoteCommunityAgent: unavailable,
+  retryRemoteCommunityDelivery: unavailable,
   uploadRemoteCommunityAttachment: unavailable,
   downloadRemoteCommunityAttachment: unavailable,
 };

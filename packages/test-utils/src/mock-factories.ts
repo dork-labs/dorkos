@@ -1113,6 +1113,9 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     leaveRemoteCommunityAgentRoom: vi.fn(),
     haltRemoteCommunityRoom: vi.fn().mockResolvedValue({ stopped: 0 }),
     haltRemoteCommunityAgent: vi.fn().mockResolvedValue({ stopped: 0 }),
+    retryRemoteCommunityDelivery: vi
+      .fn()
+      .mockImplementation(async (community, roomId) => ({ community, roomId, deliveries: [] })),
     uploadRemoteCommunityAttachment: vi.fn(),
     downloadRemoteCommunityAttachment: vi.fn(),
     listCommunityConnections: vi.fn().mockResolvedValue([]),

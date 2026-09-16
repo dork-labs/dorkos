@@ -85,6 +85,43 @@ function stream(...events: unknown[]) {
 }
 
 describe('qualified remote community transport', () => {
+  it('retries the exact qualified delivery and rejects a foreign replacement snapshot', async () => {
+    const fetch = answer({ community: 'ref-a', roomId: 'room/b', deliveries: [] });
+    await expect(
+      methods().retryRemoteCommunityDelivery('ref-a', 'room/b', 'key/c')
+    ).resolves.toEqual({
+      community: 'ref-a',
+      roomId: 'room/b',
+      deliveries: [],
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/communities/ref-a/rooms/room%2Fb/deliveries/key%2Fc/retry',
+      expect.objectContaining({ method: 'POST' })
+    );
+    answer({ community: 'other', roomId: 'room/b', deliveries: [] });
+    await expect(
+      methods().retryRemoteCommunityDelivery('ref-a', 'room/b', 'key/c')
+    ).rejects.toThrow('different room');
+    await expect(
+      communityStubs.retryRemoteCommunityDelivery('ref-a', 'room/b', 'key/c')
+    ).rejects.toThrow('web or desktop');
+  });
+
+  it('changes agent membership through the qualified membership route', async () => {
+    const joined = answer(null, 204);
+    await methods().joinRemoteCommunityAgentRoom('community-a', 'room/id', 'manifest/id');
+    expect(joined).toHaveBeenCalledWith(
+      '/api/communities/community-a/rooms/room%2Fid/agents/manifest%2Fid/membership',
+      expect.objectContaining({ method: 'POST' })
+    );
+    const left = answer({ localRevoked: true, remoteRevoked: true });
+    await methods().leaveRemoteCommunityAgentRoom('community-a', 'room/id', 'manifest/id');
+    expect(left).toHaveBeenCalledWith(
+      '/api/communities/community-a/rooms/room%2Fid/agents/manifest%2Fid/membership',
+      expect.objectContaining({ method: 'DELETE' })
+    );
+  });
+
   it('stops qualified local work directly without a remote permission preflight', async () => {
     const fetch = answer({ stopped: 2 });
     await expect(methods().haltRemoteCommunityRoom('ref/a', 'same/id')).resolves.toEqual({

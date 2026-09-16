@@ -48,6 +48,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       // member of Community A. Community B exists to prove that pairing identities
       // stay isolated; it is not the second participant in A's shared channel.
       await pageA.getByRole('button', { name: 'Manage' }).click();
+      await pageA.locator('#invite-channel').selectOption({ label: '#general' });
       await pageA.getByRole('button', { name: 'Create invite' }).click();
       const inviteUrl = await pageA.getByLabel('One-time invite link').inputValue();
       await pageMemberA.goto(inviteUrl);
@@ -61,7 +62,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
 
       const connect = async (origin: string, page: typeof pageA, name: string) => {
         const started = await json<{ connection: { ref: string }; approvalUrl: string }>(
-          `${env.local}/api/communities`,
+          `${env.local}/api/community-connections`,
           {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -75,7 +76,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         const connected = await eventually(
           () =>
             json<{ status: string; connection: { ref: string } | null }>(
-              `${env.local}/api/communities/${started.connection.ref}/poll`,
+              `${env.local}/api/community-connections/${started.connection.ref}/poll`,
               { method: 'POST' }
             ),
           (result) => result.status === 'connected' && result.connection !== null,
@@ -98,6 +99,28 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         roomA,
         'the browser-created general channel was not visible to the native connection'
       ).toBeTruthy();
+
+      type SubscriptionBarrier = {
+        generation: number;
+        snapshotComplete: boolean;
+        replayComplete: boolean;
+        dispatchesSinceBoot: number;
+      };
+      const subscriptionBarrier = async (): Promise<SubscriptionBarrier | null> => {
+        const response = await fetch(
+          `${env.local}/api/test/community-subscription?ref=${encodeURIComponent(refA)}&roomId=${encodeURIComponent(roomA!.roomId)}`
+        );
+        // Restarting the packaged server makes the runtime probe briefly absent
+        // before the first subscription is constructed. That is a not-ready
+        // condition for this poll, rather than evidence that replay completed.
+        if (response.status === 404 || response.status === 503) return null;
+        if (!response.ok) {
+          throw new Error(
+            `GET /api/test/community-subscription returned ${response.status}: ${await response.text()}`
+          );
+        }
+        return (await response.json()) as SubscriptionBarrier;
+      };
 
       const agentPath = join(env.root, 'agents', 'community-attachment-agent');
       const registered = await json<{ id: string; name: string }>(`${env.local}/api/mesh/agents`, {
@@ -128,6 +151,13 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         { method: 'POST' }
       );
       expect(joined.status).toBe(204);
+
+      const ready = await eventually(
+        subscriptionBarrier,
+        (result) => result !== null && result.snapshotComplete && result.replayComplete,
+        'the enrolled local agent did not finish its initial room subscription'
+      );
+      expect(ready?.dispatchesSinceBoot).toBe(0);
 
       const scenario = await request.post(`${env.local}/api/test/scenario`, {
         data: { name: 'rooms-post-attachment' },
@@ -200,31 +230,12 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       );
       await eventually(
         () =>
-          json<{ connection: { status: string } | null }>(`${env.local}/api/communities/${refA}`),
+          json<{ connection: { status: string } | null }>(
+            `${env.local}/api/community-connections/${refA}`
+          ),
         (result) => result.connection?.status === 'connected',
         'the packaged local server did not reconnect to Community A after restart'
       );
-      type SubscriptionBarrier = {
-        generation: number;
-        snapshotComplete: boolean;
-        replayComplete: boolean;
-        dispatchesSinceBoot: number;
-      };
-      const subscriptionBarrier = async (): Promise<SubscriptionBarrier | null> => {
-        const response = await fetch(
-          `${env.local}/api/test/community-subscription?ref=${encodeURIComponent(refA)}&roomId=${encodeURIComponent(roomA!.roomId)}`
-        );
-        // Restarting the packaged server makes the runtime probe briefly absent
-        // before the first subscription is constructed. That is a not-ready
-        // condition for this poll, rather than evidence that replay completed.
-        if (response.status === 404 || response.status === 503) return null;
-        if (!response.ok) {
-          throw new Error(
-            `GET /api/test/community-subscription returned ${response.status}: ${await response.text()}`
-          );
-        }
-        return (await response.json()) as SubscriptionBarrier;
-      };
       // A connected pairing only proves authentication. This test-only, runtime-owned
       // barrier is recorded after the bridge imports its snapshot and consumes every
       // server entry through the captured replay watermark. It makes the zero below a

@@ -15,6 +15,7 @@ import {
   RemoteCommunityAttachmentResponseSchema,
   type RemoteCommunityTransport,
 } from '@dorkos/shared/community-views';
+import { CommunityDeliverySnapshotSchema } from '@dorkos/shared/community-deliveries';
 import { HaltRoomResponseSchema } from '@dorkos/shared/room-schemas';
 import { fetchJSON, fetchNoContent, fetchResponse, buildQueryString } from './http-client';
 import { createRemoteCommunityStream } from './remote-community-stream';
@@ -145,7 +146,7 @@ export function createRemoteCommunityMethods(baseUrl: string): RemoteCommunityTr
     joinRemoteCommunityAgentRoom(ref, roomId, localAgentId) {
       return fetchNoContent(
         baseUrl,
-        `${roomPath(ref, roomId)}/agents/${encodeURIComponent(localAgentId)}`,
+        `${roomPath(ref, roomId)}/agents/${encodeURIComponent(localAgentId)}/membership`,
         { method: 'POST' }
       );
     },
@@ -153,7 +154,7 @@ export function createRemoteCommunityMethods(baseUrl: string): RemoteCommunityTr
       return RemoteCommunityEjectionResponseSchema.parse(
         await fetchJSON(
           baseUrl,
-          `${roomPath(ref, roomId)}/agents/${encodeURIComponent(localAgentId)}`,
+          `${roomPath(ref, roomId)}/agents/${encodeURIComponent(localAgentId)}/membership`,
           { method: 'DELETE' }
         )
       );
@@ -170,6 +171,21 @@ export function createRemoteCommunityMethods(baseUrl: string): RemoteCommunityTr
           `${roomPath(ref, roomId)}/agents/${encodeURIComponent(localAgentId)}/halt`,
           { method: 'POST' }
         )
+      );
+    },
+    async retryRemoteCommunityDelivery(ref, roomId, idempotencyKey) {
+      if (!idempotencyKey || idempotencyKey.length > 128)
+        throw new Error('The message retry key is invalid.');
+      return qualified(
+        CommunityDeliverySnapshotSchema.parse(
+          await fetchJSON(
+            baseUrl,
+            `${roomPath(ref, roomId)}/deliveries/${encodeURIComponent(idempotencyKey)}/retry`,
+            { method: 'POST' }
+          )
+        ),
+        ref,
+        roomId
       );
     },
     async uploadRemoteCommunityAttachment(ref, roomId, file, idempotencyKey) {

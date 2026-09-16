@@ -134,7 +134,8 @@ export function RemoteCommunitySurface({
     setActionError(null);
     try {
       await work();
-      if (name === 'join' || name === 'leave') setStreamRevision((current) => current + 1);
+      if (name === 'join' || name === 'leave' || name.startsWith('retry:'))
+        setStreamRevision((current) => current + 1);
       await queries.invalidateQueries({ queryKey: communityKeys.remote(community) });
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : 'The action could not be completed.');
@@ -342,8 +343,26 @@ export function RemoteCommunitySurface({
                       ? 'Waiting for community confirmation…'
                       : delivery.failure === 'expired'
                         ? 'Delivery not confirmed. The retry window has ended.'
-                        : 'Delivery not confirmed. Check the community connection before asking the agent to try again.'}
+                        : 'Delivery not confirmed. Check the community connection and the agent’s channel access before asking it to try again.'}
                   </p>
+                  {delivery.state === 'pending' && delivery.retryable && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={!canSend || action !== null}
+                      onClick={() =>
+                        void perform(`retry:${delivery.idempotencyKey}`, () =>
+                          transport.retryRemoteCommunityDelivery(
+                            community,
+                            roomId,
+                            delivery.idempotencyKey
+                          )
+                        )
+                      }
+                    >
+                      {action === `retry:${delivery.idempotencyKey}` ? 'Retrying…' : 'Retry now'}
+                    </Button>
+                  )}
                 </div>
               ))}
             {drafts.deliveries
