@@ -38,6 +38,7 @@ import {
   CommunityWireChannelListResponseSchema,
   CommunityWireChannelResponseSchema,
   CommunityWireAgentChannelMembershipResponseSchema,
+  CommunityWireAgentListResponseSchema,
   CommunityWireEntryPageSchema,
   CommunityWireEntryPostResponseSchema,
   CommunityWireEventSchema,
@@ -54,6 +55,7 @@ import {
   pinnedSse,
 } from './pinned-origin.js';
 import { RemoteConnectionNotFoundError, RemoteConnectionStore } from './connection-store.js';
+import type { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
 
 const capabilities: CommunityCapabilities = {
   type: 'dorkos-community',
@@ -91,6 +93,7 @@ const remoteAuthorMetadata = new WeakMap<
   Readonly<{ displayName: string; kind: 'human' | 'agent' }>
 >();
 const communityUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const activeAdmissions = new Map<string, Promise<CommunityMember>>();
 
 /**
  * Read the authoritative Community-server sequence retained for a native projected entry.
@@ -211,7 +214,8 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
   constructor(
     readonly community: CommunityRef,
     private readonly ownerKey: string,
-    private readonly store: RemoteConnectionStore
+    private readonly store: RemoteConnectionStore,
+    private readonly enrollments?: CommunityAgentEnrollmentStore
   ) {}
 
   getCapabilities(): CommunityCapabilities {
@@ -593,12 +597,48 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     throw new CommunityUnsupportedError(this.community, 'responseMode', 'setResponseMode');
   }
 
-  async admitAgent(input: AdmitAgentInput): Promise<CommunityMember> {
-    const admitted = this.admittedAgents.get(input.agentId);
-    // The cache makes duplicate enrollment idempotent, but admission derives
-    // from the human's current server authority. Re-check it before reuse.
+  private async verifiedEnrolledAgent(localAgentId: string): Promise<CommunityMember | null> {
+    const binding = this.enrollments?.findRemoteMember(this.community, localAgentId, this.ownerKey);
+    if (!binding) return null;
+    try {
+      // Fresh remote authority is required before returning a durable mapping.
+      await this.request(
+        COMMUNITY_API_V1_ROUTES.channels,
+        undefined,
+        {
+          actingMemberId: binding.remoteMemberId,
+        },
+        'GET'
+      );
+      const agents = CommunityWireAgentListResponseSchema.parse(
+        await this.request(COMMUNITY_API_V1_ROUTES.agents, undefined, undefined, 'GET')
+      );
+      const agent = agents.agents.find((item) => item.memberId === binding.remoteMemberId);
+      if (!agent || !agent.active) return null;
+      return {
+        community: this.community,
+        memberId: agent.memberId,
+        kind: 'agent',
+        displayName: agent.displayName,
+        handle: agent.handle,
+        role: null,
+        ownerMemberId: agent.ownerMemberId,
+        joinedAt: new Date().toISOString(),
+      };
+    } catch (error) {
+      if (error instanceof PinnedHttpError && (error.status === 401 || error.status === 403))
+        return null;
+      throw error;
+    }
+  }
+
+  /** Enroll once, reusing a verified durable credential after an adapter restart. */
+  private async admitAgentUnshared(input: AdmitAgentInput): Promise<CommunityMember> {
+    const admitted =
+      this.admittedAgents.get(input.agentId) ?? (await this.verifiedEnrolledAgent(input.agentId));
+    // A durable enrollment is only reusable after the remote accepts its bearer.
     if (admitted) {
-      await this.listRooms();
+      this.admittedAgents.set(input.agentId, admitted);
       return admitted;
     }
     const data = CommunityAgentEnrollmentSecretResponseSchema.parse(
@@ -608,6 +648,63 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
       })
     );
     await this.store.saveAgentToken(this.community, this.ownerKey, data.agent.memberId, data.token);
+    this.enrollments?.activate({
+      communityRef: this.community,
+      localAgentId: input.agentId,
+      remoteMemberId: data.agent.memberId,
+      ownerAuthorId: this.ownerKey,
+    });
+    const member: CommunityMember = {
+      community: this.community,
+      memberId: data.agent.memberId,
+      kind: 'agent',
+      displayName: data.agent.displayName,
+      handle: data.agent.handle,
+      role: null,
+      ownerMemberId: data.agent.ownerMemberId,
+      joinedAt: new Date().toISOString(),
+    };
+    this.admittedAgents.set(input.agentId, member);
+    return member;
+  }
+
+  /** Serialize duplicate local enrollment requests until one durable receipt exists. */
+  async admitAgent(input: AdmitAgentInput): Promise<CommunityMember> {
+    const key = `${this.community}:${this.ownerKey}:${input.agentId}`;
+    const active = activeAdmissions.get(key);
+    if (active) return active;
+    const admission = this.admitAgentUnshared(input);
+    activeAdmissions.set(key, admission);
+    try {
+      return await admission;
+    } finally {
+      if (activeAdmissions.get(key) === admission) activeAdmissions.delete(key);
+    }
+  }
+
+  /** Recover an explicitly requested missing or rejected bearer; ordinary retries never rotate it. */
+  async recoverAgent(input: AdmitAgentInput): Promise<CommunityMember> {
+    const binding = this.enrollments?.findRemoteMember(
+      this.community,
+      input.agentId,
+      this.ownerKey
+    );
+    if (!binding) return this.admitAgent(input);
+    const data = CommunityAgentEnrollmentSecretResponseSchema.parse(
+      await this.request(
+        `/api/v1/agents/${encodeURIComponent(binding.remoteMemberId)}/rotate`,
+        undefined,
+        undefined,
+        'POST'
+      )
+    );
+    await this.store.saveAgentToken(this.community, this.ownerKey, data.agent.memberId, data.token);
+    this.enrollments?.activate({
+      communityRef: this.community,
+      localAgentId: input.agentId,
+      remoteMemberId: data.agent.memberId,
+      ownerAuthorId: this.ownerKey,
+    });
     const member: CommunityMember = {
       community: this.community,
       memberId: data.agent.memberId,
@@ -623,6 +720,17 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
   }
 
   async revokeAgent(memberId: string): Promise<void> {
+    const binding = this.enrollments?.findLocalAgent(this.community, memberId, this.ownerKey);
+    // Stop local delivery before attempting network cleanup. A timeout therefore
+    // never leaves this install able to dispatch through a stale agent grant.
+    if (binding) this.enrollments?.revoke(this.community, binding.localAgentId, this.ownerKey);
+    try {
+      await this.store.deleteAgentToken(this.community, this.ownerKey, memberId);
+    } catch (error) {
+      if (!(error instanceof RemoteConnectionNotFoundError)) throw error;
+    }
+    for (const [localAgentId, agent] of this.admittedAgents)
+      if (agent.memberId === memberId) this.admittedAgents.delete(localAgentId);
     try {
       await this.request(
         `/api/v1/agents/${encodeURIComponent(memberId)}`,
@@ -631,16 +739,11 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
         'DELETE'
       );
     } catch (error) {
+      // The local revocation above remains authoritative even if cleanup loses
+      // the remote response. A confirmed remote absence is idempotent.
       if (error instanceof PinnedHttpError && error.status === 404) return;
       throw error;
     }
-    try {
-      await this.store.deleteAgentToken(this.community, this.ownerKey, memberId);
-    } catch (error) {
-      if (!(error instanceof RemoteConnectionNotFoundError)) throw error;
-    }
-    for (const [localAgentId, agent] of this.admittedAgents)
-      if (agent.memberId === memberId) this.admittedAgents.delete(localAgentId);
   }
 
   async getReadCursor(roomId: string): Promise<CommunityCursor | null> {

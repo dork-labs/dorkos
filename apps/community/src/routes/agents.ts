@@ -60,11 +60,11 @@ export function registerAgentRoutes(
       );
       if (!grant.rowCount)
         throw new ApiError(401, 'UNAUTHENTICATED', 'This connection is unavailable.');
-      const existing = await client.query(
-        'SELECT 1 FROM agents WHERE owner_member_id=$1 AND local_agent_id=$2',
+      const existing = await client.query<AgentRow>(
+        'SELECT id,display_name,handle,owner_member_id,active FROM agents WHERE owner_member_id=$1 AND local_agent_id=$2 FOR UPDATE',
         [member.id, body.localAgentId]
       );
-      if (existing.rowCount)
+      if (existing.rows[0]?.active)
         throw new ApiError(409, 'STATE_CONFLICT', 'This local agent is already enrolled.');
       const count = await client.query<{ n: string }>(
         'SELECT count(*)::text AS n FROM agents WHERE owner_member_id=$1 AND active',
@@ -72,15 +72,30 @@ export function registerAgentRoutes(
       );
       if (Number(count.rows[0].n) >= config.limits.agentsPerOwner)
         throw new ApiError(429, 'RATE_LIMITED', 'Active agent limit reached.');
-      const handle =
-        body.handle ?? (await mintHandle(client, member.community_id, body.displayName));
-      const agent = await client.query<AgentRow>(
-        'INSERT INTO agents(community_id,owner_member_id,display_name,handle,local_agent_id) VALUES($1,$2,$3,$4,$5) RETURNING id,display_name,handle,owner_member_id,active',
-        [member.community_id, member.id, body.displayName, handle, body.localAgentId]
-      );
+      const agent = existing.rows[0]
+        ? await client.query<AgentRow>(
+            'UPDATE agents SET active=true,revoked_at=NULL,display_name=$2 WHERE id=$1 RETURNING id,display_name,handle,owner_member_id,active',
+            [existing.rows[0].id, body.displayName]
+          )
+        : await (async () => {
+            const handle =
+              body.handle ?? (await mintHandle(client, member.community_id, body.displayName));
+            const created = await client.query<AgentRow>(
+              'INSERT INTO agents(community_id,owner_member_id,display_name,handle,local_agent_id) VALUES($1,$2,$3,$4,$5) RETURNING id,display_name,handle,owner_member_id,active',
+              [member.community_id, member.id, body.displayName, handle, body.localAgentId]
+            );
+            await client.query(
+              'INSERT INTO community_handles(community_id,handle,agent_id) VALUES($1,$2,$3)',
+              [member.community_id, handle, created.rows[0].id]
+            );
+            return created;
+          })();
+      // Reactivation is a new authority: old room memberships and credentials
+      // cannot survive an ejection or a lost initial response.
+      await client.query('DELETE FROM agent_channel_members WHERE agent_id=$1', [agent.rows[0].id]);
       await client.query(
-        'INSERT INTO community_handles(community_id,handle,agent_id) VALUES($1,$2,$3)',
-        [member.community_id, handle, agent.rows[0].id]
+        'UPDATE agent_credentials SET revoked_at=now() WHERE agent_id=$1 AND revoked_at IS NULL',
+        [agent.rows[0].id]
       );
       const token = randomToken();
       await client.query('INSERT INTO agent_credentials(agent_id,token_hash) VALUES($1,$2)', [
@@ -99,7 +114,10 @@ export function registerAgentRoutes(
   });
 
   app.get('/api/v1/agents', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const grant = c.req.header('authorization')
+      ? await requireConnectionGrant(c, pool, 'enroll-agent')
+      : undefined;
+    const actor = grant?.member ?? (await requireMember(c, auth, pool));
     const rows = await pool.query<AgentRow>(
       'SELECT id,display_name,handle,owner_member_id,active FROM agents WHERE community_id=$1 AND owner_member_id=$2 AND active ORDER BY created_at,id',
       [actor.community_id, actor.id]

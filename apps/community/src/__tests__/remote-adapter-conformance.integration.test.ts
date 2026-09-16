@@ -6,6 +6,8 @@
  * @vitest-environment node
  */
 import { randomUUID } from 'node:crypto';
+import { createDb, runMigrations } from '@dorkos/db';
+import { CommunityAgentEnrollmentStore } from '../../../server/src/services/communities/remote/agent-enrollment-store.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { serve } from '@hono/node-server';
 import { Pool } from 'pg';
@@ -406,6 +408,57 @@ describe('RemoteCommunityAdapter caller stream cancellation', () => {
     } finally {
       await iterator.return?.();
     }
+  });
+});
+
+describe('RemoteCommunityAdapter durable agent enrollment', () => {
+  it('reuses a validated secret after restart and reactivates an ejected agent with no rooms', async () => {
+    const localDb = createDb(':memory:');
+    runMigrations(localDb);
+    const enrollments = new CommunityAgentEnrollmentStore(localDb);
+    const first = new RemoteCommunityAdapter(ref, ownerKey, store, enrollments);
+    await first.connect();
+    const roomId = await seedRoom(first);
+    const admitted = await first.admitAgent({
+      agentId: 'fixture-agent',
+      displayName: 'Fixture agent',
+    });
+    await first.addMember(roomId, admitted.memberId);
+
+    const restarted = new RemoteCommunityAdapter(ref, ownerKey, store, enrollments);
+    const reused = await restarted.admitAgent({
+      agentId: 'fixture-agent',
+      displayName: 'Ignored name',
+    });
+    expect(reused.memberId).toBe(admitted.memberId);
+
+    // Losing the initial secret response is an explicit recovery action. It
+    // rotates once, then a subsequent restart reuses that new verified bearer.
+    await store.deleteAgentToken(ref, ownerKey, admitted.memberId);
+    const recovered = await restarted.recoverAgent({
+      agentId: 'fixture-agent',
+      displayName: 'Fixture agent',
+    });
+    expect(recovered.memberId).toBe(admitted.memberId);
+    const recoveredRestart = new RemoteCommunityAdapter(ref, ownerKey, store, enrollments);
+    expect(
+      (await recoveredRestart.admitAgent({ agentId: 'fixture-agent', displayName: 'Ignored name' }))
+        .memberId
+    ).toBe(admitted.memberId);
+
+    await restarted.revokeAgent(admitted.memberId);
+    const [reactivated, concurrent] = await Promise.all([
+      restarted.admitAgent({ agentId: 'fixture-agent', displayName: 'Fixture agent' }),
+      new RemoteCommunityAdapter(ref, ownerKey, store, enrollments).admitAgent({
+        agentId: 'fixture-agent',
+        displayName: 'Ignored name',
+      }),
+    ]);
+    expect(reactivated.memberId).toBe(admitted.memberId);
+    expect(concurrent.memberId).toBe(admitted.memberId);
+    expect(
+      (await restarted.listMembers(roomId)).some((member) => member.memberId === admitted.memberId)
+    ).toBe(false);
   });
 });
 

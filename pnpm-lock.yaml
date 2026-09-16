@@ -433,6 +433,9 @@ importers:
         specifier: ^4.1.13
         version: 4.6.5
     devDependencies:
+      '@dorkos/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@dorkos/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
