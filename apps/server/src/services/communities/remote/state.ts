@@ -24,7 +24,21 @@ let enrollments: CommunityAgentEnrollmentStore | undefined;
 let lifecycle: RemoteCommunityLifecycle | undefined;
 let deliveryProjection: CommunityOutboxProjection | undefined;
 const deliveryListeners = new Set<(ownerAuthorId: string) => void>();
+let localAgentResolver: RemoteCommunityLocalAgentResolver | undefined;
 const adapters = new Map<string, RemoteCommunityAdapter>();
+
+/** One trusted local Mesh agent resolved from the browser's manifest id. */
+export interface RemoteCommunityLocalAgent {
+  /** Opaque local room-author id minted for this live Mesh manifest. */
+  authorId: string;
+  /** Current Mesh-backed label used only when creating the remote membership. */
+  displayName: string;
+}
+
+/** Resolve an opaque browser manifest id without accepting a caller-supplied path. */
+export interface RemoteCommunityLocalAgentResolver {
+  (localAgentId: string): RemoteCommunityLocalAgent | null;
+}
 
 /** The locally durable stop surface; it never requires the remote service to be reachable. */
 export interface RemoteCommunityLifecycle {
@@ -50,6 +64,20 @@ export function getRemoteConnectionStore(): RemoteConnectionStore {
 /** The production pairing service over the same protected connection store. */
 export function getRemotePairingService(): RemoteCommunityPairingService {
   return (pairing ??= new RemoteCommunityPairingService(getRemoteConnectionStore()));
+}
+
+/** Bind the trusted Mesh manifest-to-author lookup used by native enrollment and lifecycle code. */
+export function setRemoteCommunityLocalAgentResolver(
+  resolver: RemoteCommunityLocalAgentResolver
+): void {
+  localAgentResolver = resolver;
+}
+
+/** Resolve a browser manifest id through trusted local Mesh state, never a client path or author id. */
+export function resolveRemoteCommunityLocalAgent(
+  localAgentId: string
+): RemoteCommunityLocalAgent | null {
+  return localAgentResolver?.(localAgentId) ?? null;
 }
 
 /** Bind the consolidated SQLite database before any remote lifecycle route starts. */

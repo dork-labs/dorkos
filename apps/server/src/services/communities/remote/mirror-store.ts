@@ -71,7 +71,12 @@ export interface CachedRemoteEntry {
   author: { memberId: string; displayName: string; kind: 'human' | 'agent' | 'system' } | null;
 }
 
-/** One local mirror lookup, used by RoomVisibility before owner-wide access. */
+/** One persisted mirror invalidated because no active enrolled agent still sees it. */
+export interface RevokedRemoteMirrorRoom {
+  localRoomId: string;
+  remoteRoomId: string;
+}
+
 export interface MirrorRoomAccess {
   /** `null` means the local room is not a remote mirror. */
   canRead(roomId: string, authorId: string): boolean | null;
@@ -349,6 +354,46 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
           .where(eq(communityMirrorAccess.localRoomId, row.localRoomId))
           .run();
       }
+    });
+  }
+
+  /**
+   * Revoke every persisted room absent from a complete enrolled-agent directory
+   * read. Returning the local addresses lets the lifecycle stop held work
+   * before a formerly joined agent can publish another remote reply.
+   */
+  revokeAbsentRooms(
+    communityRef: CommunityRef,
+    ownerAuthorId: string,
+    allowedRemoteRoomIds: ReadonlySet<string>
+  ): readonly RevokedRemoteMirrorRoom[] {
+    return this.db.transaction((tx) => {
+      const absent = tx
+        .select({
+          localRoomId: communityRoomMirrors.localRoomId,
+          remoteRoomId: communityRoomMirrors.remoteRoomId,
+          state: communityRoomMirrors.state,
+        })
+        .from(communityRoomMirrors)
+        .where(
+          and(
+            eq(communityRoomMirrors.communityRef, communityRef),
+            eq(communityRoomMirrors.ownerAuthorId, ownerAuthorId)
+          )
+        )
+        .all()
+        .filter((row) => row.state !== 'revoked' && !allowedRemoteRoomIds.has(row.remoteRoomId));
+      for (const room of absent) {
+        tx.update(communityRoomMirrors)
+          .set({ state: 'revoked' })
+          .where(eq(communityRoomMirrors.localRoomId, room.localRoomId))
+          .run();
+        tx.update(communityMirrorAccess)
+          .set({ state: 'revoked' })
+          .where(eq(communityMirrorAccess.localRoomId, room.localRoomId))
+          .run();
+      }
+      return absent;
     });
   }
 

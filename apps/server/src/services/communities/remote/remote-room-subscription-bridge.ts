@@ -196,6 +196,33 @@ export class RemoteRoomSubscriptionBridge {
     await Promise.all(stops);
   }
 
+  /**
+   * Revoke rooms an authoritative enrolled-agent directory no longer returns,
+   * and stop every local turn and queued delivery that those grants enabled.
+   */
+  async revokeAbsentRooms(
+    communityRef: MirrorRoomInput['communityRef'],
+    ownerAuthorId: string,
+    allowedRemoteRoomIds: ReadonlySet<string>
+  ): Promise<void> {
+    const revoked = this.mirrors.revokeAbsentRooms(
+      communityRef,
+      ownerAuthorId,
+      allowedRemoteRoomIds
+    );
+    await Promise.all(
+      revoked.flatMap(({ localRoomId, remoteRoomId }) => {
+        this.outbox?.stopForRoom(communityRef, remoteRoomId, ownerAuthorId);
+        return this.enrollments
+          .activeLocalAgentIds(communityRef, ownerAuthorId)
+          .flatMap((localAgentId) => {
+            const authorId = this.resolveLocalAgentAuthor(localAgentId);
+            return authorId ? [this.service.haltAgent(localRoomId, authorId, ownerAuthorId)] : [];
+          });
+      })
+    );
+  }
+
   /** Apply a successful owner-qualified room discovery before any stream frame can dispatch. */
   authorizeRoom(room: MirrorRoomInput): void {
     this.mirrors.ensureRoom(room);

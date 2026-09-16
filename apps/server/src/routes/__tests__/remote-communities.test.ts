@@ -62,6 +62,11 @@ const fixture = vi.hoisted(() => {
         yield { type: 'snapshot' as const, room, entries: [entry], cursor: 'cursor-a' };
       })()
     ),
+    recoverAgent: vi.fn(async () => ({
+      memberId: 'remote-enrolled-a',
+      displayName: 'Build Agent',
+      ownerMemberId: 'human-a',
+    })),
     listEnrolledAgents: vi.fn(async () => [
       {
         community: ref,
@@ -129,6 +134,10 @@ vi.mock('../../services/communities/remote/state.js', () => ({
     refreshSubscriptions: vi.fn(),
   }),
   onRemoteCommunityDeliveryChange: () => () => undefined,
+  resolveRemoteCommunityLocalAgent: (localAgentId: string) =>
+    localAgentId === 'mesh-manifest-a'
+      ? { authorId: 'opaque-local-author-a', displayName: 'Build Agent' }
+      : null,
 }));
 vi.mock('../../services/communities/remote/remote-community-adapter.js', () => ({
   remoteSequenceOf: () => 1,
@@ -226,6 +235,29 @@ describe('qualified remote community writes and live projections', () => {
         active: true,
       }),
     ]);
+  });
+
+  it('enrolls the browser Mesh manifest id through trusted server-side author resolution', async () => {
+    const response = await request(testServer)
+      .post(`/api/communities/${fixture.ref}/agents/mesh-manifest-a/enroll`)
+      .send({ handle: 'build-agent' });
+
+    expect(response.status).toBe(201);
+    expect(fixture.adapter.recoverAgent).toHaveBeenCalledWith({
+      agentId: 'mesh-manifest-a',
+      displayName: 'Build Agent',
+      handle: 'build-agent',
+    });
+    expect(response.body.agent).toMatchObject({
+      localAgentId: 'mesh-manifest-a',
+      remoteMemberId: 'remote-enrolled-a',
+    });
+
+    const unknown = await request(testServer)
+      .post(`/api/communities/${fixture.ref}/agents/opaque-local-author-a/enroll`)
+      .send({});
+    expect(unknown.status).toBe(404);
+    expect(fixture.adapter.recoverAgent).toHaveBeenCalledTimes(1);
   });
 
   it('stops local remote-room work through the owner-qualified lifecycle without a remote request', async () => {
