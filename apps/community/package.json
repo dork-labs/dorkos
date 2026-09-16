@@ -1,0 +1,41 @@
+{
+  "name": "@dorkos/community",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "dev:web": "vite --host 127.0.0.1",
+    "build": "vite build && tsc -p tsconfig.build.json",
+    "start": "node dist-server/main.js",
+    "test": "vitest run",
+    "test:pg": "vitest run --config vitest.pg.config.ts --reporter=default --reporter=json --outputFile.json=vitest-pg-report.json && node scripts/assert-pg-tests.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "db:migrate": "tsx src/migrate.ts"
+  },
+  "dependencies": {
+    "@dorkos/shared": "workspace:*",
+    "@hono/node-server": "1.19.15",
+    "better-auth": "1.7.5",
+    "drizzle-orm": "0.45.2",
+    "hono": "4.13.5",
+    "pg": "8.16.3",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@dorkos/eslint-config": "workspace:*",
+    "@types/node": "^24",
+    "@types/pg": "^8.15.5",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "5.2.0",
+    "tsx": "4.23.13",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.1",
+    "vitest": "^4.1.11"
+  }
+}

@@ -194,6 +194,39 @@ permissions:
   contents: read
 
 jobs:
+  # Real Postgres HTTP assertions are a dependency of the existing required
+  # `test` check, so a missing database or a skipped suite cannot merge green.
+  community-pg:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: community
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: community-test-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d community"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @dorkos/shared build
+      - name: Assert community HTTP paths against real Postgres
+        env:
+          COMMUNITY_TEST_DATABASE_URL: postgres://postgres:community-test-only@localhost:5432/community
+        run: pnpm --filter @dorkos/community test:pg
+
   # The suite, split four ways at the vitest file level (see the header), on
   # BOTH events: the full monorepo sweep on `merge_group`, the affected-only
   # sweep on `pull_request`. What differs between the two is one `run:` step
@@ -464,7 +497,7 @@ jobs:
   # `always()` is still what lets it report when a shard is red — without it
   # GitHub skips this job, and a SKIPPED check run satisfies a required check.
   test:
-    needs: test-shard
+    needs: [test-shard, community-pg]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     # This job runs no tests any more, so this is a ceiling on a gate, an
@@ -543,6 +576,12 @@ jobs:
         run: |
           result="${{ needs.test-shard.result }}"
           echo "shard matrix result: $result"
+          [ "$result" = "success" ]
+
+      - name: Require real community Postgres tests green
+        run: |
+          result="${{ needs.community-pg.result }}"
+          echo "community Postgres result: $result"
           [ "$result" = "success" ]
 
       # Shallow: this job reads scripts/ and the package manifests, nothing
