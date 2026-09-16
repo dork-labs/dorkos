@@ -264,6 +264,20 @@ describe('qualified remote community writes and live projections', () => {
     expect(download.text).toBe('hello');
   });
 
+  it('rejects JSON as the outer MIME before its parsed body reaches the adapter', async () => {
+    const json = Buffer.from('{"message":"this must not become an attachment body"}');
+    const upload = await request(testServer)
+      .post(`/api/communities/${fixture.ref}/rooms/room-a/attachments`)
+      .set('content-type', 'application/json')
+      .set('x-file-name', encodeURIComponent('notes.json'))
+      .set('x-file-content-type', 'application/json')
+      .set('x-file-size', String(json.byteLength))
+      .set('idempotency-key', 'attachment-retry-wrong-envelope')
+      .send(json);
+    expect(upload.status).toBe(400);
+    expect(fixture.adapter.uploadAttachment).not.toHaveBeenCalled();
+  });
+
   it('keeps JSON file bytes out of the app-wide JSON parser through the raw envelope', async () => {
     const json = Buffer.from('{"message":"preserve these exact bytes"}');
     const upload = await request(testServer)

@@ -70,6 +70,8 @@ const attachmentHeadersSchema = z.object({
 
 /** Parse the raw attachment envelope without letting a file MIME select a body parser. */
 function attachmentHeaders(req: import('express').Request) {
+  const envelopeContentType = req.header('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
+  if (envelopeContentType !== 'application/octet-stream') return null;
   const encodedName = req.header('x-file-name');
   let name: string | undefined;
   try {
