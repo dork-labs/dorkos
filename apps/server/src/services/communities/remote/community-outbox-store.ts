@@ -8,6 +8,7 @@ import {
   communityEntryOrigins,
   communityOutbox,
   eq,
+  gt,
   inArray,
   lte,
   lt,
@@ -270,20 +271,13 @@ export class CommunityOutboxStore {
       .run();
   }
 
-  /**
-   * Requeue one owner-visible lost-receipt delivery without minting a new
-   * idempotency key or extending the original expiry.
-   *
-   * Only `not-confirmed` is repairable: expiry and local Stop are terminal
-   * evidence that retrying would either duplicate old work or bypass authority.
-   */
-  retryNotConfirmed(
+  /** Find one owner-scoped delivery before the worker decides whether it is active. */
+  deliveryForOwner(
     communityRef: CommunityRef,
     remoteRoomId: string,
     ownerAuthorId: string,
-    idempotencyKey: string,
-    now: string
-  ): 'retried' | 'missing' | 'terminal' | 'expired' {
+    idempotencyKey: string
+  ): CommunityOutboxItem | null {
     const item = this.db
       .select()
       .from(communityOutbox)
@@ -296,15 +290,39 @@ export class CommunityOutboxStore {
         )
       )
       .get();
+    return item
+      ? {
+          ...item,
+          communityRef: item.communityRef as CommunityRef,
+          state: item.state as CommunityOutboxState,
+        }
+      : null;
+  }
+
+  /** Requeue one real transient backoff without extending its original expiry. */
+  retryPendingBackoff(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    ownerAuthorId: string,
+    idempotencyKey: string,
+    now: string
+  ): 'retried' | 'missing' | 'terminal' {
+    const item = this.deliveryForOwner(communityRef, remoteRoomId, ownerAuthorId, idempotencyKey);
     if (!item) return 'missing';
-    if (item.state !== 'failed' || item.failure !== 'not-confirmed') return 'terminal';
-    if (item.expiresAt <= now) return 'expired';
-    this.db
+    const changes = this.db
       .update(communityOutbox)
-      .set({ state: 'pending', failure: null, nextAttemptAt: now })
-      .where(and(eq(communityOutbox.id, item.id), eq(communityOutbox.state, 'failed')))
-      .run();
-    return 'retried';
+      .set({ nextAttemptAt: now })
+      .where(
+        and(
+          eq(communityOutbox.id, item.id),
+          eq(communityOutbox.state, 'pending'),
+          gt(communityOutbox.attempts, 0),
+          gt(communityOutbox.nextAttemptAt, now),
+          gt(communityOutbox.expiresAt, now)
+        )
+      )
+      .run().changes;
+    return changes === 1 ? 'retried' : 'terminal';
   }
 
   private stopWhere(where: ReturnType<typeof and>, failure: string): void {

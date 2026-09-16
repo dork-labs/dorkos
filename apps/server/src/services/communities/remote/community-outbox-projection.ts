@@ -21,6 +21,7 @@ export interface CommunityOutboxDeliveryView {
   attachments: readonly { id: string; name: string; mimeType: string; size: number }[];
   state: Extract<CommunityOutboxState, 'pending' | 'failed'>;
   failure: string | null;
+  retryable: boolean;
 }
 
 /** Projects only an owner's still-unconfirmed agent output, without local file paths or secrets. */
@@ -30,7 +31,9 @@ export class CommunityOutboxProjection {
     private readonly mirrors: RemoteMirrorStore,
     private readonly entries: RoomStore,
     private readonly attachments: AttachmentRowStore,
-    private readonly authors: AuthorRegistry
+    private readonly authors: AuthorRegistry,
+    private readonly isInFlight: (id: string) => boolean = () => false,
+    private readonly now: () => number = () => Date.now()
   ) {}
 
   /** Resolve a receipt's durable owner-qualified retry identity without exposing local row data. */
@@ -78,6 +81,12 @@ export class CommunityOutboxProjection {
           })),
           state: item.state,
           failure: item.failure,
+          retryable:
+            item.state === 'pending' &&
+            item.attempts > 0 &&
+            item.nextAttemptAt > new Date(this.now()).toISOString() &&
+            item.expiresAt > new Date(this.now()).toISOString() &&
+            !this.isInFlight(item.id),
         },
       ];
     });

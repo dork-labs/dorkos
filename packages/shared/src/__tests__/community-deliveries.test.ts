@@ -10,6 +10,7 @@ const pending = {
   attachments: [{ name: 'notes.txt', contentType: 'text/plain', byteSize: 24 }],
   state: 'pending' as const,
   failure: null,
+  retryable: false,
 };
 
 describe('community delivery DTOs', () => {
@@ -53,9 +54,25 @@ describe('community delivery DTOs', () => {
     expect(
       CommunityDeliverySnapshotSchema.parse({
         ...snapshot,
-        deliveries: [{ ...pending, state: 'failed', failure: 'not-confirmed' }],
+        deliveries: [
+          {
+            idempotencyKey: pending.idempotencyKey,
+            author: pending.author,
+            text: pending.text,
+            parentEntryId: pending.parentEntryId,
+            attachments: pending.attachments,
+            state: 'failed',
+            failure: 'not-confirmed',
+          },
+        ],
       }).deliveries[0]
     ).toMatchObject({ state: 'failed', failure: 'not-confirmed' });
+    expect(
+      CommunityDeliverySnapshotSchema.safeParse({
+        ...snapshot,
+        deliveries: [{ ...pending, state: 'failed', failure: 'not-confirmed' }],
+      }).success
+    ).toBe(false);
   });
 
   it('retains oversized file metadata while rejecting unsafe byte counts', () => {

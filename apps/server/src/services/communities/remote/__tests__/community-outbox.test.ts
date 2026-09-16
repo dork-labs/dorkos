@@ -42,7 +42,7 @@ function outboxItem(overrides: Partial<CommunityOutboxItem> = {}): CommunityOutb
 }
 
 describe('community outbox', () => {
-  it('writes an agent mirror post and its bounded delivery row in one RoomService transaction', () => {
+  it('writes an agent mirror post and its bounded delivery row in one RoomService transaction', async () => {
     let actual: CommunityOutboxPolicy | null = null;
     const policy: RoomMirrorWritePolicy = {
       prepare(room, authorId, delivery) {
@@ -105,8 +105,59 @@ describe('community outbox', () => {
         text: 'I have the update.',
         state: 'pending',
         attachments: [],
+        retryable: false,
       }),
     ]);
+    const workerRef: { current: CommunityOutboxWorker | null } = { current: null };
+    const liveProjection = new CommunityOutboxProjection(
+      outbox,
+      mirrors,
+      harness.store,
+      harness.attachments,
+      harness.authors,
+      (id) => workerRef.current?.isInFlight(id) ?? false,
+      () => NOW
+    );
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const observedRetryable: boolean[] = [];
+    const worker = new CommunityOutboxWorker(
+      outbox,
+      { canDeliver: () => true },
+      {
+        deliver: async () => {
+          await held;
+          return { kind: 'retry', reason: 'temporary outage' };
+        },
+      },
+      () => NOW,
+      {
+        changed: () => {
+          observedRetryable.push(liveProjection.list(harness.human)[0]?.retryable ?? false);
+        },
+      }
+    );
+    workerRef.current = worker;
+    const running = worker.runOnce();
+    await vi.waitFor(() =>
+      expect(worker.isInFlight(outbox.due(new Date(NOW).toISOString())[0]?.id ?? '')).toBe(true)
+    );
+    expect(liveProjection.list(harness.human)[0]?.retryable).toBe(false);
+    release();
+    await running;
+    expect(observedRetryable).toEqual([true]);
+    const settledProjection = new CommunityOutboxProjection(
+      outbox,
+      mirrors,
+      harness.store,
+      harness.attachments,
+      harness.authors,
+      () => false,
+      () => NOW
+    );
+    expect(settledProjection.list(harness.human)[0]?.retryable).toBe(true);
   });
 
   it.each(['stale', 'revoked', 'missing enrollment'] as const)(
@@ -222,6 +273,118 @@ describe('community outbox', () => {
     await laterWorker.runOnce();
     expect(outbox.due(new Date(NOW + 400_000).toISOString())).toEqual([]);
     expect(delivery).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not release a pending backoff while the same worker holds delivery', async () => {
+    const harness = createRoomHarness({ agents: agentLookupFor({}) });
+    const outbox = new CommunityOutboxStore(harness.db);
+    const item = outboxItem({ ownerAuthorId: harness.human });
+    harness.db.transaction((tx) => outbox.enqueue(item, tx));
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const delivery = vi.fn(async () => {
+      await held;
+      return { kind: 'retry' as const, reason: 'temporary outage' };
+    });
+    const worker = new CommunityOutboxWorker(
+      outbox,
+      { canDeliver: () => true },
+      { deliver: delivery },
+      () => NOW
+    );
+
+    const running = worker.runOnce();
+    await vi.waitFor(() => expect(delivery).toHaveBeenCalledOnce());
+    expect(
+      worker.retryNow({
+        communityRef: REF,
+        remoteRoomId: item.remoteRoomId,
+        ownerAuthorId: harness.human,
+        idempotencyKey: item.idempotencyKey,
+      })
+    ).toBe('in-flight');
+
+    release();
+    await running;
+  });
+
+  it('releases a genuine backoff without changing its delivery identity or expiry', () => {
+    const harness = createRoomHarness({ agents: agentLookupFor({}) });
+    const outbox = new CommunityOutboxStore(harness.db);
+    const item = outboxItem({
+      ownerAuthorId: harness.human,
+      localParentEntryId: 'parent-local-entry',
+      attachmentIds: JSON.stringify(['attachment-1']),
+      attempts: 2,
+      nextAttemptAt: new Date(NOW + 10_000).toISOString(),
+      expiresAt: new Date(NOW + 300_000).toISOString(),
+    });
+    harness.db.transaction((tx) => outbox.enqueue(item, tx));
+    const worker = new CommunityOutboxWorker(
+      outbox,
+      { canDeliver: () => true },
+      { deliver: vi.fn() },
+      () => NOW
+    );
+
+    expect(
+      worker.retryNow({
+        communityRef: REF,
+        remoteRoomId: item.remoteRoomId,
+        ownerAuthorId: harness.human,
+        idempotencyKey: item.idempotencyKey,
+      })
+    ).toBe('retried');
+    expect(
+      outbox.deliveryForOwner(REF, item.remoteRoomId, harness.human, item.idempotencyKey)
+    ).toMatchObject({
+      state: 'pending',
+      attempts: item.attempts,
+      nextAttemptAt: new Date(NOW).toISOString(),
+      expiresAt: item.expiresAt,
+      idempotencyKey: item.idempotencyKey,
+      attachmentIds: item.attachmentIds,
+      localParentEntryId: item.localParentEntryId,
+    });
+  });
+
+  it.each([
+    outboxItem({ state: 'failed', failure: 'remote-refused', attempts: 1 }),
+    outboxItem({
+      id: 'expired',
+      attempts: 1,
+      expiresAt: new Date(NOW - 1).toISOString(),
+      nextAttemptAt: new Date(NOW + 10_000).toISOString(),
+    }),
+    outboxItem({
+      id: 'revoked',
+      state: 'stopped',
+      failure: 'revoked',
+      attempts: 1,
+      nextAttemptAt: new Date(NOW + 10_000).toISOString(),
+    }),
+  ])('denies retry for terminal delivery state $state', (item) => {
+    const harness = createRoomHarness({ agents: agentLookupFor({}) });
+    const outbox = new CommunityOutboxStore(harness.db);
+    const owned = { ...item, ownerAuthorId: harness.human };
+    harness.db.transaction((tx) => outbox.enqueue(owned, tx));
+    const worker = new CommunityOutboxWorker(
+      outbox,
+      { canDeliver: () => true },
+      { deliver: vi.fn() },
+      () => NOW
+    );
+
+    expect(
+      worker.retryNow({
+        communityRef: REF,
+        remoteRoomId: owned.remoteRoomId,
+        ownerAuthorId: harness.human,
+        idempotencyKey: owned.idempotencyKey,
+      })
+    ).toBe('terminal');
   });
 
   it('publishes an owner replacement when expiry alone removes a pending delivery', async () => {
