@@ -8,6 +8,7 @@ import {
   communityEntryOrigins,
   communityOutbox,
   eq,
+  gt,
   inArray,
   lte,
   lt,
@@ -268,6 +269,60 @@ export class CommunityOutboxStore {
       .set({ state: 'failed', failure })
       .where(eq(communityOutbox.id, id))
       .run();
+  }
+
+  /** Find one owner-scoped delivery before the worker decides whether it is active. */
+  deliveryForOwner(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    ownerAuthorId: string,
+    idempotencyKey: string
+  ): CommunityOutboxItem | null {
+    const item = this.db
+      .select()
+      .from(communityOutbox)
+      .where(
+        and(
+          eq(communityOutbox.communityRef, communityRef),
+          eq(communityOutbox.remoteRoomId, remoteRoomId),
+          eq(communityOutbox.ownerAuthorId, ownerAuthorId),
+          eq(communityOutbox.idempotencyKey, idempotencyKey)
+        )
+      )
+      .get();
+    return item
+      ? {
+          ...item,
+          communityRef: item.communityRef as CommunityRef,
+          state: item.state as CommunityOutboxState,
+        }
+      : null;
+  }
+
+  /** Requeue one real transient backoff without extending its original expiry. */
+  retryPendingBackoff(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    ownerAuthorId: string,
+    idempotencyKey: string,
+    now: string
+  ): 'retried' | 'missing' | 'terminal' {
+    const item = this.deliveryForOwner(communityRef, remoteRoomId, ownerAuthorId, idempotencyKey);
+    if (!item) return 'missing';
+    const changes = this.db
+      .update(communityOutbox)
+      .set({ nextAttemptAt: now })
+      .where(
+        and(
+          eq(communityOutbox.id, item.id),
+          eq(communityOutbox.state, 'pending'),
+          gt(communityOutbox.attempts, 0),
+          gt(communityOutbox.nextAttemptAt, now),
+          gt(communityOutbox.expiresAt, now)
+        )
+      )
+      .run().changes;
+    return changes === 1 ? 'retried' : 'terminal';
   }
 
   private stopWhere(where: ReturnType<typeof and>, failure: string): void {

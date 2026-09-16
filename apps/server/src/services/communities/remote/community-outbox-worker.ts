@@ -4,6 +4,7 @@
  * @module services/communities/remote/community-outbox-worker
  */
 import type { CommunityOutboxItem, CommunityOutboxStore } from './community-outbox-store.js';
+import type { CommunityRef } from '@dorkos/shared/community-adapter';
 
 /** The only outcomes the native delivery adapter may report to this worker. */
 export type CommunityDeliveryResult =
@@ -34,8 +35,21 @@ export interface CommunityOutboxChangeListener {
   changed(ownerAuthorId: string): void;
 }
 
+/** The owner-scoped identity of a delivery the person wants to retry now. */
+export interface CommunityOutboxRetryInput {
+  communityRef: CommunityRef;
+  remoteRoomId: string;
+  ownerAuthorId: string;
+  idempotencyKey: string;
+}
+
+/** Result of asking the one worker to release a pending transient backoff. */
+export type CommunityOutboxRetryResult = 'retried' | 'missing' | 'terminal' | 'in-flight';
+
 /** One-process worker; remote I/O never runs inside the writer transaction. */
 export class CommunityOutboxWorker {
+  private readonly inFlight = new Set<string>();
+
   constructor(
     private readonly store: CommunityOutboxStore,
     private readonly authority: CommunityOutboxAuthority,
@@ -44,43 +58,76 @@ export class CommunityOutboxWorker {
     private readonly changes?: CommunityOutboxChangeListener
   ) {}
 
+  /** Whether this worker is currently holding an item across an authority or delivery await. */
+  isInFlight(id: string): boolean {
+    return this.inFlight.has(id);
+  }
+
+  /** Release one pending transient backoff only when this worker is not already delivering it. */
+  retryNow(input: CommunityOutboxRetryInput): CommunityOutboxRetryResult {
+    const item = this.store.deliveryForOwner(
+      input.communityRef,
+      input.remoteRoomId,
+      input.ownerAuthorId,
+      input.idempotencyKey
+    );
+    if (!item) return 'missing';
+    if (this.inFlight.has(item.id)) return 'in-flight';
+    const result = this.store.retryPendingBackoff(
+      input.communityRef,
+      input.remoteRoomId,
+      input.ownerAuthorId,
+      input.idempotencyKey,
+      new Date(this.now()).toISOString()
+    );
+    if (result === 'retried') this.changes?.changed(input.ownerAuthorId);
+    return result;
+  }
+
   /** Deliver a bounded due batch, preserving idempotency keys across every retry. */
   async runOnce(): Promise<void> {
     const now = new Date(this.now()).toISOString();
     const expiredOwners = this.store.expire(now);
     for (const ownerAuthorId of expiredOwners) this.changes?.changed(ownerAuthorId);
     for (const item of this.store.due(now)) {
-      if (!(await this.authority.canDeliver(item))) {
-        this.store.stop([item.id], 'stopped-or-unauthorized');
-        this.changes?.changed(item.ownerAuthorId);
-        continue;
-      }
-      let result: CommunityDeliveryResult;
+      this.inFlight.add(item.id);
+      let changed = false;
       try {
-        result = await this.delivery.deliver(item, () => this.authority.canDeliver(item));
-      } catch (error) {
-        result = {
-          kind: 'retry',
-          reason: error instanceof Error ? error.message : 'network delivery failed',
-        };
-      }
-      if (result.kind === 'confirmed') {
-        this.store.confirm(item.id, result.remoteEntryId);
-        this.changes?.changed(item.ownerAuthorId);
-      } else if (result.kind === 'stopped') {
-        this.store.stop([item.id], result.reason);
-        this.changes?.changed(item.ownerAuthorId);
-      } else if (result.kind === 'permanent') {
-        this.store.fail(item.id, result.reason);
-        this.changes?.changed(item.ownerAuthorId);
-      } else {
-        const attempts = item.attempts + 1;
-        this.store.retry(
-          item.id,
-          attempts,
-          new Date(this.now() + retryDelayMs(attempts)).toISOString()
-        );
-        this.changes?.changed(item.ownerAuthorId);
+        if (!(await this.authority.canDeliver(item))) {
+          this.store.stop([item.id], 'stopped-or-unauthorized');
+          changed = true;
+          continue;
+        }
+        let result: CommunityDeliveryResult;
+        try {
+          result = await this.delivery.deliver(item, () => this.authority.canDeliver(item));
+        } catch (error) {
+          result = {
+            kind: 'retry',
+            reason: error instanceof Error ? error.message : 'network delivery failed',
+          };
+        }
+        if (result.kind === 'confirmed') {
+          this.store.confirm(item.id, result.remoteEntryId);
+          changed = true;
+        } else if (result.kind === 'stopped') {
+          this.store.stop([item.id], result.reason);
+          changed = true;
+        } else if (result.kind === 'permanent') {
+          this.store.fail(item.id, result.reason);
+          changed = true;
+        } else {
+          const attempts = item.attempts + 1;
+          this.store.retry(
+            item.id,
+            attempts,
+            new Date(this.now() + retryDelayMs(attempts)).toISOString()
+          );
+          changed = true;
+        }
+      } finally {
+        this.inFlight.delete(item.id);
+        if (changed) this.changes?.changed(item.ownerAuthorId);
       }
     }
   }
