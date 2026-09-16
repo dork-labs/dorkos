@@ -110,9 +110,13 @@ type Quietness =
 
 - `background-work`: `TurnLiveness.liveTaskCounts(): { agents; shells; other }` from the level frame. `local_agent` →
   agents, `local_bash` → shells, every other `task_type` → other. Agents and other hold the process; shells never do.
-  `liveAgentCount()` stays for the resume path's stdin hold. Each distinct `task_type` is logged once per process.
+  `liveAgentCount()` stays for the resume path's stdin hold. (Each distinct `task_type` is logged once per process —
+  **shipped in slice 1**, in `persistent-dispatch.ts`, not here.)
 - `delivery-owed`: `owedCount() > 0`, bounded by the **owed-delivery clock** below.
 - `waiting-on-person`: `hasPendingInteraction`. `turn-open`: pump `running`. `runtime-turn-open`: a runtime window is open.
+  **`runtime-turn-open`, and the `hasRuntimeTurnOpen` seam that answers it, land in slice 3a together with their
+  producer.** Slice 2 ships the other four: a union member nothing can ever return is dead code, and it invites a later
+  reader to "fix" the gap into a bug.
 
 **The owed-delivery clock (new on this path).** The warm path gets its own deadline, because the resume path's lives in
 a stdin close the pump never runs:
@@ -145,6 +149,13 @@ the queue` at `info` with the task ids, and fires the gate re-arm (`onDispatchGa
 (`SESSIONS.BACKGROUND_QUIET_RESET_MS`). `SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS = 4 h` bounds a spell, as
 `INTERACTION_PARK_CEILING_MS` bounds a person-wait (`constants.ts:308`).
 
+**The reset needs no polling, because the elapsed quiet run is judged BEFORE the new observation is folded in.** A
+purely lazy check — "am I quiet, and has it been 60 s" evaluated only when somebody asks — would keep the old spell
+alive for a process that goes quiet, is asked about by nobody for an hour, and then starts a fresh helper: no
+evaluation ever landed inside the quiet minute, so nothing cleared `busySince`. Each evaluation therefore first asks
+whether the quiet run that has already elapsed reached the reset, and only then records the current observation. The
+pump evaluates at every frame and at every state change as well, so the 60 s are noticed without any consumer polling.
+
 **Consumers, and what bounds each.**
 
 | Consumer                                    | Holds while                                                                    | Bounded by                                        |
@@ -155,7 +166,13 @@ the queue` at `info` with the task ids, and fires the gate re-arm (`onDispatchGa
 | `commitDispatch` gate (D2)                  | a replace against a process that is not quiet or not settled                   | 4 h ceiling; settle interval                      |
 | `isSegmentPending` (D6)                     | `delivery-owed`                                                                | **30 s owed-delivery clock**, and the 4 h ceiling |
 
-`lastActivity` is stamped at a runtime turn's `turn_start` and `turn_end`.
+**`isHoldingBackgroundWork` is an optional probe PARAMETER, not a method on the store.** `SessionStore` knows nothing
+about pumps, so `checkSessionHealth(lockManager, isHoldingBackgroundWork?)` takes the predicate and
+`ClaudeCodeRuntime.checkSessionHealth` answers it from `pumps.peek(id)?.isHoldingBackgroundWork()`. Every other runtime
+passes nothing, as does a claude-code session with no warm process, and both evict exactly as they did before.
+
+`lastActivity` is stamped at a runtime turn's `turn_start` and `turn_end` — **in slice 3a**, which is where runtime
+turns first exist. Slice 2 has nothing to stamp it from.
 
 ### D2. The relaunch decision is made before the turn starts
 
@@ -392,7 +409,7 @@ shown to fail against the slice's build with that gate's bound removed.
 | T4   | Idle timer re-arms while frames flow with no window                                                                                                                                                                                                                                                                                    | `session-pump-registry.test.ts`                                          | 2       | ignores frames                                     |
 | T5   | Record eviction skips a session holding a helper past 30 min; evicts past the ceiling                                                                                                                                                                                                                                                  | `session-store-eviction.test.ts`                                         | 2       | person-waits only                                  |
 | T6   | 30 s quiet does not reset the ceiling clock; 60 s does                                                                                                                                                                                                                                                                                 | `session-pump.test.ts`                                                   | 2       | no ceiling                                         |
-| T7   | 12 helper-pinned sessions → 13th refused; shells-only reclaimed                                                                                                                                                                                                                                                                        | `session-pump-registry.test.ts`                                          | 2       | guard                                              |
+| T7   | 12 helper-pinned sessions → 13th refused; shells-only reclaimed. **A guard row, and it only discriminates when the twelve are pinned by a Monitor-typed (or unknown) task** — pin them with `local_agent` and it passes on today's code too, because the old rule already counted subagents                                            | `session-pump-registry.test.ts`                                          | 2       | guard                                              |
 | T35  | Owed-delivery clock: `task_notification`, `result`, no segment → `owed` expires at 30 s, logged, re-arm fired; a segment starting inside 30 s cancels it and its `system/init` clears `owed`; a further settle does not re-arm an armed clock; a delivery segment starting after expiry is logged with its lateness                    | `session-pump.test.ts`, `turn-liveness.test.ts`                          | 2       | `owed` never expires                               |
 | T38  | **Notification while idle:** no turn open, a `task_notification` arrives (owed 0 → 1), no segment follows; a chat row is queued → the clock arms on the transition and the head launches within 30 s (fake timers), never later                                                                                                        | `session-pump.test.ts`, `message-dispatcher.test.ts` (real `pumpLocked`) | 3a      | mutation: head never launches without the idle arm |
 | T8   | Unsolicited segment opens a runtime window at its first model frame                                                                                                                                                                                                                                                                    | `session-turn-windows.test.ts`                                           | 3a      | opens at `result`                                  |

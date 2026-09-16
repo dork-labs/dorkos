@@ -33,6 +33,72 @@ export const INIT_TIMEOUT_MS = 60_000;
 export const DRAIN_GRACE_MS = 5_000;
 
 /**
+ * How long a warm process may owe a notification delivery before the pump gives
+ * up on it (spec `warm-process-lifecycle` D1).
+ *
+ * A `task_notification` says a delivery is now owed, and the delivery arrives as
+ * a fresh query segment whose `system/init` clears the debt. Nothing guarantees
+ * that segment ever opens. On the RESUME path the debt is bounded by the
+ * deferred stdin close (`stdin-hold.ts`), which a warm process never performs —
+ * so the warm path needs its own clock, and this is it, deliberately the same
+ * thirty seconds the resume path uses rather than a second number to reason
+ * about. A segment starting cancels it; only a debt that is never delivered
+ * pays the full wait.
+ */
+export const OWED_DELIVERY_TIMEOUT_MS = 30_000;
+
+/**
+ * Why a warm process may not be relaunched, reaped or evicted right now — or
+ * that it may (spec `warm-process-lifecycle` D1).
+ *
+ * One predicate, answered synchronously by {@link SessionPump.quietness}, for
+ * every consumer that used to decide for itself: the idle reaper, the
+ * warm-ceiling reclaim, record eviction and (from slice 4a) the dispatch commit
+ * gate. Before it, `reap` asked only about background subagents and eviction
+ * asked about nothing at all, so a process running a Monitor or owing a
+ * delivery was torn down with its work still in flight (DOR-2064, DOR-2065).
+ */
+export type Quietness =
+  | {
+      quiet: true;
+      /**
+       * Background shells alive right now. Reported because ending the process
+       * ends them, and the operator is told so (D4) — never because they hold
+       * it open, which they deliberately do not.
+       */
+      shells: number;
+      /** When this process last produced any frame at all, as epoch ms. */
+      lastFrameAt: number;
+    }
+  | {
+      quiet: false;
+      /** The first reason found, in the order {@link SessionPump.quietness} checks them. */
+      because: QuietnessBlocker;
+      /** Live tasks that HOLD the process, split by kind. Shells are excluded by design. */
+      holding: { agents: number; other: number };
+      /** Background shells alive right now, which hold nothing. */
+      shells: number;
+      /**
+       * When this busy spell began, as epoch ms — what the four-hour ceiling is
+       * measured from. Cleared only by
+       * `SESSIONS.BACKGROUND_QUIET_RESET_MS` of continuous quiet, so two helpers
+       * running back to back are one spell rather than two.
+       */
+      busySince: number;
+    };
+
+/** The reasons a warm process is not quiet, most specific first. */
+export type QuietnessBlocker =
+  /** A dispatched turn is open: the pump is RUNNING. */
+  | 'turn-open'
+  /** A helper agent, Monitor or unknown background task is still working. */
+  | 'background-work'
+  /** A settled notification has not been delivered yet, bounded by the owed-delivery clock. */
+  | 'delivery-owed'
+  /** Somebody was asked a question and has not answered it. */
+  | 'waiting-on-person';
+
+/**
  * Where one session's process is in its life. The five reported by
  * {@link SessionWarmth} plus the two that are internal to the machine:
  * `reaped` (the process is gone and this pump object is spent — the registry
@@ -265,8 +331,21 @@ export interface SessionPumpOptions {
    * warm pump instead of refusing.
    */
   reserveSlot?: () => Promise<void>;
+  /**
+   * A hold this pump owned has been released, so whatever was waiting on it may
+   * run now (spec `warm-process-lifecycle` D1/D2a `onDispatchGateChange`).
+   *
+   * Fired today by exactly one thing: the owed-delivery clock expiring. That is
+   * the hold with no other way out — every other reason the pump is not quiet
+   * ends with a frame the caller already sees. Slice 3a's pending-segment gate
+   * and slice 4a's gated queue rows are the consumers this exists for; a throw
+   * from it is logged and swallowed, like every other observer here.
+   */
+  onDispatchGateChange?: () => void;
   /** Override the grace window between the polite close and the forceful one. */
   drainGraceMs?: number;
+  /** Override how long an owed delivery is waited for. Tests only. */
+  owedDeliveryTimeoutMs?: number;
   /** Override how long a launch may wait for `system/init`. */
   initTimeoutMs?: number;
 }

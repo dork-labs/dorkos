@@ -1666,7 +1666,16 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // close (lifecycle `interrupted`) rather than a frozen "Thinking…" before
     // the projector is disposed (ADR-0262/0264 restart/eviction degradation).
     // markInterrupted is a no-op for an idle projector.
-    const evictedIds = this.sessionStore.checkSessionHealth(this.lockManager);
+    // A session whose warm process is still doing background work is skipped
+    // for now: eviction is unconditional, so it would end a helper agent or an
+    // undelivered notification that the idle reaper already refuses to touch
+    // (spec `warm-process-lifecycle` D1). The pump answers, because the pump is
+    // what holds the level frame; a session with no warm process holds nothing
+    // and evicts exactly as it did before.
+    const evictedIds = this.sessionStore.checkSessionHealth(
+      this.lockManager,
+      (sessionId) => this.pumps.peek(sessionId)?.isHoldingBackgroundWork() === true
+    );
     for (const sessionId of evictedIds) {
       // No subprocess may outlive the session record it belongs to. Eviction
       // ALWAYS implies a reap; the idle timer's reap never implies an eviction

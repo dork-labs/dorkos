@@ -99,3 +99,56 @@ describe('checkSessionHealth exempts a session waiting on a person', () => {
     expect(store.findSession(SESSION_ID)).toBeUndefined();
   });
 });
+
+/**
+ * T5 (spec `warm-process-lifecycle` D1). Eviction is the harsher of the two
+ * sweeps — it tears the process down unconditionally — and until this landed it
+ * asked about person-waits and nothing else. A helper agent still working
+ * thirty minutes after the last turn was simply thrown away (DOR-2065).
+ *
+ * The ceiling that bounds this exemption lives on the pump, which owns the busy
+ * spell, and is pinned in `session-pump-quietness.test.ts`. What the store owes
+ * is that it asks at all, and that a "no" is still a "no".
+ */
+describe('checkSessionHealth exempts a session whose agent is still working', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000_000);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** A store holding one session whose last turn was thirty-one minutes ago. */
+  function agedStore(): SessionStore {
+    const store = new SessionStore();
+    store.ensureSession(SESSION_ID, { permissionMode: 'default' });
+    vi.setSystemTime(Date.now() + THIRTY_ONE_MINUTES);
+    return store;
+  }
+
+  it('keeps a session whose process is holding background work', () => {
+    const store = agedStore();
+    const holding = vi.fn().mockReturnValue(true);
+
+    expect(store.checkSessionHealth(new SessionLockManager(), holding)).toEqual([]);
+    expect(store.findSession(SESSION_ID)).toBeDefined();
+    expect(holding).toHaveBeenCalledWith(SESSION_ID);
+  });
+
+  it('evicts it once the process is holding nothing — the ceiling having passed, or the work done', () => {
+    const store = agedStore();
+
+    expect(store.checkSessionHealth(new SessionLockManager(), () => false)).toEqual([SESSION_ID]);
+    expect(store.findSession(SESSION_ID)).toBeUndefined();
+  });
+
+  it('evicts a session no runtime can answer for', () => {
+    // Every other runtime, and a claude-code session with no warm process at
+    // all, passes no probe — and must evict exactly as it did before.
+    const store = agedStore();
+
+    expect(store.checkSessionHealth(new SessionLockManager())).toEqual([SESSION_ID]);
+    expect(store.findSession(SESSION_ID)).toBeUndefined();
+  });
+});

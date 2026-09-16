@@ -1002,11 +1002,22 @@ export class SessionStore {
    * subprocess on every eviction, because no alias would resolve to the key
    * that finds it (DOR-1309).
    */
-  checkSessionHealth(lockManager: SessionLockManager): string[] {
+  checkSessionHealth(
+    lockManager: SessionLockManager,
+    isHoldingBackgroundWork?: (sessionId: string) => boolean
+  ): string[] {
     const now = Date.now();
     const expiredIds: string[] = [];
     for (const [id, session] of this.sessions) {
       if (now - session.lastActivity <= this.SESSION_TIMEOUT_MS) continue;
+      // A session whose agent is still working is not idle either, and eviction
+      // is the harsher of the two sweeps: it tears the process down
+      // unconditionally, so a helper agent, a Monitor or an undelivered
+      // notification thirty minutes after the last turn was simply thrown away
+      // (spec `warm-process-lifecycle` D1, DOR-2065). Bounded by the same
+      // four-hour ceiling the pump applies to every other hold, so work that
+      // never finishes cannot make a record immortal.
+      if (isHoldingBackgroundWork?.(id) === true) continue;
       // A session parked on a person is not idle, it is waiting, and evicting
       // it throws away the very tool call the person is coming back to answer.
       // `lastActivity` is stamped at creation and at each turn, never during a

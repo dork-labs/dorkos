@@ -325,12 +325,17 @@ export class SessionPumpRegistry {
    * leaving an armed timer alone matters on the WARM → WARM-again path a turn
    * makes: the window that just closed is the activity the next five minutes are
    * measured from.
+   *
+   * @param entry - The session whose countdown this is
+   * @param delayMs - How long to wait, when it is not a whole fresh window —
+   *   {@link onIdle} uses it to measure out the remainder after a frame that
+   *   arrived with no turn open
    */
-  private armIdle(entry: PumpEntry): void {
+  private armIdle(entry: PumpEntry, delayMs?: number): void {
     this.disarmIdle(entry);
     const timer = setTimeout(() => {
       void this.onIdle(entry.pump.sessionId);
-    }, entry.warmIdleMs);
+    }, delayMs ?? entry.warmIdleMs);
     timer.unref?.();
     entry.idleTimer = timer;
   }
@@ -360,6 +365,32 @@ export class SessionPumpRegistry {
     const entry = this.entries.get(sessionId);
     if (!entry) return;
     entry.idleTimer = undefined;
+    // A warm process is not idle merely because DorkOS opened no turn in it.
+    // Between turns it can be running helper agents, delivering a notification
+    // to itself, or talking at length with no window around it, and the timer
+    // used to see none of that: it measured only the gap since the last window
+    // closed, so a process mid-conversation with itself was reaped at five
+    // minutes with its work in flight (spec `warm-process-lifecycle` D1).
+    //
+    // Two separate bounds, and the reap below is what applies the first. A
+    // process that is not quiet declines the reap until its busy spell hits the
+    // four-hour ceiling; a process that IS quiet but produced a frame inside
+    // this window is measured again from that frame.
+    const quietness = entry.pump.quietness();
+    if (quietness.quiet) {
+      const sinceFrame = Date.now() - quietness.lastFrameAt;
+      if (sinceFrame < entry.warmIdleMs) {
+        logger.debug(
+          '[SessionPumpRegistry] frames are still arriving; measuring the window again',
+          {
+            session: sessionId,
+            sinceFrameMs: sinceFrame,
+          }
+        );
+        this.armIdle(entry, entry.warmIdleMs - sinceFrame);
+        return;
+      }
+    }
     // `entry.warmIdleMs` IS the idle duration this fired at — the timer that
     // just elapsed was armed for exactly that long, so there is no separate
     // clock to read. One line at info, greppable by session, is what makes a

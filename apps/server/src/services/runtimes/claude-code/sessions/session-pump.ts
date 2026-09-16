@@ -39,6 +39,7 @@ import type { SessionWarmth } from '@dorkos/shared/agent-runtime';
 import { createHeldUserPrompt, createIdlePrompt, type HeldUserPrompt } from '../sdk/sdk-utils.js';
 import { createTurnLiveness, type TurnLiveness } from '../messaging/turn-liveness.js';
 import { logger } from '../../../../lib/logger.js';
+import { ProcessQuiet } from '../messaging/process-quiet.js';
 import {
   DRAIN_GRACE_MS,
   HOLDS_PROCESS,
@@ -51,6 +52,7 @@ import {
   type PumpDispatch,
   type PumpQuery,
   type PumpState,
+  type Quietness,
   type SessionPumpOptions,
 } from './session-pump-contract.js';
 
@@ -126,6 +128,14 @@ export class SessionPump {
    * describe the turn currently opening.
    */
   private turnClosedWhileOpening = false;
+  /**
+   * Whether this process is doing anything, and the two clocks that bound the
+   * answer (`process-quiet.ts`).
+   *
+   * Assigned in the constructor rather than inline, because it reads this pump's
+   * own state back through accessors.
+   */
+  private readonly quiet: ProcessQuiet;
 
   /**
    * Build a pump for one session. Nothing is booted until it is warmed or
@@ -135,6 +145,18 @@ export class SessionPump {
    */
   constructor(opts: SessionPumpOptions) {
     this.opts = opts;
+    this.quiet = new ProcessQuiet({
+      sessionId: opts.sessionId,
+      // A getter, not the tracker itself: every launch replaces it, and a
+      // captured reference would answer for the process that went away.
+      liveness: () => this.liveness,
+      isTurnOpen: () => this.currentState === 'running',
+      hasPendingInteraction: () => opts.hasPendingInteraction?.() === true,
+      onGateChange: () => opts.onDispatchGateChange?.(),
+      ...(opts.owedDeliveryTimeoutMs !== undefined
+        ? { owedDeliveryTimeoutMs: opts.owedDeliveryTimeoutMs }
+        : {}),
+    });
   }
 
   /** The session this pump belongs to. */
@@ -437,6 +459,41 @@ export class SessionPump {
   }
 
   /**
+   * Why this process may not be relaunched, reaped or evicted right now — or
+   * that it may (spec `warm-process-lifecycle` D1).
+   *
+   * **Synchronous, and the single answer for every consumer.** The idle reaper,
+   * the warm-ceiling reclaim, record eviction and (from slice 4a) the dispatch
+   * commit gate all used to decide for themselves, and they disagreed: `reap`
+   * asked only about background subagents while eviction asked about nothing at
+   * all, so a process running a Monitor or owing a notification delivery was
+   * torn down with its work in flight (DOR-2064, DOR-2065). One predicate means
+   * one answer, and a new consumer inherits it rather than inventing a fourth.
+   *
+   * Calling this is not free of effect on purpose: it is also where the busy
+   * spell is re-evaluated, because "quiet for a continuous minute" can only be
+   * noticed by something that looks. The pump looks at every frame and at every
+   * state change as well, so the spell does not depend on a consumer polling.
+   */
+  quietness(): Quietness {
+    return this.quiet.quietness();
+  }
+
+  /**
+   * Is this process holding background work that record eviction must not throw
+   * away (spec `warm-process-lifecycle` D1, the eviction row)?
+   *
+   * A narrower question than {@link quietness}: a turn in flight or a person
+   * being waited on are already exempt from eviction by their own rules, so the
+   * two reasons that count here are the ones eviction was blind to. Bounded by
+   * the four-hour ceiling, which is what stops a helper that will never finish
+   * from making a session record immortal.
+   */
+  isHoldingBackgroundWork(): boolean {
+    return this.quiet.isHoldingBackgroundWork();
+  }
+
+  /**
    * Give the process back, politely: `WARM → REAPED`.
    *
    * Invisible to the person — the session record and its transcript are
@@ -446,7 +503,8 @@ export class SessionPump {
    * pump; a pump reaped directly is left in `reaped`, which is terminal.
    *
    * @returns True when the process was closed, false when the pump declined
-   *   (not warm, parked on a person, or still running background subagents)
+   *   (not warm, parked on a person, or not quiet — see {@link quietness} —
+   *   unless its busy spell has run past the background-work ceiling)
    */
   async reap(): Promise<boolean> {
     if (this.currentState === 'cold' || this.currentState === 'reaped') return false;
@@ -468,18 +526,34 @@ export class SessionPump {
       });
       return false;
     }
-    // A turn ends at its `result`, but a background subagent the turn launched
-    // outlives it. Reaping now closes stdin under that subagent, and the CLI
-    // answers an EOF'd control stream by cancelling every hook-matched tool it
-    // then tries to run — the agent's work is thrown away and it is told the
-    // person refused (DOR-1238). The registry asks again a window later.
-    const liveAgents = this.liveness.liveAgentCount();
-    if (liveAgents > 0) {
-      logger.warn('[SessionPump] declined to reap a session running background agents', {
+    // A turn ends at its `result`, but the work it launched outlives it.
+    // Reaping now closes stdin under that work, and the CLI answers an EOF'd
+    // control stream by cancelling every hook-matched tool it then tries to run
+    // — the agent's work is thrown away and it is told the person refused
+    // (DOR-1238). The registry asks again a window later.
+    //
+    // Held to the whole quiet predicate rather than to the subagent count this
+    // used to read: a Monitor, an unknown task type and an owed delivery are all
+    // work somebody would be upset to lose, and every one of them was reaped
+    // through this line before (DOR-2064, DOR-2065).
+    const quietness = this.quiet.quietness();
+    if (!quietness.quiet) {
+      if (!this.quiet.isPastCeiling(Date.now())) {
+        logger.warn('[SessionPump] declined to reap a session that is still working', {
+          sessionId: this.sessionId,
+          because: quietness.because,
+          holding: quietness.holding,
+        });
+        return false;
+      }
+      // The ceiling is the one thing that ends this wait. Slice 5 gives the
+      // operator the plain-words line; this is the mechanism it will report.
+      logger.warn('[SessionPump] background work hit its ceiling; taking the process back', {
         sessionId: this.sessionId,
-        liveAgents,
+        because: quietness.because,
+        holding: quietness.holding,
+        busyForMs: Date.now() - quietness.busySince,
       });
-      return false;
     }
     // Before the close, so the stream ending is read as "we asked for this"
     // rather than as a crash.
@@ -563,6 +637,9 @@ export class SessionPump {
     // A fresh process has no background work, and the level signal is not
     // replayed at startup — so the old set must not carry over (DOR-1238).
     this.liveness = createTurnLiveness();
+    // Everything the quiet predicate remembers is about the process that just
+    // went away. A new one starts quiet, with no spell, no debt and no clock.
+    this.quiet.reset(Date.now());
     const held =
       firstMessage === undefined
         ? createIdlePrompt()
@@ -617,13 +694,17 @@ export class SessionPump {
     try {
       for await (const message of live) {
         if (isInit(message)) this.noteInit(message.capabilities ?? []);
+        // Outside the guard below: this is the pump's own bookkeeping, it
+        // cannot throw, and the idle reaper's answer must not depend on whether
+        // a downstream observer did.
+        this.quiet.stampFrame(Date.now());
         try {
           // Before the demux, so a reap racing this message decides on the
           // newest membership rather than the one before it (DOR-1238). Inside
           // the guard with the demux, because ANY throw from this loop body
           // leaves the `for await` and is reported as the process dying — a
           // malformed frame must not be able to fake a crash.
-          this.liveness.observe(message);
+          this.quiet.observe(message);
           this.opts.onMessage?.(message);
         } catch (err) {
           logger.warn('[SessionPump] a message observer threw; the process is unaffected', {
@@ -701,6 +782,9 @@ export class SessionPump {
     this.held = undefined;
     this.query = undefined;
     this.clearInitTimer();
+    // The process this debt belonged to is going away, so nothing is left to
+    // deliver it and nothing is left waiting on the gate.
+    this.quiet.dispose();
     held?.close();
     if (!live) return;
     const grace = this.opts.drainGraceMs ?? DRAIN_GRACE_MS;

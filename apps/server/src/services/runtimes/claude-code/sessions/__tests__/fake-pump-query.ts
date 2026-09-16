@@ -208,6 +208,16 @@ export function initMessage(capabilities?: string[]): SDKMessage {
 }
 
 /**
+ * A `task_type` the CLI may stamp on a background task.
+ *
+ * The two named ones are what has actually been captured off the wire; the open
+ * `string` arm is how a test drives a Monitor or any type nobody has watched
+ * yet, which the quiet predicate must treat as work worth keeping (spec
+ * `warm-process-lifecycle` D1).
+ */
+export type BackgroundTaskType = 'local_agent' | 'local_bash' | (string & {});
+
+/**
  * The SDK's background-task level signal: the FULL set of live tasks after a
  * membership change (REPLACE semantics).
  *
@@ -219,7 +229,7 @@ export function initMessage(capabilities?: string[]): SDKMessage {
  * @param tasks - Every task that is live after the change
  */
 export function backgroundTasksMessage(
-  tasks: Array<{ id: string; type: 'local_agent' | 'local_bash' }>
+  tasks: Array<{ id: string; type: BackgroundTaskType }>
 ): SDKMessage {
   return {
     type: 'system',
@@ -230,6 +240,54 @@ export function backgroundTasksMessage(
       description: `task ${id}`,
     })),
     uuid: `level-${tasks.map((task) => task.id).join('-')}`,
+    session_id: 'sess-1',
+  } as unknown as SDKMessage;
+}
+
+/**
+ * The lifecycle frame saying a background task has settled, so its delivery is
+ * now owed.
+ *
+ * @param taskId - The task that finished
+ * @param status - How it finished
+ */
+export function taskNotificationMessage(
+  taskId: string,
+  status: 'completed' | 'failed' | 'stopped' = 'completed'
+): SDKMessage {
+  return {
+    type: 'system',
+    subtype: 'task_notification',
+    task_id: taskId,
+    status,
+    uuid: `notify-${taskId}`,
+    session_id: `subagent-${taskId}`,
+  } as unknown as SDKMessage;
+}
+
+/**
+ * The `result` that closes a query segment.
+ *
+ * @param uuid - The correlation id of the message this result answers, when a
+ *   test needs one
+ */
+export function resultMessage(uuid?: string): SDKMessage {
+  return {
+    type: 'result',
+    subtype: 'success',
+    is_error: false,
+    duration_ms: 1,
+    num_turns: 1,
+    session_id: 'sess-1',
+    ...(uuid !== undefined ? { user_message_uuid: uuid } : {}),
+  } as unknown as SDKMessage;
+}
+
+/** A plain assistant frame — proof the model is mid-segment. */
+export function assistantMessage(): SDKMessage {
+  return {
+    type: 'assistant',
+    message: { role: 'assistant', content: [{ type: 'text', text: 'working' }] },
     session_id: 'sess-1',
   } as unknown as SDKMessage;
 }

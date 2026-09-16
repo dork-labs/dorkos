@@ -58,6 +58,61 @@ function initFrame(): SDKMessage {
   return { type: 'system', subtype: 'init', session_id: 'sdk-1' } as unknown as SDKMessage;
 }
 
+/**
+ * What the warm path asks, on top of the resume path's stdin question (spec
+ * `warm-process-lifecycle` D1, slice 2).
+ *
+ * `liveAgentCount` answers "may stdin be closed", where only a subagent has
+ * ever counted. The quiet predicate asks a wider question — "is this process
+ * doing anything somebody would be upset to lose" — and a Monitor or a task
+ * type nobody has catalogued is exactly that.
+ */
+describe('the warm path reads every live task, not only subagents', () => {
+  it('splits live tasks into the ones that hold a process and the ones that do not', () => {
+    const liveness = createTurnLiveness();
+    liveness.observe(
+      tasksChanged([
+        { id: 'agent-1', type: 'local_agent' },
+        { id: 'agent-2', type: 'local_agent' },
+        { id: 'shell-1', type: 'local_bash' },
+      ])
+    );
+
+    expect(liveness.liveTaskCounts()).toEqual({ agents: 2, shells: 1, other: 0 });
+    // The resume path's narrower question is unchanged by any of this.
+    expect(liveness.liveAgentCount()).toBe(2);
+  });
+
+  it('counts a task type nobody has catalogued as work that holds the process', () => {
+    const liveness = createTurnLiveness();
+    liveness.observe(
+      // A Monitor, and a type invented after this test was written. Guessing
+      // "harmless" about an unknown type is the guess that throws work away.
+      tasksChanged([
+        { id: 'monitor-1', type: 'monitor' as 'local_agent' },
+        { id: 'future-1', type: 'shipped_next_year' as 'local_agent' },
+      ])
+    );
+
+    expect(liveness.liveTaskCounts()).toEqual({ agents: 0, shells: 0, other: 2 });
+    expect(liveness.liveAgentCount()).toBe(0);
+  });
+
+  it('gives up on owed deliveries and reports which ones it abandoned', () => {
+    const liveness = createTurnLiveness();
+    liveness.observe(taskSettled('task-1'));
+    liveness.observe(taskSettled('task-2'));
+    expect(liveness.owedCount()).toBe(2);
+
+    // The warm path's escape hatch: on the resume path this debt is bounded by
+    // a deferred stdin close the pump never performs, so without this a
+    // delivery that never arrives holds the queue for the process's life.
+    expect(liveness.expireOwed()).toEqual(['task-1', 'task-2']);
+    expect(liveness.owedCount()).toBe(0);
+    expect(liveness.holdOpenAtResult()).toEqual({ hold: false, armDeadline: false });
+  });
+});
+
 /** A `result` — the end of a segment. */
 function resultFrame(): SDKMessage {
   return { type: 'result', subtype: 'success', session_id: 'sdk-1' } as unknown as SDKMessage;
