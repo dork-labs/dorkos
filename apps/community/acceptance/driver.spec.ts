@@ -99,11 +99,12 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         'the browser-created general channel was not visible to the native connection'
       ).toBeTruthy();
 
+      const agentPath = join(env.root, 'agents', 'community-attachment-agent');
       const registered = await json<{ id: string; name: string }>(`${env.local}/api/mesh/agents`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          path: join(env.root, 'agents', 'community-attachment-agent'),
+          path: agentPath,
           scanRoot: join(env.root, 'agents'),
           overrides: {
             name: 'Attachment Agent',
@@ -203,6 +204,16 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         (result) => result.connection?.status === 'connected',
         'the packaged local server did not reconnect to Community A after restart'
       );
+      const localTurns = () =>
+        json<{ sessions: Array<{ id: string }> }>(
+          `${env.local}/api/sessions?cwd=${encodeURIComponent(agentPath)}`
+        ).then((result) => result.sessions);
+      const beforeFreshMention = await eventually(
+        localTurns,
+        (sessions) => sessions.length === 0,
+        'the restarted local server replayed a historical Community entry into an agent turn'
+      );
+      expect(beforeFreshMention).toHaveLength(0);
 
       // A fresh live entry makes the recovered subscription observable. Exactly
       // two replies means this addressed post ran once and the historical first
@@ -216,6 +227,12 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       ).toBe(true);
       await composer.fill(`@${handle} prove the recovered live subscription`);
       await pageMemberA.getByRole('button', { name: 'Send' }).click();
+      const freshTurns = await eventually(
+        localTurns,
+        (sessions) => sessions.length === 1,
+        'the fresh addressed Community entry did not run exactly one local agent turn'
+      );
+      expect(freshTurns).toHaveLength(1);
       const afterRestart = await eventually(
         agentEntries,
         (entries) =>
