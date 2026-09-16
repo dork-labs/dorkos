@@ -6,7 +6,13 @@ import {
 import {
   COMMUNITY_API_V1_ROUTES,
   CommunityWireChannelSchema,
+  CommunityWireMemberSchema,
+  CommunityWireAgentSchema,
+  CommunityWireAgentEnrollRequestSchema,
+  CommunityWireMemberRoleUpdateRequestSchema,
+  CommunityWireEntrySchema,
   CommunityWireEntryPostRequestSchema,
+  CommunityWireEntryPostResponseSchema,
   CommunityWireEntryPageSchema,
   CommunityWireErrorSchema,
 } from '../community-wire.js';
@@ -103,6 +109,74 @@ describe('community server port additions', () => {
     expect(COMMUNITY_API_V1_ROUTES.entries).toBe('/api/v1/channels/:id/entries');
   });
 
+  it('requires stable handles and resolved mentions with each entry resume cursor', () => {
+    const member = {
+      memberId: 'human-1',
+      kind: 'human',
+      displayName: 'Ana',
+      handle: 'ana',
+      role: 'member',
+      ownerMemberId: null,
+      joinedAt: '2026-09-16T00:00:00.000Z',
+    };
+    expect(CommunityWireMemberSchema.parse(member).handle).toBe('ana');
+    expect(CommunityWireMemberSchema.safeParse({ ...member, handle: null }).success).toBe(false);
+    expect(CommunityWireMemberSchema.safeParse({ ...member, handle: 'Ana' }).success).toBe(false);
+    expect(
+      CommunityWireAgentSchema.safeParse({
+        memberId: 'agent-1',
+        displayName: 'Helper',
+        handle: 'helper',
+        ownerMemberId: 'human-1',
+        active: true,
+      }).success
+    ).toBe(true);
+    expect(
+      CommunityWireAgentEnrollRequestSchema.safeParse({
+        localAgentId: 'local-1',
+        displayName: 'Helper',
+        handle: 'helper',
+      }).success
+    ).toBe(true);
+    expect(CommunityWireMemberRoleUpdateRequestSchema.parse({ role: 'admin' }).role).toBe('admin');
+    expect(COMMUNITY_API_V1_ROUTES.memberRole).toBe('/api/v1/members/:id/role');
+    const entry = {
+      id: 'entry-1',
+      channelId: 'channel-1',
+      seq: 1,
+      authorMemberId: 'human-1',
+      authorDisplayName: 'Ana',
+      text: '@helper hello',
+      mentions: ['agent-1'],
+      cursor: 'room-resume-1',
+      parentEntryId: null,
+      threadRootEntryId: null,
+      createdAt: '2026-09-16T00:00:00.000Z',
+      attachments: [],
+    };
+    expect(CommunityWireEntrySchema.parse(entry).mentions).toEqual(['agent-1']);
+    expect(
+      CommunityWireEntryPostResponseSchema.safeParse({ entry, cursor: entry.cursor }).success
+    ).toBe(true);
+    expect(CommunityWireEntryPostResponseSchema.safeParse({ entry, cursor: 'wrong' }).success).toBe(
+      false
+    );
+    expect(
+      CommunityWireEntryPageSchema.safeParse({ entries: [entry], nextCursor: 'page-only-cursor' })
+        .success
+    ).toBe(true);
+    expect(
+      CommunityWireEntrySchema.safeParse({ ...entry, localPath: '/private/file' }).success
+    ).toBe(false);
+    expect(CommunityWireEntrySchema.safeParse({ ...entry, mentions: undefined }).success).toBe(
+      false
+    );
+    expect(CommunityWireEntrySchema.safeParse({ ...entry, cursor: undefined }).success).toBe(false);
+    expect(
+      CommunityWireEntrySchema.safeParse({ ...entry, mentions: ['agent-1', 'agent-1'] }).success
+    ).toBe(false);
+  });
+
   it('isolates one-time credential responses in the private subpath', () => {
     expect(
       CommunityPairingExchangeSecretResponseSchema.safeParse({
@@ -121,6 +195,7 @@ describe('community server port additions', () => {
         agent: {
           memberId: 'agent-1',
           displayName: 'Helper',
+          handle: 'helper',
           ownerMemberId: 'human-1',
           active: true,
         },

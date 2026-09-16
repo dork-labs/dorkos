@@ -1,12 +1,16 @@
 /**
- * Version 1 of the standalone community HTTP contract. These are public,
- * non-secret DTOs shared by the same-origin browser and native adapter.
- * Every object is strict so a database row, bearer, or storage path cannot be
- * serialized by accidentally passing it through a response schema.
+ * Version 1 of the standalone community HTTP contract. Ordinary response
+ * projections contain no credential or storage path. Admission inputs carry
+ * deployment or invite secrets, and invite creation returns its token once;
+ * callers must keep those values out of logs and persistent browser state.
+ * Every object is strict so an extra database field cannot silently pass a
+ * response schema. One-time personal and agent bearers have a separate private
+ * server-only subpath.
  *
  * @module shared/community-wire
  */
 import { z } from 'zod';
+import { HANDLE_PATTERN } from './handle.js';
 
 const id = z.string().min(1);
 const timestamp = z.iso.datetime();
@@ -16,6 +20,13 @@ const attachmentIds = z
   .array(id)
   .max(8)
   .refine((ids) => new Set(ids).size === ids.length);
+const mentions = z
+  .array(id)
+  .max(1_000)
+  .refine((ids) => new Set(ids).size === ids.length);
+
+/** A live community member's lowercase, typeable and unique address. */
+export const CommunityWireHandleSchema = z.string().regex(HANDLE_PATTERN);
 
 /** Canonical method paths beneath the independently deployed `/api/v1` origin. */
 export const COMMUNITY_API_V1_ROUTES = {
@@ -38,6 +49,7 @@ export const COMMUNITY_API_V1_ROUTES = {
   channelEvents: '/api/v1/channels/:id/events',
   attachment: '/api/v1/attachments/:id',
   agents: '/api/v1/agents',
+  memberRole: '/api/v1/members/:id/role',
   meGrants: '/api/v1/me/grants',
   meExport: '/api/v1/me/export',
   meLeave: '/api/v1/me/leave',
@@ -80,6 +92,7 @@ export const CommunityWireMemberSchema = z.strictObject({
   memberId: id,
   kind: z.enum(['human', 'agent']),
   displayName: z.string().min(1),
+  handle: CommunityWireHandleSchema,
   role: CommunityWireHumanRoleSchema.nullable(),
   ownerMemberId: id.nullable(),
   joinedAt: timestamp,
@@ -89,6 +102,14 @@ export type CommunityWireMember = z.infer<typeof CommunityWireMemberSchema>;
 /** Authorized channel roster. */
 export const CommunityWireMemberListResponseSchema = z.strictObject({
   members: z.array(CommunityWireMemberSchema),
+});
+/** Change a human between admin and ordinary member; only the owner may call this. */
+export const CommunityWireMemberRoleUpdateRequestSchema = z.strictObject({
+  role: z.enum(['admin', 'member']),
+});
+/** Role change receipt with the current member projection. */
+export const CommunityWireMemberResponseSchema = z.strictObject({
+  member: CommunityWireMemberSchema,
 });
 
 /** Public channel projection. `joined` is for the current caller only. */
@@ -158,9 +179,13 @@ export const CommunityWireEntrySchema = z.strictObject({
   authorMemberId: id,
   authorDisplayName: z.string().min(1),
   text: z.string(),
+  /** Member IDs resolved from handles at write time against the joined roster. */
+  mentions,
   parentEntryId: id.nullable(),
   threadRootEntryId: id.nullable(),
   createdAt: timestamp,
+  /** Server-minted cursor for room-event resume immediately after this entry. */
+  cursor,
   attachments: z.array(CommunityWireAttachmentSchema).max(8),
 });
 /** One committed entry. */
@@ -172,12 +197,13 @@ export const CommunityWireEntryPostRequestSchema = z.strictObject({
   idempotencyKey,
   attachmentIds: attachmentIds.optional(),
 });
-/** Committed entry and its opaque resume cursor. */
-export const CommunityWireEntryPostResponseSchema = z.strictObject({
-  entry: CommunityWireEntrySchema,
-  cursor,
-});
-/** Oldest-first page; `null` alone means exhaustion. */
+/** Committed entry and the same room-event resume cursor carried by that entry. */
+export const CommunityWireEntryPostResponseSchema = z
+  .strictObject({ entry: CommunityWireEntrySchema, cursor })
+  .refine(({ entry, cursor }) => entry.cursor === cursor, {
+    message: 'Receipt cursor must resume after its entry',
+  });
+/** Oldest-first page. `nextCursor` is a scoped PAGE cursor, separate from each entry's room-event resume cursor. */
 export const CommunityWireEntryPageSchema = z.strictObject({
   entries: z.array(CommunityWireEntrySchema).max(100),
   nextCursor: cursor.nullable(),
@@ -290,6 +316,7 @@ export const CommunityWireGrantListResponseSchema = z.strictObject({
 export const CommunityWireAgentSchema = z.strictObject({
   memberId: id,
   displayName: z.string().min(1),
+  handle: CommunityWireHandleSchema,
   ownerMemberId: id,
   active: z.boolean(),
 });
@@ -299,6 +326,8 @@ export type CommunityWireAgent = z.infer<typeof CommunityWireAgentSchema>;
 export const CommunityWireAgentEnrollRequestSchema = z.strictObject({
   localAgentId: id,
   displayName: z.string().min(1),
+  /** The server derives a collision-safe handle when omitted. */
+  handle: CommunityWireHandleSchema.optional(),
 });
 /** Public agent management response. */
 export const CommunityWireAgentResponseSchema = z.strictObject({ agent: CommunityWireAgentSchema });
