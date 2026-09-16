@@ -343,6 +343,7 @@ import {
   setRemoteCommunityDeliveryProjection,
   setRemoteCommunityEnrollmentStore,
   setRemoteCommunityLifecycle,
+  setRemoteCommunityDeliveryRetry,
   setRemoteCommunityLocalAgentResolver,
 } from './services/communities/remote/state.js';
 import { CommunityOutboxRuntime } from './services/communities/remote/community-outbox-runtime.js';
@@ -1344,6 +1345,7 @@ async function start() {
   if (!remoteCommunityRuntime) throw new Error('Remote community runtime was not composed');
   setRemoteCommunityEnrollmentStore(remoteCommunityRuntime.enrollments);
   setRemoteCommunityDeliveryProjection(remoteCommunityRuntime.projection);
+  setRemoteCommunityDeliveryRetry((input) => remoteCommunityRuntime!.retryNow(input));
   // The public native-community API names an agent by its Mesh manifest id.
   // Resolve that id through Mesh to its server-only project path before the
   // author registry mints or reads the local room principal; neither the

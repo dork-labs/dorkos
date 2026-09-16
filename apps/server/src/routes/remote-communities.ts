@@ -40,6 +40,7 @@ import {
   getRemoteCommunityOriginIdempotencyKey,
   onRemoteCommunityDeliveryChange,
   resolveRemoteCommunityLocalAgent,
+  retryRemoteCommunityDelivery,
 } from '../services/communities/remote/state.js';
 import { getRoomService } from '../services/rooms/index.js';
 import {
@@ -395,6 +396,27 @@ export function createRemoteCommunitiesRouter(): Router {
       if (!res.writableEnded) res.end();
     }
   });
+  router.post('/:ref/rooms/:roomId/deliveries/:idempotencyKey/retry', (req, res) => {
+    const owner = resolveCommunityOwner(req, res);
+    const ref = CommunityRefSchema.safeParse(req.params.ref);
+    const idempotencyKey = z.string().min(1).max(128).safeParse(req.params.idempotencyKey);
+    if (!owner || !ref.success || !idempotencyKey.success) return;
+    try {
+      const result = retryRemoteCommunityDelivery({
+        communityRef: ref.data,
+        remoteRoomId: req.params.roomId,
+        ownerAuthorId: owner,
+        idempotencyKey: idempotencyKey.data,
+      });
+      if (result === 'missing') return res.status(404).json({ error: 'Delivery not found.' });
+      if (result !== 'retried')
+        return res.status(409).json({ error: 'Delivery cannot be retried.' });
+      res.json(getRemoteCommunityDeliverySnapshot(ref.data, req.params.roomId, owner));
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+
   router.post('/:ref/rooms/:roomId/halt', async (req, res) => {
     const owner = resolveCommunityOwner(req, res);
     const ref = CommunityRefSchema.safeParse(req.params.ref);
