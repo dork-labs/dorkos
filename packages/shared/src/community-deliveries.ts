@@ -35,6 +35,7 @@ const CommunityDeliveryBaseSchema = z.strictObject({
 export const CommunityPendingDeliverySchema = CommunityDeliveryBaseSchema.extend({
   state: z.literal('pending'),
   failure: z.null(),
+  retryable: z.boolean(),
 });
 /** A delivery that needs a person to retry or repair before it can be shared. */
 export const CommunityFailedDeliverySchema = CommunityDeliveryBaseSchema.extend({

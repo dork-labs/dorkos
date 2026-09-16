@@ -20,6 +20,8 @@ import { CommunityOutboxProjection } from './community-outbox-projection.js';
 import { CommunityOutboxStore } from './community-outbox-store.js';
 import {
   CommunityOutboxRunner,
+  type CommunityOutboxRetryInput,
+  type CommunityOutboxRetryResult,
   CommunityOutboxWorker,
   type CommunityOutboxChangeListener,
 } from './community-outbox-worker.js';
@@ -51,6 +53,7 @@ export class CommunityOutboxRuntime {
   readonly outbox: CommunityOutboxStore;
   readonly mirrorWrites: RoomMirrorWritePolicy;
   readonly projection: CommunityOutboxProjection;
+  private readonly worker: CommunityOutboxWorker;
   private readonly runner: CommunityOutboxRunner;
 
   constructor(deps: CommunityOutboxRuntimeDeps) {
@@ -65,13 +68,6 @@ export class CommunityOutboxRuntime {
       this.outbox,
       now
     );
-    this.projection = new CommunityOutboxProjection(
-      this.outbox,
-      this.mirrors,
-      deps.roomStore,
-      deps.attachmentRows,
-      deps.authors
-    );
     const delivery = new CommunityAdapterOutboxDelivery(
       deps.adapters,
       this.mirrors,
@@ -82,7 +78,7 @@ export class CommunityOutboxRuntime {
       this.outbox,
       deps.confirmNativePostOrigin
     );
-    const worker = new CommunityOutboxWorker(
+    this.worker = new CommunityOutboxWorker(
       this.outbox,
       {
         canDeliver: (item) => {
@@ -108,7 +104,16 @@ export class CommunityOutboxRuntime {
       now,
       deps.changes
     );
-    this.runner = new CommunityOutboxRunner(worker);
+    this.projection = new CommunityOutboxProjection(
+      this.outbox,
+      this.mirrors,
+      deps.roomStore,
+      deps.attachmentRows,
+      deps.authors,
+      (id) => this.worker.isInFlight(id),
+      now
+    );
+    this.runner = new CommunityOutboxRunner(this.worker);
   }
 
   /** Access control handed to the one existing RoomService at bootstrap. */
@@ -124,5 +129,10 @@ export class CommunityOutboxRuntime {
   /** Stop scheduling remote delivery during server shutdown. */
   stop(): void {
     this.runner.stop();
+  }
+
+  /** Ask this runtime's sole worker to release one genuine pending backoff immediately. */
+  retryNow(input: CommunityOutboxRetryInput): CommunityOutboxRetryResult {
+    return this.worker.retryNow(input);
   }
 }
