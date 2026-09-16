@@ -256,14 +256,28 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       ).toHaveCount(0);
       await expect(localPage.getByText('Here is what I saw.', { exact: true })).toHaveCount(1);
       for (const viewport of [
-        { name: 'desktop', width: 1440, height: 900 },
-        { name: 'tablet', width: 820, height: 1180 },
-        { name: 'mobile', width: 390, height: 844 },
+        { name: 'desktop', width: 1440, height: 900, dark: false },
+        { name: 'tablet', width: 820, height: 1180, dark: true },
+        { name: 'mobile', width: 390, height: 844, dark: false },
       ]) {
         await localPage.setViewportSize({ width: viewport.width, height: viewport.height });
-        await localPage.emulateMedia({
-          colorScheme: viewport.name === 'tablet' ? 'dark' : 'light',
-        });
+        await localPage.emulateMedia({ colorScheme: viewport.dark ? 'dark' : 'light' });
+        await localPage.waitForFunction(
+          ({ dark, foreground }) => {
+            const root = document.documentElement;
+            return (
+              root.classList.contains('dark') === dark &&
+              getComputedStyle(root).getPropertyValue('--foreground').trim() === foreground
+            );
+          },
+          { dark: viewport.dark, foreground: viewport.dark ? '0 0% 87%' : '0 0% 9%' }
+        );
+        await localPage.evaluate(
+          () =>
+            new Promise<void>((resolve) =>
+              requestAnimationFrame(() => requestAnimationFrame(resolve))
+            )
+        );
         await expect(
           localPage.getByRole('button', { name: 'Stop my agents', exact: true })
         ).toBeVisible();
@@ -445,8 +459,11 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       );
       const dispatchesBeforeB = readyBeforeB!.dispatchesSinceBoot;
       const bMarker = `B-only-${crypto.randomUUID()}`;
-      await pageB.getByLabel(/Message #general/i).fill(bMarker);
-      await pageB.getByRole('button', { name: 'Send' }).click();
+      await pageB.goto(env.communityB);
+      const bComposer = pageB.getByLabel(/Message #general/i);
+      await expect(bComposer).toBeVisible({ timeout: 10_000 });
+      await bComposer.fill(bMarker, { timeout: 10_000 });
+      await pageB.getByRole('button', { name: 'Send' }).click({ timeout: 10_000 });
       await eventually(
         () =>
           pageJson<{ entries: Array<{ text: string }> }>(
@@ -502,7 +519,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         stopCommunityA.ok(),
         `could not stop packaged Community A: ${await stopCommunityA.text()}`
       ).toBe(true);
-      const offlineNotice = localPage.getByText('Connection lost. Showing saved messages.', {
+      const offlineNotice = localPage.getByText('Community unavailable. Showing saved messages.', {
         exact: true,
       });
       await expect(offlineNotice).toBeVisible({ timeout: 90_000 });
@@ -899,10 +916,12 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         localPage.getByText('You no longer have access to this channel.', { exact: true })
       ).toBeVisible();
     } finally {
-      await ownerA.close();
-      await ownerB.close();
-      await memberA.close();
-      await localContext.close();
+      await Promise.allSettled([
+        ownerA.close(),
+        ownerB.close(),
+        memberA.close(),
+        localContext.close(),
+      ]);
     }
   });
 });

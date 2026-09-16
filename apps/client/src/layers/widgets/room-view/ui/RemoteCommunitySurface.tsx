@@ -236,7 +236,7 @@ export function RemoteCommunitySurface({
               <p role="status" className="text-muted-foreground px-4 py-2 text-sm">
                 {stream.status === 'connecting'
                   ? 'Connecting to the community…'
-                  : 'Connection lost. Showing saved messages.'}
+                  : 'Community unavailable. Showing saved messages.'}
               </p>
             )}
             {roomQuery.isError && (
@@ -343,7 +343,7 @@ export function RemoteCommunitySurface({
                       ? 'Waiting for community confirmation…'
                       : delivery.failure === 'expired'
                         ? 'Delivery not confirmed. The retry window has ended.'
-                        : 'Delivery not confirmed. Check the community connection and the agent’s channel access before asking it to try again.'}
+                        : 'Delivery not confirmed. Check that the community is reachable and the agent can access this channel before asking it to try again.'}
                   </p>
                   {delivery.state === 'pending' && delivery.retryable && (
                     <Button
