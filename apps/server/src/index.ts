@@ -269,6 +269,7 @@ import {
   type TurnEndReprojection,
 } from './services/harness/skills-watcher.js';
 import { onProjectorTurnBoundary } from './services/session/session-state-projector.js';
+import { subscribeRuntimeTurns } from './services/session/runtime-turns/runtime-turn.js';
 import { DEFAULT_CWD } from './lib/resolve-root.js';
 import { describeHookProjectionCapability } from './services/harness/hook-approval.js';
 import { ensurePersonalMarketplace } from './services/marketplace-mcp/personal-marketplace.js';
@@ -3468,6 +3469,17 @@ async function start() {
   // list from this stream agrees with GET /api/sessions (DOR-463).
   sessionListBroadcaster.start(runtimeRegistry.listRuntimes(), runtimeRegistry);
   logger.info('[SessionList] Discovery broadcaster started');
+
+  // Project turns the agent starts on its own onto the session's durable stream
+  // (spec `warm-process-lifecycle` D6). A warm process keeps working after a
+  // reply ends — a background helper finishes and its report is delivered — and
+  // without this those words are read off the stream and dropped, so the person
+  // watches a finished turn and never learns what their agent said next.
+  //
+  // Here for the same reason the broadcaster is: every runtime is registered by
+  // this point, and a runtime that cannot produce such a turn omits the hook and
+  // subscribes to nothing.
+  for (const runtime of runtimeRegistry.listRuntimes()) subscribeRuntimeTurns(runtime);
 
   // Mount Mesh routes if MeshCore initialized successfully (always-on, ADR-0062)
   // taskStore/relayCore power topology enrichment (relay badges, task counts);

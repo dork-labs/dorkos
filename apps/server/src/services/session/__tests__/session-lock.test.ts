@@ -36,6 +36,47 @@ function livingRes(): SseResponse & LockActivity & { touch(): void } {
   };
 }
 
+describe('SessionLockManager — the runtime holder is reserved (spec D6, T14)', () => {
+  it('refuses a runtime: holder to every ordinary caller, and locks nothing', () => {
+    const locks = new SessionLockManager();
+
+    // Whoever reads a lock's holder is entitled to take `runtime:` at face
+    // value — it decides whether a person's queued message waits and whether a
+    // room trigger parks — so a caller that could spell the name itself could
+    // dress its own turn up as one the agent started.
+    expect(locks.acquireLock(SESSION, `runtime:${SESSION}`, fakeRes())).toBe(false);
+    expect(locks.acquireLock(SESSION, 'runtime:anything-at-all', fakeRes())).toBe(false);
+
+    // Refused, not silently downgraded: the session is still free.
+    expect(locks.isLocked(SESSION)).toBe(false);
+    expect(locks.getLockInfo(SESSION)).toBeNull();
+  });
+
+  it('mints the reserved holder only through acquireRuntimeLock', () => {
+    const locks = new SessionLockManager();
+
+    expect(locks.acquireRuntimeLock(SESSION, fakeRes())).toBe(true);
+    expect(locks.getLockInfo(SESSION)?.clientId).toBe(`runtime:${SESSION}`);
+    // And it is an ordinary lock in every other respect: live, so nobody else
+    // gets it while the agent's turn is running.
+    expect(locks.isLocked(SESSION, CLIENT)).toBe(true);
+    expect(locks.acquireLock(SESSION, CLIENT, fakeRes())).toBe(false);
+  });
+
+  it('releases the reserved holder on its own token', () => {
+    const locks = new SessionLockManager();
+    const token = Symbol('runtime-turn-lock');
+    expect(locks.acquireRuntimeLock(SESSION, fakeRes(), token)).toBe(true);
+
+    // A stale releaser from a superseded runtime turn cannot drop this one.
+    locks.releaseLock(SESSION, `runtime:${SESSION}`, Symbol('an older turn'));
+    expect(locks.isLocked(SESSION)).toBe(true);
+
+    locks.releaseLock(SESSION, `runtime:${SESSION}`, token);
+    expect(locks.isLocked(SESSION)).toBe(false);
+  });
+});
+
 describe('SessionLockManager — one live holder (DOR-1088)', () => {
   it('refuses a live lock to the client that already holds it', () => {
     // The hole this closed: the cockpit uses ONE client id per tab, so a second

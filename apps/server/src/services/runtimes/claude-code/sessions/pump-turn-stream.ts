@@ -87,6 +87,17 @@ export interface PumpTurnStreamArgs {
   opts: MessageSenderOpts;
   /** The mesh agent to stamp `response_complete` on, if this directory hosts one. */
   meshAgentId: string | undefined;
+  /**
+   * Skip the zero-content guard, because nothing is owed an answer here (spec
+   * `warm-process-lifecycle` D6).
+   *
+   * The guard exists to catch a turn that answered a PERSON with silence. A turn
+   * the agent started answers nobody: a helper's delivery that produced only
+   * bookkeeping is a normal, quiet thing to happen, and reporting it as "the
+   * agent did not respond" would put a red frame on the stream for a turn the
+   * person never asked for.
+   */
+  suppressEmptyTurnError?: boolean;
 }
 
 /**
@@ -233,7 +244,13 @@ export async function* streamTurnWindow(args: PumpTurnStreamArgs): AsyncGenerato
           // the agent has said anything and this guard called the silence a
           // fault, which reaches the operator as a crash notice for something
           // they did on purpose (DOR-1244, fixed on the resume path first).
-          if (contentEventCount === 0 && !emittedError && !wasInteractive && !wasStopped()) {
+          if (
+            contentEventCount === 0 &&
+            !emittedError &&
+            !wasInteractive &&
+            args.suppressEmptyTurnError !== true &&
+            !wasStopped()
+          ) {
             logger.warn('[pump-turn-stream] window closed with zero content events', {
               session: sessionId,
               eventCount,
@@ -278,7 +295,13 @@ export async function* streamTurnWindow(args: PumpTurnStreamArgs): AsyncGenerato
   // `done` by the time this is reached. The resume path needs its conjunct
   // because a `query.close()` there ends the SDK stream with no `result` at
   // all; the windower never leaves that gap (DOR-1320 review).
-  if (contentEventCount === 0 && !emittedError && !emittedDone && !wasInteractive) {
+  if (
+    contentEventCount === 0 &&
+    !emittedError &&
+    !emittedDone &&
+    !wasInteractive &&
+    args.suppressEmptyTurnError !== true
+  ) {
     logger.warn('[pump-turn-stream] window closed with zero content events', {
       session: sessionId,
       eventCount,
