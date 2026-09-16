@@ -66,27 +66,49 @@ export function ChannelView({ channel, onChanged }: Props) {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [livePaused, setLivePaused] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [readCursor, setReadCursor] = useState<string | null>(null);
   const threadRef = useRef(thread);
   const listRef = useRef<HTMLDivElement>(null);
+  const activeChannelId = useRef(channel.id);
+  // A reload can overlap the initial request (or a retry). Only the newest
+  // history page may set pagination state, while entries themselves always
+  // merge: an SSE event is newer information than a slow HTTP response.
+  const historyGeneration = useRef(0);
   const threadId = thread?.id;
   useEffect(() => {
     threadRef.current = thread;
   }, [thread]);
+  useEffect(() => {
+    activeChannelId.current = channel.id;
+    return () => {
+      if (activeChannelId.current === channel.id) activeChannelId.current = '';
+    };
+  }, [channel.id]);
   const load = useCallback(async () => {
+    const generation = ++historyGeneration.current;
+    const requestedChannelId = channel.id;
     setLoading(true);
     setError('');
     try {
       const page = await request<Page>(`/api/v1/channels/${channel.id}/entries?limit=50`);
-      setEntries(page.entries);
+      if (
+        generation !== historyGeneration.current ||
+        activeChannelId.current !== requestedChannelId
+      )
+        return;
+      setEntries((previous) => mergeEntries(previous, page.entries));
       setNextCursor(page.nextCursor);
-      setReadCursor(page.entries.at(-1)?.cursor ?? null);
+      // Keep a cursor advanced by SSE. Moving it backward would make the next
+      // read receipt describe an earlier point than the one already rendered.
+      setReadCursor((current) => current ?? page.entries.at(-1)?.cursor ?? null);
     } catch (cause) {
+      if (activeChannelId.current !== requestedChannelId) return;
       setError(describeError(cause));
       setErrorAction('reload');
     } finally {
-      setLoading(false);
+      if (activeChannelId.current === requestedChannelId) setLoading(false);
     }
   }, [channel.id]);
   useEffect(() => {
@@ -100,6 +122,7 @@ export function ChannelView({ channel, onChanged }: Props) {
       try {
         const event = JSON.parse(raw.data) as CommunityWireEvent;
         if (event.type === 'snapshot') {
+          setLivePaused(false);
           setEntries((previous) =>
             mergeEntries(
               previous,
@@ -108,6 +131,7 @@ export function ChannelView({ channel, onChanged }: Props) {
           );
           if (event.entries.length) setReadCursor(event.cursor);
         } else if (event.type === 'entry') {
+          setLivePaused(false);
           setEntries((previous) =>
             event.entry.parentEntryId ? previous : mergeEntries(previous, [event.entry])
           );
@@ -133,8 +157,10 @@ export function ChannelView({ channel, onChanged }: Props) {
     source.addEventListener('entry', receive);
     source.addEventListener('closed', receive);
     source.onerror = () => {
-      setError('Live updates paused. Reconnecting…');
-      setErrorAction('reload');
+      // EventSource reconnects on its own. A later snapshot or entry clears
+      // this transient status, so a recovered stream never leaves a stale
+      // warning covering the composer.
+      setLivePaused(true);
     };
     return () => source.close();
   }, [channel.id, channel.joined, onChanged]);
@@ -303,9 +329,9 @@ export function ChannelView({ channel, onChanged }: Props) {
             ))}
           </>
         )}
-        {error && (
+        {(error || livePaused) && (
           <div role="alert" className="notice error row mt-3">
-            {error}
+            {error || 'Live updates paused. Reconnecting…'}
             {errorAction === 'remove-file' && rejectedFile ? (
               <>
                 <span className="small">

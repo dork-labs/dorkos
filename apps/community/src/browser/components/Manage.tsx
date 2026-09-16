@@ -24,10 +24,18 @@ type Props = {
   channels: Channel[];
   selectedChannel: Channel | null;
   onChanged: () => void;
+  onCurrentMemberChanged: () => Promise<Member>;
   onLeft: () => void;
 };
 /** Manage channel, member, agent and account actions for the current role. */
-export function Manage({ me, channels, selectedChannel, onChanged, onLeft }: Props) {
+export function Manage({
+  me,
+  channels,
+  selectedChannel,
+  onChanged,
+  onCurrentMemberChanged,
+  onLeft,
+}: Props) {
   const moderator = me.role === 'owner' || me.role === 'admin';
   const [tab, setTab] = useState<'community' | 'members' | 'agents' | 'account'>('community');
   const [error, setError] = useState('');
@@ -48,36 +56,41 @@ export function Manage({ me, channels, selectedChannel, onChanged, onLeft }: Pro
   const [grants, setGrants] = useState<Grant[]>([]);
   const [successor, setSuccessor] = useState('');
   const [password, setPassword] = useState('');
-  const refresh = useCallback(async () => {
-    try {
-      const requests: Promise<unknown>[] = [
-        request<{ grants: Grant[] }>('/api/v1/me/grants').then((body) => setGrants(body.grants)),
-        request<{ agents: Agent[] }>('/api/v1/agents').then((body) => setAgents(body.agents)),
-      ];
-      if (moderator) {
-        requests.push(
-          request<{ invites: Invite[] }>('/api/v1/invites').then((body) => setInvites(body.invites))
-        );
-        requests.push(
-          request<{ members: Member[]; nextCursor: string | null }>(
-            '/api/v1/members?limit=50'
-          ).then((body) => {
-            setDirectory(body.members);
-            setDirectoryCursor(body.nextCursor);
-          })
-        );
+  const refresh = useCallback(
+    async (currentModerator = moderator) => {
+      try {
+        const requests: Promise<unknown>[] = [
+          request<{ grants: Grant[] }>('/api/v1/me/grants').then((body) => setGrants(body.grants)),
+          request<{ agents: Agent[] }>('/api/v1/agents').then((body) => setAgents(body.agents)),
+        ];
+        if (currentModerator) {
+          requests.push(
+            request<{ invites: Invite[] }>('/api/v1/invites').then((body) =>
+              setInvites(body.invites)
+            )
+          );
+          requests.push(
+            request<{ members: Member[]; nextCursor: string | null }>(
+              '/api/v1/members?limit=50'
+            ).then((body) => {
+              setDirectory(body.members);
+              setDirectoryCursor(body.nextCursor);
+            })
+          );
+        }
+        if (selectedChannel?.joined)
+          requests.push(
+            request<{ members: Member[] }>(`/api/v1/channels/${selectedChannel!.id}/members`).then(
+              (body) => setRoster(body.members)
+            )
+          );
+        await Promise.all(requests);
+      } catch (cause) {
+        setError(describeError(cause));
       }
-      if (selectedChannel?.joined)
-        requests.push(
-          request<{ members: Member[] }>(`/api/v1/channels/${selectedChannel!.id}/members`).then(
-            (body) => setRoster(body.members)
-          )
-        );
-      await Promise.all(requests);
-    } catch (cause) {
-      setError(describeError(cause));
-    }
-  }, [moderator, selectedChannel?.id, selectedChannel?.joined]);
+    },
+    [moderator, selectedChannel?.id, selectedChannel?.joined]
+  );
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -88,7 +101,11 @@ export function Manage({ me, channels, selectedChannel, onChanged, onLeft }: Pro
     try {
       await operation();
       setMessage(success);
-      await refresh();
+      // Roles can change without a navigation, most visibly when ownership is
+      // transferred. Refresh the shell's identity before fetching panels so
+      // the old owner immediately sees the member controls they may use.
+      const current = await onCurrentMemberChanged();
+      await refresh(current.role === 'owner' || current.role === 'admin');
       onChanged();
     } catch (cause) {
       setError(describeError(cause));
@@ -400,11 +417,18 @@ export function Manage({ me, channels, selectedChannel, onChanged, onLeft }: Pro
                         onClick={() =>
                           void perform(
                             () =>
-                              request(
-                                `/api/v1/channels/${selectedChannel!.id}/members/${member.memberId}`,
-                                'DELETE'
-                              ),
-                            'Member removed from channel.'
+                              member.kind === 'agent'
+                                ? request(
+                                    `/api/v1/channels/${selectedChannel!.id}/agents/${member.memberId}`,
+                                    'DELETE'
+                                  )
+                                : request(
+                                    `/api/v1/channels/${selectedChannel!.id}/members/${member.memberId}`,
+                                    'DELETE'
+                                  ),
+                            member.kind === 'agent'
+                              ? 'Agent removed from channel.'
+                              : 'Member removed from channel.'
                           )
                         }
                       >
