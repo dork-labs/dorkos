@@ -694,7 +694,7 @@ describe('owner foundation over real HTTP and Postgres', () => {
     try {
       const snapshot = await nextSse(reader);
       expect(snapshot.event).toBe('snapshot');
-      await new Promise((resolve) => setTimeout(resolve, 650));
+      expect((await nextSse(reader)).event).toBe('replay_complete');
       const posted = await post(
         `/api/v1/channels/${id}/entries`,
         { text: 'live message', idempotencyKey: 'live-one' },
@@ -718,6 +718,7 @@ describe('owner foundation over real HTTP and Postgres', () => {
         ? receipt.entry.id
         : (await nextSse(replayReader)).data.entry.id;
       expect(replayed).toBe(receipt.entry.id);
+      expect((await nextSse(replayReader)).event).toBe('replay_complete');
       await replayReader.cancel();
       const removed = await request(`/api/v1/channels/${id}/members/${bobMemberId}`, {
         method: 'DELETE',
@@ -766,6 +767,7 @@ describe('owner foundation over real HTTP and Postgres', () => {
     const reader = response.body!.getReader();
     try {
       expect((await nextSse(reader)).event).toBe('snapshot');
+      expect((await nextSse(reader)).event).toBe('replay_complete');
       expect(
         (
           await post(
@@ -810,6 +812,7 @@ describe('owner foundation over real HTTP and Postgres', () => {
     const reader = response.body!.getReader();
     try {
       expect((await nextSse(reader)).event).toBe('snapshot');
+      expect((await nextSse(reader)).event).toBe('replay_complete');
       await pool.query(
         `DELETE FROM session WHERE "userId"=(SELECT user_id FROM members WHERE id=$1)`,
         [bobMemberId]
@@ -868,6 +871,9 @@ describe('owner foundation over real HTTP and Postgres', () => {
       const reader = response.body!.getReader();
       const snapshot = await nextSse(reader);
       expect(snapshot.data.entries).toEqual([]);
+      const replayComplete = await nextSse(reader);
+      expect(replayComplete.event).toBe('replay_complete');
+      expect(replayComplete.data.capturedSeq).toBe(0);
       const event = await nextSse(reader);
       expect(event.data.entry.id).toBe(receipt.entry.id);
       expect(event.data.entry.seq).toBe(1);
@@ -919,6 +925,9 @@ describe('owner foundation over real HTTP and Postgres', () => {
         seen.push(event.data.entry.seq);
       }
       expect(seen).toEqual(Array.from({ length: 269 }, (_, index) => index + 2));
+      const replayComplete = await nextSse(reader);
+      expect(replayComplete.event).toBe('replay_complete');
+      expect(replayComplete.data.capturedSeq).toBe(270);
     } finally {
       controller.abort();
       await reader.cancel().catch(() => undefined);

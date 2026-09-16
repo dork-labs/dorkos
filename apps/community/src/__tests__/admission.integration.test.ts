@@ -357,6 +357,7 @@ describe('signed admission over real HTTP and Postgres', () => {
     const reader = stream.body!.getReader();
     try {
       expect((await nextSse(reader)).type).toBe('snapshot');
+      expect((await nextSse(reader)).type).toBe('replay_complete');
       expect(
         (await call(`/api/v1/me/grants/${grant.id}`, 'DELETE', undefined, ownerCookie)).status
       ).toBe(204);
@@ -590,6 +591,7 @@ describe('signed admission over real HTTP and Postgres', () => {
     expect(stream.status).toBe(200);
     const reader = stream.body!.getReader();
     expect((await nextSse(reader)).type).toBe('snapshot');
+    expect((await nextSse(reader)).type).toBe('replay_complete');
     const rotate = await bearerCall(`/api/v1/agents/${agentId}/rotate`, 'POST', humanToken, {});
     expect(rotate.status).toBe(200);
     expect(rotate.headers.get('cache-control')).toBe('no-store');
@@ -997,6 +999,7 @@ describe('signed admission over real HTTP and Postgres', () => {
     );
     const reader = stream.body!.getReader();
     expect((await nextSse(reader)).type).toBe('snapshot');
+    expect((await nextSse(reader)).type).toBe('replay_complete');
     const blocker = await pool.connect();
     await blocker.query('BEGIN');
     await blocker.query('SELECT 1 FROM channels WHERE id=$1 FOR UPDATE', [channelId]);
