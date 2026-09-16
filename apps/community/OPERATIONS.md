@@ -31,7 +31,20 @@ For S3 storage, take a versioned snapshot of the same bucket while writes are st
 
 ## Rehearse a restore
 
-Restore into a separate deployment with empty volumes and a private test address. Use the saved source revision and deployment secrets. Start PostgreSQL without starting the app. Restore the dump into its empty `community` database using `pg_restore -U community -d community --exit-on-error`. Restore the file archive into `/data/blobs`, preserving access for the image’s `node` user. With S3, restore the matching object versions into a separate bucket and point the test deployment there.
+Restore on a separate, private test host using an empty deployment. Run these commands from a checkout of the saved source revision. Supply the saved deployment secrets and a private `COMMUNITY_PUBLIC_URL`. Set `community_restore_dir` to the absolute path containing the two backup files. These commands must not target the running production deployment.
+
+```bash
+set -euo pipefail
+community_restore_dir=/absolute/path/to/community-backup
+# Start only the new database. The app must remain stopped.
+docker compose -f apps/community/compose.yml up -d --wait database
+docker compose -f apps/community/compose.yml build community
+docker compose -f apps/community/compose.yml exec -T database pg_restore -U community -d community --exit-on-error < "$community_restore_dir/database.dump"
+docker compose -f apps/community/compose.yml run --rm --no-deps -T --entrypoint tar community -C /data/blobs -xzf - < "$community_restore_dir/blobs.tar.gz"
+docker compose -f apps/community/compose.yml up -d community
+```
+
+Use fresh, empty volumes. The image initializes its blob volume for the `node` user, which also extracts the archive. A permission error is a failed restore; fix the volume ownership before starting the app. With S3, restore the matching object versions into a separate bucket instead of extracting the file archive, and point the test deployment there.
 
 Start the app only after both restores finish. Check sign-in, channel history, a thread, and exact attachment bytes. Verify that a removed member still cannot sign in to the community. Keep the restored deployment private: it contains the same identities, secrets and community identifier as production.
 
