@@ -62,7 +62,8 @@ const attachmentHeadersSchema = z.object({
 
 /** Write one strict event payload without exposing adapter or credential state. */
 function writeEvent(res: import('express').Response, event: unknown): void {
-  res.write(`data: ${JSON.stringify(RemoteCommunityEventSchema.parse(event))}\n\n`);
+  const parsed = RemoteCommunityEventSchema.parse(event);
+  res.write(`event: ${parsed.type}\ndata: ${JSON.stringify(parsed)}\n\n`);
 }
 
 /** Turn an incoming HTTP byte stream into the adapter's portable byte source. */

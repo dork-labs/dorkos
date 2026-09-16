@@ -221,8 +221,9 @@ describe('qualified remote community writes and live projections', () => {
     );
     expect(events.status).toBe(200);
     expect(events.headers['content-type']).toContain('text/event-stream');
-    expect(events.text).toContain('"type":"snapshot"');
+    expect(events.text).toContain('event: snapshot\ndata: {"type":"snapshot"');
     expect(events.text).toContain('"remoteSeq":1');
+    expect(events.text).toContain('event: deliveries\ndata: {');
     expect(events.text).toContain('"type":"deliveries"');
     expect(events.text.indexOf('"type":"snapshot"')).toBeLessThan(
       events.text.indexOf('"type":"deliveries"')

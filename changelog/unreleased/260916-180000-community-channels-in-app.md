@@ -4,6 +4,7 @@ covers:
   - 'feat(community): show unconfirmed agent deliveries'
   - 'fix(community): recheck cached agent admission against remote authority'
   - 'fix(community): align remote controls with native delivery state'
+  - 'fix(community): name local room stream events'
 ---
 
 ### Added
