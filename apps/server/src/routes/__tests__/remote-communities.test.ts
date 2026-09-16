@@ -33,20 +33,32 @@ const fixture = vi.hoisted(() => {
     createdAt: '2026-09-16T00:00:00.000Z',
     attachments: [],
   };
+  const uploadedBytes: Uint8Array[][] = [];
   const adapter = {
     postEntry: vi.fn(async () => entry),
     listEntriesWithThreadRoot: vi.fn(async () => ({ entries: [entry], nextCursor: null })),
-    uploadAttachment: vi.fn(async (_room: string, input: { bytes: AsyncIterable<Uint8Array> }) => {
-      const bytes: Uint8Array[] = [];
-      for await (const chunk of input.bytes) bytes.push(chunk);
-      return {
-        id: 'attachment-a',
-        name: 'report.txt',
-        contentType: 'text/plain',
-        byteSize: bytes.reduce((total, chunk) => total + chunk.byteLength, 0),
-        checksum: 'checksum-a',
-      };
-    }),
+    uploadAttachment: vi.fn(
+      async (
+        _room: string,
+        input: {
+          name: string;
+          contentType: string;
+          byteSize: number;
+          bytes: AsyncIterable<Uint8Array>;
+        }
+      ) => {
+        const bytes: Uint8Array[] = [];
+        for await (const chunk of input.bytes) bytes.push(chunk);
+        uploadedBytes.push(bytes);
+        return {
+          id: 'attachment-a',
+          name: input.name,
+          contentType: input.contentType,
+          byteSize: bytes.reduce((total, chunk) => total + chunk.byteLength, 0),
+          checksum: 'checksum-a',
+        };
+      }
+    ),
     downloadAttachment: vi.fn(async () => ({
       attachment: {
         id: 'attachment-a',
@@ -98,6 +110,7 @@ const fixture = vi.hoisted(() => {
     room,
     entry,
     adapter,
+    uploadedBytes,
     lifecycle,
   };
 });
@@ -191,6 +204,7 @@ const testServer = listeningServer(app());
 describe('qualified remote community writes and live projections', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    fixture.uploadedBytes.length = 0;
   });
 
   it('posts only as the connected human and does not attach agent-only origin metadata', async () => {
@@ -215,16 +229,31 @@ describe('qualified remote community writes and live projections', () => {
     expect(accepted.body.entry.originIdempotencyKey).toBeUndefined();
   });
 
-  it('relays bounded attachment bytes without returning a remote storage URL', async () => {
+  it('relays a raw PNG envelope with an encoded Unicode filename and no remote storage URL', async () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
     const upload = await request(testServer)
       .post(`/api/communities/${fixture.ref}/rooms/room-a/attachments`)
       .set('content-type', 'application/octet-stream')
-      .set('x-file-name', 'report.txt')
-      .set('x-file-size', '5')
-      .set('idempotency-key', 'attachment-retry-a')
-      .send(Buffer.from('hello'));
+      .set('x-file-name', encodeURIComponent('sketch \uD83E\uDDEA.png'))
+      .set('x-file-content-type', 'image/png')
+      .set('x-file-size', String(png.byteLength))
+      .set('idempotency-key', 'attachment-retry-png')
+      .send(png);
     expect(upload.status).toBe(201);
-    expect(upload.body.attachment).toMatchObject({ id: 'attachment-a', byteSize: 5 });
+    expect(upload.body.attachment).toMatchObject({
+      id: 'attachment-a',
+      name: 'sketch \uD83E\uDDEA.png',
+      contentType: 'image/png',
+      byteSize: png.byteLength,
+    });
+    expect(fixture.adapter.uploadAttachment).toHaveBeenLastCalledWith(
+      'room-a',
+      expect.objectContaining({
+        name: 'sketch \uD83E\uDDEA.png',
+        contentType: 'image/png',
+        byteSize: png.byteLength,
+      })
+    );
     expect(JSON.stringify(upload.body)).not.toContain('http');
 
     const download = await request(testServer).get(
@@ -233,6 +262,27 @@ describe('qualified remote community writes and live projections', () => {
     expect(download.status).toBe(200);
     expect(download.headers['content-disposition']).toBe('attachment');
     expect(download.text).toBe('hello');
+  });
+
+  it('keeps JSON file bytes out of the app-wide JSON parser through the raw envelope', async () => {
+    const json = Buffer.from('{"message":"preserve these exact bytes"}');
+    const upload = await request(testServer)
+      .post(`/api/communities/${fixture.ref}/rooms/room-a/attachments`)
+      .set('content-type', 'application/octet-stream')
+      .set('x-file-name', encodeURIComponent('notes.json'))
+      .set('x-file-content-type', 'application/json')
+      .set('x-file-size', String(json.byteLength))
+      .set('idempotency-key', 'attachment-retry-json')
+      .send(json);
+    expect(upload.status).toBe(201);
+    expect(upload.body.attachment).toMatchObject({
+      name: 'notes.json',
+      contentType: 'application/json',
+      byteSize: json.byteLength,
+    });
+    expect(Buffer.concat(fixture.uploadedBytes.at(-1)!.map((chunk) => Buffer.from(chunk)))).toEqual(
+      json
+    );
   });
 
   it('streams the owner-qualified delivery replacement only after its room snapshot', async () => {

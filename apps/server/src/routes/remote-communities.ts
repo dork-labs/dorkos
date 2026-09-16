@@ -50,8 +50,15 @@ import {
   remoteSequenceOf,
 } from '../services/communities/remote/remote-community-adapter.js';
 
+function isSafeAttachmentName(value: string): boolean {
+  return [...value].every((character) => {
+    const code = character.codePointAt(0);
+    return code !== undefined && code >= 0x20 && code !== 0x7f;
+  });
+}
+
 const attachmentHeadersSchema = z.object({
-  name: z.string().min(1).max(255),
+  name: z.string().min(1).max(255).refine(isSafeAttachmentName),
   contentType: z.string().min(1).max(255),
   byteSize: z.coerce
     .number()
@@ -60,6 +67,24 @@ const attachmentHeadersSchema = z.object({
     .max(25 * 1024 * 1024),
   idempotencyKey: z.string().min(1).max(128),
 });
+
+/** Parse the raw attachment envelope without letting a file MIME select a body parser. */
+function attachmentHeaders(req: import('express').Request) {
+  const encodedName = req.header('x-file-name');
+  let name: string | undefined;
+  try {
+    name = encodedName ? decodeURIComponent(encodedName) : undefined;
+  } catch {
+    return null;
+  }
+  const parsed = attachmentHeadersSchema.safeParse({
+    name,
+    contentType: req.header('x-file-content-type'),
+    byteSize: req.header('x-file-size'),
+    idempotencyKey: req.header('idempotency-key'),
+  });
+  return parsed.success ? parsed.data : null;
+}
 
 /** Write one strict event payload without exposing adapter or credential state. */
 function writeEvent(res: import('express').Response, event: unknown): void {
@@ -300,20 +325,15 @@ export function createRemoteCommunitiesRouter(): Router {
     const owner = resolveCommunityOwner(req, res);
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!owner || !ref.success) return;
-    const input = attachmentHeadersSchema.safeParse({
-      name: req.header('x-file-name'),
-      contentType: req.header('content-type')?.split(';', 1)[0],
-      byteSize: req.header('x-file-size'),
-      idempotencyKey: req.header('idempotency-key'),
-    });
-    if (!input.success) {
+    const input = attachmentHeaders(req);
+    if (!input) {
       res.status(400).json({ error: 'Provide valid file metadata and a retry key.' });
       return;
     }
     try {
       const attachment = await getRemoteCommunityAdapter(ref.data, owner).uploadAttachment(
         req.params.roomId,
-        { ...input.data, bytes: requestBytes(req) }
+        { ...input, bytes: requestBytes(req) }
       );
       res.status(201).json(RemoteCommunityAttachmentResponseSchema.parse({ attachment }));
     } catch (error) {
