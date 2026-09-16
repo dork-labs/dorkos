@@ -14,6 +14,7 @@ import {
   communityMirrorEntries,
   communityRoomMirrors,
   eq,
+  gt,
   roomEntries,
   roomMembers,
   rooms,
@@ -21,7 +22,11 @@ import {
   type Db,
   type DbTransaction,
 } from '@dorkos/db';
-import type { CommunityEntry, CommunityRef } from '@dorkos/shared/community-adapter';
+import {
+  CommunityEntrySchema,
+  type CommunityEntry,
+  type CommunityRef,
+} from '@dorkos/shared/community-adapter';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import type { AuthorRegistry } from '../../rooms/author-registry.js';
@@ -165,6 +170,77 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
       if (saved) imported.push(saved);
     }
     return imported;
+  }
+
+  /**
+   * Read one authorized cached entry in its original opaque adapter shape.
+   *
+   * This projection exists for restart and offline repair paths. It returns no
+   * local path, author record, or decoded cursor, and stale cache remains
+   * owner-only through the same persisted mirror state as room reads.
+   */
+  cachedEntryForOwner(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    remoteEntryId: string,
+    ownerAuthorId: string
+  ): CommunityEntry | null {
+    const mirror = this.findRoom(communityRef, remoteRoomId);
+    if (!mirror || mirror.ownerAuthorId !== ownerAuthorId || mirror.state === 'revoked')
+      return null;
+    const row = this.db
+      .select({ entryJson: communityMirrorEntries.entryJson })
+      .from(communityMirrorEntries)
+      .where(
+        and(
+          eq(communityMirrorEntries.communityRef, communityRef),
+          eq(communityMirrorEntries.remoteRoomId, remoteRoomId),
+          eq(communityMirrorEntries.remoteEntryId, remoteEntryId)
+        )
+      )
+      .get();
+    return row?.entryJson ? CommunityEntrySchema.parse(JSON.parse(row.entryJson)) : null;
+  }
+
+  /**
+   * Read all authorized cached entries in native remote order.
+   *
+   * The entries remain full generic adapter values: cursors, attachment metadata
+   * and remote thread identities are opaque to this cache. Callers can page or
+   * filter them without deriving order from timestamps or local storage ordinals.
+   */
+  cachedEntriesForOwner(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    ownerAuthorId: string,
+    opts: { afterRemoteSeq?: number; limit: number }
+  ): readonly CommunityEntry[] {
+    const mirror = this.findRoom(communityRef, remoteRoomId);
+    if (!mirror || mirror.ownerAuthorId !== ownerAuthorId || mirror.state === 'revoked') return [];
+    const limit = Math.min(Math.max(0, opts.limit), 200);
+    if (limit === 0) return [];
+    return (
+      this.db
+        .select({ entryJson: communityMirrorEntries.entryJson })
+        .from(communityMirrorEntries)
+        .where(
+          and(
+            eq(communityMirrorEntries.communityRef, communityRef),
+            eq(communityMirrorEntries.remoteRoomId, remoteRoomId),
+            ...(opts.afterRemoteSeq === undefined
+              ? []
+              : [gt(communityMirrorEntries.remoteSeq, opts.afterRemoteSeq)])
+          )
+        )
+        .orderBy(communityMirrorEntries.remoteSeq)
+        .limit(limit)
+        .all()
+        // Older rows predate opaque projection storage and are refreshed from the
+        // remote adapter rather than pretending an incomplete value is complete.
+        .flatMap((row) =>
+          row.entryJson ? [CommunityEntrySchema.parse(JSON.parse(row.entryJson))] : []
+        )
+    );
   }
 
   /** Mark a temporary outage: only the owner may read their last authorized rooms. */
@@ -314,111 +390,122 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
       platformUserId: item.author.memberId,
       displayName: item.author.displayName,
     });
-    return this.db.transaction((tx) => {
-      const existing = tx
-        .select({ localEntryId: communityMirrorEntries.localEntryId })
-        .from(communityMirrorEntries)
-        .where(
-          and(
-            eq(communityMirrorEntries.communityRef, communityRef),
-            eq(communityMirrorEntries.remoteRoomId, remoteRoomId),
-            eq(communityMirrorEntries.remoteEntryId, item.entry.id)
+    return this.db.transaction(
+      (tx) => {
+        const existing = tx
+          .select({ localEntryId: communityMirrorEntries.localEntryId })
+          .from(communityMirrorEntries)
+          .where(
+            and(
+              eq(communityMirrorEntries.communityRef, communityRef),
+              eq(communityMirrorEntries.remoteRoomId, remoteRoomId),
+              eq(communityMirrorEntries.remoteEntryId, item.entry.id)
+            )
           )
-        )
-        .get();
-      if (existing) {
+          .get();
+        if (existing) {
+          const row = tx
+            .select()
+            .from(roomEntries)
+            .where(
+              and(eq(roomEntries.roomId, localRoomId), eq(roomEntries.id, existing.localEntryId))
+            )
+            .get();
+          return row ? toEntry(row) : null;
+        }
+
+        const colliding = tx
+          .select({ remoteEntryId: communityMirrorEntries.remoteEntryId })
+          .from(communityMirrorEntries)
+          .where(
+            and(
+              eq(communityMirrorEntries.localRoomId, localRoomId),
+              eq(communityMirrorEntries.remoteSeq, item.remoteSeq)
+            )
+          )
+          .get();
+        if (colliding) throw new Error('Two remote entries cannot share a remote sequence');
+
+        const parentEntryId = this.localEntryId(
+          tx,
+          communityRef,
+          remoteRoomId,
+          item.entry.parentEntryId
+        );
+        const threadRootEntryId = this.localEntryId(
+          tx,
+          communityRef,
+          remoteRoomId,
+          item.entry.threadRootEntryId
+        );
+        const localEntryId = ulid();
+        tx.insert(roomMembers)
+          .values({
+            roomId: localRoomId,
+            authorId: external.id,
+            responseMode: 'silent',
+            joinedAt: item.entry.createdAt,
+            joinedSeq: 0,
+            lastReadSeq: 0,
+          })
+          .onConflictDoNothing()
+          .run();
+        const allocated = tx
+          .select({ next: sql<number>`COALESCE(MAX(${roomEntries.seq}), 0) + 1` })
+          .from(roomEntries)
+          .where(eq(roomEntries.roomId, localRoomId))
+          .get();
+        const localSeq = allocated?.next ?? 1;
+        tx.insert(roomEntries)
+          .values({
+            roomId: localRoomId,
+            seq: localSeq,
+            id: localEntryId,
+            authorId: external.id,
+            kind: 'post',
+            body: JSON.stringify({ text: item.entry.text }),
+            mentions: '[]',
+            mentionSpans: '[]',
+            sessionId: null,
+            cascadeRoot: localEntryId,
+            cascadeDepth: 0,
+            dispatchId: null,
+            parentEntryId,
+            threadRootEntryId,
+            signature: null,
+            createdAt: item.entry.createdAt,
+          })
+          .run();
+        tx.insert(communityMirrorEntries)
+          .values({
+            communityRef,
+            remoteRoomId,
+            remoteEntryId: item.entry.id,
+            localRoomId,
+            localEntryId,
+            remoteSeq: item.remoteSeq,
+            entryJson: JSON.stringify(CommunityEntrySchema.parse(item.entry)),
+          })
+          .run();
+        this.repairRelations(tx, communityRef, remoteRoomId, localRoomId);
+        tx.update(rooms)
+          // A late history page may be older than the snapshot already cached.
+          // Keep the newest server timestamp only for sidebar activity; remote
+          // sequence remains the authoritative order everywhere else.
+          .set({
+            lastActivityAt: sql`CASE WHEN ${rooms.lastActivityAt} > ${item.entry.createdAt} THEN ${rooms.lastActivityAt} ELSE ${item.entry.createdAt} END`,
+          })
+          .where(eq(rooms.id, localRoomId))
+          .run();
         const row = tx
           .select()
           .from(roomEntries)
-          .where(
-            and(eq(roomEntries.roomId, localRoomId), eq(roomEntries.id, existing.localEntryId))
-          )
+          .where(and(eq(roomEntries.roomId, localRoomId), eq(roomEntries.id, localEntryId)))
           .get();
         return row ? toEntry(row) : null;
-      }
-
-      const colliding = tx
-        .select({ remoteEntryId: communityMirrorEntries.remoteEntryId })
-        .from(communityMirrorEntries)
-        .where(
-          and(
-            eq(communityMirrorEntries.localRoomId, localRoomId),
-            eq(communityMirrorEntries.remoteSeq, item.remoteSeq)
-          )
-        )
-        .get();
-      if (colliding) throw new Error('Two remote entries cannot share a remote sequence');
-
-      const parentEntryId = this.localEntryId(
-        tx,
-        communityRef,
-        remoteRoomId,
-        item.entry.parentEntryId
-      );
-      const threadRootEntryId = this.localEntryId(
-        tx,
-        communityRef,
-        remoteRoomId,
-        item.entry.threadRootEntryId
-      );
-      const localEntryId = ulid();
-      tx.insert(roomMembers)
-        .values({
-          roomId: localRoomId,
-          authorId: external.id,
-          responseMode: 'silent',
-          joinedAt: item.entry.createdAt,
-          joinedSeq: 0,
-          lastReadSeq: 0,
-        })
-        .onConflictDoNothing()
-        .run();
-      tx.insert(roomEntries)
-        .values({
-          roomId: localRoomId,
-          seq: item.remoteSeq,
-          id: localEntryId,
-          authorId: external.id,
-          kind: 'post',
-          body: JSON.stringify({ text: item.entry.text }),
-          mentions: '[]',
-          mentionSpans: '[]',
-          sessionId: null,
-          cascadeRoot: localEntryId,
-          cascadeDepth: 0,
-          dispatchId: null,
-          parentEntryId,
-          threadRootEntryId,
-          signature: null,
-          createdAt: item.entry.createdAt,
-        })
-        .run();
-      tx.insert(communityMirrorEntries)
-        .values({
-          communityRef,
-          remoteRoomId,
-          remoteEntryId: item.entry.id,
-          localRoomId,
-          localEntryId,
-          remoteSeq: item.remoteSeq,
-        })
-        .run();
-      tx.update(rooms)
-        // A late history page may be older than the snapshot already cached.
-        // Keep the newest server timestamp only for sidebar activity; remote
-        // sequence remains the authoritative order everywhere else.
-        .set({
-          lastActivityAt: sql`CASE WHEN ${rooms.lastActivityAt} > ${item.entry.createdAt} THEN ${rooms.lastActivityAt} ELSE ${item.entry.createdAt} END`,
-        })
-        .where(eq(rooms.id, localRoomId))
-        .run();
-      const row = tx
-        .select()
-        .from(roomEntries)
-        .where(and(eq(roomEntries.roomId, localRoomId), eq(roomEntries.id, localEntryId)))
-        .get();
-      return row ? toEntry(row) : null;
-    });
+      },
+      { behavior: 'immediate' }
+    );
   }
 
   private localEntryId(
@@ -441,6 +528,45 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
         )
         .get()?.localEntryId ?? null
     );
+  }
+
+  /** Repair children imported before their parent or thread root arrived. */
+  private repairRelations(
+    tx: Db | DbTransaction,
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    localRoomId: string
+  ): void {
+    const cached = tx
+      .select({
+        localEntryId: communityMirrorEntries.localEntryId,
+        entryJson: communityMirrorEntries.entryJson,
+      })
+      .from(communityMirrorEntries)
+      .where(
+        and(
+          eq(communityMirrorEntries.communityRef, communityRef),
+          eq(communityMirrorEntries.remoteRoomId, remoteRoomId)
+        )
+      )
+      .all();
+    for (const row of cached) {
+      // Rows imported before the opaque cache field existed are intentionally
+      // unreadable through this projection; a fresh remote page replaces them.
+      if (!row.entryJson) continue;
+      const entry = CommunityEntrySchema.parse(JSON.parse(row.entryJson));
+      const parentEntryId = this.localEntryId(tx, communityRef, remoteRoomId, entry.parentEntryId);
+      const threadRootEntryId = this.localEntryId(
+        tx,
+        communityRef,
+        remoteRoomId,
+        entry.threadRootEntryId
+      );
+      tx.update(roomEntries)
+        .set({ parentEntryId, threadRootEntryId })
+        .where(and(eq(roomEntries.roomId, localRoomId), eq(roomEntries.id, row.localEntryId)))
+        .run();
+    }
   }
 }
 

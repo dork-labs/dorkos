@@ -125,7 +125,13 @@ export class RoomDirectory {
               !this.visibility.hasRestrictedMirrors() ||
               this.visibility.canSee(room.id, viewerAuthorId)
           )
-      : this.store.listRoomsForMember(viewerAuthorId, filter);
+      : this.store
+          .listRoomsForMember(viewerAuthorId, filter)
+          // A revoked remote mirror retains its normal room-members row so its
+          // cache can be reconciled without recreating a local room. Membership
+          // alone is therefore insufficient here: the persisted mirror grant
+          // is the authority for every reader, owner and agent alike.
+          .filter((room) => this.visibility.canSee(room.id, viewerAuthorId));
     // Only the DMs are asked about, so a room of any other kind is simply
     // absent from the map and reads as `null` below — "not carried" rather
     // than "empty", which is the distinction the schema promises.
