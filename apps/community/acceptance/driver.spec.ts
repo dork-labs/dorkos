@@ -205,6 +205,10 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         (gate) => gate.state === 'held-before-persist',
         'the actual local agent never reached the pre-persistence delivery gate'
       );
+      // The agent answers the triggering message in its thread. Inspect that
+      // same thread for both the pending delivery and its confirmed replacement.
+      await localPage.getByRole('button', { name: 'Reply in thread', exact: true }).click();
+      await expect(localPage.getByRole('feed', { name: 'Community thread' })).toBeVisible();
       await expect(
         localPage.getByText('Waiting for community confirmation…', { exact: true })
       ).toBeVisible();
