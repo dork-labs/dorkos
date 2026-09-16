@@ -703,6 +703,63 @@ describe('signed admission over real HTTP and Postgres', () => {
     ).toBe(403);
   });
 
+  it('does not deadlock owner transfer against a successor ejecting the owner’s agent', async () => {
+    expect(
+      (await call(`/api/v1/members/${admittedId}/role`, 'PATCH', { role: 'admin' }, ownerCookie))
+        .status
+    ).toBe(200);
+    const agentId = (
+      await pool.query<{ agent_id: string }>(
+        'SELECT agent_id FROM agent_credentials WHERE token_hash=$1 AND revoked_at IS NULL',
+        [createHash('sha256').update(agentToken).digest('hex')]
+      )
+    ).rows[0].agent_id;
+    const blocker = await pool.connect();
+    try {
+      await blocker.query('BEGIN');
+      await blocker.query('SELECT 1 FROM members WHERE id=$1 FOR KEY SHARE', [admittedId]);
+      const transfer = call(
+        '/api/v1/owner/transfer',
+        'POST',
+        {
+          successorMemberId: admittedId,
+          password: 'password1234',
+        },
+        ownerCookie
+      );
+      await waitForBlockedQuery('SELECT id,user_id,display_name,role,community_id FROM members');
+      const ejection = call(`/api/v1/agents/${agentId}`, 'DELETE', undefined, admittedCookie);
+      const ejectionResult = await Promise.race([
+        ejection,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 1_000)),
+      ]);
+      expect(ejectionResult?.status).toBe(403);
+      await blocker.query('COMMIT');
+      expect((await transfer).status).toBe(200);
+      expect((await ejection).status).toBe(403);
+      expect(
+        (
+          await call(
+            '/api/v1/owner/transfer',
+            'POST',
+            {
+              successorMemberId: ownerId,
+              password: 'password1234',
+            },
+            admittedCookie
+          )
+        ).status
+      ).toBe(200);
+      expect(
+        (await call(`/api/v1/members/${admittedId}/role`, 'PATCH', { role: 'member' }, ownerCookie))
+          .status
+      ).toBe(200);
+    } finally {
+      await blocker.query('ROLLBACK');
+      blocker.release();
+    }
+  });
+
   it('removal wins a blocked post and closes the member stream without erasing history', async () => {
     const dave = await joinWithInvite('Dave', 'dave@admission.test');
     expect(
