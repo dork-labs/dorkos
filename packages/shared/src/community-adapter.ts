@@ -163,6 +163,18 @@ export const CommunityCursorSchema = z.string().min(1).brand('CommunityCursor');
 /** Opaque resume token. See {@link CommunityCursorSchema}. */
 export type CommunityCursor = z.infer<typeof CommunityCursorSchema>;
 
+/**
+ * Select an enrolled agent for a read or subscription. Omission uses the
+ * connected human. The adapter privately resolves a credential by this member
+ * ID and refuses unknown, revoked or unowned agents before a remote request.
+ * No bearer or session token crosses the port.
+ */
+export const CommunityReadContextSchema = z.strictObject({
+  actingMemberId: z.string().min(1).optional(),
+});
+/** Explicit read identity with no credential material. */
+export type CommunityReadContext = z.infer<typeof CommunityReadContextSchema>;
+
 // ---------------------------------------------------------------------------
 // 3. Capabilities
 // ---------------------------------------------------------------------------
@@ -244,7 +256,7 @@ export const CommunityCapabilitiesSchema = z.object({
   canPost: z.boolean(),
   /** Can it create, rename or archive a room? Read-only Buzz: `false`. */
   roomAdmin: z.boolean(),
-  /** Can posts and file operations select an enrolled agent owned by the connected human? */
+  /** Can reads, subscriptions, posts and file operations select an owned enrolled agent? */
   agentActing: z.boolean(),
   /** Can this adapter upload and download bounded message attachments? */
   attachments: z.boolean(),
@@ -651,6 +663,8 @@ export const ListCommunityEntriesOptsSchema = z.object({
   limit: z.number().int().positive().optional(),
   /** Omitted → top-level entries only. Set → that thread's replies. */
   thread: z.string().min(1).optional(),
+  /** Omission reads as the connected human; a selected agent must be owned. */
+  actingMemberId: z.string().min(1).optional(),
 });
 /** Read options for `listEntries`. See {@link ListCommunityEntriesOptsSchema}. */
 export type ListCommunityEntriesOpts = z.infer<typeof ListCommunityEntriesOptsSchema>;
@@ -1183,8 +1197,8 @@ export interface CommunityAdapter {
 
   // --- Rooms ---------------------------------------------------------------
 
-  /** Every room this identity may see. NEVER includes a thread — threads are entry-level. */
-  listRooms(): Promise<CommunityRoom[]>;
+  /** Every room the selected identity may see. Omission uses the connected human. */
+  listRooms(context?: CommunityReadContext): Promise<CommunityRoom[]>;
 
   /**
    * One room, or `null` when it does not exist or is not visible to this
@@ -1198,8 +1212,9 @@ export interface CommunityAdapter {
    * has no empty value the way a nullable room does.
    *
    * @param roomId - The room's id within this community.
+   * @param context - Optional owned-agent identity; omission uses the human.
    */
-  getRoom(roomId: string): Promise<CommunityRoom | null>;
+  getRoom(roomId: string, context?: CommunityReadContext): Promise<CommunityRoom | null>;
 
   /**
    * Room lifecycle as a stream. A `roomList: 'poll'` adapter satisfies this by
@@ -1208,8 +1223,12 @@ export interface CommunityAdapter {
    * fans out internally: N subscribers must not become N polls.
    *
    * @param signal - Aborts the stream so a parked consumer terminates promptly.
+   * @param context - Optional owned-agent identity; a selected agent gets its own room list.
    */
-  subscribeRoomList(signal?: AbortSignal): AsyncIterable<CommunityRoomListEvent>;
+  subscribeRoomList(
+    signal?: AbortSignal,
+    context?: CommunityReadContext
+  ): AsyncIterable<CommunityRoomListEvent>;
 
   /**
    * Create a room. Gated on `roomAdmin`; otherwise rejects with
@@ -1262,18 +1281,20 @@ export interface CommunityAdapter {
    * @param roomId - The room to stream.
    * @param sinceCursor - Resume point; emit only what follows it.
    * @param signal - Aborts the stream so a parked consumer terminates promptly.
+   * @param context - Optional owned-agent identity; rejected eagerly if unsupported.
    */
   subscribeRoom(
     roomId: string,
     sinceCursor?: CommunityCursor,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    context?: CommunityReadContext
   ): AsyncIterable<CommunityRoomEvent>;
 
   /**
    * A page of history, oldest-first within the page.
    *
    * @param roomId - The room to read.
-   * @param opts - Cursor, page size, and the thread filter.
+   * @param opts - Cursor, page size, thread filter, and optional owned-agent identity.
    */
   listEntries(roomId: string, opts?: ListCommunityEntriesOpts): Promise<CommunityEntryPage>;
 
@@ -1293,8 +1314,12 @@ export interface CommunityAdapter {
     input: UploadCommunityAttachmentInput
   ): Promise<CommunityAttachment>;
 
-  /** Download an attachment after current membership is checked. Gated on `attachments`. */
-  downloadAttachment(roomId: string, attachmentId: string): Promise<DownloadCommunityAttachment>;
+  /** Download for the selected identity after current membership is checked. Gated on `attachments`. */
+  downloadAttachment(
+    roomId: string,
+    attachmentId: string,
+    context?: CommunityReadContext
+  ): Promise<DownloadCommunityAttachment>;
 
   // --- Roster --------------------------------------------------------------
 
@@ -1304,8 +1329,9 @@ export interface CommunityAdapter {
    * An unknown or invisible room returns `[]`, never a throw.
    *
    * @param roomId - The room whose roster to read.
+   * @param context - Optional owned-agent identity; omission uses the human.
    */
-  listMembers(roomId: string): Promise<CommunityMember[]>;
+  listMembers(roomId: string, context?: CommunityReadContext): Promise<CommunityMember[]>;
 
   /**
    * Add an existing community member to a room. Gated on `roomAdmin`.
