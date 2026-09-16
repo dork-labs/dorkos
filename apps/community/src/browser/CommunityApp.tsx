@@ -7,8 +7,10 @@ import { describeError, RequestError, request } from './api.js';
 import type { Channel, Community, Me } from './types.js';
 
 function readInvite() {
+  const fragment = new URLSearchParams(window.location.hash.slice(1));
   const token =
-    new URLSearchParams(window.location.hash.slice(1)).get('invite') ??
+    fragment.get('invite') ??
+    fragment.get('token') ??
     sessionStorage.getItem('communityPendingInvite');
   if (token)
     window.history.replaceState(null, '', window.location.pathname + window.location.search);
@@ -47,6 +49,11 @@ export function CommunityApp() {
         setMe(null);
       else setError(describeError(cause));
     }
+  }, []);
+  const refreshCurrentMember = useCallback(async () => {
+    const current = await request<Me>('/api/v1/me');
+    setMe(current);
+    return current.member;
   }, []);
   useEffect(() => {
     if (!me) return;
@@ -270,6 +277,7 @@ export function CommunityApp() {
             channels={channels}
             selectedChannel={selected}
             onChanged={onChanged}
+            onCurrentMemberChanged={refreshCurrentMember}
             onLeft={() => {
               setError('');
               setMe(null);
