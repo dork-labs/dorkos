@@ -570,5 +570,12 @@ jobs:
       # runs as its own step in typecheck.yml, which is unfiltered, required,
       # and reports on merge_group. Keep both: that step enforces the result,
       # this one proves the classifier still tells copy from an identifier.
+      #
+      # check-boundary.ts (DOR-2024) is pinned here on the same terms, and its
+      # suite carries one case no other guard needs: the boundary guard runs in
+      # a PUBLIC repository, so it must never print the text it matched, and
+      # the suite seeds an invented term, runs the real CLI, and fails if that
+      # term appears anywhere in stdout or stderr. Both directions of that
+      # property were mutation-checked when it landed.
       - name: Unit tests
         run: pnpm exec vitest run --config scripts/vitest.config.ts

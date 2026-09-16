@@ -1,0 +1,56 @@
+# Boundary guard — TIER 1: shape patterns, safe to publish (DOR-2024).
+#
+# WIRE FORMAT, shared with the private tier-2 ruleset delivered through the
+# BOUNDARY_TERMS Actions secret, so ONE loader reads both and the two halves
+# cannot drift: one rule per line, <rule-id> TAB <extended regular expression>.
+# A leading # is a comment, a blank line is ignored, and there is no third
+# column — every extra field is another thing a consumer can mis-split.
+# Patterns are matched case-insensitively, one input line at a time, and stay
+# inside the POSIX-ERE subset that JavaScript's RegExp also accepts (no
+# lookaround, no \\b), so the private half can be authored once and consumed by
+# either. Case-insensitivity is why boundaries here are spelled [^A-Za-z]
+# rather than [a-z] tricks: under /i a case-based distinction does not exist.
+#
+# RULE IDS ARE STABLE AND ARE NEVER REUSED OR RENUMBERED. A guard reports the
+# id and only the id, so an id that changes meaning silently changes what every
+# past failure meant. Blocks are allocated by category, with gaps inside each:
+#
+#   BND-1xx  local filesystem paths              — tier 2, see below
+#   BND-2xx  private-looking hostnames           — tier 1, here
+#   BND-3xx  money-shaped strings near plan words — tier 1, here
+#   BND-4xx  workspace and repository identifiers — tier 2
+#   BND-9xx  exact private terms                  — tier 2
+#
+# WHY BLOCK 1xx IS NOT HERE, THOUGH A LOCAL ABSOLUTE PATH IS THE MOST OBVIOUS
+# SHAPE IN THE WHOLE GUARD. Measured against this tree on 2026-09-15: a plain
+# /Users/<name>/... pattern matches 238 lines and /home/<name>/... another 98,
+# and essentially all of them are legitimate — this is software that resolves,
+# renders and tests other people's home directories, so example paths are
+# everyday vocabulary in fixtures, showcases, docs and specs. The thing that
+# separates a leak from a fixture is not the SHAPE of the path; it is whose
+# name is in it. A username and a personal folder name are VALUES, and a
+# committed pattern for a value publishes the value. Block 1xx therefore lives
+# in the private ruleset, alongside 4xx and 9xx, for exactly the reason a
+# repository name does.
+#
+# Every id below needs a one-line public description in SHAPE_RULE_NOTES in
+# scripts/check-boundary.ts; scripts/__tests__/check-boundary.test.ts fails if
+# the two lists disagree.
+
+# --- BND-2xx: private-looking hostnames -----------------------------------
+# A host whose leftmost label names an internal-facing service, under a real
+# registrable domain. The public app talks to one documented origin; a host
+# like this in public source is either a control-plane endpoint or a copy of
+# somebody's internal infrastructure.
+BND-201	(^|[^A-Za-z0-9._-])(internal|admin|ops|control-plane|controlplane|billing|broker)\.([A-Za-z0-9-]+\.)+(com|net|org|io|ai|dev|app|cloud|co)([^A-Za-z0-9-]|$)
+
+# --- BND-3xx: money-shaped strings near plan-shaped words -----------------
+# AGENTS.md: "Never add prices, plan names, margins or supplier terms to this
+# repo; the pricing page announces them first." Two rules because the two
+# orders read differently and a single pattern for both is unreadable.
+BND-301	([$€£][0-9][0-9,]*(\.[0-9]{2})?|[0-9][0-9,]*(\.[0-9]{2})? ?(USD|EUR|GBP)).{0,40}(per (month|year|seat|user)|/mo|/month|/seat|/user|[^A-Za-z](plan|tier|subscription|seat|pricing)([^A-Za-z]|$))
+BND-302	(^|[^A-Za-z])(plan|tier|subscription|seat|pricing)s?[^A-Za-z][^$€£]{0,40}([$€£][0-9][0-9,]*(\.[0-9]{2})?|[0-9][0-9,]*(\.[0-9]{2})? ?(USD|EUR|GBP))
+# A margin, the third category AGENTS.md names, stated as a percentage. The
+# financial qualifier is REQUIRED: a bare "margin" is a CSS property, and a
+# rule that fires on layout prose is a rule everyone learns to skip.
+BND-303	(^|[^A-Za-z])(gross|net|blended|contribution|profit|unit)[ -]margins?([^A-Za-z][^\n]{0,40})[0-9]{1,3}(\.[0-9]+)? ?(%|percent|bps)
