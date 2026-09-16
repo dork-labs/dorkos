@@ -258,9 +258,10 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     path: string,
     body?: unknown,
     context?: CommunityReadContext,
-    method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+    method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+    signal?: AbortSignal
   ): Promise<unknown> {
-    return pinnedJson(await this.origin(), path, body, undefined, {
+    return pinnedJson(await this.origin(), path, body, signal, {
       method,
       authorization: await this.credential(context),
       maxBytes: 1024 * 1024,
@@ -527,7 +528,11 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     };
   }
 
-  async postEntry(roomId: string, input: PostCommunityEntryInput): Promise<CommunityEntry> {
+  async postEntry(
+    roomId: string,
+    input: PostCommunityEntryInput,
+    signal?: AbortSignal
+  ): Promise<CommunityEntry> {
     const data = CommunityWireEntryPostResponseSchema.parse(
       await this.request(
         `/api/v1/channels/${encodeURIComponent(roomId)}/entries`,
@@ -538,14 +543,20 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
           idempotencyKey: input.idempotencyKey ?? randomUUID(),
           attachmentIds: input.attachmentIds,
         },
-        { actingMemberId: input.actingMemberId }
+        { actingMemberId: input.actingMemberId },
+        'POST',
+        signal
       )
     );
     return entry(this.community, data.entry);
   }
 
-  async post(roomId: string, input: PostCommunityEntryInput): Promise<CommunityEntryRef> {
-    const written = await this.postEntry(roomId, input);
+  async post(
+    roomId: string,
+    input: PostCommunityEntryInput,
+    signal?: AbortSignal
+  ): Promise<CommunityEntryRef> {
+    const written = await this.postEntry(roomId, input, signal);
     return {
       community: this.community,
       roomId,
@@ -582,11 +593,13 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
 
   async uploadAttachment(
     roomId: string,
-    input: UploadCommunityAttachmentInput
+    input: UploadCommunityAttachmentInput,
+    signal?: AbortSignal
   ): Promise<CommunityAttachment> {
     const chunks: Buffer[] = [];
     let size = 0;
     for await (const chunk of input.bytes) {
+      if (signal?.aborted) throw signal.reason ?? new Error('Community delivery was stopped');
       size += chunk.byteLength;
       if (size > MAX_REMOTE_ATTACHMENT_BYTES) throw new PinnedOriginError('REMOTE_RESPONSE');
       chunks.push(Buffer.from(chunk));
@@ -595,7 +608,7 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
       await this.origin(),
       `/api/v1/channels/${encodeURIComponent(roomId)}/attachments`,
       undefined,
-      undefined,
+      signal,
       {
         method: 'POST',
         authorization: await this.credential({ actingMemberId: input.actingMemberId }),

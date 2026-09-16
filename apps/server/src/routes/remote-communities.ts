@@ -62,7 +62,8 @@ const attachmentHeadersSchema = z.object({
 
 /** Write one strict event payload without exposing adapter or credential state. */
 function writeEvent(res: import('express').Response, event: unknown): void {
-  res.write(`data: ${JSON.stringify(RemoteCommunityEventSchema.parse(event))}\n\n`);
+  const parsed = RemoteCommunityEventSchema.parse(event);
+  res.write(`event: ${parsed.type}\ndata: ${JSON.stringify(parsed)}\n\n`);
 }
 
 /** Turn an incoming HTTP byte stream into the adapter's portable byte source. */
@@ -342,7 +343,23 @@ export function createRemoteCommunitiesRouter(): Router {
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
+    const lifecycle = getRemoteCommunityLifecycle();
     let sawSnapshot = false;
+    const bufferedAgentEntries: CommunityEntry[] = [];
+    const flushBufferedAgentEntries = () => {
+      if (abort.signal.aborted || res.writableEnded) return;
+      for (const entry of bufferedAgentEntries.splice(0))
+        writeEvent(res, { type: 'entry', entry: remoteEntry(entry, owner) });
+    };
+    const removeBarrierListener = lifecycle.onNativePostBarrierRelease((release) => {
+      if (
+        release.communityRef === ref.data &&
+        release.remoteRoomId === req.params.roomId &&
+        release.ownerAuthorId === owner
+      ) {
+        flushBufferedAgentEntries();
+      }
+    });
     const writeDeliveries = () => {
       if (!sawSnapshot || abort.signal.aborted || res.writableEnded) return;
       const deliveries = getRemoteCommunityDeliverySnapshot(ref.data, req.params.roomId, owner);
@@ -372,6 +389,14 @@ export function createRemoteCommunitiesRouter(): Router {
           sawSnapshot = true;
           writeDeliveries();
         } else if (event.type === 'entry') {
+          const author = remoteAuthorOf(event.entry);
+          if (!author) throw new Error('Native remote entry lost authoritative metadata');
+          if (
+            lifecycle.shouldBufferNativeAgentEntry(ref.data, req.params.roomId, owner, author.kind)
+          ) {
+            bufferedAgentEntries.push(event.entry);
+            continue;
+          }
           writeEvent(res, { type: 'entry', entry: remoteEntry(event.entry, owner) });
         } else if (event.type === 'room_closed') {
           writeEvent(res, {
@@ -392,6 +417,7 @@ export function createRemoteCommunitiesRouter(): Router {
           reason: 'unavailable',
         });
     } finally {
+      removeBarrierListener();
       removeDeliveryListener();
       if (!res.writableEnded) res.end();
     }

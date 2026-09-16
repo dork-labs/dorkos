@@ -80,7 +80,16 @@ const fixture = vi.hoisted(() => {
       },
     ]),
   };
-  return { ref, room, entry, adapter };
+  return {
+    ref,
+    room,
+    entry,
+    adapter,
+    holdAgentEntries: false,
+    barrierListeners: new Set<
+      (event: { communityRef: string; remoteRoomId: string; ownerAuthorId: string }) => void
+    >(),
+  };
 });
 
 vi.mock('../community-connections.js', () => ({
@@ -95,7 +104,10 @@ vi.mock('../../services/communities/remote/state.js', () => ({
     owner: string,
     entryId: string
   ) =>
-    ref === fixture.ref && roomId === 'room-a' && owner === 'owner-a' && entryId === 'entry-a'
+    ref === fixture.ref &&
+    roomId === 'room-a' &&
+    owner === 'owner-a' &&
+    (entryId === 'entry-a' || entryId === 'agent-echo-a')
       ? 'delivery-origin-a'
       : null,
   getRemoteCommunityDeliverySnapshot: () => ({
@@ -133,6 +145,17 @@ vi.mock('../../services/communities/remote/state.js', () => ({
     haltRoom: vi.fn(async () => 1),
     haltAgent: vi.fn(async () => 1),
     refreshSubscriptions: vi.fn(),
+    shouldBufferNativeAgentEntry: () => fixture.holdAgentEntries,
+    onNativePostBarrierRelease: (
+      listener: (event: {
+        communityRef: string;
+        remoteRoomId: string;
+        ownerAuthorId: string;
+      }) => void
+    ) => {
+      fixture.barrierListeners.add(listener);
+      return () => fixture.barrierListeners.delete(listener);
+    },
   }),
   onRemoteCommunityDeliveryChange: () => () => undefined,
   retryRemoteCommunityDelivery: () => 'retried',
@@ -143,7 +166,10 @@ vi.mock('../../services/communities/remote/state.js', () => ({
 }));
 vi.mock('../../services/communities/remote/remote-community-adapter.js', () => ({
   remoteSequenceOf: () => 1,
-  remoteAuthorOf: () => ({ displayName: 'Owner', kind: 'human' }),
+  remoteAuthorOf: (entry: { id: string }) =>
+    entry.id === 'agent-echo-a'
+      ? { displayName: 'Build Agent', kind: 'agent' as const }
+      : { displayName: 'Owner', kind: 'human' as const },
   remoteRoomAccessOf: () => ({ visibility: 'public', joined: true }),
 }));
 vi.mock('../../services/rooms/index.js', () => ({
@@ -171,6 +197,8 @@ const testServer = listeningServer(app());
 describe('qualified remote community writes and live projections', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    fixture.holdAgentEntries = false;
+    fixture.barrierListeners.clear();
   });
 
   it('posts only as the connected human and returns a strict remote receipt', async () => {
@@ -237,6 +265,36 @@ describe('qualified remote community writes and live projections', () => {
         active: true,
       }),
     ]);
+  });
+
+  it('buffers an early agent echo until the receipt barrier releases its origin-keyed entry', async () => {
+    const agentEntry = {
+      ...fixture.entry,
+      id: 'agent-echo-a',
+      authorId: 'remote-agent-a',
+      text: 'agent output',
+    };
+    fixture.holdAgentEntries = true;
+    fixture.adapter.subscribeRoom.mockImplementationOnce((() =>
+      (async function* () {
+        yield {
+          type: 'snapshot' as const,
+          room: fixture.room,
+          entries: [fixture.entry],
+          cursor: 'cursor-a',
+        };
+        yield { type: 'entry' as const, entry: agentEntry };
+        fixture.holdAgentEntries = false;
+        for (const listener of fixture.barrierListeners)
+          listener({ communityRef: fixture.ref, remoteRoomId: 'room-a', ownerAuthorId: 'owner-a' });
+      })()) as never);
+
+    const events = await request(testServer).get(
+      `/api/communities/${fixture.ref}/rooms/room-a/events`
+    );
+    expect(events.status).toBe(200);
+    expect(events.text.match(/"id":"agent-echo-a"/g)).toHaveLength(1);
+    expect(events.text).toContain('"originIdempotencyKey":"delivery-origin-a"');
   });
 
   it('enrolls the browser Mesh manifest id through trusted server-side author resolution', async () => {

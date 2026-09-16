@@ -10,7 +10,7 @@
  */
 import { communityMirrorEntries, eq } from '@dorkos/db';
 import type { CommunityEntry, CommunityRef } from '@dorkos/shared/community-adapter';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { authorOrigin } from '../../../rooms/author-registry.js';
 import {
   agentLookupFor,
@@ -22,6 +22,7 @@ import {
 } from '../../../rooms/__tests__/room-test-harness.js';
 import { RemoteMirrorStore, type NativeMirrorEntry } from '../mirror-store.js';
 import { CommunityAgentEnrollmentStore } from '../agent-enrollment-store.js';
+import { CommunityOutboxStore } from '../community-outbox-store.js';
 import { RemoteRoomSubscriptionBridge } from '../remote-room-subscription-bridge.js';
 
 const REF_A = 'remote_a' as CommunityRef;
@@ -402,17 +403,127 @@ describe('RemoteMirrorStore', () => {
 
     // A fresh process owns no in-memory room subscription map. Revocation still
     // stops the held turn by reading the persisted mirror rows first.
+    const abortForAgent = vi.fn();
     const restarted = new RemoteRoomSubscriptionBridge(
       mirrors,
       harness.service,
       enrollments,
-      (localAgentId) => (localAgentId === 'local-ana' ? agent.id : null)
+      (localAgentId) => (localAgentId === 'local-ana' ? agent.id : null),
+      undefined,
+      undefined,
+      { abortForRoom: vi.fn(), abortForAgent }
     );
     await restarted.revokeEnrollment(REF_A, 'local-ana', harness.human);
     await harness.service.triggersIdle();
     expect(enrollments.findRemoteMember(REF_A, 'local-ana', harness.human)).toBeNull();
+    expect(abortForAgent).toHaveBeenCalledWith(REF_A, 'local-ana', harness.human);
     expect(runner.interrupted).toHaveLength(1);
     expect(harness.service.listHolds()).toHaveLength(0);
+  });
+
+  it('holds interleaved agent echoes until one exact receipt, then releases unrelated history unbound', () => {
+    const { harness, mirrors } = wired();
+    const room = roomInput(REF_A, 'general', harness.human);
+    const enrollments = new CommunityAgentEnrollmentStore(harness.db);
+    const outbox = new CommunityOutboxStore(harness.db);
+    const bridge = new RemoteRoomSubscriptionBridge(
+      mirrors,
+      harness.service,
+      enrollments,
+      () => null,
+      undefined,
+      outbox
+    );
+    bridge.authorizeRoom(room);
+    outbox.reserveOrigin({
+      id: 'delivery-a',
+      communityRef: REF_A,
+      remoteRoomId: 'general',
+      ownerAuthorId: harness.human,
+      idempotencyKey: 'delivery-a-key',
+    } as never);
+    bridge.reserveNativePostOrigin({
+      communityRef: REF_A,
+      remoteRoomId: 'general',
+      ownerAuthorId: harness.human,
+      idempotencyKey: 'delivery-a-key',
+    });
+    const unrelated = nativeEntry(REF_A, 'general', 1);
+    unrelated.entry = { ...unrelated.entry, id: 'unrelated-agent-entry', authorId: 'remote-agent' };
+    unrelated.author = { memberId: 'remote-agent', displayName: 'Other agent', kind: 'agent' };
+    const echoed = nativeEntry(REF_A, 'general', 2);
+    echoed.entry = { ...echoed.entry, id: 'receipt-agent-entry', authorId: 'remote-agent' };
+    echoed.author = { memberId: 'remote-agent', displayName: 'Our agent', kind: 'agent' };
+    for (const event of [unrelated, echoed])
+      bridge.importLive(
+        room,
+        { ...event, serverCreatedAt: '2026-09-16T01:00:00.000Z' },
+        { reconnect: false, wasActiveBeforeDisconnect: false, readOnly: false }
+      );
+
+    expect(
+      mirrors.cachedEntryForOwner(REF_A, 'general', unrelated.entry.id, harness.human)
+    ).toBeNull();
+    expect(
+      mirrors.cachedEntryForOwner(REF_A, 'general', echoed.entry.id, harness.human)
+    ).toBeNull();
+
+    outbox.recordOrigin({
+      communityRef: REF_A,
+      remoteRoomId: 'general',
+      ownerAuthorId: harness.human,
+      remoteEntryId: echoed.entry.id,
+      idempotencyKey: 'delivery-a-key',
+    });
+    bridge.confirmNativePostOrigin({
+      communityRef: REF_A,
+      remoteRoomId: 'general',
+      ownerAuthorId: harness.human,
+      remoteEntryId: echoed.entry.id,
+      idempotencyKey: 'delivery-a-key',
+    });
+
+    expect(
+      mirrors.cachedEntryForOwner(REF_A, 'general', unrelated.entry.id, harness.human)
+    ).not.toBeNull();
+    expect(
+      mirrors.cachedEntryForOwner(REF_A, 'general', echoed.entry.id, harness.human)
+    ).not.toBeNull();
+    expect(outbox.originForRemoteEntry(REF_A, 'general', harness.human, echoed.entry.id)).toBe(
+      'delivery-a-key'
+    );
+    expect(
+      outbox.originForRemoteEntry(REF_A, 'general', harness.human, unrelated.entry.id)
+    ).toBeNull();
+    expect(harness.runner.turns).toEqual([]);
+
+    const release = vi.fn();
+    bridge.onNativePostBarrierRelease(release);
+    bridge.reserveNativePostOrigin({
+      communityRef: REF_A,
+      remoteRoomId: 'general',
+      ownerAuthorId: harness.human,
+      idempotencyKey: 'lost-receipt-key',
+    });
+    const lost = nativeEntry(REF_A, 'general', 3);
+    lost.entry = { ...lost.entry, id: 'lost-receipt-agent-entry', authorId: 'remote-agent' };
+    lost.author = { memberId: 'remote-agent', displayName: 'Agent', kind: 'agent' };
+    bridge.importLive(
+      room,
+      { ...lost, serverCreatedAt: '2026-09-16T01:00:00.000Z' },
+      { reconnect: false, wasActiveBeforeDisconnect: false, readOnly: false }
+    );
+    bridge.releaseNativePostOrigin({
+      communityRef: REF_A,
+      remoteRoomId: 'general',
+      ownerAuthorId: harness.human,
+      idempotencyKey: 'lost-receipt-key',
+    });
+    expect(
+      mirrors.cachedEntryForOwner(REF_A, 'general', lost.entry.id, harness.human)
+    ).not.toBeNull();
+    expect(outbox.originForRemoteEntry(REF_A, 'general', harness.human, lost.entry.id)).toBeNull();
+    expect(release).toHaveBeenCalledOnce();
   });
 
   it('keeps two community refs with the same remote ids as separate local rooms', () => {

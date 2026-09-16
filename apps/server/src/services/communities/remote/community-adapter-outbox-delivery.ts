@@ -4,7 +4,12 @@
  * @module services/communities/remote/community-adapter-outbox-delivery
  */
 import { Readable } from 'node:stream';
-import type { CommunityAdapter } from '@dorkos/shared/community-adapter';
+import type {
+  CommunityAttachment,
+  CommunityEntryRef,
+  PostCommunityEntryInput,
+  UploadCommunityAttachmentInput,
+} from '@dorkos/shared/community-adapter';
 import type { AttachmentRowStore } from '../../rooms/attachments/attachment-row-store.js';
 import type { RoomAttachmentStore } from '../../rooms/attachments/room-attachment-store.js';
 import type { RoomStore } from '../../rooms/room-store.js';
@@ -24,15 +29,50 @@ export interface RemoteAdapterForDelivery {
   (
     communityRef: CommunityOutboxItem['communityRef'],
     ownerAuthorId: string
-  ): CommunityAdapter | null;
+  ): RemoteAdapterForDeliveryResult | null;
+}
+
+/** Native remote writes accept an internal cancellation signal without widening the portable port. */
+export interface RemoteAdapterForDeliveryResult {
+  post(
+    roomId: string,
+    input: PostCommunityEntryInput,
+    signal?: AbortSignal
+  ): Promise<CommunityEntryRef>;
+  uploadAttachment(
+    roomId: string,
+    input: UploadCommunityAttachmentInput,
+    signal?: AbortSignal
+  ): Promise<CommunityAttachment>;
 }
 
 /** Attach the receipt to the adapter's stream barrier before buffered echo is released. */
 export interface ConfirmNativePostOrigin {
   (input: {
     communityRef: CommunityOutboxItem['communityRef'];
+    remoteRoomId: string;
     ownerAuthorId: string;
     remoteEntryId: string;
+    idempotencyKey: string;
+  }): void;
+}
+
+/** Hold agent stream frames during one owner-qualified post until its receipt identifies the echo. */
+export interface ReserveNativePostOrigin {
+  (input: {
+    communityRef: CommunityOutboxItem['communityRef'];
+    remoteRoomId: string;
+    ownerAuthorId: string;
+    idempotencyKey: string;
+  }): void;
+}
+
+/** Release a receipt-less stream barrier so unrelated authoritative history is never hidden indefinitely. */
+export interface ReleaseNativePostOrigin {
+  (input: {
+    communityRef: CommunityOutboxItem['communityRef'];
+    remoteRoomId: string;
+    ownerAuthorId: string;
     idempotencyKey: string;
   }): void;
 }
@@ -53,15 +93,19 @@ export class CommunityAdapterOutboxDelivery implements CommunityOutboxDelivery {
     private readonly attachmentRows: AttachmentRowStore,
     private readonly attachments: RoomAttachmentStore,
     private readonly outbox: CommunityOutboxStore,
-    private readonly confirmNativePostOrigin: ConfirmNativePostOrigin
+    private readonly confirmNativePostOrigin: ConfirmNativePostOrigin,
+    private readonly reserveNativePostOrigin: ReserveNativePostOrigin = () => undefined,
+    private readonly releaseNativePostOrigin: ReleaseNativePostOrigin = () => undefined
   ) {}
 
   /** Upload attachments then post one agent entry, retaining its remote receipt. */
   async deliver(
     item: CommunityOutboxItem,
-    stillAuthorized: () => boolean | Promise<boolean>
+    stillAuthorized: () => boolean | Promise<boolean>,
+    signal: AbortSignal = new AbortController().signal
   ): Promise<CommunityDeliveryResult> {
-    if (!(await stillAuthorized())) return { kind: 'stopped', reason: 'stopped-or-unauthorized' };
+    if (signal.aborted || !(await stillAuthorized()))
+      return { kind: 'stopped', reason: 'stopped-or-unauthorized' };
     const adapter = this.adapters(item.communityRef, item.ownerAuthorId);
     const enrollment = this.enrollments.findRemoteMember(
       item.communityRef,
@@ -83,7 +127,8 @@ export class CommunityAdapterOutboxDelivery implements CommunityOutboxDelivery {
     if (!attachmentIds) return { kind: 'permanent', reason: 'invalid-local-attachments' };
     const uploaded: string[] = [];
     for (const attachmentId of attachmentIds) {
-      if (!(await stillAuthorized())) return { kind: 'stopped', reason: 'stopped-or-unauthorized' };
+      if (signal.aborted || !(await stillAuthorized()))
+        return { kind: 'stopped', reason: 'stopped-or-unauthorized' };
       const attachment = this.attachmentRows.get(localRoomId, attachmentId);
       if (!attachment || attachment.entryId !== item.localEntryId) {
         return { kind: 'permanent', reason: 'local-attachment-unavailable' };
@@ -101,34 +146,51 @@ export class CommunityAdapterOutboxDelivery implements CommunityOutboxDelivery {
         return { kind: 'permanent', reason: 'local-attachment-unavailable' };
       }
       try {
-        const remote = await adapter.uploadAttachment(item.remoteRoomId, {
-          idempotencyKey: `${item.idempotencyKey}:file:${attachment.id}`,
-          name: attachment.name,
-          contentType: attachment.mimeType,
-          byteSize: attachment.size,
-          bytes: readableBytes(stored.stream),
-          actingMemberId: enrollment.remoteMemberId,
-        });
+        const remote = await adapter.uploadAttachment(
+          item.remoteRoomId,
+          {
+            idempotencyKey: `${item.idempotencyKey}:file:${attachment.id}`,
+            name: attachment.name,
+            contentType: attachment.mimeType,
+            byteSize: attachment.size,
+            bytes: readableBytes(stored.stream),
+            actingMemberId: enrollment.remoteMemberId,
+          },
+          signal
+        );
         uploaded.push(remote.id);
       } catch (error) {
-        return deliveryFailure(error);
+        return deliveryFailure(error, signal);
       }
     }
-    if (!(await stillAuthorized())) return { kind: 'stopped', reason: 'stopped-or-unauthorized' };
+    if (signal.aborted || !(await stillAuthorized()))
+      return { kind: 'stopped', reason: 'stopped-or-unauthorized' };
     const parentEntryId = item.localParentEntryId
       ? this.mirrors.remoteEntryIdForLocal(localRoomId, item.localParentEntryId)
       : null;
     if (item.localParentEntryId && !parentEntryId)
       return { kind: 'permanent', reason: 'remote-parent-unavailable' };
+    this.outbox.reserveOrigin(item);
+    const reservation = {
+      communityRef: item.communityRef,
+      remoteRoomId: item.remoteRoomId,
+      ownerAuthorId: item.ownerAuthorId,
+      idempotencyKey: item.idempotencyKey,
+    };
+    this.reserveNativePostOrigin(reservation);
     try {
-      const receipt = await adapter.post(item.remoteRoomId, {
-        text: entry.body.text,
-        ...(parentEntryId ? { parentEntryId } : {}),
-        mentions: [],
-        actingMemberId: enrollment.remoteMemberId,
-        idempotencyKey: item.idempotencyKey,
-        ...(uploaded.length > 0 ? { attachmentIds: uploaded } : {}),
-      });
+      const receipt = await adapter.post(
+        item.remoteRoomId,
+        {
+          text: entry.body.text,
+          ...(parentEntryId ? { parentEntryId } : {}),
+          mentions: [],
+          actingMemberId: enrollment.remoteMemberId,
+          idempotencyKey: item.idempotencyKey,
+          ...(uploaded.length > 0 ? { attachmentIds: uploaded } : {}),
+        },
+        signal
+      );
       this.outbox.recordOrigin({
         communityRef: item.communityRef,
         remoteRoomId: item.remoteRoomId,
@@ -138,13 +200,17 @@ export class CommunityAdapterOutboxDelivery implements CommunityOutboxDelivery {
       });
       this.confirmNativePostOrigin({
         communityRef: item.communityRef,
+        remoteRoomId: item.remoteRoomId,
         ownerAuthorId: item.ownerAuthorId,
         remoteEntryId: receipt.entryId,
         idempotencyKey: item.idempotencyKey,
       });
-      return { kind: 'confirmed', remoteEntryId: receipt.entryId };
+      return signal.aborted
+        ? { kind: 'stopped', reason: 'stopped-or-unauthorized' }
+        : { kind: 'confirmed', remoteEntryId: receipt.entryId };
     } catch (error) {
-      return deliveryFailure(error);
+      this.releaseNativePostOrigin(reservation);
+      return deliveryFailure(error, signal);
     }
   }
 }
@@ -169,7 +235,8 @@ function parseAttachmentIds(value: string): readonly string[] | null {
 }
 
 /** Convert typed remote refusals to terminal delivery state and keep outages retryable. */
-function deliveryFailure(error: unknown): CommunityDeliveryResult {
+function deliveryFailure(error: unknown, signal: AbortSignal): CommunityDeliveryResult {
+  if (signal.aborted) return { kind: 'stopped', reason: 'stopped-or-unauthorized' };
   const message = error instanceof Error ? error.message : 'remote delivery failed';
   const status =
     typeof error === 'object' && error !== null && 'status' in error

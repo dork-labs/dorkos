@@ -26,7 +26,8 @@ export interface CommunityOutboxAuthority {
 export interface CommunityOutboxDelivery {
   deliver(
     item: CommunityOutboxItem,
-    stillAuthorized: () => boolean | Promise<boolean>
+    stillAuthorized: () => boolean | Promise<boolean>,
+    signal?: AbortSignal
   ): Promise<CommunityDeliveryResult>;
 }
 
@@ -48,7 +49,10 @@ export type CommunityOutboxRetryResult = 'retried' | 'missing' | 'terminal' | 'i
 
 /** One-process worker; remote I/O never runs inside the writer transaction. */
 export class CommunityOutboxWorker {
-  private readonly inFlight = new Set<string>();
+  private readonly inFlight = new Map<
+    string,
+    { item: CommunityOutboxItem; abort: AbortController }
+  >();
 
   constructor(
     private readonly store: CommunityOutboxStore,
@@ -61,6 +65,31 @@ export class CommunityOutboxWorker {
   /** Whether this worker is currently holding an item across an authority or delivery await. */
   isInFlight(id: string): boolean {
     return this.inFlight.has(id);
+  }
+
+  /** Abort delivery already in progress for one owner-qualified remote room. */
+  abortForRoom(communityRef: CommunityRef, remoteRoomId: string, ownerAuthorId: string): void {
+    this.abortWhere(
+      (item) =>
+        item.communityRef === communityRef &&
+        item.remoteRoomId === remoteRoomId &&
+        item.ownerAuthorId === ownerAuthorId
+    );
+  }
+
+  /** Abort delivery already in progress for one owner-qualified local agent. */
+  abortForAgent(communityRef: CommunityRef, localAgentId: string, ownerAuthorId: string): void {
+    this.abortWhere(
+      (item) =>
+        item.communityRef === communityRef &&
+        item.localAgentId === localAgentId &&
+        item.ownerAuthorId === ownerAuthorId
+    );
+  }
+
+  /** Abort all active delivery during process shutdown. */
+  abortAll(): void {
+    this.abortWhere(() => true);
   }
 
   /** Release one pending transient backoff only when this worker is not already delivering it. */
@@ -90,7 +119,11 @@ export class CommunityOutboxWorker {
     const expiredOwners = this.store.expire(now);
     for (const ownerAuthorId of expiredOwners) this.changes?.changed(ownerAuthorId);
     for (const item of this.store.due(now)) {
-      this.inFlight.add(item.id);
+      const abort = new AbortController();
+      this.inFlight.set(item.id, { item, abort });
+      // The owner SSE must expose this held delivery before any remote I/O can
+      // block, while the projection still reports it as non-retryable in flight.
+      this.changes?.changed(item.ownerAuthorId);
       let changed = false;
       try {
         if (!(await this.authority.canDeliver(item))) {
@@ -100,13 +133,22 @@ export class CommunityOutboxWorker {
         }
         let result: CommunityDeliveryResult;
         try {
-          result = await this.delivery.deliver(item, () => this.authority.canDeliver(item));
+          result = await this.delivery.deliver(
+            item,
+            () => this.authority.canDeliver(item),
+            abort.signal
+          );
         } catch (error) {
           result = {
-            kind: 'retry',
-            reason: error instanceof Error ? error.message : 'network delivery failed',
+            kind: abort.signal.aborted ? 'stopped' : 'retry',
+            reason: abort.signal.aborted
+              ? 'stopped-or-unauthorized'
+              : error instanceof Error
+                ? error.message
+                : 'network delivery failed',
           };
         }
+        if (abort.signal.aborted) result = { kind: 'stopped', reason: 'stopped-or-unauthorized' };
         if (result.kind === 'confirmed') {
           this.store.confirm(item.id, result.remoteEntryId);
           changed = true;
@@ -130,6 +172,10 @@ export class CommunityOutboxWorker {
         if (changed) this.changes?.changed(item.ownerAuthorId);
       }
     }
+  }
+
+  private abortWhere(matches: (item: CommunityOutboxItem) => boolean): void {
+    for (const { item, abort } of this.inFlight.values()) if (matches(item)) abort.abort();
   }
 }
 
@@ -162,6 +208,7 @@ export class CommunityOutboxRunner {
     this.stopped = true;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
+    this.worker.abortAll();
   }
 
   private async tick(): Promise<void> {
