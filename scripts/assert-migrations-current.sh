@@ -49,11 +49,27 @@
 # instruction to run `pnpm --filter @dorkos/db run db:generate` on a terminal and
 # commit the result.
 #
-# Usage:
-#   scripts/assert-migrations-current.sh
+# MORE THAN ONE TARGET. Everything above was written when packages/db was the
+# only Drizzle schema in the repo that a job looked at. apps/site has two of its
+# own — a public half and a control-plane half, each with its own config, its own
+# out folder and its own journal table — and neither was covered by anything,
+# which is the same "no job looks" defect one directory over. So a target is now
+# an argument, the checks below run once per target, and the defaults reproduce
+# the single packages/db invocation exactly.
 #
-# WORKSPACE_ROOT overrides where packages/db is looked up, and
-# MIGRATION_GENERATOR overrides the command run inside it. Both exist so
+# Usage:
+#   scripts/assert-migrations-current.sh                       # packages/db
+#   scripts/assert-migrations-current.sh <pkg>:<config>:<out>[:<regen-script>] [...]
+#
+# Each target is three colon-separated fields — the package directory relative to
+# the workspace root, the drizzle config inside it, and that config's `out`
+# directory, also relative to the package — plus an optional fourth naming the
+# package script an author should run to fix drift, so the failure message names
+# a command that exists. Every target is checked; the script reports each one and
+# fails on the first that drifts.
+#
+# WORKSPACE_ROOT overrides where the package directories are looked up, and
+# MIGRATION_GENERATOR overrides the command run inside them. Both exist so
 # scripts/test-assert-migrations-current.sh can drive this against synthetic
 # trees and a stub generator in a temp dir; keeping the fixtures off this repo's
 # real state is what stops them red-lighting unrelated PRs. Neither is set by CI
@@ -63,104 +79,136 @@ set -uo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 workspace_root=${WORKSPACE_ROOT:-$repo_root}
-db_dir="$workspace_root/packages/db"
-drizzle_dir="$db_dir/drizzle"
 
-# The generator, as a command run with $db_dir as the working directory.
-# `pnpm exec` resolves the locally installed binary without consulting a package
-# NAME, which is the whole point — see 2 above.
-generator=${MIGRATION_GENERATOR:-'pnpm exec drizzle-kit generate --config drizzle.config.ts'}
+# The generator, as a command run with the target package as the working
+# directory. `pnpm exec` resolves the locally installed binary without consulting
+# a package NAME, which is the whole point — see 2 above. `%s` is the target's
+# config file.
+generator_template=${MIGRATION_GENERATOR:-'pnpm exec drizzle-kit generate --config %s'}
+
+# Default target: exactly the single packages/db invocation this script had
+# before targets existed, so the fixtures and `pnpm --filter @dorkos/db run
+# db:check` are unaffected.
+if [ "$#" -eq 0 ]; then
+  set -- 'packages/db:drizzle.config.ts:drizzle:db:generate'
+fi
 
 fail() {
   printf 'assert-migrations-current: %s\n' "$1" >&2
   exit 1
 }
 
-# Resolve the package by path. A rename, a move, or a partial checkout lands here
-# rather than sailing through as a silent no-op.
-[ -d "$db_dir" ] || fail "no package directory at $db_dir.
-Nothing was checked. If packages/db moved, this script and the workflow that
+# Check one target. $1 package dir (relative), $2 config file, $3 out dir
+# (relative to the package).
+check_target() {
+  local pkg_rel=$1 config=$2 out_rel=$3 regen_script=$4
+  local db_dir="$workspace_root/$pkg_rel"
+  local drizzle_dir="$db_dir/$out_rel"
+  local regen="pnpm --filter ./$pkg_rel run $regen_script"
+
+  # Resolve the package by path. A rename, a move, or a partial checkout lands
+  # here rather than sailing through as a silent no-op.
+  [ -d "$db_dir" ] || fail "no package directory at $db_dir.
+Nothing was checked. If $pkg_rel moved, this script and the workflow that
 calls it have to move with it."
-[ -f "$db_dir/package.json" ] || fail "$db_dir has no package.json, so it is not
+  [ -f "$db_dir/package.json" ] || fail "$db_dir has no package.json, so it is not
 a workspace package. Nothing was checked."
-[ -f "$db_dir/drizzle.config.ts" ] || fail "no drizzle.config.ts in $db_dir.
+  [ -f "$db_dir/$config" ] || fail "no $config in $db_dir.
 Nothing was checked."
-[ -d "$drizzle_dir" ] || fail "no migrations directory at $drizzle_dir.
+  [ -d "$drizzle_dir" ] || fail "no migrations directory at $drizzle_dir.
 Nothing was checked."
 
-# Run the generator, keeping stdout and stderr together: drizzle-kit reports both
-# its success markers and its TTY refusal on stdout, and a genuine crash on
-# stderr. Stdin is closed so an interactive prompt fails fast and identically to
-# CI rather than hanging on a developer's terminal.
-output=$(cd "$db_dir" && eval "$generator" </dev/null 2>&1)
-status=$?
+  local generator
+  # shellcheck disable=SC2059 # the template is ours, and %s is the only spec.
+  generator=$(printf "$generator_template" "$config")
 
-# AFFIRMATIVE: the run counts only if it announced one of its two outcomes.
-#   "No schema changes, nothing to migrate" — the schema and migrations agree.
-#   "Your SQL migration file"               — it wrote one, which the tree check
-#                                             below then reports as drift.
-if printf '%s' "$output" | grep -qF 'No schema changes, nothing to migrate'; then
-  verdict='no-changes'
-elif printf '%s' "$output" | grep -qF 'Your SQL migration file'; then
-  verdict='generated'
-else
-  # Name the known cause before falling back to the generic message, because
-  # this is the one a person will actually hit.
-  if printf '%s' "$output" | grep -qF 'Interactive prompts require a TTY'; then
-    fail "drizzle-kit needs an interactive answer it cannot be asked here, and it
+  # Run the generator, keeping stdout and stderr together: drizzle-kit reports
+  # both its success markers and its TTY refusal on stdout, and a genuine crash
+  # on stderr. Stdin is closed so an interactive prompt fails fast and
+  # identically to CI rather than hanging on a developer's terminal.
+  local output status
+  output=$(cd "$db_dir" && eval "$generator" </dev/null 2>&1)
+  status=$?
+
+  # AFFIRMATIVE: the run counts only if it announced one of its two outcomes.
+  #   "No schema changes, nothing to migrate" — the schema and migrations agree.
+  #   "Your SQL migration file"               — it wrote one, which the tree check
+  #                                             below then reports as drift.
+  local verdict
+  if printf '%s' "$output" | grep -qF 'No schema changes, nothing to migrate'; then
+    verdict='no-changes'
+  elif printf '%s' "$output" | grep -qF 'Your SQL migration file'; then
+    verdict='generated'
+  else
+    # Name the known cause before falling back to the generic message, because
+    # this is the one a person will actually hit.
+    if printf '%s' "$output" | grep -qF 'Interactive prompts require a TTY'; then
+      fail "drizzle-kit needs an interactive answer it cannot be asked here, and it
 exits 0 without writing anything — so silence from it is NOT a clean schema.
 
 This is almost always a column or table RENAME: drizzle-kit cannot tell a rename
 from a drop-plus-add, and only a person can. Run
 
-  pnpm --filter @dorkos/db run db:generate
+  $regen
 
 on a real terminal, answer the prompt, and commit what it writes.
 
 Generator exit status was $status. Its output:
 $output"
+    fi
+    fail "the migration generator did not report either of its known outcomes for
+$pkg_rel ($config), so this proved nothing. Exit status was $status (which
+drizzle-kit sets to 0 even when it refuses to run). Its output:
+$output"
   fi
-  fail "the migration generator did not report either of its known outcomes, so
-this proved nothing. Exit status was $status (which drizzle-kit sets to 0 even
-when it refuses to run). Its output:
-$output"
-fi
 
-# A non-zero status is still a failure even if a marker appeared.
-[ "$status" -eq 0 ] || fail "the migration generator exited $status. Its output:
+  # A non-zero status is still a failure even if a marker appeared.
+  [ "$status" -eq 0 ] || fail "the migration generator exited $status. Its output:
 $output"
 
-# `git status --porcelain` rather than `git diff --exit-code`: a newly generated
-# migration is an UNTRACKED drizzle/00NN_*.sql plus an UNTRACKED
-# drizzle/meta/00NN_snapshot.json, and `git diff` reports neither. The only
-# reason the old one-liner caught drift at all is that meta/_journal.json is
-# tracked and gains an entry per migration — the entire gate hung on that single
-# file staying tracked and staying append-on-generate.
-#
-# The path is passed as an absolute one and git's own exit status is checked, so
-# a moved directory cannot present as "no output, therefore clean".
-dirty=$(git -C "$workspace_root" status --porcelain -- "$drizzle_dir")
-git_status=$?
-[ "$git_status" -eq 0 ] || fail "could not read git status for $drizzle_dir (git
+  # `git status --porcelain` rather than `git diff --exit-code`: a newly
+  # generated migration is an UNTRACKED 00NN_*.sql plus an UNTRACKED
+  # meta/00NN_snapshot.json, and `git diff` reports neither. The only reason
+  # drift was ever caught is that meta/_journal.json is tracked and gains an
+  # entry per migration — the entire gate hung on that single file staying
+  # tracked and staying append-on-generate.
+  #
+  # The path is passed as an absolute one and git's own exit status is checked,
+  # so a moved directory cannot present as "no output, therefore clean".
+  local dirty git_status
+  dirty=$(git -C "$workspace_root" status --porcelain -- "$drizzle_dir")
+  git_status=$?
+  [ "$git_status" -eq 0 ] || fail "could not read git status for $drizzle_dir (git
 exited $git_status). Nothing was proved."
 
-if [ -n "$dirty" ]; then
-  fail "regenerating the migrations changed $drizzle_dir, so the committed
-migrations do not match packages/db/src/schema/:
+  if [ -n "$dirty" ]; then
+    fail "regenerating the migrations changed $drizzle_dir, so the committed
+migrations do not match the schema $config points at:
 
 $(printf '%s\n' "$dirty" | sed 's/^/  /')
 
-Run 'pnpm --filter @dorkos/db run db:generate' and commit what it writes."
-fi
+Run '$regen' and commit what it writes."
+  fi
 
-if [ "$verdict" = 'generated' ]; then
-  fail "the generator wrote a migration but $drizzle_dir looks unchanged, which
+  if [ "$verdict" = 'generated' ]; then
+    fail "the generator wrote a migration but $drizzle_dir looks unchanged, which
 should be impossible. Something outside this script is reverting or ignoring
 generated files — do not trust this result."
-fi
+  fi
 
-# Report what was OBSERVED, not what it implies. A clean directory on its own is
-# also what a generator that did nothing leaves behind; the verdict above is the
-# part that separates the two.
-printf 'assert-migrations-current: generator reported "no schema changes" and %s is clean.\n' \
-  "packages/db/drizzle/"
+  # Report what was OBSERVED, not what it implies. A clean directory on its own
+  # is also what a generator that did nothing leaves behind; the verdict above is
+  # the part that separates the two.
+  printf 'assert-migrations-current: generator reported "no schema changes" for %s and %s is clean.\n' \
+    "$pkg_rel/$config" "$pkg_rel/$out_rel/"
+}
+
+for target in "$@"; do
+  # The regen script may itself contain a colon (`db:generate:public`), so it
+  # takes everything after the third field rather than just the fourth.
+  IFS=':' read -r target_pkg target_config target_out target_regen <<<"$target"
+  [ -n "${target_pkg:-}" ] && [ -n "${target_config:-}" ] && [ -n "${target_out:-}" ] ||
+    fail "target '$target' is not <package-dir>:<config>:<out-dir>[:<regen-script>].
+Nothing was checked."
+  check_target "$target_pkg" "$target_config" "$target_out" "${target_regen:-db:generate}"
+done

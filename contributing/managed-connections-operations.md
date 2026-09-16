@@ -13,7 +13,7 @@ Paths below are relative to the repository root.
 | Responsibility                                                   | Location                                                                                                                                                                                  |
 | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Environment validation and availability                          | `apps/site/src/env.ts`; `apps/site/src/lib/connectors/managed/config.ts`                                                                                                                  |
-| Existing site deployment, migrations and hourly cleanup schedule | `apps/site/vercel.json`; `apps/site/drizzle.config.ts`; `apps/site/src/app/api/cron/cleanup/route.ts`                                                                                     |
+| Existing site deployment, migrations and hourly cleanup schedule | `apps/site/vercel.json`; `apps/site/drizzle.control-plane.config.ts`; `apps/site/src/app/api/cron/event-retention/route.ts`                                                               |
 | Owner, tenant and linked-instance authority                      | `apps/site/src/lib/instance-service.ts`; `apps/site/src/lib/connectors/managed/{request-context,authority-service}.ts`                                                                    |
 | Browser account linking                                          | `apps/site/src/lib/connectors/managed/authentication-service.ts`; `apps/site/src/app/connectors/managed/authorize/route.ts`; `apps/site/src/app/api/connectors/managed/callback/route.ts` |
 | Composio SDK and material identity                               | `packages/connector-providers/src/composio/{hosted-client-factory,sdk-client,event-client,webhook-verifier}.ts`                                                                           |
@@ -157,7 +157,7 @@ A passing test validates code behavior. It does not verify an owner sign-in, con
 
 2. **Provision only the intended services.** Follow the hosted project-key setup and permission caveat above. The dedicated project key, callback verifier, webhook signing secret, and payload keys are provisioned. Use Composio-managed OAuth defaults for supported services, including the current Gmail verification flow; reuse a suitable existing managed auth config. Honor an explicit custom auth-config override only when one is actually configured and valid. Read deployment secrets back without copying values into evidence. The selected account's consent scopes determine its available operations; do not impose the historical custom Gmail fixture or its read-only scopes on new connections.
 
-3. **Deploy migrations before capabilities.** `apps/site/vercel.json` runs `pnpm db:migrate` before the site build. Confirm the target migration journal includes the managed tables and all append-only event migrations. Preserve old SQL and snapshots. Verify the deployment completes while readiness remains off. A failed migration or build is a failed rollout, not a reason to skip migrations.
+3. **Deploy migrations before capabilities.** `apps/site/vercel.json` runs `pnpm db:migrate` before the site build. The managed tables belong to the control-plane history, so confirm `drizzle.__drizzle_migrations_control_plane` includes them and all append-only event migrations. Preserve old SQL and snapshots. Verify the deployment completes while readiness remains off. A failed migration or build is a failed rollout, not a reason to skip migrations.
 
 4. **Run a controlled production account smoke.** Preview is protected by a platform login that the linked local server cannot cross. Keep Preview readiness off. Temporarily enable the non-event gates in Production for the owner test account. Link a real DorkOS instance, connect the exact Gmail account, and review one harmless read that the current catalog classifies as read-only. Execute it through DorkOS. Match its immutable revision, logical operation, and attempt to hosted and local usage. Revoke the grant or connection and prove the next call is denied. Record only redacted outcomes and stable internal test references.
 
@@ -217,9 +217,10 @@ There is no exactly-once delivery promise. Dedupe, leases and durable receipts r
 
 ## Maintenance and Incident Response
 
-The existing authenticated `GET /api/cron/cleanup` runs hourly through Vercel Cron. It gives event
+The authenticated `GET /api/cron/event-retention` runs hourly through Vercel Cron. It gives event
 retention and pending physical-subscription cleanup one shared 25-second signal; account cleanup is
-separate from that timing claim. Retention uses at most 20 seconds and then leaves the remaining
+a separate route (`/api/cron/instance-expiry`) and a separate invocation, so a failure here no
+longer reports as a failure of that pass. Retention uses at most 20 seconds and then leaves the remaining
 signal for physical cleanup. Success returns aggregate `eventRetention` and `eventSubscriptions`
 counts; an event maintenance failure returns 500 with `event_cleanup_failed`. Inspect the response
 and deployment logs without logging payloads or tenant identifiers. A bounded successful pass does

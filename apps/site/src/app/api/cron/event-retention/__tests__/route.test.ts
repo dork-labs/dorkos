@@ -1,16 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { env } from '@/env';
-import { getAuth } from '@/lib/auth';
-import { runCleanup } from '@/lib/cleanup-service';
+import { recoverManagedEventCleanup } from '@/lib/connectors/managed/event-cleanup-service';
+import { sweepManagedConnectorEventRetention } from '@/lib/connectors/managed/event-delivery-service';
 
 import { GET } from '../route';
-import { recoverManagedEventCleanup } from '@/lib/connectors/managed/event-cleanup-service';
+
+vi.mock('@/db/transaction-client', () => ({ getTransactionDb: vi.fn(() => ({ marker: 'db' })) }));
 vi.mock('@/lib/connectors/managed/event-cleanup-service', () => ({
   recoverManagedEventCleanup: vi.fn().mockResolvedValue({ examined: 1, completed: 1 }),
 }));
-import { sweepManagedConnectorEventRetention } from '@/lib/connectors/managed/event-delivery-service';
-vi.mock('@/db/transaction-client', () => ({ getTransactionDb: vi.fn(() => ({ marker: 'db' })) }));
 vi.mock('@/lib/connectors/managed/event-delivery-service', () => ({
   sweepManagedConnectorEventRetention: vi.fn().mockResolvedValue({
     pages: 1,
@@ -19,15 +18,12 @@ vi.mock('@/lib/connectors/managed/event-delivery-service', () => ({
     protectedBytesCleared: 256,
   }),
 }));
-
-// The route only needs a stand-in auth handle and a stubbed cleanup pass; the
-// service's own behavior is covered by cleanup-service.integration.test.ts.
-vi.mock('@/lib/auth', () => ({ getAuth: vi.fn(() => ({ marker: 'auth' })) }));
+// Proves the split: this route never reaches the account cleanup pass. The mock
+// throws rather than returning, so a stray call fails loudly instead of quietly
+// succeeding.
 vi.mock('@/lib/cleanup-service', () => ({
-  runCleanup: vi.fn().mockResolvedValue({
-    unverifiedUsers: 2,
-    expiredDeviceCodes: 3,
-    staleInstances: 1,
+  runCleanup: vi.fn(() => {
+    throw new Error('instance expiry belongs to /api/cron/instance-expiry');
   }),
 }));
 
@@ -37,7 +33,7 @@ const SECRET = 'test-cron-secret';
 function cronRequest(authorization?: string): Request {
   const headers: Record<string, string> = {};
   if (authorization) headers.authorization = authorization;
-  return new Request('https://dorkos.ai/api/cron/cleanup', { method: 'GET', headers });
+  return new Request('https://dorkos.ai/api/cron/event-retention', { method: 'GET', headers });
 }
 
 beforeEach(() => {
@@ -48,36 +44,44 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('GET /api/cron/cleanup', () => {
+describe('GET /api/cron/event-retention', () => {
   it('401s when no Authorization header is present', async () => {
     const res = await GET(cronRequest());
     expect(res.status).toBe(401);
-    expect(runCleanup).not.toHaveBeenCalled();
+    expect(sweepManagedConnectorEventRetention).not.toHaveBeenCalled();
     expect(recoverManagedEventCleanup).not.toHaveBeenCalled();
   });
 
   it('401s when the Bearer secret does not match', async () => {
     const res = await GET(cronRequest('Bearer wrong-secret'));
     expect(res.status).toBe(401);
-    expect(runCleanup).not.toHaveBeenCalled();
-    expect(recoverManagedEventCleanup).not.toHaveBeenCalled();
+    expect(sweepManagedConnectorEventRetention).not.toHaveBeenCalled();
   });
 
   it('401s (fail closed) when CRON_SECRET is unset, even with a Bearer token', async () => {
     env.CRON_SECRET = undefined;
     const res = await GET(cronRequest(`Bearer ${SECRET}`));
     expect(res.status).toBe(401);
-    expect(runCleanup).not.toHaveBeenCalled();
+    expect(sweepManagedConnectorEventRetention).not.toHaveBeenCalled();
     expect(recoverManagedEventCleanup).not.toHaveBeenCalled();
   });
 
-  it('runs the cleanup and returns counts when the Bearer secret matches', async () => {
+  it('sweeps retention and recovers cleanups when the Bearer secret matches', async () => {
     const res = await GET(cronRequest(`Bearer ${SECRET}`));
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { ok: boolean; counts: Record<string, number> };
+    const body = (await res.json()) as {
+      ok: boolean;
+      eventRetention: Record<string, number>;
+      eventSubscriptions: Record<string, number>;
+    };
     expect(body.ok).toBe(true);
-    expect(body.counts).toEqual({ unverifiedUsers: 2, expiredDeviceCodes: 3, staleInstances: 1 });
-    expect(sweepManagedConnectorEventRetention).toHaveBeenCalledTimes(1);
+    expect(body.eventRetention).toEqual({
+      pages: 1,
+      contentRowsCleared: 2,
+      metadataRowsDeleted: 1,
+      protectedBytesCleared: 256,
+    });
+    expect(body.eventSubscriptions).toEqual({ examined: 1, completed: 1 });
     expect(sweepManagedConnectorEventRetention).toHaveBeenCalledWith(
       { marker: 'db' },
       { signal: expect.any(AbortSignal) }
@@ -86,16 +90,14 @@ describe('GET /api/cron/cleanup', () => {
       { marker: 'db' },
       expect.any(AbortSignal)
     );
-    expect(runCleanup).toHaveBeenCalledTimes(1);
-    expect(runCleanup).toHaveBeenCalledWith(getAuth(), {});
   });
-});
 
-it('reports payload-free maintenance failure after authentication', async () => {
-  vi.mocked(sweepManagedConnectorEventRetention).mockRejectedValueOnce(
-    new Error('private provider data')
-  );
-  const response = await GET(cronRequest(`Bearer ${SECRET}`));
-  expect(response.status).toBe(500);
-  expect(await response.text()).not.toContain('private provider data');
+  it('reports payload-free maintenance failure after authentication', async () => {
+    vi.mocked(sweepManagedConnectorEventRetention).mockRejectedValueOnce(
+      new Error('private provider data')
+    );
+    const response = await GET(cronRequest(`Bearer ${SECRET}`));
+    expect(response.status).toBe(500);
+    expect(await response.text()).not.toContain('private provider data');
+  });
 });
