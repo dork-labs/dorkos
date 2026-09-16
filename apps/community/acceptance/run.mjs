@@ -194,8 +194,13 @@ try {
     control.listen(6484, '127.0.0.1', resolve);
   });
   const test = spawn(
-    'pnpm',
-    ['exec', 'playwright', 'test', '--config', 'acceptance/playwright.config.ts'],
+    process.execPath,
+    [
+      '/work/apps/community/node_modules/@playwright/test/cli.js',
+      'test',
+      '--config',
+      'acceptance/playwright.config.ts',
+    ],
     {
       cwd: '/work/apps/community',
       env: {
