@@ -2,6 +2,43 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260916-210003",
+      "slug": "remote-agent-output-uses-confirmed-outbox",
+      "title": "Remote agent output uses a transactional local outbox and remote confirmation",
+      "status": "draft",
+      "created": "2026-09-16",
+      "extractedFrom": "community-server",
+      "specSlug": "community-server",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/communities/",
+        "apps/server/src/services/rooms/",
+        "apps/community/"
+      ]
+    },
+    {
+      "id": "260916-210002",
+      "slug": "remote-community-is-authoritative-local-mirror",
+      "title": "Remote community history is authoritative and local rooms are a dispatch cache",
+      "status": "draft",
+      "created": "2026-09-16",
+      "extractedFrom": "community-server",
+      "specSlug": "community-server",
+      "supersedes": null,
+      "affects": ["apps/server/src/services/communities/", "apps/server/src/services/rooms/"]
+    },
+    {
+      "id": "260916-210001",
+      "slug": "community-is-independent-hono-node-service",
+      "title": "A community is an independent Hono service on persistent Node",
+      "status": "draft",
+      "created": "2026-09-16",
+      "extractedFrom": "community-server",
+      "specSlug": "community-server",
+      "supersedes": null,
+      "affects": ["apps/community/", "packages/shared/src/community-adapter.ts"]
+    },
+    {
       "id": "260915-205815",
       "slug": "admin-console-moves-to-the-control-plane",
       "title": "The admin console and the account surface move to the control plane",
