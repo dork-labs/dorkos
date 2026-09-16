@@ -523,6 +523,51 @@ describe('RemoteMirrorStore', () => {
     expect(
       outbox.originForRemoteEntry(REF_A, 'general', harness.human, unrelated.entry.id)
     ).toBeNull();
+    const replayItem = {
+      ...item,
+      id: 'delivery-replay',
+      localEntryId: 'local-entry-replay',
+      idempotencyKey: 'delivery-replay-key',
+    };
+    harness.db.transaction((tx) => outbox.enqueue(replayItem, tx));
+    const replay = nativeEntry(REF_A, 'general', 4);
+    replay.entry = { ...replay.entry, id: 'replay-agent-entry', authorId: 'remote-agent-a' };
+    replay.author = { memberId: 'remote-agent-a', displayName: 'Our agent', kind: 'agent' };
+    bridge.importSnapshot(room, [
+      {
+        ...replay,
+        serverCreatedAt: '2026-09-16T01:00:00.000Z',
+        originIdempotencyKey: replayItem.idempotencyKey,
+      },
+    ]);
+    expect(
+      outbox.deliveryForOwner(REF_A, 'general', harness.human, replayItem.idempotencyKey)
+    ).toMatchObject({ state: 'confirmed', remoteEntryId: replay.entry.id });
+    const stoppedItem = {
+      ...item,
+      id: 'delivery-stopped',
+      localEntryId: 'local-entry-stopped',
+      idempotencyKey: 'delivery-stopped-key',
+      state: 'stopped' as const,
+    };
+    harness.db.transaction((tx) => outbox.enqueue(stoppedItem, tx));
+    const stoppedEcho = nativeEntry(REF_A, 'general', 5);
+    stoppedEcho.entry = {
+      ...stoppedEcho.entry,
+      id: 'stopped-agent-entry',
+      authorId: 'remote-agent-a',
+    };
+    stoppedEcho.author = { memberId: 'remote-agent-a', displayName: 'Our agent', kind: 'agent' };
+    bridge.importSnapshot(room, [
+      {
+        ...stoppedEcho,
+        serverCreatedAt: '2026-09-16T01:00:00.000Z',
+        originIdempotencyKey: stoppedItem.idempotencyKey,
+      },
+    ]);
+    expect(
+      outbox.deliveryForOwner(REF_A, 'general', harness.human, stoppedItem.idempotencyKey)
+    ).toMatchObject({ state: 'stopped', remoteEntryId: null });
     expect(harness.runner.turns).toEqual([]);
   });
 
