@@ -217,6 +217,8 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         authorKind: 'agent' | 'human';
         authorDisplayName: string;
         originIdempotencyKey: string | null;
+        parentEntryId: string | null;
+        threadRootEntryId: string | null;
         attachments: Array<{ id: string; name: string }>;
       };
       const isEnrolledAgentEntry = (entry: Pick<Entry, 'authorMemberId' | 'authorKind'>) =>
@@ -255,6 +257,28 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         localPage.getByText('Waiting for community confirmation…', { exact: true })
       ).toHaveCount(0);
       await expect(localPage.getByText('Here is what I saw.', { exact: true })).toHaveCount(1);
+      // Read the attachment through the local browser surface. The remote-owner
+      // fetch below only proves Community storage; this request proves the
+      // qualified local authorization and Blob download path.
+      const localAttachmentResponse = localPage.waitForResponse(
+        (response) =>
+          response.request().method() === 'GET' &&
+          new URL(response.url()).pathname ===
+            `/api/communities/${refA}/rooms/${roomA!.roomId}/attachments/${confirmed[0]!.attachments[0]!.id}`
+      );
+      const localAttachmentDownload = localPage.waitForEvent('download');
+      await localPage.getByRole('button', { name: 'shot.png', exact: true }).click();
+      const [attachmentResponse, attachmentDownload] = await Promise.all([
+        localAttachmentResponse,
+        localAttachmentDownload,
+      ]);
+      expect(attachmentResponse.ok()).toBe(true);
+      expect(attachmentDownload.suggestedFilename()).toBe('shot.png');
+      expect(
+        Buffer.from(await attachmentResponse.body())
+          .subarray(1, 4)
+          .toString('latin1')
+      ).toBe('PNG');
       for (const viewport of [
         { name: 'desktop', width: 1440, height: 900, dark: false },
         { name: 'tablet', width: 820, height: 1180, dark: true },
@@ -1006,6 +1030,97 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         (posted) => posted,
         'the human owner could not post after the agent was ejected'
       );
+      expect(await agentEntries()).toHaveLength(heldEjection.beforeEntryCount);
+
+      // Leave Community A, receive a human post, then navigate back with the
+      // local sidebar link. This proves the remote unread cursor and the local
+      // accessible navigation path without dispatching another agent turn.
+      await localPage.setViewportSize({ width: 1440, height: 900 });
+      await localPage.goto(
+        `${env.local}/channels?community=${encodeURIComponent(refB)}&id=${encodeURIComponent(roomB!.roomId)}`
+      );
+      await expect(localPage.getByRole('feed', { name: 'Community messages' })).toBeVisible();
+      const unreadMarker = `local-unread-${crypto.randomUUID()}`;
+      const unreadRoot = await postHumanMarker(unreadMarker);
+      expect(unreadRoot?.id).toBeTruthy();
+      await eventually(
+        () =>
+          json<{ cursor: string | null; unreadCount: number }>(
+            `${env.local}/api/communities/${refA}/rooms/${roomA!.roomId}/read-cursor`
+          ),
+        (cursor) => cursor.unreadCount > 0,
+        'the remote human post did not advance Community A unread state'
+      );
+      // The room query is refetched on a fresh local page load; no polling delay
+      // is part of this causal barrier.
+      await localPage.reload();
+      const communityAChannels = localPage.getByRole('region', {
+        name: 'Acceptance local install A',
+      });
+      const communityALink = communityAChannels.getByRole('link', { name: /#general/ });
+      await expect(communityALink.getByLabel(/unread messages/)).toBeVisible();
+      const markReadResponse = localPage.waitForResponse(
+        (response) =>
+          response.request().method() === 'PUT' &&
+          new URL(response.url()).pathname ===
+            `/api/communities/${refA}/rooms/${roomA!.roomId}/read-cursor`
+      );
+      await communityALink.focus();
+      await expect(communityALink).toBeFocused();
+      await localPage.keyboard.press('Enter');
+      await expect(communityALink).toHaveAttribute('aria-current', 'page');
+      await expect(localPage.getByText(unreadMarker, { exact: true })).toBeVisible();
+      const markedRead = await markReadResponse;
+      expect(markedRead.ok()).toBe(true);
+      expect((await markedRead.json()) as { unreadCount: number }).toMatchObject({
+        unreadCount: 0,
+      });
+      await expect(communityALink.getByLabel(/unread messages/)).toHaveCount(0);
+
+      // Reply through the local thread composer and prove the remote parent
+      // identity, then use the mobile keyboard path to return to the channel.
+      const unreadArticle = localPage.getByRole('article').filter({ hasText: unreadMarker });
+      await expect(unreadArticle).toHaveCount(1);
+      await unreadArticle.getByRole('button', { name: 'Reply in thread', exact: true }).click();
+      const threadFeed = localPage.getByRole('feed', { name: 'Community thread' });
+      await expect(threadFeed).toBeVisible();
+      const localThreadReply = `local-thread-reply-${crypto.randomUUID()}`;
+      const localThreadPost = localPage.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          new URL(response.url()).pathname ===
+            `/api/communities/${refA}/rooms/${roomA!.roomId}/entries`
+      );
+      const threadComposer = localPage.getByPlaceholder('Reply in thread…');
+      await threadComposer.fill(localThreadReply);
+      await threadComposer.press('Enter');
+      expect((await localThreadPost).ok()).toBe(true);
+      await expect(threadFeed.getByText(localThreadReply, { exact: true })).toBeVisible();
+      const remoteThreadReply = await eventually(
+        () =>
+          pageJson<{ entries: Entry[] }>(
+            pageA,
+            `/api/v1/channels/${roomA!.roomId}/entries?limit=100`
+          ).then((page) => page.entries.find((entry) => entry.text === localThreadReply)),
+        (entry) => entry !== undefined && entry.parentEntryId === unreadRoot!.id,
+        'the local thread reply did not retain its remote root identity'
+      );
+      expect(remoteThreadReply?.threadRootEntryId).toBe(unreadRoot!.id);
+      await localPage.setViewportSize({ width: 390, height: 844 });
+      await expect(threadFeed).toHaveAccessibleName('Community thread');
+      const backToChannel = localPage.getByRole('button', { name: 'Back to channel', exact: true });
+      await expect(backToChannel).toBeVisible();
+      await backToChannel.focus();
+      await expect(backToChannel).toBeFocused();
+      await localPage.keyboard.press('Enter');
+      await expect(localPage.getByRole('feed', { name: 'Community messages' })).toBeVisible();
+      expect(
+        await localPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+      ).toBe(true);
+      await localPage.screenshot({
+        path: testInfo.outputPath('native-local-thread-mobile.png'),
+        fullPage: true,
+      });
       expect(await agentEntries()).toHaveLength(heldEjection.beforeEntryCount);
     } finally {
       await Promise.allSettled([
