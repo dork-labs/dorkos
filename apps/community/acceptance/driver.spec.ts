@@ -303,6 +303,48 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         'POSTED-ATTACHMENT'
       );
 
+      // Restart the remote Community itself before restarting the local process.
+      // Both browser contexts keep their authenticated identities, while the
+      // exact confirmed receipt and its attachment must survive a fresh server.
+      const restartCommunityA = await request.post(`${env.control}/restart/a`);
+      expect(
+        restartCommunityA.ok(),
+        `could not restart packaged Community A: ${await restartCommunityA.text()}`
+      ).toBe(true);
+      const restartedOwnerEntries = await eventually(
+        agentEntries,
+        (entries) => entries.length === 1 && entries[0]?.id === confirmed[0]?.id,
+        "Community A restart did not retain the owner's exact confirmed receipt"
+      );
+      const restartedMemberEntries = await eventually(
+        () =>
+          pageJson<{ entries: Entry[] }>(
+            pageMemberA,
+            `/api/v1/channels/${roomA!.roomId}/entries?limit=100`
+          ).then((page) =>
+            page.entries.filter((entry) => entry.authorDisplayName === registered.name)
+          ),
+        (entries) => entries.length === 1 && entries[0]?.id === confirmed[0]?.id,
+        "Community A restart did not retain the member's exact confirmed receipt"
+      );
+      expect(restartedOwnerEntries[0]?.attachments[0]?.id).toBe(confirmed[0]?.attachments[0]?.id);
+      expect(restartedMemberEntries[0]?.attachments[0]?.id).toBe(confirmed[0]?.attachments[0]?.id);
+      const restartedPng = await pageA.evaluate(async (attachmentId) => {
+        const response = await fetch(`/api/v1/attachments/${attachmentId}`);
+        if (!response.ok) throw new Error(`attachment download returned ${response.status}`);
+        return Array.from(new Uint8Array(await response.arrayBuffer()).slice(0, 8));
+      }, confirmed[0]!.attachments[0]!.id);
+      expect(Buffer.from(restartedPng).subarray(1, 4).toString('latin1')).toBe('PNG');
+      const localRetainedReceipt = await eventually(
+        () =>
+          json<{ entries: Entry[] }>(
+            `${env.local}/api/communities/${refA}/rooms/${roomA!.roomId}/entries?limit=100`
+          ).then((page) => page.entries.filter((entry) => entry.id === confirmed[0]?.id)),
+        (entries) => entries.length === 1,
+        'the native Community A connection was not usable after the remote restart'
+      );
+      expect(localRetainedReceipt[0]?.attachments[0]?.id).toBe(confirmed[0]?.attachments[0]?.id);
+
       const finish = await request.post(`${env.local}/api/test/finish-turn`);
       expect(finish.ok(), `could not finish deterministic turn: ${await finish.text()}`).toBe(true);
       const restart = await request.post(`${env.control}/restart/local`);
@@ -375,6 +417,416 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         'restart did not preserve a live Community subscription without replaying history'
       );
       expect(afterRestart).toHaveLength(2);
+
+      // Community B is a separate packaged server and has no local agent
+      // enrollment. Its human post must stay in B's qualified route and leave
+      // Community A's live dispatcher count unchanged.
+      const roomsB = await json<{ rooms: Array<{ roomId: string; title: string }> }>(
+        `${env.local}/api/communities/${refB}/rooms`
+      );
+      const roomB = roomsB.rooms.find(
+        (room) => room.title === 'General' || room.title === 'general'
+      );
+      expect(roomB, 'the browser-created Community B channel was not visible locally').toBeTruthy();
+      const readyBeforeB = await eventually(
+        subscriptionBarrier,
+        (result) => result !== null && result.snapshotComplete && result.replayComplete,
+        'Community A subscription was not ready before the isolated Community B post'
+      );
+      const dispatchesBeforeB = readyBeforeB!.dispatchesSinceBoot;
+      const bMarker = `B-only-${crypto.randomUUID()}`;
+      await pageB.getByLabel(/Message #general/i).fill(bMarker);
+      await pageB.getByRole('button', { name: 'Send' }).click();
+      await eventually(
+        () =>
+          pageJson<{ entries: Array<{ text: string }> }>(
+            pageB,
+            `/api/v1/channels/${roomB!.roomId}/entries?limit=100`
+          ),
+        (page) => page.entries.some((entry) => entry.text === bMarker),
+        'the Community B human post did not commit'
+      );
+      const localBHistory = await eventually(
+        () =>
+          json<{ entries: Array<{ text: string }> }>(
+            `${env.local}/api/communities/${refB}/rooms/${roomB!.roomId}/entries?limit=100`
+          ),
+        (page) => page.entries.some((entry) => entry.text === bMarker),
+        'the qualified local Community B history did not contain its human post'
+      );
+      expect(localBHistory.entries.some((entry) => entry.text === bMarker)).toBe(true);
+      const localAHistory = await json<{ entries: Array<{ text: string }> }>(
+        `${env.local}/api/communities/${refA}/rooms/${roomA!.roomId}/entries?limit=100`
+      );
+      expect(localAHistory.entries.some((entry) => entry.text === bMarker)).toBe(false);
+      const bProbe = await fetch(
+        `${env.local}/api/test/community-subscription?ref=${encodeURIComponent(refB)}&roomId=${encodeURIComponent(roomB!.roomId)}`
+      );
+      expect(bProbe.status).toBe(404);
+      const readyAfterB = await eventually(
+        subscriptionBarrier,
+        (result) => result !== null && result.snapshotComplete && result.replayComplete,
+        'Community A subscription was not ready after the isolated Community B post'
+      );
+      expect(readyAfterB?.dispatchesSinceBoot).toBe(dispatchesBeforeB);
+      await localPage.goto(
+        `${env.local}/channels?community=${encodeURIComponent(refB)}&id=${encodeURIComponent(roomB!.roomId)}`
+      );
+      await expect(localPage.getByText(bMarker, { exact: true })).toBeVisible();
+      await localPage.goto(
+        `${env.local}/channels?community=${encodeURIComponent(refA)}&id=${encodeURIComponent(roomA!.roomId)}`
+      );
+      await expect(localPage.getByRole('feed', { name: 'Community messages' })).toBeVisible();
+      await expect(localPage.getByText(bMarker, { exact: true })).toHaveCount(0);
+
+      // The runner owns both lifecycle controls and keeps Community A's database,
+      // credentials, and browser sessions intact. The local UI must report an
+      // offline stream and reconnect after that same server comes back.
+      const stopCommunityA = await request.post(`${env.control}/stop/a`);
+      expect(
+        stopCommunityA.ok(),
+        `could not stop packaged Community A: ${await stopCommunityA.text()}`
+      ).toBe(true);
+      const offlineNotice = localPage.getByText('Connection lost. Showing saved messages.', {
+        exact: true,
+      });
+      await expect(offlineNotice).toBeVisible({ timeout: 90_000 });
+      const startCommunityA = await request.post(`${env.control}/start/a`);
+      expect(
+        startCommunityA.ok(),
+        `could not start packaged Community A: ${await startCommunityA.text()}`
+      ).toBe(true);
+      await eventually(
+        subscriptionBarrier,
+        (result) => result !== null && result.snapshotComplete && result.replayComplete,
+        'the local Community A subscription did not finish replay after its remote server restarted'
+      );
+      await expect(offlineNotice).toHaveCount(0, { timeout: 90_000 });
+      await expect(localPage.getByText(bMarker, { exact: true })).toHaveCount(0);
+
+      // A transient remote failure must surface a retryable pending delivery.
+      // The manual retry is clicked while the Community keeps answering 503, so
+      // the observed second attempt is caused by the UI action rather than the
+      // worker's regular backoff. Releasing then proves idempotent confirmation.
+      const retryMarker = `retry-now-${crypto.randomUUID()}`;
+      const entriesBeforeRetry = await agentEntries();
+      await json(`${env.communityA}/api/test/delivery-receipt-gate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'arm', channelId: roomA!.roomId, phase: 'unavailable' }),
+      });
+      await composer.fill(`@${handle} ${retryMarker}`);
+      await pageMemberA.getByRole('button', { name: 'Send' }).click();
+      const retryRoot = await eventually(
+        () =>
+          pageJson<{ entries: Entry[] }>(
+            pageMemberA,
+            `/api/v1/channels/${roomA!.roomId}/entries?limit=100`
+          ).then((page) =>
+            page.entries.find((entry) => entry.text === `@${handle} ${retryMarker}`)
+          ),
+        (entry) => entry !== undefined,
+        'the retryable Community A trigger did not commit'
+      );
+      const unavailable = await eventually(
+        () =>
+          json<{ state: string; attempts: number }>(
+            `${env.communityA}/api/test/delivery-receipt-gate`
+          ),
+        (gate) => gate.state === 'unavailable' && gate.attempts >= 1,
+        'the unavailable Community gate did not observe the first agent delivery attempt'
+      );
+      await localPage.goto(
+        `${env.local}/channels?community=${encodeURIComponent(refA)}&id=${encodeURIComponent(roomA!.roomId)}&thread=${encodeURIComponent(retryRoot!.id)}`
+      );
+      const retryNow = localPage.getByRole('button', { name: 'Retry now', exact: true });
+      await expect(retryNow).toBeVisible({ timeout: 90_000 });
+      await localPage.screenshot({
+        path: testInfo.outputPath('native-retryable-delivery.png'),
+        fullPage: true,
+      });
+      const retryResponse = localPage.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          new URL(response.url()).pathname.includes(
+            `/api/communities/${refA}/rooms/${roomA!.roomId}/deliveries/`
+          ) &&
+          new URL(response.url()).pathname.endsWith('/retry')
+      );
+      await retryNow.click();
+      const retryResult = await retryResponse;
+      expect(retryResult.ok(), `Retry now returned ${retryResult.status()}`).toBe(true);
+      const retriedUnavailable = await eventually(
+        () =>
+          json<{ state: string; attempts: number }>(
+            `${env.communityA}/api/test/delivery-receipt-gate`
+          ),
+        (gate) => gate.state === 'unavailable' && gate.attempts >= unavailable.attempts + 1,
+        'Retry now did not cause a second remote delivery attempt'
+      );
+      expect(retriedUnavailable.attempts).toBeGreaterThan(unavailable.attempts);
+      await json(`${env.communityA}/api/test/delivery-receipt-gate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'release' }),
+      });
+      const retryConfirmed = await eventually(
+        agentEntries,
+        (entries) => entries.length === entriesBeforeRetry.length + 1,
+        'the released retryable delivery did not produce exactly one confirmed entry'
+      );
+      expect(retryConfirmed.at(-1)?.text).toBe('Here is what I saw.');
+      await expect(retryNow).toHaveCount(0);
+      await localPage.goto(
+        `${env.local}/channels?community=${encodeURIComponent(refA)}&id=${encodeURIComponent(roomA!.roomId)}`
+      );
+      await expect(localPage.getByRole('feed', { name: 'Community messages' })).toBeVisible();
+
+      // A committed Community event can outlive its HTTP receipt. Its native
+      // SSE echo must replace the pending row by exact remote entry identity,
+      // so this thread contains one agent reply before, during, and after the
+      // held receipt rather than a timed duplicate.
+      const afterPersistMarker = `after-persist-${crypto.randomUUID()}`;
+      await json(`${env.communityA}/api/test/delivery-receipt-gate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'arm', channelId: roomA!.roomId, phase: 'after-persist' }),
+      });
+      await composer.fill(`@${handle} ${afterPersistMarker}`);
+      await pageMemberA.getByRole('button', { name: 'Send' }).click();
+      const afterPersistRoot = await eventually(
+        () =>
+          pageJson<{ entries: Entry[] }>(
+            pageMemberA,
+            `/api/v1/channels/${roomA!.roomId}/entries?limit=100`
+          ).then((page) =>
+            page.entries.find((entry) => entry.text === `@${handle} ${afterPersistMarker}`)
+          ),
+        (entry) => entry !== undefined,
+        'the after-persist Community A trigger did not commit'
+      );
+      const heldAfterPersist = await eventually(
+        () =>
+          json<{ state: string; entryId?: string }>(
+            `${env.communityA}/api/test/delivery-receipt-gate`
+          ),
+        (gate) => gate.state === 'held' && typeof gate.entryId === 'string',
+        'the Community receipt was not held after persistence'
+      );
+      await localPage.goto(
+        `${env.local}/channels?community=${encodeURIComponent(refA)}&id=${encodeURIComponent(roomA!.roomId)}&thread=${encodeURIComponent(afterPersistRoot!.id)}`
+      );
+      const afterPersistThread = localPage.getByRole('feed', { name: 'Community thread' });
+      await expect(
+        afterPersistThread.getByText('Here is what I saw.', { exact: true })
+      ).toHaveCount(1);
+      await expect(
+        localPage.getByText('Waiting for community confirmation…', { exact: true })
+      ).toHaveCount(0);
+      await expect(afterPersistThread.getByText(afterPersistMarker, { exact: true })).toHaveCount(
+        1
+      );
+      const heldEntryId = heldAfterPersist.entryId!;
+      const heldRemoteEntry = await eventually(
+        () =>
+          pageJson<{ entries: Entry[] }>(
+            pageA,
+            `/api/v1/channels/${roomA!.roomId}/entries?limit=100`
+          ).then((page) => page.entries.filter((entry) => entry.id === heldEntryId)),
+        (entries) => entries.length === 1,
+        'the held post-persistence receipt did not name exactly one remote entry'
+      );
+      expect(heldRemoteEntry[0]?.text).toBe('Here is what I saw.');
+      await localPage.screenshot({
+        path: testInfo.outputPath('native-held-after-persist-receipt.png'),
+        fullPage: true,
+      });
+      await localPage.reload();
+      await expect(
+        afterPersistThread.getByText('Here is what I saw.', { exact: true })
+      ).toHaveCount(1);
+      await expect(
+        localPage.getByText('Waiting for community confirmation…', { exact: true })
+      ).toHaveCount(0);
+      await json(`${env.communityA}/api/test/delivery-receipt-gate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'release' }),
+      });
+      await eventually(
+        () => json<{ state: string }>(`${env.communityA}/api/test/delivery-receipt-gate`),
+        (gate) => gate.state === 'idle',
+        'the post-persistence receipt did not settle after release'
+      );
+      await expect(
+        afterPersistThread.getByText('Here is what I saw.', { exact: true })
+      ).toHaveCount(1);
+      const releasedRemoteEntry = await pageJson<{ entries: Entry[] }>(
+        pageA,
+        `/api/v1/channels/${roomA!.roomId}/entries?limit=100`
+      );
+      expect(releasedRemoteEntry.entries.filter((entry) => entry.id === heldEntryId)).toHaveLength(
+        1
+      );
+      await localPage.goto(
+        `${env.local}/channels?community=${encodeURIComponent(refA)}&id=${encodeURIComponent(roomA!.roomId)}`
+      );
+      await expect(localPage.getByRole('feed', { name: 'Community messages' })).toBeVisible();
+
+      // A real runtime turn waits on its session-scoped step barrier. The Stop
+      // button must terminate it before the barrier can release, proving Stop
+      // does more than hide a later remote delivery.
+      const stoppableScenario = await request.post(`${env.local}/api/test/scenario`, {
+        data: { name: 'stoppable-turn' },
+      });
+      expect(
+        stoppableScenario.ok(),
+        `could not select the stoppable-turn scenario: ${await stoppableScenario.text()}`
+      ).toBe(true);
+      const sessionIdsBeforeStop = new Set((await localTurns()).map((session) => session.id));
+      const readyBeforeStop = await eventually(
+        subscriptionBarrier,
+        (result) => result !== null && result.snapshotComplete && result.replayComplete,
+        'Community A subscription was not ready before the live Stop journey'
+      );
+      await composer.fill(`@${handle} stop-marker-${crypto.randomUUID()}`);
+      await pageMemberA.getByRole('button', { name: 'Send' }).click();
+      await eventually(
+        subscriptionBarrier,
+        (result) =>
+          result !== null &&
+          result.dispatchesSinceBoot === readyBeforeStop!.dispatchesSinceBoot + 1,
+        'the live stoppable turn did not receive a dispatcher claim'
+      );
+      const stoppableSession = await eventually(
+        localTurns,
+        (sessions) =>
+          sessions.find((session) => !sessionIdsBeforeStop.has(session.id)) !== undefined,
+        'the live stoppable turn never created a local runtime session'
+      );
+      const stoppableSessionId = stoppableSession.find(
+        (session) => !sessionIdsBeforeStop.has(session.id)
+      )!.id;
+      const stopResponse = localPage.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          new URL(response.url()).pathname ===
+            `/api/communities/${refA}/rooms/${roomA!.roomId}/halt`
+      );
+      await localPage.getByRole('button', { name: 'Stop my agents', exact: true }).click();
+      const stopResult = await stopResponse;
+      expect(stopResult.ok(), `live Stop returned ${stopResult.status()}`).toBe(true);
+      await expect(stopResult.json()).resolves.toEqual({ stopped: true });
+      const stoppedStep = await json<{ ok: boolean; released: boolean }>(
+        `${env.local}/api/test/step`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ sessionId: stoppableSessionId }),
+        }
+      );
+      expect(stoppedStep).toEqual({ ok: true, released: false });
+      expect((await agentEntries()).some((entry) => entry.text.includes('STOPPABLE-TURN'))).toBe(
+        false
+      );
+
+      const restoredAttachmentScenario = await request.post(`${env.local}/api/test/scenario`, {
+        data: { name: 'rooms-post-attachment' },
+      });
+      expect(
+        restoredAttachmentScenario.ok(),
+        `could not restore attachment scenario after Stop: ${await restoredAttachmentScenario.text()}`
+      ).toBe(true);
+      const holdAttachmentDelivery = async (marker: string) => {
+        const beforeEntries = await agentEntries();
+        const beforeDispatch = await eventually(
+          subscriptionBarrier,
+          (result) => result !== null && result.snapshotComplete && result.replayComplete,
+          `Community A subscription was not ready before ${marker}`
+        );
+        await json(`${env.communityA}/api/test/delivery-receipt-gate`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            action: 'arm',
+            channelId: roomA!.roomId,
+            phase: 'before-persist',
+          }),
+        });
+        await composer.fill(`@${handle} ${marker}`);
+        await pageMemberA.getByRole('button', { name: 'Send' }).click();
+        await eventually(
+          subscriptionBarrier,
+          (result) =>
+            result !== null &&
+            result.dispatchesSinceBoot === beforeDispatch!.dispatchesSinceBoot + 1,
+          `${marker} did not receive a dispatcher claim before persistence`
+        );
+        await eventually(
+          () => json<{ state: string }>(`${env.communityA}/api/test/delivery-receipt-gate`),
+          (gate) => gate.state === 'held-before-persist',
+          `${marker} never reached the pre-persistence receipt gate`
+        );
+        expect(await agentEntries()).toHaveLength(beforeEntries.length);
+        return beforeEntries.length;
+      };
+
+      const beforeHeldStop = await holdAttachmentDelivery(`held-stop-${crypto.randomUUID()}`);
+      const heldStopResponse = localPage.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          new URL(response.url()).pathname ===
+            `/api/communities/${refA}/rooms/${roomA!.roomId}/halt`
+      );
+      await localPage.getByRole('button', { name: 'Stop my agents', exact: true }).click();
+      const heldStopResult = await heldStopResponse;
+      expect(heldStopResult.ok(), `held-delivery Stop returned ${heldStopResult.status()}`).toBe(
+        true
+      );
+      await eventually(
+        () => json<{ state: string }>(`${env.communityA}/api/test/delivery-receipt-gate`),
+        (gate) => gate.state === 'idle',
+        'Stop did not abort the held pre-persistence Community delivery'
+      );
+      expect(await agentEntries()).toHaveLength(beforeHeldStop);
+
+      const beforeEjection = await holdAttachmentDelivery(`held-ejection-${crypto.randomUUID()}`);
+      await localPage.getByRole('button', { name: 'Members', exact: true }).click();
+      await expect(localPage.getByText(registered.name, { exact: true })).toBeVisible();
+      const ejectionResponse = localPage.waitForResponse(
+        (response) =>
+          response.request().method() === 'DELETE' &&
+          new URL(response.url()).pathname ===
+            `/api/communities/${refA}/agents/${encodeURIComponent(localAgentId)}`
+      );
+      await localPage.getByRole('button', { name: 'Remove from community', exact: true }).click();
+      await localPage.getByRole('button', { name: 'Remove agent', exact: true }).click();
+      const ejectionResult = await ejectionResponse;
+      expect(ejectionResult.ok(), `agent ejection returned ${ejectionResult.status()}`).toBe(true);
+      await expect(ejectionResult.json()).resolves.toMatchObject({
+        localRevoked: true,
+        remoteRevoked: true,
+      });
+      await eventually(
+        () => json<{ state: string }>(`${env.communityA}/api/test/delivery-receipt-gate`),
+        (gate) => gate.state === 'idle',
+        'agent ejection did not abort the held pre-persistence Community delivery'
+      );
+      expect(await agentEntries()).toHaveLength(beforeEjection);
+      const remainingEnrollment = await eventually(
+        () =>
+          json<{ agents: Array<{ localAgentId: string }> }>(
+            `${env.local}/api/communities/${refA}/agents`
+          ),
+        (result) => result.agents.every((agent) => agent.localAgentId !== localAgentId),
+        'the ejected agent remained locally enrolled in Community A'
+      );
+      expect(remainingEnrollment.agents).not.toContainEqual(
+        expect.objectContaining({ localAgentId })
+      );
+      await expect(
+        localPage.getByText('You no longer have access to this channel.', { exact: true })
+      ).toBeVisible();
     } finally {
       await ownerA.close();
       await ownerB.close();
