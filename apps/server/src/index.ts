@@ -1374,7 +1374,9 @@ async function start() {
   });
   setRemoteCommunityLifecycle(remoteCommunitySubscriptions);
   remoteCommunityRuntime.start();
-  remoteCommunitySubscriptions.start();
+  // Native room streams need Mesh's trusted manifest-to-path registry. Start
+  // them only after startup reconciliation below, so a cold boot never treats
+  // an as-yet-unavailable registry as an authoritative empty agent directory.
   if (env.DORKOS_TEST_RUNTIME) {
     setRemoteCommunitySubscriptionProbe(
       (ref, roomId) =>
@@ -1845,6 +1847,7 @@ async function start() {
     } catch (err) {
       logger.warn('[Mesh] Failed to ensure DorkBot system agent', logError(err));
     }
+    remoteCommunitySubscriptions?.start();
 
     // Bring every agent workspace DorkOS owns up to the current Operating DorkOS
     // skill pack, and link it where Claude Code reads it. Two repairs in one
