@@ -15,6 +15,7 @@ export async function migrate(databaseUrl: string): Promise<void> {
     for (const [version, filename] of [
       [1, '0001_foundation.sql'],
       [2, '0002_admission.sql'],
+      [3, '0003_files.sql'],
     ] as const) {
       const applied = await client.query('SELECT 1 FROM community_migrations WHERE version=$1', [
         version,

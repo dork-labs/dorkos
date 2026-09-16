@@ -47,6 +47,8 @@ it('creates all owner, conversation, credential and auth tables in fresh Postgre
       'connection_pairings',
       'connection_grants',
       'attachments',
+      'pending_blob_deletions',
+      'export_archives',
       'owner_quota_windows',
       'audit_events',
     ]) {
@@ -107,7 +109,7 @@ it('upgrades a populated foundation database without changing human authors', as
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(
         (item) => item.version
       )
-    ).toEqual([1, 2]);
+    ).toEqual([1, 2, 3]);
     await migrate(upgradeUrl.toString());
   } finally {
     await db.end();

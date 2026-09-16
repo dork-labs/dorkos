@@ -194,7 +194,7 @@ permissions:
   contents: read
 
 jobs:
-  # Real Postgres HTTP assertions are a dependency of the existing required
+  # Real Postgres HTTP and browser assertions are a dependency of the existing required
   # `test` check, so a missing database or a skipped suite cannot merge green.
   community-pg:
     runs-on: ubuntu-latest
@@ -226,6 +226,21 @@ jobs:
         env:
           COMMUNITY_TEST_DATABASE_URL: postgres://postgres:community-test-only@localhost:5432/community
         run: pnpm --filter @dorkos/community test:pg
+      - name: Install Chromium for community browser proof
+        run: pnpm --filter @dorkos/community exec playwright install --with-deps chromium
+      - name: Assert community browser paths against real Postgres
+        env:
+          COMMUNITY_TEST_DATABASE_URL: postgres://postgres:community-test-only@localhost:5432/community
+        run: pnpm --filter @dorkos/community test:browser
+      - name: Preserve community browser evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: community-browser-evidence
+          path: |
+            apps/community/browser-report.json
+            apps/community/test-results/
+          if-no-files-found: ignore
 
   # The suite, split four ways at the vitest file level (see the header), on
   # BOTH events: the full monorepo sweep on `merge_group`, the affected-only

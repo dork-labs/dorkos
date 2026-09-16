@@ -232,6 +232,7 @@ describe('signed admission over real HTTP and Postgres', () => {
     ).toBe(1);
     const loserCookie = winner === 0 ? bCookie : aCookie;
     expect((await call('/api/v1/channels', 'GET', undefined, loserCookie)).status).toBe(403);
+    expect((await call('/api/v1/me', 'GET', undefined, loserCookie)).status).toBe(403);
     const recovery = await call('/api/v1/invites', 'POST', {}, ownerCookie);
     const recoveryToken = (await recovery.json()).token;
     const recoveryPreflight = await call('/api/v1/invites/preflight', 'POST', {
@@ -248,6 +249,54 @@ describe('signed admission over real HTTP and Postgres', () => {
     expect((await call('/api/v1/invites/preview', 'POST', { token: `${token}x` })).status).toBe(
       403
     );
+  });
+
+  it('exposes only the current member and a bounded moderator directory', async () => {
+    const options = await call('/api/v1/auth-options', 'GET');
+    expect(options.status).toBe(200);
+    expect(await options.json()).toEqual({ google: false, github: false });
+    expect((await call('/api/v1/me', 'GET')).status).toBe(401);
+    const self = await call('/api/v1/me', 'GET', undefined, ownerCookie);
+    expect(self.status).toBe(200);
+    const selfBody = await self.json();
+    expect(selfBody.member.memberId).toBe(ownerId);
+    expect(selfBody.member.role).toBe('owner');
+    expect(Object.keys(selfBody.member).sort()).toEqual([
+      'displayName',
+      'handle',
+      'joinedAt',
+      'kind',
+      'memberId',
+      'ownerMemberId',
+      'role',
+    ]);
+    expect((await call('/api/v1/members', 'GET', undefined, admittedCookie)).status).toBe(403);
+    const first = await call('/api/v1/members?limit=1', 'GET', undefined, ownerCookie);
+    expect(first.status).toBe(200);
+    const page = await first.json();
+    expect(page.members).toHaveLength(1);
+    expect(page.nextCursor).toBe(page.members[0].memberId);
+    expect(JSON.stringify(page)).not.toContain('email');
+    const second = await call(
+      `/api/v1/members?limit=1&cursor=${page.nextCursor}`,
+      'GET',
+      undefined,
+      ownerCookie
+    );
+    expect(second.status).toBe(200);
+    expect((await second.json()).members[0].memberId).not.toBe(page.members[0].memberId);
+    expect((await call('/api/v1/members?limit=101', 'GET', undefined, ownerCookie)).status).toBe(
+      400
+    );
+    expect(
+      (await call(`/api/v1/members/${admittedId}/role`, 'PATCH', { role: 'admin' }, ownerCookie))
+        .status
+    ).toBe(200);
+    expect((await call('/api/v1/members', 'GET', undefined, admittedCookie)).status).toBe(200);
+    expect(
+      (await call(`/api/v1/members/${admittedId}/role`, 'PATCH', { role: 'member' }, ownerCookie))
+        .status
+    ).toBe(200);
   });
 
   it('pairs a local install once through browser approval and revokes its scoped bearer', async () => {
@@ -303,9 +352,34 @@ describe('signed admission over real HTTP and Postgres', () => {
     const listed = await call('/api/v1/me/grants', 'GET', undefined, ownerCookie);
     expect(listed.status).toBe(200);
     expect(JSON.stringify(await listed.json())).not.toContain(token);
-    expect(
-      (await call(`/api/v1/me/grants/${grant.id}`, 'DELETE', undefined, ownerCookie)).status
-    ).toBe(204);
+    const stream = await bearerCall(`/api/v1/channels/${channelId}/events`, 'GET', token);
+    expect(stream.status).toBe(200);
+    const reader = stream.body!.getReader();
+    try {
+      expect((await nextSse(reader)).type).toBe('snapshot');
+      expect(
+        (await call(`/api/v1/me/grants/${grant.id}`, 'DELETE', undefined, ownerCookie)).status
+      ).toBe(204);
+      // Another admitted person commits after revocation. The old connection
+      // must close rather than deliver even this otherwise-visible entry.
+      expect(
+        (
+          await call(
+            `/api/v1/channels/${channelId}/entries`,
+            'POST',
+            {
+              text: 'Never deliver this to the revoked installation',
+              idempotencyKey: 'after-personal-grant-revocation',
+            },
+            admittedCookie
+          )
+        ).status
+      ).toBe(201);
+      expect((await nextSse(reader)).type).toBe('closed');
+      expect((await reader.read()).done).toBe(true);
+    } finally {
+      await reader.cancel().catch(() => undefined);
+    }
     expect(
       (await pool.query('SELECT revoked_at FROM connection_grants WHERE id=$1', [grant.id])).rows[0]
         .revoked_at
@@ -530,6 +604,50 @@ describe('signed admission over real HTTP and Postgres', () => {
     ).toBe(200);
     expect((await bearerCall('/api/v1/channels', 'GET', newToken)).status).toBe(200);
     agentToken = newToken;
+  });
+
+  it('names an agent owner in a joined roster without exposing a global member directory', async () => {
+    const created = await call('/api/v1/channels', 'POST', { name: 'Owner away' }, ownerCookie);
+    expect(created.status).toBe(201);
+    const channel = (await created.json()).channel.id as string;
+    const agentId = (
+      await pool.query<{ agent_id: string }>(
+        'SELECT agent_id FROM agent_credentials WHERE token_hash=$1 AND revoked_at IS NULL',
+        [createHash('sha256').update(agentToken).digest('hex')]
+      )
+    ).rows[0].agent_id;
+    expect(
+      (
+        await call(
+          `/api/v1/channels/${channel}/members`,
+          'POST',
+          { memberId: admittedId },
+          ownerCookie
+        )
+      ).status
+    ).toBe(200);
+    expect(
+      (await call(`/api/v1/channels/${channel}/agents`, 'POST', { agentId }, ownerCookie)).status
+    ).toBe(200);
+    expect((await call(`/api/v1/channels/${channel}/leave`, 'POST', {}, ownerCookie)).status).toBe(
+      200
+    );
+    expect((await call('/api/v1/members', 'GET', undefined, admittedCookie)).status).toBe(403);
+    const roster = await call(
+      `/api/v1/channels/${channel}/members`,
+      'GET',
+      undefined,
+      admittedCookie
+    );
+    expect(roster.status).toBe(200);
+    const body = await roster.json();
+    expect(body.members.some((member: { memberId: string }) => member.memberId === ownerId)).toBe(
+      false
+    );
+    const agent = body.members.find((member: { memberId: string }) => member.memberId === agentId);
+    expect(agent.ownerMemberId).toBe(ownerId);
+    expect(agent.ownerDisplayName).toBe('Owner');
+    expect(JSON.stringify(body)).not.toContain('email');
   });
 
   it('denies delayed history after agent rotation, grant revocation, and session deletion', async () => {

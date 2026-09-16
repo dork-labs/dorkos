@@ -1,0 +1,330 @@
+import { createHash } from 'node:crypto';
+import type { Context, Hono } from 'hono';
+import type { Pool, PoolClient } from 'pg';
+import {
+  CommunityWireAttachmentUploadRequestSchema,
+  CommunityWireAttachmentUploadResponseSchema,
+  type CommunityWireAttachment,
+} from '@dorkos/shared/community-wire';
+import type { CommunityAuth } from '../auth.js';
+import type { CommunityConfig } from '../config.js';
+import {
+  assertPrincipalCurrentInTransaction,
+  lockChannel,
+  lockPrincipalAuthority,
+  requireJoined,
+  requirePrincipal,
+  transaction,
+} from '../data.js';
+import { ApiError, json } from '../http.js';
+import { BlobStoreError, downloadHeaders, type BlobStore } from '../storage/index.js';
+import { deleteUnreferencedBlob } from '../storage/pending-deletions.js';
+
+interface AttachmentRow {
+  id: string;
+  channel_id: string;
+  blob_key: string;
+  display_name: string;
+  content_type: string;
+  byte_size: number;
+  checksum: string;
+  uploaded_at: Date;
+  request_hash: string;
+}
+
+/** Public attachment metadata with no storage key or backend address. */
+export function attachmentProjection(row: AttachmentRow): CommunityWireAttachment {
+  return {
+    id: row.id,
+    name: row.display_name,
+    contentType: row.content_type,
+    byteSize: row.byte_size,
+    checksum: row.checksum,
+    createdAt: row.uploaded_at.toISOString(),
+  };
+}
+
+/** Load metadata for a page of entries with one bounded database query. */
+export async function attachmentsForEntries(
+  client: PoolClient | Pool,
+  ids: string[]
+): Promise<Map<string, CommunityWireAttachment[]>> {
+  const result = ids.length
+    ? await client.query<AttachmentRow & { entry_id: string }>(
+        'SELECT id,entry_id,channel_id,blob_key,display_name,content_type,byte_size,checksum,uploaded_at,request_hash FROM attachments WHERE entry_id=ANY($1::uuid[]) ORDER BY uploaded_at,id',
+        [ids]
+      )
+    : { rows: [] };
+  const map = new Map<string, CommunityWireAttachment[]>();
+  for (const row of result.rows) {
+    const list = map.get(row.entry_id) ?? [];
+    list.push(attachmentProjection(row));
+    map.set(row.entry_id, list);
+  }
+  return map;
+}
+
+function mapBlobError(error: unknown): never {
+  if (error instanceof BlobStoreError) {
+    if (error.code === 'BLOB_TOO_LARGE')
+      throw new ApiError(413, 'ATTACHMENT_TOO_LARGE', 'The file is too large.');
+    if (error.code === 'BLOB_TYPE_REJECTED' || error.code === 'BLOB_EMPTY')
+      throw new ApiError(415, 'UNSUPPORTED_ATTACHMENT_TYPE', 'This file type is not supported.');
+    if (error.code === 'BLOB_NOT_FOUND') throw new ApiError(404, 'NOT_FOUND', 'File not found.');
+  }
+  throw error;
+}
+
+function uploadHeaders(c: Context) {
+  const encodedName = c.req.header('x-file-name');
+  if (!encodedName || encodedName.length > 720 || !/^(?:[\x21-\x7e])+$/.test(encodedName)) {
+    throw new ApiError(400, 'STATE_CONFLICT', 'A valid encoded file name is required.');
+  }
+  let name: string;
+  try {
+    name = decodeURIComponent(encodedName);
+  } catch {
+    throw new ApiError(400, 'STATE_CONFLICT', 'The file name encoding is invalid.');
+  }
+  const rawSize = c.req.header('x-file-size');
+  if (!rawSize || !/^(0|[1-9]\d{0,8})$/.test(rawSize))
+    throw new ApiError(400, 'STATE_CONFLICT', 'A valid file size is required.');
+  const parsed = CommunityWireAttachmentUploadRequestSchema.safeParse({
+    name,
+    contentType: c.req.header('content-type'),
+    byteSize: Number(rawSize),
+    idempotencyKey: c.req.header('idempotency-key'),
+  });
+  if (!parsed.success) throw new ApiError(400, 'STATE_CONFLICT', 'Upload headers are invalid.');
+  return parsed.data;
+}
+
+async function* requestBytes(body: ReadableStream<Uint8Array>): AsyncGenerator<Uint8Array> {
+  const reader = body.getReader();
+  try {
+    while (true) {
+      const item = await reader.read();
+      if (item.done) return;
+      yield item.value;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+/** Delete a bounded page of old unbound blobs, leaving failures available for retry. */
+export async function sweepExpiredAttachments(
+  pool: Pool,
+  blobStore: BlobStore,
+  { batchSize = 50, olderThan = new Date(Date.now() - 60 * 60_000) } = {}
+): Promise<{ deleted: number; failed: number }> {
+  if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 100)
+    throw new Error('Invalid attachment sweep batch size');
+  const candidates = await pool.query<{ id: string }>(
+    'SELECT id FROM attachments WHERE entry_id IS NULL AND uploaded_at<$1 ORDER BY uploaded_at,id LIMIT $2',
+    [olderThan, batchSize]
+  );
+  let deleted = 0;
+  let failed = 0;
+  for (const candidate of candidates.rows) {
+    try {
+      await transaction(pool, async (client) => {
+        const result = await client.query<{ blob_key: string }>(
+          'SELECT blob_key FROM attachments WHERE id=$1 AND entry_id IS NULL AND uploaded_at<$2 FOR UPDATE',
+          [candidate.id, olderThan]
+        );
+        if (!result.rows[0]) return;
+        await blobStore.delete(result.rows[0].blob_key);
+        await client.query('DELETE FROM attachments WHERE id=$1 AND entry_id IS NULL', [
+          candidate.id,
+        ]);
+        deleted++;
+      });
+    } catch (error) {
+      failed++;
+      console.error('Community attachment cleanup failed', {
+        attachmentId: candidate.id,
+        error: error instanceof Error ? error.name : 'unknown',
+      });
+    }
+  }
+  return { deleted, failed };
+}
+
+/** Register streamed upload and live-authorized file download. */
+export function registerAttachmentRoutes(
+  app: Hono,
+  {
+    pool,
+    auth,
+    config,
+    blobStore,
+  }: { pool: Pool; auth: CommunityAuth; config: CommunityConfig; blobStore: BlobStore }
+) {
+  app.post('/api/v1/channels/:id/attachments', async (c) => {
+    const principal = await requirePrincipal(c, auth, pool, 'post');
+    const openedSession = principal.credentialHash
+      ? null
+      : await auth.api.getSession({ headers: c.req.raw.headers });
+    if (!principal.credentialHash && !openedSession)
+      throw new ApiError(401, 'UNAUTHENTICATED', 'Sign in to continue.');
+    const metadata = uploadHeaders(c);
+    if (metadata.byteSize > config.limits.attachmentBytes)
+      throw new ApiError(413, 'ATTACHMENT_TOO_LARGE', 'The file is too large.');
+    const declaredLength = c.req.header('content-length');
+    if (declaredLength && Number(declaredLength) !== metadata.byteSize)
+      throw new ApiError(400, 'STATE_CONFLICT', 'The declared file size does not match.');
+    if (!c.req.raw.body) throw new ApiError(400, 'STATE_CONFLICT', 'File bytes are required.');
+    await transaction(pool, async (client) => {
+      const channel = await lockChannel(client, c.req.param('id'), principal);
+      requireJoined(channel);
+      if (channel.archived) throw new ApiError(409, 'STATE_CONFLICT', 'This channel is archived.');
+      await lockPrincipalAuthority(client, principal);
+    });
+    let stored;
+    try {
+      stored = await blobStore.put({
+        source: requestBytes(c.req.raw.body),
+        displayName: metadata.name,
+        maxBytes: config.limits.attachmentBytes,
+        signal: c.req.raw.signal,
+      });
+    } catch (error) {
+      mapBlobError(error);
+    }
+    if (stored.byteSize !== metadata.byteSize) {
+      await deleteUnreferencedBlob(pool, blobStore, stored.key);
+      throw new ApiError(400, 'STATE_CONFLICT', 'The file size does not match its bytes.');
+    }
+    const requestHash = createHash('sha256')
+      .update(
+        JSON.stringify([metadata.name, metadata.contentType, metadata.byteSize, stored.sha256])
+      )
+      .digest('hex');
+    try {
+      const result = await transaction(pool, async (client) => {
+        const channel = await lockChannel(client, c.req.param('id'), principal);
+        requireJoined(channel);
+        if (channel.archived)
+          throw new ApiError(409, 'STATE_CONFLICT', 'This channel is archived.');
+        await lockPrincipalAuthority(client, principal);
+        await assertPrincipalCurrentInTransaction(
+          client,
+          principal,
+          'post',
+          openedSession?.session.id
+        );
+        const field = principal.kind === 'agent' ? 'uploader_agent_id' : 'uploader_member_id';
+        const prior = await client.query<AttachmentRow>(
+          `SELECT * FROM attachments WHERE ${field}=$1 AND channel_id=$2 AND idempotency_key=$3`,
+          [principal.id, channel.id, metadata.idempotencyKey]
+        );
+        if (prior.rows[0]) {
+          if (prior.rows[0].request_hash !== requestHash)
+            throw new ApiError(409, 'IDEMPOTENCY_CONFLICT', 'This key was used for another file.');
+          return { attachment: attachmentProjection(prior.rows[0]), repeated: true };
+        }
+        const window = new Date();
+        window.setUTCHours(0, 0, 0, 0);
+        const quota = await client.query<{ upload_bytes: string }>(
+          `INSERT INTO owner_quota_windows(owner_member_id,window_start,upload_bytes) VALUES($1,$2,$3)
+           ON CONFLICT(owner_member_id,window_start) DO UPDATE SET upload_bytes=owner_quota_windows.upload_bytes+EXCLUDED.upload_bytes
+           WHERE owner_quota_windows.upload_bytes+EXCLUDED.upload_bytes<=$4 RETURNING upload_bytes`,
+          [principal.ownerMemberId, window, stored.byteSize, config.limits.uploadBytesPerDay]
+        );
+        if (!quota.rowCount) throw new ApiError(429, 'RATE_LIMITED', 'Daily upload limit reached.');
+        const inserted = await client.query<AttachmentRow>(
+          `INSERT INTO attachments(channel_id,uploader_member_id,uploader_agent_id,blob_key,display_name,content_type,byte_size,checksum,idempotency_key,request_hash)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+          [
+            channel.id,
+            principal.kind === 'human' ? principal.id : null,
+            principal.kind === 'agent' ? principal.id : null,
+            stored.key,
+            stored.displayName,
+            stored.contentType,
+            stored.byteSize,
+            stored.sha256,
+            metadata.idempotencyKey,
+            requestHash,
+          ]
+        );
+        return { attachment: attachmentProjection(inserted.rows[0]), repeated: false };
+      });
+      if (result.repeated) await deleteUnreferencedBlob(pool, blobStore, stored.key);
+      return json(
+        c,
+        CommunityWireAttachmentUploadResponseSchema,
+        { attachment: result.attachment },
+        result.repeated ? 200 : 201
+      );
+    } catch (error) {
+      await deleteUnreferencedBlob(pool, blobStore, stored.key).catch((cleanupError: unknown) => {
+        console.error(
+          'Community blob cleanup could not be queued',
+          cleanupError instanceof Error ? cleanupError.name : 'unknown'
+        );
+      });
+      throw error;
+    }
+  });
+
+  app.get('/api/v1/attachments/:id', async (c) => {
+    const principal = await requirePrincipal(c, auth, pool, 'read');
+    const row = await pool.query<AttachmentRow>(
+      'SELECT * FROM attachments WHERE id=$1 AND entry_id IS NOT NULL',
+      [c.req.param('id')]
+    );
+    const attachment = row.rows[0];
+    if (!attachment) throw new ApiError(404, 'NOT_FOUND', 'File not found.');
+    const authorize = async () => {
+      const current = await requirePrincipal(c, auth, pool, 'read', false);
+      if (current.kind !== principal.kind || current.id !== principal.id)
+        throw new ApiError(403, 'FORBIDDEN', 'File access has ended.');
+      const client = await pool.connect();
+      try {
+        const channel = await lockChannel(client, attachment.channel_id, current);
+        requireJoined(channel);
+        await lockPrincipalAuthority(client, current, 'read');
+      } finally {
+        client.release();
+      }
+    };
+    await authorize();
+    let blob;
+    try {
+      blob = await blobStore.get(attachment.blob_key, { signal: c.req.raw.signal });
+    } catch (error) {
+      mapBlobError(error);
+    }
+    const iterator = blob.body[Symbol.asyncIterator]();
+    const body = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        try {
+          await authorize();
+          const next = await iterator.next();
+          await authorize();
+          if (next.done) controller.close();
+          else controller.enqueue(next.value);
+        } catch (error) {
+          blob.body.destroy();
+          controller.error(error);
+        }
+      },
+      async cancel() {
+        blob.body.destroy();
+        await iterator.return?.();
+      },
+    });
+    return new Response(body, {
+      headers: {
+        ...downloadHeaders({
+          displayName: attachment.display_name,
+          contentType: attachment.content_type,
+        }),
+        'content-length': String(blob.byteSize),
+        'cache-control': 'private, no-store',
+      },
+    });
+  });
+}

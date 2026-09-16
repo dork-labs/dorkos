@@ -139,7 +139,9 @@ test.describe('Community pairing approval @smoke', () => {
     expect(statusBody).not.toMatch(/"(?:code|token)"\s*:/);
     await expect(page.getByRole('heading', { name: 'Connect a local install' })).toBeVisible();
     await expect(page.getByText('Kai’s laptop')).toBeVisible();
-    await expect(page.getByText(/read channels, post messages, add your agents/)).toBeVisible();
+    await expect(page.getByText('Read channels')).toBeVisible();
+    await expect(page.getByText('Post messages')).toBeVisible();
+    await expect(page.getByText('Add your agents')).toBeVisible();
     const approveResponse = page.waitForResponse((response) =>
       response.url().endsWith('/api/v1/pairings/approve')
     );

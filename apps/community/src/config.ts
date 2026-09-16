@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isAbsolute } from 'node:path';
 
 const integer = (name: string, fallback: number, ceiling: number) =>
   z.coerce.number().int().min(1, `${name} must be positive`).max(ceiling).default(fallback);
@@ -24,7 +25,13 @@ const schema = z.object({
   ),
   COMMUNITY_BOOTSTRAP_SECRET: z.string().min(32),
   COMMUNITY_PUBLIC_URL: z.url(),
-  COMMUNITY_STORAGE_PATH: z.string().min(1),
+  COMMUNITY_STORAGE_DRIVER: z.enum(['filesystem', 's3']).default('filesystem'),
+  COMMUNITY_STORAGE_PATH: z.string().min(1).optional(),
+  COMMUNITY_S3_BUCKET: z.string().min(3).max(63).optional(),
+  COMMUNITY_S3_REGION: z.string().min(1).optional(),
+  COMMUNITY_S3_ENDPOINT: z.url().optional(),
+  COMMUNITY_S3_ACCESS_KEY_ID: z.string().min(1).optional(),
+  COMMUNITY_S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
   COMMUNITY_PORT: integer('COMMUNITY_PORT', 6481, 65535),
   COMMUNITY_POSTS_PER_TEN_MINUTES: integer('COMMUNITY_POSTS_PER_TEN_MINUTES', 120, 1000),
   COMMUNITY_AGENTS_PER_OWNER: integer('COMMUNITY_AGENTS_PER_OWNER', 20, 100),
@@ -88,9 +95,61 @@ export function parseConfig(env: Record<string, unknown>) {
     }
   }
   const publicUrl = new URL(value.COMMUNITY_PUBLIC_URL);
-  if (publicUrl.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(publicUrl.hostname)) {
-    throw new Error('COMMUNITY_PUBLIC_URL must use HTTPS outside localhost');
+  if (
+    publicUrl.protocol !== 'https:' &&
+    !(publicUrl.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(publicUrl.hostname))
+  ) {
+    throw new Error('COMMUNITY_PUBLIC_URL must use HTTPS, or HTTP on localhost');
   }
+  if (
+    publicUrl.username ||
+    publicUrl.password ||
+    publicUrl.pathname !== '/' ||
+    publicUrl.search ||
+    publicUrl.hash
+  ) {
+    throw new Error(
+      'COMMUNITY_PUBLIC_URL must be a bare origin without credentials, path, query or fragment'
+    );
+  }
+  const storage = (() => {
+    if (value.COMMUNITY_STORAGE_DRIVER === 'filesystem') {
+      if (!value.COMMUNITY_STORAGE_PATH || !isAbsolute(value.COMMUNITY_STORAGE_PATH)) {
+        throw new Error('COMMUNITY_STORAGE_PATH must be an absolute path for filesystem storage');
+      }
+      return { kind: 'filesystem' as const, directory: value.COMMUNITY_STORAGE_PATH };
+    }
+    if (!value.COMMUNITY_S3_BUCKET || !value.COMMUNITY_S3_REGION) {
+      throw new Error('COMMUNITY_S3_BUCKET and COMMUNITY_S3_REGION are required for S3 storage');
+    }
+    if (
+      Boolean(value.COMMUNITY_S3_ACCESS_KEY_ID) !== Boolean(value.COMMUNITY_S3_SECRET_ACCESS_KEY)
+    ) {
+      throw new Error(
+        'COMMUNITY_S3_ACCESS_KEY_ID and COMMUNITY_S3_SECRET_ACCESS_KEY must be set together'
+      );
+    }
+    if (value.COMMUNITY_S3_ENDPOINT) {
+      const endpoint = new URL(value.COMMUNITY_S3_ENDPOINT);
+      if (
+        endpoint.protocol !== 'https:' &&
+        !(endpoint.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(endpoint.hostname))
+      ) {
+        throw new Error('COMMUNITY_S3_ENDPOINT must use HTTPS, or HTTP on localhost');
+      }
+      if (endpoint.username || endpoint.password) {
+        throw new Error('COMMUNITY_S3_ENDPOINT must not contain credentials');
+      }
+    }
+    return {
+      kind: 's3' as const,
+      bucket: value.COMMUNITY_S3_BUCKET,
+      region: value.COMMUNITY_S3_REGION,
+      endpoint: value.COMMUNITY_S3_ENDPOINT,
+      accessKeyId: value.COMMUNITY_S3_ACCESS_KEY_ID,
+      secretAccessKey: value.COMMUNITY_S3_SECRET_ACCESS_KEY,
+    };
+  })();
   return {
     databaseUrl: value.COMMUNITY_DATABASE_URL,
     authSecret: value.COMMUNITY_AUTH_SECRET,
@@ -100,7 +159,7 @@ export function parseConfig(env: Record<string, unknown>) {
     invitePreviousSecret: value.COMMUNITY_INVITE_PREVIOUS_SECRET,
     bootstrapSecret: value.COMMUNITY_BOOTSTRAP_SECRET,
     publicUrl: publicUrl.origin,
-    storagePath: value.COMMUNITY_STORAGE_PATH,
+    storage,
     port: value.COMMUNITY_PORT,
     oauth: {
       google:

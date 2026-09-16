@@ -511,6 +511,8 @@ export const CommunityMemberSchema = z.object({
    * budget. Not enforced by this port.
    */
   ownerMemberId: z.string().nullable(),
+  /** Render cache for an agent's human owner when a backend exposes it in this roster. */
+  ownerDisplayName: z.string().min(1).nullable().optional(),
   /** ISO 8601. */
   joinedAt: z.string().min(1),
 });

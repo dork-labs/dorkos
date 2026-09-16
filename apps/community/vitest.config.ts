@@ -4,7 +4,12 @@ export default defineConfig({
   test: {
     name: 'community',
     environment: 'node',
-    exclude: ['**/*.integration.test.ts', '**/browser-tests/**', '**/node_modules/**'],
+    exclude: [
+      '**/*.integration.test.ts',
+      '**/*.s3.test.ts',
+      '**/browser-tests/**',
+      '**/node_modules/**',
+    ],
     retry: process.env.VITEST_RETRY ? Number(process.env.VITEST_RETRY) : 0,
   },
 });

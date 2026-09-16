@@ -183,13 +183,14 @@ export function registerChannelRoutes(
       handle: string;
       role: Member['role'] | null;
       owner_member_id: string | null;
+      owner_display_name: string | null;
       kind: 'human' | 'agent';
       joined_at: Date;
     }>(
-      `SELECT m.id,m.display_name,m.handle,m.role,NULL::uuid AS owner_member_id,'human' AS kind,cm.joined_at
+      `SELECT m.id,m.display_name,m.handle,m.role,NULL::uuid AS owner_member_id,NULL::text AS owner_display_name,'human' AS kind,cm.joined_at
        FROM channel_members cm JOIN members m ON m.id=cm.member_id
        WHERE cm.channel_id=$1 AND m.active
-       UNION ALL SELECT a.id,a.display_name,a.handle,NULL::text AS role,a.owner_member_id,'agent' AS kind,acm.joined_at
+       UNION ALL SELECT a.id,a.display_name,a.handle,NULL::text AS role,a.owner_member_id,owner.display_name AS owner_display_name,'agent' AS kind,acm.joined_at
        FROM agent_channel_members acm JOIN agents a ON a.id=acm.agent_id
        JOIN members owner ON owner.id=a.owner_member_id
        WHERE acm.channel_id=$1 AND a.active AND owner.active
@@ -205,6 +206,7 @@ export function registerChannelRoutes(
         handle: row.handle,
         role: row.role,
         ownerMemberId: row.owner_member_id,
+        ownerDisplayName: row.owner_display_name,
         joinedAt: row.joined_at.toISOString(),
       })),
     });
