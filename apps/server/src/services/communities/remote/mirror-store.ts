@@ -15,6 +15,7 @@ import {
   communityRoomMirrors,
   eq,
   gt,
+  isNull,
   roomEntries,
   roomMembers,
   rooms,
@@ -59,7 +60,15 @@ export interface NativeMirrorEntry {
   /** The authoritative sequence emitted by the native community wire. */
   remoteSeq: number;
   /** The raw remote author id and display label; it is always external locally. */
-  author: { memberId: string; displayName: string };
+  author: { memberId: string; displayName: string; kind: 'human' | 'agent' | 'system' };
+}
+
+/** One owner-authorized cached entry with its native provenance metadata. */
+export interface CachedRemoteEntry {
+  entry: CommunityEntry;
+  remoteSeq: number;
+  /** Null only for rows cached before native author metadata was retained. */
+  author: { memberId: string; displayName: string; kind: 'human' | 'agent' | 'system' } | null;
 }
 
 /** One local mirror lookup, used by RoomVisibility before owner-wide access. */
@@ -173,6 +182,36 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
   }
 
   /**
+   * Atomically claim the one eligible local dispatch for an already imported
+   * remote entry.
+   *
+   * A restart must not make a gap-free reconnect execute an entry twice. This
+   * is intentionally a dispatch receipt rather than an outbox or delivery
+   * state: the bridge owns only inbound eligibility, while outbound delivery
+   * remains the later writer/outbox concern.
+   */
+  claimRemoteDispatch(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    remoteEntryId: string,
+    claimedAt: string
+  ): boolean {
+    const result = this.db
+      .update(communityMirrorEntries)
+      .set({ dispatchClaimedAt: claimedAt })
+      .where(
+        and(
+          eq(communityMirrorEntries.communityRef, communityRef),
+          eq(communityMirrorEntries.remoteRoomId, remoteRoomId),
+          eq(communityMirrorEntries.remoteEntryId, remoteEntryId),
+          isNull(communityMirrorEntries.dispatchClaimedAt)
+        )
+      )
+      .run();
+    return result.changes === 1;
+  }
+
+  /**
    * Read one authorized cached entry in its original opaque adapter shape.
    *
    * This projection exists for restart and offline repair paths. It returns no
@@ -200,6 +239,40 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
       )
       .get();
     return row?.entryJson ? CommunityEntrySchema.parse(JSON.parse(row.entryJson)) : null;
+  }
+
+  /**
+   * Read one cached entry together with native author metadata.
+   *
+   * The remote route can render this provenance, but it must never turn the
+   * author into a local principal or infer authority from its display label.
+   */
+  cachedEntryWithAuthorForOwner(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    remoteEntryId: string,
+    ownerAuthorId: string
+  ): CachedRemoteEntry | null {
+    const mirror = this.findRoom(communityRef, remoteRoomId);
+    if (!mirror || mirror.ownerAuthorId !== ownerAuthorId || mirror.state === 'revoked')
+      return null;
+    const row = this.db
+      .select({
+        entryJson: communityMirrorEntries.entryJson,
+        remoteSeq: communityMirrorEntries.remoteSeq,
+        authorDisplayName: communityMirrorEntries.authorDisplayName,
+        authorKind: communityMirrorEntries.authorKind,
+      })
+      .from(communityMirrorEntries)
+      .where(
+        and(
+          eq(communityMirrorEntries.communityRef, communityRef),
+          eq(communityMirrorEntries.remoteRoomId, remoteRoomId),
+          eq(communityMirrorEntries.remoteEntryId, remoteEntryId)
+        )
+      )
+      .get();
+    return row ? toCachedEntry(row) : null;
   }
 
   /**
@@ -464,7 +537,7 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
             authorId: external.id,
             kind: 'post',
             body: JSON.stringify({ text: item.entry.text }),
-            mentions: '[]',
+            mentions: JSON.stringify(item.entry.mentions),
             mentionSpans: '[]',
             sessionId: null,
             cascadeRoot: localEntryId,
@@ -485,6 +558,8 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
             localEntryId,
             remoteSeq: item.remoteSeq,
             entryJson: JSON.stringify(CommunityEntrySchema.parse(item.entry)),
+            authorDisplayName: item.author.displayName,
+            authorKind: item.author.kind,
           })
           .run();
         this.repairRelations(tx, communityRef, remoteRoomId, localRoomId);
@@ -579,4 +654,28 @@ function dedupeAccessors(
   values.set(ownerAuthorId, { authorId: ownerAuthorId, responseMode: 'silent' });
   for (const accessor of accessors) values.set(accessor.authorId, accessor);
   return [...values.values()];
+}
+
+/** Rehydrate optional native provenance without inferring anything from a label. */
+function toCachedEntry(row: {
+  entryJson: string | null;
+  remoteSeq: number;
+  authorDisplayName: string | null;
+  authorKind: string | null;
+}): CachedRemoteEntry | null {
+  if (!row.entryJson) return null;
+  const entry = CommunityEntrySchema.parse(JSON.parse(row.entryJson));
+  const author = isNativeAuthorKind(row.authorKind)
+    ? {
+        memberId: entry.authorId,
+        displayName: row.authorDisplayName ?? entry.authorId,
+        kind: row.authorKind,
+      }
+    : null;
+  return { entry, remoteSeq: row.remoteSeq, author };
+}
+
+/** The three native member kinds the remote server vouches for on its wire. */
+function isNativeAuthorKind(value: string | null): value is 'human' | 'agent' | 'system' {
+  return value === 'human' || value === 'agent' || value === 'system';
 }

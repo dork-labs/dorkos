@@ -49,6 +49,7 @@ import type { RoomMergeService } from './repo/room-merge-service.js';
 import type { RoomAgentLookup } from './room-errors.js';
 import { resolveRoomLimits, type RoomLimitsResolver } from './limits/room-limits.js';
 import { RoomService } from './room-service.js';
+import type { RoomMirrorAccess } from './service/room-service-deps.js';
 import { RoomStore } from './room-store.js';
 import { RoomBroadcaster } from './room-stream.js';
 import type { RoomTurnRunner } from './room-trigger.js';
@@ -412,6 +413,8 @@ function safeJson(raw: string): unknown {
  *   transport, not as a second source of truth.
  * @param opts.canvasNow - The clock the canvas judges an edit lock against, so a
  *   test can move past its 45-second TTL without waiting.
+ * @param opts.mirrorAccess - Persisted remote-mirror authorization. This is
+ *   consulted before local owner-wide room visibility.
  */
 export function createRoomSubsystem(opts: {
   db: Db;
@@ -420,6 +423,7 @@ export function createRoomSubsystem(opts: {
   budget?: RoomTurnBudget;
   readCursors?: ReadCursorService;
   canvasNow?: () => number;
+  mirrorAccess?: RoomMirrorAccess;
   /**
    * Whether this subsystem sits on a database it may not write (DOR-1563).
    *
@@ -478,6 +482,7 @@ export function createRoomSubsystem(opts: {
   const readCursors = opts.readCursors ?? new ReadCursorService(new ReadCursorStore(opts.db));
   const service = new RoomService({
     store,
+    ...(opts.mirrorAccess ? { mirrorAccess: opts.mirrorAccess } : {}),
     reactions,
     canvasDocuments,
     canvas,

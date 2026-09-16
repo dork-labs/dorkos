@@ -715,6 +715,20 @@
       "when": 1789577940916,
       "tag": "0101_goofy_ken_ellis",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "6",
+      "when": 1789579415204,
+      "tag": "0102_panoramic_randall",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "6",
+      "when": 1789579579881,
+      "tag": "0103_demonic_lizard",
+      "breakpoints": true
     }
   ]
 }

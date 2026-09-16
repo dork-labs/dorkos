@@ -15,10 +15,14 @@ import { authorOrigin } from '../../../rooms/author-registry.js';
 import {
   agentLookupFor,
   createRoomHarness,
+  gatedRunner,
+  settleUntil,
   type RoomHarness,
+  type ScriptedTurnRunner,
 } from '../../../rooms/__tests__/room-test-harness.js';
 import { RemoteMirrorStore, type NativeMirrorEntry } from '../mirror-store.js';
 import { CommunityAgentEnrollmentStore } from '../agent-enrollment-store.js';
+import { RemoteRoomSubscriptionBridge } from '../remote-room-subscription-bridge.js';
 
 const REF_A = 'remote_a' as CommunityRef;
 const REF_B = 'remote_b' as CommunityRef;
@@ -40,11 +44,14 @@ function nativeEntry(ref: CommunityRef, roomId: string, seq: number): NativeMirr
   return {
     entry,
     remoteSeq: seq,
-    author: { memberId: 'remote-human', displayName: 'Remote human' },
+    author: { memberId: 'remote-human', displayName: 'Remote human', kind: 'human' },
   };
 }
 
-function wired(agents = agentLookupFor({})): {
+function wired(
+  agents = agentLookupFor({}),
+  opts: { runner?: ScriptedTurnRunner } = {}
+): {
   harness: RoomHarness;
   mirrors: RemoteMirrorStore;
 } {
@@ -53,7 +60,7 @@ function wired(agents = agentLookupFor({})): {
     canRead: (roomId: string, authorId: string) => state.mirrors?.canRead(roomId, authorId) ?? null,
     hasMirrors: () => state.mirrors?.hasMirrors() ?? false,
   };
-  const harness = createRoomHarness({ agents, mirrorAccess: access });
+  const harness = createRoomHarness({ agents, mirrorAccess: access, ...opts });
   const mirrors = new RemoteMirrorStore(harness.db, harness.store, harness.authors);
   state.mirrors = mirrors;
   return { harness, mirrors };
@@ -97,6 +104,217 @@ describe('RemoteMirrorStore', () => {
     enrollments.revoke(REF_A, 'agent-local-1', harness.human);
     expect(enrollments.findLocalAgent(REF_A, 'agent-remote-1', harness.human)).toBeNull();
     expect(enrollments.findRemoteMember(REF_A, 'agent-local-1', harness.human)).toBeNull();
+  });
+
+  it('retains native author metadata beside the opaque cached entry', () => {
+    const { harness, mirrors } = wired();
+    mirrors.ensureRoom(roomInput(REF_A, 'general', harness.human));
+    const entry = nativeEntry(REF_A, 'general', 1);
+    entry.author = { memberId: 'remote-agent', displayName: 'Release bot', kind: 'agent' };
+    entry.entry = { ...entry.entry, authorId: 'remote-agent' };
+    mirrors.importEntries(REF_A, 'general', [entry]);
+
+    expect(
+      mirrors.cachedEntryWithAuthorForOwner(REF_A, 'general', entry.entry.id, harness.human)
+    ).toMatchObject({
+      entry: { cursor: 'cursor-1', authorId: 'remote-agent' },
+      remoteSeq: 1,
+      author: { memberId: 'remote-agent', displayName: 'Release bot', kind: 'agent' },
+    });
+  });
+
+  it('dispatches only fresh external-human mentions through the existing RoomService', async () => {
+    const agents = agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } });
+    const { harness, mirrors } = wired(agents);
+    const agent = harness.authors.resolveAgent('/agents/ana', 'Ana');
+    const room = {
+      ...roomInput(REF_A, 'general', harness.human),
+      accessors: [{ authorId: agent.id, responseMode: 'always' as const }],
+    };
+    const enrollments = new CommunityAgentEnrollmentStore(harness.db);
+    enrollments.activate({
+      communityRef: REF_A,
+      localAgentId: 'local-ana',
+      remoteMemberId: 'remote-ana',
+      ownerAuthorId: harness.human,
+    });
+    const bridge = new RemoteRoomSubscriptionBridge(
+      mirrors,
+      harness.service,
+      enrollments,
+      (localAgentId) => (localAgentId === 'local-ana' ? agent.id : null),
+      () => Date.parse('2026-09-16T01:00:00.000Z')
+    );
+    const live = nativeEntry(REF_A, 'general', 1);
+    live.entry = { ...live.entry, mentions: ['remote-ana'] };
+
+    bridge.importLive(
+      room,
+      {
+        ...live,
+        author: { ...live.author, kind: 'human' },
+        serverCreatedAt: '2026-09-16T01:00:00.000Z',
+      },
+      { reconnect: false, wasActiveBeforeDisconnect: false, readOnly: false }
+    );
+    await harness.service.triggersIdle();
+    expect(harness.runner.turns).toHaveLength(1);
+    const imported = harness.store.listEntriesAfter(mirrors.ensureRoom(room).id, 0)[0];
+    const importedOrigin = authorOrigin(harness.authors.getById(imported!.authorId)!.naturalKey);
+    expect(importedOrigin).not.toBe('local');
+
+    // Snapshot and reconnect replay are cache-only even where a remote human
+    // mentions an enrolled agent. A remote agent is never a local runtime.
+    await bridge.consume(
+      room,
+      (async function* () {
+        for (const frame of [
+          {
+            type: 'snapshot' as const,
+            entries: [
+              {
+                ...nativeEntry(REF_A, 'general', 2),
+                entry: { ...nativeEntry(REF_A, 'general', 2).entry, mentions: ['remote-ana'] },
+                author: { memberId: 'remote-human', displayName: 'Remote', kind: 'human' as const },
+                serverCreatedAt: '2026-09-16T01:00:00.000Z',
+              },
+            ],
+          },
+          {
+            type: 'replay' as const,
+            entries: [
+              {
+                ...nativeEntry(REF_A, 'general', 3),
+                entry: { ...nativeEntry(REF_A, 'general', 3).entry, mentions: ['remote-ana'] },
+                author: { memberId: 'remote-human', displayName: 'Remote', kind: 'human' as const },
+                serverCreatedAt: '2026-09-16T01:00:00.000Z',
+              },
+            ],
+          },
+          {
+            type: 'live' as const,
+            entry: {
+              ...nativeEntry(REF_A, 'general', 4),
+              author: {
+                memberId: 'remote-agent',
+                displayName: 'Remote agent',
+                kind: 'agent' as const,
+              },
+              serverCreatedAt: '2026-09-16T01:00:00.000Z',
+            },
+            reconnect: false,
+            wasActiveBeforeDisconnect: false,
+            readOnly: false,
+          },
+        ]) {
+          yield frame;
+        }
+      })()
+    );
+    await harness.service.triggersIdle();
+    expect(harness.runner.turns).toHaveLength(1);
+
+    const recent = nativeEntry(REF_A, 'general', 5);
+    recent.entry = { ...recent.entry, mentions: ['remote-ana'] };
+    bridge.importLive(
+      room,
+      {
+        ...recent,
+        author: { ...recent.author, kind: 'human' },
+        serverCreatedAt: '2026-09-16T00:59:31.000Z',
+      },
+      { reconnect: true, wasActiveBeforeDisconnect: true, readOnly: false }
+    );
+    await harness.service.triggersIdle();
+    expect(harness.runner.turns).toHaveLength(2);
+
+    // The claim is persisted: a new bridge after restart cannot replay a
+    // recently eligible event, while old/revoked/read-only events never claim.
+    const restarted = new RemoteRoomSubscriptionBridge(
+      mirrors,
+      harness.service,
+      enrollments,
+      (localAgentId) => (localAgentId === 'local-ana' ? agent.id : null),
+      () => Date.parse('2026-09-16T01:00:00.000Z')
+    );
+    restarted.importLive(
+      room,
+      {
+        ...recent,
+        author: { ...recent.author, kind: 'human' },
+        serverCreatedAt: '2026-09-16T00:59:31.000Z',
+      },
+      { reconnect: true, wasActiveBeforeDisconnect: true, readOnly: false }
+    );
+    const stale = nativeEntry(REF_A, 'general', 6);
+    stale.entry = { ...stale.entry, mentions: ['remote-ana'] };
+    restarted.importLive(
+      room,
+      {
+        ...stale,
+        author: { ...stale.author, kind: 'human' },
+        serverCreatedAt: '2026-09-16T00:59:29.000Z',
+      },
+      { reconnect: true, wasActiveBeforeDisconnect: true, readOnly: false }
+    );
+    const readOnly = nativeEntry(REF_A, 'general', 7);
+    readOnly.entry = { ...readOnly.entry, mentions: ['remote-ana'] };
+    restarted.importLive(
+      room,
+      {
+        ...readOnly,
+        author: { ...readOnly.author, kind: 'human' },
+        serverCreatedAt: '2026-09-16T01:00:00.000Z',
+      },
+      { reconnect: false, wasActiveBeforeDisconnect: false, readOnly: true }
+    );
+    await harness.service.triggersIdle();
+    expect(harness.runner.turns).toHaveLength(2);
+  });
+
+  it('revokes a local enrollment before stopping its held external turn', async () => {
+    const agents = agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } });
+    const runner = gatedRunner({ interruptedTurnStillAnswers: true });
+    const { harness, mirrors } = wired(agents, { runner });
+    const agent = harness.authors.resolveAgent('/agents/ana', 'Ana');
+    const room = {
+      ...roomInput(REF_A, 'general', harness.human),
+      accessors: [{ authorId: agent.id, responseMode: 'always' as const }],
+    };
+    const enrollments = new CommunityAgentEnrollmentStore(harness.db);
+    enrollments.activate({
+      communityRef: REF_A,
+      localAgentId: 'local-ana',
+      remoteMemberId: 'remote-ana',
+      ownerAuthorId: harness.human,
+    });
+    const bridge = new RemoteRoomSubscriptionBridge(
+      mirrors,
+      harness.service,
+      enrollments,
+      (localAgentId) => (localAgentId === 'local-ana' ? agent.id : null)
+    );
+    const incoming = nativeEntry(REF_A, 'general', 1);
+    incoming.entry = { ...incoming.entry, mentions: ['remote-ana'] };
+    bridge.importLive(
+      room,
+      {
+        ...incoming,
+        author: { ...incoming.author, kind: 'human' },
+        serverCreatedAt: new Date().toISOString(),
+      },
+      { reconnect: false, wasActiveBeforeDisconnect: false, readOnly: false }
+    );
+    await settleUntil(() => runner.holdsFor(agent.id) === 1, 'external turn to be held');
+    const imported = harness.store.listEntriesAfter(mirrors.ensureRoom(room).id, 0)[0];
+    const importedOrigin = authorOrigin(harness.authors.getById(imported!.authorId)!.naturalKey);
+    expect(importedOrigin).not.toBe('local');
+
+    await bridge.revokeEnrollment(REF_A, 'local-ana', harness.human);
+    await harness.service.triggersIdle();
+    expect(enrollments.findRemoteMember(REF_A, 'local-ana', harness.human)).toBeNull();
+    expect(runner.interrupted).toHaveLength(1);
+    expect(harness.service.listHolds()).toHaveLength(0);
   });
 
   it('keeps two community refs with the same remote ids as separate local rooms', () => {

@@ -72,6 +72,17 @@ export const communityMirrorEntries = sqliteTable(
     remoteSeq: integer('remote_seq').notNull(),
     /** The validated opaque adapter entry, retained for restart-safe cache projection. */
     entryJson: text('entry_json'),
+    /** Native author label captured with the immutable remote entry. */
+    authorDisplayName: text('author_display_name'),
+    /** Native author kind captured with the immutable remote entry. */
+    authorKind: text('author_kind'),
+    /**
+     * The one local dispatcher claim for this remote entry. It is distinct from
+     * delivery: claiming says a fresh external-human entry was handed to the
+     * existing room dispatcher, so a reconnect or restart cannot hand it over
+     * again.
+     */
+    dispatchClaimedAt: text('dispatch_claimed_at'),
   },
   (table) => [
     primaryKey({ columns: [table.communityRef, table.remoteRoomId, table.remoteEntryId] }),
