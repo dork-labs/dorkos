@@ -78,7 +78,7 @@ describe('MessagingRegion runtime state', () => {
     renderRegion(transport);
 
     expect(screen.getByLabelText('Loading Messaging')).toBeInTheDocument();
-    expect(screen.queryByText('Messaging is off')).not.toBeInTheDocument();
+    expect(screen.queryByText('Chat app messaging is off')).not.toBeInTheDocument();
   });
 
   it('shows a config failure and retries into the truthful disabled state', async () => {
@@ -90,11 +90,13 @@ describe('MessagingRegion runtime state', () => {
 
     renderRegion(createMockTransport({ getConfig }));
 
-    expect(await screen.findByText('Couldn’t check Messaging')).toBeInTheDocument();
-    expect(screen.queryByText('Messaging is off')).not.toBeInTheDocument();
+    expect(await screen.findByText('Couldn’t check chat apps')).toBeInTheDocument();
+    expect(screen.queryByText('Chat app messaging is off')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Retry' }));
 
-    expect(await screen.findByText('Messaging is off')).toBeInTheDocument();
+    expect(await screen.findByText('Chat app messaging is off')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Communities' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Connect community' })).toBeInTheDocument();
     await waitFor(() => expect(getConfig).toHaveBeenCalledTimes(2));
   });
 
@@ -111,8 +113,8 @@ describe('MessagingRegion runtime state', () => {
       })
     );
 
-    expect(await screen.findByText('Messaging didn’t start')).toBeInTheDocument();
-    expect(screen.queryByText('Messaging is off')).not.toBeInTheDocument();
+    expect(await screen.findByText('Chat app connections didn’t start')).toBeInTheDocument();
+    expect(screen.queryByText('Chat app messaging is off')).not.toBeInTheDocument();
   });
 
   it('renders Messaging only after config confirms it is running', async () => {
@@ -126,6 +128,6 @@ describe('MessagingRegion runtime state', () => {
       'data-enabled',
       'true'
     );
-    expect(screen.queryByText('Messaging is off')).not.toBeInTheDocument();
+    expect(screen.queryByText('Chat app messaging is off')).not.toBeInTheDocument();
   });
 });

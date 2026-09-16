@@ -153,6 +153,7 @@ import type {
   HarnessSyncResponse,
 } from './harness-schemas.js';
 import type { RoomTransport } from './transport-rooms.js';
+import type { CommunityConnectionTransport } from './community-connections.js';
 import type { CanvasEditingResponse, UpdateCanvasDocumentRequest } from './room-schemas.js';
 import type { CanvasDocument } from './canvas-schemas.js';
 import type { ReadCursor, ReadCursorThreadKind } from './read-cursor-schemas.js';
@@ -596,7 +597,7 @@ export interface ClientErrorReport {
   stack?: string;
 }
 
-export interface Transport extends RoomTransport {
+export interface Transport extends RoomTransport, CommunityConnectionTransport {
   /** Optional client identifier for SSE presence tracking. */
   readonly clientId?: string;
   /**

@@ -1096,6 +1096,13 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     listShapes: vi.fn().mockResolvedValue([]),
     applyShape: vi.fn(),
     forkShape: vi.fn(),
+    listCommunityConnections: vi.fn().mockResolvedValue([]),
+    startCommunityConnection: vi.fn(),
+    getCommunityConnection: vi.fn(),
+    pollCommunityConnection: vi.fn(),
+    cancelCommunityConnection: vi.fn().mockResolvedValue(undefined),
+    disconnectCommunity: vi.fn().mockResolvedValue(undefined),
+
     // Cloud account link (accounts-and-auth P2)
     startCloudLink: vi.fn().mockResolvedValue({
       userCode: 'ABCD-1234',

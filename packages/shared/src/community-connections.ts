@@ -44,3 +44,30 @@ export const CommunityConnectionPollResponseSchema = z.strictObject({
   connection: CommunityConnectionDescriptorSchema.nullable(),
   status: z.enum(['pending', 'connected', 'expired', 'cancelled']),
 });
+
+/** Inputs for connecting this install to a community. */
+export type CommunityConnectionStartRequest = z.infer<typeof CommunityConnectionStartRequestSchema>;
+/** Public approval URL and the pending local connection. */
+export type CommunityConnectionStartResponse = z.infer<
+  typeof CommunityConnectionStartResponseSchema
+>;
+/** Public outcome of polling browser approval. */
+export type CommunityConnectionPollResponse = z.infer<typeof CommunityConnectionPollResponseSchema>;
+
+/** Owner-scoped community connection operations over the local server only. */
+export interface CommunityConnectionTransport {
+  /** List this install owner's pending and connected communities. */
+  listCommunityConnections(): Promise<CommunityConnectionDescriptor[]>;
+  /** Begin browser approval without returning the installation's verifier or bearer. */
+  startCommunityConnection(
+    input: CommunityConnectionStartRequest
+  ): Promise<CommunityConnectionStartResponse>;
+  /** Read one owner-scoped local connection. */
+  getCommunityConnection(ref: string): Promise<CommunityConnectionDescriptor>;
+  /** Exchange a completed approval on the local server; return only its public outcome. */
+  pollCommunityConnection(ref: string): Promise<CommunityConnectionPollResponse>;
+  /** Cancel an outstanding approval and erase the pending local proof. */
+  cancelCommunityConnection(ref: string): Promise<void>;
+  /** Disconnect this installation and discard its local credentials and cached content. */
+  disconnectCommunity(ref: string): Promise<void>;
+}
