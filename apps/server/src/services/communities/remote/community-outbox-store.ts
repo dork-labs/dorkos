@@ -270,6 +270,43 @@ export class CommunityOutboxStore {
       .run();
   }
 
+  /**
+   * Requeue one owner-visible lost-receipt delivery without minting a new
+   * idempotency key or extending the original expiry.
+   *
+   * Only `not-confirmed` is repairable: expiry and local Stop are terminal
+   * evidence that retrying would either duplicate old work or bypass authority.
+   */
+  retryNotConfirmed(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    ownerAuthorId: string,
+    idempotencyKey: string,
+    now: string
+  ): 'retried' | 'missing' | 'terminal' | 'expired' {
+    const item = this.db
+      .select()
+      .from(communityOutbox)
+      .where(
+        and(
+          eq(communityOutbox.communityRef, communityRef),
+          eq(communityOutbox.remoteRoomId, remoteRoomId),
+          eq(communityOutbox.ownerAuthorId, ownerAuthorId),
+          eq(communityOutbox.idempotencyKey, idempotencyKey)
+        )
+      )
+      .get();
+    if (!item) return 'missing';
+    if (item.state !== 'failed' || item.failure !== 'not-confirmed') return 'terminal';
+    if (item.expiresAt <= now) return 'expired';
+    this.db
+      .update(communityOutbox)
+      .set({ state: 'pending', failure: null, nextAttemptAt: now })
+      .where(and(eq(communityOutbox.id, item.id), eq(communityOutbox.state, 'failed')))
+      .run();
+    return 'retried';
+  }
+
   private stopWhere(where: ReturnType<typeof and>, failure: string): void {
     this.db
       .update(communityOutbox)
