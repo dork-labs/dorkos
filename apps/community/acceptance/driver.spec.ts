@@ -1416,9 +1416,30 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       // still owns this room and must remain able to read and post through the
       // qualified local Community surface.
       const ownerAfterEjection = `owner-after-ejection-${crypto.randomUUID()}`;
+      const ownerAttachmentName = 'owner-after-ejection.png';
+      const ownerAttachmentBytes = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL2XQAAAABJRU5ErkJggg==',
+        'base64'
+      );
       await expect(localPage.getByRole('feed', { name: 'Community messages' })).toBeVisible();
       const localComposer = localPage.getByPlaceholder('Message general…');
       await expect(localComposer).toBeVisible();
+      const localFileChooser = localPage.waitForEvent('filechooser');
+      await localPage.getByRole('button', { name: 'Attach file', exact: true }).click();
+      await (
+        await localFileChooser
+      ).setFiles({
+        name: ownerAttachmentName,
+        mimeType: 'image/png',
+        buffer: ownerAttachmentBytes,
+      });
+      await expect(localPage.getByText(ownerAttachmentName, { exact: true })).toBeVisible();
+      const ownerAttachmentUpload = localPage.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          new URL(response.url()).pathname ===
+            `/api/communities/${refA}/rooms/${roomA!.roomId}/attachments`
+      );
       const ownerPostResponse = localPage.waitForResponse(
         (response) =>
           response.request().method() === 'POST' &&
@@ -1427,20 +1448,61 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       );
       await localComposer.fill(ownerAfterEjection);
       await localComposer.press('Enter');
-      const ownerPostResult = await ownerPostResponse;
+      const [ownerAttachmentResult, ownerPostResult] = await Promise.all([
+        ownerAttachmentUpload,
+        ownerPostResponse,
+      ]);
+      expect(
+        ownerAttachmentResult.ok(),
+        `owner attachment upload returned ${ownerAttachmentResult.status()}`
+      ).toBe(true);
       expect(
         ownerPostResult.ok(),
         `owner post after agent ejection returned ${ownerPostResult.status()}`
       ).toBe(true);
+      const ownerAttachment = (await ownerAttachmentResult.json()) as {
+        attachment: { id: string; name: string; byteSize: number };
+      };
+      const ownerPost = (await ownerPostResult.json()) as { entry: Entry };
+      expect(ownerAttachment.attachment).toMatchObject({
+        name: ownerAttachmentName,
+        byteSize: ownerAttachmentBytes.length,
+      });
+      expect(ownerPost.entry).toMatchObject({
+        id: expect.any(String),
+        text: ownerAfterEjection,
+        attachments: [
+          expect.objectContaining({ id: ownerAttachment.attachment.id, name: ownerAttachmentName }),
+        ],
+      });
       await expect(localPage.getByText(ownerAfterEjection, { exact: true })).toBeVisible();
-      await eventually(
+      const remoteOwnerPost = await eventually(
         () =>
           pageJson<{ entries: Entry[] }>(
             pageA,
             `/api/v1/channels/${roomA!.roomId}/entries?limit=100`
-          ).then((page) => page.entries.some((entry) => entry.text === ownerAfterEjection)),
-        (posted) => posted,
-        'the human owner could not post after the agent was ejected'
+          ).then((page) => page.entries.find((entry) => entry.id === ownerPost.entry.id)),
+        (entry) => entry !== undefined,
+        'the owner post after agent ejection was not confirmed remotely'
+      );
+      expect(remoteOwnerPost.attachments).toContainEqual(
+        expect.objectContaining({ id: ownerAttachment.attachment.id, name: ownerAttachmentName })
+      );
+      const localOwnerAttachmentResponse = localPage.waitForResponse(
+        (response) =>
+          response.request().method() === 'GET' &&
+          new URL(response.url()).pathname ===
+            `/api/communities/${refA}/rooms/${roomA!.roomId}/attachments/${ownerAttachment.attachment.id}`
+      );
+      const localOwnerAttachmentDownload = localPage.waitForEvent('download');
+      await localPage.getByRole('button', { name: ownerAttachmentName, exact: true }).click();
+      const [ownerAttachmentDownloadResponse, ownerAttachmentDownload] = await Promise.all([
+        localOwnerAttachmentResponse,
+        localOwnerAttachmentDownload,
+      ]);
+      expect(ownerAttachmentDownload.suggestedFilename()).toBe(ownerAttachmentName);
+      expect(Buffer.from(await ownerAttachmentDownloadResponse.body())).toEqual(
+        ownerAttachmentBytes
       );
       expect(await agentEntries()).toHaveLength(heldEjection.beforeEntryCount);
 
