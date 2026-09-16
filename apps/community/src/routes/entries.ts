@@ -14,7 +14,7 @@ import { decodeCursor, encodeCursor } from '../cursor.js';
 import {
   lockChannel,
   lockPrincipalAuthority,
-  assertPrincipalCurrent,
+  assertPrincipalCurrentInTransaction,
   requireJoined,
   requirePrincipal,
   transaction,
@@ -197,13 +197,26 @@ export function registerEntryRoutes(
 
   app.get('/api/v1/channels/:id/entries', async (c) => {
     const principal = await requirePrincipal(c, auth, pool, 'read');
+    // Capture the original cookie session before holding a pool client. Better
+    // Auth needs its own pool connection; only the same-client row check is safe
+    // once the channel transaction begins.
+    const openedSession = principal.credentialHash
+      ? null
+      : await auth.api.getSession({ headers: c.req.raw.headers });
+    if (!principal.credentialHash && !openedSession)
+      throw new ApiError(401, 'UNAUTHENTICATED', 'This session is unavailable.');
     const parsed = CommunityWireEntryPageQuerySchema.parse(
       Object.fromEntries(new URL(c.req.url).searchParams)
     );
     const page = await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), principal);
       requireJoined(channel);
-      await assertPrincipalCurrent(c, auth, pool, principal, 'read');
+      await assertPrincipalCurrentInTransaction(
+        client,
+        principal,
+        'read',
+        openedSession?.session.id
+      );
       const seq = parsed.cursor
         ? decodeCursor(
             parsed.cursor,
