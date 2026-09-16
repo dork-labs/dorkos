@@ -16,6 +16,8 @@ Use a unique random value of at least 32 characters for each secret. Set `COMMUN
 
 To create the owner account, send the bootstrap secret to `POST /api/v1/bootstrap/preflight`. Keep the returned HTTP-only cookie while signing up at `/api/auth/sign-up/email`, then call `POST /api/v1/bootstrap/claim` with the same secret and a community name. The secret cannot claim a second owner. A browser sign-in page will arrive with the full interface; see [the developer guide](../../contributing/community-server.md) for the HTTP flow.
 
+For HTTPS, backups, restoration and upgrades, see [the operations guide](OPERATIONS.md). For a forgotten password, see [account recovery](RECOVERY.md).
+
 ## Develop and test
 
 Install workspace dependencies, then use `pnpm --filter @dorkos/community build` or `pnpm dev:community`. Set the required `COMMUNITY_*` variables for a running server. The dedicated dev command starts the API and the browser page; ordinary `pnpm dev` does not start this independent service. Defaults are ports 6481 (API) and 6482 (browser). Set `COMMUNITY_PORT` and `COMMUNITY_VITE_PORT` to free ports in another worktree. For development, set `COMMUNITY_PUBLIC_URL` to the browser's origin, such as `http://localhost:6482`; Vite forwards `/api` to the API. In a built deployment the browser and API share the same origin. Building, type checking, and unit tests do not need secrets.
