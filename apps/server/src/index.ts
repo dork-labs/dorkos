@@ -1331,12 +1331,6 @@ async function start() {
         attachmentBytes: roomAttachmentBytes,
         adapters: (communityRef, ownerAuthorId) =>
           getRemoteCommunityAdapter(communityRef, ownerAuthorId),
-        confirmNativePostOrigin: (origin) =>
-          remoteCommunityBridge.current?.confirmNativePostOrigin(origin),
-        reserveNativePostOrigin: (origin) =>
-          remoteCommunityBridge.current?.reserveNativePostOrigin(origin),
-        releaseNativePostOrigin: (origin) =>
-          remoteCommunityBridge.current?.releaseNativePostOrigin(origin),
         changes: { changed: publishRemoteCommunityDeliveryChanges },
       });
       return {

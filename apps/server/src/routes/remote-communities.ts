@@ -101,14 +101,15 @@ function remoteEntry(entry: CommunityEntry, ownerAuthorId?: string) {
   const author = remoteAuthorOf(entry);
   if (seq === undefined || !author)
     throw new Error('Native remote entry lost authoritative metadata');
-  const originIdempotencyKey = ownerAuthorId
-    ? (getRemoteCommunityOriginIdempotencyKey(
-        entry.community,
-        entry.roomId,
-        ownerAuthorId,
-        entry.id
-      ) ?? remoteOriginIdempotencyKeyOf(entry))
-    : null;
+  const originIdempotencyKey =
+    ownerAuthorId && author.kind === 'agent'
+      ? (getRemoteCommunityOriginIdempotencyKey(
+          entry.community,
+          entry.roomId,
+          ownerAuthorId,
+          entry.id
+        ) ?? remoteOriginIdempotencyKeyOf(entry))
+      : null;
   return {
     ...entry,
     remoteSeq: seq,
@@ -349,23 +350,7 @@ export function createRemoteCommunitiesRouter(): Router {
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
-    const lifecycle = getRemoteCommunityLifecycle();
     let sawSnapshot = false;
-    const bufferedAgentEntries: CommunityEntry[] = [];
-    const flushBufferedAgentEntries = () => {
-      if (abort.signal.aborted || res.writableEnded) return;
-      for (const entry of bufferedAgentEntries.splice(0))
-        writeEvent(res, { type: 'entry', entry: remoteEntry(entry, owner) });
-    };
-    const removeBarrierListener = lifecycle.onNativePostBarrierRelease((release) => {
-      if (
-        release.communityRef === ref.data &&
-        release.remoteRoomId === req.params.roomId &&
-        release.ownerAuthorId === owner
-      ) {
-        flushBufferedAgentEntries();
-      }
-    });
     const writeDeliveries = () => {
       if (!sawSnapshot || abort.signal.aborted || res.writableEnded) return;
       const deliveries = getRemoteCommunityDeliverySnapshot(ref.data, req.params.roomId, owner);
@@ -397,12 +382,6 @@ export function createRemoteCommunitiesRouter(): Router {
         } else if (event.type === 'entry') {
           const author = remoteAuthorOf(event.entry);
           if (!author) throw new Error('Native remote entry lost authoritative metadata');
-          if (
-            lifecycle.shouldBufferNativeAgentEntry(ref.data, req.params.roomId, owner, author.kind)
-          ) {
-            bufferedAgentEntries.push(event.entry);
-            continue;
-          }
           writeEvent(res, { type: 'entry', entry: remoteEntry(event.entry, owner) });
         } else if (event.type === 'room_closed') {
           writeEvent(res, {
@@ -423,7 +402,6 @@ export function createRemoteCommunitiesRouter(): Router {
           reason: 'unavailable',
         });
     } finally {
-      removeBarrierListener();
       removeDeliveryListener();
       if (!res.writableEnded) res.end();
     }

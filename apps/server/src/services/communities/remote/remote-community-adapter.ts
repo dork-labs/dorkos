@@ -39,6 +39,7 @@ import {
   CommunityWireChannelResponseSchema,
   CommunityWireAgentChannelMembershipResponseSchema,
   CommunityWireAgentListResponseSchema,
+  CommunityWireAttachmentUploadResponseSchema,
   CommunityWireEntryPageSchema,
   CommunityWireEntryPostResponseSchema,
   CommunityWireEventSchema,
@@ -215,7 +216,7 @@ function entry(
     depth: value.parentEntryId ? 1 : 0,
     cursor: value.cursor as CommunityCursor,
     createdAt: value.createdAt,
-    attachments: value.attachments,
+    attachments: value.attachments.map(portableAttachment),
   };
   remoteSequences.set(projected, value.seq);
   remoteAuthorMetadata.set(projected, {
@@ -225,6 +226,23 @@ function entry(
   if (value.originIdempotencyKey)
     remoteOriginIdempotencyKeys.set(projected, value.originIdempotencyKey);
   return projected;
+}
+
+/** Remove Community-wire-only attachment metadata before returning the portable adapter DTO. */
+function portableAttachment(value: {
+  id: string;
+  name: string;
+  contentType: string;
+  byteSize: number;
+  checksum: string;
+}): CommunityAttachment {
+  return {
+    id: value.id,
+    name: value.name,
+    contentType: value.contentType,
+    byteSize: value.byteSize,
+    checksum: value.checksum,
+  };
 }
 
 /** Private native stream events retain the server's replay watermark without widening the generic port. */
@@ -613,25 +631,27 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
       if (size > MAX_REMOTE_ATTACHMENT_BYTES) throw new PinnedOriginError('REMOTE_RESPONSE');
       chunks.push(Buffer.from(chunk));
     }
-    const data = (await pinnedJson(
-      await this.origin(),
-      `/api/v1/channels/${encodeURIComponent(roomId)}/attachments`,
-      undefined,
-      signal,
-      {
-        method: 'POST',
-        authorization: await this.credential({ actingMemberId: input.actingMemberId }),
-        rawBody: Buffer.concat(chunks),
-        contentType: input.contentType,
-        headers: {
-          'x-file-name': encodeURIComponent(input.name),
-          'x-file-size': String(input.byteSize),
-          'idempotency-key': input.idempotencyKey,
-        },
-        maxBytes: 128 * 1024,
-      }
-    )) as { attachment: CommunityAttachment };
-    return data.attachment;
+    const data = CommunityWireAttachmentUploadResponseSchema.parse(
+      await pinnedJson(
+        await this.origin(),
+        `/api/v1/channels/${encodeURIComponent(roomId)}/attachments`,
+        undefined,
+        signal,
+        {
+          method: 'POST',
+          authorization: await this.credential({ actingMemberId: input.actingMemberId }),
+          rawBody: Buffer.concat(chunks),
+          contentType: input.contentType,
+          headers: {
+            'x-file-name': encodeURIComponent(input.name),
+            'x-file-size': String(input.byteSize),
+            'idempotency-key': input.idempotencyKey,
+          },
+          maxBytes: 128 * 1024,
+        }
+      )
+    );
+    return portableAttachment(data.attachment);
   }
 
   async downloadAttachment(

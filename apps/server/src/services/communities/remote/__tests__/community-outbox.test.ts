@@ -232,8 +232,7 @@ describe('community outbox', () => {
         }),
       } as never,
       attachmentStore as never,
-      { recordOrigin: vi.fn() } as never,
-      vi.fn()
+      { recordOrigin: vi.fn() } as never
     );
 
     await expect(
@@ -283,7 +282,7 @@ describe('community outbox', () => {
     ).toBe('terminal');
   });
 
-  it('passes abort to a held remote post, records no receipt, and releases its echo barrier', async () => {
+  it('passes abort to a held remote post and records no receipt', async () => {
     const harness = createRoomHarness({ agents: agentLookupFor({}) });
     const outbox = new CommunityOutboxStore(harness.db);
     const item = outboxItem({ ownerAuthorId: harness.human });
@@ -294,7 +293,6 @@ describe('community outbox', () => {
         )
     );
     const recordOrigin = vi.spyOn(outbox, 'recordOrigin');
-    const release = vi.fn();
     const delivery = new CommunityAdapterOutboxDelivery(
       () => ({ post, uploadAttachment: vi.fn() }),
       { localRoomIdForOwner: () => 'room-1' } as never,
@@ -302,10 +300,7 @@ describe('community outbox', () => {
       { getEntryById: () => ({ kind: 'post', body: { text: 'Output' } }) } as never,
       {} as never,
       {} as never,
-      outbox,
-      vi.fn(),
-      vi.fn(),
-      release
+      outbox
     );
     const controller = new AbortController();
     const pending = delivery.deliver(item, () => true, controller.signal);
@@ -315,12 +310,6 @@ describe('community outbox', () => {
 
     await expect(pending).resolves.toEqual({ kind: 'stopped', reason: 'stopped-or-unauthorized' });
     expect(recordOrigin).not.toHaveBeenCalled();
-    expect(release).toHaveBeenCalledWith({
-      communityRef: item.communityRef,
-      remoteRoomId: item.remoteRoomId,
-      ownerAuthorId: item.ownerAuthorId,
-      idempotencyKey: item.idempotencyKey,
-    });
   });
 
   it('passes abort to a held remote upload and never starts its following post', async () => {
@@ -353,8 +342,7 @@ describe('community outbox', () => {
         }),
       } as never,
       { get: () => ({ size: 1, stream: Readable.from([Buffer.from('x')]) }) } as never,
-      outbox,
-      vi.fn()
+      outbox
     );
     const controller = new AbortController();
     const pending = delivery.deliver(item, () => true, controller.signal);
@@ -524,7 +512,6 @@ describe('community outbox', () => {
       attachmentRows: {} as never,
       attachmentBytes: {} as never,
       adapters: () => ({}) as never,
-      confirmNativePostOrigin: () => undefined,
       now: () => NOW,
     });
     runtime.mirrors.ensureRoom({
