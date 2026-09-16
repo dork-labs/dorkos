@@ -82,6 +82,7 @@ export type {
   PostedEntry,
   RoomEntryIndexer,
   RoomMessageFinder,
+  RoomMirrorAccess,
   RoomSearchScope,
   RoomServiceDeps,
 } from './service/room-service-deps.js';

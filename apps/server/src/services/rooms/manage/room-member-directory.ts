@@ -223,6 +223,7 @@ export class RoomMemberDirectory {
     );
     return this.store
       .listRoomsForMember(viewerAuthorId)
+      .filter((room) => this.visibility.canSee(room.id, viewerAuthorId))
       .slice(0, MEMBER_ROOMS_PAGE_MAX)
       .map((room) => ({
         roomId: room.id,
@@ -294,6 +295,7 @@ export class RoomMemberDirectory {
     );
     return this.store
       .listRoomsForMember(viewerAuthorId)
+      .filter((room) => this.visibility.canSee(room.id, viewerAuthorId))
       .filter((room) => this.matchesName(room, needle))
       .filter((room) => this.holdsEveryHandle(room, wanted))
       .slice(0, FIND_ROOMS_MAX)

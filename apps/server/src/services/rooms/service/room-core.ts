@@ -37,11 +37,18 @@ import { RoomRoster } from '../room-roster.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomBroadcaster } from '../room-stream.js';
 import { RoomTriggerDispatcher, type RoomTriggerWriter } from '../room-trigger.js';
-import type { RoomEntryIndexer, RoomMessageFinder, RoomServiceDeps } from './room-service-deps.js';
+import type {
+  RoomEntryIndexer,
+  RoomMessageFinder,
+  RoomMirrorAccess,
+  RoomServiceDeps,
+} from './room-service-deps.js';
 
 /** Everything a room collaborator may read, resolved once at construction. */
 export interface RoomCore {
   readonly store: RoomStore;
+  /** Persisted authorization for local rows that mirror a remote community. */
+  readonly mirrorAccess?: RoomMirrorAccess;
   /** Reactions on this room's entries — durable state, never a turn. */
   readonly reactions: ReactionStore;
   /** The documents on this room's shared canvas. */
@@ -234,6 +241,7 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
   });
   return {
     store: deps.store,
+    ...(deps.mirrorAccess ? { mirrorAccess: deps.mirrorAccess } : {}),
     reactions: deps.reactions,
     canvasDocuments: deps.canvasDocuments,
     canvas: deps.canvas,
