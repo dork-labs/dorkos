@@ -397,9 +397,18 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         json<{ sessions: Array<{ id: string }> }>(
           `${env.local}/api/sessions?cwd=${encodeURIComponent(agentPath)}`
         ).then((result) => result.sessions);
-      const waitForLocalTurnsToSettle = async (label: string) => {
-        const settled = await eventually(localTurns, (sessions) => sessions.length === 0, label);
-        expect(settled).toHaveLength(0);
+      const waitForTurnToSettle = async (sessionId: string, label: string) => {
+        const settled = await eventually(
+          () =>
+            json<{ lifecycle: string | null; durableEvents: { byType: Record<string, number> } }>(
+              `${env.local}/api/debug/sessions/${encodeURIComponent(sessionId)}`
+            ),
+          (session) =>
+            session.lifecycle === 'idle' && (session.durableEvents.byType.turn_end ?? 0) > 0,
+          label
+        );
+        expect(settled.lifecycle).toBe('idle');
+        expect(settled.durableEvents.byType.turn_end).toBeGreaterThan(0);
       };
       const beforeFreshMention = await eventually(
         localTurns,
@@ -426,6 +435,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         'the fresh addressed Community entry did not run exactly one local agent turn'
       );
       expect(freshTurns).toHaveLength(1);
+      const recoveredTurnSessionId = freshTurns[0]!.id;
       const afterFreshMention = await eventually(
         subscriptionBarrier,
         (result) => result !== null && result.dispatchesSinceBoot === 1,
@@ -458,7 +468,8 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         finishRecoveredTurn.ok(),
         `could not finish recovered deterministic turn: ${await finishRecoveredTurn.text()}`
       ).toBe(true);
-      await waitForLocalTurnsToSettle(
+      await waitForTurnToSettle(
+        recoveredTurnSessionId,
         'the recovered attachment turn did not settle before independent delivery journeys'
       );
 
@@ -744,7 +755,8 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       expect(releasedRemoteEntry.entries.filter((entry) => entry.id === heldEntryId)).toHaveLength(
         1
       );
-      await waitForLocalTurnsToSettle(
+      await waitForTurnToSettle(
+        recoveredTurnSessionId,
         'the released after-persistence attachment turn did not settle before the live Stop journey'
       );
       await localPage.goto(
