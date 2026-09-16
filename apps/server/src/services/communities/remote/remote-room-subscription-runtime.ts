@@ -20,6 +20,7 @@ import type { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js'
 import {
   RemoteRoomSubscriptionBridge,
   type RemoteLiveEntry,
+  type NativePostBarrierListener,
   type RemoteSubscriptionFrame,
 } from './remote-room-subscription-bridge.js';
 import type { MirrorRoomInput } from './mirror-store.js';
@@ -158,6 +159,26 @@ export class RemoteRoomSubscriptionRuntime {
     ownerAuthorId: string
   ): Promise<number> {
     return this.deps.bridge.haltAgent(communityRef, localAgentId, ownerAuthorId);
+  }
+
+  /** Tell the owner SSE whether one bounded agent-post receipt barrier is active. */
+  shouldBufferNativeAgentEntry(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    ownerAuthorId: string,
+    authorKind: 'human' | 'agent'
+  ): boolean {
+    return this.deps.bridge.shouldBufferNativeAgentEntry(
+      communityRef,
+      remoteRoomId,
+      ownerAuthorId,
+      authorKind
+    );
+  }
+
+  /** Release route-local buffered entries after the bounded post barrier settles. */
+  onNativePostBarrierRelease(listener: NativePostBarrierListener): () => void {
+    return this.deps.bridge.onNativePostBarrierRelease(listener);
   }
 
   /** Reconcile immediately after enrollment, ejection, or membership changes. */

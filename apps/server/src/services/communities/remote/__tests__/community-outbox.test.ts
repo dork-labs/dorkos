@@ -4,6 +4,7 @@
  * @module services/communities/remote/__tests__/community-outbox
  */
 import type { RoomMirrorWritePolicy } from '../../../rooms/room-service.js';
+import { Readable } from 'node:stream';
 import { RoomError } from '../../../rooms/room-errors.js';
 import { agentLookupFor, createRoomHarness } from '../../../rooms/__tests__/room-test-harness.js';
 import type { CommunityRef } from '@dorkos/shared/community-adapter';
@@ -148,7 +149,7 @@ describe('community outbox', () => {
     expect(liveProjection.list(harness.human)[0]?.retryable).toBe(false);
     release();
     await running;
-    expect(observedRetryable).toEqual([true]);
+    expect(observedRetryable).toEqual([false, true]);
     const settledProjection = new CommunityOutboxProjection(
       outbox,
       mirrors,
@@ -240,6 +241,129 @@ describe('community outbox', () => {
     ).resolves.toEqual({ kind: 'permanent', reason: 'remote-attachment-too-large' });
     expect(attachmentStore.get).not.toHaveBeenCalled();
     expect(uploadAttachment).not.toHaveBeenCalled();
+  });
+
+  it('aborts only the matching held post and leaves its stopped row unable to retry', async () => {
+    const harness = createRoomHarness({ agents: agentLookupFor({}) });
+    const outbox = new CommunityOutboxStore(harness.db);
+    const item = outboxItem({ ownerAuthorId: harness.human });
+    harness.db.transaction((tx) => outbox.enqueue(item, tx));
+    let observedSignal: AbortSignal | undefined;
+    const worker = new CommunityOutboxWorker(
+      outbox,
+      { canDeliver: () => true },
+      {
+        deliver: async (_item, _stillAuthorized, signal) => {
+          observedSignal = signal;
+          await new Promise<void>((resolve) =>
+            signal?.addEventListener('abort', () => resolve(), { once: true })
+          );
+          return { kind: 'stopped', reason: 'stopped-or-unauthorized' };
+        },
+      },
+      () => NOW
+    );
+
+    const running = worker.runOnce();
+    await vi.waitFor(() => expect(observedSignal).toBeDefined());
+    worker.abortForRoom(REF, 'other-room', harness.human);
+    expect(observedSignal?.aborted).toBe(false);
+    worker.abortForRoom(REF, item.remoteRoomId, harness.human);
+    await running;
+
+    expect(observedSignal?.aborted).toBe(true);
+    expect(outbox.isPending(item.id)).toBe(false);
+    expect(
+      worker.retryNow({
+        communityRef: REF,
+        remoteRoomId: item.remoteRoomId,
+        ownerAuthorId: harness.human,
+        idempotencyKey: item.idempotencyKey,
+      })
+    ).toBe('terminal');
+  });
+
+  it('passes abort to a held remote post, records no receipt, and releases its echo barrier', async () => {
+    const harness = createRoomHarness({ agents: agentLookupFor({}) });
+    const outbox = new CommunityOutboxStore(harness.db);
+    const item = outboxItem({ ownerAuthorId: harness.human });
+    const post = vi.fn(
+      (_roomId: string, _input: unknown, signal?: AbortSignal) =>
+        new Promise<never>((_resolve, reject) =>
+          signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+        )
+    );
+    const recordOrigin = vi.spyOn(outbox, 'recordOrigin');
+    const release = vi.fn();
+    const delivery = new CommunityAdapterOutboxDelivery(
+      () => ({ post, uploadAttachment: vi.fn() }),
+      { localRoomIdForOwner: () => 'room-1' } as never,
+      { findRemoteMember: () => ({ remoteMemberId: 'remote-agent-a' }) } as never,
+      { getEntryById: () => ({ kind: 'post', body: { text: 'Output' } }) } as never,
+      {} as never,
+      {} as never,
+      outbox,
+      vi.fn(),
+      vi.fn(),
+      release
+    );
+    const controller = new AbortController();
+    const pending = delivery.deliver(item, () => true, controller.signal);
+    await vi.waitFor(() => expect(post).toHaveBeenCalledOnce());
+    expect(post.mock.calls[0]?.[2]).toBe(controller.signal);
+    controller.abort();
+
+    await expect(pending).resolves.toEqual({ kind: 'stopped', reason: 'stopped-or-unauthorized' });
+    expect(recordOrigin).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledWith({
+      communityRef: item.communityRef,
+      remoteRoomId: item.remoteRoomId,
+      ownerAuthorId: item.ownerAuthorId,
+      idempotencyKey: item.idempotencyKey,
+    });
+  });
+
+  it('passes abort to a held remote upload and never starts its following post', async () => {
+    const harness = createRoomHarness({ agents: agentLookupFor({}) });
+    const outbox = new CommunityOutboxStore(harness.db);
+    const item = outboxItem({
+      ownerAuthorId: harness.human,
+      attachmentIds: JSON.stringify(['file-1']),
+    });
+    const uploadAttachment = vi.fn(
+      (_roomId: string, _input: unknown, signal?: AbortSignal) =>
+        new Promise<never>((_resolve, reject) =>
+          signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+        )
+    );
+    const post = vi.fn();
+    const delivery = new CommunityAdapterOutboxDelivery(
+      () => ({ post, uploadAttachment }),
+      { localRoomIdForOwner: () => 'room-1' } as never,
+      { findRemoteMember: () => ({ remoteMemberId: 'remote-agent-a' }) } as never,
+      { getEntryById: () => ({ kind: 'post', body: { text: 'Output' } }) } as never,
+      {
+        get: () => ({
+          id: 'file-1',
+          entryId: item.localEntryId,
+          size: 1,
+          extension: 'txt',
+          mimeType: 'text/plain',
+          name: 'output.txt',
+        }),
+      } as never,
+      { get: () => ({ size: 1, stream: Readable.from([Buffer.from('x')]) }) } as never,
+      outbox,
+      vi.fn()
+    );
+    const controller = new AbortController();
+    const pending = delivery.deliver(item, () => true, controller.signal);
+    await vi.waitFor(() => expect(uploadAttachment).toHaveBeenCalledOnce());
+    expect(uploadAttachment.mock.calls[0]?.[2]).toBe(controller.signal);
+    controller.abort();
+
+    await expect(pending).resolves.toEqual({ kind: 'stopped', reason: 'stopped-or-unauthorized' });
+    expect(post).not.toHaveBeenCalled();
   });
 
   it('retries network uncertainty, but stops before a later request after authority changes', async () => {

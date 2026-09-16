@@ -99,6 +99,22 @@ export class CommunityOutboxStore {
       .run();
   }
 
+  /** Reserve an owner-qualified origin before a post can publish its SSE echo. */
+  reserveOrigin(item: CommunityOutboxItem): void {
+    this.db
+      .insert(communityEntryOrigins)
+      .values({
+        communityRef: item.communityRef,
+        remoteRoomId: item.remoteRoomId,
+        ownerAuthorId: item.ownerAuthorId,
+        remoteEntryId: reservedOriginId(item.idempotencyKey),
+        idempotencyKey: item.idempotencyKey,
+        createdAt: new Date().toISOString(),
+      })
+      .onConflictDoNothing()
+      .run();
+  }
+
   /**
    * Record a server-confirmed remote identity for an owner-originated write.
    *
@@ -114,12 +130,37 @@ export class CommunityOutboxStore {
     idempotencyKey: string;
     createdAt?: string;
   }): void {
+    const existing = this.db
+      .select({ remoteEntryId: communityEntryOrigins.remoteEntryId })
+      .from(communityEntryOrigins)
+      .where(
+        and(
+          eq(communityEntryOrigins.communityRef, input.communityRef),
+          eq(communityEntryOrigins.remoteRoomId, input.remoteRoomId),
+          eq(communityEntryOrigins.ownerAuthorId, input.ownerAuthorId),
+          eq(communityEntryOrigins.idempotencyKey, input.idempotencyKey)
+        )
+      )
+      .get();
+    if (existing) {
+      if (existing.remoteEntryId !== input.remoteEntryId)
+        this.db
+          .update(communityEntryOrigins)
+          .set({ remoteEntryId: input.remoteEntryId })
+          .where(
+            and(
+              eq(communityEntryOrigins.communityRef, input.communityRef),
+              eq(communityEntryOrigins.remoteRoomId, input.remoteRoomId),
+              eq(communityEntryOrigins.ownerAuthorId, input.ownerAuthorId),
+              eq(communityEntryOrigins.idempotencyKey, input.idempotencyKey)
+            )
+          )
+          .run();
+      return;
+    }
     this.db
       .insert(communityEntryOrigins)
-      .values({
-        ...input,
-        createdAt: input.createdAt ?? new Date().toISOString(),
-      })
+      .values({ ...input, createdAt: input.createdAt ?? new Date().toISOString() })
       .onConflictDoNothing()
       .run();
   }
@@ -332,4 +373,9 @@ export class CommunityOutboxStore {
       .where(and(where, eq(communityOutbox.state, 'pending')))
       .run();
   }
+}
+
+/** Synthetic local-only entry id used until a post receipt supplies the remote id. */
+function reservedOriginId(idempotencyKey: string): string {
+  return `pending:${idempotencyKey}`;
 }

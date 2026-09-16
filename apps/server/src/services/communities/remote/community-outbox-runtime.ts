@@ -12,7 +12,9 @@ import type { RoomStore } from '../../rooms/room-store.js';
 import {
   CommunityAdapterOutboxDelivery,
   type ConfirmNativePostOrigin,
+  type ReleaseNativePostOrigin,
   type RemoteAdapterForDelivery,
+  type ReserveNativePostOrigin,
 } from './community-adapter-outbox-delivery.js';
 import { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
 import { CommunityOutboxPolicy } from './community-outbox-policy.js';
@@ -36,6 +38,8 @@ export interface CommunityOutboxRuntimeDeps {
   attachmentBytes: RoomAttachmentStore;
   adapters: RemoteAdapterForDelivery;
   confirmNativePostOrigin: ConfirmNativePostOrigin;
+  reserveNativePostOrigin?: ReserveNativePostOrigin;
+  releaseNativePostOrigin?: ReleaseNativePostOrigin;
   changes?: CommunityOutboxChangeListener;
   now?: () => number;
 }
@@ -78,7 +82,9 @@ export class CommunityOutboxRuntime {
       deps.attachmentRows,
       deps.attachmentBytes,
       this.outbox,
-      deps.confirmNativePostOrigin
+      deps.confirmNativePostOrigin,
+      deps.reserveNativePostOrigin ?? (() => undefined),
+      deps.releaseNativePostOrigin ?? (() => undefined)
     );
     this.worker = new CommunityOutboxWorker(
       this.outbox,
@@ -136,6 +142,24 @@ export class CommunityOutboxRuntime {
   /** Stop scheduling remote delivery during server shutdown. */
   stop(): void {
     this.runner.stop();
+  }
+
+  /** Abort only delivery currently in progress for one owner-qualified remote room. */
+  abortForRoom(
+    communityRef: CommunityOutboxRetryInput['communityRef'],
+    remoteRoomId: string,
+    ownerAuthorId: string
+  ): void {
+    this.worker.abortForRoom(communityRef, remoteRoomId, ownerAuthorId);
+  }
+
+  /** Abort only delivery currently in progress for one owner-qualified local agent. */
+  abortForAgent(
+    communityRef: CommunityOutboxRetryInput['communityRef'],
+    localAgentId: string,
+    ownerAuthorId: string
+  ): void {
+    this.worker.abortForAgent(communityRef, localAgentId, ownerAuthorId);
   }
 
   /** Ask this runtime's sole worker to release one genuine pending backoff immediately. */

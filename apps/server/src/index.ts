@@ -1333,6 +1333,10 @@ async function start() {
           getRemoteCommunityAdapter(communityRef, ownerAuthorId),
         confirmNativePostOrigin: (origin) =>
           remoteCommunityBridge.current?.confirmNativePostOrigin(origin),
+        reserveNativePostOrigin: (origin) =>
+          remoteCommunityBridge.current?.reserveNativePostOrigin(origin),
+        releaseNativePostOrigin: (origin) =>
+          remoteCommunityBridge.current?.releaseNativePostOrigin(origin),
         changes: { changed: publishRemoteCommunityDeliveryChanges },
       });
       return {
@@ -1364,7 +1368,8 @@ async function start() {
     remoteCommunityRuntime.enrollments,
     (localAgentId) => resolveRemoteLocalAgent(localAgentId)?.authorId ?? null,
     undefined,
-    remoteCommunityRuntime.outbox
+    remoteCommunityRuntime.outbox,
+    remoteCommunityRuntime
   );
   remoteCommunitySubscriptions = new RemoteRoomSubscriptionRuntime({
     bridge: remoteCommunityBridge.current,
