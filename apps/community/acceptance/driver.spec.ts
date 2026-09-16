@@ -397,18 +397,25 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         json<{ sessions: Array<{ id: string }> }>(
           `${env.local}/api/sessions?cwd=${encodeURIComponent(agentPath)}`
         ).then((result) => result.sessions);
-      const waitForTurnToSettle = async (sessionId: string, label: string) => {
+      type SessionSpine = {
+        lifecycle: string | null;
+        durableEvents: { byType: Record<string, number> };
+      };
+      const sessionSpine = (sessionId: string) =>
+        json<SessionSpine>(`${env.local}/api/debug/sessions/${encodeURIComponent(sessionId)}`);
+      const turnEndCount = (session: SessionSpine) => session.durableEvents.byType.turn_end ?? 0;
+      const waitForTurnToSettle = async (
+        sessionId: string,
+        priorTurnEnds: number,
+        label: string
+      ) => {
         const settled = await eventually(
-          () =>
-            json<{ lifecycle: string | null; durableEvents: { byType: Record<string, number> } }>(
-              `${env.local}/api/debug/sessions/${encodeURIComponent(sessionId)}`
-            ),
-          (session) =>
-            session.lifecycle === 'idle' && (session.durableEvents.byType.turn_end ?? 0) > 0,
+          () => sessionSpine(sessionId),
+          (session) => session.lifecycle === 'idle' && turnEndCount(session) > priorTurnEnds,
           label
         );
         expect(settled.lifecycle).toBe('idle');
-        expect(settled.durableEvents.byType.turn_end).toBeGreaterThan(0);
+        expect(turnEndCount(settled)).toBeGreaterThan(priorTurnEnds);
       };
       const beforeFreshMention = await eventually(
         localTurns,
@@ -463,6 +470,8 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       // sticky by design, so later attachment turns still exercise the real post
       // path but settle as soon as that post completes. The stoppable scenario
       // below has its own session-scoped barrier and remains live.
+      const recoveredTurnBeforeFinish = await sessionSpine(recoveredTurnSessionId);
+      expect(recoveredTurnBeforeFinish.lifecycle).toBe('streaming');
       const finishRecoveredTurn = await request.post(`${env.local}/api/test/finish-turn`);
       expect(
         finishRecoveredTurn.ok(),
@@ -470,6 +479,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       ).toBe(true);
       await waitForTurnToSettle(
         recoveredTurnSessionId,
+        turnEndCount(recoveredTurnBeforeFinish),
         'the recovered attachment turn did not settle before independent delivery journeys'
       );
 
@@ -666,6 +676,8 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       // SSE echo must replace the top-level pending row by exact remote entry
       // identity, so the channel count increases once rather than by a timer.
       const afterPersistMarker = `after-persist-${crypto.randomUUID()}`;
+      const afterPersistTurnBeforeStart = await sessionSpine(recoveredTurnSessionId);
+      expect(afterPersistTurnBeforeStart.lifecycle).toBe('idle');
       const entriesBeforeAfterPersist = await agentEntries();
       await json(`${env.communityA}/api/test/delivery-receipt-gate`, {
         method: 'POST',
@@ -757,6 +769,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       );
       await waitForTurnToSettle(
         recoveredTurnSessionId,
+        turnEndCount(afterPersistTurnBeforeStart),
         'the released after-persistence attachment turn did not settle before the live Stop journey'
       );
       await localPage.goto(
@@ -774,7 +787,8 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         stoppableScenario.ok(),
         `could not select the stoppable-turn scenario: ${await stoppableScenario.text()}`
       ).toBe(true);
-      const sessionIdsBeforeStop = new Set((await localTurns()).map((session) => session.id));
+      const stoppableTurnBeforeStart = await sessionSpine(recoveredTurnSessionId);
+      expect(stoppableTurnBeforeStart.lifecycle).toBe('idle');
       const readyBeforeStop = await eventually(
         subscriptionBarrier,
         (result) => result !== null && result.snapshotComplete && result.replayComplete,
@@ -790,15 +804,18 @@ test.describe('Packaged Community local-agent proof @integration', () => {
           result.dispatchesSinceBoot === readyBeforeStop!.dispatchesSinceBoot + 1,
         'the live stoppable turn did not receive a dispatcher claim'
       );
-      const stoppableSession = await eventually(
-        localTurns,
-        (sessions) =>
-          sessions.find((session) => !sessionIdsBeforeStop.has(session.id)) !== undefined,
-        'the live stoppable turn never created a local runtime session'
+      // Room dispatches retain one `(room, agent)` conversation. The recovered
+      // binding is therefore the session Stop must target; a session-list delta
+      // would mistake retained history for a new turn.
+      const stoppableSessionId = recoveredTurnSessionId;
+      await eventually(
+        () => sessionSpine(stoppableSessionId),
+        (session) =>
+          session.lifecycle === 'streaming' &&
+          (session.durableEvents.byType.turn_start ?? 0) >
+            (stoppableTurnBeforeStart.durableEvents.byType.turn_start ?? 0),
+        'the live stoppable turn did not enter its bound runtime session'
       );
-      const stoppableSessionId = stoppableSession.find(
-        (session) => !sessionIdsBeforeStop.has(session.id)
-      )!.id;
       const stoppableTranscript = await eventually(
         () =>
           json<{ messages: Array<{ content: string }> }>(
@@ -829,6 +846,11 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         }
       );
       expect(stoppedStep).toEqual({ ok: true, released: false });
+      await waitForTurnToSettle(
+        stoppableSessionId,
+        turnEndCount(stoppableTurnBeforeStart),
+        'the stopped turn did not close its bound runtime session'
+      );
       expect((await agentEntries()).some((entry) => entry.text.includes('STOPPABLE-TURN'))).toBe(
         false
       );
@@ -947,9 +969,37 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       expect(remainingEnrollment.agents).not.toContainEqual(
         expect.objectContaining({ localAgentId })
       );
-      await expect(
-        localPage.getByText('You no longer have access to this channel.', { exact: true })
-      ).toBeVisible();
+      // Ejecting a local agent revokes that agent's membership. The human owner
+      // still owns this room and must remain able to read and post through the
+      // qualified local Community surface.
+      const ownerAfterEjection = `owner-after-ejection-${crypto.randomUUID()}`;
+      await expect(localPage.getByRole('feed', { name: 'Community messages' })).toBeVisible();
+      const localComposer = localPage.getByPlaceholder('Message general…');
+      await expect(localComposer).toBeVisible();
+      const ownerPostResponse = localPage.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          new URL(response.url()).pathname ===
+            `/api/communities/${refA}/rooms/${roomA!.roomId}/entries`
+      );
+      await localComposer.fill(ownerAfterEjection);
+      await localPage.getByRole('button', { name: 'Send', exact: true }).click();
+      const ownerPostResult = await ownerPostResponse;
+      expect(
+        ownerPostResult.ok(),
+        `owner post after agent ejection returned ${ownerPostResult.status()}`
+      ).toBe(true);
+      await expect(localPage.getByText(ownerAfterEjection, { exact: true })).toBeVisible();
+      await eventually(
+        () =>
+          pageJson<{ entries: Entry[] }>(
+            pageA,
+            `/api/v1/channels/${roomA!.roomId}/entries?limit=100`
+          ).then((page) => page.entries.some((entry) => entry.text === ownerAfterEjection)),
+        (posted) => posted,
+        'the human owner could not post after the agent was ejected'
+      );
+      expect(await agentEntries()).toHaveLength(heldEjection.beforeEntryCount);
     } finally {
       await Promise.allSettled([
         ownerA.close(),
