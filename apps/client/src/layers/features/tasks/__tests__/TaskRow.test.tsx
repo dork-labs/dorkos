@@ -321,6 +321,24 @@ describe('ScheduleRow', () => {
       expect(screen.getByText(/flow-drain/)).toBeTruthy();
     });
 
+    it('stays off the minimal row, which is a name and a dot (delta review)', () => {
+      const t = createMockTransport();
+      const Wrapper = createWrapper(t);
+      render(
+        <Wrapper>
+          <TaskRow
+            task={offByDefaultSchedule}
+            expanded={false}
+            onToggleExpand={vi.fn()}
+            onEdit={vi.fn()}
+            size="minimal"
+          />
+        </Wrapper>
+      );
+
+      expect(screen.queryByText(/Installed/)).toBeNull();
+    });
+
     it('names no source on an ordinary switched-off schedule, which has none', () => {
       renderScheduleRow(disabledSchedule);
 

@@ -148,8 +148,15 @@ export function TaskRow({
   // LOOK identical to a task the person switched off themselves. The reviewer's
   // finding: naming the source has to survive on the collapsed row, because the
   // file path only ever showed in the expanded run-history panel.
+  //
+  // Derived from `isScheduleAwaitingApproval` rather than restated by hand, so
+  // the one rule that decides "does this need a card" is the same rule that
+  // decides "does this need its source named" — a file-discovered row is
+  // exactly one of the two, never both (delta review).
   const isQuietlyParkedFromFile =
-    task.status === 'pending_approval' && task.origin === 'file' && !task.enabled;
+    task.status === 'pending_approval' &&
+    task.origin === 'file' &&
+    !isScheduleAwaitingApproval(task);
 
   const handleRunNow = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -281,7 +288,7 @@ export function TaskRow({
                 panel — otherwise a package-shipped schedule found switched off
                 is indistinguishable from one the person switched off
                 themselves (DOR-2059 review). */}
-            {isQuietlyParkedFromFile && task.filePath && (
+            {!isMinimal && isQuietlyParkedFromFile && task.filePath && (
               <div
                 data-slot="task-quiet-source"
                 className="text-muted-foreground text-3xs min-w-0 truncate font-mono"
