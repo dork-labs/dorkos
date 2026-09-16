@@ -25,7 +25,13 @@ test.describe('Packaged Community local-agent proof @integration', () => {
     const ownerA = await browser.newContext();
     const ownerB = await browser.newContext();
     const memberA = await browser.newContext();
-    const localContext = await browser.newContext();
+    const localContext = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+      recordVideo: {
+        dir: testInfo.outputPath('local-video'),
+        size: { width: 1440, height: 900 },
+      },
+    });
     const localPage = await localContext.newPage();
     const pageA = await ownerA.newPage();
     const pageB = await ownerB.newPage();
@@ -1110,6 +1116,10 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       expect(remoteThreadReply?.threadRootEntryId).toBe(unreadRoot!.id);
       await localPage.setViewportSize({ width: 390, height: 844 });
       await expect(threadFeed).toHaveAccessibleName('Community thread');
+      await testInfo.attach('native-local-thread-mobile.aria.yml', {
+        body: await localPage.getByRole('main').ariaSnapshot({ depth: 6 }),
+        contentType: 'text/yaml',
+      });
       const backToChannel = localPage.getByRole('button', { name: 'Back to channel', exact: true });
       await expect(backToChannel).toBeVisible();
       await backToChannel.focus();
