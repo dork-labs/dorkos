@@ -441,12 +441,6 @@ test.describe('Packaged Community local-agent proof @integration', () => {
           },
           { dark: viewport.dark, foreground: viewport.dark ? '0 0% 87%' : '0 0% 9%' }
         );
-        await localPage.evaluate(
-          () =>
-            new Promise<void>((resolve) =>
-              requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
-            )
-        );
         await expect(
           localPage.getByRole('button', { name: 'Stop my agents', exact: true })
         ).toBeVisible();
@@ -456,7 +450,20 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         await localPage.screenshot({
           path: testInfo.outputPath(`native-confirmed-${viewport.name}.png`),
           fullPage: true,
+          // A system-theme switch can leave a hovered message row midway through
+          // its finite color transition. Capture the settled token rather than
+          // sampling an arbitrary pair of animation frames.
+          animations: 'disabled',
         });
+        const runningMessageTransitions = await localPage
+          .locator('[data-slot="message-root"]')
+          .evaluateAll(
+            (nodes) =>
+              nodes
+                .flatMap((node) => node.getAnimations())
+                .filter((animation) => animation.playState === 'running').length
+          );
+        expect(runningMessageTransitions).toBe(0);
       }
 
       const memberConfirmed = await eventually(
