@@ -27,6 +27,8 @@ import {
   type CommunityAdapter,
   type CommunityCapabilities,
   type CommunityConnection,
+  type CommunityAttachment,
+  type DownloadCommunityAttachment,
   type CommunityCursor,
   type CommunityEntry,
   type CommunityEntryPage,
@@ -44,6 +46,7 @@ import {
   type ListCommunityEntriesOpts,
   type PostCommunityEntryInput,
   type UpdateCommunityRoomInput,
+  type UploadCommunityAttachmentInput,
 } from '@dorkos/shared/community-adapter';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { RoomKind } from '@dorkos/shared/room-schemas';
@@ -152,12 +155,14 @@ export interface FakeCommunityAdapterOpts {
   epoch?: string;
 }
 
-/** The all-on capability profile a fake starts from before overrides. */
+/** The established capability profile; new file and agent-acting paths opt in explicitly. */
 const DEFAULT_CAPABILITIES: Omit<CommunityCapabilities, 'type'> = {
   roomList: 'push',
   roomAddressing: 'slug',
   canPost: true,
   roomAdmin: true,
+  agentActing: false,
+  attachments: false,
   roles: {
     supported: true,
     default: 'member',
@@ -428,10 +433,28 @@ export class FakeCommunityAdapter implements CommunityAdapter {
     if (!this._capabilities.canPost) {
       return Promise.reject(new CommunityUnsupportedError(this.community, 'canPost', 'post'));
     }
+    if (input.actingMemberId !== undefined && !this._capabilities.agentActing) {
+      return Promise.reject(new CommunityUnsupportedError(this.community, 'agentActing', 'post'));
+    }
+    if (input.attachmentIds?.length && !this._capabilities.attachments) {
+      return Promise.reject(new CommunityUnsupportedError(this.community, 'attachments', 'post'));
+    }
+    const authorId = input.actingMemberId ?? this._identityMemberId;
+    if (input.actingMemberId !== undefined) {
+      const agent = this._directory.get(authorId);
+      if (
+        agent?.kind !== 'agent' ||
+        agent.ownerMemberId !== this._identityMemberId ||
+        !this._directory.has(this._identityMemberId) ||
+        !this._rooms.get(roomId)?.roster.has(authorId)
+      ) {
+        return Promise.reject(new CommunityMemberNotFoundError(this.community, authorId));
+      }
+    }
     try {
       const entry = this.seedEntry(roomId, {
         text: input.text,
-        authorId: this._identityMemberId,
+        authorId,
         parentEntryId: input.parentEntryId,
         mentions: input.mentions,
       });
@@ -444,6 +467,23 @@ export class FakeCommunityAdapter implements CommunityAdapter {
     } catch (err) {
       return Promise.reject(err instanceof Error ? err : new Error(String(err)));
     }
+  }
+
+  /** Refuse file upload until a fixture explicitly implements the file capability. */
+  uploadAttachment(
+    _roomId: string,
+    _input: UploadCommunityAttachmentInput
+  ): Promise<CommunityAttachment> {
+    return Promise.reject(
+      new CommunityUnsupportedError(this.community, 'attachments', 'uploadAttachment')
+    );
+  }
+
+  /** Refuse file download until a fixture explicitly implements the file capability. */
+  downloadAttachment(_roomId: string, _attachmentId: string): Promise<DownloadCommunityAttachment> {
+    return Promise.reject(
+      new CommunityUnsupportedError(this.community, 'attachments', 'downloadAttachment')
+    );
   }
 
   // --- Roster --------------------------------------------------------------

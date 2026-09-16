@@ -145,6 +145,14 @@
       "types": "./src/community-adapter.ts",
       "default": "./dist/community-adapter.js"
     },
+    "./community-wire": {
+      "types": "./src/community-wire.ts",
+      "default": "./dist/community-wire.js"
+    },
+    "./community-private-wire": {
+      "types": "./src/community-private-wire.ts",
+      "default": "./dist/community-private-wire.js"
+    },
     "./memory-provider": {
       "types": "./src/memory-provider.ts",
       "default": "./dist/memory-provider.js"

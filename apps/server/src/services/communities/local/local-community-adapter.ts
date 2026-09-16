@@ -90,6 +90,8 @@ import {
   type CommunityAdapter,
   type CommunityCapabilities,
   type CommunityConnection,
+  type CommunityAttachment,
+  type DownloadCommunityAttachment,
   type CommunityCursor,
   type CommunityEntry,
   type CommunityEntryPage,
@@ -106,6 +108,7 @@ import {
   type ListCommunityEntriesOpts,
   type PostCommunityEntryInput,
   type UpdateCommunityRoomInput,
+  type UploadCommunityAttachmentInput,
 } from '@dorkos/shared/community-adapter';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { SignalType } from '@dorkos/shared/relay-schemas';
@@ -136,6 +139,8 @@ const LOCAL_CAPABILITIES: CommunityCapabilities = {
   roomAddressing: 'slug',
   canPost: true,
   roomAdmin: true,
+  agentActing: false,
+  attachments: false,
   roles: { supported: false, values: [] },
   admission: 'open',
   invite: 'none',
@@ -501,6 +506,12 @@ export class LocalCommunityAdapter implements CommunityAdapter {
    * @param input - What to say, what it replies to, and who it addresses.
    */
   async post(roomId: string, input: PostCommunityEntryInput): Promise<CommunityEntryRef> {
+    if (input.actingMemberId !== undefined) {
+      throw new CommunityUnsupportedError(this.community, 'agentActing', 'post');
+    }
+    if (input.attachmentIds?.length) {
+      throw new CommunityUnsupportedError(this.community, 'attachments', 'post');
+    }
     const entry = this.deps.service.post(roomId, {
       authorId: this.identity(),
       text: input.text,
@@ -513,6 +524,23 @@ export class LocalCommunityAdapter implements CommunityAdapter {
       entryId: entry.id,
       cursor: mintLocalCursor(this.community, roomId, entry.seq),
     };
+  }
+
+  /** This backend does not expose file uploads through the community port. */
+  uploadAttachment(
+    _roomId: string,
+    _input: UploadCommunityAttachmentInput
+  ): Promise<CommunityAttachment> {
+    return Promise.reject(
+      new CommunityUnsupportedError(this.community, 'attachments', 'uploadAttachment')
+    );
+  }
+
+  /** This backend does not expose file downloads through the community port. */
+  downloadAttachment(_roomId: string, _attachmentId: string): Promise<DownloadCommunityAttachment> {
+    return Promise.reject(
+      new CommunityUnsupportedError(this.community, 'attachments', 'downloadAttachment')
+    );
   }
 
   // --- Roster --------------------------------------------------------------
