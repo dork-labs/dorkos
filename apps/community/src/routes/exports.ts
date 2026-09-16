@@ -48,9 +48,17 @@ async function snapshot(pool: Pool | PoolClient, member: Member, scope: 'persona
     owner
       ? 'SELECT id,name,description,visibility,archived,created_at FROM channels WHERE community_id=$1 ORDER BY id LIMIT $2'
       : `SELECT c.id,c.name,c.description,c.visibility,c.archived,c.created_at FROM channels c
-         JOIN channel_members cm ON cm.channel_id=c.id WHERE cm.member_id=$1 ORDER BY c.id LIMIT $2`,
-    [owner ? member.community_id : member.id, MAX_ROWS + 1]
+         WHERE c.community_id=$3 AND (
+           EXISTS (SELECT 1 FROM channel_members cm WHERE cm.channel_id=c.id AND cm.member_id=$1)
+           OR EXISTS (
+             SELECT 1 FROM agent_channel_members acm JOIN agents a ON a.id=acm.agent_id
+             JOIN members owner ON owner.id=a.owner_member_id
+             WHERE acm.channel_id=c.id AND a.owner_member_id=$1 AND a.active AND owner.active
+           )
+         ) ORDER BY c.id LIMIT $2`,
+    owner ? [member.community_id, MAX_ROWS + 1] : [member.id, MAX_ROWS + 1, member.community_id]
   );
+  const accessibleChannelIds = channels.rows.map((channel: { id: string }) => channel.id);
   const members = await pool.query(
     owner
       ? `SELECT m.id,m.display_name,m.handle,m.role,m.active,m.created_at,m.removed_at,u.email
@@ -70,9 +78,9 @@ async function snapshot(pool: Pool | PoolClient, member: Member, scope: 'persona
          FROM entries e JOIN channels c ON c.id=e.channel_id WHERE c.community_id=$1 ORDER BY e.channel_id,e.seq LIMIT $2`
       : `SELECT e.id,e.channel_id,e.seq,e.author_member_id,e.author_agent_id,e.author_display_name,e.text,e.mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at
          FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id
-         JOIN channel_members cm ON cm.channel_id=e.channel_id AND cm.member_id=$1
-         WHERE e.author_member_id=$1 OR a.owner_member_id=$1 ORDER BY e.channel_id,e.seq LIMIT $2`,
-    [owner ? member.community_id : member.id, MAX_ROWS + 1]
+         WHERE e.channel_id=ANY($3::uuid[]) AND (e.author_member_id=$1 OR a.owner_member_id=$1)
+         ORDER BY e.channel_id,e.seq LIMIT $2`,
+    owner ? [member.community_id, MAX_ROWS + 1] : [member.id, MAX_ROWS + 1, accessibleChannelIds]
   );
   const attachments = await pool.query<AttachmentRecord>(
     owner
@@ -80,9 +88,9 @@ async function snapshot(pool: Pool | PoolClient, member: Member, scope: 'persona
          WHERE c.community_id=$1 AND att.entry_id IS NOT NULL ORDER BY att.id LIMIT $2`
       : `SELECT att.* FROM attachments att JOIN entries e ON e.id=att.entry_id
          LEFT JOIN agents a ON a.id=e.author_agent_id
-         JOIN channel_members cm ON cm.channel_id=e.channel_id AND cm.member_id=$1
-         WHERE e.author_member_id=$1 OR a.owner_member_id=$1 ORDER BY att.id LIMIT $2`,
-    [owner ? member.community_id : member.id, MAX_ROWS + 1]
+         WHERE e.channel_id=ANY($3::uuid[]) AND (e.author_member_id=$1 OR a.owner_member_id=$1)
+         ORDER BY att.id LIMIT $2`,
+    owner ? [member.community_id, MAX_ROWS + 1] : [member.id, MAX_ROWS + 1, accessibleChannelIds]
   );
   for (const result of [channels, members, agents, entries, attachments]) {
     if (result.rows.length > MAX_ROWS)
@@ -130,7 +138,15 @@ async function requireCurrentChannels(
 ) {
   if (!channelIds.length) return;
   const result = await pool.query<{ count: string }>(
-    'SELECT count(*)::text AS count FROM channel_members WHERE member_id=$1 AND channel_id=ANY($2::uuid[])',
+    `SELECT count(*)::text AS count FROM channels c
+     WHERE c.id=ANY($2::uuid[]) AND (
+       EXISTS (SELECT 1 FROM channel_members cm WHERE cm.channel_id=c.id AND cm.member_id=$1)
+       OR EXISTS (
+         SELECT 1 FROM agent_channel_members acm JOIN agents a ON a.id=acm.agent_id
+         JOIN members owner ON owner.id=a.owner_member_id
+         WHERE acm.channel_id=c.id AND a.owner_member_id=$1 AND a.active AND owner.active
+       )
+     )`,
     [memberId, channelIds]
   );
   if (Number(result.rows[0].count) !== channelIds.length)
