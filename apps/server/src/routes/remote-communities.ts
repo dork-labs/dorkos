@@ -225,5 +225,94 @@ export function createRemoteCommunitiesRouter(): Router {
       fail(res, error);
     }
   });
+  router.post('/:ref/agents/:localAgentId/enroll', async (req, res) => {
+    const owner = resolveCommunityOwner(req, res);
+    const ref = CommunityRefSchema.safeParse(req.params.ref);
+    if (!owner || !ref.success) return;
+    try {
+      const author = (await import('../services/rooms/index.js'))
+        .getRoomService()
+        .authorRegistry.getById(req.params.localAgentId);
+      if (!author || author.kind !== 'agent')
+        return res.status(404).json({ error: 'Local agent not found.' });
+      const adapter = getRemoteCommunityAdapter(ref.data, owner);
+      const member = await adapter.recoverAgent({
+        agentId: req.params.localAgentId,
+        displayName: author.displayName,
+      });
+      res
+        .status(201)
+        .json({
+          community: ref.data,
+          localAgentId: req.params.localAgentId,
+          remoteMemberId: member.memberId,
+          displayName: member.displayName,
+          ownerMemberId: member.ownerMemberId,
+          ownerDisplayName: '',
+          roomIds: [],
+          active: true,
+        });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+  router.delete('/:ref/agents/:localAgentId', async (req, res) => {
+    const owner = resolveCommunityOwner(req, res);
+    const ref = CommunityRefSchema.safeParse(req.params.ref);
+    if (!owner || !ref.success) return;
+    try {
+      const enrollments = (
+        await import('../services/communities/remote/state.js')
+      ).getRemoteCommunityEnrollmentStore();
+      const binding = enrollments.findAnyRemoteMember(ref.data, req.params.localAgentId, owner);
+      if (!binding) return res.status(404).json({ error: 'Agent enrollment not found.' });
+      enrollments.revoke(ref.data, req.params.localAgentId, owner);
+      let remoteRevoked = true;
+      try {
+        await getRemoteCommunityAdapter(ref.data, owner).revokeAgent(binding.remoteMemberId);
+      } catch {
+        remoteRevoked = false;
+      }
+      res.json({ localRevoked: true, remoteRevoked });
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+  router.post('/:ref/rooms/:roomId/agents/:localAgentId/membership', async (req, res) => {
+    const owner = resolveCommunityOwner(req, res);
+    const ref = CommunityRefSchema.safeParse(req.params.ref);
+    if (!owner || !ref.success) return;
+    try {
+      const binding = (await import('../services/communities/remote/state.js'))
+        .getRemoteCommunityEnrollmentStore()
+        .findRemoteMember(ref.data, req.params.localAgentId, owner);
+      if (!binding) return res.status(404).json({ error: 'Active agent enrollment not found.' });
+      await getRemoteCommunityAdapter(ref.data, owner).addMember(
+        req.params.roomId,
+        binding.remoteMemberId
+      );
+      res.status(204).end();
+    } catch (error) {
+      fail(res, error);
+    }
+  });
+  router.delete('/:ref/rooms/:roomId/agents/:localAgentId/membership', async (req, res) => {
+    const owner = resolveCommunityOwner(req, res);
+    const ref = CommunityRefSchema.safeParse(req.params.ref);
+    if (!owner || !ref.success) return;
+    try {
+      const binding = (await import('../services/communities/remote/state.js'))
+        .getRemoteCommunityEnrollmentStore()
+        .findRemoteMember(ref.data, req.params.localAgentId, owner);
+      if (!binding) return res.status(404).json({ error: 'Active agent enrollment not found.' });
+      await getRemoteCommunityAdapter(ref.data, owner).removeMember(
+        req.params.roomId,
+        binding.remoteMemberId
+      );
+      res.status(204).end();
+    } catch (error) {
+      fail(res, error);
+    }
+  });
   return router;
 }

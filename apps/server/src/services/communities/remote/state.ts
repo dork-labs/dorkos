@@ -16,6 +16,7 @@ let store: RemoteConnectionStore | undefined;
 let pairing: RemoteCommunityPairingService | undefined;
 let db: Db | undefined;
 let enrollments: CommunityAgentEnrollmentStore | undefined;
+const adapters = new Map<string, RemoteCommunityAdapter>();
 
 /** The encrypted credential and owner-scoped metadata store for remote communities. */
 export function getRemoteConnectionStore(): RemoteConnectionStore {
@@ -45,10 +46,16 @@ export function getRemoteCommunityAdapter(
   ref: CommunityRef,
   ownerAuthorId: string
 ): RemoteCommunityAdapter {
-  return new RemoteCommunityAdapter(
-    ref,
-    ownerAuthorId,
-    getRemoteConnectionStore(),
-    getRemoteCommunityEnrollmentStore()
-  );
+  const key = `${ref}:${ownerAuthorId}`;
+  let adapter = adapters.get(key);
+  if (!adapter) {
+    adapter = new RemoteCommunityAdapter(
+      ref,
+      ownerAuthorId,
+      getRemoteConnectionStore(),
+      getRemoteCommunityEnrollmentStore()
+    );
+    adapters.set(key, adapter);
+  }
+  return adapter;
 }

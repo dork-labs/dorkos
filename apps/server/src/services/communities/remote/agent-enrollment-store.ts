@@ -101,6 +101,32 @@ export class CommunityAgentEnrollmentStore {
       : null;
   }
 
+  /** Resolve a local binding in either state for retryable remote cleanup. */
+  findAnyRemoteMember(
+    communityRef: CommunityRef,
+    localAgentId: string,
+    ownerAuthorId: string
+  ): CommunityAgentEnrollment | null {
+    const row = this.db
+      .select()
+      .from(communityAgentEnrollments)
+      .where(
+        and(
+          eq(communityAgentEnrollments.communityRef, communityRef),
+          eq(communityAgentEnrollments.localAgentId, localAgentId),
+          eq(communityAgentEnrollments.ownerAuthorId, ownerAuthorId)
+        )
+      )
+      .get();
+    return row
+      ? {
+          ...row,
+          communityRef: row.communityRef as CommunityRef,
+          state: row.state as CommunityAgentEnrollment['state'],
+        }
+      : null;
+  }
+
   /** Resolve an active remote principal from a local manifest and owner grant. */
   findRemoteMember(
     communityRef: CommunityRef,
