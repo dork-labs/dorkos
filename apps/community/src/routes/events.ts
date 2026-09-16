@@ -20,6 +20,7 @@ import {
 } from '../data.js';
 import { ApiError, json, readJson } from '../http.js';
 import { entryProjection } from './entries.js';
+import { attachmentsForEntries } from './attachments.js';
 
 interface LiveChannel {
   id: string;
@@ -160,6 +161,10 @@ export function registerEventRoutes(
             [channel.id, position]
           )
         ).rows;
+    const snapshotAttachments = await attachmentsForEntries(
+      pool,
+      snapshotRows.map((row: { id: string }) => row.id)
+    );
     const encoder = new TextEncoder();
     let revocationTimer: ReturnType<typeof setInterval> | undefined;
     let closed = false;
@@ -228,7 +233,9 @@ export function registerEventRoutes(
           writeEvent(controller, {
             type: 'snapshot',
             channel: channelWire(channel),
-            entries: snapshotRows.map((row) => entryProjection(row, channel.epoch, config)),
+            entries: snapshotRows.map((row) =>
+              entryProjection(row, channel.epoch, config, snapshotAttachments.get(row.id))
+            ),
             cursor: currentCursor(),
           });
           revocationTimer = setInterval(() => {
@@ -301,7 +308,13 @@ export function registerEventRoutes(
               const row = result.rows[0];
               if (row) {
                 position = Number(row.seq);
-                const entry = entryProjection(row, channel.epoch, config);
+                const attachmentMap = await attachmentsForEntries(pool, [row.id]);
+                const entry = entryProjection(
+                  row,
+                  channel.epoch,
+                  config,
+                  attachmentMap.get(row.id)
+                );
                 writeEvent(controller, { type: 'entry', entry, cursor: entry.cursor });
                 return;
               }

@@ -20,6 +20,7 @@ import {
 } from '../data.js';
 import { ApiError, json, readJson } from '../http.js';
 import { resolveCommunityMentions } from '../mentions.js';
+import { attachmentsForEntries } from './attachments.js';
 
 interface EntryRow {
   id: string;
@@ -38,7 +39,8 @@ interface EntryRow {
 export function entryProjection(
   row: EntryRow,
   epoch: number,
-  config: CommunityConfig
+  config: CommunityConfig,
+  attachments: CommunityWireEntry['attachments'] = []
 ): CommunityWireEntry {
   return {
     id: row.id,
@@ -55,7 +57,7 @@ export function entryProjection(
       { channelId: row.channel_id, thread: null, epoch, seq: Number(row.seq) },
       config
     ),
-    attachments: [],
+    attachments,
   };
 }
 
@@ -110,11 +112,13 @@ export function registerEntryRoutes(
             'This key was used for different content.'
           );
         }
+        const attachmentMap = await attachmentsForEntries(client, [previous.rows[0].id]);
         return {
           entry: entryProjection(
             await loadEntry(client, previous.rows[0].id),
             channel.epoch,
-            config
+            config,
+            attachmentMap.get(previous.rows[0].id)
           ),
           repeated: true,
         };
@@ -139,7 +143,7 @@ export function registerEntryRoutes(
       }
       if (body.attachmentIds?.length) {
         const owned = await client.query<{ id: string }>(
-          `SELECT id FROM attachments WHERE id=ANY($1::uuid[]) AND channel_id=$2 AND ${principal.kind === 'agent' ? 'uploader_agent_id' : 'uploader_member_id'}=$3 AND entry_id IS NULL FOR UPDATE`,
+          `SELECT id FROM attachments WHERE id=ANY($1::uuid[]) AND channel_id=$2 AND ${principal.kind === 'agent' ? 'uploader_agent_id' : 'uploader_member_id'}=$3 AND entry_id IS NULL AND uploaded_at>now()-interval '1 hour' FOR UPDATE`,
           [body.attachmentIds, channel.id, principal.id]
         );
         if (owned.rowCount !== body.attachmentIds.length)
@@ -181,8 +185,14 @@ export function registerEntryRoutes(
           body.attachmentIds,
         ]);
       }
+      const attachmentMap = await attachmentsForEntries(client, [inserted.rows[0].id]);
       return {
-        entry: entryProjection(await loadEntry(client, inserted.rows[0].id), channel.epoch, config),
+        entry: entryProjection(
+          await loadEntry(client, inserted.rows[0].id),
+          channel.epoch,
+          config,
+          attachmentMap.get(inserted.rows[0].id)
+        ),
         repeated: false,
       };
     });
@@ -224,6 +234,10 @@ export function registerEntryRoutes(
         [channel.id, seq, parsed.thread ?? null, limit + 1]
       );
       const rows = result.rows.slice(0, limit);
+      const attachmentMap = await attachmentsForEntries(
+        client,
+        rows.map((row) => row.id)
+      );
       const nextCursor =
         result.rows.length > limit && rows.length
           ? encodeCursor(
@@ -237,7 +251,9 @@ export function registerEntryRoutes(
             )
           : null;
       return json(c, CommunityWireEntryPageSchema, {
-        entries: rows.map((row) => entryProjection(row, channel.epoch, config)),
+        entries: rows.map((row) =>
+          entryProjection(row, channel.epoch, config, attachmentMap.get(row.id))
+        ),
         nextCursor,
       });
     } finally {

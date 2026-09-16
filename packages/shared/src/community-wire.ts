@@ -50,6 +50,7 @@ export const COMMUNITY_API_V1_ROUTES = {
   channelReadCursor: '/api/v1/channels/:id/read-cursor',
   channelEvents: '/api/v1/channels/:id/events',
   attachment: '/api/v1/attachments/:id',
+  exportArchive: '/api/v1/exports/:id',
   agents: '/api/v1/agents',
   memberRole: '/api/v1/members/:id/role',
   meGrants: '/api/v1/me/grants',
@@ -371,6 +372,8 @@ export const CommunityWireOwnerTransferRequestSchema = z.strictObject({
 });
 /** Transfer receipt with the new current owner identity. */
 export const CommunityWireOwnerTransferResponseSchema = z.strictObject({ ownerMemberId: id });
+/** Owner export requires current password confirmation. */
+export const CommunityWireOwnerExportRequestSchema = z.strictObject({ password: id });
 /** Archive manifest metadata; archive bytes use an authorized download stream. */
 export const CommunityWireExportResponseSchema = z.strictObject({
   archiveId: id,

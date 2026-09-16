@@ -125,10 +125,11 @@ export async function requirePrincipal(
   };
 }
 
-/** Lock the quota owner and recheck an actor's credential before a committed post. */
+/** Lock the quota owner and recheck an actor's credential at a requested scope. */
 export async function lockPrincipalAuthority(
   client: PoolClient,
-  principal: Principal
+  principal: Principal,
+  scope: 'read' | 'post' = 'post'
 ): Promise<void> {
   const owner = await client.query('SELECT 1 FROM members WHERE id=$1 AND active FOR UPDATE', [
     principal.ownerMemberId,
@@ -148,8 +149,8 @@ export async function lockPrincipalAuthority(
       throw new ApiError(401, 'UNAUTHENTICATED', 'This credential is unavailable.');
   } else if (principal.credentialKind === 'grant') {
     const grant = await client.query(
-      "SELECT 1 FROM connection_grants WHERE member_id=$1 AND token_hash=$2 AND revoked_at IS NULL AND scopes @> ARRAY['post']::text[] FOR SHARE",
-      [principal.id, principal.credentialHash]
+      'SELECT 1 FROM connection_grants WHERE member_id=$1 AND token_hash=$2 AND revoked_at IS NULL AND scopes @> ARRAY[$3]::text[] FOR SHARE',
+      [principal.id, principal.credentialHash, scope]
     );
     if (!grant.rowCount)
       throw new ApiError(401, 'UNAUTHENTICATED', 'This connection is unavailable.');
