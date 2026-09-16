@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(tasks): a package-shipped schedule that ships switched off raises no card (DOR-2059)'
+  - 'fix(tasks): key the DOR-2059 quiet-parking decision on origin, not enabled'
 ---
 
 ### Fixed
