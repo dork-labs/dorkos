@@ -12,13 +12,17 @@ import {
 } from '@dorkos/shared/community-wire';
 import type { CommunityConfig } from './config.js';
 import { createCommunityAuth } from './auth.js';
-import { bootstrapGrant, requireMember, requireSessionUser, transaction } from './data.js';
+import { bootstrapGrant, requireSessionUser, transaction } from './data.js';
 import { ApiError, handleError, json, readJson } from './http.js';
 import { equalSecret, hashSecret, randomToken, signValue } from './security.js';
 import { mintHandle } from './handles.js';
 import { registerChannelRoutes } from './routes/channels.js';
 import { registerEntryRoutes } from './routes/entries.js';
 import { registerEventRoutes } from './routes/events.js';
+import { registerInviteRoutes } from './routes/invites.js';
+import { registerMemberRoutes } from './routes/members.js';
+import { registerPairingRoutes } from './routes/pairings.js';
+import { registerAgentRoutes } from './routes/agents.js';
 import { communities } from './schema.js';
 
 /** Assemble the injectable HTTP app without reading environment variables. */
@@ -178,8 +182,8 @@ export function createCommunityApp({
   });
 
   app.get('/api/v1/community', async (c) => {
-    await requireMember(c, auth, pool);
     const [row] = await db.select().from(communities).limit(1);
+    if (!row) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
     return json(c, CommunityWireCommunitySchema, {
       id: row.id,
       name: row.name,
@@ -191,5 +195,20 @@ export function createCommunityApp({
   registerChannelRoutes(app, { pool, auth });
   registerEntryRoutes(app, { pool, auth, config });
   registerEventRoutes(app, { pool, auth, config, hooks });
+  registerInviteRoutes(app, {
+    pool,
+    auth,
+    config,
+    limitPreview: (c) =>
+      limitAttempts(`invite-preview:${peer(c)}`, config.limits.invitePreviewAttemptsPerMinute),
+  });
+  registerMemberRoutes(app, { pool, auth });
+  registerPairingRoutes(app, {
+    pool,
+    auth,
+    config,
+    limitStart: (c) => limitAttempts(`pairing:${peer(c)}`, config.limits.pairingAttemptsPerMinute),
+  });
+  registerAgentRoutes(app, { pool, auth, config });
   return app;
 }

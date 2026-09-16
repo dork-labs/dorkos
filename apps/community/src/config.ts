@@ -8,6 +8,21 @@ const schema = z.object({
   COMMUNITY_DATABASE_URL: z.url().startsWith('postgres'),
   COMMUNITY_AUTH_SECRET: z.string().min(32),
   COMMUNITY_INVITE_SECRET: z.string().min(32),
+  COMMUNITY_INVITE_KEY_ID: z
+    .string()
+    .regex(/^[-\w]{1,32}$/)
+    .default('v1'),
+  COMMUNITY_INVITE_PREVIOUS_KEY_ID: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z
+      .string()
+      .regex(/^[-\w]{1,32}$/)
+      .optional()
+  ),
+  COMMUNITY_INVITE_PREVIOUS_SECRET: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.string().min(32).optional()
+  ),
   COMMUNITY_BOOTSTRAP_SECRET: z.string().min(32),
   COMMUNITY_PUBLIC_URL: z.url(),
   COMMUNITY_STORAGE_DRIVER: z.enum(['filesystem', 's3']).default('filesystem'),
@@ -38,6 +53,12 @@ const schema = z.object({
     10,
     100
   ),
+  COMMUNITY_INVITE_PREVIEW_ATTEMPTS_PER_MINUTE: integer(
+    'COMMUNITY_INVITE_PREVIEW_ATTEMPTS_PER_MINUTE',
+    20,
+    100
+  ),
+  COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE: integer('COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE', 5, 100),
   COMMUNITY_GOOGLE_CLIENT_ID: z.string().optional(),
   COMMUNITY_GOOGLE_CLIENT_SECRET: z.string().optional(),
   COMMUNITY_GITHUB_CLIENT_ID: z.string().optional(),
@@ -55,6 +76,15 @@ export function parseConfig(env: Record<string, unknown>) {
     throw new Error(`Invalid community configuration: ${fields}`);
   }
   const value = result.data;
+  if (
+    Boolean(value.COMMUNITY_INVITE_PREVIOUS_KEY_ID) !==
+      Boolean(value.COMMUNITY_INVITE_PREVIOUS_SECRET) ||
+    value.COMMUNITY_INVITE_PREVIOUS_KEY_ID === value.COMMUNITY_INVITE_KEY_ID
+  ) {
+    throw new Error(
+      'Previous invite key ID and secret must be set together, with an ID different from the current key'
+    );
+  }
   for (const name of ['GOOGLE', 'GITHUB'] as const) {
     const id = value[`COMMUNITY_${name}_CLIENT_ID`];
     const secret = value[`COMMUNITY_${name}_CLIENT_SECRET`];
@@ -107,6 +137,9 @@ export function parseConfig(env: Record<string, unknown>) {
     databaseUrl: value.COMMUNITY_DATABASE_URL,
     authSecret: value.COMMUNITY_AUTH_SECRET,
     inviteSecret: value.COMMUNITY_INVITE_SECRET,
+    inviteKeyId: value.COMMUNITY_INVITE_KEY_ID,
+    invitePreviousKeyId: value.COMMUNITY_INVITE_PREVIOUS_KEY_ID,
+    invitePreviousSecret: value.COMMUNITY_INVITE_PREVIOUS_SECRET,
     bootstrapSecret: value.COMMUNITY_BOOTSTRAP_SECRET,
     publicUrl: publicUrl.origin,
     storage,
@@ -136,6 +169,8 @@ export function parseConfig(env: Record<string, unknown>) {
       uploadBytesPerDay: value.COMMUNITY_UPLOAD_BYTES_PER_DAY,
       signupAttemptsPerMinute: value.COMMUNITY_SIGNUP_ATTEMPTS_PER_MINUTE,
       bootstrapAttemptsPerMinute: value.COMMUNITY_BOOTSTRAP_ATTEMPTS_PER_MINUTE,
+      invitePreviewAttemptsPerMinute: value.COMMUNITY_INVITE_PREVIEW_ATTEMPTS_PER_MINUTE,
+      pairingAttemptsPerMinute: value.COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE,
     },
   };
 }

@@ -94,6 +94,83 @@ export function registerCapabilityBranchedAssertions(ctx: CommunityConformanceCo
       ).rejects.toMatchObject({ capability: 'attachments', method: 'post' });
     });
 
+    it('C1d refuses explicit agent reads when acting is unsupported', async () => {
+      const { adapter, caps, roomId } = await arrange();
+      if (caps.agentActing) return;
+      const actor = { actingMemberId: 'unowned-agent' };
+      await expect(adapter.listRooms(actor)).rejects.toMatchObject({ capability: 'agentActing' });
+      await expect(adapter.getRoom(roomId, actor)).rejects.toMatchObject({
+        capability: 'agentActing',
+      });
+      await expect(adapter.listEntries(roomId, actor)).rejects.toMatchObject({
+        capability: 'agentActing',
+      });
+      await expect(adapter.listMembers(roomId, actor)).rejects.toMatchObject({
+        capability: 'agentActing',
+      });
+      await expect(adapter.downloadAttachment(roomId, 'attachment', actor)).rejects.toMatchObject({
+        capability: 'agentActing',
+      });
+      expect(() => adapter.subscribeRoomList(undefined, actor)).toThrow(CommunityUnsupportedError);
+      expect(() => adapter.subscribeRoom(roomId, undefined, undefined, actor)).toThrow(
+        CommunityUnsupportedError
+      );
+    });
+
+    if (declared.agentActing && declared.roomAdmin && declared.agentAdmission === 'owner-vouched') {
+      it('C1e keeps an agent-only room out of human reads and streams', async () => {
+        const { adapter, identityMemberId } = await arrange();
+        const agent = await adapter.admitAgent({
+          agentId: 'reader-agent',
+          displayName: 'Reader Agent',
+        });
+        const roomId = await seedRoom(adapter);
+        await adapter.addMember(roomId, agent.memberId);
+        await adapter.removeMember(roomId, identityMemberId);
+        const context = { actingMemberId: agent.memberId };
+        expect((await adapter.listRooms()).some((room) => room.roomId === roomId)).toBe(false);
+        expect((await adapter.listRooms(context)).some((room) => room.roomId === roomId)).toBe(
+          true
+        );
+        expect(await adapter.getRoom(roomId)).toBeNull();
+        expect(await adapter.getRoom(roomId, context)).not.toBeNull();
+        expect((await adapter.listEntries(roomId)).entries).toEqual([]);
+        expect((await adapter.listEntries(roomId, context)).entries.length).toBeGreaterThan(0);
+        expect(await adapter.listMembers(roomId)).toEqual([]);
+        expect(
+          (await adapter.listMembers(roomId, context)).some(
+            (member) => member.memberId === agent.memberId
+          )
+        ).toBe(true);
+        expect(() => adapter.subscribeRoom(roomId)).toThrow();
+        const roomStream = adapter
+          .subscribeRoom(roomId, undefined, undefined, context)
+          [Symbol.asyncIterator]();
+        try {
+          const snapshot = await nextEvent(roomStream, 'agent-only room snapshot', eventTimeoutMs);
+          expect(snapshot.type).toBe('snapshot');
+        } finally {
+          await roomStream.return?.();
+        }
+        await expect(adapter.listRooms({ actingMemberId: 'unowned-agent' })).rejects.toThrow();
+        const listStream = adapter.subscribeRoomList(undefined, context)[Symbol.asyncIterator]();
+        try {
+          const gainedRoomId = await seedRoom(adapter);
+          await adapter.addMember(gainedRoomId, agent.memberId);
+          const gained = await nextEvent(
+            listStream,
+            'agent room joined after subscribe',
+            eventTimeoutMs
+          );
+          expect(gained.type === 'room_added' && gained.room.roomId).toBe(gainedRoomId);
+        } finally {
+          await listStream.return?.();
+        }
+      });
+    } else {
+      it.skip('C1e agent-only room visibility (this backend lacks acting or admin)', () => {});
+    }
+
     if (declared.agentActing && declared.canPost && declared.agentAdmission === 'owner-vouched') {
       it('C1c attributes an owned agent post to that agent', async () => {
         const { adapter, roomId, identityMemberId } = await arrange();

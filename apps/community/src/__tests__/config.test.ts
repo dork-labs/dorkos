@@ -53,4 +53,21 @@ describe('community startup config', () => {
       parseConfig({ ...s3, COMMUNITY_S3_ENDPOINT: 'http://storage.example.com' })
     ).toThrow();
   });
+
+  it('accepts empty optional rotation settings from Compose but requires a complete previous key', () => {
+    expect(
+      parseConfig({
+        ...valid,
+        COMMUNITY_INVITE_PREVIOUS_KEY_ID: '',
+        COMMUNITY_INVITE_PREVIOUS_SECRET: '',
+      }).invitePreviousKeyId
+    ).toBeUndefined();
+    expect(() =>
+      parseConfig({
+        ...valid,
+        COMMUNITY_INVITE_PREVIOUS_KEY_ID: 'v0',
+        COMMUNITY_INVITE_PREVIOUS_SECRET: '',
+      })
+    ).toThrow();
+  });
 });
