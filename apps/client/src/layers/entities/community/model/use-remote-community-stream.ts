@@ -31,7 +31,12 @@ export function mergeRemoteCommunityEntries(
  * Follow one qualified room with bounded memory and cancelable reconnects.
  * Membership loss clears protected cache; a temporary outage remains visibly stale.
  */
-export function useRemoteCommunityStream(ref: string, roomId: string, enabled = true) {
+export function useRemoteCommunityStream(
+  ref: string,
+  roomId: string,
+  enabled = true,
+  reconnectKey = 0
+) {
   const transport = useTransport();
   const queries = useQueryClient();
   const address = JSON.stringify([ref, roomId]);
@@ -130,7 +135,7 @@ export function useRemoteCommunityStream(ref: string, roomId: string, enabled = 
       controller.abort();
       clearTimeout(retry);
     };
-  }, [address, ref, roomId, enabled, queries, transport]);
+  }, [address, ref, roomId, enabled, reconnectKey, queries, transport]);
 
   // A route change must never expose the previous community's history for even one render.
   return state.address === address && enabled

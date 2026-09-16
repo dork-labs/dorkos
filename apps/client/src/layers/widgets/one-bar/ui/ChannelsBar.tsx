@@ -1,3 +1,5 @@
+import { useSafeSearch } from '@/layers/shared/model';
+import { useRemoteCommunityRoom, useCommunityConnections } from '@/layers/entities/community';
 import {
   BridgeVisibilityBadge,
   RoomAvatar,
@@ -96,6 +98,25 @@ function RoomIdentity({ room }: { room: RoomWithRoster }) {
  * would be the worse half of that pair.
  */
 export function ChannelsBar() {
+  const search = useSafeSearch() as { community?: string; id?: string };
+  if (search.community && search.id)
+    return <RemoteChannelsBar community={search.community} roomId={search.id} />;
+  return <LocalChannelsBar />;
+}
+
+function RemoteChannelsBar({ community, roomId }: { community: string; roomId: string }) {
+  const room = useRemoteCommunityRoom(community, roomId);
+  const connections = useCommunityConnections();
+  const label = connections.data?.find((connection) => connection.ref === community)?.label;
+  return (
+    <OneBar
+      identity={<BarTitle>{room.data?.title ?? 'Community channel'}</BarTitle>}
+      chips={<span className="text-muted-foreground truncate text-xs">{label ?? 'Community'}</span>}
+    />
+  );
+}
+
+function LocalChannelsBar() {
   const { room } = useOneBarState();
   const team = useTeamRoom();
 

@@ -522,6 +522,7 @@ const tasksRoute = createRoute({
 export const channelsSearchSchema = mergeDialogSearch(
   z.object({
     id: z.string().optional(),
+    community: z.string().min(1).optional(),
     thread: z.string().optional(),
     entry: roomEntrySeqParam,
   })
