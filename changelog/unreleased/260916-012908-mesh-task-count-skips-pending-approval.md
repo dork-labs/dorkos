@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): a schedule waiting for approval no longer counts as an agent live task (DOR-2087)'
+  - 'fix(server): mesh no longer counts a schedule still waiting for approval as live work (DOR-2087)'
 ---
 
 ### Fixed
