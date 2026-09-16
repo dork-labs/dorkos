@@ -616,11 +616,29 @@ describe('signed admission over real HTTP and Postgres', () => {
         { cookie: ownerCookie },
         { authorization: `Bearer ${agentToken}` },
       ];
+      let cursor = '';
       for (const headers of credentials) {
         const response = await fetch(path, { headers, signal: AbortSignal.timeout(5_000) });
         expect(response.status).toBe(200);
-        expect((await response.json()).entries).toBeInstanceOf(Array);
+        const page = await response.json();
+        expect(page.entries).toBeInstanceOf(Array);
+        cursor ||= page.entries[0]?.cursor ?? '';
       }
+      expect(cursor).not.toBe('');
+      const read = await fetch(
+        `http://localhost:${address.port}/api/v1/channels/${channelId}/read-cursor`,
+        {
+          method: 'PUT',
+          headers: {
+            cookie: ownerCookie,
+            origin: config.publicUrl,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({ cursor }),
+          signal: AbortSignal.timeout(5_000),
+        }
+      );
+      expect(read.status).toBe(200);
     } finally {
       await new Promise<void>((resolve) => isolated.close(() => resolve()));
       await singlePool.end();

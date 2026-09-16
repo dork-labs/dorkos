@@ -12,6 +12,7 @@ import type { CommunityConfig } from '../config.js';
 import { decodeCursor, encodeCursor } from '../cursor.js';
 import {
   assertPrincipalCurrent,
+  assertPrincipalCurrentInTransaction,
   lockChannel,
   requireJoined,
   requireMember,
@@ -106,17 +107,25 @@ export function registerEventRoutes(
 
   app.put('/api/v1/channels/:id/read-cursor', async (c) => {
     const member = await requireMember(c, auth, pool);
+    const openedSession = await auth.api.getSession({ headers: c.req.raw.headers });
+    if (!openedSession || openedSession.user.id !== member.user_id)
+      throw new ApiError(401, 'UNAUTHENTICATED', 'This session is unavailable.');
     const body = await readJson(c, CommunityWireReadCursorRequestSchema);
     const { channel, current } = await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), member);
       requireJoined(channel);
-      const currentMember = await requireMember(c, auth, pool);
-      if (currentMember.id !== member.id)
-        throw new ApiError(401, 'UNAUTHENTICATED', 'This session is unavailable.');
-      const active = await client.query('SELECT 1 FROM members WHERE id=$1 AND active FOR SHARE', [
-        member.id,
-      ]);
-      if (!active.rowCount) throw new ApiError(403, 'FORBIDDEN', 'Your membership has ended.');
+      await assertPrincipalCurrentInTransaction(
+        client,
+        {
+          kind: 'human',
+          id: member.id,
+          ownerMemberId: member.id,
+          display_name: member.display_name,
+          community_id: member.community_id,
+        },
+        'read',
+        openedSession.session.id
+      );
       const seq = decodeCursor(
         body.cursor,
         { channelId: channel.id, thread: null, epoch: channel.epoch },

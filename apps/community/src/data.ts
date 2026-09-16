@@ -170,7 +170,8 @@ export async function assertPrincipalCurrentInTransaction(
   } else if (sessionId) {
     const current = await client.query(
       `SELECT 1 FROM session s JOIN members m ON m.user_id=s."userId"
-       WHERE s.id=$1 AND m.id=$2 AND s."expiresAt">now() AND m.active`,
+       WHERE s.id=$1 AND m.id=$2 AND s."expiresAt">now() AND m.active
+       FOR SHARE OF s,m`,
       [sessionId, principal.id]
     );
     if (current.rowCount) return;
