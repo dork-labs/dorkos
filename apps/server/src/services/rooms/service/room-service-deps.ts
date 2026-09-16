@@ -87,9 +87,23 @@ export interface RoomEntryIndexer {
  */
 export type RoomSearchScope = 'all' | ReadonlyMap<string, number>;
 
+/**
+ * The persisted authorization answer for a locally cached remote room.
+ *
+ * `null` means an ordinary local room. A boolean is deliberately decided before
+ * the install-owner shortcut: remote history remains remote-authorized even
+ * though its cache rows live in the local SQLite room tables.
+ */
+export interface RoomMirrorAccess {
+  canRead(roomId: string, authorId: string): boolean | null;
+  hasMirrors(): boolean;
+}
+
 /** Everything {@link RoomService} is constructed from. */
 export interface RoomServiceDeps {
   store: RoomStore;
+  /** Persisted access control for native remote-community mirror rows. */
+  mirrorAccess?: RoomMirrorAccess;
   /** Reactions on this room's entries — durable state, never a turn. */
   reactions: ReactionStore;
   /** The documents on this room's shared canvas. */

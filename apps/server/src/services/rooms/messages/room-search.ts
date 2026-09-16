@@ -165,9 +165,21 @@ export class RoomSearch {
    *   rooms — and matches nothing.
    */
   searchScope(viewerAuthorId: string): RoomSearchScope {
-    if (this.visibility.seesEveryRoom(viewerAuthorId)) return 'all';
+    if (this.visibility.seesEveryRoom(viewerAuthorId)) {
+      if (!this.visibility.hasRestrictedMirrors()) return 'all';
+      // `'all'` cannot subtract a hidden remote cache row. Once a mirror is
+      // present, name the permitted local rooms explicitly so the index never
+      // receives a coordinate it may hand back through a guessed cache id.
+      return new Map(
+        this.store
+          .listRooms({ includeArchived: true })
+          .filter((room) => this.visibility.canSee(room.id, viewerAuthorId))
+          .map((room) => [room.id, 0])
+      );
+    }
     const floors = new Map<string, number>();
     for (const membership of this.store.listMembershipsFor(viewerAuthorId)) {
+      if (!this.visibility.canSee(membership.roomId, viewerAuthorId)) continue;
       floors.set(membership.roomId, membership.joinedSeq);
     }
     return floors;
@@ -251,6 +263,7 @@ export class RoomSearch {
   ): MemberRoomMatch[] {
     const floors = new Map<string, number>();
     for (const membership of this.store.listMembershipsFor(viewerAuthorId)) {
+      if (!this.visibility.canSee(membership.roomId, viewerAuthorId)) continue;
       floors.set(membership.roomId, membership.joinedSeq);
     }
     if (floors.size === 0) return [];
