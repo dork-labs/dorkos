@@ -191,9 +191,9 @@ export function registerEventRoutes(
     const snapshotRows = (
       await pool.query(
         resume
-          ? `SELECT id,channel_id,seq,COALESCE(author_member_id,author_agent_id) AS author_member_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,created_at
+          ? `SELECT id,channel_id,seq,COALESCE(author_member_id,author_agent_id) AS author_member_id,author_agent_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,created_at
              FROM entries WHERE channel_id=$1 AND seq>$2 AND seq<=$3 ORDER BY seq LIMIT 100`
-          : `SELECT id,channel_id,seq,COALESCE(author_member_id,author_agent_id) AS author_member_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,created_at
+          : `SELECT id,channel_id,seq,COALESCE(author_member_id,author_agent_id) AS author_member_id,author_agent_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,created_at
              FROM (SELECT * FROM entries WHERE channel_id=$1 AND seq<=$2 ORDER BY seq DESC LIMIT 100) e ORDER BY seq`,
         resume ? [channel.id, position, Number(channel.last_seq)] : [channel.id, position]
       )
@@ -366,7 +366,7 @@ export function registerEventRoutes(
                 return;
               }
               const result = await pool.query(
-                `SELECT id,channel_id,seq,COALESCE(author_member_id,author_agent_id) AS author_member_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,created_at
+                `SELECT id,channel_id,seq,COALESCE(author_member_id,author_agent_id) AS author_member_id,author_agent_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,created_at
                FROM entries WHERE channel_id=$1 AND seq>$2 ORDER BY seq LIMIT 1`,
                 [channel.id, position]
               );

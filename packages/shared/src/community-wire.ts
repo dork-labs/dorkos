@@ -188,6 +188,8 @@ export const CommunityWireEntrySchema = z.strictObject({
   seq: z.number().int().positive(),
   authorMemberId: id,
   authorDisplayName: z.string().min(1),
+  /** Immutable author principal kind, retained after a member or agent becomes inactive. */
+  authorKind: z.enum(['human', 'agent']),
   text: z.string(),
   /** Member IDs resolved from handles at write time against the joined roster. */
   mentions,

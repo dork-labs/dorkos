@@ -28,6 +28,7 @@ interface EntryRow {
   channel_id: string;
   seq: string;
   author_member_id: string;
+  author_agent_id: string | null;
   author_display_name: string;
   text: string;
   mentions: string[];
@@ -50,6 +51,7 @@ export function entryProjection(
     seq: Number(row.seq),
     authorMemberId: row.author_member_id,
     authorDisplayName: row.author_display_name,
+    authorKind: row.author_agent_id ? 'agent' : 'human',
     text: row.text,
     mentions: row.mentions,
     parentEntryId: row.parent_entry_id,
@@ -73,7 +75,7 @@ export function entryProjection(
 /** Load one entry without revealing its storage columns. */
 export async function loadEntry(client: PoolClient | Pool, id: string): Promise<EntryRow> {
   const result = await client.query<EntryRow>(
-    'SELECT id,channel_id,seq,COALESCE(author_member_id,author_agent_id) AS author_member_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,created_at FROM entries WHERE id=$1',
+    'SELECT id,channel_id,seq,COALESCE(author_member_id,author_agent_id) AS author_member_id,author_agent_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,created_at FROM entries WHERE id=$1',
     [id]
   );
   if (!result.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Entry not found.');
@@ -261,7 +263,7 @@ export function registerEntryRoutes(
       }
       const limit = parsed.limit ?? 50;
       const result = await client.query<EntryRow>(
-        `SELECT id,channel_id,seq,COALESCE(author_member_id,author_agent_id) AS author_member_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,created_at
+        `SELECT id,channel_id,seq,COALESCE(author_member_id,author_agent_id) AS author_member_id,author_agent_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,created_at
          FROM entries WHERE channel_id=$1 AND seq>$2 AND
            (($3::uuid IS NULL AND thread_root_entry_id IS NULL) OR ($3::uuid IS NOT NULL AND (id=$3 OR thread_root_entry_id=$3)))
          ORDER BY seq LIMIT $4`,

@@ -174,6 +174,7 @@ describe('community server port additions', () => {
       seq: 1,
       authorMemberId: 'human-1',
       authorDisplayName: 'Ana',
+      authorKind: 'human',
       text: '@helper hello',
       mentions: ['agent-1'],
       cursor: 'room-resume-1',

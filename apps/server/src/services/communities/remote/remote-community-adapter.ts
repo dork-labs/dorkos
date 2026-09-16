@@ -86,6 +86,10 @@ const capabilities: CommunityCapabilities = {
 /** The standalone server defaults to 10 MiB and may configure at most 25 MiB. */
 const MAX_REMOTE_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 const remoteSequences = new WeakMap<CommunityEntry, number>();
+const remoteAuthorMetadata = new WeakMap<
+  CommunityEntry,
+  Readonly<{ displayName: string; kind: 'human' | 'agent' }>
+>();
 const communityUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
@@ -101,6 +105,13 @@ const communityUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{
  */
 export function remoteSequenceOf(projected: CommunityEntry): number | undefined {
   return remoteSequences.get(projected);
+}
+
+/** Read immutable server-supplied author metadata retained for native cache import. */
+export function remoteAuthorOf(
+  projected: CommunityEntry
+): Readonly<{ displayName: string; kind: 'human' | 'agent' }> | undefined {
+  return remoteAuthorMetadata.get(projected);
 }
 
 /** Translate a server-authoritative room/cursor refusal into the port's safe error. */
@@ -150,6 +161,8 @@ function entry(
     channelId: string;
     seq: number;
     authorMemberId: string;
+    authorDisplayName: string;
+    authorKind: 'human' | 'agent';
     text: string;
     mentions: string[];
     parentEntryId: string | null;
@@ -180,6 +193,10 @@ function entry(
     attachments: value.attachments,
   };
   remoteSequences.set(projected, value.seq);
+  remoteAuthorMetadata.set(projected, {
+    displayName: value.authorDisplayName,
+    kind: value.authorKind,
+  });
   return projected;
 }
 

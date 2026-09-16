@@ -110,6 +110,7 @@ beforeAll(async () => {
             seq: 1,
             authorMemberId: 'human-id',
             authorDisplayName: 'Human',
+            authorKind: 'human',
             text: 'hello',
             mentions: [],
             parentEntryId: null,

@@ -41,7 +41,11 @@ export { listRoomsAcrossCommunities } from './list-rooms-across-communities.js';
 // Only the startup wiring leaves this domain — the adapter itself is reached
 // through the registry, the way every other backend behind this port will be.
 export { registerLocalCommunity } from './local/register-local-community.js';
-export { RemoteCommunityAdapter, remoteSequenceOf } from './remote/remote-community-adapter.js';
+export {
+  RemoteCommunityAdapter,
+  remoteAuthorOf,
+  remoteSequenceOf,
+} from './remote/remote-community-adapter.js';
 export {
   CommunityNotRegisteredError,
   CommunityRegistry,
