@@ -230,27 +230,33 @@ describe('qualified remote community transport', () => {
     );
   });
 
-  it('uploads through the local API with a stable key and refuses oversized bytes', async () => {
+  it('uploads raw file bytes with encoded metadata and refuses oversized bytes', async () => {
     const attachment = {
       id: 'file',
-      name: 'note.txt',
-      contentType: 'text/plain',
+      name: 'résumé 📎.png',
+      contentType: 'image/png',
       byteSize: 3,
       checksum: 'sha',
     };
     const fetch = answer({ attachment });
+    const file = new File(['abc'], attachment.name, { type: attachment.contentType });
     await expect(
-      methods().uploadRemoteCommunityAttachment(
-        'community-a',
-        'same-id',
-        new File(['abc'], 'note.txt'),
-        'stable'
-      )
+      methods().uploadRemoteCommunityAttachment('community-a', 'same-id', file, 'stable')
     ).resolves.toEqual(attachment);
     const [url, options] = fetch.mock.calls[0];
     expect(url).toBe('/api/communities/community-a/rooms/same-id/attachments');
-    expect(options.headers).toEqual({});
-    expect(options.body.get('idempotencyKey')).toBe('stable');
+    expect(options).toMatchObject({
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'x-file-name': encodeURIComponent(attachment.name),
+        'x-file-content-type': attachment.contentType,
+        'x-file-size': '3',
+        'idempotency-key': 'stable',
+      },
+    });
+    expect(options.body).toBe(file);
+    await expect((options.body as File).text()).resolves.toBe('abc');
     await expect(
       methods().uploadRemoteCommunityAttachment(
         'community-a',

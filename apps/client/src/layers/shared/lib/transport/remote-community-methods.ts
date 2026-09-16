@@ -192,15 +192,21 @@ export function createRemoteCommunityMethods(baseUrl: string): RemoteCommunityTr
       if (file.size > MAX_FILE_BYTES) throw new Error('Files must be 25 MB or smaller.');
       if (!idempotencyKey || idempotencyKey.length > 128)
         throw new Error('The file retry key is invalid.');
-      const body = new FormData();
-      body.append('file', file);
-      body.append('idempotencyKey', idempotencyKey);
-      const response = await fetchResponse(baseUrl, `${roomPath(ref, roomId)}/attachments`, {
-        method: 'POST',
-        headers: {},
-        body,
-      });
-      return RemoteCommunityAttachmentResponseSchema.parse(await response.json()).attachment;
+      return RemoteCommunityAttachmentResponseSchema.parse(
+        await fetchJSON(baseUrl, `${roomPath(ref, roomId)}/attachments`, {
+          method: 'POST',
+          // The route reads raw bytes. Setting this explicitly prevents the
+          // HTTP helper's JSON default from sending the file through a parser.
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'x-file-name': encodeURIComponent(file.name),
+            'x-file-content-type': file.type || 'application/octet-stream',
+            'x-file-size': String(file.size),
+            'idempotency-key': idempotencyKey,
+          },
+          body: file,
+        })
+      ).attachment;
     },
     async downloadRemoteCommunityAttachment(ref, roomId, attachmentId) {
       const response = await fetchResponse(
