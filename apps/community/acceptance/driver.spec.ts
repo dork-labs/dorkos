@@ -1419,7 +1419,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
             `/api/communities/${refA}/rooms/${roomA!.roomId}/entries`
       );
       await localComposer.fill(ownerAfterEjection);
-      await localPage.getByRole('button', { name: 'Send', exact: true }).click();
+      await localComposer.press('Enter');
       const ownerPostResult = await ownerPostResponse;
       expect(
         ownerPostResult.ok(),
