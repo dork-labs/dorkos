@@ -422,6 +422,49 @@ describe('RemoteMirrorStore', () => {
     expect(harness.service.listHolds()).toHaveLength(0);
   });
 
+  it('returns the real RoomService count when stopping one qualified mirrored agent', async () => {
+    const agents = agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } });
+    const runner = gatedRunner();
+    const { harness, mirrors } = wired(agents, { runner });
+    const agent = harness.authors.resolveAgent('/agents/ana', 'Ana');
+    const room = {
+      ...roomInput(REF_A, 'general', harness.human),
+      accessors: [{ authorId: agent.id, responseMode: 'always' as const }],
+    };
+    const enrollments = new CommunityAgentEnrollmentStore(harness.db);
+    enrollments.activate({
+      communityRef: REF_A,
+      localAgentId: 'local-ana',
+      remoteMemberId: 'remote-ana',
+      ownerAuthorId: harness.human,
+    });
+    const bridge = new RemoteRoomSubscriptionBridge(
+      mirrors,
+      harness.service,
+      enrollments,
+      (localAgentId) => (localAgentId === 'local-ana' ? agent.id : null)
+    );
+    const incoming = nativeEntry(REF_A, 'general', 1);
+    incoming.entry = { ...incoming.entry, mentions: ['remote-ana'] };
+    bridge.importLive(
+      room,
+      {
+        ...incoming,
+        author: { ...incoming.author, kind: 'human' },
+        serverCreatedAt: new Date().toISOString(),
+      },
+      { reconnect: false, wasActiveBeforeDisconnect: false, readOnly: false }
+    );
+    await settleUntil(() => runner.holdsFor(agent.id) === 1, 'the qualified external turn to hold');
+
+    // This is the numeric RoomService receipt that the route must preserve.
+    await expect(bridge.haltRoomAgent(REF_A, 'general', 'local-ana', harness.human)).resolves.toBe(
+      1
+    );
+    await harness.service.triggersIdle();
+    expect(runner.interrupted).toHaveLength(1);
+  });
+
   it('reconciles only the owner-authorized agent wire key without delaying unrelated agent history', () => {
     const { harness, mirrors } = wired();
     const room = roomInput(REF_A, 'general', harness.human);

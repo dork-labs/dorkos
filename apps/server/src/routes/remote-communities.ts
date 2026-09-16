@@ -442,7 +442,7 @@ export function createRemoteCommunitiesRouter(): Router {
         req.params.roomId,
         owner
       );
-      res.json({ stopped: stopped > 0 });
+      res.json({ stopped });
     } catch (error) {
       fail(res, error);
     }
@@ -458,7 +458,7 @@ export function createRemoteCommunitiesRouter(): Router {
         req.params.localAgentId,
         owner
       );
-      res.json({ stopped: stopped > 0 });
+      res.json({ stopped });
     } catch (error) {
       fail(res, error);
     }

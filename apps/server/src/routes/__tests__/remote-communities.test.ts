@@ -2,6 +2,7 @@
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
+import { HaltRoomResponseSchema } from '@dorkos/shared/room-schemas';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fixture = vi.hoisted(() => {
@@ -417,10 +418,12 @@ describe('qualified remote community writes and live projections', () => {
   });
 
   it('halts only the requested agent in the requested qualified room', async () => {
+    fixture.lifecycle.haltRoomAgent.mockResolvedValueOnce(1);
     const response = await request(testServer).post(
       `/api/communities/${fixture.ref}/rooms/room-a/agents/local-agent-a/halt`
     );
     expect(response.status).toBe(200);
+    expect(HaltRoomResponseSchema.parse(response.body)).toEqual({ stopped: 1 });
     expect(fixture.lifecycle.haltRoomAgent).toHaveBeenCalledWith(
       fixture.ref,
       'room-a',
@@ -447,6 +450,8 @@ describe('qualified remote community writes and live projections', () => {
   });
 
   it('stops local remote-room work through the owner-qualified lifecycle without a remote request', async () => {
+    fixture.lifecycle.haltRoom.mockResolvedValueOnce(2);
+    fixture.lifecycle.haltRoomAgent.mockResolvedValueOnce(1);
     const room = await request(testServer).post(
       `/api/communities/${fixture.ref}/rooms/room-a/halt`
     );
@@ -454,9 +459,9 @@ describe('qualified remote community writes and live projections', () => {
       `/api/communities/${fixture.ref}/rooms/room-a/agents/local-agent-a/halt`
     );
     expect(room.status).toBe(200);
-    expect(room.body).toEqual({ stopped: true });
+    expect(HaltRoomResponseSchema.parse(room.body)).toEqual({ stopped: 2 });
     expect(agent.status).toBe(200);
-    expect(agent.body).toEqual({ stopped: true });
+    expect(HaltRoomResponseSchema.parse(agent.body)).toEqual({ stopped: 1 });
     expect(fixture.adapter.postEntry).not.toHaveBeenCalled();
   });
 });
