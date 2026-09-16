@@ -184,7 +184,8 @@ export interface RightPanelContribution extends BaseContribution {
    * hides under the in-process transport), or an agent/folder the tab does not
    * apply to. When omitted, the contribution is always visible.
    *
-   * `transport`, `agentId`, `cwd`, and `explicitAgentPath` are optional so unit
+   * `transport`, `agentId`, `cwd`, `explicitAgentPath`, and
+   * `isRemoteCommunityRoom` are optional so unit
    * callers can pass a bare `{ pathname }`; the shell (RightPanelContainer)
    * always supplies them. `agentId` and `cwd` are `string | null` — null is the
    * honest value while no agent is registered at the selected folder, no folder
@@ -203,6 +204,8 @@ export interface RightPanelContribution extends BaseContribution {
     agentId?: string | null;
     cwd?: string | null;
     explicitAgentPath?: string | null;
+    /** Whether the current channel address belongs to a connected community. */
+    isRemoteCommunityRoom?: boolean;
   }) => boolean;
 }
 

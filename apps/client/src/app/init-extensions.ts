@@ -192,7 +192,8 @@ export function registerRightPanelTabs(register: RegisterFn): void {
     component: lazy(() =>
       import('@/layers/features/room-management').then((m) => ({ default: m.RoomPanel }))
     ),
-    visibleWhen: ({ pathname }) => routeShowsRoom(pathname),
+    visibleWhen: ({ pathname, isRemoteCommunityRoom }) =>
+      routeShowsRoom(pathname) && !isRemoteCommunityRoom,
     priority: 8,
   });
 
