@@ -17,6 +17,18 @@ import {
   CommunityWireEntryPostResponseSchema,
   CommunityWireEntryPageSchema,
   CommunityWireErrorSchema,
+  CommunityWireInviteListResponseSchema,
+  CommunityWireInvitePreflightResponseSchema,
+  CommunityWirePairingPollRequestSchema,
+  CommunityWirePairingCancelRequestSchema,
+  CommunityWirePairingApproveResponseSchema,
+  CommunityWirePairingDeclineRequestSchema,
+  CommunityWirePairingDeclineResponseSchema,
+  CommunityWirePairingStatusResponseSchema,
+  CommunityWireAgentChannelMembershipRequestSchema,
+  CommunityWireAgentChannelMembershipResponseSchema,
+  CommunityWireOwnerTransferResponseSchema,
+  CommunityWireGrantListResponseSchema,
 } from '../community-wire.js';
 import {
   CommunityPairingExchangeSecretResponseSchema,
@@ -200,6 +212,7 @@ describe('community server port additions', () => {
         grant: {
           id: 'grant-1',
           memberId: 'human-1',
+          installName: 'Desk',
           scopes: ['read', 'post'],
           createdAt: '2026-09-16T00:00:00.000Z',
         },
@@ -217,5 +230,77 @@ describe('community server port additions', () => {
         },
       }).success
     ).toBe(true);
+  });
+
+  it('validates phase-two admission and management receipts without exposing secrets', () => {
+    const invite = {
+      id: 'invite-1',
+      channelId: null,
+      createdAt: '2026-09-16T00:00:00.000Z',
+      expiresAt: '2026-09-17T00:00:00.000Z',
+      seats: 2,
+      uses: 0,
+      revoked: false,
+    };
+    expect(CommunityWireInviteListResponseSchema.parse({ invites: [invite] }).invites).toHaveLength(
+      1
+    );
+    expect(
+      CommunityWireInviteListResponseSchema.safeParse({ invites: [{ ...invite, token: 'secret' }] })
+        .success
+    ).toBe(false);
+    expect(CommunityWireInvitePreflightResponseSchema.parse({ granted: true }).granted).toBe(true);
+    expect(
+      CommunityWirePairingPollRequestSchema.parse({ pairingId: 'pair-1', verifier: 'verifier-1' })
+    ).toEqual({ pairingId: 'pair-1', verifier: 'verifier-1' });
+    expect(
+      CommunityWirePairingCancelRequestSchema.parse({ pairingId: 'pair-1', verifier: 'verifier-1' })
+    ).toEqual({ pairingId: 'pair-1', verifier: 'verifier-1' });
+    expect(CommunityWirePairingApproveResponseSchema.parse({ approved: true }).approved).toBe(true);
+    expect(CommunityWirePairingDeclineRequestSchema.parse({ pairingId: 'pair-1' })).toEqual({
+      pairingId: 'pair-1',
+    });
+    expect(CommunityWirePairingDeclineResponseSchema.parse({ cancelled: true }).cancelled).toBe(
+      true
+    );
+    expect(
+      CommunityWirePairingStatusResponseSchema.safeParse({
+        pairingId: 'pair-1',
+        status: 'approved',
+        installName: 'Desk',
+        scopes: ['read'],
+        expiresAt: invite.expiresAt,
+        code: 'secret',
+      }).success
+    ).toBe(false);
+    expect(
+      CommunityWireAgentChannelMembershipRequestSchema.parse({ agentId: 'agent-1' }).agentId
+    ).toBe('agent-1');
+    expect(CommunityWireAgentChannelMembershipResponseSchema.parse({ joined: true }).joined).toBe(
+      true
+    );
+    expect(
+      CommunityWireOwnerTransferResponseSchema.parse({ ownerMemberId: 'human-2' }).ownerMemberId
+    ).toBe('human-2');
+    const grant = {
+      id: 'grant-1',
+      memberId: 'human-1',
+      installName: 'Desk',
+      scopes: ['read'],
+      createdAt: invite.createdAt,
+    };
+    expect(CommunityWireGrantListResponseSchema.parse({ grants: [grant] }).grants).toHaveLength(1);
+    expect(
+      CommunityWireGrantListResponseSchema.safeParse({ grants: [{ ...grant, token: 'secret' }] })
+        .success
+    ).toBe(false);
+    expect(
+      CommunityWireGrantListResponseSchema.safeParse({
+        grants: [{ ...grant, installName: undefined }],
+      }).success
+    ).toBe(false);
+    expect(COMMUNITY_API_V1_ROUTES.pairingCancel).toBe('/api/v1/pairings/cancel');
+    expect(COMMUNITY_API_V1_ROUTES.pairingDecline).toBe('/api/v1/pairings/decline');
+    expect(COMMUNITY_API_V1_ROUTES.channelAgents).toBe('/api/v1/channels/:id/agents');
   });
 });

@@ -7,7 +7,7 @@
 ## Progress
 
 **Status:** In Progress  
-**Tasks Completed:** 6 / 25 (foundation implemented, independently accepted, and verified; PR merge pending)
+**Tasks Completed:** 10 / 25 (foundation and admission implemented, independently accepted, and verified; PR merges pending)
 
 ## Foundation: tasks 1.1–1.6
 
@@ -33,6 +33,16 @@ The planning PR #1911 is merged. The foundation was rebased onto that merged mai
 
 Existing site, local server, and CLI retain Better Auth 1.7.2 with explicit compatible core/fetch peers; the independent app uses 1.7.5.
 
+## Admission: tasks 2.1–2.4
+
+Worker `/root/implement_community_server` implemented invitations, membership changes, installation pairing, and agent credentials in an isolated worktree. Reviewer `/root/review_community_foundation` independently applied `REVIEW.md`; root integrated the accepted changes onto the foundation.
+
+Signed invitations have server-side records, bounded seats and expiry, a short-lived signup grant, and transactional redemption. Members can be removed, leave, or transfer ownership. Pairing requires a private verifier and browser approval; approval and decline never expose personal or agent credentials to the browser. Agent enrollment, channel membership, token rotation and removal retain the human owner's authority and shared quotas.
+
+Independent review exercised concurrent promotion/removal, credential revocation during a database wait, ownership transfer against agent ejection, and one-connection database pools. Corrections recheck authority after locks, use the held transaction client, and lock the member before the original cookie session. The final ordered-lock mutation reproduced the intended deadlock failure; restoring the correction returned all 27 PostgreSQL tests to green. The accepted source is `48191843285d903d7e8647ce0ab950d6aec4ad44` before consolidation.
+
+Normal pre-push validation passed all 37 tasks on the accepted source, including 1,231 client files and 1,107 server files (one explicit server skip). Admission validation: PostgreSQL 27/27, unit tests 7/7, Chromium pairing tests 2/2, build, typecheck, lint, and normal repository hooks. The browser proof covers mobile keyboard focus, literal installation names, approval, decline, and secret-free responses. These changes also address the two SSE/history review nits on foundation PR #1912.
+
 ## Remaining work
 
-Tasks 2.1–2.4 are assigned to `/root/implement_community_server` in `codex/community-admission`. Task 3.1 storage is assigned to `/root/implement_community_contract` in `codex/community-storage` and is undergoing independent review. Storage is preparatory until real upload/download/export routes consume it. Invitations, moderation, pairing, agent credentials, files, browser chat, local community connections, real agent dispatch, and the final packaged acceptance journey remain unfinished. Canonical requirements and dependencies remain in `03-tasks.json`; the six phases remain six coherent PR batches.
+Tasks 3.1, 3.2 and 3.5 have accepted backend implementations in a separate storage worktree; their integration with the phase 3 browser is still in progress. Worker `/root/implement_community_server` owns browser tasks 3.3–3.4. Worker `/root/implement_community_contract` owns local connection tasks beginning at 4.1. Local community connections, authorized mirrors, real agent dispatch and delivery, and the final packaged acceptance journey remain unfinished. Canonical requirements and dependencies remain in `03-tasks.json`; the six phases remain six coherent PR batches.
