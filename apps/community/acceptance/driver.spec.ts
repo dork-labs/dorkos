@@ -20,11 +20,13 @@ test.describe('Packaged Community local-agent proof @integration', () => {
   test('pairs two built communities and confirms one real agent attachment reply', async ({
     browser,
     request,
-  }) => {
+  }, testInfo) => {
     const env = acceptanceEnvironment();
     const ownerA = await browser.newContext();
     const ownerB = await browser.newContext();
     const memberA = await browser.newContext();
+    const localContext = await browser.newContext();
+    const localPage = await localContext.newPage();
     const pageA = await ownerA.newPage();
     const pageB = await ownerB.newPage();
     const pageMemberA = await memberA.newPage();
@@ -168,10 +170,60 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       ).toBe(true);
       expect(await scenario.json()).toMatchObject({ scenario: 'rooms-post-attachment' });
 
+      const localConfig = await json<{ dorkHome: string }>(`${env.local}/api/config`);
+      expect(localConfig.dorkHome).toBe(join(env.root, 'local-home'));
+      const now = new Date().toISOString();
+      await json(`${env.local}/api/config`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          onboarding: { dismissedAt: now },
+          profile: { rolePromptDismissedAt: now },
+          telemetry: { userHasDecided: true },
+          ui: { fullPowerDecidedAt: now, fullPowerChoice: 'supervised' },
+        }),
+      });
+      await localPage.goto(
+        `${env.local}/channels?community=${encodeURIComponent(refA)}&id=${encodeURIComponent(roomA!.roomId)}`
+      );
+      await expect(
+        localPage.getByRole('button', { name: 'Stop my agents', exact: true })
+      ).toBeVisible();
+      await json(`${env.communityA}/api/test/delivery-receipt-gate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'arm', channelId: roomA!.roomId, phase: 'before-persist' }),
+      });
+
       const composer = pageMemberA.getByLabel(/Message #general/i);
       await expect(composer).toBeVisible();
       await composer.fill(`@${handle} show the packaged proof`);
       await pageMemberA.getByRole('button', { name: 'Send' }).click();
+
+      await eventually(
+        () => json<{ state: string }>(`${env.communityA}/api/test/delivery-receipt-gate`),
+        (gate) => gate.state === 'held-before-persist',
+        'the actual local agent never reached the pre-persistence delivery gate'
+      );
+      await expect(
+        localPage.getByText('Waiting for community confirmation…', { exact: true })
+      ).toBeVisible();
+      const heldHistory = await pageJson<{ entries: Array<{ authorDisplayName: string }> }>(
+        pageA,
+        `/api/v1/channels/${roomA!.roomId}/entries?limit=100`
+      );
+      expect(
+        heldHistory.entries.filter((entry) => entry.authorDisplayName === registered.name)
+      ).toHaveLength(0);
+      await localPage.screenshot({
+        path: testInfo.outputPath('native-pending-desktop.png'),
+        fullPage: true,
+      });
+      await json(`${env.communityA}/api/test/delivery-receipt-gate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'release' }),
+      });
 
       type Entry = {
         id: string;
@@ -196,6 +248,31 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         'the real local dispatcher/outbox did not produce exactly one remote agent attachment entry'
       );
       expect(confirmed).toHaveLength(1);
+      await expect(
+        localPage.getByText('Waiting for community confirmation…', { exact: true })
+      ).toHaveCount(0);
+      await expect(localPage.getByText('Here is what I saw.', { exact: true })).toHaveCount(1);
+      for (const viewport of [
+        { name: 'desktop', width: 1440, height: 900 },
+        { name: 'tablet', width: 820, height: 1180 },
+        { name: 'mobile', width: 390, height: 844 },
+      ]) {
+        await localPage.setViewportSize({ width: viewport.width, height: viewport.height });
+        await localPage.emulateMedia({
+          colorScheme: viewport.name === 'tablet' ? 'dark' : 'light',
+        });
+        await expect(
+          localPage.getByRole('button', { name: 'Stop my agents', exact: true })
+        ).toBeVisible();
+        expect(
+          await localPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+        ).toBe(true);
+        await localPage.screenshot({
+          path: testInfo.outputPath(`native-confirmed-${viewport.name}.png`),
+          fullPage: true,
+        });
+      }
+
       const memberConfirmed = await eventually(
         () =>
           pageJson<{ entries: Entry[] }>(
@@ -298,6 +375,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       await ownerA.close();
       await ownerB.close();
       await memberA.close();
+      await localContext.close();
     }
   });
 });

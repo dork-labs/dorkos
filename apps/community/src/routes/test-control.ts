@@ -3,7 +3,11 @@ import { z } from 'zod';
 import { DeliveryReceiptGate } from '../delivery-receipt-gate.js';
 
 const inputSchema = z.discriminatedUnion('action', [
-  z.strictObject({ action: z.literal('arm'), channelId: z.string().uuid() }),
+  z.strictObject({
+    action: z.literal('arm'),
+    channelId: z.string().uuid(),
+    phase: z.enum(['before-persist', 'after-persist']).default('after-persist'),
+  }),
   z.strictObject({ action: z.literal('release') }),
   z.strictObject({ action: z.literal('reset') }),
 ]);
@@ -17,7 +21,7 @@ export function registerCommunityTestControlRoutes(app: Hono, gate: DeliveryRece
     try {
       const state =
         parsed.data.action === 'arm'
-          ? gate.arm(parsed.data.channelId)
+          ? gate.arm(parsed.data.channelId, parsed.data.phase)
           : parsed.data.action === 'release'
             ? gate.release()
             : gate.reset();

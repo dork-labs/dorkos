@@ -112,6 +112,12 @@ export function registerEntryRoutes(
         })
       )
       .digest('hex');
+    if (principal.kind === 'agent' && receiptGate) {
+      await receiptGate.holdBeforePersist({
+        channelId: c.req.param('id'),
+        signal: c.req.raw.signal,
+      });
+    }
     const result = await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), principal);
       requireJoined(channel);
