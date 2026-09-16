@@ -63,6 +63,8 @@ import {
   type CommunityAdapter,
   type CommunityCapabilities,
   type CommunityConnection,
+  type CommunityAttachment,
+  type DownloadCommunityAttachment,
   type CommunityCursor,
   type CommunityEntry,
   type CommunityEntryPage,
@@ -70,6 +72,8 @@ import {
   type CommunityInvite,
   type CommunityMember,
   type CommunityRef,
+  type CommunityReadContext,
+  type UploadCommunityAttachmentInput,
   type CommunityRoom,
   type CommunityRoomEvent,
   type CommunityRoomListEvent,
@@ -106,6 +110,17 @@ const SNAPSHOT_HISTORY_LIMIT = 50;
 
 /** Page size when a caller does not ask for one. */
 const DEFAULT_PAGE_SIZE = 50;
+
+/** Refuse a selected agent before Buzz can reuse the machine's human identity. */
+function requireHumanReader(
+  community: CommunityRef,
+  context: CommunityReadContext | undefined,
+  method: string
+): void {
+  if (context?.actingMemberId !== undefined) {
+    throw new CommunityUnsupportedError(community, 'agentActing', method);
+  }
+}
 
 /** Channels to ask for in one discovery read. */
 const ROOM_DISCOVERY_LIMIT = 500;
@@ -201,6 +216,8 @@ export class BuzzCommunityAdapter implements CommunityAdapter {
       roomAddressing: 'opaque-id',
       canPost: false,
       roomAdmin: false,
+      agentActing: false,
+      attachments: false,
       roles: { supported: true, values: BUZZ_ROLES },
       admission: 'out-of-band',
       invite: 'none',
@@ -279,7 +296,8 @@ export class BuzzCommunityAdapter implements CommunityAdapter {
    * listed rather than hidden: `archived` is a state the port carries, and an
    * archived room still reads.
    */
-  async listRooms(): Promise<CommunityRoom[]> {
+  async listRooms(context?: CommunityReadContext): Promise<CommunityRoom[]> {
+    requireHumanReader(this.community, context, 'listRooms');
     await this.refreshRooms();
     return [...this.rooms.values()];
   }
@@ -294,7 +312,8 @@ export class BuzzCommunityAdapter implements CommunityAdapter {
    *
    * @param roomId - The channel UUID.
    */
-  async getRoom(roomId: string): Promise<CommunityRoom | null> {
+  async getRoom(roomId: string, context?: CommunityReadContext): Promise<CommunityRoom | null> {
+    requireHumanReader(this.community, context, 'getRoom');
     const events = await this.read([{ kinds: [KIND_GROUP_METADATA], '#d': [roomId], limit: 1 }]);
     const room = events.map((event) => toCommunityRoom(this.community, event)).find(Boolean);
     if (room) this.rooms.set(room.roomId, room);
@@ -313,7 +332,11 @@ export class BuzzCommunityAdapter implements CommunityAdapter {
    *
    * @param signal - Aborts the stream so a parked consumer terminates promptly.
    */
-  subscribeRoomList(signal?: AbortSignal): AsyncIterable<CommunityRoomListEvent> {
+  subscribeRoomList(
+    signal?: AbortSignal,
+    context?: CommunityReadContext
+  ): AsyncIterable<CommunityRoomListEvent> {
+    requireHumanReader(this.community, context, 'subscribeRoomList');
     const stream = new PushStream<CommunityRoomListEvent>(() => {
       this.listStreams.delete(stream);
       if (this.listStreams.size === 0) this.stopPolling();
@@ -376,8 +399,10 @@ export class BuzzCommunityAdapter implements CommunityAdapter {
   subscribeRoom(
     roomId: string,
     sinceCursor?: CommunityCursor,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    context?: CommunityReadContext
   ): AsyncIterable<CommunityRoomEvent> {
+    requireHumanReader(this.community, context, 'subscribeRoom');
     const room = this.rooms.get(roomId);
     if (!room) throw new CommunityRoomNotFoundError(this.community, roomId);
     const from =
@@ -423,6 +448,7 @@ export class BuzzCommunityAdapter implements CommunityAdapter {
     roomId: string,
     opts: ListCommunityEntriesOpts = {}
   ): Promise<CommunityEntryPage> {
+    requireHumanReader(this.community, opts, 'listEntries');
     const after =
       opts.cursor === undefined ? BEGINNING : readBuzzCursor(this.community, roomId, opts.cursor);
     const limit = opts.limit ?? DEFAULT_PAGE_SIZE;
@@ -471,6 +497,32 @@ export class BuzzCommunityAdapter implements CommunityAdapter {
     return Promise.reject(new CommunityUnsupportedError(this.community, 'canPost', 'post'));
   }
 
+  /** Buzz has no attachment write path through this read-only adapter. */
+  uploadAttachment(
+    _roomId: string,
+    _input: UploadCommunityAttachmentInput
+  ): Promise<CommunityAttachment> {
+    return Promise.reject(
+      new CommunityUnsupportedError(this.community, 'attachments', 'uploadAttachment')
+    );
+  }
+
+  /** Buzz has no attachment download path through this read-only adapter. */
+  downloadAttachment(
+    _roomId: string,
+    _attachmentId: string,
+    context?: CommunityReadContext
+  ): Promise<DownloadCommunityAttachment> {
+    if (context?.actingMemberId !== undefined) {
+      return Promise.reject(
+        new CommunityUnsupportedError(this.community, 'agentActing', 'downloadAttachment')
+      );
+    }
+    return Promise.reject(
+      new CommunityUnsupportedError(this.community, 'attachments', 'downloadAttachment')
+    );
+  }
+
   // --- Roster ----------------------------------------------------------------
 
   /**
@@ -482,7 +534,8 @@ export class BuzzCommunityAdapter implements CommunityAdapter {
    *
    * @param roomId - The channel whose roster to read.
    */
-  async listMembers(roomId: string): Promise<CommunityMember[]> {
+  async listMembers(roomId: string, context?: CommunityReadContext): Promise<CommunityMember[]> {
+    requireHumanReader(this.community, context, 'listMembers');
     let events: NostrEvent[];
     try {
       events = await this.read([{ kinds: [KIND_GROUP_MEMBERS], '#d': [roomId], limit: 1 }]);

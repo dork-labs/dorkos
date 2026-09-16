@@ -30,6 +30,7 @@ Turborepo monorepo:
 dorkos/
 ├── apps/
 │   ├── client/           # @dorkos/client - React 19 SPA (Vite 6, Tailwind 4, shadcn/ui)
+│   ├── community/        # @dorkos/community - Independent Hono/Postgres community service
 │   ├── server/           # @dorkos/server - Express 5 API (tsc, NodeNext)
 │   ├── site/             # @dorkos/site - Marketing site & docs (Next.js 16, Fumadocs)
 │   ├── desktop/          # @dorkos/desktop - Electron shell

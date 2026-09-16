@@ -1,0 +1,35 @@
+services:
+  database:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: community
+      POSTGRES_USER: community
+      POSTGRES_PASSWORD: ${COMMUNITY_POSTGRES_PASSWORD:?Set COMMUNITY_POSTGRES_PASSWORD}
+    volumes:
+      - community-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U community -d community']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  community:
+    build:
+      context: ../..
+      dockerfile: apps/community/Dockerfile
+    depends_on:
+      database:
+        condition: service_healthy
+    ports:
+      - '6481:6481'
+    environment:
+      COMMUNITY_DATABASE_URL: postgres://community:${COMMUNITY_POSTGRES_PASSWORD}@database:5432/community
+      COMMUNITY_PUBLIC_URL: ${COMMUNITY_PUBLIC_URL:?Set COMMUNITY_PUBLIC_URL}
+      COMMUNITY_AUTH_SECRET: ${COMMUNITY_AUTH_SECRET:?Set COMMUNITY_AUTH_SECRET}
+      COMMUNITY_INVITE_SECRET: ${COMMUNITY_INVITE_SECRET:?Set COMMUNITY_INVITE_SECRET}
+      COMMUNITY_BOOTSTRAP_SECRET: ${COMMUNITY_BOOTSTRAP_SECRET:?Set COMMUNITY_BOOTSTRAP_SECRET}
+      COMMUNITY_STORAGE_PATH: /data/blobs
+    volumes:
+      - community-blobs:/data/blobs
+volumes:
+  community-postgres:
+  community-blobs:

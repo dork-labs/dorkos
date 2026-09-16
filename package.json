@@ -6,7 +6,8 @@
   "packageManager": "pnpm@10.28.2",
   "scripts": {
     "preinstall": "npx only-allow pnpm",
-    "dev": "dotenv -- turbo dev --filter=!@dorkos/desktop",
+    "dev": "dotenv -- turbo dev --filter=!@dorkos/desktop --filter=!@dorkos/community",
+    "dev:community": "pnpm --filter @dorkos/shared build && dotenv -- concurrently --names api,web --kill-others \"pnpm --filter @dorkos/community dev\" \"pnpm --filter @dorkos/community dev:web\"",
     "dev:desktop": "dotenv -- turbo dev --filter=@dorkos/desktop",
     "dev:dogfood": "concurrently --names preview,cockpit --prefix-colors cyan,magenta --kill-others \"pnpm dev\" \"pnpm cli:dev\"",
     "build": "dotenv -- turbo build",

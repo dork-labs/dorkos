@@ -70,6 +70,136 @@ export function registerCapabilityBranchedAssertions(ctx: CommunityConformanceCo
       }
     });
 
+    it('C1a refuses unsupported acting identities before writing', async () => {
+      const { adapter, caps, roomId } = await arrange();
+      if (!caps.canPost || caps.agentActing) return;
+      await expect(
+        adapter.post(roomId, {
+          text: 'must not appear',
+          actingMemberId: 'another-agent',
+          idempotencyKey: 'acting-refusal',
+        })
+      ).rejects.toMatchObject({ capability: 'agentActing', method: 'post' });
+    });
+
+    it('C1b refuses attachment references when files are unsupported', async () => {
+      const { adapter, caps, roomId } = await arrange();
+      if (!caps.canPost || caps.attachments) return;
+      await expect(
+        adapter.post(roomId, {
+          text: 'must not appear',
+          attachmentIds: ['unavailable'],
+          idempotencyKey: 'file-refusal',
+        })
+      ).rejects.toMatchObject({ capability: 'attachments', method: 'post' });
+    });
+
+    it('C1d refuses explicit agent reads when acting is unsupported', async () => {
+      const { adapter, caps, roomId } = await arrange();
+      if (caps.agentActing) return;
+      const actor = { actingMemberId: 'unowned-agent' };
+      await expect(adapter.listRooms(actor)).rejects.toMatchObject({ capability: 'agentActing' });
+      await expect(adapter.getRoom(roomId, actor)).rejects.toMatchObject({
+        capability: 'agentActing',
+      });
+      await expect(adapter.listEntries(roomId, actor)).rejects.toMatchObject({
+        capability: 'agentActing',
+      });
+      await expect(adapter.listMembers(roomId, actor)).rejects.toMatchObject({
+        capability: 'agentActing',
+      });
+      await expect(adapter.downloadAttachment(roomId, 'attachment', actor)).rejects.toMatchObject({
+        capability: 'agentActing',
+      });
+      expect(() => adapter.subscribeRoomList(undefined, actor)).toThrow(CommunityUnsupportedError);
+      expect(() => adapter.subscribeRoom(roomId, undefined, undefined, actor)).toThrow(
+        CommunityUnsupportedError
+      );
+    });
+
+    if (declared.agentActing && declared.roomAdmin && declared.agentAdmission === 'owner-vouched') {
+      it('C1e keeps an agent-only room out of human reads and streams', async () => {
+        const { adapter, identityMemberId } = await arrange();
+        const agent = await adapter.admitAgent({
+          agentId: 'reader-agent',
+          displayName: 'Reader Agent',
+        });
+        const roomId = await seedRoom(adapter);
+        await adapter.addMember(roomId, agent.memberId);
+        await adapter.removeMember(roomId, identityMemberId);
+        const context = { actingMemberId: agent.memberId };
+        expect((await adapter.listRooms()).some((room) => room.roomId === roomId)).toBe(false);
+        expect((await adapter.listRooms(context)).some((room) => room.roomId === roomId)).toBe(
+          true
+        );
+        expect(await adapter.getRoom(roomId)).toBeNull();
+        expect(await adapter.getRoom(roomId, context)).not.toBeNull();
+        expect((await adapter.listEntries(roomId)).entries).toEqual([]);
+        expect((await adapter.listEntries(roomId, context)).entries.length).toBeGreaterThan(0);
+        expect(await adapter.listMembers(roomId)).toEqual([]);
+        expect(
+          (await adapter.listMembers(roomId, context)).some(
+            (member) => member.memberId === agent.memberId
+          )
+        ).toBe(true);
+        expect(() => adapter.subscribeRoom(roomId)).toThrow();
+        const roomStream = adapter
+          .subscribeRoom(roomId, undefined, undefined, context)
+          [Symbol.asyncIterator]();
+        try {
+          const snapshot = await nextEvent(roomStream, 'agent-only room snapshot', eventTimeoutMs);
+          expect(snapshot.type).toBe('snapshot');
+        } finally {
+          await roomStream.return?.();
+        }
+        await expect(adapter.listRooms({ actingMemberId: 'unowned-agent' })).rejects.toThrow();
+        const listStream = adapter.subscribeRoomList(undefined, context)[Symbol.asyncIterator]();
+        try {
+          const gainedRoomId = await seedRoom(adapter);
+          await adapter.addMember(gainedRoomId, agent.memberId);
+          const gained = await nextEvent(
+            listStream,
+            'agent room joined after subscribe',
+            eventTimeoutMs
+          );
+          expect(gained.type === 'room_added' && gained.room.roomId).toBe(gainedRoomId);
+        } finally {
+          await listStream.return?.();
+        }
+      });
+    } else {
+      it.skip('C1e agent-only room visibility (this backend lacks acting or admin)', () => {});
+    }
+
+    if (declared.agentActing && declared.canPost && declared.agentAdmission === 'owner-vouched') {
+      it('C1c attributes an owned agent post to that agent', async () => {
+        const { adapter, roomId, identityMemberId } = await arrange();
+        const agent = await adapter.admitAgent({
+          agentId: 'acting-agent',
+          displayName: 'Acting Agent',
+        });
+        await adapter.addMember(roomId, agent.memberId);
+        const receipt = await adapter.post(roomId, {
+          text: 'from agent',
+          actingMemberId: agent.memberId,
+          idempotencyKey: 'acting-agent-post',
+        });
+        const page = await adapter.listEntries(roomId);
+        const entry = page.entries.find((item) => item.id === receipt.entryId);
+        expect(entry?.authorId).toBe(agent.memberId);
+        expect(entry?.authorId).not.toBe(identityMemberId);
+        await expect(
+          adapter.post(roomId, {
+            text: 'not owned',
+            actingMemberId: 'unowned-agent',
+            idempotencyKey: 'unowned-agent-post',
+          })
+        ).rejects.toThrow();
+      });
+    } else {
+      it.skip('C1c owned agent acting (this backend does not declare the capability)', () => {});
+    }
+
     it('C2 round-trips create → rename → archive when roomAdmin, and refuses when it does not', async () => {
       const { adapter, caps, roomId } = await arrange();
       if (!caps.roomAdmin) {
@@ -508,6 +638,20 @@ export function registerCapabilityBranchedAssertions(ctx: CommunityConformanceCo
       });
     } else {
       it.skip('C16 machine-managed zero-setup connect (this backend declares a different credential model)', () => {});
+    }
+
+    if (declared.credential === 'browser-approved') {
+      it('C16a connects from a privately retained browser grant without exposing it', async () => {
+        // The fixture is already approved and ready. The approval ceremony is
+        // outside this port; connect consumes the adapter's private store.
+        const ready = makeAdapter();
+        const connection = await ready.connect();
+        expect(connection.status).toBe('connected');
+        expect(connection.identity).toBeDefined();
+        expect(JSON.stringify(connection)).not.toContain(ctx.opts.plantedCredential);
+      });
+    } else {
+      it.skip('C16a browser-approved private grant (this backend declares a different credential model)', () => {});
     }
 
     if (makeUnadmittedAdapter) {

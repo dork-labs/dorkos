@@ -27,6 +27,8 @@ import {
   type CommunityAdapter,
   type CommunityCapabilities,
   type CommunityConnection,
+  type CommunityAttachment,
+  type DownloadCommunityAttachment,
   type CommunityCursor,
   type CommunityEntry,
   type CommunityEntryPage,
@@ -35,6 +37,7 @@ import {
   type CommunityMember,
   type CommunityPresencePayload,
   type CommunityRef,
+  type CommunityReadContext,
   type CommunityRoom,
   type CommunityRoomClosedReason,
   type CommunityRoomEvent,
@@ -44,6 +47,7 @@ import {
   type ListCommunityEntriesOpts,
   type PostCommunityEntryInput,
   type UpdateCommunityRoomInput,
+  type UploadCommunityAttachmentInput,
 } from '@dorkos/shared/community-adapter';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { RoomKind } from '@dorkos/shared/room-schemas';
@@ -152,12 +156,14 @@ export interface FakeCommunityAdapterOpts {
   epoch?: string;
 }
 
-/** The all-on capability profile a fake starts from before overrides. */
+/** The established capability profile; new file and agent-acting paths opt in explicitly. */
 const DEFAULT_CAPABILITIES: Omit<CommunityCapabilities, 'type'> = {
   roomList: 'push',
   roomAddressing: 'slug',
   canPost: true,
   roomAdmin: true,
+  agentActing: false,
+  attachments: false,
   roles: {
     supported: true,
     default: 'member',
@@ -212,7 +218,7 @@ export class FakeCommunityAdapter implements CommunityAdapter {
   private readonly _agentsByLocalId = new Map<string, string>();
   private readonly _readCursors = new Map<string, CommunityCursor>();
   private readonly _roomStreams = new Map<string, Set<Pushable<CommunityRoomEvent>>>();
-  private readonly _listStreams = new Set<Pushable<CommunityRoomListEvent>>();
+  private readonly _listStreams = new Map<Pushable<CommunityRoomListEvent>, string>();
   private readonly _pollTimers = new Set<ReturnType<typeof setTimeout>>();
   private _counter = 0;
   private _connected = false;
@@ -305,27 +311,35 @@ export class FakeCommunityAdapter implements CommunityAdapter {
     this._pollTimers.clear();
     for (const streams of this._roomStreams.values()) for (const s of streams) s.end();
     this._roomStreams.clear();
-    for (const s of this._listStreams) s.end();
+    for (const s of this._listStreams.keys()) s.end();
     this._listStreams.clear();
     return Promise.resolve();
   }
 
   // --- Rooms ---------------------------------------------------------------
 
-  listRooms(): Promise<CommunityRoom[]> {
-    return Promise.resolve([...this._rooms.values()].map((r) => this._projectRoom(r)));
+  async listRooms(context?: CommunityReadContext): Promise<CommunityRoom[]> {
+    const reader = this._readerId(context, 'listRooms');
+    return [...this._rooms.values()]
+      .filter((r) => r.roster.has(reader))
+      .map((r) => this._projectRoom(r));
   }
 
-  getRoom(roomId: string): Promise<CommunityRoom | null> {
+  async getRoom(roomId: string, context?: CommunityReadContext): Promise<CommunityRoom | null> {
+    const reader = this._readerId(context, 'getRoom');
     const stored = this._rooms.get(roomId);
-    return Promise.resolve(stored ? this._projectRoom(stored) : null);
+    return stored?.roster.has(reader) ? this._projectRoom(stored) : null;
   }
 
-  subscribeRoomList(signal?: AbortSignal): AsyncIterable<CommunityRoomListEvent> {
+  subscribeRoomList(
+    signal?: AbortSignal,
+    context?: CommunityReadContext
+  ): AsyncIterable<CommunityRoomListEvent> {
+    const reader = this._readerId(context, 'subscribeRoomList');
     const stream = new Pushable<CommunityRoomListEvent>(() => {
       this._listStreams.delete(stream);
     });
-    this._listStreams.add(stream);
+    this._listStreams.set(stream, reader);
     signal?.addEventListener('abort', () => stream.end());
     return stream;
   }
@@ -367,13 +381,15 @@ export class FakeCommunityAdapter implements CommunityAdapter {
   subscribeRoom(
     roomId: string,
     sinceCursor?: CommunityCursor,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    context?: CommunityReadContext
   ): AsyncIterable<CommunityRoomEvent> {
+    const reader = this._readerId(context, 'subscribeRoom');
     const stored = this._rooms.get(roomId);
     // Both refusals land SYNCHRONOUSLY, before any stream exists: the port
     // requires the room check and the stale-cursor throw at call time, and this
     // is the reference implementation of that shape.
-    if (!stored) throw new CommunityRoomNotFoundError(this.community, roomId);
+    if (!stored?.roster.has(reader)) throw new CommunityRoomNotFoundError(this.community, roomId);
     const from = sinceCursor === undefined ? 0 : this._ordinalOrThrow(roomId, sinceCursor);
 
     const stream = new Pushable<CommunityRoomEvent>(() => {
@@ -406,8 +422,9 @@ export class FakeCommunityAdapter implements CommunityAdapter {
     roomId: string,
     opts: ListCommunityEntriesOpts = {}
   ): Promise<CommunityEntryPage> {
+    const reader = this._readerId(opts, 'listEntries');
     const stored = this._rooms.get(roomId);
-    if (!stored) return { entries: [], nextCursor: null };
+    if (!stored?.roster.has(reader)) return { entries: [], nextCursor: null };
     const from = opts.cursor === undefined ? 0 : this._ordinalOrThrow(roomId, opts.cursor);
     const matching = stored.entries.filter((e) => {
       if (e.ordinal <= from) return false;
@@ -428,10 +445,28 @@ export class FakeCommunityAdapter implements CommunityAdapter {
     if (!this._capabilities.canPost) {
       return Promise.reject(new CommunityUnsupportedError(this.community, 'canPost', 'post'));
     }
+    if (input.actingMemberId !== undefined && !this._capabilities.agentActing) {
+      return Promise.reject(new CommunityUnsupportedError(this.community, 'agentActing', 'post'));
+    }
+    if (input.attachmentIds?.length && !this._capabilities.attachments) {
+      return Promise.reject(new CommunityUnsupportedError(this.community, 'attachments', 'post'));
+    }
+    const authorId = input.actingMemberId ?? this._identityMemberId;
+    if (input.actingMemberId !== undefined) {
+      const agent = this._directory.get(authorId);
+      if (
+        agent?.kind !== 'agent' ||
+        agent.ownerMemberId !== this._identityMemberId ||
+        !this._directory.has(this._identityMemberId) ||
+        !this._rooms.get(roomId)?.roster.has(authorId)
+      ) {
+        return Promise.reject(new CommunityMemberNotFoundError(this.community, authorId));
+      }
+    }
     try {
       const entry = this.seedEntry(roomId, {
         text: input.text,
-        authorId: this._identityMemberId,
+        authorId,
         parentEntryId: input.parentEntryId,
         mentions: input.mentions,
       });
@@ -446,17 +481,44 @@ export class FakeCommunityAdapter implements CommunityAdapter {
     }
   }
 
+  /** Refuse file upload until a fixture explicitly implements the file capability. */
+  uploadAttachment(
+    _roomId: string,
+    _input: UploadCommunityAttachmentInput
+  ): Promise<CommunityAttachment> {
+    return Promise.reject(
+      new CommunityUnsupportedError(this.community, 'attachments', 'uploadAttachment')
+    );
+  }
+
+  /** Refuse file download until a fixture explicitly implements the file capability. */
+  downloadAttachment(
+    _roomId: string,
+    _attachmentId: string,
+    context?: CommunityReadContext
+  ): Promise<DownloadCommunityAttachment> {
+    try {
+      this._readerId(context, 'downloadAttachment');
+    } catch (err) {
+      return Promise.reject(err instanceof Error ? err : new Error(String(err)));
+    }
+    return Promise.reject(
+      new CommunityUnsupportedError(this.community, 'attachments', 'downloadAttachment')
+    );
+  }
+
   // --- Roster --------------------------------------------------------------
 
-  listMembers(roomId: string): Promise<CommunityMember[]> {
+  async listMembers(roomId: string, context?: CommunityReadContext): Promise<CommunityMember[]> {
+    const reader = this._readerId(context, 'listMembers');
     const stored = this._rooms.get(roomId);
-    if (!stored) return Promise.resolve([]);
+    if (!stored?.roster.has(reader)) return [];
     const members: CommunityMember[] = [];
     for (const membership of stored.roster.values()) {
       const member = this._projectMember(membership);
       if (member) members.push(member);
     }
-    return Promise.resolve(members);
+    return members;
   }
 
   addMember(
@@ -485,6 +547,7 @@ export class FakeCommunityAdapter implements CommunityAdapter {
       membership.responseMode = 'mention-only';
     }
     stored.roster.set(memberId, membership);
+    this._emitRoomList({ type: 'room_added', room: this._projectRoom(stored) }, memberId);
     return Promise.resolve(this._projectMember(membership)!);
   }
 
@@ -495,7 +558,9 @@ export class FakeCommunityAdapter implements CommunityAdapter {
         new CommunityUnsupportedError(this.community, 'roomAdmin', 'removeMember')
       );
     }
-    this._rooms.get(roomId)?.roster.delete(memberId);
+    if (this._rooms.get(roomId)?.roster.delete(memberId)) {
+      this._emitRoomList({ type: 'room_removed', community: this.community, roomId }, memberId);
+    }
     return Promise.resolve();
   }
 
@@ -873,6 +938,24 @@ export class FakeCommunityAdapter implements CommunityAdapter {
     return structuredClone(entry);
   }
 
+  /** Resolve a selected owned agent without falling back to the connected human. */
+  private _readerId(context: CommunityReadContext | undefined, method: string): string {
+    const selected = context?.actingMemberId;
+    if (selected === undefined) return this._identityMemberId;
+    if (!this._capabilities.agentActing) {
+      throw new CommunityUnsupportedError(this.community, 'agentActing', method);
+    }
+    const member = this._directory.get(selected);
+    if (
+      member?.kind !== 'agent' ||
+      member.ownerMemberId !== this._identityMemberId ||
+      !this._directory.has(this._identityMemberId)
+    ) {
+      throw new CommunityMemberNotFoundError(this.community, selected);
+    }
+    return selected;
+  }
+
   /** The role a new member gets, honouring an explicit request when it is declared. */
   private _defaultRoleFor(memberId: string, requested?: string): string | null {
     if (!this._capabilities.roles.supported) return null;
@@ -951,14 +1034,24 @@ export class FakeCommunityAdapter implements CommunityAdapter {
    * `'push'` adapter, on the declared interval on a `'poll'` one. The latency
    * differs; the shape does not.
    */
-  private _emitRoomList(event: CommunityRoomListEvent): void {
+  private _emitRoomList(event: CommunityRoomListEvent, onlyReader?: string): void {
+    const deliver = () => {
+      for (const [stream, reader] of this._listStreams) {
+        if (onlyReader !== undefined && reader !== onlyReader) continue;
+        if (onlyReader === undefined && event.type !== 'room_removed') {
+          const room = this._rooms.get(event.room.roomId);
+          if (!room?.roster.has(reader)) continue;
+        }
+        stream.push(event);
+      }
+    };
     if (this._capabilities.roomList === 'push') {
-      for (const stream of this._listStreams) stream.push(event);
+      deliver();
       return;
     }
     const timer = setTimeout(() => {
       this._pollTimers.delete(timer);
-      for (const stream of this._listStreams) stream.push(event);
+      deliver();
     }, this._capabilities.roomListPollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS);
     // Never keep a test process alive for a poll nobody is waiting on.
     (timer as { unref?: () => void }).unref?.();
