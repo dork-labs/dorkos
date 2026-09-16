@@ -70,12 +70,18 @@ export function assertNotAborted(signal?: AbortSignal): void {
 export function sanitizeDisplayName(name: string): string {
   const clean = Array.from(name.normalize('NFKC'), (character) => {
     const code = character.codePointAt(0) ?? 0;
-    return code < 32 || code === 127 || character === '/' || character === '\\' ? '_' : character;
+    return code < 32 ||
+      code === 127 ||
+      (code >= 0xd800 && code <= 0xdfff) ||
+      character === '/' ||
+      character === '\\'
+      ? '_'
+      : character;
   })
+    .slice(0, 180)
     .join('')
     .replace(/^\.+/, '')
-    .trim()
-    .slice(0, 180);
+    .trim();
   return clean || 'download';
 }
 
@@ -129,18 +135,7 @@ function detectedType(sample: Buffer, textValid: boolean, kind: 'attachment' | '
   )
     return 'image/webp';
   if (sample.subarray(0, 5).toString('ascii') === '%PDF-') return 'application/pdf';
-  const text = sample.toString('utf8').trimStart();
-  if (
-    textValid &&
-    !Array.from(text).some((character) => {
-      const code = character.codePointAt(0) ?? 0;
-      return code < 32 && code !== 9 && code !== 10 && code !== 13;
-    }) &&
-    !text.startsWith('<') &&
-    !text.startsWith('#!')
-  ) {
-    return 'text/plain; charset=utf-8';
-  }
+  if (textValid) return 'text/plain; charset=utf-8';
   throw new BlobStoreError('BLOB_TYPE_REJECTED', 'File type is not allowed');
 }
 
@@ -158,6 +153,30 @@ export async function stageBlob(directory: string, input: PutBlobInput) {
   const hash = createHash('sha256');
   const decoder = new TextDecoder('utf-8', { fatal: true });
   let textValid = true;
+  let textPrefix: 'leading' | 'hash' | 'safe' = 'leading';
+  const inspectText = (decoded: string) => {
+    for (const character of decoded) {
+      const code = character.codePointAt(0) ?? 0;
+      if ((code < 32 && code !== 9 && code !== 10 && code !== 13) || code === 127) {
+        textValid = false;
+        return;
+      }
+      if (textPrefix === 'leading') {
+        if (character.trim() === '') continue;
+        if (character === '<') {
+          textValid = false;
+          return;
+        }
+        textPrefix = character === '#' ? 'hash' : 'safe';
+      } else if (textPrefix === 'hash') {
+        if (character === '!') {
+          textValid = false;
+          return;
+        }
+        textPrefix = 'safe';
+      }
+    }
+  };
   let byteSize = 0;
   let sample = Buffer.alloc(0);
   let success = false;
@@ -181,7 +200,7 @@ export async function stageBlob(directory: string, input: PutBlobInput) {
         }
         if (textValid) {
           try {
-            decoder.decode(chunk, { stream: true });
+            inspectText(decoder.decode(chunk, { stream: true }));
           } catch {
             textValid = false;
           }
@@ -198,7 +217,7 @@ export async function stageBlob(directory: string, input: PutBlobInput) {
     if (byteSize === 0) throw new BlobStoreError('BLOB_EMPTY', 'Blob is empty');
     if (textValid) {
       try {
-        decoder.decode();
+        inspectText(decoder.decode());
       } catch {
         textValid = false;
       }
