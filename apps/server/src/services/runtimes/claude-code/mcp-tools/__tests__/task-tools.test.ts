@@ -203,6 +203,57 @@ describe('tasks_* operator-only field guard (in-session dorkos server)', () => {
     });
   });
 
+  describe('tasks_update cannot arm a schedule a package shipped switched off (DOR-2059)', () => {
+    it('flips `enabled` but leaves `status` — and so the scheduler eligibility — untouched', async () => {
+      // The row a discovery sweep leaves behind for a package-shipped
+      // `schedule.enabled: false`: parked, and switched off. `enabled` is
+      // agent-writable (task-write-policy.ts) by design, but `status` is
+      // operator-only and refused unconditionally on this surface — so this
+      // is the one call an agent actually has, and it must not be enough.
+      const offByDefault = store.updateTask(existing.id, {
+        status: 'pending_approval',
+        enabled: false,
+      })!;
+
+      const { isError, payload } = await call('tasks_update', {
+        id: offByDefault.id,
+        enabled: true,
+      });
+
+      expect(isError).toBe(false);
+      expect(payload.schedule).toBeDefined();
+      const after = store.getTask(offByDefault.id)!;
+      // The switch landed — `enabled` really is agent-writable...
+      expect(after.enabled).toBe(true);
+      // ...but the scheduler registers on `enabled && status === 'active'`
+      // (`task-registrar.ts`), and status did not move. An agent flipping the
+      // switch on its own is not an approval, and the row proves it.
+      expect(after.status).toBe('pending_approval');
+    });
+
+    it('refuses to move `status` at all, even riding along with `enabled`', async () => {
+      const offByDefault = store.updateTask(existing.id, {
+        status: 'pending_approval',
+        enabled: false,
+      })!;
+
+      const { isError, payload } = await call('tasks_update', {
+        id: offByDefault.id,
+        enabled: true,
+        status: 'active',
+      });
+
+      expect(isError).toBe(true);
+      expect(payload.code).toBe('operator_only_task_field');
+      expect(payload.fields).toEqual(['status']);
+      // The whole call is refused — `enabled` did not land either, so an agent
+      // cannot use a doomed `status` write to smuggle the switch through.
+      const after = store.getTask(offByDefault.id)!;
+      expect(after.enabled).toBe(false);
+      expect(after.status).toBe('pending_approval');
+    });
+  });
+
   describe('tasks_create — the advertised-but-inert path', () => {
     it('refuses permissionMode and creates no task at all', async () => {
       const before = store.getTasks().length;

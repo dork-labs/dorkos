@@ -67,6 +67,7 @@ import {
   type StandingCondition,
 } from './services/notifications/escalation-service.js';
 import { resolveScheduleParkPayload } from './services/notifications/emitters/schedule-park.js';
+import { needsScheduleApprovalAttention } from './services/tasks/schedule-permission-clamp.js';
 import { capabilityApprovalPayload } from './services/notifications/emitters/capability-approval.js';
 import {
   NotificationService,
@@ -2140,7 +2141,10 @@ async function start() {
         await Promise.all(
           taskStore
             .getTasks()
-            .filter((task) => task.status === 'pending_approval')
+            // A package can ship a schedule switched off; discovery still
+            // parks it, but it is not asking to run, so a restart must not
+            // re-arm an escalation for it (DOR-2059).
+            .filter((task) => needsScheduleApprovalAttention(task))
             .map(async (task) => ({
               kind: 'schedule.parked' as const,
               // Resolved here too, not just at the live edges: a proposal that

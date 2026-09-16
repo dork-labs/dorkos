@@ -36,6 +36,7 @@ import type { TaskRegistrar } from '../task-registrar.js';
 import { agentSkillsRoot } from '../skills-roots.js';
 import { skillsRoot } from './task-root-fixtures.js';
 import { applyTaskFileUpdate } from '../lifecycle/update-task-file.js';
+import { needsScheduleApprovalAttention } from '../schedule-permission-clamp.js';
 
 /** The id the project's agent is registered under. */
 const AGENT_ID = 'agent-1';
@@ -229,6 +230,48 @@ describe('a schedule that came with an installed package', () => {
 
     expect(after.status).toBe('active');
     expect(after.enabled).toBe(true);
+  });
+
+  it('is discovered switched off with nothing to escalate — no reason gate blocks a later approval (DOR-2059)', async () => {
+    // The ticket: `flow-drain` and `flow-groom` both ship
+    // `schedule.enabled: false`, and installing a package with N off-by-default
+    // schedules must not cost N clicks. The row itself stays `pending_approval`
+    // — the arm gate cannot skip a first sighting — but the schedule is
+    // discovered clean, and a person switching it on later goes through the
+    // FULL approval path with nothing standing in the way.
+    const task = await sweep();
+    expect(task.status).toBe('pending_approval');
+    expect(task.enabled).toBe(false);
+    // Fed a row REAL discovery produced, not a hand-written object — the two
+    // halves of `needsScheduleApprovalAttention` (origin, enabled) have to
+    // agree on a row `upsertFromFile` actually wrote, or a future change to
+    // how either is stamped could pass its own unit test while breaking this.
+    expect(needsScheduleApprovalAttention(task)).toBe(false);
+
+    const approved = await patch(task, { status: 'active', enabled: true });
+
+    expect(approved.ok).toBe(true);
+    expect(approved.task?.status).toBe('active');
+    expect(approved.task?.enabled).toBe(true);
+    // The package's own file is still untouched — the arm blocker and
+    // permission clamp ran on the same door every approval runs through.
+    expect(await fs.readFile(packagedFile, 'utf-8')).toBe(PACKAGED_SKILL);
+  });
+
+  it('is discovered switched off, then genuinely needs attention once the package ships it switched on', async () => {
+    // The other half of the same real-discovery row: `needsScheduleApprovalAttention`
+    // must not be permanently blind to a `file`-origin row — only to one that
+    // still ships `enabled: false`. Fed the exact row discovery produces both
+    // times, not a hand-written stand-in.
+    const off = await sweep();
+    expect(needsScheduleApprovalAttention(off)).toBe(false);
+
+    await fs.writeFile(packagedFile, PACKAGED_SKILL.replace('enabled: false', 'enabled: true'));
+    const on = await sweep();
+
+    expect(on.status).toBe('pending_approval');
+    expect(on.origin).toBe('file');
+    expect(needsScheduleApprovalAttention(on)).toBe(true);
   });
 
   it('is never armed by switching it on without approving it (DOR-607)', async () => {
