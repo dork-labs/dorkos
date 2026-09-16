@@ -174,6 +174,41 @@ function contract(
         ).rejects.toMatchObject({ code: 'BLOB_TYPE_REJECTED' });
       }
     });
+
+    it('checks every text chunk for controls and a delayed active prefix', async () => {
+      const invalid = [
+        Buffer.concat([Buffer.alloc(4096, 0x61), Buffer.from([0])]),
+        Buffer.concat([Buffer.alloc(4096, 0x20), Buffer.from('<script>alert(1)</script>')]),
+      ];
+      for (const body of invalid) {
+        await expect(
+          fixture.store.put({
+            source: Readable.from([body.subarray(0, 4096), body.subarray(4096)]),
+            displayName: 'spoofed.txt',
+            maxBytes: body.length,
+          })
+        ).rejects.toMatchObject({ code: 'BLOB_TYPE_REJECTED' });
+      }
+    });
+
+    it('turns a malformed Unicode name into safe round-trip download headers', async () => {
+      for (const displayName of ['\ud800-é.png', `${'a'.repeat(179)}😀.png`]) {
+        const stored = await fixture.store.put({
+          source: Readable.from([png]),
+          displayName,
+          maxBytes: png.length,
+        });
+        try {
+          const disposition = downloadHeaders(stored)['content-disposition'];
+          expect(disposition).not.toMatch(/[\r\n]/);
+          expect(decodeURIComponent(disposition.split("filename*=UTF-8''")[1])).toBe(
+            stored.displayName
+          );
+        } finally {
+          await fixture.store.delete(stored.key);
+        }
+      }
+    });
   });
 }
 
@@ -183,8 +218,11 @@ contract('filesystem blob store', async () => {
     store: new FileSystemBlobStore(directory),
     reopen: () => new FileSystemBlobStore(directory),
     clean: async () => {
-      expect(await readdir(directory)).toEqual([]);
-      await rm(directory, { recursive: true, force: true });
+      try {
+        expect(await readdir(directory)).toEqual([]);
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
     },
   };
 });
