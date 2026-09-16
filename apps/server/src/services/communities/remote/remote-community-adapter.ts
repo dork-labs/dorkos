@@ -689,21 +689,26 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
 
   private async verifiedEnrolledAgent(localAgentId: string): Promise<CommunityMember | null> {
     const binding = this.enrollments?.findRemoteMember(this.community, localAgentId, this.ownerKey);
-    if (!binding) return null;
+    // The in-memory cache remembers identity, never current admission. A durable
+    // store's revoked binding must not fall back to an older in-memory record.
+    const remoteMemberId = this.enrollments
+      ? binding?.remoteMemberId
+      : this.admittedAgents.get(localAgentId)?.memberId;
+    if (!remoteMemberId) return null;
     try {
-      // Fresh remote authority is required before returning a durable mapping.
+      // Fresh remote authority is required before returning either cached mapping.
       await this.request(
         COMMUNITY_API_V1_ROUTES.channels,
         undefined,
         {
-          actingMemberId: binding.remoteMemberId,
+          actingMemberId: remoteMemberId,
         },
         'GET'
       );
       const agents = CommunityWireAgentListResponseSchema.parse(
         await this.request(COMMUNITY_API_V1_ROUTES.agents, undefined, undefined, 'GET')
       );
-      const agent = agents.agents.find((item) => item.memberId === binding.remoteMemberId);
+      const agent = agents.agents.find((item) => item.memberId === remoteMemberId);
       if (!agent || !agent.active) return null;
       return {
         community: this.community,
@@ -726,8 +731,7 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
   private async admitAgentUnshared(
     input: AdmitAgentInput & { handle?: string }
   ): Promise<CommunityMember> {
-    const admitted =
-      this.admittedAgents.get(input.agentId) ?? (await this.verifiedEnrolledAgent(input.agentId));
+    const admitted = await this.verifiedEnrolledAgent(input.agentId);
     // A durable enrollment is only reusable after the remote accepts its bearer.
     if (admitted) {
       this.admittedAgents.set(input.agentId, admitted);
