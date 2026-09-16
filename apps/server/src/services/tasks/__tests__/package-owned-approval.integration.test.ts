@@ -205,6 +205,24 @@ describe('a schedule that came with an installed package', () => {
     expect(back.enabled).toBe(true);
   });
 
+  it('stays switched on across the agent being unregistered and registered again (DOR-2082)', async () => {
+    // The other writer that pauses a row for reasons that have nothing to do
+    // with a person's decision: `disableTasksByAgentId`, run when the agent
+    // that owns this schedule is unregistered from Mesh. Re-registering it
+    // re-syncs the same file (`attachAgentTaskRoots` in `index.ts`), which
+    // must land on the same approved-and-on row `markRemovedByFilePath`
+    // produces above — not the package's shipped `enabled: false`.
+    const approved = await patch(await sweep(), { status: 'active', enabled: true });
+    expect(store.disableTasksByAgentId(AGENT_ID)).toBe(1);
+    expect(store.getTask(approved.task!.id)?.status).toBe('paused');
+    expect(store.getTask(approved.task!.id)?.enabled).toBe(true);
+
+    const back = await sweep();
+
+    expect(back.status).toBe('active');
+    expect(back.enabled).toBe(true);
+  });
+
   it('stays switched OFF across a package update when the person switched it off', async () => {
     // The mirror of the test above: the row keeps the person's switch, whichever
     // way they set it, and never takes the file's shipped value for theirs.

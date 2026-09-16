@@ -1044,17 +1044,44 @@ export class TaskStore {
   }
 
   /**
-   * Disable all tasks linked to a specific agent ID.
+   * Pause every task linked to an agent that was just unregistered.
    *
-   * @param agentId - The agent ULID whose linked tasks should be disabled
-   * @returns The number of tasks that were disabled
+   * Mirrors {@link markRemovedByFilePath} on purpose (DOR-2082, follow-up to
+   * DOR-2058): `status: 'paused'` alone stops the clock — the scheduler and
+   * the registrar both require `enabled` AND `active` — and `enabled` is left
+   * untouched because it is a person's switch, not the server's. This used to
+   * write `enabled: false` too, which meant re-registering the agent brought
+   * an approved, switched-on package schedule back APPROVED but switched OFF:
+   * `upsertFromFile`'s package-owned branch (`file-sync-gates.ts`,
+   * `keepsRowEnabled`) leaves `enabled` exactly as the row already has it
+   * once the approval still stands, so a wrongly-written `false` here would
+   * never self-heal.
+   *
+   * No status filter, same as `markRemovedByFilePath`: a `pending_approval`
+   * row gets paused too, and un-parks back to `pending_approval` (never
+   * `active`) the moment discovery re-reads its file, because nothing here
+   * ever touches the stored approval key.
+   *
+   * **No backfill for rows this method already wrote `enabled: false` onto,
+   * before this fix.** Nothing on a row distinguishes "the person switched
+   * this off" from "this writer switched it off for them" — both look like
+   * `enabled: false`, same as any other row — so a sweep that flipped every
+   * such row back to `true` would just as often overturn a real "no" as
+   * repair a wrong one. That is a worse failure than the one being fixed: a
+   * schedule the person is currently relying on staying off. A pre-existing
+   * row is instead repaired the ordinary way, by touching it — switching it
+   * off and on again, or any edit that re-syncs its file — which is already
+   * true of every schedule this ships next to.
+   *
+   * @param agentId - The agent ULID whose linked tasks should be paused
+   * @returns The number of tasks that were paused
    */
   disableTasksByAgentId(agentId: string): number {
     const now = new Date().toISOString();
     const result = this.db
       .update(pulseSchedules)
-      .set({ enabled: false, status: 'paused', updatedAt: now })
-      .where(and(eq(pulseSchedules.agentId, agentId), eq(pulseSchedules.enabled, true)))
+      .set({ status: 'paused', updatedAt: now })
+      .where(eq(pulseSchedules.agentId, agentId))
       .run();
     return result.changes;
   }

@@ -741,7 +741,7 @@ describe('TaskStore', () => {
   // === disableTasksByAgentId ===
 
   describe('disableTasksByAgentId', () => {
-    it('disables matching enabled tasks', () => {
+    it('pauses a task, but leaves the person switch alone (DOR-2082)', () => {
       const task = store.createTask(
         taskInput({
           name: 'Agent task',
@@ -753,7 +753,10 @@ describe('TaskStore', () => {
       const count = store.disableTasksByAgentId('agent-1');
       expect(count).toBe(1);
       const updated = store.getTask(task.id);
-      expect(updated!.enabled).toBe(false);
+      // Unregistering pauses the schedule; it must not also flip the switch a
+      // person may have turned on. Only `status` stops the clock — the
+      // scheduler and registrar both require `enabled` AND `active`.
+      expect(updated!.enabled).toBe(true);
       expect(updated!.status).toBe('paused');
     });
 
@@ -770,8 +773,8 @@ describe('TaskStore', () => {
       expect(count).toBe(0);
     });
 
-    it('does not re-disable already disabled tasks', () => {
-      store.createTask(
+    it('still pauses a schedule the person had already switched off', () => {
+      const task = store.createTask(
         taskInput({
           name: 'Already disabled',
           prompt: 'test',
@@ -781,10 +784,13 @@ describe('TaskStore', () => {
         })
       );
       const count = store.disableTasksByAgentId('agent-3');
-      expect(count).toBe(0);
+      expect(count).toBe(1);
+      const updated = store.getTask(task.id);
+      expect(updated!.status).toBe('paused');
+      expect(updated!.enabled).toBe(false);
     });
 
-    it('only disables tasks for the specified agent', () => {
+    it('only pauses tasks for the specified agent', () => {
       const s1 = store.createTask(
         taskInput({
           name: 'Agent A',
@@ -802,11 +808,12 @@ describe('TaskStore', () => {
         })
       );
       store.disableTasksByAgentId('agent-a');
-      expect(store.getTask(s1.id)!.enabled).toBe(false);
+      expect(store.getTask(s1.id)!.status).toBe('paused');
+      expect(store.getTask(s2.id)!.status).toBe('active');
       expect(store.getTask(s2.id)!.enabled).toBe(true);
     });
 
-    it('disables multiple tasks for the same agent', () => {
+    it('pauses multiple tasks for the same agent', () => {
       store.createTask(
         taskInput({
           name: 'S1',
