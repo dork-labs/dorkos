@@ -30,6 +30,7 @@
     "typecheck:scripts": "tsc -p scripts/tsconfig.json --noEmit",
     "docs:export-api": "tsx scripts/export-openapi.ts",
     "check:banned-words": "bash scripts/check-banned-words.sh",
+    "check:boundary": "tsx scripts/check-boundary.ts",
     "check:dead-doc-paths": "bash scripts/check-dead-doc-paths.sh",
     "check:vocab-gate": "tsx scripts/check-vocab-gate.ts",
     "check:copy-spec-drift": "tsx scripts/check-copy-spec-drift.ts",

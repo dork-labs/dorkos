@@ -1,0 +1,85 @@
+{
+  "$comment": "Scoped exceptions for scripts/check-boundary.ts (DOR-2024). Every entry names a path substring, the rule ids it covers (omit for all), and a written reason, so this file stays an audit trail rather than a place to make a red build go away. Widen the path, never the rules: an entry with no `rules` list exempts a path from the PRIVATE ruleset too, which is almost never what you want.",
+  "entries": [
+    {
+      "path": "AGENTS.md",
+      "rules": ["BND-301", "BND-302"],
+      "reason": "DEFENSIVE, and currently suppressing nothing: the '## DorkOS Cloud' paragraph names the categories it forbids — 'prices, plan names, margins or supplier terms' — without quoting an amount, so no rule fires on it today. The entry exists because the paragraph is the one place in the repo that must be able to state the prohibition in full, including with an example, without the guard that enforces it going red."
+    },
+    {
+      "path": "scripts/__tests__/check-boundary.test.ts",
+      "rules": ["BND-201", "BND-301", "BND-302", "BND-303"],
+      "reason": "This guard's own pin suite plants one example per tier-1 rule; a guard nobody has watched fail is not a gate. Scoped to the tier-1 ids on purpose — the file is still scanned by the private ruleset, so a real private term pasted into a fixture is still caught."
+    },
+    {
+      "path": "apps/server/src/services/runtimes/codex/__tests__/managed-mcp-headers.test.ts",
+      "rules": ["BND-201"],
+      "reason": "Uses an RFC 2606 reserved example domain as a stand-in MCP host. Reserved domains cannot resolve, so they cannot be anyone's internal infrastructure."
+    },
+    {
+      "path": "packages/relay/src/adapters/slack/__tests__/slack-adapter.test.ts",
+      "rules": ["BND-201"],
+      "reason": "Same: an RFC 2606 reserved example domain in a Slack webhook fixture."
+    },
+    {
+      "path": "decisions/260707-122350-admin-console-lives-in-site.md",
+      "rules": ["BND-201"],
+      "reason": "Names a hypothetical `admin.` subdomain of the PUBLIC product domain as option B, and then rejects it. The host was never provisioned, and an ADR records the options it weighed."
+    },
+    {
+      "path": "meta/",
+      "rules": ["BND-301", "BND-302"],
+      "reason": "Internal strategy artifacts — positioning, the revenue model, persona economics — whose whole job is to reason about what things cost. This is a PRE-EXISTING exemption, not an endorsement: AGENTS.md says prices do not belong in this repo, and retiring or relocating the modelled pricing under meta/ is a separate decision flagged on DOR-2024, not something a CI guard should decide by going red on 100 lines."
+    },
+    {
+      "path": "research/",
+      "rules": ["BND-301", "BND-302"],
+      "reason": "Research reports quote third-party and vendor pricing as evidence (ngrok tiers, model costs, competitor plans). That is what the corpus is for, and none of it is ours."
+    },
+    {
+      "path": "decisions/",
+      "rules": ["BND-301", "BND-302"],
+      "reason": "ADRs record the vendor pricing that justified a decision at the time it was made (WorkOS, Resend, Azure signing). An ADR is an immutable record; rewriting one to satisfy a guard would falsify it."
+    },
+    {
+      "path": "plans/",
+      "rules": ["BND-301", "BND-302"],
+      "reason": "Plans cost out the work they propose, in third-party terms (runner minutes, model spend)."
+    },
+    {
+      "path": "specs/",
+      "rules": ["BND-301", "BND-302"],
+      "reason": "Specs quote vendor pricing when the price is part of the requirement being specified (eval-harness budgets, Windows code-signing, accounts and auth)."
+    },
+    {
+      "path": "apps/site/src/layers/features/marketing/lib/comparisons.ts",
+      "rules": ["BND-301", "BND-302"],
+      "reason": "The comparison pages publish COMPETITORS' pricing on purpose — it is the content of the page. Their prices are public facts; ours are the thing this rule guards."
+    },
+    {
+      "path": "apps/site/src/app/(marketing)/test/heroes/",
+      "rules": ["BND-301", "BND-302"],
+      "reason": "Hero layout variants render invented dashboard figures to show a shape. No real amount and no plan."
+    },
+    {
+      "path": "apps/client/src/layers/features/gen-ui/",
+      "rules": ["BND-301", "BND-302"],
+      "reason": "Currency formatting helper and its tests: '$1,234/mo' is the formatter's own worked example, not a price."
+    },
+    {
+      "path": "packages/evals/",
+      "rules": ["BND-301", "BND-302"],
+      "reason": "'tier' in the eval harness is a MODEL tier, and the dollar figures beside it are per-run cost tripwires. Neither is a plan or a price we charge."
+    },
+    {
+      "path": "contributing/",
+      "rules": ["BND-301", "BND-302"],
+      "reason": "Contributor docs quote third-party tool and runner costs when explaining why a gate is scoped the way it is."
+    },
+    {
+      "path": "docs/",
+      "rules": ["BND-302"],
+      "reason": "Self-hosting and quickstart docs use 'plan' and 'tier' in their ordinary English senses near unrelated shell snippets. Note BND-301 is deliberately NOT exempt here: a real price in shipped documentation is exactly the leak this rule exists for."
+    }
+  ]
+}
