@@ -9,7 +9,7 @@ import {
 const REF = CommunityRefSchema.parse('remote_owner_a');
 
 describe('remote community delivery projection', () => {
-  it('keeps the qualified delivery while withholding metadata over the browser limit', () => {
+  it('keeps a failed qualified delivery and its safe oversized attachment metadata', () => {
     setRemoteCommunityDeliveryProjection({
       list: () => [
         {
@@ -43,7 +43,14 @@ describe('remote community delivery projection', () => {
           author: { kind: 'agent', displayName: 'Build Agent' },
           text: 'result',
           parentEntryId: null,
-          attachments: [{ name: 'small.txt', contentType: 'text/plain', byteSize: 10 }],
+          attachments: [
+            { name: 'small.txt', contentType: 'text/plain', byteSize: 10 },
+            {
+              name: 'large.bin',
+              contentType: 'application/octet-stream',
+              byteSize: 25 * 1024 * 1024 + 1,
+            },
+          ],
           state: 'failed',
           failure: 'not-confirmed',
         },

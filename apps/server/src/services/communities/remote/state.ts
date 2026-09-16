@@ -7,7 +7,6 @@
 import type { Db } from '@dorkos/db';
 import type { CommunityRef } from '@dorkos/shared/community-adapter';
 import {
-  COMMUNITY_DELIVERY_MAX_ATTACHMENT_BYTES,
   CommunityDeliverySnapshotSchema,
   type CommunityDeliverySnapshot,
 } from '@dorkos/shared/community-deliveries';
@@ -114,16 +113,11 @@ export function getRemoteCommunityDeliverySnapshot(
       author: item.author,
       text: item.text,
       parentEntryId: item.parentEntryId,
-      // A local upload cap may be higher than the portable community cap. Keep
-      // the delivery state visible while withholding only metadata the shared
-      // browser contract cannot safely represent.
-      attachments: item.attachments
-        .filter((attachment) => attachment.size <= COMMUNITY_DELIVERY_MAX_ATTACHMENT_BYTES)
-        .map((attachment) => ({
-          name: attachment.name,
-          contentType: attachment.mimeType,
-          byteSize: attachment.size,
-        })),
+      attachments: item.attachments.map((attachment) => ({
+        name: attachment.name,
+        contentType: attachment.mimeType,
+        byteSize: attachment.size,
+      })),
       ...(item.state === 'pending'
         ? { state: 'pending' as const, failure: null }
         : {
