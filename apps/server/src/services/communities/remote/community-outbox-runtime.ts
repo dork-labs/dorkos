@@ -53,11 +53,13 @@ export class CommunityOutboxRuntime {
   readonly outbox: CommunityOutboxStore;
   readonly mirrorWrites: RoomMirrorWritePolicy;
   readonly projection: CommunityOutboxProjection;
+  private readonly authors: AuthorRegistry;
   private readonly worker: CommunityOutboxWorker;
   private readonly runner: CommunityOutboxRunner;
 
   constructor(deps: CommunityOutboxRuntimeDeps) {
     const now = deps.now ?? (() => Date.now());
+    this.authors = deps.authors;
     this.mirrors = new RemoteMirrorStore(deps.db, deps.roomStore, deps.authors);
     this.enrollments = new CommunityAgentEnrollmentStore(deps.db);
     this.outbox = new CommunityOutboxStore(deps.db);
@@ -87,10 +89,15 @@ export class CommunityOutboxRuntime {
             item.remoteRoomId,
             item.ownerAuthorId
           );
+          const agentAuthorId = this.authors
+            .listActive('agent')
+            .find((author) => author.mintedForManifestId === item.localAgentId)?.id;
           return (
             this.outbox.isPending(item.id) &&
             localRoomId !== null &&
+            agentAuthorId !== undefined &&
             this.mirrors.isActivelyAuthorized(localRoomId, item.ownerAuthorId) &&
+            this.mirrors.canRead(localRoomId, agentAuthorId) === true &&
             this.enrollments.findRemoteMember(
               item.communityRef,
               item.localAgentId,

@@ -164,31 +164,51 @@ export class RemoteRoomSubscriptionRuntime {
       const adapter = this.deps.adapters(connection.communityRef, connection.ownerAuthorId);
       if (!adapter) continue;
       try {
-        const agents = this.deps.enrollments
-          .activeForOwner(connection.communityRef, connection.ownerAuthorId)
-          .flatMap((enrollment) => {
-            const authorId = this.deps.resolveLocalAgentAuthor(enrollment.localAgentId);
-            return authorId ? [{ authorId, responseMode: 'always' as const }] : [];
-          });
-        if (!agents.length) continue;
-        for (const room of await adapter.listRooms()) {
-          if (!this.isJoinedRoom(room)) continue;
+        const rooms = new Map<
+          string,
+          { room: CommunityRoom; accessors: MirrorRoomInput['accessors'] }
+        >();
+        for (const enrollment of this.deps.enrollments.activeForOwner(
+          connection.communityRef,
+          connection.ownerAuthorId
+        )) {
+          const authorId = this.deps.resolveLocalAgentAuthor(enrollment.localAgentId);
+          if (!authorId) continue;
+          // Read as the enrolled agent, not as the human owner. A room in the
+          // owner's directory is not authority to dispatch an agent that has
+          // not joined that room.
+          for (const room of await adapter.listRooms({
+            actingMemberId: enrollment.remoteMemberId,
+          })) {
+            if (!this.isJoinedRoom(room)) continue;
+            const existing = rooms.get(room.roomId);
+            if (existing) {
+              existing.accessors = [...existing.accessors, { authorId, responseMode: 'always' }];
+            } else {
+              rooms.set(room.roomId, {
+                room,
+                accessors: [{ authorId, responseMode: 'always' }],
+              });
+            }
+          }
+        }
+        for (const { room, accessors } of rooms.values()) {
           const input: MirrorRoomInput = {
             communityRef: connection.communityRef,
             remoteRoomId: room.roomId,
             title: room.title,
             topic: room.topic,
             ownerAuthorId: connection.ownerAuthorId,
-            accessors: agents,
+            accessors,
             authorizedAt: new Date(this.deps.now?.() ?? Date.now()).toISOString(),
           };
-          // This fresh owner-authenticated directory read is the only path that
-          // may renew a stale mirror; delayed stream snapshots never do so.
+          // This fresh enrolled-agent directory read is the only path that may
+          // renew a stale mirror; delayed stream snapshots never do so.
           this.deps.bridge.authorizeRoom(input);
           const key = subscriptionKey(input);
           desired.set(key, {
             key,
-            signature: `${key}:${agents
+            signature: `${key}:${accessors
               .map((agent) => agent.authorId)
               .sort()
               .join(',')}`,
@@ -218,10 +238,14 @@ export class RemoteRoomSubscriptionRuntime {
   }
 
   private async consume(desired: DesiredSubscription, abort: AbortController): Promise<void> {
-    const observation = this.nextObservation(desired.room);
     let wasActiveBeforeDisconnect = false;
     try {
       while (!abort.signal.aborted && !this.stopped) {
+        // A reconnect is a new authoritative replay boundary. Replacing the
+        // observation before subscribing prevents a test (or runtime caller)
+        // from treating the completed prior generation as this stream's ready
+        // barrier.
+        const observation = this.nextObservation(desired.room);
         const reconnect = wasActiveBeforeDisconnect;
         let receivedSnapshot = false;
         try {

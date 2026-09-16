@@ -52,6 +52,9 @@ export class CommunityOutboxPolicy implements RoomMirrorWritePolicy {
     if (!this.mirrors.isActivelyAuthorized(room.id, address.ownerAuthorId)) {
       throw unavailableDelivery();
     }
+    if (this.mirrors.canRead(room.id, authorId) !== true) {
+      throw unavailableDelivery();
+    }
     if (
       !this.enrollments.findRemoteMember(address.communityRef, localAgentId, address.ownerAuthorId)
     ) {
