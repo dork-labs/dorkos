@@ -37,6 +37,13 @@ test.describe('Packaged Community local-agent proof @integration', () => {
     const pageB = await ownerB.newPage();
     const pageMemberA = await memberA.newPage();
     try {
+      // The packaged local install starts as a person would see it. Finish this
+      // actual first-visit UI before the connection controls are navigable.
+      await localPage.goto(env.local);
+      const skipSetup = localPage.getByRole('button', { name: 'Skip all setup', exact: true });
+      await expect(skipSetup).toBeVisible();
+      await skipSetup.click();
+      await expect(skipSetup).toBeHidden();
       await bootstrapCommunity(pageA, {
         url: env.communityA,
         secret: env.communityASecret,
@@ -576,14 +583,15 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       const waitForTurnToSettle = async (
         sessionId: string,
         priorTurnEnds: number,
-        label: string
+        label: string,
+        lifecycle: 'idle' | 'interrupted' = 'idle'
       ) => {
         const settled = await eventually(
           () => sessionSpine(sessionId),
-          (session) => session.lifecycle === 'idle' && turnEndCount(session) > priorTurnEnds,
+          (session) => session.lifecycle === lifecycle && turnEndCount(session) > priorTurnEnds,
           label
         );
-        expect(settled.lifecycle).toBe('idle');
+        expect(settled.lifecycle).toBe(lifecycle);
         expect(turnEndCount(settled)).toBeGreaterThan(priorTurnEnds);
       };
       const beforeFreshMention = await eventually(
@@ -1180,7 +1188,8 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         await waitForTurnToSettle(
           stoppableSessionId,
           turnEndCount(stoppableTurnBeforeStart),
-          'the stopped turn did not close its bound runtime session'
+          'the stopped turn did not close its bound runtime session',
+          'interrupted'
         );
       } catch (error) {
         await testInfo.attach('stopped-turn-diagnostics.json', {
