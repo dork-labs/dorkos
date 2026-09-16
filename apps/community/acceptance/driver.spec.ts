@@ -1281,7 +1281,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         () =>
           pageJson<{ entries: Entry[] }>(
             pageA,
-            `/api/v1/channels/${roomA!.roomId}/entries?limit=100`
+            `/api/v1/channels/${roomA!.roomId}/entries?limit=100&thread=${encodeURIComponent(unreadRoot!.id)}`
           ).then((page) => page.entries.find((entry) => entry.text === localThreadReply)),
         (entry) => entry !== undefined && entry.parentEntryId === unreadRoot!.id,
         'the local thread reply did not retain its remote root identity'
