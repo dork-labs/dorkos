@@ -14,6 +14,7 @@ import { decodeCursor, encodeCursor } from '../cursor.js';
 import {
   lockChannel,
   lockPrincipalAuthority,
+  assertPrincipalCurrent,
   requireJoined,
   requirePrincipal,
   transaction,
@@ -203,6 +204,7 @@ export function registerEntryRoutes(
     try {
       const channel = await lockChannel(client, c.req.param('id'), principal);
       requireJoined(channel);
+      await assertPrincipalCurrent(c, auth, pool, principal, 'read');
       const seq = parsed.cursor
         ? decodeCursor(
             parsed.cursor,

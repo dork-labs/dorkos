@@ -11,6 +11,7 @@ import type { CommunityAuth } from '../auth.js';
 import type { CommunityConfig } from '../config.js';
 import { decodeCursor, encodeCursor } from '../cursor.js';
 import {
+  assertPrincipalCurrent,
   lockChannel,
   requireJoined,
   requireMember,
@@ -91,6 +92,9 @@ export function registerEventRoutes(
       display_name: member.display_name,
       community_id: member.community_id,
     });
+    const currentMember = await requireMember(c, auth, pool);
+    if (currentMember.id !== member.id)
+      throw new ApiError(401, 'UNAUTHENTICATED', 'This session is unavailable.');
     const seq = Number(channel.read_seq);
     return json(c, CommunityWireReadCursorResponseSchema, {
       cursor: seq
@@ -106,6 +110,9 @@ export function registerEventRoutes(
     const { channel, current } = await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), member);
       requireJoined(channel);
+      const currentMember = await requireMember(c, auth, pool);
+      if (currentMember.id !== member.id)
+        throw new ApiError(401, 'UNAUTHENTICATED', 'This session is unavailable.');
       const active = await client.query('SELECT 1 FROM members WHERE id=$1 AND active FOR SHARE', [
         member.id,
       ]);
@@ -160,6 +167,12 @@ export function registerEventRoutes(
             [channel.id, position]
           )
         ).rows;
+    await assertPrincipalCurrent(c, auth, pool, principal, 'read');
+    if (openedSession) {
+      const currentSession = await auth.api.getSession({ headers: c.req.raw.headers });
+      if (!currentSession || currentSession.session.id !== openedSession.session.id)
+        throw new ApiError(401, 'UNAUTHENTICATED', 'This session is unavailable.');
+    }
     const encoder = new TextEncoder();
     let revocationTimer: ReturnType<typeof setInterval> | undefined;
     let closed = false;

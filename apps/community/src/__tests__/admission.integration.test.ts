@@ -21,6 +21,7 @@ const config = parseConfig({
   COMMUNITY_STORAGE_PATH: '/tmp/community-admission-test-blobs',
   COMMUNITY_AGENTS_PER_OWNER: 2,
   COMMUNITY_POSTS_PER_TEN_MINUTES: 3,
+  COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE: 100,
 });
 let server: ReturnType<typeof serve>;
 let pool: Pool;
@@ -108,6 +109,19 @@ async function bearerCall(path: string, method: string, token: string, body?: un
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
+}
+
+async function waitForBlockedQuery(fragment: string) {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const result = await pool.query<{ blocked: boolean }>(
+      `SELECT EXISTS(SELECT 1 FROM pg_stat_activity
+       WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE $1) AS blocked`,
+      [`%${fragment}%`]
+    );
+    if (result.rows[0].blocked) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`Request did not block on ${fragment}`);
 }
 
 async function signup(name: string, email: string, grant: string) {
@@ -343,6 +357,28 @@ describe('signed admission over real HTTP and Postgres', () => {
     expect((await pool.query('SELECT count(*)::int AS n FROM connection_grants')).rows[0].n).toBe(
       1
     );
+    const third = await (
+      await localCall('/api/v1/pairings/start', {
+        installName: 'Declined in browser',
+        challenge,
+        scopes: ['read'],
+      })
+    ).json();
+    expect(
+      (await call('/api/v1/pairings/approve', 'POST', { pairingId: third.pairingId }, ownerCookie))
+        .status
+    ).toBe(200);
+    expect(
+      (await call('/api/v1/pairings/decline', 'POST', { pairingId: third.pairingId }, ownerCookie))
+        .status
+    ).toBe(200);
+    expect(
+      (
+        await (
+          await localCall('/api/v1/pairings/poll', { pairingId: third.pairingId, verifier })
+        ).json()
+      ).status
+    ).toBe('cancelled');
   });
 
   it('does not admit through revoked or expired invites and never consumes seats on preview', async () => {
@@ -496,8 +532,149 @@ describe('signed admission over real HTTP and Postgres', () => {
     agentToken = newToken;
   });
 
+  it('denies delayed history after agent rotation, grant revocation, and session deletion', async () => {
+    const path = `/api/v1/channels/${channelId}/entries`;
+    const agentId = (
+      await pool.query<{ agent_id: string }>(
+        'SELECT agent_id FROM agent_credentials WHERE token_hash=$1 AND revoked_at IS NULL',
+        [createHash('sha256').update(agentToken).digest('hex')]
+      )
+    ).rows[0].agent_id;
+    const blocker = await pool.connect();
+    try {
+      await blocker.query('BEGIN');
+      await blocker.query('SELECT 1 FROM channels WHERE id=$1 FOR UPDATE', [channelId]);
+      const delayed = bearerCall(path, 'GET', agentToken);
+      await waitForBlockedQuery('SELECT c.* FROM channels');
+      const rotated = await bearerCall(
+        `/api/v1/agents/${agentId}/rotate`,
+        'POST',
+        ownerGrantToken,
+        {}
+      );
+      expect(rotated.status).toBe(200);
+      const replacement = (await rotated.json()).token;
+      await blocker.query('COMMIT');
+      expect((await delayed).status).toBe(401);
+      agentToken = replacement;
+
+      await blocker.query('BEGIN');
+      await blocker.query('SELECT 1 FROM channels WHERE id=$1 FOR UPDATE', [channelId]);
+      const delayedGrant = bearerCall(path, 'GET', ownerGrantToken);
+      await waitForBlockedQuery('SELECT c.* FROM channels');
+      const grantId = (
+        await pool.query<{ id: string }>(
+          'SELECT id FROM connection_grants WHERE token_hash=$1 AND revoked_at IS NULL',
+          [createHash('sha256').update(ownerGrantToken).digest('hex')]
+        )
+      ).rows[0].id;
+      expect(
+        (await call(`/api/v1/me/grants/${grantId}`, 'DELETE', undefined, ownerCookie)).status
+      ).toBe(204);
+      await blocker.query('COMMIT');
+      expect((await delayedGrant).status).toBe(401);
+
+      const eve = await joinWithInvite('Eve', 'eve@admission.test');
+      expect(
+        (
+          await call(
+            `/api/v1/channels/${channelId}/members`,
+            'POST',
+            { memberId: eve.id },
+            ownerCookie
+          )
+        ).status
+      ).toBe(200);
+      await blocker.query('BEGIN');
+      await blocker.query('SELECT 1 FROM channels WHERE id=$1 FOR UPDATE', [channelId]);
+      const delayedSession = call(path, 'GET', undefined, eve.cookie);
+      await waitForBlockedQuery('SELECT c.* FROM channels');
+      await pool.query(
+        'DELETE FROM session WHERE "userId"=(SELECT user_id FROM members WHERE id=$1)',
+        [eve.id]
+      );
+      await blocker.query('COMMIT');
+      expect((await delayedSession).status).toBe(401);
+    } finally {
+      await blocker.query('ROLLBACK');
+      blocker.release();
+    }
+  });
+
+  it('checks an agent owner’s promoted role after a contended ejection', async () => {
+    const moderator = await joinWithInvite('Moderator', 'moderator@admission.test');
+    expect(
+      (await call(`/api/v1/members/${moderator.id}/role`, 'PATCH', { role: 'admin' }, ownerCookie))
+        .status
+    ).toBe(200);
+    const verifier = randomBytes(32).toString('base64url');
+    const challenge = createHash('sha256').update(verifier).digest('base64url');
+    const started = await (
+      await localCall('/api/v1/pairings/start', {
+        installName: 'Admitted agent host',
+        challenge,
+        scopes: ['enroll-agent'],
+      })
+    ).json();
+    expect(
+      (
+        await call(
+          '/api/v1/pairings/approve',
+          'POST',
+          { pairingId: started.pairingId },
+          admittedCookie
+        )
+      ).status
+    ).toBe(200);
+    const { code } = await (
+      await localCall('/api/v1/pairings/poll', { pairingId: started.pairingId, verifier })
+    ).json();
+    const { token } = await (
+      await localCall('/api/v1/pairings/exchange', { pairingId: started.pairingId, verifier, code })
+    ).json();
+    const enrolled = await bearerCall('/api/v1/agents', 'POST', token, {
+      localAgentId: 'role-race-agent',
+      displayName: 'Role race agent',
+    });
+    expect(enrolled.status).toBe(201);
+    const agentId = (await enrolled.json()).agent.memberId;
+    const blocker = await pool.connect();
+    try {
+      await blocker.query('BEGIN');
+      await blocker.query('SELECT 1 FROM members WHERE id=$1 FOR UPDATE', [admittedId]);
+      const promotion = call(
+        `/api/v1/members/${admittedId}/role`,
+        'PATCH',
+        { role: 'admin' },
+        ownerCookie
+      );
+      await waitForBlockedQuery('UPDATE members SET role');
+      const ejection = call(`/api/v1/agents/${agentId}`, 'DELETE', undefined, moderator.cookie);
+      await waitForBlockedQuery('SELECT role FROM members');
+      await blocker.query('COMMIT');
+      expect((await promotion).status).toBe(200);
+      expect((await ejection).status).toBe(403);
+      expect(
+        (await call(`/api/v1/members/${admittedId}/role`, 'PATCH', { role: 'member' }, ownerCookie))
+          .status
+      ).toBe(200);
+      expect(
+        (await call(`/api/v1/agents/${agentId}`, 'DELETE', undefined, moderator.cookie)).status
+      ).toBe(204);
+    } finally {
+      await blocker.query('ROLLBACK');
+      blocker.release();
+    }
+  });
+
   it('enforces the member role matrix and immediately removes an ordinary member', async () => {
     const ordinary = await joinWithInvite('Carol', 'carol@admission.test');
+    const priorRoleEvents = (
+      await pool.query<{ n: number }>(
+        "SELECT count(*)::int AS n FROM audit_events WHERE action='member.role' AND subject_id=$1",
+        [admittedId]
+      )
+    ).rows[0].n;
     expect(
       (await call(`/api/v1/members/${admittedId}/role`, 'PATCH', { role: 'admin' }, ownerCookie))
         .status
@@ -509,7 +686,7 @@ describe('signed admission over real HTTP and Postgres', () => {
           [admittedId]
         )
       ).rows[0].n
-    ).toBe(1);
+    ).toBe(priorRoleEvents + 1);
     expect(
       (await call(`/api/v1/members/${ownerId}`, 'DELETE', undefined, admittedCookie)).status
     ).toBe(403);
