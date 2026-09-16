@@ -429,6 +429,8 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         ).then((result) => result.sessions);
       type SessionSpine = {
         lifecycle: string | null;
+        /** Live projector position; completed-turn storage deliberately lags this. */
+        seq: number | null;
         durableEvents: { byType: Record<string, number> };
       };
       const sessionSpine = (sessionId: string) =>
@@ -822,10 +824,15 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         // directly so this barrier does not depend on the global default.
         data: { name: 'stoppable-turn', sessionId: recoveredTurnSessionId },
       });
+      const stoppableScenarioAck = (await stoppableScenario.json()) as {
+        ok: boolean;
+        scenario: string;
+      };
       expect(
         stoppableScenario.ok(),
-        `could not select the stoppable-turn scenario: ${await stoppableScenario.text()}`
+        `could not select the stoppable-turn scenario: ${JSON.stringify(stoppableScenarioAck)}`
       ).toBe(true);
+      expect(stoppableScenarioAck).toEqual({ ok: true, scenario: 'stoppable-turn' });
       const stoppableTurnBeforeStart = await sessionSpine(recoveredTurnSessionId);
       expect(stoppableTurnBeforeStart.lifecycle).toBe('idle');
       const readyBeforeStop = await eventually(
@@ -836,6 +843,15 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       const stopMarker = `stop-marker-${crypto.randomUUID()}`;
       await composer.fill(`@${handle} ${stopMarker}`);
       await pageMemberA.getByRole('button', { name: 'Send' }).click();
+      const stopEntry = await eventually(
+        () =>
+          pageJson<{ entries: Entry[] }>(
+            pageMemberA,
+            `/api/v1/channels/${roomA!.roomId}/entries?limit=100`
+          ).then((page) => page.entries.find((entry) => entry.text === stopMarker)),
+        (entry) => entry !== undefined,
+        'the live Stop marker did not commit as a Community entry'
+      );
       await eventually(
         subscriptionBarrier,
         (result) =>
@@ -847,14 +863,114 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       // binding is therefore the session Stop must target; a session-list delta
       // would mistake retained history for a new turn.
       const stoppableSessionId = recoveredTurnSessionId;
-      await eventually(
-        () => sessionSpine(stoppableSessionId),
-        (session) =>
-          session.lifecycle === 'streaming' &&
-          (session.durableEvents.byType.turn_start ?? 0) >
-            (stoppableTurnBeforeStart.durableEvents.byType.turn_start ?? 0),
-        'the live stoppable turn did not enter its bound runtime session'
-      );
+      type DebugDispatch = {
+        dispatchId: string;
+        origin: string;
+        startedAt: string;
+        endedAt: string | null;
+        outcome: string | null;
+        roomId?: string;
+        sessionId?: string;
+      };
+      type DebugRefusal = {
+        at: string;
+        reason: string;
+        visibility: string;
+        roomId?: string;
+        sessionId?: string;
+        entryId?: string;
+      };
+      const captureStopDiagnostics = async () => {
+        const [session, subscription, dispatches, refusals] = await Promise.allSettled([
+          sessionSpine(stoppableSessionId),
+          subscriptionBarrier(),
+          json<{ claims: unknown[]; holds: unknown[]; recent: DebugDispatch[] }>(
+            `${env.local}/api/debug/dispatches?limit=256`
+          ),
+          json<{ refusals: DebugRefusal[] }>(`${env.local}/api/debug/refusals?limit=256`),
+        ]);
+        const unavailable = [
+          ...(session.status === 'rejected' ? ['session spine'] : []),
+          ...(subscription.status === 'rejected' ? ['subscription observation'] : []),
+          ...(dispatches.status === 'rejected' ? ['dispatch observation'] : []),
+          ...(refusals.status === 'rejected' ? ['refusal observation'] : []),
+        ];
+        const activeDispatches =
+          dispatches.status === 'fulfilled'
+            ? dispatches.value.recent.filter(
+                (dispatch) =>
+                  dispatch.roomId === roomA!.roomId || dispatch.sessionId === stoppableSessionId
+              )
+            : [];
+        const relatedRefusals =
+          refusals.status === 'fulfilled'
+            ? refusals.value.refusals.filter(
+                (refusal) =>
+                  refusal.roomId === roomA!.roomId ||
+                  refusal.sessionId === stoppableSessionId ||
+                  refusal.entryId === stopEntry!.id
+              )
+            : [];
+        return {
+          scenario: stoppableScenarioAck,
+          target: { roomId: roomA!.roomId, sessionId: stoppableSessionId, entryId: stopEntry!.id },
+          session: session.status === 'fulfilled' ? session.value : null,
+          subscription: subscription.status === 'fulfilled' ? subscription.value : null,
+          dispatches: {
+            claims:
+              dispatches.status === 'fulfilled'
+                ? dispatches.value.claims.filter(
+                    (claim) =>
+                      typeof claim === 'object' &&
+                      claim !== null &&
+                      'roomId' in claim &&
+                      claim.roomId === roomA!.roomId
+                  )
+                : [],
+            holds:
+              dispatches.status === 'fulfilled'
+                ? dispatches.value.holds.filter(
+                    (hold) =>
+                      typeof hold === 'object' &&
+                      hold !== null &&
+                      'roomId' in hold &&
+                      hold.roomId === roomA!.roomId
+                  )
+                : [],
+            recent: activeDispatches,
+          },
+          refusals: relatedRefusals,
+          unavailable,
+        };
+      };
+      try {
+        await expect
+          .poll(
+            async () => {
+              const session = await sessionSpine(stoppableSessionId);
+              // `durableEvents` only contains completed turns. `seq` is the
+              // live projector cursor, so it moves before the stopped turn is
+              // flushed.
+              return (
+                session.lifecycle === 'streaming' &&
+                (session.seq ?? 0) > (stoppableTurnBeforeStart.seq ?? 0)
+              );
+            },
+            {
+              message: 'the live stoppable turn did not enter its bound runtime session',
+              // Leave time for an artifact that establishes whether the bridge,
+              // dispatcher, or runtime declined this exact Stop marker.
+              timeout: 20_000,
+            }
+          )
+          .toBe(true);
+      } catch (error) {
+        await testInfo.attach('stoppable-turn-diagnostics.json', {
+          body: JSON.stringify(await captureStopDiagnostics(), null, 2),
+          contentType: 'application/json',
+        });
+        throw error;
+      }
       const stoppableTranscript = await eventually(
         () =>
           json<{ messages: Array<{ content: string }> }>(
