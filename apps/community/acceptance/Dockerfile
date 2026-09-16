@@ -8,6 +8,7 @@ RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @dork-labs/cloud-api build && pnpm --filter @dorkos/shared build && pnpm --filter @dorkos/community build && pnpm --filter dorkos build
 RUN mkdir /packed && pnpm --dir packages/cli pack --pack-destination /packed && npm install --prefix /packaged-cli /packed/dorkos-*.tgz
 RUN pnpm --filter @dorkos/community deploy --prod --legacy --ignore-scripts /packaged-community && cp -R apps/community/dist apps/community/dist-server apps/community/migrations /packaged-community/
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
 RUN pnpm --filter @dorkos/community exec playwright install --with-deps chromium
 ENV NODE_ENV=production
 CMD ["node", "apps/community/acceptance/run.mjs"]
