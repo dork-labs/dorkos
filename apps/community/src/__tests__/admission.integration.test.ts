@@ -645,6 +645,53 @@ describe('signed admission over real HTTP and Postgres', () => {
     }
   });
 
+  it('locks member before session when a cursor update races session removal', async () => {
+    const reader = await joinWithInvite('Session reader', 'session-reader@admission.test');
+    expect(
+      (
+        await call(
+          `/api/v1/channels/${channelId}/members`,
+          'POST',
+          { memberId: reader.id },
+          ownerCookie
+        )
+      ).status
+    ).toBe(200);
+    const page = await call(
+      `/api/v1/channels/${channelId}/entries`,
+      'GET',
+      undefined,
+      reader.cookie
+    );
+    expect(page.status).toBe(200);
+    const cursor = (await page.json()).entries[0].cursor;
+    const blocker = await pool.connect();
+    try {
+      await blocker.query('BEGIN');
+      await blocker.query("SET LOCAL lock_timeout='2s'");
+      await blocker.query('SELECT 1 FROM members WHERE id=$1 FOR UPDATE', [reader.id]);
+      const delayed = call(
+        `/api/v1/channels/${channelId}/read-cursor`,
+        'PUT',
+        { cursor },
+        reader.cookie
+      );
+      await waitForBlockedQuery('SELECT user_id FROM members');
+      // Member removal takes M then S. A joined recheck that grabbed S before
+      // waiting on M would deadlock this delete instead of allowing it to finish.
+      const deleted = await blocker.query(
+        'DELETE FROM session WHERE "userId"=(SELECT user_id FROM members WHERE id=$1)',
+        [reader.id]
+      );
+      expect(deleted.rowCount).toBe(1);
+      await blocker.query('COMMIT');
+      expect((await delayed).status).toBe(401);
+    } finally {
+      await blocker.query('ROLLBACK');
+      blocker.release();
+    }
+  });
+
   it('checks an agent owner’s promoted role after a contended ejection', async () => {
     const moderator = await joinWithInvite('Moderator', 'moderator@admission.test');
     expect(
