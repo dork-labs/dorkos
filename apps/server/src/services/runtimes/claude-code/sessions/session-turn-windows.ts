@@ -466,6 +466,16 @@ export interface SessionTurnWindowsOptions {
   continuationCapMs?: number;
   /** Override {@link EMPTY_CLOSE_CONTINUATION_CAP_MS}, for tests that drive it directly. */
   emptyCloseCapMs?: number;
+  /**
+   * A closing `result` named prompts DorkOS never sent, which is the CLI having
+   * consumed one of its own — what a FOLDED notification delivery looks like
+   * from outside (spec `warm-process-lifecycle` D1).
+   *
+   * The pump clears that many owed settles early, so a person's queued message
+   * is released at once instead of waiting out the owed-delivery clock for a
+   * segment the CLI already handed over inside a turn.
+   */
+  onFoldedDelivery?: (count: number) => void;
 }
 
 /** A buffered stream of SDK messages with an explicit end. */
@@ -1148,6 +1158,18 @@ export class SessionTurnWindows {
    * next one owes nothing under an old id.
    */
   private readonly awaitingResult = new Set<string>();
+  /**
+   * Every correlation id this session has EVER pushed at the process, answered
+   * or not — bounded by {@link MAX_AWAITING_IDS}, oldest evicted first.
+   *
+   * Distinct from {@link awaitingResult}, which holds only what is still
+   * OUTSTANDING: an id leaves that set the moment a `result` names it. The fold
+   * check asks a different question — "did this session ever send this id?" —
+   * and asking it of the outstanding ledger reads every already-answered id as
+   * a prompt the CLI invented, so a late or duplicate `result` for a message we
+   * really did send would clear an owed report that is still genuinely coming.
+   */
+  private readonly sentEver = new Set<string>();
 
   /**
    * Build a windower over one pump.
@@ -1441,6 +1463,11 @@ export class SessionTurnWindows {
     // that ANY `result` named while this window was open are spent and are never
     // filed — not only the last one held, since a later `result` naming nothing
     // replaces the held terminal without un-answering anything.
+    // The "ever sent" ledger takes the WHOLE batch, unconditionally: every one
+    // of these ids really was pushed at the process, and the fold check asks
+    // exactly that. The OUTSTANDING ledger below keeps its answered-filter, for
+    // the separate reason that a spent id must never close a later window.
+    this.noteSentEver(record.ids);
     if (this.current === record) {
       this.rememberSent(record.ids.filter((id) => !record.answeredIds.has(id)));
     }
@@ -1576,6 +1603,9 @@ export class SessionTurnWindows {
     // nothing under an id it never read. Keeping them would let a fresh
     // process's stray `result` close a window on a dead process's id.
     this.awaitingResult.clear();
+    // The ids go too: a relaunched process never read any of them, so a `result`
+    // it produces naming one is genuinely a prompt this session never sent it.
+    this.sentEver.clear();
     const record = this.current;
     if (record === undefined) return;
     this.current = undefined;
@@ -1599,6 +1629,17 @@ export class SessionTurnWindows {
     // only the singular id left a coalesced batch's other ids filed as
     // unanswered, where a stray later `result` naming one could close a window
     // it had nothing to do with through the `sentEarlier` branch below.
+    // Asked BEFORE the ledger is drained below, or every id would look unsent.
+    //
+    // An id on this `result` that this session never sent, and that no open
+    // window is answering, is the CLI having consumed a prompt of its own — the
+    // shape a FOLDED delivery takes (spec `warm-process-lifecycle` D1). The
+    // settles that arrived while the window was open were handed over inside it,
+    // so no segment is coming for them and the queue must stop waiting for one.
+    const foldedIn = answered.filter(
+      (id) => !this.sentEver.has(id) && record?.ids.includes(id) !== true
+    );
+    if (foldedIn.length > 0) this.opts.onFoldedDelivery?.(foldedIn.length);
     let sentEarlier = false;
     for (const id of answered) {
       if (this.awaitingResult.delete(id)) sentEarlier = true;
@@ -2123,11 +2164,34 @@ export class SessionTurnWindows {
 
   /** Remember ids that were really sent, dropping the oldest past the cap. */
   private rememberSent(ids: readonly string[]): void {
+    this.noteSentEver(ids);
     for (const id of ids) {
       this.awaitingResult.add(id);
       if (this.awaitingResult.size <= MAX_AWAITING_IDS) continue;
       const oldest = this.awaitingResult.values().next();
       if (!oldest.done) this.awaitingResult.delete(oldest.value);
+    }
+  }
+
+  /**
+   * Remember that this session pushed these ids at the process at all, whether
+   * or not a `result` has already named them ({@link sentEver}).
+   *
+   * Deliberately NOT filtered by {@link WindowRecord.answeredIds} the way
+   * {@link rememberSent} is. That filter exists so a spent id cannot close some
+   * future window; this ledger answers "did we send it", and a fast turn whose
+   * `result` landed before `dispatch` returned still sent its id. Omitting it
+   * here made the fold check read that id as a prompt the CLI invented and
+   * clear an owed report that was still genuinely coming.
+   *
+   * @param ids - The correlation ids just pushed at the process
+   */
+  private noteSentEver(ids: readonly string[]): void {
+    for (const id of ids) {
+      this.sentEver.add(id);
+      if (this.sentEver.size <= MAX_AWAITING_IDS) continue;
+      const spent = this.sentEver.values().next();
+      if (!spent.done) this.sentEver.delete(spent.value);
     }
   }
 

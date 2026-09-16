@@ -236,6 +236,36 @@ export class ProcessQuiet {
   }
 
   /**
+   * The CLI folded owed deliveries into a turn it has just answered, rather
+   * than opening a segment of its own for them (spec `warm-process-lifecycle`
+   * D1, "Folded in").
+   *
+   * The windower is what notices: a closing `result` naming a prompt DorkOS
+   * never sent is the CLI having consumed one of its own, which is what a fold
+   * looks like from outside. Clearing the debt here releases the queue at once
+   * instead of making a person's next message wait out the full thirty seconds
+   * for a segment that is never coming.
+   *
+   * The clock remains the guarantee — this only ever shortens the wait.
+   *
+   * @param count - How many settles the fold accounted for, oldest first
+   */
+  noteFoldedDelivery(count: number): void {
+    if (count <= 0) return;
+    const cleared = this.opts.liveness().clearOldestOwed(count);
+    if (cleared.length === 0) return;
+    logger.info('[SessionPump] a delivery was folded into a turn the CLI answered', {
+      sessionId: this.opts.sessionId,
+      tasks: cleared,
+    });
+    // Only once nothing is owed: a fold that settles one of several debts
+    // leaves the rest on the clock they were armed with.
+    if (this.opts.liveness().owedCount() > 0) return;
+    this.dispose();
+    this.fireGateChange();
+  }
+
+  /**
    * The first reason this process is not quiet, or undefined when it is.
    *
    * Ordered most specific first, so the reason a consumer logs is the one a
@@ -342,6 +372,15 @@ export class ProcessQuiet {
       tasks: abandoned,
       waitedMs: this.owedTimeout,
     });
+    this.fireGateChange();
+  }
+
+  /**
+   * Tell whoever is waiting that a hold this tracker owned has been released.
+   * A throw from the observer is contained: it must not reach the pump's own
+   * message loop, where it would be read as the process dying.
+   */
+  private fireGateChange(): void {
     try {
       this.opts.onGateChange();
     } catch (err) {

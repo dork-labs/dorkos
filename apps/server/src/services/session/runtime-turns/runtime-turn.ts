@@ -61,7 +61,11 @@ import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { SESSIONS } from '../../../config/constants.js';
 import { logError, logger } from '../../../lib/logger.js';
-import { noteRuntimeTurnClosed, noteRuntimeTurnOpen } from '../message-dispatcher.js';
+import {
+  noteRuntimeTurnClosed,
+  noteRuntimeTurnOpen,
+  noteTurnBoundary,
+} from '../message-dispatcher.js';
 import { persistenceModeFor } from '../projector-persistence.js';
 import { runtimeLockHolder } from '../session-lock.js';
 import { feedProjector } from '../session-event-normalizer.js';
@@ -95,13 +99,26 @@ const LOCK_RETRY_MS = 50;
  * @returns Unsubscribes, or `undefined` when this runtime has no such turns
  */
 export function subscribeRuntimeTurns(runtime: AgentRuntime): (() => void) | undefined {
-  return runtime.onRuntimeTurn?.((sessionId, events) => {
+  const turns = runtime.onRuntimeTurn?.((sessionId, events) => {
     // Claimed SYNCHRONOUSLY, before the first await: the window is open and the
     // process is already talking, so the queue may not launch anything into it
     // from this moment on. See the module doc.
     noteRuntimeTurnOpen(sessionId);
     void projectRuntimeTurn(runtime, sessionId, events);
   });
+  // The other half of the pending-segment gate. `isSegmentPending` holds a
+  // person's queued message while a helper's report is on its way; this is how
+  // the queue learns that hold has dropped. Without it a session sitting idle —
+  // no turn boundary coming, nothing else to pump it — would hold that message
+  // until something unrelated happened along (spec `warm-process-lifecycle` D1).
+  const gates = runtime.onDispatchGateChange?.((sessionId) => {
+    noteTurnBoundary(sessionId);
+  });
+  if (turns === undefined && gates === undefined) return undefined;
+  return () => {
+    turns?.();
+    gates?.();
+  };
 }
 
 /**

@@ -148,8 +148,20 @@ describe('a runtime turn that goes dark is interrupted like any other (T12)', ()
 describe('a runtime that cannot start its own turns subscribes to nothing', () => {
   it('answers undefined rather than pretending', () => {
     const runtime = new FakeAgentRuntime();
-    // The honest shape for a backend whose output only ever answers a dispatch.
+    // Two observers are wired here, not one: turns the agent starts, and the
+    // release of a hold its pending-segment gate puts on the queue. A backend
+    // whose output only ever answers a dispatch offers neither.
     (runtime as { onRuntimeTurn?: unknown }).onRuntimeTurn = undefined;
+    (runtime as { onDispatchGateChange?: unknown }).onDispatchGateChange = undefined;
     expect(subscribeRuntimeTurns(runtime)).toBeUndefined();
+  });
+
+  it('still subscribes for a runtime that only holds the queue', () => {
+    const runtime = new FakeAgentRuntime();
+    (runtime as { onRuntimeTurn?: unknown }).onRuntimeTurn = undefined;
+    // A runtime that can hold a person's message MUST be able to say the hold
+    // dropped, whether or not it ever produces a turn of its own — otherwise
+    // that message waits for an event nothing will send.
+    expect(subscribeRuntimeTurns(runtime)).toBeDefined();
   });
 });

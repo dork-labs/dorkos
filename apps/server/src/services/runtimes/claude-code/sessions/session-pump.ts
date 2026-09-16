@@ -495,6 +495,20 @@ export class SessionPump {
   }
 
   /**
+   * The windower saw a `result` naming a prompt DorkOS never sent — the shape a
+   * FOLDED delivery takes (spec `warm-process-lifecycle` D1).
+   *
+   * Clears that many owed settles early, so a queued message is released at
+   * once rather than waiting out the owed-delivery clock for a segment the CLI
+   * has already handed over inside a turn.
+   *
+   * @param count - How many settles the fold accounted for
+   */
+  noteFoldedDelivery(count: number): void {
+    this.quiet.noteFoldedDelivery(count);
+  }
+
+  /**
    * Give the process back, politely: `WARM → REAPED`.
    *
    * Invisible to the person — the session record and its transcript are

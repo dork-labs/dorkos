@@ -281,6 +281,11 @@ export class PersistentDispatch {
    */
   private runtimeTurnListener:
     ((sessionId: string, events: AsyncIterable<StreamEvent>) => void) | undefined;
+  /**
+   * Whoever wants to know that a hold this class owned has been released, or
+   * `undefined` when nothing is listening (spec `warm-process-lifecycle` D1).
+   */
+  private dispatchGateListener: ((sessionId: string) => void) | undefined;
 
   /**
    * Build the dispatcher over a runtime's pump registry.
@@ -337,6 +342,45 @@ export class PersistentDispatch {
     return () => {
       if (this.runtimeTurnListener === listener) this.runtimeTurnListener = undefined;
     };
+  }
+
+  /**
+   * Listen for a hold this class owned being released (spec
+   * `warm-process-lifecycle` D1/D6).
+   *
+   * What makes {@link isSegmentPending} safe to gate a queue on: the owed-delivery
+   * clock expiring is the one release nothing else observes, because the session
+   * may be sitting idle with no turn boundary coming.
+   *
+   * @param listener - Told which session's hold was released
+   * @returns Unsubscribes the listener
+   */
+  onDispatchGateChange(listener: (sessionId: string) => void): () => void {
+    this.dispatchGateListener = listener;
+    return () => {
+      if (this.dispatchGateListener === listener) this.dispatchGateListener = undefined;
+    };
+  }
+
+  /**
+   * The live query of a RUNTIME turn open on this session, or `undefined` when
+   * none is (spec `warm-process-lifecycle` D6, the Stop rule).
+   *
+   * The exact counterpart of {@link bootingQuery}, and it exists for the same
+   * reason: `session.activeQuery` is armed by the pump's `running` edge, and a
+   * turn nobody dispatched never moves the pump to `running`. So a person
+   * pressing Stop while the agent talks to itself would find no query at all and
+   * be told nothing was running — for a turn they can plainly see.
+   *
+   * @param sessionId - The session a Stop is trying to reach, in any id it
+   *   answers to
+   */
+  runtimeTurnQuery(sessionId: string): Query | undefined {
+    const key = this.sessionKeyOf(sessionId);
+    const bundle = this.bundles.get(key);
+    if (bundle === undefined || this.registry.peek(key) !== bundle.pump) return undefined;
+    if (bundle.windows.openWindow?.origin !== 'runtime') return undefined;
+    return bundle.live;
   }
 
   /**
@@ -1091,11 +1135,22 @@ export class PersistentDispatch {
       // pump's own state machine never left WARM and would read a process
       // mid-sentence as idle (spec `warm-process-lifecycle` D6).
       hasRuntimeTurnOpen: () => bundle.windows?.openWindow?.origin === 'runtime',
+      // The owed-delivery clock giving up is the one hold release nothing else
+      // observes: the session may be idle, with no turn boundary coming to pump
+      // its queue (spec `warm-process-lifecycle` D1).
+      onDispatchGateChange: () => this.dispatchGateListener?.(key),
     });
 
     bundle.windows = new SessionTurnWindows({
       sessionId: key,
       pump: bundle.pump,
+      // A closing `result` naming a prompt DorkOS never sent is the CLI having
+      // consumed one of its own, which is what a folded notification delivery
+      // looks like from outside (spec `warm-process-lifecycle` D1). Clearing the
+      // debt early releases a queued message at once instead of making the
+      // person wait out the full owed-delivery clock for a segment that has
+      // already been handed over inside a turn.
+      onFoldedDelivery: (count) => bundle.pump.noteFoldedDelivery(count),
       onWindowOpen: (window) => {
         if (window.origin !== 'runtime') return;
         // The agent is talking, so the session is active — the idle reaper and

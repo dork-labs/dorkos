@@ -190,6 +190,33 @@ export class FakeAgentRuntime implements AgentRuntime {
    */
   isSegmentPending = vi.fn<(sessionId: string) => boolean>(() => false);
 
+  /** The listener {@link onDispatchGateChange} registered, if anything is listening. */
+  private dispatchGateListener: ((sessionId: string) => void) | undefined;
+
+  /**
+   * Listen for a hold this runtime owned being released. Spied so a test can
+   * assert the server subscribed, and wired to {@link emitDispatchGateChange}
+   * so a test can drive a release.
+   */
+  onDispatchGateChange = vi.fn<(listener: (sessionId: string) => void) => () => void>(
+    (listener) => {
+      this.dispatchGateListener = listener;
+      return () => {
+        this.dispatchGateListener = undefined;
+      };
+    }
+  );
+
+  /**
+   * Release whatever hold the queue is waiting on for this session.
+   *
+   * @param sessionId - The session whose hold dropped
+   * @internal Exported for tests that drive the pending-segment gate.
+   */
+  emitDispatchGateChange(sessionId: string): void {
+    this.dispatchGateListener?.(sessionId);
+  }
+
   /**
    * Take the reserved `runtime:` lock holder. Answers `true` by default, as an
    * uncontended session's lock manager does.

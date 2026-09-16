@@ -139,6 +139,13 @@ the queue` at `info` with the task ids, and fires the gate re-arm (`onDispatchGa
 
 - The fold check clears **one settle per unsent `user_message_uuid`** on the closing `result`, oldest settle first, never
   every settle that arrived inside the window. Settles left over keep their clock.
+  - **"Unsent" means NEVER sent, not merely not-outstanding** (slice 3a). The obvious ledger to ask is the one the
+    windower already keeps — `awaitingResult`, the ids sent and not yet answered — and it is the wrong one: an id leaves
+    it the moment a `result` names it, so every already-answered message reads as a prompt the CLI invented, and a late
+    or duplicate `result` for a message the person really did send would clear a report still genuinely on its way. The
+    check needs its own bounded "ever sent" set, filled for the WHOLE dispatched batch (a fast turn answered before
+    `dispatch` returns still sent its id, and the outstanding ledger deliberately skips those), plus every steer and
+    staged message, and cleared on a crash because a relaunched process never read any of them.
 - A delivery segment that starts **after** `expireOwed()` has fired is logged at `info`
   (`[SessionPump] a delivery arrived after its clock expired`) with how long after expiry it began, so the 30 s bound is
   measured in real sessions rather than assumed.
@@ -326,11 +333,26 @@ token)`, because `acquireLock` now refuses the `runtime:` prefix to every caller
 
 - At runtime window **open**, the subscriber (`services/session/runtime-turns/runtime-turn.ts`, new — the flat
   `services/session/` is eight files past `check-dir-size.sh`'s error threshold, and that gate blocks a commit that ADDS
-  a source file to such a directory) registers the session in `inFlight`
+  a source file to such a directory — **only an add, never a modification**, so a later slice editing
+  `message-dispatcher.ts` or `session-lock.ts` in place is unaffected and needs no split of its own) registers the session in `inFlight`
   (`noteRuntimeTurnOpen`), synchronously from `onWindowOpen`; at `turn_end` it unregisters and calls `noteTurnBoundary`.
 - **Pending segment:** `pumpLocked` also returns while `AgentRuntime.isSegmentPending?(sessionId)` is true. The claude-code
   runtime answers it from `quietness().because === 'delivery-owed'`, which is **bounded by the 30 s owed-delivery clock**
   (D1) and cleared early when a fold is detected. When the clock expires the re-arm launches the head.
+
+> **Amended in slice 3a: the gate needs a SECOND site, and `pumpLocked` alone was the wrong one.** `dispatchMessage`
+> launches directly (`launchDispatch`) whenever `inFlight` is empty — a message arriving on an idle session never goes
+> through the pump at all. And "idle" is exactly the state this gate is about: the turn has ended, the helper has
+> settled, and its report has not opened its segment yet. So the gate as specified would have missed the incident's own
+> shape and only ever caught a message queued behind a _running_ turn. It is therefore asked in both places, and at
+> acceptance only for a caller that queues — a refusing trigger answers for itself as it always has, until slice 3b's
+> room slot replaces that.
+>
+> **`onDispatchGateChange` moves from slice 4a's touches into 3a.** The spec lists the port under 4a, but T38 is a 3a row
+> and cannot pass without it: when the owed-delivery clock expires on an idle session there is no turn boundary coming,
+> so nothing re-pumps the queue and the held message waits for an unrelated event that may never arrive. The port, the
+> claude-code delegate and the subscriber all land here; slice 4a's gated rows reuse them.
+
 - `SessionTurnWindows.dispatch` refuses to write stdin while a runtime window is open, as a last guard.
 
 **Lock protocol.**

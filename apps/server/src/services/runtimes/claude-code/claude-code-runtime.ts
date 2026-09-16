@@ -1073,8 +1073,16 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // not yet armed `session.activeQuery` with (DOR-1191). Reach that turn
     // through the same interrupt→close escalation the running path uses.
     const bootingQuery = this.persistent.bootingQuery(sessionId);
-    if (bootingQuery === undefined) return receipt;
-    return this.sessionStore.interruptGivenQuery(sessionId, bootingQuery);
+    if (bootingQuery !== undefined) {
+      return this.sessionStore.interruptGivenQuery(sessionId, bootingQuery);
+    }
+    // Or a turn the AGENT started, which never armed `session.activeQuery`
+    // either: nobody dispatched it, so the pump's `running` edge never fired
+    // (spec `warm-process-lifecycle` D6, the Stop rule). Without this, Stop on a
+    // turn the person can plainly see answers "nothing is running".
+    const runtimeQuery = this.persistent.runtimeTurnQuery(sessionId);
+    if (runtimeQuery === undefined) return receipt;
+    return this.sessionStore.interruptGivenQuery(sessionId, runtimeQuery);
   }
 
   /** @inheritdoc */
@@ -1180,6 +1188,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   /** @inheritdoc */
   isSegmentPending(sessionId: string): boolean {
     return this.persistent.isSegmentPending(sessionId);
+  }
+
+  /** @inheritdoc */
+  onDispatchGateChange(listener: (sessionId: string) => void): () => void {
+    return this.persistent.onDispatchGateChange(listener);
   }
 
   /** @inheritdoc */

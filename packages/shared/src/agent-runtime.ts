@@ -1404,6 +1404,27 @@ export interface AgentRuntime {
    */
   isSegmentPending?(sessionId: string): boolean;
 
+  /**
+   * Subscribe to "a hold this runtime owned has been released, so whatever was
+   * waiting on it may run now" (spec `warm-process-lifecycle` D1/D6).
+   *
+   * The companion to {@link isSegmentPending}, and the reason that gate can be
+   * trusted. A gate answered from runtime state needs a way to say it has
+   * dropped, or a queue held by it waits for some unrelated event to come along
+   * and pump it — which, for a session sitting idle, may be never.
+   *
+   * Fired today by exactly one thing: the owed-delivery clock giving up on a
+   * report that never arrived. Every other reason a queue head waits ends with a
+   * turn boundary the server already observes.
+   *
+   * Optional, and only a runtime that implements {@link isSegmentPending} owes
+   * it. A throw from the listener must not reach the runtime's own loop.
+   *
+   * @param listener - Told which session's hold was released
+   * @returns Unsubscribes the listener
+   */
+  onDispatchGateChange?(listener: (sessionId: string) => void): () => void;
+
   // --- Session queries (storage) ---
 
   /** List all sessions for a project directory. */

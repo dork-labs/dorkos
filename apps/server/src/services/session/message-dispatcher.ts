@@ -1543,6 +1543,25 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
     return waiting();
   }
 
+  // A report the runtime already owes is on its way, and it arrives as a segment
+  // of its own (spec `warm-process-lifecycle` D6). The session looks IDLE while
+  // that is true — the turn it belonged to has ended and nothing holds the
+  // in-flight slot yet — so without this the person's message launches straight
+  // into the gap and their words share a turn with a background helper's report.
+  // That is the shape of the incident this spec exists to fix, and the gate in
+  // `pumpLocked` cannot see it: a message on an idle session never goes through
+  // the pump at all.
+  //
+  // Only a caller that QUEUES waits here. A refusing trigger answers for itself
+  // exactly as it always has. The wait is bounded by the runtime's own
+  // owed-delivery clock, whose release reaches this module through
+  // `onDispatchGateChange`, so a report that never arrives cannot wedge the queue.
+  if (whenBusy === 'queue' && runtime.isSegmentPending?.(sessionKey) === true) {
+    plan.answered = true;
+    parkDispatch(plan, unwatchedSettle(plan));
+    return waiting();
+  }
+
   let result: TriggerTurnResult;
   try {
     result = await launchDispatch(plan, { budgetExhausted: false });
