@@ -200,8 +200,7 @@ export function registerEntryRoutes(
     const parsed = CommunityWireEntryPageQuerySchema.parse(
       Object.fromEntries(new URL(c.req.url).searchParams)
     );
-    const client = await pool.connect();
-    try {
+    const page = await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), principal);
       requireJoined(channel);
       await assertPrincipalCurrent(c, auth, pool, principal, 'read');
@@ -238,12 +237,11 @@ export function registerEntryRoutes(
               config
             )
           : null;
-      return json(c, CommunityWireEntryPageSchema, {
+      return {
         entries: rows.map((row) => entryProjection(row, channel.epoch, config)),
         nextCursor,
-      });
-    } finally {
-      client.release();
-    }
+      };
+    });
+    return json(c, CommunityWireEntryPageSchema, page);
   });
 }
