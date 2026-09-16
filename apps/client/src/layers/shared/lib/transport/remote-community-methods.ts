@@ -15,6 +15,7 @@ import {
   RemoteCommunityAttachmentResponseSchema,
   type RemoteCommunityTransport,
 } from '@dorkos/shared/community-views';
+import { HaltRoomResponseSchema } from '@dorkos/shared/room-schemas';
 import { fetchJSON, fetchNoContent, fetchResponse, buildQueryString } from './http-client';
 import { createRemoteCommunityStream } from './remote-community-stream';
 
@@ -154,6 +155,20 @@ export function createRemoteCommunityMethods(baseUrl: string): RemoteCommunityTr
           baseUrl,
           `${roomPath(ref, roomId)}/agents/${encodeURIComponent(localAgentId)}`,
           { method: 'DELETE' }
+        )
+      );
+    },
+    async haltRemoteCommunityRoom(ref, roomId) {
+      return HaltRoomResponseSchema.strict().parse(
+        await fetchJSON(baseUrl, `${roomPath(ref, roomId)}/halt`, { method: 'POST' })
+      );
+    },
+    async haltRemoteCommunityAgent(ref, roomId, localAgentId) {
+      return HaltRoomResponseSchema.strict().parse(
+        await fetchJSON(
+          baseUrl,
+          `${roomPath(ref, roomId)}/agents/${encodeURIComponent(localAgentId)}/halt`,
+          { method: 'POST' }
         )
       );
     },

@@ -1111,6 +1111,8 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     ejectRemoteCommunityAgent: vi.fn(),
     joinRemoteCommunityAgentRoom: vi.fn(),
     leaveRemoteCommunityAgentRoom: vi.fn(),
+    haltRemoteCommunityRoom: vi.fn().mockResolvedValue({ stopped: 0 }),
+    haltRemoteCommunityAgent: vi.fn().mockResolvedValue({ stopped: 0 }),
     uploadRemoteCommunityAttachment: vi.fn(),
     downloadRemoteCommunityAttachment: vi.fn(),
     listCommunityConnections: vi.fn().mockResolvedValue([]),

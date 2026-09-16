@@ -85,6 +85,25 @@ function stream(...events: unknown[]) {
 }
 
 describe('qualified remote community transport', () => {
+  it('stops qualified local work directly without a remote permission preflight', async () => {
+    const fetch = answer({ stopped: 2 });
+    await expect(methods().haltRemoteCommunityRoom('ref/a', 'same/id')).resolves.toEqual({
+      stopped: 2,
+    });
+    await expect(
+      methods().haltRemoteCommunityAgent('ref/b', 'same/id', 'agent/id')
+    ).resolves.toEqual({ stopped: 2 });
+    expect(fetch.mock.calls.map(([path]) => path)).toEqual([
+      '/api/communities/ref%2Fa/rooms/same%2Fid/halt',
+      '/api/communities/ref%2Fb/rooms/same%2Fid/agents/agent%2Fid/halt',
+    ]);
+    expect(fetch.mock.calls.every(([, options]) => options.method === 'POST')).toBe(true);
+    answer({ stopped: -1 });
+    await expect(methods().haltRemoteCommunityRoom('a', 'b')).rejects.toThrow();
+    await expect(communityStubs.haltRemoteCommunityRoom('a', 'b')).rejects.toThrow(
+      'web or desktop'
+    );
+  });
   it('keeps identical remote room IDs under distinct local connection refs', async () => {
     const fetch = answer({ room });
     await expect(methods().getRemoteCommunityRoom('community-a', 'same-id')).resolves.toEqual(room);

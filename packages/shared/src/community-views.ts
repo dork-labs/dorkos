@@ -5,6 +5,7 @@
  * @module shared/community-views
  */
 import { z } from 'zod';
+import type { HaltRoomResponse } from './room-schemas.js';
 import {
   CommunityWireEntryPostRequestSchema,
   CommunityWireHandleSchema,
@@ -251,6 +252,14 @@ export interface RemoteCommunityTransport {
     roomId: string,
     localAgentId: string
   ): Promise<RemoteCommunityEjectionResponse>;
+  /** Stop this owner's local work in a remote room, including while disconnected. */
+  haltRemoteCommunityRoom(ref: string, roomId: string): Promise<HaltRoomResponse>;
+  /** Stop one owned local agent without requiring remote community access. */
+  haltRemoteCommunityAgent(
+    ref: string,
+    roomId: string,
+    localAgentId: string
+  ): Promise<HaltRoomResponse>;
   /** Upload bounded bytes through the local server, with a stable retry key. */
   uploadRemoteCommunityAttachment(
     ref: string,
