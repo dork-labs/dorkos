@@ -204,6 +204,26 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         (result) => result.connection?.status === 'connected',
         'the packaged local server did not reconnect to Community A after restart'
       );
+      type SubscriptionBarrier = {
+        generation: number;
+        snapshotComplete: boolean;
+        replayComplete: boolean;
+        dispatchesSinceBoot: number;
+      };
+      const subscriptionBarrier = () =>
+        json<SubscriptionBarrier>(
+          `${env.local}/api/test/community-subscription?ref=${encodeURIComponent(refA)}&roomId=${encodeURIComponent(roomA!.roomId)}`
+        );
+      // A connected pairing only proves authentication. This test-only, runtime-owned
+      // barrier is recorded after the bridge imports its snapshot and consumes every
+      // server entry through the captured replay watermark. It makes the zero below a
+      // post-replay assertion rather than a race with the subscription startup.
+      const recovered = await eventually(
+        subscriptionBarrier,
+        (result) => result.snapshotComplete && result.replayComplete,
+        'the restarted local server did not finish importing the Community subscription replay'
+      );
+      expect(recovered.dispatchesSinceBoot).toBe(0);
       const localTurns = () =>
         json<{ sessions: Array<{ id: string }> }>(
           `${env.local}/api/sessions?cwd=${encodeURIComponent(agentPath)}`
@@ -233,6 +253,12 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         'the fresh addressed Community entry did not run exactly one local agent turn'
       );
       expect(freshTurns).toHaveLength(1);
+      const afterFreshMention = await eventually(
+        subscriptionBarrier,
+        (result) => result.dispatchesSinceBoot === 1,
+        'the fresh addressed Community entry did not produce exactly one dispatcher claim'
+      );
+      expect(afterFreshMention.dispatchesSinceBoot).toBe(1);
       const afterRestart = await eventually(
         agentEntries,
         (entries) =>
