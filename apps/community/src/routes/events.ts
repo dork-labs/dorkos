@@ -22,6 +22,7 @@ import {
 } from '../data.js';
 import { ApiError, json, readJson } from '../http.js';
 import { entryProjection } from './entries.js';
+import { attachmentsForEntries } from './attachments.js';
 
 interface LiveChannel {
   id: string;
@@ -81,7 +82,10 @@ export function registerEventRoutes(
     pool: Pool;
     auth: CommunityAuth;
     config: CommunityConfig;
-    hooks?: { afterSnapshotWatermark?: () => Promise<void> };
+    hooks?: {
+      afterSnapshotWatermark?: () => Promise<void>;
+      afterEntryAttachmentLookup?: () => Promise<void>;
+    };
   }
 ) {
   app.get('/api/v1/channels/:id/read-cursor', async (c) => {
@@ -176,6 +180,10 @@ export function registerEventRoutes(
             [channel.id, position]
           )
         ).rows;
+    const snapshotAttachments = await attachmentsForEntries(
+      pool,
+      snapshotRows.map((row: { id: string }) => row.id)
+    );
     await assertPrincipalCurrent(c, auth, pool, principal, 'read');
     if (openedSession) {
       const currentSession = await auth.api.getSession({ headers: c.req.raw.headers });
@@ -207,26 +215,31 @@ export function registerEventRoutes(
       if (revocationTimer) clearInterval(revocationTimer);
     };
     const checkAccess = async () => {
-      if (openedSession) {
-        const session = await auth.api.getSession({ headers: c.req.raw.headers });
-        if (
-          !session ||
-          session.user.id !== openedSession.user.id ||
-          session.session.id !== openedSession.session.id
-        )
-          return null;
-      }
-      try {
-        const current = await requirePrincipal(c, auth, pool, 'read', false);
-        if (
-          current.id !== principal.id ||
-          current.kind !== principal.kind ||
-          current.credentialHash !== principal.credentialHash
-        )
-          return null;
-      } catch {
-        return null;
-      }
+      // The opening request already verified the cookie signature or bearer.
+      // Revalidate that exact credential and the channel in ONE fresh database
+      // snapshot. Calling Better Auth twice per entry repeats unrelated account
+      // hydration and makes durable catch-up slower than incoming traffic.
+      // Nothing is cached: this query also runs after attachment enrichment.
+      const credential =
+        principal.kind === 'agent'
+          ? `EXISTS (SELECT 1 FROM agent_credentials ac WHERE ac.agent_id=a.id
+             AND ac.token_hash=$4 AND ac.revoked_at IS NULL)`
+          : principal.credentialKind === 'grant'
+            ? `EXISTS (SELECT 1 FROM connection_grants g WHERE g.member_id=m.id
+               AND g.token_hash=$4 AND g.revoked_at IS NULL
+               AND g.scopes @> ARRAY['read']::text[])`
+            : `EXISTS (SELECT 1 FROM session s WHERE s.id=$4 AND s."userId"=m.user_id
+               AND s."userId"=$5 AND s.token=$6 AND s."expiresAt">now())`;
+      const cookie = !principal.credentialHash;
+      if (cookie && !openedSession) return null;
+      const values: unknown[] = [
+        principal.id,
+        channel.id,
+        principal.community_id,
+        principal.credentialHash ?? openedSession!.session.id,
+      ];
+      if (cookie) values.push(openedSession!.user.id, openedSession!.session.token);
+      if (principal.kind === 'agent') values.push(principal.ownerMemberId);
       const active = await pool.query<{
         active: boolean;
         joined: boolean;
@@ -236,11 +249,14 @@ export function registerEventRoutes(
         principal.kind === 'agent'
           ? `SELECT (a.active AND owner.active) AS active,(cm.agent_id IS NOT NULL) AS joined,ch.archived,ch.epoch
            FROM agents a JOIN members owner ON owner.id=a.owner_member_id JOIN channels ch ON ch.id=$2
-           LEFT JOIN agent_channel_members cm ON cm.channel_id=ch.id AND cm.agent_id=a.id WHERE a.id=$1`
+           LEFT JOIN agent_channel_members cm ON cm.channel_id=ch.id AND cm.agent_id=a.id
+           WHERE a.id=$1 AND a.community_id=$3 AND ch.community_id=$3
+             AND a.owner_member_id=$5 AND ${credential}`
           : `SELECT m.active,(cm.member_id IS NOT NULL) AS joined,ch.archived,ch.epoch
            FROM members m JOIN channels ch ON ch.id=$2
-           LEFT JOIN channel_members cm ON cm.channel_id=ch.id AND cm.member_id=m.id WHERE m.id=$1`,
-        [principal.id, channel.id]
+           LEFT JOIN channel_members cm ON cm.channel_id=ch.id AND cm.member_id=m.id
+           WHERE m.id=$1 AND m.community_id=$3 AND ch.community_id=$3 AND ${credential}`,
+        values
       );
       return active.rows[0];
     };
@@ -250,7 +266,9 @@ export function registerEventRoutes(
           writeEvent(controller, {
             type: 'snapshot',
             channel: channelWire(channel),
-            entries: snapshotRows.map((row) => entryProjection(row, channel.epoch, config)),
+            entries: snapshotRows.map((row) =>
+              entryProjection(row, channel.epoch, config, snapshotAttachments.get(row.id))
+            ),
             cursor: currentCursor(),
           });
           revocationTimer = setInterval(() => {
@@ -324,7 +342,31 @@ export function registerEventRoutes(
               const row = result.rows[0];
               if (row) {
                 position = Number(row.seq);
-                const entry = entryProjection(row, channel.epoch, config);
+                const attachmentMap = await attachmentsForEntries(pool, [row.id]);
+                await hooks?.afterEntryAttachmentLookup?.();
+                const afterEnrichment = await checkAccess();
+                if (closed) return;
+                if (
+                  !afterEnrichment?.active ||
+                  !afterEnrichment.joined ||
+                  afterEnrichment.archived ||
+                  afterEnrichment.epoch !== channel.epoch
+                ) {
+                  stop();
+                  writeEvent(controller, {
+                    type: 'closed',
+                    reason: afterEnrichment?.archived ? 'archived' : 'removed',
+                    cursor: currentCursor(),
+                  });
+                  controller.close();
+                  return;
+                }
+                const entry = entryProjection(
+                  row,
+                  channel.epoch,
+                  config,
+                  attachmentMap.get(row.id)
+                );
                 writeEvent(controller, { type: 'entry', entry, cursor: entry.cursor });
                 return;
               }

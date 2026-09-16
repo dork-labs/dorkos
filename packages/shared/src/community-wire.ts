@@ -51,7 +51,11 @@ export const COMMUNITY_API_V1_ROUTES = {
   channelReadCursor: '/api/v1/channels/:id/read-cursor',
   channelEvents: '/api/v1/channels/:id/events',
   attachment: '/api/v1/attachments/:id',
+  exportArchive: '/api/v1/exports/:id',
   agents: '/api/v1/agents',
+  me: '/api/v1/me',
+  members: '/api/v1/members',
+  authOptions: '/api/v1/auth-options',
   memberRole: '/api/v1/members/:id/role',
   meGrants: '/api/v1/me/grants',
   meExport: '/api/v1/me/export',
@@ -98,6 +102,8 @@ export const CommunityWireMemberSchema = z.strictObject({
   handle: CommunityWireHandleSchema,
   role: CommunityWireHumanRoleSchema.nullable(),
   ownerMemberId: id.nullable(),
+  /** Agent owner's display name, scoped to a roster this caller may already read. */
+  ownerDisplayName: z.string().min(1).nullable().optional(),
   joinedAt: timestamp,
 });
 /** Public roster row. */
@@ -113,6 +119,21 @@ export const CommunityWireMemberRoleUpdateRequestSchema = z.strictObject({
 /** Role change receipt with the current member projection. */
 export const CommunityWireMemberResponseSchema = z.strictObject({
   member: CommunityWireMemberSchema,
+});
+/** Bounded human directory for owner/admin member selection. */
+export const CommunityWireMemberDirectoryQuerySchema = z.strictObject({
+  cursor: z.uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+/** One page of public human member descriptions, with no account fields. */
+export const CommunityWireMemberDirectoryPageSchema = z.strictObject({
+  members: z.array(CommunityWireMemberSchema).max(100),
+  nextCursor: z.uuid().nullable(),
+});
+/** Public provider availability, without OAuth IDs, secrets or callback details. */
+export const CommunityWireAuthOptionsSchema = z.strictObject({
+  google: z.boolean(),
+  github: z.boolean(),
 });
 
 /** Public channel projection. `joined` is for the current caller only. */
@@ -378,6 +399,8 @@ export const CommunityWireOwnerTransferRequestSchema = z.strictObject({
 });
 /** Transfer receipt with the new current owner identity. */
 export const CommunityWireOwnerTransferResponseSchema = z.strictObject({ ownerMemberId: id });
+/** Owner export requires current password confirmation. */
+export const CommunityWireOwnerExportRequestSchema = z.strictObject({ password: id });
 /** Archive manifest metadata; archive bytes use an authorized download stream. */
 export const CommunityWireExportResponseSchema = z.strictObject({
   archiveId: id,

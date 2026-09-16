@@ -1,11 +1,14 @@
 import type { Hono } from 'hono';
 import type { Pool, PoolClient } from 'pg';
 import {
+  CommunityWireMemberDirectoryPageSchema,
+  CommunityWireMemberDirectoryQuerySchema,
+  CommunityWireMemberResponseSchema,
   CommunityWireOwnerTransferRequestSchema,
   CommunityWireOwnerTransferResponseSchema,
 } from '@dorkos/shared/community-wire';
 import type { CommunityAuth } from '../auth.js';
-import { requireMember, transaction, type Member } from '../data.js';
+import { requireLiveRole, requireMember, transaction, type Member } from '../data.js';
 import { ApiError, json, readJson } from '../http.js';
 
 async function live(client: PoolClient, id: string, communityId: string) {
@@ -47,6 +50,59 @@ export function registerMemberRoutes(
   app: Hono,
   { pool, auth }: { pool: Pool; auth: CommunityAuth }
 ) {
+  app.get('/api/v1/me', async (c) => {
+    const actor = await requireMember(c, auth, pool);
+    const result = await pool.query<Member & { handle: string; created_at: Date }>(
+      'SELECT id,user_id,display_name,role,community_id,handle,created_at FROM members WHERE id=$1 AND active',
+      [actor.id]
+    );
+    const row = result.rows[0];
+    const current = await requireMember(c, auth, pool);
+    if (!row || current.id !== actor.id)
+      throw new ApiError(403, 'FORBIDDEN', 'Your membership has ended.');
+    return json(c, CommunityWireMemberResponseSchema, {
+      member: {
+        memberId: row.id,
+        kind: 'human',
+        displayName: row.display_name,
+        handle: row.handle,
+        role: row.role,
+        ownerMemberId: null,
+        joinedAt: row.created_at.toISOString(),
+      },
+    });
+  });
+
+  app.get('/api/v1/members', async (c) => {
+    const actor = await requireMember(c, auth, pool);
+    const query = CommunityWireMemberDirectoryQuerySchema.parse(
+      Object.fromEntries(new URL(c.req.url).searchParams)
+    );
+    const limit = query.limit ?? 50;
+    const rows = await transaction(pool, async (client) => {
+      await requireLiveRole(client, actor, ['owner', 'admin']);
+      return client.query<Member & { handle: string; created_at: Date }>(
+        `SELECT id,user_id,display_name,role,community_id,handle,created_at FROM members
+         WHERE community_id=$1 AND active AND ($2::uuid IS NULL OR id>$2::uuid)
+         ORDER BY id LIMIT $3`,
+        [actor.community_id, query.cursor ?? null, limit + 1]
+      );
+    });
+    const members = rows.rows.slice(0, limit);
+    return json(c, CommunityWireMemberDirectoryPageSchema, {
+      members: members.map((row) => ({
+        memberId: row.id,
+        kind: 'human' as const,
+        displayName: row.display_name,
+        handle: row.handle,
+        role: row.role,
+        ownerMemberId: null,
+        joinedAt: row.created_at.toISOString(),
+      })),
+      nextCursor: rows.rows.length > limit ? members.at(-1)!.id : null,
+    });
+  });
+
   app.delete('/api/v1/members/:id', async (c) => {
     const actor = await requireMember(c, auth, pool);
     await transaction(pool, async (client) => {

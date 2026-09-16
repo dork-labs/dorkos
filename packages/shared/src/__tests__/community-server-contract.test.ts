@@ -29,6 +29,7 @@ import {
   CommunityWireAgentChannelMembershipResponseSchema,
   CommunityWireOwnerTransferResponseSchema,
   CommunityWireGrantListResponseSchema,
+  CommunityWireAuthOptionsSchema,
 } from '../community-wire.js';
 import {
   CommunityPairingExchangeSecretResponseSchema,
@@ -101,6 +102,17 @@ describe('community server port additions', () => {
   });
 
   it('keeps HTTP conversation DTOs strict and free of private fields', () => {
+    expect(CommunityWireAuthOptionsSchema.parse({ google: false, github: true })).toEqual({
+      google: false,
+      github: true,
+    });
+    expect(
+      CommunityWireAuthOptionsSchema.safeParse({
+        google: true,
+        github: false,
+        clientSecret: 'private',
+      }).success
+    ).toBe(false);
     const channel = {
       id: 'channel-1',
       name: 'General',
@@ -148,6 +160,25 @@ describe('community server port additions', () => {
       joinedAt: '2026-09-16T00:00:00.000Z',
     };
     expect(CommunityWireMemberSchema.parse(member).handle).toBe('ana');
+    expect(
+      CommunityWireMemberSchema.parse({ ...member, ownerDisplayName: null }).ownerDisplayName
+    ).toBeNull();
+    expect(
+      CommunityWireMemberSchema.parse({
+        ...member,
+        kind: 'agent',
+        role: null,
+        ownerMemberId: 'human-1',
+        ownerDisplayName: 'Ana',
+      }).ownerDisplayName
+    ).toBe('Ana');
+    expect(
+      CommunityWireMemberSchema.safeParse({
+        ...member,
+        ownerDisplayName: 'Ana',
+        email: 'ana@example.com',
+      }).success
+    ).toBe(false);
     expect(CommunityWireMemberSchema.safeParse({ ...member, handle: null }).success).toBe(false);
     expect(CommunityWireMemberSchema.safeParse({ ...member, handle: 'Ana' }).success).toBe(false);
     expect(
