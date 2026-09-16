@@ -2,6 +2,7 @@
 covers:
   - 'fix(tasks): a package-shipped schedule that ships switched off raises no card (DOR-2059)'
   - 'fix(tasks): key the DOR-2059 quiet-parking decision on origin, not enabled'
+  - 'fix(tasks): tie needsScheduleApprovalAttention to a real discovered row, gate the source line size and derive it (DOR-2059 delta review)'
 ---
 
 ### Fixed
