@@ -46,6 +46,7 @@ import { logger } from '../../../../lib/logger.js';
 import { configManager } from '../../../core/config-manager.js';
 import { resolveClaudeCredentialEnv } from '../../../core/credential-env.js';
 import { resolveAgentTokenEnv } from '../../../core/agent-identity/index.js';
+import { creditsTurnEnv } from '../../../core/cloud/credits-inference.js';
 import { isRelayEnabled } from '../../../relay/relay-state.js';
 import { isTasksEnabled } from '../../../tasks/task-state.js';
 import type { AgentSession } from '../agent-types.js';
@@ -367,6 +368,15 @@ export async function resolveLaunch(args: {
       ...claudeCredentialEnv,
       // This session's freshly minted agent identity token (or nothing).
       ...agentTokenEnv,
+      // DorkOS credits as the inference source, when the operator armed them
+      // (DOR-2027). An empty object on every install that did not — the flag is
+      // off by default and the path also needs the cloud link beside it — so a
+      // turn launches exactly as it did before. It is deliberately LAST: having
+      // chosen to spend credits, that choice beats an inherited key. The base
+      // URL and token are runtime values obtained before the turn, never minted
+      // on this path: a launch that waited on the network would turn a cloud
+      // hiccup into a stalled turn.
+      ...creditsTurnEnv('claude-code'),
     }),
     ...(opts.claudeCliPath ? { pathToClaudeCodeExecutable: opts.claudeCliPath } : {}),
   };

@@ -162,7 +162,19 @@ import type {
   ProfileUpdateResponse,
   TeamRosterResponse,
 } from './team-schemas.js';
-import type { CloudLinkStatus, CloudLinkSummary, StartLinkResult } from './cloud-schemas.js';
+import type {
+  CloudCreditsStatus,
+  CloudLinkStatus,
+  CloudLinkSummary,
+  CloudMembersResponse,
+  CloudNudgeResponse,
+  CloudOrgsResponse,
+  CloudPlanResponse,
+  CloudSeatActionResponse,
+  CloudSeatsResponse,
+  CloudUsageResponse,
+  StartLinkResult,
+} from './cloud-schemas.js';
 import type { FeedbackListItem, FeedbackSubmission } from './telemetry-events.js';
 import type { ConnectorProviderStatus } from './connector-provider.js';
 import type {
@@ -2619,6 +2631,75 @@ export interface Transport extends RoomTransport {
   unlinkCloud(): Promise<{ ok: boolean }>;
   /** Read the settled linked/unlinked summary for the Settings panel's initial render. */
   getCloudStatus(): Promise<CloudLinkSummary>;
+
+  // --- The plan-aware surfaces (DOR-2027) ---
+
+  /**
+   * Read what this account is entitled to and its credit position, for the plan
+   * card. Answers `{ available: false }` — never an error — when this instance
+   * has no cloud account, which is what the card's empty state renders.
+   */
+  getCloudPlan(): Promise<CloudPlanResponse>;
+  /**
+   * Read one grouped usage window for the credits gauge. `seat` is the
+   * per-agent breakdown; each row carries the service's own `displayName` and
+   * an opaque `key`.
+   *
+   * @param groupBy - How to group the rows.
+   */
+  getCloudUsage(groupBy: 'seat' | 'model' | 'day'): Promise<CloudUsageResponse>;
+  /**
+   * Read the already-reduced comparison, when the service offers one. The
+   * subtraction is the service's; the client renders what it is given and
+   * computes nothing. `{ available: false }` is the ordinary answer.
+   */
+  getCloudNudge(): Promise<CloudNudgeResponse>;
+  /** Read the organizations this account belongs to. */
+  getCloudOrgs(): Promise<CloudOrgsResponse>;
+  /**
+   * Read one organization's members — who could hold a person seat. The seat
+   * surface reads this so assigning a seat picks a real subject rather than
+   * asking somebody to type an opaque identifier at it.
+   *
+   * @param orgId - The organization's opaque identifier.
+   */
+  getCloudMembers(orgId: string): Promise<CloudMembersResponse>;
+  /**
+   * Read one organization's seats.
+   *
+   * @param orgId - The organization's opaque identifier.
+   */
+  getCloudSeats(orgId: string): Promise<CloudSeatsResponse>;
+  /**
+   * Assign a seat to a person or an agent. A refusal a plan change would lift
+   * comes back as the contract's problem envelope, which the caller renders
+   * verbatim rather than describing in words of its own.
+   *
+   * @param seatId - The seat's opaque identifier.
+   * @param subject - Who the seat is for.
+   */
+  assignCloudSeat(
+    seatId: string,
+    subject: { kind: 'agent' | 'user'; id: string }
+  ): Promise<CloudSeatActionResponse>;
+  /**
+   * Release a seat.
+   *
+   * @param seatId - The seat's opaque identifier.
+   */
+  releaseCloudSeat(seatId: string): Promise<CloudSeatActionResponse>;
+  /**
+   * Read whether DorkOS credits are armed as an inference source on this
+   * server. Carries no credential — only whether the path is on and which
+   * runtimes it reaches.
+   */
+  getCloudCredits(): Promise<CloudCreditsStatus>;
+  /**
+   * Select DorkOS credits as the inference source for this server process.
+   * Inert unless the server's own feature flag is on beside its cloud link, and
+   * it answers the same report either way rather than an error.
+   */
+  selectCloudCredits(): Promise<CloudCreditsStatus>;
 
   // --- Feedback (user-volunteered; DOR-317, ADR 260713-143958 Phase 5) ---
 
