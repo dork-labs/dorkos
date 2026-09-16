@@ -131,6 +131,7 @@ try {
       ['dist-server/main.js'],
       '/packaged-community',
       {
+        ...(name === 'a' ? { COMMUNITY_TEST_RUNTIME: 'true' } : {}),
         COMMUNITY_DATABASE_URL: url.toString(),
         COMMUNITY_PUBLIC_URL: origin,
         COMMUNITY_PORT: String(port),
