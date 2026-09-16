@@ -33,6 +33,7 @@ const schema = z.object({
   COMMUNITY_S3_ACCESS_KEY_ID: z.string().min(1).optional(),
   COMMUNITY_S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
   COMMUNITY_PORT: integer('COMMUNITY_PORT', 6481, 65535),
+  COMMUNITY_TEST_RUNTIME: z.enum(['true', 'false']).default('false'),
   COMMUNITY_POSTS_PER_TEN_MINUTES: integer('COMMUNITY_POSTS_PER_TEN_MINUTES', 120, 1000),
   COMMUNITY_AGENTS_PER_OWNER: integer('COMMUNITY_AGENTS_PER_OWNER', 20, 100),
   COMMUNITY_TEXT_BYTES: integer('COMMUNITY_TEXT_BYTES', 16 * 1024, 64 * 1024),
@@ -144,6 +145,7 @@ export function parseConfig(env: Record<string, unknown>) {
     publicUrl: publicUrl.origin,
     storage,
     port: value.COMMUNITY_PORT,
+    testRuntime: value.COMMUNITY_TEST_RUNTIME === 'true',
     oauth: {
       google:
         value.COMMUNITY_GOOGLE_CLIENT_ID && value.COMMUNITY_GOOGLE_CLIENT_SECRET

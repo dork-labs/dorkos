@@ -1,0 +1,37 @@
+import { describe, expect, it } from 'vitest';
+import { DeliveryReceiptGate } from '../delivery-receipt-gate.js';
+
+describe('DeliveryReceiptGate', () => {
+  it('holds a persisted agent receipt until release and cleans up the one-use gate', async () => {
+    const gate = new DeliveryReceiptGate();
+    const channelId = 'c8a9058c-1e76-4297-a84f-12b0ce830973';
+    const controller = new AbortController();
+    expect(gate.arm(channelId)).toEqual({ state: 'armed', channelId });
+    let complete = false;
+    const held = gate
+      .holdAfterPersist({ channelId, entryId: 'entry-1', signal: controller.signal })
+      .then(() => {
+        complete = true;
+      });
+    expect(gate.observation()).toEqual({ state: 'held', channelId, entryId: 'entry-1' });
+    expect(complete).toBe(false);
+    expect(gate.release()).toEqual({ state: 'idle' });
+    await held;
+    expect(complete).toBe(true);
+    expect(gate.observation()).toEqual({ state: 'idle' });
+  });
+
+  it('releases a held request when its client aborts', async () => {
+    const gate = new DeliveryReceiptGate();
+    const controller = new AbortController();
+    gate.arm('f7a5da48-61c4-43df-8cfe-1acb98333c8e');
+    const held = gate.holdAfterPersist({
+      channelId: 'f7a5da48-61c4-43df-8cfe-1acb98333c8e',
+      entryId: 'entry-2',
+      signal: controller.signal,
+    });
+    controller.abort();
+    await held;
+    expect(gate.observation()).toEqual({ state: 'idle' });
+  });
+});

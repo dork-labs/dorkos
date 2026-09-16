@@ -22,6 +22,7 @@ import {
 import { ApiError, json, readJson } from '../http.js';
 import { resolveCommunityMentions } from '../mentions.js';
 import { attachmentsForEntries } from './attachments.js';
+import type { DeliveryReceiptGate } from '../delivery-receipt-gate.js';
 
 interface EntryRow {
   id: string;
@@ -75,7 +76,12 @@ export async function loadEntry(client: PoolClient | Pool, id: string): Promise<
 /** Register ordered posts and bounded, scoped history. */
 export function registerEntryRoutes(
   app: Hono,
-  { pool, auth, config }: { pool: Pool; auth: CommunityAuth; config: CommunityConfig }
+  {
+    pool,
+    auth,
+    config,
+    receiptGate,
+  }: { pool: Pool; auth: CommunityAuth; config: CommunityConfig; receiptGate?: DeliveryReceiptGate }
 ) {
   app.post('/api/v1/channels/:id/entries', async (c) => {
     const principal = await requirePrincipal(c, auth, pool, 'post');
@@ -197,6 +203,13 @@ export function registerEntryRoutes(
         repeated: false,
       };
     });
+    if (principal.kind === 'agent' && !result.repeated && receiptGate) {
+      await receiptGate.holdAfterPersist({
+        channelId: c.req.param('id'),
+        entryId: result.entry.id,
+        signal: c.req.raw.signal,
+      });
+    }
     return json(
       c,
       CommunityWireEntryPostResponseSchema,

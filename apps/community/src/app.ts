@@ -27,6 +27,8 @@ import { registerAttachmentRoutes } from './routes/attachments.js';
 import { registerExportRoutes } from './routes/exports.js';
 import { createBlobStore, type BlobStore } from './storage/index.js';
 import { communities } from './schema.js';
+import { DeliveryReceiptGate } from './delivery-receipt-gate.js';
+import { registerCommunityTestControlRoutes } from './routes/test-control.js';
 
 /** Assemble the injectable HTTP app without reading environment variables. */
 export function createCommunityApp({
@@ -45,6 +47,7 @@ export function createCommunityApp({
 }) {
   const app = new Hono();
   const auth = createCommunityAuth(pool, config);
+  const receiptGate = config.testRuntime ? new DeliveryReceiptGate() : undefined;
   const db = drizzle(pool, { schema: { communities } });
   app.onError(handleError);
   app.get('/health', (c) => c.json({ status: 'ok' }));
@@ -207,7 +210,8 @@ export function createCommunityApp({
   });
 
   registerChannelRoutes(app, { pool, auth });
-  registerEntryRoutes(app, { pool, auth, config });
+  registerEntryRoutes(app, { pool, auth, config, receiptGate });
+  if (receiptGate) registerCommunityTestControlRoutes(app, receiptGate);
   registerEventRoutes(app, { pool, auth, config, hooks });
   registerInviteRoutes(app, {
     pool,
