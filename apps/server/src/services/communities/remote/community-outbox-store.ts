@@ -78,6 +78,17 @@ export class CommunityOutboxStore {
       }));
   }
 
+  /** Whether an item remains eligible after a concurrent local Stop or receipt. */
+  isPending(id: string): boolean {
+    return (
+      this.db
+        .select({ id: communityOutbox.id })
+        .from(communityOutbox)
+        .where(and(eq(communityOutbox.id, id), eq(communityOutbox.state, 'pending')))
+        .get() !== undefined
+    );
+  }
+
   /** Mark one local output confirmed only after a remote receipt or matching echo. */
   confirm(id: string, remoteEntryId: string): void {
     this.db

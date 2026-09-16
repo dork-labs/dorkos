@@ -101,6 +101,12 @@ export interface RoomSubsystem {
   canvas: CanvasService;
 }
 
+/** Builds persisted remote-mirror policy only after room stores and authors exist. */
+export interface RoomMirrorRuntime {
+  mirrorAccess: RoomMirrorAccess;
+  mirrorWrites: RoomMirrorWritePolicy;
+}
+
 /**
  * Read an agent's handle, display name and manifest `responseMode` out of the
  * mesh cache, keyed on its directory. The default {@link RoomAgentLookup}.
@@ -418,6 +424,8 @@ function safeJson(raw: string): unknown {
  * @param opts.mirrorWrites - Trusted remote-mirror outbox policy. The writer
  *   derives it from persisted mirror and enrollment state; callers cannot
  *   suppress dispatch themselves.
+ * @param opts.createMirrorRuntime - Production composition hook for a mirror
+ *   runtime that needs this factory's one store and author registry.
  */
 export function createRoomSubsystem(opts: {
   db: Db;
@@ -428,6 +436,11 @@ export function createRoomSubsystem(opts: {
   canvasNow?: () => number;
   mirrorAccess?: RoomMirrorAccess;
   mirrorWrites?: RoomMirrorWritePolicy;
+  createMirrorRuntime?: (deps: {
+    store: RoomStore;
+    authors: AuthorRegistry;
+    attachments: AttachmentRowStore;
+  }) => RoomMirrorRuntime;
   /**
    * Whether this subsystem sits on a database it may not write (DOR-1563).
    *
@@ -445,6 +458,7 @@ export function createRoomSubsystem(opts: {
   const attachments = new AttachmentRowStore(opts.db);
   const agentLookup = opts.agents ?? createAgentLookup(opts.db);
   const authors = new AuthorRegistry(opts.db, agentLookup);
+  const mirrorRuntime = opts.createMirrorRuntime?.({ store, authors, attachments });
   const broadcaster = new RoomBroadcaster();
   // **One canvas service per process, built here and registered here.** It is
   // the single writer for every scope (spec `canvas-agent-seat` §1.2), and this
@@ -486,8 +500,12 @@ export function createRoomSubsystem(opts: {
   const readCursors = opts.readCursors ?? new ReadCursorService(new ReadCursorStore(opts.db));
   const service = new RoomService({
     store,
-    ...(opts.mirrorAccess ? { mirrorAccess: opts.mirrorAccess } : {}),
-    ...(opts.mirrorWrites ? { mirrorWrites: opts.mirrorWrites } : {}),
+    ...((mirrorRuntime?.mirrorAccess ?? opts.mirrorAccess)
+      ? { mirrorAccess: mirrorRuntime?.mirrorAccess ?? opts.mirrorAccess }
+      : {}),
+    ...((mirrorRuntime?.mirrorWrites ?? opts.mirrorWrites)
+      ? { mirrorWrites: mirrorRuntime?.mirrorWrites ?? opts.mirrorWrites }
+      : {}),
     reactions,
     canvasDocuments,
     canvas,
