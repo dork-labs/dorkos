@@ -1,0 +1,9 @@
+{
+  "id": "inv_0001",
+  "orgId": "org_0001",
+  "email": "person@example.invalid",
+  "role": "member",
+  "status": "pending",
+  "expiresAt": "2026-10-15T12:00:00.000Z",
+  "createdAt": "2026-09-15T12:00:00.000Z"
+}

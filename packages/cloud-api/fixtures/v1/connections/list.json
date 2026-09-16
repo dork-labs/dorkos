@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "id": "conn_0001",
+      "toolkit": "tk_0001",
+      "displayName": "A toolkit",
+      "status": "active",
+      "orgId": "org_0001",
+      "seatId": "seat_0001",
+      "createdAt": "2026-09-15T12:00:00.000Z",
+      "expiresAt": null,
+      "lastUsedAt": "2026-09-15T12:00:00.000Z"
+    }
+  ],
+  "nextCursor": null
+}

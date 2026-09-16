@@ -1,0 +1,7 @@
+{
+  "mode": "managed",
+  "state": "closed",
+  "address": "example-instance.remote.invalid",
+  "alwaysAvailable": false,
+  "reason": "idle"
+}

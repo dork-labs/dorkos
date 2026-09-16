@@ -1,0 +1,17 @@
+{
+  "catalogVersion": "cv_0001",
+  "models": [
+    {
+      "id": "md_opaque_0001",
+      "displayName": "the model shown in your usage page",
+      "contextWindow": 200000,
+      "maxOutputTokens": 64000,
+      "supports": {
+        "tools": true,
+        "promptCaching": true,
+        "streaming": true,
+        "thinking": false
+      }
+    }
+  ]
+}

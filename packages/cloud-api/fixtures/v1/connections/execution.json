@@ -1,0 +1,12 @@
+{
+  "attemptId": "att_0001",
+  "connectionId": "conn_0001",
+  "operation": "op_0001",
+  "status": "succeeded",
+  "startedAt": "2026-09-15T12:00:00.000Z",
+  "completedAt": "2026-09-15T12:00:00.000Z",
+  "output": {
+    "ok": true
+  },
+  "failure": null
+}

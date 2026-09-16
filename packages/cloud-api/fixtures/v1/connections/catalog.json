@@ -1,0 +1,12 @@
+{
+  "items": [
+    {
+      "toolkit": "tk_0001",
+      "displayName": "A toolkit",
+      "description": "Does a thing.",
+      "authentication": "oauth2",
+      "version": "v_0001"
+    }
+  ],
+  "nextCursor": "cur_0002"
+}

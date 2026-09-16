@@ -46,6 +46,7 @@
     "docker:build": "rm -f dorkos-*.tgz && pnpm --filter=dorkos run build && cd packages/cli && pnpm pack --pack-destination ../../ && cd ../.. && docker build --target runtime -t dorkos .",
     "docker:run": "docker run --rm -p 4242:4242 -e ANTHROPIC_API_KEY -v dorkos-data:/home/node/.dork dorkos",
     "publish:cli": "pnpm publish --filter=dorkos",
+    "publish:cloud-api": "pnpm publish --filter=@dork-labs/cloud-api",
     "cli:dev": "pnpm --filter=./packages/cli run build && node packages/cli/dist/bin/cli.js"
   },
   "dependencies": {

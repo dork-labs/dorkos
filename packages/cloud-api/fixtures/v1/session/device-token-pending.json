@@ -1,0 +1,4 @@
+{
+  "error": "authorization_pending",
+  "error_description": "The person has not approved this device yet."
+}
