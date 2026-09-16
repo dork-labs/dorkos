@@ -3,7 +3,12 @@ import { AnimatePresence, motion } from 'motion/react';
 import cronstrue from 'cronstrue';
 import { MoreHorizontal, Pencil, Play, Trash2, AlertCircle, Shield } from 'lucide-react';
 import { toast } from 'sonner';
-import { useUpdateTask, useTriggerTask, useDeleteTask } from '@/layers/entities/tasks';
+import {
+  isScheduleAwaitingApproval,
+  useUpdateTask,
+  useTriggerTask,
+  useDeleteTask,
+} from '@/layers/entities/tasks';
 import { AgentAvatar } from '@/layers/entities/agent';
 import { RuntimeMark, formatModelLabel } from '@/layers/entities/runtime';
 import {
@@ -81,13 +86,15 @@ function TaskOverrideChip({ task }: { task: Task }) {
 /** Color-coded dot indicating the task's current status. */
 function StatusDot({ task }: { task: Task }) {
   // The shared vocabulary, so a waiting task is the same amber a waiting agent
-  // is, and a paused one is neutral rather than a second grey.
-  const tone: StatusTone =
-    task.status === 'pending_approval'
-      ? 'warning'
-      : !task.enabled || task.status === 'paused'
-        ? 'neutral'
-        : 'success';
+  // is, and a paused one is neutral rather than a second grey. A schedule a
+  // package shipped switched off is `pending_approval` on the row but is not
+  // asking for anything (DOR-2059), so it reads exactly like any other
+  // switched-off task — neutral, not amber.
+  const tone: StatusTone = isScheduleAwaitingApproval(task)
+    ? 'warning'
+    : !task.enabled || task.status === 'paused'
+      ? 'neutral'
+      : 'success';
 
   return <span className={cn('inline-block size-2 rounded-full', STATUS_TONE_DOT[tone])} />;
 }
@@ -136,6 +143,20 @@ export function TaskRow({
   const shouldShowCron = !isMinimal;
   const shouldShowHistory = isDefault;
   const isSystem = agent?.isSystem === true;
+  // A package-shipped schedule found switched off draws as an ordinary
+  // switched-off task — no card, no reason line (DOR-2059) — but that makes it
+  // LOOK identical to a task the person switched off themselves. The reviewer's
+  // finding: naming the source has to survive on the collapsed row, because the
+  // file path only ever showed in the expanded run-history panel.
+  //
+  // Derived from `isScheduleAwaitingApproval` rather than restated by hand, so
+  // the one rule that decides "does this need a card" is the same rule that
+  // decides "does this need its source named" — a file-discovered row is
+  // exactly one of the two, never both (delta review).
+  const isQuietlyParkedFromFile =
+    task.status === 'pending_approval' &&
+    task.origin === 'file' &&
+    !isScheduleAwaitingApproval(task);
 
   const handleRunNow = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -253,7 +274,7 @@ export function TaskRow({
                 words, not theirs. Both conditions are needed: a schedule that
                 is already running is not waiting for anything, so whatever
                 `reason` it still carries is history. */}
-            {task.status === 'pending_approval' &&
+            {isScheduleAwaitingApproval(task) &&
               (task.origin === 'file' || task.reasonSource === 'dorkos') &&
               task.reason && (
                 <div
@@ -263,10 +284,22 @@ export function TaskRow({
                   {task.reason}
                 </div>
               )}
+            {/* Names the source on the row itself, not only in the expanded
+                panel — otherwise a package-shipped schedule found switched off
+                is indistinguishable from one the person switched off
+                themselves (DOR-2059 review). */}
+            {!isMinimal && isQuietlyParkedFromFile && task.filePath && (
+              <div
+                data-slot="task-quiet-source"
+                className="text-muted-foreground text-3xs min-w-0 truncate font-mono"
+              >
+                Installed · {shortenHomePath(task.filePath)}
+              </div>
+            )}
           </div>
 
           {/* Actions — vary by size */}
-          {!isMinimal && task.status === 'pending_approval' ? (
+          {!isMinimal && isScheduleAwaitingApproval(task) ? (
             <div className="flex gap-1">
               <button
                 className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center rounded-md border bg-transparent px-2.5 py-1 text-xs font-medium shadow-sm transition-colors"
@@ -300,6 +333,21 @@ export function TaskRow({
                   checked={task.enabled && task.status !== 'paused'}
                   disabled={task.status === 'paused'}
                   onCheckedChange={(checked) => {
+                    // A package-shipped schedule that ships off is
+                    // `pending_approval` on the row even though it draws as an
+                    // ordinary switched-off task (DOR-2059) — so switching it
+                    // ON here is the FIRST time anybody has approved it, and
+                    // has to run the same door the Approve button does
+                    // (`handleApprove`, above): `status` is operator-only, and
+                    // sending it alongside `enabled` is what runs the arm
+                    // blocker and the permission clamp before anything is
+                    // armed. Flipping an already-approved schedule off and
+                    // back on needs none of that — `enabled` alone is
+                    // agent-writable and reversible.
+                    if (checked && task.status === 'pending_approval') {
+                      updateTask.mutate({ id: task.id, status: 'active', enabled: true });
+                      return;
+                    }
                     updateTask.mutate({ id: task.id, enabled: checked });
                   }}
                   onClick={(e) => e.stopPropagation()}

@@ -22,7 +22,10 @@ function task(overrides: Partial<Task> & Pick<Task, 'id'>): Task {
     cron: '0 3 * * *',
     timezone: 'UTC',
     agentId: null,
-    enabled: false,
+    // True by default: most fixtures here stand in for a schedule that IS
+    // asking to run (an agent's proposal, or a package shipped switched on).
+    // The DOR-2059 case below overrides this explicitly.
+    enabled: true,
     sticky: false,
     maxRuntime: null,
     permissionMode: 'default',
@@ -98,6 +101,36 @@ describe('usePendingScheduleApprovals', () => {
 
     await waitFor(() => expect(result.current.schedules).toHaveLength(1));
     expect(result.current.schedules[0]?.id).toBe('parked');
+  });
+
+  it('says nothing about a schedule a package shipped switched off (DOR-2059)', async () => {
+    // Installing a package with N off-by-default schedules must cost zero
+    // clicks — the operator's own words in the report were "too many
+    // requests". A schedule that still wants to run keeps the card.
+    const { wrapper } = setup([
+      task({ id: 'off-by-default', enabled: false, origin: 'file' }),
+      task({ id: 'wants-to-run', enabled: true }),
+    ]);
+
+    const { result } = renderHook(() => usePendingScheduleApprovals(), { wrapper });
+
+    await waitFor(() => expect(result.current.schedules).toHaveLength(1));
+    expect(result.current.schedules[0]?.id).toBe('wants-to-run');
+  });
+
+  it('still shows the card when an agent hides its own proposal by switching itself off (adversarial review)', async () => {
+    // The exploit the first cut of this fix missed: `tasks_create` parks with
+    // `enabled: true` and `origin: null` — nothing here went through file
+    // discovery — and `enabled` is agent-writable, so an agent could call
+    // `tasks_update({ enabled: false })` on its OWN proposal without touching
+    // `status`. Only a genuinely file-discovered, switched-off schedule may
+    // quiet itself; an agent's proposal cannot.
+    const { wrapper } = setup([task({ id: 'proposed', enabled: false, origin: null })]);
+
+    const { result } = renderHook(() => usePendingScheduleApprovals(), { wrapper });
+
+    await waitFor(() => expect(result.current.schedules).toHaveLength(1));
+    expect(result.current.schedules[0]?.id).toBe('proposed');
   });
 
   it('keeps one array identity while nothing is parked', async () => {

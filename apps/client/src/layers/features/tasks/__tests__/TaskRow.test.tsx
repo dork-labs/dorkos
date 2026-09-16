@@ -82,6 +82,33 @@ const disabledSchedule: Task = {
   enabled: false,
 };
 
+// A package-shipped schedule found switched off. Discovery still parks it at
+// `pending_approval` — the row itself does not change — but nobody asked for
+// it to run, so it must draw exactly like `disabledSchedule` above: a normal
+// switched-off task, no card, no reason line (DOR-2059).
+const offByDefaultSchedule: Task = {
+  ...activeSchedule,
+  id: 'sched-4',
+  name: 'Off By Default Task',
+  status: 'pending_approval',
+  enabled: false,
+  origin: 'file',
+  filePath: '/home/user/.dork/plugins/flow/skills/flow-drain/SKILL.md',
+  reason:
+    'DorkOS found this schedule in a file on your computer. Nothing runs on a timer until you say so — read what it does below, then approve it or delete it.',
+};
+
+// An agent's OWN proposal, switched off by the same agent (`enabled` is
+// agent-writable, `origin` is `null` — no update path ever sets it to
+// `'file'`). This must NOT draw like `offByDefaultSchedule` above: an agent
+// cannot hide its own proposal by flipping `enabled` (adversarial review).
+const agentHidOwnProposal: Task = {
+  ...pendingSchedule,
+  id: 'sched-7',
+  name: 'Agent Proposal Switched Off',
+  enabled: false,
+};
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -258,6 +285,110 @@ describe('ScheduleRow', () => {
     });
 
     expect(screen.queryByText('The backlog piles up overnight and nobody sees it.')).toBeNull();
+  });
+
+  describe('a schedule a package shipped switched off (DOR-2059)', () => {
+    it('shows no Approve/Reject — it reads as an ordinary switched-off task', () => {
+      renderScheduleRow(offByDefaultSchedule);
+
+      expect(screen.queryByText('Approve')).toBeNull();
+      expect(screen.queryByText('Reject')).toBeNull();
+      expect(screen.getByRole('switch')).toBeTruthy();
+    });
+
+    it('shows its switch off but flippable, unlike a paused schedule', () => {
+      renderScheduleRow(offByDefaultSchedule);
+
+      const toggle = screen.getByRole('switch');
+      expect(toggle).toHaveAttribute('aria-checked', 'false');
+      expect(toggle).not.toBeDisabled();
+    });
+
+    it('says nothing about why it is waiting — there is no card to explain', () => {
+      renderScheduleRow(offByDefaultSchedule);
+
+      expect(
+        screen.queryByText(/DorkOS found this schedule in a file on your computer/)
+      ).toBeNull();
+    });
+
+    it('names its source on the row itself, without expanding (DOR-2059 review)', () => {
+      // No card and no reason line would otherwise leave this row
+      // indistinguishable from one the person switched off themselves.
+      renderScheduleRow(offByDefaultSchedule);
+
+      expect(screen.getByText(/Installed/)).toBeTruthy();
+      expect(screen.getByText(/flow-drain/)).toBeTruthy();
+    });
+
+    it('stays off the minimal row, which is a name and a dot (delta review)', () => {
+      const t = createMockTransport();
+      const Wrapper = createWrapper(t);
+      render(
+        <Wrapper>
+          <TaskRow
+            task={offByDefaultSchedule}
+            expanded={false}
+            onToggleExpand={vi.fn()}
+            onEdit={vi.fn()}
+            size="minimal"
+          />
+        </Wrapper>
+      );
+
+      expect(screen.queryByText(/Installed/)).toBeNull();
+    });
+
+    it('names no source on an ordinary switched-off schedule, which has none', () => {
+      renderScheduleRow(disabledSchedule);
+
+      expect(screen.queryByText(/Installed/)).toBeNull();
+    });
+  });
+
+  describe('an agent hiding its own proposal by switching itself off (adversarial review)', () => {
+    it('still shows Approve/Reject — `origin` is not `file`, so `enabled` cannot quiet it', () => {
+      renderScheduleRow(agentHidOwnProposal);
+
+      expect(screen.getByText('Approve')).toBeTruthy();
+      expect(screen.getByText('Reject')).toBeTruthy();
+      expect(screen.queryByRole('switch')).toBeNull();
+    });
+
+    it('names no source, unlike a genuinely file-discovered schedule', () => {
+      renderScheduleRow(agentHidOwnProposal);
+
+      expect(screen.queryByText(/Installed/)).toBeNull();
+    });
+
+    it('switching it on runs the same approval a person clicking Approve would (DOR-607)', async () => {
+      const updateTask = vi.fn().mockResolvedValue(offByDefaultSchedule);
+      const transport = createMockTransport({ updateTask });
+      renderScheduleRow(offByDefaultSchedule, {}, transport);
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('switch'));
+      });
+
+      // `status: 'active'` alongside `enabled: true` is what the PATCH route
+      // reads as the approval — the arm blocker and permission clamp run on
+      // every PATCH regardless of which fields it carries, so sending `status`
+      // here is what turns this specific write into the first approval this
+      // schedule has ever had, rather than an ordinary agent-writable toggle.
+      expect(updateTask).toHaveBeenCalledWith('sched-4', { status: 'active', enabled: true });
+    });
+
+    it('switching an already-approved schedule off and back on sends only `enabled`', async () => {
+      const updateTask = vi.fn().mockResolvedValue(activeSchedule);
+      const transport = createMockTransport({ updateTask });
+      renderScheduleRow(activeSchedule, {}, transport);
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('switch'));
+      });
+
+      expect(updateTask).toHaveBeenCalledWith('sched-1', { enabled: false });
+    });
   });
 
   it('opens dropdown menu with Edit, Run Now, Delete items', async () => {
