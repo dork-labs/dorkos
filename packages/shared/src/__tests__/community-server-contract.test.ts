@@ -22,6 +22,8 @@ import {
   CommunityWirePairingPollRequestSchema,
   CommunityWirePairingCancelRequestSchema,
   CommunityWirePairingApproveResponseSchema,
+  CommunityWirePairingDeclineRequestSchema,
+  CommunityWirePairingDeclineResponseSchema,
   CommunityWirePairingStatusResponseSchema,
   CommunityWireAgentChannelMembershipRequestSchema,
   CommunityWireAgentChannelMembershipResponseSchema,
@@ -255,6 +257,12 @@ describe('community server port additions', () => {
       CommunityWirePairingCancelRequestSchema.parse({ pairingId: 'pair-1', verifier: 'verifier-1' })
     ).toEqual({ pairingId: 'pair-1', verifier: 'verifier-1' });
     expect(CommunityWirePairingApproveResponseSchema.parse({ approved: true }).approved).toBe(true);
+    expect(CommunityWirePairingDeclineRequestSchema.parse({ pairingId: 'pair-1' })).toEqual({
+      pairingId: 'pair-1',
+    });
+    expect(CommunityWirePairingDeclineResponseSchema.parse({ cancelled: true }).cancelled).toBe(
+      true
+    );
     expect(
       CommunityWirePairingStatusResponseSchema.safeParse({
         pairingId: 'pair-1',
@@ -292,6 +300,7 @@ describe('community server port additions', () => {
       }).success
     ).toBe(false);
     expect(COMMUNITY_API_V1_ROUTES.pairingCancel).toBe('/api/v1/pairings/cancel');
+    expect(COMMUNITY_API_V1_ROUTES.pairingDecline).toBe('/api/v1/pairings/decline');
     expect(COMMUNITY_API_V1_ROUTES.channelAgents).toBe('/api/v1/channels/:id/agents');
   });
 });
