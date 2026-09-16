@@ -32,6 +32,8 @@ The command fails if PostgreSQL is unavailable or if any expected test was skipp
 
 The S3 route test also needs a disposable S3-compatible server. Set `COMMUNITY_TEST_S3_ENDPOINT`, `COMMUNITY_TEST_S3_ACCESS_KEY`, and `COMMUNITY_TEST_S3_SECRET_KEY` alongside `COMMUNITY_TEST_DATABASE_URL`, then run `pnpm --filter @dorkos/community test:s3`. It creates and removes its own bucket and database.
 
+The [HTTP API reference](API.md) describes authentication, routes, retry keys and live-update cursors.
+
 ## Invitations and credentials
 
 An owner or admin can create an invitation with `POST /api/v1/invites`. The response shows the signed token once. Put it in a link fragment, such as `/join#invite=<token>`, so the browser does not send it with the first page request. Preview and preflight accept the token in a same-origin POST body. Preflight gives the browser an HTTP-only, ten-minute join cookie; signup still needs that cookie, and redeeming the invitation after sign-in claims a seat. A signed token alone never admits someone. An owner can revoke a link with `DELETE /api/v1/invites/:id`. The default link lasts seven days and admits one person; the maximum is 30 days and 100 people.
