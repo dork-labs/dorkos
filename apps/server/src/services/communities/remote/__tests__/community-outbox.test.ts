@@ -141,6 +141,36 @@ describe('community outbox', () => {
     expect(delivery).toHaveBeenCalledTimes(1);
   });
 
+  it('publishes an owner replacement when expiry alone removes a pending delivery', async () => {
+    const harness = createRoomHarness({ agents: agentLookupFor({}) });
+    const outbox = new CommunityOutboxStore(harness.db);
+    harness.db.transaction((tx) =>
+      outbox.enqueue(
+        outboxItem({
+          ownerAuthorId: harness.human,
+          expiresAt: new Date(NOW - 1).toISOString(),
+        }),
+        tx
+      )
+    );
+    const changed = vi.fn();
+    const worker = new CommunityOutboxWorker(
+      outbox,
+      { canDeliver: () => true },
+      { deliver: vi.fn() },
+      () => NOW,
+      { changed }
+    );
+
+    await worker.runOnce();
+
+    expect(changed).toHaveBeenCalledOnce();
+    expect(changed).toHaveBeenCalledWith(harness.human);
+    expect(outbox.visibleForOwner(harness.human)).toMatchObject([
+      { state: 'failed', failure: 'expired' },
+    ]);
+  });
+
   it('settles a receipt and records owner-scoped echo provenance without account matching', async () => {
     const harness = createRoomHarness({ agents: agentLookupFor({}) });
     const outbox = new CommunityOutboxStore(harness.db);

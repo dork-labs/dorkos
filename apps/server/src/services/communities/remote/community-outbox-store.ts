@@ -213,13 +213,27 @@ export class CommunityOutboxStore {
     );
   }
 
-  /** Expire unsent entries before a worker attempts a network action. */
-  expire(now: string): void {
-    this.db
-      .update(communityOutbox)
-      .set({ state: 'failed', failure: 'expired' })
-      .where(and(eq(communityOutbox.state, 'pending'), lt(communityOutbox.expiresAt, now)))
-      .run();
+  /**
+   * Expire unsent entries before a worker attempts a network action.
+   *
+   * Returns each affected private owner once so a replacement delivery snapshot
+   * can remove stale pending UI without exposing another owner's queue.
+   */
+  expire(now: string): readonly string[] {
+    const where = and(eq(communityOutbox.state, 'pending'), lt(communityOutbox.expiresAt, now));
+    const owners = [
+      ...new Set(
+        this.db
+          .select({ ownerAuthorId: communityOutbox.ownerAuthorId })
+          .from(communityOutbox)
+          .where(where)
+          .all()
+          .map((row) => row.ownerAuthorId)
+      ),
+    ];
+    if (owners.length === 0) return [];
+    this.db.update(communityOutbox).set({ state: 'failed', failure: 'expired' }).where(where).run();
+    return owners;
   }
 
   /** Due rows in bounded order. The worker rechecks all authority before each request. */
