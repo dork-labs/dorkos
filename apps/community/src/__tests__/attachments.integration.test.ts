@@ -448,6 +448,101 @@ describe('attachments over real HTTP and Postgres', () => {
 });
 
 describe('private archives and recoverable leave', () => {
+  it('includes owned-agent posts and files in an agent-only channel until its last access ends', async () => {
+    const { unzipSync, strFromU8 } = await import('fflate');
+    const created = await post('/api/v1/channels', { name: 'Agent archive room' }, ownerCookie);
+    expect(created.status).toBe(201);
+    const id = (await created.json()).channel.id;
+    const community = await pool.query<{ community_id: string }>(
+      'SELECT community_id FROM members WHERE id=$1',
+      [ownerId]
+    );
+    const agent = await pool.query<{ id: string }>(
+      `INSERT INTO agents(community_id,owner_member_id,display_name,handle)
+       VALUES($1,$2,'Archive Helper','archive-helper') RETURNING id`,
+      [community.rows[0].community_id, ownerId]
+    );
+    const agentId = agent.rows[0].id;
+    const token = 'agent-archive-token';
+    await pool.query('INSERT INTO agent_credentials(agent_id,token_hash) VALUES($1,$2)', [
+      agentId,
+      hashSecret(token),
+    ]);
+    await pool.query('INSERT INTO agent_channel_members(channel_id,agent_id) VALUES($1,$2)', [
+      id,
+      agentId,
+    ]);
+    await pool.query('DELETE FROM channel_members WHERE channel_id=$1 AND member_id=$2', [
+      id,
+      ownerId,
+    ]);
+    await pool.query('UPDATE owner_quota_windows SET upload_bytes=0 WHERE owner_member_id=$1', [
+      ownerId,
+    ]);
+    const uploaded = await request(`/api/v1/channels/${id}/attachments`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        origin: config.publicUrl,
+        'content-type': 'text/plain',
+        'idempotency-key': 'archive-agent-file',
+        'x-file-name': 'agent-note.txt',
+        'x-file-size': '6',
+      },
+      body: 'secret',
+    });
+    expect(uploaded.status).toBe(201);
+    const fileId = (await uploaded.json()).attachment.id;
+    const entry = await request(`/api/v1/channels/${id}/entries`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        origin: config.publicUrl,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        text: 'Owned agent memory',
+        idempotencyKey: 'archive-agent-entry',
+        attachmentIds: [fileId],
+      }),
+    });
+    expect(entry.status).toBe(201);
+    const archive = await post('/api/v1/me/export', {}, ownerCookie);
+    expect(archive.status).toBe(201);
+    const archiveId = (await archive.json()).archiveId;
+    const downloaded = await request(`/api/v1/exports/${archiveId}`, {
+      headers: { cookie: ownerCookie },
+    });
+    expect(downloaded.status).toBe(200);
+    const zip = unzipSync(new Uint8Array(await downloaded.arrayBuffer()));
+    const manifest = JSON.parse(strFromU8(zip['manifest.json']));
+    expect(manifest.channels.some((channel: { id: string }) => channel.id === id)).toBe(true);
+    expect(
+      manifest.entries.some((item: { text: string }) => item.text === 'Owned agent memory')
+    ).toBe(true);
+    expect(manifest.attachments.some((item: { id: string }) => item.id === fileId)).toBe(true);
+    expect(strFromU8(zip[`attachments/${fileId}`])).toBe('secret');
+    await pool.query('DELETE FROM agent_channel_members WHERE channel_id=$1 AND agent_id=$2', [
+      id,
+      agentId,
+    ]);
+    expect(
+      (await request(`/api/v1/exports/${archiveId}`, { headers: { cookie: ownerCookie } })).status
+    ).toBe(403);
+    const after = await post('/api/v1/me/export', {}, ownerCookie);
+    expect(after.status).toBe(201);
+    const afterZip = unzipSync(
+      new Uint8Array(
+        await (
+          await request(`/api/v1/exports/${(await after.json()).archiveId}`, {
+            headers: { cookie: ownerCookie },
+          })
+        ).arrayBuffer()
+      )
+    );
+    expect(strFromU8(afterZip['manifest.json'])).not.toContain('Owned agent memory');
+  });
+
   it('exports only the requester’s posts and owned file bytes, with owner reauthentication for full archive', async () => {
     const { unzipSync, strFromU8 } = await import('fflate');
     await pool.query(
@@ -556,5 +651,49 @@ describe('private archives and recoverable leave', () => {
     expect((await upload(channelId, ownerCookie, 'over-file-cap', 'z'.repeat(33))).status).toBe(
       413
     );
+  });
+
+  it('commits cookie and agent uploads with a one-client database pool', async () => {
+    await pool.query('UPDATE owner_quota_windows SET upload_bytes=0 WHERE owner_member_id=$1', [
+      ownerId,
+    ]);
+    const onePool = new Pool({ connectionString: dbUrl.toString(), max: 1 });
+    const oneApp = createCommunityApp({ config, pool: onePool, blobStore });
+    try {
+      const ownerUpload = await oneApp.request(`/api/v1/channels/${channelId}/attachments`, {
+        method: 'POST',
+        headers: {
+          cookie: ownerCookie,
+          origin: config.publicUrl,
+          'content-type': 'text/plain',
+          'idempotency-key': 'one-pool-human',
+          'x-file-name': 'human.txt',
+          'x-file-size': '5',
+        },
+        body: 'human',
+      });
+      expect(ownerUpload.status).toBe(201);
+      const agent = await pool.query<{ id: string }>("SELECT id FROM agents WHERE handle='helper'");
+      const token = 'agent-one-pool-token';
+      await pool.query('INSERT INTO agent_credentials(agent_id,token_hash) VALUES($1,$2)', [
+        agent.rows[0].id,
+        hashSecret(token),
+      ]);
+      const agentUpload = await oneApp.request(`/api/v1/channels/${channelId}/attachments`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          origin: config.publicUrl,
+          'content-type': 'text/plain',
+          'idempotency-key': 'one-pool-agent',
+          'x-file-name': 'agent.txt',
+          'x-file-size': '5',
+        },
+        body: 'agent',
+      });
+      expect(agentUpload.status).toBe(201);
+    } finally {
+      await onePool.end();
+    }
   });
 });

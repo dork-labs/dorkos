@@ -32,7 +32,10 @@ let channelId = '';
 let ownerMemberId = '';
 let firstCursor = '';
 let bobMemberId = '';
-const hooks: { afterSnapshotWatermark?: () => Promise<void> } = {};
+const hooks: {
+  afterSnapshotWatermark?: () => Promise<void>;
+  afterEntryAttachmentLookup?: () => Promise<void>;
+} = {};
 const sseBuffers = new WeakMap<ReadableStreamDefaultReader<Uint8Array>, string>();
 
 async function nextSse(
@@ -720,6 +723,62 @@ describe('owner foundation over real HTTP and Postgres', () => {
         ).status
       ).toBe(404);
     } finally {
+      controller.abort();
+      await reader.cancel().catch(() => undefined);
+    }
+  });
+
+  it('does not emit an entry if access ends during attachment enrichment', async () => {
+    const created = await post('/api/v1/channels', { name: 'Enrichment revocation' }, ownerCookie);
+    const id = (await created.json()).channel.id;
+    await pool.query('INSERT INTO channel_members(channel_id,member_id) VALUES($1,$2)', [
+      id,
+      bobMemberId,
+    ]);
+    let entered!: () => void;
+    let release!: () => void;
+    const atEnrichment = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    hooks.afterEntryAttachmentLookup = async () => {
+      entered();
+      await held;
+    };
+    const controller = new AbortController();
+    const response = await request(`/api/v1/channels/${id}/events`, {
+      headers: { cookie: bobCookie },
+      signal: controller.signal,
+    });
+    const reader = response.body!.getReader();
+    try {
+      expect((await nextSse(reader)).event).toBe('snapshot');
+      expect(
+        (
+          await post(
+            `/api/v1/channels/${id}/entries`,
+            {
+              text: 'must stay private',
+              idempotencyKey: 'enrichment-revoked',
+            },
+            ownerCookie
+          )
+        ).status
+      ).toBe(201);
+      await atEnrichment;
+      await pool.query('DELETE FROM channel_members WHERE channel_id=$1 AND member_id=$2', [
+        id,
+        bobMemberId,
+      ]);
+      release();
+      const event = await nextSse(reader);
+      expect(event.event).toBe('closed');
+      expect(JSON.stringify(event.data)).not.toContain('must stay private');
+    } finally {
+      release();
+      hooks.afterEntryAttachmentLookup = undefined;
       controller.abort();
       await reader.cancel().catch(() => undefined);
     }

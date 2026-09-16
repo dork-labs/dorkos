@@ -81,7 +81,10 @@ export function registerEventRoutes(
     pool: Pool;
     auth: CommunityAuth;
     config: CommunityConfig;
-    hooks?: { afterSnapshotWatermark?: () => Promise<void> };
+    hooks?: {
+      afterSnapshotWatermark?: () => Promise<void>;
+      afterEntryAttachmentLookup?: () => Promise<void>;
+    };
   }
 ) {
   app.get('/api/v1/channels/:id/read-cursor', async (c) => {
@@ -323,6 +326,24 @@ export function registerEventRoutes(
               if (row) {
                 position = Number(row.seq);
                 const attachmentMap = await attachmentsForEntries(pool, [row.id]);
+                await hooks?.afterEntryAttachmentLookup?.();
+                const afterEnrichment = await checkAccess();
+                if (closed) return;
+                if (
+                  !afterEnrichment?.active ||
+                  !afterEnrichment.joined ||
+                  afterEnrichment.archived ||
+                  afterEnrichment.epoch !== channel.epoch
+                ) {
+                  stop();
+                  writeEvent(controller, {
+                    type: 'closed',
+                    reason: afterEnrichment?.archived ? 'archived' : 'removed',
+                    cursor: currentCursor(),
+                  });
+                  controller.close();
+                  return;
+                }
                 const entry = entryProjection(
                   row,
                   channel.epoch,
