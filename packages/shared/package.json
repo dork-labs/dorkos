@@ -157,6 +157,10 @@
       "types": "./src/community-connections.ts",
       "default": "./dist/community-connections.js"
     },
+    "./community-deliveries": {
+      "types": "./src/community-deliveries.ts",
+      "default": "./dist/community-deliveries.js"
+    },
     "./memory-provider": {
       "types": "./src/memory-provider.ts",
       "default": "./dist/memory-provider.js"
