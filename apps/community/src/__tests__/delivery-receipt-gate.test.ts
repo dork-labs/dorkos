@@ -34,4 +34,11 @@ describe('DeliveryReceiptGate', () => {
     await held;
     expect(gate.observation()).toEqual({ state: 'idle' });
   });
+
+  it('makes release idempotent, including before a matching post arrives', () => {
+    const gate = new DeliveryReceiptGate();
+    gate.arm('f7a5da48-61c4-43df-8cfe-1acb98333c8e');
+    expect(gate.release()).toEqual({ state: 'idle' });
+    expect(gate.release()).toEqual({ state: 'idle' });
+  });
 });
