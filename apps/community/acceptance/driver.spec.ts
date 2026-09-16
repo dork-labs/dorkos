@@ -24,8 +24,10 @@ test.describe('Packaged Community local-agent proof @integration', () => {
     const env = acceptanceEnvironment();
     const ownerA = await browser.newContext();
     const ownerB = await browser.newContext();
+    const memberA = await browser.newContext();
     const pageA = await ownerA.newPage();
     const pageB = await ownerB.newPage();
+    const pageMemberA = await memberA.newPage();
     try {
       await bootstrapCommunity(pageA, {
         url: env.communityA,
@@ -41,6 +43,21 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         email: 'bea@acceptance.test',
         community: 'Acceptance B',
       });
+
+      // The person who addresses the agent must be a distinct, browser-admitted
+      // member of Community A. Community B exists to prove that pairing identities
+      // stay isolated; it is not the second participant in A's shared channel.
+      await pageA.getByRole('button', { name: 'Manage' }).click();
+      await pageA.getByRole('button', { name: 'Create invite' }).click();
+      const inviteUrl = await pageA.getByLabel('One-time invite link').inputValue();
+      await pageMemberA.goto(inviteUrl);
+      await pageMemberA.getByRole('button', { name: 'Continue' }).click();
+      await pageMemberA.getByRole('button', { name: 'Create account' }).click();
+      await pageMemberA.getByLabel('Your name').fill('Casey Member');
+      await pageMemberA.getByLabel('Email').fill('casey@acceptance.test');
+      await pageMemberA.getByLabel('Password').fill('acceptance-password');
+      await pageMemberA.getByRole('button', { name: 'Join community' }).click();
+      await expect(pageMemberA.getByLabel(/Message #general/i)).toBeVisible();
 
       const connect = async (origin: string, page: typeof pageA, name: string) => {
         const started = await json<{ connection: { ref: string }; approvalUrl: string }>(
@@ -91,7 +108,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
           overrides: {
             name: 'Attachment Agent',
             runtime: 'claude-code',
-            behavior: 'silent',
+            behavior: { responseMode: 'silent' },
           },
         }),
       });
@@ -120,11 +137,10 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       ).toBe(true);
       expect(await scenario.json()).toMatchObject({ scenario: 'rooms-post-attachment' });
 
-      await pageA.goto(`${env.communityA}/`);
-      const composer = pageA.getByLabel(/Message #general/i);
+      const composer = pageMemberA.getByLabel(/Message #general/i);
       await expect(composer).toBeVisible();
       await composer.fill(`@${handle} show the packaged proof`);
-      await pageA.getByRole('button', { name: 'Send' }).click();
+      await pageMemberA.getByRole('button', { name: 'Send' }).click();
 
       type Entry = {
         id: string;
@@ -149,6 +165,18 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         'the real local dispatcher/outbox did not produce exactly one remote agent attachment entry'
       );
       expect(confirmed).toHaveLength(1);
+      const memberConfirmed = await eventually(
+        () =>
+          pageJson<{ entries: Entry[] }>(
+            pageMemberA,
+            `/api/v1/channels/${roomA!.roomId}/entries?limit=100`
+          ).then((page) =>
+            page.entries.filter((entry) => entry.authorDisplayName === registered.name)
+          ),
+        (entries) => entries.length === 1 && entries[0]?.id === confirmed[0]?.id,
+        'the confirmed remote reply was not visible to the invited Community A member'
+      );
+      expect(memberConfirmed).toHaveLength(1);
       const png = await pageA.evaluate(async (attachmentId) => {
         const response = await fetch(`/api/v1/attachments/${attachmentId}`);
         if (!response.ok) throw new Error(`attachment download returned ${response.status}`);
@@ -170,13 +198,41 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         true
       );
       await eventually(
-        agentEntries,
-        (entries) => entries.length === 1,
-        'local restart replayed a historical Community entry into a second agent turn'
+        () =>
+          json<{ connection: { status: string } | null }>(`${env.local}/api/communities/${refA}`),
+        (result) => result.connection?.status === 'connected',
+        'the packaged local server did not reconnect to Community A after restart'
       );
+
+      // A fresh live entry makes the recovered subscription observable. Exactly
+      // two replies means this addressed post ran once and the historical first
+      // post did not run again while the local server restarted.
+      const restartScenario = await request.post(`${env.local}/api/test/scenario`, {
+        data: { name: 'rooms-post-attachment' },
+      });
+      expect(
+        restartScenario.ok(),
+        `could not restore test runtime scenario after restart: ${await restartScenario.text()}`
+      ).toBe(true);
+      await composer.fill(`@${handle} prove the recovered live subscription`);
+      await pageMemberA.getByRole('button', { name: 'Send' }).click();
+      const afterRestart = await eventually(
+        agentEntries,
+        (entries) =>
+          entries.length === 2 &&
+          entries.every(
+            (entry) =>
+              entry.text === 'Here is what I saw.' &&
+              entry.attachments.length === 1 &&
+              entry.attachments[0]?.name === 'shot.png'
+          ),
+        'restart did not preserve a live Community subscription without replaying history'
+      );
+      expect(afterRestart).toHaveLength(2);
     } finally {
       await ownerA.close();
       await ownerB.close();
+      await memberA.close();
     }
   });
 });
