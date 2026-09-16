@@ -397,6 +397,10 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         json<{ sessions: Array<{ id: string }> }>(
           `${env.local}/api/sessions?cwd=${encodeURIComponent(agentPath)}`
         ).then((result) => result.sessions);
+      const waitForLocalTurnsToSettle = async (label: string) => {
+        const settled = await eventually(localTurns, (sessions) => sessions.length === 0, label);
+        expect(settled).toHaveLength(0);
+      };
       const beforeFreshMention = await eventually(
         localTurns,
         (sessions) => sessions.length === 0,
@@ -441,6 +445,22 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         'restart did not preserve a live Community subscription without replaying history'
       );
       expect(afterRestart).toHaveLength(2);
+
+      // `rooms-post-attachment` deliberately remains open after its capability
+      // call. End the recovered-subscription witness before beginning independent
+      // delivery journeys: otherwise its single runtime slot queues the retry
+      // attempt until the fixture's 60-second safety expiry. `finish-turn` is
+      // sticky by design, so later attachment turns still exercise the real post
+      // path but settle as soon as that post completes. The stoppable scenario
+      // below has its own session-scoped barrier and remains live.
+      const finishRecoveredTurn = await request.post(`${env.local}/api/test/finish-turn`);
+      expect(
+        finishRecoveredTurn.ok(),
+        `could not finish recovered deterministic turn: ${await finishRecoveredTurn.text()}`
+      ).toBe(true);
+      await waitForLocalTurnsToSettle(
+        'the recovered attachment turn did not settle before independent delivery journeys'
+      );
 
       // Community B is a separate packaged server and has no local agent
       // enrollment. Its human post must stay in B's qualified route and leave
@@ -723,6 +743,9 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       );
       expect(releasedRemoteEntry.entries.filter((entry) => entry.id === heldEntryId)).toHaveLength(
         1
+      );
+      await waitForLocalTurnsToSettle(
+        'the released after-persistence attachment turn did not settle before the live Stop journey'
       );
       await localPage.goto(
         `${env.local}/channels?community=${encodeURIComponent(refA)}&id=${encodeURIComponent(roomA!.roomId)}`
