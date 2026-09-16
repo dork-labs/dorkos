@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { CommunityDelivery } from '@dorkos/shared/community-deliveries';
 import { useQueryClient } from '@tanstack/react-query';
 import type { RemoteCommunityEntry, RemoteCommunityRoom } from '@dorkos/shared/community-views';
 import { useTransport } from '@/layers/shared/model';
@@ -8,6 +9,7 @@ interface StreamState {
   address: string;
   room: RemoteCommunityRoom | null;
   entries: RemoteCommunityEntry[];
+  deliveries: CommunityDelivery[];
   status: 'connecting' | 'live' | 'offline' | 'removed';
 }
 
@@ -44,6 +46,7 @@ export function useRemoteCommunityStream(
     address,
     room: null,
     entries: [],
+    deliveries: [],
     status: 'connecting',
   }));
 
@@ -54,13 +57,13 @@ export function useRemoteCommunityStream(
     let failures = 0;
     let since: string | undefined;
     let denied = false;
-    setState({ address, room: null, entries: [], status: 'connecting' });
+    setState({ address, room: null, entries: [], deliveries: [], status: 'connecting' });
 
     function removeAccess() {
       denied = true;
       since = undefined;
       queries.removeQueries({ queryKey: communityKeys.remote(ref) });
-      setState({ address, room: null, entries: [], status: 'removed' });
+      setState({ address, room: null, entries: [], deliveries: [], status: 'removed' });
     }
 
     async function connect() {
@@ -69,7 +72,7 @@ export function useRemoteCommunityStream(
           ref,
           roomId,
           (event) => {
-            if (controller.signal.aborted) return;
+            if (controller.signal.aborted || denied) return;
             if (event.type === 'closed') {
               if (event.reason === 'removed' || event.reason === 'revoked') removeAccess();
               return;
@@ -87,7 +90,23 @@ export function useRemoteCommunityStream(
                   current.address === address ? current.entries : [],
                   event.entries
                 ).slice(-500),
+                deliveries: current.deliveries.filter(
+                  (delivery) =>
+                    !event.entries.some(
+                      (entry) => entry.originIdempotencyKey === delivery.idempotencyKey
+                    )
+                ),
                 status: event.stale ? 'offline' : 'live',
+              }));
+            } else if (event.type === 'deliveries') {
+              setState((current) => ({
+                ...current,
+                deliveries: event.deliveries.filter(
+                  (delivery) =>
+                    !current.entries.some(
+                      (entry) => entry.originIdempotencyKey === delivery.idempotencyKey
+                    )
+                ),
               }));
             } else {
               since = event.entry.cursor;
@@ -96,6 +115,9 @@ export function useRemoteCommunityStream(
                 entries: mergeRemoteCommunityEntries(ref, roomId, current.entries, [
                   event.entry,
                 ]).slice(-500),
+                deliveries: current.deliveries.filter(
+                  (delivery) => delivery.idempotencyKey !== event.entry.originIdempotencyKey
+                ),
                 status: 'live',
               }));
             }
@@ -140,5 +162,5 @@ export function useRemoteCommunityStream(
   // A route change must never expose the previous community's history for even one render.
   return state.address === address && enabled
     ? state
-    : { address, room: null, entries: [], status: 'connecting' as const };
+    : { address, room: null, entries: [], deliveries: [], status: 'connecting' as const };
 }

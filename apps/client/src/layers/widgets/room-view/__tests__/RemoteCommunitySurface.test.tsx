@@ -129,6 +129,53 @@ describe('remote community surface', () => {
     expect(screen.queryByRole('button', { name: 'Join channel' })).not.toBeInTheDocument();
   });
 
+  it('shows agent deliveries as unconfirmed and removes them on an empty replacement', async () => {
+    const view = mount();
+    await waitFor(() => expect(view.transport.subscribeRemoteCommunityRoom).toHaveBeenCalled());
+    const delivery = {
+      idempotencyKey: 'agent-output',
+      author: { kind: 'agent' as const, displayName: 'Builder' },
+      text: 'Local agent output',
+      parentEntryId: null,
+      attachments: [{ name: 'proof.png', contentType: 'image/png', byteSize: 42 }],
+      state: 'pending' as const,
+      failure: null,
+    };
+    act(() =>
+      view.emit({
+        type: 'deliveries',
+        community: room.community,
+        roomId: room.roomId,
+        deliveries: [delivery],
+      })
+    );
+    expect(screen.getByText('Builder · Agent')).toBeInTheDocument();
+    expect(screen.getByText('Waiting for community confirmation…')).toBeInTheDocument();
+    expect(screen.getByText('proof.png')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'proof.png' })).not.toBeInTheDocument();
+    act(() =>
+      view.emit({
+        type: 'deliveries',
+        community: room.community,
+        roomId: room.roomId,
+        deliveries: [{ ...delivery, state: 'failed', failure: 'expired' }],
+      })
+    );
+    expect(
+      screen.getByText('Delivery not confirmed. The retry window has ended.')
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Waiting for community confirmation…')).not.toBeInTheDocument();
+    act(() =>
+      view.emit({
+        type: 'deliveries',
+        community: room.community,
+        roomId: room.roomId,
+        deliveries: [],
+      })
+    );
+    expect(screen.queryByText('Local agent output')).not.toBeInTheDocument();
+  });
+
   it('sends only through the qualified remote transport and leaves local room APIs unused', async () => {
     const view = mount();
     vi.mocked(view.transport.postRemoteCommunityEntry).mockRejectedValue(

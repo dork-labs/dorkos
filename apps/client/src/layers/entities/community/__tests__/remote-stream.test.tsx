@@ -147,6 +147,90 @@ describe('remote room stream lifecycle', () => {
     });
   });
 
+  it('replaces private agent deliveries and removes them only on a matching remote confirmation', () => {
+    const { streams, wrapper } = setup();
+    const hook = renderHook(() => useRemoteCommunityStream('a', 'same'), { wrapper });
+    const delivery = {
+      idempotencyKey: 'own-output',
+      author: { kind: 'agent' as const, displayName: 'Helper' },
+      text: 'Pending agent reply',
+      parentEntryId: null,
+      attachments: [],
+      state: 'pending' as const,
+      failure: null,
+    };
+    const pending: RemoteCommunityEvent = {
+      type: 'deliveries',
+      community: room().community,
+      roomId: 'same',
+      deliveries: [delivery],
+    };
+    act(() => {
+      streams[0].emit(snapshot());
+      streams[0].emit(pending);
+    });
+    expect(hook.result.current.deliveries).toEqual([delivery]);
+    act(() => streams[0].emit({ type: 'entry', entry: { ...entry('a', 2), text: delivery.text } }));
+    expect(hook.result.current.deliveries).toHaveLength(1);
+    act(() =>
+      streams[0].emit({
+        type: 'entry',
+        entry: { ...entry('a', 3), originIdempotencyKey: delivery.idempotencyKey },
+      })
+    );
+    expect(hook.result.current.deliveries).toEqual([]);
+    act(() => streams[0].emit(pending));
+    expect(hook.result.current.deliveries).toEqual([]);
+    act(() =>
+      streams[0].emit({
+        ...pending,
+        deliveries: [
+          { ...delivery, idempotencyKey: 'another', state: 'failed', failure: 'expired' },
+        ],
+      })
+    );
+    expect(hook.result.current.deliveries[0]?.state).toBe('failed');
+    act(() => streams[0].emit({ ...pending, deliveries: [] }));
+    expect(hook.result.current.deliveries).toEqual([]);
+  });
+
+  it('clears private deliveries on revocation and refuses a late event from that subscription', () => {
+    const { streams, wrapper } = setup();
+    const hook = renderHook(() => useRemoteCommunityStream('a', 'same'), { wrapper });
+    const pending: RemoteCommunityEvent = {
+      type: 'deliveries',
+      community: room().community,
+      roomId: 'same',
+      deliveries: [
+        {
+          idempotencyKey: 'secret',
+          author: { kind: 'agent', displayName: 'Helper' },
+          text: 'private',
+          parentEntryId: null,
+          attachments: [],
+          state: 'pending',
+          failure: null,
+        },
+      ],
+    };
+    act(() => {
+      streams[0].emit(snapshot());
+      streams[0].emit(pending);
+    });
+    expect(hook.result.current.deliveries).toHaveLength(1);
+    act(() =>
+      streams[0].emit({
+        type: 'closed',
+        community: room().community,
+        roomId: 'same',
+        reason: 'revoked',
+      })
+    );
+    act(() => streams[0].emit(pending));
+    expect(hook.result.current.deliveries).toEqual([]);
+    expect(hook.result.current.status).toBe('removed');
+  });
+
   it('merges receipt and echo once in native order, independent of timestamps', () => {
     const first = entry('a', 1);
     const second = { ...entry('a', 2), createdAt: '2020-01-01T00:00:00Z' };

@@ -104,6 +104,33 @@ describe('qualified remote community transport', () => {
       'web or desktop'
     );
   });
+  it('validates private delivery events against the selected community and requires a room snapshot first', async () => {
+    const pending = {
+      type: 'deliveries',
+      community: 'community-a',
+      roomId: 'same-id',
+      deliveries: [],
+    };
+    stream(pending);
+    await expect(
+      methods().subscribeRemoteCommunityRoom('community-a', 'same-id', vi.fn())
+    ).rejects.toThrow('begin with a snapshot');
+    const foreign = stream(snapshot, { ...pending, community: 'community-b' });
+    await expect(
+      methods().subscribeRemoteCommunityRoom('community-a', 'same-id', vi.fn())
+    ).rejects.toThrow('different room');
+    expect(foreign.cancel).toHaveBeenCalled();
+    stream(snapshot, pending, {
+      type: 'closed',
+      community: 'community-a',
+      roomId: 'same-id',
+      reason: 'revoked',
+    });
+    const onEvent = vi.fn();
+    await methods().subscribeRemoteCommunityRoom('community-a', 'same-id', onEvent);
+    expect(onEvent).toHaveBeenCalledWith(pending);
+  });
+
   it('keeps identical remote room IDs under distinct local connection refs', async () => {
     const fetch = answer({ room });
     await expect(methods().getRemoteCommunityRoom('community-a', 'same-id')).resolves.toEqual(room);

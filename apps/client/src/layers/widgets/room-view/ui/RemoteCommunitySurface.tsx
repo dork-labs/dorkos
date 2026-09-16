@@ -318,6 +318,34 @@ export function RemoteCommunitySurface({
                 <RemoteCommunityMessage entry={visible[context.index]!} onThread={onThread} />
               )}
             />
+            {stream.deliveries
+              .filter(
+                (delivery) =>
+                  delivery.parentEntryId === (threadId ?? null) &&
+                  !entries.some((entry) => entry.originIdempotencyKey === delivery.idempotencyKey)
+              )
+              .map((delivery) => (
+                <div
+                  key={delivery.idempotencyKey}
+                  className="border-t px-4 py-2 text-sm"
+                  role="status"
+                >
+                  <p className="font-medium">{delivery.author.displayName} · Agent</p>
+                  <p className="whitespace-pre-wrap">{delivery.text}</p>
+                  {delivery.attachments.map((file, index) => (
+                    <span key={index} className="mr-2">
+                      {file.name}
+                    </span>
+                  ))}
+                  <p className="text-muted-foreground">
+                    {delivery.state === 'pending'
+                      ? 'Waiting for community confirmation…'
+                      : delivery.failure === 'expired'
+                        ? 'Delivery not confirmed. The retry window has ended.'
+                        : 'Delivery not confirmed. Check the community connection before asking the agent to try again.'}
+                  </p>
+                </div>
+              ))}
             {drafts.deliveries
               .filter(
                 (job) =>

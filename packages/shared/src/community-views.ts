@@ -5,6 +5,7 @@
  * @module shared/community-views
  */
 import { z } from 'zod';
+import { CommunityDeliverySnapshotSchema } from './community-deliveries.js';
 import type { HaltRoomResponse } from './room-schemas.js';
 import {
   CommunityWireEntryPostRequestSchema,
@@ -179,6 +180,7 @@ export const RemoteCommunityEventSchema = z
       stale: z.boolean(),
     }),
     z.strictObject({ type: z.literal('entry'), entry: RemoteCommunityEntrySchema }),
+    CommunityDeliverySnapshotSchema.safeExtend({ type: z.literal('deliveries') }),
     RoomAddressSchema.extend({
       type: z.literal('closed'),
       reason: z.enum(['removed', 'revoked', 'unavailable']),
