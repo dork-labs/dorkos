@@ -84,6 +84,17 @@ export class RoomVisibility {
     return this.store.getMember(roomId, viewerAuthorId) !== null;
   }
 
+  /** Whether this is an ordinary local room that may appear in generic room lists. */
+  canList(roomId: string, viewerAuthorId: string): boolean {
+    // A mirror is an implementation cache for a connected community. Its local
+    // id must stay readable by native delivery code, but generic room lists have
+    // no community coordinate and must not offer an unopenable duplicate.
+    const mirrored = this.mirrorAccess?.canRead(roomId, viewerAuthorId);
+    if (mirrored !== undefined && mirrored !== null) return false;
+    if (this.seesEveryRoom(viewerAuthorId)) return true;
+    return this.store.getMember(roomId, viewerAuthorId) !== null;
+  }
+
   /** Whether owner-wide list/search calls must enumerate through `canSee`. */
   hasRestrictedMirrors(): boolean {
     return this.mirrorAccess?.hasMirrors() ?? false;

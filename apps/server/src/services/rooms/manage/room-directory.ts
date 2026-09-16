@@ -119,19 +119,19 @@ export class RoomDirectory {
           .listRooms(filter)
           // Cached remote rows share this table, but remote membership is not
           // owner-wide local authority. Keep the local fast path unless a
-          // mirror exists, then ask the one visibility predicate per row.
+          // mirror exists, then ask the one list predicate per row.
           .filter(
             (room) =>
               !this.visibility.hasRestrictedMirrors() ||
-              this.visibility.canSee(room.id, viewerAuthorId)
+              this.visibility.canList(room.id, viewerAuthorId)
           )
       : this.store
           .listRoomsForMember(viewerAuthorId, filter)
           // A revoked remote mirror retains its normal room-members row so its
           // cache can be reconciled without recreating a local room. Membership
-          // alone is therefore insufficient here: the persisted mirror grant
-          // is the authority for every reader, owner and agent alike.
-          .filter((room) => this.visibility.canSee(room.id, viewerAuthorId));
+          // alone is therefore insufficient here. Cached remote rooms belong
+          // to their qualified community list, never this local directory.
+          .filter((room) => this.visibility.canList(room.id, viewerAuthorId));
     // Only the DMs are asked about, so a room of any other kind is simply
     // absent from the map and reads as `null` below — "not carried" rather
     // than "empty", which is the distinction the schema promises.

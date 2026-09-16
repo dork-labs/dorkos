@@ -594,6 +594,23 @@ describe('RightPanelContainer', () => {
     expect(screen.getByTestId('tab-content-a')).toBeInTheDocument();
   });
 
+  it('falls back when a qualified community room hides the local Room tab', () => {
+    mockRightPanelOpen = true;
+    mockActiveRightPanelTab = 'room';
+    mockContributions = [
+      makeContribution('pulse', { isGlobal: true }),
+      makeContribution('room', {
+        visibleWhen: ({ isRemoteCommunityRoom }) => !isRemoteCommunityRoom,
+      }),
+    ];
+
+    render(<RightPanelContainer pathname="/channels" isRemoteCommunityRoom />);
+
+    expect(screen.queryByRole('tab', { name: 'Tab room' })).not.toBeInTheDocument();
+    expect(screen.getByText('Tab pulse')).toBeInTheDocument();
+    expect(mockSetActiveRightPanelTabView).toHaveBeenCalledWith('pulse');
+  });
+
   it('renders no empty-state copy when every contribution is filtered out', () => {
     // The Wave-1 empty state is gone (Pulse makes it unreachable): a route that
     // filters out its only contribution renders an empty body, never stale copy.

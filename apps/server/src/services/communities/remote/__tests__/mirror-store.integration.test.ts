@@ -577,7 +577,7 @@ describe('RemoteMirrorStore', () => {
     );
   });
 
-  it('hides stale and revoked mirror rooms from a retained enrolled agent membership', () => {
+  it('keeps authorized mirror caches readable but out of generic room lists', () => {
     const agents = agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } });
     const { harness, mirrors } = wired(agents);
     const agent = harness.authors.resolveAgent('/agents/ana', 'Ana');
@@ -586,7 +586,10 @@ describe('RemoteMirrorStore', () => {
       accessors: [{ authorId: agent.id, responseMode: 'always' }],
     });
 
-    expect(harness.service.listRooms(agent.id).map((item) => item.id)).toContain(room.id);
+    mirrors.importEntries(REF_A, 'general', [nativeEntry(REF_A, 'general', 1)]);
+    expect(harness.service.listRooms(harness.human).map((item) => item.id)).not.toContain(room.id);
+    expect(harness.service.listRooms(agent.id).map((item) => item.id)).not.toContain(room.id);
+    expect(harness.service.readHistory(room.id, harness.human, { limit: 10 })).toHaveLength(1);
 
     mirrors.markStale(REF_A, harness.human);
     expect(harness.service.listRooms(agent.id).map((item) => item.id)).not.toContain(room.id);
