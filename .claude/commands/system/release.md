@@ -341,7 +341,15 @@ npm version X.Y.Z --no-git-tag-version
 
 # apps/desktop/package.json (the macOS desktop app)
 cd apps/desktop && npm version X.Y.Z --no-git-tag-version && cd ../..
+
+# packages/cloud-api/package.json (@dork-labs/cloud-api, the public wire contract)
+cd packages/cloud-api && npm version X.Y.Z --no-git-tag-version && cd ../..
 ```
+
+`@dork-labs/cloud-api` is versioned in **lockstep** with the CLI: the contract version equals the
+app version, published atomically with it or not at all. `packages/cloud-api/src/__tests__/packaging.test.ts`
+fails if this file, `VERSION` and `packages/cli/package.json` ever disagree, so a forgotten bump
+here is caught by `test` rather than discovered on npm.
 
 Bumping the desktop app keeps its artifact version (`DorkOS-X.Y.Z-arm64.dmg`) and electron-updater's version comparison in lockstep with the product version — the macOS build rides the `vX.Y.Z` tag (see Phase 4 and the "Desktop Release" workflow).
 
@@ -478,7 +486,7 @@ cd .claude/worktrees/release-vX.Y.Z && pnpm install   # or the pre-push hook die
 # Stage all version-related changes. If Check 6 scaffolded a config migration,
 # also stage apps/server/src/services/core/config-manager.ts (and
 # packages/shared/src/config-schema.ts if it was part of the drift).
-git add VERSION CHANGELOG.md docs/changelog.mdx docs/changelog-archive.mdx changelog/ packages/cli/package.json package.json apps/desktop/package.json blog/ apps/site/public/product/archive/vX.Y.Z/
+git add VERSION CHANGELOG.md docs/changelog.mdx docs/changelog-archive.mdx changelog/ packages/cli/package.json packages/cloud-api/package.json package.json apps/desktop/package.json blog/ apps/site/public/product/archive/vX.Y.Z/
 
 git commit -m "$(cat <<'EOF'
 chore(release): vX.Y.Z
@@ -523,9 +531,17 @@ section via a small follow-up PR (this happened on v0.62.0, fixed in #1118).
 
 ```bash
 pnpm run publish:cli
+pnpm run publish:cloud-api
 ```
 
-The `prepublishOnly` hook in `packages/cli/package.json` builds before publishing. (If the publish itself fails — e.g. an expired token — that is a genuine failure: report it and retry per the auth guidance below; do not silently skip it.)
+The `prepublishOnly` hook in each package builds before publishing.
+
+`@dork-labs/cloud-api` publishes **after** the CLI and is **not** allowed to be skipped on a
+release that changed it: the hosted control plane resolves the contract from public npm, so a
+version tagged here and absent there leaves the two sides describing different wires. If the
+contract publish fails where the CLI succeeded, that is a broken release to finish, not a
+follow-up to file — retry it with the same auth guidance below. It is a small, dependency-free
+package, so nothing about it can fail slowly. (If the publish itself fails — e.g. an expired token — that is a genuine failure: report it and retry per the auth guidance below; do not silently skip it.)
 
 **npm takes ~10-15 minutes to make the ~19 MB package fetchable.** `+ dorkos@X.Y.Z`
 and exit 0 mean accepted, not live. `publish-docker.yml` waits only ~5 minutes, so

@@ -1,0 +1,7 @@
+{
+  "code": "unauthenticated",
+  "status": 401,
+  "title": "Sign in to continue.",
+  "detail": "No bearer token was presented.",
+  "instance": "req_0a1b2c3d"
+}

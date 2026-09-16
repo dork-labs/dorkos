@@ -1,0 +1,12 @@
+{
+  "hostname": "agents.example.invalid",
+  "status": "pending_verification",
+  "verification": {
+    "recordName": "_dorkos-challenge.agents.example.invalid",
+    "recordValue": "v=dorkos1 token=abc123"
+  },
+  "certificate": {
+    "state": "pending",
+    "renewsAt": null
+  }
+}

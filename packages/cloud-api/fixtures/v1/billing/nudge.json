@@ -1,0 +1,9 @@
+{
+  "trailing30Micro": "48000000",
+  "suggestedPlanId": "pl_opaque_0002",
+  "suggestedPlanDisplayName": "the subscription shown in your billing page",
+  "suggestedPlanPriceMicro": "20000000",
+  "savingMicro": "28000000",
+  "computedAt": "2026-09-15T12:00:00.000Z",
+  "dismissible": true
+}

@@ -1,0 +1,7 @@
+{
+  "access_token": "at_0001_opaque",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "refresh_token": "rt_0001_opaque",
+  "scope": "account:read instances:write"
+}

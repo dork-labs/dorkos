@@ -1,0 +1,7 @@
+{
+  "code": "person_seat_required",
+  "status": 403,
+  "title": "This needs a person seat.",
+  "requiredPlanId": "pl_opaque_0001",
+  "requiredPlanDisplayName": "the subscription shown in your billing page"
+}
