@@ -28,6 +28,7 @@ import { hashSecret } from '../security.js';
 import { RemoteConnectionStore } from '../../../server/src/services/communities/remote/connection-store.js';
 import {
   RemoteCommunityAdapter,
+  remoteAuthorOf,
   remoteSequenceOf,
 } from '../../../server/src/services/communities/remote/remote-community-adapter.js';
 
@@ -408,6 +409,42 @@ describe('RemoteCommunityAdapter caller stream cancellation', () => {
     } finally {
       await iterator.return?.();
     }
+  });
+});
+
+describe('RemoteCommunityAdapter qualified human primitives', () => {
+  it('returns a confirmed native post and joins or leaves only the connected human', async () => {
+    const adapter = new RemoteCommunityAdapter(ref, ownerKey, store);
+    await adapter.connect();
+    const room = await pool.query<{ id: string }>(
+      "INSERT INTO channels(community_id,name,visibility) VALUES($1,$2,'public') RETURNING id",
+      [communityId, `Public ${randomUUID()}`]
+    );
+    const roomId = room.rows[0]!.id;
+    await adapter.joinRoom(roomId);
+    expect(
+      (
+        await pool.query('SELECT 1 FROM channel_members WHERE channel_id=$1 AND member_id=$2', [
+          roomId,
+          ownerMemberId,
+        ])
+      ).rowCount
+    ).toBe(1);
+    const written = await adapter.postEntry(roomId, {
+      text: 'confirmed browser post primitive',
+      idempotencyKey: randomUUID(),
+    });
+    expect(remoteSequenceOf(written)).toBe(1);
+    expect(remoteAuthorOf(written)).toEqual({ displayName: 'Conformance Owner', kind: 'human' });
+    await adapter.leaveRoom(roomId);
+    expect(
+      (
+        await pool.query('SELECT 1 FROM channel_members WHERE channel_id=$1 AND member_id=$2', [
+          roomId,
+          ownerMemberId,
+        ])
+      ).rowCount
+    ).toBe(0);
   });
 });
 

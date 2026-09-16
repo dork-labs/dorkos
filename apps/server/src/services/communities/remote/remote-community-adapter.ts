@@ -442,7 +442,8 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     };
   }
 
-  async post(roomId: string, input: PostCommunityEntryInput): Promise<CommunityEntryRef> {
+  /** Post and retain the server-confirmed native entry for the qualified local API. */
+  async postEntry(roomId: string, input: PostCommunityEntryInput): Promise<CommunityEntry> {
     const data = CommunityWireEntryPostResponseSchema.parse(
       await this.request(
         `/api/v1/channels/${encodeURIComponent(roomId)}/entries`,
@@ -456,12 +457,43 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
         { actingMemberId: input.actingMemberId }
       )
     );
+    return entry(this.community, data.entry);
+  }
+
+  async post(roomId: string, input: PostCommunityEntryInput): Promise<CommunityEntryRef> {
+    const written = await this.postEntry(roomId, input);
     return {
       community: this.community,
       roomId,
-      entryId: data.entry.id,
-      cursor: data.cursor as CommunityCursor,
+      entryId: written.id,
+      cursor: written.cursor,
     };
+  }
+
+  /** Join a public room as the browser-approved human, never a nominated member. */
+  async joinRoom(roomId: string): Promise<CommunityRoom> {
+    const data = CommunityWireChannelResponseSchema.parse(
+      await this.request(
+        `/api/v1/channels/${encodeURIComponent(roomId)}/join`,
+        undefined,
+        undefined,
+        'POST'
+      )
+    );
+    return room(this.community, data.channel);
+  }
+
+  /** Leave a room as the browser-approved human. */
+  async leaveRoom(roomId: string): Promise<CommunityRoom> {
+    const data = CommunityWireChannelResponseSchema.parse(
+      await this.request(
+        `/api/v1/channels/${encodeURIComponent(roomId)}/leave`,
+        undefined,
+        undefined,
+        'POST'
+      )
+    );
+    return room(this.community, data.channel);
   }
 
   async uploadAttachment(

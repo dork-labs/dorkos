@@ -335,6 +335,7 @@ import {
   agents,
   type Db,
 } from '@dorkos/db';
+import { setRemoteCommunityDb } from './services/communities/remote/state.js';
 import { INTERVALS } from './config/constants.js';
 import { resolveDorkHome } from './lib/dork-home.js';
 import { acquireInstanceLock } from './lib/instance-lock.js';
@@ -815,6 +816,7 @@ async function start() {
   // (and, on first boot, persists into) a 0600 file there — a fresh install
   // signs in with zero manual `BETTER_AUTH_SECRET` setup (DOR-242).
   initAuth(db, dorkHome);
+  setRemoteCommunityDb(db);
 
   // One-time migration: fold a pre-auth global `mcp.apiKey` into an owner-owned
   // Better Auth API key so existing MCP clients keep working after the rewrite to
