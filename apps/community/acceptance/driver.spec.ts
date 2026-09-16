@@ -94,7 +94,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         expect(started.ok(), `local connection start returned ${started.status()}`).toBe(true);
         const connection = (await started.json()) as { connection: { ref: string } };
         const approvalLink = localPage.getByRole('link', {
-          name: `Open ${installName} to approve`,
+          name: `Open ${communityName} to approve`,
           exact: true,
         });
         await expect(approvalLink).toBeVisible();
@@ -1176,11 +1176,19 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         }
       );
       expect(stoppedStep).toEqual({ ok: true, released: false });
-      await waitForTurnToSettle(
-        stoppableSessionId,
-        turnEndCount(stoppableTurnBeforeStart),
-        'the stopped turn did not close its bound runtime session'
-      );
+      try {
+        await waitForTurnToSettle(
+          stoppableSessionId,
+          turnEndCount(stoppableTurnBeforeStart),
+          'the stopped turn did not close its bound runtime session'
+        );
+      } catch (error) {
+        await testInfo.attach('stopped-turn-diagnostics.json', {
+          body: JSON.stringify(await captureStopDiagnostics(), null, 2),
+          contentType: 'application/json',
+        });
+        throw error;
+      }
       expect((await agentEntries()).some((entry) => entry.text.includes('STOPPABLE-TURN'))).toBe(
         false
       );
