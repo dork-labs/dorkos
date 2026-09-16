@@ -720,9 +720,9 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       await expect(
         localPage.getByText('Waiting for community confirmation…', { exact: true })
       ).toHaveCount(0);
-      await expect(afterPersistChannel.getByText(afterPersistMarker, { exact: true })).toHaveCount(
-        1
-      );
+      await expect(
+        afterPersistChannel.getByText(`@${handle} ${afterPersistMarker}`, { exact: true })
+      ).toHaveCount(1);
       const heldEntryId = heldAfterPersist.entryId!;
       const heldRemoteEntry = await eventually(
         () =>
