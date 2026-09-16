@@ -104,7 +104,16 @@ export function subscribeRuntimeTurns(runtime: AgentRuntime): (() => void) | und
     // process is already talking, so the queue may not launch anything into it
     // from this moment on. See the module doc.
     noteRuntimeTurnOpen(sessionId);
-    void projectRuntimeTurn(runtime, sessionId, events);
+    // Defense in depth. `projectRuntimeTurn` contains its own failures, but an
+    // unhandled rejection escaping here would be swallowed by the server's
+    // global handler, and the only symptom would be a chat that quietly stopped
+    // answering with nothing in the log naming the session.
+    void projectRuntimeTurn(runtime, sessionId, events).catch((err) => {
+      logger.error('[runtime-turn] a turn the agent started could not be projected', {
+        sessionId,
+        ...logError(err),
+      });
+    });
   });
   // The other half of the pending-segment gate. `isSegmentPending` holds a
   // person's queued message while a helper's report is on its way; this is how
@@ -124,9 +133,12 @@ export function subscribeRuntimeTurns(runtime: AgentRuntime): (() => void) | und
 /**
  * Project one agent-initiated turn, holding the session for its duration.
  *
- * Never throws: it is called from a runtime's own message loop by way of a
- * detached promise, so a failure here has to become a terminal on the stream
- * and a log line, exactly as a person's failed turn does.
+ * Never throws, and that is load-bearing rather than tidy: it is called from a
+ * runtime's own message loop by way of a detached promise, and the session's
+ * in-flight slot was claimed before it was called. A failure has to become a
+ * terminal on the stream and a log line — exactly as a person's failed turn
+ * does — and it must still hand the session back, or the queue behind it never
+ * moves again.
  *
  * @param runtime - The runtime whose turn this is
  * @param sessionId - The session it belongs to, in any id it answers to
@@ -137,23 +149,35 @@ async function projectRuntimeTurn(
   sessionId: string,
   events: AsyncIterable<StreamEvent>
 ): Promise<void> {
-  // The id the RUNTIME resolves to, which is what the lock and the queue key on
-  // — never the id this call happened to carry.
-  const turnKey = runtime.getInternalSessionId(sessionId) ?? sessionId;
-  const holder = runtimeLockHolder(turnKey);
-  const projector = getOrCreateProjector(sessionId, undefined, {
-    persist: persistenceModeFor(runtime.getCapabilities()),
-  });
-  const waitingOnPerson = (): boolean => projector.hasPendingInteractions();
-  const lifecycle = new DetachedTurnLifecycle(waitingOnPerson);
+  // **Everything that can throw belongs INSIDE the try below.** The subscriber
+  // already claimed this session's in-flight slot, synchronously, before this
+  // function was called — so a throw out here would skip the `finally`,
+  // `releaseOnce` would never run, and the session would hold a slot nothing
+  // can release for the life of the process. Its next message, and every one
+  // after it, is then accepted and made durable and never sent; the server's
+  // global `unhandledRejection` handler swallows the throw, so the only symptom
+  // is a chat that silently stops answering.
+  //
+  // **Two different keys, on purpose.** The queue claim keys on
+  // `primaryOf(sessionId)`, inside `noteRuntimeTurnOpen`/`noteRuntimeTurnClosed`;
+  // the LOCK keys on the runtime's own `getInternalSessionId(sessionId) ??
+  // sessionId`. Each layer resolves by what it owns, and they cannot mismatch
+  // here because the claim and the release are handed the same raw `sessionId`
+  // and each does its own resolution.
+  let turnKey = sessionId;
+  let holder = runtimeLockHolder(sessionId);
+  let lifecycle: DetachedTurnLifecycle | undefined;
   const lockToken = Symbol('runtime-turn-lock');
 
   let released = false;
   const releaseOnce = (): void => {
     if (released) return;
     released = true;
+    // Both tolerate never having been reached: `releaseLock` is a no-op unless
+    // this token holds the lock, and a lifecycle that was never built has
+    // nothing to close.
     runtime.releaseLock(turnKey, holder, lockToken);
-    lifecycle.close();
+    lifecycle?.close();
     // The queue is told last, and always: a runtime turn that ends without
     // handing the session back would hold every queued message for the life of
     // the process.
@@ -161,7 +185,19 @@ async function projectRuntimeTurn(
   };
 
   try {
-    if (!(await acquireWhenFree(runtime, turnKey, lifecycle, lockToken))) {
+    // The id the RUNTIME resolves to, which is what the lock keys on — never
+    // the id this call happened to carry.
+    turnKey = runtime.getInternalSessionId(sessionId) ?? sessionId;
+    holder = runtimeLockHolder(turnKey);
+    const projector = getOrCreateProjector(sessionId, undefined, {
+      persist: persistenceModeFor(runtime.getCapabilities()),
+    });
+    const waitingOnPerson = (): boolean => projector.hasPendingInteractions();
+    // Bound to a `const` as well, so the closures below need no non-null
+    // assertion to reach it.
+    const turnLifecycle = new DetachedTurnLifecycle(waitingOnPerson);
+    lifecycle = turnLifecycle;
+    if (!(await acquireWhenFree(runtime, turnKey, turnLifecycle, lockToken))) {
       // Somebody held this session for longer than a lock may be held. The turn
       // cannot be projected under a lock this never got, and the alternative —
       // projecting anyway — is the concurrent writer the lock exists to prevent.
@@ -176,7 +212,7 @@ async function projectRuntimeTurn(
     const tapped = tapEachEvent(events, () => {
       // Proof of life for the write-lock: a turn visibly producing events must
       // never be declared abandoned and stolen mid-flight (DOR-782).
-      lifecycle.touch();
+      turnLifecycle.touch();
     });
     const guarded = guardTurnErrors(
       projector,

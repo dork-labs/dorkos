@@ -245,6 +245,33 @@ describe('a message waits out a turn the agent started (T10)', () => {
   });
 });
 
+describe('a turn that fails to project still hands the session back', () => {
+  it('releases the claim when building the projection throws', async () => {
+    runtime.withScenarios([quickTurn()]);
+
+    // The subscriber claims the session synchronously, BEFORE the projection is
+    // built. A throw while building it used to skip the release entirely, so the
+    // slot was held for the life of the process and every later message on this
+    // session was accepted, made durable, and never sent — with the throw
+    // swallowed by the server's global handler, so nothing named the session.
+    const healthy = runtime.getCapabilities.getMockImplementation();
+    runtime.getCapabilities.mockImplementation(() => {
+      throw new Error('the projection could not be built');
+    });
+    const report = pushable();
+    runtime.emitRuntimeTurn(session, report.stream);
+    await settle();
+    if (healthy) runtime.getCapabilities.mockImplementation(healthy);
+
+    const queued = send('is anyone there?');
+    await settle();
+
+    expect((await queued).accepted).toBe(true);
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(listQueuedMessages(session)).toEqual([]);
+  });
+});
+
 describe('a report that never arrives cannot wedge the queue (T38)', () => {
   it('runs the held message when the runtime says the hold has dropped', async () => {
     runtime.withScenarios([quickTurn(), quickTurn()]);
