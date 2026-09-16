@@ -1,5 +1,6 @@
 import { SecurityPanel } from '@/layers/features/auth';
 import { CloudLinkPanel } from '@/layers/features/cloud-link';
+import { CloudPlanPanel } from '@/layers/features/cloud-plan';
 import { useDeepLinkScroll, useSettingsDeepLink } from '@/layers/shared/model';
 
 /**
@@ -39,6 +40,10 @@ export function AccessTab() {
           DorkOS account
         </h3>
         <CloudLinkPanel />
+        {/* The room behind the door: what the linked account includes, what it
+            has spent, and the seats it holds. One plain line until somebody
+            links, so an install with no account gains no empty furniture. */}
+        <CloudPlanPanel />
       </section>
     </div>
   );

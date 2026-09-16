@@ -303,6 +303,11 @@ describe('turbo never hands a spend flag or a model key to any task', () => {
     'DORKOS_OPENCODE_LIVE_PAID',
     'DORKOS_HARNESS_SMOKE',
     'OPENAI_API_KEY',
+    // The fifth money path (DOR-2027): selecting DorkOS credits as the
+    // inference source. Its key is the cloud-link instance credential rather
+    // than a model key, but the flag is the decision either way, and a turbo
+    // task that passed it through would arm spending for every `pnpm test`.
+    'DORKOS_CLOUD_CREDITS',
   ];
 
   /**

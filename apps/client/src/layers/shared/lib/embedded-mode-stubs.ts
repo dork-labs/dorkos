@@ -195,8 +195,16 @@ import type {
 } from '@dorkos/shared/marketplace-schemas';
 import type { HarnessStatusResponse } from '@dorkos/shared/harness-schemas';
 import type {
+  CloudCreditsStatus,
   CloudLinkStatus,
   CloudLinkSummary,
+  CloudMembersResponse,
+  CloudNudgeResponse,
+  CloudOrgsResponse,
+  CloudPlanResponse,
+  CloudSeatActionResponse,
+  CloudSeatsResponse,
+  CloudUsageResponse,
   StartLinkResult,
 } from '@dorkos/shared/cloud-schemas';
 import type {
@@ -979,7 +987,58 @@ export const cloudStubs = {
   async getCloudStatus(): Promise<CloudLinkSummary> {
     return { linked: false, accountLabel: null, lastHeartbeatAt: null };
   },
+
+  // The plan-aware surfaces (DOR-2027). The embed has no account link, so each
+  // read reports that there is nothing to show — the same answer an unlinked
+  // server gives, which is what makes the whole surface hide itself here with no
+  // embed-specific branch anywhere in the UI.
+  async getCloudPlan(): Promise<CloudPlanResponse> {
+    return { available: false };
+  },
+
+  async getCloudUsage(): Promise<CloudUsageResponse> {
+    return { available: false };
+  },
+
+  async getCloudNudge(): Promise<CloudNudgeResponse> {
+    return { available: false };
+  },
+
+  async getCloudOrgs(): Promise<CloudOrgsResponse> {
+    return { available: false };
+  },
+
+  async getCloudMembers(): Promise<CloudMembersResponse> {
+    return { available: false };
+  },
+
+  async getCloudSeats(): Promise<CloudSeatsResponse> {
+    return { available: false };
+  },
+
+  async assignCloudSeat(): Promise<CloudSeatActionResponse> {
+    throw new Error('Seat management is not supported in Obsidian plugin mode.');
+  },
+
+  async releaseCloudSeat(): Promise<CloudSeatActionResponse> {
+    throw new Error('Seat management is not supported in Obsidian plugin mode.');
+  },
+
+  async getCloudCredits(): Promise<CloudCreditsStatus> {
+    return { enabled: false, ready: false, runtimes: CREDITS_RUNTIMES_OFF };
+  },
+
+  async selectCloudCredits(): Promise<CloudCreditsStatus> {
+    return { enabled: false, ready: false, runtimes: CREDITS_RUNTIMES_OFF };
+  },
 };
+
+/** The per-runtime credits state an embed always reports: nothing is wired here. */
+const CREDITS_RUNTIMES_OFF = {
+  'claude-code': 'follow-up',
+  opencode: 'follow-up',
+  codex: 'follow-up',
+} as const satisfies CloudCreditsStatus['runtimes'];
 
 /**
  * Workspace stubs — workspaces are a server-only subsystem (they shell out to

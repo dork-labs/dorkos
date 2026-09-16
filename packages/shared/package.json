@@ -363,6 +363,7 @@
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "9.1.0",
+    "@dork-labs/cloud-api": "workspace:*",
     "ulidx": "^2.4.1",
     "zod": "^4.6.2"
   },

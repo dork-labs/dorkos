@@ -1107,6 +1107,27 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getCloudStatus: vi
       .fn()
       .mockResolvedValue({ linked: false, accountLabel: null, lastHeartbeatAt: null }),
+    // The plan-aware reads (DOR-2027) default to "nothing to show" — the same
+    // answer an install with no cloud account gets — so every existing test
+    // renders the unlinked surface unless it deliberately says otherwise.
+    getCloudPlan: vi.fn().mockResolvedValue({ available: false }),
+    getCloudUsage: vi.fn().mockResolvedValue({ available: false }),
+    getCloudNudge: vi.fn().mockResolvedValue({ available: false }),
+    getCloudOrgs: vi.fn().mockResolvedValue({ available: false }),
+    getCloudMembers: vi.fn().mockResolvedValue({ available: false }),
+    getCloudSeats: vi.fn().mockResolvedValue({ available: false }),
+    assignCloudSeat: vi.fn(),
+    releaseCloudSeat: vi.fn(),
+    getCloudCredits: vi.fn().mockResolvedValue({
+      enabled: false,
+      ready: false,
+      runtimes: { 'claude-code': 'follow-up', opencode: 'follow-up', codex: 'follow-up' },
+    }),
+    selectCloudCredits: vi.fn().mockResolvedValue({
+      enabled: false,
+      ready: false,
+      runtimes: { 'claude-code': 'follow-up', opencode: 'follow-up', codex: 'follow-up' },
+    }),
     sendFeedback: vi.fn().mockResolvedValue({ ok: true }),
     listMyFeedback: vi.fn().mockResolvedValue([]),
     // Connectors (connector-completion spec §Detailed Design 5). Reads default

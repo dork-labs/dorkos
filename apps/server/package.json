@@ -31,6 +31,7 @@
     "@anthropic-ai/sdk": "^0.123.0",
     "@asteasolutions/zod-to-openapi": "9.1.0",
     "@better-auth/api-key": "1.7.2",
+    "@dork-labs/cloud-api": "workspace:*",
     "@dorkos/a2a-gateway": "workspace:*",
     "@dorkos/connector-providers": "workspace:*",
     "@dorkos/db": "workspace:*",
