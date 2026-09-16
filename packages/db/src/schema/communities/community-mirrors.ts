@@ -70,6 +70,8 @@ export const communityMirrorEntries = sqliteTable(
     localEntryId: text('local_entry_id').notNull(),
     /** The native community wire sequence; never derived from timestamps or cursors. */
     remoteSeq: integer('remote_seq').notNull(),
+    /** The validated opaque adapter entry, retained for restart-safe cache projection. */
+    entryJson: text('entry_json'),
   },
   (table) => [
     primaryKey({ columns: [table.communityRef, table.remoteRoomId, table.remoteEntryId] }),
@@ -79,5 +81,39 @@ export const communityMirrorEntries = sqliteTable(
     ),
     uniqueIndex('community_mirror_entries_local_entry_unique').on(table.localEntryId),
     index('idx_community_mirror_entries_room_seq').on(table.localRoomId, table.remoteSeq),
+  ]
+);
+
+/**
+ * The local manifest-to-remote-agent binding for one owner's community grant.
+ *
+ * Credentials live in the protected connection store, never in SQLite. This
+ * row only says which remote principal a local manifest may act as, so mirror
+ * dispatch and future outbox delivery can fail closed the moment enrollment is
+ * revoked.
+ */
+export const communityAgentEnrollments = sqliteTable(
+  'community_agent_enrollments',
+  {
+    /** Locally minted connection ref, never a remote host or identifier. */
+    communityRef: text('community_ref').notNull(),
+    /** The local manifest's stable `agents.id`, never its path or display name. */
+    localAgentId: text('local_agent_id').notNull(),
+    /** The remote community member ID minted for this local manifest. */
+    remoteMemberId: text('remote_member_id').notNull(),
+    /** Local human owner whose connection vouched for this enrollment. */
+    ownerAuthorId: text('owner_author_id').notNull(),
+    /** An active binding can act; a revoked binding is retained only for audit and fails closed. */
+    state: text('state').notNull(),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.communityRef, table.localAgentId] }),
+    uniqueIndex('community_agent_enrollments_ref_remote_member_unique').on(
+      table.communityRef,
+      table.remoteMemberId
+    ),
+    index('idx_community_agent_enrollments_owner_state').on(table.ownerAuthorId, table.state),
   ]
 );

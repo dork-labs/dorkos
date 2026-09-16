@@ -701,6 +701,20 @@
       "when": 1789574819934,
       "tag": "0099_flaky_lorna_dane",
       "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "6",
+      "when": 1789577447389,
+      "tag": "0100_wandering_spiral",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "6",
+      "when": 1789577940916,
+      "tag": "0101_goofy_ken_ellis",
+      "breakpoints": true
     }
   ]
 }

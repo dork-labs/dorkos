@@ -1,0 +1,130 @@
+/**
+ * Durable, non-secret bindings between local agent manifests and remote members.
+ *
+ * The encrypted connection store owns bearer material. This store deliberately
+ * holds only the qualified identities and live authority required to decide
+ * whether a local agent may receive or later deliver community work.
+ *
+ * @module services/communities/remote/agent-enrollment-store
+ */
+import { and, communityAgentEnrollments, eq, type Db } from '@dorkos/db';
+import type { CommunityRef } from '@dorkos/shared/community-adapter';
+
+/** One active or revoked local-manifest binding. */
+export interface CommunityAgentEnrollment {
+  communityRef: CommunityRef;
+  localAgentId: string;
+  remoteMemberId: string;
+  ownerAuthorId: string;
+  state: 'active' | 'revoked';
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** The non-secret enrollment state for native community connections. */
+export class CommunityAgentEnrollmentStore {
+  constructor(
+    private readonly db: Db,
+    private readonly now: () => string = () => new Date().toISOString()
+  ) {}
+
+  /** Activate the one remote member identity a local manifest may use in one community. */
+  activate(input: {
+    communityRef: CommunityRef;
+    localAgentId: string;
+    remoteMemberId: string;
+    ownerAuthorId: string;
+  }): CommunityAgentEnrollment {
+    const timestamp = this.now();
+    this.db
+      .insert(communityAgentEnrollments)
+      .values({ ...input, state: 'active', createdAt: timestamp, updatedAt: timestamp })
+      .onConflictDoUpdate({
+        target: [communityAgentEnrollments.communityRef, communityAgentEnrollments.localAgentId],
+        set: {
+          remoteMemberId: input.remoteMemberId,
+          ownerAuthorId: input.ownerAuthorId,
+          state: 'active',
+          updatedAt: timestamp,
+        },
+      })
+      .run();
+    const enrollment = this.findLocalAgent(
+      input.communityRef,
+      input.remoteMemberId,
+      input.ownerAuthorId
+    );
+    if (!enrollment) throw new Error('The community agent enrollment was not persisted');
+    return enrollment;
+  }
+
+  /** Revoke an enrollment before best-effort credential cleanup. */
+  revoke(communityRef: CommunityRef, localAgentId: string, ownerAuthorId: string): void {
+    this.db
+      .update(communityAgentEnrollments)
+      .set({ state: 'revoked', updatedAt: this.now() })
+      .where(
+        and(
+          eq(communityAgentEnrollments.communityRef, communityRef),
+          eq(communityAgentEnrollments.localAgentId, localAgentId),
+          eq(communityAgentEnrollments.ownerAuthorId, ownerAuthorId),
+          eq(communityAgentEnrollments.state, 'active')
+        )
+      )
+      .run();
+  }
+
+  /** Resolve an active local manifest from a remote member without trusting display data. */
+  findLocalAgent(
+    communityRef: CommunityRef,
+    remoteMemberId: string,
+    ownerAuthorId: string
+  ): CommunityAgentEnrollment | null {
+    const row = this.db
+      .select()
+      .from(communityAgentEnrollments)
+      .where(
+        and(
+          eq(communityAgentEnrollments.communityRef, communityRef),
+          eq(communityAgentEnrollments.remoteMemberId, remoteMemberId),
+          eq(communityAgentEnrollments.ownerAuthorId, ownerAuthorId),
+          eq(communityAgentEnrollments.state, 'active')
+        )
+      )
+      .get();
+    return row
+      ? {
+          ...row,
+          communityRef: row.communityRef as CommunityRef,
+          state: row.state as CommunityAgentEnrollment['state'],
+        }
+      : null;
+  }
+
+  /** Resolve an active remote principal from a local manifest and owner grant. */
+  findRemoteMember(
+    communityRef: CommunityRef,
+    localAgentId: string,
+    ownerAuthorId: string
+  ): CommunityAgentEnrollment | null {
+    const row = this.db
+      .select()
+      .from(communityAgentEnrollments)
+      .where(
+        and(
+          eq(communityAgentEnrollments.communityRef, communityRef),
+          eq(communityAgentEnrollments.localAgentId, localAgentId),
+          eq(communityAgentEnrollments.ownerAuthorId, ownerAuthorId),
+          eq(communityAgentEnrollments.state, 'active')
+        )
+      )
+      .get();
+    return row
+      ? {
+          ...row,
+          communityRef: row.communityRef as CommunityRef,
+          state: row.state as CommunityAgentEnrollment['state'],
+        }
+      : null;
+  }
+}
