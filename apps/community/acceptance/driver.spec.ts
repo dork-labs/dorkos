@@ -431,7 +431,10 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         lifecycle: string | null;
         /** Live projector position; completed-turn storage deliberately lags this. */
         seq: number | null;
-        durableEvents: { byType: Record<string, number> };
+        projectorLive: boolean;
+        runtime: string | null;
+        runtimeBound: boolean | null;
+        durableEvents: { total: number; byType: Record<string, number> };
       };
       const sessionSpine = (sessionId: string) =>
         json<SessionSpine>(`${env.local}/api/debug/sessions/${encodeURIComponent(sessionId)}`);
@@ -848,7 +851,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
           pageJson<{ entries: Entry[] }>(
             pageMemberA,
             `/api/v1/channels/${roomA!.roomId}/entries?limit=100`
-          ).then((page) => page.entries.find((entry) => entry.text === stopMarker)),
+          ).then((page) => page.entries.find((entry) => entry.text === `@${handle} ${stopMarker}`)),
         (entry) => entry !== undefined,
         'the live Stop marker did not commit as a Community entry'
       );
@@ -880,11 +883,29 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         sessionId?: string;
         entryId?: string;
       };
+      type DebugClaim = {
+        roomId: string;
+        authorId: string;
+        entryId: string;
+        cascadeRoot: string;
+        dispatchId: string;
+        claimedAt: string;
+        heldMs: number;
+        pastDeadline: boolean;
+      };
+      type DebugHold = {
+        roomId: string;
+        authorId: string;
+        entryId: string;
+        behindRoomId: string;
+        since: string;
+        heldMs: number;
+      };
       const captureStopDiagnostics = async () => {
         const [session, subscription, dispatches, refusals] = await Promise.allSettled([
           sessionSpine(stoppableSessionId),
           subscriptionBarrier(),
-          json<{ claims: unknown[]; holds: unknown[]; recent: DebugDispatch[] }>(
+          json<{ claims: DebugClaim[]; holds: DebugHold[]; recent: DebugDispatch[] }>(
             `${env.local}/api/debug/dispatches?limit=256`
           ),
           json<{ refusals: DebugRefusal[] }>(`${env.local}/api/debug/refusals?limit=256`),
@@ -898,48 +919,84 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         const activeDispatches =
           dispatches.status === 'fulfilled'
             ? dispatches.value.recent.filter(
-                (dispatch) =>
-                  dispatch.roomId === roomA!.roomId || dispatch.sessionId === stoppableSessionId
-              )
-            : [];
-        const relatedRefusals =
-          refusals.status === 'fulfilled'
-            ? refusals.value.refusals.filter(
-                (refusal) =>
-                  refusal.roomId === roomA!.roomId ||
-                  refusal.sessionId === stoppableSessionId ||
-                  refusal.entryId === stopEntry!.id
+                (dispatch) => dispatch.sessionId === stoppableSessionId
               )
             : [];
         return {
           scenario: stoppableScenarioAck,
-          target: { roomId: roomA!.roomId, sessionId: stoppableSessionId, entryId: stopEntry!.id },
-          session: session.status === 'fulfilled' ? session.value : null,
-          subscription: subscription.status === 'fulfilled' ? subscription.value : null,
+          target: {
+            remoteRoomId: roomA!.roomId,
+            sessionId: stoppableSessionId,
+            remoteEntryId: stopEntry!.id,
+          },
+          session:
+            session.status === 'fulfilled'
+              ? {
+                  lifecycle: session.value.lifecycle,
+                  seq: session.value.seq,
+                  projectorLive: session.value.projectorLive,
+                  runtime: session.value.runtime,
+                  runtimeBound: session.value.runtimeBound,
+                  durableEvents: session.value.durableEvents,
+                }
+              : null,
+          subscription:
+            subscription.status === 'fulfilled' && subscription.value !== null
+              ? {
+                  generation: subscription.value.generation,
+                  snapshotComplete: subscription.value.snapshotComplete,
+                  replayComplete: subscription.value.replayComplete,
+                  dispatchesSinceBoot: subscription.value.dispatchesSinceBoot,
+                }
+              : null,
           dispatches: {
+            // These rows use the opaque local mirror room id. It is intentionally
+            // reported rather than compared with the qualified remote room id.
             claims:
               dispatches.status === 'fulfilled'
-                ? dispatches.value.claims.filter(
-                    (claim) =>
-                      typeof claim === 'object' &&
-                      claim !== null &&
-                      'roomId' in claim &&
-                      claim.roomId === roomA!.roomId
-                  )
+                ? dispatches.value.claims.map((claim) => ({
+                    roomId: claim.roomId,
+                    authorId: claim.authorId,
+                    entryId: claim.entryId,
+                    cascadeRoot: claim.cascadeRoot,
+                    dispatchId: claim.dispatchId,
+                    claimedAt: claim.claimedAt,
+                    heldMs: claim.heldMs,
+                    pastDeadline: claim.pastDeadline,
+                  }))
                 : [],
             holds:
               dispatches.status === 'fulfilled'
-                ? dispatches.value.holds.filter(
-                    (hold) =>
-                      typeof hold === 'object' &&
-                      hold !== null &&
-                      'roomId' in hold &&
-                      hold.roomId === roomA!.roomId
-                  )
+                ? dispatches.value.holds.map((hold) => ({
+                    roomId: hold.roomId,
+                    authorId: hold.authorId,
+                    entryId: hold.entryId,
+                    behindRoomId: hold.behindRoomId,
+                    since: hold.since,
+                    heldMs: hold.heldMs,
+                  }))
                 : [],
-            recent: activeDispatches,
+            recent: activeDispatches.map((dispatch) => ({
+              dispatchId: dispatch.dispatchId,
+              origin: dispatch.origin,
+              startedAt: dispatch.startedAt,
+              endedAt: dispatch.endedAt,
+              outcome: dispatch.outcome,
+              roomId: dispatch.roomId ?? null,
+              sessionId: dispatch.sessionId ?? null,
+            })),
           },
-          refusals: relatedRefusals,
+          refusals:
+            refusals.status === 'fulfilled'
+              ? refusals.value.refusals.slice(0, 16).map((refusal) => ({
+                  at: refusal.at,
+                  reason: refusal.reason,
+                  visibility: refusal.visibility,
+                  roomId: refusal.roomId ?? null,
+                  sessionId: refusal.sessionId ?? null,
+                  entryId: refusal.entryId ?? null,
+                }))
+              : [],
           unavailable,
         };
       };
