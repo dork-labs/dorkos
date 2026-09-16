@@ -18,6 +18,7 @@ import {
   CommunityRoomSchema,
   RoomAddressSchema,
 } from './community-adapter.js';
+import { CommunityDeliverySnapshotSchema } from './community-deliveries.js';
 
 const id = z.string().min(1);
 const sequence = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
@@ -176,6 +177,7 @@ export const RemoteCommunityEventSchema = z
       stale: z.boolean(),
     }),
     z.strictObject({ type: z.literal('entry'), entry: RemoteCommunityEntrySchema }),
+    CommunityDeliverySnapshotSchema.safeExtend({ type: z.literal('deliveries') }),
     RoomAddressSchema.extend({
       type: z.literal('closed'),
       reason: z.enum(['removed', 'revoked', 'unavailable']),

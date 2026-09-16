@@ -4,6 +4,7 @@
  * @module services/communities/remote/__tests__/community-outbox
  */
 import type { RoomMirrorWritePolicy } from '../../../rooms/room-service.js';
+import { RoomError } from '../../../rooms/room-errors.js';
 import { agentLookupFor, createRoomHarness } from '../../../rooms/__tests__/room-test-harness.js';
 import type { CommunityRef } from '@dorkos/shared/community-adapter';
 import { describe, expect, it, vi } from 'vitest';
@@ -106,6 +107,60 @@ describe('community outbox', () => {
       }),
     ]);
   });
+
+  it.each(['stale', 'revoked', 'missing enrollment'] as const)(
+    'refuses a local agent post before append, outbox, or dispatch when the mirror is %s',
+    (condition) => {
+      let actual: CommunityOutboxPolicy | null = null;
+      const policy: RoomMirrorWritePolicy = {
+        prepare(room, authorId, delivery) {
+          return actual?.prepare(room, authorId, delivery) ?? null;
+        },
+      };
+      const harness = createRoomHarness({
+        agents: agentLookupFor({ '/agents/a': { name: 'Agent A', responseMode: 'always' } }),
+        mirrorWrites: policy,
+      });
+      const mirrors = new RemoteMirrorStore(harness.db, harness.store, harness.authors);
+      const enrollments = new CommunityAgentEnrollmentStore(harness.db, () =>
+        new Date(NOW).toISOString()
+      );
+      const outbox = new CommunityOutboxStore(harness.db);
+      const agent = harness.authors.resolveAgent('/agents/a', 'Agent A');
+      const room = mirrors.ensureRoom({
+        communityRef: REF,
+        remoteRoomId: 'general',
+        title: 'General',
+        topic: null,
+        ownerAuthorId: harness.human,
+        accessors: [{ authorId: agent.id, responseMode: 'always' }],
+        authorizedAt: new Date(NOW).toISOString(),
+      });
+      if (condition !== 'missing enrollment') {
+        enrollments.activate({
+          communityRef: REF,
+          localAgentId: '/agents/a',
+          remoteMemberId: 'remote-agent-a',
+          ownerAuthorId: harness.human,
+        });
+      }
+      if (condition === 'stale') mirrors.markStale(REF, harness.human);
+      if (condition === 'revoked') mirrors.revoke(REF);
+      actual = new CommunityOutboxPolicy(mirrors, enrollments, harness.authors, outbox, () => NOW);
+
+      expect(() =>
+        harness.service.post(room.id, { authorId: agent.id, text: 'A denied local fallback.' })
+      ).toThrow(RoomError);
+      try {
+        harness.service.post(room.id, { authorId: agent.id, text: 'A denied local fallback.' });
+      } catch (error) {
+        expect(error).toMatchObject({ code: 'COMMUNITY_DELIVERY_UNAVAILABLE' });
+      }
+      expect(harness.store.listEntries(room.id, { limit: 100 })).toEqual([]);
+      expect(outbox.due(new Date(NOW).toISOString())).toEqual([]);
+      expect(harness.runner.turns).toEqual([]);
+    }
+  );
 
   it('retries network uncertainty, but stops before a later request after authority changes', async () => {
     const harness = createRoomHarness({ agents: agentLookupFor({}) });

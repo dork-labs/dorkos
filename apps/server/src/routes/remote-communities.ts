@@ -34,8 +34,10 @@ import { resolveCommunityOwner } from './community-connections.js';
 import {
   getRemoteCommunityAdapter,
   getRemoteConnectionStore,
+  getRemoteCommunityDeliverySnapshot,
   getRemoteCommunityEnrollmentStore,
   getRemoteCommunityLifecycle,
+  onRemoteCommunityDeliveryChange,
 } from '../services/communities/remote/state.js';
 import { getRoomService } from '../services/rooms/index.js';
 import {
@@ -331,6 +333,15 @@ export function createRemoteCommunitiesRouter(): Router {
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
+    let sawSnapshot = false;
+    const writeDeliveries = () => {
+      if (!sawSnapshot || abort.signal.aborted || res.writableEnded) return;
+      const deliveries = getRemoteCommunityDeliverySnapshot(ref.data, req.params.roomId, owner);
+      writeEvent(res, { type: 'deliveries', ...deliveries });
+    };
+    const removeDeliveryListener = onRemoteCommunityDeliveryChange((changedOwnerAuthorId) => {
+      if (changedOwnerAuthorId === owner) writeDeliveries();
+    });
     try {
       const adapter = getRemoteCommunityAdapter(ref.data, owner);
       for await (const event of adapter.subscribeRoom(
@@ -349,6 +360,8 @@ export function createRemoteCommunitiesRouter(): Router {
             lastRemoteSeq: entries.at(-1)?.remoteSeq ?? 0,
             stale: false,
           });
+          sawSnapshot = true;
+          writeDeliveries();
         } else if (event.type === 'entry') {
           writeEvent(res, { type: 'entry', entry: remoteEntry(event.entry) });
         } else if (event.type === 'room_closed') {
@@ -370,6 +383,7 @@ export function createRemoteCommunitiesRouter(): Router {
           reason: 'unavailable',
         });
     } finally {
+      removeDeliveryListener();
       if (!res.writableEnded) res.end();
     }
   });

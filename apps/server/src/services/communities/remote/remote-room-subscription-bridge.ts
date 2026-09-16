@@ -8,6 +8,7 @@ import { CommunityEntrySchema, type CommunityEntry } from '@dorkos/shared/commun
 import type { RoomService } from '../../rooms/room-service.js';
 import type { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
 import type { CommunityOutboxStore } from './community-outbox-store.js';
+import type { ConfirmNativePostOrigin } from './community-adapter-outbox-delivery.js';
 import { RemoteMirrorStore, type MirrorRoomInput, type NativeMirrorEntry } from './mirror-store.js';
 
 /** One native entry after the adapter has retained its wire sequence and author kind. */
@@ -43,6 +44,8 @@ export interface LocalAgentAuthorResolver {
 
 /** Server-only bridge from a native remote stream into the existing room dispatcher. */
 export class RemoteRoomSubscriptionBridge {
+  private readonly confirmedNativeOrigins = new Set<string>();
+
   constructor(
     private readonly mirrors: RemoteMirrorStore,
     private readonly service: RoomService,
@@ -72,6 +75,16 @@ export class RemoteRoomSubscriptionBridge {
       });
     }
   }
+
+  /**
+   * Release a receipt-confirmed native echo only after its durable origin is
+   * present. The stream never infers ownership from a human account or label.
+   */
+  confirmNativePostOrigin: ConfirmNativePostOrigin = (input) => {
+    this.confirmedNativeOrigins.add(
+      `${input.communityRef}:${input.ownerAuthorId}:${input.remoteEntryId}`
+    );
+  };
 
   /** Import snapshot/history state only. Durable replay is deliberately never a trigger. */
   importSnapshot(room: MirrorRoomInput, entries: readonly RemoteLiveEntry[]): void {
@@ -114,7 +127,28 @@ export class RemoteRoomSubscriptionBridge {
     const [saved] = this.mirrors.importEntries(room.communityRef, room.remoteRoomId, [
       this.nativeEntry(room, event),
     ]);
-    if (!saved || opts.readOnly || event.author.kind !== 'human') return;
+    if (!saved || opts.readOnly) return;
+    const originKey = `${room.communityRef}:${room.ownerAuthorId}:${event.entry.id}`;
+    if (this.confirmedNativeOrigins.delete(originKey)) {
+      this.outbox?.confirmByRemoteEntry(
+        room.communityRef,
+        room.remoteRoomId,
+        room.ownerAuthorId,
+        event.entry.id
+      );
+      return;
+    }
+    if (
+      this.outbox?.confirmByRemoteEntry(
+        room.communityRef,
+        room.remoteRoomId,
+        room.ownerAuthorId,
+        event.entry.id
+      )
+    ) {
+      return;
+    }
+    if (event.author.kind !== 'human') return;
     if (
       opts.reconnect &&
       !this.isFreshReconnect(event.serverCreatedAt, opts.wasActiveBeforeDisconnect)

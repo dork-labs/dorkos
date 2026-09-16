@@ -18,6 +18,8 @@ export type RoomErrorCode =
   | 'AGENT_NOT_FOUND'
   /** The durable remote-delivery queue is at its explicit safety ceiling. */
   | 'COMMUNITY_OUTBOX_FULL'
+  /** A local agent may not write to a stale, revoked, or unenrolled remote mirror. */
+  | 'COMMUNITY_DELIVERY_UNAVAILABLE'
   | 'SLUG_TAKEN'
   | 'INVALID_SLUG'
   /**

@@ -84,6 +84,21 @@ vi.mock('../community-connections.js', () => ({
 vi.mock('../../services/communities/remote/state.js', () => ({
   getRemoteCommunityAdapter: () => fixture.adapter,
   getRemoteConnectionStore: () => ({ get: async () => ({ remoteCommunityId: 'community-a' }) }),
+  getRemoteCommunityDeliverySnapshot: () => ({
+    community: fixture.ref,
+    roomId: 'room-a',
+    deliveries: [
+      {
+        idempotencyKey: 'delivery-retry-a',
+        author: { kind: 'agent', displayName: 'Build Agent' },
+        text: 'working on it',
+        parentEntryId: null,
+        attachments: [],
+        state: 'pending',
+        failure: null,
+      },
+    ],
+  }),
   getRemoteCommunityEnrollmentStore: () => ({
     activeForOwner: () => [
       {
@@ -103,6 +118,7 @@ vi.mock('../../services/communities/remote/state.js', () => ({
     haltRoom: vi.fn(async () => 1),
     haltAgent: vi.fn(async () => 1),
   }),
+  onRemoteCommunityDeliveryChange: () => () => undefined,
 }));
 vi.mock('../../services/communities/remote/remote-community-adapter.js', () => ({
   remoteSequenceOf: () => 1,
@@ -174,7 +190,7 @@ describe('qualified remote community writes and live projections', () => {
     expect(download.text).toBe('hello');
   });
 
-  it('streams only validated remote events and lists owner-scoped active enrollments', async () => {
+  it('streams the owner-qualified delivery replacement only after its room snapshot', async () => {
     const events = await request(testServer).get(
       `/api/communities/${fixture.ref}/rooms/room-a/events?since=cursor-before`
     );
@@ -182,6 +198,10 @@ describe('qualified remote community writes and live projections', () => {
     expect(events.headers['content-type']).toContain('text/event-stream');
     expect(events.text).toContain('"type":"snapshot"');
     expect(events.text).toContain('"remoteSeq":1');
+    expect(events.text).toContain('"type":"deliveries"');
+    expect(events.text.indexOf('"type":"snapshot"')).toBeLessThan(
+      events.text.indexOf('"type":"deliveries"')
+    );
 
     const agents = await request(testServer).get(`/api/communities/${fixture.ref}/agents`);
     expect(agents.status).toBe(200);

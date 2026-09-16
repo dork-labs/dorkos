@@ -24,9 +24,10 @@ export const COMMUNITY_OUTBOX_EXPIRY_MS = 5 * 60_000;
 /**
  * Builds an outbox insert from server-owned mirror and enrollment records.
  *
- * There is no caller flag here. An ordinary room answers `null`, while a local
- * agent with a current enrolled remote principal gets one row inserted in the
- * exact transaction that inserts the room entry.
+ * There is no caller flag here. Only an ordinary room or non-agent post answers
+ * `null`. A local agent in a mirror without current persisted authority is
+ * refused before the entry transaction, so it cannot become an ordinary local
+ * post and trigger another turn.
  */
 export class CommunityOutboxPolicy implements RoomMirrorWritePolicy {
   constructor(
@@ -37,7 +38,7 @@ export class CommunityOutboxPolicy implements RoomMirrorWritePolicy {
     private readonly now: () => number = () => Date.now()
   ) {}
 
-  /** Prepare one atomic delivery row, or leave a non-mirror/non-agent post local. */
+  /** Prepare one atomic delivery row, or refuse a local agent that cannot deliver remotely. */
   prepare(
     room: Parameters<RoomMirrorWritePolicy['prepare']>[0],
     authorId: string,
@@ -48,11 +49,13 @@ export class CommunityOutboxPolicy implements RoomMirrorWritePolicy {
     const author = this.authors.getById(authorId);
     const localAgentId = author?.kind === 'agent' ? author.mintedForManifestId : null;
     if (!localAgentId) return null;
-    if (!this.mirrors.isActivelyAuthorized(room.id, address.ownerAuthorId)) return null;
+    if (!this.mirrors.isActivelyAuthorized(room.id, address.ownerAuthorId)) {
+      throw unavailableDelivery();
+    }
     if (
       !this.enrollments.findRemoteMember(address.communityRef, localAgentId, address.ownerAuthorId)
     ) {
-      return null;
+      throw unavailableDelivery();
     }
     if (
       this.outbox.pendingCount(address.communityRef) >= COMMUNITY_OUTBOX_PER_COMMUNITY_LIMIT ||
@@ -86,4 +89,12 @@ export class CommunityOutboxPolicy implements RoomMirrorWritePolicy {
       enqueue: (entryId, tx) => this.outbox.enqueue({ ...row, localEntryId: entryId }, tx),
     };
   }
+}
+
+/** Refuse before append so a denied remote agent output cannot fall back to a local trigger. */
+function unavailableDelivery(): RoomError {
+  return new RoomError(
+    'COMMUNITY_DELIVERY_UNAVAILABLE',
+    'This agent cannot send to the community until its access is restored.'
+  );
 }
