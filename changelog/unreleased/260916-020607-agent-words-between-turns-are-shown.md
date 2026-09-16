@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(server,claude-code): an agent's own words between turns become a turn of their own"
+  - "fix(server,claude-code): a queued message waits for the agent's own turn, and Stop can reach it"
 ---
 
 ### Fixed
