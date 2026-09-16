@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { RemoteCommunityEntry } from '@dorkos/shared/community-views';
 import { useTransport } from '@/layers/shared/model';
@@ -15,6 +15,7 @@ import {
   Conversation,
   type ConversationCapabilities,
   type ConversationRow,
+  type ConversationTimelineHandle,
   type ConversationTarget,
 } from '@/layers/features/conversation';
 import type { ComposerInputHandle } from '@/layers/features/composer';
@@ -61,11 +62,13 @@ export function RemoteCommunitySurface({
   );
   const roster = useRemoteCommunityMembers(community, roomId, !removed && room?.readable === true);
   const [receipts, setReceipts] = useState<RemoteCommunityEntry[]>([]);
+  const [receiptRevision, setReceiptRevision] = useState(0);
   const [showMembers, setShowMembers] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [action, setAction] = useState<string | null>(null);
   const marked = useRef<string | null>(null);
   const composer = useRef<ComposerInputHandle>(null);
+  const timeline = useRef<ConversationTimelineHandle>(null);
   const canSend = !removed && stream.status === 'live' && room?.writable === true;
   const entries = useMemo(
     () =>
@@ -85,9 +88,16 @@ export function RemoteCommunitySurface({
       setReceipts((current) =>
         mergeRemoteCommunityEntries(community, roomId, current, [entry]).slice(-500)
       );
+      setReceiptRevision((current) => current + 1);
     },
     [community, roomId]
   );
+  // A person who sends a message expects to see their confirmed post, even if
+  // they were reading earlier history when it arrived. Incoming activity keeps
+  // the reader's position and uses the timeline's arrival affordance instead.
+  useLayoutEffect(() => {
+    if (receiptRevision > 0) timeline.current?.scrollToBottom();
+  }, [receiptRevision]);
   const drafts = useRemoteCommunityDrafts(
     community,
     roomId,
@@ -304,6 +314,7 @@ export function RemoteCommunitySurface({
               </Button>
             )}
             <Conversation.Timeline
+              ref={timeline}
               conversationId={target.id}
               rows={rows}
               label={threadId ? 'Community thread' : 'Community messages'}

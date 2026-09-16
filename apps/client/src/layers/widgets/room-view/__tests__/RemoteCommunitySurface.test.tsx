@@ -5,6 +5,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import {
+  RemoteCommunityEntrySchema,
   RemoteCommunityRoomSchema,
   type RemoteCommunityEvent,
 } from '@dorkos/shared/community-views';
@@ -33,6 +34,23 @@ const room = RemoteCommunityRoomSchema.parse({
   cacheCursor: null,
   lastRemoteSeq: 0,
 });
+const ownerEntry = RemoteCommunityEntrySchema.parse({
+  community: 'a',
+  roomId: 'same',
+  id: 'owner-confirmed',
+  authorId: 'owner',
+  authorKind: 'human',
+  authorDisplayName: 'Alex Owner',
+  text: 'The accepted owner post is visible',
+  mentions: [],
+  parentEntryId: null,
+  threadRootEntryId: null,
+  depth: 0,
+  remoteSeq: 1,
+  attachments: [],
+  cursor: 'cursor-1',
+  createdAt: '2026-09-16T10:00:00Z',
+});
 function mount() {
   const transport = createMockTransport();
   const queries = new QueryClient({
@@ -53,6 +71,10 @@ function mount() {
     roomId: room.roomId,
     members: [],
     stale: false,
+  });
+  vi.mocked(transport.setRemoteCommunityReadCursor).mockResolvedValue({
+    cursor: null,
+    unreadCount: 0,
   });
   vi.mocked(transport.subscribeRemoteCommunityRoom).mockImplementation(
     async (_ref, _room, callback, options) => {
@@ -278,5 +300,35 @@ describe('remote community surface', () => {
     );
     expect(await screen.findByText('Delivery not confirmed.')).toBeInTheDocument();
     expect(view.transport.postToRoom).not.toHaveBeenCalled();
+  });
+
+  it('reveals a confirmed owner post without waiting for a remote stream echo', async () => {
+    const scrollTo = vi.fn();
+    const originalScrollTo = HTMLElement.prototype.scrollTo;
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+      configurable: true,
+      value: scrollTo,
+    });
+    const view = mount();
+    vi.mocked(view.transport.postRemoteCommunityEntry).mockResolvedValue(ownerEntry);
+    try {
+      const input = await screen.findByRole('combobox');
+      fireEvent.change(input, { target: { value: ownerEntry.text } });
+      fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
+      await waitFor(() =>
+        expect(view.transport.postRemoteCommunityEntry).toHaveBeenCalledWith(
+          'a',
+          'same',
+          expect.objectContaining({ text: ownerEntry.text })
+        )
+      );
+      expect(await screen.findByText(ownerEntry.text, { exact: true })).toBeVisible();
+      expect(scrollTo).toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+        configurable: true,
+        value: originalScrollTo,
+      });
+    }
   });
 });
