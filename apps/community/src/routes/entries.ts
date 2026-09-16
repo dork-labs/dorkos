@@ -36,6 +36,20 @@ interface EntryRow {
   parent_entry_id: string | null;
   thread_root_entry_id: string | null;
   created_at: Date;
+  idempotency_key: string;
+  agent_owner_member_id: string | null;
+}
+
+/** Reveal an agent's stable post key only to that agent or its owning human. */
+export function originKeyForPrincipal(
+  row: EntryRow,
+  principal: { kind: 'human' | 'agent'; id: string }
+): string | undefined {
+  if (!row.author_agent_id) return undefined;
+  return (principal.kind === 'agent' && principal.id === row.author_agent_id) ||
+    (principal.kind === 'human' && principal.id === row.agent_owner_member_id)
+    ? row.idempotency_key
+    : undefined;
 }
 
 /** Convert a committed row to the public wire form. */
@@ -44,7 +58,8 @@ export function entryProjection(
   epoch: number,
   config: CommunityConfig,
   attachments: CommunityWireEntry['attachments'] = [],
-  communityId: string
+  communityId: string,
+  originIdempotencyKey?: string
 ): CommunityWireEntry {
   return {
     id: row.id,
@@ -70,13 +85,14 @@ export function entryProjection(
       config
     ),
     attachments,
+    ...(originIdempotencyKey ? { originIdempotencyKey } : {}),
   };
 }
 
 /** Load one entry without revealing its storage columns. */
 export async function loadEntry(client: PoolClient | Pool, id: string): Promise<EntryRow> {
   const result = await client.query<EntryRow>(
-    'SELECT id,channel_id,seq,COALESCE(author_member_id,author_agent_id) AS author_member_id,author_agent_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,created_at FROM entries WHERE id=$1',
+    'SELECT e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,e.mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id WHERE e.id=$1',
     [id]
   );
   if (!result.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Entry not found.');
@@ -136,14 +152,16 @@ export function registerEntryRoutes(
             'This key was used for different content.'
           );
         }
+        const previousEntry = await loadEntry(client, previous.rows[0].id);
         const attachmentMap = await attachmentsForEntries(client, [previous.rows[0].id]);
         return {
           entry: entryProjection(
-            await loadEntry(client, previous.rows[0].id),
+            previousEntry,
             channel.epoch,
             config,
             attachmentMap.get(previous.rows[0].id),
-            principal.community_id
+            principal.community_id,
+            originKeyForPrincipal(previousEntry, principal)
           ),
           repeated: true,
         };
@@ -214,14 +232,16 @@ export function registerEntryRoutes(
           body.attachmentIds,
         ]);
       }
+      const insertedEntry = await loadEntry(client, inserted.rows[0].id);
       const attachmentMap = await attachmentsForEntries(client, [inserted.rows[0].id]);
       return {
         entry: entryProjection(
-          await loadEntry(client, inserted.rows[0].id),
+          insertedEntry,
           channel.epoch,
           config,
           attachmentMap.get(inserted.rows[0].id),
-          principal.community_id
+          principal.community_id,
+          originKeyForPrincipal(insertedEntry, principal)
         ),
         repeated: false,
       };
@@ -282,10 +302,10 @@ export function registerEntryRoutes(
       }
       const limit = parsed.limit ?? 50;
       const result = await client.query<EntryRow>(
-        `SELECT id,channel_id,seq,COALESCE(author_member_id,author_agent_id) AS author_member_id,author_agent_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,created_at
-         FROM entries WHERE channel_id=$1 AND seq>$2 AND
-           (($3::uuid IS NULL AND thread_root_entry_id IS NULL) OR ($3::uuid IS NOT NULL AND (id=$3 OR thread_root_entry_id=$3)))
-         ORDER BY seq LIMIT $4`,
+        `SELECT e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,e.mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id
+         FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id WHERE e.channel_id=$1 AND e.seq>$2 AND
+           (($3::uuid IS NULL AND e.thread_root_entry_id IS NULL) OR ($3::uuid IS NOT NULL AND (e.id=$3 OR e.thread_root_entry_id=$3)))
+         ORDER BY e.seq LIMIT $4`,
         [channel.id, seq, parsed.thread ?? null, limit + 1]
       );
       const rows = result.rows.slice(0, limit);
@@ -314,7 +334,8 @@ export function registerEntryRoutes(
             channel.epoch,
             config,
             attachmentMap.get(row.id),
-            principal.community_id
+            principal.community_id,
+            originKeyForPrincipal(row, principal)
           )
         ),
         nextCursor,

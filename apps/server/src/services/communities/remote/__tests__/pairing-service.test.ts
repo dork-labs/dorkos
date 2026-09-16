@@ -7,7 +7,11 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { RemoteConnectionStore, RemoteConnectionNotFoundError } from '../connection-store.js';
 import { EncryptedFileCredentialStore } from '../../../core/credential-provider.js';
 import { RemoteCommunityPairingService, RemotePairingBusyError } from '../pairing-service.js';
-import { RemoteCommunityAdapter, type RemoteNativeRoomEvent } from '../remote-community-adapter.js';
+import {
+  RemoteCommunityAdapter,
+  remoteOriginIdempotencyKeyOf,
+  type RemoteNativeRoomEvent,
+} from '../remote-community-adapter.js';
 import {
   checkedAddress,
   parseCommunityOrigin,
@@ -108,9 +112,10 @@ beforeAll(async () => {
             id: 'entry-1',
             channelId: 'general',
             seq: 1,
-            authorMemberId: 'human-id',
-            authorDisplayName: 'Human',
-            authorKind: 'human',
+            authorMemberId: remoteAgentId,
+            authorDisplayName: 'Test Agent',
+            authorKind: 'agent',
+            originIdempotencyKey: 'owner-wire-key',
             text: 'hello',
             mentions: [],
             parentEntryId: null,
@@ -229,7 +234,9 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
     const adapter = new RemoteCommunityAdapter(started.connection.ref, 'adapter-owner', store);
     expect((await adapter.connect()).status).toBe('connected');
     expect((await adapter.listRooms()).map((item) => item.roomId)).toEqual(['general']);
-    expect((await adapter.listEntries('general')).entries).toHaveLength(1);
+    const history = await adapter.listEntries('general');
+    expect(history.entries).toHaveLength(1);
+    expect(remoteOriginIdempotencyKeyOf(history.entries[0]!)).toBe('owner-wire-key');
     expect(await adapter.getReadCursor('general')).toBe('resume-1');
     await adapter.setReadCursor('general', 'resume-1' as never);
     const agent = await adapter.admitAgent({ agentId: randomUUID(), displayName: 'Test Agent' });

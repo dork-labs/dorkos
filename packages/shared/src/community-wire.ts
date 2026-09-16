@@ -219,6 +219,8 @@ export const CommunityWireEntrySchema = z.strictObject({
   /** Server-minted cursor for room-event resume immediately after this entry. */
   cursor,
   attachments: z.array(CommunityWireAttachmentSchema).max(8),
+  /** Owner-authorized agent-post correlation key; absent for every other reader. */
+  originIdempotencyKey: idempotencyKey.optional(),
 });
 /** One committed entry. */
 export type CommunityWireEntry = z.infer<typeof CommunityWireEntrySchema>;

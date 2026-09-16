@@ -45,6 +45,7 @@ import {
 import { getRoomService } from '../services/rooms/index.js';
 import {
   remoteAuthorOf,
+  remoteOriginIdempotencyKeyOf,
   remoteRoomAccessOf,
   remoteSequenceOf,
 } from '../services/communities/remote/remote-community-adapter.js';
@@ -101,7 +102,12 @@ function remoteEntry(entry: CommunityEntry, ownerAuthorId?: string) {
   if (seq === undefined || !author)
     throw new Error('Native remote entry lost authoritative metadata');
   const originIdempotencyKey = ownerAuthorId
-    ? getRemoteCommunityOriginIdempotencyKey(entry.community, entry.roomId, ownerAuthorId, entry.id)
+    ? (getRemoteCommunityOriginIdempotencyKey(
+        entry.community,
+        entry.roomId,
+        ownerAuthorId,
+        entry.id
+      ) ?? remoteOriginIdempotencyKeyOf(entry))
     : null;
   return {
     ...entry,
