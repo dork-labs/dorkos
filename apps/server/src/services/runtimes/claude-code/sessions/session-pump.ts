@@ -37,20 +37,29 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionWarmth } from '@dorkos/shared/agent-runtime';
 import { createHeldUserPrompt, createIdlePrompt, type HeldUserPrompt } from '../sdk/sdk-utils.js';
-import { createTurnLiveness, type TurnLiveness } from '../messaging/turn-liveness.js';
+import {
+  createTurnLiveness,
+  type LiveTaskCounts,
+  type LivenessChange,
+  type TurnLiveness,
+} from '../messaging/turn-liveness.js';
 import { logger } from '../../../../lib/logger.js';
+import { SESSIONS } from '../../../../config/constants.js';
 import {
   DRAIN_GRACE_MS,
   HOLDS_PROCESS,
   INIT_TIMEOUT_MS,
   IllegalPumpTransitionError,
   LEGAL_TRANSITIONS,
+  OWED_DELIVERY_TIMEOUT_MS,
   PumpRefusedError,
   WARMTH_OF,
   type PumpControlQuery,
   type PumpDispatch,
   type PumpQuery,
   type PumpState,
+  type Quietness,
+  type QuietnessBlocker,
   type SessionPumpOptions,
 } from './session-pump-contract.js';
 
@@ -126,6 +135,37 @@ export class SessionPump {
    * describe the turn currently opening.
    */
   private turnClosedWhileOpening = false;
+  /**
+   * When this process last produced ANY frame, as epoch ms, or 0 before it has
+   * produced one. What the idle reaper measures against, so a process talking
+   * to itself between turns is not read as unused (spec
+   * `warm-process-lifecycle` D1).
+   */
+  private lastFrameAt = 0;
+  /**
+   * When the current busy spell began, or undefined while this process is
+   * quiet. What the four-hour ceiling is measured from.
+   */
+  private busySince: number | undefined;
+  /** When the current run of continuous quiet began, or undefined while busy. */
+  private quietSince: number | undefined;
+  /**
+   * True between a frame that proves a segment is running and the `result` that
+   * ends it — the pump's own view of whether the CLI is mid-segment right now.
+   * The owed-delivery clock arms only when nothing is running to deliver into.
+   */
+  private segmentRunning = false;
+  /** The armed owed-delivery clock, or undefined when no delivery is owed. */
+  private owedTimer: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * When {@link expireOwedDelivery} last gave up, or undefined when it has not.
+   *
+   * Kept only to measure the next delivery's lateness: the thirty seconds are a
+   * guarantee rather than a measurement, and a real session logging "a delivery
+   * arrived after its clock expired" is how the number gets checked against
+   * reality instead of being assumed.
+   */
+  private owedExpiredAt: number | undefined;
 
   /**
    * Build a pump for one session. Nothing is booted until it is warmed or
@@ -437,6 +477,211 @@ export class SessionPump {
   }
 
   /**
+   * Why this process may not be relaunched, reaped or evicted right now — or
+   * that it may (spec `warm-process-lifecycle` D1).
+   *
+   * **Synchronous, and the single answer for every consumer.** The idle reaper,
+   * the warm-ceiling reclaim, record eviction and (from slice 4a) the dispatch
+   * commit gate all used to decide for themselves, and they disagreed: `reap`
+   * asked only about background subagents while eviction asked about nothing at
+   * all, so a process running a Monitor or owing a notification delivery was
+   * torn down with its work in flight (DOR-2064, DOR-2065). One predicate means
+   * one answer, and a new consumer inherits it rather than inventing a fourth.
+   *
+   * Calling this is not free of effect on purpose: it is also where the busy
+   * spell is re-evaluated, because "quiet for a continuous minute" can only be
+   * noticed by something that looks. The pump looks at every frame and at every
+   * state change as well, so the spell does not depend on a consumer polling.
+   */
+  quietness(): Quietness {
+    const now = Date.now();
+    const counts = this.liveness.liveTaskCounts();
+    const because = this.blockingReason(counts);
+    this.noteBusySpell(because === undefined, now);
+    if (because === undefined) {
+      return { quiet: true, shells: counts.shells, lastFrameAt: this.lastFrameAt };
+    }
+    return {
+      quiet: false,
+      because,
+      holding: { agents: counts.agents, other: counts.other },
+      shells: counts.shells,
+      // `??` rather than `!`: `noteBusySpell` has just set it for any state this
+      // can be reached in, and falling back to now is the honest answer anyway.
+      busySince: this.busySince ?? now,
+    };
+  }
+
+  /**
+   * Is this process holding background work that record eviction must not throw
+   * away (spec `warm-process-lifecycle` D1, the eviction row)?
+   *
+   * A narrower question than {@link quietness}: a turn in flight or a person
+   * being waited on are already exempt from eviction by their own rules, so the
+   * three reasons here are the ones eviction was blind to. Bounded by the
+   * four-hour ceiling, which is what stops a helper that will never finish from
+   * making a session record immortal.
+   */
+  isHoldingBackgroundWork(): boolean {
+    const quietness = this.quietness();
+    if (quietness.quiet) return false;
+    if (this.isPastBackgroundCeiling(Date.now())) return false;
+    return (
+      quietness.because === 'background-work' ||
+      quietness.because === 'delivery-owed' ||
+      quietness.because === 'runtime-turn-open'
+    );
+  }
+
+  /**
+   * The first reason this process is not quiet, or undefined when it is.
+   *
+   * Ordered most specific first, so the reason a consumer logs is the one a
+   * person would name: a turn being open explains everything else about the
+   * process, and "waiting on a person" is only interesting once nothing is
+   * running.
+   */
+  private blockingReason(counts: LiveTaskCounts): QuietnessBlocker | undefined {
+    if (this.currentState === 'running') return 'turn-open';
+    if (this.opts.hasRuntimeTurnOpen?.() === true) return 'runtime-turn-open';
+    // Shells are deliberately absent: the CLI kills them shortly after stdin
+    // ends and always has, so holding a whole process open for one would be a
+    // new promise this spec explicitly declines to make (Non-Goals).
+    if (counts.agents + counts.other > 0) return 'background-work';
+    if (this.liveness.owedCount() > 0) return 'delivery-owed';
+    if (this.opts.hasPendingInteraction?.() === true) return 'waiting-on-person';
+    return undefined;
+  }
+
+  /**
+   * Fold this observation into the busy spell the ceiling is measured from.
+   *
+   * A spell ends only after `BACKGROUND_QUIET_RESET_MS` of CONTINUOUS quiet, so
+   * the momentary gap between one helper finishing and the next starting — which
+   * lands inside a single output burst — does not hand the process a fresh four
+   * hours every time.
+   */
+  private noteBusySpell(quiet: boolean, now: number): void {
+    // Judged on the quiet run that has ALREADY elapsed, before this observation
+    // is folded in, so the reset does not depend on somebody having asked
+    // during the quiet minute. A process that goes quiet, is asked about by
+    // nobody for an hour, and then starts a fresh helper begins a fresh spell —
+    // which is the rule as written, and is not what a purely lazy check would
+    // have given it.
+    if (
+      this.quietSince !== undefined &&
+      now - this.quietSince >= SESSIONS.BACKGROUND_QUIET_RESET_MS
+    ) {
+      this.busySince = undefined;
+    }
+    if (!quiet) {
+      this.quietSince = undefined;
+      this.busySince ??= now;
+      return;
+    }
+    this.quietSince ??= now;
+  }
+
+  /** Has the current busy spell run past the four-hour ceiling? */
+  private isPastBackgroundCeiling(now: number): boolean {
+    return (
+      this.busySince !== undefined &&
+      now - this.busySince >= SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS
+    );
+  }
+
+  /**
+   * Drive the owed-delivery clock from one observed frame.
+   *
+   * The clock exists because `owed` has no other bound on this path: a settle
+   * says a delivery is coming, the delivery arrives as a fresh query segment,
+   * and nothing guarantees that segment ever opens. It arms at the two moments
+   * a debt can be left with nothing running to pay it — a `result` observed
+   * while something is owed, and a settle that lands while no segment is running
+   * — and a segment starting cancels it, because that segment's own
+   * `system/init` clears the debt properly.
+   *
+   * @param message - The frame just observed
+   * @param change - What the liveness tracker made of it
+   * @param owedBefore - How many deliveries were owed before it was observed
+   */
+  private noteOwedDelivery(message: SDKMessage, change: LivenessChange, owedBefore: number): void {
+    if (change.segmentRunning) {
+      this.segmentRunning = true;
+      this.noteLateDelivery();
+      this.cancelOwedClock();
+      return;
+    }
+    if (message.type === 'result') {
+      this.segmentRunning = false;
+      if (this.liveness.owedCount() > 0) this.armOwedClock();
+      return;
+    }
+    // A notification that lands between turns: the count goes 0 → non-zero with
+    // nothing running, so no `result` is coming to arm the clock at.
+    if (owedBefore === 0 && this.liveness.owedCount() > 0 && !this.segmentRunning) {
+      this.armOwedClock();
+    }
+  }
+
+  /** Start the owed-delivery countdown, unless one is already running. */
+  private armOwedClock(): void {
+    // An armed clock is not re-armed by further settles: the bound is on the
+    // debt, not on each notification, so a stream of settles cannot walk the
+    // deadline forward indefinitely.
+    if (this.owedTimer !== undefined) return;
+    const timer = setTimeout(() => {
+      this.expireOwedDelivery();
+    }, this.opts.owedDeliveryTimeoutMs ?? OWED_DELIVERY_TIMEOUT_MS);
+    timer.unref?.();
+    this.owedTimer = timer;
+  }
+
+  /** Stop the owed-delivery countdown, if one is running. */
+  private cancelOwedClock(): void {
+    if (this.owedTimer !== undefined) clearTimeout(this.owedTimer);
+    this.owedTimer = undefined;
+  }
+
+  /**
+   * The owed delivery never came. Clear the debt, say so, and release whatever
+   * was waiting behind it.
+   */
+  private expireOwedDelivery(): void {
+    this.owedTimer = undefined;
+    const abandoned = this.liveness.expireOwed();
+    if (abandoned.length === 0) return;
+    this.owedExpiredAt = Date.now();
+    logger.info('[SessionPump] an owed delivery never arrived; releasing the queue', {
+      sessionId: this.sessionId,
+      tasks: abandoned,
+      waitedMs: this.opts.owedDeliveryTimeoutMs ?? OWED_DELIVERY_TIMEOUT_MS,
+    });
+    try {
+      this.opts.onDispatchGateChange?.();
+    } catch (err) {
+      logger.warn('[SessionPump] a dispatch-gate observer threw', {
+        sessionId: this.sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * A delivery segment started after its clock had already expired. Logged once
+   * with how late it was, so the thirty seconds can be checked against real
+   * sessions rather than assumed.
+   */
+  private noteLateDelivery(): void {
+    if (this.owedExpiredAt === undefined) return;
+    logger.info('[SessionPump] a delivery arrived after its clock expired', {
+      sessionId: this.sessionId,
+      lateByMs: Date.now() - this.owedExpiredAt,
+    });
+    this.owedExpiredAt = undefined;
+  }
+
+  /**
    * Give the process back, politely: `WARM → REAPED`.
    *
    * Invisible to the person — the session record and its transcript are
@@ -446,7 +691,8 @@ export class SessionPump {
    * pump; a pump reaped directly is left in `reaped`, which is terminal.
    *
    * @returns True when the process was closed, false when the pump declined
-   *   (not warm, parked on a person, or still running background subagents)
+   *   (not warm, parked on a person, or not quiet — see {@link quietness} —
+   *   unless its busy spell has run past the background-work ceiling)
    */
   async reap(): Promise<boolean> {
     if (this.currentState === 'cold' || this.currentState === 'reaped') return false;
@@ -468,18 +714,34 @@ export class SessionPump {
       });
       return false;
     }
-    // A turn ends at its `result`, but a background subagent the turn launched
-    // outlives it. Reaping now closes stdin under that subagent, and the CLI
-    // answers an EOF'd control stream by cancelling every hook-matched tool it
-    // then tries to run — the agent's work is thrown away and it is told the
-    // person refused (DOR-1238). The registry asks again a window later.
-    const liveAgents = this.liveness.liveAgentCount();
-    if (liveAgents > 0) {
-      logger.warn('[SessionPump] declined to reap a session running background agents', {
+    // A turn ends at its `result`, but the work it launched outlives it.
+    // Reaping now closes stdin under that work, and the CLI answers an EOF'd
+    // control stream by cancelling every hook-matched tool it then tries to run
+    // — the agent's work is thrown away and it is told the person refused
+    // (DOR-1238). The registry asks again a window later.
+    //
+    // Held to the whole quiet predicate rather than to the subagent count this
+    // used to read: a Monitor, an unknown task type and an owed delivery are all
+    // work somebody would be upset to lose, and every one of them was reaped
+    // through this line before (DOR-2064, DOR-2065).
+    const quietness = this.quietness();
+    if (!quietness.quiet) {
+      if (!this.isPastBackgroundCeiling(Date.now())) {
+        logger.warn('[SessionPump] declined to reap a session that is still working', {
+          sessionId: this.sessionId,
+          because: quietness.because,
+          holding: quietness.holding,
+        });
+        return false;
+      }
+      // The ceiling is the one thing that ends this wait. Slice 5 gives the
+      // operator the plain-words line; this is the mechanism it will report.
+      logger.warn('[SessionPump] background work hit its ceiling; taking the process back', {
         sessionId: this.sessionId,
-        liveAgents,
+        because: quietness.because,
+        holding: quietness.holding,
+        busyForMs: Date.now() - quietness.busySince,
       });
-      return false;
     }
     // Before the close, so the stream ending is read as "we asked for this"
     // rather than as a crash.
@@ -563,6 +825,14 @@ export class SessionPump {
     // A fresh process has no background work, and the level signal is not
     // replayed at startup — so the old set must not carry over (DOR-1238).
     this.liveness = createTurnLiveness();
+    // Everything the quiet predicate remembers is about the process that just
+    // went away. A new one starts quiet, with no spell, no debt and no clock.
+    this.cancelOwedClock();
+    this.busySince = undefined;
+    this.quietSince = undefined;
+    this.segmentRunning = false;
+    this.owedExpiredAt = undefined;
+    this.lastFrameAt = Date.now();
     const held =
       firstMessage === undefined
         ? createIdlePrompt()
@@ -617,13 +887,26 @@ export class SessionPump {
     try {
       for await (const message of live) {
         if (isInit(message)) this.noteInit(message.capabilities ?? []);
+        // Outside the guard below: this is the pump's own bookkeeping, it
+        // cannot throw, and the idle reaper's answer must not depend on whether
+        // a downstream observer did.
+        this.lastFrameAt = Date.now();
         try {
           // Before the demux, so a reap racing this message decides on the
           // newest membership rather than the one before it (DOR-1238). Inside
           // the guard with the demux, because ANY throw from this loop body
           // leaves the `for await` and is reported as the process dying — a
           // malformed frame must not be able to fake a crash.
-          this.liveness.observe(message);
+          const owedBefore = this.liveness.owedCount();
+          const change = this.liveness.observe(message);
+          this.noteOwedDelivery(message, change, owedBefore);
+          // Every frame is also a chance to notice the busy spell has ended, so
+          // the ceiling's sixty seconds of quiet do not wait on a consumer
+          // happening to ask.
+          this.noteBusySpell(
+            this.blockingReason(this.liveness.liveTaskCounts()) === undefined,
+            this.lastFrameAt
+          );
           this.opts.onMessage?.(message);
         } catch (err) {
           logger.warn('[SessionPump] a message observer threw; the process is unaffected', {
@@ -701,6 +984,9 @@ export class SessionPump {
     this.held = undefined;
     this.query = undefined;
     this.clearInitTimer();
+    // The process this debt belonged to is going away, so nothing is left to
+    // deliver it and nothing is left waiting on the gate.
+    this.cancelOwedClock();
     held?.close();
     if (!live) return;
     const grace = this.opts.drainGraceMs ?? DRAIN_GRACE_MS;

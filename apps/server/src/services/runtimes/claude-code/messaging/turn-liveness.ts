@@ -88,6 +88,25 @@ export interface LivenessChange {
   segmentRunning: boolean;
 }
 
+/**
+ * How many live background tasks of each kind the level frame currently names.
+ *
+ * Split three ways rather than two because the quiet predicate treats them
+ * differently (spec `warm-process-lifecycle` D1): agents and anything unknown
+ * hold the process, shells never do. An unrecognised `task_type` counts as
+ * `other` on purpose — a Monitor, or whatever the CLI ships next, is work
+ * somebody would be upset to lose, and guessing "harmless" about a type nobody
+ * has watched is the guess that throws work away.
+ */
+export interface LiveTaskCounts {
+  /** `local_agent` — a background subagent. Holds the process. */
+  agents: number;
+  /** `local_bash` — a background shell. Never holds the process. */
+  shells: number;
+  /** Every other `task_type`, known or not. Holds the process. */
+  other: number;
+}
+
 /** Tracks whether a turn's stream is still alive, and why. */
 export interface TurnLiveness {
   /**
@@ -104,8 +123,28 @@ export interface TurnLiveness {
   holdOpenAtResult: () => CloseDecision;
   /** How many background subagents are live per the latest level frame. */
   liveAgentCount: () => number;
+  /**
+   * Every live background task per the latest level frame, split by whether it
+   * holds the process. The quiet predicate's input (spec
+   * `warm-process-lifecycle` D1); {@link liveAgentCount} stays for the resume
+   * path's stdin hold, which asks only about subagents.
+   */
+  liveTaskCounts: () => LiveTaskCounts;
   /** How many settled notifications have not yet been delivered. */
   owedCount: () => number;
+  /**
+   * Give up on every owed delivery and report which ones were abandoned.
+   *
+   * The warm path's escape hatch (spec `warm-process-lifecycle` D1). On the
+   * resume path an owed notification is bounded by the deferred stdin close in
+   * `stdin-hold.ts`; a warm process never runs that close, so without this a
+   * settle whose delivery segment never arrives would hold the queue for the
+   * life of the process. The pump's owed-delivery clock is the only caller, and
+   * it logs the ids this returns.
+   *
+   * @returns The task ids whose deliveries were given up on, oldest first
+   */
+  expireOwed: () => string[];
 }
 
 /** Lifecycle subtype announcing that a background task has settled. */
@@ -119,6 +158,9 @@ const INIT = 'init';
 
 /** The `task_type` the CLI stamps on a background SUBAGENT, as opposed to a shell. */
 const AGENT_TASK_TYPE = 'local_agent';
+
+/** The `task_type` the CLI stamps on a background SHELL, which holds nothing. */
+const SHELL_TASK_TYPE = 'local_bash';
 
 /** Nothing about the turn's liveness changed. */
 const UNCHANGED: LivenessChange = { segmentRunning: false };
@@ -138,9 +180,17 @@ const MODEL_ACTIVITY: ReadonlySet<string> = new Set(['assistant', 'stream_event'
  * startup, so a tracker must never outlive the process it was fed by.
  */
 export function createTurnLiveness(): TurnLiveness {
-  const liveAgents = new Set<string>();
+  /** Live task id to the `task_type` the level frame stamped on it. */
+  const liveTasks = new Map<string, string>();
   const owed = new Set<string>();
   let resultsSeen = 0;
+
+  /** How many live tasks are background SUBAGENTS — the resume path's question. */
+  const agentCount = (): number => {
+    let agents = 0;
+    for (const type of liveTasks.values()) if (type === AGENT_TASK_TYPE) agents += 1;
+    return agents;
+  };
 
   return {
     observe: (message) => {
@@ -154,10 +204,16 @@ export function createTurnLiveness(): TurnLiveness {
           // since a malformed frame is not evidence that the agents stopped —
           // and dropping a hold is the failure this module exists to prevent.
           if (!Array.isArray(message.tasks)) return UNCHANGED;
-          liveAgents.clear();
+          liveTasks.clear();
           for (const task of message.tasks) {
             if (typeof task?.task_id !== 'string') continue;
-            if (task.task_type === AGENT_TASK_TYPE) liveAgents.add(task.task_id);
+            // A task whose type the frame does not state is kept as an empty
+            // string, which classifies as `other` and therefore HOLDS the
+            // process. Dropping it instead would make an unlabelled task
+            // invisible to the quiet predicate, and throwing away work is the
+            // failure this module exists to prevent.
+            const taskType = typeof task.task_type === 'string' ? task.task_type : '';
+            liveTasks.set(task.task_id, taskType);
           }
           return UNCHANGED;
         }
@@ -170,7 +226,7 @@ export function createTurnLiveness(): TurnLiveness {
             // Belt and braces: the level frame that drops a settled task
             // precedes this in every capture, but a task that has reported is
             // definitionally no longer running.
-            liveAgents.delete(taskId);
+            liveTasks.delete(taskId);
           }
           return UNCHANGED;
         }
@@ -198,11 +254,28 @@ export function createTurnLiveness(): TurnLiveness {
       }
       return MODEL_ACTIVITY.has(message.type) ? SEGMENT_RUNNING : UNCHANGED;
     },
+    // Unchanged on purpose: this is the RESUME path's stdin decision, where
+    // only a subagent has ever held the stream open. The warm path's wider
+    // question — which the quiet predicate asks — is `liveTaskCounts`.
     holdOpenAtResult: () => ({
-      hold: liveAgents.size > 0 || owed.size > 0,
-      armDeadline: liveAgents.size === 0 && owed.size > 0,
+      hold: agentCount() > 0 || owed.size > 0,
+      armDeadline: agentCount() === 0 && owed.size > 0,
     }),
-    liveAgentCount: () => liveAgents.size,
+    liveAgentCount: agentCount,
+    liveTaskCounts: () => {
+      const counts: LiveTaskCounts = { agents: 0, shells: 0, other: 0 };
+      for (const type of liveTasks.values()) {
+        if (type === AGENT_TASK_TYPE) counts.agents += 1;
+        else if (type === SHELL_TASK_TYPE) counts.shells += 1;
+        else counts.other += 1;
+      }
+      return counts;
+    },
     owedCount: () => owed.size,
+    expireOwed: () => {
+      const abandoned = [...owed];
+      owed.clear();
+      return abandoned;
+    },
   };
 }

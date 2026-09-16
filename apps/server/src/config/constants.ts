@@ -340,6 +340,34 @@ export const SESSIONS = {
    */
   MAX_WARM_SESSIONS: 12,
   /**
+   * How long a warm process must be CONTINUOUSLY quiet before its busy spell is
+   * over (spec `warm-process-lifecycle` D1).
+   *
+   * The spell is what {@link SESSIONS.BACKGROUND_WORK_PARK_CEILING_MS} is
+   * measured from, so the question this answers is "when does the four hours
+   * start again". A brief gap between two helper agents is not a fresh start —
+   * the level frame drops one task and names the next within the same output
+   * burst, so a spell reset on the first quiet instant would never fire the
+   * ceiling at all. A full minute of nothing is past any burst by two orders of
+   * magnitude, and still short enough that an agent genuinely finishing its
+   * background work gets a clean slate before the person's next message.
+   */
+  BACKGROUND_QUIET_RESET_MS: 60 * 1000,
+  /**
+   * How long background work may keep a warm process alive before DorkOS takes
+   * it back anyway (spec `warm-process-lifecycle` D1, D3).
+   *
+   * The same four hours, and the same reasoning, as
+   * {@link SESSIONS.INTERACTION_PARK_CEILING_MS}: a hold with no bound is a
+   * resource leak with a story attached, and twelve processes pinned by helpers
+   * that will never finish fill `MAX_WARM_SESSIONS` exactly as twelve parked
+   * ones do. Deliberately a SEPARATE constant from the person-wait ceiling even
+   * though both are four hours: one bounds how long DorkOS waits for a person,
+   * the other how long it waits for an agent, and a future change to either
+   * must not silently move the other.
+   */
+  BACKGROUND_WORK_PARK_CEILING_MS: 4 * 60 * 60 * 1000,
+  /**
    * Inactivity window before a detached turn is declared stalled: the watchdog
    * interrupts the runtime and closes the turn with a typed error. Resets on
    * every StreamEvent; suspended while the session holds a live pending
