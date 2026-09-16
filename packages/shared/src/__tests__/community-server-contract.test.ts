@@ -1,0 +1,221 @@
+import { describe, expect, it } from 'vitest';
+import {
+  CommunityCapabilitiesSchema,
+  CommunityReadContextSchema,
+  ListCommunityEntriesOptsSchema,
+  PostCommunityEntryInputSchema,
+} from '../community-adapter.js';
+import {
+  COMMUNITY_API_V1_ROUTES,
+  CommunityWireChannelSchema,
+  CommunityWireMemberSchema,
+  CommunityWireAgentSchema,
+  CommunityWireAgentEnrollRequestSchema,
+  CommunityWireMemberRoleUpdateRequestSchema,
+  CommunityWireEntrySchema,
+  CommunityWireEntryPostRequestSchema,
+  CommunityWireEntryPostResponseSchema,
+  CommunityWireEntryPageSchema,
+  CommunityWireErrorSchema,
+} from '../community-wire.js';
+import {
+  CommunityPairingExchangeSecretResponseSchema,
+  CommunityAgentEnrollmentSecretResponseSchema,
+} from '../community-private-wire.js';
+
+describe('community server port additions', () => {
+  it('bounds post identity, idempotency and attachment references', () => {
+    expect(
+      PostCommunityEntryInputSchema.safeParse({
+        text: 'hello',
+        actingMemberId: 'agent-1',
+        idempotencyKey: 'retry-1',
+        attachmentIds: ['attachment-1'],
+      }).success
+    ).toBe(true);
+    expect(
+      PostCommunityEntryInputSchema.safeParse({ text: 'hello', attachmentIds: Array(9).fill('a') })
+        .success
+    ).toBe(false);
+    expect(
+      PostCommunityEntryInputSchema.safeParse({ text: 'hello', actingMemberId: '' }).success
+    ).toBe(false);
+    expect(
+      PostCommunityEntryInputSchema.safeParse({ text: 'hello', idempotencyKey: '' }).success
+    ).toBe(false);
+  });
+
+  it('declares browser-approved credentials and distinct agent/file capabilities', () => {
+    const base = {
+      type: 'remote',
+      roomList: 'push',
+      roomAddressing: 'opaque-id',
+      canPost: true,
+      roomAdmin: true,
+      roles: {
+        supported: true,
+        default: 'member',
+        values: [{ id: 'member', label: 'Member', administers: false }],
+      },
+      admission: 'invite',
+      invite: 'room',
+      agentAdmission: 'owner-vouched',
+      readCursor: 'server',
+      responseMode: false,
+      threadDepth: 1,
+      signals: 'none',
+      credential: 'browser-approved',
+      agentActing: true,
+      attachments: true,
+    };
+    expect(CommunityCapabilitiesSchema.safeParse(base).success).toBe(true);
+    expect(CommunityCapabilitiesSchema.safeParse({ ...base, credential: 'random' }).success).toBe(
+      false
+    );
+  });
+
+  it('names an explicit agent for reads without carrying a credential', () => {
+    expect(CommunityReadContextSchema.parse({ actingMemberId: 'owned-agent' })).toEqual({
+      actingMemberId: 'owned-agent',
+    });
+    expect(CommunityReadContextSchema.safeParse({ actingMemberId: '' }).success).toBe(false);
+    expect(
+      CommunityReadContextSchema.safeParse({ actingMemberId: 'owned-agent', token: 'secret' })
+        .success
+    ).toBe(false);
+    expect(
+      ListCommunityEntriesOptsSchema.safeParse({ actingMemberId: 'owned-agent', limit: 50 }).success
+    ).toBe(true);
+  });
+
+  it('keeps HTTP conversation DTOs strict and free of private fields', () => {
+    const channel = {
+      id: 'channel-1',
+      name: 'General',
+      description: null,
+      visibility: 'public',
+      archived: false,
+      createdAt: '2026-09-16T00:00:00.000Z',
+      joined: true,
+      unreadCount: 0,
+    };
+    expect(CommunityWireChannelSchema.parse(channel)).toEqual(channel);
+    expect(CommunityWireChannelSchema.safeParse({ ...channel, token: 'private' }).success).toBe(
+      false
+    );
+    expect(
+      CommunityWireEntryPostRequestSchema.safeParse({ text: 'Hello', idempotencyKey: 'retry-1' })
+        .success
+    ).toBe(true);
+    expect(
+      CommunityWireEntryPostRequestSchema.safeParse({
+        text: 'Hello',
+        idempotencyKey: 'retry-1',
+        actingMemberId: 'agent',
+      }).success
+    ).toBe(false);
+    expect(CommunityWireEntryPageSchema.parse({ entries: [], nextCursor: null })).toEqual({
+      entries: [],
+      nextCursor: null,
+    });
+    expect(
+      CommunityWireErrorSchema.parse({ code: 'NESTED_THREAD', message: 'Replies have one level' })
+        .code
+    ).toBe('NESTED_THREAD');
+    expect(COMMUNITY_API_V1_ROUTES.entries).toBe('/api/v1/channels/:id/entries');
+  });
+
+  it('requires stable handles and resolved mentions with each entry resume cursor', () => {
+    const member = {
+      memberId: 'human-1',
+      kind: 'human',
+      displayName: 'Ana',
+      handle: 'ana',
+      role: 'member',
+      ownerMemberId: null,
+      joinedAt: '2026-09-16T00:00:00.000Z',
+    };
+    expect(CommunityWireMemberSchema.parse(member).handle).toBe('ana');
+    expect(CommunityWireMemberSchema.safeParse({ ...member, handle: null }).success).toBe(false);
+    expect(CommunityWireMemberSchema.safeParse({ ...member, handle: 'Ana' }).success).toBe(false);
+    expect(
+      CommunityWireAgentSchema.safeParse({
+        memberId: 'agent-1',
+        displayName: 'Helper',
+        handle: 'helper',
+        ownerMemberId: 'human-1',
+        active: true,
+      }).success
+    ).toBe(true);
+    expect(
+      CommunityWireAgentEnrollRequestSchema.safeParse({
+        localAgentId: 'local-1',
+        displayName: 'Helper',
+        handle: 'helper',
+      }).success
+    ).toBe(true);
+    expect(CommunityWireMemberRoleUpdateRequestSchema.parse({ role: 'admin' }).role).toBe('admin');
+    expect(COMMUNITY_API_V1_ROUTES.memberRole).toBe('/api/v1/members/:id/role');
+    const entry = {
+      id: 'entry-1',
+      channelId: 'channel-1',
+      seq: 1,
+      authorMemberId: 'human-1',
+      authorDisplayName: 'Ana',
+      text: '@helper hello',
+      mentions: ['agent-1'],
+      cursor: 'room-resume-1',
+      parentEntryId: null,
+      threadRootEntryId: null,
+      createdAt: '2026-09-16T00:00:00.000Z',
+      attachments: [],
+    };
+    expect(CommunityWireEntrySchema.parse(entry).mentions).toEqual(['agent-1']);
+    expect(
+      CommunityWireEntryPostResponseSchema.safeParse({ entry, cursor: entry.cursor }).success
+    ).toBe(true);
+    expect(CommunityWireEntryPostResponseSchema.safeParse({ entry, cursor: 'wrong' }).success).toBe(
+      false
+    );
+    expect(
+      CommunityWireEntryPageSchema.safeParse({ entries: [entry], nextCursor: 'page-only-cursor' })
+        .success
+    ).toBe(true);
+    expect(
+      CommunityWireEntrySchema.safeParse({ ...entry, localPath: '/private/file' }).success
+    ).toBe(false);
+    expect(CommunityWireEntrySchema.safeParse({ ...entry, mentions: undefined }).success).toBe(
+      false
+    );
+    expect(CommunityWireEntrySchema.safeParse({ ...entry, cursor: undefined }).success).toBe(false);
+    expect(
+      CommunityWireEntrySchema.safeParse({ ...entry, mentions: ['agent-1', 'agent-1'] }).success
+    ).toBe(false);
+  });
+
+  it('isolates one-time credential responses in the private subpath', () => {
+    expect(
+      CommunityPairingExchangeSecretResponseSchema.safeParse({
+        token: 'opaque-personal-token',
+        grant: {
+          id: 'grant-1',
+          memberId: 'human-1',
+          scopes: ['read', 'post'],
+          createdAt: '2026-09-16T00:00:00.000Z',
+        },
+      }).success
+    ).toBe(true);
+    expect(
+      CommunityAgentEnrollmentSecretResponseSchema.safeParse({
+        token: 'opaque-agent-token',
+        agent: {
+          memberId: 'agent-1',
+          displayName: 'Helper',
+          handle: 'helper',
+          ownerMemberId: 'human-1',
+          active: true,
+        },
+      }).success
+    ).toBe(true);
+  });
+});

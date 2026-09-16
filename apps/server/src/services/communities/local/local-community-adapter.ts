@@ -90,6 +90,8 @@ import {
   type CommunityAdapter,
   type CommunityCapabilities,
   type CommunityConnection,
+  type CommunityAttachment,
+  type DownloadCommunityAttachment,
   type CommunityCursor,
   type CommunityEntry,
   type CommunityEntryPage,
@@ -98,6 +100,7 @@ import {
   type CommunityMember,
   type CommunityPresencePayload,
   type CommunityRef,
+  type CommunityReadContext,
   type CommunityRoom,
   type CommunityRoomClosedReason,
   type CommunityRoomEvent,
@@ -106,6 +109,7 @@ import {
   type ListCommunityEntriesOpts,
   type PostCommunityEntryInput,
   type UpdateCommunityRoomInput,
+  type UploadCommunityAttachmentInput,
 } from '@dorkos/shared/community-adapter';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { SignalType } from '@dorkos/shared/relay-schemas';
@@ -129,6 +133,17 @@ import {
 /** Page size when a caller does not ask for one. Matches the port's own default shape. */
 const DEFAULT_PAGE_SIZE = 50;
 
+/** Refuse a selected agent before local reads can fall back to the human view. */
+function requireHumanReader(
+  community: CommunityRef,
+  context: CommunityReadContext | undefined,
+  method: string
+): void {
+  if (context?.actingMemberId !== undefined) {
+    throw new CommunityUnsupportedError(community, 'agentActing', method);
+  }
+}
+
 /** What this backend declares. Every value is argued in this module's doc. */
 const LOCAL_CAPABILITIES: CommunityCapabilities = {
   type: 'local',
@@ -136,6 +151,8 @@ const LOCAL_CAPABILITIES: CommunityCapabilities = {
   roomAddressing: 'slug',
   canPost: true,
   roomAdmin: true,
+  agentActing: false,
+  attachments: false,
   roles: { supported: false, values: [] },
   admission: 'open',
   invite: 'none',
@@ -284,7 +301,8 @@ export class LocalCommunityAdapter implements CommunityAdapter {
   // other direction: its unknown-room and stale-cursor throws MUST both be
   // synchronous, so it cannot be `async` at all.
 
-  async listRooms(): Promise<CommunityRoom[]> {
+  async listRooms(context?: CommunityReadContext): Promise<CommunityRoom[]> {
+    requireHumanReader(this.community, context, 'listRooms');
     // Archived rooms are listed, not hidden: `archived` is a state the port
     // carries on the room, and an archived room still reads. A consumer that
     // wants only live rooms filters on the flag it was given.
@@ -292,12 +310,17 @@ export class LocalCommunityAdapter implements CommunityAdapter {
     return rooms.map((room) => toCommunityRoom(this.community, room, room.unreadCount));
   }
 
-  async getRoom(roomId: string): Promise<CommunityRoom | null> {
+  async getRoom(roomId: string, context?: CommunityReadContext): Promise<CommunityRoom | null> {
+    requireHumanReader(this.community, context, 'getRoom');
     const room = this.deps.service.getRoom(roomId, this.identity());
     return room ? this.projectRoom(room) : null;
   }
 
-  subscribeRoomList(signal?: AbortSignal): AsyncIterable<CommunityRoomListEvent> {
+  subscribeRoomList(
+    signal?: AbortSignal,
+    context?: CommunityReadContext
+  ): AsyncIterable<CommunityRoomListEvent> {
+    requireHumanReader(this.community, context, 'subscribeRoomList');
     const stream = new PushStream<CommunityRoomListEvent>(() => {
       this.listStreams.delete(stream);
       if (this.listStreams.size === 0) this.visible.clear();
@@ -379,8 +402,10 @@ export class LocalCommunityAdapter implements CommunityAdapter {
   subscribeRoom(
     roomId: string,
     sinceCursor?: CommunityCursor,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    context?: CommunityReadContext
   ): AsyncIterable<CommunityRoomEvent> {
+    requireHumanReader(this.community, context, 'subscribeRoom');
     const identity = this.identity();
     const room = this.deps.service.getRoom(roomId, identity);
     // The port's own refusal, not a local one, and the SAME refusal for "no
@@ -451,6 +476,7 @@ export class LocalCommunityAdapter implements CommunityAdapter {
     roomId: string,
     opts: ListCommunityEntriesOpts = {}
   ): Promise<CommunityEntryPage> {
+    requireHumanReader(this.community, opts, 'listEntries');
     const identity = this.identity();
     if (!this.deps.service.getRoom(roomId, identity)) return { entries: [], nextCursor: null };
     const afterSeq =
@@ -501,6 +527,12 @@ export class LocalCommunityAdapter implements CommunityAdapter {
    * @param input - What to say, what it replies to, and who it addresses.
    */
   async post(roomId: string, input: PostCommunityEntryInput): Promise<CommunityEntryRef> {
+    if (input.actingMemberId !== undefined) {
+      throw new CommunityUnsupportedError(this.community, 'agentActing', 'post');
+    }
+    if (input.attachmentIds?.length) {
+      throw new CommunityUnsupportedError(this.community, 'attachments', 'post');
+    }
     const entry = this.deps.service.post(roomId, {
       authorId: this.identity(),
       text: input.text,
@@ -515,9 +547,36 @@ export class LocalCommunityAdapter implements CommunityAdapter {
     };
   }
 
+  /** This backend does not expose file uploads through the community port. */
+  uploadAttachment(
+    _roomId: string,
+    _input: UploadCommunityAttachmentInput
+  ): Promise<CommunityAttachment> {
+    return Promise.reject(
+      new CommunityUnsupportedError(this.community, 'attachments', 'uploadAttachment')
+    );
+  }
+
+  /** This backend does not expose file downloads through the community port. */
+  downloadAttachment(
+    _roomId: string,
+    _attachmentId: string,
+    context?: CommunityReadContext
+  ): Promise<DownloadCommunityAttachment> {
+    if (context?.actingMemberId !== undefined) {
+      return Promise.reject(
+        new CommunityUnsupportedError(this.community, 'agentActing', 'downloadAttachment')
+      );
+    }
+    return Promise.reject(
+      new CommunityUnsupportedError(this.community, 'attachments', 'downloadAttachment')
+    );
+  }
+
   // --- Roster --------------------------------------------------------------
 
-  async listMembers(roomId: string): Promise<CommunityMember[]> {
+  async listMembers(roomId: string, context?: CommunityReadContext): Promise<CommunityMember[]> {
+    requireHumanReader(this.community, context, 'listMembers');
     const room = this.deps.service.getRoom(roomId, this.identity());
     return (room?.members ?? []).map((member) => toCommunityMember(this.community, member));
   }

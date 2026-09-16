@@ -37,6 +37,7 @@ export default defineConfig({
   test: {
     projects: [
       'apps/client',
+      'apps/community',
       'apps/desktop',
       // Only the capture pipeline's unit tests; the Playwright browser suite is
       // a separate task (`pnpm test:browser`) and no vitest project.

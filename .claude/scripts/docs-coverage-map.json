@@ -361,6 +361,15 @@
       ]
     },
     {
+      "guide": "community-server.md",
+      "description": "Independent community service: configuration, migrations, auth admission, room ordering, stream replay, and real Postgres checks",
+      "patterns": [
+        "apps/community/",
+        "community-wire",
+        "community-pg"
+      ]
+    },
+    {
       "guide": "adding-a-memory-provider.md",
       "description": "Memory backend authoring: MemoryProvider port (seam #5), three-way honest reads, five typed errors + MemoryPathError, memoryConformance, and the quarantine that keeps a fault off a turn",
       "patterns": [
