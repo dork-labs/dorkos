@@ -601,6 +601,32 @@ describe('signed admission over real HTTP and Postgres', () => {
     }
   });
 
+  it('reads history with one pool connection for both cookie and bearer credentials', async () => {
+    const singlePool = new Pool({ connectionString: dbUrl.toString(), max: 1 });
+    const isolated = serve({
+      fetch: createCommunityApp({ config, pool: singlePool }).fetch,
+      port: 0,
+    });
+    await new Promise<void>((resolve) => isolated.once('listening', resolve));
+    try {
+      const address = isolated.address();
+      if (!address || typeof address === 'string') throw new Error('Missing isolated HTTP address');
+      const path = `http://localhost:${address.port}/api/v1/channels/${channelId}/entries`;
+      const credentials: Record<string, string>[] = [
+        { cookie: ownerCookie },
+        { authorization: `Bearer ${agentToken}` },
+      ];
+      for (const headers of credentials) {
+        const response = await fetch(path, { headers, signal: AbortSignal.timeout(5_000) });
+        expect(response.status).toBe(200);
+        expect((await response.json()).entries).toBeInstanceOf(Array);
+      }
+    } finally {
+      await new Promise<void>((resolve) => isolated.close(() => resolve()));
+      await singlePool.end();
+    }
+  });
+
   it('checks an agent owner’s promoted role after a contended ejection', async () => {
     const moderator = await joinWithInvite('Moderator', 'moderator@admission.test');
     expect(
