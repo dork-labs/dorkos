@@ -438,6 +438,60 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       };
       const sessionSpine = (sessionId: string) =>
         json<SessionSpine>(`${env.local}/api/debug/sessions/${encodeURIComponent(sessionId)}`);
+      type LiveSessionSnapshot = {
+        inProgressTurn: Array<{ type: string; text?: string }> | null;
+        status: { lifecycle: string };
+      };
+      // The public session stream's cold snapshot is the sole read that
+      // includes an open test-mode turn. GET /messages is completed history,
+      // so it cannot establish a pre-Stop barrier for a deliberately parked
+      // turn.
+      const liveSessionSnapshot = async (sessionId: string): Promise<LiveSessionSnapshot> => {
+        const controller = new AbortController();
+        try {
+          const response = await fetch(
+            `${env.local}/api/sessions/${encodeURIComponent(sessionId)}/events?cwd=${encodeURIComponent(agentPath)}`,
+            { signal: controller.signal }
+          );
+          if (!response.ok || response.body === null) {
+            throw new Error(
+              `GET /api/sessions/${sessionId}/events returned ${response.status}: ${await response.text()}`
+            );
+          }
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffered = '';
+          try {
+            for (;;) {
+              const { done, value } = await reader.read();
+              if (done) throw new Error('session stream ended before its snapshot arrived');
+              buffered += decoder.decode(value, { stream: true });
+              const boundary = buffered.indexOf('\n\n');
+              if (boundary === -1) continue;
+              const frame = buffered.slice(0, boundary);
+              const event = frame
+                .split('\n')
+                .find((line) => line.startsWith('event: '))
+                ?.slice('event: '.length);
+              const data = frame
+                .split('\n')
+                .filter((line) => line.startsWith('data: '))
+                .map((line) => line.slice('data: '.length))
+                .join('\n');
+              if (event !== 'snapshot') {
+                throw new Error(
+                  `expected leading session snapshot, received ${event ?? 'no event'}`
+                );
+              }
+              return JSON.parse(data) as LiveSessionSnapshot;
+            }
+          } finally {
+            await reader.cancel().catch(() => undefined);
+          }
+        } finally {
+          controller.abort();
+        }
+      };
       const turnEndCount = (session: SessionSpine) => session.durableEvents.byType.turn_end ?? 0;
       const waitForTurnToSettle = async (
         sessionId: string,
@@ -1000,27 +1054,17 @@ test.describe('Packaged Community local-agent proof @integration', () => {
           unavailable,
         };
       };
+      let stoppableSnapshot: LiveSessionSnapshot;
       try {
-        await expect
-          .poll(
-            async () => {
-              const session = await sessionSpine(stoppableSessionId);
-              // `durableEvents` only contains completed turns. `seq` is the
-              // live projector cursor, so it moves before the stopped turn is
-              // flushed.
-              return (
-                session.lifecycle === 'streaming' &&
-                (session.seq ?? 0) > (stoppableTurnBeforeStart.seq ?? 0)
-              );
-            },
-            {
-              message: 'the live stoppable turn did not enter its bound runtime session',
-              // Leave time for an artifact that establishes whether the bridge,
-              // dispatcher, or runtime declined this exact Stop marker.
-              timeout: 20_000,
-            }
-          )
-          .toBe(true);
+        stoppableSnapshot = await eventually(
+          () => liveSessionSnapshot(stoppableSessionId),
+          (snapshot) =>
+            snapshot.status.lifecycle === 'streaming' &&
+            snapshot.inProgressTurn?.some(
+              (event) => event.type === 'text_delta' && event.text?.includes('STOPPABLE-TURN')
+            ) === true,
+          'the live stoppable turn did not expose its exact pre-Stop marker in the session snapshot'
+        );
       } catch (error) {
         await testInfo.attach('stoppable-turn-diagnostics.json', {
           body: JSON.stringify(await captureStopDiagnostics(), null, 2),
@@ -1028,16 +1072,10 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         });
         throw error;
       }
-      const stoppableTranscript = await eventually(
-        () =>
-          json<{ messages: Array<{ content: string }> }>(
-            `${env.local}/api/sessions/${stoppableSessionId}/messages?cwd=${encodeURIComponent(agentPath)}`
-          ),
-        (history) => history.messages.some((message) => message.content.includes('STOPPABLE-TURN')),
-        'the live stoppable turn did not stream its pre-Stop marker before Stop'
-      );
       expect(
-        stoppableTranscript.messages.some((message) => message.content.includes('STOPPABLE-TURN'))
+        stoppableSnapshot.inProgressTurn?.some(
+          (event) => event.type === 'text_delta' && event.text?.includes('STOPPABLE-TURN')
+        )
       ).toBe(true);
       const stopResponse = localPage.waitForResponse(
         (response) =>
