@@ -364,6 +364,10 @@
     "./test-budget": {
       "types": "./src/test-budget.ts",
       "default": "./dist/test-budget.js"
+    },
+    "./community-views": {
+      "types": "./src/community-views.ts",
+      "default": "./dist/community-views.js"
     }
   },
   "scripts": {
