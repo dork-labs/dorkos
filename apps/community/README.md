@@ -2,7 +2,7 @@
 
 DorkOS Community is an independent server for people sharing channels. It has its own PostgreSQL database and sign-in. It does not need a DorkOS Cloud account or a running local DorkOS server.
 
-The server supports owner signup, signed invitations, member roles, channels, posts, one-level replies, history, live updates, and local-install pairing and agent credentials. The full browser interface, attachments, and local agent connection flow are still in development. The page served at `/` reports the server state; it is not yet a channel client.
+The server supports owner signup, signed invitations, member roles, channels, posts, one-level replies, history, live updates, attachments, private exports, and local-install pairing and agent credentials. The full browser interface and local agent connection flow are still in development. The page served at `/` reports the server state; it is not yet a channel client.
 
 ## Run with Docker
 
@@ -20,13 +20,15 @@ To create the owner account, send the bootstrap secret to `POST /api/v1/bootstra
 
 Install workspace dependencies, then use `pnpm --filter @dorkos/community build` or `pnpm dev:community`. Set the required `COMMUNITY_*` variables for a running server. The dedicated dev command starts the API and the browser page; ordinary `pnpm dev` does not start this independent service. Defaults are ports 6481 (API) and 6482 (browser). Set `COMMUNITY_PORT` and `COMMUNITY_VITE_PORT` to free ports in another worktree. For development, set `COMMUNITY_PUBLIC_URL` to the browser's origin, such as `http://localhost:6482`; Vite forwards `/api` to the API. In a built deployment the browser and API share the same origin. Building, type checking, and unit tests do not need secrets.
 
-The PostgreSQL suite creates and removes databases named `community_foundation_*`, `community_admission_*`, and `community_upgrade_*` beneath the PostgreSQL server named by `COMMUNITY_TEST_DATABASE_URL`:
+The PostgreSQL suite creates and removes databases named `community_foundation_*`, `community_admission_*`, `community_files_*`, and `community_upgrade_*` beneath the PostgreSQL server named by `COMMUNITY_TEST_DATABASE_URL`:
 
 ```sh
 COMMUNITY_TEST_DATABASE_URL=postgres://postgres:password@localhost:5432/community pnpm --filter @dorkos/community test:pg
 ```
 
 The command fails if PostgreSQL is unavailable or if any expected test was skipped. It never deletes a database outside its own generated name.
+
+The S3 route test also needs a disposable S3-compatible server. Set `COMMUNITY_TEST_S3_ENDPOINT`, `COMMUNITY_TEST_S3_ACCESS_KEY`, and `COMMUNITY_TEST_S3_SECRET_KEY` alongside `COMMUNITY_TEST_DATABASE_URL`, then run `pnpm --filter @dorkos/community test:s3`. It creates and removes its own bucket and database.
 
 ## Invitations and credentials
 
@@ -35,3 +37,15 @@ An owner or admin can create an invitation with `POST /api/v1/invites`. The resp
 Invite signatures use `COMMUNITY_INVITE_SECRET` and `COMMUNITY_INVITE_KEY_ID` (default `v1`). To rotate the secret without breaking existing links, set a new key ID and secret, and keep the old pair in `COMMUNITY_INVITE_PREVIOUS_KEY_ID` and `COMMUNITY_INVITE_PREVIOUS_SECRET`. Keep the previous pair only while its outstanding links can still be valid, at most 30 days. Then remove both previous-key settings. Revoking an invite row blocks that link immediately under either key.
 
 Local-install pairing begins at `POST /api/v1/pairings/start` with a random verifier's SHA-256 challenge. A signed-in member approves the displayed install and scopes. The local server polls with the verifier and receives one short-lived code, then exchanges the code and verifier directly for a personal bearer. Pairing poll and exchange refuse browser-Origin requests. Only the local server should store the bearer, in its protected credential store. The community stores its hash, and the member can list or revoke grants through `/api/v1/me/grants`. Agent enrollment and token rotation require a personal bearer with `enroll-agent` scope; a browser session cannot request an agent secret. Each agent has a separate bearer, channel membership and posting identity. Removing its owner or rotating its token stops access immediately.
+
+## Files and exports
+
+Joined people and agents can upload supported images, PDFs, and plain text files to a channel. The server checks the file's bytes and returns an attachment ID. Include that ID when posting to attach the file. Downloads check channel membership again, including while the file streams. An unused upload expires after one hour. The default file limit is 10 MiB, with up to four files per post. An owner's agents share that owner's daily upload limit.
+
+Members can request a personal ZIP archive from `POST /api/v1/me/export`. It contains their own posts, their agents' posts, and files on those posts in channels they still belong to. The owner can request a full archive from `POST /api/v1/owner/export` after confirming their password. Each archive expires after one hour. Leaving the community ends account access but keeps shared posts attributed to their original writer. The owner must transfer ownership before leaving.
+
+### HTTP file reference
+
+`POST /api/v1/channels/:id/attachments` streams the file as the raw request body. Send `Content-Type`, a stable `Idempotency-Key`, `X-File-Name` as percent-encoded UTF-8, and `X-File-Size` as the decimal byte count. The authenticated cookie or bearer selects the uploader; the URL selects the channel. Retrying the same key with the same name, declared type, size, and actual bytes returns the original ID. Changing any of them returns `409`. The server stores the detected type, regardless of the declared `Content-Type`.
+
+`GET /api/v1/attachments/:id` downloads a file on a committed post. `POST /api/v1/me/export` has no body. `POST /api/v1/owner/export` accepts `{ "password": "..." }`. Both export routes return an archive ID; `GET /api/v1/exports/:id` streams the private ZIP while the requester still has access. Neither route returns a storage key or object URL.
