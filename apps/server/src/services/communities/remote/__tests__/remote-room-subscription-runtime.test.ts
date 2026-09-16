@@ -21,14 +21,14 @@ import type { RemoteNativeRoomEvent } from '../remote-community-adapter.js';
 const REF = 'remote_owner_a' as CommunityRef;
 const ROOM_ID = 'room-a';
 
-function entry(seq: number): CommunityEntry {
+function entry(seq: number, mentions: string[] = ['remote-ana']): CommunityEntry {
   return {
     community: REF,
     roomId: ROOM_ID,
     id: `entry-${seq}`,
     authorId: 'remote-human',
     text: `message ${seq}`,
-    mentions: ['remote-ana'],
+    mentions,
     parentEntryId: null,
     threadRootEntryId: null,
     depth: 0,
@@ -133,4 +133,181 @@ describe('RemoteRoomSubscriptionRuntime', () => {
     expect(harness.runner.turns).toHaveLength(1);
     runtime.stop();
   });
+
+  it('authorizes each enrolled agent from that agent directory before dispatch', async () => {
+    const harness = createRoomHarness({
+      agents: agentLookupFor({
+        '/agents/ana': { name: 'Ana', responseMode: 'always' },
+        '/agents/bob': { name: 'Bob', responseMode: 'always' },
+      }),
+    });
+    const ana = harness.authors.resolveAgent('/agents/ana', 'Ana');
+    const bob = harness.authors.resolveAgent('/agents/bob', 'Bob');
+    const enrollments = new CommunityAgentEnrollmentStore(harness.db);
+    enrollments.activate({
+      communityRef: REF,
+      localAgentId: ana.id,
+      remoteMemberId: 'remote-ana',
+      ownerAuthorId: harness.human,
+    });
+    enrollments.activate({
+      communityRef: REF,
+      localAgentId: bob.id,
+      remoteMemberId: 'remote-bob',
+      ownerAuthorId: harness.human,
+    });
+    const mirrors = new RemoteMirrorStore(harness.db, harness.store, harness.authors);
+    const bridge = new RemoteRoomSubscriptionBridge(
+      mirrors,
+      harness.service,
+      enrollments,
+      (localAgentId) => (localAgentId === ana.id || localAgentId === bob.id ? localAgentId : null)
+    );
+    const room = testRoom();
+    const adapter: RemoteRoomSubscriptionAdapter = {
+      async listRooms(context) {
+        return context?.actingMemberId === 'remote-ana' ? [room] : [];
+      },
+      subscribeNativeRoom(): AsyncIterable<RemoteNativeRoomEvent> {
+        return (async function* () {
+          yield snapshot(room, [entry(1)], 1);
+          yield { type: 'replay_complete' as const, capturedSeq: 1 };
+          // Bob is actively enrolled but is not a member of this remote room.
+          yield { type: 'entry' as const, entry: entry(2, ['remote-bob']) };
+          yield { type: 'entry' as const, entry: entry(3, ['remote-ana']) };
+        })();
+      },
+    };
+    const runtime = new RemoteRoomSubscriptionRuntime({
+      bridge,
+      enrollments,
+      adapters: () => adapter,
+      resolveLocalAgentAuthor: (localAgentId) =>
+        localAgentId === ana.id || localAgentId === bob.id ? localAgentId : null,
+      isRoomJoined: () => true,
+      toLiveEntry: (value) => live(value, Number(value.id.slice('entry-'.length))),
+      retryMs: 1,
+    });
+
+    runtime.start();
+    await settleUntil(
+      () => runtime.observation(REF, ROOM_ID, harness.human)?.dispatchesSinceBoot === 1,
+      'only the room-joined agent is dispatched'
+    );
+    await harness.service.triggersIdle();
+    expect(harness.runner.turns).toHaveLength(1);
+    expect(harness.runner.turns[0]?.authorId).toBe(ana.id);
+    runtime.stop();
+  });
+
+  it('replaces the replay observation for every reconnect generation', async () => {
+    const harness = createRoomHarness({
+      agents: agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } }),
+    });
+    const agent = harness.authors.resolveAgent('/agents/ana', 'Ana');
+    const enrollments = new CommunityAgentEnrollmentStore(harness.db);
+    enrollments.activate({
+      communityRef: REF,
+      localAgentId: agent.id,
+      remoteMemberId: 'remote-ana',
+      ownerAuthorId: harness.human,
+    });
+    const mirrors = new RemoteMirrorStore(harness.db, harness.store, harness.authors);
+    const bridge = new RemoteRoomSubscriptionBridge(
+      mirrors,
+      harness.service,
+      enrollments,
+      (localAgentId) => (localAgentId === agent.id ? agent.id : null)
+    );
+    let releaseFirst: (() => void) | undefined;
+    const firstDone = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let releaseSecond: (() => void) | undefined;
+    const secondDone = new Promise<void>((resolve) => {
+      releaseSecond = resolve;
+    });
+    let streams = 0;
+    const room = testRoom();
+    const adapter: RemoteRoomSubscriptionAdapter = {
+      async listRooms() {
+        return [room];
+      },
+      subscribeNativeRoom(): AsyncIterable<RemoteNativeRoomEvent> {
+        streams += 1;
+        if (streams === 1) {
+          return (async function* () {
+            yield snapshot(room, [entry(1)], 1);
+            yield { type: 'replay_complete' as const, capturedSeq: 1 };
+            await firstDone;
+          })();
+        }
+        return (async function* () {
+          yield snapshot(room, [entry(1)], 1);
+          await secondDone;
+          yield { type: 'replay_complete' as const, capturedSeq: 1 };
+        })();
+      },
+    };
+    const runtime = new RemoteRoomSubscriptionRuntime({
+      bridge,
+      enrollments,
+      adapters: () => adapter,
+      resolveLocalAgentAuthor: (localAgentId) => (localAgentId === agent.id ? agent.id : null),
+      isRoomJoined: () => true,
+      toLiveEntry: (value) => live(value, Number(value.id.slice('entry-'.length))),
+      retryMs: 1,
+    });
+
+    runtime.start();
+    await settleUntil(
+      () => runtime.observation(REF, ROOM_ID, harness.human)?.generation === 1,
+      'the initial subscription begins'
+    );
+    expect(runtime.observation(REF, ROOM_ID, harness.human)).toMatchObject({
+      snapshotComplete: true,
+      replayComplete: true,
+    });
+    releaseFirst!();
+    await settleUntil(
+      () => runtime.observation(REF, ROOM_ID, harness.human)?.generation === 2,
+      'the reconnect begins a new replay boundary'
+    );
+    expect(runtime.observation(REF, ROOM_ID, harness.human)).toMatchObject({
+      snapshotComplete: true,
+      replayComplete: false,
+      dispatchesSinceBoot: 0,
+    });
+    releaseSecond!();
+    runtime.stop();
+  });
 });
+
+function testRoom(): CommunityRoom {
+  return {
+    community: REF,
+    roomId: ROOM_ID,
+    kind: 'channel',
+    title: 'General',
+    slug: null,
+    topic: null,
+    archived: false,
+    createdAt: '2026-09-16T00:00:00.000Z',
+    lastActivityAt: '2026-09-16T00:00:00.000Z',
+    unreadCount: 0,
+  };
+}
+
+function snapshot(
+  room: CommunityRoom,
+  entries: CommunityEntry[],
+  capturedSeq: number
+): Extract<RemoteNativeRoomEvent, { type: 'snapshot' }> {
+  return {
+    type: 'snapshot',
+    room,
+    entries,
+    capturedSeq,
+    cursor: `cursor-${capturedSeq}` as CommunityEntry['cursor'],
+  };
+}

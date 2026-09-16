@@ -159,6 +159,8 @@ export class RemoteRoomSubscriptionBridge {
     // The persisted cache state is the final authorization answer immediately
     // before dispatch; revocation and a stale owner grant therefore fail closed.
     if (!this.mirrors.isActivelyAuthorized(local.id, room.ownerAuthorId)) return;
+    const dispatchEntry = this.dispatchEntry(local.id, room, event, saved);
+    if (!dispatchEntry.mentions.length) return;
     if (
       !this.mirrors.claimRemoteDispatch(
         room.communityRef,
@@ -169,7 +171,7 @@ export class RemoteRoomSubscriptionBridge {
     ) {
       return;
     }
-    this.service.dispatchImportedRemoteEntry(local.id, this.dispatchEntry(room, event, saved));
+    this.service.dispatchImportedRemoteEntry(local.id, dispatchEntry);
     const dispatchKey = `${room.communityRef}:${room.ownerAuthorId}:${room.remoteRoomId}`;
     this.dispatchesSinceBoot.set(dispatchKey, (this.dispatchesSinceBoot.get(dispatchKey) ?? 0) + 1);
   }
@@ -277,6 +279,7 @@ export class RemoteRoomSubscriptionBridge {
 
   /** Translate remote mention identities only on the short-lived local dispatch view. */
   private dispatchEntry(
+    localRoomId: string,
     room: MirrorRoomInput,
     event: RemoteLiveEntry,
     saved: ReturnType<RemoteMirrorStore['importEntries']>[number]
@@ -289,7 +292,10 @@ export class RemoteRoomSubscriptionBridge {
       );
       if (!enrollment) return [];
       const authorId = this.resolveLocalAgentAuthor(enrollment.localAgentId);
-      return authorId ? [authorId] : [];
+      // Membership is refreshed from the enrolled agent's own remote
+      // directory. Keep the persisted per-room grant as the final fence so a
+      // late event cannot dispatch an agent removed during reconciliation.
+      return authorId && this.mirrors.canRead(localRoomId, authorId) === true ? [authorId] : [];
     });
     return { ...saved, mentions };
   }
