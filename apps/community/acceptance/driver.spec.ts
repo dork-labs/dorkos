@@ -182,6 +182,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       });
       const localAgentId = registered.id;
       const handle = 'attachment-agent';
+      const ownedAgentLabel = `${agentDisplayName} · owned by You`;
       const localConfig = await json<{ dorkHome: string }>(`${env.local}/api/config`);
       expect(localConfig.dorkHome).toBe(join(env.root, 'local-home'));
       const now = new Date().toISOString();
@@ -214,7 +215,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       await agentControls.getByRole('button', { name: 'Add to community', exact: true }).click();
       const enrolledResult = await enrolledResponse;
       expect(enrolledResult.status()).toBe(201);
-      await expect(agentControls.getByText(agentDisplayName, { exact: true })).toBeVisible();
+      await expect(agentControls.getByText(ownedAgentLabel, { exact: true })).toBeVisible();
       const joinedResponse = localPage.waitForResponse(
         (response) =>
           response.request().method() === 'POST' &&
@@ -1274,12 +1275,46 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       );
       expect(await agentEntries()).toHaveLength(heldStop.beforeEntryCount);
       expect(heldStop.parentEntryId).toBeTruthy();
-      await postHumanMarker(`after-held-stop-${crypto.randomUUID()}`);
-      expect(await agentEntries()).toHaveLength(heldStop.beforeEntryCount);
+      // Stop ends the held delivery, not this agent's participation. A new,
+      // addressed entry must run exactly one fresh turn; its terminal count
+      // closes the window in which a stopped delivery could arrive late.
+      const postStopMarker = `after-held-stop-${crypto.randomUUID()}`;
+      const postStopEntriesBefore = await agentEntries();
+      const postStopTurnBeforeStart = await sessionSpine(recoveredTurnSessionId);
+      const postStopDispatchBefore = await eventually(
+        subscriptionBarrier,
+        (result) => result !== null && result.snapshotComplete && result.replayComplete,
+        'Community A subscription was not ready before the fresh post-Stop mention'
+      );
+      const postStopParent = await postHumanMarker(`@${handle} ${postStopMarker}`);
+      expect(postStopParent?.id).toBeTruthy();
+      await eventually(
+        subscriptionBarrier,
+        (result) =>
+          result !== null &&
+          result.dispatchesSinceBoot === postStopDispatchBefore!.dispatchesSinceBoot + 1,
+        'the fresh post-Stop mention did not receive a dispatcher claim'
+      );
+      await eventually(
+        agentEntries,
+        (entries) => entries.length === postStopEntriesBefore.length + 1,
+        'the fresh post-Stop mention did not produce exactly one agent reply'
+      );
+      const finishPostStopTurn = await request.post(`${env.local}/api/test/finish-turn`);
+      expect(
+        finishPostStopTurn.ok(),
+        `could not finish the fresh post-Stop turn: ${await finishPostStopTurn.text()}`
+      ).toBe(true);
+      await waitForTurnToSettle(
+        recoveredTurnSessionId,
+        turnEndCount(postStopTurnBeforeStart),
+        'the fresh post-Stop agent turn did not settle'
+      );
+      expect(await agentEntries()).toHaveLength(postStopEntriesBefore.length + 1);
 
       const heldEjection = await holdAttachmentDelivery(`held-ejection-${crypto.randomUUID()}`);
       await localPage.getByRole('button', { name: 'Members', exact: true }).click();
-      await expect(localPage.getByText(enrolledAgent.displayName, { exact: true })).toBeVisible();
+      await expect(localPage.getByText(ownedAgentLabel, { exact: true })).toBeVisible();
       const ejectionResponse = localPage.waitForResponse(
         (response) =>
           response.request().method() === 'DELETE' &&
@@ -1301,8 +1336,6 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       );
       expect(await agentEntries()).toHaveLength(heldEjection.beforeEntryCount);
       expect(heldEjection.parentEntryId).toBeTruthy();
-      await postHumanMarker(`after-held-ejection-${crypto.randomUUID()}`);
-      expect(await agentEntries()).toHaveLength(heldEjection.beforeEntryCount);
       const remainingEnrollment = await eventually(
         () =>
           json<{ agents: Array<{ localAgentId: string }> }>(
@@ -1314,6 +1347,13 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       expect(remainingEnrollment.agents).not.toContainEqual(
         expect.objectContaining({ localAgentId })
       );
+      // The ejected agent is no longer an eligible local recipient. Persist an
+      // explicit addressed remote message after revocation, then retain the
+      // exact remote-agent count through the later owner write below.
+      const afterEjectionMarker = `after-held-ejection-${crypto.randomUUID()}`;
+      const afterEjectionParent = await postHumanMarker(`@${handle} ${afterEjectionMarker}`);
+      expect(afterEjectionParent?.id).toBeTruthy();
+      expect(await agentEntries()).toHaveLength(heldEjection.beforeEntryCount);
       // Ejecting a local agent revokes that agent's membership. The human owner
       // still owns this room and must remain able to read and post through the
       // qualified local Community surface.
