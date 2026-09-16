@@ -231,6 +231,27 @@ describe('a schedule that came with an installed package', () => {
     expect(after.enabled).toBe(true);
   });
 
+  it('is discovered switched off with nothing to escalate — no reason gate blocks a later approval (DOR-2059)', async () => {
+    // The ticket: `flow-drain` and `flow-groom` both ship
+    // `schedule.enabled: false`, and installing a package with N off-by-default
+    // schedules must not cost N clicks. The row itself stays `pending_approval`
+    // — the arm gate cannot skip a first sighting — but the schedule is
+    // discovered clean, and a person switching it on later goes through the
+    // FULL approval path with nothing standing in the way.
+    const task = await sweep();
+    expect(task.status).toBe('pending_approval');
+    expect(task.enabled).toBe(false);
+
+    const approved = await patch(task, { status: 'active', enabled: true });
+
+    expect(approved.ok).toBe(true);
+    expect(approved.task?.status).toBe('active');
+    expect(approved.task?.enabled).toBe(true);
+    // The package's own file is still untouched — the arm blocker and
+    // permission clamp ran on the same door every approval runs through.
+    expect(await fs.readFile(packagedFile, 'utf-8')).toBe(PACKAGED_SKILL);
+  });
+
   it('is never armed by switching it on without approving it (DOR-607)', async () => {
     // `enabled` lands on the row for a package-owned file, and `enabled` is
     // agent-writable. That must not become a way to start a package's job: the

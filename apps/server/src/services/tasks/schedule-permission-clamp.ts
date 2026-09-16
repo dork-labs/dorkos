@@ -307,3 +307,32 @@ export function resolveFilePermissionMode(
   }
   return clampSchedulePermissionMode(declared);
 }
+
+/**
+ * Whether a scheduled task genuinely needs the operator's attention right now
+ * (DOR-2059) — the third question this module answers, alongside what mode a
+ * schedule gets and whether it may arm itself.
+ *
+ * A package can ship a schedule switched off (`schedule.enabled: false`),
+ * documented as opt-in. {@link resolveFileArmStatus} still parks it at
+ * `pending_approval` on first sighting — the arm gate applies to every file
+ * discovery, because a package can change its mind about what the schedule
+ * does before anyone approves it — but a schedule that is not even asking to
+ * run has nothing for a person to decide about *right now*. So the row stays
+ * `pending_approval`, every write-time invariant that status protects is
+ * untouched (`status` stays operator-only, an agent flipping `enabled` still
+ * leaves the scheduler ineligible), and this is the one place that reads
+ * `enabled` alongside `status` to decide whether the condition should reach
+ * the operator at all — read by the boot-time re-arm in `index.ts`. The
+ * client draws the identical line for its approval card and OS-level knock
+ * (`entities/tasks/lib/is-schedule-awaiting-approval.ts`, which this mirrors).
+ *
+ * @param task - The status and switch a schedule's row carries.
+ * @returns True for a schedule that is both parked AND asking to run.
+ */
+export function needsScheduleApprovalAttention(task: {
+  status: string;
+  enabled: boolean;
+}): boolean {
+  return task.status === 'pending_approval' && task.enabled;
+}

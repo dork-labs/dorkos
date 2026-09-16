@@ -82,6 +82,21 @@ const disabledSchedule: Task = {
   enabled: false,
 };
 
+// A package-shipped schedule found switched off. Discovery still parks it at
+// `pending_approval` — the row itself does not change — but nobody asked for
+// it to run, so it must draw exactly like `disabledSchedule` above: a normal
+// switched-off task, no card, no reason line (DOR-2059).
+const offByDefaultSchedule: Task = {
+  ...activeSchedule,
+  id: 'sched-4',
+  name: 'Off By Default Task',
+  status: 'pending_approval',
+  enabled: false,
+  origin: 'file',
+  reason:
+    'DorkOS found this schedule in a file on your computer. Nothing runs on a timer until you say so — read what it does below, then approve it or delete it.',
+};
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -258,6 +273,61 @@ describe('ScheduleRow', () => {
     });
 
     expect(screen.queryByText('The backlog piles up overnight and nobody sees it.')).toBeNull();
+  });
+
+  describe('a schedule a package shipped switched off (DOR-2059)', () => {
+    it('shows no Approve/Reject — it reads as an ordinary switched-off task', () => {
+      renderScheduleRow(offByDefaultSchedule);
+
+      expect(screen.queryByText('Approve')).toBeNull();
+      expect(screen.queryByText('Reject')).toBeNull();
+      expect(screen.getByRole('switch')).toBeTruthy();
+    });
+
+    it('shows its switch off but flippable, unlike a paused schedule', () => {
+      renderScheduleRow(offByDefaultSchedule);
+
+      const toggle = screen.getByRole('switch');
+      expect(toggle).toHaveAttribute('aria-checked', 'false');
+      expect(toggle).not.toBeDisabled();
+    });
+
+    it('says nothing about why it is waiting — there is no card to explain', () => {
+      renderScheduleRow(offByDefaultSchedule);
+
+      expect(
+        screen.queryByText(/DorkOS found this schedule in a file on your computer/)
+      ).toBeNull();
+    });
+
+    it('switching it on runs the same approval a person clicking Approve would (DOR-607)', async () => {
+      const updateTask = vi.fn().mockResolvedValue(offByDefaultSchedule);
+      const transport = createMockTransport({ updateTask });
+      renderScheduleRow(offByDefaultSchedule, {}, transport);
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('switch'));
+      });
+
+      // `status: 'active'` alongside `enabled: true` is what the PATCH route
+      // reads as the approval — the arm blocker and permission clamp run on
+      // every PATCH regardless of which fields it carries, so sending `status`
+      // here is what turns this specific write into the first approval this
+      // schedule has ever had, rather than an ordinary agent-writable toggle.
+      expect(updateTask).toHaveBeenCalledWith('sched-4', { status: 'active', enabled: true });
+    });
+
+    it('switching an already-approved schedule off and back on sends only `enabled`', async () => {
+      const updateTask = vi.fn().mockResolvedValue(activeSchedule);
+      const transport = createMockTransport({ updateTask });
+      renderScheduleRow(activeSchedule, {}, transport);
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('switch'));
+      });
+
+      expect(updateTask).toHaveBeenCalledWith('sched-1', { enabled: false });
+    });
   });
 
   it('opens dropdown menu with Edit, Run Now, Delete items', async () => {

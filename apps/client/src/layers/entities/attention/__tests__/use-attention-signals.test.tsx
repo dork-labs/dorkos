@@ -188,7 +188,9 @@ describe('useAttentionSignals', () => {
         cron: '0 3 * * *',
         timezone: 'UTC',
         agentId: null,
-        enabled: false,
+        // True: this schedule is asking to run — DOR-2059 only quiets a
+        // package-shipped schedule that ships switched off.
+        enabled: true,
         maxRuntime: null,
         permissionMode: 'default',
         runtime: null,

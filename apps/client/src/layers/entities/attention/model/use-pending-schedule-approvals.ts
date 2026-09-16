@@ -8,11 +8,21 @@
  * that a live signal, nothing anywhere said so. This is the read half of
  * saying so.
  *
+ * **Not every `pending_approval` row belongs here.** A package can ship a
+ * schedule switched off, documented as opt-in; discovery still parks it, but
+ * nobody has anything to decide about a schedule that is not asking to run
+ * (DOR-2059). See {@link isScheduleAwaitingApproval} for the one place that
+ * distinction is drawn.
+ *
  * @module entities/attention/model/use-pending-schedule-approvals
  */
 import { useMemo } from 'react';
 import type { Task } from '@dorkos/shared/types';
-import { useTasks, useTasksEnabledState } from '@/layers/entities/tasks';
+import {
+  isScheduleAwaitingApproval,
+  useTasks,
+  useTasksEnabledState,
+} from '@/layers/entities/tasks';
 
 /** Shared empty, so a cockpit with nothing parked never mints a fresh array. */
 const NO_SCHEDULES: readonly Task[] = [];
@@ -57,7 +67,14 @@ export function usePendingScheduleApprovals(): PendingScheduleApprovals {
   const { data, isLoading } = useTasks(enabled);
 
   const schedules = useMemo(() => {
-    const parked = (data ?? []).filter((task) => task.status === 'pending_approval');
+    // A package can ship a schedule switched off, and discovery still parks it
+    // at `pending_approval` (the arm gate applies to every first sighting) —
+    // but a schedule that is not asking to run is not waiting on anybody
+    // (DOR-2059). `isScheduleAwaitingApproval` is the one place that reads
+    // `enabled` alongside `status`, so this list and the card, the OS-level
+    // knock, and the escalation ladder cannot disagree about which schedules
+    // count as pending.
+    const parked = (data ?? []).filter((task) => isScheduleAwaitingApproval(task));
     // Oldest first: the same order every other queue in the cockpit uses, and
     // the one that puts the thing that has been waiting longest at the top.
     parked.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
