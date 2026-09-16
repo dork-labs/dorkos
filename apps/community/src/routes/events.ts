@@ -185,7 +185,8 @@ export function registerEventRoutes(
           config
         )
       : Number(channel.last_seq);
-    if (position > Number(channel.last_seq))
+    const capturedSeq = Number(channel.last_seq);
+    if (position > capturedSeq)
       throw new ApiError(410, 'CURSOR_STALE', 'This cursor is ahead of channel history.');
     await hooks?.afterSnapshotWatermark?.();
     const snapshotRows = (
@@ -195,7 +196,7 @@ export function registerEventRoutes(
              FROM entries WHERE channel_id=$1 AND seq>$2 AND seq<=$3 ORDER BY seq LIMIT 100`
           : `SELECT id,channel_id,seq,COALESCE(author_member_id,author_agent_id) AS author_member_id,author_agent_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,created_at
              FROM (SELECT * FROM entries WHERE channel_id=$1 AND seq<=$2 ORDER BY seq DESC LIMIT 100) e ORDER BY seq`,
-        resume ? [channel.id, position, Number(channel.last_seq)] : [channel.id, position]
+        resume ? [channel.id, position, capturedSeq] : [channel.id, position]
       )
     ).rows;
     if (snapshotRows.length) position = Number(snapshotRows.at(-1).seq);
@@ -212,6 +213,7 @@ export function registerEventRoutes(
     const encoder = new TextEncoder();
     let revocationTimer: ReturnType<typeof setInterval> | undefined;
     let closed = false;
+    let replayComplete = false;
     let lastHeartbeat = Date.now();
     const currentCursor = () =>
       encodeCursor(
@@ -301,8 +303,17 @@ export function registerEventRoutes(
                 principal.community_id
               )
             ),
+            capturedSeq,
             cursor: currentCursor(),
           });
+          if (position >= capturedSeq) {
+            replayComplete = true;
+            writeEvent(controller, {
+              type: 'replay_complete',
+              capturedSeq,
+              cursor: currentCursor(),
+            });
+          }
           revocationTimer = setInterval(() => {
             void checkAccess()
               .then((state) => {
@@ -348,6 +359,15 @@ export function registerEventRoutes(
           if (closed) return;
           try {
             while (!closed) {
+              if (!replayComplete && position >= capturedSeq) {
+                replayComplete = true;
+                writeEvent(controller, {
+                  type: 'replay_complete',
+                  capturedSeq,
+                  cursor: currentCursor(),
+                });
+                return;
+              }
               const state = await checkAccess();
               if (closed) return;
               if (

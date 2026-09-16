@@ -37,6 +37,7 @@ import {
   getRemoteCommunityDeliverySnapshot,
   getRemoteCommunityEnrollmentStore,
   getRemoteCommunityLifecycle,
+  getRemoteCommunityOriginIdempotencyKey,
   onRemoteCommunityDeliveryChange,
 } from '../services/communities/remote/state.js';
 import { getRoomService } from '../services/rooms/index.js';
@@ -91,16 +92,20 @@ function remoteRoom(room: CommunityRoom, remoteCommunityId: string) {
   };
 }
 
-function remoteEntry(entry: CommunityEntry) {
+function remoteEntry(entry: CommunityEntry, ownerAuthorId?: string) {
   const seq = remoteSequenceOf(entry);
   const author = remoteAuthorOf(entry);
   if (seq === undefined || !author)
     throw new Error('Native remote entry lost authoritative metadata');
+  const originIdempotencyKey = ownerAuthorId
+    ? getRemoteCommunityOriginIdempotencyKey(entry.community, entry.roomId, ownerAuthorId, entry.id)
+    : null;
   return {
     ...entry,
     remoteSeq: seq,
     authorDisplayName: author.displayName,
     authorKind: author.kind,
+    ...(originIdempotencyKey ? { originIdempotencyKey } : {}),
   };
 }
 
@@ -161,7 +166,7 @@ export function createRemoteCommunitiesRouter(): Router {
           thread: typeof req.query.threadRootId === 'string' ? req.query.threadRootId : undefined,
         }
       );
-      const entries = page.entries.map(remoteEntry);
+      const entries = page.entries.map((entry) => remoteEntry(entry, owner));
       const lastRemoteSeq = entries.at(-1)?.remoteSeq ?? 0;
       res.json(
         RemoteCommunityHistoryResponseSchema.parse({
@@ -274,7 +279,9 @@ export function createRemoteCommunitiesRouter(): Router {
         req.params.roomId,
         input.data
       );
-      res.status(201).json(RemoteCommunityPostResponseSchema.parse({ entry: remoteEntry(entry) }));
+      res
+        .status(201)
+        .json(RemoteCommunityPostResponseSchema.parse({ entry: remoteEntry(entry, owner) }));
     } catch (error) {
       fail(res, error);
     }
@@ -351,7 +358,7 @@ export function createRemoteCommunitiesRouter(): Router {
       )) {
         if (event.type === 'snapshot') {
           const connection = await getRemoteConnectionStore().get(ref.data, owner);
-          const entries = event.entries.map(remoteEntry);
+          const entries = event.entries.map((entry) => remoteEntry(entry, owner));
           writeEvent(res, {
             type: 'snapshot',
             room: remoteRoom(event.room, connection.remoteCommunityId),
@@ -363,7 +370,7 @@ export function createRemoteCommunitiesRouter(): Router {
           sawSnapshot = true;
           writeDeliveries();
         } else if (event.type === 'entry') {
-          writeEvent(res, { type: 'entry', entry: remoteEntry(event.entry) });
+          writeEvent(res, { type: 'entry', entry: remoteEntry(event.entry, owner) });
         } else if (event.type === 'room_closed') {
           writeEvent(res, {
             type: 'closed',
@@ -471,6 +478,7 @@ export function createRemoteCommunitiesRouter(): Router {
         displayName: author.displayName,
         ...(input.data.handle ? { handle: input.data.handle } : {}),
       });
+      getRemoteCommunityLifecycle().refreshSubscriptions();
       res.status(201).json(
         RemoteCommunityEnrollmentResponseSchema.parse({
           agent: {
@@ -508,6 +516,7 @@ export function createRemoteCommunitiesRouter(): Router {
       } catch {
         remoteRevoked = false;
       }
+      getRemoteCommunityLifecycle().refreshSubscriptions();
       res.json(RemoteCommunityEjectionResponseSchema.parse({ localRevoked: true, remoteRevoked }));
     } catch (error) {
       fail(res, error);
@@ -528,6 +537,7 @@ export function createRemoteCommunitiesRouter(): Router {
         req.params.roomId,
         binding.remoteMemberId
       );
+      getRemoteCommunityLifecycle().refreshSubscriptions();
       res.status(204).end();
     } catch (error) {
       fail(res, error);
@@ -548,6 +558,7 @@ export function createRemoteCommunitiesRouter(): Router {
         req.params.roomId,
         binding.remoteMemberId
       );
+      getRemoteCommunityLifecycle().refreshSubscriptions();
       res.status(204).end();
     } catch (error) {
       fail(res, error);

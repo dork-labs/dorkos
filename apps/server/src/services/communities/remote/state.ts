@@ -38,6 +38,8 @@ export interface RemoteCommunityLifecycle {
     localAgentId: string,
     ownerAuthorId: string
   ): Promise<number>;
+  /** Reconcile private background streams after native enrollment or membership changes. */
+  refreshSubscriptions(): void;
 }
 
 /** The encrypted credential and owner-scoped metadata store for remote communities. */
@@ -130,6 +132,23 @@ export function getRemoteCommunityDeliverySnapshot(
     roomId: remoteRoomId,
     deliveries,
   });
+}
+
+/** Resolve only the durable owner-qualified origin marker for one confirmed remote entry. */
+export function getRemoteCommunityOriginIdempotencyKey(
+  communityRef: CommunityRef,
+  remoteRoomId: string,
+  ownerAuthorId: string,
+  remoteEntryId: string
+): string | null {
+  if (!deliveryProjection)
+    throw new Error('Remote community delivery projection requires startup wiring');
+  return deliveryProjection.originForRemoteEntry(
+    communityRef,
+    remoteRoomId,
+    ownerAuthorId,
+    remoteEntryId
+  );
 }
 
 /** Construct the one native adapter shape used by connection lifecycle and qualified routes. */

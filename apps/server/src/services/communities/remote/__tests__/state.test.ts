@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
 import {
   getRemoteCommunityDeliverySnapshot,
+  getRemoteCommunityOriginIdempotencyKey,
   setRemoteCommunityDeliveryProjection,
 } from '../state.js';
 
@@ -32,7 +33,23 @@ describe('remote community delivery projection', () => {
           failure: 'remote attachment too large',
         },
       ],
+      originForRemoteEntry: (
+        communityRef: unknown,
+        roomId: string,
+        owner: string,
+        entryId: string
+      ) =>
+        communityRef === REF && roomId === 'room-a' && owner === 'owner-a' && entryId === 'remote-a'
+          ? 'retry-a'
+          : null,
     } as never);
+
+    expect(getRemoteCommunityOriginIdempotencyKey(REF, 'room-a', 'owner-a', 'remote-a')).toBe(
+      'retry-a'
+    );
+    expect(
+      getRemoteCommunityOriginIdempotencyKey(REF, 'room-a', 'other-owner', 'remote-a')
+    ).toBeNull();
 
     expect(getRemoteCommunityDeliverySnapshot(REF, 'room-a', 'owner-a')).toEqual({
       community: REF,

@@ -50,6 +50,8 @@ export const RemoteCommunityEntrySchema = CommunityEntrySchema.extend({
   remoteSeq: sequence.min(1),
   authorDisplayName: z.string().min(1),
   authorKind: z.enum(['human', 'agent']),
+  /** Present only for the connected owner's receipt-confirmed remote agent output. */
+  originIdempotencyKey: z.string().min(1).max(128).optional(),
   attachments: z.array(attachment).max(8),
 }).strict();
 /** Confirmed history; pending local output is a separate delivery state. */

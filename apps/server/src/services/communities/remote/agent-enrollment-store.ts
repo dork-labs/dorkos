@@ -154,6 +154,25 @@ export class CommunityAgentEnrollmentStore {
       : null;
   }
 
+  /** Enumerate every distinct owner-qualified community with active native agents. */
+  activeConnections(): readonly { communityRef: CommunityRef; ownerAuthorId: string }[] {
+    const rows = this.db
+      .select({
+        communityRef: communityAgentEnrollments.communityRef,
+        ownerAuthorId: communityAgentEnrollments.ownerAuthorId,
+      })
+      .from(communityAgentEnrollments)
+      .where(eq(communityAgentEnrollments.state, 'active'))
+      .all();
+    const seen = new Set<string>();
+    return rows.flatMap((row) => {
+      const key = `${row.communityRef}:${row.ownerAuthorId}`;
+      if (seen.has(key)) return [];
+      seen.add(key);
+      return [{ communityRef: row.communityRef as CommunityRef, ownerAuthorId: row.ownerAuthorId }];
+    });
+  }
+
   /** Active local manifests owned by this connection, for a local-only room Stop. */
   activeLocalAgentIds(communityRef: CommunityRef, ownerAuthorId: string): readonly string[] {
     return this.db

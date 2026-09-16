@@ -33,6 +33,21 @@ export class CommunityOutboxProjection {
     private readonly authors: AuthorRegistry
   ) {}
 
+  /** Resolve a receipt's durable owner-qualified retry identity without exposing local row data. */
+  originForRemoteEntry(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    ownerAuthorId: string,
+    remoteEntryId: string
+  ): string | null {
+    return this.outbox.originForRemoteEntry(
+      communityRef,
+      remoteRoomId,
+      ownerAuthorId,
+      remoteEntryId
+    );
+  }
+
   /** Snapshot pending and failed entries for one owner, skipping rows whose local cache was purged. */
   list(ownerAuthorId: string): readonly CommunityOutboxDeliveryView[] {
     return this.outbox.visibleForOwner(ownerAuthorId).flatMap((item) => {

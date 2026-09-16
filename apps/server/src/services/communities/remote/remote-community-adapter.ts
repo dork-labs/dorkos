@@ -218,6 +218,13 @@ function entry(
   return projected;
 }
 
+/** Private native stream events retain the server's replay watermark without widening the generic port. */
+export type RemoteNativeRoomEvent =
+  | (Extract<CommunityRoomEvent, { type: 'snapshot' }> & { capturedSeq: number })
+  | Extract<CommunityRoomEvent, { type: 'entry' }>
+  | Extract<CommunityRoomEvent, { type: 'room_closed' }>
+  | { type: 'replay_complete'; capturedSeq: number };
+
 /** Remote community connection which refuses an unowned agent before opening a socket. */
 export class RemoteCommunityAdapter implements CommunityAdapter {
   readonly type = 'dorkos-community';
@@ -361,13 +368,29 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     signal?: AbortSignal,
     context?: CommunityReadContext
   ): AsyncIterable<CommunityRoomEvent> {
+    const native = this.subscribeNativeRoom(roomId, sinceCursor, signal, context);
+    return (async function* () {
+      for await (const event of native) {
+        if (event.type === 'replay_complete') continue;
+        yield event;
+      }
+    })();
+  }
+
+  /** Native subscription keeps the server-captured replay watermark private to local lifecycle code. */
+  subscribeNativeRoom(
+    roomId: string,
+    sinceCursor?: CommunityCursor,
+    signal?: AbortSignal,
+    context?: CommunityReadContext
+  ): AsyncIterable<RemoteNativeRoomEvent> {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(roomId))
       throw new CommunityRoomNotFoundError(this.community, roomId);
     const community = this.community;
     const origin = this.origin.bind(this);
     const credential = this.credential.bind(this);
     const cancelled = new AbortController();
-    const stream: AsyncGenerator<CommunityRoomEvent, void, unknown> = (async function* () {
+    const stream: AsyncGenerator<RemoteNativeRoomEvent, void, unknown> = (async function* () {
       try {
         for await (const raw of pinnedSse(
           await origin(),
@@ -383,11 +406,14 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
               type: 'snapshot',
               room: room(community, event.channel),
               entries,
+              capturedSeq: event.capturedSeq,
               cursor: event.cursor as CommunityCursor,
             };
           } else if (event.type === 'entry') {
             const value = entry(community, event.entry);
             yield { type: 'entry', entry: value };
+          } else if (event.type === 'replay_complete') {
+            yield { type: 'replay_complete', capturedSeq: event.capturedSeq };
           } else {
             yield {
               type: 'room_closed',
@@ -406,7 +432,7 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
       }
     })();
     return {
-      [Symbol.asyncIterator](): AsyncIterator<CommunityRoomEvent> {
+      [Symbol.asyncIterator](): AsyncIterator<RemoteNativeRoomEvent> {
         const iterator = stream[Symbol.asyncIterator]();
         return {
           next: (...value: [] | [unknown]) => iterator.next(...value),
