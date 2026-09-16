@@ -370,9 +370,9 @@ describe('Topology enrichment — Tasks agent linking', () => {
 
     buildApp({
       getTasks: vi.fn().mockReturnValue([
-        { agentId: 'agent-1', enabled: true },
-        { agentId: 'agent-1', enabled: true },
-        { agentId: 'agent-other', enabled: true },
+        { agentId: 'agent-1', enabled: true, status: 'active' },
+        { agentId: 'agent-1', enabled: true, status: 'active' },
+        { agentId: 'agent-other', enabled: true, status: 'active' },
       ]),
     });
 
@@ -401,11 +401,32 @@ describe('Topology enrichment — Tasks agent linking', () => {
     expect(res.body.namespaces[0].agents[0].taskCount).toBe(1);
   });
 
+  it('does not count a schedule still waiting for approval (DOR-2087)', async () => {
+    // A schedule parked at `pending_approval` keeps `enabled: true`, but
+    // nothing runs it — the registrar and scheduler both require
+    // `status === 'active'`. The topology badge must agree.
+    meshCore.getTopology.mockReturnValue(SINGLE_AGENT_TOPOLOGY);
+
+    buildApp({
+      getTasks: vi.fn().mockReturnValue([
+        { agentId: 'agent-1', enabled: true, status: 'active' },
+        { agentId: 'agent-1', enabled: true, status: 'pending_approval' },
+      ]),
+    });
+
+    const res = await request(app).get('/api/mesh/topology');
+
+    expect(res.status).toBe(200);
+    expect(res.body.namespaces[0].agents[0].taskCount).toBe(1);
+  });
+
   it('returns 0 when no tasks are linked to the agent', async () => {
     meshCore.getTopology.mockReturnValue(SINGLE_AGENT_TOPOLOGY);
 
     buildApp({
-      getTasks: vi.fn().mockReturnValue([{ agentId: 'agent-other', enabled: true }]),
+      getTasks: vi
+        .fn()
+        .mockReturnValue([{ agentId: 'agent-other', enabled: true, status: 'active' }]),
     });
 
     const res = await request(app).get('/api/mesh/topology');
@@ -420,8 +441,8 @@ describe('Topology enrichment — Tasks agent linking', () => {
 
     buildApp({
       getTasks: vi.fn().mockReturnValue([
-        { agentId: null, enabled: true },
-        { agentId: 'agent-1', enabled: true },
+        { agentId: null, enabled: true, status: 'active' },
+        { agentId: 'agent-1', enabled: true, status: 'active' },
       ]),
     });
 
@@ -439,9 +460,9 @@ describe('Topology enrichment — Tasks agent linking', () => {
 
     buildApp({
       getTasks: vi.fn().mockReturnValue([
-        { agentId: 'agent-1', enabled: true },
-        { agentId: 'agent-1', enabled: false },
-        { agentId: 'agent-1', enabled: false },
+        { agentId: 'agent-1', enabled: true, status: 'active' },
+        { agentId: 'agent-1', enabled: false, status: 'active' },
+        { agentId: 'agent-1', enabled: false, status: 'active' },
       ]),
     });
 

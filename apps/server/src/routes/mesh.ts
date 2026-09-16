@@ -72,8 +72,9 @@ export interface MeshRouterDeps {
   meshCore: MeshCore;
   /**
    * Task store for per-agent schedule counts. Tasks link to agents via
-   * `agentId`; only enabled tasks count toward `taskCount` — disabled ones
-   * (e.g. cascade-disabled on unregister, or paused) are not live schedules.
+   * `agentId`; only enabled, `active` tasks count toward `taskCount` — a
+   * disabled one (e.g. cascade-disabled on unregister), a paused one, or one
+   * still parked at `pending_approval` is not a live schedule (DOR-2087).
    */
   taskStore?: {
     getTasks(): Array<{ agentId: string | null; enabled: boolean; status: string }>;
@@ -93,7 +94,7 @@ function enrichTopology(topology: TopologyView, deps: MeshRouterDeps): TopologyV
   if (deps.taskStore) {
     try {
       for (const task of deps.taskStore.getTasks()) {
-        if (task.enabled && task.status !== 'paused' && task.agentId) {
+        if (task.enabled && task.status === 'active' && task.agentId) {
           taskCounts.set(task.agentId, (taskCounts.get(task.agentId) ?? 0) + 1);
         }
       }
