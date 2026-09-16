@@ -91,8 +91,6 @@ export type Quietness =
 export type QuietnessBlocker =
   /** A dispatched turn is open: the pump is RUNNING. */
   | 'turn-open'
-  /** A runtime turn (unsolicited agent activity) is open — wired by slice 3a. */
-  | 'runtime-turn-open'
   /** A helper agent, Monitor or unknown background task is still working. */
   | 'background-work'
   /** A settled notification has not been delivered yet, bounded by the owed-delivery clock. */
@@ -333,16 +331,6 @@ export interface SessionPumpOptions {
    * warm pump instead of refusing.
    */
   reserveSlot?: () => Promise<void>;
-  /**
-   * True while a runtime turn — unsolicited agent activity with no dispatched
-   * turn behind it — is open on this process (spec `warm-process-lifecycle`
-   * D1/D6). Reported by the quiet predicate as `runtime-turn-open`, so nothing
-   * takes the process back mid-segment.
-   *
-   * Unwired in production until slice 3a builds runtime windows; a pump with no
-   * such observer answers "no runtime turn", which is the truth today.
-   */
-  hasRuntimeTurnOpen?: () => boolean;
   /**
    * A hold this pump owned has been released, so whatever was waiting on it may
    * run now (spec `warm-process-lifecycle` D1/D2a `onDispatchGateChange`).
