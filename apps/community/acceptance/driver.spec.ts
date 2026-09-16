@@ -216,6 +216,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         authorMemberId: string;
         authorKind: 'agent' | 'human';
         authorDisplayName: string;
+        originIdempotencyKey: string | null;
         attachments: Array<{ id: string; name: string }>;
       };
       const isEnrolledAgentEntry = (entry: Pick<Entry, 'authorMemberId' | 'authorKind'>) =>
@@ -523,9 +524,9 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       await expect(localPage.getByText(bMarker, { exact: true })).toHaveCount(0);
 
       // A transient remote failure must surface a retryable pending delivery.
-      // The manual retry is clicked while the Community keeps answering 503, so
-      // the observed second attempt is caused by the UI action rather than the
-      // worker's regular backoff. Releasing then proves idempotent confirmation.
+      // The atomic retry endpoint returns the owner-qualified replacement
+      // snapshot while the Community keeps returning 503. Releasing then
+      // proves that the original key confirms exactly once.
       const retryMarker = `retry-now-${crypto.randomUUID()}`;
       const entriesBeforeRetry = await agentEntries();
       await json(`${env.communityA}/api/test/delivery-receipt-gate`, {
@@ -557,14 +558,12 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       expect(retryRoot?.id).toBeTruthy();
       const retryNow = localPage.getByRole('button', { name: 'Retry now', exact: true });
       // This control only renders for a pending delivery whose next retry is
-      // still in the future. Capture its attempt count at that actual backoff
-      // boundary, then require exactly one new attempt after the click.
+      // still in the future.
       await expect(retryNow).toBeVisible({ timeout: 90_000 });
       await expect(retryNow).toBeEnabled();
-      const retryableBackoff = await json<{ state: string; attempts: number }>(
-        `${env.communityA}/api/test/delivery-receipt-gate`
-      );
-      expect(retryableBackoff).toMatchObject({ state: 'unavailable' });
+      expect(
+        await json<{ state: string }>(`${env.communityA}/api/test/delivery-receipt-gate`)
+      ).toMatchObject({ state: 'unavailable' });
       await localPage.screenshot({
         path: testInfo.outputPath('native-retryable-delivery.png'),
         fullPage: true,
@@ -580,15 +579,21 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       await retryNow.click();
       const retryResult = await retryResponse;
       expect(retryResult.ok(), `Retry now returned ${retryResult.status()}`).toBe(true);
-      const retriedUnavailable = await eventually(
-        () =>
-          json<{ state: string; attempts: number }>(
-            `${env.communityA}/api/test/delivery-receipt-gate`
-          ),
-        (gate) => gate.state === 'unavailable' && gate.attempts === retryableBackoff.attempts + 1,
-        'Retry now did not cause exactly one immediate remote delivery attempt'
+      const retryIdempotencyKey = decodeURIComponent(
+        new URL(retryResult.url()).pathname.split('/').at(-2)!
       );
-      expect(retriedUnavailable.attempts).toBe(retryableBackoff.attempts + 1);
+      const retrySnapshot = (await retryResult.json()) as {
+        community: string;
+        roomId: string;
+        deliveries: Array<{ idempotencyKey: string; state: string; retryable?: boolean }>;
+      };
+      expect(retrySnapshot).toMatchObject({ community: refA, roomId: roomA!.roomId });
+      expect(
+        retrySnapshot.deliveries.find((delivery) => delivery.idempotencyKey === retryIdempotencyKey)
+      ).toMatchObject({ state: 'pending', retryable: false });
+      expect(
+        await json<{ state: string }>(`${env.communityA}/api/test/delivery-receipt-gate`)
+      ).toMatchObject({ state: 'unavailable' });
       await json(`${env.communityA}/api/test/delivery-receipt-gate`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -600,6 +605,9 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         'the released retryable delivery did not produce exactly one confirmed entry'
       );
       expect(retryConfirmed.at(-1)?.text).toBe('Here is what I saw.');
+      expect(
+        retryConfirmed.filter((entry) => entry.originIdempotencyKey === retryIdempotencyKey)
+      ).toHaveLength(1);
       await expect(retryNow).toHaveCount(0);
       await localPage.goto(
         `${env.local}/channels?community=${encodeURIComponent(refA)}&id=${encodeURIComponent(roomA!.roomId)}`
