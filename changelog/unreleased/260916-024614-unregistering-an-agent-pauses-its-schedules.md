@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(tasks): unregistering an agent pauses its schedules instead of switching them off (DOR-2082)'
+  - 'fix(tasks): the unregister log says paused, and only counts rows it actually paused'
 ---
 
 ### Fixed
