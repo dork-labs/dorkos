@@ -61,6 +61,25 @@ function PairingPage() {
     }
   }
 
+  async function decline() {
+    if (!pairingId) return;
+    setBusy(true);
+    try {
+      const response = await fetch('/api/v1/pairings/decline', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ pairingId }),
+      });
+      if (!response.ok) throw new Error('This request is no longer available.');
+      setStatus((previous) => (previous ? { ...previous, status: 'cancelled' } : previous));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'The request could not be declined.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <main
       style={{
@@ -96,19 +115,33 @@ function PairingPage() {
               .join(', ')}
             .
           </p>
-          {status.status === 'pending' ? (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void approve()}
-              style={{ padding: '0.65rem 1rem', cursor: 'pointer' }}
-            >
-              {busy ? 'Approving…' : 'Approve connection'}
-            </button>
+          {status.status === 'pending' || status.status === 'approved' ? (
+            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+              {status.status === 'pending' ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void approve()}
+                  style={{ padding: '0.65rem 1rem', cursor: 'pointer' }}
+                >
+                  {busy ? 'Working…' : 'Approve connection'}
+                </button>
+              ) : (
+                <p role="status">Approved. Return to your local app to finish connecting.</p>
+              )}
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void decline()}
+                style={{ padding: '0.65rem 1rem', cursor: 'pointer' }}
+              >
+                Decline
+              </button>
+            </div>
           ) : (
             <p role="status">
-              {status.status === 'approved'
-                ? 'Approved. Return to your local app to finish connecting.'
+              {status.status === 'cancelled'
+                ? 'Connection declined. You can close this page.'
                 : 'This request is no longer available. Start again from your local app.'}
             </p>
           )}

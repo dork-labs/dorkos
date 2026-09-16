@@ -125,6 +125,59 @@ export async function requirePrincipal(
   };
 }
 
+/** Revalidate the exact cookie or bearer after a read waited on another transaction. */
+export async function assertPrincipalCurrent(
+  c: Context,
+  auth: CommunityAuth,
+  pool: Pool,
+  principal: Principal,
+  scope: 'read' | 'post'
+): Promise<void> {
+  const current = await requirePrincipal(c, auth, pool, scope, false);
+  if (
+    current.id !== principal.id ||
+    current.kind !== principal.kind ||
+    current.credentialHash !== principal.credentialHash
+  ) {
+    throw new ApiError(401, 'UNAUTHENTICATED', 'This credential is unavailable.');
+  }
+}
+
+/** Recheck a read's exact credential on its existing transaction connection. */
+export async function assertPrincipalCurrentInTransaction(
+  client: PoolClient,
+  principal: Principal,
+  scope: 'read' | 'post',
+  sessionId?: string
+): Promise<void> {
+  if (principal.kind === 'agent') {
+    const current = await client.query(
+      `SELECT 1 FROM agent_credentials ac JOIN agents a ON a.id=ac.agent_id
+       JOIN members owner ON owner.id=a.owner_member_id
+       WHERE ac.agent_id=$1 AND ac.token_hash=$2 AND ac.revoked_at IS NULL
+         AND a.active AND owner.active AND a.owner_member_id=$3`,
+      [principal.id, principal.credentialHash, principal.ownerMemberId]
+    );
+    if (current.rowCount) return;
+  } else if (principal.credentialKind === 'grant') {
+    const current = await client.query(
+      `SELECT 1 FROM connection_grants g JOIN members m ON m.id=g.member_id
+       WHERE g.member_id=$1 AND g.token_hash=$2 AND g.revoked_at IS NULL
+         AND g.scopes @> ARRAY[$3]::text[] AND m.active`,
+      [principal.id, principal.credentialHash, scope]
+    );
+    if (current.rowCount) return;
+  } else if (sessionId) {
+    const current = await client.query(
+      `SELECT 1 FROM session s JOIN members m ON m.user_id=s."userId"
+       WHERE s.id=$1 AND m.id=$2 AND s."expiresAt">now() AND m.active`,
+      [sessionId, principal.id]
+    );
+    if (current.rowCount) return;
+  }
+  throw new ApiError(401, 'UNAUTHENTICATED', 'This credential is unavailable.');
+}
+
 /** Lock the quota owner and recheck an actor's credential at a requested scope. */
 export async function lockPrincipalAuthority(
   client: PoolClient,

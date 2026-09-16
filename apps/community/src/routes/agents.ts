@@ -16,6 +16,7 @@ import {
   requireLiveRole,
   requireMember,
   transaction,
+  type Member,
 } from '../data.js';
 import { mintHandle } from '../handles.js';
 import { ApiError, json, readJson } from '../http.js';
@@ -149,16 +150,39 @@ export function registerAgentRoutes(
     const id = uuid.parse(c.req.param('id'));
     await transaction(pool, async (client) => {
       const role = await requireLiveRole(client, actor, ['owner', 'admin', 'member']);
-      const target = await client.query<AgentRow & { owner_role: 'owner' | 'admin' | 'member' }>(
-        'SELECT a.id,a.owner_member_id,m.role AS owner_role FROM agents a JOIN members m ON m.id=a.owner_member_id WHERE a.id=$1 AND a.community_id=$2 AND a.active FOR UPDATE OF a',
+      const candidate = await client.query<{ owner_member_id: string; owner_role: Member['role'] }>(
+        'SELECT a.owner_member_id,m.role AS owner_role FROM agents a JOIN members m ON m.id=a.owner_member_id WHERE a.id=$1 AND a.community_id=$2 AND a.active AND m.active',
+        [id, actor.community_id]
+      );
+      if (!candidate.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Agent not found.');
+      const isOtherMember = candidate.rows[0].owner_member_id !== actor.id;
+      if (
+        isOtherMember &&
+        (role === 'member' || (role === 'admin' && candidate.rows[0].owner_role !== 'member'))
+      )
+        throw new ApiError(403, 'FORBIDDEN', 'You cannot remove this agent.');
+      // Only a moderator ejecting another ordinary member needs the target owner
+      // lock. An admin checking an owner would invert owner-transfer's O→A order.
+      // Early denial above is conservative if a concurrent demotion is pending.
+      const owner =
+        role === 'admin' && isOtherMember
+          ? await client.query<{ role: Member['role'] }>(
+              'SELECT role FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
+              [candidate.rows[0].owner_member_id, actor.community_id]
+            )
+          : null;
+      const target = await client.query<{ id: string; owner_member_id: string }>(
+        'SELECT id,owner_member_id FROM agents WHERE id=$1 AND community_id=$2 AND active FOR UPDATE',
         [id, actor.community_id]
       );
       const row = target.rows[0];
-      if (!row) throw new ApiError(404, 'NOT_FOUND', 'Agent not found.');
       if (
-        row.owner_member_id !== actor.id &&
-        (role === 'member' || (role === 'admin' && row.owner_role !== 'member'))
+        !row ||
+        row.owner_member_id !== candidate.rows[0].owner_member_id ||
+        (owner && !owner.rows[0])
       )
+        throw new ApiError(404, 'NOT_FOUND', 'Agent not found.');
+      if (owner && owner.rows[0].role !== 'member')
         throw new ApiError(403, 'FORBIDDEN', 'You cannot remove this agent.');
       await client.query('UPDATE agents SET active=false,revoked_at=now() WHERE id=$1', [id]);
       await client.query(
