@@ -165,6 +165,51 @@ export class FakeAgentRuntime implements AgentRuntime {
    */
   settleOpenTurn = vi.fn<(sessionId: string) => Promise<boolean>>(async () => false);
 
+  /** The listener {@link onRuntimeTurn} registered, if anything is listening. */
+  private runtimeTurnListener:
+    ((sessionId: string, events: AsyncIterable<StreamEvent>) => void) | undefined;
+
+  /**
+   * Listen for turns the agent started on its own. Spied so a test can assert
+   * the server subscribed, and wired to {@link emitRuntimeTurn} so a test can
+   * drive one.
+   */
+  onRuntimeTurn = vi.fn<
+    (listener: (sessionId: string, events: AsyncIterable<StreamEvent>) => void) => () => void
+  >((listener) => {
+    this.runtimeTurnListener = listener;
+    return () => {
+      this.runtimeTurnListener = undefined;
+    };
+  });
+
+  /**
+   * Whether a delivery this session owes is still on its way. Answers `false` —
+   * this fake owes nothing — and is spied so a dispatcher test can hold the
+   * queue head by making it answer `true`.
+   */
+  isSegmentPending = vi.fn<(sessionId: string) => boolean>(() => false);
+
+  /**
+   * Take the reserved `runtime:` lock holder. Answers `true` by default, as an
+   * uncontended session's lock manager does.
+   */
+  acquireRuntimeLock = vi.fn<(sessionKey: string, res: SseResponse, token?: symbol) => boolean>(
+    () => true
+  );
+
+  /**
+   * Drive one agent-initiated turn into whatever subscribed through
+   * {@link onRuntimeTurn}.
+   *
+   * @param sessionId - The session the agent started talking on
+   * @param events - That turn's events, ending when the turn does
+   * @internal Exported for tests that drive a runtime turn.
+   */
+  emitRuntimeTurn(sessionId: string, events: AsyncIterable<StreamEvent>): void {
+    this.runtimeTurnListener?.(sessionId, events);
+  }
+
   ensureSession = vi.fn<(sessionId: string, opts: SessionOpts) => void>();
   hasSession = vi.fn<(sessionId: string) => boolean>(() => false);
   updateSession = vi.fn<

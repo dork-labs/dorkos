@@ -62,6 +62,15 @@ export interface ProcessQuietOptions {
   liveness: () => TurnLiveness;
   /** True while a dispatched turn is open on this process. */
   isTurnOpen: () => boolean;
+  /**
+   * True while a turn the AGENT started is open on this process (spec
+   * `warm-process-lifecycle` D6).
+   *
+   * Separate from {@link isTurnOpen} because the pump's own state cannot answer
+   * it: nobody dispatched the turn, so the machine never left WARM and a
+   * process mid-sentence would otherwise read as quiet and be reaped.
+   */
+  hasRuntimeTurnOpen: () => boolean;
   /** True while the session is parked on a person. */
   hasPendingInteraction: () => boolean;
   /**
@@ -235,6 +244,7 @@ export class ProcessQuiet {
    */
   private blockingReason(counts: LiveTaskCounts): QuietnessBlocker | undefined {
     if (this.opts.isTurnOpen()) return 'turn-open';
+    if (this.opts.hasRuntimeTurnOpen()) return 'runtime-turn-open';
     // Shells are deliberately absent: the CLI kills them shortly after stdin
     // ends and always has, so holding a whole process open for one would be a
     // new promise this spec explicitly declines to make (Non-Goals).

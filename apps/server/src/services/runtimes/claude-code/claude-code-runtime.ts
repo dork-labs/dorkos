@@ -1163,6 +1163,25 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     return Promise.resolve(this.persistent.settleOpenTurn(sessionId));
   }
 
+  /**
+   * @inheritdoc
+   *
+   * Only the pump path produces these: a turn on the resume path IS the stream
+   * the caller asked for, so a session with no held process can never speak
+   * between turns. The dispatcher holds the warm process's own bookkeeping, so
+   * the subscription rides it rather than being kept here.
+   */
+  onRuntimeTurn(
+    listener: (sessionId: string, events: AsyncIterable<StreamEvent>) => void
+  ): () => void {
+    return this.persistent.onRuntimeTurn(listener);
+  }
+
+  /** @inheritdoc */
+  isSegmentPending(sessionId: string): boolean {
+    return this.persistent.isSegmentPending(sessionId);
+  }
+
   /** @inheritdoc */
   getSessionWarmth(sessionId: string): SessionWarmth {
     return this.pumps.warmth(sessionId);
@@ -1453,6 +1472,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   /** @inheritdoc */
   acquireLock(sessionId: string, clientId: string, res: SseResponse, token?: symbol): boolean {
     return this.lockManager.acquireLock(sessionId, clientId, res, token);
+  }
+
+  /** @inheritdoc */
+  acquireRuntimeLock(sessionKey: string, res: SseResponse, token?: symbol): boolean {
+    return this.lockManager.acquireRuntimeLock(sessionKey, res, token);
   }
 
   /** @inheritdoc */

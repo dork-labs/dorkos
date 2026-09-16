@@ -290,8 +290,21 @@ Stands alone.
 
 ### D6. Runtime activity is its own turn, in order
 
-**Windowing:** with no window open, a `SEGMENT_RUNNING` frame opens a runtime window at once (the hold is flushed into it).
-Bookkeeping frames are held as today. A runtime window closes on the next `result`. `drainUnprojected` is deleted.
+**Windowing:** with no window open, the first MODEL frame — `beginsATurn`, i.e. an `assistant` or a `stream_event` —
+opens a runtime window at once (the hold is flushed into it). Bookkeeping frames are held as today. A runtime window
+closes on the next `result`, **whatever that result names**: it holds no ids of its own, so an unrecognised id would
+otherwise mint a second runtime window beside it and strand the first open forever.
+
+> **Amended in slice 3a.** This paragraph said "a `SEGMENT_RUNNING` frame". `TurnLiveness`'s `SEGMENT_RUNNING` also
+> covers a post-`result` `system/init`, which is precisely the bookkeeping the same sentence says is HELD — so the two
+> halves contradicted each other. The windower uses its own `beginsATurn`, which is the "first model message" the slice
+> row and T8 both describe, and an init still rides the hold into whichever window opens next.
+>
+> **`drainUnprojected` is NOT deleted**, as this paragraph originally said. It survives as the no-subscriber fallback:
+> nothing forces a host to call `subscribeRuntimeTurns` (the Obsidian/embedded composition does not, nor does any test
+> that builds a runtime by hand), and an unread channel is a buffer nobody empties. The production path never reaches it
+> — the composition root subscribes every registered runtime — and the byte tripwire below is what says so if it ever
+> does.
 
 **Channel size.** A runtime window's channel is **not capped**, so nothing is dropped while the runtime turn waits for the
 previous holder's lock release. It carries a byte-size tripwire: when the buffered, not-yet-consumed frames exceed
@@ -299,12 +312,21 @@ previous holder's lock release. It carries a byte-size tripwire: when the buffer
 once per window with the session, frame count and byte estimate. It never drops. A healthy run never trips it: the buffer
 exists only for the milliseconds between a `turn_end` and the next lock acquire.
 
-**Port.** Optional `AgentRuntime.onRuntimeTurn?(listener: (sessionId, events) => void)`, mapped through `streamTurnWindow`
-without the empty-turn guard.
+**Port.** Optional `AgentRuntime.onRuntimeTurn?(listener: (sessionId, events) => void): () => void`, mapped through
+`streamTurnWindow` without the empty-turn guard (a new `suppressEmptyTurnError` argument: nobody asked this turn a
+question, so silence from it is not a failure to answer one). It returns an unsubscribe, like every other observer
+registry in the server.
+
+> **Added in slice 3a.** The reserved holder needs a port of its own: `AgentRuntime.acquireRuntimeLock?(sessionKey, res,
+token)`, because `acquireLock` now refuses the `runtime:` prefix to every caller and the subscriber reaches the lock
+> manager through the runtime, not directly. Conformance ties the two together — a runtime declaring `onRuntimeTurn`
+> must implement `acquireRuntimeLock`, since its turns have no other way to hold the session.
 
 **The queue pump sees runtime turns.**
 
-- At runtime window **open**, the subscriber (`services/session/runtime-turn.ts`, new) registers the session in `inFlight`
+- At runtime window **open**, the subscriber (`services/session/runtime-turns/runtime-turn.ts`, new — the flat
+  `services/session/` is eight files past `check-dir-size.sh`'s error threshold, and that gate blocks a commit that ADDS
+  a source file to such a directory) registers the session in `inFlight`
   (`noteRuntimeTurnOpen`), synchronously from `onWindowOpen`; at `turn_end` it unregisters and calls `noteTurnBoundary`.
 - **Pending segment:** `pumpLocked` also returns while `AgentRuntime.isSegmentPending?(sessionId)` is true. The claude-code
   runtime answers it from `quietness().because === 'delivery-owed'`, which is **bounded by the 30 s owed-delivery clock**
@@ -489,7 +511,7 @@ busy notice (DOR-621), which is today's behavior.
 | --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
 | 1   | **Empty turn waits for its answer, plus logging.** D5.                                                                                                                       | S    | `session-turn-windows.ts`, `persistent-dispatch.ts`, fake CLI, tests                                                                                                                                                                                                                                                                                                                                                                                                                                                    | T1–T2                                              |
 | 2   | **Quiet predicate; reap, idle, warm ceiling, eviction; ceiling; owed-delivery clock.** D1.                                                                                   | M    | `turn-liveness.ts`, `session-pump.ts`, `session-pump-contract.ts`, `session-pump-registry.ts`, `session-store.ts`, `claude-code-runtime.ts`, `constants.ts`, tests                                                                                                                                                                                                                                                                                                                                                      | T3–T7, T35                                         |
-| 3a  | **Runtime turns: early windows, projection, channel tripwire, lock protocol, `inFlight`, pending-segment gate with fold detection, stall guard, Stop, reserved holder.** D6. | M    | `session-turn-windows.ts`, `session-pump.ts`, `persistent-dispatch.ts`, `pump-turn-stream.ts`, `claude-code-runtime.ts`, `packages/shared/src/agent-runtime.ts` (`onRuntimeTurn?`, `isSegmentPending?`), `services/session/runtime-turn.ts` (new), `session-lock.ts`, `message-dispatcher.ts`, composition root, `fake-agent-runtime.ts`, `runtime-conformance.ts`, tests                                                                                                                                               | T8–T14, T31, T34, T36, T38                         |
+| 3a  | **Runtime turns: early windows, projection, channel tripwire, lock protocol, `inFlight`, pending-segment gate with fold detection, stall guard, Stop, reserved holder.** D6. | M    | `session-turn-windows.ts`, `session-pump.ts`, `persistent-dispatch.ts`, `pump-turn-stream.ts`, `claude-code-runtime.ts`, `packages/shared/src/agent-runtime.ts` (`onRuntimeTurn?`, `isSegmentPending?`), `services/session/runtime-turns/runtime-turn.ts` (new), `session-lock.ts`, `message-dispatcher.ts`, composition root, `fake-agent-runtime.ts`, `runtime-conformance.ts`, tests                                                                                                                                 | T8–T14, T31, T34, T36, T38                         |
 | 3b  | **Room pending slot, notices, boot follow-up.** D7 (runtime-turn reasons).                                                                                                   | M    | `room-pending-triggers.ts` (new), `room-turn-runner.ts`, `rooms/notices/`, boot wiring, tests                                                                                                                                                                                                                                                                                                                                                                                                                           | T15–T19, T32                                       |
 | 4a  | **Prepare/commit gate with settle interval, gated rows, room pass-once, Switch now, `not_sent`, client queue and store.** D2, D2a, D4 copy, D7 (gated reasons).              | L    | `message-dispatcher.ts`, queue store, `packages/shared/src/schemas.ts` (`waitingOn`, `'not_sent'`), `agent-runtime.ts` (`prepareDispatch?`, `commitDispatch?`, `onDispatchGateChange?`, `switchWhenReady?`), `persistent-dispatch.ts`, `session-pump.ts` (`beginRetire`), `pump-launch.ts`, `launch-fingerprint.ts`, `process-change-copy.ts` (new), `claude-code-runtime.ts`, `session-state-projector.ts` (`not_sent`), `routes/sessions.ts`, `room-pending-triggers.ts`, client queue panel and session store, tests | T18 (ceiling), T20–T26, T26b, T21b, T21c, T33, T37 |
 | 4b  | **Account step.** D9.                                                                                                                                                        | S    | `account-switch.ts`, `claude-code-runtime.ts`, `runtime-turn.ts` (pin check), `process-change-copy.ts`, tests                                                                                                                                                                                                                                                                                                                                                                                                           | T27a–d, T28                                        |

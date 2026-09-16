@@ -151,6 +151,7 @@ export class SessionPump {
       // captured reference would answer for the process that went away.
       liveness: () => this.liveness,
       isTurnOpen: () => this.currentState === 'running',
+      hasRuntimeTurnOpen: () => opts.hasRuntimeTurnOpen?.() === true,
       hasPendingInteraction: () => opts.hasPendingInteraction?.() === true,
       onGateChange: () => opts.onDispatchGateChange?.(),
       ...(opts.owedDeliveryTimeoutMs !== undefined

@@ -1358,6 +1358,52 @@ export interface AgentRuntime {
    */
   reapSession?(sessionId: string): Promise<void>;
 
+  /**
+   * Subscribe to turns the AGENT started, with nothing dispatched to it (spec
+   * `warm-process-lifecycle` D6).
+   *
+   * A runtime that holds a process between turns can produce output nobody
+   * asked for: a background helper's report being delivered, or the agent
+   * picking its own work back up after a reply ended. Those words are part of
+   * the session and must reach its durable stream — as a turn that is truthfully
+   * the agent's own (`origin: 'runtime'`), never folded into the next turn a
+   * person opens.
+   *
+   * `events` is one turn's worth of already-mapped stream events, ending when
+   * that turn does. The listener is called as the turn OPENS rather than when it
+   * finishes, because whoever projects it must claim the session before a queued
+   * message can be launched into the middle of it.
+   *
+   * Optional: a runtime whose output only ever answers a dispatch cannot produce
+   * one of these and omits it. At most one listener is expected; the returned
+   * function unsubscribes.
+   *
+   * @param listener - Told about each agent-initiated turn as it opens
+   * @returns Unsubscribes the listener
+   */
+  onRuntimeTurn?(
+    listener: (sessionId: string, events: AsyncIterable<StreamEvent>) => void
+  ): () => void;
+
+  /**
+   * Whether this session owes a delivery that has not arrived yet, so the queue
+   * should hold its head rather than launch it (spec `warm-process-lifecycle`
+   * D6).
+   *
+   * A background helper that finishes announces itself before the runtime hands
+   * its report over, and the hand-over opens a segment of its own. Launching a
+   * queued message into that gap puts the person's words and the helper's report
+   * into one turn. This is the runtime saying "something is already on its way".
+   *
+   * **Synchronous, and it must not be true forever.** The queue pump asks it
+   * under a lock and cannot await, and a gate with no clock behind it is a
+   * wedged queue — so a runtime that implements this owes a bound and a way out,
+   * which conformance checks by driving it false within the bound it declares.
+   *
+   * @param sessionId - The session whose queue head is waiting
+   */
+  isSegmentPending?(sessionId: string): boolean;
+
   // --- Session queries (storage) ---
 
   /** List all sessions for a project directory. */
@@ -1583,6 +1629,30 @@ export interface AgentRuntime {
    * @returns true if the lock was acquired, false if already held by another client
    */
   acquireLock(sessionId: string, clientId: string, res: SseResponse, token?: symbol): boolean;
+
+  /**
+   * Take a session for a turn the AGENT started, under the reserved
+   * `runtime:<sessionKey>` holder (spec `warm-process-lifecycle` D6).
+   *
+   * The only way that holder is ever minted: {@link acquireLock} refuses the
+   * `runtime:` prefix to every caller, so a lock reading it was taken here.
+   * Whoever reads a lock's holder is entitled to believe what it says — it
+   * decides whether a person's queued message waits and whether a room trigger
+   * parks — and a name anyone could spell would be worth nothing.
+   *
+   * Optional, and only a runtime that can produce an agent-initiated turn
+   * ({@link onRuntimeTurn}) needs it. In every other respect it is an ordinary
+   * lock: the same TTL measured from the holder's own liveness, the same
+   * token-matched release through {@link releaseLock}, and the same refusal
+   * while somebody else holds it live.
+   *
+   * @param sessionKey - The session being taken, resolved as any other holder
+   *   resolves it
+   * @param res - The turn's lifecycle, which vouches for its own liveness
+   * @param token - Per-acquisition identity, threaded into {@link releaseLock}
+   * @returns True when the lock was taken
+   */
+  acquireRuntimeLock?(sessionKey: string, res: SseResponse, token?: symbol): boolean;
 
   /**
    * Release the lock held by a specific client. No-op if not locked by that

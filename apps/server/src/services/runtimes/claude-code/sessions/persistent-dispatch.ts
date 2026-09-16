@@ -104,18 +104,33 @@
  * has to know that for `rebindSdkSession` and `findSession`, so this class and
  * the registry just ask it.
  *
- * ## Runtime windows are drained, never projected
+ * ## Runtime windows are PROJECTED, not drained (spec `warm-process-lifecycle` D6)
  *
- * `SessionTurnWindows` opens a synthetic `origin: 'runtime'` window for a
- * `result` nobody dispatched. Nothing here consumes it as a turn, because the
- * only consumer of a window on this path is the `sendMessage` generator that
- * asked for one — so a runtime window is drained and dropped, with a warning.
- * That keeps projection SERIALIZED per session by construction, which is the
- * P3.3 review's first option: one window is projected at a time, and the
- * interleave two genuinely-open windows could produce (a `turn_end` for one
- * arriving after a `turn_start` for the next) cannot occur, because the second
- * window is never projected at all. Draining rather than ignoring matters: an
- * unread channel is a buffer nobody empties.
+ * `SessionTurnWindows` opens an `origin: 'runtime'` window when the process
+ * speaks with nothing dispatched — a background helper's report being
+ * delivered, or the agent picking its own work back up after a reply ended.
+ * Those words belong to the session, so they are mapped exactly as a dispatched
+ * turn's are and handed to whoever subscribed through {@link
+ * PersistentDispatch.onRuntimeTurn}, which projects them as a turn truthfully
+ * labelled the agent's own.
+ *
+ * **This retires the rule this section used to state** — "runtime windows are
+ * drained, never projected" — which ADR `260915-202228` names outright as an
+ * implementation rule it supersedes. Draining meant every word an agent said
+ * between turns was read off the stream and thrown away: the person watched a
+ * finished turn and learned nothing of what came next, while the `error` line
+ * saying so went only to the server log (DOR-2064, DOR-2065).
+ *
+ * Projection stays SERIALIZED per session, which is what the P3.3 review was
+ * protecting: a runtime turn takes the session's write-lock like any other
+ * writer, and a dispatch that meets one open WAITS for it rather than writing
+ * into the middle of it. What changed is that the second window is now
+ * projected in its turn instead of never.
+ *
+ * The drain survives as the NO-SUBSCRIBER fallback only. Nothing forces a host
+ * to call `subscribeRuntimeTurns` — the embedded composition does not, nor does
+ * a test that builds a runtime by hand — and an unread channel is a buffer
+ * nobody empties. The production path never takes it.
  *
  * What gets drained is CENSUSED, and the two outcomes are reported differently
  * (DOR-1314). A window carrying only a `result` and a `system` line is the CLI
@@ -260,6 +275,12 @@ export class PersistentDispatch {
   private readonly registry: SessionPumpRegistry;
   private readonly sessionKeyOf: (sessionId: string) => string;
   private readonly bundles = new Map<string, SessionBundle>();
+  /**
+   * Whoever is projecting turns the agent starts on its own, or `undefined`
+   * when nothing is listening (spec `warm-process-lifecycle` D6).
+   */
+  private runtimeTurnListener:
+    ((sessionId: string, events: AsyncIterable<StreamEvent>) => void) | undefined;
 
   /**
    * Build the dispatcher over a runtime's pump registry.
@@ -296,6 +317,46 @@ export class PersistentDispatch {
     this.registry = registry;
     this.sessionKeyOf = sessionKeyOf;
     this.onPluginReloadHeld = onPluginReloadHeld;
+  }
+
+  /**
+   * Listen for turns the agent starts on its own (spec `warm-process-lifecycle`
+   * D6).
+   *
+   * One listener, because there is one durable stream per session and a second
+   * projector for the same turn would mint it twice.
+   *
+   * @param listener - Told about each agent-initiated turn as its window opens,
+   *   with that turn's already-mapped events
+   * @returns Unsubscribes the listener
+   */
+  onRuntimeTurn(
+    listener: (sessionId: string, events: AsyncIterable<StreamEvent>) => void
+  ): () => void {
+    this.runtimeTurnListener = listener;
+    return () => {
+      if (this.runtimeTurnListener === listener) this.runtimeTurnListener = undefined;
+    };
+  }
+
+  /**
+   * Is a delivery this session owes still on its way (spec
+   * `warm-process-lifecycle` D6)?
+   *
+   * A settled background helper's report arrives as a segment of its own, and a
+   * queued message launched into the gap before it would share a turn with it.
+   * Bounded by the pump's owed-delivery clock, so a delivery that never arrives
+   * releases the queue after thirty seconds rather than holding it forever.
+   *
+   * @param sessionId - The session whose queue head is waiting, in any id it
+   *   answers to
+   */
+  isSegmentPending(sessionId: string): boolean {
+    const key = this.sessionKeyOf(sessionId);
+    const pump = this.registry.peek(key);
+    if (pump === undefined) return false;
+    const quietness = pump.quietness();
+    return !quietness.quiet && quietness.because === 'delivery-owed';
   }
 
   /**
@@ -1026,15 +1087,42 @@ export class PersistentDispatch {
       // allows, so all three answers to "is somebody still expected back"
       // agree (spec `ask-parks-on-timeout`).
       hasPendingInteraction: () => isWaitingOnPerson(session, Date.now()),
+      // The windower is what knows: nobody dispatched a runtime turn, so the
+      // pump's own state machine never left WARM and would read a process
+      // mid-sentence as idle (spec `warm-process-lifecycle` D6).
+      hasRuntimeTurnOpen: () => bundle.windows?.openWindow?.origin === 'runtime',
     });
 
     bundle.windows = new SessionTurnWindows({
       sessionId: key,
       pump: bundle.pump,
       onWindowOpen: (window) => {
-        // A window nobody dispatched has no consumer here. Its channel would
-        // otherwise buffer a whole synthetic turn that nothing ever reads.
-        if (window.origin === 'runtime') void drainUnprojected(key, window);
+        if (window.origin !== 'runtime') return;
+        // The agent is talking, so the session is active — the idle reaper and
+        // record eviction both measure from this (spec `warm-process-lifecycle`
+        // D1). Stamped at the turn's start and again at its end.
+        session.lastActivity = Date.now();
+        const listener = this.runtimeTurnListener;
+        if (listener === undefined) {
+          // Nothing is projecting these — an embedded host, or a test that
+          // never subscribed. The channel still has to be emptied, or it
+          // buffers a whole turn nobody reads.
+          void drainUnprojected(key, window);
+          return;
+        }
+        listener(
+          key,
+          streamTurnWindow({
+            sessionId: key,
+            session,
+            window,
+            opts,
+            meshAgentId: bundle.plan?.meshAgentId,
+            // Nobody asked this turn a question, so silence from it is not a
+            // failure to answer one.
+            suppressEmptyTurnError: true,
+          })
+        );
       },
       onUsage: (usage) => {
         // Delivered BEFORE the window's `result` is released, so `context_usage`

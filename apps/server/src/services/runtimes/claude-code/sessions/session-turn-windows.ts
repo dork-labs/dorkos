@@ -340,6 +340,47 @@ const CONTINUATION_CAP_MS = 5_000;
  */
 const EMPTY_CLOSE_CONTINUATION_CAP_MS = 30_000;
 
+/**
+ * How many buffered bytes a RUNTIME window may hold before it says so, once
+ * (spec `warm-process-lifecycle` D6).
+ *
+ * A runtime window's channel is deliberately **not capped**: the turn it
+ * carries is the agent's own words, and the window exists precisely because
+ * nothing else is going to project them. Dropping the oldest — what the
+ * unattributed hold does — would lose exactly what this turn was opened to
+ * keep. So the buffer grows, and this is a tripwire rather than a limit.
+ *
+ * A healthy run never reaches it. The buffer only holds frames between the
+ * window opening and its consumer acquiring the session lock, which is
+ * milliseconds after the previous holder's `turn_end`. Eight mebibytes of
+ * unread model output in that gap means the consumer never arrived, and that is
+ * worth an `error` line naming the session rather than silent memory growth.
+ *
+ * Measured from each frame's serialized length as it is pushed, and reported
+ * once per window: a tripwire that re-fires on every frame past it is a log
+ * flood, which is the same as no signal at all.
+ */
+const RUNTIME_WINDOW_BUFFER_WARN_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Roughly how many bytes a frame occupies while it waits to be read.
+ *
+ * An estimate on purpose — the serialized length, which is what a frame costs
+ * to hold and what the tripwire is stated in. A frame that cannot be
+ * serialized (a cycle the SDK should never produce) counts as zero rather than
+ * throwing: this runs inside the pump's read loop, where a throw is read as the
+ * process dying, and under-counting a tripwire costs a log line.
+ *
+ * @param message - The frame being buffered
+ */
+function estimateFrameBytes(message: SDKMessage): number {
+  try {
+    return JSON.stringify(message)?.length ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
 /** The per-window accounting fetched from the still-live process at its close. */
 export interface WindowUsage {
   /** The authoritative per-category context breakdown, when the fetch answered. */
@@ -432,11 +473,34 @@ class WindowChannel {
   private readonly pending: SDKMessage[] = [];
   private wake: (() => void) | undefined;
   private ended = false;
+  /** Serialized size of the frames pushed but not yet consumed. */
+  private pendingBytes = 0;
+  /** True once {@link onBuffering} has fired, so it fires exactly once. */
+  private reported = false;
+
+  /**
+   * Build a channel, optionally watched for unread growth.
+   *
+   * @param onBuffering - Told once when the unread frames pass
+   *   {@link RUNTIME_WINDOW_BUFFER_WARN_BYTES}. Omitted for a dispatched
+   *   window, whose consumer is the generator that asked for it and is
+   *   therefore already reading — measuring every frame there would cost a
+   *   `JSON.stringify` per frame on the hot path for a tripwire that cannot
+   *   fire.
+   */
+  constructor(private readonly onBuffering?: (frames: number, bytes: number) => void) {}
 
   /** Hand a message to the consumer, or hold it until one arrives. */
   push(message: SDKMessage): void {
     if (this.ended) return;
     this.pending.push(message);
+    if (this.onBuffering !== undefined) {
+      this.pendingBytes += estimateFrameBytes(message);
+      if (!this.reported && this.pendingBytes > RUNTIME_WINDOW_BUFFER_WARN_BYTES) {
+        this.reported = true;
+        this.onBuffering(this.pending.length, this.pendingBytes);
+      }
+    }
     this.wake?.();
     this.wake = undefined;
   }
@@ -449,6 +513,7 @@ class WindowChannel {
    * rather than dying in a stream nothing will ever read.
    */
   takePending(): SDKMessage[] {
+    this.pendingBytes = 0;
     return this.pending.splice(0, this.pending.length);
   }
 
@@ -462,7 +527,13 @@ class WindowChannel {
   /** Every message pushed, in order, until {@link end}. */
   async *drain(): AsyncGenerator<SDKMessage> {
     for (;;) {
-      while (this.pending.length > 0) yield this.pending.shift()!;
+      while (this.pending.length > 0) {
+        const message = this.pending.shift()!;
+        if (this.onBuffering !== undefined) {
+          this.pendingBytes = Math.max(0, this.pendingBytes - estimateFrameBytes(message));
+        }
+        yield message;
+      }
       if (this.ended) return;
       await new Promise<void>((resolve) => {
         this.wake = resolve;
@@ -513,11 +584,36 @@ interface WindowRecord {
    * `result` does not restart it. Cleared with the rest of the grace state.
    */
   emptyClose?: boolean;
+  /**
+   * Resolves once this window has closed and its observers have been told.
+   *
+   * Only a RUNTIME window's is ever awaited ({@link SessionTurnWindows.dispatch}):
+   * a dispatch that finds one open waits it out rather than abandoning it, because
+   * those are the agent's own words and the person's message is not owed them.
+   */
+  readonly settled: Promise<void>;
+  /** Settles {@link settled}. Idempotent, as a promise resolver is. */
+  readonly markSettled: () => void;
 }
 
-/** Build a window record and the public handle onto it. */
-function createRecord(ids: string[], origin: TurnOrigin): WindowRecord {
-  const channel = new WindowChannel();
+/**
+ * Build a window record and the public handle onto it.
+ *
+ * @param ids - Every `messageId` this window answers; empty for a runtime one
+ * @param origin - Who asked for this turn
+ * @param onBuffering - Told once when unread frames pass the tripwire; supplied
+ *   only for a runtime window (see {@link WindowChannel})
+ */
+function createRecord(
+  ids: string[],
+  origin: TurnOrigin,
+  onBuffering?: (frames: number, bytes: number) => void
+): WindowRecord {
+  const channel = new WindowChannel(onBuffering);
+  let markSettled!: () => void;
+  const settled = new Promise<void>((resolve) => {
+    markSettled = resolve;
+  });
   return {
     ids,
     origin,
@@ -526,6 +622,8 @@ function createRecord(ids: string[], origin: TurnOrigin): WindowRecord {
     steered: new Set<string>(),
     contentFrames: 0,
     answeredIds: new Set<string>(),
+    settled,
+    markSettled,
   };
 }
 
@@ -1286,6 +1384,19 @@ export class SessionTurnWindows {
     // it. The person is sending their next message, which answers the question
     // the grace was asking: no continuation is coming (DOR-1314).
     if (this.current !== undefined) this.settleDeferredNow(this.current);
+    // A runtime turn is WAITED OUT, never abandoned (spec `warm-process-lifecycle`
+    // D6). Those are the agent's own words, mid-turn, and this dispatch has no
+    // claim on them — abandoning one would stamp an error terminal on a turn that
+    // is running perfectly and drop the rest of it. So nothing is written to stdin
+    // until it closes on its own `result`, which the runtime turn's stall guard
+    // bounds exactly as it bounds any other turn.
+    //
+    // The queue pump normally keeps a dispatch from arriving here at all (the
+    // subscriber registers the session in `inFlight` as the window opens); this is
+    // the last guard, for a caller that reached the runtime without the queue.
+    while (this.current !== undefined && this.current.origin === 'runtime') {
+      await this.current.settled;
+    }
     // EVERY close in flight, and looped rather than awaited once: a stray
     // `result` can open and close a runtime window while we wait here, and that
     // close has to be waited for too.
@@ -1309,6 +1420,9 @@ export class SessionTurnWindows {
       this.current = undefined;
       this.rehold(record.channel.takePending());
       record.channel.end();
+      // Nothing observed this window, so nothing will be told it closed — but a
+      // waiter must never be left parked on a window that no longer exists.
+      record.markSettled();
       throw err;
     }
     // Only now that the batch really was sent: a refused dispatch put nothing on
@@ -1382,7 +1496,49 @@ export class SessionTurnWindows {
       this.current.channel.push(message);
       return;
     }
+    // A model frame with NO window open is the CLI starting a turn nobody asked
+    // for — a helper's report being delivered, or the agent picking its own work
+    // back up — and it gets a window at that first frame rather than at the
+    // `result` that ends it (spec `warm-process-lifecycle` D6). Opening late is
+    // what left every word of such a segment outside any turn until it finished,
+    // where `PersistentDispatch` used to drain and drop it.
+    //
+    // `beginsATurn` and not the whole of `TurnLiveness`'s SEGMENT_RUNNING: a
+    // post-`result` `system/init` proves a segment opened but is bookkeeping, and
+    // the module's rule that between-turn bookkeeping is HELD for the next window
+    // is deliberately unchanged. The hold is flushed into this window when the
+    // first real frame arrives, so nothing is lost by waiting for one.
+    if (beginsATurn(message)) {
+      this.openRuntimeWindow(message);
+      return;
+    }
     this.hold(message);
+  }
+
+  /**
+   * Open a window for a segment nobody dispatched, carrying whatever the process
+   * said on its way here (spec `warm-process-lifecycle` D6).
+   *
+   * Announced immediately, because the subscriber that projects it registers the
+   * session with the queue pump as it opens — a runtime turn the pump cannot see
+   * is one a queued message can be launched straight into.
+   *
+   * @param first - The model frame that proves the segment is running
+   */
+  private openRuntimeWindow(first: SDKMessage): void {
+    const record = createRecord([], 'runtime', (frames, bytes) => {
+      logger.error('[SessionTurnWindows] a runtime turn is buffering more than it should', {
+        sessionId: this.opts.sessionId,
+        frames,
+        bytes,
+        limit: RUNTIME_WINDOW_BUFFER_WARN_BYTES,
+      });
+    });
+    this.current = record;
+    this.flushHeld(record);
+    if (carriesVisibleContent(first)) record.contentFrames += 1;
+    record.channel.push(first);
+    this.opts.onWindowOpen?.(record.window);
   }
 
   /**
@@ -1430,6 +1586,7 @@ export class SessionTurnWindows {
     record.channel.push(crash.stopRequested === true ? stoppedResult(crash) : crashResult(crash));
     record.channel.end();
     this.opts.onWindowClose?.(record.window);
+    record.markSettled();
   }
 
   /** Route a `result` by the ids it answers. See the module doc's table. */
@@ -1446,7 +1603,14 @@ export class SessionTurnWindows {
     for (const id of answered) {
       if (this.awaitingResult.delete(id)) sentEarlier = true;
     }
-    if (record !== undefined && (answered.length === 0 || namesAny(record, answered))) {
+    // A RUNTIME window closes on the next `result`, whatever that result names
+    // (spec `warm-process-lifecycle` D6). It holds no ids of its own, so the id
+    // test below can never match one — and without this an unrecognised id would
+    // mint a SECOND runtime window beside it and strand the first open forever.
+    if (
+      record !== undefined &&
+      (record.origin === 'runtime' || answered.length === 0 || namesAny(record, answered))
+    ) {
       for (const id of answered) {
         record.steered.delete(id);
         // Remembered for the dispatch ledger: spent, whatever this window does next.
@@ -1807,6 +1971,7 @@ export class SessionTurnWindows {
     record.channel.end();
     this.opts.pump.endTurn();
     this.opts.onWindowClose?.(record.window);
+    record.markSettled();
     return true;
   }
 
@@ -1895,6 +2060,7 @@ export class SessionTurnWindows {
     // of a `result` that had nothing to do with it.
     if (record.origin !== 'runtime') this.opts.pump.endTurn();
     this.opts.onWindowClose?.(record.window);
+    record.markSettled();
   }
 
   /**
@@ -1952,6 +2118,7 @@ export class SessionTurnWindows {
     record.channel.end();
     this.opts.pump.endTurn();
     this.opts.onWindowClose?.(record.window);
+    record.markSettled();
   }
 
   /** Remember ids that were really sent, dropping the oldest past the cap. */
