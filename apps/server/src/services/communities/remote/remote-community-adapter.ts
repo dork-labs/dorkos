@@ -94,6 +94,10 @@ const remoteAuthorMetadata = new WeakMap<
 >();
 const communityUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const activeAdmissions = new Map<string, Promise<CommunityMember>>();
+const remoteRoomMetadata = new WeakMap<
+  CommunityRoom,
+  Readonly<{ visibility: 'public' | 'private'; joined: boolean }>
+>();
 
 /**
  * Read the authoritative Community-server sequence retained for a native projected entry.
@@ -115,6 +119,13 @@ export function remoteAuthorOf(
   projected: CommunityEntry
 ): Readonly<{ displayName: string; kind: 'human' | 'agent' }> | undefined {
   return remoteAuthorMetadata.get(projected);
+}
+
+/** Read private native visibility and joined state for a projected remote room. */
+export function remoteRoomAccessOf(
+  projected: CommunityRoom
+): Readonly<{ visibility: 'public' | 'private'; joined: boolean }> | undefined {
+  return remoteRoomMetadata.get(projected);
 }
 
 /** Translate a server-authoritative room/cursor refusal into the port's safe error. */
@@ -140,9 +151,11 @@ function room(
     archived: boolean;
     createdAt: string;
     unreadCount: number;
+    visibility: 'public' | 'private';
+    joined: boolean;
   }
 ): CommunityRoom {
-  return {
+  const projected: CommunityRoom = {
     community,
     roomId: value.id,
     kind: 'channel',
@@ -154,6 +167,8 @@ function room(
     lastActivityAt: value.createdAt,
     unreadCount: value.unreadCount,
   };
+  remoteRoomMetadata.set(projected, { visibility: value.visibility, joined: value.joined });
+  return projected;
 }
 
 /** Map a server entry while preserving the distinct history and resume cursors. */
