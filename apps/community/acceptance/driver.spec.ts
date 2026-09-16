@@ -1236,7 +1236,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       // is part of this causal barrier.
       await localPage.reload();
       const communityAChannels = localPage.getByRole('region', {
-        name: 'Acceptance local install A',
+        name: 'Acceptance A',
       });
       const communityALink = communityAChannels.getByRole('link', { name: /#general/ });
       await expect(communityALink.getByLabel(/unread messages/)).toBeVisible();
