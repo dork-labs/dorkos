@@ -74,6 +74,7 @@ interface RunningSubscription {
   abort: AbortController;
   communityRef: CommunityRef;
   ownerAuthorId: string;
+  remoteRoomId: string;
   localAgentId: string;
 }
 
@@ -165,6 +166,44 @@ export class RemoteRoomSubscriptionRuntime {
     ownerAuthorId: string
   ): Promise<number> {
     return this.deps.bridge.haltAgent(communityRef, localAgentId, ownerAuthorId);
+  }
+
+  /** Stop one agent only in one qualified mirror without changing other rooms. */
+  haltRoomAgent(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    localAgentId: string,
+    ownerAuthorId: string
+  ): Promise<number> {
+    return this.deps.bridge.haltRoomAgent(communityRef, remoteRoomId, localAgentId, ownerAuthorId);
+  }
+
+  /**
+   * Fence local state after remote membership removal before the route returns.
+   * The version invalidates a directory read that began before the removal.
+   */
+  async leaveRoom(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    localAgentId: string,
+    ownerAuthorId: string
+  ): Promise<void> {
+    this.membershipVersion += 1;
+    this.abortStreamsForAgentInRoom(communityRef, remoteRoomId, ownerAuthorId, localAgentId);
+    await this.deps.bridge.leaveRoom(communityRef, remoteRoomId, localAgentId, ownerAuthorId);
+    this.refresh();
+  }
+
+  /** Fence one ejected enrollment before remote cleanup can leave a stale stream dispatchable. */
+  async revokeEnrollment(
+    communityRef: CommunityRef,
+    localAgentId: string,
+    ownerAuthorId: string
+  ): Promise<void> {
+    this.membershipVersion += 1;
+    this.abortStreamsForAgent(communityRef, ownerAuthorId, localAgentId);
+    await this.deps.bridge.revokeEnrollment(communityRef, localAgentId, ownerAuthorId);
+    this.refresh();
   }
 
   /** Reconcile immediately after enrollment, ejection, or membership changes. */
@@ -326,6 +365,7 @@ export class RemoteRoomSubscriptionRuntime {
         abort,
         communityRef: next.room.communityRef,
         ownerAuthorId: next.room.ownerAuthorId,
+        remoteRoomId: next.room.remoteRoomId,
         localAgentId: next.localAgentId,
       });
       void this.consume(next, abort);
@@ -442,6 +482,26 @@ export class RemoteRoomSubscriptionRuntime {
     if (this.deps.isRoomJoined) return this.deps.isRoomJoined(room);
     const access = remoteRoomAccessOf(room);
     return room.archived === false && access?.joined === true;
+  }
+
+  /** Abort only a departed agent's subscription to one qualified remote room. */
+  private abortStreamsForAgentInRoom(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    ownerAuthorId: string,
+    localAgentId: string
+  ): void {
+    for (const [key, subscription] of this.running) {
+      if (
+        subscription.communityRef === communityRef &&
+        subscription.ownerAuthorId === ownerAuthorId &&
+        subscription.remoteRoomId === remoteRoomId &&
+        subscription.localAgentId === localAgentId
+      ) {
+        subscription.abort.abort();
+        this.running.delete(key);
+      }
+    }
   }
 
   private abortStreamsForAgent(

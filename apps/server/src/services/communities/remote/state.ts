@@ -58,6 +58,23 @@ export interface RemoteCommunityLifecycle {
     localAgentId: string,
     ownerAuthorId: string
   ): Promise<number>;
+  haltRoomAgent(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    localAgentId: string,
+    ownerAuthorId: string
+  ): Promise<number>;
+  leaveRoom(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    localAgentId: string,
+    ownerAuthorId: string
+  ): Promise<void>;
+  revokeEnrollment(
+    communityRef: CommunityRef,
+    localAgentId: string,
+    ownerAuthorId: string
+  ): Promise<void>;
   /** Reconcile private background streams after native enrollment or membership changes. */
   refreshSubscriptions(): void;
 }

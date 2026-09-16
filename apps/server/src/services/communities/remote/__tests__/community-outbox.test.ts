@@ -375,6 +375,37 @@ describe('community outbox', () => {
     ).toBe('terminal');
   });
 
+  it('stops only the departed agent work in its qualified remote room', () => {
+    const harness = createRoomHarness({ agents: agentLookupFor({}) });
+    const outbox = new CommunityOutboxStore(harness.db);
+    const target = outboxItem({ id: 'left-agent-room-a', ownerAuthorId: harness.human });
+    const otherAgent = outboxItem({
+      id: 'other-agent-room-a',
+      localAgentId: 'agent-b',
+      idempotencyKey: 'delivery-key-b',
+      localEntryId: 'entry-2',
+      ownerAuthorId: harness.human,
+    });
+    const otherRoom = outboxItem({
+      id: 'left-agent-room-b',
+      remoteRoomId: 'build',
+      idempotencyKey: 'delivery-key-c',
+      localEntryId: 'entry-3',
+      ownerAuthorId: harness.human,
+    });
+    harness.db.transaction((tx) => {
+      outbox.enqueue(target, tx);
+      outbox.enqueue(otherAgent, tx);
+      outbox.enqueue(otherRoom, tx);
+    });
+
+    outbox.stopForAgentInRoom(REF, target.remoteRoomId, target.localAgentId, harness.human);
+
+    expect(outbox.isPending(target.id)).toBe(false);
+    expect(outbox.isPending(otherAgent.id)).toBe(true);
+    expect(outbox.isPending(otherRoom.id)).toBe(true);
+  });
+
   it('passes abort to a held remote post and records no receipt', async () => {
     const harness = createRoomHarness({ agents: agentLookupFor({}) });
     const outbox = new CommunityOutboxStore(harness.db);

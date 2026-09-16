@@ -80,12 +80,24 @@ const fixture = vi.hoisted(() => {
         joinedAt: '2026-09-16T00:00:00.000Z',
       },
     ]),
+    listRooms: vi.fn(async () => [room]),
+    revokeAgent: vi.fn(async () => undefined),
+    removeMember: vi.fn(async () => undefined),
+  };
+  const lifecycle = {
+    haltRoom: vi.fn(async () => 1),
+    haltAgent: vi.fn(async () => 1),
+    haltRoomAgent: vi.fn(async () => 1),
+    leaveRoom: vi.fn(async () => undefined),
+    revokeEnrollment: vi.fn(async () => undefined),
+    refreshSubscriptions: vi.fn(),
   };
   return {
     ref,
     room,
     entry,
     adapter,
+    lifecycle,
   };
 });
 
@@ -132,14 +144,10 @@ vi.mock('../../services/communities/remote/state.js', () => ({
         updatedAt: '2026-09-16T00:00:00.000Z',
       },
     ],
-    findAnyRemoteMember: () => null,
-    findRemoteMember: () => null,
+    findAnyRemoteMember: () => ({ remoteMemberId: 'remote-agent-a' }),
+    findRemoteMember: () => ({ remoteMemberId: 'remote-agent-a' }),
   }),
-  getRemoteCommunityLifecycle: () => ({
-    haltRoom: vi.fn(async () => 1),
-    haltAgent: vi.fn(async () => 1),
-    refreshSubscriptions: vi.fn(),
-  }),
+  getRemoteCommunityLifecycle: () => fixture.lifecycle,
   onRemoteCommunityDeliveryChange: () => () => undefined,
   retryRemoteCommunityDelivery: () => 'retried',
   resolveRemoteCommunityLocalAgent: (localAgentId: string) =>
@@ -331,6 +339,95 @@ describe('qualified remote community writes and live projections', () => {
       .send({});
     expect(unknown.status).toBe(404);
     expect(fixture.adapter.recoverAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it('projects agent room membership and returns the existing Leave JSON contract', async () => {
+    const listed = await request(testServer).get(`/api/communities/${fixture.ref}/agents`);
+    expect(listed.status).toBe(200);
+    expect(listed.body.agents).toEqual([
+      expect.objectContaining({ localAgentId: 'local-agent-a', roomIds: ['room-a'] }),
+    ]);
+
+    const left = await request(testServer).delete(
+      `/api/communities/${fixture.ref}/rooms/room-a/agents/local-agent-a/membership`
+    );
+    expect(left.status).toBe(200);
+    expect(left.body).toEqual({ localRevoked: true, remoteRevoked: true });
+    expect(fixture.adapter.removeMember).toHaveBeenCalledWith('room-a', 'remote-agent-a');
+    expect(fixture.lifecycle.leaveRoom).toHaveBeenCalledWith(
+      fixture.ref,
+      'room-a',
+      'local-agent-a',
+      'owner-a'
+    );
+  });
+
+  it('waits for the owner-qualified local Leave fence before replying', async () => {
+    let releaseFence!: () => void;
+    const fenced = new Promise<void>((resolve) => {
+      releaseFence = resolve;
+    });
+    fixture.lifecycle.leaveRoom.mockImplementationOnce(() => fenced.then(() => undefined));
+
+    let responseSettled = false;
+    const responsePromise = request(testServer)
+      .delete(`/api/communities/${fixture.ref}/rooms/room-a/agents/local-agent-a/membership`)
+      .then((response) => {
+        responseSettled = true;
+        return response;
+      });
+
+    await vi.waitFor(() => expect(fixture.adapter.removeMember).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(fixture.lifecycle.leaveRoom).toHaveBeenCalledOnce());
+    expect(responseSettled).toBe(false);
+
+    releaseFence();
+    expect((await responsePromise).status).toBe(200);
+  });
+
+  it('waits for the local ejection fence before beginning remote cleanup or replying', async () => {
+    let releaseFence!: () => void;
+    const fenced = new Promise<void>((resolve) => {
+      releaseFence = resolve;
+    });
+    fixture.lifecycle.revokeEnrollment.mockImplementationOnce(() => fenced.then(() => undefined));
+
+    let responseSettled = false;
+    const responsePromise = request(testServer)
+      .delete(`/api/communities/${fixture.ref}/agents/local-agent-a`)
+      .then((response) => {
+        responseSettled = true;
+        return response;
+      });
+
+    await vi.waitFor(() =>
+      expect(fixture.lifecycle.revokeEnrollment).toHaveBeenCalledWith(
+        fixture.ref,
+        'local-agent-a',
+        'owner-a'
+      )
+    );
+    expect(fixture.adapter.revokeAgent).not.toHaveBeenCalled();
+    expect(responseSettled).toBe(false);
+
+    releaseFence();
+    const response = await responsePromise;
+    expect(response.status).toBe(200);
+    expect(fixture.adapter.revokeAgent).toHaveBeenCalledWith('remote-agent-a');
+  });
+
+  it('halts only the requested agent in the requested qualified room', async () => {
+    const response = await request(testServer).post(
+      `/api/communities/${fixture.ref}/rooms/room-a/agents/local-agent-a/halt`
+    );
+    expect(response.status).toBe(200);
+    expect(fixture.lifecycle.haltRoomAgent).toHaveBeenCalledWith(
+      fixture.ref,
+      'room-a',
+      'local-agent-a',
+      'owner-a'
+    );
+    expect(fixture.lifecycle.haltAgent).not.toHaveBeenCalled();
   });
 
   it('releases only an owner-qualified pending delivery through the worker retry gate', async () => {

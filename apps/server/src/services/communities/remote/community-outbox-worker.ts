@@ -77,6 +77,22 @@ export class CommunityOutboxWorker {
     );
   }
 
+  /** Abort delivery in progress for one agent leaving one qualified remote room. */
+  abortForAgentInRoom(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    localAgentId: string,
+    ownerAuthorId: string
+  ): void {
+    this.abortWhere(
+      (item) =>
+        item.communityRef === communityRef &&
+        item.remoteRoomId === remoteRoomId &&
+        item.localAgentId === localAgentId &&
+        item.ownerAuthorId === ownerAuthorId
+    );
+  }
+
   /** Abort delivery already in progress for one owner-qualified local agent. */
   abortForAgent(communityRef: CommunityRef, localAgentId: string, ownerAuthorId: string): void {
     this.abortWhere(

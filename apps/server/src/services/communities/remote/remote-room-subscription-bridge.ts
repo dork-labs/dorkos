@@ -55,9 +55,21 @@ export interface CommunityOutboxInFlightAborter {
     localAgentId: string,
     ownerAuthorId: string
   ): void;
+  abortForAgentInRoom?(
+    communityRef: MirrorRoomInput['communityRef'],
+    remoteRoomId: string,
+    localAgentId: string,
+    ownerAuthorId: string
+  ): void;
   /** Stop durable unsent work and abort its matching network operation together. */
   stopForAgent?(
     communityRef: MirrorRoomInput['communityRef'],
+    localAgentId: string,
+    ownerAuthorId: string
+  ): void;
+  stopForAgentInRoom?(
+    communityRef: MirrorRoomInput['communityRef'],
+    remoteRoomId: string,
     localAgentId: string,
     ownerAuthorId: string
   ): void;
@@ -136,7 +148,16 @@ export class RemoteRoomSubscriptionBridge {
     ) {
       return;
     }
-    const local = this.localRoom(room);
+    // A live stream is opened only after runtime directory authorization. It
+    // may outlive a scoped ejection, so it must never recreate or refresh that
+    // mirror from the stale stream descriptor.
+    const local = this.mirrors.cachedRoomForImport(
+      room.communityRef,
+      room.remoteRoomId,
+      room.ownerAuthorId
+    );
+    if (local === null) return;
+    const target = local ?? this.localRoom(room);
     const [saved] = this.mirrors.importEntries(room.communityRef, room.remoteRoomId, [
       this.nativeEntry(room, event),
     ]);
@@ -161,8 +182,8 @@ export class RemoteRoomSubscriptionBridge {
     }
     // The persisted cache state is the final authorization answer immediately
     // before dispatch; revocation and a stale owner grant therefore fail closed.
-    if (!this.mirrors.isActivelyAuthorized(local.id, room.ownerAuthorId)) return;
-    const dispatchEntry = this.dispatchEntry(local.id, room, event, saved);
+    if (!this.mirrors.isActivelyAuthorized(target.id, room.ownerAuthorId)) return;
+    const dispatchEntry = this.dispatchEntry(target.id, room, event, saved);
     if (!dispatchEntry.mentions.length) return;
     if (
       !this.mirrors.claimRemoteDispatch(
@@ -174,7 +195,7 @@ export class RemoteRoomSubscriptionBridge {
     ) {
       return;
     }
-    this.service.dispatchImportedRemoteEntry(local.id, dispatchEntry);
+    this.service.dispatchImportedRemoteEntry(target.id, dispatchEntry);
     const dispatchKey = `${room.communityRef}:${room.ownerAuthorId}:${room.remoteRoomId}`;
     this.dispatchesSinceBoot.set(dispatchKey, (this.dispatchesSinceBoot.get(dispatchKey) ?? 0) + 1);
   }
@@ -219,19 +240,21 @@ export class RemoteRoomSubscriptionBridge {
     ownerAuthorId: string,
     formerAuthorId?: string | null
   ): Promise<void> {
+    const authorId = formerAuthorId ?? this.resolveLocalAgentAuthor(localAgentId);
     this.enrollments.revoke(communityRef, localAgentId, ownerAuthorId);
+    if (authorId) this.mirrors.revokeAgentAccess(communityRef, ownerAuthorId, authorId);
     if (this.outboxAborter?.stopForAgent) {
       this.outboxAborter.stopForAgent(communityRef, localAgentId, ownerAuthorId);
     } else {
       this.outbox?.stopForAgent(communityRef, localAgentId, ownerAuthorId);
       this.outboxAborter?.abortForAgent(communityRef, localAgentId, ownerAuthorId);
     }
-    const authorId = formerAuthorId ?? this.resolveLocalAgentAuthor(localAgentId);
     if (!authorId) return;
     const stops = this.mirrors
       .roomIdsForOwner(communityRef, ownerAuthorId)
       .map((localRoomId) => this.service.haltAgent(localRoomId, authorId, ownerAuthorId));
     await Promise.all(stops);
+    this.mirrors.removeAgentMembership(communityRef, ownerAuthorId, authorId);
   }
 
   /**
@@ -298,6 +321,87 @@ export class RemoteRoomSubscriptionBridge {
       })
     );
     return stops.reduce((total, stopped) => total + stopped, 0);
+  }
+
+  /** Stop one enrolled agent only in one qualified mirror. */
+  async haltRoomAgent(
+    communityRef: MirrorRoomInput['communityRef'],
+    remoteRoomId: string,
+    localAgentId: string,
+    ownerAuthorId: string
+  ): Promise<number> {
+    const authorId = this.resolveLocalAgentAuthor(localAgentId);
+    const localRoomId = this.mirrors.localRoomIdForOwner(communityRef, remoteRoomId, ownerAuthorId);
+    if (
+      !authorId ||
+      !localRoomId ||
+      this.mirrors.canRead(localRoomId, authorId) !== true ||
+      !this.enrollments.findRemoteMember(communityRef, localAgentId, ownerAuthorId)
+    ) {
+      return 0;
+    }
+    if (this.outboxAborter?.stopForAgentInRoom) {
+      this.outboxAborter.stopForAgentInRoom(
+        communityRef,
+        remoteRoomId,
+        localAgentId,
+        ownerAuthorId
+      );
+    } else {
+      this.outbox?.stopForAgentInRoom(communityRef, remoteRoomId, localAgentId, ownerAuthorId);
+      this.outboxAborter?.abortForAgentInRoom?.(
+        communityRef,
+        remoteRoomId,
+        localAgentId,
+        ownerAuthorId
+      );
+    }
+    return this.service.haltAgent(localRoomId, authorId, ownerAuthorId);
+  }
+
+  /**
+   * Fence one enrolled agent's local state after remote membership removal.
+   * It touches only this qualified mirror, preserving other room memberships
+   * and other agents' pending delivery.
+   */
+  async leaveRoom(
+    communityRef: MirrorRoomInput['communityRef'],
+    remoteRoomId: string,
+    localAgentId: string,
+    ownerAuthorId: string
+  ): Promise<number> {
+    const authorId = this.resolveLocalAgentAuthor(localAgentId);
+    const localRoomId = this.mirrors.localRoomIdForOwner(communityRef, remoteRoomId, ownerAuthorId);
+    if (
+      !authorId ||
+      !localRoomId ||
+      !this.enrollments.findRemoteMember(communityRef, localAgentId, ownerAuthorId)
+    ) {
+      return 0;
+    }
+    const wasAuthorized = this.mirrors.canRead(localRoomId, authorId) === true;
+    this.mirrors.revokeRoomAgentAccess(communityRef, remoteRoomId, ownerAuthorId, authorId);
+    if (this.outboxAborter?.stopForAgentInRoom) {
+      this.outboxAborter.stopForAgentInRoom(
+        communityRef,
+        remoteRoomId,
+        localAgentId,
+        ownerAuthorId
+      );
+    } else {
+      this.outbox?.stopForAgentInRoom(communityRef, remoteRoomId, localAgentId, ownerAuthorId);
+      this.outboxAborter?.abortForAgentInRoom?.(
+        communityRef,
+        remoteRoomId,
+        localAgentId,
+        ownerAuthorId
+      );
+    }
+    const stopped = wasAuthorized
+      ? await this.service.haltAgent(localRoomId, authorId, ownerAuthorId)
+      : 0;
+    this.mirrors.removeRoomAgentMembership(communityRef, remoteRoomId, ownerAuthorId, authorId);
+    return stopped;
   }
 
   /** Stop one enrolled local agent in every persisted mirror for this connection. */

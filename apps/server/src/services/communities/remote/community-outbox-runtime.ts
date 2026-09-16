@@ -151,6 +151,28 @@ export class CommunityOutboxRuntime {
     this.worker.abortForRoom(communityRef, remoteRoomId, ownerAuthorId);
   }
 
+  /** Stop and abort delivery for one agent leaving one qualified remote room. */
+  stopForAgentInRoom(
+    communityRef: CommunityOutboxRetryInput['communityRef'],
+    remoteRoomId: string,
+    localAgentId: string,
+    ownerAuthorId: string
+  ): void {
+    this.outbox.stopForAgentInRoom(communityRef, remoteRoomId, localAgentId, ownerAuthorId);
+    this.worker.abortForAgentInRoom(communityRef, remoteRoomId, localAgentId, ownerAuthorId);
+    this.changes?.changed(ownerAuthorId);
+  }
+
+  /** Abort delivery currently in progress for one agent in one qualified remote room. */
+  abortForAgentInRoom(
+    communityRef: CommunityOutboxRetryInput['communityRef'],
+    remoteRoomId: string,
+    localAgentId: string,
+    ownerAuthorId: string
+  ): void {
+    this.worker.abortForAgentInRoom(communityRef, remoteRoomId, localAgentId, ownerAuthorId);
+  }
+
   /** Abort only delivery currently in progress for one owner-qualified local agent. */
   abortForAgent(
     communityRef: CommunityOutboxRetryInput['communityRef'],

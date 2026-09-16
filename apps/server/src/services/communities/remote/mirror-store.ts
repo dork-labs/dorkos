@@ -499,6 +499,94 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
       .map((row) => row.localRoomId);
   }
 
+  /** Revoke one local agent's access without changing other enrolled agents' grants. */
+  revokeAgentAccess(communityRef: CommunityRef, ownerAuthorId: string, authorId: string): void {
+    const rooms = this.db
+      .select({ localRoomId: communityRoomMirrors.localRoomId })
+      .from(communityRoomMirrors)
+      .where(
+        and(
+          eq(communityRoomMirrors.communityRef, communityRef),
+          eq(communityRoomMirrors.ownerAuthorId, ownerAuthorId)
+        )
+      )
+      .all();
+    this.db.transaction((tx) => {
+      for (const room of rooms) {
+        tx.update(communityMirrorAccess)
+          .set({ state: 'revoked' })
+          .where(
+            and(
+              eq(communityMirrorAccess.localRoomId, room.localRoomId),
+              eq(communityMirrorAccess.authorId, authorId)
+            )
+          )
+          .run();
+      }
+    });
+  }
+
+  /** Revoke one agent's access to one qualified mirror without touching other grants. */
+  revokeRoomAgentAccess(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    ownerAuthorId: string,
+    authorId: string
+  ): void {
+    const localRoomId = this.localRoomIdForOwner(communityRef, remoteRoomId, ownerAuthorId);
+    if (!localRoomId) return;
+    this.db
+      .update(communityMirrorAccess)
+      .set({ state: 'revoked' })
+      .where(
+        and(
+          eq(communityMirrorAccess.localRoomId, localRoomId),
+          eq(communityMirrorAccess.authorId, authorId)
+        )
+      )
+      .run();
+  }
+
+  /** Remove one agent's local room membership after the matching halt completes. */
+  removeRoomAgentMembership(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    ownerAuthorId: string,
+    authorId: string
+  ): void {
+    const localRoomId = this.localRoomIdForOwner(communityRef, remoteRoomId, ownerAuthorId);
+    if (!localRoomId) return;
+    this.db
+      .delete(roomMembers)
+      .where(and(eq(roomMembers.roomId, localRoomId), eq(roomMembers.authorId, authorId)))
+      .run();
+  }
+
+  /**
+   * Remove an ejected agent from the mirrored local room after its running
+   * turn has been halted. The access row is revoked first so this cleanup
+   * cannot reopen a live-dispatch window while the halt awaits.
+   */
+  removeAgentMembership(communityRef: CommunityRef, ownerAuthorId: string, authorId: string): void {
+    const rooms = this.db
+      .select({ localRoomId: communityRoomMirrors.localRoomId })
+      .from(communityRoomMirrors)
+      .where(
+        and(
+          eq(communityRoomMirrors.communityRef, communityRef),
+          eq(communityRoomMirrors.ownerAuthorId, ownerAuthorId)
+        )
+      )
+      .all();
+    this.db.transaction((tx) => {
+      for (const room of rooms) {
+        tx.delete(roomMembers)
+          .where(and(eq(roomMembers.roomId, room.localRoomId), eq(roomMembers.authorId, authorId)))
+          .run();
+      }
+    });
+  }
+
   /** Resolve a qualified remote room to its opaque local mirror id for local-only Stop. */
   localRoomIdForOwner(
     communityRef: CommunityRef,

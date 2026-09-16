@@ -243,6 +243,24 @@ export class CommunityOutboxStore {
     );
   }
 
+  /** Stop unsent work for one agent leaving one qualified remote room. */
+  stopForAgentInRoom(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    localAgentId: string,
+    ownerAuthorId: string
+  ): void {
+    this.stopWhere(
+      and(
+        eq(communityOutbox.communityRef, communityRef),
+        eq(communityOutbox.remoteRoomId, remoteRoomId),
+        eq(communityOutbox.localAgentId, localAgentId),
+        eq(communityOutbox.ownerAuthorId, ownerAuthorId)
+      ),
+      'stopped'
+    );
+  }
+
   /** Stop every unsent item for one enrollment before best-effort remote revoke. */
   stopForAgent(communityRef: CommunityRef, localAgentId: string, ownerAuthorId: string): void {
     this.stopWhere(

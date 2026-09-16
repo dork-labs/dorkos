@@ -452,8 +452,9 @@ export function createRemoteCommunitiesRouter(): Router {
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!owner || !ref.success) return;
     try {
-      const stopped = await getRemoteCommunityLifecycle().haltAgent(
+      const stopped = await getRemoteCommunityLifecycle().haltRoomAgent(
         ref.data,
+        req.params.roomId,
         req.params.localAgentId,
         owner
       );
@@ -473,6 +474,22 @@ export function createRemoteCommunitiesRouter(): Router {
       ]);
       const author = getRoomService().authorRegistry.getById(owner);
       const byRemoteId = new Map(agents.map((agent) => [agent.memberId, agent]));
+      const adapter = getRemoteCommunityAdapter(ref.data, owner);
+      const joinedRooms = new Map(
+        await Promise.all(
+          bindings.map(
+            async (binding) =>
+              [
+                binding.localAgentId,
+                (await adapter.listRooms({ actingMemberId: binding.remoteMemberId }))
+                  .filter(
+                    (room) => room.archived === false && remoteRoomAccessOf(room)?.joined === true
+                  )
+                  .map((room) => room.roomId),
+              ] as const
+          )
+        )
+      );
       const rows = bindings.flatMap((binding) => {
         const agent = byRemoteId.get(binding.remoteMemberId);
         return agent
@@ -484,7 +501,7 @@ export function createRemoteCommunitiesRouter(): Router {
                 displayName: agent.displayName,
                 ownerMemberId: agent.ownerMemberId ?? '',
                 ownerDisplayName: author?.displayName ?? 'Owner',
-                roomIds: [],
+                roomIds: joinedRooms.get(binding.localAgentId) ?? [],
                 active: true,
               },
             ]
@@ -545,10 +562,14 @@ export function createRemoteCommunitiesRouter(): Router {
       const enrollments = getRemoteCommunityEnrollmentStore();
       const binding = enrollments.findAnyRemoteMember(ref.data, req.params.localAgentId, owner);
       if (!binding) return res.status(404).json({ error: 'Agent enrollment not found.' });
-      // Cancel held/running local turns and outbound work before invalidating the
-      // binding. This path remains effective when remote cleanup is unavailable.
-      await getRemoteCommunityLifecycle().haltAgent(ref.data, req.params.localAgentId, owner);
-      enrollments.revoke(ref.data, req.params.localAgentId, owner);
+      // Fence the exact local enrollment before any remote cleanup. This aborts
+      // its stream and pending work, revokes only its mirror accessors, and
+      // prevents a directory pass already in flight from restoring that grant.
+      await getRemoteCommunityLifecycle().revokeEnrollment(
+        ref.data,
+        req.params.localAgentId,
+        owner
+      );
       let remoteRevoked = true;
       try {
         await getRemoteCommunityAdapter(ref.data, owner).revokeAgent(binding.remoteMemberId);
@@ -597,8 +618,15 @@ export function createRemoteCommunitiesRouter(): Router {
         req.params.roomId,
         binding.remoteMemberId
       );
-      getRemoteCommunityLifecycle().refreshSubscriptions();
-      res.status(204).end();
+      await getRemoteCommunityLifecycle().leaveRoom(
+        ref.data,
+        req.params.roomId,
+        req.params.localAgentId,
+        owner
+      );
+      res.json(
+        RemoteCommunityEjectionResponseSchema.parse({ localRevoked: true, remoteRevoked: true })
+      );
     } catch (error) {
       fail(res, error);
     }
