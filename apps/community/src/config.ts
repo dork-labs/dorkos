@@ -95,8 +95,22 @@ export function parseConfig(env: Record<string, unknown>) {
     }
   }
   const publicUrl = new URL(value.COMMUNITY_PUBLIC_URL);
-  if (publicUrl.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(publicUrl.hostname)) {
-    throw new Error('COMMUNITY_PUBLIC_URL must use HTTPS outside localhost');
+  if (
+    publicUrl.protocol !== 'https:' &&
+    !(publicUrl.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(publicUrl.hostname))
+  ) {
+    throw new Error('COMMUNITY_PUBLIC_URL must use HTTPS, or HTTP on localhost');
+  }
+  if (
+    publicUrl.username ||
+    publicUrl.password ||
+    publicUrl.pathname !== '/' ||
+    publicUrl.search ||
+    publicUrl.hash
+  ) {
+    throw new Error(
+      'COMMUNITY_PUBLIC_URL must be a bare origin without credentials, path, query or fragment'
+    );
   }
   const storage = (() => {
     if (value.COMMUNITY_STORAGE_DRIVER === 'filesystem') {
@@ -119,9 +133,12 @@ export function parseConfig(env: Record<string, unknown>) {
       const endpoint = new URL(value.COMMUNITY_S3_ENDPOINT);
       if (
         endpoint.protocol !== 'https:' &&
-        !['localhost', '127.0.0.1'].includes(endpoint.hostname)
+        !(endpoint.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(endpoint.hostname))
       ) {
-        throw new Error('COMMUNITY_S3_ENDPOINT must use HTTPS outside localhost');
+        throw new Error('COMMUNITY_S3_ENDPOINT must use HTTPS, or HTTP on localhost');
+      }
+      if (endpoint.username || endpoint.password) {
+        throw new Error('COMMUNITY_S3_ENDPOINT must not contain credentials');
       }
     }
     return {
