@@ -47,7 +47,8 @@ export class CommunityOutboxWorker {
   /** Deliver a bounded due batch, preserving idempotency keys across every retry. */
   async runOnce(): Promise<void> {
     const now = new Date(this.now()).toISOString();
-    this.store.expire(now);
+    const expiredOwners = this.store.expire(now);
+    for (const ownerAuthorId of expiredOwners) this.changes?.changed(ownerAuthorId);
     for (const item of this.store.due(now)) {
       if (!(await this.authority.canDeliver(item))) {
         this.store.stop([item.id], 'stopped-or-unauthorized');
