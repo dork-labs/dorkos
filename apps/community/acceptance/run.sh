@@ -23,12 +23,18 @@ app="dorkos-community-proof-app-$run_id"
 network_created=false
 postgres_created=false
 app_created=false
+copy_evidence() {
+  # Keep the configured browser screenshots/traces and reports, never service
+  # logs, databases, blobs or the runtime home directory.
+  for artifact in network-proof.json playwright-report.json; do
+    docker cp "$app:/data/acceptance/$artifact" "$output/$artifact" 2>/dev/null || true
+  done
+  docker cp "$app:/data/acceptance/playwright-artifacts" "$output/playwright-artifacts" >/dev/null 2>&1 || true
+}
 cleanup() {
   if [[ "$app_created" == true ]]; then
-    # Keep test reports, not private service logs, database files or credentials.
-    for artifact in network-proof.json playwright-report.json; do
-      docker cp "$app:/data/acceptance/$artifact" "$output/$artifact" 2>/dev/null || true
-    done
+    # Preserve evidence on success and failure before deleting our container.
+    copy_evidence
     docker rm -f "$app" >/dev/null 2>&1 || true
   fi
   if [[ "$postgres_created" == true ]]; then docker rm -fv "$postgres" >/dev/null 2>&1 || true; fi
