@@ -316,6 +316,52 @@ describe('RemoteMirrorStore', () => {
     expect(mirrors.isActivelyAuthorized(local.id, harness.human)).toBe(false);
   });
 
+  it('does not restore a revoked mirror when a delayed snapshot arrives before a live mention', async () => {
+    const agents = agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } });
+    const { harness, mirrors } = wired(agents);
+    const agent = harness.authors.resolveAgent('/agents/ana', 'Ana');
+    const room = {
+      ...roomInput(REF_A, 'revoked-general', harness.human),
+      accessors: [{ authorId: agent.id, responseMode: 'always' as const }],
+    };
+    const local = mirrors.ensureRoom(room);
+    const enrollments = new CommunityAgentEnrollmentStore(harness.db);
+    enrollments.activate({
+      communityRef: REF_A,
+      localAgentId: 'local-ana',
+      remoteMemberId: 'remote-ana',
+      ownerAuthorId: harness.human,
+    });
+    const bridge = new RemoteRoomSubscriptionBridge(
+      mirrors,
+      harness.service,
+      enrollments,
+      (localAgentId) => (localAgentId === 'local-ana' ? agent.id : null)
+    );
+    mirrors.revoke(REF_A);
+    bridge.importSnapshot(room, [
+      {
+        ...nativeEntry(REF_A, 'revoked-general', 1),
+        serverCreatedAt: '2026-09-16T01:00:00.000Z',
+      },
+    ]);
+    const live = nativeEntry(REF_A, 'revoked-general', 2);
+    live.entry = { ...live.entry, mentions: ['remote-ana'] };
+    bridge.importLive(
+      room,
+      {
+        ...live,
+        author: { ...live.author, kind: 'human' },
+        serverCreatedAt: '2026-09-16T01:00:00.000Z',
+      },
+      { reconnect: false, wasActiveBeforeDisconnect: false, readOnly: false }
+    );
+    await harness.service.triggersIdle();
+
+    expect(harness.runner.turns).toHaveLength(0);
+    expect(mirrors.isActivelyAuthorized(local.id, harness.human)).toBe(false);
+  });
+
   it('revokes a local enrollment before stopping its held external turn', async () => {
     const agents = agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } });
     const runner = gatedRunner({ interruptedTurnStillAnswers: true });

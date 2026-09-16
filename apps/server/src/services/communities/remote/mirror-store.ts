@@ -405,6 +405,25 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
     return row === undefined || (row.state === 'authorized' && row.ownerAuthorId === ownerAuthorId);
   }
 
+  /**
+   * Resolve an existing cache target without changing its persisted authority.
+   *
+   * `undefined` means a newly authorized lifecycle directory may create this
+   * mirror. `null` means a revoked mapping, which old snapshot/history frames
+   * must leave alone. A stale owner cache remains readable, so it returns its
+   * room without ever promoting it back to authorized.
+   */
+  cachedRoomForImport(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    ownerAuthorId: string
+  ): Room | null | undefined {
+    const row = this.findRoom(communityRef, remoteRoomId);
+    if (!row) return undefined;
+    if (row.ownerAuthorId !== ownerAuthorId || row.state === 'revoked') return null;
+    return this.roomsStore.getRoom(row.localRoomId);
+  }
+
   /** Persisted local room ids for one owner's connected community. */
   roomIdsForOwner(communityRef: CommunityRef, ownerAuthorId: string): readonly string[] {
     return this.db

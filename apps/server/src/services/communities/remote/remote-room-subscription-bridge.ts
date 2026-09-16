@@ -75,7 +75,16 @@ export class RemoteRoomSubscriptionBridge {
 
   /** Import snapshot/history state only. Durable replay is deliberately never a trigger. */
   importSnapshot(room: MirrorRoomInput, entries: readonly RemoteLiveEntry[]): void {
-    this.localRoom(room);
+    // A snapshot is cache data, never a directory authorization transition.
+    // In particular it cannot turn a revoked or stale persisted mirror back
+    // into an authorized one merely because an old subscription delivered late.
+    const cached = this.mirrors.cachedRoomForImport(
+      room.communityRef,
+      room.remoteRoomId,
+      room.ownerAuthorId
+    );
+    if (cached === null) return;
+    if (cached === undefined) this.localRoom(room);
     this.mirrors.importEntries(
       room.communityRef,
       room.remoteRoomId,
