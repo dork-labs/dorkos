@@ -140,14 +140,13 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       });
       const localAgentId = registered.id;
       const handle = 'attachment-agent';
-      await json(
-        `${env.local}/api/communities/${refA}/agents/${encodeURIComponent(localAgentId)}/enroll`,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ handle }),
-        }
-      );
+      const enrollment = await json<{
+        agent: { remoteMemberId: string; displayName: string };
+      }>(`${env.local}/api/communities/${refA}/agents/${encodeURIComponent(localAgentId)}/enroll`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ handle }),
+      });
       const joined = await fetch(
         `${env.local}/api/communities/${refA}/rooms/${roomA!.roomId}/agents/${encodeURIComponent(localAgentId)}/membership`,
         { method: 'POST' }
@@ -205,20 +204,27 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         (gate) => gate.state === 'held-before-persist',
         'the actual local agent never reached the pre-persistence delivery gate'
       );
-      // The agent answers the triggering message in its thread. Inspect that
-      // same thread for both the pending delivery and its confirmed replacement.
-      await localPage.getByRole('button', { name: 'Reply in thread', exact: true }).click();
-      await expect(localPage.getByRole('feed', { name: 'Community thread' })).toBeVisible();
+      // The scenario uses rooms.post without replyTo, so its pending and
+      // confirmed attachment rows belong to the channel feed.
+      await expect(localPage.getByRole('feed', { name: 'Community messages' })).toBeVisible();
       await expect(
         localPage.getByText('Waiting for community confirmation…', { exact: true })
       ).toBeVisible();
-      const heldHistory = await pageJson<{ entries: Array<{ authorDisplayName: string }> }>(
+      type Entry = {
+        id: string;
+        text: string;
+        authorMemberId: string;
+        authorKind: 'agent' | 'human';
+        authorDisplayName: string;
+        attachments: Array<{ id: string; name: string }>;
+      };
+      const isEnrolledAgentEntry = (entry: Pick<Entry, 'authorMemberId' | 'authorKind'>) =>
+        entry.authorKind === 'agent' && entry.authorMemberId === enrollment.agent.remoteMemberId;
+      const heldHistory = await pageJson<{ entries: Entry[] }>(
         pageA,
         `/api/v1/channels/${roomA!.roomId}/entries?limit=100`
       );
-      expect(
-        heldHistory.entries.filter((entry) => entry.authorDisplayName === registered.name)
-      ).toHaveLength(0);
+      expect(heldHistory.entries.filter(isEnrolledAgentEntry)).toHaveLength(0);
       await localPage.screenshot({
         path: testInfo.outputPath('native-pending-desktop.png'),
         fullPage: true,
@@ -229,19 +235,11 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         body: JSON.stringify({ action: 'release' }),
       });
 
-      type Entry = {
-        id: string;
-        text: string;
-        authorDisplayName: string;
-        attachments: Array<{ id: string; name: string }>;
-      };
       const agentEntries = () =>
         pageJson<{ entries: Entry[] }>(
           pageA,
           `/api/v1/channels/${roomA!.roomId}/entries?limit=100`
-        ).then((page) =>
-          page.entries.filter((entry) => entry.authorDisplayName === registered.name)
-        );
+        ).then((page) => page.entries.filter(isEnrolledAgentEntry));
       const confirmed = await eventually(
         agentEntries,
         (entries) =>
@@ -282,9 +280,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
           pageJson<{ entries: Entry[] }>(
             pageMemberA,
             `/api/v1/channels/${roomA!.roomId}/entries?limit=100`
-          ).then((page) =>
-            page.entries.filter((entry) => entry.authorDisplayName === registered.name)
-          ),
+          ).then((page) => page.entries.filter(isEnrolledAgentEntry)),
         (entries) => entries.length === 1 && entries[0]?.id === confirmed[0]?.id,
         'the confirmed remote reply was not visible to the invited Community A member'
       );
@@ -306,6 +302,11 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       // Restart the remote Community itself before restarting the local process.
       // Both browser contexts keep their authenticated identities, while the
       // exact confirmed receipt and its attachment must survive a fresh server.
+      const beforeCommunityRestart = await eventually(
+        subscriptionBarrier,
+        (result) => result !== null && result.snapshotComplete && result.replayComplete,
+        'Community A subscription was not ready before its remote restart'
+      );
       const restartCommunityA = await request.post(`${env.control}/restart/a`);
       expect(
         restartCommunityA.ok(),
@@ -321,9 +322,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
           pageJson<{ entries: Entry[] }>(
             pageMemberA,
             `/api/v1/channels/${roomA!.roomId}/entries?limit=100`
-          ).then((page) =>
-            page.entries.filter((entry) => entry.authorDisplayName === registered.name)
-          ),
+          ).then((page) => page.entries.filter(isEnrolledAgentEntry)),
         (entries) => entries.length === 1 && entries[0]?.id === confirmed[0]?.id,
         "Community A restart did not retain the member's exact confirmed receipt"
       );
@@ -335,6 +334,16 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         return Array.from(new Uint8Array(await response.arrayBuffer()).slice(0, 8));
       }, confirmed[0]!.attachments[0]!.id);
       expect(Buffer.from(restartedPng).subarray(1, 4).toString('latin1')).toBe('PNG');
+      const afterCommunityRestart = await eventually(
+        subscriptionBarrier,
+        (result) =>
+          result !== null &&
+          result.generation > beforeCommunityRestart!.generation &&
+          result.snapshotComplete &&
+          result.replayComplete,
+        'Community A subscription did not establish a new completed generation after remote restart'
+      );
+      expect(afterCommunityRestart?.generation).toBeGreaterThan(beforeCommunityRestart!.generation);
       const localRetainedReceipt = await eventually(
         () =>
           json<{ entries: Entry[] }>(
@@ -482,6 +491,11 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       // The runner owns both lifecycle controls and keeps Community A's database,
       // credentials, and browser sessions intact. The local UI must report an
       // offline stream and reconnect after that same server comes back.
+      const beforeOfflineRestart = await eventually(
+        subscriptionBarrier,
+        (result) => result !== null && result.snapshotComplete && result.replayComplete,
+        'Community A subscription was not ready before the controlled offline transition'
+      );
       const stopCommunityA = await request.post(`${env.control}/stop/a`);
       expect(
         stopCommunityA.ok(),
@@ -498,8 +512,12 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       ).toBe(true);
       await eventually(
         subscriptionBarrier,
-        (result) => result !== null && result.snapshotComplete && result.replayComplete,
-        'the local Community A subscription did not finish replay after its remote server restarted'
+        (result) =>
+          result !== null &&
+          result.generation > beforeOfflineRestart!.generation &&
+          result.snapshotComplete &&
+          result.replayComplete,
+        'the local Community A subscription did not establish a new completed generation after its remote server restarted'
       );
       await expect(offlineNotice).toHaveCount(0, { timeout: 90_000 });
       await expect(localPage.getByText(bMarker, { exact: true })).toHaveCount(0);
@@ -528,7 +546,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         (entry) => entry !== undefined,
         'the retryable Community A trigger did not commit'
       );
-      const unavailable = await eventually(
+      await eventually(
         () =>
           json<{ state: string; attempts: number }>(
             `${env.communityA}/api/test/delivery-receipt-gate`
@@ -536,11 +554,17 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         (gate) => gate.state === 'unavailable' && gate.attempts >= 1,
         'the unavailable Community gate did not observe the first agent delivery attempt'
       );
-      await localPage.goto(
-        `${env.local}/channels?community=${encodeURIComponent(refA)}&id=${encodeURIComponent(roomA!.roomId)}&thread=${encodeURIComponent(retryRoot!.id)}`
-      );
+      expect(retryRoot?.id).toBeTruthy();
       const retryNow = localPage.getByRole('button', { name: 'Retry now', exact: true });
+      // This control only renders for a pending delivery whose next retry is
+      // still in the future. Capture its attempt count at that actual backoff
+      // boundary, then require exactly one new attempt after the click.
       await expect(retryNow).toBeVisible({ timeout: 90_000 });
+      await expect(retryNow).toBeEnabled();
+      const retryableBackoff = await json<{ state: string; attempts: number }>(
+        `${env.communityA}/api/test/delivery-receipt-gate`
+      );
+      expect(retryableBackoff).toMatchObject({ state: 'unavailable' });
       await localPage.screenshot({
         path: testInfo.outputPath('native-retryable-delivery.png'),
         fullPage: true,
@@ -561,10 +585,10 @@ test.describe('Packaged Community local-agent proof @integration', () => {
           json<{ state: string; attempts: number }>(
             `${env.communityA}/api/test/delivery-receipt-gate`
           ),
-        (gate) => gate.state === 'unavailable' && gate.attempts >= unavailable.attempts + 1,
-        'Retry now did not cause a second remote delivery attempt'
+        (gate) => gate.state === 'unavailable' && gate.attempts === retryableBackoff.attempts + 1,
+        'Retry now did not cause exactly one immediate remote delivery attempt'
       );
-      expect(retriedUnavailable.attempts).toBeGreaterThan(unavailable.attempts);
+      expect(retriedUnavailable.attempts).toBe(retryableBackoff.attempts + 1);
       await json(`${env.communityA}/api/test/delivery-receipt-gate`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -583,10 +607,10 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       await expect(localPage.getByRole('feed', { name: 'Community messages' })).toBeVisible();
 
       // A committed Community event can outlive its HTTP receipt. Its native
-      // SSE echo must replace the pending row by exact remote entry identity,
-      // so this thread contains one agent reply before, during, and after the
-      // held receipt rather than a timed duplicate.
+      // SSE echo must replace the top-level pending row by exact remote entry
+      // identity, so the channel count increases once rather than by a timer.
       const afterPersistMarker = `after-persist-${crypto.randomUUID()}`;
+      const entriesBeforeAfterPersist = await agentEntries();
       await json(`${env.communityA}/api/test/delivery-receipt-gate`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -613,17 +637,15 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         (gate) => gate.state === 'held' && typeof gate.entryId === 'string',
         'the Community receipt was not held after persistence'
       );
-      await localPage.goto(
-        `${env.local}/channels?community=${encodeURIComponent(refA)}&id=${encodeURIComponent(roomA!.roomId)}&thread=${encodeURIComponent(afterPersistRoot!.id)}`
-      );
-      const afterPersistThread = localPage.getByRole('feed', { name: 'Community thread' });
+      expect(afterPersistRoot?.id).toBeTruthy();
+      const afterPersistChannel = localPage.getByRole('feed', { name: 'Community messages' });
       await expect(
-        afterPersistThread.getByText('Here is what I saw.', { exact: true })
-      ).toHaveCount(1);
+        afterPersistChannel.getByText('Here is what I saw.', { exact: true })
+      ).toHaveCount(entriesBeforeAfterPersist.length + 1);
       await expect(
         localPage.getByText('Waiting for community confirmation…', { exact: true })
       ).toHaveCount(0);
-      await expect(afterPersistThread.getByText(afterPersistMarker, { exact: true })).toHaveCount(
+      await expect(afterPersistChannel.getByText(afterPersistMarker, { exact: true })).toHaveCount(
         1
       );
       const heldEntryId = heldAfterPersist.entryId!;
@@ -637,14 +659,23 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         'the held post-persistence receipt did not name exactly one remote entry'
       );
       expect(heldRemoteEntry[0]?.text).toBe('Here is what I saw.');
+      const heldLocalEntry = await eventually(
+        () =>
+          json<{ entries: Entry[] }>(
+            `${env.local}/api/communities/${refA}/rooms/${roomA!.roomId}/entries?limit=100`
+          ).then((page) => page.entries.filter((entry) => entry.id === heldEntryId)),
+        (entries) => entries.length === 1,
+        'the local qualified history did not reconcile the held receipt by its exact remote entry id'
+      );
+      expect(heldLocalEntry[0]?.id).toBe(heldEntryId);
       await localPage.screenshot({
         path: testInfo.outputPath('native-held-after-persist-receipt.png'),
         fullPage: true,
       });
       await localPage.reload();
       await expect(
-        afterPersistThread.getByText('Here is what I saw.', { exact: true })
-      ).toHaveCount(1);
+        afterPersistChannel.getByText('Here is what I saw.', { exact: true })
+      ).toHaveCount(entriesBeforeAfterPersist.length + 1);
       await expect(
         localPage.getByText('Waiting for community confirmation…', { exact: true })
       ).toHaveCount(0);
@@ -659,8 +690,8 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         'the post-persistence receipt did not settle after release'
       );
       await expect(
-        afterPersistThread.getByText('Here is what I saw.', { exact: true })
-      ).toHaveCount(1);
+        afterPersistChannel.getByText('Here is what I saw.', { exact: true })
+      ).toHaveCount(entriesBeforeAfterPersist.length + 1);
       const releasedRemoteEntry = await pageJson<{ entries: Entry[] }>(
         pageA,
         `/api/v1/channels/${roomA!.roomId}/entries?limit=100`
@@ -689,7 +720,8 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         (result) => result !== null && result.snapshotComplete && result.replayComplete,
         'Community A subscription was not ready before the live Stop journey'
       );
-      await composer.fill(`@${handle} stop-marker-${crypto.randomUUID()}`);
+      const stopMarker = `stop-marker-${crypto.randomUUID()}`;
+      await composer.fill(`@${handle} ${stopMarker}`);
       await pageMemberA.getByRole('button', { name: 'Send' }).click();
       await eventually(
         subscriptionBarrier,
@@ -707,6 +739,17 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       const stoppableSessionId = stoppableSession.find(
         (session) => !sessionIdsBeforeStop.has(session.id)
       )!.id;
+      const stoppableTranscript = await eventually(
+        () =>
+          json<{ messages: Array<{ content: string }> }>(
+            `${env.local}/api/sessions/${stoppableSessionId}/messages?cwd=${encodeURIComponent(agentPath)}`
+          ),
+        (history) => history.messages.some((message) => message.content.includes('STOPPABLE-TURN')),
+        'the live stoppable turn did not stream its pre-Stop marker before Stop'
+      );
+      expect(
+        stoppableTranscript.messages.some((message) => message.content.includes('STOPPABLE-TURN'))
+      ).toBe(true);
       const stopResponse = localPage.waitForResponse(
         (response) =>
           response.request().method() === 'POST' &&
@@ -737,6 +780,19 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         restoredAttachmentScenario.ok(),
         `could not restore attachment scenario after Stop: ${await restoredAttachmentScenario.text()}`
       ).toBe(true);
+      const postHumanMarker = async (marker: string) => {
+        await composer.fill(marker);
+        await pageMemberA.getByRole('button', { name: 'Send' }).click();
+        return eventually(
+          () =>
+            pageJson<{ entries: Entry[] }>(
+              pageMemberA,
+              `/api/v1/channels/${roomA!.roomId}/entries?limit=100`
+            ).then((page) => page.entries.find((entry) => entry.text === marker)),
+          (entry) => entry !== undefined,
+          `${marker} did not commit as a human Community entry`
+        );
+      };
       const holdAttachmentDelivery = async (marker: string) => {
         const beforeEntries = await agentEntries();
         const beforeDispatch = await eventually(
@@ -753,8 +809,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
             phase: 'before-persist',
           }),
         });
-        await composer.fill(`@${handle} ${marker}`);
-        await pageMemberA.getByRole('button', { name: 'Send' }).click();
+        const heldParent = await postHumanMarker(`@${handle} ${marker}`);
         await eventually(
           subscriptionBarrier,
           (result) =>
@@ -768,10 +823,10 @@ test.describe('Packaged Community local-agent proof @integration', () => {
           `${marker} never reached the pre-persistence receipt gate`
         );
         expect(await agentEntries()).toHaveLength(beforeEntries.length);
-        return beforeEntries.length;
+        return { beforeEntryCount: beforeEntries.length, parentEntryId: heldParent!.id };
       };
 
-      const beforeHeldStop = await holdAttachmentDelivery(`held-stop-${crypto.randomUUID()}`);
+      const heldStop = await holdAttachmentDelivery(`held-stop-${crypto.randomUUID()}`);
       const heldStopResponse = localPage.waitForResponse(
         (response) =>
           response.request().method() === 'POST' &&
@@ -788,11 +843,16 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         (gate) => gate.state === 'idle',
         'Stop did not abort the held pre-persistence Community delivery'
       );
-      expect(await agentEntries()).toHaveLength(beforeHeldStop);
+      expect(await agentEntries()).toHaveLength(heldStop.beforeEntryCount);
+      expect(heldStop.parentEntryId).toBeTruthy();
+      await postHumanMarker(`after-held-stop-${crypto.randomUUID()}`);
+      expect(await agentEntries()).toHaveLength(heldStop.beforeEntryCount);
 
-      const beforeEjection = await holdAttachmentDelivery(`held-ejection-${crypto.randomUUID()}`);
+      const heldEjection = await holdAttachmentDelivery(`held-ejection-${crypto.randomUUID()}`);
       await localPage.getByRole('button', { name: 'Members', exact: true }).click();
-      await expect(localPage.getByText(registered.name, { exact: true })).toBeVisible();
+      await expect(
+        localPage.getByText(enrollment.agent.displayName, { exact: true })
+      ).toBeVisible();
       const ejectionResponse = localPage.waitForResponse(
         (response) =>
           response.request().method() === 'DELETE' &&
@@ -812,7 +872,10 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         (gate) => gate.state === 'idle',
         'agent ejection did not abort the held pre-persistence Community delivery'
       );
-      expect(await agentEntries()).toHaveLength(beforeEjection);
+      expect(await agentEntries()).toHaveLength(heldEjection.beforeEntryCount);
+      expect(heldEjection.parentEntryId).toBeTruthy();
+      await postHumanMarker(`after-held-ejection-${crypto.randomUUID()}`);
+      expect(await agentEntries()).toHaveLength(heldEjection.beforeEntryCount);
       const remainingEnrollment = await eventually(
         () =>
           json<{ agents: Array<{ localAgentId: string }> }>(
