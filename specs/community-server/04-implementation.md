@@ -36,3 +36,7 @@ Existing site, local server, and CLI retain Better Auth 1.7.2 with explicit comp
 ## Remaining work
 
 Tasks 2.1–2.4 are assigned to `/root/implement_community_server` in `codex/community-admission`. Task 3.1 storage is assigned to `/root/implement_community_contract` in `codex/community-storage` and is undergoing independent review. Storage is preparatory until real upload/download/export routes consume it. Invitations, moderation, pairing, agent credentials, files, browser chat, local community connections, real agent dispatch, and the final packaged acceptance journey remain unfinished. Canonical requirements and dependencies remain in `03-tasks.json`; the six phases remain six coherent PR batches.
+
+## Combined browser integration checkpoint
+
+The independently reviewed standalone community browser and its bounded member directory are now included in the local participation integration branch. The browser supports admission, channel history, threads, files, member management, private exports and pairing approval. Its earlier isolated PostgreSQL/Playwright proof does not replace the required combined local-runtime and blocked-egress acceptance journey, which remains pending.

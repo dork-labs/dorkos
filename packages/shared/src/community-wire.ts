@@ -55,6 +55,7 @@ export const COMMUNITY_API_V1_ROUTES = {
   agents: '/api/v1/agents',
   me: '/api/v1/me',
   members: '/api/v1/members',
+  authOptions: '/api/v1/auth-options',
   memberRole: '/api/v1/members/:id/role',
   meGrants: '/api/v1/me/grants',
   meExport: '/api/v1/me/export',
@@ -101,6 +102,8 @@ export const CommunityWireMemberSchema = z.strictObject({
   handle: CommunityWireHandleSchema,
   role: CommunityWireHumanRoleSchema.nullable(),
   ownerMemberId: id.nullable(),
+  /** Agent owner's display name, scoped to a roster this caller may already read. */
+  ownerDisplayName: z.string().min(1).nullable().optional(),
   joinedAt: timestamp,
 });
 /** Public roster row. */
@@ -126,6 +129,11 @@ export const CommunityWireMemberDirectoryQuerySchema = z.strictObject({
 export const CommunityWireMemberDirectoryPageSchema = z.strictObject({
   members: z.array(CommunityWireMemberSchema).max(100),
   nextCursor: z.uuid().nullable(),
+});
+/** Public provider availability, without OAuth IDs, secrets or callback details. */
+export const CommunityWireAuthOptionsSchema = z.strictObject({
+  google: z.boolean(),
+  github: z.boolean(),
 });
 
 /** Public channel projection. `joined` is for the current caller only. */

@@ -52,6 +52,29 @@ describe('community startup config', () => {
     expect(() =>
       parseConfig({ ...s3, COMMUNITY_S3_ENDPOINT: 'http://storage.example.com' })
     ).toThrow();
+    expect(() => parseConfig({ ...s3, COMMUNITY_S3_ENDPOINT: 'ftp://localhost:4602' })).toThrow();
+    expect(() =>
+      parseConfig({ ...s3, COMMUNITY_S3_ENDPOINT: 'http://user:pass@localhost:4602' })
+    ).toThrow();
+    expect(
+      parseConfig({ ...s3, COMMUNITY_S3_ENDPOINT: 'http://localhost:4602/prefix' }).storage
+    ).toMatchObject({ kind: 's3' });
+  });
+
+  it('accepts only a bare HTTPS origin or HTTP loopback origin for the public URL', () => {
+    expect(parseConfig(valid).publicUrl).toBe('http://localhost:6481');
+    expect(
+      parseConfig({ ...valid, COMMUNITY_PUBLIC_URL: 'https://community.example.com/' }).publicUrl
+    ).toBe('https://community.example.com');
+    for (const url of [
+      'ftp://localhost:6481',
+      'http://community.example.com',
+      'http://user:pass@localhost:6481',
+      'https://community.example.com/join',
+      'https://community.example.com/?mode=join',
+      'https://community.example.com/#invite',
+    ])
+      expect(() => parseConfig({ ...valid, COMMUNITY_PUBLIC_URL: url })).toThrow();
   });
 
   it('accepts empty optional rotation settings from Compose but requires a complete previous key', () => {

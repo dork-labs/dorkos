@@ -9,6 +9,7 @@ import {
   CommunityWireBootstrapPreflightRequestSchema,
   CommunityWireBootstrapPreflightResponseSchema,
   CommunityWireCommunitySchema,
+  CommunityWireAuthOptionsSchema,
 } from '@dorkos/shared/community-wire';
 import type { CommunityConfig } from './config.js';
 import { createCommunityAuth } from './auth.js';
@@ -205,6 +206,12 @@ export function createCommunityApp({
       createdAt: row.createdAt.toISOString(),
     });
   });
+  app.get('/api/v1/auth-options', (c) =>
+    json(c, CommunityWireAuthOptionsSchema, {
+      google: Boolean(config.oauth.google),
+      github: Boolean(config.oauth.github),
+    })
+  );
 
   registerChannelRoutes(app, { pool, auth });
   registerEntryRoutes(app, { pool, auth, config });
