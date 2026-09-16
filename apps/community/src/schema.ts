@@ -354,6 +354,10 @@ export const attachments = pgTable(
     idempotencyKey: text('idempotency_key'),
     requestHash: text('request_hash'),
     uploadedAt: time('uploaded_at'),
+    cleanupAttempts: integer('cleanup_attempts').notNull().default(0),
+    cleanupNextAttemptAt: timestamp('cleanup_next_attempt_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (table) => [
     index('attachments_entry_idx').on(table.entryId),
@@ -364,7 +368,7 @@ export const attachments = pgTable(
       .on(table.uploaderAgentId, table.channelId, table.idempotencyKey)
       .where(sql`${table.uploaderAgentId} IS NOT NULL`),
     index('attachments_orphan_idx')
-      .on(table.uploadedAt, table.id)
+      .on(table.cleanupNextAttemptAt, table.uploadedAt, table.id)
       .where(sql`${table.entryId} IS NULL`),
     check(
       'attachments_exactly_one_uploader',
@@ -387,21 +391,32 @@ export const exportArchives = pgTable(
     createdAt: time('created_at'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    cleanupAttempts: integer('cleanup_attempts').notNull().default(0),
+    cleanupNextAttemptAt: timestamp('cleanup_next_attempt_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (table) => [
     check('export_archives_scope', sql`${table.scope} IN ('personal','owner')`),
     index('export_archives_expiry_idx')
-      .on(table.expiresAt, table.id)
+      .on(table.cleanupNextAttemptAt, table.expiresAt, table.id)
       .where(sql`${table.deletedAt} IS NULL`),
   ]
 );
 /** Durable cleanup work for blobs whose metadata transaction did not commit. */
-export const pendingBlobDeletions = pgTable('pending_blob_deletions', {
-  blobKey: text('blob_key').primaryKey(),
-  createdAt: time('created_at'),
-  attempts: integer('attempts').notNull().default(0),
-  lastErrorAt: timestamp('last_error_at', { withTimezone: true }),
-});
+export const pendingBlobDeletions = pgTable(
+  'pending_blob_deletions',
+  {
+    blobKey: text('blob_key').primaryKey(),
+    createdAt: time('created_at'),
+    attempts: integer('attempts').notNull().default(0),
+    lastErrorAt: timestamp('last_error_at', { withTimezone: true }),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('pending_blob_deletions_due_idx').on(table.nextAttemptAt, table.createdAt, table.blobKey),
+  ]
+);
 /** Monotonic per-human read positions. */
 export const readCursors = pgTable(
   'read_cursors',
