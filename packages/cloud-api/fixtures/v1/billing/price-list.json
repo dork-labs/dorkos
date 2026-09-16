@@ -1,0 +1,13 @@
+{
+  "version": "plv_0001",
+  "effectiveFrom": "2026-09-15T12:00:00.000Z",
+  "entries": [
+    {
+      "modelId": "md_opaque_0001",
+      "displayName": "the model shown in your usage page",
+      "unit": "megatoken",
+      "inputMicro": "3000000",
+      "outputMicro": "15000000"
+    }
+  ]
+}

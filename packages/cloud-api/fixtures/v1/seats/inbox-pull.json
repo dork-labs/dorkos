@@ -1,0 +1,17 @@
+{
+  "items": [
+    {
+      "id": "ibx_0001",
+      "leaseToken": "lt_0002",
+      "receivedAt": "2026-09-15T12:00:00.000Z",
+      "expiresAt": "2026-10-15T12:00:00.000Z",
+      "sourceKind": "email",
+      "sourceRef": "sender@example.invalid",
+      "envelope": {
+        "subject": "A message"
+      },
+      "bodyUrl": "https://example.invalid/inbox/ibx_0001/body",
+      "sizeBytes": 2048
+    }
+  ]
+}

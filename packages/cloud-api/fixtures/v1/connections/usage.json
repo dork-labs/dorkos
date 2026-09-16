@@ -1,0 +1,16 @@
+{
+  "periodStart": "2026-09-15T12:00:00.000Z",
+  "periodEnd": "2026-10-15T12:00:00.000Z",
+  "rows": [
+    {
+      "connectionId": "conn_0001",
+      "toolkit": "tk_0001",
+      "actions": 12,
+      "events": 3
+    }
+  ],
+  "totals": {
+    "actions": 12,
+    "events": 3
+  }
+}

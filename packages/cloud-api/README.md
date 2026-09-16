@@ -1,0 +1,192 @@
+# @dork-labs/cloud-api
+
+The public wire contract for DorkOS Cloud: Zod schemas for the `/v1` surface, the types they
+infer, the route table, and a thin `fetch` client.
+
+This package is the agreement between the DorkOS app and the hosted service. Both sides build
+against it, and neither side gets to change the wire without changing it here first.
+
+```bash
+npm install @dork-labs/cloud-api zod
+```
+
+## Two entry points
+
+```ts
+// Schemas, types and route paths. No network code, so you can validate
+// a payload without pulling in a client.
+import { EntitlementsSchema, ProblemSchema, V1_ROUTES, v1Path } from '@dork-labs/cloud-api';
+
+// The thin fetch client. No Node-only import, so a CLI, a server and a
+// browser can all use it.
+import { createCloudApiClient } from '@dork-labs/cloud-api/client';
+
+const cloud = createCloudApiClient({
+  baseUrl: process.env.MY_CLOUD_ORIGIN!, // no origin is baked into this package
+  token: () => myTokenStore.read(),
+});
+
+const entitlements = await cloud.get(V1_ROUTES.entitlements, EntitlementsSchema);
+const seat = await cloud.get(v1Path.seat(seatId), SeatSchema);
+```
+
+Every response is either the route's success schema or the `Problem` envelope. The client throws
+`CloudApiProblemError` for a refusal the service described, and `CloudApiResponseError` when the
+body is neither.
+
+## What is in the contract
+
+| Group                     | Covers                                                                                                                                                                   |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Session and account       | `GET /v1/session`, `GET /v1/account`, `POST /v1/account/export`                                                                                                          |
+| Device link               | `POST /v1/device/code`, `POST /v1/device/token` (RFC 8628)                                                                                                               |
+| Instances                 | heartbeat, revoke, list, organization re-link                                                                                                                            |
+| Managed connections       | catalog, toolkits, connections, authentication flows, authority commands, executions, the lease-based event pull and acknowledgement, usage                              |
+| Billing                   | `GET /v1/entitlements`, `/v1/balance`, `/v1/usage`, `/v1/price-list`, `/v1/nudge`, `POST /v1/checkout`, `/v1/topup`, `/v1/portal`, `GET /v1/statement`                   |
+| Inference                 | `POST /v1/inference/tokens`, `GET /v1/inference/models`, token revocation                                                                                                |
+| Seats, orgs and addresses | organizations, membership, invitations, agents and claims, seats, addresses, grants, add-ons, the seat inbox, presence                                                   |
+| Remote access             | status, open/close, wake tokens, enrolment, canonical and custom addresses, designation, instance credentials, the command stream and its acknowledgement, event batches |
+| Shared                    | the `Problem` envelope, bearer auth, cursor pagination, the `X-DorkOS-Wire: 1` header                                                                                    |
+
+### What is deliberately not in it
+
+The browser-facing `/api/auth/*` endpoints, the account and admin pages, and
+`POST /api/instances/pending` are a user interface of one application rather than a
+machine-to-machine wire. Publishing them would freeze a dependency's internals into a machine
+contract. The two device-code endpoints are the one exception: they live under `/api/auth/` today
+but are a machine wire, so they are here.
+
+The closed-address browser surface — the page an address serves while the machine is asleep,
+and the authorized reopen path on it — is excluded on the same grounds. The omission is a
+decision, not a gap.
+
+## The rules this package holds itself to
+
+### Additive within a major
+
+Within `/v1`, the only changes allowed are **new endpoints and new optional fields**. The service
+accepts the previous minor of this package, so a client one release behind keeps working.
+
+Removing a field, or making an optional field required, is a `/v2` change, served beside `/v1`
+for at least two releases. A change to a field's meaning is the same thing wearing a disguise:
+if code that was correct before is wrong after, it is not additive.
+
+### Catalog blindness
+
+**No type here enumerates the subscription catalog or the model catalog.** `planId`, `skuId`,
+`modelId`, add-on kinds, `catalogVersion` and every other catalog-shaped identifier are opaque
+strings. Not a `z.enum`, and equally not a union of literals, a `z.nativeEnum`, a hand-written
+string-literal union, a `const` array a schema is derived from, or a value named in a
+`.describe()`, a `.default()` or an `@example`.
+
+A _value_ a caller happens to be on is fine. The _set_ is not: this package publishes to public
+npm, and a `.d.ts` that enumerates the ladder publishes it permanently.
+
+The practical consequence for consumers: subscription-specific interface behaviour is driven by
+the **limit values** and the **server-supplied display string**, never by a switch on `planId`.
+There is no compile-time exhaustiveness over subscriptions here, deliberately.
+
+Enums that are fine, because they describe mechanism rather than catalog: the `Problem` codes,
+the remote `mode` and `state`, `remoteAccess`, `customAddress`, `support`, `costBasis`, the
+`supports` booleans, `groupBy`, the refusal reasons, and the RFC 8628 error set. Each one is
+listed by name with its reason in `src/__tests__/catalog-blindness.test.ts`, and a new exported
+enum fails that test until somebody writes down why it is mechanism.
+
+### Money is never a number
+
+Every amount is an **integer count of micro-units carried as a string** (`MicroAmountSchema`). A
+`z.number()` on an amount is a precision bug, not a style choice.
+
+### No origin baked in
+
+No host, origin or URL literal appears in this package. Inference endpoints are runtime values
+the mint call returns, and the client takes its `baseUrl` from the caller.
+
+No supplier is named anywhere. The two exceptions are the field names
+`endpoints.anthropicMessages` and `endpoints.openaiChat`, and they are a deliberate carve-out
+rather than an oversight: they name a **request format** a caller encodes in — both are de-facto
+public standards — not a supplier a request is routed to. Which provider actually serves a
+request is not part of this contract and is published nowhere.
+
+### Where amounts appear, and where they do not
+
+Three routes carry amounts, and it is worth being precise about which, because "no prices here"
+would be a comfortable claim and a false one:
+
+- **`GET /v1/price-list`** publishes the per-model list. That is its whole job.
+- **`GET /v1/usage`** returns, per row and in the totals, both `listPriceMicro` (the upstream
+  list price) and `dorkosPriceMicro` (what DorkOS charged). Publishing both means publishing the
+  difference, and that is the point rather than an accident: somebody paying for inference
+  through us can see exactly what the routing costs them without asking. If that ever stops
+  being the intent, the field to drop is `listPriceMicro`, and dropping it is a `/v2` change.
+- **`GET /v1/nudge`** returns one already-computed comparison — one subscription, one price, one
+  subtraction the server already did. The client renders it and computes nothing.
+
+Nothing else carries an amount. In particular, no inference route does: not a rate, not a
+multiplier, not a unit cost. And no route anywhere carries a supplier's terms.
+
+Fields typed `SecretValueSchema` are returned **once**: hold them as credential references, never
+as configuration strings, and never log them.
+
+## Conformance fixtures
+
+`fixtures/v1/**.json` is a shared corpus of example payloads, with `fixtures/v1/index.json`
+naming the exported schema that validates each one. Both sides of the wire can implement against
+the same examples; `src/__tests__/fixtures.test.ts` proves every example is valid and that the
+manifest and the directory have not drifted apart.
+
+Every example is synthetic: opaque identifiers, RFC 2606 `.invalid` hosts, and no real catalog
+value anywhere.
+
+```ts
+import entitlements from '@dork-labs/cloud-api/fixtures/v1/billing/entitlements-free.json' with { type: 'json' };
+```
+
+## Versioning, and the range to depend on
+
+This package's version **equals the DorkOS app version**, published atomically with it or not at
+all.
+
+That has a consequence worth stating plainly, because it bites silently. Lockstep bumps this
+package's **minor** on every app release, and on a `0.x` version npm reads `^0.75.0` as
+`>=0.75.0 <0.76.0`. **A caret range would lock you out of every future release.** While this
+package is pre-1.0, depend on it as:
+
+```json
+{ "dependencies": { "@dork-labs/cloud-api": ">=0.75.0 <1" } }
+```
+
+or as an exact pin your own release process bumps.
+
+## Dependencies
+
+`zod` is a **peer dependency** (`^4.6.2`), so a consumer that already has it gets one copy rather
+than two — two copies mean two answers to `instanceof`, and schemas that silently stop
+recognising each other. The range names the lowest version actually built and tested against,
+not the whole major: this package uses `z.iso.datetime` and Zod 4's `.def` internals, and a range
+wider than what CI resolves would be a compatibility claim nothing checks.
+
+There are **zero workspace dependencies**. Nothing here imports another package in this
+monorepo, and nothing in `dependencies`, `peerDependencies` or `optionalDependencies` resolves to
+one, so the package installs from public npm into a checkout that has none of this repository in
+it. `src/__tests__/packaging.test.ts` proves it from the manifest, from the imports, and from the
+workspace lockfile. The shared ESLint and TypeScript configs are `devDependencies`, which npm
+strips from the published tarball.
+
+## Development
+
+```bash
+pnpm --filter @dork-labs/cloud-api build       # ESM + .d.ts into dist/
+pnpm --filter @dork-labs/cloud-api typecheck
+pnpm --filter @dork-labs/cloud-api lint
+pnpm vitest run packages/cloud-api             # from the repo root
+```
+
+The catalog-blindness suite has one case that needs the real catalog values, which cannot live in
+this repository. Supply them to run it:
+
+```bash
+DORKOS_CATALOG_BLINDNESS_VALUES="value-a,value-b" pnpm vitest run packages/cloud-api
+```
+
+Unset, that case is reported as skipped rather than passing quietly. Set but empty, it fails.

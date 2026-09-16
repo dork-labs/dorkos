@@ -1,0 +1,14 @@
+{
+  "authenticated": true,
+  "account": {
+    "id": "acct_0001",
+    "email": "person@example.invalid",
+    "displayName": "A Person",
+    "createdAt": "2026-09-15T12:00:00.000Z"
+  },
+  "instanceId": "inst_0001",
+  "orgId": "org_0001",
+  "seatId": "seat_0001",
+  "scopes": ["account:read", "instances:read", "billing:read"],
+  "expiresAt": "2026-10-15T12:00:00.000Z"
+}

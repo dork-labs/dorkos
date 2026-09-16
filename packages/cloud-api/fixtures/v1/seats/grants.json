@@ -1,0 +1,20 @@
+{
+  "grants": [
+    {
+      "id": "gr_0001",
+      "seatId": "seat_0001",
+      "granteeKind": "org",
+      "granteeRef": "org_0001",
+      "capability": "address",
+      "effect": "allow"
+    },
+    {
+      "id": "gr_0002",
+      "seatId": "seat_0001",
+      "granteeKind": "public",
+      "granteeRef": null,
+      "capability": "trigger",
+      "effect": "deny"
+    }
+  ]
+}

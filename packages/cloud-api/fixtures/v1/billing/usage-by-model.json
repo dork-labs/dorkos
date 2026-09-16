@@ -1,0 +1,21 @@
+{
+  "from": "2026-09-15T12:00:00.000Z",
+  "to": "2026-10-15T12:00:00.000Z",
+  "groupBy": "model",
+  "state": "active",
+  "rows": [
+    {
+      "key": "md_opaque_0001",
+      "displayName": "the model shown in your usage page",
+      "units": 128000,
+      "unit": "tokens",
+      "listPriceMicro": "4200",
+      "dorkosPriceMicro": "4620",
+      "costBasis": "published_price"
+    }
+  ],
+  "totals": {
+    "listPriceMicro": "4200",
+    "dorkosPriceMicro": "4620"
+  }
+}

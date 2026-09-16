@@ -1,0 +1,16 @@
+{
+  "allowance": {
+    "grantedMicro": "5000000",
+    "remainingMicro": "1250000",
+    "resetsAt": "2026-10-15T12:00:00.000Z"
+  },
+  "purchased": {
+    "remainingMicro": "0"
+  },
+  "heldMicro": "25000",
+  "owedMicro": "0",
+  "autoReload": {
+    "enabled": false,
+    "ceilingMicro": null
+  }
+}

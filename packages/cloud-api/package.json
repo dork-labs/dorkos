@@ -1,0 +1,58 @@
+{
+  "name": "@dork-labs/cloud-api",
+  "version": "0.75.1",
+  "description": "The public wire contract for DorkOS Cloud: Zod schemas for the /v1 surface, plus a thin fetch client.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dork-labs/dorkos.git",
+    "directory": "packages/cloud-api"
+  },
+  "homepage": "https://github.com/dork-labs/dorkos/tree/main/packages/cloud-api#readme",
+  "type": "module",
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "default": "./dist/client.js"
+    },
+    "./fixtures/v1/*.json": "./fixtures/v1/*.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "fixtures",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "pnpm run build",
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "eslint ."
+  },
+  "peerDependencies": {
+    "zod": "^4.6.2"
+  },
+  "devDependencies": {
+    "@dorkos/eslint-config": "workspace:*",
+    "@dorkos/typescript-config": "workspace:*",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11",
+    "zod": "^4.6.2"
+  },
+  "keywords": [
+    "dorkos",
+    "wire-contract",
+    "zod"
+  ]
+}

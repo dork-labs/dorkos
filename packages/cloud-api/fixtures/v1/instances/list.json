@@ -1,0 +1,15 @@
+{
+  "items": [
+    {
+      "id": "inst_0001",
+      "orgId": "org_0001",
+      "displayName": "Studio laptop",
+      "appVersion": "0.75.1",
+      "platform": "darwin-arm64",
+      "firstSeenAt": "2026-09-15T12:00:00.000Z",
+      "lastSeenAt": "2026-09-15T12:00:00.000Z",
+      "revokedAt": null
+    }
+  ],
+  "nextCursor": null
+}

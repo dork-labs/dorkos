@@ -1,0 +1,14 @@
+{
+  // The CHECK program: it covers src/ AND its test files, so a type error in a
+  // test fails this package's `typecheck` (the split apps/server/tsconfig.build.json
+  // documents in full, DOR-508). Emit runs from tsconfig.build.json instead,
+  // which drops the tests so they stay out of dist/.
+  "extends": "@dorkos/typescript-config/node.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "declaration": true,
+    "declarationMap": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

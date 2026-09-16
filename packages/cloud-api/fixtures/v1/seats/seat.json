@@ -1,0 +1,21 @@
+{
+  "id": "seat_0001",
+  "orgId": "org_0001",
+  "kind": "agent",
+  "status": "assigned",
+  "subject": {
+    "kind": "agent",
+    "id": "agt_0001"
+  },
+  "address": {
+    "id": "addr_0001",
+    "orgId": "org_0001",
+    "seatId": "seat_0001",
+    "handle": "owl",
+    "canonical": "dork:example-org/owl",
+    "status": "active",
+    "issuedAt": "2026-09-15T12:00:00.000Z"
+  },
+  "createdAt": "2026-09-15T12:00:00.000Z",
+  "assignedAt": "2026-09-15T12:00:00.000Z"
+}
