@@ -100,6 +100,26 @@ export class RemoteConnectionStore {
     return (await this.read()).filter((record) => record.ownerKey === ownerKey).map(this.project);
   }
 
+  /** Remove expired pending proof before list/status can display it after restart. */
+  async sweepExpired(ownerKey: string, busy: ReadonlySet<CommunityRef> = new Set()): Promise<void> {
+    await this.exclusive(async () => {
+      const records = await this.read();
+      const expired = records.filter(
+        (record) =>
+          record.ownerKey === ownerKey &&
+          record.status === 'pending' &&
+          record.expiresAt !== null &&
+          Date.parse(record.expiresAt) <= Date.now() &&
+          !busy.has(record.ref)
+      );
+      if (!expired.length) return;
+      for (const record of expired)
+        await this.credentials.delete(`community:${record.ref}:pairing`);
+      const refs = new Set(expired.map((record) => record.ref));
+      await this.write(records.filter((record) => !refs.has(record.ref)));
+    });
+  }
+
   /** Read one matching record for server-side pairing; other owners appear absent. */
   async get(ref: CommunityRef, ownerKey: string): Promise<ConnectionRecord> {
     const record = (await this.read()).find(

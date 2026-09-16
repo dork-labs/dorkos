@@ -54,8 +54,8 @@ import { AuthorKindSchema, RoomKindSchema, RoomPresenceStateSchema } from './roo
  * Opaque, locally-minted handle for ONE configured community connection.
  * Branded so a bare string cannot pass where a community is due.
  *
- * Minted as a ULID (`ulidx`, already how rooms, entries and authors get their
- * ids). The regex is not decoration: this value becomes a directory name under
+ * Minted locally from a ULID or a random UUID-derived opaque value. The regex
+ * is not decoration: this value can become a directory name under
  * `<dorkHome>/communities/<ref>/`, so it must never contain `/`, `.` or `..`.
  *
  * It is minted locally at configure time and **never supplied by a remote** —

@@ -19,7 +19,10 @@ import { getRoomService } from '../services/rooms/index.js';
 import { resolveCaller } from './room-caller.js';
 import { isLocalCaller, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
 import { RemoteConnectionNotFoundError } from '../services/communities/remote/connection-store.js';
-import { RemoteCommunityPairingService } from '../services/communities/remote/pairing-service.js';
+import {
+  RemoteCommunityPairingService,
+  RemotePairingBusyError,
+} from '../services/communities/remote/pairing-service.js';
 import { PinnedOriginError } from '../services/communities/remote/pinned-origin.js';
 import { getRemotePairingService } from '../services/communities/remote/state.js';
 
@@ -48,7 +51,9 @@ function ownerKey(req: Request, res: Response): string | null {
 }
 
 function failure(res: Response, error: unknown): void {
-  if (error instanceof RemoteConnectionNotFoundError) {
+  if (error instanceof RemotePairingBusyError) {
+    res.status(409).json({ error: 'This pairing is still finishing. Try again in a moment.' });
+  } else if (error instanceof RemoteConnectionNotFoundError) {
     res.status(404).json({ error: 'Community connection not found.' });
   } else if (error instanceof PinnedOriginError) {
     res

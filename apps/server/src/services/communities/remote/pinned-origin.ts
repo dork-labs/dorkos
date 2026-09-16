@@ -98,7 +98,12 @@ export async function checkedAddress(
     if (local ? !loopback : blocked.check(value, family))
       throw new PinnedOriginError('UNSAFE_ADDRESS');
   }
-  return answers[0] as { address: string; family: 4 | 6 };
+  // Docker's localhost port forwarding often binds IPv4 only even when the
+  // resolver lists ::1 first. Both addresses were checked as loopback above.
+  return (local ? (answers.find((answer) => answer.family === 4) ?? answers[0]) : answers[0]) as {
+    address: string;
+    family: 4 | 6;
+  };
 }
 
 /** Send one bounded JSON request; redirects and unexpected content never reach another host. */
@@ -112,8 +117,10 @@ export async function pinnedJson(
   if (target.origin !== origin.origin || !path.startsWith('/api/v1/'))
     throw new PinnedOriginError('INVALID_ORIGIN');
   const address = await checkedAddress(origin);
-  const lookup: LookupFunction = (_hostname, _options, callback) =>
-    callback(null, address.address, address.family);
+  const lookup: LookupFunction = (_hostname, options, callback) => {
+    if (options.all) callback(null, [address]);
+    else callback(null, address.address, address.family);
+  };
   const agent =
     origin.protocol === 'https:'
       ? new HttpsAgent({ keepAlive: false, lookup })

@@ -34,9 +34,22 @@ export interface RemotePairingPoll {
   status: 'pending' | 'connected' | 'expired' | 'cancelled';
 }
 
+/** A pairing state change already in progress for this local ref. */
+export class RemotePairingBusyError extends Error {
+  constructor() {
+    super('Pairing state is changing');
+    this.name = 'RemotePairingBusyError';
+  }
+}
+
 /** Pairing orchestration scoped to the local owner's verified author ID. */
 export class RemoteCommunityPairingService {
-  private readonly polling = new Set<CommunityRef>();
+  private readonly busy = new Set<CommunityRef>();
+
+  private enter(ref: CommunityRef): void {
+    if (this.busy.has(ref)) throw new RemotePairingBusyError();
+    this.busy.add(ref);
+  }
 
   /**
    * Bind pairing to the local encrypted connection store.
@@ -46,12 +59,14 @@ export class RemoteCommunityPairingService {
   constructor(private readonly store: RemoteConnectionStore) {}
 
   /** Read only the caller's non-secret connection status. */
-  list(ownerKey: string): Promise<RemoteConnectionDescriptor[]> {
+  async list(ownerKey: string): Promise<RemoteConnectionDescriptor[]> {
+    await this.store.sweepExpired(ownerKey, this.busy);
     return this.store.list(ownerKey);
   }
 
   /** Read one descriptor without exposing another local owner's connection. */
   async status(ref: CommunityRef, ownerKey: string): Promise<RemoteConnectionDescriptor> {
+    await this.store.sweepExpired(ownerKey, this.busy);
     return this.store.project(await this.store.get(ref, ownerKey));
   }
 
@@ -99,8 +114,7 @@ export class RemoteCommunityPairingService {
 
   /** Poll once, exchanging an approved code only into the encrypted store. */
   async poll(ref: CommunityRef, ownerKey: string): Promise<RemotePairingPoll> {
-    if (this.polling.has(ref)) throw new PinnedOriginError('REMOTE_RESPONSE');
-    this.polling.add(ref);
+    this.enter(ref);
     try {
       const connection = await this.store.get(ref, ownerKey);
       if (connection.status === 'connected')
@@ -153,28 +167,38 @@ export class RemoteCommunityPairingService {
       );
       return { status: 'connected', connection: completed };
     } finally {
-      this.polling.delete(ref);
+      this.busy.delete(ref);
     }
   }
 
   /** Cancel a verifier-bound pending request and clear local protected state. */
   async cancel(ref: CommunityRef, ownerKey: string): Promise<void> {
-    const connection = await this.store.get(ref, ownerKey);
-    if (connection.status !== 'pending') throw new PinnedOriginError('REMOTE_RESPONSE');
-    const verifier = await this.store.verifier(ref, ownerKey);
+    this.enter(ref);
     try {
-      await pinnedJson(
-        parseCommunityOrigin(connection.pinnedOrigin),
-        COMMUNITY_API_V1_ROUTES.pairingCancel,
-        { pairingId: connection.pairingId, verifier }
-      );
+      const connection = await this.store.get(ref, ownerKey);
+      if (connection.status !== 'pending') throw new PinnedOriginError('REMOTE_RESPONSE');
+      const verifier = await this.store.verifier(ref, ownerKey);
+      try {
+        await pinnedJson(
+          parseCommunityOrigin(connection.pinnedOrigin),
+          COMMUNITY_API_V1_ROUTES.pairingCancel,
+          { pairingId: connection.pairingId, verifier }
+        );
+      } finally {
+        await this.store.disconnect(ref, ownerKey);
+      }
     } finally {
-      await this.store.disconnect(ref, ownerKey);
+      this.busy.delete(ref);
     }
   }
 
   /** Remove this owner's connected or pending local credentials and cache. */
-  disconnect(ref: CommunityRef, ownerKey: string): Promise<void> {
-    return this.store.disconnect(ref, ownerKey);
+  async disconnect(ref: CommunityRef, ownerKey: string): Promise<void> {
+    this.enter(ref);
+    try {
+      await this.store.disconnect(ref, ownerKey);
+    } finally {
+      this.busy.delete(ref);
+    }
   }
 }

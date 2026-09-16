@@ -1,11 +1,12 @@
 import { createServer, type Server } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { RemoteConnectionStore, RemoteConnectionNotFoundError } from '../connection-store.js';
-import { RemoteCommunityPairingService } from '../pairing-service.js';
+import { EncryptedFileCredentialStore } from '../../../core/credential-provider.js';
+import { RemoteCommunityPairingService, RemotePairingBusyError } from '../pairing-service.js';
 import {
   checkedAddress,
   parseCommunityOrigin,
@@ -24,6 +25,7 @@ let cancelled = false;
 let redirect = false;
 let pollCount = 0;
 let waitForPoll: (() => Promise<void>) | undefined;
+let waitForExchange: (() => Promise<void>) | undefined;
 const token = 'private-pairing-bearer-should-never-appear-in-dto';
 const requests: Array<{ path: string; body: Record<string, string> }> = [];
 
@@ -67,6 +69,7 @@ beforeAll(async () => {
       await waitForPoll?.();
       send(approved ? { status: 'approved', code: 'one-time-code' } : { status: 'pending' });
     } else if (req.url === '/api/v1/pairings/exchange') {
+      await waitForExchange?.();
       send({
         token,
         grant: {
@@ -105,6 +108,15 @@ afterAll(async () => {
 
 describe('private remote pairing with real HTTP and encrypted local storage', () => {
   it('rejects private targets and refuses a cross-host redirect without following it', async () => {
+    expect((await checkedAddress(parseCommunityOrigin('http://localhost:6491'))).address).toBe(
+      '127.0.0.1'
+    );
+    expect(
+      await pinnedJson(
+        parseCommunityOrigin(origin.replace('127.0.0.1', 'localhost')),
+        '/api/v1/community'
+      )
+    ).toMatchObject({ id: 'same-remote-id' });
     expect(() => parseCommunityOrigin('http://192.168.1.9:4444')).toThrow(PinnedOriginError);
     await expect(checkedAddress(parseCommunityOrigin('https://192.168.1.9'))).rejects.toMatchObject(
       { code: 'UNSAFE_ADDRESS' }
@@ -222,9 +234,15 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
     try {
       const first = service.poll(started.connection.ref, 'local-owner-a');
       await atPoll;
-      await expect(service.poll(started.connection.ref, 'local-owner-a')).rejects.toMatchObject({
-        code: 'REMOTE_RESPONSE',
-      });
+      await expect(service.poll(started.connection.ref, 'local-owner-a')).rejects.toBeInstanceOf(
+        RemotePairingBusyError
+      );
+      await expect(service.cancel(started.connection.ref, 'local-owner-a')).rejects.toBeInstanceOf(
+        RemotePairingBusyError
+      );
+      await expect(
+        service.disconnect(started.connection.ref, 'local-owner-a')
+      ).rejects.toBeInstanceOf(RemotePairingBusyError);
       release();
       expect((await first).status).toBe('pending');
     } finally {
@@ -241,6 +259,42 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
     ).rejects.toBeInstanceOf(RemoteConnectionNotFoundError);
   });
 
+  it('keeps the local token when cancellation races an approved exchange', async () => {
+    approved = true;
+    const store = new RemoteConnectionStore(directory);
+    const service = new RemoteCommunityPairingService(store);
+    const started = await service.start('local-owner-a', origin, 'Exchange race');
+    let entered!: () => void;
+    let release!: () => void;
+    const atExchange = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    waitForExchange = async () => {
+      entered();
+      await held;
+    };
+    try {
+      const polling = service.poll(started.connection.ref, 'local-owner-a');
+      await atExchange;
+      await expect(service.cancel(started.connection.ref, 'local-owner-a')).rejects.toBeInstanceOf(
+        RemotePairingBusyError
+      );
+      await expect(
+        service.disconnect(started.connection.ref, 'local-owner-a')
+      ).rejects.toBeInstanceOf(RemotePairingBusyError);
+      release();
+      expect((await polling).status).toBe('connected');
+      expect(await store.personalToken(started.connection.ref, 'local-owner-a')).toBe(token);
+    } finally {
+      release();
+      waitForExchange = undefined;
+      await service.disconnect(started.connection.ref, 'local-owner-a');
+    }
+  });
+
   it('keeps both records when starts write the local store concurrently', async () => {
     const store = new RemoteConnectionStore(directory);
     const service = new RemoteCommunityPairingService(store);
@@ -255,5 +309,30 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
     ).list('local-owner-a');
     expect(persisted.map((item) => item.ref).sort()).toEqual([...refs].sort());
     for (const ref of refs) await service.disconnect(ref, 'local-owner-a');
+  });
+
+  it('clears expired pending descriptors and encrypted verifiers on the next read after restart', async () => {
+    approved = false;
+    const service = new RemoteCommunityPairingService(new RemoteConnectionStore(directory));
+    const first = await service.start('local-owner-a', origin, 'Expired status');
+    const second = await service.start('local-owner-a', origin, 'Expired list');
+    const file = join(directory, 'communities', 'remote', 'connections.json');
+    const records = JSON.parse(await readFile(file, 'utf8')) as Array<{
+      ref: string;
+      expiresAt: string;
+    }>;
+    for (const record of records) {
+      if (record.ref === first.connection.ref || record.ref === second.connection.ref)
+        record.expiresAt = new Date(Date.now() - 1_000).toISOString();
+    }
+    await writeFile(file, JSON.stringify(records));
+    const restarted = new RemoteCommunityPairingService(new RemoteConnectionStore(directory));
+    await expect(restarted.status(first.connection.ref, 'local-owner-a')).rejects.toBeInstanceOf(
+      RemoteConnectionNotFoundError
+    );
+    expect(await restarted.list('local-owner-a')).toEqual([]);
+    const encrypted = new EncryptedFileCredentialStore(directory);
+    expect(await encrypted.get(`community:${first.connection.ref}:pairing`)).toBeNull();
+    expect(await encrypted.get(`community:${second.connection.ref}:pairing`)).toBeNull();
   });
 });
