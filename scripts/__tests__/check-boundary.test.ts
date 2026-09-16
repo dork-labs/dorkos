@@ -34,6 +34,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   BoundaryError,
+  buildSniff,
   SHAPE_RULE_NOTES,
   buildRuleset,
   collectFiles,
@@ -609,18 +610,123 @@ describe('zero-subject and unreadable-configuration failures exit 2, not 0 or 1'
 // Regression canary: the real tree, the real rules, the real allowlist
 // ---------------------------------------------------------------------------
 
+describe('the prefilter is a speedup and never a filter on findings', () => {
+  it('gives up rather than guess when a rule reads differently line by line', () => {
+    // A lookbehind and a negative lookahead are the two constructs that can
+    // succeed at a line boundary and fail one character earlier. One of them in
+    // the ruleset and the whole prefilter switches off, so every file is line
+    // scanned exactly as it was before this optimization existed.
+    expect(buildSniff(parseRuleset(`BND-a\t(?<=x)${FAKE_TERM}`, 'shape', 'f'))).toBeNull();
+    expect(buildSniff(parseRuleset(`BND-a\t(?!x)${FAKE_TERM}`, 'shape', 'f'))).toBeNull();
+    expect(buildSniff(parseRuleset('', 'shape', 'f'))).toBeNull();
+  });
+
+  it('gives up on a numbered escape, which the alternation would re-point', () => {
+    // The subtle one, and the reason this whole prefilter needed an adversary.
+    // `\2` in a rule that owns one group is an OCTAL escape — a literal
+    // character. Put that rule second in an alternation and the rule before it
+    // has donated a group, so the same `\2` becomes a BACKREFERENCE and matches
+    // strictly less. It compiles cleanly both ways, so there is no error to
+    // catch: the only safe move is not to combine such a rule at all.
+    const rules = parseRuleset(`BND-a\t(${FAKE_TERM})\nBND-b\tsecret-(x)\\2`, 'shape', 'f');
+
+    expect(buildSniff(rules)).toBeNull();
+  });
+
+  it('still finds what a numbered-escape rule matches, prefilter or not', () => {
+    // The counter-example that made the case above blocking, run end to end.
+    // Before the escape was disqualified, the guard reported this tree clean.
+    const dir = makeTempDir();
+    const rules = parseRuleset(`BND-a\t(qqqqq)\nBND-b\tsecret-(x)\\2`, 'shape', 'f');
+    seedFile(dir, 'leak.md', `harmless prose\nsecret-x\u0002 leaked\nmore prose\n`);
+
+    const { findings } = runBoundaryGuard(dir, rules, []);
+
+    expect(findings.map((f) => `${f.file}:${f.line}  ${f.ruleId}`)).toEqual(['leak.md:2  BND-b']);
+  });
+
+  it('says maybe for anything any rule could match, on any line', () => {
+    const rules = parseRuleset(`BND-a\t^${FAKE_TERM}$\nBND-b\tqux`, 'shape', 'f');
+    const sniff = buildSniff(rules);
+
+    expect(sniff).not.toBeNull();
+    // `^`/`$` mean LINE boundaries in the combined pattern, so a term on the
+    // third line of a file is still a reason to scan that file.
+    expect(sniff!.test(`alpha\nbeta\n${FAKE_TERM}\n`)).toBe(true);
+    expect(sniff!.test(`alpha\nbeta\nqux in a sentence\n`)).toBe(true);
+    expect(sniff!.test('alpha\nbeta\ngamma\n')).toBe(false);
+  });
+
+  it('finds a term buried deep in one big file and skips the big file beside it', () => {
+    // Both branches in one case: one large file the prefilter must NOT skip
+    // (its match is 50,000 lines in, on a line of its own) beside one it must,
+    // so the count of files that reached the line scan is the assertion.
+    const dir = mkdtempSync(join(tmpdir(), 'boundary-prefilter-'));
+    tempDirs.push(dir);
+    const filler = 'a harmless line of prose\n'.repeat(50_000);
+    writeFileSync(join(dir, 'big.md'), `${filler}${FAKE_TERM}\n${filler}`);
+    writeFileSync(join(dir, 'clean.md'), filler);
+    const rules = parseRuleset(`BND-a\t^${FAKE_TERM}$`, 'shape', 'f');
+
+    const { findings, filesScanned, filesLineScanned } = runBoundaryGuard(dir, rules, []);
+
+    expect(findings.map((f) => `${f.file}  ${f.ruleId}`)).toEqual(['big.md  BND-a']);
+    expect(findings[0]!.line).toBe(50_001);
+    expect(filesScanned).toBe(2);
+    expect(filesLineScanned).toBe(1);
+  });
+
+  it('reports the same line number whether the file ends its lines with LF or CRLF', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'boundary-crlf-'));
+    tempDirs.push(dir);
+    writeFileSync(join(dir, 'lf.md'), `one\ntwo\n${FAKE_TERM}\n`);
+    writeFileSync(join(dir, 'crlf.md'), `one\r\ntwo\r\n${FAKE_TERM}\r\n`);
+    const rules = parseRuleset(`BND-a\t^${FAKE_TERM}$`, 'shape', 'f');
+
+    const { findings } = runBoundaryGuard(dir, rules, []);
+
+    expect(findings.map((f) => `${f.file}:${f.line}`).sort()).toEqual(['crlf.md:3', 'lf.md:3']);
+  });
+});
+
 describe('regression canary — this checkout', () => {
+  /**
+   * ONE real-repo scan, shared by the cases below.
+   *
+   * This is the only thing in the suite that touches the whole checkout —
+   * ~11,500 files and ~140 MB — and it used to run once per case, so three
+   * cases meant three full scans and the describe block blew through vitest's
+   * 5s default on a cold filesystem cache. A guard that reports RED for a clean
+   * tree because it ran out of time teaches people to ignore it, which is worse
+   * than the minutes. Scanning once is not a shortcut: each case asks a
+   * different question of the SAME verdict, which is what the guard produces in
+   * one pass anyway.
+   */
+  let scan: ReturnType<typeof runBoundaryGuard> | undefined;
+
+  function realRepoScan(): ReturnType<typeof runBoundaryGuard> {
+    scan ??= runBoundaryGuard(REPO_ROOT, loadShapeRules(), loadAllowlist());
+    return scan;
+  }
+
   it('is clean under the committed shape rules and allowlist', () => {
-    const { findings } = runBoundaryGuard(REPO_ROOT, loadShapeRules(), loadAllowlist());
+    const { findings } = realRepoScan();
     const rendered = findings.map((f) => `${f.file}:${f.line}  ${f.ruleId}`);
 
     expect(rendered).toEqual([]);
   });
 
   it('actually scanned the tree — a clean verdict over nothing is not a verdict', () => {
-    const { filesScanned } = runBoundaryGuard(REPO_ROOT, loadShapeRules(), loadAllowlist());
+    const { filesScanned, filesLineScanned } = realRepoScan();
 
     expect(filesScanned).toBeGreaterThan(5000);
+    // And the half the file count cannot see. The prefilter is itself a
+    // mechanism that could over-skip, so a clean verdict over eleven thousand
+    // files means nothing unless SOME of them reached the line scan. A sniff
+    // that quietly stopped matching would leave the count above untouched and
+    // this one at zero.
+    expect(filesLineScanned).toBeGreaterThan(0);
+    expect(filesLineScanned).toBeLessThanOrEqual(filesScanned);
   });
 
   it('scans its own source and its own pin suite', () => {
@@ -634,4 +740,11 @@ describe('regression canary — this checkout', () => {
     expect(scanned).toContain('scripts/check-boundary.ts');
     expect(scanned).not.toContain('scripts/boundary/shape-rules.tsv');
   });
-});
+  // An explicit ceiling, not vitest's default, and deliberately generous. These
+  // cases read the entire repository, so their runtime tracks how big the
+  // repository has become and how cold the filesystem cache is on the runner —
+  // neither of which is a property of the guard. One warm scan is ~1.4s here
+  // and a cold one is a few times that. The number is a RUNAWAY detector: if
+  // this ever trips, the scan has regressed by an order of magnitude and wants
+  // measuring, not raising.
+}, 30_000);

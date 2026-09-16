@@ -79,6 +79,22 @@
  * an AST walk would see a fraction of the ground. That is why this is a
  * sibling of the vocab gate rather than another wave inside it.
  *
+ * WHAT IT COSTS, AND WHY THAT IS A CORRECTNESS CONCERN. The scan reads every
+ * prose and source file in the checkout — on this repo, roughly 11,500 files
+ * and 140 MB — so it is the one gate whose runtime grows with the repository
+ * rather than with the diff. That matters beyond patience: the pin suite's
+ * real-repo canary runs under vitest's default 5s timeout, and a guard that
+ * times out reports RED for a clean tree, which trains people to ignore it.
+ * Two things keep it cheap, and both are measured rather than assumed
+ * ({@link collectFiles} and {@link buildSniff} carry the numbers):
+ *
+ *   - The walk asks the directory once, with `withFileTypes`, instead of
+ *     asking the filesystem again per entry.
+ *   - A file is line-scanned only when ONE combined pattern says some line in
+ *     it could match. That prefilter is an over-approximation by construction
+ *     — see {@link buildSniff} for the exact condition under which it is safe,
+ *     and for the fallback when a rule does not meet it.
+ *
  * WHERE IT RUNS. The `typecheck` workflow, beside the two vocabulary gates and
  * for the same reason they are there: `typecheck` is already a required status
  * check and already reports on `merge_group`, so a gate that rides it fails the
@@ -88,7 +104,7 @@
  * Usage:
  *   pnpm exec tsx scripts/check-boundary.ts [repoRoot]
  */
-import { lstatSync, readFileSync, readdirSync } from 'node:fs';
+import { lstatSync, readFileSync, readdirSync, type Dirent } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -473,36 +489,175 @@ export function collectFiles(repoRoot: string): string[] {
   const files: string[] = [];
 
   function walk(dir: string): void {
-    let entries: string[];
+    let entries: Dirent[];
     try {
-      entries = readdirSync(dir);
+      // `withFileTypes` is what makes this affordable: the kind of each entry
+      // comes back with the directory listing, so the walk does ONE syscall per
+      // directory instead of one per entry. On this checkout that is ~11,500
+      // `lstat` calls saved. The types still come from `lstat` semantics — a
+      // symlink reports as a symlink and is never followed — so the no-escape
+      // property below is unchanged, not traded away for speed.
+      entries = readdirSync(dir, { withFileTypes: true });
     } catch {
       return;
     }
     for (const entry of entries) {
-      const full = join(dir, entry);
-      const normalized = `/${toPosixRelative(repoRoot, full)}/`;
-      if (EXCLUDED_SEGMENTS.some((seg) => normalized.includes(seg))) continue;
-      let stat;
-      try {
-        stat = lstatSync(full);
-      } catch {
-        continue; // A broken symlink is not this guard's problem.
+      // A symlinked directory is skipped rather than followed, so the walk
+      // cannot leave the checkout (a link to a sibling folder would be scanned
+      // and reported under an escaping path) and cannot loop.
+      if (entry.isSymbolicLink()) continue;
+      const name = entry.name;
+      const full = join(dir, name);
+      // A filesystem that does not fill `d_type` — some network and overlay
+      // mounts — reports UNKNOWN, and Node passes that through rather than
+      // falling back. Every `isX()` is then false, so without this the entry is
+      // neither walked nor scanned and part of the tree goes quietly unread,
+      // which is the one failure mode a leak guard may not have. Ask the
+      // filesystem directly for exactly those entries; it costs a syscall on a
+      // platform that was going to be slow anyway.
+      if (isUnknownKind(entry)) {
+        let stat;
+        try {
+          stat = lstatSync(full);
+        } catch {
+          continue; // A broken symlink is not this guard's problem.
+        }
+        if (stat.isSymbolicLink()) continue;
+        if (stat.isDirectory()) {
+          const normalized = `/${toPosixRelative(repoRoot, full)}/`;
+          if (EXCLUDED_SEGMENTS.some((seg) => normalized.includes(seg))) continue;
+          walk(full);
+          continue;
+        }
+        if (stat.isFile() && scannable(repoRoot, full, name)) files.push(full);
+        continue;
       }
-      if (stat.isSymbolicLink()) continue;
-      if (stat.isDirectory()) {
+      if (entry.isDirectory()) {
+        const normalized = `/${toPosixRelative(repoRoot, full)}/`;
+        if (EXCLUDED_SEGMENTS.some((seg) => normalized.includes(seg))) continue;
         walk(full);
         continue;
       }
-      if (EXCLUDED_BASENAMES.has(entry)) continue;
-      const dot = entry.lastIndexOf('.');
-      if (dot <= 0) continue;
-      if (SCANNED_EXTENSIONS.has(entry.slice(dot))) files.push(full);
+      if (!entry.isFile()) continue;
+      if (scannable(repoRoot, full, name)) files.push(full);
     }
   }
 
   walk(repoRoot);
   return files;
+}
+
+/**
+ * Whether a directory entry whose kind the filesystem would not say is neither
+ * a file, a directory, a symlink, nor any other thing Node can name.
+ *
+ * @param entry - The directory entry to classify.
+ */
+function isUnknownKind(entry: Dirent): boolean {
+  return (
+    !entry.isFile() &&
+    !entry.isDirectory() &&
+    !entry.isSymbolicLink() &&
+    !entry.isFIFO() &&
+    !entry.isSocket() &&
+    !entry.isBlockDevice() &&
+    !entry.isCharacterDevice()
+  );
+}
+
+/**
+ * Whether a regular file is one this guard reads.
+ *
+ * Cheap string tests first — most entries in a repo this size are files with an
+ * extension nobody scans, and the path only has to be normalized for the few
+ * that survive.
+ *
+ * @param repoRoot - Repo root, for the relative path the exclusions match on.
+ * @param full - The absolute path.
+ * @param name - The entry's basename.
+ */
+function scannable(repoRoot: string, full: string, name: string): boolean {
+  if (EXCLUDED_BASENAMES.has(name)) return false;
+  const dot = name.lastIndexOf('.');
+  if (dot <= 0) return false;
+  if (!SCANNED_EXTENSIONS.has(name.slice(dot))) return false;
+  const normalized = `/${toPosixRelative(repoRoot, full)}/`;
+  return !EXCLUDED_SEGMENTS.some((seg) => normalized.includes(seg));
+}
+
+/**
+ * Whether a rule's pattern could read differently over a whole file than over
+ * one line of it.
+ *
+ * Only two constructs can: a lookbehind and a NEGATIVE lookahead. Both can
+ * succeed at a line boundary and fail one character earlier (or the reverse),
+ * which is exactly the difference between "start of line" and "after the
+ * previous line's newline". Everything else — including `^` and `$`, which the
+ * sniff compiles with `m` so they mean line boundaries — reads the same either
+ * way.
+ *
+ * The direction of the remaining error is what makes this safe. A positive
+ * lookaround at a line edge sees a newline over whole text and nothing
+ * per line, so it can only make the sniff say "maybe" where the line scan says
+ * "no" — a wasted pass, never a missed finding.
+ *
+ * @param source - The rule's pattern source.
+ */
+function isLineSensitive(source: string): boolean {
+  return source.includes('(?<') || source.includes('(?!') || NUMBERED_ESCAPE.test(source);
+}
+
+/**
+ * A `\1`-`\9` escape, which the alternation would silently re-point.
+ *
+ * This is the third disqualifier and the least obvious one. Wrapping a rule in
+ * `(?:…)` adds no capture group, but the rules BEFORE it in the alternation do,
+ * so every numbered escape shifts. In non-Unicode mode a `\N` with no group N is
+ * an OCTAL ESCAPE — a literal character — and the same `\N` with a group N is a
+ * backreference. So a rule that standalone matched a literal byte can, inside
+ * the combination, become a backreference to its own group and match strictly
+ * less. It compiles cleanly either way, which is what makes it dangerous: there
+ * is no error to catch, only a quieter guard.
+ *
+ * Found by the adversarial review of this optimization, with a worked
+ * counter-example; pinned by the `buildSniff` cases in the test suite.
+ */
+const NUMBERED_ESCAPE = /\\[0-9]/;
+
+/**
+ * One combined pattern that matches when ANY rule could match some line, or
+ * `null` when no such pattern can be built safely.
+ *
+ * WHY. Line-scanning every file runs `rules.length` regex tests per line — on
+ * this checkout, 3.1M lines and about 12.5M tests, roughly 1.4s and the bulk of
+ * the whole run. A clean tree matches nothing, so almost all of that work
+ * proves a negative. One alternation over the file answers the same question in
+ * a single pass and takes the per-line loop off all but a few dozen files.
+ *
+ * WHAT IT MUST NEVER DO is miss. It is only ever a PREFILTER: a hit means "line
+ * scan this file", never "this file has a finding", and the per-line scan
+ * remains the only thing that produces a `Finding`. It is built only when every
+ * rule passes {@link isLineSensitive}; one rule that does not, and this returns
+ * `null` and every file is line-scanned exactly as before. A private ruleset
+ * this guard has never seen therefore cannot quietly lose coverage — the worst
+ * it can do is give up the speedup.
+ *
+ * A pattern that fails to compile in combination — two rules declaring the same
+ * named group, say — yields `null` rather than a wrong answer. Note that a
+ * numbered escape does NOT fail to compile; it is refused earlier, by
+ * {@link isLineSensitive}, precisely because it would compile and mean something
+ * else.
+ *
+ * @param rules - The compiled ruleset.
+ */
+export function buildSniff(rules: BoundaryRule[]): RegExp | null {
+  if (rules.length === 0) return null;
+  if (rules.some((rule) => isLineSensitive(rule.pattern.source))) return null;
+  try {
+    return new RegExp(rules.map((rule) => `(?:${rule.pattern.source})`).join('|'), 'im');
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -513,6 +668,12 @@ export function collectFiles(repoRoot: string): string[] {
  * did not run, or a future exclusion bug all render as success unless the
  * caller can ask what the check actually counted.
  *
+ * `filesLineScanned` is the second half of that same argument, and it exists
+ * because the prefilter is itself a mechanism that could over-skip. It counts
+ * the files that reached the line scan rather than the files considered, so a
+ * sniff that quietly stopped matching anything shows up as a number collapsing
+ * toward zero instead of as a clean run over eleven thousand files.
+ *
  * @param repoRoot - Repo root to scan from.
  * @param rules - Compiled rules from {@link buildRuleset}.
  * @param allowlist - Scoped exceptions.
@@ -521,9 +682,11 @@ export function runBoundaryGuard(
   repoRoot: string,
   rules: BoundaryRule[],
   allowlist: AllowlistEntry[]
-): { findings: Finding[]; filesScanned: number } {
+): { findings: Finding[]; filesScanned: number; filesLineScanned: number } {
   const findings: Finding[] = [];
   const files = collectFiles(repoRoot);
+  const sniff = buildSniff(rules);
+  let filesLineScanned = 0;
   for (const file of files) {
     const relPath = toPosixRelative(repoRoot, file);
     let text: string;
@@ -533,12 +696,23 @@ export function runBoundaryGuard(
       continue;
     }
     if (text.includes('\u0000')) continue; // Binary content behind a text extension.
+    // One `replace` per file instead of a `\r`-stripping regex per line, which
+    // on this checkout is 3.1M calls saved. It is NOT load-bearing for the
+    // prefilter: `\r` is a JS line terminator, so `m`-mode `$` already matches
+    // before it, and `scanText` strips the carriage return per line regardless.
+    // Purely a saving, and the findings are identical with or without it.
+    if (text.includes('\r')) text = text.replace(/\r\n/g, '\n');
+    // The prefilter, and the one thing it is allowed to be: a reason to skip
+    // work. A miss here means no line in this file can match any rule (see
+    // {@link buildSniff}); a hit means nothing until the line scan says so.
+    if (sniff !== null && !sniff.test(text)) continue;
+    filesLineScanned++;
     for (const finding of scanText(relPath, text, rules)) {
       if (isAllowlisted(finding.file, finding.ruleId, allowlist)) continue;
       findings.push(finding);
     }
   }
-  return { findings, filesScanned: files.length };
+  return { findings, filesScanned: files.length, filesLineScanned };
 }
 
 const isMain = process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.argv[1];
@@ -552,6 +726,7 @@ if (isMain) {
   let privateRuleCount: number;
   let findings: Finding[];
   let filesScanned: number;
+  let filesLineScanned: number;
   try {
     const shapeRules = loadShapeRules();
     ({ mode, rules, privateRuleCount } = buildRuleset(process.env, shapeRules));
@@ -566,7 +741,7 @@ if (isMain) {
     // Inside the try on purpose: a scan that throws must exit 2 ("could not
     // run"), not 1 ("found hits"). Before this, a malformed allowlist threw a
     // TypeError out here and Node exited 1, which CI reads as a finding.
-    ({ findings, filesScanned } = runBoundaryGuard(repoRoot, rules, allowlist));
+    ({ findings, filesScanned, filesLineScanned } = runBoundaryGuard(repoRoot, rules, allowlist));
 
     if (filesScanned === 0) {
       throw new BoundaryError(
@@ -609,6 +784,9 @@ if (isMain) {
   }
 
   console.log(
-    `check-boundary: clean — 0 hits from ${rules.length} rule(s) over ${filesScanned} file(s).`
+    // Both counts, deliberately. "Over 11501 files" alone would read the same
+    // whether the prefilter skipped a sensible few thousand or silently skipped
+    // everything, and the second number is the only place a reader would notice.
+    `check-boundary: clean — 0 hits from ${rules.length} rule(s) over ${filesScanned} file(s), ${filesLineScanned} line-scanned.`
   );
 }
