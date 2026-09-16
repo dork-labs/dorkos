@@ -406,7 +406,7 @@ export function createRemoteCommunitiesRouter(): Router {
       if (!res.writableEnded) res.end();
     }
   });
-  router.post('/:ref/rooms/:roomId/deliveries/:idempotencyKey/retry', (req, res) => {
+  router.post('/:ref/rooms/:roomId/deliveries/:idempotencyKey/retry', async (req, res) => {
     const owner = resolveCommunityOwner(req, res);
     if (!owner) return;
     const ref = CommunityRefSchema.safeParse(req.params.ref);
@@ -417,7 +417,7 @@ export function createRemoteCommunitiesRouter(): Router {
       return;
     }
     try {
-      const result = retryRemoteCommunityDelivery({
+      const result = await retryRemoteCommunityDelivery({
         communityRef: ref.data,
         remoteRoomId: roomId.data,
         ownerAuthorId: owner,

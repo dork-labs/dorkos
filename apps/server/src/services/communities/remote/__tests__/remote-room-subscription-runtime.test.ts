@@ -13,6 +13,7 @@ import {
 import { CommunityAgentEnrollmentStore } from '../agent-enrollment-store.js';
 import { CommunityOutboxStore, type CommunityOutboxItem } from '../community-outbox-store.js';
 import { CommunityOutboxRuntime } from '../community-outbox-runtime.js';
+import { isCurrentLocalMeshAgent } from '../local-agent-authority.js';
 import { registerRemoteCommunityUnregisterCascade } from '../mesh-unregister-cascade.js';
 import { RemoteMirrorStore } from '../mirror-store.js';
 import {
@@ -77,71 +78,123 @@ function outboxItem(overrides: Partial<CommunityOutboxItem> = {}): CommunityOutb
 
 describe('RemoteRoomSubscriptionRuntime', () => {
   it('does not deliver persisted work after an offline manifest deletion before restart', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'remote-community-offline-delete-'));
+    const agentPath = path.join(root, 'ana');
+    await fs.mkdir(agentPath, { recursive: true });
+    const agents = { [agentPath]: { id: '', name: 'Ana', responseMode: 'always' as const } };
     const harness = createRoomHarness({
-      agents: agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } }),
+      agents: agentLookupFor(agents),
     });
-    const agent = harness.authors.resolveAgent('/agents/ana', 'Ana');
-    const post = vi.fn();
-    const runtime = new CommunityOutboxRuntime({
-      db: harness.db,
-      roomStore: harness.store,
-      authors: harness.authors,
-      attachmentRows: harness.attachments,
-      attachmentBytes: {} as never,
-      adapters: () => ({ post, uploadAttachment: vi.fn() }),
-      // This is the post-restart condition: the durable row exists, but Mesh
-      // did not reconcile the deleted manifest back into this process.
-      isLocalAgentCurrent: () => false,
-      now: () => Date.parse('2026-09-16T01:00:00.000Z'),
-    });
-    const localRoom = runtime.mirrors.ensureRoom({
-      communityRef: REF,
-      remoteRoomId: ROOM_ID,
-      title: 'General',
-      topic: null,
-      ownerAuthorId: harness.human,
-      accessors: [{ authorId: agent.id, responseMode: 'always' }],
-      authorizedAt: '2026-09-16T00:00:00.000Z',
-    });
-    const localEntry = harness.service.post(localRoom.id, {
-      authorId: agent.id,
-      text: 'A persisted reply must not escape after deletion.',
-    });
-    const localAgentId = agent.mintedForManifestId!;
-    runtime.enrollments.activate({
-      communityRef: REF,
-      localAgentId,
-      remoteMemberId: 'remote-ana',
-      ownerAuthorId: harness.human,
-    });
-    harness.db.transaction((tx) =>
-      runtime.outbox.enqueue(
-        outboxItem({
-          id: 'offline-deleted',
-          ownerAuthorId: harness.human,
-          localAgentId,
-          localEntryId: localEntry.id,
-          createdAt: '2026-09-16T01:00:00.000Z',
-          expiresAt: '2026-09-16T01:05:00.000Z',
-          nextAttemptAt: '2026-09-16T01:00:00.000Z',
-        }),
-        tx
-      )
-    );
+    let initialMesh: MeshCore | undefined;
+    let restartedMesh: MeshCore | undefined;
+    let runtime: CommunityOutboxRuntime | undefined;
+    try {
+      initialMesh = new MeshCore({ db: harness.db, defaultScanRoot: root });
+      const manifest = await initialMesh.registerByPath(agentPath, {
+        name: 'ana',
+        runtime: 'claude-code',
+        namespace: 'test',
+      });
+      agents[agentPath].id = manifest.id;
+      const agent = harness.authors.resolveAgent(agentPath, 'Ana');
+      const post = vi.fn();
+      const firstMirror = new RemoteMirrorStore(harness.db, harness.store, harness.authors);
+      const localRoom = firstMirror.ensureRoom({
+        communityRef: REF,
+        remoteRoomId: ROOM_ID,
+        title: 'General',
+        topic: null,
+        ownerAuthorId: harness.human,
+        accessors: [{ authorId: agent.id, responseMode: 'always' }],
+        authorizedAt: '2026-09-16T00:00:00.000Z',
+      });
+      const localEntry = harness.service.post(localRoom.id, {
+        authorId: agent.id,
+        text: 'A persisted reply must not escape after deletion.',
+      });
 
-    runtime.start();
-    await settleUntil(
-      () => !runtime.outbox.isPending('offline-deleted'),
-      'the deleted manifest row is stopped by the worker authority gate'
-    );
-    runtime.stop();
+      // Community is offline while this file disappears. Mesh deliberately
+      // retains the cached row through grace and loads it on the next boot.
+      await fs.rm(path.join(agentPath, '.dork', 'agent.json'));
+      initialMesh.close();
+      initialMesh = undefined;
+      restartedMesh = new MeshCore({ db: harness.db, defaultScanRoot: root });
+      await restartedMesh.reconcileOnStartup();
+      expect(restartedMesh.get(manifest.id)).toBeDefined();
+      await expect(isCurrentLocalMeshAgent(restartedMesh, manifest.id)).resolves.toBe(false);
 
-    expect(post).not.toHaveBeenCalled();
-    expect(
-      runtime.outbox.deliveryForOwner(REF, ROOM_ID, harness.human, 'delivery-key')
-    ).toMatchObject({
-      state: 'stopped',
-    });
+      runtime = new CommunityOutboxRuntime({
+        db: harness.db,
+        roomStore: harness.store,
+        authors: harness.authors,
+        attachmentRows: harness.attachments,
+        attachmentBytes: {} as never,
+        adapters: () => ({ post, uploadAttachment: vi.fn() }),
+        isLocalAgentCurrent: (id) => isCurrentLocalMeshAgent(restartedMesh!, id),
+        now: () => Date.parse('2026-09-16T01:00:00.000Z'),
+      });
+      runtime.enrollments.activate({
+        communityRef: REF,
+        localAgentId: manifest.id,
+        remoteMemberId: 'remote-ana',
+        ownerAuthorId: harness.human,
+      });
+      runtime.mirrors.ensureRoom({
+        communityRef: REF,
+        remoteRoomId: ROOM_ID,
+        title: 'General',
+        topic: null,
+        ownerAuthorId: harness.human,
+        accessors: [{ authorId: agent.id, responseMode: 'always' }],
+        authorizedAt: '2026-09-16T00:00:00.000Z',
+      });
+      harness.db.transaction((tx) =>
+        runtime!.outbox.enqueue(
+          outboxItem({
+            id: 'offline-deleted',
+            ownerAuthorId: harness.human,
+            localAgentId: manifest.id,
+            localEntryId: localEntry.id,
+            createdAt: '2026-09-16T01:00:00.000Z',
+            expiresAt: '2026-09-16T01:05:00.000Z',
+            nextAttemptAt: '2026-09-16T01:00:00.000Z',
+          }),
+          tx
+        )
+      );
+
+      runtime.start();
+      await settleUntil(
+        () => !runtime!.outbox.isPending('offline-deleted'),
+        'the deleted manifest row is stopped by the worker authority gate'
+      );
+      expect(post).not.toHaveBeenCalled();
+      expect(
+        runtime.outbox.deliveryForOwner(REF, ROOM_ID, harness.human, 'delivery-key')
+      ).toMatchObject({ state: 'stopped' });
+
+      // A different valid manifest at the cached path cannot authorize the
+      // old enrollment identity either.
+      const replacementPath = path.join(root, 'replacement');
+      await fs.mkdir(replacementPath, { recursive: true });
+      const replacement = await restartedMesh.registerByPath(replacementPath, {
+        name: 'replacement',
+        runtime: 'claude-code',
+        namespace: 'test',
+      });
+      await fs.mkdir(path.join(agentPath, '.dork'), { recursive: true });
+      await fs.copyFile(
+        path.join(replacementPath, '.dork', 'agent.json'),
+        path.join(agentPath, '.dork', 'agent.json')
+      );
+      expect(replacement.id).not.toBe(manifest.id);
+      await expect(isCurrentLocalMeshAgent(restartedMesh, manifest.id)).resolves.toBe(false);
+    } finally {
+      runtime?.stop();
+      initialMesh?.close();
+      restartedMesh?.close();
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 
   it('cascades a live Mesh manifest deletion to its held post, enrollment, and native stream', async () => {
@@ -181,8 +234,7 @@ describe('RemoteRoomSubscriptionRuntime', () => {
         attachmentRows: harness.attachments,
         attachmentBytes: {} as never,
         adapters: () => ({ post, uploadAttachment: vi.fn() }),
-        isLocalAgentCurrent: (id) =>
-          mesh.get(id) !== undefined && mesh.getProjectPath(id) !== undefined,
+        isLocalAgentCurrent: (id) => isCurrentLocalMeshAgent(mesh, id),
         now: () => Date.parse('2026-09-16T01:00:00.000Z'),
       });
       const localRoom = deliveryRuntime.mirrors.ensureRoom({

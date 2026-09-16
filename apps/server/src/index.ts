@@ -350,6 +350,7 @@ import { CommunityOutboxRuntime } from './services/communities/remote/community-
 import { RemoteRoomSubscriptionBridge } from './services/communities/remote/remote-room-subscription-bridge.js';
 import { RemoteRoomSubscriptionRuntime } from './services/communities/remote/remote-room-subscription-runtime.js';
 import { registerRemoteCommunityUnregisterCascade } from './services/communities/remote/mesh-unregister-cascade.js';
+import { isCurrentLocalMeshAgent } from './services/communities/remote/local-agent-authority.js';
 import { INTERVALS } from './config/constants.js';
 import { resolveDorkHome } from './lib/dork-home.js';
 import { acquireInstanceLock } from './lib/instance-lock.js';
@@ -1336,9 +1337,9 @@ async function start() {
         adapters: (communityRef, ownerAuthorId) =>
           getRemoteCommunityAdapter(communityRef, ownerAuthorId),
         isLocalAgentCurrent: (localAgentId) =>
-          meshStartupReconciled &&
-          meshCore?.get(localAgentId) !== undefined &&
-          meshCore.getProjectPath(localAgentId) !== undefined,
+          meshStartupReconciled && meshCore
+            ? isCurrentLocalMeshAgent(meshCore, localAgentId)
+            : false,
         changes: { changed: publishRemoteCommunityDeliveryChanges },
       });
       return {

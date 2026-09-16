@@ -35,7 +35,7 @@ export interface CommunityOutboxRuntimeDeps {
   attachmentBytes: RoomAttachmentStore;
   adapters: RemoteAdapterForDelivery;
   /** True only while this process still owns the local Mesh manifest. */
-  isLocalAgentCurrent: (localAgentId: string) => boolean;
+  isLocalAgentCurrent: (localAgentId: string) => boolean | Promise<boolean>;
   changes?: CommunityOutboxChangeListener;
   now?: () => number;
 }
@@ -55,7 +55,7 @@ export class CommunityOutboxRuntime {
   readonly projection: CommunityOutboxProjection;
   private readonly authors: AuthorRegistry;
   private readonly changes: CommunityOutboxChangeListener | undefined;
-  private readonly isLocalAgentCurrent: (localAgentId: string) => boolean;
+  private readonly isLocalAgentCurrent: (localAgentId: string) => boolean | Promise<boolean>;
   private readonly worker: CommunityOutboxWorker;
   private readonly runner: CommunityOutboxRunner;
 
@@ -86,7 +86,7 @@ export class CommunityOutboxRuntime {
     this.worker = new CommunityOutboxWorker(
       this.outbox,
       {
-        canDeliver: (item) => {
+        canDeliver: async (item) => {
           const localRoomId = this.mirrors.localRoomIdForOwner(
             item.communityRef,
             item.remoteRoomId,
@@ -97,7 +97,7 @@ export class CommunityOutboxRuntime {
             .find((author) => author.mintedForManifestId === item.localAgentId)?.id;
           return (
             this.outbox.isPending(item.id) &&
-            this.isLocalAgentCurrent(item.localAgentId) &&
+            (await this.isLocalAgentCurrent(item.localAgentId)) &&
             localRoomId !== null &&
             agentAuthorId !== undefined &&
             this.mirrors.isActivelyAuthorized(localRoomId, item.ownerAuthorId) &&
@@ -172,7 +172,7 @@ export class CommunityOutboxRuntime {
   }
 
   /** Ask this runtime's sole worker to release one genuine pending backoff immediately. */
-  retryNow(input: CommunityOutboxRetryInput): CommunityOutboxRetryResult {
+  async retryNow(input: CommunityOutboxRetryInput): Promise<CommunityOutboxRetryResult> {
     const item = this.outbox.deliveryForOwner(
       input.communityRef,
       input.remoteRoomId,
@@ -189,7 +189,7 @@ export class CommunityOutboxRuntime {
       .listActive('agent')
       .find((author) => author.mintedForManifestId === item.localAgentId)?.id;
     if (
-      !this.isLocalAgentCurrent(item.localAgentId) ||
+      !(await this.isLocalAgentCurrent(item.localAgentId)) ||
       !localRoomId ||
       !authorId ||
       !this.mirrors.isActivelyAuthorized(localRoomId, item.ownerAuthorId) ||

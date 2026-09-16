@@ -27,7 +27,8 @@ let db: Db | undefined;
 let enrollments: CommunityAgentEnrollmentStore | undefined;
 let lifecycle: RemoteCommunityLifecycle | undefined;
 let deliveryProjection: CommunityOutboxProjection | undefined;
-let deliveryRetry: ((input: CommunityOutboxRetryInput) => CommunityOutboxRetryResult) | undefined;
+let deliveryRetry:
+  ((input: CommunityOutboxRetryInput) => Promise<CommunityOutboxRetryResult>) | undefined;
 const deliveryListeners = new Set<(ownerAuthorId: string) => void>();
 let localAgentResolver: RemoteCommunityLocalAgentResolver | undefined;
 const adapters = new Map<string, RemoteCommunityAdapter>();
@@ -116,7 +117,7 @@ export function getRemoteCommunityLifecycle(): RemoteCommunityLifecycle {
 
 /** Bind the one in-process retry gate owned by the native delivery worker. */
 export function setRemoteCommunityDeliveryRetry(
-  retry: (input: CommunityOutboxRetryInput) => CommunityOutboxRetryResult
+  retry: (input: CommunityOutboxRetryInput) => Promise<CommunityOutboxRetryResult>
 ): void {
   deliveryRetry = retry;
 }
@@ -124,7 +125,7 @@ export function setRemoteCommunityDeliveryRetry(
 /** Release one owner-qualified transient delivery backoff through the sole worker. */
 export function retryRemoteCommunityDelivery(
   input: CommunityOutboxRetryInput
-): CommunityOutboxRetryResult {
+): Promise<CommunityOutboxRetryResult> {
   if (!deliveryRetry) throw new Error('Remote community delivery retry requires startup wiring');
   return deliveryRetry(input);
 }

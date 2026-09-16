@@ -500,7 +500,7 @@ describe('community outbox', () => {
     ).toBe('terminal');
   });
 
-  it('keeps retry owner-qualified and refuses missing enrollment or revoked mirror authority', () => {
+  it('keeps retry owner-qualified and refuses missing enrollment or revoked mirror authority', async () => {
     const harness = createRoomHarness({
       agents: agentLookupFor({ '/agents/a': { name: 'Agent A' } }),
     });
@@ -537,7 +537,7 @@ describe('community outbox', () => {
       ownerAuthorId: harness.human,
       idempotencyKey: item.idempotencyKey,
     };
-    expect(runtime.retryNow(input)).toBe('terminal');
+    await expect(runtime.retryNow(input)).resolves.toBe('terminal');
     expect(runtime.outbox.isPending(item.id)).toBe(true);
 
     runtime.enrollments.activate({
@@ -546,11 +546,13 @@ describe('community outbox', () => {
       remoteMemberId: 'remote-a',
       ownerAuthorId: harness.human,
     });
-    expect(runtime.retryNow({ ...input, ownerAuthorId: 'other-owner' })).toBe('missing');
+    await expect(runtime.retryNow({ ...input, ownerAuthorId: 'other-owner' })).resolves.toBe(
+      'missing'
+    );
     expect(runtime.outbox.isPending(item.id)).toBe(true);
 
     runtime.mirrors.revokeAbsentRooms(REF, harness.human, new Set());
-    expect(runtime.retryNow(input)).toBe('terminal');
+    await expect(runtime.retryNow(input)).resolves.toBe('terminal');
     expect(runtime.outbox.isPending(item.id)).toBe(true);
   });
 
