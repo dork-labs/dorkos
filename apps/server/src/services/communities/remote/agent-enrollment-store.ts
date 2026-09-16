@@ -127,4 +127,20 @@ export class CommunityAgentEnrollmentStore {
         }
       : null;
   }
+
+  /** Active local manifests owned by this connection, for a local-only room Stop. */
+  activeLocalAgentIds(communityRef: CommunityRef, ownerAuthorId: string): readonly string[] {
+    return this.db
+      .select({ localAgentId: communityAgentEnrollments.localAgentId })
+      .from(communityAgentEnrollments)
+      .where(
+        and(
+          eq(communityAgentEnrollments.communityRef, communityRef),
+          eq(communityAgentEnrollments.ownerAuthorId, ownerAuthorId),
+          eq(communityAgentEnrollments.state, 'active')
+        )
+      )
+      .all()
+      .map((row) => row.localAgentId);
+  }
 }

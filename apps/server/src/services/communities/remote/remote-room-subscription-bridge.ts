@@ -42,8 +42,6 @@ export interface LocalAgentAuthorResolver {
 
 /** Server-only bridge from a native remote stream into the existing room dispatcher. */
 export class RemoteRoomSubscriptionBridge {
-  private readonly knownRooms = new Map<string, { localRoomId: string; input: MirrorRoomInput }>();
-
   constructor(
     private readonly mirrors: RemoteMirrorStore,
     private readonly service: RoomService,
@@ -102,7 +100,7 @@ export class RemoteRoomSubscriptionBridge {
     }
     // The persisted cache state is the final authorization answer immediately
     // before dispatch; revocation and a stale owner grant therefore fail closed.
-    if (this.mirrors.canRead(local.id, room.ownerAuthorId) !== true) return;
+    if (!this.mirrors.isActivelyAuthorized(local.id, room.ownerAuthorId)) return;
     if (
       !this.mirrors.claimRemoteDispatch(
         room.communityRef,
@@ -113,7 +111,7 @@ export class RemoteRoomSubscriptionBridge {
     ) {
       return;
     }
-    this.service.dispatchImportedRemoteEntry(local.id, saved);
+    this.service.dispatchImportedRemoteEntry(local.id, this.dispatchEntry(room, event, saved));
   }
 
   /**
@@ -129,21 +127,48 @@ export class RemoteRoomSubscriptionBridge {
     this.enrollments.revoke(communityRef, localAgentId, ownerAuthorId);
     const authorId = this.resolveLocalAgentAuthor(localAgentId);
     if (!authorId) return;
-    const stops = [...this.knownRooms.values()]
-      .filter(
-        ({ input }) => input.communityRef === communityRef && input.ownerAuthorId === ownerAuthorId
-      )
-      .map(({ localRoomId }) => this.service.haltAgent(localRoomId, authorId, ownerAuthorId));
+    const stops = this.mirrors
+      .roomIdsForOwner(communityRef, ownerAuthorId)
+      .map((localRoomId) => this.service.haltAgent(localRoomId, authorId, ownerAuthorId));
     await Promise.all(stops);
   }
 
+  /** Stop all locally enrolled agents in one qualified mirror without network access. */
+  async haltRoom(
+    communityRef: MirrorRoomInput['communityRef'],
+    remoteRoomId: string,
+    ownerAuthorId: string
+  ): Promise<number> {
+    const localRoomId = this.mirrors.localRoomIdForOwner(communityRef, remoteRoomId, ownerAuthorId);
+    if (!localRoomId) return 0;
+    const stops = await Promise.all(
+      this.enrollments.activeLocalAgentIds(communityRef, ownerAuthorId).flatMap((localAgentId) => {
+        const authorId = this.resolveLocalAgentAuthor(localAgentId);
+        return authorId ? [this.service.haltAgent(localRoomId, authorId, ownerAuthorId)] : [];
+      })
+    );
+    return stops.reduce((total, stopped) => total + stopped, 0);
+  }
+
+  /** Stop one enrolled local agent in every persisted mirror for this connection. */
+  async haltAgent(
+    communityRef: MirrorRoomInput['communityRef'],
+    localAgentId: string,
+    ownerAuthorId: string
+  ): Promise<number> {
+    const authorId = this.resolveLocalAgentAuthor(localAgentId);
+    if (!authorId || !this.enrollments.findRemoteMember(communityRef, localAgentId, ownerAuthorId))
+      return 0;
+    const stops = await Promise.all(
+      this.mirrors
+        .roomIdsForOwner(communityRef, ownerAuthorId)
+        .map((roomId) => this.service.haltAgent(roomId, authorId, ownerAuthorId))
+    );
+    return stops.reduce((total, stopped) => total + stopped, 0);
+  }
+
   private localRoom(room: MirrorRoomInput) {
-    const local = this.mirrors.ensureRoom(room);
-    this.knownRooms.set(`${room.communityRef}:${room.remoteRoomId}`, {
-      localRoomId: local.id,
-      input: room,
-    });
-    return local;
+    return this.mirrors.ensureRoom(room);
   }
 
   private isFreshReconnect(serverCreatedAt: string, wasActiveBeforeDisconnect: boolean): boolean {
@@ -157,7 +182,24 @@ export class RemoteRoomSubscriptionBridge {
     // Parse before persisting or dispatching so a mutable native projection
     // cannot alter the mentions the dispatcher already evaluated.
     const entry = CommunityEntrySchema.parse(event.entry);
-    const mentions = entry.mentions.flatMap((remoteMemberId) => {
+    return {
+      entry,
+      remoteSeq: event.remoteSeq,
+      author: {
+        memberId: event.author.memberId,
+        displayName: event.author.displayName,
+        kind: event.author.kind,
+      },
+    };
+  }
+
+  /** Translate remote mention identities only on the short-lived local dispatch view. */
+  private dispatchEntry(
+    room: MirrorRoomInput,
+    event: RemoteLiveEntry,
+    saved: ReturnType<RemoteMirrorStore['importEntries']>[number]
+  ) {
+    const mentions = CommunityEntrySchema.parse(event.entry).mentions.flatMap((remoteMemberId) => {
       const enrollment = this.enrollments.findLocalAgent(
         room.communityRef,
         remoteMemberId,
@@ -167,14 +209,6 @@ export class RemoteRoomSubscriptionBridge {
       const authorId = this.resolveLocalAgentAuthor(enrollment.localAgentId);
       return authorId ? [authorId] : [];
     });
-    return {
-      entry: { ...entry, mentions },
-      remoteSeq: event.remoteSeq,
-      author: {
-        memberId: event.author.memberId,
-        displayName: event.author.displayName,
-        kind: event.author.kind,
-      },
-    };
+    return { ...saved, mentions };
   }
 }

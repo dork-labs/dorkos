@@ -162,6 +162,9 @@ describe('RemoteMirrorStore', () => {
     const imported = harness.store.listEntriesAfter(mirrors.ensureRoom(room).id, 0)[0];
     const importedOrigin = authorOrigin(harness.authors.getById(imported!.authorId)!.naturalKey);
     expect(importedOrigin).not.toBe('local');
+    expect(
+      mirrors.cachedEntryForOwner(REF_A, 'general', live.entry.id, harness.human)?.mentions
+    ).toEqual(['remote-ana']);
 
     // Snapshot and reconnect replay are cache-only even where a remote human
     // mentions an enrolled agent. A remote agent is never a local runtime.
@@ -310,7 +313,15 @@ describe('RemoteMirrorStore', () => {
     const importedOrigin = authorOrigin(harness.authors.getById(imported!.authorId)!.naturalKey);
     expect(importedOrigin).not.toBe('local');
 
-    await bridge.revokeEnrollment(REF_A, 'local-ana', harness.human);
+    // A fresh process owns no in-memory room subscription map. Revocation still
+    // stops the held turn by reading the persisted mirror rows first.
+    const restarted = new RemoteRoomSubscriptionBridge(
+      mirrors,
+      harness.service,
+      enrollments,
+      (localAgentId) => (localAgentId === 'local-ana' ? agent.id : null)
+    );
+    await restarted.revokeEnrollment(REF_A, 'local-ana', harness.human);
     await harness.service.triggersIdle();
     expect(enrollments.findRemoteMember(REF_A, 'local-ana', harness.human)).toBeNull();
     expect(runner.interrupted).toHaveLength(1);

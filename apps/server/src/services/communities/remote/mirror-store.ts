@@ -376,6 +376,44 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
     return grant !== undefined;
   }
 
+  /** Whether a mirror is actively authorized for fresh inbound work. */
+  isActivelyAuthorized(roomId: string, ownerAuthorId: string): boolean {
+    const mirror = this.db
+      .select({
+        state: communityRoomMirrors.state,
+        ownerAuthorId: communityRoomMirrors.ownerAuthorId,
+      })
+      .from(communityRoomMirrors)
+      .where(eq(communityRoomMirrors.localRoomId, roomId))
+      .get();
+    return mirror?.state === 'authorized' && mirror.ownerAuthorId === ownerAuthorId;
+  }
+
+  /** Persisted local room ids for one owner's connected community. */
+  roomIdsForOwner(communityRef: CommunityRef, ownerAuthorId: string): readonly string[] {
+    return this.db
+      .select({ localRoomId: communityRoomMirrors.localRoomId })
+      .from(communityRoomMirrors)
+      .where(
+        and(
+          eq(communityRoomMirrors.communityRef, communityRef),
+          eq(communityRoomMirrors.ownerAuthorId, ownerAuthorId)
+        )
+      )
+      .all()
+      .map((row) => row.localRoomId);
+  }
+
+  /** Resolve a qualified remote room to its opaque local mirror id for local-only Stop. */
+  localRoomIdForOwner(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    ownerAuthorId: string
+  ): string | null {
+    const row = this.findRoom(communityRef, remoteRoomId);
+    return row?.ownerAuthorId === ownerAuthorId ? row.localRoomId : null;
+  }
+
   /** Whether this installation has any mirrors that make owner-wide access unsafe. */
   hasMirrors(): boolean {
     return (
