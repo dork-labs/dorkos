@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   CommunityCapabilitiesSchema,
+  CommunityReadContextSchema,
+  ListCommunityEntriesOptsSchema,
   PostCommunityEntryInputSchema,
 } from '../community-adapter.js';
 import {
@@ -70,6 +72,20 @@ describe('community server port additions', () => {
     expect(CommunityCapabilitiesSchema.safeParse({ ...base, credential: 'random' }).success).toBe(
       false
     );
+  });
+
+  it('names an explicit agent for reads without carrying a credential', () => {
+    expect(CommunityReadContextSchema.parse({ actingMemberId: 'owned-agent' })).toEqual({
+      actingMemberId: 'owned-agent',
+    });
+    expect(CommunityReadContextSchema.safeParse({ actingMemberId: '' }).success).toBe(false);
+    expect(
+      CommunityReadContextSchema.safeParse({ actingMemberId: 'owned-agent', token: 'secret' })
+        .success
+    ).toBe(false);
+    expect(
+      ListCommunityEntriesOptsSchema.safeParse({ actingMemberId: 'owned-agent', limit: 50 }).success
+    ).toBe(true);
   });
 
   it('keeps HTTP conversation DTOs strict and free of private fields', () => {
