@@ -21,6 +21,14 @@
 
 set -uo pipefail
 
+# The fixtures build throwaway git repositories in a temp dir, so an inherited
+# GIT_DIR or GIT_INDEX_FILE would aim their `git init`/`git add` at whatever
+# repository set it — and could then make a case pass for the wrong reason.
+# The subject script clears these for itself; clear them here too, so the
+# fixtures test the subject rather than the ambient environment.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR
+unset GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 subject="$script_dir/assert-migrations-current.sh"
 
@@ -119,6 +127,68 @@ check 'a missing drizzle.config.ts is refused' "$tmp/noconfig" "$CLEAN" 1 'no dr
 make_workspace "$tmp/nodrizzle"
 rm -rf "$tmp/nodrizzle/packages/db/drizzle"
 check 'a missing migrations directory is refused' "$tmp/nodrizzle" "$CLEAN" 1 'no migrations directory'
+
+# A LEAKED GIT ENVIRONMENT must not change this gate's answer. The drift check is
+# `git -C <root> status --porcelain -- <dir>`, and `-C` sets the working
+# directory, NOT the repository: git still prefers $GIT_DIR. Three leaks, three
+# different wrong answers, one of them a SILENT PASS — see the subject's header
+# for the measurements. Each case below is a workspace whose honest verdict is
+# known, run under one leak; the subject clears the variables, so each must give
+# the honest verdict anyway. Remove the `unset` from the subject and these go red.
+
+#   $1 — case name
+#   $2 — workspace root
+#   $3 — expected exit
+#   $4 — substring the output must contain (may be empty)
+#   rest — VAR=value assignments to leak into the run
+check_leak() {
+  local name=$1 root=$2 want=$3 needle=$4
+  shift 4
+  local out status
+  out=$(env "$@" WORKSPACE_ROOT="$root" MIGRATION_GENERATOR="$CLEAN" "$subject" 2>&1)
+  status=$?
+  if [ "$status" -ne "$want" ] || { [ -n "$needle" ] && [[ "$out" != *"$needle"* ]]; }; then
+    printf 'FAIL  %s\n      expected exit %s%s, got %s\n      output: %s\n' \
+      "$name" "$want" "${needle:+ mentioning '$needle'}" "$status" "$out"
+    fail=$((fail + 1))
+    return
+  fi
+  printf 'ok    %s\n' "$name"
+  pass=$((pass + 1))
+}
+
+# Clean tree, leak aimed at an unrelated repository. Honest verdict: pass.
+make_workspace "$tmp/leaked"
+make_workspace "$tmp/elsewhere"
+check_leak 'a leaked GIT_DIR pair cannot turn a clean tree red' "$tmp/leaked" 0 'is clean' \
+  GIT_DIR="$tmp/elsewhere/.git" GIT_WORK_TREE="$tmp/elsewhere"
+
+# Deliberately NOT a case: GIT_DIR leaked without GIT_WORK_TREE. Measured on git
+# 2.x here, it happens to give the honest answer anyway, so a fixture for it
+# passes with the subject's `unset` removed — a case that cannot fail is a
+# decoration, and this file exists because of one of those. The three below all
+# go red without the `unset`; checked by removing it.
+
+# Clean tree, stale GIT_INDEX_FILE: `status` would diff the committed migrations
+# against an empty index and call them deleted. The comment in the subject calls
+# this the nastier one, so it is pinned rather than asserted.
+: >"$tmp/empty-index"
+check_leak 'a stale GIT_INDEX_FILE cannot turn a clean tree red' "$tmp/leaked" 0 'is clean' \
+  GIT_INDEX_FILE="$tmp/empty-index"
+
+# The silent-pass shape, and the reason this fixture exists at all: an ANCESTOR
+# repository that gitignores the workspace. Real drift, and git run against that
+# ancestor prints nothing for a path it is told to ignore, so the gate would exit
+# 0 on a drifted tree. Honest verdict: fail, naming the drifted file.
+mkdir -p "$tmp/ancestor"
+git -C "$tmp/ancestor" init -q
+printf 'nested/\n' >"$tmp/ancestor/.gitignore"
+git -C "$tmp/ancestor" add -A
+git -C "$tmp/ancestor" -c user.email=t@t -c user.name=t commit -qm init
+make_workspace "$tmp/ancestor/nested"
+printf 'CREATE TABLE b (id text);' >"$tmp/ancestor/nested/packages/db/drizzle/0001_drift.sql"
+check_leak 'a leaked ancestor GIT_DIR cannot hide real drift' "$tmp/ancestor/nested" 1 '0001_drift.sql' \
+  GIT_DIR="$tmp/ancestor/.git" GIT_WORK_TREE="$tmp/ancestor"
 
 printf '\nassert-migrations-current fixtures: %s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

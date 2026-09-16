@@ -153,7 +153,15 @@ export function readBaselineTables(history: MigrationHistory): string[] {
  * The minimum a database handle must offer here. Both the Neon driver used in
  * production and the PGlite instance used in tests satisfy it.
  */
-export type SqlExecutor = { execute(query: ReturnType<typeof sql>): Promise<unknown> };
+export type SqlExecutor = {
+  execute(query: ReturnType<typeof sql>): Promise<unknown>;
+  /**
+   * Run `callback` in one transaction on one connection. Required, not optional:
+   * the baseline mark is only safe inside one, and a driver that cannot open one
+   * is a driver this must not run against.
+   */
+  transaction<T>(callback: (tx: SqlExecutor) => Promise<T>): Promise<T>;
+};
 
 /** What {@link markBaselineApplied} decided to do, for logging and assertions. */
 export type BaselineOutcome =
@@ -177,7 +185,8 @@ function rowsOf(result: unknown): Record<string, unknown>[] {
 /**
  * A pair of signed 32-bit advisory-lock keys derived from a name, so two
  * concurrent builds serialize on the same history instead of racing
- * check-then-insert.
+ * check-then-insert. Taken as a transaction-scoped lock — see
+ * {@link markBaselineApplied}.
  *
  * Two int4s rather than one int8 because this file compiles at an ES2017 target
  * where BigInt literals are unavailable, and `pg_advisory_lock(int4, int4)` is
@@ -205,9 +214,15 @@ function advisoryLockKeys(name: string): [number, number] {
  * by a query that fails in production. There is no safe guess between "already
  * done" and "not started", so this refuses rather than choosing.
  *
- * Idempotent and safe to run concurrently: the check and the insert are taken
- * under a transaction-scoped advisory lock keyed on the journal table, so two
- * builds racing the same database serialize and the second sees the first's row.
+ * Idempotent, and concurrency-safe where it counts: the check and the insert
+ * happen in one transaction under a transaction-scoped advisory lock keyed on the
+ * journal table, so two builds racing the same database serialize and the second
+ * sees the first's row. The `CREATE SCHEMA/TABLE IF NOT EXISTS` above the lock is
+ * the one part left unguarded, on purpose — taking `ACCESS EXCLUSIVE` on the
+ * journal inside the transaction would order it before the advisory lock and
+ * invert the lock order against this same path. Concurrent `IF NOT EXISTS` DDL
+ * can still lose a unique-violation race in Postgres; a build that hits it fails
+ * loudly and the next one succeeds, which is the right trade against a deadlock.
  *
  * @param db - A database handle able to execute raw SQL.
  * @param history - The history to consider.
@@ -234,23 +249,33 @@ export async function markBaselineApplied(
   `);
 
   const expected = readBaselineTables(history);
-
-  // Session-scoped, because the drivers here do not guarantee one connection for
-  // one statement outside an explicit transaction; released in `finally`.
   const [lockA, lockB] = advisoryLockKeys(qualified);
-  await db.execute(sql`SELECT pg_advisory_lock(${lockA}, ${lockB})`);
-  try {
+
+  // ONE TRANSACTION, and a TRANSACTION-scoped lock. `pg_advisory_lock` is
+  // session-scoped: it is held by the connection that took it and released only
+  // by an unlock on that same connection. Under the pooled driver production
+  // uses, the statements below are not guaranteed the same connection, so the
+  // unlock could land on a different one — returning false and stranding the
+  // lock on the first until that connection is closed, which would deadlock
+  // every later build against this journal. `pg_advisory_xact_lock` inside an
+  // explicit transaction cannot be stranded: Postgres releases it at commit or
+  // rollback, including a rollback caused by the connection dying. The
+  // transaction is also what gives the check and the insert one connection and
+  // one snapshot.
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockA}, ${lockB})`);
+
     // Ask whether the journal has ROWS, not whether the table exists. We may have
     // just created it, and an empty journal from an interrupted earlier run must
     // still be fillable.
-    const tracked = rowsOf(await db.execute(sql`SELECT 1 FROM ${schemaId}.${tableId} LIMIT 1`));
+    const tracked = rowsOf(await tx.execute(sql`SELECT 1 FROM ${schemaId}.${tableId} LIMIT 1`));
     if (tracked.length > 0) return 'already-tracked';
 
     // Catalog lookup rather than `to_regclass('public.user')`: one of these
     // tables is named `user`, a reserved word, which the regclass cast parses as
     // the keyword and rejects.
     const present = rowsOf(
-      await db.execute(sql`
+      await tx.execute(sql`
         SELECT c.relname
         FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -275,13 +300,13 @@ export async function markBaselineApplied(
     }
 
     const baseline = readBaselineRow(history);
-    // Conditional insert, not a plain VALUES: the advisory lock orders writers on
-    // separate connections, but two calls sharing ONE connection (the lock is
-    // re-entrant within a session) would both pass the check above. `WHERE NOT
+    // Conditional insert, not a plain VALUES. The lock orders writers on separate
+    // connections, but advisory locks are re-entrant within a session, so two
+    // calls that end up sharing one would both pass the check above. `WHERE NOT
     // EXISTS` makes the journal's emptiness part of the write itself, and
     // RETURNING says which call actually wrote.
     const inserted = rowsOf(
-      await db.execute(sql`
+      await tx.execute(sql`
         INSERT INTO ${schemaId}.${tableId} ("hash", "created_at")
         SELECT ${baseline.hash}, ${baseline.createdAt}
         WHERE NOT EXISTS (SELECT 1 FROM ${schemaId}.${tableId})
@@ -289,7 +314,5 @@ export async function markBaselineApplied(
       `)
     );
     return inserted.length > 0 ? 'marked-applied' : 'already-tracked';
-  } finally {
-    await db.execute(sql`SELECT pg_advisory_unlock(${lockA}, ${lockB})`);
-  }
+  });
 }

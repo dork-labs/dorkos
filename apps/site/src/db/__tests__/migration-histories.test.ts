@@ -2,7 +2,8 @@
  * @vitest-environment node
  */
 import { PGlite } from '@electric-sql/pglite';
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { drizzle, type PgliteDatabase } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -15,6 +16,7 @@ import {
   markBaselineApplied,
   readBaselineRow,
   type MigrationHistory,
+  type SqlExecutor,
 } from '../../../scripts/migration-histories';
 
 // Every case boots its own PGlite and replays a migration history into it,
@@ -27,6 +29,12 @@ const PUBLIC = MIGRATION_HISTORIES.find((h) => h.id === 'public')!;
 const CONTROL_PLANE = MIGRATION_HISTORIES.find((h) => h.id === 'control-plane')!;
 
 type Db = PgliteDatabase<Record<string, never>>;
+
+/** Render a drizzle `SQL` fragment as the text a driver would send. */
+const pgDialect = new PgDialect();
+function sqlToText(query: SQL): string {
+  return pgDialect.sqlToQuery(query).sql;
+}
 
 /** A fresh empty PGlite database with a drizzle handle over it. */
 function freshDatabase(): { client: PGlite; db: Db } {
@@ -348,6 +356,89 @@ describe('adopting the split on a database built by the frozen history', () => {
     // The other half is unaffected and still marks cleanly.
     expect(await markBaselineApplied(db, PUBLIC)).toBe('marked-applied');
     await client.close();
+  });
+
+  // The lock is transaction-scoped so that it cannot outlive the call. A
+  // session-scoped one is released by an unlock on the connection that took it,
+  // and under a pooled driver that unlock can land on a DIFFERENT connection —
+  // stranding the lock until the first is closed, and deadlocking every later
+  // build against this journal.
+  //
+  // PGlite is one in-process connection, so it cannot reproduce that split and
+  // the two `pg_locks` cases below prove only the weaker "something releases the
+  // lock". The case after them is the one that pins the mechanism, by reading the
+  // SQL actually issued.
+  /** Advisory locks currently held anywhere in the database. */
+  async function heldAdvisoryLocks(client: PGlite): Promise<unknown[]> {
+    const rows = await client.query(
+      `SELECT classid, objid FROM pg_locks WHERE locktype = 'advisory' AND granted`
+    );
+    return rows.rows;
+  }
+
+  it('holds no advisory lock once it has returned', async () => {
+    const { client, db } = await seededFromFrozenHistory();
+    expect(await markBaselineApplied(db, PUBLIC)).toBe('marked-applied');
+    expect(await heldAdvisoryLocks(client)).toEqual([]);
+    await client.close();
+  });
+
+  it('holds no advisory lock after it refuses a half-built database', async () => {
+    const { client, db } = await seededFromFrozenHistory();
+    await client.exec(`DROP TABLE "audit_log"`);
+    await expect(markBaselineApplied(db, CONTROL_PLANE)).rejects.toThrow(/half-built/);
+    expect(await heldAdvisoryLocks(client)).toEqual([]);
+    expect(await journalRows(client, 'drizzle', CONTROL_PLANE.migrationsTable)).toHaveLength(0);
+    await client.close();
+  });
+
+  it('takes a transaction-scoped lock inside a transaction and never unlocks by hand', async () => {
+    // The discriminating case. Both alternatives the production code must not be
+    // — a session lock released in a `finally`, and a session lock never
+    // released — are invisible to PGlite, which is one connection and so can
+    // never put the lock and the unlock on different ones. Read the SQL instead.
+    const issued: string[] = [];
+    const recorder: SqlExecutor = {
+      execute(query: SQL) {
+        issued.push(sqlToText(query));
+        return Promise.resolve({ rows: [] });
+      },
+      transaction<T>(callback: (tx: SqlExecutor) => Promise<T>): Promise<T> {
+        issued.push('BEGIN');
+        return callback(recorder).then(
+          (value) => {
+            issued.push('COMMIT');
+            return value;
+          },
+          (error: unknown) => {
+            issued.push('ROLLBACK');
+            throw error;
+          }
+        );
+      },
+    };
+
+    // No rows come back, so this takes the 'fresh-database' path — which is
+    // enough: the lock is taken before any of the branching.
+    expect(await markBaselineApplied(recorder, PUBLIC)).toBe('fresh-database');
+
+    const lockAt = issued.findIndex((s) => s.includes('pg_advisory_xact_lock'));
+    expect(lockAt).toBeGreaterThan(-1);
+    // Inside the transaction — a transaction-scoped lock outside one is released
+    // immediately and guards nothing.
+    expect(issued.indexOf('BEGIN')).toBeGreaterThan(-1);
+    expect(issued.indexOf('BEGIN')).toBeLessThan(lockAt);
+    expect(issued.lastIndexOf('COMMIT')).toBeGreaterThan(lockAt);
+    // The session-scoped pair must not appear at all: `pg_advisory_unlock` is the
+    // call that can land on the wrong connection, and this code must never make it.
+    expect(issued.some((s) => /pg_advisory_lock\b/.test(s))).toBe(false);
+    expect(issued.some((s) => s.includes('pg_advisory_unlock'))).toBe(false);
+    // And the DDL stays OUTSIDE the transaction: `CREATE TABLE IF NOT EXISTS`
+    // takes ACCESS EXCLUSIVE on the journal, which inside would be taken before
+    // the advisory lock and invert the lock order against this same path.
+    const ddlAt = issued.findIndex((s) => s.includes('CREATE TABLE IF NOT EXISTS'));
+    expect(ddlAt).toBeGreaterThan(-1);
+    expect(ddlAt).toBeLessThan(issued.indexOf('BEGIN'));
   });
 
   it('serializes concurrent passes so only one baseline row is written', async () => {

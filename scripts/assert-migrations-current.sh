@@ -77,6 +77,34 @@
 
 set -uo pipefail
 
+# A LEAKED GIT_DIR POINTS THIS GATE AT THE WRONG REPOSITORY. The drift check is
+# `git -C "$workspace_root" status --porcelain -- "$drizzle_dir"`, and `-C` sets
+# the working directory, NOT the repository: git still prefers $GIT_DIR when it
+# is set. Anything that exports one — a hook, a rebase or bisect script, an outer
+# harness — aims the check at that other repository, which does not contain the
+# absolute path being asked about.
+#
+# WHICH WAY IT BREAKS DEPENDS ON WHERE THE LEAK POINTS, and one of the shapes is
+# a silent pass, so do not reason from the first one you try. All three measured:
+#
+#   * GIT_DIR + GIT_WORK_TREE at an UNRELATED repository — git exits 128, "is
+#     outside repository", the status check below catches the non-zero exit and a
+#     CLEAN tree fails saying "could not read git status". A false red: an author
+#     sent hunting through migrations for a problem that is not there.
+#   * GIT_DIR alone — the work tree stays put, and a clean tree reports as drift.
+#     Another false red, by a different route.
+#   * GIT_DIR + GIT_WORK_TREE at an ANCESTOR repository that gitignores this one —
+#     real, uncommitted drift prints NOTHING and the gate exits 0. A false GREEN,
+#     which is the silence-is-success shape this whole file exists to prevent.
+#
+# A stale GIT_INDEX_FILE is its own case again: `status` diffs against someone
+# else's index and reports the committed migrations as deleted. So take none of
+# them from the environment; the answer must not depend on who called us. Pinned
+# by the leaked-GIT_DIR cases in scripts/test-assert-migrations-current.sh, which
+# go red if this `unset` is removed.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR
+unset GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 workspace_root=${WORKSPACE_ROOT:-$repo_root}
 

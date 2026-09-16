@@ -34,6 +34,27 @@ async function main(): Promise<void> {
   const pool = new Pool({ connectionString: url });
   try {
     const db = drizzle(pool);
+    // Own the checkout, exactly as src/db/transaction-client.ts does and for the
+    // same measured reason: drizzle 0.45's Pool transaction acquires a client and
+    // then awaits BEGIN, both BEFORE its own release `finally`. A connection that
+    // dies in that window leaks the client, and `pool.end()` below would then wait
+    // on a client that is never released — turning a failure this script is
+    // supposed to report into a build that hangs.
+    db.transaction = async (transaction, config) => {
+      const client = await pool.connect();
+      let failed = false;
+      try {
+        return await drizzle(client).transaction(transaction, config);
+      } catch (error) {
+        failed = true;
+        throw error;
+      } finally {
+        // A failed rollback or interrupted commit leaves session state unknown —
+        // and this connection may still hold the advisory lock. Discard it rather
+        // than returning it to the pool.
+        client.release(failed);
+      }
+    };
     for (const history of MIGRATION_HISTORIES) {
       const outcome = await markBaselineApplied(db, history);
       console.log(`[baseline] ${history.id}: ${outcome} (${history.migrationsTable})`);
