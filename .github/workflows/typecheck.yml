@@ -179,6 +179,55 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm run check:vocab-gate
 
+      # The public/private boundary (DOR-2024): a control-plane hostname, a
+      # price or plan name, or anything else that belongs to the closed-source
+      # side of DorkOS Cloud, reaching this repository's source or prose.
+      # AGENTS.md ("## DorkOS Cloud") has stated that rule for months with
+      # nothing enforcing it; a 2026-09-13 audit found two live examples.
+      # Rides THIS job for the same reason the three gates above it do:
+      # `typecheck` is already required and already reports on `merge_group`,
+      # and a gate on a non-required check is not a gate.
+      #
+      # TWO TIERS, AND THE SECRET IS ONLY HALF OF IT. The committed shape
+      # patterns (scripts/boundary/shape-rules.tsv) describe forms and are safe
+      # to publish. The exact term list is private and arrives as the
+      # organisation secret BOUNDARY_TERMS. A fork PR gets no secrets, so the
+      # guard runs shape-only there and says so on stdout — one of
+      # `boundary: mode=shape-only …` or `boundary: mode=shape+terms …` is
+      # printed on every run, and neither line names a term.
+      #
+      # WHY `BOUNDARY_TERMS_REQUIRED` IS A SEPARATE, EXPLICIT SWITCH. GitHub
+      # sets a missing secret to the EMPTY STRING, so emptiness alone cannot
+      # distinguish "this is a fork" from "someone renamed the secret and the
+      # gate has quietly been checking nothing". The repository/organisation
+      # VARIABLE below is the operator's declaration that the secret exists;
+      # with it set, an absent or empty ruleset fails the job (exit 2) instead
+      # of silently downgrading. Until the operator sets it, this step enforces
+      # the shape patterns only — which is also what keeps this PR from
+      # deadlocking the merge queue on a secret that does not exist yet.
+      #
+      # WHO GETS NO SECRETS, and therefore must not be held to the full
+      # ruleset. `github.event.pull_request.head.repo.fork` is null on
+      # merge_group, so `!= true` is true there, which is correct: the queue is
+      # never a fork. Dependabot is the trap: its PRs come from an IN-REPO
+      # branch, so the fork test passes, but GitHub withholds repository
+      # secrets from `dependabot[bot]`-actored `pull_request` runs — without
+      # the actor test below, every dependency PR would exit 2 on a required
+      # check and could never enter the queue.
+      #
+      # The variable is tested for non-emptiness rather than against '1', so an
+      # operator who writes `true` or `yes` still gets enforcement instead of a
+      # silent downgrade to shape-only — which is the hazard the switch exists
+      # to prevent, not one it should introduce.
+      #
+      # Operator steps, in this order: contributing/boundary-guard.md.
+      - name: Public/private boundary gate (DOR-2024)
+        if: ${{ !cancelled() }}
+        env:
+          BOUNDARY_TERMS: ${{ secrets.BOUNDARY_TERMS }}
+          BOUNDARY_REQUIRE_TERMS: ${{ (vars.BOUNDARY_TERMS_REQUIRED != '' && github.event.pull_request.head.repo.fork != true && github.actor != 'dependabot[bot]' && github.triggering_actor != 'dependabot[bot]') && '1' || '' }}
+        run: pnpm run check:boundary
+
       # Raw NUL bytes pasted into text files (DOR-1561). Rides THIS job for
       # the same reason the gate above it does: `typecheck` is already a
       # required status check that reports on `merge_group`, and a gate on a
