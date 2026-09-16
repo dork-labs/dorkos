@@ -57,6 +57,7 @@ export interface RemoteRoomSubscriptionRuntimeDeps {
 interface DesiredSubscription {
   key: string;
   signature: string;
+  localAgentId: string;
   adapter: RemoteRoomSubscriptionAdapter;
   room: MirrorRoomInput;
   context: CommunityReadContext;
@@ -71,6 +72,9 @@ interface DiscoveredRoom {
 interface RunningSubscription {
   signature: string;
   abort: AbortController;
+  communityRef: CommunityRef;
+  ownerAuthorId: string;
+  localAgentId: string;
 }
 
 /** Test-only readout of the current owner-qualified native replay boundary. */
@@ -100,6 +104,8 @@ export class RemoteRoomSubscriptionRuntime {
   private readonly observations = new Map<string, MutableObservation>();
   private timer: ReturnType<typeof setInterval> | undefined;
   private reconciling: Promise<void> | undefined;
+  private refreshQueued = false;
+  private membershipVersion = 0;
   private stopped = true;
 
   constructor(private readonly deps: RemoteRoomSubscriptionRuntimeDeps) {}
@@ -166,14 +172,54 @@ export class RemoteRoomSubscriptionRuntime {
     this.refresh();
   }
 
+  /**
+   * Remove one deleted local manifest from every qualified remote enrollment.
+   *
+   * Mesh invokes this after it has removed the registry row, so the former
+   * room author is supplied from the durable author registry solely to halt
+   * already-running local turns. New work still resolves only through Mesh.
+   */
+  revokeUnregisteredAgent(localAgentId: string, formerAuthorId: string | null): void {
+    // An in-progress directory pass may have captured this enrollment before
+    // Mesh removed it. Invalidate that pass so it cannot re-authorize a room or
+    // reopen the stream after the cascade below has revoked it.
+    this.membershipVersion += 1;
+    const enrollments = this.deps.enrollments.activeForLocalAgent(localAgentId);
+    for (const enrollment of enrollments) {
+      this.abortStreamsForAgent(
+        enrollment.communityRef,
+        enrollment.ownerAuthorId,
+        enrollment.localAgentId
+      );
+      void this.deps.bridge
+        .revokeEnrollment(
+          enrollment.communityRef,
+          enrollment.localAgentId,
+          enrollment.ownerAuthorId,
+          formerAuthorId
+        )
+        .catch(() => undefined);
+    }
+    this.refresh();
+  }
+
   private refresh(): void {
-    if (this.stopped || this.reconciling || this.deps.isReady?.() === false) return;
+    if (this.stopped || this.deps.isReady?.() === false) return;
+    if (this.reconciling) {
+      this.refreshQueued = true;
+      return;
+    }
     this.reconciling = this.reconcile().finally(() => {
       this.reconciling = undefined;
+      if (this.refreshQueued) {
+        this.refreshQueued = false;
+        this.refresh();
+      }
     });
   }
 
   private async reconcile(): Promise<void> {
+    const membershipVersion = this.membershipVersion;
     const desired = new Map<string, DesiredSubscription>();
     for (const connection of this.deps.enrollments.activeConnections()) {
       const adapter = this.deps.adapters(connection.communityRef, connection.ownerAuthorId);
@@ -216,6 +262,11 @@ export class RemoteRoomSubscriptionRuntime {
           }
         }
 
+        // `listRooms` is remote I/O. A local Mesh deletion can revoke this
+        // enrollment while that await is parked, so do not apply the stale
+        // room directory even briefly before the queued fresh refresh runs.
+        if (membershipVersion !== this.membershipVersion) return;
+
         // The complete set of successful enrolled-agent directory reads is
         // authoritative. Any old room absent from it loses its persisted grant
         // and its held turns/outbound work before streams are reconciled.
@@ -242,6 +293,7 @@ export class RemoteRoomSubscriptionRuntime {
             desired.set(key, {
               key,
               signature: `${key}:${member.remoteMemberId}`,
+              localAgentId: member.localAgentId,
               adapter,
               room: input,
               context: { actingMemberId: member.remoteMemberId },
@@ -252,6 +304,11 @@ export class RemoteRoomSubscriptionRuntime {
         this.deps.bridge.markStale(connection.communityRef, connection.ownerAuthorId);
       }
     }
+
+    // Never apply a directory snapshot that started before a local Mesh
+    // deletion revoked one of its enrollments. The queued refresh above reads
+    // the newly authoritative active set after this stale pass returns.
+    if (this.stopped || membershipVersion !== this.membershipVersion) return;
 
     for (const [key, running] of this.running) {
       const next = desired.get(key);
@@ -264,7 +321,13 @@ export class RemoteRoomSubscriptionRuntime {
     for (const next of desired.values()) {
       if (this.running.has(next.key)) continue;
       const abort = new AbortController();
-      this.running.set(next.key, { signature: next.signature, abort });
+      this.running.set(next.key, {
+        signature: next.signature,
+        abort,
+        communityRef: next.room.communityRef,
+        ownerAuthorId: next.room.ownerAuthorId,
+        localAgentId: next.localAgentId,
+      });
       void this.consume(next, abort);
     }
   }
@@ -379,6 +442,23 @@ export class RemoteRoomSubscriptionRuntime {
     if (this.deps.isRoomJoined) return this.deps.isRoomJoined(room);
     const access = remoteRoomAccessOf(room);
     return room.archived === false && access?.joined === true;
+  }
+
+  private abortStreamsForAgent(
+    communityRef: CommunityRef,
+    ownerAuthorId: string,
+    localAgentId: string
+  ): void {
+    for (const [key, subscription] of this.running) {
+      if (
+        subscription.communityRef === communityRef &&
+        subscription.ownerAuthorId === ownerAuthorId &&
+        subscription.localAgentId === localAgentId
+      ) {
+        subscription.abort.abort();
+        this.running.delete(key);
+      }
+    }
   }
 }
 

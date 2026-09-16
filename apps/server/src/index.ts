@@ -349,6 +349,7 @@ import {
 import { CommunityOutboxRuntime } from './services/communities/remote/community-outbox-runtime.js';
 import { RemoteRoomSubscriptionBridge } from './services/communities/remote/remote-room-subscription-bridge.js';
 import { RemoteRoomSubscriptionRuntime } from './services/communities/remote/remote-room-subscription-runtime.js';
+import { registerRemoteCommunityUnregisterCascade } from './services/communities/remote/mesh-unregister-cascade.js';
 import { INTERVALS } from './config/constants.js';
 import { resolveDorkHome } from './lib/dork-home.js';
 import { acquireInstanceLock } from './lib/instance-lock.js';
@@ -1309,6 +1310,9 @@ async function start() {
   setReadCursorService(readCursorService);
 
   const roomAttachmentBytes = new LocalRoomAttachmentStore(dorkHome);
+  // Both the worker and native stream lifecycle must remain inert until Mesh
+  // has reconciled the on-disk manifest registry for this process boot.
+  let meshStartupReconciled = false;
   const remoteCommunityBridge: { current: RemoteRoomSubscriptionBridge | undefined } = {
     current: undefined,
   };
@@ -1331,6 +1335,10 @@ async function start() {
         attachmentBytes: roomAttachmentBytes,
         adapters: (communityRef, ownerAuthorId) =>
           getRemoteCommunityAdapter(communityRef, ownerAuthorId),
+        isLocalAgentCurrent: (localAgentId) =>
+          meshStartupReconciled &&
+          meshCore?.get(localAgentId) !== undefined &&
+          meshCore.getProjectPath(localAgentId) !== undefined,
         changes: { changed: publishRemoteCommunityDeliveryChanges },
       });
       return {
@@ -1372,10 +1380,9 @@ async function start() {
       getRemoteCommunityAdapter(communityRef, ownerAuthorId),
     resolveLocalAgentAuthor: (localAgentId) =>
       resolveRemoteLocalAgent(localAgentId)?.authorId ?? null,
-    isReady: () => meshCore !== undefined,
+    isReady: () => meshStartupReconciled && meshCore !== undefined,
   });
   setRemoteCommunityLifecycle(remoteCommunitySubscriptions);
-  remoteCommunityRuntime.start();
   // Native room streams need Mesh's trusted manifest-to-path registry. Start
   // them only after startup reconciliation below, so a cold boot never treats
   // an as-yet-unavailable registry as an authoritative empty agent directory.
@@ -1819,6 +1826,13 @@ async function start() {
     // removal, exactly like the sibling cascades below.
     meshCore.onUnregister(createAgentIdentityUnregisterCascade(getAgentIdentityService, logger));
 
+    // A removed Mesh manifest no longer owns any remote enrollment. The
+    // cascade stops and aborts held delivery before the next network boundary,
+    // then closes only that manifest's native streams.
+    if (remoteCommunitySubscriptions) {
+      registerRemoteCommunityUnregisterCascade(meshCore, roomAuthors, remoteCommunitySubscriptions);
+    }
+
     // Wire the cwd -> agent lookup notification emitters read from (session
     // lifecycle, ask resolution): both fire from module-level projector
     // subscriptions registered before this line runs, so they read this
@@ -1839,6 +1853,7 @@ async function start() {
     try {
       const result = await meshCore.reconcileOnStartup();
       logger.info('[Mesh] Startup reconciliation complete', result);
+      meshStartupReconciled = true;
     } catch (err) {
       logger.error('[Mesh] Startup reconciliation failed', logError(err));
     }
@@ -1849,7 +1864,10 @@ async function start() {
     } catch (err) {
       logger.warn('[Mesh] Failed to ensure DorkBot system agent', logError(err));
     }
-    remoteCommunitySubscriptions?.start();
+    if (meshStartupReconciled) {
+      remoteCommunityRuntime?.start();
+      remoteCommunitySubscriptions?.start();
+    }
 
     // Bring every agent workspace DorkOS owns up to the current Operating DorkOS
     // skill pack, and link it where Claude Code reads it. Two repairs in one

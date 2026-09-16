@@ -211,4 +211,23 @@ export class CommunityAgentEnrollmentStore {
         state: row.state as CommunityAgentEnrollment['state'],
       }));
   }
+
+  /** List every active remote binding for one current local Mesh manifest. */
+  activeForLocalAgent(localAgentId: string): readonly CommunityAgentEnrollment[] {
+    return this.db
+      .select()
+      .from(communityAgentEnrollments)
+      .where(
+        and(
+          eq(communityAgentEnrollments.localAgentId, localAgentId),
+          eq(communityAgentEnrollments.state, 'active')
+        )
+      )
+      .all()
+      .map((row) => ({
+        ...row,
+        communityRef: row.communityRef as CommunityRef,
+        state: row.state as CommunityAgentEnrollment['state'],
+      }));
+  }
 }
