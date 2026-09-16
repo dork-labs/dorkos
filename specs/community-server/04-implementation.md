@@ -7,7 +7,7 @@
 ## Progress
 
 **Status:** In Progress  
-**Tasks Completed:** 6 / 25 (foundation implemented, independently accepted, and verified; PR merge pending)
+**Merged phases:** Foundation and admission (PRs #1912 and #1913). Browser/files/export PR #1914 is in the merge queue. Local participation and final packaged acceptance remain in progress; the programme is not complete.
 
 ## Foundation: tasks 1.1–1.6
 
@@ -15,7 +15,7 @@ Workers `/root/implement_community_contract` and `/root/implement_community_serv
 
 The public contract includes versioned metadata, channels, entries, durable cursors, explicit acting identities, and capability-aware conformance. Private credential responses have their own server-only schemas. Existing local and Buzz communities explicitly refuse unsupported acting identities.
 
-The new app owns PostgreSQL migrations, Better Auth, one-owner bootstrap, channel membership, roles, ordered idempotent posts, one-level replies, resolved mentions, read cursors, and replayable SSE. Docker packaging and a required real-Postgres CI job accompany the app. The browser page is a status shell, not yet a chat client.
+The foundation introduced PostgreSQL migrations, Better Auth, one-owner bootstrap, channel membership, roles, ordered idempotent posts, one-level replies, resolved mentions, read cursors, and replayable SSE. Docker packaging and a required real-Postgres CI job accompanied it. That phase shipped a browser status shell; the later browser phase adds the chat client described below.
 
 Independent review reproduced and fixed five issues: private-channel discovery by unjoined administrators, a read-cursor membership race, incorrectly protected public metadata, stale-role writes after demotion, and streams surviving original-session revocation. The accepted source was `eba138949880f3e0791e07d2ef849132f18ef875` before rebasing onto merged planning commit `c181c414fc6c9eabb4c25f9cd4dbf6e75163710c`.
 
@@ -35,8 +35,18 @@ Existing site, local server, and CLI retain Better Auth 1.7.2 with explicit comp
 
 ## Remaining work
 
-Tasks 2.1–2.4 are assigned to `/root/implement_community_server` in `codex/community-admission`. Task 3.1 storage is assigned to `/root/implement_community_contract` in `codex/community-storage` and is undergoing independent review. Storage is preparatory until real upload/download/export routes consume it. Invitations, moderation, pairing, agent credentials, files, browser chat, local community connections, real agent dispatch, and the final packaged acceptance journey remain unfinished. Canonical requirements and dependencies remain in `03-tasks.json`; the six phases remain six coherent PR batches.
+The admission phase, including invitations, moderation, pairing and agent credentials, is merged in #1913. Browser chat, files and exports have passed independent review and are awaiting the remaining merge-queue gate in #1914. The local participation integration includes native connections, agent subscriptions, transactional outbox delivery, qualified client views, deployment documentation and packaged acceptance infrastructure. These later phases remain open until their combined runtime behavior and final review pass. Canonical requirements and dependencies remain in `03-tasks.json`.
 
 ## Combined browser integration checkpoint
 
 The independently reviewed standalone community browser and its bounded member directory are now included in the local participation integration branch. The browser supports admission, channel history, threads, files, member management, private exports and pairing approval. Its earlier isolated PostgreSQL/Playwright proof does not replace the required combined local-runtime and blocked-egress acceptance journey, which remains pending.
+
+## Local participation integration checkpoint
+
+Workers `/root/complete_qualified_community_routes` and `/root/repair_pending_retry` are finishing the native delivery and app composition work in isolated worktrees. `/root/review_remote_outbox` independently reviews these changes using `REVIEW.md`; root owns combined integration and packaged verification.
+
+The combined real-Postgres suite passed 99 tests, with four declared capability exclusions, after fixing stream cancellation and replay assertions. The packaged runner starts two independent Community processes and the installed CLI package on an internal Docker network. Its network proof confirms PostgreSQL access while public IP and DorkOS-host egress fail. No paid inference credentials enter that runtime.
+
+The packaged browser journey has reached a real local agent dispatch, attachment upload and a held remote post through the production outbox. It exposed an incorrectly framed local SSE stream; the independently accepted fix now delivers the human message to the local app. The driver also now opens the reply thread before checking delivery state. A further observed defect prevented pending state from being published while network delivery was held. Its implementation repair is integrated and passes focused tests; packaged confirmation remains outstanding.
+
+Independent review accepted the app composition correction: qualified remote channels hide the local-only Room inspector, and mirror cache rows no longer appear as separate local channels. Review of the overall delivery path remains open for in-flight Stop/revocation and exact echo correlation before a receipt arrives. Final acceptance must still prove these cases, retries/failures, two-community isolation, both service restarts, responsive browser behavior, and the full frozen checklist. Green component tests do not substitute for those proofs.
