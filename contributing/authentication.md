@@ -386,9 +386,13 @@ explicitly and also stamped on `session.impersonatedBy`.
 
 ### Cleanup jobs (DOR-194)
 
-A daily Vercel Cron (`crons` in `apps/site/vercel.json`, `0 4 * * *`) hits
-`GET /api/cron/cleanup`, which runs `runCleanup` (`lib/cleanup-service.ts`) over
-the account tables through the Better Auth adapter. One idempotent pass:
+A Vercel Cron (`crons` in `apps/site/vercel.json`) hits
+`GET /api/cron/instance-expiry`, which runs `runCleanup`
+(`lib/cleanup-service.ts`) over the account tables through the Better Auth
+adapter. It is one of the two routes the old combined `/api/cron/cleanup` split
+into; the other, `/api/cron/event-retention`, sweeps managed-connector event
+rows and shares nothing with this one but the `CRON_SECRET` check in
+`lib/cron/auth.ts`. One idempotent pass:
 
 - **Purges never-verified accounts** — `user` rows still `emailVerified = false`
   after 7 days (`UNVERIFIED_USER_TTL_MS`). The `user` delete cascades its
@@ -426,7 +430,7 @@ anything — before running it against production data by hand.
 | Admin-action audit + ban hook     | `apps/site/src/lib/admin-audit-hook.ts`                                          |
 | Audit log service                 | `apps/site/src/lib/audit-service.ts`                                             |
 | Scheduled cleanup service         | `apps/site/src/lib/cleanup-service.ts`                                           |
-| Cleanup cron route + schedule     | `apps/site/src/app/api/cron/cleanup/route.ts`, `apps/site/vercel.json`           |
+| Cleanup cron route + schedule     | `apps/site/src/app/api/cron/instance-expiry/route.ts`, `apps/site/vercel.json`   |
 | Audit table + registry plugin     | `apps/site/src/db/audit-schema.ts`, `apps/site/src/lib/audit-registry-plugin.ts` |
 | Data export service               | `apps/site/src/lib/account-service.ts`                                           |
 | Export route                      | `apps/site/src/app/api/account/export/route.ts`                                  |

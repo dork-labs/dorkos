@@ -47,24 +47,25 @@ When you do want a real DB locally — for telemetry endpoint development or sch
 
 ## 5. Drizzle schema and migrations
 
-The telemetry table schema lives at `apps/site/src/db/schema.ts`. It is **not** in `packages/db` — that package is SQLite-only and serves the local DorkOS server. The marketplace telemetry table is Postgres and lives next to the only app that consumes it (`apps/site`).
+The telemetry table schema lives at `apps/site/src/db/telemetry-schema.ts`, re-exported from the **public** barrel `apps/site/src/db/public-schema.ts`. It is **not** in `packages/db` — that package is SQLite-only and serves the local DorkOS server. The marketplace telemetry table is Postgres and lives next to the only app that consumes it (`apps/site`).
 
-The Drizzle config lives at `apps/site/drizzle.config.ts` and points at `./src/db/schema.ts`. Generated migrations land in `apps/site/drizzle/0000_*.sql` and are committed to the repo.
+The site schema is split in two halves over one database, each with its own config, folder and journal table. Telemetry is in the **public** half: `apps/site/drizzle.public.config.ts` points at `./src/db/public-schema.ts`, its migrations land in `apps/site/drizzle-public/` and are committed to the repo. The control-plane half (accounts, device link, admin, managed connectors) is `apps/site/drizzle.control-plane.config.ts` and `apps/site/drizzle-control-plane/`. `apps/site/drizzle/` is the frozen pre-split history — see the README there.
 
 The `apps/site/package.json` exposes three scripts:
 
 ```bash
-pnpm db:generate   # Regenerate the migration when schema.ts changes
-pnpm db:migrate    # Apply pending migrations to DATABASE_URL
-pnpm db:studio     # Open drizzle-studio against DATABASE_URL
+pnpm db:generate:public         # Regenerate after editing public-schema.ts
+pnpm db:generate:control-plane  # Regenerate after editing control-plane-schema.ts
+pnpm db:migrate                 # Baseline, then apply both histories to DATABASE_URL
+pnpm db:studio                  # Open drizzle-studio against DATABASE_URL
 ```
 
 The workflow for changing the schema is:
 
-1. Edit `apps/site/src/db/schema.ts`.
-2. Run `pnpm db:generate --filter @dorkos/site` — this writes a new SQL migration file under `apps/site/drizzle/`.
+1. Edit `apps/site/src/db/telemetry-schema.ts` (or whichever file the public barrel re-exports).
+2. Run `pnpm --filter @dorkos/site db:generate:public` — this writes a new SQL migration file under `apps/site/drizzle-public/`.
 3. Review the generated SQL and commit both `schema.ts` and the migration file in the same commit.
-4. Run `pnpm db:migrate --filter @dorkos/site` against your local Neon branch (or wait for the deploy hook to run it against the staging branch).
+4. Run `pnpm --filter @dorkos/site db:migrate` against your local Neon branch (or wait for the deploy hook to run it against the staging branch).
 
 Migrations are forward-only. There is no down migration story — Postgres state is reproducible from `marketplace.json` plus the cumulative install events, both of which are append-only.
 

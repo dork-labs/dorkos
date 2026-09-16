@@ -13,8 +13,10 @@
     "lint": "eslint .",
     "generate:api-docs": "node scripts/generate-api-docs.ts",
     "site:indexnow": "node scripts/indexnow-ping.mjs",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
+    "db:check": "bash ../../scripts/assert-migrations-current.sh 'apps/site:drizzle.public.config.ts:drizzle-public:db:generate:public' 'apps/site:drizzle.control-plane.config.ts:drizzle-control-plane:db:generate:control-plane'",
+    "db:generate:public": "drizzle-kit generate --config drizzle.public.config.ts",
+    "db:generate:control-plane": "drizzle-kit generate --config drizzle.control-plane.config.ts",
+    "db:migrate": "tsx scripts/baseline-migrations.ts && drizzle-kit migrate --config drizzle.public.config.ts && drizzle-kit migrate --config drizzle.control-plane.config.ts",
     "db:verify-event-capacity": "tsx scripts/verify-managed-event-capacity-cutover.ts",
     "db:studio": "drizzle-kit studio",
     "clean": "rm -rf .next node_modules/.cache"

@@ -34,7 +34,7 @@ import * as eventCleanup from '../event-cleanup-service';
 import * as authModule from '@/lib/auth';
 import * as cleanupModule from '@/lib/cleanup-service';
 import { env } from '@/env';
-import { GET as cleanupCron } from '@/app/api/cron/cleanup/route';
+import { GET as eventRetentionCron } from '@/app/api/cron/event-retention/route';
 import { recoverManagedEventCleanup } from '../event-cleanup-service';
 import { acceptManagedConnectorEvent } from '../event-ingress-service';
 import * as eventIngress from '../event-ingress-service';
@@ -1210,12 +1210,13 @@ describe('managed signed event persistence and handoff', () => {
     const original = env.CRON_SECRET;
     env.CRON_SECRET = 'synthetic-cron-only';
     try {
-      expect((await cleanupCron(new Request('https://dorkos.test/api/cron/cleanup'))).status).toBe(
-        401
-      );
+      expect(
+        (await eventRetentionCron(new Request('https://dorkos.test/api/cron/event-retention')))
+          .status
+      ).toBe(401);
       expect(f.events.deleteTrigger).not.toHaveBeenCalled();
-      const response = await cleanupCron(
-        new Request('https://dorkos.test/api/cron/cleanup', {
+      const response = await eventRetentionCron(
+        new Request('https://dorkos.test/api/cron/event-retention', {
           headers: { authorization: 'Bearer synthetic-cron-only' },
         })
       );

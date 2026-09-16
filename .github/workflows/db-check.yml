@@ -129,3 +129,21 @@ jobs:
       # for a developer and runs this very script, so there is one gate, not two.
       - name: Prove the committed migrations still match the schema
         run: bash scripts/assert-migrations-current.sh
+
+      # apps/site has two Drizzle schemas of its own — a public half and a
+      # control-plane half over one Neon database, each with its own config, out
+      # folder and journal table — and until they existed as targets, nothing in
+      # CI looked at either. That is the same "a change merges green because no
+      # job looks" defect this workflow was created for, one directory over: an
+      # edit to public-schema.ts or control-plane-schema.ts without the matching
+      # `db:generate:*` run would have merged clean. Same script, same
+      # affirmative verdict, so there is one gate and not three.
+      #
+      # A step, not a second job: a failure here has to fail THIS job, because
+      # `db-check` is the required context and adding another required context is
+      # a branch-protection change (see above).
+      - name: Prove the site's two migration histories still match their schemas
+        run: |
+          bash scripts/assert-migrations-current.sh \
+            'apps/site:drizzle.public.config.ts:drizzle-public:db:generate:public' \
+            'apps/site:drizzle.control-plane.config.ts:drizzle-control-plane:db:generate:control-plane'

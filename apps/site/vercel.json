@@ -3,7 +3,11 @@
   "buildCommand": "pnpm db:migrate && pnpm exec turbo run build --filter=@dorkos/site",
   "crons": [
     {
-      "path": "/api/cron/cleanup",
+      "path": "/api/cron/instance-expiry",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/event-retention",
       "schedule": "0 * * * *"
     }
   ]

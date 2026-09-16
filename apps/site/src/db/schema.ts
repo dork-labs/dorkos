@@ -1,183 +1,28 @@
 /**
- * Drizzle ORM schema for the apps/site Neon Postgres database.
+ * The runtime Drizzle schema for the apps/site Neon Postgres database — the
+ * union of both halves of the split.
  *
- * This file is the **privacy contract** for marketplace install telemetry. The
- * `marketplaceInstallEvents` table stores aggregate, non-PII events recorded
- * by `dorkos install` when telemetry is opt-in. Adding a column here is the
- * single chokepoint for what we are allowed to collect — the ESLint and test
- * suite enforce that no field which could identify a user (IP address, user
- * agent, hostname, username, working directory, etc.) ever lands here.
+ * **This file is not what drizzle-kit reads any more.** The schema is split in
+ * two, and each half has its own drizzle config, its own migration folder and
+ * its own journal table:
  *
- * Tasks #6 (read helpers) and #15 (write endpoint) consume this schema.
+ * | Half          | Barrel                    | Config                          | Folder                   | Journal table                         |
+ * | ------------- | ------------------------- | ------------------------------- | ------------------------ | ------------------------------------- |
+ * | public        | `public-schema.ts`        | `drizzle.public.config.ts`        | `drizzle-public/`        | `drizzle.__drizzle_migrations_public` |
+ * | control plane | `control-plane-schema.ts` | `drizzle.control-plane.config.ts` | `drizzle-control-plane/` | `drizzle.__drizzle_migrations_control_plane` |
  *
- * The Better Auth **DorkOS account** tables (`user`, `session`, `account`,
- * `verification`), the plugin tables (`apikey`, `deviceCode`), the device-link
- * `instance` registry, the `audit_log`, the `newsletter_subscriber` list, and
- * the `feedback_submission` table are defined in `./auth-schema.ts` /
- * `./instance-schema.ts` / `./audit-schema.ts` / `./newsletter-schema.ts` /
- * `./feedback-schema.ts` and re-exported below so drizzle-kit and the db
- * client see one schema. They are hard-isolated from `marketplaceInstallEvents`
- * — no foreign keys, join columns, or shared identifiers cross the account ↔
- * telemetry boundary (see `auth-schema.ts`).
+ * A new table goes in one of those two barrels, never here. This file exists
+ * only so the one database client (`client.ts`, `transaction-client.ts`) still
+ * sees one schema namespace — there is one Neon database, and a caller writing
+ * `db.select().from(schema.marketplaceInstallEvents)` should not have to know
+ * which half owns the table.
+ *
+ * The two halves are disjoint and there are no foreign keys across them;
+ * `__tests__/migration-histories.test.ts` asserts both properties against a real
+ * database, and that the union of the two migration folders reproduces exactly
+ * the table set the frozen `drizzle/` history built.
  *
  * @module db/schema
  */
-import {
-  bigserial,
-  boolean,
-  index,
-  integer,
-  pgTable,
-  text,
-  timestamp,
-  uuid,
-} from 'drizzle-orm/pg-core';
-
-export { account, apikey, deviceCode, session, user, verification } from './auth-schema';
-export { managedConnectorAuthConfigResolution } from './managed-auth-config-schema';
-export { instance, type Instance, type NewInstance } from './instance-schema';
-export { auditLog, type AuditLogEntry, type NewAuditLogEntry } from './audit-schema';
-export {
-  connectorTenant,
-  managedConnectorAuthFlow,
-  managedConnectorAuthorityCommand,
-  managedConnectorConnection,
-  managedConnectorExecutionAttempt,
-  managedConnectorGrant,
-  managedConnectorOperationRevision,
-  managedConnectorProvider,
-} from './managed-connectors-schema';
-export {
-  newsletterSubscriber,
-  type NewsletterSubscriber,
-  type NewNewsletterSubscriber,
-  type NewsletterStatus,
-  type NewsletterSource,
-} from './newsletter-schema';
-export {
-  feedbackSubmission,
-  type FeedbackSubmission,
-  type NewFeedbackSubmission,
-  type FeedbackKind,
-  type FeedbackSurface,
-  type FeedbackStatus,
-} from './feedback-schema';
-
-/**
- * `marketplace_install_events` — append-only event log for opt-in install
- * telemetry from `dorkos install`.
- *
- * The columns below are the **complete allowed set**. The schema test in
- * `__tests__/schema.test.ts` enforces negative assertions on PII columns
- * (ipAddress, userAgent, hostname, username, cwd) — those must never be
- * added here.
- */
-export const marketplaceInstallEvents = pgTable(
-  'marketplace_install_events',
-  {
-    /** Surrogate primary key. Bigserial so we can grow past 2B rows. */
-    id: bigserial('id', { mode: 'bigint' }).primaryKey(),
-    /** Package name from marketplace.json (e.g. `code-reviewer`). 1..64 chars. */
-    packageName: text('package_name').notNull(),
-    /** Marketplace identifier (e.g. `dorkos-community`). 1..64 chars. */
-    marketplace: text('marketplace').notNull(),
-    /** Package type — agent | plugin | skill-pack | adapter. */
-    type: text('type').notNull(),
-    /** Install outcome — success | failure | cancelled. */
-    outcome: text('outcome').notNull(),
-    /** Wall-clock duration of the install attempt in milliseconds. */
-    durationMs: integer('duration_ms').notNull(),
-    /** Optional error code (≤64 chars) when outcome is failure. */
-    errorCode: text('error_code'),
-    /**
-     * Random per-install UUID. Generated by the CLI for each install attempt.
-     * Not tied to a user — re-installing the same package emits a fresh UUID.
-     */
-    installId: uuid('install_id').notNull(),
-    /** DorkOS version that emitted the event (e.g. `0.4.2`). ≤32 chars. */
-    dorkosVersion: text('dorkos_version').notNull(),
-    /**
-     * Marketplace source type the plugin was installed from. One of
-     * `relative-path`, `github`, `url`, `git-subdir`, `npm`. Added in
-     * marketplace-05 so we can track adoption of each source form over
-     * time. Not PII — purely an install-pipeline metadata field.
-     */
-    sourceType: text('source_type').notNull(),
-    /** Server-side receive timestamp. Trust this, never the client clock. */
-    receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => [
-    index('idx_install_events_package_received').on(t.packageName, t.receivedAt.desc()),
-    index('idx_install_events_marketplace_received').on(t.marketplace, t.receivedAt.desc()),
-  ]
-);
-
-/** A row read from `marketplace_install_events`. */
-export type MarketplaceInstallEvent = typeof marketplaceInstallEvents.$inferSelect;
-
-/** A row insertable into `marketplace_install_events`. */
-export type NewMarketplaceInstallEvent = typeof marketplaceInstallEvents.$inferInsert;
-
-/**
- * `instance_heartbeats` — one row per DorkOS installation for the anonymous
- * daily heartbeat (DOR-293; Tier 1 opt-out per ADR 260713-143958). **Last-seen
- * semantics via upsert**: the receive route upserts on `instanceId`, so a given
- * install has exactly one row whose `receivedAt` and payload reflect its most
- * recent ping. This bounds the table to the number of distinct instances (not
- * the number of pings) and makes the row count a true distinct-instance metric.
- * "Daily-active" is then a `receivedAt >= now() - 1 day` filter over distinct
- * rows (and any wider window is just a larger interval).
- *
- * The columns below are the **complete allowed set**. Like
- * `marketplace_install_events`, this table is the privacy contract: the schema
- * test in `__tests__/schema.test.ts` forbids any PII column (ipAddress,
- * userAgent, hostname, username, cwd). Every field here is anonymous and
- * aggregate-safe by construction. Public contract: https://dorkos.ai/telemetry.
- */
-export const instanceHeartbeats = pgTable(
-  'instance_heartbeats',
-  {
-    /** Surrogate primary key. */
-    id: bigserial('id', { mode: 'bigint' }).primaryKey(),
-    /**
-     * Random per-install UUID (shared with install telemetry). Identifies one
-     * DorkOS installation so we can de-duplicate to daily-active counts — NOT
-     * a user, and never joined to any account table. **Unique**: the receive
-     * route upserts on this column, so repeated pings update the same row.
-     */
-    instanceId: uuid('instance_id').notNull().unique(),
-    /** DorkOS version from the most recent heartbeat (e.g. `0.46.0`). */
-    dorkosVersion: text('dorkos_version').notNull(),
-    /** Platform and CPU architecture, e.g. `darwin-arm64`. */
-    os: text('os').notNull(),
-    /** Runtime ids the user has enabled, e.g. `{claude-code,codex}`. */
-    runtimesConfigured: text('runtimes_configured').array().notNull(),
-    /** Whether the public tunnel is enabled (mobile-access signal). */
-    tunnelEnabled: boolean('tunnel_enabled').notNull(),
-    /** Whether this instance is device-linked to a DorkOS account (fleet signal). */
-    cloudLinked: boolean('cloud_linked').notNull(),
-    /** Rough count of registered agents. */
-    countAgents: integer('count_agents').notNull(),
-    /** Rough count of scheduled tasks. */
-    countTasks: integer('count_tasks').notNull(),
-    /** Rough count of configured relay adapters. */
-    countRelayAdapters: integer('count_relay_adapters').notNull(),
-    /** Timestamp of the most recent heartbeat. Server clock, never the client's. */
-    receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => [index('idx_heartbeats_received').on(t.receivedAt.desc())]
-);
-
-/** A row read from `instance_heartbeats`. */
-export type InstanceHeartbeat = typeof instanceHeartbeats.$inferSelect;
-
-/** A row insertable into `instance_heartbeats`. */
-export type NewInstanceHeartbeat = typeof instanceHeartbeats.$inferInsert;
-
-export {
-  managedConnectorEventCapacity,
-  managedConnectorEventDefinition,
-  managedConnectorEventBinding,
-  managedConnectorEventSubscription,
-  managedConnectorEventInbox,
-} from './managed-connector-events-schema';
+export * from './control-plane-schema';
+export * from './public-schema';
