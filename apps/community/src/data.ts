@@ -85,6 +85,22 @@ export async function lockChannel(client: PoolClient, channelId: string, member:
   return channel;
 }
 
+/** Lock and check the current actor after the channel lock for each channel mutation. */
+export async function requireLiveRole(
+  client: PoolClient,
+  member: Member,
+  allowed: readonly Member['role'][]
+): Promise<Member['role']> {
+  const result = await client.query<{ role: Member['role'] }>(
+    'SELECT role FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
+    [member.id, member.community_id]
+  );
+  const role = result.rows[0]?.role;
+  if (!role || !allowed.includes(role))
+    throw new ApiError(403, 'FORBIDDEN', 'Your current role cannot perform this action.');
+  return role;
+}
+
 /** Require current channel membership for history, posting and live streams. */
 export function requireJoined(channel: { joined: boolean }): void {
   if (!channel.joined) throw new ApiError(403, 'FORBIDDEN', 'Join this channel first.');

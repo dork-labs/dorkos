@@ -120,6 +120,9 @@ export function registerEventRoutes(
 
   app.get('/api/v1/channels/:id/events', async (c) => {
     const member = await requireMember(c, auth, pool);
+    const openedSession = await auth.api.getSession({ headers: c.req.raw.headers });
+    if (!openedSession || openedSession.user.id !== member.user_id)
+      throw new ApiError(401, 'UNAUTHENTICATED', 'Sign in to continue.');
     const channel = await liveChannel(pool, c.req.param('id'), member.id);
     const resume = c.req.header('last-event-id');
     let position = resume
@@ -162,6 +165,13 @@ export function registerEventRoutes(
       if (revocationTimer) clearInterval(revocationTimer);
     };
     const checkAccess = async () => {
+      const session = await auth.api.getSession({ headers: c.req.raw.headers });
+      if (
+        !session ||
+        session.user.id !== member.user_id ||
+        session.session.id !== openedSession.session.id
+      )
+        return null;
       const active = await pool.query<{
         active: boolean;
         joined: boolean;

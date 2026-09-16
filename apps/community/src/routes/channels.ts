@@ -12,7 +12,7 @@ import {
   type CommunityWireChannel,
 } from '@dorkos/shared/community-wire';
 import type { CommunityAuth } from '../auth.js';
-import { lockChannel, requireMember, transaction, type Member } from '../data.js';
+import { lockChannel, requireLiveRole, requireMember, transaction, type Member } from '../data.js';
 import { ApiError, json, readJson } from '../http.js';
 
 interface ChannelRow {
@@ -78,14 +78,14 @@ export function registerChannelRoutes(
 
   app.post('/api/v1/channels', async (c) => {
     const member = await requireMember(c, auth, pool);
-    if (member.role === 'member')
-      throw new ApiError(403, 'FORBIDDEN', 'Only an owner or admin can create channels.');
     const body = await readJson(c, CommunityWireChannelCreateRequestSchema);
     const id = await transaction(pool, async (client) => {
       const row = await client.query<{ id: string }>(
         `INSERT INTO channels(community_id,name,description,visibility) VALUES($1,$2,$3,$4) RETURNING id`,
         [member.community_id, body.name, body.description ?? null, body.visibility ?? 'public']
       );
+      // A concurrent demotion may complete while INSERT waits; this check is inside the transaction.
+      await requireLiveRole(client, member, ['owner', 'admin']);
       await client.query('INSERT INTO channel_members(channel_id,member_id) VALUES($1,$2)', [
         row.rows[0].id,
         member.id,
@@ -105,11 +105,10 @@ export function registerChannelRoutes(
 
   app.patch('/api/v1/channels/:id', async (c) => {
     const member = await requireMember(c, auth, pool);
-    if (member.role === 'member')
-      throw new ApiError(403, 'FORBIDDEN', 'Only an owner or admin can change channels.');
     const body = await readJson(c, CommunityWireChannelUpdateRequestSchema);
     await transaction(pool, async (client) => {
       await lockChannel(client, c.req.param('id'), member);
+      await requireLiveRole(client, member, ['owner', 'admin']);
       await client.query(
         `UPDATE channels SET name=COALESCE($2,name),description=CASE WHEN $3::boolean THEN $4 ELSE description END,
            archived=COALESCE($5,archived),epoch=epoch+1 WHERE id=$1`,
@@ -131,6 +130,7 @@ export function registerChannelRoutes(
     const member = await requireMember(c, auth, pool);
     await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), member);
+      await requireLiveRole(client, member, ['owner', 'admin', 'member']);
       if (channel.archived) throw new ApiError(409, 'STATE_CONFLICT', 'This channel is archived.');
       if (channel.visibility === 'private' && !channel.joined)
         throw new ApiError(404, 'NOT_FOUND', 'Channel not found.');
@@ -148,6 +148,7 @@ export function registerChannelRoutes(
     const member = await requireMember(c, auth, pool);
     await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), member);
+      await requireLiveRole(client, member, ['owner', 'admin', 'member']);
       await client.query('DELETE FROM channel_members WHERE channel_id=$1 AND member_id=$2', [
         channel.id,
         member.id,
@@ -188,11 +189,10 @@ export function registerChannelRoutes(
 
   app.post('/api/v1/channels/:id/members', async (c) => {
     const actor = await requireMember(c, auth, pool);
-    if (actor.role === 'member')
-      throw new ApiError(403, 'FORBIDDEN', 'Only an owner or admin can add members.');
     const body = await readJson(c, CommunityWireChannelMemberRequestSchema);
     await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), actor);
+      await requireLiveRole(client, actor, ['owner', 'admin']);
       if (channel.archived) throw new ApiError(409, 'STATE_CONFLICT', 'This channel is archived.');
       const target = await client.query(
         'SELECT 1 FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
@@ -211,10 +211,9 @@ export function registerChannelRoutes(
 
   app.delete('/api/v1/channels/:id/members/:memberId', async (c) => {
     const actor = await requireMember(c, auth, pool);
-    if (actor.role === 'member')
-      throw new ApiError(403, 'FORBIDDEN', 'Only an owner or admin can remove members.');
     await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), actor);
+      const actorRole = await requireLiveRole(client, actor, ['owner', 'admin']);
       const target = await client.query<{ role: Member['role'] }>(
         'SELECT role FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
         [c.req.param('memberId'), actor.community_id]
@@ -222,7 +221,7 @@ export function registerChannelRoutes(
       if (!target.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Member not found.');
       if (
         target.rows[0].role === 'owner' ||
-        (target.rows[0].role === 'admin' && actor.role !== 'owner')
+        (target.rows[0].role === 'admin' && actorRole !== 'owner')
       ) {
         throw new ApiError(403, 'FORBIDDEN', 'This member cannot be removed by your role.');
       }
@@ -238,10 +237,9 @@ export function registerChannelRoutes(
 
   app.patch('/api/v1/members/:id/role', async (c) => {
     const actor = await requireMember(c, auth, pool);
-    if (actor.role !== 'owner')
-      throw new ApiError(403, 'FORBIDDEN', 'Only the owner can change member roles.');
     const body = await readJson(c, CommunityWireMemberRoleUpdateRequestSchema);
     const member = await transaction(pool, async (client) => {
+      await requireLiveRole(client, actor, ['owner']);
       const result = await client.query<{
         id: string;
         display_name: string;

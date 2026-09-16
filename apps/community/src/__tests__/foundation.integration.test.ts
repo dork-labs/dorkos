@@ -541,6 +541,53 @@ describe('owner foundation over real HTTP and Postgres', () => {
     ).toBe(409);
   });
 
+  it('rejects a channel create if admin authority is removed while the insert waits', async () => {
+    expect(
+      (
+        await request(`/api/v1/members/${bobMemberId}/role`, {
+          method: 'PATCH',
+          headers: { cookie: ownerCookie, 'content-type': 'application/json' },
+          body: JSON.stringify({ role: 'admin' }),
+        })
+      ).status
+    ).toBe(200);
+    const blocker = await pool.connect();
+    try {
+      await blocker.query('BEGIN');
+      await blocker.query('LOCK TABLE channels IN ACCESS EXCLUSIVE MODE');
+      const pending = post('/api/v1/channels', { name: 'After demotion' }, bobCookie);
+      let waiting = false;
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        const state = await pool.query<{ waiting: boolean }>(
+          `SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE query LIKE 'INSERT INTO channels%'
+             AND wait_event_type='Lock') AS waiting`
+        );
+        waiting = state.rows[0].waiting;
+        if (waiting) break;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      expect(waiting).toBe(true);
+      expect(
+        (
+          await request(`/api/v1/members/${bobMemberId}/role`, {
+            method: 'PATCH',
+            headers: { cookie: ownerCookie, 'content-type': 'application/json' },
+            body: JSON.stringify({ role: 'member' }),
+          })
+        ).status
+      ).toBe(200);
+      await blocker.query('COMMIT');
+      expect((await pending).status).toBe(403);
+    } finally {
+      await blocker.query('ROLLBACK').catch(() => undefined);
+      blocker.release();
+    }
+    expect(
+      (await pool.query("SELECT count(*)::int AS count FROM channels WHERE name='After demotion'"))
+        .rows[0].count
+    ).toBe(0);
+  });
+
   it('refuses a read cursor when membership is revoked before its channel lock', async () => {
     const created = await post('/api/v1/channels', { name: 'Cursor race' }, ownerCookie);
     const id = (await created.json()).channel.id;
@@ -672,6 +719,45 @@ describe('owner foundation over real HTTP and Postgres', () => {
           })
         ).status
       ).toBe(404);
+    } finally {
+      controller.abort();
+      await reader.cancel().catch(() => undefined);
+    }
+  });
+
+  it('closes an active stream when its sign-in session is revoked', async () => {
+    const created = await post('/api/v1/channels', { name: 'Session revocation' }, ownerCookie);
+    const id = (await created.json()).channel.id;
+    expect(
+      (await post(`/api/v1/channels/${id}/members`, { memberId: bobMemberId }, ownerCookie)).status
+    ).toBe(200);
+    const controller = new AbortController();
+    const response = await request(`/api/v1/channels/${id}/events`, {
+      headers: { cookie: bobCookie },
+      signal: controller.signal,
+    });
+    expect(response.status).toBe(200);
+    const reader = response.body!.getReader();
+    try {
+      expect((await nextSse(reader)).event).toBe('snapshot');
+      await pool.query(
+        `DELETE FROM session WHERE "userId"=(SELECT user_id FROM members WHERE id=$1)`,
+        [bobMemberId]
+      );
+      expect(
+        (await request(`/api/v1/channels/${id}/entries`, { headers: { cookie: bobCookie } })).status
+      ).toBe(401);
+      expect(
+        (
+          await post(
+            `/api/v1/channels/${id}/entries`,
+            { text: 'after sign-out', idempotencyKey: 'after-sign-out' },
+            ownerCookie
+          )
+        ).status
+      ).toBe(201);
+      const next = await nextSse(reader);
+      expect(next.event).toBe('closed');
     } finally {
       controller.abort();
       await reader.cancel().catch(() => undefined);
