@@ -11,6 +11,7 @@ import type { CommunityAuth } from '../auth.js';
 import type { CommunityConfig } from '../config.js';
 import { decodeCursor, encodeCursor } from '../cursor.js';
 import {
+  assertPrincipalCurrent,
   lockChannel,
   requireJoined,
   requireMember,
@@ -80,7 +81,10 @@ export function registerEventRoutes(
     pool: Pool;
     auth: CommunityAuth;
     config: CommunityConfig;
-    hooks?: { afterSnapshotWatermark?: () => Promise<void> };
+    hooks?: {
+      afterSnapshotWatermark?: () => Promise<void>;
+      afterEntryAttachmentLookup?: () => Promise<void>;
+    };
   }
 ) {
   app.get('/api/v1/channels/:id/read-cursor', async (c) => {
@@ -92,6 +96,9 @@ export function registerEventRoutes(
       display_name: member.display_name,
       community_id: member.community_id,
     });
+    const currentMember = await requireMember(c, auth, pool);
+    if (currentMember.id !== member.id)
+      throw new ApiError(401, 'UNAUTHENTICATED', 'This session is unavailable.');
     const seq = Number(channel.read_seq);
     return json(c, CommunityWireReadCursorResponseSchema, {
       cursor: seq
@@ -107,6 +114,9 @@ export function registerEventRoutes(
     const { channel, current } = await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), member);
       requireJoined(channel);
+      const currentMember = await requireMember(c, auth, pool);
+      if (currentMember.id !== member.id)
+        throw new ApiError(401, 'UNAUTHENTICATED', 'This session is unavailable.');
       const active = await client.query('SELECT 1 FROM members WHERE id=$1 AND active FOR SHARE', [
         member.id,
       ]);
@@ -165,6 +175,12 @@ export function registerEventRoutes(
       pool,
       snapshotRows.map((row: { id: string }) => row.id)
     );
+    await assertPrincipalCurrent(c, auth, pool, principal, 'read');
+    if (openedSession) {
+      const currentSession = await auth.api.getSession({ headers: c.req.raw.headers });
+      if (!currentSession || currentSession.session.id !== openedSession.session.id)
+        throw new ApiError(401, 'UNAUTHENTICATED', 'This session is unavailable.');
+    }
     const encoder = new TextEncoder();
     let revocationTimer: ReturnType<typeof setInterval> | undefined;
     let closed = false;
@@ -284,6 +300,7 @@ export function registerEventRoutes(
           try {
             while (!closed) {
               const state = await checkAccess();
+              if (closed) return;
               if (
                 !state?.active ||
                 !state.joined ||
@@ -309,6 +326,24 @@ export function registerEventRoutes(
               if (row) {
                 position = Number(row.seq);
                 const attachmentMap = await attachmentsForEntries(pool, [row.id]);
+                await hooks?.afterEntryAttachmentLookup?.();
+                const afterEnrichment = await checkAccess();
+                if (closed) return;
+                if (
+                  !afterEnrichment?.active ||
+                  !afterEnrichment.joined ||
+                  afterEnrichment.archived ||
+                  afterEnrichment.epoch !== channel.epoch
+                ) {
+                  stop();
+                  writeEvent(controller, {
+                    type: 'closed',
+                    reason: afterEnrichment?.archived ? 'archived' : 'removed',
+                    cursor: currentCursor(),
+                  });
+                  controller.close();
+                  return;
+                }
                 const entry = entryProjection(
                   row,
                   channel.epoch,

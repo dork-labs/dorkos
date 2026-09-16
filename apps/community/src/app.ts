@@ -37,7 +37,10 @@ export function createCommunityApp({
 }: {
   config: CommunityConfig;
   pool: Pool;
-  hooks?: { afterSnapshotWatermark?: () => Promise<void> };
+  hooks?: {
+    afterSnapshotWatermark?: () => Promise<void>;
+    afterEntryAttachmentLookup?: () => Promise<void>;
+  };
   blobStore?: BlobStore;
 }) {
   const app = new Hono();

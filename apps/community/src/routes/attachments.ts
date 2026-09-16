@@ -9,6 +9,7 @@ import {
 import type { CommunityAuth } from '../auth.js';
 import type { CommunityConfig } from '../config.js';
 import {
+  assertPrincipalCurrentInTransaction,
   lockChannel,
   lockPrincipalAuthority,
   requireJoined,
@@ -162,6 +163,11 @@ export function registerAttachmentRoutes(
 ) {
   app.post('/api/v1/channels/:id/attachments', async (c) => {
     const principal = await requirePrincipal(c, auth, pool, 'post');
+    const openedSession = principal.credentialHash
+      ? null
+      : await auth.api.getSession({ headers: c.req.raw.headers });
+    if (!principal.credentialHash && !openedSession)
+      throw new ApiError(401, 'UNAUTHENTICATED', 'Sign in to continue.');
     const metadata = uploadHeaders(c);
     if (metadata.byteSize > config.limits.attachmentBytes)
       throw new ApiError(413, 'ATTACHMENT_TOO_LARGE', 'The file is too large.');
@@ -202,13 +208,12 @@ export function registerAttachmentRoutes(
         if (channel.archived)
           throw new ApiError(409, 'STATE_CONFLICT', 'This channel is archived.');
         await lockPrincipalAuthority(client, principal);
-        const current = await requirePrincipal(c, auth, pool, 'post', false);
-        if (
-          current.kind !== principal.kind ||
-          current.id !== principal.id ||
-          current.credentialHash !== principal.credentialHash
-        )
-          throw new ApiError(401, 'UNAUTHENTICATED', 'Upload access has ended.');
+        await assertPrincipalCurrentInTransaction(
+          client,
+          principal,
+          'post',
+          openedSession?.session.id
+        );
         const field = principal.kind === 'agent' ? 'uploader_agent_id' : 'uploader_member_id';
         const prior = await client.query<AttachmentRow>(
           `SELECT * FROM attachments WHERE ${field}=$1 AND channel_id=$2 AND idempotency_key=$3`,
