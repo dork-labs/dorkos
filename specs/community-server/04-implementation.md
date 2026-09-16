@@ -7,7 +7,7 @@
 ## Progress
 
 **Status:** In Progress  
-**Merged phases:** Foundation and admission (PRs #1912 and #1913). Browser/files/export PR #1914 is in the merge queue. Local participation and final packaged acceptance remain in progress; the programme is not complete.
+**Merged phases:** Foundation, admission, and browser/files/export (PRs #1912, #1913, and #1914). Local participation and final packaged acceptance remain in progress; the programme is not complete.
 
 ## Foundation: tasks 1.1–1.6
 
@@ -35,7 +35,7 @@ Existing site, local server, and CLI retain Better Auth 1.7.2 with explicit comp
 
 ## Remaining work
 
-The admission phase, including invitations, moderation, pairing and agent credentials, is merged in #1913. Browser chat, files and exports have passed independent review and are awaiting the remaining merge-queue gate in #1914. The local participation integration includes native connections, agent subscriptions, transactional outbox delivery, qualified client views, deployment documentation and packaged acceptance infrastructure. These later phases remain open until their combined runtime behavior and final review pass. Canonical requirements and dependencies remain in `03-tasks.json`.
+The admission phase, including invitations, moderation, pairing and agent credentials, is merged in #1913. Browser chat, files and exports merged in #1914 after all merge-queue gates passed. The local participation integration includes native connections, agent subscriptions, transactional outbox delivery, qualified client views, deployment documentation and packaged acceptance infrastructure. These later phases remain open until their combined runtime behavior and final review pass. Canonical requirements and dependencies remain in `03-tasks.json`.
 
 ## Combined browser integration checkpoint
 
@@ -47,6 +47,6 @@ Workers `/root/complete_qualified_community_routes` and `/root/repair_pending_re
 
 The combined real-Postgres suite passed 99 tests, with four declared capability exclusions, after fixing stream cancellation and replay assertions. The packaged runner starts two independent Community processes and the installed CLI package on an internal Docker network. Its network proof confirms PostgreSQL access while public IP and DorkOS-host egress fail. No paid inference credentials enter that runtime.
 
-The packaged browser journey has reached a real local agent dispatch, attachment upload and a held remote post through the production outbox. It exposed an incorrectly framed local SSE stream; the independently accepted fix now delivers the human message to the local app. The driver also now opens the reply thread before checking delivery state. A further observed defect prevented pending state from being published while network delivery was held. Its implementation repair is integrated and passes focused tests; packaged confirmation remains outstanding.
+The packaged browser journey has reached a real local agent dispatch, visible pending delivery, and exactly one committed remote message with its PNG attachment through the production outbox. It exposed an incorrectly framed local SSE stream and missing pending-state publication; both repairs now have packaged evidence. The attachment scenario explicitly posts to the channel without a thread parent, and the remote agent's immutable member ID is the assertion identity. A subsequent failure exposed wire attachment metadata being forwarded unchanged into the stricter local view schema. That repair and the full successful journey remain outstanding.
 
 Independent review accepted the app composition correction: qualified remote channels hide the local-only Room inspector, and mirror cache rows no longer appear as separate local channels. Review of the overall delivery path remains open for in-flight Stop/revocation and exact echo correlation before a receipt arrives. Final acceptance must still prove these cases, retries/failures, two-community isolation, both service restarts, responsive browser behavior, and the full frozen checklist. Green component tests do not substitute for those proofs.
