@@ -109,7 +109,7 @@ it('upgrades a populated foundation database without changing human authors', as
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(
         (item) => item.version
       )
-    ).toEqual([1, 2, 3]);
+    ).toEqual([1, 2, 3, 4]);
     await migrate(upgradeUrl.toString());
   } finally {
     await db.end();

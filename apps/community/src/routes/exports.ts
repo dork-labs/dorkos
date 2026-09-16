@@ -11,7 +11,7 @@ import type { CommunityAuth } from '../auth.js';
 import { requireMember, transaction, type Member } from '../data.js';
 import { ApiError, json, readJson } from '../http.js';
 import { BlobStoreError, downloadHeaders, type BlobStore } from '../storage/index.js';
-import { deleteUnreferencedBlob } from '../storage/pending-deletions.js';
+import { cleanupBackoffSql, deleteUnreferencedBlob } from '../storage/pending-deletions.js';
 
 const MAX_EXPORT_BYTES = 1024 * 1024 * 1024;
 const MAX_MANIFEST_BYTES = 16 * 1024 * 1024;
@@ -202,34 +202,59 @@ export async function sweepExpiredExports(pool: Pool, blobStore: BlobStore, batc
   if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 100)
     throw new Error('Invalid export sweep batch size');
   const result = await pool.query<{ id: string }>(
-    'SELECT id,blob_key FROM export_archives WHERE deleted_at IS NULL AND expires_at<now() ORDER BY expires_at,id LIMIT $1',
+    'SELECT id FROM export_archives WHERE deleted_at IS NULL AND expires_at<now() AND cleanup_next_attempt_at<=now() ORDER BY cleanup_next_attempt_at,expires_at,id LIMIT $1',
     [batchSize]
   );
   let deleted = 0;
   let failed = 0;
   for (const row of result.rows) {
+    const attempt: { outcome: 'deleted' | 'failed' | 'skipped'; error?: unknown } = {
+      outcome: 'skipped',
+    };
     try {
       await transaction(pool, async (client) => {
         const current = await client.query<{ blob_key: string; community_id: string }>(
           `SELECT e.blob_key,m.community_id FROM export_archives e
            JOIN members m ON m.id=e.requester_member_id
-           WHERE e.id=$1 AND e.deleted_at IS NULL AND e.expires_at<now() FOR UPDATE OF e`,
+           WHERE e.id=$1 AND e.deleted_at IS NULL AND e.expires_at<now() AND e.cleanup_next_attempt_at<=now() FOR UPDATE OF e`,
           [row.id]
         );
         if (!current.rows[0]) return;
-        await blobStore.delete(current.rows[0].blob_key);
+        try {
+          await blobStore.delete(current.rows[0].blob_key);
+        } catch (error) {
+          await client.query(
+            `UPDATE export_archives
+             SET cleanup_attempts=cleanup_attempts+1,cleanup_next_attempt_at=now() + ${cleanupBackoffSql('cleanup_attempts')}
+             WHERE id=$1 AND deleted_at IS NULL AND expires_at<now()`,
+            [row.id]
+          );
+          attempt.outcome = 'failed';
+          attempt.error = error;
+          return;
+        }
         await client.query('UPDATE export_archives SET deleted_at=now() WHERE id=$1', [row.id]);
         await client.query(
           'INSERT INTO audit_events(community_id,action,subject_id) VALUES($1,$2,$3)',
           [current.rows[0].community_id, 'export.expire', row.id]
         );
-        deleted++;
+        attempt.outcome = 'deleted';
       });
     } catch (error) {
       failed++;
       console.error('Community export cleanup failed', {
         archiveId: row.id,
         error: error instanceof Error ? error.name : 'unknown',
+      });
+      continue;
+    }
+    if (attempt.outcome === 'deleted') {
+      deleted++;
+    } else if (attempt.outcome === 'failed') {
+      failed++;
+      console.error('Community export cleanup failed', {
+        archiveId: row.id,
+        error: attempt.error instanceof Error ? attempt.error.name : 'unknown',
       });
     }
   }
