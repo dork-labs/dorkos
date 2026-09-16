@@ -68,33 +68,61 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       await pageMemberA.getByRole('button', { name: 'Join community' }).click();
       await expect(pageMemberA.getByLabel(/Message #general/i)).toBeVisible();
 
-      const connect = async (origin: string, page: typeof pageA, name: string) => {
-        const started = await json<{ connection: { ref: string }; approvalUrl: string }>(
-          `${env.local}/api/community-connections`,
-          {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ url: origin, installName: name }),
-          }
+      const connect = async (
+        origin: string,
+        ownerPage: typeof pageA,
+        installName: string,
+        communityName: string
+      ) => {
+        // Pairing approval is user-scoped at the remote Community. Move only
+        // that already-authenticated browser cookie into the local browser so
+        // this test can activate the local app's own approval link.
+        await localContext.addCookies(await ownerPage.context().cookies(origin));
+        await localPage.goto(`${env.local}/connections?region=messaging`);
+        await expect(
+          localPage.getByRole('heading', { name: 'Communities', exact: true })
+        ).toBeVisible();
+        await localPage.getByLabel('Community address').fill(origin);
+        await localPage.getByLabel('Name for this installation').fill(installName);
+        const startedResponse = localPage.waitForResponse(
+          (response) =>
+            response.request().method() === 'POST' &&
+            new URL(response.url()).pathname === '/api/community-connections'
         );
-        await page.goto(started.approvalUrl);
-        await expect(page.getByRole('heading', { name: 'Connect a local install' })).toBeVisible();
-        await page.getByRole('button', { name: 'Approve connection' }).click();
-        await expect(page.getByRole('status')).toContainText('Approved');
-        const connected = await eventually(
-          () =>
-            json<{ status: string; connection: { ref: string } | null }>(
-              `${env.local}/api/community-connections/${started.connection.ref}/poll`,
-              { method: 'POST' }
-            ),
-          (result) => result.status === 'connected' && result.connection !== null,
-          `local pairing to ${origin} did not complete`
-        );
-        return connected.connection!.ref;
+        await localPage.getByRole('button', { name: 'Connect community', exact: true }).click();
+        const started = await startedResponse;
+        expect(started.ok(), `local connection start returned ${started.status()}`).toBe(true);
+        const connection = (await started.json()) as { connection: { ref: string } };
+        const approvalLink = localPage.getByRole('link', {
+          name: `Open ${installName} to approve`,
+          exact: true,
+        });
+        await expect(approvalLink).toBeVisible();
+        const openedApproval = localContext.waitForEvent('page');
+        await approvalLink.click();
+        const approvalPage = await openedApproval;
+        await expect(
+          approvalPage.getByRole('heading', { name: 'Connect a local install' })
+        ).toBeVisible();
+        await approvalPage.getByRole('button', { name: 'Approve connection' }).click();
+        await expect(approvalPage.getByRole('status')).toContainText('Approved');
+        const row = localPage.locator('li').filter({ hasText: communityName });
+        await expect(row.getByText('Connected', { exact: true })).toBeVisible({ timeout: 90_000 });
+        return connection.connection.ref;
       };
 
-      const refA = await connect(env.communityA, pageA, 'Acceptance local install A');
-      const refB = await connect(env.communityB, pageB, 'Acceptance local install B');
+      const refA = await connect(
+        env.communityA,
+        pageA,
+        'Acceptance local install A',
+        'Acceptance A'
+      );
+      const refB = await connect(
+        env.communityB,
+        pageB,
+        'Acceptance local install B',
+        'Acceptance B'
+      );
       expect(refA).not.toBe(refB);
 
       const roomsA = await json<{ rooms: Array<{ roomId: string; title: string }> }>(
@@ -131,6 +159,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       };
 
       const agentPath = join(env.root, 'agents', 'community-attachment-agent');
+      const agentDisplayName = 'Attachment Agent';
       const registered = await json<{ id: string; name: string }>(`${env.local}/api/mesh/agents`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -138,7 +167,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
           path: agentPath,
           scanRoot: join(env.root, 'agents'),
           overrides: {
-            name: 'Attachment Agent',
+            name: agentDisplayName,
             runtime: 'claude-code',
             behavior: { responseMode: 'silent' },
           },
@@ -146,18 +175,82 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       });
       const localAgentId = registered.id;
       const handle = 'attachment-agent';
-      const enrollment = await json<{
-        agent: { remoteMemberId: string; displayName: string };
-      }>(`${env.local}/api/communities/${refA}/agents/${encodeURIComponent(localAgentId)}/enroll`, {
-        method: 'POST',
+      const localConfig = await json<{ dorkHome: string }>(`${env.local}/api/config`);
+      expect(localConfig.dorkHome).toBe(join(env.root, 'local-home'));
+      const now = new Date().toISOString();
+      await json(`${env.local}/api/config`, {
+        method: 'PATCH',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ handle }),
+        body: JSON.stringify({
+          onboarding: { dismissedAt: now },
+          profile: { rolePromptDismissedAt: now },
+          telemetry: { userHasDecided: true },
+          ui: { fullPowerDecidedAt: now, fullPowerChoice: 'supervised' },
+        }),
       });
-      const joined = await fetch(
-        `${env.local}/api/communities/${refA}/rooms/${roomA!.roomId}/agents/${encodeURIComponent(localAgentId)}/membership`,
-        { method: 'POST' }
+      await localPage.goto(
+        `${env.local}/channels?community=${encodeURIComponent(refA)}&id=${encodeURIComponent(roomA!.roomId)}`
       );
-      expect(joined.status).toBe(204);
+      await expect(localPage.getByRole('button', { name: 'Members', exact: true })).toBeVisible();
+      await localPage.getByRole('button', { name: 'Members', exact: true }).click();
+      const agentControls = localPage.getByRole('region', { name: 'My community agents' });
+      await expect(agentControls.getByLabel('Local agent')).toBeVisible();
+      await agentControls.getByLabel('Local agent').click();
+      await localPage.getByRole('option', { name: registered.name, exact: true }).click();
+      await agentControls.getByLabel('Community handle (optional)').fill(handle);
+      const enrolledResponse = localPage.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          new URL(response.url()).pathname ===
+            `/api/communities/${refA}/agents/${encodeURIComponent(localAgentId)}/enroll`
+      );
+      await agentControls.getByRole('button', { name: 'Add to community', exact: true }).click();
+      const enrolledResult = await enrolledResponse;
+      expect(enrolledResult.status()).toBe(201);
+      await expect(agentControls.getByText(agentDisplayName, { exact: true })).toBeVisible();
+      const joinedResponse = localPage.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          new URL(response.url()).pathname ===
+            `/api/communities/${refA}/rooms/${roomA!.roomId}/agents/${encodeURIComponent(localAgentId)}/membership`
+      );
+      await agentControls.getByRole('button', { name: 'Join channel', exact: true }).click();
+      expect((await joinedResponse).status()).toBe(204);
+      const enrollment = await eventually(
+        () =>
+          json<{
+            community: string;
+            agents: Array<{
+              localAgentId: string;
+              remoteMemberId: string;
+              displayName: string;
+              active: boolean;
+            }>;
+          }>(`${env.local}/api/communities/${refA}/agents`),
+        (result) =>
+          result.community === refA &&
+          result.agents.some((agent) => agent.localAgentId === localAgentId && agent.active),
+        'the browser-enrolled local agent was not retained under Community A'
+      );
+      const enrolledAgent = enrollment.agents.find((agent) => agent.localAgentId === localAgentId)!;
+      expect(enrolledAgent.displayName).toBe(agentDisplayName);
+      const membership = await eventually(
+        () =>
+          json<{
+            members: Array<{ memberId: string; kind: string; displayName: string }>;
+          }>(`${env.local}/api/communities/${refA}/rooms/${roomA!.roomId}/members`),
+        (result) =>
+          result.members.some(
+            (member) =>
+              member.memberId === enrolledAgent.remoteMemberId &&
+              member.kind === 'agent' &&
+              member.displayName === agentDisplayName
+          ),
+        'the browser-requested agent membership did not retain its exact remote identity'
+      );
+      expect(
+        membership.members.filter((member) => member.memberId === enrolledAgent.remoteMemberId)
+      ).toHaveLength(1);
 
       const ready = await eventually(
         subscriptionBarrier,
@@ -175,19 +268,6 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       ).toBe(true);
       expect(await scenario.json()).toMatchObject({ scenario: 'rooms-post-attachment' });
 
-      const localConfig = await json<{ dorkHome: string }>(`${env.local}/api/config`);
-      expect(localConfig.dorkHome).toBe(join(env.root, 'local-home'));
-      const now = new Date().toISOString();
-      await json(`${env.local}/api/config`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          onboarding: { dismissedAt: now },
-          profile: { rolePromptDismissedAt: now },
-          telemetry: { userHasDecided: true },
-          ui: { fullPowerDecidedAt: now, fullPowerChoice: 'supervised' },
-        }),
-      });
       await localPage.goto(
         `${env.local}/channels?community=${encodeURIComponent(refA)}&id=${encodeURIComponent(roomA!.roomId)}`
       );
@@ -228,7 +308,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         attachments: Array<{ id: string; name: string }>;
       };
       const isEnrolledAgentEntry = (entry: Pick<Entry, 'authorMemberId' | 'authorKind'>) =>
-        entry.authorKind === 'agent' && entry.authorMemberId === enrollment.agent.remoteMemberId;
+        entry.authorKind === 'agent' && entry.authorMemberId === enrolledAgent.remoteMemberId;
       const heldHistory = await pageJson<{ entries: Entry[] }>(
         pageA,
         `/api/v1/channels/${roomA!.roomId}/entries?limit=100`
@@ -1182,9 +1262,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
 
       const heldEjection = await holdAttachmentDelivery(`held-ejection-${crypto.randomUUID()}`);
       await localPage.getByRole('button', { name: 'Members', exact: true }).click();
-      await expect(
-        localPage.getByText(enrollment.agent.displayName, { exact: true })
-      ).toBeVisible();
+      await expect(localPage.getByText(enrolledAgent.displayName, { exact: true })).toBeVisible();
       const ejectionResponse = localPage.waitForResponse(
         (response) =>
           response.request().method() === 'DELETE' &&
