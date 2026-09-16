@@ -24,7 +24,7 @@ name: docs-openapi-check
 #     Second, GitHub's troubleshooting-required-status-checks doc: a workflow
 #     skipped by path filtering reports NOTHING, not success, and under the merge
 #     queue a required check that never reports blocks the queue until
-#     `check_response_timeout_minutes` (60) expires. So no path filter on this
+#     `check_response_timeout_minutes` (120) expires. So no path filter on this
 #     event, ever; if the queue leg ever needs scoping, scope it in a STEP — a
 #     skipped step leaves the job green and the context reported.
 #   * `pull_request`: the early-warning half, so an author gets the answer on

@@ -58,7 +58,7 @@ name: db-check
 # checks stay in a 'Pending' state and block merging → Avoid requiring workflows
 # that can be skipped." A skipped JOB reports success; a skipped WORKFLOW reports
 # nothing at all, and under the merge queue a required check that never reports
-# blocks the queue until `check_response_timeout_minutes` (60) expires. So the
+# blocks the queue until `check_response_timeout_minutes` (120) expires. So the
 # filter and the option of ever making this required are mutually exclusive, and
 # this is a good candidate for required — deterministic, and under a minute. Not
 # worth trading that away for a few runner-seconds on unrelated PRs.
