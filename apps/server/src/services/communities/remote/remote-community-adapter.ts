@@ -458,6 +458,30 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
   }
 
   /** Post and retain the server-confirmed native entry for the qualified local API. */
+  /** Read a browser thread including its authoritative root context entry. */
+  async listEntriesWithThreadRoot(
+    roomId: string,
+    opts: ListCommunityEntriesOpts = {}
+  ): Promise<CommunityEntryPage> {
+    if (!opts.thread) return this.listEntries(roomId, opts);
+    const query = new URLSearchParams();
+    if (opts.cursor) query.set('cursor', opts.cursor);
+    if (opts.limit) query.set('limit', String(Math.min(opts.limit, 100)));
+    query.set('thread', opts.thread);
+    const data = CommunityWireEntryPageSchema.parse(
+      await this.request(
+        `/api/v1/channels/${encodeURIComponent(roomId)}/entries?${query}`,
+        undefined,
+        { actingMemberId: opts.actingMemberId },
+        'GET'
+      )
+    );
+    return {
+      entries: data.entries.map((item) => entry(this.community, item)),
+      nextCursor: data.nextCursor as CommunityCursor | null,
+    };
+  }
+
   async postEntry(roomId: string, input: PostCommunityEntryInput): Promise<CommunityEntry> {
     const data = CommunityWireEntryPostResponseSchema.parse(
       await this.request(

@@ -118,11 +118,14 @@ export function createRemoteCommunitiesRouter(): Router {
     if (!Number.isInteger(limit) || limit < 1 || limit > 100)
       return res.status(400).json({ error: 'Use a history limit from 1 through 100.' });
     try {
-      const page = await getRemoteCommunityAdapter(ref.data, owner).listEntries(req.params.roomId, {
-        cursor: typeof req.query.cursor === 'string' ? (req.query.cursor as never) : undefined,
-        limit,
-        thread: typeof req.query.threadRootId === 'string' ? req.query.threadRootId : undefined,
-      });
+      const page = await getRemoteCommunityAdapter(ref.data, owner).listEntriesWithThreadRoot(
+        req.params.roomId,
+        {
+          cursor: typeof req.query.cursor === 'string' ? (req.query.cursor as never) : undefined,
+          limit,
+          thread: typeof req.query.threadRootId === 'string' ? req.query.threadRootId : undefined,
+        }
+      );
       const entries = page.entries.map(remoteEntry);
       const lastRemoteSeq = entries.at(-1)?.remoteSeq ?? 0;
       res.json(
