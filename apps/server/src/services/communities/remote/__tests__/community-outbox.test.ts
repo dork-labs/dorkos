@@ -6,7 +6,12 @@
 import type { RoomMirrorWritePolicy } from '../../../rooms/room-service.js';
 import { Readable } from 'node:stream';
 import { RoomError } from '../../../rooms/room-errors.js';
-import { agentLookupFor, createRoomHarness } from '../../../rooms/__tests__/room-test-harness.js';
+import {
+  agentLookupFor,
+  createRoomHarness,
+  settleUntil,
+  scriptedRunner,
+} from '../../../rooms/__tests__/room-test-harness.js';
 import type { CommunityRef } from '@dorkos/shared/community-adapter';
 import { describe, expect, it, vi } from 'vitest';
 import { CommunityAgentEnrollmentStore } from '../agent-enrollment-store.js';
@@ -160,6 +165,94 @@ describe('community outbox', () => {
       () => NOW
     );
     expect(settledProjection.list(harness.human)[0]?.retryable).toBe(true);
+  });
+
+  it('suppresses recursive agent narration only for a remote mirror', async () => {
+    let actual: CommunityOutboxPolicy | null = null;
+    const policy: RoomMirrorWritePolicy = {
+      prepare(room, authorId, delivery) {
+        return actual?.prepare(room, authorId, delivery) ?? null;
+      },
+    };
+    const harness = createRoomHarness({
+      agents: agentLookupFor({
+        '/agents/a': { name: 'Ana', responseMode: 'always' },
+        '/agents/b': { name: 'Bo', responseMode: 'mention-only' },
+      }),
+      runner: scriptedRunner((request) =>
+        request.agentPath === '/agents/a' ? '@bo please verify the deployment.' : 'Verified.'
+      ),
+      mirrorWrites: policy,
+    });
+    const mirrors = new RemoteMirrorStore(harness.db, harness.store, harness.authors);
+    const enrollments = new CommunityAgentEnrollmentStore(harness.db, () =>
+      new Date(NOW).toISOString()
+    );
+    const outbox = new CommunityOutboxStore(harness.db);
+    const agentA = harness.authors.resolveAgent('/agents/a', 'Ana');
+    const agentB = harness.authors.resolveAgent('/agents/b', 'Bo');
+    const mirror = mirrors.ensureRoom({
+      communityRef: REF,
+      remoteRoomId: 'general',
+      title: 'General',
+      topic: null,
+      ownerAuthorId: harness.human,
+      accessors: [
+        { authorId: agentA.id, responseMode: 'always' },
+        { authorId: agentB.id, responseMode: 'mention-only' },
+      ],
+      authorizedAt: new Date(NOW).toISOString(),
+    });
+    for (const [localAgentId, remoteMemberId] of [
+      ['/agents/a', 'remote-agent-a'],
+      ['/agents/b', 'remote-agent-b'],
+    ]) {
+      enrollments.activate({
+        communityRef: REF,
+        localAgentId,
+        remoteMemberId,
+        ownerAuthorId: harness.human,
+      });
+    }
+    actual = new CommunityOutboxPolicy(mirrors, enrollments, harness.authors, outbox, () => NOW);
+
+    harness.service.post(mirror.id, {
+      authorId: harness.human,
+      text: '@ana report the deployment status.',
+      mentions: [agentA.id],
+    });
+    await settleUntil(() => harness.runner.turns.length === 1, 'the mirrored agent turn');
+    await harness.service.triggersIdle();
+
+    expect(harness.runner.turns).toHaveLength(1);
+    expect(harness.runner.turns[0]?.authorId).toBe(agentA.id);
+    expect(outbox.due(new Date(NOW).toISOString())).toHaveLength(1);
+
+    const local = harness.service.createRoom(
+      {
+        kind: 'channel',
+        title: 'Local updates',
+        members: [],
+        agentPaths: ['/agents/a', '/agents/b'],
+      },
+      harness.human
+    );
+    harness.service.post(local.id, {
+      authorId: harness.human,
+      text: '@ana report the local deployment status.',
+      mentions: [agentA.id],
+    });
+    await settleUntil(
+      () => harness.runner.turns.length === 3,
+      'the local agent narration to dispatch'
+    );
+    await harness.service.triggersIdle();
+
+    expect(harness.runner.turns.slice(1).map((turn) => turn.roomId)).toEqual([local.id, local.id]);
+    expect(harness.runner.turns.slice(1).map((turn) => turn.authorId)).toEqual([
+      agentA.id,
+      agentB.id,
+    ]);
   });
 
   it.each(['stale', 'revoked', 'missing enrollment'] as const)(
