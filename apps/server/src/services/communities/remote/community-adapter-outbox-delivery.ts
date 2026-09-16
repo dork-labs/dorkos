@@ -16,6 +16,9 @@ import type {
 } from './community-outbox-worker.js';
 import type { RemoteMirrorStore } from './mirror-store.js';
 
+/** The hard remote-community upload ceiling, enforced before local bytes are read. */
+export const COMMUNITY_REMOTE_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
+
 /** The native adapter registry returns the shared ref-and-owner instance. */
 export interface RemoteAdapterForDelivery {
   (
@@ -84,6 +87,9 @@ export class CommunityAdapterOutboxDelivery implements CommunityOutboxDelivery {
       const attachment = this.attachmentRows.get(localRoomId, attachmentId);
       if (!attachment || attachment.entryId !== item.localEntryId) {
         return { kind: 'permanent', reason: 'local-attachment-unavailable' };
+      }
+      if (attachment.size > COMMUNITY_REMOTE_ATTACHMENT_MAX_BYTES) {
+        return { kind: 'permanent', reason: 'remote-attachment-too-large' };
       }
       const stored = await this.attachments.get(
         localRoomId,

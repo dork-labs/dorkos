@@ -6,14 +6,11 @@
 import { z } from 'zod';
 import { CommunityRefSchema } from './community-adapter.js';
 
-/** Largest attachment a community delivery can describe. */
-export const COMMUNITY_DELIVERY_MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
-
 /** Browser-safe metadata for one pending delivery attachment. */
 export const CommunityDeliveryAttachmentSchema = z.strictObject({
   name: z.string().trim().min(1).max(255),
   contentType: z.string().trim().min(1).max(255),
-  byteSize: z.number().int().nonnegative().max(COMMUNITY_DELIVERY_MAX_ATTACHMENT_BYTES),
+  byteSize: z.number().int().nonnegative().safe(),
 });
 /** Attachment metadata that contains no local storage identifier or path. */
 export type CommunityDeliveryAttachment = z.infer<typeof CommunityDeliveryAttachmentSchema>;

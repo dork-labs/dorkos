@@ -9,6 +9,7 @@ import { agentLookupFor, createRoomHarness } from '../../../rooms/__tests__/room
 import type { CommunityRef } from '@dorkos/shared/community-adapter';
 import { describe, expect, it, vi } from 'vitest';
 import { CommunityAgentEnrollmentStore } from '../agent-enrollment-store.js';
+import { CommunityAdapterOutboxDelivery } from '../community-adapter-outbox-delivery.js';
 import { CommunityOutboxPolicy } from '../community-outbox-policy.js';
 import { CommunityOutboxProjection } from '../community-outbox-projection.js';
 import { CommunityOutboxStore, type CommunityOutboxItem } from '../community-outbox-store.js';
@@ -161,6 +162,33 @@ describe('community outbox', () => {
       expect(harness.runner.turns).toEqual([]);
     }
   );
+
+  it('keeps oversized attachment metadata visible but refuses native upload before reading bytes', async () => {
+    const uploadAttachment = vi.fn();
+    const attachmentStore = { get: vi.fn() };
+    const delivery = new CommunityAdapterOutboxDelivery(
+      () => ({ uploadAttachment, post: vi.fn() }) as never,
+      { localRoomIdForOwner: () => 'room-1' } as never,
+      { findRemoteMember: () => ({ remoteMemberId: 'remote-agent-a' }) } as never,
+      { getEntryById: () => ({ kind: 'post', body: { text: 'Output' } }) } as never,
+      {
+        get: () => ({
+          id: 'attachment-1',
+          entryId: 'entry-1',
+          size: 26 * 1024 * 1024,
+        }),
+      } as never,
+      attachmentStore as never,
+      { recordOrigin: vi.fn() } as never,
+      vi.fn()
+    );
+
+    await expect(
+      delivery.deliver(outboxItem({ attachmentIds: JSON.stringify(['attachment-1']) }), () => true)
+    ).resolves.toEqual({ kind: 'permanent', reason: 'remote-attachment-too-large' });
+    expect(attachmentStore.get).not.toHaveBeenCalled();
+    expect(uploadAttachment).not.toHaveBeenCalled();
+  });
 
   it('retries network uncertainty, but stops before a later request after authority changes', async () => {
     const harness = createRoomHarness({ agents: agentLookupFor({}) });
