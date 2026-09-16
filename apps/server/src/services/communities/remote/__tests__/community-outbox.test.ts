@@ -98,7 +98,7 @@ describe('community outbox', () => {
       ).list(harness.human)
     ).toEqual([
       expect.objectContaining({
-        localEntryId: posted.id,
+        communityRef: REF,
         author: { displayName: 'Agent A', kind: 'agent' },
         text: 'I have the update.',
         state: 'pending',

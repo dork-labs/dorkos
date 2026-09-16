@@ -6,13 +6,14 @@
 import type { AuthorRegistry } from '../../rooms/author-registry.js';
 import type { AttachmentRowStore } from '../../rooms/attachments/attachment-row-store.js';
 import type { RoomStore } from '../../rooms/room-store.js';
+import type { CommunityRef } from '@dorkos/shared/community-adapter';
 import { CommunityOutboxStore, type CommunityOutboxState } from './community-outbox-store.js';
 import { RemoteMirrorStore } from './mirror-store.js';
 
 /** A local delivery state the connected owner may render beside remote history. */
 export interface CommunityOutboxDeliveryView {
+  communityRef: CommunityRef;
   idempotencyKey: string;
-  localEntryId: string;
   remoteRoomId: string;
   author: { displayName: string; kind: 'agent' };
   text: string;
@@ -47,11 +48,13 @@ export class CommunityOutboxProjection {
       return [
         {
           idempotencyKey: item.idempotencyKey,
-          localEntryId: item.localEntryId,
+          communityRef: item.communityRef,
           remoteRoomId: item.remoteRoomId,
           author: { displayName: author.displayName, kind: 'agent' },
           text: entry.body.text,
-          parentEntryId: entry.parentEntryId,
+          parentEntryId: item.localParentEntryId
+            ? this.mirrors.remoteEntryIdForLocal(localRoomId, item.localParentEntryId)
+            : null,
           attachments: this.attachments.listForEntry(localRoomId, entry.id).map((attachment) => ({
             id: attachment.id,
             name: attachment.name,
