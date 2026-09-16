@@ -16,6 +16,7 @@
     "db:migrate": "tsx src/migrate.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1133.0",
     "@dorkos/shared": "workspace:*",
     "@hono/node-server": "1.19.15",
     "better-auth": "1.7.5",
