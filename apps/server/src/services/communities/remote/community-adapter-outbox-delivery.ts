@@ -46,43 +46,12 @@ export interface RemoteAdapterForDeliveryResult {
   ): Promise<CommunityAttachment>;
 }
 
-/** Attach the receipt to the adapter's stream barrier before buffered echo is released. */
-export interface ConfirmNativePostOrigin {
-  (input: {
-    communityRef: CommunityOutboxItem['communityRef'];
-    remoteRoomId: string;
-    ownerAuthorId: string;
-    remoteEntryId: string;
-    idempotencyKey: string;
-  }): void;
-}
-
-/** Hold agent stream frames during one owner-qualified post until its receipt identifies the echo. */
-export interface ReserveNativePostOrigin {
-  (input: {
-    communityRef: CommunityOutboxItem['communityRef'];
-    remoteRoomId: string;
-    ownerAuthorId: string;
-    idempotencyKey: string;
-  }): void;
-}
-
-/** Release a receipt-less stream barrier so unrelated authoritative history is never hidden indefinitely. */
-export interface ReleaseNativePostOrigin {
-  (input: {
-    communityRef: CommunityOutboxItem['communityRef'];
-    remoteRoomId: string;
-    ownerAuthorId: string;
-    idempotencyKey: string;
-  }): void;
-}
-
 /**
  * Sends a single committed local entry through the native adapter.
  *
  * The writer never reaches this class. Every byte is read through the bounded
  * local attachment store, every remote request gets the same stable key, and a
- * receipt is persisted before the adapter releases an echo it buffered.
+ * receipt is persisted with the same stable key carried by the authenticated owner wire.
  */
 export class CommunityAdapterOutboxDelivery implements CommunityOutboxDelivery {
   constructor(
@@ -92,10 +61,7 @@ export class CommunityAdapterOutboxDelivery implements CommunityOutboxDelivery {
     private readonly entries: RoomStore,
     private readonly attachmentRows: AttachmentRowStore,
     private readonly attachments: RoomAttachmentStore,
-    private readonly outbox: CommunityOutboxStore,
-    private readonly confirmNativePostOrigin: ConfirmNativePostOrigin,
-    private readonly reserveNativePostOrigin: ReserveNativePostOrigin = () => undefined,
-    private readonly releaseNativePostOrigin: ReleaseNativePostOrigin = () => undefined
+    private readonly outbox: CommunityOutboxStore
   ) {}
 
   /** Upload attachments then post one agent entry, retaining its remote receipt. */
@@ -171,13 +137,6 @@ export class CommunityAdapterOutboxDelivery implements CommunityOutboxDelivery {
     if (item.localParentEntryId && !parentEntryId)
       return { kind: 'permanent', reason: 'remote-parent-unavailable' };
     this.outbox.reserveOrigin(item);
-    const reservation = {
-      communityRef: item.communityRef,
-      remoteRoomId: item.remoteRoomId,
-      ownerAuthorId: item.ownerAuthorId,
-      idempotencyKey: item.idempotencyKey,
-    };
-    this.reserveNativePostOrigin(reservation);
     try {
       const receipt = await adapter.post(
         item.remoteRoomId,
@@ -198,18 +157,10 @@ export class CommunityAdapterOutboxDelivery implements CommunityOutboxDelivery {
         remoteEntryId: receipt.entryId,
         idempotencyKey: item.idempotencyKey,
       });
-      this.confirmNativePostOrigin({
-        communityRef: item.communityRef,
-        remoteRoomId: item.remoteRoomId,
-        ownerAuthorId: item.ownerAuthorId,
-        remoteEntryId: receipt.entryId,
-        idempotencyKey: item.idempotencyKey,
-      });
       return signal.aborted
         ? { kind: 'stopped', reason: 'stopped-or-unauthorized' }
         : { kind: 'confirmed', remoteEntryId: receipt.entryId };
     } catch (error) {
-      this.releaseNativePostOrigin(reservation);
       return deliveryFailure(error, signal);
     }
   }

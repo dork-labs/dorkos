@@ -421,7 +421,7 @@ describe('RemoteMirrorStore', () => {
     expect(harness.service.listHolds()).toHaveLength(0);
   });
 
-  it('holds interleaved agent echoes until one exact receipt, then releases unrelated history unbound', () => {
+  it('reconciles only the owner-authorized agent wire key without delaying unrelated agent history', () => {
     const { harness, mirrors } = wired();
     const room = roomInput(REF_A, 'general', harness.human);
     const enrollments = new CommunityAgentEnrollmentStore(harness.db);
@@ -435,53 +435,75 @@ describe('RemoteMirrorStore', () => {
       outbox
     );
     bridge.authorizeRoom(room);
-    outbox.reserveOrigin({
+    const item = {
       id: 'delivery-a',
       communityRef: REF_A,
       remoteRoomId: 'general',
       ownerAuthorId: harness.human,
+      localEntryId: 'local-entry-a',
+      localParentEntryId: null,
+      localAgentId: 'local-agent-a',
+      attachmentIds: '[]',
       idempotencyKey: 'delivery-a-key',
-    } as never);
-    bridge.reserveNativePostOrigin({
+      state: 'pending' as const,
+      createdAt: '2026-09-16T00:00:00.000Z',
+      expiresAt: '2026-09-16T00:05:00.000Z',
+      remoteEntryId: null,
+      failure: null,
+      attempts: 0,
+      nextAttemptAt: '2026-09-16T00:00:00.000Z',
+    };
+    harness.db.transaction((tx) => outbox.enqueue(item, tx));
+    enrollments.activate({
       communityRef: REF_A,
-      remoteRoomId: 'general',
+      localAgentId: item.localAgentId,
+      remoteMemberId: 'remote-agent-a',
       ownerAuthorId: harness.human,
-      idempotencyKey: 'delivery-a-key',
     });
     const unrelated = nativeEntry(REF_A, 'general', 1);
-    unrelated.entry = { ...unrelated.entry, id: 'unrelated-agent-entry', authorId: 'remote-agent' };
-    unrelated.author = { memberId: 'remote-agent', displayName: 'Other agent', kind: 'agent' };
+    unrelated.entry = {
+      ...unrelated.entry,
+      id: 'unrelated-agent-entry',
+      authorId: 'remote-agent-a',
+    };
+    unrelated.author = { memberId: 'remote-agent-a', displayName: 'Other agent', kind: 'agent' };
     const echoed = nativeEntry(REF_A, 'general', 2);
-    echoed.entry = { ...echoed.entry, id: 'receipt-agent-entry', authorId: 'remote-agent' };
-    echoed.author = { memberId: 'remote-agent', displayName: 'Our agent', kind: 'agent' };
-    for (const event of [unrelated, echoed])
-      bridge.importLive(
-        room,
-        { ...event, serverCreatedAt: '2026-09-16T01:00:00.000Z' },
-        { reconnect: false, wasActiveBeforeDisconnect: false, readOnly: false }
-      );
+    echoed.entry = { ...echoed.entry, id: 'receipt-agent-entry', authorId: 'remote-agent-a' };
+    echoed.author = { memberId: 'remote-agent-a', displayName: 'Our agent', kind: 'agent' };
 
+    bridge.importLive(
+      room,
+      { ...unrelated, serverCreatedAt: '2026-09-16T01:00:00.000Z' },
+      { reconnect: false, wasActiveBeforeDisconnect: false, readOnly: false }
+    );
+    const peer = nativeEntry(REF_A, 'general', 3);
+    peer.entry = { ...peer.entry, id: 'peer-agent-entry', authorId: 'remote-agent-peer' };
+    peer.author = { memberId: 'remote-agent-peer', displayName: 'Peer agent', kind: 'agent' };
+    bridge.importLive(
+      room,
+      {
+        ...peer,
+        serverCreatedAt: '2026-09-16T01:00:00.000Z',
+        originIdempotencyKey: item.idempotencyKey,
+      },
+      { reconnect: false, wasActiveBeforeDisconnect: false, readOnly: false }
+    );
     expect(
-      mirrors.cachedEntryForOwner(REF_A, 'general', unrelated.entry.id, harness.human)
-    ).toBeNull();
-    expect(
-      mirrors.cachedEntryForOwner(REF_A, 'general', echoed.entry.id, harness.human)
-    ).toBeNull();
+      outbox.deliveryForOwner(REF_A, 'general', harness.human, item.idempotencyKey)
+    ).toMatchObject({
+      state: 'pending',
+    });
+    expect(outbox.originForRemoteEntry(REF_A, 'general', harness.human, peer.entry.id)).toBeNull();
 
-    outbox.recordOrigin({
-      communityRef: REF_A,
-      remoteRoomId: 'general',
-      ownerAuthorId: harness.human,
-      remoteEntryId: echoed.entry.id,
-      idempotencyKey: 'delivery-a-key',
-    });
-    bridge.confirmNativePostOrigin({
-      communityRef: REF_A,
-      remoteRoomId: 'general',
-      ownerAuthorId: harness.human,
-      remoteEntryId: echoed.entry.id,
-      idempotencyKey: 'delivery-a-key',
-    });
+    bridge.importLive(
+      room,
+      {
+        ...echoed,
+        serverCreatedAt: '2026-09-16T01:00:00.000Z',
+        originIdempotencyKey: item.idempotencyKey,
+      },
+      { reconnect: false, wasActiveBeforeDisconnect: false, readOnly: false }
+    );
 
     expect(
       mirrors.cachedEntryForOwner(REF_A, 'general', unrelated.entry.id, harness.human)
@@ -490,40 +512,18 @@ describe('RemoteMirrorStore', () => {
       mirrors.cachedEntryForOwner(REF_A, 'general', echoed.entry.id, harness.human)
     ).not.toBeNull();
     expect(outbox.originForRemoteEntry(REF_A, 'general', harness.human, echoed.entry.id)).toBe(
-      'delivery-a-key'
+      item.idempotencyKey
     );
+    expect(
+      outbox.deliveryForOwner(REF_A, 'general', harness.human, item.idempotencyKey)
+    ).toMatchObject({
+      state: 'confirmed',
+      remoteEntryId: echoed.entry.id,
+    });
     expect(
       outbox.originForRemoteEntry(REF_A, 'general', harness.human, unrelated.entry.id)
     ).toBeNull();
     expect(harness.runner.turns).toEqual([]);
-
-    const release = vi.fn();
-    bridge.onNativePostBarrierRelease(release);
-    bridge.reserveNativePostOrigin({
-      communityRef: REF_A,
-      remoteRoomId: 'general',
-      ownerAuthorId: harness.human,
-      idempotencyKey: 'lost-receipt-key',
-    });
-    const lost = nativeEntry(REF_A, 'general', 3);
-    lost.entry = { ...lost.entry, id: 'lost-receipt-agent-entry', authorId: 'remote-agent' };
-    lost.author = { memberId: 'remote-agent', displayName: 'Agent', kind: 'agent' };
-    bridge.importLive(
-      room,
-      { ...lost, serverCreatedAt: '2026-09-16T01:00:00.000Z' },
-      { reconnect: false, wasActiveBeforeDisconnect: false, readOnly: false }
-    );
-    bridge.releaseNativePostOrigin({
-      communityRef: REF_A,
-      remoteRoomId: 'general',
-      ownerAuthorId: harness.human,
-      idempotencyKey: 'lost-receipt-key',
-    });
-    expect(
-      mirrors.cachedEntryForOwner(REF_A, 'general', lost.entry.id, harness.human)
-    ).not.toBeNull();
-    expect(outbox.originForRemoteEntry(REF_A, 'general', harness.human, lost.entry.id)).toBeNull();
-    expect(release).toHaveBeenCalledOnce();
   });
 
   it('keeps two community refs with the same remote ids as separate local rooms', () => {

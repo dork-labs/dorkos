@@ -11,10 +11,7 @@ import type { RoomMirrorAccess, RoomMirrorWritePolicy } from '../../rooms/room-s
 import type { RoomStore } from '../../rooms/room-store.js';
 import {
   CommunityAdapterOutboxDelivery,
-  type ConfirmNativePostOrigin,
-  type ReleaseNativePostOrigin,
   type RemoteAdapterForDelivery,
-  type ReserveNativePostOrigin,
 } from './community-adapter-outbox-delivery.js';
 import { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
 import { CommunityOutboxPolicy } from './community-outbox-policy.js';
@@ -37,9 +34,6 @@ export interface CommunityOutboxRuntimeDeps {
   attachmentRows: AttachmentRowStore;
   attachmentBytes: RoomAttachmentStore;
   adapters: RemoteAdapterForDelivery;
-  confirmNativePostOrigin: ConfirmNativePostOrigin;
-  reserveNativePostOrigin?: ReserveNativePostOrigin;
-  releaseNativePostOrigin?: ReleaseNativePostOrigin;
   changes?: CommunityOutboxChangeListener;
   now?: () => number;
 }
@@ -81,10 +75,7 @@ export class CommunityOutboxRuntime {
       deps.roomStore,
       deps.attachmentRows,
       deps.attachmentBytes,
-      this.outbox,
-      deps.confirmNativePostOrigin,
-      deps.reserveNativePostOrigin ?? (() => undefined),
-      deps.releaseNativePostOrigin ?? (() => undefined)
+      this.outbox
     );
     this.worker = new CommunityOutboxWorker(
       this.outbox,

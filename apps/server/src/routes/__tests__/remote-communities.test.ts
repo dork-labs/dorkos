@@ -86,10 +86,6 @@ const fixture = vi.hoisted(() => {
     room,
     entry,
     adapter,
-    holdAgentEntries: false,
-    barrierListeners: new Set<
-      (event: { communityRef: string; remoteRoomId: string; ownerAuthorId: string }) => void
-    >(),
   };
 });
 
@@ -105,10 +101,7 @@ vi.mock('../../services/communities/remote/state.js', () => ({
     owner: string,
     entryId: string
   ) =>
-    ref === fixture.ref &&
-    roomId === 'room-a' &&
-    owner === 'owner-a' &&
-    (entryId === 'entry-a' || entryId === 'agent-echo-a')
+    ref === fixture.ref && roomId === 'room-a' && owner === 'owner-a' && entryId === 'agent-echo-a'
       ? 'delivery-origin-a'
       : null,
   getRemoteCommunityDeliverySnapshot: () => ({
@@ -146,17 +139,6 @@ vi.mock('../../services/communities/remote/state.js', () => ({
     haltRoom: vi.fn(async () => 1),
     haltAgent: vi.fn(async () => 1),
     refreshSubscriptions: vi.fn(),
-    shouldBufferNativeAgentEntry: () => fixture.holdAgentEntries,
-    onNativePostBarrierRelease: (
-      listener: (event: {
-        communityRef: string;
-        remoteRoomId: string;
-        ownerAuthorId: string;
-      }) => void
-    ) => {
-      fixture.barrierListeners.add(listener);
-      return () => fixture.barrierListeners.delete(listener);
-    },
   }),
   onRemoteCommunityDeliveryChange: () => () => undefined,
   retryRemoteCommunityDelivery: () => 'retried',
@@ -200,11 +182,9 @@ const testServer = listeningServer(app());
 describe('qualified remote community writes and live projections', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    fixture.holdAgentEntries = false;
-    fixture.barrierListeners.clear();
   });
 
-  it('posts only as the connected human and returns a strict remote receipt', async () => {
+  it('posts only as the connected human and does not attach agent-only origin metadata', async () => {
     const response = await request(testServer)
       .post(`/api/communities/${fixture.ref}/rooms/room-a/entries`)
       .send({ text: 'hello', idempotencyKey: 'retry-a', actingMemberId: 'remote-agent-a' });
@@ -222,8 +202,8 @@ describe('qualified remote community writes and live projections', () => {
     expect(accepted.body.entry).toMatchObject({
       remoteSeq: 1,
       authorKind: 'human',
-      originIdempotencyKey: 'delivery-origin-a',
     });
+    expect(accepted.body.entry.originIdempotencyKey).toBeUndefined();
   });
 
   it('relays bounded attachment bytes without returning a remote storage URL', async () => {
@@ -304,14 +284,13 @@ describe('qualified remote community writes and live projections', () => {
     expect(events.text).toContain('"originIdempotencyKey":"wire-owned-key"');
   });
 
-  it('buffers an early agent echo until the receipt barrier releases its origin-keyed entry', async () => {
+  it('streams an authenticated agent marker immediately without a receipt barrier', async () => {
     const agentEntry = {
       ...fixture.entry,
       id: 'agent-wire-a',
       authorId: 'remote-agent-a',
       text: 'agent output',
     };
-    fixture.holdAgentEntries = true;
     fixture.adapter.subscribeRoom.mockImplementationOnce((() =>
       (async function* () {
         yield {
@@ -321,9 +300,6 @@ describe('qualified remote community writes and live projections', () => {
           cursor: 'cursor-a',
         };
         yield { type: 'entry' as const, entry: agentEntry };
-        fixture.holdAgentEntries = false;
-        for (const listener of fixture.barrierListeners)
-          listener({ communityRef: fixture.ref, remoteRoomId: 'room-a', ownerAuthorId: 'owner-a' });
       })()) as never);
 
     const events = await request(testServer).get(

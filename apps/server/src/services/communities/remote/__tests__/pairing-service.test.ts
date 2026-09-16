@@ -122,7 +122,16 @@ beforeAll(async () => {
             threadRootEntryId: null,
             createdAt: new Date().toISOString(),
             cursor: 'resume-1',
-            attachments: [],
+            attachments: [
+              {
+                id: 'attachment-1',
+                name: 'shot.png',
+                contentType: 'image/png',
+                byteSize: 5,
+                checksum: 'checksum-1',
+                createdAt: new Date().toISOString(),
+              },
+            ],
           },
         ],
         nextCursor: null,
@@ -237,6 +246,15 @@ describe('private remote pairing with real HTTP and encrypted local storage', ()
     const history = await adapter.listEntries('general');
     expect(history.entries).toHaveLength(1);
     expect(remoteOriginIdempotencyKeyOf(history.entries[0]!)).toBe('owner-wire-key');
+    expect(history.entries[0]!.attachments).toEqual([
+      {
+        id: 'attachment-1',
+        name: 'shot.png',
+        contentType: 'image/png',
+        byteSize: 5,
+        checksum: 'checksum-1',
+      },
+    ]);
     expect(await adapter.getReadCursor('general')).toBe('resume-1');
     await adapter.setReadCursor('general', 'resume-1' as never);
     const agent = await adapter.admitAgent({ agentId: randomUUID(), displayName: 'Test Agent' });

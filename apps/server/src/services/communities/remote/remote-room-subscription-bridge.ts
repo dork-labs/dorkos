@@ -8,11 +8,6 @@ import { CommunityEntrySchema, type CommunityEntry } from '@dorkos/shared/commun
 import type { RoomService } from '../../rooms/room-service.js';
 import type { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
 import type { CommunityOutboxStore } from './community-outbox-store.js';
-import type {
-  ConfirmNativePostOrigin,
-  ReleaseNativePostOrigin,
-  ReserveNativePostOrigin,
-} from './community-adapter-outbox-delivery.js';
 import { RemoteMirrorStore, type MirrorRoomInput, type NativeMirrorEntry } from './mirror-store.js';
 
 /** One native entry after the adapter has retained its wire sequence and author kind. */
@@ -23,6 +18,8 @@ export interface RemoteLiveEntry {
   author: { memberId: string; displayName: string; kind: 'human' | 'agent' | 'system' };
   /** Server timestamp used only as a conservative reconnect freshness bound. */
   serverCreatedAt: string;
+  /** Owner-authorized exact post key retained from the native wire, never inferred. */
+  originIdempotencyKey?: string;
 }
 
 /**
@@ -60,42 +57,9 @@ export interface CommunityOutboxInFlightAborter {
   ): void;
 }
 
-/** A route-local buffered agent frame may now be released as cache-only or with one exact origin. */
-export interface NativePostBarrierEvent {
-  communityRef: MirrorRoomInput['communityRef'];
-  remoteRoomId: string;
-  ownerAuthorId: string;
-}
-
-/** Receives receipt and abandonment notifications for a bounded native-post barrier. */
-export interface NativePostBarrierListener {
-  (event: NativePostBarrierEvent): void;
-}
-
-interface PendingNativePost {
-  communityRef: MirrorRoomInput['communityRef'];
-  remoteRoomId: string;
-  ownerAuthorId: string;
-  idempotencyKey: string;
-  frames: Array<{ room: MirrorRoomInput; event: RemoteLiveEntry }>;
-  timeout: ReturnType<typeof setTimeout>;
-}
-
-/** Keep each unreceived post barrier private to its owner-qualified remote room. */
-function nativePostScope(input: {
-  communityRef: MirrorRoomInput['communityRef'];
-  remoteRoomId: string;
-  ownerAuthorId: string;
-}): string {
-  return `${input.communityRef}:${input.ownerAuthorId}:${input.remoteRoomId}`;
-}
-
 /** Server-only bridge from a native remote stream into the existing room dispatcher. */
 export class RemoteRoomSubscriptionBridge {
-  private readonly confirmedNativeOrigins = new Set<string>();
   private readonly dispatchesSinceBoot = new Map<string, number>();
-  private readonly pendingNativePosts = new Map<string, PendingNativePost>();
-  private readonly nativePostBarrierListeners = new Set<NativePostBarrierListener>();
 
   constructor(
     private readonly mirrors: RemoteMirrorStore,
@@ -126,62 +90,6 @@ export class RemoteRoomSubscriptionBridge {
         readOnly: frame.readOnly,
       });
     }
-  }
-
-  /**
-   * Release a receipt-confirmed native echo only after its durable origin is
-   * present. The stream never infers ownership from a human account or label.
-   */
-  confirmNativePostOrigin: ConfirmNativePostOrigin = (input) => {
-    const reservation = this.pendingNativePosts.get(nativePostScope(input));
-    if (reservation?.idempotencyKey === input.idempotencyKey) {
-      this.pendingNativePosts.delete(nativePostScope(input));
-      clearTimeout(reservation.timeout);
-      for (const frame of reservation.frames) this.importCacheOnly(frame.room, frame.event);
-      this.notifyNativePostBarrier(reservation);
-    }
-    this.confirmedNativeOrigins.add(
-      `${input.communityRef}:${input.ownerAuthorId}:${input.remoteEntryId}`
-    );
-  };
-
-  /** Hold agent frames briefly while one exact post waits for its authoritative receipt. */
-  reserveNativePostOrigin: ReserveNativePostOrigin = (input) => {
-    const scope = nativePostScope(input);
-    const existing = this.pendingNativePosts.get(scope);
-    if (existing) this.releasePendingNativePost(existing);
-    const reservation: PendingNativePost = {
-      ...input,
-      frames: [],
-      timeout: setTimeout(() => this.releaseNativePostOrigin(reservation), 10_000),
-    };
-    this.pendingNativePosts.set(scope, reservation);
-  };
-
-  /** Release a failed, aborted, or timed-out barrier without claiming any buffered remote entry. */
-  releaseNativePostOrigin: ReleaseNativePostOrigin = (input) => {
-    const reservation = this.pendingNativePosts.get(nativePostScope(input));
-    if (!reservation || reservation.idempotencyKey !== input.idempotencyKey) return;
-    this.releasePendingNativePost(reservation);
-  };
-
-  /** Whether an independent owner SSE stream must briefly buffer an agent entry. */
-  shouldBufferNativeAgentEntry(
-    communityRef: MirrorRoomInput['communityRef'],
-    remoteRoomId: string,
-    ownerAuthorId: string,
-    authorKind: 'human' | 'agent'
-  ): boolean {
-    return (
-      authorKind === 'agent' &&
-      this.pendingNativePosts.has(nativePostScope({ communityRef, remoteRoomId, ownerAuthorId }))
-    );
-  }
-
-  /** Observe bounded barrier release so route-local buffered entries can be written in source order. */
-  onNativePostBarrierRelease(listener: NativePostBarrierListener): () => void {
-    this.nativePostBarrierListeners.add(listener);
-    return () => this.nativePostBarrierListeners.delete(listener);
   }
 
   /** Import snapshot/history state only. Durable replay is deliberately never a trigger. */
@@ -222,26 +130,35 @@ export class RemoteRoomSubscriptionBridge {
       return;
     }
     const local = this.localRoom(room);
-    if (event.author.kind === 'agent') {
-      const reservation = this.pendingNativePosts.get(nativePostScope(room));
-      if (reservation) {
-        reservation.frames.push({ room, event });
-        return;
-      }
-    }
     const [saved] = this.mirrors.importEntries(room.communityRef, room.remoteRoomId, [
       this.nativeEntry(room, event),
     ]);
     if (!saved || opts.readOnly) return;
-    const originKey = `${room.communityRef}:${room.ownerAuthorId}:${event.entry.id}`;
-    if (this.confirmedNativeOrigins.delete(originKey)) {
-      this.outbox?.confirmByRemoteEntry(
+    if (event.originIdempotencyKey && event.author.kind === 'agent') {
+      const item = this.outbox?.deliveryForOwner(
         room.communityRef,
         room.remoteRoomId,
         room.ownerAuthorId,
-        event.entry.id
+        event.originIdempotencyKey
       );
-      return;
+      const enrollment = item
+        ? this.enrollments.findRemoteMember(
+            room.communityRef,
+            item.localAgentId,
+            room.ownerAuthorId
+          )
+        : null;
+      if (item && enrollment?.remoteMemberId === event.author.memberId) {
+        this.outbox?.recordOrigin({
+          communityRef: room.communityRef,
+          remoteRoomId: room.remoteRoomId,
+          ownerAuthorId: room.ownerAuthorId,
+          remoteEntryId: event.entry.id,
+          idempotencyKey: event.originIdempotencyKey,
+        });
+        this.outbox?.confirm(item.id, event.entry.id);
+        return;
+      }
     }
     if (
       this.outbox?.confirmByRemoteEntry(
@@ -278,36 +195,6 @@ export class RemoteRoomSubscriptionBridge {
     this.service.dispatchImportedRemoteEntry(local.id, dispatchEntry);
     const dispatchKey = `${room.communityRef}:${room.ownerAuthorId}:${room.remoteRoomId}`;
     this.dispatchesSinceBoot.set(dispatchKey, (this.dispatchesSinceBoot.get(dispatchKey) ?? 0) + 1);
-  }
-
-  private releasePendingNativePost(reservation: PendingNativePost): void {
-    const scope = nativePostScope(reservation);
-    if (this.pendingNativePosts.get(scope) === reservation) this.pendingNativePosts.delete(scope);
-    clearTimeout(reservation.timeout);
-    for (const frame of reservation.frames) this.importCacheOnly(frame.room, frame.event);
-    this.notifyNativePostBarrier(reservation);
-  }
-
-  private notifyNativePostBarrier(reservation: PendingNativePost): void {
-    for (const listener of this.nativePostBarrierListeners)
-      listener({
-        communityRef: reservation.communityRef,
-        remoteRoomId: reservation.remoteRoomId,
-        ownerAuthorId: reservation.ownerAuthorId,
-      });
-  }
-
-  private importCacheOnly(room: MirrorRoomInput, event: RemoteLiveEntry): void {
-    const cached = this.mirrors.cachedRoomForImport(
-      room.communityRef,
-      room.remoteRoomId,
-      room.ownerAuthorId
-    );
-    if (cached === null) return;
-    if (cached === undefined) this.localRoom(room);
-    this.mirrors.importEntries(room.communityRef, room.remoteRoomId, [
-      this.nativeEntry(room, event),
-    ]);
   }
 
   /**

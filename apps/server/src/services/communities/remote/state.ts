@@ -20,7 +20,6 @@ import type {
   CommunityOutboxRetryInput,
   CommunityOutboxRetryResult,
 } from './community-outbox-worker.js';
-import type { NativePostBarrierListener } from './remote-room-subscription-bridge.js';
 
 let store: RemoteConnectionStore | undefined;
 let pairing: RemoteCommunityPairingService | undefined;
@@ -60,15 +59,6 @@ export interface RemoteCommunityLifecycle {
   ): Promise<number>;
   /** Reconcile private background streams after native enrollment or membership changes. */
   refreshSubscriptions(): void;
-  /** A bounded receipt barrier may temporarily hold agent entries from the owner SSE. */
-  shouldBufferNativeAgentEntry(
-    communityRef: CommunityRef,
-    remoteRoomId: string,
-    ownerAuthorId: string,
-    authorKind: 'human' | 'agent'
-  ): boolean;
-  /** Notify an owner SSE that its bounded agent-entry barrier settled. */
-  onNativePostBarrierRelease(listener: NativePostBarrierListener): () => void;
 }
 
 /** The encrypted credential and owner-scoped metadata store for remote communities. */
