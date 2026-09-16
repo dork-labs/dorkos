@@ -150,6 +150,7 @@ try {
     '/packaged-cli/node_modules/dorkos',
     {
       DORK_HOME: `${root}/local-home`,
+      DORKOS_HOST: '127.0.0.1',
       DORKOS_BOUNDARY: root,
       DORKOS_TEST_RUNTIME: 'true',
       DORKOS_TEST_RUNTIME_CLAUDE_ALIAS: 'true',
