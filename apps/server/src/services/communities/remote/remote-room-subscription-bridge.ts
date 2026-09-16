@@ -7,6 +7,7 @@
 import { CommunityEntrySchema, type CommunityEntry } from '@dorkos/shared/community-adapter';
 import type { RoomService } from '../../rooms/room-service.js';
 import type { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
+import type { CommunityOutboxStore } from './community-outbox-store.js';
 import { RemoteMirrorStore, type MirrorRoomInput, type NativeMirrorEntry } from './mirror-store.js';
 
 /** One native entry after the adapter has retained its wire sequence and author kind. */
@@ -47,7 +48,8 @@ export class RemoteRoomSubscriptionBridge {
     private readonly service: RoomService,
     private readonly enrollments: CommunityAgentEnrollmentStore,
     private readonly resolveLocalAgentAuthor: LocalAgentAuthorResolver,
-    private readonly now: () => number = () => Date.now()
+    private readonly now: () => number = () => Date.now(),
+    private readonly outbox?: CommunityOutboxStore
   ) {}
 
   /**
@@ -87,6 +89,18 @@ export class RemoteRoomSubscriptionBridge {
     event: RemoteLiveEntry,
     opts: { reconnect: boolean; wasActiveBeforeDisconnect: boolean; readOnly: boolean }
   ): void {
+    // Check before `ensureRoom` refreshes the cache directory. A stale/revoked
+    // row is allowed to remain readable under its narrow policy, never renewed
+    // merely because an old stream frame arrives.
+    if (
+      !this.mirrors.isAddressActivelyAuthorized(
+        room.communityRef,
+        room.remoteRoomId,
+        room.ownerAuthorId
+      )
+    ) {
+      return;
+    }
     const local = this.localRoom(room);
     const [saved] = this.mirrors.importEntries(room.communityRef, room.remoteRoomId, [
       this.nativeEntry(room, event),
@@ -125,6 +139,7 @@ export class RemoteRoomSubscriptionBridge {
     ownerAuthorId: string
   ): Promise<void> {
     this.enrollments.revoke(communityRef, localAgentId, ownerAuthorId);
+    this.outbox?.stopForAgent(communityRef, localAgentId, ownerAuthorId);
     const authorId = this.resolveLocalAgentAuthor(localAgentId);
     if (!authorId) return;
     const stops = this.mirrors
@@ -141,6 +156,7 @@ export class RemoteRoomSubscriptionBridge {
   ): Promise<number> {
     const localRoomId = this.mirrors.localRoomIdForOwner(communityRef, remoteRoomId, ownerAuthorId);
     if (!localRoomId) return 0;
+    this.outbox?.stopForRoom(communityRef, remoteRoomId, ownerAuthorId);
     const stops = await Promise.all(
       this.enrollments.activeLocalAgentIds(communityRef, ownerAuthorId).flatMap((localAgentId) => {
         const authorId = this.resolveLocalAgentAuthor(localAgentId);
@@ -159,6 +175,7 @@ export class RemoteRoomSubscriptionBridge {
     const authorId = this.resolveLocalAgentAuthor(localAgentId);
     if (!authorId || !this.enrollments.findRemoteMember(communityRef, localAgentId, ownerAuthorId))
       return 0;
+    this.outbox?.stopForAgent(communityRef, localAgentId, ownerAuthorId);
     const stops = await Promise.all(
       this.mirrors
         .roomIdsForOwner(communityRef, ownerAuthorId)

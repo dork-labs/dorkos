@@ -49,7 +49,7 @@ import type { RoomMergeService } from './repo/room-merge-service.js';
 import type { RoomAgentLookup } from './room-errors.js';
 import { resolveRoomLimits, type RoomLimitsResolver } from './limits/room-limits.js';
 import { RoomService } from './room-service.js';
-import type { RoomMirrorAccess } from './service/room-service-deps.js';
+import type { RoomMirrorAccess, RoomMirrorWritePolicy } from './service/room-service-deps.js';
 import { RoomStore } from './room-store.js';
 import { RoomBroadcaster } from './room-stream.js';
 import type { RoomTurnRunner } from './room-trigger.js';
@@ -415,6 +415,9 @@ function safeJson(raw: string): unknown {
  *   test can move past its 45-second TTL without waiting.
  * @param opts.mirrorAccess - Persisted remote-mirror authorization. This is
  *   consulted before local owner-wide room visibility.
+ * @param opts.mirrorWrites - Trusted remote-mirror outbox policy. The writer
+ *   derives it from persisted mirror and enrollment state; callers cannot
+ *   suppress dispatch themselves.
  */
 export function createRoomSubsystem(opts: {
   db: Db;
@@ -424,6 +427,7 @@ export function createRoomSubsystem(opts: {
   readCursors?: ReadCursorService;
   canvasNow?: () => number;
   mirrorAccess?: RoomMirrorAccess;
+  mirrorWrites?: RoomMirrorWritePolicy;
   /**
    * Whether this subsystem sits on a database it may not write (DOR-1563).
    *
@@ -483,6 +487,7 @@ export function createRoomSubsystem(opts: {
   const service = new RoomService({
     store,
     ...(opts.mirrorAccess ? { mirrorAccess: opts.mirrorAccess } : {}),
+    ...(opts.mirrorWrites ? { mirrorWrites: opts.mirrorWrites } : {}),
     reactions,
     canvasDocuments,
     canvas,

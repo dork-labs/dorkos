@@ -83,6 +83,7 @@ export type {
   RoomEntryIndexer,
   RoomMessageFinder,
   RoomMirrorAccess,
+  RoomMirrorWritePolicy,
   RoomSearchScope,
   RoomServiceDeps,
 } from './service/room-service-deps.js';

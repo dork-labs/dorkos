@@ -41,6 +41,7 @@ import type {
   RoomEntryIndexer,
   RoomMessageFinder,
   RoomMirrorAccess,
+  RoomMirrorWritePolicy,
   RoomServiceDeps,
 } from './room-service-deps.js';
 
@@ -49,6 +50,8 @@ export interface RoomCore {
   readonly store: RoomStore;
   /** Persisted authorization for local rows that mirror a remote community. */
   readonly mirrorAccess?: RoomMirrorAccess;
+  /** Trusted atomic outbound policy for local agent output in remote mirrors. */
+  readonly mirrorWrites?: RoomMirrorWritePolicy;
   /** Reactions on this room's entries — durable state, never a turn. */
   readonly reactions: ReactionStore;
   /** The documents on this room's shared canvas. */
@@ -242,6 +245,7 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
   return {
     store: deps.store,
     ...(deps.mirrorAccess ? { mirrorAccess: deps.mirrorAccess } : {}),
+    ...(deps.mirrorWrites ? { mirrorWrites: deps.mirrorWrites } : {}),
     reactions: deps.reactions,
     canvasDocuments: deps.canvasDocuments,
     canvas: deps.canvas,

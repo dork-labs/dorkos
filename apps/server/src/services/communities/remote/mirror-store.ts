@@ -389,6 +389,22 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
     return mirror?.state === 'authorized' && mirror.ownerAuthorId === ownerAuthorId;
   }
 
+  /**
+   * Fresh inbound work must not revive a stale or revoked cached grant.
+   *
+   * An absent row is the first authorized lifecycle snapshot for a newly
+   * discovered room, so it may proceed to `ensureRoom`; only a persisted
+   * non-current row is a fail-closed answer before that method can refresh it.
+   */
+  isAddressActivelyAuthorized(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    ownerAuthorId: string
+  ): boolean {
+    const row = this.findRoom(communityRef, remoteRoomId);
+    return row === undefined || (row.state === 'authorized' && row.ownerAuthorId === ownerAuthorId);
+  }
+
   /** Persisted local room ids for one owner's connected community. */
   roomIdsForOwner(communityRef: CommunityRef, ownerAuthorId: string): readonly string[] {
     return this.db
@@ -412,6 +428,40 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
   ): string | null {
     const row = this.findRoom(communityRef, remoteRoomId);
     return row?.ownerAuthorId === ownerAuthorId ? row.localRoomId : null;
+  }
+
+  /** Trusted outbound address for a local mirror row, or null for ordinary rooms. */
+  outboundAddress(
+    roomId: string
+  ): { communityRef: CommunityRef; remoteRoomId: string; ownerAuthorId: string } | null {
+    const row = this.db
+      .select()
+      .from(communityRoomMirrors)
+      .where(eq(communityRoomMirrors.localRoomId, roomId))
+      .get();
+    return row
+      ? {
+          communityRef: row.communityRef as CommunityRef,
+          remoteRoomId: row.remoteRoomId,
+          ownerAuthorId: row.ownerAuthorId,
+        }
+      : null;
+  }
+
+  /** Resolve an imported local entry back to its remote parent identity for an outbound reply. */
+  remoteEntryIdForLocal(roomId: string, localEntryId: string): string | null {
+    return (
+      this.db
+        .select({ remoteEntryId: communityMirrorEntries.remoteEntryId })
+        .from(communityMirrorEntries)
+        .where(
+          and(
+            eq(communityMirrorEntries.localRoomId, roomId),
+            eq(communityMirrorEntries.localEntryId, localEntryId)
+          )
+        )
+        .get()?.remoteEntryId ?? null
+    );
   }
 
   /** Whether this installation has any mirrors that make owner-wide access unsafe. */

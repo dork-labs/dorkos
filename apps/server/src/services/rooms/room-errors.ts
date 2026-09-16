@@ -16,6 +16,8 @@ export type RoomErrorCode =
   | 'ENTRY_NOT_FOUND'
   | 'MEMBER_NOT_FOUND'
   | 'AGENT_NOT_FOUND'
+  /** The durable remote-delivery queue is at its explicit safety ceiling. */
+  | 'COMMUNITY_OUTBOX_FULL'
   | 'SLUG_TAKEN'
   | 'INVALID_SLUG'
   /**

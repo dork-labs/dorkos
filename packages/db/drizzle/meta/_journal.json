@@ -729,6 +729,20 @@
       "when": 1789579579881,
       "tag": "0103_demonic_lizard",
       "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "6",
+      "when": 1789580715795,
+      "tag": "0104_tearful_professor_monster",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "6",
+      "when": 1789581166437,
+      "tag": "0105_bumpy_kabuki",
+      "breakpoints": true
     }
   ]
 }
