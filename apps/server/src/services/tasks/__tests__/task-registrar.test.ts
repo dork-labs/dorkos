@@ -84,6 +84,24 @@ describe('TaskRegistrar', () => {
       expect(scheduler.cronFor(task.id)).toBeNull();
     });
 
+    it('unregisters a task paused because its agent was unregistered, even switched on (DOR-2082)', () => {
+      const task = store.createTask(
+        taskInput({ name: 'orphaned', cron: '0 2 * * *', agentId: 'agent-1' })
+      );
+      registrar.syncTask(task.id);
+      expect(scheduler.cronFor(task.id)).toBe('0 2 * * *');
+
+      store.disableTasksByAgentId('agent-1');
+      // `disableTasksByAgentId` leaves `enabled` exactly as the person set it
+      // (DOR-2082) — nothing runs while the agent is unregistered only because
+      // `status` alone already fails this gate.
+      expect(store.getTask(task.id)?.enabled).toBe(true);
+      registrar.syncTask(task.id);
+
+      expect(scheduler.cronFor(task.id)).toBeNull();
+      expect(scheduler.unregistered).toContain(task.id);
+    });
+
     // A live job whose row is gone is the worst of the states: it still fires,
     // and the run it tries to record has no schedule to belong to.
     it('unregisters a task whose row has been deleted', () => {
