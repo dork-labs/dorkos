@@ -1373,6 +1373,7 @@ async function start() {
       getRemoteCommunityAdapter(communityRef, ownerAuthorId),
     resolveLocalAgentAuthor: (localAgentId) =>
       resolveRemoteLocalAgent(localAgentId)?.authorId ?? null,
+    isReady: () => meshCore !== undefined,
   });
   setRemoteCommunityLifecycle(remoteCommunitySubscriptions);
   remoteCommunityRuntime.start();

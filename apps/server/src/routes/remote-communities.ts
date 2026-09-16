@@ -398,20 +398,25 @@ export function createRemoteCommunitiesRouter(): Router {
   });
   router.post('/:ref/rooms/:roomId/deliveries/:idempotencyKey/retry', (req, res) => {
     const owner = resolveCommunityOwner(req, res);
+    if (!owner) return;
     const ref = CommunityRefSchema.safeParse(req.params.ref);
+    const roomId = z.string().min(1).max(128).safeParse(req.params.roomId);
     const idempotencyKey = z.string().min(1).max(128).safeParse(req.params.idempotencyKey);
-    if (!owner || !ref.success || !idempotencyKey.success) return;
+    if (!ref.success || !roomId.success || !idempotencyKey.success) {
+      res.status(400).json({ error: 'Use valid community, room, and delivery identifiers.' });
+      return;
+    }
     try {
       const result = retryRemoteCommunityDelivery({
         communityRef: ref.data,
-        remoteRoomId: req.params.roomId,
+        remoteRoomId: roomId.data,
         ownerAuthorId: owner,
         idempotencyKey: idempotencyKey.data,
       });
       if (result === 'missing') return res.status(404).json({ error: 'Delivery not found.' });
       if (result !== 'retried')
         return res.status(409).json({ error: 'Delivery cannot be retried.' });
-      res.json(getRemoteCommunityDeliverySnapshot(ref.data, req.params.roomId, owner));
+      res.json(getRemoteCommunityDeliverySnapshot(ref.data, roomId.data, owner));
     } catch (error) {
       fail(res, error);
     }
