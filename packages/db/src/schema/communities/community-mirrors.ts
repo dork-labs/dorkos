@@ -72,6 +72,17 @@ export const communityMirrorEntries = sqliteTable(
     remoteSeq: integer('remote_seq').notNull(),
     /** The validated opaque adapter entry, retained for restart-safe cache projection. */
     entryJson: text('entry_json'),
+    /** Native author label captured with the immutable remote entry. */
+    authorDisplayName: text('author_display_name'),
+    /** Native author kind captured with the immutable remote entry. */
+    authorKind: text('author_kind'),
+    /**
+     * The one local dispatcher claim for this remote entry. It is distinct from
+     * delivery: claiming says a fresh external-human entry was handed to the
+     * existing room dispatcher, so a reconnect or restart cannot hand it over
+     * again.
+     */
+    dispatchClaimedAt: text('dispatch_claimed_at'),
   },
   (table) => [
     primaryKey({ columns: [table.communityRef, table.remoteRoomId, table.remoteEntryId] }),
@@ -81,6 +92,70 @@ export const communityMirrorEntries = sqliteTable(
     ),
     uniqueIndex('community_mirror_entries_local_entry_unique').on(table.localEntryId),
     index('idx_community_mirror_entries_room_seq').on(table.localRoomId, table.remoteSeq),
+  ]
+);
+
+/** A local agent output awaiting remote receipt; never proof of delivery. */
+export const communityOutbox = sqliteTable(
+  'community_outbox',
+  {
+    id: text('id').primaryKey(),
+    communityRef: text('community_ref').notNull(),
+    remoteRoomId: text('remote_room_id').notNull(),
+    ownerAuthorId: text('owner_author_id').notNull(),
+    localEntryId: text('local_entry_id').notNull(),
+    /** Local parent id, resolved to a remote id only by the delivery worker. */
+    localParentEntryId: text('local_parent_entry_id'),
+    localAgentId: text('local_agent_id').notNull(),
+    /** Bounded local attachment ids serialized only for the worker's byte seam. */
+    attachmentIds: text('attachment_ids').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    state: text('state').notNull(),
+    createdAt: text('created_at').notNull(),
+    expiresAt: text('expires_at').notNull(),
+    remoteEntryId: text('remote_entry_id'),
+    failure: text('failure'),
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: text('next_attempt_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('community_outbox_local_entry_unique').on(table.localEntryId),
+    uniqueIndex('community_outbox_ref_idempotency_unique').on(
+      table.communityRef,
+      table.idempotencyKey
+    ),
+    index('idx_community_outbox_state_expiry').on(table.state, table.expiresAt),
+    index('idx_community_outbox_ref_state').on(table.communityRef, table.state),
+  ]
+);
+
+/**
+ * Owner-scoped proof that a remote entry was written by this installation.
+ *
+ * This is deliberately separate from the agent outbox. Browser-originated
+ * human posts need the same echo reconciliation without pretending to be an
+ * agent delivery, and the row contains neither a bearer nor any remote path.
+ */
+export const communityEntryOrigins = sqliteTable(
+  'community_entry_origins',
+  {
+    communityRef: text('community_ref').notNull(),
+    remoteRoomId: text('remote_room_id').notNull(),
+    ownerAuthorId: text('owner_author_id').notNull(),
+    remoteEntryId: text('remote_entry_id').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.communityRef, table.remoteRoomId, table.ownerAuthorId, table.remoteEntryId],
+    }),
+    uniqueIndex('community_entry_origins_qualified_key_unique').on(
+      table.communityRef,
+      table.remoteRoomId,
+      table.ownerAuthorId,
+      table.idempotencyKey
+    ),
   ]
 );
 

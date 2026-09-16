@@ -83,6 +83,7 @@ export type {
   RoomEntryIndexer,
   RoomMessageFinder,
   RoomMirrorAccess,
+  RoomMirrorWritePolicy,
   RoomSearchScope,
   RoomServiceDeps,
 } from './service/room-service-deps.js';
@@ -355,6 +356,19 @@ export class RoomService {
   ): RoomEntryListResponse {
     return this.parts.reads.listEntryPage(roomId, viewerAuthorId, opts);
   }
+  /**
+   * Dispatch one already-imported remote entry through this service's sole dispatcher.
+   *
+   * Only the remote subscription bridge calls this after durable cache import and
+   * its own freshness, enrollment and authorization checks. It intentionally has
+   * no caller-controlled bypass flags or write behavior.
+   */
+  dispatchImportedRemoteEntry(roomId: string, entry: RoomEntry): void {
+    const room = this.parts.core.store.getRoom(roomId);
+    if (!room) return;
+    this.triggers.dispatch(room, entry);
+  }
+
   /** Write a post. See {@link RoomPosting.post}. */
   post(roomId: string, input: RoomPostInput): PostedEntry {
     return this.parts.posting.post(roomId, input);

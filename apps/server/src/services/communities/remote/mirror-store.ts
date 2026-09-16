@@ -15,6 +15,7 @@ import {
   communityRoomMirrors,
   eq,
   gt,
+  isNull,
   roomEntries,
   roomMembers,
   rooms,
@@ -59,7 +60,15 @@ export interface NativeMirrorEntry {
   /** The authoritative sequence emitted by the native community wire. */
   remoteSeq: number;
   /** The raw remote author id and display label; it is always external locally. */
-  author: { memberId: string; displayName: string };
+  author: { memberId: string; displayName: string; kind: 'human' | 'agent' | 'system' };
+}
+
+/** One owner-authorized cached entry with its native provenance metadata. */
+export interface CachedRemoteEntry {
+  entry: CommunityEntry;
+  remoteSeq: number;
+  /** Null only for rows cached before native author metadata was retained. */
+  author: { memberId: string; displayName: string; kind: 'human' | 'agent' | 'system' } | null;
 }
 
 /** One local mirror lookup, used by RoomVisibility before owner-wide access. */
@@ -173,6 +182,36 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
   }
 
   /**
+   * Atomically claim the one eligible local dispatch for an already imported
+   * remote entry.
+   *
+   * A restart must not make a gap-free reconnect execute an entry twice. This
+   * is intentionally a dispatch receipt rather than an outbox or delivery
+   * state: the bridge owns only inbound eligibility, while outbound delivery
+   * remains the later writer/outbox concern.
+   */
+  claimRemoteDispatch(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    remoteEntryId: string,
+    claimedAt: string
+  ): boolean {
+    const result = this.db
+      .update(communityMirrorEntries)
+      .set({ dispatchClaimedAt: claimedAt })
+      .where(
+        and(
+          eq(communityMirrorEntries.communityRef, communityRef),
+          eq(communityMirrorEntries.remoteRoomId, remoteRoomId),
+          eq(communityMirrorEntries.remoteEntryId, remoteEntryId),
+          isNull(communityMirrorEntries.dispatchClaimedAt)
+        )
+      )
+      .run();
+    return result.changes === 1;
+  }
+
+  /**
    * Read one authorized cached entry in its original opaque adapter shape.
    *
    * This projection exists for restart and offline repair paths. It returns no
@@ -200,6 +239,40 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
       )
       .get();
     return row?.entryJson ? CommunityEntrySchema.parse(JSON.parse(row.entryJson)) : null;
+  }
+
+  /**
+   * Read one cached entry together with native author metadata.
+   *
+   * The remote route can render this provenance, but it must never turn the
+   * author into a local principal or infer authority from its display label.
+   */
+  cachedEntryWithAuthorForOwner(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    remoteEntryId: string,
+    ownerAuthorId: string
+  ): CachedRemoteEntry | null {
+    const mirror = this.findRoom(communityRef, remoteRoomId);
+    if (!mirror || mirror.ownerAuthorId !== ownerAuthorId || mirror.state === 'revoked')
+      return null;
+    const row = this.db
+      .select({
+        entryJson: communityMirrorEntries.entryJson,
+        remoteSeq: communityMirrorEntries.remoteSeq,
+        authorDisplayName: communityMirrorEntries.authorDisplayName,
+        authorKind: communityMirrorEntries.authorKind,
+      })
+      .from(communityMirrorEntries)
+      .where(
+        and(
+          eq(communityMirrorEntries.communityRef, communityRef),
+          eq(communityMirrorEntries.remoteRoomId, remoteRoomId),
+          eq(communityMirrorEntries.remoteEntryId, remoteEntryId)
+        )
+      )
+      .get();
+    return row ? toCachedEntry(row) : null;
   }
 
   /**
@@ -301,6 +374,113 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
       )
       .get();
     return grant !== undefined;
+  }
+
+  /** Whether a mirror is actively authorized for fresh inbound work. */
+  isActivelyAuthorized(roomId: string, ownerAuthorId: string): boolean {
+    const mirror = this.db
+      .select({
+        state: communityRoomMirrors.state,
+        ownerAuthorId: communityRoomMirrors.ownerAuthorId,
+      })
+      .from(communityRoomMirrors)
+      .where(eq(communityRoomMirrors.localRoomId, roomId))
+      .get();
+    return mirror?.state === 'authorized' && mirror.ownerAuthorId === ownerAuthorId;
+  }
+
+  /**
+   * Fresh inbound work must not revive a stale or revoked cached grant.
+   *
+   * An absent row is the first authorized lifecycle snapshot for a newly
+   * discovered room, so it may proceed to `ensureRoom`; only a persisted
+   * non-current row is a fail-closed answer before that method can refresh it.
+   */
+  isAddressActivelyAuthorized(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    ownerAuthorId: string
+  ): boolean {
+    const row = this.findRoom(communityRef, remoteRoomId);
+    return row === undefined || (row.state === 'authorized' && row.ownerAuthorId === ownerAuthorId);
+  }
+
+  /**
+   * Resolve an existing cache target without changing its persisted authority.
+   *
+   * `undefined` means a newly authorized lifecycle directory may create this
+   * mirror. `null` means a revoked mapping, which old snapshot/history frames
+   * must leave alone. A stale owner cache remains readable, so it returns its
+   * room without ever promoting it back to authorized.
+   */
+  cachedRoomForImport(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    ownerAuthorId: string
+  ): Room | null | undefined {
+    const row = this.findRoom(communityRef, remoteRoomId);
+    if (!row) return undefined;
+    if (row.ownerAuthorId !== ownerAuthorId || row.state === 'revoked') return null;
+    return this.roomsStore.getRoom(row.localRoomId);
+  }
+
+  /** Persisted local room ids for one owner's connected community. */
+  roomIdsForOwner(communityRef: CommunityRef, ownerAuthorId: string): readonly string[] {
+    return this.db
+      .select({ localRoomId: communityRoomMirrors.localRoomId })
+      .from(communityRoomMirrors)
+      .where(
+        and(
+          eq(communityRoomMirrors.communityRef, communityRef),
+          eq(communityRoomMirrors.ownerAuthorId, ownerAuthorId)
+        )
+      )
+      .all()
+      .map((row) => row.localRoomId);
+  }
+
+  /** Resolve a qualified remote room to its opaque local mirror id for local-only Stop. */
+  localRoomIdForOwner(
+    communityRef: CommunityRef,
+    remoteRoomId: string,
+    ownerAuthorId: string
+  ): string | null {
+    const row = this.findRoom(communityRef, remoteRoomId);
+    return row?.ownerAuthorId === ownerAuthorId ? row.localRoomId : null;
+  }
+
+  /** Trusted outbound address for a local mirror row, or null for ordinary rooms. */
+  outboundAddress(
+    roomId: string
+  ): { communityRef: CommunityRef; remoteRoomId: string; ownerAuthorId: string } | null {
+    const row = this.db
+      .select()
+      .from(communityRoomMirrors)
+      .where(eq(communityRoomMirrors.localRoomId, roomId))
+      .get();
+    return row
+      ? {
+          communityRef: row.communityRef as CommunityRef,
+          remoteRoomId: row.remoteRoomId,
+          ownerAuthorId: row.ownerAuthorId,
+        }
+      : null;
+  }
+
+  /** Resolve an imported local entry back to its remote parent identity for an outbound reply. */
+  remoteEntryIdForLocal(roomId: string, localEntryId: string): string | null {
+    return (
+      this.db
+        .select({ remoteEntryId: communityMirrorEntries.remoteEntryId })
+        .from(communityMirrorEntries)
+        .where(
+          and(
+            eq(communityMirrorEntries.localRoomId, roomId),
+            eq(communityMirrorEntries.localEntryId, localEntryId)
+          )
+        )
+        .get()?.remoteEntryId ?? null
+    );
   }
 
   /** Whether this installation has any mirrors that make owner-wide access unsafe. */
@@ -464,7 +644,7 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
             authorId: external.id,
             kind: 'post',
             body: JSON.stringify({ text: item.entry.text }),
-            mentions: '[]',
+            mentions: JSON.stringify(item.entry.mentions),
             mentionSpans: '[]',
             sessionId: null,
             cascadeRoot: localEntryId,
@@ -485,6 +665,8 @@ export class RemoteMirrorStore implements MirrorRoomAccess {
             localEntryId,
             remoteSeq: item.remoteSeq,
             entryJson: JSON.stringify(CommunityEntrySchema.parse(item.entry)),
+            authorDisplayName: item.author.displayName,
+            authorKind: item.author.kind,
           })
           .run();
         this.repairRelations(tx, communityRef, remoteRoomId, localRoomId);
@@ -579,4 +761,28 @@ function dedupeAccessors(
   values.set(ownerAuthorId, { authorId: ownerAuthorId, responseMode: 'silent' });
   for (const accessor of accessors) values.set(accessor.authorId, accessor);
   return [...values.values()];
+}
+
+/** Rehydrate optional native provenance without inferring anything from a label. */
+function toCachedEntry(row: {
+  entryJson: string | null;
+  remoteSeq: number;
+  authorDisplayName: string | null;
+  authorKind: string | null;
+}): CachedRemoteEntry | null {
+  if (!row.entryJson) return null;
+  const entry = CommunityEntrySchema.parse(JSON.parse(row.entryJson));
+  const author = isNativeAuthorKind(row.authorKind)
+    ? {
+        memberId: entry.authorId,
+        displayName: row.authorDisplayName ?? entry.authorId,
+        kind: row.authorKind,
+      }
+    : null;
+  return { entry, remoteSeq: row.remoteSeq, author };
+}
+
+/** The three native member kinds the remote server vouches for on its wire. */
+function isNativeAuthorKind(value: string | null): value is 'human' | 'agent' | 'system' {
+  return value === 'human' || value === 'agent' || value === 'system';
 }

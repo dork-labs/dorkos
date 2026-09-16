@@ -1,0 +1,1 @@
+ALTER TABLE `community_mirror_entries` ADD `dispatch_claimed_at` text;
