@@ -721,15 +721,25 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
       input.agentId,
       this.ownerKey
     );
-    if (!binding) return this.admitAgent(input);
-    const data = CommunityAgentEnrollmentSecretResponseSchema.parse(
-      await this.request(
-        `/api/v1/agents/${encodeURIComponent(binding.remoteMemberId)}/rotate`,
-        undefined,
-        undefined,
-        'POST'
-      )
-    );
+    let data;
+    try {
+      data = CommunityAgentEnrollmentSecretResponseSchema.parse(
+        await this.request(
+          binding
+            ? `/api/v1/agents/${encodeURIComponent(binding.remoteMemberId)}/rotate`
+            : '/api/v1/agents/recover',
+          binding ? undefined : { localAgentId: input.agentId, displayName: input.displayName },
+          undefined,
+          'POST'
+        )
+      );
+    } catch (error) {
+      // An inactive row is reactivated only after its authorized recovery lookup
+      // says no active credential exists. Ordinary admission never rotates.
+      if (!binding && error instanceof PinnedHttpError && error.status === 404)
+        return this.admitAgent(input);
+      throw error;
+    }
     await this.store.saveAgentToken(this.community, this.ownerKey, data.agent.memberId, data.token);
     this.enrollments?.activate({
       communityRef: this.community,

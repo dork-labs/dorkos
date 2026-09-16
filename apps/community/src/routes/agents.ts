@@ -125,6 +125,40 @@ export function registerAgentRoutes(
     return json(c, CommunityWireAgentListResponseSchema, { agents: rows.rows.map(project) });
   });
 
+  // A client can lose the one-time enrollment response after the transaction
+  // commits. The owner-scoped local id is the recovery key; this endpoint is
+  // deliberately distinct from ordinary enrollment so retries never rotate a
+  // still-working credential.
+  app.post('/api/v1/agents/recover', async (c) => {
+    const { member, tokenHash } = await requireConnectionGrant(c, pool, 'enroll-agent');
+    const body = await readJson(c, CommunityWireAgentEnrollRequestSchema);
+    const result = await transaction(pool, async (client) => {
+      await assertConnectionGrantCurrent(client, member.id, tokenHash, 'enroll-agent');
+      const agent = await client.query<AgentRow>(
+        'SELECT id,display_name,handle,owner_member_id,active FROM agents WHERE owner_member_id=$1 AND local_agent_id=$2 AND active FOR UPDATE',
+        [member.id, body.localAgentId]
+      );
+      if (!agent.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Active agent not found.');
+      await client.query(
+        'UPDATE agent_credentials SET revoked_at=now() WHERE agent_id=$1 AND revoked_at IS NULL',
+        [agent.rows[0].id]
+      );
+      const token = randomToken();
+      await client.query('INSERT INTO agent_credentials(agent_id,token_hash) VALUES($1,$2)', [
+        agent.rows[0].id,
+        hashSecret(token),
+      ]);
+      await client.query(
+        'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
+        [member.community_id, member.id, 'agent.recover', agent.rows[0].id]
+      );
+      return { token, agent: project(agent.rows[0]) };
+    });
+    const out = json(c, CommunityAgentEnrollmentSecretResponseSchema, result);
+    out.headers.set('Cache-Control', 'no-store');
+    return out;
+  });
+
   app.post('/api/v1/agents/:id/rotate', async (c) => {
     const { member, tokenHash } = await requireConnectionGrant(c, pool, 'enroll-agent');
     const id = uuid.parse(c.req.param('id'));

@@ -449,6 +449,34 @@ describe('RemoteCommunityAdapter qualified human primitives', () => {
 });
 
 describe('RemoteCommunityAdapter durable agent enrollment', () => {
+  it('recovers an agent whose enrollment response committed before this install saved it', async () => {
+    const remote = await fetch(`${baseUrl}/api/v1/agents`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${plantedCredential}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ localAgentId: 'lost-response-agent', displayName: 'Lost response' }),
+    });
+    expect(remote.status).toBe(201);
+    const created = (await remote.json()) as { agent: { memberId: string } };
+
+    const localDb = createDb(':memory:');
+    runMigrations(localDb);
+    const enrollments = new CommunityAgentEnrollmentStore(localDb);
+    const adapter = new RemoteCommunityAdapter(ref, ownerKey, store, enrollments);
+    const recovered = await adapter.recoverAgent({
+      agentId: 'lost-response-agent',
+      displayName: 'Ignored recovery display',
+    });
+    expect(recovered.memberId).toBe(created.agent.memberId);
+    expect(
+      (
+        await new RemoteCommunityAdapter(ref, ownerKey, store, enrollments).admitAgent({
+          agentId: 'lost-response-agent',
+          displayName: 'Ignored restart display',
+        })
+      ).memberId
+    ).toBe(created.agent.memberId);
+  });
+
   it('reuses a validated secret after restart and reactivates an ejected agent with no rooms', async () => {
     const localDb = createDb(':memory:');
     runMigrations(localDb);
