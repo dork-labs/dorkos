@@ -55,6 +55,12 @@ export interface CommunityOutboxInFlightAborter {
     localAgentId: string,
     ownerAuthorId: string
   ): void;
+  /** Stop durable unsent work and abort its matching network operation together. */
+  stopForAgent?(
+    communityRef: MirrorRoomInput['communityRef'],
+    localAgentId: string,
+    ownerAuthorId: string
+  ): void;
 }
 
 /** Server-only bridge from a native remote stream into the existing room dispatcher. */
@@ -210,12 +216,17 @@ export class RemoteRoomSubscriptionBridge {
   async revokeEnrollment(
     communityRef: MirrorRoomInput['communityRef'],
     localAgentId: string,
-    ownerAuthorId: string
+    ownerAuthorId: string,
+    formerAuthorId?: string | null
   ): Promise<void> {
     this.enrollments.revoke(communityRef, localAgentId, ownerAuthorId);
-    this.outbox?.stopForAgent(communityRef, localAgentId, ownerAuthorId);
-    this.outboxAborter?.abortForAgent(communityRef, localAgentId, ownerAuthorId);
-    const authorId = this.resolveLocalAgentAuthor(localAgentId);
+    if (this.outboxAborter?.stopForAgent) {
+      this.outboxAborter.stopForAgent(communityRef, localAgentId, ownerAuthorId);
+    } else {
+      this.outbox?.stopForAgent(communityRef, localAgentId, ownerAuthorId);
+      this.outboxAborter?.abortForAgent(communityRef, localAgentId, ownerAuthorId);
+    }
+    const authorId = formerAuthorId ?? this.resolveLocalAgentAuthor(localAgentId);
     if (!authorId) return;
     const stops = this.mirrors
       .roomIdsForOwner(communityRef, ownerAuthorId)

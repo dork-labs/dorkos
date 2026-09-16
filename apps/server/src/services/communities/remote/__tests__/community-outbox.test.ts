@@ -512,6 +512,7 @@ describe('community outbox', () => {
       attachmentRows: {} as never,
       attachmentBytes: {} as never,
       adapters: () => ({}) as never,
+      isLocalAgentCurrent: () => true,
       now: () => NOW,
     });
     runtime.mirrors.ensureRoom({
