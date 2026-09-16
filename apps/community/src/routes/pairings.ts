@@ -8,6 +8,8 @@ import {
   CommunityWirePairingApproveResponseSchema,
   CommunityWirePairingPollRequestSchema,
   CommunityWirePairingCancelRequestSchema,
+  CommunityWirePairingDeclineRequestSchema,
+  CommunityWirePairingDeclineResponseSchema,
   CommunityWirePairingExchangeRequestSchema,
   CommunityWirePairingStartRequestSchema,
   CommunityWirePairingStartResponseSchema,
@@ -129,6 +131,29 @@ export function registerPairingRoutes(
       }
     });
     return json(c, CommunityWirePairingApproveResponseSchema, { approved: true });
+  });
+
+  app.post('/api/v1/pairings/decline', async (c) => {
+    const actor = await requireMember(c, auth, pool);
+    const { pairingId } = await readJson(c, CommunityWirePairingDeclineRequestSchema);
+    const id = uuid.parse(pairingId);
+    await transaction(pool, async (client) => {
+      const pair = await client.query<{ member_id: string | null }>(
+        'SELECT member_id FROM connection_pairings WHERE id=$1 AND expires_at>now() AND cancelled_at IS NULL AND consumed_at IS NULL FOR UPDATE',
+        [id]
+      );
+      if (!pair.rows[0])
+        throw new ApiError(409, 'STATE_CONFLICT', 'This pairing request is no longer available.');
+      await requireLiveRole(client, actor, ['owner', 'admin', 'member']);
+      if (pair.rows[0].member_id && pair.rows[0].member_id !== actor.id)
+        throw new ApiError(403, 'FORBIDDEN', 'Another member approved this request.');
+      await client.query('UPDATE connection_pairings SET cancelled_at=now() WHERE id=$1', [id]);
+      await client.query(
+        'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
+        [actor.community_id, actor.id, 'pairing.decline', id]
+      );
+    });
+    return json(c, CommunityWirePairingDeclineResponseSchema, { cancelled: true });
   });
 
   app.post('/api/v1/pairings/poll', async (c) => {

@@ -13,6 +13,7 @@ import {
 } from '@dorkos/shared/community-wire';
 import type { CommunityAuth } from '../auth.js';
 import {
+  assertPrincipalCurrent,
   lockChannel,
   requireLiveRole,
   requireMember,
@@ -83,6 +84,7 @@ export function registerChannelRoutes(
        ORDER BY c.created_at,c.id`,
       [member.id, member.community_id]
     );
+    await assertPrincipalCurrent(c, auth, pool, member, 'read');
     return json(c, CommunityWireChannelListResponseSchema, { channels: result.rows.map(project) });
   });
 
@@ -108,8 +110,10 @@ export function registerChannelRoutes(
 
   app.get('/api/v1/channels/:id', async (c) => {
     const member = await requirePrincipal(c, auth, pool, 'read');
+    const channel = await channelProjection(pool, c.req.param('id'), member);
+    await assertPrincipalCurrent(c, auth, pool, member, 'read');
     return json(c, CommunityWireChannelResponseSchema, {
-      channel: await channelProjection(pool, c.req.param('id'), member),
+      channel,
     });
   });
 
@@ -192,6 +196,7 @@ export function registerChannelRoutes(
        ORDER BY joined_at,id`,
       [channel.id]
     );
+    await assertPrincipalCurrent(c, auth, pool, member, 'read');
     return json(c, CommunityWireMemberListResponseSchema, {
       members: rows.rows.map((row) => ({
         memberId: row.id,

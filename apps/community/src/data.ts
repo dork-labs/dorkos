@@ -125,6 +125,24 @@ export async function requirePrincipal(
   };
 }
 
+/** Revalidate the exact cookie or bearer after a read waited on another transaction. */
+export async function assertPrincipalCurrent(
+  c: Context,
+  auth: CommunityAuth,
+  pool: Pool,
+  principal: Principal,
+  scope: 'read' | 'post'
+): Promise<void> {
+  const current = await requirePrincipal(c, auth, pool, scope, false);
+  if (
+    current.id !== principal.id ||
+    current.kind !== principal.kind ||
+    current.credentialHash !== principal.credentialHash
+  ) {
+    throw new ApiError(401, 'UNAUTHENTICATED', 'This credential is unavailable.');
+  }
+}
+
 /** Lock the quota owner and recheck an actor's credential before a committed post. */
 export async function lockPrincipalAuthority(
   client: PoolClient,
