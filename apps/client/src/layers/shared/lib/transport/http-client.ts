@@ -30,13 +30,15 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 async function request(
   baseUrl: string,
   url: string,
-  opts?: RequestInit & { timeout?: number }
+  opts?: RequestInit & { timeout?: number | null }
 ): Promise<Response> {
   const { timeout = DEFAULT_TIMEOUT_MS, ...requestInit } = opts ?? {};
-  const timeoutSignal = AbortSignal.timeout(timeout);
-  const signal = requestInit.signal
-    ? AbortSignal.any([timeoutSignal, requestInit.signal])
-    : timeoutSignal;
+  const timeoutSignal = timeout === null ? undefined : AbortSignal.timeout(timeout);
+  const signal = timeoutSignal
+    ? requestInit.signal
+      ? AbortSignal.any([timeoutSignal, requestInit.signal])
+      : timeoutSignal
+    : requestInit.signal;
 
   let res: Response;
   try {
@@ -49,7 +51,7 @@ async function request(
       signal,
     });
   } catch (err) {
-    if (err instanceof DOMException && err.name === 'TimeoutError') {
+    if (timeout !== null && err instanceof DOMException && err.name === 'TimeoutError') {
       throw new Error(`Request timed out after ${timeout / 1000}s. Check your network`, {
         cause: err,
       });
@@ -78,6 +80,19 @@ async function request(
     throw err;
   }
   return res;
+}
+
+/**
+ * Fetch authorized bytes with the same local authentication/error handling as JSON.
+ * `timeout: null` is reserved for a stream whose caller owns its header deadline
+ * and cancellation; ordinary files retain the normal request timeout.
+ */
+export function fetchResponse(
+  baseUrl: string,
+  url: string,
+  opts?: RequestInit & { timeout?: number | null }
+): Promise<Response> {
+  return request(baseUrl, url, opts);
 }
 
 /** Fetch JSON from a URL, throwing on non-OK responses. */
