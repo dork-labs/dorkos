@@ -3612,6 +3612,39 @@ export function runtimeConformance(
       }
     });
 
+    describe('turns the agent starts on its own (spec `warm-process-lifecycle` D6)', () => {
+      it('subscribes and unsubscribes without throwing, or declares nothing', () => {
+        const runtime = makeRuntime();
+        if (runtime.onRuntimeTurn === undefined) return;
+
+        // A runtime that can produce one of these turns needs the reserved lock
+        // holder to run it under: the turn takes the session like any other
+        // writer, and `acquireLock` refuses the `runtime:` name to everyone.
+        expect(
+          typeof runtime.acquireRuntimeLock,
+          'a runtime that declares onRuntimeTurn must also implement acquireRuntimeLock — ' +
+            'its turns hold the session under the reserved runtime: holder'
+        ).toBe('function');
+
+        const unsubscribe = runtime.onRuntimeTurn(() => {});
+        expect(typeof unsubscribe).toBe('function');
+        // Idempotent: a host that tears down twice must not be punished for it.
+        unsubscribe();
+        unsubscribe();
+      });
+
+      it('never reports a pending segment for a session it holds nothing for', () => {
+        const runtime = makeRuntime();
+        if (runtime.isSegmentPending === undefined) return;
+
+        // The gate holds a person's queued message, so a runtime that cannot
+        // answer honestly must answer `false`. A session it has never heard of
+        // owes no delivery, and a `true` here would be a queue wedged forever —
+        // the failure this method's bound exists to prevent.
+        expect(runtime.isSegmentPending(nextSessionId())).toBe(false);
+      });
+    });
+
     describe('dependencies', () => {
       it('checkDependencies returns well-formed DependencyCheck entries', async () => {
         const runtime = makeRuntime();

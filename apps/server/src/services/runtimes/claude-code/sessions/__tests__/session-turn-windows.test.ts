@@ -24,7 +24,12 @@ import { createToolState } from '../../agent-types.js';
 import type { AgentSession } from '../../agent-types.js';
 import { PumpRefusedError } from '../session-pump-contract.js';
 import { SessionPump } from '../session-pump.js';
-import { SessionTurnWindows, type TurnWindow, type WindowUsage } from '../session-turn-windows.js';
+import {
+  SessionTurnWindows,
+  type TurnWindow,
+  type WindowedPump,
+  type WindowUsage,
+} from '../session-turn-windows.js';
 import { FakeQuery, initMessage } from './fake-pump-query.js';
 
 const SESSION_ID = 'sess-1';
@@ -887,8 +892,11 @@ describe('SessionTurnWindows — a turn opens on dispatch and closes on its resu
       onWindowOpen: (w) => opened.push(w),
     });
 
-    // The warm process speaks with no window open: held.
-    windows.onMessage(textDeltaMessage('said before the refusal'));
+    // The warm process emits BOOKKEEPING with no window open: held for the next
+    // window, exactly as before. A MODEL frame here would instead open a runtime
+    // turn of its own (spec `warm-process-lifecycle` D6), which is a different
+    // case and has its own test.
+    windows.onMessage(apiRetryMessage(700));
 
     await expect(
       windows.dispatch([{ content: 'never runs', messageId: 'm-refused' }], CWD)
@@ -909,13 +917,16 @@ describe('SessionTurnWindows — a turn opens on dispatch and closes on its resu
 
     // In order: the re-held message first, then this window's own result.
     expect(got).toHaveLength(2);
-    expect(got[0]).toMatchObject({ type: 'stream_event' });
+    expect(got[0]).toMatchObject({ type: 'system', subtype: 'api_retry' });
     expect(got[1]).toMatchObject({ type: 'result' });
   });
 
-  // Nothing the process says is lost. A message that arrives between windows is
-  // held and rides into the next one.
-  it('flushes messages that arrived with no window open into the next window', async () => {
+  // Nothing the process says is lost — and since spec `warm-process-lifecycle`
+  // D6, unprompted model speech is no longer folded into the NEXT person's turn.
+  // It becomes a turn of its own, ahead of the message that follows it, so the
+  // person reads the agent's words attributed to the agent rather than appearing
+  // inside a turn they opened.
+  it('gives unprompted speech its own turn ahead of the next dispatch', async () => {
     const h = harness();
 
     // Warm without dispatching: the init arrives with no window open.
@@ -927,18 +938,27 @@ describe('SessionTurnWindows — a turn opens on dispatch and closes on its resu
 
     h.live().emit(textDeltaMessage('unprompted'));
     // Wait for the pump to have HANDED it over before dispatching, or the race
-    // decides whether it was held or simply arrived inside the new window —
-    // and the test would then pass whether or not held messages survive.
+    // decides whether the window was open first and the test would pass whether
+    // or not unprompted speech gets a turn.
     await vi.waitFor(() => expect(h.seen).toHaveLength(2));
-    await h.windows.dispatch([{ content: 'hello', messageId: 'm1' }], CWD);
-    h.live().emit(resultMessage('m1'));
+    await vi.waitFor(() => expect(h.opened.length).toBe(1));
+    h.live().emit(resultMessage());
     await settled(h, 1);
 
+    // Only now can the person's turn start — the dispatch waits out the runtime
+    // window rather than writing into the middle of it.
+    await h.windows.dispatch([{ content: 'hello', messageId: 'm1' }], CWD);
+    h.live().emit(textDeltaMessage('answering'));
+    h.live().emit(resultMessage('m1'));
+    await settled(h, 2);
+
     const windows = h.windowsOnStream();
-    expect(windows).toHaveLength(1);
+    expect(windows).toHaveLength(2);
+    expect(windows[0]!.origin).toBe('runtime');
     expect(windows[0]!.events).toContainEqual(
       expect.objectContaining({ type: 'text_delta', text: 'unprompted' })
     );
+    expect(windows[1]!.origin).toBeUndefined();
   });
 
   // TWO closes in flight at once, which every other case in this file rules out
@@ -2126,5 +2146,125 @@ describe('an empty dispatched window waits for its answer (DOR-2064)', () => {
     windows.onMessage(resultMessage('m-fast'));
 
     expect(windows.openWindow?.ids).toEqual(['m2']);
+  });
+});
+
+/**
+ * The pump slice the windower drives, with no process behind it — enough for
+ * the cases that never dispatch and only push frames in by hand.
+ */
+function bareWindowedPump(): WindowedPump & { turnsEnded: number } {
+  return {
+    turnsEnded: 0,
+    dispatch: vi.fn(async () => {}),
+    endTurn(): void {
+      this.turnsEnded += 1;
+    },
+    controlQuery: undefined,
+  };
+}
+
+describe('a segment nobody dispatched is its own turn, from its first word (spec D6, T8)', () => {
+  it('opens a runtime window at the first model frame, before any result', async () => {
+    const h = harness();
+
+    // One ordinary turn, closed. From here the process is warm with no window
+    // open — the state a helper's wake-up arrives in.
+    await h.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
+    h.live().emit(textDeltaMessage('answered'));
+    h.live().emit(resultMessage('m1'));
+    await settled(h, 1);
+
+    // The CLI starts talking again with nothing dispatched. That first model
+    // frame IS the turn starting, so it opens a window of its own at once —
+    // today it is merely held, and only the eventual `result` opens one, which
+    // is what puts the agent's words outside any turn until then.
+    h.live().emit(textDeltaMessage('the helper finished'));
+    await vi.waitFor(() => expect(h.opened.length).toBe(2));
+    expect(h.opened[1]!.origin).toBe('runtime');
+    expect(h.opened[1]!.ids).toEqual([]);
+
+    // And it closes on the next `result`, carrying the words that opened it.
+    h.live().emit(resultMessage());
+    await settled(h, 2);
+    const windows = h.windowsOnStream();
+    expect(windows).toHaveLength(2);
+    expect(windows[1]!.origin).toBe('runtime');
+    expect(
+      windows[1]!.events.find((e) => e.type === 'text_delta') as { text?: string } | undefined
+    ).toEqual(expect.objectContaining({ text: 'the helper finished' }));
+  });
+
+  it('flushes the bookkeeping held before it into that same window', async () => {
+    const h = harness();
+    await h.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
+    h.live().emit(textDeltaMessage('answered'));
+    h.live().emit(resultMessage('m1'));
+    await settled(h, 1);
+
+    // A `system` line is bookkeeping, not a turn starting: it is HELD, exactly
+    // as today. The model frame behind it is what opens the window, and the
+    // hold goes in ahead of it so the order the process produced them survives.
+    h.live().emit(apiRetryMessage(700));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(h.opened).toHaveLength(1);
+
+    h.live().emit(textDeltaMessage('the helper finished'));
+    await vi.waitFor(() => expect(h.opened.length).toBe(2));
+    h.live().emit(resultMessage());
+    await settled(h, 2);
+    expect(h.windowsOnStream()[1]!.origin).toBe('runtime');
+  });
+
+  it('leaves a frame that arrives during a dispatched window in that window', async () => {
+    const h = harness();
+    await h.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
+
+    // A dispatched window OWNS the output while it is open — a helper finishing
+    // inside a person's turn is folded into it by the CLI, and this layer must
+    // not cut a second turn out of the middle of one somebody is watching.
+    h.live().emit(textDeltaMessage('working'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(h.opened).toHaveLength(1);
+
+    h.live().emit(resultMessage('m1'));
+    await settled(h, 1);
+    expect(h.windowsOnStream()).toHaveLength(1);
+  });
+});
+
+describe('a runtime window buffers without dropping, and says when it is huge (spec D6, T36)', () => {
+  it('logs one error past the tripwire and still delivers every frame', async () => {
+    const pump = bareWindowedPump();
+    const opened: TurnWindow[] = [];
+    const windows = new SessionTurnWindows({
+      sessionId: SESSION_ID,
+      pump,
+      // Deliberately NOT consumed here: the tripwire measures frames pushed and
+      // not yet read, which is the state a runtime turn sits in while it waits
+      // for the previous holder to release the lock.
+      onWindowOpen: (window) => opened.push(window),
+    });
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => {});
+
+    // 1 MiB of text per frame, twelve frames: past the 8 MiB tripwire with room
+    // to prove it fires exactly once rather than once per frame beyond it.
+    const big = 'x'.repeat(1024 * 1024);
+    windows.onMessage(textDeltaMessage(big));
+    await vi.waitFor(() => expect(opened.length).toBe(1));
+    for (let i = 0; i < 11; i += 1) windows.onMessage(textDeltaMessage(big));
+
+    const tripwire = error.mock.calls.filter(([message]) =>
+      String(message).includes('runtime turn is buffering')
+    );
+    expect(tripwire).toHaveLength(1);
+
+    // Nothing was dropped to get there. The window carries all twelve frames
+    // plus the `result` that closes it.
+    windows.onMessage(resultMessage());
+    const drained: SDKMessage[] = [];
+    for await (const message of opened[0]!.messages) drained.push(message);
+    expect(drained).toHaveLength(13);
+    error.mockRestore();
   });
 });

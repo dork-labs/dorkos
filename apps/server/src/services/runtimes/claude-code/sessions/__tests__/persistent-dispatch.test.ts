@@ -1845,6 +1845,91 @@ describe('what a drained runtime window is reported as (DOR-1314)', () => {
     optIn.persistentSession = true;
   });
 
+  /**
+   * A background task settling, which leaves its report owed until the CLI
+   * hands it over (spec `warm-process-lifecycle` D1).
+   *
+   * @param taskId - The task that finished
+   */
+  function taskNotification(taskId: string): SDKMessage {
+    return {
+      type: 'system',
+      subtype: 'task_notification',
+      task_id: taskId,
+      status: 'completed',
+      uuid: `notify-${taskId}`,
+      session_id: 'sess-notify',
+    } as unknown as SDKMessage;
+  }
+
+  it('clears an owed report the CLI folded into a turn it answered (T34a)', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+
+    // A helper settles. Its report is owed, and a person's next message has to
+    // wait or it lands in the same turn as that report.
+    process.emit(taskNotification('task-1'));
+    await vi.waitFor(() => {
+      expect(runtime.isSegmentPending(sessionId)).toBe(true);
+    });
+
+    // The CLI FOLDS the delivery into a turn of its own instead of opening a
+    // segment for it, and says so the only way it can: the closing `result`
+    // names a prompt DorkOS never sent.
+    process.emit(resultMessage('a-message-nobody-dispatched'));
+
+    // Released AT ONCE. Without the fold check this stays true until the
+    // thirty-second clock gives up, so the person waits half a minute for a
+    // report that was handed over before they finished typing.
+    await vi.waitFor(() => {
+      expect(runtime.isSegmentPending(sessionId)).toBe(false);
+    });
+  });
+
+  it('keeps holding when nothing proves a fold (T34b)', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+
+    process.emit(taskNotification('task-2'));
+    await vi.waitFor(() => {
+      expect(runtime.isSegmentPending(sessionId)).toBe(true);
+    });
+
+    // A `result` that answers a message this session DID send proves nothing
+    // about the owed report, so the hold stands. What bounds it from here is
+    // the owed-delivery clock (its expiry is T35 in `session-pump-quietness`,
+    // and that the release reaches the queue is T38) — asserting the clock a
+    // third time here would only be checking it against itself.
+    process.emit(resultMessage(process.received[0]!));
+    // A bounded window for a NEGATIVE claim: there is no event to wait on, and
+    // the point is that nothing releases the hold.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(runtime.isSegmentPending(sessionId)).toBe(true);
+  });
+
+  it('lets Stop reach a turn the agent started on its own (T13)', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+
+    // The agent speaks with nothing dispatched, which opens a runtime turn.
+    process.say('picking my own work back up');
+    await vi.waitFor(() => {
+      expect(process.spoke).toBeGreaterThan(0);
+    });
+
+    const receipt = await runtime.interruptQuery(sessionId);
+
+    // The pump never left WARM for this turn — nobody dispatched it — so
+    // `session.activeQuery` was never armed. Without the runtime-turn fallback
+    // a person pressing Stop on a turn they can plainly see is told that
+    // nothing is running, and the agent keeps talking.
+    expect(process.interrupts).toBeGreaterThan(0);
+    expect(receipt.outcome).not.toBe('not-running');
+  });
+
   it('says nothing louder than debug when the CLI only volunteered bookkeeping', async () => {
     const { logger } = await import('../../../../../lib/logger.js');
     const sessionId = nextSession();
@@ -1876,8 +1961,12 @@ describe('what a drained runtime window is reported as (DOR-1314)', () => {
     vi.mocked(logger.error).mockClear();
 
     // The CLI speaks between turns and then names a message nobody sent. Those
-    // words have no window to land in, so they are dropped — and dropping words
-    // a person might have been owed is not a debug-level event.
+    // words open a runtime turn, and with NOTHING SUBSCRIBED to project it —
+    // which is this suite, and an embedded host — the fallback drains it. That
+    // drop is what gets reported, because dropping words a person might have
+    // been owed is not a debug-level event. In production the composition root
+    // subscribes, the turn is projected, and this path is never taken (spec
+    // `warm-process-lifecycle` D6).
     process.say('a continuation nobody asked for');
     process.emit(resultMessage('a-message-nobody-dispatched'));
 

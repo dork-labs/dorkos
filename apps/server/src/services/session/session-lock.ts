@@ -1,5 +1,25 @@
 import type { SseResponse } from '@dorkos/shared/agent-runtime';
 import { SESSIONS } from '../../config/constants.js';
+import { logger } from '../../lib/logger.js';
+
+/**
+ * The holder prefix reserved for a turn the agent started on its own (spec
+ * `warm-process-lifecycle` D6).
+ *
+ * Reserved rather than merely conventional: `SessionLockManager.acquireLock`
+ * refuses it to every caller, so a lock reading `runtime:…` was minted by
+ * {@link SessionLockManager.acquireRuntimeLock} and by nothing else.
+ */
+export const RUNTIME_LOCK_PREFIX = 'runtime:';
+
+/**
+ * The reserved holder id for one session's agent-initiated turns.
+ *
+ * @param sessionKey - The session the turn runs on
+ */
+export function runtimeLockHolder(sessionKey: string): string {
+  return `${RUNTIME_LOCK_PREFIX}${sessionKey}`;
+}
 
 /**
  * A lock holder that can prove it is still alive (DOR-782).
@@ -95,6 +115,44 @@ export class SessionLockManager {
    *   locked and that lock is still live, whoever holds it.
    */
   acquireLock(sessionId: string, clientId: string, res: SseResponse, token?: symbol): boolean {
+    // The runtime holder is RESERVED (spec `warm-process-lifecycle` D6). A turn
+    // the agent started on its own holds the session under `runtime:<key>`, and
+    // whoever reads a lock's holder is entitled to take that name at face value:
+    // it decides whether the person's queued message waits, and whether a room
+    // trigger parks. A caller that could spell the name itself could impersonate
+    // an agent-initiated turn, so the only way in is {@link acquireRuntimeLock}.
+    if (clientId.startsWith(RUNTIME_LOCK_PREFIX)) {
+      logger.warn('[SessionLockManager] refused a reserved runtime lock holder', {
+        sessionId,
+        clientId,
+      });
+      return false;
+    }
+    return this.claim(sessionId, clientId, res, token);
+  }
+
+  /**
+   * Take a session for a turn the AGENT started, under the reserved
+   * `runtime:<sessionKey>` holder (spec `warm-process-lifecycle` D6).
+   *
+   * The one way that holder is ever minted. Everything else about it is an
+   * ordinary lock: the same TTL measured from the holder's own liveness, the
+   * same token-matched release, and the same refusal while somebody else holds
+   * it live — a runtime turn waits for the person's turn to finish exactly as
+   * the person's next turn waits for the runtime one.
+   *
+   * @param sessionKey - The session being taken, resolved as every other holder
+   *   resolves it
+   * @param res - The turn's lifecycle, which vouches for its own liveness
+   * @param token - Per-acquisition identity, threaded into {@link releaseLock}
+   * @returns True when the lock was taken
+   */
+  acquireRuntimeLock(sessionKey: string, res: SseResponse, token?: symbol): boolean {
+    return this.claim(sessionKey, runtimeLockHolder(sessionKey), res, token);
+  }
+
+  /** Take the lock, with no question about who is allowed to ask. */
+  private claim(sessionId: string, clientId: string, res: SseResponse, token?: symbol): boolean {
     const existing = this.locks.get(sessionId);
     if (existing) {
       if (!this.isExpired(existing)) return false;

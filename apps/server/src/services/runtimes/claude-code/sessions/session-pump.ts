@@ -151,6 +151,7 @@ export class SessionPump {
       // captured reference would answer for the process that went away.
       liveness: () => this.liveness,
       isTurnOpen: () => this.currentState === 'running',
+      hasRuntimeTurnOpen: () => opts.hasRuntimeTurnOpen?.() === true,
       hasPendingInteraction: () => opts.hasPendingInteraction?.() === true,
       onGateChange: () => opts.onDispatchGateChange?.(),
       ...(opts.owedDeliveryTimeoutMs !== undefined
@@ -491,6 +492,20 @@ export class SessionPump {
    */
   isHoldingBackgroundWork(): boolean {
     return this.quiet.isHoldingBackgroundWork();
+  }
+
+  /**
+   * The windower saw a `result` naming a prompt DorkOS never sent — the shape a
+   * FOLDED delivery takes (spec `warm-process-lifecycle` D1).
+   *
+   * Clears that many owed settles early, so a queued message is released at
+   * once rather than waiting out the owed-delivery clock for a segment the CLI
+   * has already handed over inside a turn.
+   *
+   * @param count - How many settles the fold accounted for
+   */
+  noteFoldedDelivery(count: number): void {
+    this.quiet.noteFoldedDelivery(count);
   }
 
   /**

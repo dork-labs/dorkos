@@ -165,6 +165,78 @@ export class FakeAgentRuntime implements AgentRuntime {
    */
   settleOpenTurn = vi.fn<(sessionId: string) => Promise<boolean>>(async () => false);
 
+  /** The listener {@link onRuntimeTurn} registered, if anything is listening. */
+  private runtimeTurnListener:
+    ((sessionId: string, events: AsyncIterable<StreamEvent>) => void) | undefined;
+
+  /**
+   * Listen for turns the agent started on its own. Spied so a test can assert
+   * the server subscribed, and wired to {@link emitRuntimeTurn} so a test can
+   * drive one.
+   */
+  onRuntimeTurn = vi.fn<
+    (listener: (sessionId: string, events: AsyncIterable<StreamEvent>) => void) => () => void
+  >((listener) => {
+    this.runtimeTurnListener = listener;
+    return () => {
+      this.runtimeTurnListener = undefined;
+    };
+  });
+
+  /**
+   * Whether a delivery this session owes is still on its way. Answers `false` —
+   * this fake owes nothing — and is spied so a dispatcher test can hold the
+   * queue head by making it answer `true`.
+   */
+  isSegmentPending = vi.fn<(sessionId: string) => boolean>(() => false);
+
+  /** The listener {@link onDispatchGateChange} registered, if anything is listening. */
+  private dispatchGateListener: ((sessionId: string) => void) | undefined;
+
+  /**
+   * Listen for a hold this runtime owned being released. Spied so a test can
+   * assert the server subscribed, and wired to {@link emitDispatchGateChange}
+   * so a test can drive a release.
+   */
+  onDispatchGateChange = vi.fn<(listener: (sessionId: string) => void) => () => void>(
+    (listener) => {
+      this.dispatchGateListener = listener;
+      return () => {
+        this.dispatchGateListener = undefined;
+      };
+    }
+  );
+
+  /**
+   * Release whatever hold the queue is waiting on for this session.
+   *
+   * @param sessionId - The session whose hold dropped
+   * @internal Exported for tests that drive the pending-segment gate.
+   */
+  emitDispatchGateChange(sessionId: string): void {
+    this.dispatchGateListener?.(sessionId);
+  }
+
+  /**
+   * Take the reserved `runtime:` lock holder. Answers `true` by default, as an
+   * uncontended session's lock manager does.
+   */
+  acquireRuntimeLock = vi.fn<(sessionKey: string, res: SseResponse, token?: symbol) => boolean>(
+    () => true
+  );
+
+  /**
+   * Drive one agent-initiated turn into whatever subscribed through
+   * {@link onRuntimeTurn}.
+   *
+   * @param sessionId - The session the agent started talking on
+   * @param events - That turn's events, ending when the turn does
+   * @internal Exported for tests that drive a runtime turn.
+   */
+  emitRuntimeTurn(sessionId: string, events: AsyncIterable<StreamEvent>): void {
+    this.runtimeTurnListener?.(sessionId, events);
+  }
+
   ensureSession = vi.fn<(sessionId: string, opts: SessionOpts) => void>();
   hasSession = vi.fn<(sessionId: string) => boolean>(() => false);
   updateSession = vi.fn<

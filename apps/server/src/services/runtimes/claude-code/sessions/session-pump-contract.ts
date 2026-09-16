@@ -91,6 +91,13 @@ export type Quietness =
 export type QuietnessBlocker =
   /** A dispatched turn is open: the pump is RUNNING. */
   | 'turn-open'
+  /**
+   * A turn the AGENT started is open — a helper's report being delivered, or
+   * the agent picking its own work back up (spec `warm-process-lifecycle` D6).
+   * Distinct from `turn-open` because the pump is not RUNNING for one: nobody
+   * dispatched it, so the state machine never left WARM.
+   */
+  | 'runtime-turn-open'
   /** A helper agent, Monitor or unknown background task is still working. */
   | 'background-work'
   /** A settled notification has not been delivered yet, bounded by the owed-delivery clock. */
@@ -324,6 +331,16 @@ export interface SessionPumpOptions {
    * `hasPendingInteractions` probe here rather than inventing a third one.
    */
   hasPendingInteraction?: () => boolean;
+  /**
+   * True while a turn the AGENT started is open on this process (spec
+   * `warm-process-lifecycle` D6).
+   *
+   * The windower is what knows — a runtime window is open — and the pump cannot
+   * derive it: nobody dispatched that turn, so the machine never left WARM.
+   * Without it a process mid-sentence reads as quiet, and the idle reaper takes
+   * its subprocess away in the middle of what the agent is saying.
+   */
+  hasRuntimeTurnOpen?: () => boolean;
   /**
    * Claims a slot under the warm ceiling before a process is booted; throws
    * {@link PumpRefusedError} with `warm-ceiling` when there is none. The

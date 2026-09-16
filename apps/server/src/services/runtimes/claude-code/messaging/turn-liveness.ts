@@ -145,6 +145,20 @@ export interface TurnLiveness {
    * @returns The task ids whose deliveries were given up on, oldest first
    */
   expireOwed: () => string[];
+  /**
+   * Give up on the OLDEST `count` owed deliveries, because the CLI handed them
+   * over inside a turn it has just answered rather than opening a segment of
+   * its own for them (spec `warm-process-lifecycle` D1, "Folded in").
+   *
+   * Oldest first, and exactly `count` — never every settle that arrived while
+   * the window was open. One unsent `user_message_uuid` on the closing `result`
+   * is evidence of one consumed prompt, and clearing more than that would drop
+   * a debt still genuinely outstanding.
+   *
+   * @param count - How many settles to clear, oldest first
+   * @returns The task ids whose deliveries were cleared
+   */
+  clearOldestOwed: (count: number) => string[];
 }
 
 /** Lifecycle subtype announcing that a background task has settled. */
@@ -276,6 +290,13 @@ export function createTurnLiveness(): TurnLiveness {
       const abandoned = [...owed];
       owed.clear();
       return abandoned;
+    },
+    clearOldestOwed: (count) => {
+      // A Set iterates in insertion order, so "oldest first" needs no second
+      // structure to track when each settle arrived.
+      const cleared = [...owed].slice(0, Math.max(0, count));
+      for (const id of cleared) owed.delete(id);
+      return cleared;
     },
   };
 }

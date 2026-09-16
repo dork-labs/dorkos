@@ -151,6 +151,7 @@ import {
   resetSessionKeys,
 } from './session-key-registry.js';
 import { onSessionRemoved } from './session-list-broadcaster.js';
+import { runtimeLockHolder } from './session-lock.js';
 import { getStagedContextStore, holdStagedContext } from './staged-context-store.js';
 import { triggerTurn, type TriggerTurnDeps, type TriggerTurnResult } from './trigger-turn.js';
 import { triggerCommandIntent } from './trigger-command-intent.js';
@@ -201,6 +202,15 @@ interface PendingDispatch {
   sessionKey: string;
   /** Who asked for it — the lock identity its turn will run under. */
   clientId: string;
+  /**
+   * The runtime this message's session resolves to.
+   *
+   * Carried on the entry, not looked up, because {@link pumpLocked} has to ask
+   * it whether a delivery is already on its way ({@link AgentRuntime.isSegmentPending})
+   * and this module deliberately knows nothing about the runtime registry —
+   * every other runtime it touches was handed to it by its caller.
+   */
+  runtime: AgentRuntime;
   /** Run it now. Idempotent — the wait bound and the pump can both reach it. */
   launch: (opts: { budgetExhausted: boolean }) => void;
   /** The wait bound's timer, cleared when the dispatch launches. */
@@ -220,6 +230,14 @@ interface PendingDispatch {
 
 /** Turns open right now, keyed by resolved session id. */
 const inFlight = new Map<string, InFlightTurn>();
+/**
+ * The {@link inFlight} token of each session's open AGENT-started turn.
+ *
+ * Kept apart from the slot so {@link noteRuntimeTurnClosed} can tell its own
+ * claim from a dispatched turn's — the two race by construction, since a
+ * runtime turn opens exactly when the process talks with nothing dispatched.
+ */
+const runtimeTurns = new Map<string, symbol>();
 /** Accepted messages waiting to launch, keyed by message id. */
 const pending = new Map<string, PendingDispatch>();
 /**
@@ -1328,6 +1346,7 @@ function parkDispatch(
     messageId: plan.messageId,
     sessionKey: plan.sessionKey,
     clientId: plan.clientId,
+    runtime: plan.runtime,
     waitingOnLock: opts?.waitingOnLock ?? false,
     launch: (launchOpts) => {
       if (!pending.delete(plan.messageId)) return;
@@ -1519,6 +1538,25 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
     // Told it was accepted, so it can no longer be quietly dropped — including
     // for the refusing caller that reaches here, which is a `'refuse-foreign'`
     // waiting out its own turn. See {@link DispatchPlan.answered}.
+    plan.answered = true;
+    parkDispatch(plan, unwatchedSettle(plan));
+    return waiting();
+  }
+
+  // A report the runtime already owes is on its way, and it arrives as a segment
+  // of its own (spec `warm-process-lifecycle` D6). The session looks IDLE while
+  // that is true — the turn it belonged to has ended and nothing holds the
+  // in-flight slot yet — so without this the person's message launches straight
+  // into the gap and their words share a turn with a background helper's report.
+  // That is the shape of the incident this spec exists to fix, and the gate in
+  // `pumpLocked` cannot see it: a message on an idle session never goes through
+  // the pump at all.
+  //
+  // Only a caller that QUEUES waits here. A refusing trigger answers for itself
+  // exactly as it always has. The wait is bounded by the runtime's own
+  // owed-delivery clock, whose release reaches this module through
+  // `onDispatchGateChange`, so a report that never arrives cannot wedge the queue.
+  if (whenBusy === 'queue' && runtime.isSegmentPending?.(sessionKey) === true) {
     plan.answered = true;
     parkDispatch(plan, unwatchedSettle(plan));
     return waiting();
@@ -2122,7 +2160,69 @@ function pumpLocked(sessionKey: string): void {
   if (inFlight.has(sessionKey)) return;
   const head = orderedWaiting(sessionKey)[0];
   if (!head || head.waitingOnLock) return;
+  // A delivery the runtime already owes is on its way, and it opens a segment of
+  // its own (spec `warm-process-lifecycle` D6). Launching now would put the
+  // person's words and a background helper's report into one turn. The runtime
+  // owes this gate a bound — it is re-asked at the next boundary, and the
+  // runtime's own clock releases it — so a queue held here always moves again.
+  if (head.runtime.isSegmentPending?.(sessionKey) === true) return;
   head.launch({ budgetExhausted: false });
+}
+
+/**
+ * A turn the AGENT started has opened on this session, so nothing queued may
+ * launch into it (spec `warm-process-lifecycle` D6).
+ *
+ * Claimed at the turn's WINDOW OPEN rather than when it takes the session's
+ * write-lock, and the gap is the reason this exists: the lock may be a moment
+ * from free, and a queued message launched into that moment lands in the middle
+ * of a turn the agent is already running.
+ *
+ * A dispatched turn already holding the slot keeps it. That is not a conflict to
+ * resolve here — the runtime turn will wait for the write-lock like any other
+ * holder — and overwriting the claim would tell this module the person's turn
+ * had ended.
+ *
+ * @param sessionId - The session the agent started talking on, in any id it
+ *   answers to
+ */
+export function noteRuntimeTurnOpen(sessionId: string): void {
+  const sessionKey = primaryOf(sessionId);
+  if (inFlight.has(sessionKey)) return;
+  const token = Symbol('dispatcher-runtime-turn');
+  runtimeTurns.set(sessionKey, token);
+  inFlight.set(sessionKey, {
+    clientId: runtimeLockHolder(sessionKey),
+    token,
+    startedAt: Date.now(),
+    // A runtime turn reports no `turn_start` to this module, so nothing could
+    // ever flip this. False is the conservative answer and the deliberate one: a
+    // slot that never claims to have started reads as still producing for as
+    // long as it is held.
+    sawTurnStart: false,
+  });
+}
+
+/**
+ * That turn has ended: give the session back and let the queue move.
+ *
+ * Only clears a slot this module's own runtime-turn claim owns — a dispatched
+ * turn that was already running when the agent started talking holds the slot
+ * on its own token, and a runtime turn ending must not hand away a person's
+ * turn.
+ *
+ * @param sessionId - The session whose agent-initiated turn ended
+ */
+export function noteRuntimeTurnClosed(sessionId: string): void {
+  const sessionKey = primaryOf(sessionId);
+  const token = runtimeTurns.get(sessionKey);
+  runtimeTurns.delete(sessionKey);
+  if (token !== undefined && inFlight.get(sessionKey)?.token === token) {
+    inFlight.delete(sessionKey);
+  }
+  // A turn ending is a turn boundary, whoever ran it: it re-arms every message
+  // the write-lock refused and gives the queue its chance to move.
+  noteTurnBoundary(sessionKey);
 }
 
 /**
@@ -2264,6 +2364,7 @@ export function cancelPendingDispatch(messageId: string): boolean {
 export function resetMessageDispatcher(): void {
   for (const entry of pending.values()) clearTimeout(entry.timer);
   inFlight.clear();
+  runtimeTurns.clear();
   pending.clear();
   launching.clear();
   resetSessionKeys();

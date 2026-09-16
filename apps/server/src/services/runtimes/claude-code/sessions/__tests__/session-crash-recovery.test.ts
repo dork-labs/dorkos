@@ -312,25 +312,38 @@ describe('SessionCrashRecovery', () => {
   // DROPPED with a notice, never carried into the next process's window: the
   // durable queue is the reconciliation for input, and held SDK messages are
   // OUTPUT.
-  it('drops a dead process words rather than flushing them into the next process window', async () => {
+  it("keeps a dying process's words in its OWN turn, never the next process's window", async () => {
     const h = harness();
 
     await h.warm();
     await vi.waitFor(() => expect(h.pump.state).toBe('warm'));
     h.live().emit(textDeltaMessage('a thought the dying process had'));
-    await vi.waitFor(() => expect(h.pump.state).toBe('warm'));
+    // A model frame with no window open opens a turn of its own at once (spec
+    // `warm-process-lifecycle` D6). This used to be HELD and then dropped by the
+    // crash, so the agent's last words vanished and the person learned nothing
+    // of them; now they are the agent's own turn, and the crash settles it.
+    await vi.waitFor(() => expect(h.opened).toHaveLength(1));
     h.live().failStream(new Error('the CLI died while idle'));
     await h.awaitCrash(1);
 
     await runTurn(h, 'm1');
 
-    const firstWindow = h.streamEvents[0] ?? [];
-    const text = JSON.stringify(firstWindow);
-    expect(text).not.toContain('a thought the dying process had');
-    expect(text).toContain('answering m1');
-    // And the `system/init` the explicit warm produced did not mint a turn of
-    // its own on the way past either.
-    expect(h.stream().filter((e) => e.type === 'turn_start')).toHaveLength(1);
+    const dyingTurn = JSON.stringify(h.streamEvents[0] ?? []);
+    expect(dyingTurn).toContain('a thought the dying process had');
+
+    // And they did NOT ride into the NEW process's window, which is the half of
+    // task 3.6 that still stands: a dead process's words attributed to a live
+    // process's turn is a lie about what happened inside that turn, and the hard
+    // kind to debug.
+    const nextTurn = JSON.stringify(h.streamEvents[1] ?? []);
+    expect(nextTurn).toContain('answering m1');
+    expect(nextTurn).not.toContain('a thought the dying process had');
+
+    // Two turns, not three: the `system/init` the explicit warm produced is
+    // bookkeeping and still mints no turn of its own on the way past.
+    const starts = h.stream().filter((e) => e.type === 'turn_start');
+    expect(starts).toHaveLength(2);
+    expect((starts[0] as { origin?: string }).origin).toBe('runtime');
   });
 
   // AC5, and the reason the bound exists: a genuinely broken session must not
