@@ -61,8 +61,8 @@ function hooks(capabilities: Partial<Omit<CommunityCapabilities, 'type'>> = {}) 
       (adapter as FakeCommunityAdapter).removeRoom(roomId);
       return Promise.resolve();
     },
-    // The port has no post-as-agent, so the entry an agent wrote is arranged out
-    // of band — the same way a read-only backend arranges anything at all.
+    // This generic hook arranges an agent entry out of band, also for a backend
+    // whose acting-identity capability is off.
     seedAgentEntry: (adapter: CommunityAdapter, roomId: string, agent: CommunityMember) =>
       Promise.resolve(
         (adapter as FakeCommunityAdapter).seedEntry(roomId, {
@@ -147,6 +147,26 @@ const COMMUNITY_INVITE_OPAQUE_CURSOR: Partial<Omit<CommunityCapabilities, 'type'
 communityConformance(make(COMMUNITY_INVITE_OPAQUE_CURSOR), {
   name: 'FakeCommunityAdapter (community invite + client-opaque cursor) — conformance',
   ...hooks(COMMUNITY_INVITE_OPAQUE_CURSOR),
+});
+
+// 5. A human approved a local install and it privately holds a revocable grant.
+const BROWSER_APPROVED: Partial<Omit<CommunityCapabilities, 'type'>> = {
+  admission: 'invite',
+  credential: 'browser-approved',
+};
+communityConformance(make(BROWSER_APPROVED), {
+  name: 'FakeCommunityAdapter (browser-approved credential) — conformance',
+  ...hooks(BROWSER_APPROVED),
+});
+
+// 6. A connected owner can select a privately credentialed enrolled agent.
+const AGENT_ACTING: Partial<Omit<CommunityCapabilities, 'type'>> = {
+  credential: 'browser-approved',
+  agentActing: true,
+};
+communityConformance(make(AGENT_ACTING), {
+  name: 'FakeCommunityAdapter (owned agent acting) — conformance',
+  ...hooks(AGENT_ACTING),
 });
 
 // ---------------------------------------------------------------------------

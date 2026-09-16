@@ -244,6 +244,10 @@ export const CommunityCapabilitiesSchema = z.object({
   canPost: z.boolean(),
   /** Can it create, rename or archive a room? Read-only Buzz: `false`. */
   roomAdmin: z.boolean(),
+  /** Can posts and file operations select an enrolled agent owned by the connected human? */
+  agentActing: z.boolean(),
+  /** Can this adapter upload and download bounded message attachments? */
+  attachments: z.boolean(),
 
   // --- 3. Membership -------------------------------------------------------
   /**
@@ -341,8 +345,10 @@ export const CommunityCapabilitiesSchema = z.object({
    *   lose.
    * - `'user-account'` — the member signs in (email + password, Google,
    *   GitHub). Still no key.
+   * - `'browser-approved'` — the human approves this install in the community
+   *   browser; the local server privately retains a revocable bearer grant.
    */
-  credential: z.enum(['none', 'machine-managed', 'user-account']),
+  credential: z.enum(['none', 'machine-managed', 'user-account', 'browser-approved']),
 
   /**
    * Adapter-specific metadata that does not merit a first-class field (cf.
@@ -375,9 +381,13 @@ export const COMMUNITY_GATED_CAPABILITIES = [
   'readCursor',
   'responseMode',
   'signals',
+  'attachments',
 ] as const;
 /** One capability that gates a method. See {@link COMMUNITY_GATED_CAPABILITIES}. */
-export type CommunityGatedCapability = (typeof COMMUNITY_GATED_CAPABILITIES)[number];
+export type CommunityGatedCapability =
+  (typeof COMMUNITY_GATED_CAPABILITIES)[number] | 'agentActing';
+/** Capabilities with a whole-method refusal probe. Agent acting instead gates a selected identity. */
+export type CommunityMethodGatedCapability = (typeof COMMUNITY_GATED_CAPABILITIES)[number];
 
 // ---------------------------------------------------------------------------
 // 4. Rooms, members, entries
@@ -550,6 +560,11 @@ export const CommunityEntrySchema = RoomAddressSchema.extend({
   cursor: CommunityCursorSchema,
   /** ISO 8601. For display, never for sorting. */
   createdAt: z.string().min(1),
+  /** Bounded file metadata, when this backend supports attachments. */
+  attachments: z
+    .array(z.lazy(() => CommunityAttachmentSchema))
+    .max(8)
+    .optional(),
 });
 /** One durable entry in one room. See {@link CommunityEntrySchema}. */
 export type CommunityEntry = z.infer<typeof CommunityEntrySchema>;
@@ -580,6 +595,17 @@ export const CommunityEntryRefSchema = RoomAddressSchema.extend({
 });
 /** The receipt of a committed entry. See {@link CommunityEntryRefSchema}. */
 export type CommunityEntryRef = z.infer<typeof CommunityEntryRefSchema>;
+
+/** Public metadata for an authorized message attachment; no storage location is exposed. */
+export const CommunityAttachmentSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  contentType: z.string().min(1),
+  byteSize: z.number().int().nonnegative(),
+  checksum: z.string().min(1),
+});
+/** Authorized attachment metadata. */
+export type CommunityAttachment = z.infer<typeof CommunityAttachmentSchema>;
 
 // ---------------------------------------------------------------------------
 // 5. Inputs
@@ -637,9 +663,39 @@ export const PostCommunityEntryInputSchema = z.object({
   parentEntryId: z.string().min(1).optional(),
   /** Member ids the writer addressed. Resolved by the caller, not re-parsed by the adapter. */
   mentions: z.array(z.string()).optional(),
+  /** Omission writes as the connected human; a selected agent must be privately owned. */
+  actingMemberId: z.string().min(1).optional(),
+  /** Stable key required by the remote HTTP backend for every write. */
+  idempotencyKey: z.string().min(1).max(128).optional(),
+  /** Server-minted attachment IDs already uploaded by this acting identity. */
+  attachmentIds: z.array(z.string().min(1)).max(8).optional(),
 });
 /** Input to `post`. See {@link PostCommunityEntryInputSchema}. */
 export type PostCommunityEntryInput = z.infer<typeof PostCommunityEntryInputSchema>;
+
+/** Bounded file upload over the server-side community port. */
+export interface UploadCommunityAttachmentInput {
+  /** Stable key reused after a network timeout. */
+  idempotencyKey: string;
+  /** Human-facing display name, never a storage path. */
+  name: string;
+  /** Claimed media type; the server verifies the bytes. */
+  contentType: string;
+  /** Declared size; the server enforces its own byte limit while streaming. */
+  byteSize: number;
+  /** Byte stream; the port does not buffer an entire blob. */
+  bytes: AsyncIterable<Uint8Array>;
+  /** Omission uploads as the connected human. */
+  actingMemberId?: string;
+}
+
+/** Authorized download metadata and streaming bytes. */
+export interface DownloadCommunityAttachment {
+  /** Safe metadata for display and content disposition. */
+  attachment: CommunityAttachment;
+  /** Byte stream; authorization is checked by the backend. */
+  bytes: AsyncIterable<Uint8Array>;
+}
 
 /** Options for {@link CommunityAdapter.addMember}. Gated on `roomAdmin`. */
 export const AddCommunityMemberOptsSchema = z.object({
@@ -1230,6 +1286,15 @@ export interface CommunityAdapter {
    * @param input - What to say, and what it replies to.
    */
   post(roomId: string, input: PostCommunityEntryInput): Promise<CommunityEntryRef>;
+
+  /** Upload an unbound attachment. Gated on `attachments`; remote writes need a stable key. */
+  uploadAttachment(
+    roomId: string,
+    input: UploadCommunityAttachmentInput
+  ): Promise<CommunityAttachment>;
+
+  /** Download an attachment after current membership is checked. Gated on `attachments`. */
+  downloadAttachment(roomId: string, attachmentId: string): Promise<DownloadCommunityAttachment>;
 
   // --- Roster --------------------------------------------------------------
 

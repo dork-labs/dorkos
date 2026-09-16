@@ -13,7 +13,7 @@ import {
   type CommunityCapabilities,
   type CommunityCursor,
   type CommunityEntry,
-  type CommunityGatedCapability,
+  type CommunityMethodGatedCapability,
   type CommunityMember,
   type CommunityRoom,
   type CommunityRoomClosedReason,
@@ -398,7 +398,7 @@ export function createCommunityConformanceContext(
  * adding a member to `COMMUNITY_GATED_CAPABILITIES` fails this file's own
  * typecheck until its refusal is asserted here.
  */
-export const GATED_PROBES: Record<CommunityGatedCapability, GatedProbe> = {
+export const GATED_PROBES: Record<CommunityMethodGatedCapability, GatedProbe> = {
   canPost: {
     isOff: (caps) => !caps.canPost,
     calls: (adapter, { roomId }) => [
@@ -451,6 +451,23 @@ export const GATED_PROBES: Record<CommunityGatedCapability, GatedProbe> = {
     isOff: (caps) => caps.signals === 'none',
     calls: (adapter, { roomId }) => [
       { method: 'publishSignal', run: () => adapter.publishSignal(roomId, 'typing') },
+    ],
+  },
+  attachments: {
+    isOff: (caps) => !caps.attachments,
+    calls: (adapter, { roomId }) => [
+      {
+        method: 'uploadAttachment',
+        run: () =>
+          adapter.uploadAttachment(roomId, {
+            idempotencyKey: 'refusal-probe',
+            name: 'probe.txt',
+            contentType: 'text/plain',
+            byteSize: 0,
+            bytes: (async function* () {})(),
+          }),
+      },
+      { method: 'downloadAttachment', run: () => adapter.downloadAttachment(roomId, 'absent') },
     ],
   },
 };

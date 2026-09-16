@@ -63,6 +63,8 @@ import {
   type CommunityAdapter,
   type CommunityCapabilities,
   type CommunityConnection,
+  type CommunityAttachment,
+  type DownloadCommunityAttachment,
   type CommunityCursor,
   type CommunityEntry,
   type CommunityEntryPage,
@@ -70,6 +72,7 @@ import {
   type CommunityInvite,
   type CommunityMember,
   type CommunityRef,
+  type UploadCommunityAttachmentInput,
   type CommunityRoom,
   type CommunityRoomEvent,
   type CommunityRoomListEvent,
@@ -201,6 +204,8 @@ export class BuzzCommunityAdapter implements CommunityAdapter {
       roomAddressing: 'opaque-id',
       canPost: false,
       roomAdmin: false,
+      agentActing: false,
+      attachments: false,
       roles: { supported: true, values: BUZZ_ROLES },
       admission: 'out-of-band',
       invite: 'none',
@@ -469,6 +474,23 @@ export class BuzzCommunityAdapter implements CommunityAdapter {
    */
   post(): Promise<CommunityEntryRef> {
     return Promise.reject(new CommunityUnsupportedError(this.community, 'canPost', 'post'));
+  }
+
+  /** Buzz has no attachment write path through this read-only adapter. */
+  uploadAttachment(
+    _roomId: string,
+    _input: UploadCommunityAttachmentInput
+  ): Promise<CommunityAttachment> {
+    return Promise.reject(
+      new CommunityUnsupportedError(this.community, 'attachments', 'uploadAttachment')
+    );
+  }
+
+  /** Buzz has no attachment download path through this read-only adapter. */
+  downloadAttachment(_roomId: string, _attachmentId: string): Promise<DownloadCommunityAttachment> {
+    return Promise.reject(
+      new CommunityUnsupportedError(this.community, 'attachments', 'downloadAttachment')
+    );
   }
 
   // --- Roster ----------------------------------------------------------------

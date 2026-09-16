@@ -70,6 +70,59 @@ export function registerCapabilityBranchedAssertions(ctx: CommunityConformanceCo
       }
     });
 
+    it('C1a refuses unsupported acting identities before writing', async () => {
+      const { adapter, caps, roomId } = await arrange();
+      if (!caps.canPost || caps.agentActing) return;
+      await expect(
+        adapter.post(roomId, {
+          text: 'must not appear',
+          actingMemberId: 'another-agent',
+          idempotencyKey: 'acting-refusal',
+        })
+      ).rejects.toMatchObject({ capability: 'agentActing', method: 'post' });
+    });
+
+    it('C1b refuses attachment references when files are unsupported', async () => {
+      const { adapter, caps, roomId } = await arrange();
+      if (!caps.canPost || caps.attachments) return;
+      await expect(
+        adapter.post(roomId, {
+          text: 'must not appear',
+          attachmentIds: ['unavailable'],
+          idempotencyKey: 'file-refusal',
+        })
+      ).rejects.toMatchObject({ capability: 'attachments', method: 'post' });
+    });
+
+    if (declared.agentActing && declared.canPost && declared.agentAdmission === 'owner-vouched') {
+      it('C1c attributes an owned agent post to that agent', async () => {
+        const { adapter, roomId, identityMemberId } = await arrange();
+        const agent = await adapter.admitAgent({
+          agentId: 'acting-agent',
+          displayName: 'Acting Agent',
+        });
+        await adapter.addMember(roomId, agent.memberId);
+        const receipt = await adapter.post(roomId, {
+          text: 'from agent',
+          actingMemberId: agent.memberId,
+          idempotencyKey: 'acting-agent-post',
+        });
+        const page = await adapter.listEntries(roomId);
+        const entry = page.entries.find((item) => item.id === receipt.entryId);
+        expect(entry?.authorId).toBe(agent.memberId);
+        expect(entry?.authorId).not.toBe(identityMemberId);
+        await expect(
+          adapter.post(roomId, {
+            text: 'not owned',
+            actingMemberId: 'unowned-agent',
+            idempotencyKey: 'unowned-agent-post',
+          })
+        ).rejects.toThrow();
+      });
+    } else {
+      it.skip('C1c owned agent acting (this backend does not declare the capability)', () => {});
+    }
+
     it('C2 round-trips create → rename → archive when roomAdmin, and refuses when it does not', async () => {
       const { adapter, caps, roomId } = await arrange();
       if (!caps.roomAdmin) {
@@ -508,6 +561,20 @@ export function registerCapabilityBranchedAssertions(ctx: CommunityConformanceCo
       });
     } else {
       it.skip('C16 machine-managed zero-setup connect (this backend declares a different credential model)', () => {});
+    }
+
+    if (declared.credential === 'browser-approved') {
+      it('C16a connects from a privately retained browser grant without exposing it', async () => {
+        // The fixture is already approved and ready. The approval ceremony is
+        // outside this port; connect consumes the adapter's private store.
+        const ready = makeAdapter();
+        const connection = await ready.connect();
+        expect(connection.status).toBe('connected');
+        expect(connection.identity).toBeDefined();
+        expect(JSON.stringify(connection)).not.toContain(ctx.opts.plantedCredential);
+      });
+    } else {
+      it.skip('C16a browser-approved private grant (this backend declares a different credential model)', () => {});
     }
 
     if (makeUnadmittedAdapter) {
