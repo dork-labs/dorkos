@@ -109,6 +109,7 @@ export class RemoteRoomSubscriptionBridge {
       room.remoteRoomId,
       entries.map((entry) => this.nativeEntry(room, entry))
     );
+    for (const entry of entries) this.reconcileAuthenticatedOrigin(room, entry);
   }
 
   /** Import one fresh live event, dispatching it at most once when every trust gate holds. */
@@ -133,33 +134,8 @@ export class RemoteRoomSubscriptionBridge {
     const [saved] = this.mirrors.importEntries(room.communityRef, room.remoteRoomId, [
       this.nativeEntry(room, event),
     ]);
+    if (this.reconcileAuthenticatedOrigin(room, event)) return;
     if (!saved || opts.readOnly) return;
-    if (event.originIdempotencyKey && event.author.kind === 'agent') {
-      const item = this.outbox?.deliveryForOwner(
-        room.communityRef,
-        room.remoteRoomId,
-        room.ownerAuthorId,
-        event.originIdempotencyKey
-      );
-      const enrollment = item
-        ? this.enrollments.findRemoteMember(
-            room.communityRef,
-            item.localAgentId,
-            room.ownerAuthorId
-          )
-        : null;
-      if (item && enrollment?.remoteMemberId === event.author.memberId) {
-        this.outbox?.recordOrigin({
-          communityRef: room.communityRef,
-          remoteRoomId: room.remoteRoomId,
-          ownerAuthorId: room.ownerAuthorId,
-          remoteEntryId: event.entry.id,
-          idempotencyKey: event.originIdempotencyKey,
-        });
-        this.outbox?.confirm(item.id, event.entry.id);
-        return;
-      }
-    }
     if (
       this.outbox?.confirmByRemoteEntry(
         room.communityRef,
@@ -195,6 +171,35 @@ export class RemoteRoomSubscriptionBridge {
     this.service.dispatchImportedRemoteEntry(local.id, dispatchEntry);
     const dispatchKey = `${room.communityRef}:${room.ownerAuthorId}:${room.remoteRoomId}`;
     this.dispatchesSinceBoot.set(dispatchKey, (this.dispatchesSinceBoot.get(dispatchKey) ?? 0) + 1);
+  }
+
+  /** Bind a server-authenticated agent wire key only to its active owner-qualified enrollment. */
+  private reconcileAuthenticatedOrigin(room: MirrorRoomInput, event: RemoteLiveEntry): boolean {
+    if (!event.originIdempotencyKey || event.author.kind !== 'agent') return false;
+    const outbox = this.outbox;
+    if (!outbox) return false;
+    const item = outbox.deliveryForOwner(
+      room.communityRef,
+      room.remoteRoomId,
+      room.ownerAuthorId,
+      event.originIdempotencyKey
+    );
+    if (!item || item.state !== 'pending') return false;
+    const enrollment = this.enrollments.findRemoteMember(
+      room.communityRef,
+      item.localAgentId,
+      room.ownerAuthorId
+    );
+    if (enrollment?.remoteMemberId !== event.author.memberId) return false;
+    outbox.recordOrigin({
+      communityRef: room.communityRef,
+      remoteRoomId: room.remoteRoomId,
+      ownerAuthorId: room.ownerAuthorId,
+      remoteEntryId: event.entry.id,
+      idempotencyKey: event.originIdempotencyKey,
+    });
+    outbox.confirm(item.id, event.entry.id);
+    return true;
   }
 
   /**
