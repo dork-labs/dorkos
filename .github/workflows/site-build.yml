@@ -69,7 +69,7 @@ name: site-build
 # GitHub's troubleshooting-required-status-checks doc: a workflow skipped by
 # path filtering reports NOTHING (not success), and under the merge queue a
 # required check that never reports blocks the queue until
-# `check_response_timeout_minutes` (60) expires — the trade browser-test.yml's
+# `check_response_timeout_minutes` (120) expires — the trade browser-test.yml's
 # header works through at length, and the deadlock desktop-renderer.yml accepts
 # by staying permanently non-required. Worse, a required check that never
 # reports ON THE PR keeps the PR out of the queue entirely (measured on PR

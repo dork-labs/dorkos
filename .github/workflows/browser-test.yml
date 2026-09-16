@@ -61,7 +61,7 @@ name: browser-test
 #      requiring workflows that can be skipped." A skipped JOB reports success; a
 #      skipped WORKFLOW reports nothing at all, and under the merge queue
 #      (ADR 260728-112203) a required check that never reports blocks the queue
-#      until `check_response_timeout_minutes` (60) expires. So the filter and the
+#      until `check_response_timeout_minutes` (120) expires. So the filter and the
 #      option of ever making this required are mutually exclusive.
 #
 # The trade this accepts, stated plainly: a docs-only or changelog-only PR pays

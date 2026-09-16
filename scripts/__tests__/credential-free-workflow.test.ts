@@ -23,6 +23,17 @@
  *     runner with no secrets wired in, the two are indistinguishable from the
  *     log — which is exactly why it has to be asserted from the file.
  *
+ *  3. **Letting the cost story drift from the numbers it rests on.** The
+ *     ceiling and the test step's fan-out are a matched pair, argued from
+ *     measured runs in the workflow's own header. `--concurrency=1` there is a
+ *     SERIAL pass over the affected set, which for a `packages/shared` change
+ *     is 20 of 25 packages and measured 40m53s in the queue against a
+ *     50-minute ceiling; a ceiling above the queue's own
+ *     `check_response_timeout_minutes` stalls every PR for the whole window
+ *     instead of going red. Both are one-character edits that change no output
+ *     until the day a shared-package PR is in the queue, so both are pinned
+ *     below with the reasoning rather than left to a comment.
+ *
  * Same shape of guard, for the same reason, as `vitest-flake-reporter.test.ts`
  * beside it: a flag or a trigger whose absence changes no output has to be
  * pinned by a test, because nothing else will ever notice. It reads the
@@ -142,6 +153,56 @@ describe('credential-free-build workflow', () => {
   // Flatten that to a bare `true` — the obvious "simplification" — and every
   // one of those properties goes at once, silently, on a workflow that still
   // passes.
+  it('keeps a job ceiling that is under the merge queue`s own check window', () => {
+    // The queue's `check_response_timeout_minutes` is 120, read off the live
+    // branch ruleset. A job permitted to outlive it does not go red — it holds
+    // every PR behind it for the full window, which is strictly worse than
+    // failing. The lower bound is the other half: the measured worst case is
+    // ~41 minutes in the test step on a `packages/shared` change, so a ceiling
+    // back down near 50 re-creates the timeout this pin exists to record.
+    // There is exactly one uncommented `timeout-minutes:` in this workflow and
+    // it is the job's. Asserting the count keeps that true: a step-level
+    // timeout added above the job key would otherwise silently retarget this.
+    const all = [...workflow.matchAll(/^\s*timeout-minutes:\s*(\d+)\s*$/gm)];
+    expect(
+      all.length,
+      `${WORKFLOW_REL} declares ${all.length} \`timeout-minutes\` keys; this pin assumes exactly one, the job's.`
+    ).toBe(1);
+    const declared = all[0]?.[1];
+
+    expect(
+      declared,
+      `${WORKFLOW_REL} declares no job-level \`timeout-minutes\` — an untimed job can stall the queue.`
+    ).toBeDefined();
+    // The floor is the measured worst case with runaway headroom, not the old
+    // 50 plus one: run 35064083857 spent 40m53s in the test step alone and
+    // 8m34s in the step before it, so a ceiling in the sixties re-creates the
+    // very timeout this pin records. The roof is the queue's own window.
+    expect(Number(declared)).toBeGreaterThanOrEqual(90);
+    expect(Number(declared)).toBeLessThan(120);
+  });
+
+  it('never runs the test leg serially, and never at turbo`s default fan-out', () => {
+    // Both ends matter and they fail in opposite directions. `1` is a serial
+    // chain over the affected set — 20 of 25 packages for a `packages/shared`
+    // change, 40m53s measured in the queue. Turbo's default (15, from
+    // turbo.json) has every task spawning its own vitest worker pool on a
+    // 4-vCPU runner, which is the ~10x oversubscription DOR-121 is about and
+    // the shape of the `Killed` runs this workflow's header documents. The
+    // window between them is small on purpose; widening it wants a measurement
+    // in the header, not a looser test.
+    const testStep = runCommands().find((c) => c.includes('turbo test'));
+
+    expect(testStep, `${WORKFLOW_REL} has no \`turbo test\` step to check.`).toBeDefined();
+    const fanOut = testStep?.match(/--concurrency=(\d+)/)?.[1];
+    expect(
+      fanOut,
+      `the \`turbo test\` step in ${WORKFLOW_REL} sets no \`--concurrency\`, so it runs at turbo's default of 15.`
+    ).toBeDefined();
+    expect(Number(fanOut)).toBeGreaterThan(1);
+    expect(Number(fanOut)).toBeLessThanOrEqual(4);
+  });
+
   it('never cancels a merge-group run in progress', () => {
     const block = workflow.match(/^concurrency:\n((?:[ \t]+.*\n)+)/m)?.[1] ?? '';
     expect(
