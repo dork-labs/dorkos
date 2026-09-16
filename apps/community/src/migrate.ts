@@ -12,16 +12,21 @@ export async function migrate(databaseUrl: string): Promise<void> {
     await client.query(
       'CREATE TABLE IF NOT EXISTS community_migrations (version integer PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())'
     );
-    const applied = await client.query(
-      'SELECT version FROM community_migrations WHERE version = 1'
-    );
-    if (applied.rowCount === 0) {
+    for (const [version, filename] of [
+      [1, '0001_foundation.sql'],
+      [2, '0002_admission.sql'],
+      [3, '0003_files.sql'],
+    ] as const) {
+      const applied = await client.query('SELECT 1 FROM community_migrations WHERE version=$1', [
+        version,
+      ]);
+      if (applied.rowCount) continue;
       const sql = await readFile(
-        fileURLToPath(new URL('../migrations/0001_foundation.sql', import.meta.url)),
+        fileURLToPath(new URL(`../migrations/${filename}`, import.meta.url)),
         'utf8'
       );
       await client.query(sql);
-      await client.query('INSERT INTO community_migrations(version) VALUES (1)');
+      await client.query('INSERT INTO community_migrations(version) VALUES ($1)', [version]);
     }
     await client.query('COMMIT');
   } catch (error) {

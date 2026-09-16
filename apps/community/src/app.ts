@@ -19,6 +19,13 @@ import { mintHandle } from './handles.js';
 import { registerChannelRoutes } from './routes/channels.js';
 import { registerEntryRoutes } from './routes/entries.js';
 import { registerEventRoutes } from './routes/events.js';
+import { registerInviteRoutes } from './routes/invites.js';
+import { registerMemberRoutes } from './routes/members.js';
+import { registerPairingRoutes } from './routes/pairings.js';
+import { registerAgentRoutes } from './routes/agents.js';
+import { registerAttachmentRoutes } from './routes/attachments.js';
+import { registerExportRoutes } from './routes/exports.js';
+import { createBlobStore, type BlobStore } from './storage/index.js';
 import { communities } from './schema.js';
 
 /** Assemble the injectable HTTP app without reading environment variables. */
@@ -26,10 +33,15 @@ export function createCommunityApp({
   config,
   pool,
   hooks,
+  blobStore = createBlobStore(config),
 }: {
   config: CommunityConfig;
   pool: Pool;
-  hooks?: { afterSnapshotWatermark?: () => Promise<void> };
+  hooks?: {
+    afterSnapshotWatermark?: () => Promise<void>;
+    afterEntryAttachmentLookup?: () => Promise<void>;
+  };
+  blobStore?: BlobStore;
 }) {
   const app = new Hono();
   const auth = createCommunityAuth(pool, config);
@@ -63,7 +75,13 @@ export function createCommunityApp({
         throw new ApiError(403, 'FORBIDDEN', 'This request came from an untrusted site.');
       }
       // Bound JSON and auth requests before parsing, even for chunked or false-length bodies.
-      // Attachment uploads have a separate streaming limit when that route is added.
+      if (
+        c.req.path.match(/^\/api\/v1\/channels\/[^/]+\/attachments$/) &&
+        c.req.method === 'POST'
+      ) {
+        await next();
+        return;
+      }
       const maxBodyBytes = Math.max(config.limits.textBytes + 32 * 1024, 96 * 1024);
       const declared = Number(c.req.header('content-length'));
       if (declared > maxBodyBytes)
@@ -191,5 +209,22 @@ export function createCommunityApp({
   registerChannelRoutes(app, { pool, auth });
   registerEntryRoutes(app, { pool, auth, config });
   registerEventRoutes(app, { pool, auth, config, hooks });
+  registerInviteRoutes(app, {
+    pool,
+    auth,
+    config,
+    limitPreview: (c) =>
+      limitAttempts(`invite-preview:${peer(c)}`, config.limits.invitePreviewAttemptsPerMinute),
+  });
+  registerMemberRoutes(app, { pool, auth });
+  registerPairingRoutes(app, {
+    pool,
+    auth,
+    config,
+    limitStart: (c) => limitAttempts(`pairing:${peer(c)}`, config.limits.pairingAttemptsPerMinute),
+  });
+  registerAgentRoutes(app, { pool, auth, config });
+  registerAttachmentRoutes(app, { pool, auth, config, blobStore });
+  registerExportRoutes(app, { pool, auth, blobStore });
   return app;
 }

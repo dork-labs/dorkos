@@ -166,10 +166,15 @@ export const pendingAdmissions = pgTable('pending_admissions', {
 export const connectionPairings = pgTable('connection_pairings', {
   id: uuid('id').primaryKey().defaultRandom(),
   verifierHash: text('verifier_hash').notNull(),
+  installName: text('install_name').notNull(),
+  scopes: text('scopes').array().notNull(),
   memberId: uuid('member_id').references(() => members.id),
   codeHash: text('code_hash'),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   consumedAt: timestamp('consumed_at', { withTimezone: true }),
+  approvedAt: timestamp('approved_at', { withTimezone: true }),
+  polledAt: timestamp('polled_at', { withTimezone: true }),
+  cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
   createdAt: time('created_at'),
 });
 /** Revocable server-to-server personal grants, stored as hashes. */
@@ -179,6 +184,7 @@ export const connectionGrants = pgTable('connection_grants', {
     .notNull()
     .references(() => members.id),
   tokenHash: text('token_hash').notNull().unique(),
+  installName: text('install_name').notNull(),
   scopes: text('scopes').array().notNull(),
   createdAt: time('created_at'),
   lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
@@ -234,12 +240,14 @@ export const agents = pgTable(
       .references(() => members.id),
     displayName: text('display_name').notNull(),
     handle: text('handle').notNull(),
+    localAgentId: text('local_agent_id'),
     active: boolean('active').notNull().default(true),
     createdAt: time('created_at'),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
   },
   (table) => [
     uniqueIndex('agents_handle_unique').on(table.communityId, table.handle),
+    uniqueIndex('agents_owner_local_id_unique').on(table.ownerMemberId, table.localAgentId),
     index('agents_owner_active_idx').on(table.ownerMemberId, table.active),
   ]
 );
@@ -294,9 +302,8 @@ export const entries = pgTable(
       .notNull()
       .references(() => channels.id),
     seq: bigint('seq', { mode: 'number' }).notNull(),
-    authorMemberId: uuid('author_member_id')
-      .notNull()
-      .references(() => members.id),
+    authorMemberId: uuid('author_member_id').references(() => members.id),
+    authorAgentId: uuid('author_agent_id').references(() => agents.id),
     authorDisplayName: text('author_display_name').notNull(),
     text: text('text').notNull(),
     parentEntryId: uuid('parent_entry_id'),
@@ -316,6 +323,15 @@ export const entries = pgTable(
       table.channelId,
       table.idempotencyKey
     ),
+    uniqueIndex('entries_agent_key_unique').on(
+      table.authorAgentId,
+      table.channelId,
+      table.idempotencyKey
+    ),
+    check(
+      'entries_exactly_one_author',
+      sql`(${table.authorMemberId} IS NULL) <> (${table.authorAgentId} IS NULL)`
+    ),
     index('entries_thread_idx').on(table.channelId, table.threadRootEntryId, table.seq),
   ]
 );
@@ -327,19 +343,65 @@ export const attachments = pgTable(
     channelId: uuid('channel_id')
       .notNull()
       .references(() => channels.id),
-    uploaderMemberId: uuid('uploader_member_id')
-      .notNull()
-      .references(() => members.id),
+    uploaderMemberId: uuid('uploader_member_id').references(() => members.id),
+    uploaderAgentId: uuid('uploader_agent_id').references(() => agents.id),
     entryId: uuid('entry_id').references(() => entries.id),
     blobKey: text('blob_key').notNull().unique(),
     displayName: text('display_name').notNull(),
     contentType: text('content_type').notNull(),
     byteSize: integer('byte_size').notNull(),
     checksum: text('checksum').notNull(),
+    idempotencyKey: text('idempotency_key'),
+    requestHash: text('request_hash'),
     uploadedAt: time('uploaded_at'),
   },
-  (table) => [index('attachments_entry_idx').on(table.entryId)]
+  (table) => [
+    index('attachments_entry_idx').on(table.entryId),
+    uniqueIndex('attachments_human_retry_idx')
+      .on(table.uploaderMemberId, table.channelId, table.idempotencyKey)
+      .where(sql`${table.uploaderMemberId} IS NOT NULL`),
+    uniqueIndex('attachments_agent_retry_idx')
+      .on(table.uploaderAgentId, table.channelId, table.idempotencyKey)
+      .where(sql`${table.uploaderAgentId} IS NOT NULL`),
+    index('attachments_orphan_idx')
+      .on(table.uploadedAt, table.id)
+      .where(sql`${table.entryId} IS NULL`),
+    check(
+      'attachments_exactly_one_uploader',
+      sql`(${table.uploaderMemberId} IS NULL) <> (${table.uploaderAgentId} IS NULL)`
+    ),
+  ]
 );
+/** One-hour private export lifecycle; bytes remain in the configured BlobStore. */
+export const exportArchives = pgTable(
+  'export_archives',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    requesterMemberId: uuid('requester_member_id')
+      .notNull()
+      .references(() => members.id),
+    scope: text('scope').notNull(),
+    channelIds: uuid('channel_ids').array().notNull().default([]),
+    blobKey: text('blob_key').notNull().unique(),
+    byteSize: bigint('byte_size', { mode: 'number' }).notNull(),
+    createdAt: time('created_at'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (table) => [
+    check('export_archives_scope', sql`${table.scope} IN ('personal','owner')`),
+    index('export_archives_expiry_idx')
+      .on(table.expiresAt, table.id)
+      .where(sql`${table.deletedAt} IS NULL`),
+  ]
+);
+/** Durable cleanup work for blobs whose metadata transaction did not commit. */
+export const pendingBlobDeletions = pgTable('pending_blob_deletions', {
+  blobKey: text('blob_key').primaryKey(),
+  createdAt: time('created_at'),
+  attempts: integer('attempts').notNull().default(0),
+  lastErrorAt: timestamp('last_error_at', { withTimezone: true }),
+});
 /** Monotonic per-human read positions. */
 export const readCursors = pgTable(
   'read_cursors',
