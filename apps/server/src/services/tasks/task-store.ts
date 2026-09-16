@@ -1,4 +1,16 @@
-import { eq, desc, and, count, inArray, notInArray, lt, isNull, isNotNull, sql } from 'drizzle-orm';
+import {
+  eq,
+  ne,
+  desc,
+  and,
+  count,
+  inArray,
+  notInArray,
+  lt,
+  isNull,
+  isNotNull,
+  sql,
+} from 'drizzle-orm';
 import {
   pulseSchedules,
   pulseRuns,
@@ -1057,10 +1069,15 @@ export class TaskStore {
    * once the approval still stands, so a wrongly-written `false` here would
    * never self-heal.
    *
-   * No status filter, same as `markRemovedByFilePath`: a `pending_approval`
-   * row gets paused too, and un-parks back to `pending_approval` (never
-   * `active`) the moment discovery re-reads its file, because nothing here
-   * ever touches the stored approval key.
+   * No status VALUE filter, same as `markRemovedByFilePath`: a
+   * `pending_approval` row gets paused too, and un-parks back to
+   * `pending_approval` (never `active`) the moment discovery re-reads its
+   * file, because nothing here ever touches the stored approval key. It DOES
+   * exclude rows already `paused`, so the count this returns — and the line
+   * the one caller logs from it — says how many schedules this call actually
+   * stopped, not how many it merely re-touched: unregistering an agent twice,
+   * or unregistering one with no live schedules left, must not claim a second
+   * round of pausing that did nothing.
    *
    * **No backfill for rows this method already wrote `enabled: false` onto,
    * before this fix.** Nothing on a row distinguishes "the person switched
@@ -1081,7 +1098,7 @@ export class TaskStore {
     const result = this.db
       .update(pulseSchedules)
       .set({ status: 'paused', updatedAt: now })
-      .where(eq(pulseSchedules.agentId, agentId))
+      .where(and(eq(pulseSchedules.agentId, agentId), ne(pulseSchedules.status, 'paused')))
       .run();
     return result.changes;
   }

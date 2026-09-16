@@ -3043,15 +3043,15 @@ async function start() {
     setTasksEnabled(true);
     mountedRouters.push('tasks');
 
-    // Cascade-disable: when an agent is unregistered from Mesh, disable its linked task schedules.
+    // Cascade-pause: when an agent is unregistered from Mesh, pause its linked task schedules.
     // The callback receives the project path captured before registry removal —
     // meshCore.getProjectPath(agentId) would already return undefined here.
     if (meshCore) {
       meshCore.onUnregister((agentId, projectPath) => {
-        const disabledCount = taskStore.disableTasksByAgentId(agentId);
-        if (disabledCount > 0) {
+        const pausedCount = taskStore.disableTasksByAgentId(agentId);
+        if (pausedCount > 0) {
           logger.info(
-            `[Tasks] Disabled ${disabledCount} schedule(s) for unregistered agent ${agentId}`
+            `[Tasks] Paused ${pausedCount} schedule(s) for unregistered agent ${agentId}`
           );
         }
         // Stop watching and reconciling every root that belonged to the agent.
