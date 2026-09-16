@@ -7,4 +7,4 @@ covers:
 
 ### Fixed
 
-- A session started from a room now gets the short title Claude Code writes for it, instead of showing the message that started it — including the @mention that routed it there. Renaming a session still wins over that title, and it updates on its own as soon as the new title is ready, with no need to reload the page. (DOR-2083)
+- A session started from a room now gets the short title Claude Code writes for it, instead of showing the message that started it. Renaming a session still wins over that title, and it updates on its own as soon as the new title is ready, with no need to reload the page. (DOR-2083)
