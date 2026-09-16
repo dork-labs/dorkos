@@ -3,11 +3,11 @@ import { randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { RemoteConnectionStore, RemoteConnectionNotFoundError } from '../connection-store.js';
 import { EncryptedFileCredentialStore } from '../../../core/credential-provider.js';
 import { RemoteCommunityPairingService, RemotePairingBusyError } from '../pairing-service.js';
-import { RemoteCommunityAdapter } from '../remote-community-adapter.js';
+import { RemoteCommunityAdapter, type RemoteNativeRoomEvent } from '../remote-community-adapter.js';
 import {
   checkedAddress,
   parseCommunityOrigin,
@@ -161,6 +161,65 @@ afterAll(async () => {
 });
 
 describe('private remote pairing with real HTTP and encrypted local storage', () => {
+  it('closes a quiet generic room subscription without requiring a caller abort', async () => {
+    const adapter = new RemoteCommunityAdapter(
+      'remote-generic-return' as never,
+      'adapter-owner',
+      new RemoteConnectionStore(directory)
+    );
+    let unblock: ((result: IteratorResult<RemoteNativeRoomEvent>) => void) | undefined;
+    let nativeReturned = false;
+    vi.spyOn(adapter, 'subscribeNativeRoom').mockImplementation(() => ({
+      [Symbol.asyncIterator](): AsyncIterator<RemoteNativeRoomEvent> {
+        let sentSnapshot = false;
+        return {
+          next: () => {
+            if (!sentSnapshot) {
+              sentSnapshot = true;
+              return Promise.resolve({
+                done: false,
+                value: {
+                  type: 'snapshot',
+                  room: {
+                    community: adapter.community,
+                    roomId: 'quiet-room',
+                    kind: 'channel',
+                    title: 'Quiet room',
+                    slug: null,
+                    topic: null,
+                    archived: false,
+                    createdAt: new Date(0).toISOString(),
+                    lastActivityAt: new Date(0).toISOString(),
+                    unreadCount: 0,
+                  },
+                  entries: [],
+                  cursor: 'quiet-cursor' as never,
+                  capturedSeq: 0,
+                },
+              });
+            }
+            return new Promise<IteratorResult<RemoteNativeRoomEvent>>((resolve) => {
+              unblock = resolve;
+            });
+          },
+          return: async () => {
+            nativeReturned = true;
+            unblock?.({ done: true, value: undefined as never });
+            return { done: true, value: undefined as never };
+          },
+        };
+      },
+    }));
+
+    const iterator = adapter.subscribeRoom('quiet-room')[Symbol.asyncIterator]();
+    expect((await iterator.next()).value?.type).toBe('snapshot');
+    const pending = iterator.next();
+
+    await expect(iterator.return?.()).resolves.toMatchObject({ done: true });
+    expect(nativeReturned).toBe(true);
+    await expect(pending).resolves.toMatchObject({ done: true });
+  });
+
   it('uses the private store for a live HTTP adapter and rejects an unowned agent before a request', async () => {
     approved = true;
     const store = new RemoteConnectionStore(directory);

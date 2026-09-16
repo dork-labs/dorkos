@@ -369,12 +369,29 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     context?: CommunityReadContext
   ): AsyncIterable<CommunityRoomEvent> {
     const native = this.subscribeNativeRoom(roomId, sinceCursor, signal, context);
-    return (async function* () {
-      for await (const event of native) {
-        if (event.type === 'replay_complete') continue;
-        yield event;
-      }
-    })();
+    // Do not use an async generator here: its `return()` queues behind an
+    // unresolved `next()`, which leaves a generic consumer unable to abort a
+    // quiet native stream. Forward `return()` to the native iterator directly.
+    return {
+      [Symbol.asyncIterator](): AsyncIterator<CommunityRoomEvent> {
+        const iterator = native[Symbol.asyncIterator]();
+        return {
+          async next(...value: [] | [unknown]): Promise<IteratorResult<CommunityRoomEvent>> {
+            for (;;) {
+              const result = await iterator.next(...value);
+              if (result.done) return { done: true, value: undefined as never };
+              if (result.value.type !== 'replay_complete') {
+                return { done: false, value: result.value };
+              }
+            }
+          },
+          return: async () => {
+            await iterator.return?.();
+            return { done: true, value: undefined as never };
+          },
+        };
+      },
+    };
   }
 
   /** Native subscription keeps the server-captured replay watermark private to local lifecycle code. */
