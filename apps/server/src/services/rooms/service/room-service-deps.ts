@@ -8,7 +8,8 @@
  *
  * @module server/services/rooms/service/room-service-deps
  */
-import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
+import type { Room, RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
+import type { DbTransaction } from '@dorkos/db';
 import type { RoomWorktreeManager } from '../repo/room-worktree-manager.js';
 import type { ReadCursorService } from '../../core/read-cursor-service.js';
 import type { BridgeStore } from '../../relay/chat-bridge/bridge-store.js';
@@ -87,9 +88,40 @@ export interface RoomEntryIndexer {
  */
 export type RoomSearchScope = 'all' | ReadonlyMap<string, number>;
 
+/**
+ * The persisted authorization answer for a locally cached remote room.
+ *
+ * `null` means an ordinary local room. A boolean is deliberately decided before
+ * the install-owner shortcut: remote history remains remote-authorized even
+ * though its cache rows live in the local SQLite room tables.
+ */
+export interface RoomMirrorAccess {
+  canRead(roomId: string, authorId: string): boolean | null;
+  hasMirrors(): boolean;
+}
+
+/** A trusted mirror agent write prepared before one local room entry is inserted. */
+export interface PreparedMirrorWrite {
+  /** Persist the outbox row in the entry transaction after its id exists. */
+  enqueue(entryId: string, tx: DbTransaction): void;
+}
+
+/** Persisted policy for remote mirrors; callers cannot select it per post. */
+export interface RoomMirrorWritePolicy {
+  prepare(
+    room: Room,
+    authorId: string,
+    delivery: { parentEntryId: string | null; attachmentIds: readonly string[] }
+  ): PreparedMirrorWrite | null;
+}
+
 /** Everything {@link RoomService} is constructed from. */
 export interface RoomServiceDeps {
   store: RoomStore;
+  /** Persisted access control for native remote-community mirror rows. */
+  mirrorAccess?: RoomMirrorAccess;
+  /** Atomically enqueue local agent output in remote mirrors and suppress recursive dispatch. */
+  mirrorWrites?: RoomMirrorWritePolicy;
   /** Reactions on this room's entries — durable state, never a turn. */
   reactions: ReactionStore;
   /** The documents on this room's shared canvas. */

@@ -26,7 +26,8 @@ import {
 import { PinnedOriginError } from '../services/communities/remote/pinned-origin.js';
 import { getRemotePairingService } from '../services/communities/remote/state.js';
 
-function ownerKey(req: Request, res: Response): string | null {
+/** Resolve the only local human allowed to use a stored community connection. */
+export function resolveCommunityOwner(req: Request, res: Response): string | null {
   const cookieRefusal = requireOperatorCookieUnderLogin(res, 'community connections');
   if (cookieRefusal) {
     res.status(cookieRefusal.status).json({ error: cookieRefusal.error, code: cookieRefusal.code });
@@ -75,7 +76,7 @@ export function createCommunityConnectionsRouter(
 ): Router {
   const router = Router();
   router.get('/', async (req, res) => {
-    const owner = ownerKey(req, res);
+    const owner = resolveCommunityOwner(req, res);
     if (!owner) return;
     try {
       res.json(
@@ -88,7 +89,7 @@ export function createCommunityConnectionsRouter(
     }
   });
   router.post('/', async (req, res) => {
-    const owner = ownerKey(req, res);
+    const owner = resolveCommunityOwner(req, res);
     if (!owner) return;
     const parsed = CommunityConnectionStartRequestSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -108,7 +109,7 @@ export function createCommunityConnectionsRouter(
     }
   });
   router.get('/:ref', async (req, res) => {
-    const owner = ownerKey(req, res);
+    const owner = resolveCommunityOwner(req, res);
     if (!owner) return;
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!ref.success) {
@@ -126,7 +127,7 @@ export function createCommunityConnectionsRouter(
     }
   });
   router.post('/:ref/poll', async (req, res) => {
-    const owner = ownerKey(req, res);
+    const owner = resolveCommunityOwner(req, res);
     if (!owner) return;
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!ref.success) {
@@ -142,7 +143,7 @@ export function createCommunityConnectionsRouter(
     }
   });
   router.post('/:ref/cancel', async (req, res) => {
-    const owner = ownerKey(req, res);
+    const owner = resolveCommunityOwner(req, res);
     if (!owner) return;
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!ref.success) {
@@ -157,7 +158,7 @@ export function createCommunityConnectionsRouter(
     }
   });
   router.delete('/:ref', async (req, res) => {
-    const owner = ownerKey(req, res);
+    const owner = resolveCommunityOwner(req, res);
     if (!owner) return;
     const ref = CommunityRefSchema.safeParse(req.params.ref);
     if (!ref.success) {

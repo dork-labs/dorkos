@@ -47,6 +47,17 @@ export class PinnedOriginError extends Error {
   }
 }
 
+/** A remote status observed through the pinned socket, with no response body or URL. */
+export class PinnedHttpError extends Error {
+  /** Preserve only the semantic HTTP status; bodies may contain untrusted detail. */
+  constructor(readonly status: number) {
+    super(`Remote community returned HTTP ${status}`);
+    this.name = 'PinnedHttpError';
+  }
+  /** Retain the existing safe transport classification for callers that do not branch on status. */
+  readonly code = 'REMOTE_RESPONSE' as const;
+}
+
 /** Accept HTTPS hosts, or literal localhost for disposable development servers. */
 export function parseCommunityOrigin(input: string): URL {
   let url: URL;
@@ -111,7 +122,17 @@ export async function pinnedJson(
   origin: URL,
   path: string,
   body?: unknown,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  options: {
+    method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+    authorization?: string;
+    maxBytes?: number;
+    accept?: readonly number[];
+    rawBody?: Buffer;
+    contentType?: string;
+    headers?: Record<string, string>;
+    response?: 'json' | 'buffer';
+  } = {}
 ): Promise<unknown> {
   const target = new URL(path, origin);
   if (target.origin !== origin.origin || !path.startsWith('/api/v1/'))
@@ -125,7 +146,10 @@ export async function pinnedJson(
     origin.protocol === 'https:'
       ? new HttpsAgent({ keepAlive: false, lookup })
       : new HttpAgent({ keepAlive: false, lookup });
-  const payload = body === undefined ? undefined : Buffer.from(JSON.stringify(body));
+  const payload =
+    options.rawBody ?? (body === undefined ? undefined : Buffer.from(JSON.stringify(body)));
+  const method = options.method ?? (payload ? 'POST' : 'GET');
+  const maxBytes = options.maxBytes ?? 64 * 1024;
   const boundedSignal = signal
     ? AbortSignal.any([signal, AbortSignal.timeout(10_000)])
     : AbortSignal.timeout(10_000);
@@ -134,20 +158,27 @@ export async function pinnedJson(
       const request = (origin.protocol === 'https:' ? httpsRequest : httpRequest)(
         target,
         {
-          method: payload ? 'POST' : 'GET',
+          method,
           agent,
           timeout: 10_000,
           signal: boundedSignal,
-          headers: payload
-            ? { 'content-type': 'application/json', 'content-length': payload.length }
-            : undefined,
+          headers: {
+            ...(payload
+              ? {
+                  'content-type': options.contentType ?? 'application/json',
+                  'content-length': payload.length,
+                }
+              : {}),
+            ...(options.authorization ? { authorization: `Bearer ${options.authorization}` } : {}),
+            ...options.headers,
+          },
         },
         (response) => {
           const chunks: Buffer[] = [];
           let bytes = 0;
           response.on('data', (chunk: Buffer) => {
             bytes += chunk.length;
-            if (bytes > 64 * 1024) {
+            if (bytes > maxBytes) {
               request.destroy();
               reject(new PinnedOriginError('REMOTE_RESPONSE'));
             } else chunks.push(chunk);
@@ -157,12 +188,17 @@ export async function pinnedJson(
               resolve(null);
               return;
             }
-            if (response.statusCode !== 200 && response.statusCode !== 201) {
-              reject(new PinnedOriginError('REMOTE_RESPONSE'));
+            if (!(options.accept ?? [200, 201]).includes(response.statusCode ?? 0)) {
+              reject(new PinnedHttpError(response.statusCode ?? 502));
+              return;
+            }
+            const content = Buffer.concat(chunks);
+            if (options.response === 'buffer') {
+              resolve(content);
               return;
             }
             try {
-              resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+              resolve(JSON.parse(content.toString('utf8')));
             } catch {
               reject(new PinnedOriginError('REMOTE_RESPONSE'));
             }
@@ -174,6 +210,82 @@ export async function pinnedJson(
       request.end(payload);
     });
   } finally {
+    agent.destroy();
+  }
+}
+
+/** Open one pinned SSE response without following redirects or re-resolving DNS. */
+export async function* pinnedSse(
+  origin: URL,
+  path: string,
+  authorization: string,
+  lastEventId?: string,
+  signal?: AbortSignal
+): AsyncGenerator<unknown> {
+  const target = new URL(path, origin);
+  if (target.origin !== origin.origin || !path.startsWith('/api/v1/'))
+    throw new PinnedOriginError('INVALID_ORIGIN');
+  const address = await checkedAddress(origin);
+  const lookup: LookupFunction = (_hostname, options, callback) => {
+    if (options.all) callback(null, [address]);
+    else callback(null, address.address, address.family);
+  };
+  const agent =
+    origin.protocol === 'https:'
+      ? new HttpsAgent({ keepAlive: false, lookup })
+      : new HttpAgent({ keepAlive: false, lookup });
+  const boundedSignal = signal
+    ? AbortSignal.any([signal, AbortSignal.timeout(30_000)])
+    : AbortSignal.timeout(30_000);
+  let request: import('node:http').ClientRequest | undefined;
+  let response: import('node:http').IncomingMessage | undefined;
+  try {
+    response = await new Promise<import('node:http').IncomingMessage>((resolve, reject) => {
+      request = (origin.protocol === 'https:' ? httpsRequest : httpRequest)(
+        target,
+        {
+          method: 'GET',
+          agent,
+          signal: boundedSignal,
+          headers: {
+            accept: 'text/event-stream',
+            authorization: `Bearer ${authorization}`,
+            ...(lastEventId ? { 'last-event-id': lastEventId } : {}),
+          },
+        },
+        (opened) => {
+          if (opened.statusCode !== 200) {
+            opened.resume();
+            reject(new PinnedHttpError(opened.statusCode ?? 502));
+            return;
+          }
+          resolve(opened);
+        }
+      );
+      request.on('error', () => reject(new PinnedOriginError('REMOTE_UNAVAILABLE')));
+      request.end();
+    });
+    let buffer = '';
+    for await (const chunk of response) {
+      buffer += Buffer.from(chunk).toString('utf8');
+      if (buffer.length > 64 * 1024) throw new PinnedOriginError('REMOTE_RESPONSE');
+      for (;;) {
+        const boundary = buffer.indexOf('\n\n');
+        if (boundary < 0) break;
+        const frame = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        const data = frame.split('\n').find((line) => line.startsWith('data: '));
+        if (!data) continue;
+        try {
+          yield JSON.parse(data.slice(6));
+        } catch {
+          throw new PinnedOriginError('REMOTE_RESPONSE');
+        }
+      }
+    }
+  } finally {
+    response?.destroy();
+    request?.destroy();
     agent.destroy();
   }
 }

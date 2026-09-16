@@ -335,6 +335,16 @@ import {
   agents,
   type Db,
 } from '@dorkos/db';
+import {
+  getRemoteCommunityAdapter,
+  publishRemoteCommunityDeliveryChanges,
+  setRemoteCommunityDb,
+  setRemoteCommunityDeliveryProjection,
+  setRemoteCommunityEnrollmentStore,
+  setRemoteCommunityLifecycle,
+} from './services/communities/remote/state.js';
+import { CommunityOutboxRuntime } from './services/communities/remote/community-outbox-runtime.js';
+import { RemoteRoomSubscriptionBridge } from './services/communities/remote/remote-room-subscription-bridge.js';
 import { INTERVALS } from './config/constants.js';
 import { resolveDorkHome } from './lib/dork-home.js';
 import { acquireInstanceLock } from './lib/instance-lock.js';
@@ -488,6 +498,7 @@ let traceStore: TraceStore | undefined;
 let meshCore: MeshCore | undefined;
 let agentMcpServerService: AgentMcpServerService | undefined;
 let agentMcpOAuthService: AgentMcpOAuthService | undefined;
+let remoteCommunityRuntime: CommunityOutboxRuntime | undefined;
 let extensionManager: ExtensionManager | undefined;
 let connectorRuntimeMcpListener: ConnectorRuntimeMcpListener | undefined;
 let testComposioFixture:
@@ -815,6 +826,7 @@ async function start() {
   // (and, on first boot, persists into) a 0600 file there — a fresh install
   // signs in with zero manual `BETTER_AUTH_SECRET` setup (DOR-242).
   initAuth(db, dorkHome);
+  setRemoteCommunityDb(db);
 
   // One-time migration: fold a pre-auth global `mcp.apiKey` into an owner-owned
   // Better Auth API key so existing MCP clients keep working after the rewrite to
@@ -1291,6 +1303,10 @@ async function start() {
   const readCursorService = new ReadCursorService(new ReadCursorStore(db));
   setReadCursorService(readCursorService);
 
+  const roomAttachmentBytes = new LocalRoomAttachmentStore(dorkHome);
+  const remoteCommunityBridge: { current: RemoteRoomSubscriptionBridge | undefined } = {
+    current: undefined,
+  };
   const {
     service: roomService,
     store: roomStore,
@@ -1298,8 +1314,42 @@ async function start() {
     authors: roomAuthors,
     bridges: roomBridges,
     welcomeBack: welcomeBackGreeter,
-  } = createRoomSubsystem({ db, readCursors: readCursorService });
+  } = createRoomSubsystem({
+    db,
+    readCursors: readCursorService,
+    createMirrorRuntime: ({ store, authors, attachments }) => {
+      remoteCommunityRuntime = new CommunityOutboxRuntime({
+        db,
+        roomStore: store,
+        authors,
+        attachmentRows: attachments,
+        attachmentBytes: roomAttachmentBytes,
+        adapters: (communityRef, ownerAuthorId) =>
+          getRemoteCommunityAdapter(communityRef, ownerAuthorId),
+        confirmNativePostOrigin: (origin) =>
+          remoteCommunityBridge.current?.confirmNativePostOrigin(origin),
+        changes: { changed: publishRemoteCommunityDeliveryChanges },
+      });
+      return {
+        mirrorAccess: remoteCommunityRuntime.mirrorAccess,
+        mirrorWrites: remoteCommunityRuntime.mirrorWrites,
+      };
+    },
+  });
   setRoomService(roomService);
+  if (!remoteCommunityRuntime) throw new Error('Remote community runtime was not composed');
+  setRemoteCommunityEnrollmentStore(remoteCommunityRuntime.enrollments);
+  setRemoteCommunityDeliveryProjection(remoteCommunityRuntime.projection);
+  remoteCommunityBridge.current = new RemoteRoomSubscriptionBridge(
+    remoteCommunityRuntime.mirrors,
+    roomService,
+    remoteCommunityRuntime.enrollments,
+    (localAgentId) => (roomAuthors.getById(localAgentId)?.kind === 'agent' ? localAgentId : null),
+    undefined,
+    remoteCommunityRuntime.outbox
+  );
+  setRemoteCommunityLifecycle(remoteCommunityBridge.current);
+  remoteCommunityRuntime.start();
   // What your agents may say when you come back (team-room-home §D5.2). The
   // read-state route is what tells it somebody is here, so it is registered
   // beside the service that route already reaches for.
@@ -1310,7 +1360,7 @@ async function start() {
   // those bytes live somewhere other than this machine, this line is what
   // changes. Same doctrine as the avatar store below.
   setRoomAttachmentStores({
-    attachments: new LocalRoomAttachmentStore(dorkHome),
+    attachments: roomAttachmentBytes,
     rows: roomAttachmentRows,
   });
   logger.info('[Rooms] RoomService registered');
@@ -4623,6 +4673,8 @@ async function start() {
 // Extracted so the admin router can invoke it before a restart.
 async function shutdownServices() {
   logger.info('[DorkOS] shutting down services');
+  remoteCommunityRuntime?.stop();
+  remoteCommunityRuntime = undefined;
   await testComposioFixture?.close();
   testComposioFixture = undefined;
   await connectorRuntimeMcpListener?.close();

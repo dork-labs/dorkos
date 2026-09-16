@@ -371,9 +371,9 @@ export class LocalCommunityAdapter implements CommunityAdapter {
    *
    * Both refusals run before any of that, so `CommunityRoomNotFoundError` (a
    * room this identity cannot stream, absent or invisible alike) and
-   * `StaleCommunityCursorError` are thrown at call time as the port requires —
-   * which is also why this is a plain method returning a stream rather than an
-   * `async function*`.
+   * `StaleCommunityCursorError` are thrown at call time in this in-process
+   * adapter, before it returns a stream. An HTTP adapter may defer the same
+   * authoritative refusal to its first pull.
    *
    * **The snapshot carries thread replies; `listEntries` does not.** Both are
    * port-legal and the difference is deliberate: a page is a timeline (the port

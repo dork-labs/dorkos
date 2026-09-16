@@ -21,6 +21,8 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   ENTRY_NOT_FOUND: 404,
   MEMBER_NOT_FOUND: 404,
   AGENT_NOT_FOUND: 404,
+  COMMUNITY_OUTBOX_FULL: 429,
+  COMMUNITY_DELIVERY_UNAVAILABLE: 409,
   SLUG_TAKEN: 409,
   // A 409 beside `SLUG_TAKEN`, and for the identical reason: a room's name is
   // already somebody else's. A DM's name is who is in it, so this is what a

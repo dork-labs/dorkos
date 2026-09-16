@@ -15,7 +15,6 @@ import {
   assertPrincipalCurrentInTransaction,
   lockChannel,
   requireJoined,
-  requireMember,
   requirePrincipal,
   transaction,
   type Principal,
@@ -89,50 +88,52 @@ export function registerEventRoutes(
   }
 ) {
   app.get('/api/v1/channels/:id/read-cursor', async (c) => {
-    const member = await requireMember(c, auth, pool);
-    const channel = await liveChannel(pool, c.req.param('id'), {
-      kind: 'human',
-      id: member.id,
-      ownerMemberId: member.id,
-      display_name: member.display_name,
-      community_id: member.community_id,
-    });
-    const currentMember = await requireMember(c, auth, pool);
-    if (currentMember.id !== member.id)
-      throw new ApiError(401, 'UNAUTHENTICATED', 'This session is unavailable.');
+    const member = await requirePrincipal(c, auth, pool, 'read');
+    if (member.kind !== 'human')
+      throw new ApiError(403, 'FORBIDDEN', 'Agents do not have read cursors.');
+    const channel = await liveChannel(pool, c.req.param('id'), member);
+    await assertPrincipalCurrent(c, auth, pool, member, 'read');
     const seq = Number(channel.read_seq);
     return json(c, CommunityWireReadCursorResponseSchema, {
       cursor: seq
-        ? encodeCursor({ channelId: channel.id, thread: null, epoch: channel.epoch, seq }, config)
+        ? encodeCursor(
+            {
+              version: 1,
+              communityId: member.community_id,
+              channelId: channel.id,
+              thread: null,
+              epoch: channel.epoch,
+              seq,
+            },
+            config
+          )
         : null,
       unreadCount: Math.max(0, Number(channel.last_seq) - seq),
     });
   });
 
   app.put('/api/v1/channels/:id/read-cursor', async (c) => {
-    const member = await requireMember(c, auth, pool);
-    const openedSession = await auth.api.getSession({ headers: c.req.raw.headers });
-    if (!openedSession || openedSession.user.id !== member.user_id)
+    const member = await requirePrincipal(c, auth, pool, 'read');
+    if (member.kind !== 'human')
+      throw new ApiError(403, 'FORBIDDEN', 'Agents do not have read cursors.');
+    const openedSession = member.credentialHash
+      ? undefined
+      : await auth.api.getSession({ headers: c.req.raw.headers });
+    if (!member.credentialHash && !openedSession)
       throw new ApiError(401, 'UNAUTHENTICATED', 'This session is unavailable.');
     const body = await readJson(c, CommunityWireReadCursorRequestSchema);
     const { channel, current } = await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), member);
       requireJoined(channel);
-      await assertPrincipalCurrentInTransaction(
-        client,
-        {
-          kind: 'human',
-          id: member.id,
-          ownerMemberId: member.id,
-          display_name: member.display_name,
-          community_id: member.community_id,
-        },
-        'read',
-        openedSession.session.id
-      );
+      await assertPrincipalCurrentInTransaction(client, member, 'read', openedSession?.session.id);
       const seq = decodeCursor(
         body.cursor,
-        { channelId: channel.id, thread: null, epoch: channel.epoch },
+        {
+          communityId: member.community_id,
+          channelId: channel.id,
+          thread: null,
+          epoch: channel.epoch,
+        },
         config
       );
       if (seq > Number(channel.last_seq))
@@ -148,7 +149,14 @@ export function registerEventRoutes(
     return json(c, CommunityWireReadCursorResponseSchema, {
       cursor: current
         ? encodeCursor(
-            { channelId: channel.id, thread: null, epoch: channel.epoch, seq: current },
+            {
+              version: 1,
+              communityId: member.community_id,
+              channelId: channel.id,
+              thread: null,
+              epoch: channel.epoch,
+              seq: current,
+            },
             config
           )
         : null,
@@ -166,20 +174,31 @@ export function registerEventRoutes(
     const channel = await liveChannel(pool, c.req.param('id'), principal);
     const resume = c.req.header('last-event-id');
     let position = resume
-      ? decodeCursor(resume, { channelId: channel.id, thread: null, epoch: channel.epoch }, config)
+      ? decodeCursor(
+          resume,
+          {
+            communityId: principal.community_id,
+            channelId: channel.id,
+            thread: null,
+            epoch: channel.epoch,
+          },
+          config
+        )
       : Number(channel.last_seq);
     if (position > Number(channel.last_seq))
       throw new ApiError(410, 'CURSOR_STALE', 'This cursor is ahead of channel history.');
     await hooks?.afterSnapshotWatermark?.();
-    const snapshotRows = resume
-      ? []
-      : (
-          await pool.query(
-            `SELECT id,channel_id,seq,COALESCE(author_member_id,author_agent_id) AS author_member_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,created_at
-       FROM (SELECT * FROM entries WHERE channel_id=$1 AND seq<=$2 ORDER BY seq DESC LIMIT 100) e ORDER BY seq`,
-            [channel.id, position]
-          )
-        ).rows;
+    const snapshotRows = (
+      await pool.query(
+        resume
+          ? `SELECT id,channel_id,seq,COALESCE(author_member_id,author_agent_id) AS author_member_id,author_agent_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,created_at
+             FROM entries WHERE channel_id=$1 AND seq>$2 AND seq<=$3 ORDER BY seq LIMIT 100`
+          : `SELECT id,channel_id,seq,COALESCE(author_member_id,author_agent_id) AS author_member_id,author_agent_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,created_at
+             FROM (SELECT * FROM entries WHERE channel_id=$1 AND seq<=$2 ORDER BY seq DESC LIMIT 100) e ORDER BY seq`,
+        resume ? [channel.id, position, Number(channel.last_seq)] : [channel.id, position]
+      )
+    ).rows;
+    if (snapshotRows.length) position = Number(snapshotRows.at(-1).seq);
     const snapshotAttachments = await attachmentsForEntries(
       pool,
       snapshotRows.map((row: { id: string }) => row.id)
@@ -196,7 +215,14 @@ export function registerEventRoutes(
     let lastHeartbeat = Date.now();
     const currentCursor = () =>
       encodeCursor(
-        { channelId: channel.id, thread: null, epoch: channel.epoch, seq: position },
+        {
+          version: 1,
+          communityId: principal.community_id,
+          channelId: channel.id,
+          thread: null,
+          epoch: channel.epoch,
+          seq: position,
+        },
         config
       );
     const writeEvent = (
@@ -215,26 +241,31 @@ export function registerEventRoutes(
       if (revocationTimer) clearInterval(revocationTimer);
     };
     const checkAccess = async () => {
-      if (openedSession) {
-        const session = await auth.api.getSession({ headers: c.req.raw.headers });
-        if (
-          !session ||
-          session.user.id !== openedSession.user.id ||
-          session.session.id !== openedSession.session.id
-        )
-          return null;
-      }
-      try {
-        const current = await requirePrincipal(c, auth, pool, 'read', false);
-        if (
-          current.id !== principal.id ||
-          current.kind !== principal.kind ||
-          current.credentialHash !== principal.credentialHash
-        )
-          return null;
-      } catch {
-        return null;
-      }
+      // The opening request already verified the cookie signature or bearer.
+      // Revalidate that exact credential and the channel in ONE fresh database
+      // snapshot. Calling Better Auth twice per entry repeats unrelated account
+      // hydration and makes durable catch-up slower than incoming traffic.
+      // Nothing is cached: this query also runs after attachment enrichment.
+      const credential =
+        principal.kind === 'agent'
+          ? `EXISTS (SELECT 1 FROM agent_credentials ac WHERE ac.agent_id=a.id
+             AND ac.token_hash=$4 AND ac.revoked_at IS NULL)`
+          : principal.credentialKind === 'grant'
+            ? `EXISTS (SELECT 1 FROM connection_grants g WHERE g.member_id=m.id
+               AND g.token_hash=$4 AND g.revoked_at IS NULL
+               AND g.scopes @> ARRAY['read']::text[])`
+            : `EXISTS (SELECT 1 FROM session s WHERE s.id=$4 AND s."userId"=m.user_id
+               AND s."userId"=$5 AND s.token=$6 AND s."expiresAt">now())`;
+      const cookie = !principal.credentialHash;
+      if (cookie && !openedSession) return null;
+      const values: unknown[] = [
+        principal.id,
+        channel.id,
+        principal.community_id,
+        principal.credentialHash ?? openedSession!.session.id,
+      ];
+      if (cookie) values.push(openedSession!.user.id, openedSession!.session.token);
+      if (principal.kind === 'agent') values.push(principal.ownerMemberId);
       const active = await pool.query<{
         active: boolean;
         joined: boolean;
@@ -244,11 +275,14 @@ export function registerEventRoutes(
         principal.kind === 'agent'
           ? `SELECT (a.active AND owner.active) AS active,(cm.agent_id IS NOT NULL) AS joined,ch.archived,ch.epoch
            FROM agents a JOIN members owner ON owner.id=a.owner_member_id JOIN channels ch ON ch.id=$2
-           LEFT JOIN agent_channel_members cm ON cm.channel_id=ch.id AND cm.agent_id=a.id WHERE a.id=$1`
+           LEFT JOIN agent_channel_members cm ON cm.channel_id=ch.id AND cm.agent_id=a.id
+           WHERE a.id=$1 AND a.community_id=$3 AND ch.community_id=$3
+             AND a.owner_member_id=$5 AND ${credential}`
           : `SELECT m.active,(cm.member_id IS NOT NULL) AS joined,ch.archived,ch.epoch
            FROM members m JOIN channels ch ON ch.id=$2
-           LEFT JOIN channel_members cm ON cm.channel_id=ch.id AND cm.member_id=m.id WHERE m.id=$1`,
-        [principal.id, channel.id]
+           LEFT JOIN channel_members cm ON cm.channel_id=ch.id AND cm.member_id=m.id
+           WHERE m.id=$1 AND m.community_id=$3 AND ch.community_id=$3 AND ${credential}`,
+        values
       );
       return active.rows[0];
     };
@@ -259,7 +293,13 @@ export function registerEventRoutes(
             type: 'snapshot',
             channel: channelWire(channel),
             entries: snapshotRows.map((row) =>
-              entryProjection(row, channel.epoch, config, snapshotAttachments.get(row.id))
+              entryProjection(
+                row,
+                channel.epoch,
+                config,
+                snapshotAttachments.get(row.id),
+                principal.community_id
+              )
             ),
             cursor: currentCursor(),
           });
@@ -326,7 +366,7 @@ export function registerEventRoutes(
                 return;
               }
               const result = await pool.query(
-                `SELECT id,channel_id,seq,COALESCE(author_member_id,author_agent_id) AS author_member_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,created_at
+                `SELECT id,channel_id,seq,COALESCE(author_member_id,author_agent_id) AS author_member_id,author_agent_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,created_at
                FROM entries WHERE channel_id=$1 AND seq>$2 ORDER BY seq LIMIT 1`,
                 [channel.id, position]
               );
@@ -357,7 +397,8 @@ export function registerEventRoutes(
                   row,
                   channel.epoch,
                   config,
-                  attachmentMap.get(row.id)
+                  attachmentMap.get(row.id),
+                  principal.community_id
                 );
                 writeEvent(controller, { type: 'entry', entry, cursor: entry.cursor });
                 return;

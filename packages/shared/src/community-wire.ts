@@ -208,6 +208,8 @@ export const CommunityWireEntrySchema = z.strictObject({
   seq: z.number().int().positive(),
   authorMemberId: id,
   authorDisplayName: z.string().min(1),
+  /** Immutable author principal kind, retained after a member or agent becomes inactive. */
+  authorKind: z.enum(['human', 'agent']),
   text: z.string(),
   /** Member IDs resolved from handles at write time against the joined roster. */
   mentions,
@@ -223,6 +225,8 @@ export type CommunityWireEntry = z.infer<typeof CommunityWireEntrySchema>;
 /** Post as the bearer or cookie identity; agent selection is by private bearer. */
 export const CommunityWireEntryPostRequestSchema = z.strictObject({
   text: z.string().min(1),
+  /** Member ids resolved by the local caller, checked against the joined roster. */
+  mentions: mentions.optional(),
   parentEntryId: id.optional(),
   idempotencyKey,
   attachmentIds: attachmentIds.optional(),
@@ -380,7 +384,9 @@ export const CommunityWireAgentSchema = z.strictObject({
 export type CommunityWireAgent = z.infer<typeof CommunityWireAgentSchema>;
 /** Enrollment request made under a scoped personal grant. */
 export const CommunityWireAgentEnrollRequestSchema = z.strictObject({
-  localAgentId: id,
+  // A local harness owns this identifier. It is deliberately not constrained
+  // to the community service's UUID vocabulary.
+  localAgentId: z.string().min(1).max(256),
   displayName: z.string().min(1),
   /** The server derives a collision-safe handle when omitted. */
   handle: CommunityWireHandleSchema.optional(),

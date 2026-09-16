@@ -50,6 +50,54 @@ import {
 } from './community-conformance-support.js';
 
 /**
+ * Assert a room stream refuses before emitting a snapshot.
+ *
+ * In-process adapters can validate synchronously. An HTTP adapter must let the
+ * authoritative remote server decide cursor scope and may surface that same
+ * typed refusal on the first pull. Both forms keep the no-bytes guarantee.
+ */
+async function expectRoomStreamRefusal(
+  adapter: CommunityAdapter,
+  roomId: string,
+  cursor: CommunityCursor | undefined,
+  errorType: new (...args: never[]) => Error,
+  timeoutMs: number,
+  message: string
+): Promise<void> {
+  let stream;
+  try {
+    stream = adapter.subscribeRoom(roomId, cursor);
+  } catch (error) {
+    expect(error, message).toBeInstanceOf(errorType);
+    return;
+  }
+  const iterator = stream[Symbol.asyncIterator]();
+  try {
+    await expect(nextEvent(iterator, message, timeoutMs)).rejects.toBeInstanceOf(errorType);
+  } finally {
+    await iterator.return?.();
+  }
+}
+
+/** Assert a cursor the adapter minted opens a stream rather than refusing on its first pull. */
+async function expectRoomStreamAcceptance(
+  adapter: CommunityAdapter,
+  roomId: string,
+  cursor: CommunityCursor,
+  timeoutMs: number,
+  message: string
+): Promise<void> {
+  const iterator = adapter.subscribeRoom(roomId, cursor)[Symbol.asyncIterator]();
+  try {
+    await expect(nextEvent(iterator, message, timeoutMs)).resolves.toMatchObject({
+      type: 'snapshot',
+    });
+  } finally {
+    await iterator.return?.();
+  }
+}
+
+/**
  * Register the assertions every adapter owes.
  *
  * @param ctx - The suite's resolved hooks and helpers.
@@ -187,7 +235,7 @@ export function registerUniversalAssertions(ctx: CommunityConformanceContext): v
       }
     });
 
-    it('U6 resumes gap-free or throws eagerly — there is no third outcome', async () => {
+    it('U6 resumes gap-free or refuses before a snapshot — there is no third outcome', async () => {
       assertImported(StaleCommunityCursorError, 'StaleCommunityCursorError');
       const { adapter, roomId } = await arrange();
       const { entries } = await pageAllEntries(adapter, roomId);
@@ -201,10 +249,11 @@ export function registerUniversalAssertions(ctx: CommunityConformanceContext): v
 
       let stream;
       try {
-        // Constructed, awaiting nothing: the throw must land here or not at all.
+        // An in-process adapter may refuse here. An HTTP adapter can defer the
+        // authoritative opaque-token check until the first pull.
         stream = adapter.subscribeRoom(roomId, from.cursor);
       } catch (err) {
-        expect(err, 'a refused resume throws StaleCommunityCursorError, eagerly').toBeInstanceOf(
+        expect(err, 'a refused resume throws StaleCommunityCursorError').toBeInstanceOf(
           StaleCommunityCursorError
         );
         return;
@@ -212,14 +261,29 @@ export function registerUniversalAssertions(ctx: CommunityConformanceContext): v
 
       const iterator = stream[Symbol.asyncIterator]();
       const seen = new Set<string>();
+      let emitted = 0;
       try {
         const deadline = Date.now() + eventTimeoutMs;
         while (!expectedIds.every((id) => seen.has(id)) && Date.now() < deadline) {
-          const event = await nextEvent(
-            iterator,
-            'the resumed entries',
-            Math.max(1, deadline - Date.now())
-          );
+          let event;
+          try {
+            event = await nextEvent(
+              iterator,
+              'the resumed entries',
+              Math.max(1, deadline - Date.now())
+            );
+          } catch (error) {
+            expect(
+              emitted,
+              'a refusal after a snapshot or entry is partial history, never a gap-free refusal'
+            ).toBe(0);
+            expect(
+              error,
+              'a refused resume throws StaleCommunityCursorError before serving bytes'
+            ).toBeInstanceOf(StaleCommunityCursorError);
+            return;
+          }
+          emitted += 1;
           if (event.type === 'snapshot') for (const e of event.entries) seen.add(e.id);
           if (event.type === 'entry') seen.add(event.entry.id);
         }
@@ -240,10 +304,14 @@ export function registerUniversalAssertions(ctx: CommunityConformanceContext): v
       const { entries } = await pageAllEntries(adapter, roomA);
       const foreign = entries[0]!.cursor;
 
-      expect(
-        () => adapter.subscribeRoom(roomB, foreign),
+      await expectRoomStreamRefusal(
+        adapter,
+        roomB,
+        foreign,
+        StaleCommunityCursorError,
+        eventTimeoutMs,
         'a cursor from another room must be rejected, not bounded'
-      ).toThrow(StaleCommunityCursorError);
+      );
     });
 
     if (secondCommunity) {
@@ -257,10 +325,14 @@ export function registerUniversalAssertions(ctx: CommunityConformanceContext): v
         const otherRoomId = await seedRoom(other);
         const otherEntries = await pageAllEntries(other, otherRoomId);
 
-        expect(
-          () => adapter.subscribeRoom(roomId, otherEntries.entries[0]!.cursor),
+        await expectRoomStreamRefusal(
+          adapter,
+          roomId,
+          otherEntries.entries[0]!.cursor,
+          StaleCommunityCursorError,
+          eventTimeoutMs,
           'a cursor from another community must be rejected'
-        ).toThrow(StaleCommunityCursorError);
+        );
       });
     } else {
       it.skip('U7 cross-community cursor rejection (no secondCommunity hook supplied)', () => {});
@@ -528,25 +600,27 @@ export function registerUniversalAssertions(ctx: CommunityConformanceContext): v
       ).resolves.toEqual([]);
     });
 
-    it('U16 refuses to stream a room it cannot serve, eagerly', async () => {
+    it('U16 refuses to stream a room it cannot serve before a snapshot', async () => {
       assertImported(CommunityRoomNotFoundError, 'CommunityRoomNotFoundError');
       const { adapter } = await arrange();
 
-      // Constructed, awaiting nothing — the U6/U7 shape, for the same reason.
-      // The two failures this catches are the two an adapter actually ships: a
-      // stream that opens and never yields (a caller parks on it forever,
-      // unable to tell it from a quiet room), and a refusal deferred to the
-      // first pull (a caller holding a plain `try` never sees it).
+      // A remote server may reject this on the first pull after its own
+      // authorization check. It still cannot open a snapshot or park the
+      // caller: the helper verifies the first result is the typed refusal.
       //
       // DELIBERATELY NOT ASSERTED: that a room which exists but is invisible
       // throws the SAME refusal. Arranging one needs a second identity the port
       // does not expose, so the collapse is stated on
       // `CommunityRoomNotFoundError` and held by each adapter's own tests —
       // this case proves the shape, not the discretion.
-      expect(
-        () => adapter.subscribeRoom('no-such-room-id'),
-        'a room this identity cannot stream is refused with CommunityRoomNotFoundError, at call time'
-      ).toThrow(CommunityRoomNotFoundError);
+      await expectRoomStreamRefusal(
+        adapter,
+        'no-such-room-id',
+        undefined,
+        CommunityRoomNotFoundError,
+        eventTimeoutMs,
+        'a room this identity cannot stream is refused with CommunityRoomNotFoundError'
+      );
     });
 
     it('U17 accepts every cursor it minted, on both the surfaces that take one', async () => {
@@ -564,12 +638,15 @@ export function registerUniversalAssertions(ctx: CommunityConformanceContext): v
       );
 
       for (const { cursor, source } of minted) {
-        // Constructed, awaiting nothing — a refusal here is eager by contract,
-        // so it lands on this line or not at all.
-        expect(
-          () => adapter.subscribeRoom(roomId, cursor),
+        // A remote server may validate the opaque token on the first pull, so
+        // creation alone is not evidence that a minted cursor is accepted.
+        await expectRoomStreamAcceptance(
+          adapter,
+          roomId,
+          cursor,
+          eventTimeoutMs,
           `subscribeRoom refused a cursor this adapter minted itself (${source})`
-        ).not.toThrow();
+        );
         await expect(
           adapter.listEntries(roomId, { cursor }),
           `listEntries refused a cursor this adapter minted itself (${source})`
@@ -600,10 +677,13 @@ export function registerUniversalAssertions(ctx: CommunityConformanceContext): v
           await iterator.return?.();
         }
 
-        expect(
-          () => adapter.subscribeRoom(emptyRoomId, cursor),
+        await expectRoomStreamAcceptance(
+          adapter,
+          emptyRoomId,
+          cursor,
+          eventTimeoutMs,
           'an adapter must accept the cursor its own empty-room snapshot handed out'
-        ).not.toThrow();
+        );
         await expect(
           adapter.listEntries(emptyRoomId, { cursor }),
           'and so must the paging surface'
@@ -760,10 +840,14 @@ export function registerUniversalAssertions(ctx: CommunityConformanceContext): v
       // is, "I do not recognise this" is a refusal and never a default position
       // at the start of the room.
       const nonsense = 'not-a-cursor-this-adapter-ever-minted' as CommunityCursor;
-      expect(
-        () => adapter.subscribeRoom(roomB, nonsense),
-        'an unrecognisable cursor is refused at call time, like every other one'
-      ).toThrow(StaleCommunityCursorError);
+      await expectRoomStreamRefusal(
+        adapter,
+        roomB,
+        nonsense,
+        StaleCommunityCursorError,
+        eventTimeoutMs,
+        'an unrecognisable cursor is refused before it can serve a snapshot'
+      );
       await expect(
         adapter.listEntries(roomB, { cursor: nonsense }),
         'and refused on the paging surface too, rather than read as the beginning'

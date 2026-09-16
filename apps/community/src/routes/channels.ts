@@ -15,6 +15,7 @@ import type { CommunityAuth } from '../auth.js';
 import {
   assertPrincipalCurrent,
   lockChannel,
+  lockPrincipalAuthority,
   requireLiveRole,
   requireMember,
   requirePrincipal,
@@ -141,10 +142,13 @@ export function registerChannelRoutes(
   });
 
   app.post('/api/v1/channels/:id/join', async (c) => {
-    const member = await requireMember(c, auth, pool);
+    const member = await requirePrincipal(c, auth, pool, 'post');
+    if (member.kind !== 'human')
+      throw new ApiError(403, 'FORBIDDEN', 'Agents cannot join channels themselves.');
     await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), member);
-      await requireLiveRole(client, member, ['owner', 'admin', 'member']);
+      await lockPrincipalAuthority(client, member, 'post');
+      await requireLiveRole(client, member as unknown as Member, ['owner', 'admin', 'member']);
       if (channel.archived) throw new ApiError(409, 'STATE_CONFLICT', 'This channel is archived.');
       if (channel.visibility === 'private' && !channel.joined)
         throw new ApiError(404, 'NOT_FOUND', 'Channel not found.');
@@ -159,10 +163,13 @@ export function registerChannelRoutes(
   });
 
   app.post('/api/v1/channels/:id/leave', async (c) => {
-    const member = await requireMember(c, auth, pool);
+    const member = await requirePrincipal(c, auth, pool, 'post');
+    if (member.kind !== 'human')
+      throw new ApiError(403, 'FORBIDDEN', 'Agents cannot leave channels themselves.');
     await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), member);
-      await requireLiveRole(client, member, ['owner', 'admin', 'member']);
+      await lockPrincipalAuthority(client, member, 'post');
+      await requireLiveRole(client, member as unknown as Member, ['owner', 'admin', 'member']);
       await client.query('DELETE FROM channel_members WHERE channel_id=$1 AND member_id=$2', [
         channel.id,
         member.id,

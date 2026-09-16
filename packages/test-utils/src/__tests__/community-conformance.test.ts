@@ -176,7 +176,7 @@ communityConformance(make(AGENT_ACTING), {
 // ---------------------------------------------------------------------------
 
 describe('communityConformance discriminates', () => {
-  it('rejects a foreign cursor EAGERLY — the throw lands at call time, not on first pull', async () => {
+  it('rejects a foreign cursor synchronously in the in-process fake', async () => {
     assertImported(StaleCommunityCursorError, 'StaleCommunityCursorError');
     const adapter = new FakeCommunityAdapter();
     await adapter.connect();
@@ -184,8 +184,8 @@ describe('communityConformance discriminates', () => {
     const roomB = adapter.seedRoom({ entries: 2 });
     const foreign = (await adapter.listEntries(roomA)).entries[0]!.cursor;
 
-    // Constructed, awaiting nothing. An `async function*` implementation would
-    // defer this to the first `next()` and fail the suite's U6/U7.
+    // This fake can validate its own cursor without I/O, so it preserves the
+    // stricter synchronous behavior that its direct callers already use.
     expect(() => adapter.subscribeRoom(roomB, foreign)).toThrow(StaleCommunityCursorError);
 
     const otherCommunity = new FakeCommunityAdapter({

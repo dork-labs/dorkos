@@ -36,7 +36,13 @@ import {
 } from '../../canvas/index.js';
 import { AttachmentRowStore } from '../attachments/attachment-row-store.js';
 import type { RoomAgent, RoomAgentLookup } from '../room-errors.js';
-import { RoomService, type RoomEntryIndexer, type RoomMessageFinder } from '../room-service.js';
+import {
+  RoomService,
+  type RoomEntryIndexer,
+  type RoomMessageFinder,
+  type RoomMirrorAccess,
+  type RoomMirrorWritePolicy,
+} from '../room-service.js';
 import { RoomStore } from '../room-store.js';
 import type { RoomWorktreeManager } from '../repo/room-worktree-manager.js';
 import { RoomBroadcaster } from '../room-stream.js';
@@ -637,6 +643,10 @@ export function createRoomHarness(opts: {
    * the behavior it was written for.
    */
   worktrees?: () => RoomWorktreeManager | null;
+  /** Persisted remote-cache authorization, for RoomService integration tests. */
+  mirrorAccess?: RoomMirrorAccess;
+  /** Trusted remote-mirror delivery policy, for real writer transaction tests. */
+  mirrorWrites?: RoomMirrorWritePolicy;
 }): RoomHarness {
   const db = createTestDb();
   const agentLookup = typeof opts.agents === 'function' ? opts.agents(db) : opts.agents;
@@ -700,6 +710,8 @@ export function createRoomHarness(opts: {
   setCanvasService(canvas);
   const service = new RoomService({
     store,
+    ...(opts.mirrorAccess ? { mirrorAccess: opts.mirrorAccess } : {}),
+    ...(opts.mirrorWrites ? { mirrorWrites: opts.mirrorWrites } : {}),
     reactions,
     canvasDocuments,
     canvas,

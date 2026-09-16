@@ -1,9 +1,6 @@
 /** @module shared/__tests__/community-deliveries */
 import { describe, expect, it } from 'vitest';
-import {
-  COMMUNITY_DELIVERY_MAX_ATTACHMENT_BYTES,
-  CommunityDeliverySnapshotSchema,
-} from '../community-deliveries.js';
+import { CommunityDeliverySnapshotSchema } from '../community-deliveries.js';
 
 const pending = {
   idempotencyKey: '01JQ0XVC4RGH6T1E2J2M7YB10T',
@@ -43,7 +40,7 @@ describe('community delivery DTOs', () => {
         attachments: [
           {
             ...pending.attachments[0],
-            byteSize: COMMUNITY_DELIVERY_MAX_ATTACHMENT_BYTES + 1,
+            byteSize: Number.MAX_SAFE_INTEGER + 1,
           },
         ],
         text: 'x'.repeat(100_001),
@@ -59,6 +56,32 @@ describe('community delivery DTOs', () => {
         deliveries: [{ ...pending, state: 'failed', failure: 'not-confirmed' }],
       }).deliveries[0]
     ).toMatchObject({ state: 'failed', failure: 'not-confirmed' });
+  });
+
+  it('retains oversized file metadata while rejecting unsafe byte counts', () => {
+    const snapshot = { community: 'remote_abc', roomId: 'general', deliveries: [pending] };
+    expect(
+      CommunityDeliverySnapshotSchema.parse({
+        ...snapshot,
+        deliveries: [
+          {
+            ...pending,
+            attachments: [{ ...pending.attachments[0], byteSize: 26 * 1024 * 1024 }],
+          },
+        ],
+      }).deliveries[0].attachments[0]
+    ).toMatchObject({ byteSize: 26 * 1024 * 1024 });
+    expect(
+      CommunityDeliverySnapshotSchema.safeParse({
+        ...snapshot,
+        deliveries: [
+          {
+            ...pending,
+            attachments: [{ ...pending.attachments[0], byteSize: Number.MAX_SAFE_INTEGER + 1 }],
+          },
+        ],
+      }).success
+    ).toBe(false);
   });
 
   it('bounds snapshots rather than streaming an unbounded local queue', () => {

@@ -32,8 +32,14 @@ import {
  */
 export function registerCapabilityBranchedAssertions(ctx: CommunityConformanceContext): void {
   const { makeAdapter, arrange, awaitRoomEvent, eventTimeoutMs } = ctx;
-  const { seedRoom, revokeOwner, makeUnadmittedAdapter, makeUnauthorizedAdapter, makeRemovedRoom } =
-    ctx.opts;
+  const {
+    seedRoom,
+    revokeOwner,
+    makeUnadmittedAdapter,
+    makeUnauthorizedAdapter,
+    makeRemovedRoom,
+    unadmittedUnavailableReason,
+  } = ctx.opts;
   // Read once at REGISTRATION time so a case this backend cannot run registers a
   // named skip rather than returning green from inside the test body.
   const declared = makeAdapter().getCapabilities();
@@ -669,7 +675,7 @@ export function registerCapabilityBranchedAssertions(ctx: CommunityConformanceCo
         expect(connection.identity, 'an unadmitted connection has no identity').toBeUndefined();
       });
     } else {
-      it.skip("C17 'not-admitted' branch (no makeUnadmittedAdapter hook supplied)", () => {});
+      it.skip(`C17 'not-admitted' branch (${unadmittedUnavailableReason ?? 'no makeUnadmittedAdapter hook supplied'})`, () => {});
     }
 
     if (makeUnauthorizedAdapter) {
