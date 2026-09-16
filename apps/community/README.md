@@ -12,7 +12,7 @@ From the repository root, set `COMMUNITY_POSTGRES_PASSWORD`, `COMMUNITY_PUBLIC_U
 docker compose -f apps/community/compose.yml up --build
 ```
 
-Use a unique random value of at least 32 characters for each secret. Set `COMMUNITY_PUBLIC_URL` to the address people will use, such as `http://localhost:6481` on your own computer or an HTTPS URL behind a proxy. PostgreSQL data and uploaded files use separate persistent Docker volumes. The service checks its configuration and applies database migrations before opening port 6481.
+Use a unique random value of at least 32 characters for each secret. Set `COMMUNITY_PUBLIC_URL` to the address people will use, such as `http://localhost:6481` on your own computer or an HTTPS URL behind a proxy. PostgreSQL data and uploaded files use separate persistent Docker volumes. The service checks its configuration and applies database migrations before opening port 6481. See [deployment settings and limits](DEPLOYMENT.md) for the full environment reference, optional Google and GitHub sign-in, and an optional Render setup.
 
 To create the owner account, send the bootstrap secret to `POST /api/v1/bootstrap/preflight`. Keep the returned HTTP-only cookie while signing up at `/api/auth/sign-up/email`, then call `POST /api/v1/bootstrap/claim` with the same secret and a community name. The secret cannot claim a second owner. A browser sign-in page will arrive with the full interface; see [the developer guide](../../contributing/community-server.md) for the HTTP flow.
 
