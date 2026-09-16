@@ -232,6 +232,7 @@ describe('signed admission over real HTTP and Postgres', () => {
     ).toBe(1);
     const loserCookie = winner === 0 ? bCookie : aCookie;
     expect((await call('/api/v1/channels', 'GET', undefined, loserCookie)).status).toBe(403);
+    expect((await call('/api/v1/me', 'GET', undefined, loserCookie)).status).toBe(403);
     const recovery = await call('/api/v1/invites', 'POST', {}, ownerCookie);
     const recoveryToken = (await recovery.json()).token;
     const recoveryPreflight = await call('/api/v1/invites/preflight', 'POST', {
@@ -248,6 +249,51 @@ describe('signed admission over real HTTP and Postgres', () => {
     expect((await call('/api/v1/invites/preview', 'POST', { token: `${token}x` })).status).toBe(
       403
     );
+  });
+
+  it('exposes only the current member and a bounded moderator directory', async () => {
+    expect((await call('/api/v1/me', 'GET')).status).toBe(401);
+    const self = await call('/api/v1/me', 'GET', undefined, ownerCookie);
+    expect(self.status).toBe(200);
+    const selfBody = await self.json();
+    expect(selfBody.member.memberId).toBe(ownerId);
+    expect(selfBody.member.role).toBe('owner');
+    expect(Object.keys(selfBody.member).sort()).toEqual([
+      'displayName',
+      'handle',
+      'joinedAt',
+      'kind',
+      'memberId',
+      'ownerMemberId',
+      'role',
+    ]);
+    expect((await call('/api/v1/members', 'GET', undefined, admittedCookie)).status).toBe(403);
+    const first = await call('/api/v1/members?limit=1', 'GET', undefined, ownerCookie);
+    expect(first.status).toBe(200);
+    const page = await first.json();
+    expect(page.members).toHaveLength(1);
+    expect(page.nextCursor).toBe(page.members[0].memberId);
+    expect(JSON.stringify(page)).not.toContain('email');
+    const second = await call(
+      `/api/v1/members?limit=1&cursor=${page.nextCursor}`,
+      'GET',
+      undefined,
+      ownerCookie
+    );
+    expect(second.status).toBe(200);
+    expect((await second.json()).members[0].memberId).not.toBe(page.members[0].memberId);
+    expect((await call('/api/v1/members?limit=101', 'GET', undefined, ownerCookie)).status).toBe(
+      400
+    );
+    expect(
+      (await call(`/api/v1/members/${admittedId}/role`, 'PATCH', { role: 'admin' }, ownerCookie))
+        .status
+    ).toBe(200);
+    expect((await call('/api/v1/members', 'GET', undefined, admittedCookie)).status).toBe(200);
+    expect(
+      (await call(`/api/v1/members/${admittedId}/role`, 'PATCH', { role: 'member' }, ownerCookie))
+        .status
+    ).toBe(200);
   });
 
   it('pairs a local install once through browser approval and revokes its scoped bearer', async () => {

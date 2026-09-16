@@ -53,6 +53,8 @@ export const COMMUNITY_API_V1_ROUTES = {
   attachment: '/api/v1/attachments/:id',
   exportArchive: '/api/v1/exports/:id',
   agents: '/api/v1/agents',
+  me: '/api/v1/me',
+  members: '/api/v1/members',
   memberRole: '/api/v1/members/:id/role',
   meGrants: '/api/v1/me/grants',
   meExport: '/api/v1/me/export',
@@ -114,6 +116,16 @@ export const CommunityWireMemberRoleUpdateRequestSchema = z.strictObject({
 /** Role change receipt with the current member projection. */
 export const CommunityWireMemberResponseSchema = z.strictObject({
   member: CommunityWireMemberSchema,
+});
+/** Bounded human directory for owner/admin member selection. */
+export const CommunityWireMemberDirectoryQuerySchema = z.strictObject({
+  cursor: z.uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+/** One page of public human member descriptions, with no account fields. */
+export const CommunityWireMemberDirectoryPageSchema = z.strictObject({
+  members: z.array(CommunityWireMemberSchema).max(100),
+  nextCursor: z.uuid().nullable(),
 });
 
 /** Public channel projection. `joined` is for the current caller only. */
