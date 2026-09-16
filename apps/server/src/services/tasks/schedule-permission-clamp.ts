@@ -321,18 +321,35 @@ export function resolveFilePermissionMode(
  * run has nothing for a person to decide about *right now*. So the row stays
  * `pending_approval`, every write-time invariant that status protects is
  * untouched (`status` stays operator-only, an agent flipping `enabled` still
- * leaves the scheduler ineligible), and this is the one place that reads
- * `enabled` alongside `status` to decide whether the condition should reach
- * the operator at all — read by the boot-time re-arm in `index.ts`. The
- * client draws the identical line for its approval card and OS-level knock
- * (`entities/tasks/lib/is-schedule-awaiting-approval.ts`, which this mirrors).
+ * leaves the scheduler ineligible), and this is the one place that decides
+ * whether the condition should reach the operator at all — read by the
+ * boot-time re-arm in `index.ts`.
  *
- * @param task - The status and switch a schedule's row carries.
- * @returns True for a schedule that is both parked AND asking to run.
+ * **Keyed on `origin`, not on `enabled`, and that is load-bearing.** `enabled`
+ * is agent-writable (`task-write-policy.ts`) by design — flipping it on an
+ * already-APPROVED schedule is a reversible nuisance, not an escalation. But
+ * the first cut of this fix read `enabled` alone, which let an agent hide its
+ * OWN proposal: `tasks_create` parks a schedule and raises `schedule.parked`
+ * with `enabled: true`, and a follow-up `tasks_update({enabled: false})` — an
+ * ordinary agent-writable field, `status` untouched — quieted every consumer
+ * of this decision at once, with the escalation ladder still armed and
+ * nothing anywhere explaining why (adversarial review, DOR-2059). `origin` is
+ * `'file'` ONLY for a row `upsertFromFile` wrote with `source: 'discovery'`
+ * (`task-store.ts`) — never for a row `tasks_create` or `POST /api/tasks`
+ * made — and `TaskStore.updateTask` never sets it. An agent cannot manufacture
+ * the one condition that quiets a schedule, whatever it does to `enabled`.
+ *
+ * The client draws the identical line for its approval card and OS-level
+ * knock (`entities/tasks/lib/is-schedule-awaiting-approval.ts`, which this
+ * mirrors).
+ *
+ * @param task - The status, switch, and origin a schedule's row carries.
+ * @returns True for a schedule a person still has to decide about.
  */
 export function needsScheduleApprovalAttention(task: {
   status: string;
   enabled: boolean;
+  origin: string | null;
 }): boolean {
-  return task.status === 'pending_approval' && task.enabled;
+  return task.status === 'pending_approval' && (task.origin !== 'file' || task.enabled);
 }

@@ -93,8 +93,20 @@ const offByDefaultSchedule: Task = {
   status: 'pending_approval',
   enabled: false,
   origin: 'file',
+  filePath: '/home/user/.dork/plugins/flow/skills/flow-drain/SKILL.md',
   reason:
     'DorkOS found this schedule in a file on your computer. Nothing runs on a timer until you say so — read what it does below, then approve it or delete it.',
+};
+
+// An agent's OWN proposal, switched off by the same agent (`enabled` is
+// agent-writable, `origin` is `null` — no update path ever sets it to
+// `'file'`). This must NOT draw like `offByDefaultSchedule` above: an agent
+// cannot hide its own proposal by flipping `enabled` (adversarial review).
+const agentHidOwnProposal: Task = {
+  ...pendingSchedule,
+  id: 'sched-7',
+  name: 'Agent Proposal Switched Off',
+  enabled: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -298,6 +310,37 @@ describe('ScheduleRow', () => {
       expect(
         screen.queryByText(/DorkOS found this schedule in a file on your computer/)
       ).toBeNull();
+    });
+
+    it('names its source on the row itself, without expanding (DOR-2059 review)', () => {
+      // No card and no reason line would otherwise leave this row
+      // indistinguishable from one the person switched off themselves.
+      renderScheduleRow(offByDefaultSchedule);
+
+      expect(screen.getByText(/Installed/)).toBeTruthy();
+      expect(screen.getByText(/flow-drain/)).toBeTruthy();
+    });
+
+    it('names no source on an ordinary switched-off schedule, which has none', () => {
+      renderScheduleRow(disabledSchedule);
+
+      expect(screen.queryByText(/Installed/)).toBeNull();
+    });
+  });
+
+  describe('an agent hiding its own proposal by switching itself off (adversarial review)', () => {
+    it('still shows Approve/Reject — `origin` is not `file`, so `enabled` cannot quiet it', () => {
+      renderScheduleRow(agentHidOwnProposal);
+
+      expect(screen.getByText('Approve')).toBeTruthy();
+      expect(screen.getByText('Reject')).toBeTruthy();
+      expect(screen.queryByRole('switch')).toBeNull();
+    });
+
+    it('names no source, unlike a genuinely file-discovered schedule', () => {
+      renderScheduleRow(agentHidOwnProposal);
+
+      expect(screen.queryByText(/Installed/)).toBeNull();
     });
 
     it('switching it on runs the same approval a person clicking Approve would (DOR-607)', async () => {

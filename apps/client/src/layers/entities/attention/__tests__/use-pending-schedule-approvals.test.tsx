@@ -108,7 +108,7 @@ describe('usePendingScheduleApprovals', () => {
     // clicks — the operator's own words in the report were "too many
     // requests". A schedule that still wants to run keeps the card.
     const { wrapper } = setup([
-      task({ id: 'off-by-default', enabled: false }),
+      task({ id: 'off-by-default', enabled: false, origin: 'file' }),
       task({ id: 'wants-to-run', enabled: true }),
     ]);
 
@@ -116,6 +116,21 @@ describe('usePendingScheduleApprovals', () => {
 
     await waitFor(() => expect(result.current.schedules).toHaveLength(1));
     expect(result.current.schedules[0]?.id).toBe('wants-to-run');
+  });
+
+  it('still shows the card when an agent hides its own proposal by switching itself off (adversarial review)', async () => {
+    // The exploit the first cut of this fix missed: `tasks_create` parks with
+    // `enabled: true` and `origin: null` — nothing here went through file
+    // discovery — and `enabled` is agent-writable, so an agent could call
+    // `tasks_update({ enabled: false })` on its OWN proposal without touching
+    // `status`. Only a genuinely file-discovered, switched-off schedule may
+    // quiet itself; an agent's proposal cannot.
+    const { wrapper } = setup([task({ id: 'proposed', enabled: false, origin: null })]);
+
+    const { result } = renderHook(() => usePendingScheduleApprovals(), { wrapper });
+
+    await waitFor(() => expect(result.current.schedules).toHaveLength(1));
+    expect(result.current.schedules[0]?.id).toBe('proposed');
   });
 
   it('keeps one array identity while nothing is parked', async () => {

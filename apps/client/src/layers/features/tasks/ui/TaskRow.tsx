@@ -143,6 +143,13 @@ export function TaskRow({
   const shouldShowCron = !isMinimal;
   const shouldShowHistory = isDefault;
   const isSystem = agent?.isSystem === true;
+  // A package-shipped schedule found switched off draws as an ordinary
+  // switched-off task — no card, no reason line (DOR-2059) — but that makes it
+  // LOOK identical to a task the person switched off themselves. The reviewer's
+  // finding: naming the source has to survive on the collapsed row, because the
+  // file path only ever showed in the expanded run-history panel.
+  const isQuietlyParkedFromFile =
+    task.status === 'pending_approval' && task.origin === 'file' && !task.enabled;
 
   const handleRunNow = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -270,6 +277,18 @@ export function TaskRow({
                   {task.reason}
                 </div>
               )}
+            {/* Names the source on the row itself, not only in the expanded
+                panel — otherwise a package-shipped schedule found switched off
+                is indistinguishable from one the person switched off
+                themselves (DOR-2059 review). */}
+            {isQuietlyParkedFromFile && task.filePath && (
+              <div
+                data-slot="task-quiet-source"
+                className="text-muted-foreground text-3xs min-w-0 truncate font-mono"
+              >
+                Installed · {shortenHomePath(task.filePath)}
+              </div>
+            )}
           </div>
 
           {/* Actions — vary by size */}

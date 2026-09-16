@@ -5,4 +5,4 @@ covers:
 
 ### Fixed
 
-- Installing a package no longer asks you to approve a schedule it shipped switched off. A schedule like that now shows up on the Schedules page already off, with nothing to click — switch it on yourself and DorkOS runs it through the same approval it always has. A schedule a package ships switched on still asks first, the way it always has
+- Installing a package no longer asks you to approve a schedule it shipped switched off. A schedule like that now shows up on the Schedules page already off, with its source named so you can tell it came from the package — switch it on yourself and DorkOS runs it through the same approval it always has. A schedule a package ships switched on still asks first, the way it always has
