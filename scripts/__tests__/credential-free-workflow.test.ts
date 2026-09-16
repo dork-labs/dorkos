@@ -131,4 +131,99 @@ describe('credential-free-build workflow', () => {
         `leaves the author's own PR with no credential-free boot signal at all.`
     ).toBe(false);
   });
+
+  // A queue run that can be cancelled by a newer one is the stall this whole
+  // workflow's header argues against, wearing a different hat: the context
+  // never arrives, so the queue waits out `check_response_timeout_minutes`
+  // instead of going red. Today two queue runs cannot share the group at all
+  // (the `gh-readonly-queue/main/pr-<n>-<sha>` ref is unique per batch), but
+  // that is a property of GitHub's ref naming, not of this file, and the line
+  // that makes it safe HERE is the event-conditional `cancel-in-progress`.
+  // Flatten that to a bare `true` — the obvious "simplification" — and every
+  // one of those properties goes at once, silently, on a workflow that still
+  // passes.
+  it('never cancels a merge-group run in progress', () => {
+    const block = workflow.match(/^concurrency:\n((?:[ \t]+.*\n)+)/m)?.[1] ?? '';
+    expect(
+      block,
+      `${WORKFLOW_REL} has no parseable \`concurrency:\` block — this guard cannot check it.`
+    ).not.toBe('');
+    const cancel = block.match(/^\s+cancel-in-progress:\s*(.+)$/m)?.[1]?.trim() ?? '';
+    expect(
+      cancel.replace(/\s+/g, ' '),
+      `${WORKFLOW_REL} set \`cancel-in-progress: ${cancel}\`. It must stay conditional on the ` +
+        `event: a cancelled merge-group run never reports \`credential-free-build\` inside the ` +
+        `queue, and an unreported check is a stall rather than a red.`
+    ).toBe("${{ github.event_name == 'pull_request' }}");
+  });
+
+  // The cache is the only reason this job finishes at all — before it, every
+  // run logged `Cached: 0 cached` and was torn down mid-build. Two ways to
+  // break it leave a green workflow: drop the save (nothing is ever written,
+  // every run is cold, and the only symptom is slowness) or loosen the
+  // restore-keys past the lockfile hash (entries from before a dependency bump
+  // start being downloaded into a tree whose dependencies have moved).
+  it('caches turbo locally, keyed so a lockfile change cannot restore a stale entry', () => {
+    const KEY = "turbo-credential-free-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}";
+    for (const action of ['actions/cache/restore@v6', 'actions/cache/save@v6']) {
+      expect(
+        workflow.includes(`uses: ${action}`),
+        `${WORKFLOW_REL} no longer uses \`${action}\`. Without BOTH halves the local turbo ` +
+          `cache is never restored or never written, and this job goes back to rebuilding the ` +
+          `whole affected set on every run — the reason it had never once finished.`
+      ).toBe(true);
+    }
+    const keys = [...workflow.matchAll(/^\s+key:\s*(.+)$/gm)].map((m) => (m[1] as string).trim());
+    expect(
+      keys,
+      `the cache keys in ${WORKFLOW_REL} are ${JSON.stringify(keys)}. Restore and save must use ` +
+        `the SAME key, and it must carry the runner OS, the lockfile hash and \`github.sha\` — ` +
+        `the SHA is what keeps the primary key from ever hitting, so the save always writes.`
+    ).toEqual([`${KEY}-\${{ github.sha }}`, `${KEY}-\${{ github.sha }}`]);
+    // `\1[ \t]+` rather than `\s+`: the fallback lines are indented deeper
+    // than `restore-keys:` itself, and a bare `\s+` would swallow the blank
+    // line and the comment block that follow the step.
+    const restoreKeys =
+      workflow.match(/^([ \t]+)restore-keys:[ \t]*\|\n((?:\1[ \t]+\S.*\n)+)/m)?.[2] ?? '';
+    expect(
+      restoreKeys
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean),
+      `the \`restore-keys\` in ${WORKFLOW_REL} are ${JSON.stringify(restoreKeys)}. Exactly one ` +
+        `fallback, and it must stop at the lockfile hash: a looser prefix restores entries ` +
+        `built against different dependencies.`
+    ).toEqual([`${KEY}-`]);
+    // The save's `if:` has to survive a cancel and has to stay off the queue
+    // leg. A bare `actions/cache/save` skips on cancellation, and every
+    // failing run of this job so far ended in one, so a save without
+    // `always()` would leave the cache permanently empty while the workflow
+    // stayed green. A save that DOES run on `merge_group` writes ~180 MB into
+    // the `gh-readonly-queue/...` scope the queue deletes on merge — an entry
+    // nothing can ever restore, evicting entries other workflows do read.
+    //
+    // `[ \t]+(?!- )` rather than `\s+`: `\s` matches newlines and every line
+    // in the steps region is indented, so a lazy `(?:\s+.*\n)*?` has no
+    // barrier — it starts at the FIRST step header in the job and swallows
+    // everything down to the save, which made an earlier version of this
+    // assertion pass with `if: always()` sitting on an unrelated step. The
+    // negative lookahead stops the block at the next step's `- `.
+    const saveStep =
+      workflow.match(
+        /^[ \t]+- name:[^\n]*\n(?:[ \t]+(?!- )[^\n]*\n)*?[ \t]+uses: actions\/cache\/save@v6\n/m
+      )?.[0] ?? '';
+    expect(
+      saveStep,
+      `${WORKFLOW_REL} has no single step that both names itself and uses actions/cache/save@v6 ` +
+        `— this guard cannot check the save's conditions.`
+    ).not.toBe('');
+    expect(
+      saveStep.match(/^[ \t]+if: (.+)$/m)?.[1]?.trim(),
+      `the cache-save step in ${WORKFLOW_REL} does not carry the expected \`if:\`. It must be ` +
+        `\`always()\` (every failing run of this job so far ended in a cancel, and a save that ` +
+        `skips on cancel never writes anything) AND restricted to \`pull_request\` (a merge-group ` +
+        `save writes into a scope the queue deletes on merge, so it is unreadable waste against ` +
+        `the repo's 10GB cache budget).`
+    ).toBe("always() && github.event_name == 'pull_request'");
+  });
 });
