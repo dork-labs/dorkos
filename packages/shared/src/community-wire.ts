@@ -38,6 +38,7 @@ export const COMMUNITY_API_V1_ROUTES = {
   inviteRedeem: '/api/v1/invites/redeem',
   pairingStart: '/api/v1/pairings/start',
   pairingApprove: '/api/v1/pairings/approve',
+  pairingDecline: '/api/v1/pairings/decline',
   pairingPoll: '/api/v1/pairings/poll',
   pairingCancel: '/api/v1/pairings/cancel',
   pairingExchange: '/api/v1/pairings/exchange',
@@ -305,6 +306,12 @@ export const CommunityWirePairingApproveRequestSchema = z.strictObject({ pairing
 /** Human approval receipt without a verifier, code or bearer. */
 export const CommunityWirePairingApproveResponseSchema = z.strictObject({
   approved: z.literal(true),
+});
+/** An authenticated member may decline an approval request in the browser. */
+export const CommunityWirePairingDeclineRequestSchema = z.strictObject({ pairingId: id });
+/** Browser decline receipt; no verifier or one-time code is exposed. */
+export const CommunityWirePairingDeclineResponseSchema = z.strictObject({
+  cancelled: z.literal(true),
 });
 /** The requesting local server must prove its verifier to poll a pairing. */
 export const CommunityWirePairingPollRequestSchema = z.strictObject({
