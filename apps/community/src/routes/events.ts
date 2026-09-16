@@ -10,7 +10,7 @@ import {
 import type { CommunityAuth } from '../auth.js';
 import type { CommunityConfig } from '../config.js';
 import { decodeCursor, encodeCursor } from '../cursor.js';
-import { requireMember } from '../data.js';
+import { lockChannel, requireJoined, requireMember, transaction } from '../data.js';
 import { ApiError, json, readJson } from '../http.js';
 import { entryProjection } from './entries.js';
 
@@ -85,21 +85,28 @@ export function registerEventRoutes(
   app.put('/api/v1/channels/:id/read-cursor', async (c) => {
     const member = await requireMember(c, auth, pool);
     const body = await readJson(c, CommunityWireReadCursorRequestSchema);
-    const channel = await liveChannel(pool, c.req.param('id'), member.id);
-    const seq = decodeCursor(
-      body.cursor,
-      { channelId: channel.id, thread: null, epoch: channel.epoch },
-      config
-    );
-    if (seq > Number(channel.last_seq))
-      throw new ApiError(409, 'STATE_CONFLICT', 'The cursor is ahead of channel history.');
-    const result = await pool.query<{ seq: string }>(
-      `INSERT INTO read_cursors(channel_id,member_id,seq) VALUES($1,$2,$3)
-       ON CONFLICT(channel_id,member_id) DO UPDATE SET seq=GREATEST(read_cursors.seq,EXCLUDED.seq),updated_at=now()
-       RETURNING seq`,
-      [channel.id, member.id, seq]
-    );
-    const current = Number(result.rows[0].seq);
+    const { channel, current } = await transaction(pool, async (client) => {
+      const channel = await lockChannel(client, c.req.param('id'), member);
+      requireJoined(channel);
+      const active = await client.query('SELECT 1 FROM members WHERE id=$1 AND active FOR SHARE', [
+        member.id,
+      ]);
+      if (!active.rowCount) throw new ApiError(403, 'FORBIDDEN', 'Your membership has ended.');
+      const seq = decodeCursor(
+        body.cursor,
+        { channelId: channel.id, thread: null, epoch: channel.epoch },
+        config
+      );
+      if (seq > Number(channel.last_seq))
+        throw new ApiError(409, 'STATE_CONFLICT', 'The cursor is ahead of channel history.');
+      const result = await client.query<{ seq: string }>(
+        `INSERT INTO read_cursors(channel_id,member_id,seq) VALUES($1,$2,$3)
+         ON CONFLICT(channel_id,member_id) DO UPDATE SET seq=GREATEST(read_cursors.seq,EXCLUDED.seq),updated_at=now()
+         RETURNING seq`,
+        [channel.id, member.id, seq]
+      );
+      return { channel, current: Number(result.rows[0].seq) };
+    });
     return json(c, CommunityWireReadCursorResponseSchema, {
       cursor: current
         ? encodeCursor(

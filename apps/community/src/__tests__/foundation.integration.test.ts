@@ -6,6 +6,7 @@ import { migrate } from '../migrate.js';
 import { createCommunityApp } from '../app.js';
 import { parseConfig } from '../config.js';
 import { encodeCursor } from '../cursor.js';
+import { CommunityWireCommunitySchema } from '@dorkos/shared/community-wire';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
 if (!adminUrl)
@@ -106,6 +107,7 @@ afterAll(async () => {
 describe('owner foundation over real HTTP and Postgres', () => {
   it('rejects sessionless access and permits exactly one owner claim', async () => {
     expect((await request('/api/v1/channels')).status).toBe(401);
+    expect((await request('/api/v1/community')).status).toBe(404);
     const oversized = await post('/api/v1/bootstrap/preflight', { secret: 'x'.repeat(100_000) });
     expect(oversized.status).toBe(413);
     const chunkedBody = new ReadableStream<Uint8Array>({
@@ -179,6 +181,11 @@ describe('owner foundation over real HTTP and Postgres', () => {
       403
     );
     ownerMemberId = (await pool.query("SELECT id FROM members WHERE role='owner'")).rows[0].id;
+    const publicCommunity = await request('/api/v1/community');
+    expect(publicCommunity.status).toBe(200);
+    const publicBody = await publicCommunity.json();
+    expect(CommunityWireCommunitySchema.parse(publicBody)).toEqual(publicBody);
+    expect(Object.keys(publicBody).sort()).toEqual(['createdAt', 'description', 'id', 'name']);
 
     const foreignOrigin = await request('/api/v1/channels', {
       method: 'POST',
@@ -455,6 +462,55 @@ describe('owner foundation over real HTTP and Postgres', () => {
       (await request(`/api/v1/channels/${privateId}/entries`, { headers: { cookie: bobCookie } }))
         .status
     ).toBe(404);
+    expect(
+      (
+        await request(`/api/v1/members/${bobMemberId}/role`, {
+          method: 'PATCH',
+          headers: { cookie: ownerCookie, 'content-type': 'application/json' },
+          body: JSON.stringify({ role: 'admin' }),
+        })
+      ).status
+    ).toBe(200);
+    const hiddenList = await request('/api/v1/channels', { headers: { cookie: bobCookie } });
+    expect(
+      (await hiddenList.json()).channels.some((channel: { id: string }) => channel.id === privateId)
+    ).toBe(false);
+    expect(
+      (await request(`/api/v1/channels/${privateId}`, { headers: { cookie: bobCookie } })).status
+    ).toBe(404);
+    expect(
+      (await post(`/api/v1/channels/${privateId}/members`, { memberId: bobMemberId }, ownerCookie))
+        .status
+    ).toBe(200);
+    const visibleList = await request('/api/v1/channels', { headers: { cookie: bobCookie } });
+    expect(
+      (await visibleList.json()).channels.some(
+        (channel: { id: string }) => channel.id === privateId
+      )
+    ).toBe(true);
+    expect(
+      (await request(`/api/v1/channels/${privateId}`, { headers: { cookie: bobCookie } })).status
+    ).toBe(200);
+    expect(
+      (
+        await request(`/api/v1/channels/${privateId}/members/${bobMemberId}`, {
+          method: 'DELETE',
+          headers: { cookie: ownerCookie },
+        })
+      ).status
+    ).toBe(200);
+    expect(
+      (await request(`/api/v1/channels/${privateId}`, { headers: { cookie: bobCookie } })).status
+    ).toBe(404);
+    expect(
+      (
+        await request(`/api/v1/members/${bobMemberId}/role`, {
+          method: 'PATCH',
+          headers: { cookie: ownerCookie, 'content-type': 'application/json' },
+          body: JSON.stringify({ role: 'member' }),
+        })
+      ).status
+    ).toBe(200);
     const removed = await request(`/api/v1/channels/${channelId}/members/${bobMemberId}`, {
       method: 'DELETE',
       headers: { cookie: ownerCookie },
@@ -483,6 +539,52 @@ describe('owner foundation over real HTTP and Postgres', () => {
         )
       ).status
     ).toBe(409);
+  });
+
+  it('refuses a read cursor when membership is revoked before its channel lock', async () => {
+    const created = await post('/api/v1/channels', { name: 'Cursor race' }, ownerCookie);
+    const id = (await created.json()).channel.id;
+    expect(
+      (await post(`/api/v1/channels/${id}/members`, { memberId: bobMemberId }, ownerCookie)).status
+    ).toBe(200);
+    const entry = await post(
+      `/api/v1/channels/${id}/entries`,
+      { text: 'cursor race', idempotencyKey: 'cursor-race' },
+      ownerCookie
+    );
+    const cursor = (await entry.json()).entry.cursor;
+    const setCursor = () =>
+      request(`/api/v1/channels/${id}/read-cursor`, {
+        method: 'PUT',
+        headers: { cookie: bobCookie, 'content-type': 'application/json' },
+        body: JSON.stringify({ cursor }),
+      });
+    expect((await setCursor()).status).toBe(200);
+    const blocker = await pool.connect();
+    try {
+      await blocker.query('BEGIN');
+      await blocker.query('SELECT id FROM channels WHERE id=$1 FOR UPDATE', [id]);
+      await blocker.query('DELETE FROM channel_members WHERE channel_id=$1 AND member_id=$2', [
+        id,
+        bobMemberId,
+      ]);
+      const pending = setCursor();
+      let settled = false;
+      void pending.then(() => {
+        settled = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(settled).toBe(false);
+      await blocker.query('COMMIT');
+      expect((await pending).status).toBe(403);
+    } finally {
+      await blocker.query('ROLLBACK').catch(() => undefined);
+      blocker.release();
+    }
+    expect(
+      (await request(`/api/v1/channels/${id}/read-cursor`, { headers: { cookie: bobCookie } }))
+        .status
+    ).toBe(404);
   });
 
   it('serializes the author quota across different channel locks', async () => {

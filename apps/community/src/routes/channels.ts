@@ -49,7 +49,7 @@ async function channelProjection(pool: Pool, id: string, member: Member) {
     [id, member.id, member.community_id]
   );
   const row = result.rows[0];
-  if (!row || (row.visibility === 'private' && !row.joined && member.role === 'member')) {
+  if (!row || (row.visibility === 'private' && !row.joined)) {
     throw new ApiError(404, 'NOT_FOUND', 'Channel not found.');
   }
   return project(row);
@@ -69,9 +69,9 @@ export function registerChannelRoutes(
        FROM channels c
        LEFT JOIN channel_members cm ON cm.channel_id=c.id AND cm.member_id=$1
        LEFT JOIN read_cursors rc ON rc.channel_id=c.id AND rc.member_id=$1
-       WHERE c.community_id=$2 AND (c.visibility='public' OR cm.member_id IS NOT NULL OR $3 <> 'member')
+       WHERE c.community_id=$2 AND (c.visibility='public' OR cm.member_id IS NOT NULL)
        ORDER BY c.created_at,c.id`,
-      [member.id, member.community_id, member.role]
+      [member.id, member.community_id]
     );
     return json(c, CommunityWireChannelListResponseSchema, { channels: result.rows.map(project) });
   });

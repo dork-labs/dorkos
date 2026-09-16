@@ -67,17 +67,19 @@ export async function lockChannel(client: PoolClient, channelId: string, member:
     last_seq: string;
     epoch: number;
     created_at: Date;
-    joined: boolean;
-  }>(
-    `SELECT c.*, EXISTS(SELECT 1 FROM channel_members cm WHERE cm.channel_id=c.id AND cm.member_id=$2) AS joined
-     FROM channels c WHERE c.id=$1 AND c.community_id=$3 FOR UPDATE OF c`,
-    [channelId, member.id, member.community_id]
+  }>(`SELECT c.* FROM channels c WHERE c.id=$1 AND c.community_id=$2 FOR UPDATE OF c`, [
+    channelId,
+    member.community_id,
+  ]);
+  const row = result.rows[0];
+  if (!row) throw new ApiError(404, 'NOT_FOUND', 'Channel not found.');
+  // Membership must be read in a new statement after any competing channel lock commits.
+  const membership = await client.query(
+    'SELECT 1 FROM channel_members WHERE channel_id=$1 AND member_id=$2',
+    [row.id, member.id]
   );
-  const channel = result.rows[0];
-  if (
-    !channel ||
-    (channel.visibility === 'private' && !channel.joined && member.role === 'member')
-  ) {
+  const channel = { ...row, joined: Boolean(membership.rowCount) };
+  if (!channel || (channel.visibility === 'private' && !channel.joined)) {
     throw new ApiError(404, 'NOT_FOUND', 'Channel not found.');
   }
   return channel;

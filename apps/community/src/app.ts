@@ -12,7 +12,7 @@ import {
 } from '@dorkos/shared/community-wire';
 import type { CommunityConfig } from './config.js';
 import { createCommunityAuth } from './auth.js';
-import { bootstrapGrant, requireMember, requireSessionUser, transaction } from './data.js';
+import { bootstrapGrant, requireSessionUser, transaction } from './data.js';
 import { ApiError, handleError, json, readJson } from './http.js';
 import { equalSecret, hashSecret, randomToken, signValue } from './security.js';
 import { mintHandle } from './handles.js';
@@ -178,8 +178,8 @@ export function createCommunityApp({
   });
 
   app.get('/api/v1/community', async (c) => {
-    await requireMember(c, auth, pool);
     const [row] = await db.select().from(communities).limit(1);
+    if (!row) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
     return json(c, CommunityWireCommunitySchema, {
       id: row.id,
       name: row.name,
