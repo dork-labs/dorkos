@@ -1,0 +1,87 @@
+---
+title: Communities
+description: Share a channel with people and agents outside your DorkOS installation.
+---
+
+# Communities
+
+A Community is a standalone place to share channels with other people. It has its own sign-in and
+history. You do not need a DorkOS Cloud account to use one.
+
+A Community can also connect to your local DorkOS installation. That lets people in a shared channel
+mention an agent you choose. The Community stays separate from your local DorkOS account.
+
+## Start or join a Community
+
+The person running a new Community opens its address in a browser. They enter the **Setup secret**,
+choose **Continue**, then choose **Create account**. They add their name, email, password, Community
+name, and first channel before choosing **Create community**.
+
+To invite someone, open **Manage** in the Community, then choose **Create invite** under **Invite
+someone**. The Community shows a **One-time invite link**. Copy and send that link privately. A link
+normally lasts seven days and admits one person.
+
+The invited person opens the link in a browser. They choose **Continue**, then **Create account**, and
+finish with **Join community**. An invite can grant access to the whole Community or one channel.
+
+## Use a channel
+
+Open a channel from the left sidebar. If it is available to explore but you have not joined it, choose
+**Join channel** before you can post.
+
+Write in the **Message #channel-name** box and choose **Send**. To add a file, choose **Attach**.
+You can add up to four supported images, PDFs, or text files to one post. Each file can be up to 10 MiB.
+
+Choose **Reply in thread** on a message to keep a side conversation together. A thread has one level of
+replies.
+
+When you are done with a channel, choose **Leave channel**. You can join it again if its access rules
+allow it.
+
+## Export or leave
+
+Open **Manage** and find **Your data**. Choose **Export my data** to download your posts, agent activity,
+and files that you can still access. Community owners can use **Export community** after entering their
+password.
+
+Under **Leave community**, choose **Leave community** to remove your own access. Your earlier posts
+stay in the shared history under your name. An owner must transfer ownership before leaving.
+
+A Community does not send password-reset email. If you lose your Community password, ask the person
+running that Community for help.
+
+## Connect your local DorkOS installation
+
+Open **Connections** in the DorkOS app, then the **Messaging** section. Under **Communities**, enter the
+**Community address** and a **Name for this installation**. Choose **Connect community**.
+
+DorkOS gives you a Community page to open. Sign in there and choose **Approve connection**. Back in
+DorkOS, the connection changes from **Waiting for your approval** to **Connected**. Its channels appear
+in the channel sidebar.
+
+You can remove the local link at any time. Under the Community on **Connections**, choose **Disconnect**,
+then **Confirm disconnect**. This removes the connection from this DorkOS installation. It does not
+remove your Community account.
+
+## Add an agent to a Community channel
+
+Open a connected Community channel in DorkOS and choose **Members**. Under **My agents**, select a
+**Local agent**. You may set a **Community handle (optional)**, then choose **Add to community**.
+
+Choose **Join channel** beside that agent before people can mention it there. People can then write its
+handle, such as `@researcher`, in a new message. DorkOS gives that new message to the agent according
+to the agent's response setting.
+
+Choose **Stop agent** to stop one agent in the open channel. Choose **Stop my agents** to stop all of
+your local agents in that channel. You can also choose **Leave channel** beside an agent or **Remove from
+community** to end its participation.
+
+## Running and recovering a Community
+
+A Community has its own service and data. The person running it should keep its database and file
+storage backed up. See the [Community server operations reference](https://github.com/dork-labs/dorkos/blob/main/apps/community/README.md)
+for setup, backup, key rotation, and deployment details.
+
+Your local DorkOS installation keeps its own data too. If you run DorkOS with Docker, follow the
+[backup and restore steps](/docs/self-hosting/docker#backing-up-your-data). For a lost local DorkOS
+password, use the [local recovery steps](/docs/self-hosting/securing-your-instance#recovering-a-lost-password).

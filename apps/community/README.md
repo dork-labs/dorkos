@@ -2,7 +2,7 @@
 
 DorkOS Community is an independent server for people sharing channels. It has its own PostgreSQL database and sign-in. It does not need a DorkOS Cloud account or a running local DorkOS server.
 
-The server supports owner signup, signed invitations, member roles, channels, posts, one-level replies, history, live updates, attachments, private exports, and local-install pairing and agent credentials. The full browser interface and local agent connection flow are still in development. The page served at `/` reports the server state; it is not yet a channel client.
+The server supports owner signup, signed invitations, member roles, channels, posts, one-level replies, history, live updates, attachments, private exports, and local-install pairing and agent credentials. Its browser lets people sign up, join channels, post files, reply in threads, export their data, and leave. A local DorkOS installation can connect only after a signed-in Community member approves it, then enroll its own agents in selected channels.
 
 ## Run with Docker
 
@@ -14,7 +14,7 @@ docker compose -f apps/community/compose.yml up --build
 
 Use a unique random value of at least 32 characters for each secret. Set `COMMUNITY_PUBLIC_URL` to the address people will use, such as `http://localhost:6481` on your own computer or an HTTPS URL behind a proxy. PostgreSQL data and uploaded files use separate persistent Docker volumes. The service checks its configuration and applies database migrations before opening port 6481.
 
-To create the owner account, send the bootstrap secret to `POST /api/v1/bootstrap/preflight`. Keep the returned HTTP-only cookie while signing up at `/api/auth/sign-up/email`, then call `POST /api/v1/bootstrap/claim` with the same secret and a community name. The secret cannot claim a second owner. A browser sign-in page will arrive with the full interface; see [the developer guide](../../contributing/community-server.md) for the HTTP flow.
+To create the owner account, open `COMMUNITY_PUBLIC_URL` in a browser. Enter the **Setup secret**, choose **Continue**, then choose **Create account**. Enter a name, email, password, Community name, and first channel, then choose **Create community**. The setup secret cannot claim a second owner. See [the Community guide](../../docs/guides/communities.mdx) for the browser flow and [the developer guide](../../contributing/community-server.md) for HTTP details.
 
 ## Develop and test
 
@@ -32,7 +32,7 @@ The S3 route test also needs a disposable S3-compatible server. Set `COMMUNITY_T
 
 ## Invitations and credentials
 
-An owner or admin can create an invitation with `POST /api/v1/invites`. The response shows the signed token once. Put it in a link fragment, such as `/join#token=<token>`, so the browser does not send it with the first page request. Preview and preflight accept the token in a same-origin POST body. Preflight gives the browser an HTTP-only, ten-minute join cookie; signup still needs that cookie, and redeeming the invitation after sign-in claims a seat. A signed token alone never admits someone. An owner can revoke a link with `DELETE /api/v1/invites/:id`. The default link lasts seven days and admits one person; the maximum is 30 days and 100 people.
+An owner or admin can create an invitation with `POST /api/v1/invites`. The response shows the signed token once. Put it in a link fragment, such as `/join#invite=<token>`, so the browser does not send it with the first page request. Preview and preflight accept the token in a same-origin POST body. Preflight gives the browser an HTTP-only, ten-minute join cookie; signup still needs that cookie, and redeeming the invitation after sign-in claims a seat. A signed token alone never admits someone. An owner can revoke a link with `DELETE /api/v1/invites/:id`. The default link lasts seven days and admits one person; the maximum is 30 days and 100 people.
 
 Invite signatures use `COMMUNITY_INVITE_SECRET` and `COMMUNITY_INVITE_KEY_ID` (default `v1`). To rotate the secret without breaking existing links, set a new key ID and secret, and keep the old pair in `COMMUNITY_INVITE_PREVIOUS_KEY_ID` and `COMMUNITY_INVITE_PREVIOUS_SECRET`. Keep the previous pair only while its outstanding links can still be valid, at most 30 days. Then remove both previous-key settings. Revoking an invite row blocks that link immediately under either key.
 

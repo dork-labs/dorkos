@@ -25,6 +25,7 @@
     "agent-coordination",
     "relay-messaging",
     "bridged-channels",
+    "communities",
     "relay-observability",
     "task-scheduler",
     "a2a-integration",
