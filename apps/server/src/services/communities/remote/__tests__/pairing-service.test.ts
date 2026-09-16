@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { RemoteConnectionStore, RemoteConnectionNotFoundError } from '../connection-store.js';
 import { EncryptedFileCredentialStore } from '../../../core/credential-provider.js';
 import { RemoteCommunityPairingService, RemotePairingBusyError } from '../pairing-service.js';
+import { RemoteCommunityAdapter } from '../remote-community-adapter.js';
 import {
   checkedAddress,
   parseCommunityOrigin,
@@ -27,6 +28,7 @@ let pollCount = 0;
 let waitForPoll: (() => Promise<void>) | undefined;
 let waitForExchange: (() => Promise<void>) | undefined;
 const token = 'private-pairing-bearer-should-never-appear-in-dto';
+const remoteAgentId = randomUUID();
 const requests: Array<{ path: string; body: Record<string, string> }> = [];
 
 beforeAll(async () => {
@@ -84,6 +86,57 @@ beforeAll(async () => {
       cancelled = true;
       res.statusCode = 204;
       res.end();
+    } else if (req.url === '/api/v1/channels') {
+      send({
+        channels: [
+          {
+            id: 'general',
+            name: 'General',
+            description: null,
+            visibility: 'public',
+            archived: false,
+            createdAt: new Date().toISOString(),
+            joined: true,
+            unreadCount: 0,
+          },
+        ],
+      });
+    } else if (req.url === '/api/v1/channels/general/entries') {
+      send({
+        entries: [
+          {
+            id: 'entry-1',
+            channelId: 'general',
+            seq: 1,
+            authorMemberId: 'human-id',
+            authorDisplayName: 'Human',
+            text: 'hello',
+            mentions: [],
+            parentEntryId: null,
+            threadRootEntryId: null,
+            createdAt: new Date().toISOString(),
+            cursor: 'resume-1',
+            attachments: [],
+          },
+        ],
+        nextCursor: null,
+      });
+    } else if (req.url === '/api/v1/channels/general/read-cursor') {
+      send({ cursor: 'resume-1', unreadCount: 0 });
+    } else if (req.url === '/api/v1/agents') {
+      send(
+        {
+          token: 'private-agent-token',
+          agent: {
+            memberId: remoteAgentId,
+            displayName: 'Test Agent',
+            handle: 'test-agent',
+            ownerMemberId: 'human-id',
+            active: true,
+          },
+        },
+        201
+      );
     } else send({}, 404);
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -107,6 +160,32 @@ afterAll(async () => {
 });
 
 describe('private remote pairing with real HTTP and encrypted local storage', () => {
+  it('uses the private store for a live HTTP adapter and rejects an unowned agent before a request', async () => {
+    approved = true;
+    const store = new RemoteConnectionStore(directory);
+    const service = new RemoteCommunityPairingService(store);
+    const started = await service.start('adapter-owner', origin, 'Adapter test');
+    expect((await service.poll(started.connection.ref, 'adapter-owner')).status).toBe('connected');
+    const adapter = new RemoteCommunityAdapter(started.connection.ref, 'adapter-owner', store);
+    expect((await adapter.connect()).status).toBe('connected');
+    expect((await adapter.listRooms()).map((item) => item.roomId)).toEqual(['general']);
+    expect((await adapter.listEntries('general')).entries).toHaveLength(1);
+    expect(await adapter.getReadCursor('general')).toBe('resume-1');
+    await adapter.setReadCursor('general', 'resume-1' as never);
+    const agent = await adapter.admitAgent({ agentId: randomUUID(), displayName: 'Test Agent' });
+    expect(agent.memberId).toBe(remoteAgentId);
+    await expect(adapter.listRooms({ actingMemberId: randomUUID() })).rejects.toBeInstanceOf(
+      RemoteConnectionNotFoundError
+    );
+    const metadata = await readFile(
+      join(directory, 'communities', 'remote', 'connections.json'),
+      'utf8'
+    );
+    expect(metadata).not.toContain('private-agent-token');
+    await service.disconnect(started.connection.ref, 'adapter-owner');
+    approved = false;
+    pollCount = 0;
+  });
   it('rejects private targets and refuses a cross-host redirect without following it', async () => {
     expect((await checkedAddress(parseCommunityOrigin('http://localhost:6491'))).address).toBe(
       '127.0.0.1'

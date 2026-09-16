@@ -341,7 +341,12 @@ describe('owner foundation over real HTTP and Postgres', () => {
       body: JSON.stringify({ cursor: firstCursor }),
     });
     expect((await again.json()).cursor).toBe(current.cursor);
-    const future = encodeCursor({ channelId, thread: null, epoch: 1, seq: 999_999 }, config);
+    const communityId = (await pool.query<{ id: string }>('SELECT id FROM communities')).rows[0]!
+      .id;
+    const future = encodeCursor(
+      { version: 1, communityId, channelId, thread: null, epoch: 1, seq: 999_999 },
+      config
+    );
     const tooFar = await request(`/api/v1/channels/${channelId}/read-cursor`, {
       method: 'PUT',
       headers: { cookie: ownerCookie, 'content-type': 'application/json' },
@@ -705,8 +710,14 @@ describe('owner foundation over real HTTP and Postgres', () => {
         signal: controller.signal,
       });
       const replayReader = replay.body!.getReader();
-      expect((await nextSse(replayReader)).event).toBe('snapshot');
-      expect((await nextSse(replayReader)).data.entry.id).toBe(receipt.entry.id);
+      const replaySnapshot = await nextSse(replayReader);
+      expect(replaySnapshot.event).toBe('snapshot');
+      const replayed = replaySnapshot.data.entries.some(
+        (entry: { id: string }) => entry.id === receipt.entry.id
+      )
+        ? receipt.entry.id
+        : (await nextSse(replayReader)).data.entry.id;
+      expect(replayed).toBe(receipt.entry.id);
       await replayReader.cancel();
       const removed = await request(`/api/v1/channels/${id}/members/${bobMemberId}`, {
         method: 'DELETE',
@@ -898,10 +909,11 @@ describe('owner foundation over real HTTP and Postgres', () => {
     expect(response.status).toBe(200);
     const reader = response.body!.getReader();
     try {
-      expect((await nextSse(reader)).event).toBe('snapshot');
+      const snapshot = await nextSse(reader);
+      expect(snapshot.event).toBe('snapshot');
       await new Promise((resolve) => setTimeout(resolve, 700));
-      const seen: number[] = [];
-      for (let index = 0; index < 269; index += 1) {
+      const seen = snapshot.data.entries.map((entry: { seq: number }) => entry.seq);
+      for (let index = seen.length; index < 269; index += 1) {
         const event = await nextSse(reader);
         expect(event.event).toBe('entry');
         seen.push(event.data.entry.seq);
@@ -911,7 +923,12 @@ describe('owner foundation over real HTTP and Postgres', () => {
       controller.abort();
       await reader.cancel().catch(() => undefined);
     }
-    const future = encodeCursor({ channelId: id, thread: null, epoch: 1, seq: 9999 }, config);
+    const communityId = (await pool.query<{ id: string }>('SELECT id FROM communities')).rows[0]!
+      .id;
+    const future = encodeCursor(
+      { version: 1, communityId, channelId: id, thread: null, epoch: 1, seq: 9999 },
+      config
+    );
     expect(
       (
         await request(`/api/v1/channels/${id}/events`, {

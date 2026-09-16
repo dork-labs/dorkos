@@ -32,6 +32,7 @@
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
+    "@dorkos/test-utils": "workspace:*",
     "@playwright/test": "1.62.1",
     "@types/node": "^24",
     "@types/pg": "^8.15.5",

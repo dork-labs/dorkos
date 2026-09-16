@@ -362,15 +362,16 @@ export class BuzzCommunityAdapter implements CommunityAdapter {
   /**
    * The durable stream for one channel: snapshot → gap-free replay → live.
    *
-   * **Both refusals are synchronous**, as the port requires, which is why this is
-   * a plain method returning a stream and not an `async function*`. The room is
-   * checked BEFORE the cursor, and that order is contractual: an adapter that
+   * **Both refusals are synchronous in this adapter.** Its cache can validate
+   * them without I/O, while an HTTP adapter may defer an authoritative refusal
+   * to its first pull. The room is checked BEFORE the cursor, and that order is
+   * contractual: an adapter that
    * validated the cursor first would answer a different typed error for a room
    * that does not exist than for one that exists and is hidden, which is the
    * probe the identical message closes, re-opened one line earlier.
    *
-   * **The room check reads the cache, and it has to.** An eager throw cannot
-   * await a relay round trip. The cache is a poll behind, so a channel created
+   * **The room check reads the cache, and it has to for this synchronous path.**
+   * It cannot await a relay round trip. The cache is a poll behind, so a channel created
    * seconds ago is briefly refused — the honest cost of `roomList: 'poll'`, and
    * recoverable by any caller that lists first. The reverse case is not a hole:
    * a room that has gone away since the poll is refused by the relay itself, and

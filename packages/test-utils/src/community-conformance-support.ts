@@ -105,6 +105,14 @@ export interface CommunityConformanceOpts {
   /** Optional: an adapter whose credential is valid but which has not been admitted. */
   makeUnadmittedAdapter?: () => CommunityAdapter;
 
+  /**
+   * Exact protocol-model reason a valid-but-unadmitted credential cannot exist.
+   *
+   * Supplying this records a deliberate model exclusion beside the named
+   * conformance skip instead of making a fixture omission look accidental.
+   */
+  unadmittedUnavailableReason?: string;
+
   /** Optional: an adapter whose credential is wrong, expired, rejected or banned. */
   makeUnauthorizedAdapter?: () => CommunityAdapter;
 

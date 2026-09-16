@@ -303,9 +303,34 @@ describe('signed admission over real HTTP and Postgres', () => {
     const listed = await call('/api/v1/me/grants', 'GET', undefined, ownerCookie);
     expect(listed.status).toBe(200);
     expect(JSON.stringify(await listed.json())).not.toContain(token);
-    expect(
-      (await call(`/api/v1/me/grants/${grant.id}`, 'DELETE', undefined, ownerCookie)).status
-    ).toBe(204);
+    const stream = await bearerCall(`/api/v1/channels/${channelId}/events`, 'GET', token);
+    expect(stream.status).toBe(200);
+    const reader = stream.body!.getReader();
+    try {
+      expect((await nextSse(reader)).type).toBe('snapshot');
+      expect(
+        (await call(`/api/v1/me/grants/${grant.id}`, 'DELETE', undefined, ownerCookie)).status
+      ).toBe(204);
+      // Another admitted person commits after revocation. The old connection
+      // must close rather than deliver even this otherwise-visible entry.
+      expect(
+        (
+          await call(
+            `/api/v1/channels/${channelId}/entries`,
+            'POST',
+            {
+              text: 'Never deliver this to the revoked installation',
+              idempotencyKey: 'after-personal-grant-revocation',
+            },
+            admittedCookie
+          )
+        ).status
+      ).toBe(201);
+      expect((await nextSse(reader)).type).toBe('closed');
+      expect((await reader.read()).done).toBe(true);
+    } finally {
+      await reader.cancel().catch(() => undefined);
+    }
     expect(
       (await pool.query('SELECT revoked_at FROM connection_grants WHERE id=$1', [grant.id])).rows[0]
         .revoked_at
@@ -961,5 +986,85 @@ describe('signed admission over real HTTP and Postgres', () => {
       admittedCookie
     );
     expect(history.status).toBe(200);
+  });
+
+  it('limits native personal grants to their scopes, ownership, and live revocation', async () => {
+    const issueGrant = async (cookie: string, scopes: Array<'read' | 'post' | 'enroll-agent'>) => {
+      const verifier = randomBytes(32).toString('base64url');
+      const challenge = createHash('sha256').update(verifier).digest('base64url');
+      const started = await (
+        await localCall('/api/v1/pairings/start', {
+          installName: `Native grant ${randomUUID()}`,
+          challenge,
+          scopes,
+        })
+      ).json();
+      expect(
+        (await call('/api/v1/pairings/approve', 'POST', { pairingId: started.pairingId }, cookie))
+          .status
+      ).toBe(200);
+      const polled = await localCall('/api/v1/pairings/poll', {
+        pairingId: started.pairingId,
+        verifier,
+      });
+      const { code } = await polled.json();
+      return (
+        await localCall('/api/v1/pairings/exchange', {
+          pairingId: started.pairingId,
+          verifier,
+          code,
+        })
+      ).json() as Promise<{ token: string }>;
+    };
+
+    const readOnly = (await issueGrant(admittedCookie, ['read'])).token;
+    expect((await bearerCall(`/api/v1/channels/${channelId}/join`, 'POST', readOnly)).status).toBe(
+      403
+    );
+    expect((await bearerCall('/api/v1/agents', 'POST', readOnly, {})).status).toBe(401);
+
+    const full = (await issueGrant(admittedCookie, ['read', 'post', 'enroll-agent'])).token;
+    const enrolled = await bearerCall('/api/v1/agents', 'POST', full, {
+      localAgentId: `native-${randomUUID()}`,
+      displayName: 'Native grant agent',
+    });
+    expect(enrolled.status).toBe(201);
+    const agentId = (await enrolled.json()).agent.memberId;
+    expect(
+      (await bearerCall(`/api/v1/channels/${channelId}/agents`, 'POST', full, { agentId })).status
+    ).toBe(200);
+
+    const issued = await call('/api/v1/invites', 'POST', { seats: 1 }, admittedCookie);
+    expect(issued.status).toBe(201);
+    const inviteToken = (await issued.json()).token;
+    const preflight = await call('/api/v1/invites/preflight', 'POST', { token: inviteToken });
+    const otherCookie = await signup(
+      'Native other',
+      'native-other@admission.test',
+      cookieOf(preflight)
+    );
+    const redeemed = await call(
+      '/api/v1/invites/redeem',
+      'POST',
+      { token: inviteToken },
+      otherCookie
+    );
+    expect(redeemed.status).toBe(200);
+    const other = { cookie: otherCookie, id: (await redeemed.json()).memberId };
+    const otherGrant = (await issueGrant(other.cookie, ['read', 'post', 'enroll-agent'])).token;
+    expect((await bearerCall(`/api/v1/agents/${agentId}`, 'DELETE', otherGrant)).status).toBe(403);
+
+    const grantId = (
+      await pool.query<{ id: string }>(
+        'SELECT id FROM connection_grants WHERE token_hash=$1 AND revoked_at IS NULL',
+        [createHash('sha256').update(full).digest('hex')]
+      )
+    ).rows[0].id;
+    expect(
+      (await call(`/api/v1/me/grants/${grantId}`, 'DELETE', undefined, admittedCookie)).status
+    ).toBe(204);
+    expect(
+      (await bearerCall(`/api/v1/channels/${channelId}/agents/${agentId}`, 'DELETE', full)).status
+    ).toBe(401);
   });
 });

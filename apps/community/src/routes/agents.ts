@@ -11,6 +11,7 @@ import { CommunityAgentEnrollmentSecretResponseSchema } from '@dorkos/shared/com
 import type { CommunityAuth } from '../auth.js';
 import type { CommunityConfig } from '../config.js';
 import {
+  assertConnectionGrantCurrent,
   lockChannel,
   requireConnectionGrant,
   requireLiveRole,
@@ -146,9 +147,14 @@ export function registerAgentRoutes(
   });
 
   app.delete('/api/v1/agents/:id', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const grant = c.req.header('authorization')
+      ? await requireConnectionGrant(c, pool, 'enroll-agent')
+      : undefined;
+    const actor = grant?.member ?? (await requireMember(c, auth, pool));
     const id = uuid.parse(c.req.param('id'));
     await transaction(pool, async (client) => {
+      if (grant)
+        await assertConnectionGrantCurrent(client, actor.id, grant.tokenHash, 'enroll-agent');
       const role = await requireLiveRole(client, actor, ['owner', 'admin', 'member']);
       const candidate = await client.query<{ owner_member_id: string; owner_role: Member['role'] }>(
         'SELECT a.owner_member_id,m.role AS owner_role FROM agents a JOIN members m ON m.id=a.owner_member_id WHERE a.id=$1 AND a.community_id=$2 AND a.active AND m.active',
@@ -199,10 +205,15 @@ export function registerAgentRoutes(
   });
 
   app.post('/api/v1/channels/:id/agents', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const grant = c.req.header('authorization')
+      ? await requireConnectionGrant(c, pool, 'enroll-agent')
+      : undefined;
+    const actor = grant?.member ?? (await requireMember(c, auth, pool));
     const { agentId } = await readJson(c, CommunityWireAgentChannelMembershipRequestSchema);
     await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), actor);
+      if (grant)
+        await assertConnectionGrantCurrent(client, actor.id, grant.tokenHash, 'enroll-agent');
       const role = await requireLiveRole(client, actor, ['owner', 'admin', 'member']);
       const agent = await client.query<{ owner_member_id: string }>(
         'SELECT owner_member_id FROM agents WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
@@ -221,10 +232,15 @@ export function registerAgentRoutes(
   });
 
   app.delete('/api/v1/channels/:id/agents/:agentId', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const grant = c.req.header('authorization')
+      ? await requireConnectionGrant(c, pool, 'enroll-agent')
+      : undefined;
+    const actor = grant?.member ?? (await requireMember(c, auth, pool));
     const agentId = uuid.parse(c.req.param('agentId'));
     await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), actor);
+      if (grant)
+        await assertConnectionGrantCurrent(client, actor.id, grant.tokenHash, 'enroll-agent');
       const role = await requireLiveRole(client, actor, ['owner', 'admin', 'member']);
       const agent = await client.query<{ owner_member_id: string }>(
         'SELECT owner_member_id FROM agents WHERE id=$1 AND community_id=$2 AND active FOR SHARE',

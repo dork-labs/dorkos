@@ -41,7 +41,8 @@ export function entryProjection(
   row: EntryRow,
   epoch: number,
   config: CommunityConfig,
-  attachments: CommunityWireEntry['attachments'] = []
+  attachments: CommunityWireEntry['attachments'] = [],
+  communityId: string
 ): CommunityWireEntry {
   return {
     id: row.id,
@@ -55,7 +56,14 @@ export function entryProjection(
     threadRootEntryId: row.thread_root_entry_id,
     createdAt: row.created_at.toISOString(),
     cursor: encodeCursor(
-      { channelId: row.channel_id, thread: null, epoch, seq: Number(row.seq) },
+      {
+        version: 1,
+        communityId,
+        channelId: row.channel_id,
+        thread: null,
+        epoch,
+        seq: Number(row.seq),
+      },
       config
     ),
     attachments,
@@ -90,6 +98,7 @@ export function registerEntryRoutes(
       .update(
         JSON.stringify({
           text: body.text,
+          mentions: body.mentions ?? [],
           parentEntryId: body.parentEntryId ?? null,
           attachmentIds: body.attachmentIds ?? [],
         })
@@ -119,7 +128,8 @@ export function registerEntryRoutes(
             await loadEntry(client, previous.rows[0].id),
             channel.epoch,
             config,
-            attachmentMap.get(previous.rows[0].id)
+            attachmentMap.get(previous.rows[0].id),
+            principal.community_id
           ),
           repeated: true,
         };
@@ -158,7 +168,11 @@ export function registerEntryRoutes(
          WHERE acm.channel_id=$1 AND a.active AND owner.active`,
         [channel.id]
       );
-      const mentions = resolveCommunityMentions(body.text, roster.rows);
+      const resolvedMentions = resolveCommunityMentions(body.text, roster.rows);
+      const mentions = body.mentions ?? resolvedMentions;
+      const joinedIds = new Set(roster.rows.map((member) => member.id));
+      if (mentions.some((memberId) => !joinedIds.has(memberId)))
+        throw new ApiError(404, 'NOT_FOUND', 'Mentioned member not found.');
       const next = await client.query<{ last_seq: string }>(
         'UPDATE channels SET last_seq=last_seq+1 WHERE id=$1 RETURNING last_seq',
         [channel.id]
@@ -192,7 +206,8 @@ export function registerEntryRoutes(
           await loadEntry(client, inserted.rows[0].id),
           channel.epoch,
           config,
-          attachmentMap.get(inserted.rows[0].id)
+          attachmentMap.get(inserted.rows[0].id),
+          principal.community_id
         ),
         repeated: false,
       };
@@ -230,7 +245,12 @@ export function registerEntryRoutes(
       const seq = parsed.cursor
         ? decodeCursor(
             parsed.cursor,
-            { channelId: channel.id, thread: parsed.thread ?? null, epoch: channel.epoch },
+            {
+              communityId: principal.community_id,
+              channelId: channel.id,
+              thread: parsed.thread ?? null,
+              epoch: channel.epoch,
+            },
             config
           )
         : 0;
@@ -256,6 +276,8 @@ export function registerEntryRoutes(
         result.rows.length > limit && rows.length
           ? encodeCursor(
               {
+                version: 1,
+                communityId: principal.community_id,
                 channelId: channel.id,
                 thread: parsed.thread ?? null,
                 epoch: channel.epoch,
@@ -266,7 +288,13 @@ export function registerEntryRoutes(
           : null;
       return {
         entries: rows.map((row) =>
-          entryProjection(row, channel.epoch, config, attachmentMap.get(row.id))
+          entryProjection(
+            row,
+            channel.epoch,
+            config,
+            attachmentMap.get(row.id),
+            principal.community_id
+          )
         ),
         nextCursor,
       };
