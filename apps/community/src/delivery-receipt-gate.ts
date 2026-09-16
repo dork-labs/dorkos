@@ -23,7 +23,8 @@ export class DeliveryReceiptGate {
 
   /** Release the one held receipt. */
   release(): DeliveryReceiptGateState {
-    this.releaseHeld?.();
+    if (this.releaseHeld) this.releaseHeld();
+    else if (this.state.state === 'armed') this.state = { state: 'idle' };
     return this.observation();
   }
 
