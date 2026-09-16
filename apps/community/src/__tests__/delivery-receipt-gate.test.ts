@@ -2,6 +2,23 @@ import { describe, expect, it } from 'vitest';
 import { DeliveryReceiptGate } from '../delivery-receipt-gate.js';
 
 describe('DeliveryReceiptGate', () => {
+  it('refuses matching posts before persistence until the unavailable gate is released', async () => {
+    const gate = new DeliveryReceiptGate();
+    const channelId = 'c8a9058c-1e76-4297-a84f-12b0ce830973';
+    const signal = new AbortController().signal;
+    gate.arm(channelId, 'unavailable');
+    await gate.holdBeforePersist({ channelId: 'another-channel', signal });
+    expect(gate.observation().state).toBe('armed');
+    for (let attempts = 1; attempts <= 2; attempts += 1) {
+      await expect(gate.holdBeforePersist({ channelId, signal })).rejects.toMatchObject({
+        status: 503,
+        code: 'UNAVAILABLE',
+      });
+      expect(gate.observation()).toEqual({ state: 'unavailable', channelId, attempts });
+    }
+    expect(gate.release()).toEqual({ state: 'idle' });
+    await gate.holdBeforePersist({ channelId, signal });
+  });
   it('holds a persisted agent receipt until release and cleans up the one-use gate', async () => {
     const gate = new DeliveryReceiptGate();
     const channelId = 'c8a9058c-1e76-4297-a84f-12b0ce830973';

@@ -1,19 +1,22 @@
-/** The point at which the test runtime pauses an agent post. */
-export type DeliveryReceiptPhase = 'before-persist' | 'after-persist';
+import { ApiError } from './http.js';
+
+/** The test runtime's pause or temporary-refusal mode for an agent post. */
+export type DeliveryReceiptPhase = 'before-persist' | 'after-persist' | 'unavailable';
 
 /** Public observations contain no message content or credentials. */
 export type DeliveryReceiptGateState =
   | { state: 'idle' }
   | { state: 'armed'; channelId: string; phase: DeliveryReceiptPhase }
   | { state: 'held-before-persist'; channelId: string }
+  | { state: 'unavailable'; channelId: string; attempts: number }
   | { state: 'held'; channelId: string; entryId: string };
 
-/** Single-use test-only gate for pending delivery and committed-but-unreceived posts. */
+/** Test-only pauses and temporary refusal for delivery and uncertain receipts. */
 export class DeliveryReceiptGate {
   private state: DeliveryReceiptGateState = { state: 'idle' };
   private releaseHeld: (() => void) | undefined;
 
-  /** Arm one channel's next agent post at an explicit persistence phase. */
+  /** Arm one channel's next pause, or refuse its agent posts until explicitly released. */
   arm(channelId: string, phase: DeliveryReceiptPhase = 'after-persist'): DeliveryReceiptGateState {
     if (this.state.state !== 'idle') throw new Error('A delivery receipt gate is already active.');
     this.state = { state: 'armed', channelId, phase };
@@ -28,7 +31,8 @@ export class DeliveryReceiptGate {
   /** Release the held request, or disarm before a matching request arrives. */
   release(): DeliveryReceiptGateState {
     if (this.releaseHeld) this.releaseHeld();
-    else if (this.state.state === 'armed') this.state = { state: 'idle' };
+    else if (this.state.state === 'armed' || this.state.state === 'unavailable')
+      this.state = { state: 'idle' };
     return this.observation();
   }
 
@@ -41,6 +45,13 @@ export class DeliveryReceiptGate {
 
   /** Pause before opening any transaction; an aborted request must not persist afterward. */
   async holdBeforePersist(input: { channelId: string; signal: AbortSignal }): Promise<void> {
+    if (this.matches(input.channelId, 'unavailable')) {
+      this.state = { state: 'unavailable', channelId: input.channelId, attempts: 0 };
+    }
+    if (this.state.state === 'unavailable' && this.state.channelId === input.channelId) {
+      this.state.attempts += 1;
+      throw new ApiError(503, 'UNAVAILABLE', 'Community delivery is temporarily unavailable.');
+    }
     if (!this.matches(input.channelId, 'before-persist')) return;
     this.state = { state: 'held-before-persist', channelId: input.channelId };
     await this.waitForRelease(input.signal);

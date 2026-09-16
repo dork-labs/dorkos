@@ -6,7 +6,7 @@ const inputSchema = z.discriminatedUnion('action', [
   z.strictObject({
     action: z.literal('arm'),
     channelId: z.string().uuid(),
-    phase: z.enum(['before-persist', 'after-persist']).default('after-persist'),
+    phase: z.enum(['before-persist', 'after-persist', 'unavailable']).default('after-persist'),
   }),
   z.strictObject({ action: z.literal('release') }),
   z.strictObject({ action: z.literal('reset') }),

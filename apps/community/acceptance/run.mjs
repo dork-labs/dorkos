@@ -53,10 +53,15 @@ async function start(name, command, args, cwd, env, health) {
     stdio: ['ignore', output.fd, output.fd],
   });
   children.set(name, child);
+  child.once('exit', () => {
+    // An older process may exit after its replacement has already started.
+    if (children.get(name) === child) children.delete(name);
+  });
   await output.close();
   let spawnError;
   child.once('error', (error) => {
     spawnError = error;
+    if (children.get(name) === child) children.delete(name);
   });
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
@@ -165,11 +170,12 @@ try {
     testMode.ok,
     'Packaged server must expose deterministic test runtime; no live inference fallback is allowed'
   );
-  // This loopback-only test control is outside both products. Restart the exact
+  // This loopback-only test control is outside both products. Control only the
   // owned child while preserving its database, key material and files.
   let restarting = false;
   control = createServer(async (request, response) => {
-    const name = request.url?.match(/^\/restart\/(a|b|local)$/)?.[1];
+    const match = request.url?.match(/^\/(restart|stop|start)\/(a|b|local)$/);
+    const [, action, name] = match ?? [];
     if (request.method !== 'POST' || !name) {
       response.writeHead(404).end();
       return;
@@ -180,11 +186,19 @@ try {
     }
     restarting = true;
     try {
-      await stop(name);
-      await start(name, ...definitions.get(name));
-      response.writeHead(200, { 'content-type': 'application/json' }).end('{"restarted":true}');
+      if (action !== 'start') await stop(name);
+      if (action !== 'stop') {
+        if (children.has(name)) {
+          response.writeHead(409).end('Owned service is already running');
+          return;
+        }
+        await start(name, ...definitions.get(name));
+      }
+      response
+        .writeHead(200, { 'content-type': 'application/json' })
+        .end(JSON.stringify({ action, service: name, completed: true }));
     } catch {
-      response.writeHead(500).end('Owned service did not restart');
+      response.writeHead(500).end('Owned service control failed');
     } finally {
       restarting = false;
     }
