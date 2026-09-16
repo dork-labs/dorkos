@@ -22,6 +22,7 @@ const { redirect, params } = vi.hoisted(() => ({
 
 vi.mock('@tanstack/react-router', () => ({
   useSearch: () => params.current,
+  useNavigate: () => vi.fn(),
 }));
 
 const redirectArgs = vi.hoisted(() => vi.fn());
