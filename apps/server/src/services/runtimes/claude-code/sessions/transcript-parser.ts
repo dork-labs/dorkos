@@ -41,6 +41,19 @@ export interface TranscriptLine {
   subtype?: string;
   cwd?: string;
   /**
+   * The AI-generated title on a standalone `type: 'ai-title'` record (no
+   * `message`, no `timestamp` — just this field and `sessionId`). The SDK
+   * appends a fresh one as the conversation evolves; the transcript can carry
+   * many, and the LAST one in file order is the current title.
+   */
+  aiTitle?: string;
+  /**
+   * The operator-set title on a standalone `type: 'custom-title'` record,
+   * written by `/rename` (SDK `renameSession`). Same shape as `ai-title`:
+   * no `message`, no `timestamp`, last one wins.
+   */
+  customTitle?: string;
+  /**
    * Top-level content of a `system` record (e.g. `local_command` output, where
    * the SDK stores the `<local-command-stdout>…</local-command-stdout>` text
    * here rather than under `message`).

@@ -73,4 +73,77 @@ describe('deriveSessionTitle', () => {
     const derived = deriveSessionTitle('one two three four five six seven');
     expect(derived).toBe('One two three four five six…');
   });
+
+  it('leaves a leading @-token alone by DEFAULT — stripping is opt-in (DOR-2083 review)', () => {
+    expect(deriveSessionTitle('@agent do the thing')).toBe('@agent do the thing');
+    expect(deriveSessionTitle('@meeting-notes please review all of our notes')).toBe(
+      '@meeting-notes please review all of our…'
+    );
+  });
+
+  it('strips a leading room @mention only when the caller opts in via stripLeadingMention', () => {
+    expect(deriveSessionTitle('@agent do the thing', { stripLeadingMention: true })).toBe(
+      'Do the thing'
+    );
+  });
+
+  it('strips a leading room @mention followed by a courtesy opener, when opted in (DOR-2083)', () => {
+    expect(
+      deriveSessionTitle('@meeting-notes please review all of our notes', {
+        stripLeadingMention: true,
+      })
+    ).toBe('Review all of our notes');
+  });
+
+  it('strips a hyphenated leading @mention with a comma, when opted in', () => {
+    expect(
+      deriveSessionTitle('@meeting-notes, can you summarize this', { stripLeadingMention: true })
+    ).toBe('Summarize this');
+  });
+
+  it('leaves an email-shaped mid-message @ alone even opted in (not a leading mention)', () => {
+    expect(
+      deriveSessionTitle('email me at dorian@dorkos.ai please', { stripLeadingMention: true })
+    ).toBe('Email me at dorian@dorkos.ai please');
+  });
+
+  it('treats a bare @ with no handle as real content, not a mention, even opted in', () => {
+    expect(
+      deriveSessionTitle('@ is not a valid handle by itself', { stripLeadingMention: true })
+    ).toBe('@ is not a valid handle…');
+  });
+
+  // DOR-2083 review: the mention pattern is syntactically indistinguishable
+  // from real technical content that also opens a line with `@word` — these
+  // must survive untouched under the DEFAULT (no options passed), which is
+  // what every current caller uses.
+  it('never eats a leading @override doc/code marker by default', () => {
+    expect(deriveSessionTitle('@override this method to add validation')).toBe(
+      '@override this method to add validation'
+    );
+  });
+
+  it('never eats a leading @media CSS rule by default', () => {
+    expect(deriveSessionTitle('@media queries are not resizing correctly')).toBe(
+      '@media queries are not resizing correctly'
+    );
+  });
+
+  it('never eats a leading @ts-expect-error directive by default', () => {
+    expect(deriveSessionTitle('@ts-expect-error is suppressing a real bug')).toBe(
+      '@ts-expect-error is suppressing a real bug'
+    );
+  });
+
+  it('never eats a leading @import rule by default', () => {
+    expect(deriveSessionTitle('@import rules are loading in the wrong order')).toBe(
+      '@import rules are loading in the…'
+    );
+  });
+
+  it('never eats a leading @echo off batch directive by default', () => {
+    expect(deriveSessionTitle('@echo off is not suppressing console output')).toBe(
+      '@echo off is not suppressing console…'
+    );
+  });
 });

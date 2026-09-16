@@ -510,11 +510,32 @@ export class TranscriptReader {
    * ~90% of conversations touched in the last week — the person's own last turn.
    *
    * `userLastMessageAt` rides this SAME pass on purpose: the session list is
-   * read on every cockpit boot, and re-reading transcripts to answer "when did
+   * read on every app boot, and re-reading transcripts to answer "when did
    * the person last write" would turn a bounded tail read into a whole-file
    * scan per session. The cost of the extra answer is one
    * {@link isPersonAuthoredUserRecord} call per `user` record already parsed
    * here — no additional open, read, or stat.
+   *
+   * `aiTitle` and `customTitle` ride the same pass for the same reason: the SDK
+   * appends a fresh standalone `ai-title` record as its auto-generated title
+   * changes (dozens over a long conversation) and a `custom-title` record when
+   * `/rename` runs, and the current one of each is simply the last one seen
+   * going forward — tracked as two SEPARATE last-wins values, never one shared
+   * "whichever type came last", so a rename recorded before a later auto-title
+   * still outranks it once both are folded together by the caller (`/rename`
+   * is a stronger, explicit signal than the SDK's own titling, and must never
+   * be silently overwritten by it — DOR-2083).
+   *
+   * This is a best-effort reading, like `contextTokens` above it — a title
+   * record written earlier than the last {@link TRANSCRIPT.TAIL_BUFFER_BYTES}
+   * of the file is missed, same trade-off the rest of this read already makes.
+   * Unlike a missed `contextTokens` reading, which just reads as "unknown", a
+   * missed title record is VISIBLE: in a long enough session, the newest
+   * `ai-title` can scroll past the tail window and the row falls back to an
+   * older title (or the first-message derivation) until the next one lands.
+   * That flip is accepted rather than fixed by widening the read, because
+   * fixing it means a whole-file scan on every list, for every session, on
+   * every app boot — the same cost this bounded read exists to avoid.
    *
    * @param filePath - Absolute path of the transcript file.
    * @param fileSize - The transcript's byte size from the caller's existing
@@ -530,6 +551,8 @@ export class TranscriptReader {
     contextTokens?: number;
     lastAutoCompactAt?: string;
     userLastMessageAt?: string;
+    aiTitle?: string;
+    customTitle?: string;
   }> {
     const TAIL_SIZE = TRANSCRIPT.TAIL_BUFFER_BYTES;
     try {
@@ -546,6 +569,8 @@ export class TranscriptReader {
         let contextTokens: number | undefined;
         let lastAutoCompactAt: string | undefined;
         let userLastMessageAt: string | undefined;
+        let aiTitle: string | undefined;
+        let customTitle: string | undefined;
 
         // Iterate forward — last occurrence wins
         for (const line of lines) {
@@ -588,9 +613,23 @@ export class TranscriptReader {
           ) {
             lastAutoCompactAt = parsed.timestamp;
           }
+          if (parsed.type === 'ai-title' && parsed.aiTitle) {
+            aiTitle = parsed.aiTitle;
+          }
+          if (parsed.type === 'custom-title' && parsed.customTitle) {
+            customTitle = parsed.customTitle;
+          }
         }
 
-        return { model, permissionMode, contextTokens, lastAutoCompactAt, userLastMessageAt };
+        return {
+          model,
+          permissionMode,
+          contextTokens,
+          lastAutoCompactAt,
+          userLastMessageAt,
+          aiTitle,
+          customTitle,
+        };
       } finally {
         await fileHandle.close();
       }
@@ -729,10 +768,51 @@ export class TranscriptReader {
     // here rather than at the assignment below because the SDK title lookup is
     // gated on it (see `resolveSdkTitle`).
     const account = accountForTranscript(filePath);
-    // The Claude Agent SDK is the source of truth for session titles (set at
-    // creation, via renameSession, or auto-generated). Prefer the persisted
-    // title; fall back to the first-message derivation for untitled sessions.
-    const title = (await this.resolveSdkTitle(sessionId, cwd, account)) ?? derivedTitle;
+
+    // Fold in the tail read: the latest model overlays the head's, a
+    // best-effort context reading + auto-compaction marker ride onto the row,
+    // and the latest `ai-title` record (if any) feeds the title precedence
+    // below. Absent tail values leave the head-derived fields untouched and
+    // the optional reading fields unset (an honest "unknown" downstream). The
+    // already-known stat size is threaded in so the tail adds one open, not
+    // an open plus a redundant stat. (`Number()` collapses the BigIntStats
+    // union from the fileStat parameter's `ReturnType<typeof fs.stat>` type;
+    // transcripts are far below Number.MAX_SAFE_INTEGER.)
+    const tailStatus = await this.readTailStatus(filePath, Number(stat.size));
+
+    // The Claude Agent SDK is the source of truth for session titles. Precedence,
+    // strongest first:
+    //   1. `/rename`, read via the SDK (`sdkTitle.customTitle` — active account
+    //      only, see `resolveSdkTitle`);
+    //   2. `/rename`, read straight off the transcript's standalone
+    //      `custom-title` record (`tailStatus.customTitle` — ANY account, since
+    //      `/rename` writes that record regardless of which account is active,
+    //      which is what makes this a real fallback rather than a duplicate of
+    //      (1): a rename on a non-active account has no other way to surface —
+    //      DOR-2083 review);
+    //   3. the latest SDK-generated `ai-title` record, same transcript read
+    //      (`tailStatus.aiTitle` — any account: this is what a room-started
+    //      session's auto-title actually looks like on disk, and the SDK
+    //      exposes no `aiTitle` field on `SDKSessionInfo` to ask for it any
+    //      other way);
+    //   4. the first-message derivation, for a session with no real title
+    //      anywhere.
+    // (2) outranks (3) unconditionally — an explicit rename is a stronger
+    // signal than the SDK's own auto-titling and must never be silently
+    // clobbered by a later `ai-title`, even though both are read from the same
+    // best-effort tail window (see `readTailStatus`'s TSDoc for why that
+    // window, and the visible title-flip trade-off it accepts, exist).
+    // The SDK's own `summary` field is deliberately NOT a fallback here — it is
+    // the SDK's raw "custom title, auto-generated title, or first prompt"
+    // reading, and for the untitled case that is the RAW first prompt, which
+    // `deriveSessionTitle` filters (slash-commands, system tags, courtesy
+    // openers) more carefully than the SDK does.
+    const sdkTitle = await this.resolveSdkTitle(sessionId, cwd, account);
+    const title =
+      sdkTitle.customTitle?.trim() ||
+      tailStatus.customTitle?.trim() ||
+      tailStatus.aiTitle?.trim() ||
+      derivedTitle;
     const { origin, originLabel } = classifyOrigin(firstRawUserMessage);
 
     const session: Session = {
@@ -749,15 +829,6 @@ export class TranscriptReader {
       cwd,
     };
 
-    // Fold in the tail read: the latest model overlays the head's, and a
-    // best-effort context reading + auto-compaction marker ride onto the row.
-    // Absent tail values leave the head-derived fields untouched and the
-    // optional reading fields unset (an honest "unknown" downstream). The
-    // already-known stat size is threaded in so the tail adds one open, not
-    // an open plus a redundant stat. (`Number()` collapses the BigIntStats
-    // union from the fileStat parameter's `ReturnType<typeof fs.stat>` type;
-    // transcripts are far below Number.MAX_SAFE_INTEGER.)
-    const tailStatus = await this.readTailStatus(filePath, Number(stat.size));
     if (tailStatus.model) session.model = tailStatus.model;
     if (tailStatus.permissionMode) session.permissionMode = tailStatus.permissionMode;
     if (tailStatus.contextTokens) session.contextTokens = tailStatus.contextTokens;
@@ -785,30 +856,35 @@ export class TranscriptReader {
   }
 
   /**
-   * Read the SDK-persisted custom title for a session, if one exists — and only
-   * for a session on the ACTIVE account.
+   * Read the SDK-persisted custom title for a session, if one exists via the
+   * SDK's own `getSessionInfo` — and only for a session on the ACTIVE account.
    *
    * The Claude Agent SDK owns session titles and persists them across restarts,
-   * so we read the stored value rather than derive and overlay our own. Returns
-   * undefined when the SDK has no custom title — untitled sessions then keep the
-   * first-message derivation, which filters slash-commands and system tags more
-   * carefully than the SDK's raw first prompt.
+   * so we read the stored value rather than derive and overlay our own.
+   * `customTitle` is set only by `/rename`. Returns `{}` when the SDK has no
+   * custom title — untitled sessions then keep the transcript's own
+   * `custom-title` record (`tailStatus.customTitle`, read directly and
+   * account-blind, see {@link extractSessionMeta}'s precedence comment), then
+   * its `ai-title` record, then the first-message derivation.
+   * `SDKSessionInfo.summary` is deliberately NOT read here even though the SDK
+   * exposes it: it is the SDK's own "custom title, auto-generated title, or
+   * first prompt" reading, and for the untitled case that is the RAW first
+   * prompt — `deriveSessionTitle` filters slash-commands and system tags more
+   * carefully than the SDK does, so the derived fallback stays authoritative
+   * over `summary`.
    *
    * ## The account gate is a chosen, bounded degradation, not an oversight
    *
    * `getSessionInfo` runs IN-PROCESS and its options carry no config dir, so the
-   * only way to read a title from a NON-active account is the same env lock
-   * rename and fork use — mutating `process.env.CLAUDE_CONFIG_DIR`
+   * only way to read a title from a NON-active account THROUGH THE SDK is the
+   * same env lock rename and fork use — mutating `process.env.CLAUDE_CONFIG_DIR`
    * process-globally. This call sits on the session-LISTING path, once per
    * session per mtime change, so wrapping it would serialize every listing behind
    * a process-global mutation: a systemic risk traded for a cosmetic gain (spec
-   * D8).
-   *
-   * So the honest consequence, written down rather than hidden: a custom title
-   * you set on account B may not display while account A is active — that
-   * session shows its first-message derivation instead. The alternative was
-   * reverse-engineering the SDK's title sidecar, which is exactly the
-   * implementation-detail dependency D4 refuses.
+   * D8). The transcript's own `custom-title` record is what keeps this gate
+   * from costing an ACTUAL rename on a non-active account (DOR-2083): `/rename`
+   * writes that record regardless of which account is active, so
+   * `extractSessionMeta` still sees it even when this method returns `{}`.
    *
    * @param sessionId - SDK session UUID
    * @param cwd - The session's working directory; scopes the lookup to one project
@@ -819,14 +895,14 @@ export class TranscriptReader {
     sessionId: string,
     cwd: string | undefined,
     account: string
-  ): Promise<string | undefined> {
-    if (!cwd) return undefined;
-    if (path.resolve(account) !== path.resolve(resolveActiveClaudeRoot())) return undefined;
+  ): Promise<{ customTitle?: string }> {
+    if (!cwd) return {};
+    if (path.resolve(account) !== path.resolve(resolveActiveClaudeRoot())) return {};
     try {
       const info = await getSessionInfo(sessionId, { dir: cwd });
-      return info?.customTitle?.trim() || undefined;
+      return { customTitle: info?.customTitle?.trim() || undefined };
     } catch {
-      return undefined;
+      return {};
     }
   }
 
