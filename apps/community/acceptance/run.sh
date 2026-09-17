@@ -54,7 +54,7 @@ docker run -d --name "$postgres" --network "$network" \
 postgres_created=true
 ready=false
 for ((attempt = 0; attempt < 30; attempt++)); do
-  if docker exec "$postgres" pg_isready -U postgres -d community >/dev/null 2>&1; then ready=true; break; fi
+  if docker exec "$postgres" pg_isready -h 127.0.0.1 -U postgres -d community >/dev/null 2>&1; then ready=true; break; fi
   sleep 1
 done
 [[ "$ready" == true ]] || { echo 'Isolated PostgreSQL did not become ready.' >&2; exit 1; }
