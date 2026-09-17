@@ -1,0 +1,28 @@
+{
+  "theme": "base",
+  "deterministicIds": true,
+  "deterministicIDSeed": "dorkos-architecture",
+  "themeVariables": {
+    "fontFamily": "Arial, sans-serif",
+    "fontSize": "16px",
+    "primaryColor": "#edf3fa",
+    "primaryTextColor": "#183047",
+    "primaryBorderColor": "#607d98",
+    "lineColor": "#607080",
+    "secondaryColor": "#f3f6f9",
+    "tertiaryColor": "#ffffff",
+    "clusterBkg": "#f8fafc",
+    "clusterBorder": "#becbd7",
+    "edgeLabelBackground": "#ffffff",
+    "actorBkg": "#edf3fa",
+    "actorBorder": "#607d98",
+    "actorTextColor": "#183047",
+    "signalColor": "#43586d",
+    "signalTextColor": "#183047",
+    "noteBkgColor": "#fff5e4",
+    "noteBorderColor": "#b89559",
+    "noteTextColor": "#49320c"
+  },
+  "flowchart": { "htmlLabels": false, "curve": "linear", "nodeSpacing": 30, "rankSpacing": 55 },
+  "sequence": { "useMaxWidth": true, "wrap": true, "actorMargin": 35, "messageMargin": 32 }
+}

@@ -1,0 +1,20 @@
+flowchart LR
+  accTitle: DorkOS replaceable interfaces
+  accDescr: Each row names a caller, its port, and implementations. A port is a code boundary, not necessarily a network boundary. The dashed Community edge is the unwired Buzz implementation.
+  ui["React client"] --> transport{{"Transport"}}
+  transport --> http["HttpTransport<br/>HTTP + WebSocket + Community SSE<br/>Express"]
+  transport --> direct["DirectTransport<br/>In-process subset · Obsidian preview"]
+  dispatch["Session dispatcher"] --> agent{{"AgentRuntime"}}
+  agent --> runtimes["Claude Code / Codex SDKs<br/>OpenCode HTTP + SSE sidecar"]
+  accounts["Account actions"] --> connector{{"ConnectorProvider"}}
+  connector --> backends["Composio · Nango · raw MCP<br/>Managed Cloud backend"]
+  rooms["Local registry / remote consumers"] --> community{{"CommunityAdapter"}}
+  community --> local["LocalCommunityAdapter<br/>Wraps local RoomService"]
+  community --> remote["RemoteCommunityAdapter<br/>Owner-qualified, lazy instance<br/>Qualified HTTP + SSE"]
+  community -.-> buzz["Buzz implementation<br/>Not wired"]
+  notes["Agent memory"] --> memory{{"MemoryProvider"}}
+  memory --> files["Built-in MEMORY.md store<br/>Optional registered backends"]
+  relay["Relay message bus"] --> messaging{{"RelayAdapter"}}
+  messaging --> channels["Messaging platforms / agent delivery<br/>Protocol depends on implementation"]
+  classDef port fill:#e7f1eb,stroke:#427a55,color:#183f26
+  class transport,agent,connector,community,memory,messaging port

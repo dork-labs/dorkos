@@ -1,0 +1,22 @@
+flowchart TB
+  accTitle: Marketplace discovery, installation, and activation
+  accDescr: Source registries and repositories supply packages. The website browses them. Local installation validates and previews changes, performs a file transaction, then activates code or projects agent assets through Harness Sync.
+  repo["Marketplace sources<br/>Dork Labs + third-party repositories"]
+  site["Website marketplace<br/>Discovery + README pages"]
+  user["DorkOS client / CLI / MCP caller"]
+  installer["Local MarketplaceInstaller<br/>Resolve → fetch/cache → validate → preview"]
+  txn["File transaction<br/>Stage → backup → rename → restore on failure"]
+  disk[("Installed packages<br/>User / project / agent scope")]
+  activate["Activation by package type<br/>Extensions · messaging · agents · shapes"]
+  harness["Harness Sync<br/>Project skills, commands, hooks and MCP config"]
+  runtime["Harness-native files<br/>Read by Claude Code / Codex / OpenCode"]
+  telemetry["Website telemetry endpoint<br/>Install reporting, not package delivery"]
+  repo -->|"HTTPS registry / sidecar / README"| site
+  repo -->|"HTTPS / Git / npm / local source"| installer
+  user -->|"HTTP API or MCP tool"| installer
+  installer -->|"Authorized install"| txn
+  txn --> disk
+  disk --> activate
+  disk --> harness
+  harness --> runtime
+  installer -->|"Install outcome, subject to telemetry settings"| telemetry

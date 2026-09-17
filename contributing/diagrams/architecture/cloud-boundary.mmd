@@ -1,0 +1,26 @@
+flowchart TB
+  accTitle: The public boundary of DorkOS Cloud
+  accDescr: Optional local Cloud clients use HTTPS. Legacy app-side paths coexist with the versioned public contract. A runtime may use a separately returned inference endpoint when explicitly enabled. The existing tunnel is a separate route to the local server.
+  subgraph app["Open-source app · local machine"]
+    local["Local DorkOS server<br/>Runs without a Cloud link"]
+    legacy["Cloud link + managed services client<br/>Existing /api/auth and /api/instances calls"]
+    versioned["Versioned client<br/>@dork-labs/cloud-api/client"]
+    runtime["Runtime inference configuration<br/>Explicit credits opt-in required"]
+    tunnel["Existing tunnel manager<br/>ngrok SDK · optional"]
+    local --> legacy
+    local --> versioned
+    local --> runtime
+    local --> tunnel
+  end
+  control["Optional Cloud control plane<br/>Service under development"]
+  inference["Inference endpoint<br/>URL + scoped token returned at runtime"]
+  contract["Public contract: packages/cloud-api<br/>Schemas + route table + fixtures<br/>Accounts · instances · managed services<br/>entitlements · seats · remote access · inference"]
+  edge["Tunnel service"]
+  browser["Remote browser"]
+  legacy -->|"HTTPS: device link, heartbeat,<br/>managed actions + event pull/ack"| control
+  versioned -->|"HTTPS /v1 · bearer auth"| control
+  contract -.->|"Contract describes wire;<br/>not a deployment guarantee"| control
+  runtime -->|"Inference protocol over HTTPS<br/>when enabled"| inference
+  tunnel -->|"Outbound tunnel connection"| edge
+  browser -->|"HTTPS / WSS"| edge
+  edge -->|"Forward app traffic through tunnel"| local

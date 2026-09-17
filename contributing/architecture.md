@@ -4,10 +4,14 @@
 
 ## Overview
 
-The DorkOS uses a hexagonal (ports & adapters) architecture centered on a **Transport** abstraction layer. This enables the same React client to run in two modes:
+Start with [the system architecture map](system-architecture.md) for deployment boundaries, protocols, replaceable interfaces, Community, Cloud, and marketplace delivery. This guide covers local implementation details.
+
+DorkOS uses a hexagonal (ports & adapters) architecture centered on a **Transport** abstraction layer. This enables the same React client to run in two modes:
 
 1. **Standalone web** -- Express server + HTTP via `HttpTransport`, with the durable streams over WebSocket (ADR 260805-041016)
-2. **Obsidian plugin** -- In-process services via `DirectTransport`, no server needed
+2. **Obsidian plugin (preview)** -- An in-process service subset via `DirectTransport`, no HTTP server needed
+
+The browser, phone web app, and desktop renderer use the first path. The desktop shell manages its local server. Independent Community has its own browser and Hono service; it is not another Transport implementation for the local app.
 
 ## Core Abstraction: Transport Interface
 
@@ -16,7 +20,6 @@ The `Transport` interface (`packages/shared/src/transport.ts`) defines all clien
 ```
 Transport
   -- Session Management --
-  createSession(opts)            -> Session
   listSessions(cwd?)             -> Session[]
   getSession(id, cwd?)           -> Session
   updateSession(id, opts, cwd?)  -> SessionUpdateResponse  # Session + optional
@@ -96,7 +99,7 @@ Transport
 
 ### Key Design Decision: Trigger + Durable Stream
 
-`postMessage` is trigger-only: it starts the turn and resolves to the canonical session id (ADR-0264). Delivery happens on the durable session event stream — `getSessionSnapshot` hydrates, `subscribeSession(sessionId, sinceCursor)` yields `SessionEvent`s with monotonic `seq` for gap-free resume. An optional `options` bag supports `clientMessageId` for server-echo ID reconciliation and `uiState` for passing a client UI state snapshot to the agent (see [Agent UI Control](#agent-ui-control)). This normalizes both transports:
+There is no separate `Transport.createSession`: the first message creates a session. `postMessage` is trigger-only: it starts the turn and resolves to the canonical session id (ADR-0264). Delivery happens on the durable session event stream — `getSessionSnapshot` hydrates, `subscribeSession(sessionId, sinceCursor)` yields `SessionEvent`s with monotonic `seq` for gap-free resume. An optional `options` bag supports `clientMessageId` for server-echo ID reconciliation and `uiState` for passing a client UI state snapshot to the agent (see [Agent UI Control](#agent-ui-control)). This normalizes both transports:
 
 - **HttpTransport** maps the streams to `GET /api/sessions/:id/events` and `GET /api/events` (WebSocket; the same paths also serve SSE for integrations — ADR 260805-041016)
 - **DirectTransport** iterates the runtime's async generators in-process
@@ -161,7 +164,7 @@ Search params use `@tanstack/zod-adapter` with `zodValidator()`. Hooks `useSessi
 // Vault path = workspace/, repo root = its parent (where .claude/ lives)
 repoRoot = path.resolve(vaultPath, '..')
 
-ClaudeCodeRuntime(repoRoot)     -- resolves Claude CLI, sets cwd
+ClaudeCodeRuntime(dorkHome, repoRoot) -- resolves Claude CLI, sets cwd
 TranscriptReader()              -- reads JSONL from ~/.claude/projects/{slug}/
 CommandRegistryService(repoRoot) -- scans repoRoot/.claude/commands/
 
@@ -199,10 +202,10 @@ Calls service instances directly in the same process:
 - Uses `DirectTransportServices` interface (narrow typed subset of service methods)
 - `getSessionSnapshot`/`subscribeSession`/`subscribeSessionList` iterate the runtime's async generators in-process
 - `uploadFiles` copies files to disk via Node.js `fs` (no HTTP)
-- `createSession` generates UUIDs via `crypto.randomUUID()`
+- The caller supplies a session ID to `postMessage`; the returned canonical runtime ID may differ
 - Respects `AbortSignal` for cancellation
 
-**Scope limitation:** DirectTransport currently implements only session, message, tool, task, and agent APIs. Relay, Mesh, and Tasks methods are not available in DirectTransport (Obsidian plugin mode) — these features require server-side state and are scoped for the standalone web client.
+**Scope limitation:** DirectTransport currently implements only session, message, tool, task, and agent APIs. Relay, Mesh, and task-scheduler methods are not available in DirectTransport (Obsidian plugin mode) — these features require server-side state and are scoped for the standalone web client.
 
 ### Authentication across the Transport seam
 
@@ -217,7 +220,7 @@ Server-side, the single `sessionGate` middleware enforces this for `/api/*` and 
 
 ### Standalone Web (HttpTransport)
 
-`POST /api/sessions/:id/messages` is trigger-only AND accept-only (ADR-0264, amended by ADR 260811-184735): it returns `202` immediately, without waiting for the turn ahead of it, and never `409` — a busy session queues the message instead of refusing it. The body carries the canonical session id plus a delivery receipt (`messageId`, `outcome`, `queuePosition`), but the receipt cannot say whether the turn started immediately or is waiting behind another: `queuePosition` reads `1` in both cases. ALL turn delivery — and cross-client sync — rides the durable per-session stream `GET /api/sessions/:id/events` (snapshot → gap-free replay via `Last-Event-ID` → live `SessionEvent`s with monotonic `seq`), owned client-side by `StreamManager` (`shared/lib/transport/stream-manager.ts`); `turn_start` there is the only signal that this message's turn actually began.
+`POST /api/sessions/:id/messages` is trigger-only AND accept-only (ADR-0264, amended by ADR 260811-184735): it returns `202` immediately, without waiting for the turn ahead of it, and never `409` — a busy session queues the message instead of refusing it. The body carries the canonical session id plus a delivery receipt (`messageId`, `outcome`, `queuePosition`), but the receipt cannot say whether the turn started immediately or is waiting behind another: `queuePosition` reads `1` in both cases. ALL turn delivery — and cross-client sync — rides the durable per-session stream `GET /api/sessions/:id/events` (snapshot → gap-free replay (`?resume=` on WebSocket; `Last-Event-ID` on SSE) → live `SessionEvent`s with monotonic `seq`), owned client-side by `StreamManager` (`shared/lib/transport/stream-manager.ts`); `turn_start` there is the only signal that this message's turn actually began.
 
 Server-side, every caller that can start a turn (HTTP route, MCP tool, relay, CLI) now goes through one ingress, `MessageDispatcher` (`services/session/message-dispatcher.ts`, spec `persistent-session-runtime`): it decides whether a message runs now or waits, and if it waits, in the durable `MessageQueueStore` rather than an in-memory list — so a queued message survives a server restart. A dequeue fires only on `turn_end`, never on a bare `result`, and never while the session has a pending interaction open. Every subscribed client sees the same queue, hydrated on the snapshot's `queuedMessages` and kept live by `queue_update` stream events (see `contributing/data-fetching.md`).
 
@@ -319,19 +322,19 @@ A companion `get_ui_state` MCP tool lets agents query the current UI state witho
 
 ### UiCommand Actions
 
-| Action                                        | Effect                                                                                       |
-| --------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `open_canvas`                                 | Opens the canvas panel with URL, markdown, or JSON content                                   |
-| `update_canvas`                               | Updates canvas content without toggling visibility                                           |
-| `close_canvas`                                | Closes the canvas panel                                                                      |
-| `open_panel` / `close_panel` / `toggle_panel` | Controls named panels (settings, pulse, relay, mesh, picker)                                 |
-| `open_sidebar` / `close_sidebar`              | Controls sidebar visibility                                                                  |
-| `switch_sidebar_tab`                          | Switches the sidebar to a named tab (embedded Obsidian app only; a no-op on the web cockpit) |
-| `show_toast`                                  | Shows a toast notification (success, error, info, warning)                                   |
-| `set_theme`                                   | Switches between light and dark theme                                                        |
-| `scroll_to_message`                           | Scrolls chat to a specific message ID                                                        |
-| `switch_agent`                                | Switches to a different agent by working directory                                           |
-| `open_command_palette`                        | Opens the command palette                                                                    |
+| Action                                        | Effect                                                                                   |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `open_canvas`                                 | Opens the canvas panel with URL, markdown, or JSON content                               |
+| `update_canvas`                               | Updates canvas content without toggling visibility                                       |
+| `close_canvas`                                | Closes the canvas panel                                                                  |
+| `open_panel` / `close_panel` / `toggle_panel` | Controls named panels (settings, pulse, relay, mesh, picker)                             |
+| `open_sidebar` / `close_sidebar`              | Controls sidebar visibility                                                              |
+| `switch_sidebar_tab`                          | Switches the sidebar to a named tab (embedded Obsidian app only; a no-op on the web app) |
+| `show_toast`                                  | Shows a toast notification (success, error, info, warning)                               |
+| `set_theme`                                   | Switches between light and dark theme                                                    |
+| `scroll_to_message`                           | Scrolls chat to a specific message ID                                                    |
+| `switch_agent`                                | Switches to a different agent by working directory                                       |
+| `open_command_palette`                        | Opens the command palette                                                                |
 
 ### Key Types
 
@@ -445,7 +448,7 @@ A session that has not sent one yet has **no** runtime, and `session_metadata.ru
 
 ### Aggregated Session Listing (ADR-0310)
 
-Session storage stays **runtime-owned** — Claude Code's JSONL transcripts, Codex's SDK threads, OpenCode's own store — with no unified transcript database. `GET /api/sessions` and the global session-list stream aggregate instead:
+Session history is **runtime-specific**: Claude Code reads JSONL transcripts, OpenCode reads its sidecar store, and Codex uses SDK threads plus DorkOS-owned persistence. The Codex SDK cannot list or read threads, so `codex_threads` preserves tracked bindings and metadata while a persisted event log supplies displayed history. There is no universal transcript store. `GET /api/sessions` and the global session-list stream aggregate instead:
 
 - `aggregateSessionList` (`services/session/aggregate-session-list.ts`) fans out `listSessions` across `listRuntimes()` with `Promise.allSettled` and a per-runtime time budget, merges and sorts by `updatedAt`, and tags every session with its `runtime` type. A failing or slow runtime degrades to partial results plus a `warnings[]` entry in the response envelope — never a failed request. An optional `?runtime=` query filters to one runtime.
 - `session-list-broadcaster` (`services/session/session-list-broadcaster.ts`) fans in `subscribeSessionList` across all registered runtimes with per-runtime failure isolation, feeding the global `GET /api/events` stream. Runtimes must register **before** the broadcaster starts (see the composition-root ordering in `index.ts`).
@@ -558,9 +561,11 @@ A session's canvas is the same table under a `session:` scope (spec `canvas-agen
 
 ## Community Registry (the fourth seam)
 
-`CommunityAdapter` (`packages/shared/src/community-adapter.ts`) is the fourth swappable seam beside `AgentRuntime`, `Transport` and `ConnectorProvider`. It lets one local server read and write rooms in more than one place — this machine's SQLite rooms, a foreign relay, a hosted community — without the cockpit, the router or the session spine learning that more than one place exists. **The client's `Transport` is unchanged**: the seam is entirely server-side, so keys never touch the browser and there is one render path and one streaming model.
+`CommunityAdapter` (`packages/shared/src/community-adapter.ts`) is the fourth swappable seam beside `AgentRuntime`, `Transport` and `ConnectorProvider`. It lets one local server read and write rooms in more than one place — this machine's SQLite rooms, a foreign relay, a hosted community — while keeping each community authoritative for its own rooms. The seam remains server-side for Community credentials. `HttpTransport` exposes qualified Community operations and a remote-room SSE subscription through the local server, while local and remote rooms keep their intentionally separate address and rendering paths.
 
 One instance serves one community, so every address on the port is the pair `(community, roomId)`. `CommunityRegistry` (`apps/server/src/services/communities/registry.ts`) dispatches on the community and holds the human-readable label; `aggregateCommunityRooms` lists across communities with per-community degradation and `warnings[]` — ADR-0310's shape with the nouns changed. Backend differences are **declared capabilities with branched conformance assertions**, never softened shared ones, and `communityConformance` in `@dorkos/test-utils` is the gate. The first backend behind it is this machine's own rooms: `LocalCommunityAdapter` (`apps/server/src/services/communities/local/`) wraps the shipped `RoomService` rather than replacing it, and is registered as `LOCAL_COMMUNITY` at startup so the registry always holds the one community that certainly exists. Author guide: [adding-a-community-adapter.md](adding-a-community-adapter.md).
+
+**Actual wiring:** `GET /api/rooms` lists local rooms through caller-aware `RoomService` operations, not through the single-identity local port. Qualified routes and the subscription runtime lazily obtain owner-qualified remote Community implementations; qualified `/api/communities/:ref/rooms/:roomId` routes and the remote-room SSE stream serve the local app's authorized Community channels. The Buzz implementation is not exported or registered at startup. The independent `apps/community` service retains browser chat, invitations, files, exports, pairing, and its own authority. See [Community development](community-server.md).
 
 ## Memory Provider (the fifth seam)
 
@@ -596,7 +601,7 @@ The membership column survives Phase 3 unchanged as the RP3 delivery cursor (roo
 - **`kind: 'room'` delegates into `RoomService.setReadCursor`**, so a room cursor gets the room's `requireVisibleRoom` check, the monotonic guard, and the recomputed unread count in one call. Writing it straight to the table would emit an event the room list has nothing to patch with, leaving the badge lit on the second device.
 - Monotonicity is a write-path invariant, deliberately not a `CHECK`: SQLite cannot express a constraint about a value's own previous state. `ReadCursorStore.set` and `RoomStore.setReadCursor` share the same `lt()` predicate.
 
-`ReadCursorService.advance` broadcasts `read_cursor` on the global `GET /api/events` fan-out **only when the cursor actually moved**, carrying the unread count where one can be computed. A no-op write (opening an already-read thread, the common case) says nothing. An agent's cursor is never announced: RP3 advances it once per agent per turn, which would make it the loudest event on the stream, and nothing in the cockpit draws it.
+`ReadCursorService.advance` broadcasts `read_cursor` on the global `GET /api/events` fan-out **only when the cursor actually moved**, carrying the unread count where one can be computed. A no-op write (opening an already-read thread, the common case) says nothing. An agent's cursor is never announced: RP3 advances it once per agent per turn, which would make it the loudest event on the stream, and nothing in the app draws it.
 
 ### Client
 
@@ -681,217 +686,20 @@ Everything above is still true of these four toggles, and ADR-260726-171347 reco
 
 ## Module Layout
 
-```
-packages/
-  shared/src/
-    agent-runtime.ts        -- AgentRuntime interface + RuntimeCapabilities (universal backend contract)
-    transport.ts            -- Transport interface (the "port", includes getCapabilities)
-    types.ts                -- Shared type definitions
-    manifest.ts             -- Agent manifest I/O (readManifest, writeManifest, removeManifest)
-    relay-schemas.ts        -- Facade re-exporting from 4 focused sub-modules (backward compatible)
-    relay-envelope-schemas.ts -- Envelopes, budgets, payloads, signals, HTTP API request/query schemas
-    relay-access-schemas.ts   -- Access control rules (allow/deny by subject pattern)
-    relay-adapter-schemas.ts  -- Adapters, catalogs, bindings, HTTP request schemas
-    relay-trace-schemas.ts    -- Delivery traces, metrics, reliability configuration
-    mesh-schemas.ts         -- Zod schemas for Mesh (AgentManifest, health, topology, lifecycle)
-    config-schema.ts        -- UserConfigSchema with defaults and sensitive key list
+Use [project structure](project-structure.md) for the repository map and [system architecture](system-architecture.md#key-files) for cross-system entry points. The composition roots are `apps/server/src/index.ts` for local services and `apps/community/src/app.ts` for the independent Community API.
 
-  relay/src/
-    relay-core.ts           -- Main RelayCore class (pub/sub orchestrator)
-    types.ts                -- RelayAdapter, DeliveryResult, AdapterContext, etc.
-    adapter-registry.ts     -- AdapterRegistry (lifecycle + subject-prefix routing)
-    adapter-plugin-loader.ts -- Dynamic plugin loading (npm package or local path)
-    maildir-store.ts        -- Maildir-based atomic message storage per endpoint
-    sqlite-index.ts         -- SQLite index for message history and status queries
-    dead-letter-queue.ts    -- O(1) dead-letter lookup via SQLite rowid
-    access-control.ts       -- Subject-level access control rules
-    delivery-pipeline.ts    -- Staged delivery (rate limit, circuit breaker, backpressure)
-    adapter-delivery.ts     -- Adapter delivery with 30s timeout protection
-    subscription-registry.ts -- In-process push subscriptions
-    watcher-manager.ts      -- chokidar-based Maildir new/ watchers
-    signal-emitter.ts       -- Signal (lifecycle event) broadcasting
-    rate-limiter.ts         -- Per-sender sliding window rate limiting
-    circuit-breaker.ts      -- Per-endpoint circuit breaker (CLOSED/OPEN/HALF_OPEN)
-    backpressure.ts         -- Reactive load-shedding based on mailbox depth
-    budget-enforcer.ts      -- Budget envelope validation and decrement
-    subject-matcher.ts      -- NATS-style subject and wildcard matching
-    endpoint-registry.ts    -- Maildir endpoint registration + hash computation
-    adapters/
-      claude-code/          -- Routes relay.agent.> and relay.system.tasks.> to whichever runtime the message names
-                               (modular: claude-code-adapter.ts, agent-handler.ts, tasks-handler.ts, queue.ts, publish.ts)
-      telegram/             -- Telegram Bot API via grammY (modular: telegram-adapter.ts, inbound.ts, outbound.ts, webhook.ts)
-      webhook-adapter.ts    -- Generic HTTP POST with HMAC-SHA256 verification
-
-  a2a-gateway/src/
-    agent-card-generator.ts -- A2A Agent Card generation from Mesh manifests
-    schema-translator.ts    -- A2A ↔ DorkOS type translation
-    task-store.ts           -- SQLite task state persistence
-    dorkos-executor.ts      -- Bridges A2A tasks to Relay publish/subscribe
-    express-handlers.ts     -- Express handlers for A2A endpoints
-    index.ts                -- Barrel export
-
-  mesh/src/
-    mesh-core.ts            -- Thin coordinator composing discovery, agent management, and denial modules
-    mesh-discovery.ts       -- Discovery & registration logic (discover, register, registerByPath)
-    mesh-agent-management.ts -- Agent list/get/update/unregister, health, topology operations
-    mesh-denial.ts          -- Denial list operations (deny, undeny, list)
-    discovery/              -- Unified discovery system
-      unified-scanner.ts    -- BFS async generator with detection strategies, symlink support
-      types.ts              -- ScanEvent, UnifiedScanOptions, UNIFIED_EXCLUDE_PATTERNS
-    agent-registry.ts       -- SQLite-backed persistent agent registry
-    denial-list.ts          -- SQLite-backed denial list to suppress re-discovery
-    namespace-resolver.ts   -- Namespace derivation from agent workspace paths
-    topology.ts             -- TopologyManager for cross-namespace access rules
-    health.ts               -- computeHealthStatus() (active/inactive/stale thresholds)
-    relay-bridge.ts         -- Publishes lifecycle events to Relay subjects when enabled
-    budget-mapper.ts        -- Maps Relay budget envelopes to mesh agent capabilities
-    reconciler.ts           -- Reconciles discovered candidates with registry state
-    manifest.ts             -- readManifest/writeManifest for .dork/agent.json
-    strategies/
-      claude-code-strategy.ts -- Detects .claude/settings.json workspaces
-      cursor-strategy.ts    -- Detects .cursor/ directories
-      codex-strategy.ts     -- Detects .codex/ directories
-
-apps/
-  client/src/layers/
-    shared/
-      model/
-        TransportContext.tsx -- React Context DI (useTransport, TransportProvider)
-        app-store.ts        -- Zustand UI state store
-        use-theme.ts        -- Theme hook (+ 7 other hooks)
-      lib/
-        direct-transport.ts -- In-process adapter (Obsidian plugin)
-        transport/
-          http-transport.ts -- HTTP adapter
-          relay-methods.ts  -- createRelayMethods() factory
-          pulse-methods.ts  -- createTasksMethods() factory
-          mesh-methods.ts   -- createMeshMethods() factory
-          http-client.ts    -- fetchJSON, buildQueryString helpers
-          sse-parser.ts     -- parseSSEStream helper
-        utils.ts            -- cn() utility
-    components/
-      App.tsx               -- Main app shell
-    main.tsx                -- Standalone entry (HttpTransport)
-    # Client dependencies: fuse.js (fuzzy search with match indices for command palette)
-
-  obsidian-plugin/src/
-    main.ts                 -- Obsidian plugin entry
-    views/
-      CopilotView.tsx       -- Creates DirectTransport + service instances
-    components/
-      ObsidianApp.tsx       -- Plugin wrapper (auto-session, context bar)
-    lib/
-      obsidian-adapter.ts   -- Platform adapter for Obsidian
-
-  server/src/
-    services/
-      core/                   -- Shared infrastructure services
-        runtime-registry.ts   -- Registry of agent runtimes (singleton, keyed by type)
-        config-manager.ts     -- Persistent user config (~/.dork/config.json)
-        stream-adapter.ts     -- SSE helpers (initSSEStream, sendSSEEvent, endSSEStream).
-                                  sendSSEEvent is async — must be awaited. Awaits drain
-                                  when res.write() returns false (backpressure handling).
-        tunnel-manager.ts     -- Opt-in ngrok tunnel lifecycle
-        update-checker.ts     -- npm registry version check with 1-hour cache
-        file-lister.ts        -- Directory file listing
-        git-status.ts         -- Git branch and changed files
-        upload-handler.ts     -- File upload service (multer config, storage, MIME validation)
-        mcp-server.ts         -- External MCP server factory (Streamable HTTP transport)
-        openapi-registry.ts   -- Auto-generated OpenAPI spec from Zod schemas
-      runtimes/               -- Agent backend implementations
-        index.ts              -- Barrel export for runtimes
-        claude-code/          -- Claude Code runtime (Agent SDK)
-          claude-code-runtime.ts -- ClaudeCodeRuntime implementing AgentRuntime (composition root)
-          agent-types.ts      -- AgentSession/ToolState interfaces (shared across subdirs)
-          runtime-constants.ts -- Runtime constants
-          index.ts            -- Barrel export for ClaudeCodeRuntime
-          messaging/          -- Send-message pipeline
-            message-sender.ts -- Extracted send-message logic
-            context-builder.ts -- Runtime context for systemPrompt (XML blocks)
-            interactive-handlers.ts -- Tool approval & question flows
-            interaction-wait.ts -- One prompt's two-stage wait (park, then refuse)
-            permission-mode-guard.ts -- Resolves effective permission mode (incl. auto-mode fallback)
-            plugin-activation.ts -- Builds options.plugins from installed marketplace plugins
-            runtime-cache.ts  -- Caches models/commands/MCP status/subagents
-          sdk/                -- SDK message ↔ StreamEvent mapping + SDK utilities
-            sdk-event-mapper.ts -- Dispatcher: SDK message → StreamEvent
-            event-mappers/    -- Per-category mappers (system/stream/message/result)
-            sdk-error-mapping.ts -- SDK error/refusal subtype → ErrorCategory
-            sdk-utils.ts      -- makeUserPrompt(), resolveClaudeCliPath()
-            build-task-event.ts -- TaskUpdateEvent builder from tool call inputs
-          sessions/           -- Transcript/session/task reading + sync
-            transcript-reader.ts -- JSONL session reader (single source of truth)
-            transcript-parser.ts -- JSONL line → HistoryMessage parser
-            task-reader.ts    -- Task state parser from JSONL transcript lines
-            session-store.ts  -- In-memory session state
-            session-list-watcher.ts -- Fleet-wide session-list watcher (chokidar) backing subscribeSessionList
-            question-answers.ts -- Structured-question answer mapping
-          tooling/            -- Tool/command/dependency configuration
-            tool-filter.ts    -- Per-agent MCP tool-group resolution (resolveToolConfig)
-            command-registry.ts -- Slash command discovery
-            check-dependency.ts -- Verifies the Claude CLI dependency
-          mcp-tools/          -- In-process MCP tool server for Claude Agent SDK
-      tasks/                  -- Tasks scheduler services
-        tasks-store.ts        -- SQLite + JSON schedule/run state
-        scheduler-service.ts  -- Cron engine (croner) with overrun protection
-        tasks-presets.ts      -- Default schedule presets (~/.dork/tasks/presets.json)
-        tasks-state.ts        -- DORKOS_TASKS_ENABLED feature flag holder
-      relay/                  -- Relay messaging services
-        adapter-manager.ts    -- Server-side adapter lifecycle (config I/O, hot-reload, enable/disable)
-        adapter-factory.ts    -- Adapter instantiation from config (built-in + plugin)
-        adapter-config.ts     -- Config load/save/watch, sensitive field masking
-        adapter-error.ts      -- AdapterError typed error class
-        binding-store.ts      -- JSON-backed adapter-agent binding store (~/.dork/relay/bindings.json)
-        binding-router.ts     -- relay.human.> → relay.agent.{sessionId} routing with session strategies
-        trace-store.ts        -- SQLite delivery trace storage (message_traces table)
-        relay-state.ts        -- DORKOS_RELAY_ENABLED feature flag holder
-        subject-resolver.ts   -- Subject pattern resolution helpers
-      mesh/                   -- Mesh state
-        mesh-state.ts         -- Mesh subsystem internal state tracking
-      marketplace/            -- Package install/uninstall/update pipeline
-        marketplace-installer.ts -- 8-stage orchestrator; dispatches per-kind flows
-        marketplace-cache.ts  -- Content-addressable clone cache (TTL, prune)
-        marketplace-source-manager.ts -- Source CRUD (marketplaces.json on disk)
-        package-fetcher.ts    -- marketplace.json fetch + git clone of packages
-        package-resolver.ts   -- Resolves package name → source + entry
-        permission-preview.ts -- Builds PermissionPreview from manifest analysis
-        conflict-detector.ts  -- Detects file conflicts before writing begins
-        telemetry-hook.ts     -- Install/uninstall/update event telemetry
-        installed-metadata.ts -- Reads .dork/manifest.json from installed packages
-        transaction.ts        -- File-scoped transaction engine: stage, move target aside as
-                                  backup, activate, restore backup on failure (see ADR-0304)
-        lib/atomic-move.ts    -- Crash-safe directory rename (tmp + rename)
-        flows/                -- Per-kind install flows: install-plugin.ts, install-agent.ts,
-                                  install-skill-pack.ts, install-adapter.ts, uninstall.ts, update.ts
-      core-extensions/        -- Toggleable first-party extensions staged at server startup
-        ensure-core-extensions.ts -- Stages every core extension so extension-manager picks them up
-      discovery/              -- Agent discovery (delegates to @dorkos/mesh unified scanner)
-    lib/
-      resolve-root.ts       -- DEFAULT_CWD (prefers DORKOS_DEFAULT_CWD, falls back to repo root)
-      boundary.ts           -- Directory boundary validation (enforces 403 for out-of-boundary paths)
-      feature-flag.ts       -- Generic feature flag helpers
-      route-utils.ts        -- Shared Express route utilities
-    routes/
-      sessions.ts / commands.ts / health.ts / directory.ts / config.ts
-      files.ts / git.ts / tunnel.ts / pulse.ts / agents.ts
-      uploads.ts            -- POST /api/uploads (multipart file upload)
-      relay.ts              -- Relay HTTP routes (feature-flag guarded)
-      mesh.ts               -- Mesh HTTP routes (always mounted)
-      marketplace.ts        -- Marketplace HTTP routes (/api/marketplace/*): sources, packages,
-                                install/uninstall/update, cache, installed listing
-      mcp.ts                -- MCP server endpoint (/mcp, Streamable HTTP transport)
-      a2a.ts                -- A2A protocol endpoints (gated: a2a.enabled, env override DORKOS_A2A_ENABLED)
-      models.ts             -- GET /api/models (dynamic via runtimeRegistry.getDefault())
-      capabilities.ts       -- GET /api/capabilities (all runtime capability flags)
-      discovery.ts          -- POST /api/discovery/scan (SSE agent discovery)
-    middleware/
-      host-guard.ts         -- /api Host allowlist; DNS rebinding protection, login-off only
-      mcp-auth.ts           -- MCP API key auth middleware
-      browser-origin.ts     -- Express -> BrowserOriginFacts, for the one origin policy
-      mcp-origin.ts         -- MCP Origin validation; thin adapter over that policy
-      rate-limit-key.ts     -- The one rate-limit bucket key (socket peer; DORKOS_TRUST_PROXY)
-    index.ts                -- Express server entry
-```
+| Area                  | Location                                                            | Responsibility                                                                  |
+| --------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Client                | `apps/client/src/layers/`                                           | FSD layers; transport implementations live under `shared/lib/`                  |
+| Local API             | `apps/server/src/routes/`                                           | HTTP operations plus session, room and global socket entry points               |
+| Stream infrastructure | `apps/server/src/services/core/streams/`                            | Wire sinks, replay cursors and authenticated WebSocket upgrade routing          |
+| Agent execution       | `apps/server/src/services/runtimes/`                                | Claude Code, Codex, OpenCode and test runtimes                                  |
+| Turn orchestration    | `apps/server/src/services/session/`                                 | Dispatch, durable queues and shared session services                            |
+| Local coordination    | `services/rooms/`, `tasks/`, `relay/`, `mesh/` under the server     | Rooms, scheduling, message routing and discovery                                |
+| Replaceable backends  | `services/connectors/`, `communities/`, `memory/` under the server  | Account actions, remote community seam and agent memory                         |
+| Package delivery      | `services/marketplace/`, `extensions/`, `harness/` under the server | Transactions, activation and harness projection                                 |
+| Independent Community | `apps/community/src/`                                               | Hono API, browser, PostgreSQL and blob storage                                  |
+| Cloud contract        | `packages/cloud-api/`                                               | Public schemas, routes and a fetch client; no private implementation dependency |
 
 ## Electron Compatibility Layer
 
@@ -1278,7 +1086,7 @@ See `contributing/relay-adapters.md` for the full developer guide on creating cu
 
 ## Relay Message Routing (on by default)
 
-When the Relay feature flag is on — which it is unless `relay.enabled` is set false or `DORKOS_RELAY_ENABLED=false` — Tasks (scheduled) message flows are routed through the Relay message bus instead of calling the runtime directly. The web client always uses direct SSE regardless of this flag.
+When the Relay feature flag is on — which it is unless `relay.enabled` is set false or `DORKOS_RELAY_ENABLED=false` — Tasks (scheduled) message flows are routed through the Relay message bus instead of calling the runtime directly. The web client uses HTTP message commands and its durable WebSocket event stream regardless of this flag; SSE remains available to HTTP consumers.
 
 ### Tasks Dispatch Flow
 
