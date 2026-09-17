@@ -7,12 +7,68 @@ description: Architecture overview for DorkOS contributors
 
 # Architecture
 
-DorkOS uses a hexagonal (ports & adapters) architecture that lets the same React client run in two modes:
+This is the engineering reference. For a plain-language introduction, start with [Architecture](/docs/concepts/architecture).
 
-1. **Standalone web**: Express server, with the durable streams over WebSocket (and SSE at the same paths for integrations)
-2. **Obsidian plugin**: In-process services, no server or network required
+DorkOS has several deployment boundaries. The local React client reaches an Express server through the `Transport` interface. The independent Community server owns shared channels. Cloud is optional and communicates through a public contract. The marketplace website helps people discover packages that the local server installs.
 
-This guide explains how the pieces fit together.
+The diagrams below reflect public source at `9688d2db0`, reviewed September 16, 2026. In flowcharts, solid arrows show implemented paths; dashed arrows label unfinished wiring or contract relationships. In the sequence diagram, dashed arrows represent responses and events. Optional app-side calls do not certify hosted-service readiness.
+
+## System map
+
+[![DorkOS deployment boundaries and communication paths](/diagrams/architecture/system-context.svg)](/diagrams/architecture/system-context.svg)
+
+Browser, phone web app, and desktop renderer share the local server path. The desktop shell manages a local server. Obsidian uses `DirectTransport` for an in-process subset and remains a preview.
+
+Community has its own browser, sign-in, PostgreSQL, and file storage. Its browser chat, invitations, files, and exports are implemented. The local DorkOS app's remote-community experience is still being built.
+
+## Replaceable interfaces
+
+A port is an interface in code; an adapter implements it. A port does not necessarily cross a network.
+
+[![Transport, runtimes, service actions, communities, memory, and messaging ports](/diagrams/architecture/ports.svg)](/diagrams/architecture/ports.svg)
+
+`AgentRuntime` selects an execution engine. `ConnectorProvider` handles account-backed service actions. `RelayAdapter` handles messaging. `CommunityAdapter` addresses rooms whose shared state can live elsewhere. `MemoryProvider` handles persistent agent notes. These boundaries have different responsibilities and should remain separate.
+
+The local Community implementation is registered at startup. Buzz has an implementation but no startup wiring. `GET /api/rooms` keeps per-caller local listing outside the port; registered remote results currently produce warnings rather than clickable remote rooms.
+
+## Message and event paths
+
+[![Message acceptance, queueing, runtime execution and resumable event delivery](/diagrams/architecture/session-flow.svg)](/diagrams/architecture/session-flow.svg)
+
+A message POST returns `202` with an acceptance receipt. It does not carry the reply or prove that a turn has begun. `turn_start` on the event stream marks execution. Busy sessions queue messages durably.
+
+| Boundary                    | Protocol                                                                                                                   |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Client commands and queries | HTTP `/api/*`                                                                                                              |
+| Local app updates           | WebSockets at `/api/events`, `/api/sessions/:id/events`, and `/api/rooms/:id/events`; SSE remains available at those paths |
+| Terminal bytes              | Separate WebSocket `/api/terminal/:id/socket`                                                                              |
+| Community browser updates   | SSE `/api/v1/channels/:id/events`, alongside HTTP commands                                                                 |
+| OpenCode runtime            | Local SDK/HTTP sidecar calls plus a global SSE event subscription                                                          |
+| External tools and agents   | MCP Streamable HTTP at `/mcp`; A2A under `/a2a`                                                                            |
+
+WebSocket reconnection sends the opaque cursor as `?resume=`; SSE uses `Last-Event-ID`. Replay falls back to a snapshot when the cursor is stale. See the [protocol reference](/docs/integrations/sse-protocol).
+
+## Community boundary
+
+[![Local rooms, messaging bridges, and the independent Community server](/diagrams/architecture/community.svg)](/diagrams/architecture/community.svg)
+
+Community owns membership and posts. It does not execute agent turns. Its pairing and scoped agent credential endpoints exist; those endpoints do not imply the local app is already connected. Slack and Telegram bridges instead project conversations into local rooms through Relay.
+
+## Marketplace delivery
+
+[![Package discovery, local installation, activation and harness projection](/diagrams/architecture/marketplace.svg)](/diagrams/architecture/marketplace.svg)
+
+Source registries supply package metadata and content. The website browses them. Local installation validates packages, prepares permission previews, and uses a file transaction with rollback. Harness Sync projects agent-facing assets into the layouts the coding tools read; app extensions have their own activation path. The install path is covered end to end, while full Claude Code marketplace superset compatibility remains unverified.
+
+## Cloud boundary
+
+[![Public Cloud requests, optional inference configuration, and the separate tunnel path](/diagrams/architecture/cloud-boundary.svg)](/diagrams/architecture/cloud-boundary.svg)
+
+The public `packages/cloud-api` package defines schemas, routes, fixtures and a fetch client. Existing device-link, heartbeat and managed-service calls still use `/api/auth/device/*` and `/api/instances/*`; versioned clients use `/v1`. A defined route is not proof that a feature is deployed.
+
+The contract's remote command stream uses SSE. The existing local tunnel manager separately uses the ngrok SDK; remote browser traffic travels through the tunnel to the local server. Credits inference is another optional path, requiring an explicit flag and a linked instance. Local DorkOS and Community both run without Cloud.
+
+The [repository system architecture guide](https://github.com/dork-labs/dorkos/blob/main/contributing/system-architecture.md) has code evidence, data ownership, status notes and diagram maintenance instructions.
 
 ## Monorepo Structure
 
@@ -26,6 +82,12 @@ DorkOS is a Turborepo monorepo. The apps and the packages that matter most for t
       </Folder>
       <Folder name="server">
         <File name="Express + TypeScript" />
+      </Folder>
+      <Folder name="community">
+        <File name="Independent Hono API + React browser + PostgreSQL" />
+      </Folder>
+      <Folder name="desktop">
+        <File name="Electron shell + managed local server" />
       </Folder>
       <Folder name="site">
         <File name="Next.js 16 + Fumadocs" />
@@ -49,6 +111,18 @@ DorkOS is a Turborepo monorepo. The apps and the packages that matter most for t
       </Folder>
       <Folder name="mesh">
         <File name="Agent discovery & registry" />
+      </Folder>
+      <Folder name="cloud-api">
+        <File name="Public Cloud wire contract and fetch client" />
+      </Folder>
+      <Folder name="harness">
+        <File name="Agent asset projection into coding-tool layouts" />
+      </Folder>
+      <Folder name="marketplace">
+        <File name="Registry and package schemas" />
+      </Folder>
+      <Folder name="memory">
+        <File name="Persistent agent memory" />
       </Folder>
       <Folder name="test-utils">
         <File name="Mock factories, test helpers" />
@@ -104,7 +178,7 @@ The interface extends further to cover Tasks schedules, Relay messaging, Mesh ag
 
 - No HTTP, no port binding, no network serialization
 - `StreamManager` iterates the runtime's snapshot + event streams in-process (`getSessionSnapshot`, `subscribeSession`, `subscribeSessionList`)
-- Lower latency, ideal for embedded contexts
+- Implements an embedded service subset; the Obsidian surface remains a preview
 
 **Location:** `apps/client/src/layers/shared/lib/direct-transport.ts`
 
@@ -131,7 +205,7 @@ const transport = new HttpTransport({ baseUrl: '/api' })
 <Tab value="Obsidian Plugin">
 ```typescript
 // CopilotView.tsx
-const runtime = new ClaudeCodeRuntime(repoRoot)
+const runtime = new ClaudeCodeRuntime(dorkHome, repoRoot)
 const commandRegistry = new CommandRegistryService(repoRoot)
 
 const transport = new DirectTransport({
@@ -180,7 +254,7 @@ Routes are thin HTTP handlers. They obtain the active runtime via `runtimeRegist
       type: 'route',
       description: 'Runtime capability flags for all registered runtimes',
     },
-    'models.ts': { type: 'route', description: 'Available Claude models via runtime' },
+    'models.ts': { type: 'route', description: 'Available models for the selected runtime' },
     'health.ts': { type: 'route', description: 'Health check and optional tunnel status' },
     'directory.ts': {
       type: 'route',
@@ -318,13 +392,13 @@ The services behind those routes, grouped by domain (also not exhaustive):
 ### Session Storage: Runtime-Owned
 
 <Callout type="info">
-  Sessions are **not** stored in a unified DorkOS database: each runtime owns its store, and `GET
+  There is **no universal transcript store**: history is handled per runtime, and `GET
   /api/sessions` aggregates across all registered runtimes, tagging every session with its `runtime`
   type. A failing runtime degrades to partial results plus a warning, never a failed request.
 </Callout>
 
 - **Claude Code**: `TranscriptReader` scans SDK JSONL files at `~/.claude/projects/\{slug\}/*.jsonl`. All sessions are visible regardless of which client created them (CLI, DorkOS, or otherwise); `ClaudeCodeRuntime` calls SDK `query()` with `resume: sessionId` for continuity across clients.
-- **Codex**: one DorkOS session per Codex SDK thread; the session-to-thread map lives in the `codex_threads` SQLite table.
+- **Codex**: one DorkOS session per SDK thread. The `codex_threads` table persists the binding and display metadata. The SDK exposes no thread-listing or history-reading API, so DorkOS reconstructs displayed history from its own persisted event log and lists the threads this server tracked.
 - **OpenCode**: sessions live in the sidecar's own store, read via `@opencode-ai/sdk`.
 - No delete endpoint: sessions persist in each runtime's storage.
 - A session's runtime is fixed when it starts (persisted first-write-wins in `session_metadata`).
@@ -382,11 +456,13 @@ SessionComposer → ConversationTarget.send() → useChatSession.submitContent()
   ↓
 transport.postMessage(sessionId, content, cwd) → POST /api/sessions/:id/messages
   ↓
-Express route validates, acquires the write-lock, starts the turn → 202 { sessionId }
+Express route validates → MessageDispatcher accepts → 202 { sessionId, messageId, outcome, queuePosition }
+  ↓
+Dispatcher starts when possible, or persists the message in the session queue
   ↓
 Runtime yields StreamEvent objects → per-session projector assigns monotonic seq
   ↓
-GET /api/sessions/:id/events (durable stream, already open via StreamManager)
+GET /api/sessions/:id/events (WebSocket stream, already open via StreamManager)
   ↓
 StreamManager validates SessionEvent frames → session stream store applies them
   ↓
@@ -467,7 +543,7 @@ Runtimes yield internal `StreamEvent` objects; the per-session projector normali
 
 ## Session Event Stream
 
-All session state is delivered on a durable per-session stream: `GET /api/sessions/:id/events`. The DorkOS client opens it as a WebSocket and integrations may open the same path as SSE (ADR 260805-041016). A cold connect receives a `snapshot` (history, in-progress turn, status, pending interactions, cursor), then live events. On reconnect the resume cursor (`Last-Event-ID` over SSE, `?resume=` over a socket) resumes from the last applied `seq` and the server replays the gap, or falls back to a fresh snapshot if it cannot. This one stream is also the multi-client sync mechanism: CLI writes and turns triggered by other clients appear in the DorkOS UI automatically.
+All session state is delivered on a durable per-session stream: `GET /api/sessions/:id/events`. The DorkOS client opens it as a WebSocket and integrations may open the same path as SSE (ADR 260805-041016). A cold connect receives a `snapshot` (history, in-progress turn, status, pending interactions, cursor), then live events. On reconnect the resume cursor (`Last-Event-ID` over SSE, `?resume=` over a socket) resumes from the last applied `seq` and the server replays the gap, or falls back to a fresh snapshot if it cannot. This one stream is also the multi-client sync mechanism: Turns triggered by other connected clients appear automatically. External CLI visibility depends on the runtime; Claude Code transcript watching supports it, while the Codex session list is limited to tracked threads.
 
 The session list stays live via the global `GET /api/events` stream (`session_upserted` / `session_removed` / `session_status`), with no polling.
 
@@ -498,12 +574,12 @@ This pattern provides type safety and explicit test setup without global mocks.
 
 ## Key Design Properties
 
-- **Same React app, two deployment modes**: Transport abstraction enables full code reuse
-- **No network required for Obsidian**: DirectTransport runs entirely in-process
+- **Shared local client**: the web and desktop surfaces reuse the React app; Obsidian uses an embedded subset
+- **No HTTP boundary for Obsidian**: DirectTransport calls services in-process; model calls can still use the network
 - **Type-safe end-to-end**: Zod schemas generate both TypeScript types and OpenAPI specs
 - **Testable**: Mock Transport objects make testing React hooks and components straightforward
-- **Real-time sync**: durable, resumable SSE streams keep all clients in sync
-- **Runtime-owned storage**: each runtime keeps its own session store; DorkOS aggregates instead of duplicating (no unified transcript database)
+- **Real-time sync**: the local app uses resumable WebSockets; HTTP consumers can use SSE
+- **Runtime-specific storage**: Claude Code transcripts, OpenCode sidecar storage, and Codex thread bindings plus DorkOS-persisted event history
 - **Runtime-agnostic core**: Claude Code, Codex, and OpenCode all implement the same `AgentRuntime` contract, proven by a shared conformance suite
 
 ## Next Steps

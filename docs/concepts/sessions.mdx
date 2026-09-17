@@ -23,10 +23,9 @@ conversation, either window. DorkOS just gives every session an ID so it can fin
 
 ## How to work with sessions day to day
 
-**Only one place can send a message at a time.** If you have a session open in two windows,
-DorkOS locks it to whoever's actively using it, and unlocks it again a few minutes after they
-stop, in case you wandered off mid-turn. Everyone can still watch the conversation; only sending
-a new message needs the lock.
+**One turn runs at a time, but every window can queue work.** Send a message while an agent is
+working and DorkOS keeps it in the session's queue. All connected windows can see the same queue
+and conversation. The next turn starts when the current one has finished and no approval is waiting.
 
 **Approvals survive a refresh.** If an agent asks to approve running a command or editing a file,
 that prompt sticks around even if you reload the page, switch sessions, or open a second window.
@@ -38,9 +37,10 @@ CLI and it appears in the DorkOS sidebar too, no import step, no sync button. Th
 can read the same files as well, though it's still early and under active testing, so expect some
 rough edges there.
 
-Codex and OpenCode sessions work the same way in spirit: each tool keeps its own session store,
-and DorkOS reads from all three to build one combined list. If DorkOS can't reach one of them, it
-still shows you the others and flags which one it missed.
+OpenCode supplies sessions from its own store. For Codex, DorkOS lists the threads it has tracked
+and saves the conversation events it observed. This is not a promise that every conversation
+started in the Codex CLI appears in the session list. If one runtime is unavailable, DorkOS still
+shows the others and reports which one it missed.
 
 **A "New messages" line remembers where you stopped.** Come back to a chat that ran on without
 you and DorkOS marks the spot. Everything you have not seen sits below the line.
@@ -77,8 +77,9 @@ event stream, `GET /api/sessions/:id/events`. That stream carries text deltas, t
 approval requests, and task-progress updates in real time.
 
 The `202` means the server has your message. If the session was already working, the message waits
-on the session's queue and runs when the current turn ends; the response says which happened, and
-`queuePosition` is 1 when nothing was ahead of it.
+on the session's queue and runs when the current turn ends. `queuePosition: 1` cannot distinguish
+an immediate start from the first waiting message. Use the stream's `turn_start` event to know
+when execution begins.
 
 ### One turn at a time
 
@@ -94,12 +95,15 @@ inactivity as a backstop.
 
 ### Storage
 
-DorkOS keeps no separate session database of its own. Each runtime owns its storage:
+History storage differs by runtime:
 
 - **Claude Code** writes each session as a transcript file at
   `~/.claude/projects/{project-slug}/{session-id}.jsonl`, in JSONL (one JSON record per line).
   That file is the single source of truth for the session.
-- **Codex** and **OpenCode** keep their own session stores, managed by their own tooling.
+- **Codex** owns its SDK threads, but its SDK cannot list them or read their history. DorkOS
+  persists tracked thread bindings and display metadata in `codex_threads`, and reconstructs
+  displayed messages from its own persisted event log.
+- **OpenCode** keeps sessions in its sidecar store, accessed through its SDK.
 
 DorkOS reads the Claude Code transcript to build the session list, plus per-session metadata and
 full message history. Metadata is computed fresh on every request, so it always reflects the
@@ -112,8 +116,9 @@ snapshot: completed history, the in-progress turn, session status, and any pendi
 there, every client receives the same live events with monotonic (always-increasing) sequence
 numbers, including turns triggered by another client or the CLI.
 
-On reconnect, the client resumes from its last sequence number via the `Last-Event-ID` header, and
-the server replays exactly what it missed. If that gap can't be served, the server falls back to
+The DorkOS browser uses WebSockets for these streams. On reconnect it sends the full opaque
+cursor as `?resume=`. HTTP consumers can use SSE and return the same cursor in `Last-Event-ID`.
+The server replays the missing events when it can. If that gap can't be served, the server falls back to
 sending a fresh snapshot instead.
 
 The sidebar list stays live the same way: a single global stream, `GET /api/events`, announces

@@ -12,7 +12,7 @@
     },
     {
       "guide": "development-workflow.md",
-      "description": "Dual-instance dogfooding: dev preview + built CLI cockpit, ports, data dirs",
+      "description": "Dual-instance dogfooding: dev preview + built CLI app, ports, data dirs",
       "patterns": [
         "dev:dogfood",
         "cli:dev",
@@ -28,12 +28,32 @@
     },
     {
       "guide": "architecture.md",
-      "description": "Hexagonal architecture, Transport interface, Electron compatibility",
+      "description": "Local implementation, Transport, runtimes and streams",
       "patterns": [
         "transport.ts",
         "direct-transport",
         "http-transport",
+        "apps/server/src/services/core/streams/",
+        "apps/server/src/services/runtimes/",
         "apps/obsidian-plugin/build-plugins"
+      ]
+    },
+    {
+      "guide": "system-architecture.md",
+      "description": "Deployment boundaries, protocols, ports, Community, Cloud and marketplace; diagrams",
+      "patterns": [
+        "apps/community/",
+        "packages/cloud-api/",
+        "apps/server/src/services/core/cloud/",
+        "apps/server/src/services/core/auth/cloud-link",
+        "apps/server/src/services/core/streams/",
+        "apps/server/src/services/communities/",
+        "apps/server/src/services/connectors/",
+        "apps/server/src/services/marketplace/",
+        "packages/harness/",
+        "packages/shared/src/agent-runtime",
+        "packages/shared/src/memory-provider",
+        "apps/desktop/src/main/"
       ]
     },
     {
@@ -362,7 +382,7 @@
     },
     {
       "guide": "community-server.md",
-      "description": "Independent community service: configuration, migrations, auth admission, room ordering, stream replay, and real Postgres checks",
+      "description": "Independent Community: browser, admission, pairing, streams, files, exports, storage and Postgres checks",
       "patterns": [
         "apps/community/",
         "community-wire",
@@ -511,7 +531,10 @@
       "description": "Architecture concepts overview",
       "patterns": [
         "apps/server/src/services/",
-        "transport.ts"
+        "transport.ts",
+        "apps/community/",
+        "packages/cloud-api/",
+        "packages/harness/"
       ]
     },
     {
@@ -687,6 +710,9 @@
       "patterns": [
         "apps/server/src/services/",
         "transport.ts",
+        "apps/community/",
+        "packages/cloud-api/",
+        "packages/harness/",
         "apps/obsidian-plugin/"
       ]
     },

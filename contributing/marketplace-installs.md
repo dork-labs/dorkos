@@ -20,7 +20,7 @@ A marketplace install turns a short identifier (`code-review-suite@dorkos-commun
 
 The five supported package types are `plugin`, `agent`, `skill-pack`, `adapter`, and `shape`. Each has its own destination rules and activation hook, but they all share the same orchestrator, the same transaction engine, the same permission preview, the same conflict detector, and the same cache layer. If you want to add a sixth type, you write one flow file and plug it into the dispatch switch — everything else is already wired (see section 9).
 
-The install half of the marketplace ships complete via CLI and HTTP. The browse UI is a separate spec; this guide covers only the operational core.
+Marketplace browsing and installation are implemented in the app, and the website has a separate discovery surface. This guide covers the local operational core; see [the system map](system-architecture.md#marketplace-discovery-and-delivery) for how the pieces connect.
 
 ### Key invariants
 
@@ -234,7 +234,7 @@ Two more rules:
 
 Consumers of the staged tree must skip `node_modules`. `findSkillFiles` in `install-skill-pack.ts` does: a vendored dependency shipping any file named `SKILL.md` that the parser rejects would otherwise **throw** and roll the whole install back, over a file the package author neither wrote nor can fix.
 
-The permission preview reports the declared `dependencies` **and** `optionalDependencies` as `npmDependencies: { name, range, optional? }[]` (section 6), and **both** consent surfaces name every library before the person approves the network fetch: the cockpit's install dialog (`features/marketplace/lib/format-permissions.ts`) and `dorkos install`'s terminal preview (`packages/cli/src/lib/preview-render.ts`). Both say "and everything they depend on", because the count is what the package declared and one declared library routinely pulls dozens more. `node_modules` stays out of `fileChanges` as it always has.
+The permission preview reports the declared `dependencies` **and** `optionalDependencies` as `npmDependencies: { name, range, optional? }[]` (section 6), and **both** consent surfaces name every library before the person approves the network fetch: the app's install dialog (`features/marketplace/lib/format-permissions.ts`) and `dorkos install`'s terminal preview (`packages/cli/src/lib/preview-render.ts`). Both say "and everything they depend on", because the count is what the package declared and one declared library routinely pulls dozens more. `node_modules` stays out of `fileChanges` as it always has.
 
 A new flow gets none of this for free — the call lives in each flow's `stage`, not in `runTransaction` (`services/shapes/fork.ts` shares the engine and must not npm-install). Step 2 of section 9 is where to add it.
 
@@ -293,7 +293,7 @@ The builder (`services/marketplace/permission-preview.ts`) walks the staged pack
   2. the package is a **`plugin` or `skill-pack`** — `projector.ts` filters to `PROJECTABLE_PLUGIN_TYPES`, and an `agent` or `shape` lands outside `plugins/` so it is never scanned at all;
   3. a person has **approved that exact command set** for that project — `services/harness/hook-approval.ts` (DOR-522) gates projection on the hook CONTENT rather than on the install, keyed by `<packageName>@<digest>`.
 
-  The cockpit's default install scope is global, so "will run" would over-claim in the common case; both preview surfaces therefore say the package **"declares"** these commands. The preview still reports them for every type and scope, because the file does land on disk, a later project-scoped install would surface them for approval, and under-reporting a shell command is the dangerous direction. The two surfaces answer different questions: the preview is what a person reads _before installing_, and the DOR-522 card is what they answer _before those commands can run_. Note that `packages/marketplace/src/package-validator.ts` has no `hooks` check, so nothing rejects a decorative `hooks/hooks.json` on a Shape or agent.
+  The app's default install scope is global, so "will run" would over-claim in the common case; both preview surfaces therefore say the package **"declares"** these commands. The preview still reports them for every type and scope, because the file does land on disk, a later project-scoped install would surface them for approval, and under-reporting a shell command is the dangerous direction. The two surfaces answer different questions: the preview is what a person reads _before installing_, and the DOR-522 card is what they answer _before those commands can run_. Note that `packages/marketplace/src/package-validator.ts` has no `hooks` check, so nothing rejects a decorative `hooks/hooks.json` on a Shape or agent.
 
 - `.dork/tasks/*/SKILL.md` for scheduled jobs (name, plus `cron`, `permissions` and `enabled` inside the file's `schedule:` block). Read with the unified skill schema since DOR-1486: a package still writing those fields at the top level declares no schedule at all, because nothing materializes or discovers one from there.
 - `manifest.schedules` for a Shape's scheduled jobs. Both disclosed fields report what the install will ACTUALLY do, not what the manifest asked for, because two apply-time rules override it (DOR-607) and echoing the raw declaration would be wrong in the alarming direction:

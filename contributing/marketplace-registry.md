@@ -1,10 +1,9 @@
 # Marketplace Registry
 
 This guide describes the format of the DorkOS marketplace registry that
-powers browse, install, and telemetry. The registry format is a **strict
-superset** of Claude Code's `marketplace.json` format — every registry
-this guide covers is valid for BOTH `claude plugin validate` AND DorkOS's
-install pipeline. DorkOS-specific extensions live in a sidecar file
+powers browse, install, and telemetry. The registry format is designed to extend Claude Code's `marketplace.json`
+format. DorkOS's install path is covered end to end; full Claude Code
+superset compatibility remains unverified and must not be advertised as complete. DorkOS-specific extensions live in a sidecar file
 (`dorkos.json`) that CC ignores entirely.
 
 > **Why a strict superset?** See ADR-0236. Empirical verification against
