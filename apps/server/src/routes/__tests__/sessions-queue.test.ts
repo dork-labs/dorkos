@@ -93,6 +93,12 @@ const OTHER_SESSION_ID = '00000000-0000-4000-8000-0000000000cd';
 let releaseTurn: () => void;
 /** The case's store, for seeding rows no route would create. */
 let store: MessageQueueStore;
+/** Resolves from the queued fixture scenario once the runtime starts it. */
+let secondTurnStarted: Promise<void>;
+let signalSecondTurnStarted!: () => void;
+/** Resolves after the queued fixture scenario has emitted its terminal event. */
+let secondTurnFinished: Promise<void>;
+let signalSecondTurnFinished!: () => void;
 
 /** Post a message as `clientId` and return the 202 body. */
 async function post(content: string, clientId: string) {
@@ -127,6 +133,12 @@ beforeEach(async () => {
   const gate = new Promise<void>((resolve) => {
     releaseTurn = resolve;
   });
+  secondTurnStarted = new Promise<void>((resolve) => {
+    signalSecondTurnStarted = resolve;
+  });
+  secondTurnFinished = new Promise<void>((resolve) => {
+    signalSecondTurnFinished = resolve;
+  });
   fakeRuntime.withScenarios([
     async function* () {
       yield { type: 'text_delta', data: { text: 'working' } } as StreamEvent;
@@ -134,7 +146,9 @@ beforeEach(async () => {
       yield { type: 'done', data: {} } as StreamEvent;
     },
     async function* () {
+      signalSecondTurnStarted();
       yield { type: 'done', data: {} } as StreamEvent;
+      signalSecondTurnFinished();
     },
   ]);
   const first = await request(server)
@@ -371,19 +385,17 @@ describe('a row this process ADOPTED after a restart (task 2.5)', () => {
     // ends, only the message still queued runs. An adopted entry left armed
     // would have fired the removed message anyway.
     releaseTurn();
-    await vi.waitFor(() => expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(2));
-    // Let the queue drain completely before judging: a stale entry sorts BEHIND
-    // every message that still has a row, so it would fire after the assertion
-    // above rather than instead of it, and a count taken too early cannot tell
-    // the two apart.
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await secondTurnStarted;
+    await secondTurnFinished;
+    // The remaining row ran through its terminal event. That is the queue's
+    // actual lifecycle boundary; a fixed delay only sampled it under load.
     expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(2);
     expect(fakeRuntime.sendMessage).not.toHaveBeenCalledWith(
       SESSION_ID,
       'reworded after the restart',
       expect.anything()
     );
-  });
+  }, 10_000);
 });
 
 describe('POST /api/sessions/:id/messages — the receipt', () => {

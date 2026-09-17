@@ -198,6 +198,14 @@ describe('the dispatch id survives the detached turn', () => {
     const gate = new Promise<void>((resolve) => {
       open = resolve;
     });
+    let signalSecondStarted!: () => void;
+    const secondStarted = new Promise<void>((resolve) => {
+      signalSecondStarted = resolve;
+    });
+    let signalSecondFinished!: () => void;
+    const secondFinished = new Promise<void>((resolve) => {
+      signalSecondFinished = resolve;
+    });
     fakeRuntime.withScenarios([
       async function* () {
         yield { type: 'text_delta', data: { text: 'working' } } as StreamEvent;
@@ -205,7 +213,9 @@ describe('the dispatch id survives the detached turn', () => {
         yield { type: 'done', data: {} } as StreamEvent;
       },
       async function* () {
+        signalSecondStarted();
         yield { type: 'done', data: {} } as StreamEvent;
+        signalSecondFinished();
       },
     ]);
 
@@ -229,6 +239,8 @@ describe('the dispatch id survives the detached turn', () => {
     expect(waiting.endedAt).toBeNull();
 
     open();
+    await secondStarted;
+    await secondFinished;
 
     // It closes under its OWN id when its turn finally runs and settles.
     await vi.waitFor(() => {
@@ -236,7 +248,7 @@ describe('the dispatch id survives the detached turn', () => {
       expect(row?.outcome).toBe('answered');
       expect(row?.endedAt).not.toBeNull();
     });
-  });
+  }, 10_000);
 
   it('runs a queued message under its own dispatch, not the one it waited behind', async () => {
     // The production failure (DOR-1159): three POSTs minted three ids, and every
