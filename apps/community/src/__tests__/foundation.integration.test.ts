@@ -341,7 +341,12 @@ describe('owner foundation over real HTTP and Postgres', () => {
       body: JSON.stringify({ cursor: firstCursor }),
     });
     expect((await again.json()).cursor).toBe(current.cursor);
-    const future = encodeCursor({ channelId, thread: null, epoch: 1, seq: 999_999 }, config);
+    const communityId = (await pool.query<{ id: string }>('SELECT id FROM communities')).rows[0]!
+      .id;
+    const future = encodeCursor(
+      { version: 1, communityId, channelId, thread: null, epoch: 1, seq: 999_999 },
+      config
+    );
     const tooFar = await request(`/api/v1/channels/${channelId}/read-cursor`, {
       method: 'PUT',
       headers: { cookie: ownerCookie, 'content-type': 'application/json' },
@@ -544,6 +549,68 @@ describe('owner foundation over real HTTP and Postgres', () => {
     ).toBe(409);
   });
 
+  it('projects an agent post key only to its authenticated owner across history and snapshots', async () => {
+    const created = await post('/api/v1/channels', { name: 'Owner correlation' }, ownerCookie);
+    expect(created.status).toBe(201);
+    const id = (await created.json()).channel.id as string;
+    expect(
+      (
+        await request(`/api/v1/channels/${id}/join`, {
+          method: 'POST',
+          headers: { cookie: bobCookie },
+        })
+      ).status
+    ).toBe(200);
+    const communityId = (await pool.query<{ id: string }>('SELECT id FROM communities')).rows[0]!
+      .id;
+    const agent = await pool.query<{ id: string }>(
+      `INSERT INTO agents(community_id,owner_member_id,display_name,handle,local_agent_id)
+       VALUES($1,$2,'Owner worker','owner-worker','owner-worker-local') RETURNING id`,
+      [communityId, ownerMemberId]
+    );
+    await pool.query('INSERT INTO agent_channel_members(channel_id,agent_id) VALUES($1,$2)', [
+      id,
+      agent.rows[0]!.id,
+    ]);
+    const sequence = await pool.query<{ last_seq: string }>(
+      'UPDATE channels SET last_seq=last_seq+1 WHERE id=$1 RETURNING last_seq',
+      [id]
+    );
+    await pool.query(
+      `INSERT INTO entries(channel_id,seq,author_member_id,author_agent_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,idempotency_key,payload_hash)
+       VALUES($1,$2,NULL,$3,'Owner worker','private correlation',ARRAY[]::uuid[],NULL,NULL,'owner-wire-key','test-hash')`,
+      [id, sequence.rows[0]!.last_seq, agent.rows[0]!.id]
+    );
+
+    const [ownerHistory, bobHistory] = await Promise.all([
+      request(`/api/v1/channels/${id}/entries`, { headers: { cookie: ownerCookie } }),
+      request(`/api/v1/channels/${id}/entries`, { headers: { cookie: bobCookie } }),
+    ]);
+    expect(ownerHistory.status).toBe(200);
+    expect(bobHistory.status).toBe(200);
+    expect((await ownerHistory.json()).entries[0].originIdempotencyKey).toBe('owner-wire-key');
+    expect((await bobHistory.json()).entries[0].originIdempotencyKey).toBeUndefined();
+
+    const [ownerEvents, bobEvents] = await Promise.all([
+      request(`/api/v1/channels/${id}/events`, { headers: { cookie: ownerCookie } }),
+      request(`/api/v1/channels/${id}/events`, { headers: { cookie: bobCookie } }),
+    ]);
+    const ownerReader = ownerEvents.body!.getReader();
+    const bobReader = bobEvents.body!.getReader();
+    expect((await nextSse(ownerReader)).data.entries[0].originIdempotencyKey).toBe(
+      'owner-wire-key'
+    );
+    expect((await nextSse(bobReader)).data.entries[0].originIdempotencyKey).toBeUndefined();
+    await ownerReader.cancel();
+    await bobReader.cancel();
+    await pool.query('DELETE FROM entries WHERE channel_id=$1', [id]);
+    await pool.query('DELETE FROM agent_channel_members WHERE channel_id=$1 AND agent_id=$2', [
+      id,
+      agent.rows[0]!.id,
+    ]);
+    await pool.query('DELETE FROM agents WHERE id=$1', [agent.rows[0]!.id]);
+  });
+
   it('rejects a channel create if admin authority is removed while the insert waits', async () => {
     expect(
       (
@@ -689,7 +756,7 @@ describe('owner foundation over real HTTP and Postgres', () => {
     try {
       const snapshot = await nextSse(reader);
       expect(snapshot.event).toBe('snapshot');
-      await new Promise((resolve) => setTimeout(resolve, 650));
+      expect((await nextSse(reader)).event).toBe('replay_complete');
       const posted = await post(
         `/api/v1/channels/${id}/entries`,
         { text: 'live message', idempotencyKey: 'live-one' },
@@ -705,8 +772,15 @@ describe('owner foundation over real HTTP and Postgres', () => {
         signal: controller.signal,
       });
       const replayReader = replay.body!.getReader();
-      expect((await nextSse(replayReader)).event).toBe('snapshot');
-      expect((await nextSse(replayReader)).data.entry.id).toBe(receipt.entry.id);
+      const replaySnapshot = await nextSse(replayReader);
+      expect(replaySnapshot.event).toBe('snapshot');
+      const replayed = replaySnapshot.data.entries.some(
+        (entry: { id: string }) => entry.id === receipt.entry.id
+      )
+        ? receipt.entry.id
+        : (await nextSse(replayReader)).data.entry.id;
+      expect(replayed).toBe(receipt.entry.id);
+      expect((await nextSse(replayReader)).event).toBe('replay_complete');
       await replayReader.cancel();
       const removed = await request(`/api/v1/channels/${id}/members/${bobMemberId}`, {
         method: 'DELETE',
@@ -755,6 +829,7 @@ describe('owner foundation over real HTTP and Postgres', () => {
     const reader = response.body!.getReader();
     try {
       expect((await nextSse(reader)).event).toBe('snapshot');
+      expect((await nextSse(reader)).event).toBe('replay_complete');
       expect(
         (
           await post(
@@ -799,6 +874,7 @@ describe('owner foundation over real HTTP and Postgres', () => {
     const reader = response.body!.getReader();
     try {
       expect((await nextSse(reader)).event).toBe('snapshot');
+      expect((await nextSse(reader)).event).toBe('replay_complete');
       await pool.query(
         `DELETE FROM session WHERE "userId"=(SELECT user_id FROM members WHERE id=$1)`,
         [bobMemberId]
@@ -857,6 +933,9 @@ describe('owner foundation over real HTTP and Postgres', () => {
       const reader = response.body!.getReader();
       const snapshot = await nextSse(reader);
       expect(snapshot.data.entries).toEqual([]);
+      const replayComplete = await nextSse(reader);
+      expect(replayComplete.event).toBe('replay_complete');
+      expect(replayComplete.data.capturedSeq).toBe(0);
       const event = await nextSse(reader);
       expect(event.data.entry.id).toBe(receipt.entry.id);
       expect(event.data.entry.seq).toBe(1);
@@ -898,20 +977,29 @@ describe('owner foundation over real HTTP and Postgres', () => {
     expect(response.status).toBe(200);
     const reader = response.body!.getReader();
     try {
-      expect((await nextSse(reader)).event).toBe('snapshot');
+      const snapshot = await nextSse(reader);
+      expect(snapshot.event).toBe('snapshot');
       await new Promise((resolve) => setTimeout(resolve, 700));
-      const seen: number[] = [];
-      for (let index = 0; index < 269; index += 1) {
+      const seen = snapshot.data.entries.map((entry: { seq: number }) => entry.seq);
+      for (let index = seen.length; index < 269; index += 1) {
         const event = await nextSse(reader);
         expect(event.event).toBe('entry');
         seen.push(event.data.entry.seq);
       }
       expect(seen).toEqual(Array.from({ length: 269 }, (_, index) => index + 2));
+      const replayComplete = await nextSse(reader);
+      expect(replayComplete.event).toBe('replay_complete');
+      expect(replayComplete.data.capturedSeq).toBe(270);
     } finally {
       controller.abort();
       await reader.cancel().catch(() => undefined);
     }
-    const future = encodeCursor({ channelId: id, thread: null, epoch: 1, seq: 9999 }, config);
+    const communityId = (await pool.query<{ id: string }>('SELECT id FROM communities')).rows[0]!
+      .id;
+    const future = encodeCursor(
+      { version: 1, communityId, channelId: id, thread: null, epoch: 1, seq: 9999 },
+      config
+    );
     expect(
       (
         await request(`/api/v1/channels/${id}/events`, {

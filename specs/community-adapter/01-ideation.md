@@ -2,7 +2,7 @@
 slug: community-adapter
 id: 260727-221432
 created: 2026-07-27
-status: ideation
+status: implemented
 ---
 
 # Ideation: `CommunityAdapter` — the port every community backend implements

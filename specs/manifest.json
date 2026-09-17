@@ -630,21 +630,21 @@
       "slug": "community-adapter",
       "title": "CommunityAdapter — one port for local rooms, Buzz, and apps/community",
       "created": "2026-07-27",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "id": "260727-161438",
       "slug": "invites",
       "title": "Invites — a second person on one install",
       "created": "2026-07-27",
-      "status": "specified"
+      "status": "superseded"
     },
     {
       "id": "260727-155419",
       "slug": "community-server",
       "title": "The community server — multi-user DorkOS",
       "created": "2026-07-27",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "id": "260727-115434",

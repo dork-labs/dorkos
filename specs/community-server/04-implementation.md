@@ -1,60 +1,75 @@
-# Implementation Summary: A self-hosted community for people and their agents
+# Implementation: A self-hosted community for people and their agents
 
-**Created:** 2026-09-16  
-**Last Updated:** 2026-09-16  
-**Spec:** specs/community-server/02-specification.md
+**Updated:** 2026-09-16
 
-## Progress
+**Specification:** [Community server](02-specification.md)
 
-**Status:** In Progress  
-**Tasks Completed:** 15 / 25 (foundation, admission, files/exports and browser independently accepted; later local integration and remaining PR merges pending)
+**Acceptance tasks:** [Frozen task breakdown](03-tasks.json)
 
-## Foundation: tasks 1.1–1.6
+**Status:** Implemented and verified. Release closeout will be recorded on the linked work items after the remaining gates.
 
-Workers `/root/implement_community_contract` and `/root/implement_community_server` implemented the shared contract and Hono server in separate worktrees. Reviewer `/root/review_community_foundation` independently applied `REVIEW.md`. Root integrated both branches and tested the built Docker image.
+## Delivered behavior
 
-The public contract includes versioned metadata, channels, entries, durable cursors, explicit acting identities, and capability-aware conformance. Private credential responses have their own server-only schemas. Existing local and Buzz communities explicitly refuse unsupported acting identities.
+`apps/community` is an MIT-licensed Hono service with a React browser client, PostgreSQL storage and persistent SSE. It runs independently of DorkOS Cloud. Docker Compose is the primary self-hosting path; the deployment guide also covers a persistent managed service and optional external object storage. The local DorkOS server remains Express and single-owner.
 
-The new app owns PostgreSQL migrations, Better Auth, one-owner bootstrap, channel membership, roles, ordered idempotent posts, one-level replies, resolved mentions, read cursors, and replayable SSE. Docker packaging and a required real-Postgres CI job accompany the app. The first batch supplied a status shell; the chat browser is part of the later phase 3 checkpoint.
+A community issues its own accounts, invitations and agent credentials. People can join channels, reply in threads, share files, track unread messages, manage members and export their data. A server operator can recover an account without email; recovery revokes sessions and connected installation/agent credentials. Files use filesystem or S3 storage behind one contract, with durable, non-starving cleanup retries.
 
-Independent review reproduced and fixed five issues: private-channel discovery by unjoined administrators, a read-cursor membership race, incorrectly protected public metadata, stale-role writes after demotion, and streams surviving original-session revocation. The accepted source was `eba138949880f3e0791e07d2ef849132f18ef875` before rebasing onto merged planning commit `c181c414fc6c9eabb4c25f9cd4dbf6e75163710c`.
+People approve their local DorkOS installation in the community browser, then enroll their own local agents. The DorkOS app presents remote channels through `Transport` and the native `CommunityAdapter`; credentials stay on the local server. Agents execute on their owners' machines. Only a fresh, authorized external human mention can start a remote-room turn; history, replay and mirrored agent output do not recursively dispatch work.
+
+Agent replies enter a transactional outbox. A stable idempotency key, authenticated receipt/echo correlation and durable pending state retain one confirmed message across retries, held responses, reloads and restarts. Every delivery rechecks the current local agent manifest. Stop, room Leave, removal and Mesh unregister revoke local execution and delivery authority before remote cleanup can finish. Room-scoped controls preserve other rooms and agents.
+
+## Delivery and independent review
+
+Planning merged in [#1911](https://github.com/dork-labs/dorkos/pull/1911), foundation in [#1912](https://github.com/dork-labs/dorkos/pull/1912), admission in [#1913](https://github.com/dork-labs/dorkos/pull/1913), and browser chat/files/exports in [#1914](https://github.com/dork-labs/dorkos/pull/1914). The participation changes build on merged main `9688d2db0616efb03d503bc105ef40b7541dc30e`.
+
+Authors worked in isolated worktrees. Separate reviewers applied `REVIEW.md` to each implementation and the combined source, including real boundary and mutation checks. The final production composition was accepted at tree `10cac1ab971d9a72bf5b7a60dbf113c12fd904d4`; subsequent bounded changes received separate acceptance: exact numeric Stop assertion, routed-content ARIA capture, responsive attachment filename rendering, the measured overall test timeout, and invitation manifest status. The release record also passed independent review.
+
+Review corrections include private-channel visibility, admission and role races, stream revocation, exact authenticated delivery correlation, live Stop/ejection ordering, stale local-manifest authority, raw attachment HTTP envelopes, and confirmed own-message visibility. The responsive attachment fix preserves the full accessible/download name while containing a legal 233-character filename within a 292-pixel mobile message column.
 
 ## Verification evidence
 
-- Real PostgreSQL: 13 integration tests passed after review corrections. The session-revocation mutation made the intended stream test fail; restoring the guard returned the suite to green.
-- Shared contract and existing community behavior: 436 tests passed, with 55 declared capability skips. Removing actor-read isolation made the intended conformance test fail.
-- Normal pre-push verification on the accepted source: 36 tasks passed. Node 24.14.1 was used; the machine's Node 22.22.2 is below the repo's minimum and changes Unicode readline behavior in an existing search test.
-- Built image `sha256:5bbc5dea43e504075f619560023a480fb46654d3977be9dc50c8e567d8975321`: fresh-database bootstrap, public metadata, owner signup, channel creation, and exactly one post passed. Restart retained the account session and history; an idempotent retry returned the same entry. Upgrading an earlier foundation database also passed.
-- The running image remained on an internal Docker network with PostgreSQL reachable and outbound access to DorkOS hosts blocked. These checks cover the foundation only, not the final two-human/local-agent acceptance journey.
+### Complete packaged participation
 
-## Integration notes
+The final packaged journey exited successfully on 2026-09-16 in **101.909 seconds**: one expected test, no skips, no unexpected failures, no retries and no report errors.
 
-The planning PR #1911 and foundation PR #1912 are merged. The foundation was rebased onto that merged main, including Cloud PR #1908, without textual conflicts. Combined-tree lint passed 24 tasks and typecheck passed 38. Real PostgreSQL passed 13/13 again. The full combined suite passed 37/37 tasks with `VITEST_MAX_WORKERS=2` and package concurrency limited to one. The client contributed 1,231 files and 15,458 passing tests; the server contributed 1,107 passing files and one explicit skip. Earlier high-contention runs timed out in existing memory/client tests; the exact affected files passed in isolation before the full rerun. Repository script checks passed, including 595 script Vitest cases; regenerating OpenAPI produced no change. The clean combined Docker build exposed the newly required public `packages/cloud-api` dependency. The Docker context now includes and builds it before shared. Independent review accepted the packaging fix, and image `sha256:1125ec2273327e9f2c466fecb8aaac20db6bd09b41ec87f394fc23e3e553ecf8` passed persisted-session/history/idempotency HTTP checks and blocked DorkOS-host egress. No private Cloud service is required.
+The real production apps were built from clean source into `dorkos-community-acceptance:reviewed-final`, manifest `sha256:3aa6dfe659958f65b7f7fb64fe56b31bb63844411a7d381adc970c3350458e9b`. The proof image adds only the independently accepted 180-second Playwright configuration. Source hashes for the driver, configuration, attachment component, timeline surface and qualified routes match the proof image.
 
-Existing site, local server, and CLI retain Better Auth 1.7.2 with explicit compatible core/fetch peers; the independent app uses 1.7.5.
+The journey covers:
 
-## Admission: tasks 2.1–2.4
+- Two independent communities, human admission and browser-approved local connections.
+- Local-agent enrollment and channel Join/Leave/rejoin.
+- A fresh mention dispatched through the installed CLI's deterministic test runtime, producing exactly one confirmed agent reply and the expected PNG bytes.
+- Community and local restarts, retained messages/files, and no dispatch of historical mentions.
+- Two-community isolation, offline/reconnect and manual retry under the original delivery key.
+- Confirmation before a held receipt, reload without duplicate history, live and held Stop, and agent ejection.
+- Human posting and PNG upload/download after agent removal.
+- Unread navigation, local thread reply identity, mobile keyboard return to the channel and no horizontal page overflow.
 
-Worker `/root/implement_community_server` implemented invitations, membership changes, installation pairing, and agent credentials in an isolated worktree. Reviewer `/root/review_community_foundation` independently applied `REVIEW.md`; root integrated the accepted changes onto the foundation.
+No live inference service or paid model credential enters this runtime. The sealed-network proof records `postgresReachable: true`, `publicIpReachable: false` and `dorkosReachable: false`.
 
-Signed invitations have server-side records, bounded seats and expiry, a short-lived signup grant, and transactional redemption. Members can be removed, leave, or transfer ownership. Pairing requires a private verifier and browser approval; approval and decline never expose personal or agent credentials to the browser. Agent enrollment, channel membership, token rotation and removal retain the human owner's authority and shared quotas.
+The successful bundle is `.temp/community-acceptance/run.WW3ZPH` in the final integration worktree: seven screenshots, an attached mobile ARIA snapshot, three recorded browser pages, the JSON report and network proof. Preserve it in the private programme archive before worktree removal. Earlier failed diagnostics are retained as diagnostic history, not substituted for this successful result.
 
-Independent review exercised concurrent promotion/removal, credential revocation during a database wait, ownership transfer against agent ejection, and one-connection database pools. Corrections recheck authority after locks, use the held transaction client, and lock the member before the original cookie session. The final ordered-lock mutation reproduced the intended deadlock failure; restoring the correction returned all 27 PostgreSQL tests to green. The accepted source is `48191843285d903d7e8647ce0ab950d6aec4ad44` before consolidation.
+The 180-second overall timeout follows a measured run whose last behavior assertion completed around 114 seconds before the prior 120-second budget expired during browser/video context cleanup. Individual assertion and helper deadlines remain unchanged.
 
-Normal pre-push validation passed all 37 tasks on the accepted source, including 1,231 client files and 1,107 server files (one explicit server skip). Admission validation: PostgreSQL 27/27, unit tests 7/7, Chromium pairing tests 2/2, build, typecheck, lint, and normal repository hooks. The browser proof covers mobile keyboard focus, literal installation names, approval, decline, and secret-free responses. These changes also address the two SSE/history review nits on foundation PR #1912.
+### Service, contract and browser checks
 
-## Files and browser: phase 3
+- Real PostgreSQL and native HTTP conformance: 100 passing tests with four declared capability exclusions.
+- Standalone community browser: three passing cases across two files against real PostgreSQL.
+- Current focused participation checks: 54 passing tests across qualified routes, mirrored lifecycle, client transport and the remote community surface.
+- Combined typecheck/lint: 33 successful tasks; existing warnings remain.
+- Fresh full repository verification: all 35 tasks passed in 25m27.068s, with 26 cached. The server passed 1,117 files and 19,070 tests, with two declared skipped files and 55 skipped tests. The client passed all 1,240 files and 15,507 tests.
+- Regenerating OpenAPI produces no change.
 
-Workers `/root/implement_community_contract` and `/root/implement_community_server` implemented the storage backend and browser in separate worktrees. `/root/finish_community_browser` took over the browser checkpoint. The backend tasks 3.1, 3.2 and 3.5 have independent `REVIEW.md` acceptance at `5291f11b6`, integrated with the final admission fixes at `4bcffb774`. Browser tasks 3.3–3.4 were independently accepted by `/root/review_community_delivery` at `4105fa3fb1174ff8f1cedb1957ba59670b4f24af`, following review corrections.
+Guard mutation checks demonstrated failure when live/read-only dispatch protection, external-author permission confinement or mirrored-output recursion suppression was removed, with green baselines restored afterward. The recursion case uses the same mention-only engagement policy in local and remote positive controls. Reintroducing the old ejection ordering caused two unauthorized turns instead of zero. Replacing numeric Stop with a boolean fails the response-schema assertion; weakening the raw upload envelope fails the real HTTP attachment test.
 
-The backend includes bounded filesystem/S3 storage, verified file types and checksums, idempotent uploads, membership-checked streaming downloads, transactional entry binding, owner quotas, unused-file cleanup, and private personal/owner ZIP exports. Review corrected upload-finalization pool exhaustion, missing owned-agent channels in personal exports, and a stream revocation race during attachment lookup. Integrated checks passed PostgreSQL 39/39, real MinIO 1/1, unit 18/18, build, lint and typecheck. A Docker image passed invitations, private pairing, an agent-attributed threaded reply with a file, exact download and export boundaries, then restart persistence. This does not yet prove dispatch through a local runtime.
+Desktop, dark tablet and mobile captures have been inspected. The earlier theme-transition capture issue is corrected by finishing animations before the relevant screenshots. The successful final bundle passed a separate visual, ARIA and video inspection: named controls and feed content are present, all seven screenshots are readable, and all three recorded pages have normal metadata and valid rendered frames.
 
-The same-origin browser covers owner setup, sign-in, invitation admission, configured OAuth choices, channels, history, threads, live updates, read cursors, files, member/agent/grant controls, exports, leaving and ownership transfer. Its support endpoints return only public identity, member and sign-in-availability data. Agent roster entries can name their human owner without exposing email or credentials.
+### Dependencies and packaging
 
-Author verification passed PostgreSQL 41/41 and three real-Postgres Playwright tests. The browser scenario uses separate owner/member/observer contexts. Root inspected populated mobile, desktop thread/composer, dark tablet, admission, member administration and file-rejection screenshots. Review led to a corrected thread/composer layout, a confirmed zero read count after the final file post, and a repair action for unsupported files while preserving the draft. Transient errors alone offer retry. Independent review fixed delayed history overwriting live entries, cross-channel response races, reconnect error recovery, stale ownership controls, the documented invitation fragment, and agent removal routing. The reviewer and root each ran all three real-Postgres browser tests successfully. Required CI now runs the browser tests and rejects skipped, empty, incomplete or retried reports. No dedicated React Testing Library component suite is claimed.
+The production license inventory was independently revalidated against lockfile SHA-256 `cae609e4f4d877bcfed47430e5193a4b47079aed528611e26b0abb4542e66f35`. All 80 records match installed package names, versions and license metadata; the shared workspace package resolves to the repository MIT license. This is metadata evidence for the pinned dependency closure, not a legal certification or a future-dependency check.
 
-Root combined validation passed PostgreSQL 41/41, Chromium 3/3 with the nonzero browser census, and typecheck. Two earlier runs hit the unchanged 30-second backlog replay deadline. Replacing repeated per-entry authentication hydration with fresh exact-credential SQL checks retained post-enrichment authorization and reduced the 269-entry replay to 6.2 seconds in the successful combined run. A personal-grant revocation regression checks that a later committed post is not delivered to the revoked stream. Independent review of this final stream delta is in progress.
+The public build includes `packages/cloud-api` as a public package, without requiring the private Cloud service. The community uses its own Better Auth instance; existing local server, site and CLI authentication remain independent.
 
-## Remaining work
+## Release closeout
 
-Root integrated the accepted phase 3 browser and storage backend in `codex/community-storage`. Worker `/root/remote_conformance_delivery` owns native HTTP conformance after accepted connection setup task 4.1; `/root/finish_community_browser` proceeds to authorized mirrors in its own worktree. Authorized mirrors, local routing, real agent dispatch and reliable outgoing delivery, local app surfaces, and the final packaged acceptance journey remain unfinished. Privileged offline password recovery and browser CI enforcement have independently accepted preparatory commits for phase 6, but that phase is not complete. Canonical requirements and dependencies remain in `03-tasks.json`; the six phases remain six coherent PR batches.
+The release must pass review of the exact pushed branch and the required merge-queue checks. Close DOR-589, DOR-594, DOR-595 and DOR-596 together only after those gates finish. Their completion record retains the final PR/merge result and archive location. Preserve every unique commit and evidence bundle before removing owned programme worktrees and test resources; implementation verification alone is not programme closeout.

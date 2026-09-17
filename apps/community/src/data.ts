@@ -54,6 +54,25 @@ export async function requireConnectionGrant(
   return { member, tokenHash };
 }
 
+/** Recheck a personal grant on the mutation connection after it waited on a channel lock. */
+export async function assertConnectionGrantCurrent(
+  client: PoolClient,
+  memberId: string,
+  tokenHash: string,
+  scope: 'read' | 'post' | 'enroll-agent'
+): Promise<void> {
+  const owner = await client.query('SELECT 1 FROM members WHERE id=$1 AND active FOR UPDATE', [
+    memberId,
+  ]);
+  if (!owner.rowCount) throw new ApiError(403, 'FORBIDDEN', 'Owner membership has ended.');
+  const grant = await client.query(
+    'SELECT 1 FROM connection_grants WHERE member_id=$1 AND token_hash=$2 AND revoked_at IS NULL AND scopes @> ARRAY[$3]::text[] FOR SHARE',
+    [memberId, tokenHash, scope]
+  );
+  if (!grant.rowCount)
+    throw new ApiError(401, 'UNAUTHENTICATED', 'This connection is unavailable.');
+}
+
 /** Resolve a cookie or a scoped bearer without accepting an acting-member hint. */
 export async function requirePrincipal(
   c: Context,

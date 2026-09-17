@@ -22,18 +22,34 @@ import {
 import { ApiError, json, readJson } from '../http.js';
 import { resolveCommunityMentions } from '../mentions.js';
 import { attachmentsForEntries } from './attachments.js';
+import type { DeliveryReceiptGate } from '../delivery-receipt-gate.js';
 
 interface EntryRow {
   id: string;
   channel_id: string;
   seq: string;
   author_member_id: string;
+  author_agent_id: string | null;
   author_display_name: string;
   text: string;
   mentions: string[];
   parent_entry_id: string | null;
   thread_root_entry_id: string | null;
   created_at: Date;
+  idempotency_key: string;
+  agent_owner_member_id: string | null;
+}
+
+/** Reveal an agent's stable post key only to that agent or its owning human. */
+export function originKeyForPrincipal(
+  row: EntryRow,
+  principal: { kind: 'human' | 'agent'; id: string }
+): string | undefined {
+  if (!row.author_agent_id) return undefined;
+  return (principal.kind === 'agent' && principal.id === row.author_agent_id) ||
+    (principal.kind === 'human' && principal.id === row.agent_owner_member_id)
+    ? row.idempotency_key
+    : undefined;
 }
 
 /** Convert a committed row to the public wire form. */
@@ -41,7 +57,9 @@ export function entryProjection(
   row: EntryRow,
   epoch: number,
   config: CommunityConfig,
-  attachments: CommunityWireEntry['attachments'] = []
+  attachments: CommunityWireEntry['attachments'] = [],
+  communityId: string,
+  originIdempotencyKey?: string
 ): CommunityWireEntry {
   return {
     id: row.id,
@@ -49,23 +67,32 @@ export function entryProjection(
     seq: Number(row.seq),
     authorMemberId: row.author_member_id,
     authorDisplayName: row.author_display_name,
+    authorKind: row.author_agent_id ? 'agent' : 'human',
     text: row.text,
     mentions: row.mentions,
     parentEntryId: row.parent_entry_id,
     threadRootEntryId: row.thread_root_entry_id,
     createdAt: row.created_at.toISOString(),
     cursor: encodeCursor(
-      { channelId: row.channel_id, thread: null, epoch, seq: Number(row.seq) },
+      {
+        version: 1,
+        communityId,
+        channelId: row.channel_id,
+        thread: null,
+        epoch,
+        seq: Number(row.seq),
+      },
       config
     ),
     attachments,
+    ...(originIdempotencyKey ? { originIdempotencyKey } : {}),
   };
 }
 
 /** Load one entry without revealing its storage columns. */
 export async function loadEntry(client: PoolClient | Pool, id: string): Promise<EntryRow> {
   const result = await client.query<EntryRow>(
-    'SELECT id,channel_id,seq,COALESCE(author_member_id,author_agent_id) AS author_member_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,created_at FROM entries WHERE id=$1',
+    'SELECT e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,e.mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id WHERE e.id=$1',
     [id]
   );
   if (!result.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Entry not found.');
@@ -75,7 +102,12 @@ export async function loadEntry(client: PoolClient | Pool, id: string): Promise<
 /** Register ordered posts and bounded, scoped history. */
 export function registerEntryRoutes(
   app: Hono,
-  { pool, auth, config }: { pool: Pool; auth: CommunityAuth; config: CommunityConfig }
+  {
+    pool,
+    auth,
+    config,
+    receiptGate,
+  }: { pool: Pool; auth: CommunityAuth; config: CommunityConfig; receiptGate?: DeliveryReceiptGate }
 ) {
   app.post('/api/v1/channels/:id/entries', async (c) => {
     const principal = await requirePrincipal(c, auth, pool, 'post');
@@ -90,11 +122,18 @@ export function registerEntryRoutes(
       .update(
         JSON.stringify({
           text: body.text,
+          mentions: body.mentions ?? [],
           parentEntryId: body.parentEntryId ?? null,
           attachmentIds: body.attachmentIds ?? [],
         })
       )
       .digest('hex');
+    if (principal.kind === 'agent' && receiptGate) {
+      await receiptGate.holdBeforePersist({
+        channelId: c.req.param('id'),
+        signal: c.req.raw.signal,
+      });
+    }
     const result = await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), principal);
       requireJoined(channel);
@@ -113,13 +152,16 @@ export function registerEntryRoutes(
             'This key was used for different content.'
           );
         }
+        const previousEntry = await loadEntry(client, previous.rows[0].id);
         const attachmentMap = await attachmentsForEntries(client, [previous.rows[0].id]);
         return {
           entry: entryProjection(
-            await loadEntry(client, previous.rows[0].id),
+            previousEntry,
             channel.epoch,
             config,
-            attachmentMap.get(previous.rows[0].id)
+            attachmentMap.get(previous.rows[0].id),
+            principal.community_id,
+            originKeyForPrincipal(previousEntry, principal)
           ),
           repeated: true,
         };
@@ -158,7 +200,11 @@ export function registerEntryRoutes(
          WHERE acm.channel_id=$1 AND a.active AND owner.active`,
         [channel.id]
       );
-      const mentions = resolveCommunityMentions(body.text, roster.rows);
+      const resolvedMentions = resolveCommunityMentions(body.text, roster.rows);
+      const mentions = body.mentions ?? resolvedMentions;
+      const joinedIds = new Set(roster.rows.map((member) => member.id));
+      if (mentions.some((memberId) => !joinedIds.has(memberId)))
+        throw new ApiError(404, 'NOT_FOUND', 'Mentioned member not found.');
       const next = await client.query<{ last_seq: string }>(
         'UPDATE channels SET last_seq=last_seq+1 WHERE id=$1 RETURNING last_seq',
         [channel.id]
@@ -186,17 +232,27 @@ export function registerEntryRoutes(
           body.attachmentIds,
         ]);
       }
+      const insertedEntry = await loadEntry(client, inserted.rows[0].id);
       const attachmentMap = await attachmentsForEntries(client, [inserted.rows[0].id]);
       return {
         entry: entryProjection(
-          await loadEntry(client, inserted.rows[0].id),
+          insertedEntry,
           channel.epoch,
           config,
-          attachmentMap.get(inserted.rows[0].id)
+          attachmentMap.get(inserted.rows[0].id),
+          principal.community_id,
+          originKeyForPrincipal(insertedEntry, principal)
         ),
         repeated: false,
       };
     });
+    if (principal.kind === 'agent' && !result.repeated && receiptGate) {
+      await receiptGate.holdAfterPersist({
+        channelId: c.req.param('id'),
+        entryId: result.entry.id,
+        signal: c.req.raw.signal,
+      });
+    }
     return json(
       c,
       CommunityWireEntryPostResponseSchema,
@@ -230,7 +286,12 @@ export function registerEntryRoutes(
       const seq = parsed.cursor
         ? decodeCursor(
             parsed.cursor,
-            { channelId: channel.id, thread: parsed.thread ?? null, epoch: channel.epoch },
+            {
+              communityId: principal.community_id,
+              channelId: channel.id,
+              thread: parsed.thread ?? null,
+              epoch: channel.epoch,
+            },
             config
           )
         : 0;
@@ -241,10 +302,10 @@ export function registerEntryRoutes(
       }
       const limit = parsed.limit ?? 50;
       const result = await client.query<EntryRow>(
-        `SELECT id,channel_id,seq,COALESCE(author_member_id,author_agent_id) AS author_member_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,created_at
-         FROM entries WHERE channel_id=$1 AND seq>$2 AND
-           (($3::uuid IS NULL AND thread_root_entry_id IS NULL) OR ($3::uuid IS NOT NULL AND (id=$3 OR thread_root_entry_id=$3)))
-         ORDER BY seq LIMIT $4`,
+        `SELECT e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,e.mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id
+         FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id WHERE e.channel_id=$1 AND e.seq>$2 AND
+           (($3::uuid IS NULL AND e.thread_root_entry_id IS NULL) OR ($3::uuid IS NOT NULL AND (e.id=$3 OR e.thread_root_entry_id=$3)))
+         ORDER BY e.seq LIMIT $4`,
         [channel.id, seq, parsed.thread ?? null, limit + 1]
       );
       const rows = result.rows.slice(0, limit);
@@ -256,6 +317,8 @@ export function registerEntryRoutes(
         result.rows.length > limit && rows.length
           ? encodeCursor(
               {
+                version: 1,
+                communityId: principal.community_id,
                 channelId: channel.id,
                 thread: parsed.thread ?? null,
                 epoch: channel.epoch,
@@ -266,7 +329,14 @@ export function registerEntryRoutes(
           : null;
       return {
         entries: rows.map((row) =>
-          entryProjection(row, channel.epoch, config, attachmentMap.get(row.id))
+          entryProjection(
+            row,
+            channel.epoch,
+            config,
+            attachmentMap.get(row.id),
+            principal.community_id,
+            originKeyForPrincipal(row, principal)
+          )
         ),
         nextCursor,
       };

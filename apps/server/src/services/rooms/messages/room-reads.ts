@@ -296,7 +296,9 @@ export class RoomReads {
     return {
       room: this.projection.withRoster(room, viewerAuthorId),
       entries,
-      cursor: entries.length > 0 ? entries[entries.length - 1].seq : 0,
+      // Timeline order may use a remote mirror's authoritative sequence, while
+      // this cursor resumes the monotonic local room log.
+      cursor: this.store.maxSeq(roomId),
       // The room's shared canvas, whole, in the SAME frame — so a cold connect
       // draws the table on its first paint rather than waiting for the next
       // change. It is state, not history, so it does not touch the cursor.

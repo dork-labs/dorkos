@@ -15,13 +15,12 @@ import {
   assertPrincipalCurrentInTransaction,
   lockChannel,
   requireJoined,
-  requireMember,
   requirePrincipal,
   transaction,
   type Principal,
 } from '../data.js';
 import { ApiError, json, readJson } from '../http.js';
-import { entryProjection } from './entries.js';
+import { entryProjection, originKeyForPrincipal } from './entries.js';
 import { attachmentsForEntries } from './attachments.js';
 
 interface LiveChannel {
@@ -89,50 +88,52 @@ export function registerEventRoutes(
   }
 ) {
   app.get('/api/v1/channels/:id/read-cursor', async (c) => {
-    const member = await requireMember(c, auth, pool);
-    const channel = await liveChannel(pool, c.req.param('id'), {
-      kind: 'human',
-      id: member.id,
-      ownerMemberId: member.id,
-      display_name: member.display_name,
-      community_id: member.community_id,
-    });
-    const currentMember = await requireMember(c, auth, pool);
-    if (currentMember.id !== member.id)
-      throw new ApiError(401, 'UNAUTHENTICATED', 'This session is unavailable.');
+    const member = await requirePrincipal(c, auth, pool, 'read');
+    if (member.kind !== 'human')
+      throw new ApiError(403, 'FORBIDDEN', 'Agents do not have read cursors.');
+    const channel = await liveChannel(pool, c.req.param('id'), member);
+    await assertPrincipalCurrent(c, auth, pool, member, 'read');
     const seq = Number(channel.read_seq);
     return json(c, CommunityWireReadCursorResponseSchema, {
       cursor: seq
-        ? encodeCursor({ channelId: channel.id, thread: null, epoch: channel.epoch, seq }, config)
+        ? encodeCursor(
+            {
+              version: 1,
+              communityId: member.community_id,
+              channelId: channel.id,
+              thread: null,
+              epoch: channel.epoch,
+              seq,
+            },
+            config
+          )
         : null,
       unreadCount: Math.max(0, Number(channel.last_seq) - seq),
     });
   });
 
   app.put('/api/v1/channels/:id/read-cursor', async (c) => {
-    const member = await requireMember(c, auth, pool);
-    const openedSession = await auth.api.getSession({ headers: c.req.raw.headers });
-    if (!openedSession || openedSession.user.id !== member.user_id)
+    const member = await requirePrincipal(c, auth, pool, 'read');
+    if (member.kind !== 'human')
+      throw new ApiError(403, 'FORBIDDEN', 'Agents do not have read cursors.');
+    const openedSession = member.credentialHash
+      ? undefined
+      : await auth.api.getSession({ headers: c.req.raw.headers });
+    if (!member.credentialHash && !openedSession)
       throw new ApiError(401, 'UNAUTHENTICATED', 'This session is unavailable.');
     const body = await readJson(c, CommunityWireReadCursorRequestSchema);
     const { channel, current } = await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), member);
       requireJoined(channel);
-      await assertPrincipalCurrentInTransaction(
-        client,
-        {
-          kind: 'human',
-          id: member.id,
-          ownerMemberId: member.id,
-          display_name: member.display_name,
-          community_id: member.community_id,
-        },
-        'read',
-        openedSession.session.id
-      );
+      await assertPrincipalCurrentInTransaction(client, member, 'read', openedSession?.session.id);
       const seq = decodeCursor(
         body.cursor,
-        { channelId: channel.id, thread: null, epoch: channel.epoch },
+        {
+          communityId: member.community_id,
+          channelId: channel.id,
+          thread: null,
+          epoch: channel.epoch,
+        },
         config
       );
       if (seq > Number(channel.last_seq))
@@ -148,7 +149,14 @@ export function registerEventRoutes(
     return json(c, CommunityWireReadCursorResponseSchema, {
       cursor: current
         ? encodeCursor(
-            { channelId: channel.id, thread: null, epoch: channel.epoch, seq: current },
+            {
+              version: 1,
+              communityId: member.community_id,
+              channelId: channel.id,
+              thread: null,
+              epoch: channel.epoch,
+              seq: current,
+            },
             config
           )
         : null,
@@ -166,20 +174,32 @@ export function registerEventRoutes(
     const channel = await liveChannel(pool, c.req.param('id'), principal);
     const resume = c.req.header('last-event-id');
     let position = resume
-      ? decodeCursor(resume, { channelId: channel.id, thread: null, epoch: channel.epoch }, config)
+      ? decodeCursor(
+          resume,
+          {
+            communityId: principal.community_id,
+            channelId: channel.id,
+            thread: null,
+            epoch: channel.epoch,
+          },
+          config
+        )
       : Number(channel.last_seq);
-    if (position > Number(channel.last_seq))
+    const capturedSeq = Number(channel.last_seq);
+    if (position > capturedSeq)
       throw new ApiError(410, 'CURSOR_STALE', 'This cursor is ahead of channel history.');
     await hooks?.afterSnapshotWatermark?.();
-    const snapshotRows = resume
-      ? []
-      : (
-          await pool.query(
-            `SELECT id,channel_id,seq,COALESCE(author_member_id,author_agent_id) AS author_member_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,created_at
-       FROM (SELECT * FROM entries WHERE channel_id=$1 AND seq<=$2 ORDER BY seq DESC LIMIT 100) e ORDER BY seq`,
-            [channel.id, position]
-          )
-        ).rows;
+    const snapshotRows = (
+      await pool.query(
+        resume
+          ? `SELECT e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,e.mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id
+             FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id WHERE e.channel_id=$1 AND e.seq>$2 AND e.seq<=$3 ORDER BY e.seq LIMIT 100`
+          : `SELECT e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,e.mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id
+             FROM (SELECT * FROM entries WHERE channel_id=$1 AND seq<=$2 ORDER BY seq DESC LIMIT 100) e LEFT JOIN agents a ON a.id=e.author_agent_id ORDER BY e.seq`,
+        resume ? [channel.id, position, capturedSeq] : [channel.id, position]
+      )
+    ).rows;
+    if (snapshotRows.length) position = Number(snapshotRows.at(-1).seq);
     const snapshotAttachments = await attachmentsForEntries(
       pool,
       snapshotRows.map((row: { id: string }) => row.id)
@@ -193,10 +213,18 @@ export function registerEventRoutes(
     const encoder = new TextEncoder();
     let revocationTimer: ReturnType<typeof setInterval> | undefined;
     let closed = false;
+    let replayComplete = false;
     let lastHeartbeat = Date.now();
     const currentCursor = () =>
       encodeCursor(
-        { channelId: channel.id, thread: null, epoch: channel.epoch, seq: position },
+        {
+          version: 1,
+          communityId: principal.community_id,
+          channelId: channel.id,
+          thread: null,
+          epoch: channel.epoch,
+          seq: position,
+        },
         config
       );
     const writeEvent = (
@@ -267,10 +295,26 @@ export function registerEventRoutes(
             type: 'snapshot',
             channel: channelWire(channel),
             entries: snapshotRows.map((row) =>
-              entryProjection(row, channel.epoch, config, snapshotAttachments.get(row.id))
+              entryProjection(
+                row,
+                channel.epoch,
+                config,
+                snapshotAttachments.get(row.id),
+                principal.community_id,
+                originKeyForPrincipal(row, principal)
+              )
             ),
+            capturedSeq,
             cursor: currentCursor(),
           });
+          if (position >= capturedSeq) {
+            replayComplete = true;
+            writeEvent(controller, {
+              type: 'replay_complete',
+              capturedSeq,
+              cursor: currentCursor(),
+            });
+          }
           revocationTimer = setInterval(() => {
             void checkAccess()
               .then((state) => {
@@ -316,6 +360,15 @@ export function registerEventRoutes(
           if (closed) return;
           try {
             while (!closed) {
+              if (!replayComplete && position >= capturedSeq) {
+                replayComplete = true;
+                writeEvent(controller, {
+                  type: 'replay_complete',
+                  capturedSeq,
+                  cursor: currentCursor(),
+                });
+                return;
+              }
               const state = await checkAccess();
               if (closed) return;
               if (
@@ -334,8 +387,8 @@ export function registerEventRoutes(
                 return;
               }
               const result = await pool.query(
-                `SELECT id,channel_id,seq,COALESCE(author_member_id,author_agent_id) AS author_member_id,author_display_name,text,mentions,parent_entry_id,thread_root_entry_id,created_at
-               FROM entries WHERE channel_id=$1 AND seq>$2 ORDER BY seq LIMIT 1`,
+                `SELECT e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,e.mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id
+               FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id WHERE e.channel_id=$1 AND e.seq>$2 ORDER BY e.seq LIMIT 1`,
                 [channel.id, position]
               );
               if (closed) return;
@@ -365,7 +418,9 @@ export function registerEventRoutes(
                   row,
                   channel.epoch,
                   config,
-                  attachmentMap.get(row.id)
+                  attachmentMap.get(row.id),
+                  principal.community_id,
+                  originKeyForPrincipal(row, principal)
                 );
                 writeEvent(controller, { type: 'entry', entry, cursor: entry.cursor });
                 return;

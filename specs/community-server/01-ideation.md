@@ -2,7 +2,7 @@
 slug: community-server
 id: 260727-155419
 created: 2026-07-27
-status: ideation
+status: implemented
 ---
 
 # Ideation: The community server — multi-user DorkOS

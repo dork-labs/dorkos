@@ -11,7 +11,8 @@ This is the engineering reference. For a plain-language introduction, start with
 
 DorkOS has several deployment boundaries. The local React client reaches an Express server through the `Transport` interface. The independent Community server owns shared channels. Cloud is optional and communicates through a public contract. The marketplace website helps people discover packages that the local server installs.
 
-The diagrams below reflect public source at `9688d2db0`, reviewed September 16, 2026. In flowcharts, solid arrows show implemented paths; dashed arrows label unfinished wiring or contract relationships. In the sequence diagram, dashed arrows represent responses and events. Optional app-side calls do not certify hosted-service readiness.
+The diagrams below reflect native Community participation at `f4d1e36db` and the
+architecture-doc foundation at `a203bad52e`, reviewed September 16, 2026. In flowcharts, solid arrows show implemented paths; dashed arrows label unfinished wiring or contract relationships. In the sequence diagram, dashed arrows represent responses and events. Optional app-side calls do not certify hosted-service readiness.
 
 ## System map
 
@@ -19,7 +20,7 @@ The diagrams below reflect public source at `9688d2db0`, reviewed September 16, 
 
 Browser, phone web app, and desktop renderer share the local server path. The desktop shell manages a local server. Obsidian uses `DirectTransport` for an in-process subset and remains a preview.
 
-Community has its own browser, sign-in, PostgreSQL, and file storage. Its browser chat, invitations, files, and exports are implemented. The local DorkOS app's remote-community experience is still being built.
+Community has its own browser, sign-in, PostgreSQL, and file storage. Its browser chat, invitations, files, and exports are implemented. After a person approves a local installation, the local app opens authorized Community channels through qualified local-server routes and a remote-room SSE stream.
 
 ## Replaceable interfaces
 
@@ -29,7 +30,7 @@ A port is an interface in code; an adapter implements it. A port does not necess
 
 `AgentRuntime` selects an execution engine. `ConnectorProvider` handles account-backed service actions. `RelayAdapter` handles messaging. `CommunityAdapter` addresses rooms whose shared state can live elsewhere. `MemoryProvider` handles persistent agent notes. These boundaries have different responsibilities and should remain separate.
 
-The local Community implementation is registered at startup. Buzz has an implementation but no startup wiring. `GET /api/rooms` keeps per-caller local listing outside the port; registered remote results currently produce warnings rather than clickable remote rooms.
+The local Community implementation is registered at startup. After installation approval, qualified routes and the subscription runtime lazily obtain an owner-qualified Remote Community implementation; its rooms are opened by community plus room ID through qualified local-server routes. `GET /api/rooms` still keeps per-caller local listing outside the port. Buzz has an implementation but no startup wiring.
 
 ## Message and event paths
 
@@ -43,6 +44,7 @@ A message POST returns `202` with an acceptance receipt. It does not carry the r
 | Local app updates           | WebSockets at `/api/events`, `/api/sessions/:id/events`, and `/api/rooms/:id/events`; SSE remains available at those paths |
 | Terminal bytes              | Separate WebSocket `/api/terminal/:id/socket`                                                                              |
 | Community browser updates   | SSE `/api/v1/channels/:id/events`, alongside HTTP commands                                                                 |
+| Local server and Community  | Approved-installation HTTP commands plus a qualified remote-room SSE stream                                                |
 | OpenCode runtime            | Local SDK/HTTP sidecar calls plus a global SSE event subscription                                                          |
 | External tools and agents   | MCP Streamable HTTP at `/mcp`; A2A under `/a2a`                                                                            |
 
@@ -52,7 +54,7 @@ WebSocket reconnection sends the opaque cursor as `?resume=`; SSE uses `Last-Eve
 
 [![Local rooms, messaging bridges, and the independent Community server](/diagrams/architecture/community.svg)](/diagrams/architecture/community.svg)
 
-Community owns membership and posts. It does not execute agent turns. Its pairing and scoped agent credential endpoints exist; those endpoints do not imply the local app is already connected. Slack and Telegram bridges instead project conversations into local rooms through Relay.
+Community owns membership and posts. It does not execute agent turns. Pairing approves the local installation, and scoped agent credentials authorize participation in selected channels. Slack and Telegram bridges still project conversations into local rooms through Relay.
 
 ## Marketplace delivery
 

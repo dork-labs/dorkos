@@ -61,6 +61,8 @@ export interface RightPanelContainerProps {
    * mounts safely in a shell with no `RouterProvider`.
    */
   pathname: string;
+  /** Whether the open channel is addressed through a connected community. */
+  isRemoteCommunityRoom?: boolean;
   /**
    * Presentation mode.
    *
@@ -86,7 +88,11 @@ export interface RightPanelContainerProps {
  * `variant='overlay'` (the Obsidian embed) — it renders as a Sheet with
  * built-in slide animation instead.
  */
-export function RightPanelContainer({ pathname, variant = 'resizable' }: RightPanelContainerProps) {
+export function RightPanelContainer({
+  pathname,
+  isRemoteCommunityRoom = false,
+  variant = 'resizable',
+}: RightPanelContainerProps) {
   const rightPanelOpen = useAppStore((s) => s.rightPanelOpen);
   const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
   const activeTab = useAppStore((s) => s.activeRightPanelTab);
@@ -123,16 +129,24 @@ export function RightPanelContainer({ pathname, variant = 'resizable' }: RightPa
   // Get all right-panel contributions, sorted by priority
   const allContributions = useSlotContributions('right-panel');
 
-  // Filter to only visible contributions, passing router + transport + agent
+  // Filter to only visible contributions, passing route + transport + agent
   // context to each predicate. Memoized so the auto-select effect below only
   // re-runs when the inputs actually change, not on every render.
   const visibleContributions = useMemo(
     () =>
       allContributions.filter(
         (c) =>
-          !c.visibleWhen || c.visibleWhen({ pathname, transport, agentId, cwd, explicitAgentPath })
+          !c.visibleWhen ||
+          c.visibleWhen({
+            pathname,
+            transport,
+            agentId,
+            cwd,
+            explicitAgentPath,
+            isRemoteCommunityRoom,
+          })
       ),
-    [allContributions, pathname, transport, agentId, cwd, explicitAgentPath]
+    [allContributions, pathname, transport, agentId, cwd, explicitAgentPath, isRemoteCommunityRoom]
   );
 
   // Auto-select a default tab when the active tab is not visible. View-only: this

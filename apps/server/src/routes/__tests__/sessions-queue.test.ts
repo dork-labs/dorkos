@@ -80,7 +80,10 @@ import {
   MessageQueueStore,
   setMessageQueueStore,
 } from '../../services/session/message-queue-store.js';
-import { resetMessageDispatcher } from '../../services/session/message-dispatcher.js';
+import {
+  dispatchMessage,
+  resetMessageDispatcher,
+} from '../../services/session/message-dispatcher.js';
 
 const app = createApp();
 finalizeApp(app);
@@ -88,11 +91,27 @@ const server = listeningServer(app);
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000000cc';
 const OTHER_SESSION_ID = '00000000-0000-4000-8000-0000000000cd';
+const RECOVERED_MESSAGE = 'typed after the server came back';
+const QUIESCENCE_WITNESS = 'queue drain witness';
+const REMOVED_ADOPTED_MESSAGE = 'reworded after the restart';
 
 /** Opens the running turn that everything else in a case queues behind. */
 let releaseTurn: () => void;
 /** The case's store, for seeding rows no route would create. */
 let store: MessageQueueStore;
+/** Resolves from the queued fixture scenario once the runtime starts it. */
+let secondTurnStarted: Promise<void>;
+let signalSecondTurnStarted!: () => void;
+/** Resolves after the queued fixture scenario has emitted its terminal event. */
+let secondTurnFinished: Promise<void>;
+let signalSecondTurnFinished!: () => void;
+/** Resolves only when the rowless witness has passed through the dispatcher. */
+let quiescenceWitnessStarted: Promise<void>;
+let signalQuiescenceWitnessStarted!: () => void;
+let quiescenceWitnessFinished: Promise<void>;
+let signalQuiescenceWitnessFinished!: () => void;
+/** Records a removed adopted entry that the dispatcher launched anyway. */
+let removedAdoptedEntryStarted: boolean;
 
 /** Post a message as `clientId` and return the 202 body. */
 async function post(content: string, clientId: string) {
@@ -127,15 +146,37 @@ beforeEach(async () => {
   const gate = new Promise<void>((resolve) => {
     releaseTurn = resolve;
   });
+  secondTurnStarted = new Promise<void>((resolve) => {
+    signalSecondTurnStarted = resolve;
+  });
+  secondTurnFinished = new Promise<void>((resolve) => {
+    signalSecondTurnFinished = resolve;
+  });
+  quiescenceWitnessStarted = new Promise<void>((resolve) => {
+    signalQuiescenceWitnessStarted = resolve;
+  });
+  quiescenceWitnessFinished = new Promise<void>((resolve) => {
+    signalQuiescenceWitnessFinished = resolve;
+  });
+  removedAdoptedEntryStarted = false;
+  const queuedScenario = async function* (content: string): AsyncGenerator<StreamEvent> {
+    if (content === RECOVERED_MESSAGE) signalSecondTurnStarted();
+    if (content === QUIESCENCE_WITNESS) signalQuiescenceWitnessStarted();
+    if (content === REMOVED_ADOPTED_MESSAGE) removedAdoptedEntryStarted = true;
+    yield { type: 'done', data: {} } as StreamEvent;
+    if (content === RECOVERED_MESSAGE) signalSecondTurnFinished();
+    if (content === QUIESCENCE_WITNESS) signalQuiescenceWitnessFinished();
+  };
   fakeRuntime.withScenarios([
     async function* () {
       yield { type: 'text_delta', data: { text: 'working' } } as StreamEvent;
       await gate;
       yield { type: 'done', data: {} } as StreamEvent;
     },
-    async function* () {
-      yield { type: 'done', data: {} } as StreamEvent;
-    },
+    queuedScenario,
+    queuedScenario,
+    queuedScenario,
+    queuedScenario,
   ]);
   const first = await request(server)
     .post(`/api/sessions/${SESSION_ID}/messages`)
@@ -343,13 +384,13 @@ describe('a row this process ADOPTED after a restart (task 2.5)', () => {
 
     // Any dispatch adopts. This one queues behind the turn the fixture started,
     // so the adopted row is still waiting when the routes reach it.
-    await post('typed after the server came back', 'client-b');
+    await post(RECOVERED_MESSAGE, 'client-b');
 
     // One queue: the survivor keeps its own id, its position, and the client
     // that first typed it.
     expect(await readQueue()).toMatchObject([
       { id: survivor.id, content: 'typed before the server restarted', enqueuedBy: 'client-a' },
-      { content: 'typed after the server came back', enqueuedBy: 'client-b' },
+      { content: RECOVERED_MESSAGE, enqueuedBy: 'client-b' },
     ]);
 
     const patched = await request(server)
@@ -364,26 +405,38 @@ describe('a row this process ADOPTED after a restart (task 2.5)', () => {
       .set('X-Client-Id', 'client-b');
     expect(removed.status).toBe(200);
     expect(removed.body.queue.map((m: { content: string }) => m.content)).toEqual([
-      'typed after the server came back',
+      RECOVERED_MESSAGE,
     ]);
 
     // Removing it really cancelled its ADOPTED dispatch: when the turn ahead
-    // ends, only the message still queued runs. An adopted entry left armed
-    // would have fired the removed message anyway.
+    // ends, only the message still queued runs. This rowless same-client
+    // witness is deliberately parked after any retained adopted entry, so its
+    // completion proves the dispatcher drained every predecessor. An adopted
+    // entry left armed would fire before the witness instead of slipping past a
+    // timing sample.
+    const witness = await dispatchMessage({
+      sessionId: SESSION_ID,
+      clientId: 'client-a',
+      content: QUIESCENCE_WITNESS,
+      projector: getOrCreateProjector(SESSION_ID),
+      runtime: fakeRuntime,
+      whenBusy: 'refuse-foreign',
+    });
+    expect(witness).toMatchObject({ accepted: true, queued: true });
+
     releaseTurn();
-    await vi.waitFor(() => expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(2));
-    // Let the queue drain completely before judging: a stale entry sorts BEHIND
-    // every message that still has a row, so it would fire after the assertion
-    // above rather than instead of it, and a count taken too early cannot tell
-    // the two apart.
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(2);
+    await secondTurnStarted;
+    await secondTurnFinished;
+    await quiescenceWitnessStarted;
+    await quiescenceWitnessFinished;
+    expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(3);
+    expect(removedAdoptedEntryStarted).toBe(false);
     expect(fakeRuntime.sendMessage).not.toHaveBeenCalledWith(
       SESSION_ID,
-      'reworded after the restart',
+      REMOVED_ADOPTED_MESSAGE,
       expect.anything()
     );
-  });
+  }, 10_000);
 });
 
 describe('POST /api/sessions/:id/messages — the receipt', () => {

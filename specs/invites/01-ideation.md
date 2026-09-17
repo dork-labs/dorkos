@@ -2,10 +2,12 @@
 slug: invites
 id: 260727-161438
 created: 2026-07-27
-status: specified
+status: superseded
 ---
 
-# Ideation: Invites — a second person on one install
+# Ideation: Invitations (historical proposal)
+
+> **Superseded 2026-09-16.** Invitations now belong to the independently hosted community server. The local DorkOS install remains single-owner. Read the [current invitation contract](02-specification.md) and [community specification](../community-server/02-specification.md) before using this historical proposal. None of its instructions to reopen local registration remain active.
 
 - **Slug:** invites
 - **Date:** 2026-07-27

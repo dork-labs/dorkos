@@ -8,6 +8,7 @@ export default defineConfig({
       '**/*.integration.test.ts',
       '**/*.s3.test.ts',
       '**/browser-tests/**',
+      '**/acceptance/**',
       '**/node_modules/**',
     ],
     retry: process.env.VITEST_RETRY ? Number(process.env.VITEST_RETRY) : 0,

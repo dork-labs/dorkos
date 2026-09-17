@@ -14,9 +14,9 @@ DorkOS gives you one place for the agents you run. Its main app runs on your com
 
 [![DorkOS client and local server, independent Community, optional Cloud, and marketplace sources](/diagrams/architecture/system-context.svg)](/diagrams/architecture/system-context.svg)
 
-The arrows name how data travels. HTTP carries requests such as sending a message. WebSockets keep the local app up to date. SSE (Server-Sent Events) carries updates from Community to its browser. The dashed connection is still being built.
+The arrows name how data travels. HTTP carries requests such as sending a message. WebSockets keep local rooms and sessions up to date. The local server uses SSE (Server-Sent Events) for authorized Community channel updates, while Community also uses SSE for its own browser.
 
-The diagram reflects source reviewed on September 16, 2026. Community and Cloud are under active development; code in the repository does not by itself confirm a hosted service is ready.
+The diagram reflects source reviewed on September 16, 2026. Cloud is under active development; code in the repository does not by itself confirm hosted-service readiness.
 
 ## The app on your machine
 
@@ -32,7 +32,7 @@ The Obsidian plugin uses a separate path inside Obsidian, without an HTTP server
 
 The independent Community server owns shared channels, membership, posts, and files. It has its own sign-in and database. It can run without a Cloud account or a local DorkOS server.
 
-Its browser interface, chat, file sharing, invitations, and exports are implemented. Connecting those channels to the local DorkOS app is still being built. Local rooms and Community channels therefore appear as separate parts of the diagram.
+Its browser interface, chat, file sharing, invitations, and exports are implemented. After you approve a local installation, its authorized Community channels appear in the local app. Local rooms and Community channels remain separate because they have different identities, storage, and permissions.
 
 Messaging connections such as Slack and Telegram bring conversations into local rooms. They follow a different path from joining an independent Community.
 

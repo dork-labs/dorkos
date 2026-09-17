@@ -2,42 +2,36 @@
 slug: invites
 id: 260727-161438
 created: 2026-07-27
-status: specified
+status: superseded
 ---
 
-# Specification: Invites — a second person on one install
+# Specification: Invitations to a self-hosted community
 
-- **Slug:** invites
-- **Id:** 260727-161438
-- **Date:** 2026-07-27
-- **Status:** specified, **retargeted** — see the banner below
-- **Tracker:** DOR-594, re-parented under DOR-595 (`apps/community`)
-- **Anchors:** codebase = `7099013d2` (`origin/main` @ `19bd5def2`, plus the unpushed community-server ideation commit)
+- **Tracker:** DOR-594, delivered within the community server programme (DOR-595).
+- **Updated:** 2026-09-16.
+- **Authoritative specification:** [Community server](../community-server/02-specification.md), especially “Bootstrap, invites, and membership.”
+- **Acceptance tasks:** [Community server tasks](../community-server/03-tasks.json), tasks 2.1 and 2.2, with browser admission in 3.3.
 
-Read [`01-ideation.md`](01-ideation.md) first for what is inherited from `specs/community-server/` and must not be re-argued.
+## Current contract
 
----
+Invitations admit people to `apps/community`. The local DorkOS server remains single-owner; its registration guard is permanent. The community owns its accounts, sessions and membership in PostgreSQL and needs neither SMTP nor DorkOS Cloud.
 
-> ## ⚠ Retargeted 2026-07-27 — this spec's host changed after it was written
->
-> **D6** (`specs/community-server/01-ideation.md` §3) and ADR `260727-184933` decided that the local install stays single-user **forever**. `apps/server` never holds a second human account; the `FORBIDDEN`-on-second-signup hook is permanent. All multi-user moves to `apps/community`.
->
-> **The title of this document is therefore wrong.** There is no "second person on one install." Everything below is still correct and still wanted — the token design, the security analysis, the role definition, the experience contract — but it describes **the community server**, not the local cockpit.
->
-> **What changed, concretely:**
->
-> | Section                                                                                                     | Status                                                                                                                                                                                                                                                                                                                |
-> | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-> | §1 the invite token, §2 registration, §3 roles, §5 preview, §7 landing, §10 UX, §14 security                | **Valid.** Read `apps/community` wherever it says `apps/server`.                                                                                                                                                                                                                                                      |
-> | §3.3, §14.4D, §16 Phase 1 — `roleGate`, `member-routes.ts`, the coverage test                               | **Not built, deliberately.** Removed from DOR-598 because no member can ever authenticate to the local install. The design carries forward to `apps/community` (DOR-595), including the reviewer's finding that a source-scanning coverage test must enumerate **every** file that mounts routers, not just `app.ts`. |
-> | §16 Phase 1's authorization work — `isOwnerAuthor`, `viewerAuthorId`, `resolveCaller`, the `'local'` rebind | **Shipped** as DOR-598, on a stronger justification: joining a community puts _other humans_ in the local `authors` table, so `kind === 'human'` → "operator" is already wrong on your own machine.                                                                                                                   |
-> | §2 reopening local registration                                                                             | **Deleted.** Nothing to build.                                                                                                                                                                                                                                                                                        |
-> | §3 the role model                                                                                           | **Superseded by D7** — the community server has `owner` / `admin` (many) / `member`, not two roles. §3.2's May/May-not lists need re-deciding against three roles.                                                                                                                                                    |
-> | §3.2 "may create API keys owned by her"                                                                     | **Superseded by D8.** A member brings agents by attestation from her own install; the community never executes them (ADR `260727-184933`). See `research/20260727_agent-identity-in-communities.md`.                                                                                                                  |
->
-> §17's resolution table stands, except #4 (role name) which D7 extends rather than replaces.
+An owner or administrator issues a signed, row-backed invitation for the community, optionally naming a channel. The browser previews the community, inviter and channel before registration. The URL carries its token in a fragment; preview and preflight send it in a same-origin POST body. A short-lived admission cookie permits community account creation, but does not itself grant membership or consume a seat.
 
----
+Redemption checks the current invitation, issuer authority, expiry, revocation and remaining seats in one transaction. Repeating redemption for the same account consumes at most one seat. A losing registration race leaves an unadmitted account with no protected community access; another valid invitation can admit it later. Roles are owner, administrator and member. Channel visibility and membership are checked independently of authentication.
+
+Local connection approval and agent enrollment are separate from human invitations. A person approves their own DorkOS install in the community browser, then admits their own agents. Each agent has a distinct community identity; execution remains on its owner's machine. Revoking the person also revokes the authority of their agents.
+
+## Implementation and verification pointers
+
+- Community admission: `apps/community/src/routes/invites.ts`, `src/invites.ts`, `src/auth.ts` and the community browser under `src/client/`.
+- Token boundaries and admission races: `apps/community/src/__tests__/invites.test.ts` and `admission.integration.test.ts`.
+- Browser admission: `apps/community/browser-tests/community.spec.ts` and the combined `apps/community/acceptance/driver.spec.ts` journey.
+- Current completion evidence: [Community implementation record](../community-server/04-implementation.md). Test files alone do not establish completion.
+
+## Historical proposal (superseded)
+
+The remainder preserves the July proposal for its design history. It is not an implementation contract. Its local-signup changes, two-role model, route names, configuration fields and open questions have been superseded by the community specification above. Do not reopen local registration or implement these older instructions.
 
 ## Overview
 

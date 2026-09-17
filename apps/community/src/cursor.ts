@@ -3,6 +3,8 @@ import { ApiError } from './http.js';
 import { signValue, verifyValue } from './security.js';
 
 interface Position {
+  version: 1;
+  communityId: string;
   channelId: string;
   thread: string | null;
   epoch: number;
@@ -17,7 +19,7 @@ export function encodeCursor(position: Position, config: CommunityConfig): strin
 /** Reject tampered, foreign or stale cursor scopes before reading rows. */
 export function decodeCursor(
   value: string,
-  scope: Omit<Position, 'seq'>,
+  scope: Omit<Position, 'seq' | 'version'>,
   config: CommunityConfig
 ): number {
   const raw = verifyValue(value, config.authSecret);
@@ -29,6 +31,8 @@ export function decodeCursor(
     throw new ApiError(410, 'CURSOR_STALE', 'This cursor is no longer valid.');
   }
   if (
+    parsed.version !== 1 ||
+    parsed.communityId !== scope.communityId ||
     parsed.channelId !== scope.channelId ||
     parsed.thread !== scope.thread ||
     parsed.epoch !== scope.epoch ||

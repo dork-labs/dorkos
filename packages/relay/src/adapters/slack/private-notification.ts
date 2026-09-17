@@ -13,7 +13,10 @@ export async function sendPrivateSlackNotification(input: {
   let attempted = false;
   if (!input.text || input.text.length > 4_000 || !/^[CDG][A-Z0-9]+$/.test(input.channelId))
     return { state: 'refused' };
-  const fetch = input.fetch ?? globalThis.fetch;
+  const fetch: NonNullable<WebClientOptions['fetch']> =
+    input.fetch ??
+    ((url, init) =>
+      globalThis.fetch(url, init) as unknown as ReturnType<NonNullable<WebClientOptions['fetch']>>);
   const client = new WebClient(input.token, {
     retryConfig: { retries: 0 },
     rejectRateLimitedCalls: true,

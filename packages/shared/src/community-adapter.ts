@@ -54,8 +54,8 @@ import { AuthorKindSchema, RoomKindSchema, RoomPresenceStateSchema } from './roo
  * Opaque, locally-minted handle for ONE configured community connection.
  * Branded so a bare string cannot pass where a community is due.
  *
- * Minted as a ULID (`ulidx`, already how rooms, entries and authors get their
- * ids). The regex is not decoration: this value becomes a directory name under
+ * Minted locally from a ULID or a random UUID-derived opaque value. The regex
+ * is not decoration: this value can become a directory name under
  * `<dorkHome>/communities/<ref>/`, so it must never contain `/`, `.` or `..`.
  *
  * It is minted locally at configure time and **never supplied by a remote** —
@@ -152,9 +152,12 @@ export type CommunityMemberRef = z.infer<typeof CommunityMemberRefSchema>;
  *    minted for a different room, a different community, or a superseded epoch.
  *    A foreign cursor is a plausible value that would silently skip real
  *    entries, so it must be **rejected, not bounded**.
- * 3. **Resume is gap-free or it throws**, eagerly, at call time. There is no
- *    best-effort and no per-adapter opt-out — it is a property of the port that
- *    every adapter owes, not a capability one may decline.
+ * 3. **Resume is gap-free or it throws before serving an event.** An in-process
+ *    adapter normally validates at call time; an HTTP adapter may surface the
+ *    same refusal on its first pull after its authoritative server validates
+ *    the opaque token. There is no best-effort and no per-adapter opt-out — it
+ *    is a property of the port that every adapter owes, not a capability one
+ *    may decline.
  * 4. **Every entry carries the cursor that resumes after it**
  *    ({@link CommunityEntry.cursor}). That is what replaces a numeric `seq`: you
  *    resume from an entry without knowing what is inside the token.
@@ -994,16 +997,15 @@ export type CommunityWarning = z.infer<typeof CommunityWarningSchema>;
 // ---------------------------------------------------------------------------
 
 /**
- * Thrown EAGERLY by {@link CommunityAdapter.subscribeRoom} when a cursor cannot
+ * Thrown by {@link CommunityAdapter.subscribeRoom} when a cursor cannot
  * be served gap-free — it belongs to a different room or community, or it is
  * from a superseded epoch. Callers MUST catch it and fall back to a cold
  * snapshot.
  *
- * "Eagerly" is load-bearing and is asserted by construction: the throw must
- * happen at call time, before the first `next()`. An adapter whose
- * `subscribeRoom` is an `async function*` cannot satisfy that — the body does
- * not run until the first pull — so validate the cursor in a plain method and
- * return a generator from it.
+ * An in-process adapter normally throws at call time. An HTTP adapter may
+ * surface the same typed refusal on its first pull, after its authoritative
+ * server validates the opaque cursor. Neither form may emit a snapshot or entry
+ * before the refusal.
  */
 export class StaleCommunityCursorError extends Error {
   /**
@@ -1024,7 +1026,7 @@ export class StaleCommunityCursorError extends Error {
 }
 
 /**
- * Thrown EAGERLY by {@link CommunityAdapter.subscribeRoom} when `roomId` is not
+ * Thrown by {@link CommunityAdapter.subscribeRoom} when `roomId` is not
  * a room this identity can stream — it does not exist, or it exists and is not
  * visible here.
  *
@@ -1035,12 +1037,11 @@ export class StaleCommunityCursorError extends Error {
  * `requireVisibleRoom` collapses them for exactly this reason, and an adapter
  * MUST NOT widen the message with a cause.
  *
- * "Eagerly" carries the same weight it does on
- * {@link StaleCommunityCursorError}, and the conformance suite asserts it the
- * same way — by construction, awaiting nothing. Check the room before returning
- * the generator; an `async function*` cannot satisfy it. Check it **before the
- * cursor** as well — {@link CommunityAdapter.subscribeRoom} states why that
- * order is part of the contract rather than an implementation detail.
+ * An in-process adapter normally throws at call time. An HTTP adapter may
+ * surface the same typed refusal on its first pull after remote authorization.
+ * Neither form may emit a snapshot or entry first. Check the room **before the
+ * cursor** wherever both checks are local; a remote server performs both under
+ * its own authority.
  *
  * **Why `getRoom` answers `null` and this throws.** The asymmetry is in what
  * each return type can express, not in what either discloses. A method whose
@@ -1054,7 +1055,7 @@ export class StaleCommunityCursorError extends Error {
  * never had one, and would make the terminal event ambiguous between "you lost
  * it" and "there was never one"; a stream that simply never yields is
  * indistinguishable from a quiet room, so the caller parks forever — the very
- * failure the eager cursor throw exists to prevent; and a nullable return would
+ * failure the before-first-event cursor refusal exists to prevent; and a nullable return would
  * put a null check at every call site for a case the caller must ALSO handle as
  * a throw, since a room can vanish between `getRoom` and `subscribeRoom`. What
  * never differs across those shapes is what the caller learns about WHY:
@@ -1254,14 +1255,15 @@ export interface CommunityAdapter {
   /**
    * The durable stream for one room: snapshot → gap-free replay → live.
    *
-   * Throws {@link StaleCommunityCursorError} EAGERLY (at call time, before any
-   * iteration) when `sinceCursor` cannot be served gap-free. Callers MUST catch
-   * it and fall back to a cold snapshot. Gap-free-or-throw is universal, not
+   * Throws {@link StaleCommunityCursorError} before any snapshot or entry when
+   * `sinceCursor` cannot be served gap-free. An HTTP adapter may throw on the
+   * first pull after the remote server validates its opaque cursor. Callers MUST
+   * catch it and fall back to a cold snapshot. Gap-free-or-throw is universal, not
    * capability-gated: there is no flag that lets an adapter offer a weaker
    * resume.
    *
-   * Throws {@link CommunityRoomNotFoundError} EAGERLY, by that same discipline,
-   * when `roomId` is not a room this identity can stream — unknown and invisible
+   * Throws {@link CommunityRoomNotFoundError} before any snapshot or entry when
+   * `roomId` is not a room this identity can stream — unknown and invisible
    * alike, indistinguishably. `getRoom` answers `null` for the same pair; the
    * asymmetry is in what each return type can express and not in what either
    * discloses, which {@link CommunityRoomNotFoundError} argues in full.
@@ -1283,7 +1285,7 @@ export interface CommunityAdapter {
    * @param roomId - The room to stream.
    * @param sinceCursor - Resume point; emit only what follows it.
    * @param signal - Aborts the stream so a parked consumer terminates promptly.
-   * @param context - Optional owned-agent identity; rejected eagerly if unsupported.
+   * @param context - Optional owned-agent identity; rejected before any snapshot or entry if unsupported.
    */
   subscribeRoom(
     roomId: string,

@@ -25,6 +25,7 @@ import type { RoomMessageNotifier } from './room-message-notifier.js';
 import type { RoomPublisher } from '../service/room-publisher.js';
 import type { RoomRoster } from '../room-roster.js';
 import type { PostTrigger, PostedEntry } from '../service/room-service-deps.js';
+import type { RoomMirrorWritePolicy } from '../service/room-service-deps.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomDispatchSummary, RoomTriggerDispatcher } from '../room-trigger.js';
 
@@ -101,6 +102,7 @@ export class RoomEntryWriter {
   private readonly triggers: RoomTriggerDispatcher;
   /** What bounds automatic replies in one room. Read per write. */
   private readonly limitsFor: RoomLimitsResolver;
+  private readonly mirrorWrites: RoomMirrorWritePolicy | undefined;
 
   constructor(
     core: RoomCore,
@@ -113,6 +115,7 @@ export class RoomEntryWriter {
     this.bridges = core.bridges;
     this.triggers = core.triggers;
     this.limitsFor = core.limitsFor;
+    this.mirrorWrites = core.mirrorWrites;
   }
 
   /**
@@ -276,6 +279,13 @@ export class RoomEntryWriter {
     // with what the text resolved to rather than replacing it.
     const mentions = withCallerMentions(addressed.mentions, input.mentions, candidates.live);
     const id = ulid();
+    // Derived solely from persisted mirror/enrollment state. A local agent's
+    // mirrored output is durable pending delivery, never a new inbound prompt.
+    const mirrorWrite =
+      this.mirrorWrites?.prepare(room, input.authorId, {
+        parentEntryId: input.replyTo ?? null,
+        attachmentIds: (opts?.attachments ?? []).map((attachment) => attachment.id),
+      }) ?? null;
     // The ref write shares the entry's transaction, so both land or neither does
     // (§5.2, A5.6). Composed with `within` — a bridged first message both joins
     // its author (`within`) and records its inbound ref (`recordRef`) in the one
@@ -293,9 +303,13 @@ export class RoomEntryWriter {
     // `transactional` above — see `opts.bind`. Built only when there is one, so
     // an ordinary post pays nothing here either.
     const bindAfterInsert = opts?.bind;
-    const bindTransactional = bindAfterInsert
-      ? (tx: DbTransaction) => bindAfterInsert(id, tx)
-      : undefined;
+    const bindTransactional =
+      bindAfterInsert || mirrorWrite
+        ? (tx: DbTransaction) => {
+            bindAfterInsert?.(id, tx);
+            mirrorWrite?.enqueue(id, tx);
+          }
+        : undefined;
     const entry = this.store.appendEntry(
       {
         roomId,
@@ -358,7 +372,7 @@ export class RoomEntryWriter {
     // nothing rather than told "nobody" — the post stands either way.
     let dispatch: RoomDispatchSummary | null = null;
     try {
-      dispatch = this.triggers.dispatch(room, entry, addressed.unreachable);
+      if (!mirrorWrite) dispatch = this.triggers.dispatch(room, entry, addressed.unreachable);
     } catch (err) {
       logger.error('[rooms] a committed post could not be dispatched from', {
         roomId,

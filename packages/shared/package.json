@@ -153,6 +153,14 @@
       "types": "./src/community-private-wire.ts",
       "default": "./dist/community-private-wire.js"
     },
+    "./community-connections": {
+      "types": "./src/community-connections.ts",
+      "default": "./dist/community-connections.js"
+    },
+    "./community-deliveries": {
+      "types": "./src/community-deliveries.ts",
+      "default": "./dist/community-deliveries.js"
+    },
     "./memory-provider": {
       "types": "./src/memory-provider.ts",
       "default": "./dist/memory-provider.js"
@@ -360,6 +368,10 @@
     "./test-budget": {
       "types": "./src/test-budget.ts",
       "default": "./dist/test-budget.js"
+    },
+    "./community-views": {
+      "types": "./src/community-views.ts",
+      "default": "./dist/community-views.js"
     }
   },
   "scripts": {

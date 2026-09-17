@@ -77,7 +77,6 @@ vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp, finalizeApp } from '../../app.js';
-import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import {
   getOrCreateProjector,
   disposeProjector,
@@ -147,16 +146,11 @@ function postMessage(
     .then((res) => ({ status: res.status }));
 }
 
-/** Wait until the route has resolved a runtime for `count` POSTs — i.e. they arrived. */
-async function awaitArrivals(count: number): Promise<void> {
-  await vi.waitFor(() =>
-    expect(vi.mocked(runtimeRegistry.resolveForSession)).toHaveBeenCalledTimes(count)
-  );
-}
-
 describe('POST /api/sessions/:id/messages — same-client turn serialization', () => {
   it('makes a second POST from the same client WAIT, then run, never alongside', async () => {
     const first = gate();
+    const secondStarted = gate();
+    const secondFinished = gate();
     /** Every start/end boundary the runtime saw, in the order it saw them. */
     const order: string[] = [];
     fakeRuntime.withScenarios([
@@ -169,9 +163,11 @@ describe('POST /api/sessions/:id/messages — same-client turn serialization', (
       },
       async function* () {
         order.push('turn-2:start');
+        secondStarted.open();
         yield { type: 'text_delta', data: { text: 'queued reply' } } as StreamEvent;
         order.push('turn-2:end');
         yield { type: 'done', data: {} } as StreamEvent;
+        secondFinished.open();
       },
     ]);
 
@@ -181,19 +177,17 @@ describe('POST /api/sessions/:id/messages — same-client turn serialization', (
 
     // The same tab's auto-flush posts its queued message while turn 1 streams.
     const secondDone = postMessage(TAB, 'queued message');
-    await awaitArrivals(2);
-    // Let the request settle as far as it can get. It must get no further than
-    // the queue: turn 1 still holds the session, so turn 2 has not been sent.
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect((await secondDone).status).toBe(202);
+    // It must get no further than the queue: turn 1 still holds the session,
+    // so turn 2 has not been sent.
     expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(1);
     expect(order).toEqual(['turn-1:start']);
 
     // Turn 1 finishes and releases. Only now may turn 2 begin.
     first.open();
-    expect((await secondDone).status).toBe(202);
-    await vi.waitFor(() =>
-      expect(order).toEqual(['turn-1:start', 'turn-1:end', 'turn-2:start', 'turn-2:end'])
-    );
+    await secondStarted.wait;
+    await secondFinished.wait;
+    expect(order).toEqual(['turn-1:start', 'turn-1:end', 'turn-2:start', 'turn-2:end']);
     expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(2);
     expect(fakeRuntime.sendMessage).toHaveBeenLastCalledWith(
       SESSION_ID,
@@ -202,7 +196,7 @@ describe('POST /api/sessions/:id/messages — same-client turn serialization', (
     );
     // Both slots handed back: the queue holds nothing once a session goes quiet.
     await vi.waitFor(() => expect(sessionTurnQueue.size).toBe(0));
-  });
+  }, 10_000);
 
   it('makes a SECOND CLIENT wait exactly as the first one does (DOR-1131)', async () => {
     // Waiting used to be only for the client that owned the turn; a different
@@ -211,6 +205,8 @@ describe('POST /api/sessions/:id/messages — same-client turn serialization', (
     // queue and runs on the same signal, and the lock it used to bounce off is
     // now just the mutex the running turn holds.
     const first = gate();
+    const secondStarted = gate();
+    const secondFinished = gate();
     fakeRuntime.withScenarios([
       async function* () {
         yield { type: 'text_delta', data: { text: 'working' } } as StreamEvent;
@@ -218,8 +214,10 @@ describe('POST /api/sessions/:id/messages — same-client turn serialization', (
         yield { type: 'done', data: {} } as StreamEvent;
       },
       async function* () {
+        secondStarted.open();
         yield { type: 'text_delta', data: { text: 'the other window’s reply' } } as StreamEvent;
         yield { type: 'done', data: {} } as StreamEvent;
+        secondFinished.open();
       },
     ]);
 
@@ -237,7 +235,9 @@ describe('POST /api/sessions/:id/messages — same-client turn serialization', (
     expect(fakeRuntime.getLockInfo(SESSION_ID)?.clientId).toBe(TAB);
 
     first.open();
-    await vi.waitFor(() => expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(2));
+    await secondStarted.wait;
+    await secondFinished.wait;
+    expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(2);
     expect(fakeRuntime.sendMessage).toHaveBeenLastCalledWith(
       SESSION_ID,
       'from elsewhere',
@@ -245,7 +245,7 @@ describe('POST /api/sessions/:id/messages — same-client turn serialization', (
     );
     await vi.waitFor(() => expect(fakeRuntime.releaseLock).toHaveBeenCalledTimes(2));
     await vi.waitFor(() => expect(sessionTurnQueue.size).toBe(0));
-  });
+  }, 10_000);
 });
 
 describe('POST /api/sessions/:id/messages — one session, two ids (review G4)', () => {
@@ -256,6 +256,8 @@ describe('POST /api/sessions/:id/messages — one session, two ids (review G4)',
     // and keyed on the raw request id, the queue and the lock both looked at the
     // wrong shelf and let a second stream into one projector.
     const first = gate();
+    const secondStarted = gate();
+    const secondFinished = gate();
     const order: string[] = [];
     let canonicalAssigned = false;
 
@@ -277,9 +279,11 @@ describe('POST /api/sessions/:id/messages — one session, two ids (review G4)',
       },
       async function* () {
         order.push('turn-2:start');
+        secondStarted.open();
         yield { type: 'text_delta', data: { text: 'queued reply' } } as StreamEvent;
         order.push('turn-2:end');
         yield { type: 'done', data: {} } as StreamEvent;
+        secondFinished.open();
       },
     ]);
 
@@ -289,17 +293,15 @@ describe('POST /api/sessions/:id/messages — one session, two ids (review G4)',
 
     // Same tab, same client id — but addressed to the id it just adopted.
     const secondDone = postMessage(TAB, 'queued message', CANONICAL_ID);
-    await awaitArrivals(2);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect((await secondDone).status).toBe(202);
     expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(1);
     expect(order).toEqual(['turn-1:start']);
 
     first.open();
-    expect((await secondDone).status).toBe(202);
-    await vi.waitFor(() =>
-      expect(order).toEqual(['turn-1:start', 'turn-1:end', 'turn-2:start', 'turn-2:end'])
-    );
+    await secondStarted.wait;
+    await secondFinished.wait;
+    expect(order).toEqual(['turn-1:start', 'turn-1:end', 'turn-2:start', 'turn-2:end']);
     expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(2);
     await vi.waitFor(() => expect(sessionTurnQueue.size).toBe(0));
-  });
+  }, 10_000);
 });

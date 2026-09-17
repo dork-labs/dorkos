@@ -1,6 +1,6 @@
 flowchart TB
   accTitle: DorkOS systems and deployment boundaries
-  accDescr: The DorkOS client reaches a local execution server. Community has its own browser, server and storage. Cloud is optional. The website and local installer both read marketplace sources. The remote-community connection is unfinished.
+  accDescr: The DorkOS client reaches a local execution server. Community has its own browser, server and storage. The local server participates in approved Community channels through qualified HTTP and SSE. Cloud is optional. The website and local installer both read marketplace sources.
   client["DorkOS client · React<br/>Browser / phone web app / desktop"]
   subgraph local["Your machine or self-hosted environment"]
     server["DorkOS server · Express<br/>Sessions · Rooms · Tasks · Relay · Mesh<br/>Local SQLite + files"]
@@ -15,8 +15,8 @@ flowchart TB
   cloud["DorkOS Cloud · optional<br/>Public contract<br/>Service under development"]
   sources["Marketplace sources<br/>Registries + package repositories"]
   site["DorkOS website · Next.js<br/>Docs + marketplace discovery"]
-  client <-->|"HTTP commands / WebSocket events"| server
-  server -.->|"Local app connection in development<br/>HTTP + SSE"| community
+  client <-->|"HTTP commands / WebSocket events<br/>Community SSE"| server
+  server <-->|"Approved Community participation<br/>Qualified HTTP + SSE channel events"| community
   server -->|"Optional HTTPS<br/>Link, heartbeat, managed services"| cloud
   server -->|"Fetch packages<br/>HTTPS / Git / npm"| sources
   site -->|"HTTPS metadata + READMEs"| sources

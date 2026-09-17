@@ -372,7 +372,7 @@
     },
     {
       "guide": "adding-a-community-adapter.md",
-      "description": "Community backend authoring: CommunityAdapter port, capability matrix, the four typed errors + the eager stale-cursor and unknown-room throws, four connection outcomes, agent admission, credential discipline",
+      "description": "Community backend authoring: CommunityAdapter port, capability matrix, the four typed errors + stale-cursor and unknown-room refusals before the first event, four connection outcomes, agent admission, credential discipline",
       "patterns": [
         "community-adapter",
         "apps/server/src/services/communities/",
@@ -382,7 +382,7 @@
     },
     {
       "guide": "community-server.md",
-      "description": "Independent Community: browser, admission, pairing, streams, files, exports, storage and Postgres checks",
+      "description": "Independent Community: browser, admission, native local participation, streams, files, exports, recovery and Postgres checks",
       "patterns": [
         "apps/community/",
         "community-wire",

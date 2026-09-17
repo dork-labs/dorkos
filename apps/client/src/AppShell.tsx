@@ -245,6 +245,12 @@ export function AppShell() {
   // (it takes pathname as a prop) so the same component mounts in the
   // router-less Obsidian embed, which passes a constant.
   const rightPanelPathname = useRouterState({ select: (s) => s.location.pathname });
+  const searchStr = useRouterState({ select: (st) => st.location.searchStr });
+  const rightPanelSearch = new URLSearchParams(searchStr);
+  const rightPanelIsRemoteCommunityRoom =
+    rightPanelPathname === '/channels' &&
+    Boolean(rightPanelSearch.get('community')) &&
+    Boolean(rightPanelSearch.get('id'));
   // See `route-fade.ts`: an inline opacity tween is invisible to both the
   // global reduced-motion CSS reset and `MotionConfig reducedMotion="user"`,
   // so the fade below needs its own gate.
@@ -518,7 +524,6 @@ export function AppShell() {
     select: (session) => session.title,
   });
   const routeHeader = useRouteHeader();
-  const searchStr = useRouterState({ select: (st) => st.location.searchStr });
   // What every route bar reads but no route resolves for itself — the shell has
   // these already, and resolving them twice is how two places end up disagreeing
   // about which room is open.
@@ -908,7 +913,10 @@ export function AppShell() {
                             <Outlet />
                           </motion.div>
                         </Panel>
-                        <RightPanelContainer pathname={rightPanelPathname} />
+                        <RightPanelContainer
+                          pathname={rightPanelPathname}
+                          isRemoteCommunityRoom={rightPanelIsRemoteCommunityRoom}
+                        />
                       </PanelGroup>
                     </main>
                   </SidebarInset>

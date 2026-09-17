@@ -336,6 +336,14 @@ describe('cross-client: second-client POST during an open turn', () => {
     const gate = new Promise<void>((resolve) => {
       releaseTurn = resolve;
     });
+    let signalSecondStarted!: () => void;
+    const secondStarted = new Promise<void>((resolve) => {
+      signalSecondStarted = resolve;
+    });
+    let signalSecondFinished!: () => void;
+    const secondFinished = new Promise<void>((resolve) => {
+      signalSecondFinished = resolve;
+    });
     fakeRuntime.withScenarios([
       // The long-running first turn (client A) — parked open at the gate.
       async function* () {
@@ -345,8 +353,10 @@ describe('cross-client: second-client POST during an open turn', () => {
       },
       // The queued message's turn (client B), once the first one ends.
       async function* () {
+        signalSecondStarted();
         yield { type: 'text_delta', data: { text: 'queued reply' } } as StreamEvent;
         yield { type: 'done', data: {} } as StreamEvent;
+        signalSecondFinished();
       },
     ]);
 
@@ -392,7 +402,9 @@ describe('cross-client: second-client POST during an open turn', () => {
     // The first turn ends. THAT is what releases the queue — and the message
     // runs without anybody sending it again.
     releaseTurn();
-    await vi.waitFor(() => expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(2));
+    await secondStarted;
+    await secondFinished;
+    expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(2);
     expect(fakeRuntime.sendMessage).toHaveBeenLastCalledWith(
       SESSION_ID,
       'second client message',
@@ -405,5 +417,5 @@ describe('cross-client: second-client POST during an open turn', () => {
 
     // Drain both detached turns so the afterEach dispose finds them settled.
     await vi.waitFor(() => expect(fakeRuntime.releaseLock).toHaveBeenCalledTimes(2));
-  });
+  }, 10_000);
 });

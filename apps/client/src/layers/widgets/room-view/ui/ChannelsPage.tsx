@@ -1,9 +1,10 @@
-import { useSearch } from '@tanstack/react-router';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { MessagesSquare } from 'lucide-react';
 import { useIsMobile } from '@/layers/shared/model';
 import { useTeamRoomRedirect } from '../model/use-team-room-redirect';
 import { RoomHistorySkeleton } from './RoomFlow';
 import { RoomSurface } from './RoomSurface';
+import { RemoteCommunitySurface } from './RemoteCommunitySurface';
 
 /**
  * The `/channels` page — one room's history, addressed by search param.
@@ -23,12 +24,26 @@ import { RoomSurface } from './RoomSurface';
  * (spec §3.5). Every other id is unaffected.
  */
 export function ChannelsPage() {
-  const { id, thread, entry } = useSearch({ from: '/_shell/channels' });
-  const teamRoom = useTeamRoomRedirect(id, thread, entry);
+  const { id, thread, entry, community } = useSearch({ from: '/_shell/channels' });
+  const navigate = useNavigate();
+  const teamRoom = useTeamRoomRedirect(community ? undefined : id, thread, entry);
   // The empty state names the way in, and the way in is not the same on a
   // phone: `MobileTabsLayout` deliberately has no sidebar and no hamburger, so
   // copy pointing at one described a control that had been removed (DOR-1755).
   const isMobile = useIsMobile();
+
+  if (community && id)
+    return (
+      <RemoteCommunitySurface
+        key={JSON.stringify([community, id])}
+        community={community}
+        roomId={id}
+        threadId={thread}
+        onThread={(rootId) => {
+          void navigate({ to: '/channels', search: { community, id, thread: rootId } });
+        }}
+      />
+    );
 
   // **Not yet sure whether this id is Home's room — so draw the room's own
   // loading state, not a blank pane.** This branch is taken by EVERY room on a

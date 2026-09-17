@@ -45,6 +45,15 @@ import type { AgentMcpServerService } from '../services/mesh/agent-mcp-server-se
  */
 export const testControlRouter = Router();
 
+let remoteCommunitySubscriptionProbe: ((ref: string, roomId: string) => unknown) | undefined;
+
+/** Bind the private replay barrier after the room subsystem completes startup. */
+export function setRemoteCommunitySubscriptionProbe(
+  next: ((ref: string, roomId: string) => unknown) | undefined
+): void {
+  remoteCommunitySubscriptionProbe = next;
+}
+
 /** Test-only bridge into the authenticated internal connector MCP listener. */
 export interface ConnectorRuntimeRequestProbe {
   /** Open one real runtime principal, call the request tool, and close the turn. */
@@ -66,6 +75,22 @@ export interface ConnectorRuntimeExecutionProbe {
     readonly signal: AbortSignal;
   }): Promise<unknown>;
 }
+
+const remoteCommunitySubscriptionQuerySchema = z
+  .object({ ref: z.string().min(1), roomId: z.string().min(1) })
+  .strict();
+
+/** Test-only owner-qualified replay barrier. Production never mounts this router. */
+testControlRouter.get('/community-subscription', (req, res) => {
+  const parsed = remoteCommunitySubscriptionQuerySchema.safeParse(req.query);
+  if (!parsed.success)
+    return res.status(400).json({ error: 'A community ref and roomId are required.' });
+  if (!remoteCommunitySubscriptionProbe)
+    return res.status(503).json({ error: 'Community subscription probe is unavailable.' });
+  const value = remoteCommunitySubscriptionProbe(parsed.data.ref, parsed.data.roomId);
+  if (!value) return res.status(404).json({ error: 'Community room subscription is unavailable.' });
+  return res.json(value);
+});
 
 const scenarioSchema = z.object({
   name: z.string().min(1),

@@ -14,6 +14,8 @@ import workbenchServeRoutes from './routes/workbench-serve.js';
 import gitRoutes from './routes/git.js';
 import workspaceRoutes from './routes/workspaces.js';
 import roomRoutes from './routes/rooms.js';
+import { createCommunityConnectionsRouter } from './routes/community-connections.js';
+import { createRemoteCommunitiesRouter } from './routes/remote-communities.js';
 import readCursorRoutes from './routes/read-cursors.js';
 import tunnelRoutes from './routes/tunnel.js';
 import cloudRoutes from './routes/cloud.js';
@@ -304,6 +306,8 @@ export function createApp(options: { connectorEventIngress?: ConnectorSignedIngr
   app.use('/api/git', gitRoutes);
   app.use('/api/workspaces', workspaceRoutes);
   app.use('/api/rooms', roomRoutes);
+  app.use('/api/community-connections', createCommunityConnectionsRouter());
+  app.use('/api/communities', createRemoteCommunitiesRouter());
   app.use('/api/read-cursors', readCursorRoutes);
   app.use('/api/tunnel', tunnelRoutes);
   app.use('/api/cloud', cloudRoutes);

@@ -33,5 +33,6 @@ export * from './rooms.js';
 export * from './room-coordination.js';
 export * from './read-cursors.js';
 export * from './bridges.js';
+export * from './communities/community-mirrors.js';
 export * from './search.js';
 export * from './notifications.js';

@@ -1,0 +1,73 @@
+/**
+ * Browser-safe local connection API. These schemas deliberately have no
+ * verifier, one-time code, bearer or encrypted credential reference. Private
+ * server-to-server pairing responses live in `community-private-wire`.
+ *
+ * @module shared/community-connections
+ */
+import { z } from 'zod';
+import { CommunityRefSchema } from './community-adapter.js';
+
+/** A connected or pending community visible to its local install owner. */
+export const CommunityConnectionDescriptorSchema = z.strictObject({
+  ref: CommunityRefSchema,
+  remoteCommunityId: z.string().min(1),
+  label: z.string().min(1),
+  pinnedOrigin: z.url(),
+  connectedHumanMemberId: z.string().min(1).nullable(),
+  status: z.enum(['pending', 'connected']),
+  expiresAt: z.iso.datetime().nullable(),
+});
+/** Browser-safe connection descriptor. */
+export type CommunityConnectionDescriptor = z.infer<typeof CommunityConnectionDescriptorSchema>;
+
+/** The operator's requested deployment URL and this install's display name. */
+export const CommunityConnectionStartRequestSchema = z.strictObject({
+  url: z.url(),
+  installName: z.string().trim().min(1).max(120),
+});
+/** Pairing starts with a URL opened on the remote community's own origin. */
+export const CommunityConnectionStartResponseSchema = z.strictObject({
+  connection: CommunityConnectionDescriptorSchema,
+  approvalUrl: z.url(),
+});
+/** List only the authenticated local owner's connections. */
+export const CommunityConnectionListResponseSchema = z.strictObject({
+  connections: z.array(CommunityConnectionDescriptorSchema),
+});
+/** Single connection status. */
+export const CommunityConnectionStatusResponseSchema = z.strictObject({
+  connection: CommunityConnectionDescriptorSchema,
+});
+/** A poll can complete, remain pending, expire, or be cancelled. */
+export const CommunityConnectionPollResponseSchema = z.strictObject({
+  connection: CommunityConnectionDescriptorSchema.nullable(),
+  status: z.enum(['pending', 'connected', 'expired', 'cancelled']),
+});
+
+/** Inputs for connecting this install to a community. */
+export type CommunityConnectionStartRequest = z.infer<typeof CommunityConnectionStartRequestSchema>;
+/** Public approval URL and the pending local connection. */
+export type CommunityConnectionStartResponse = z.infer<
+  typeof CommunityConnectionStartResponseSchema
+>;
+/** Public outcome of polling browser approval. */
+export type CommunityConnectionPollResponse = z.infer<typeof CommunityConnectionPollResponseSchema>;
+
+/** Owner-scoped community connection operations over the local server only. */
+export interface CommunityConnectionTransport {
+  /** List this install owner's pending and connected communities. */
+  listCommunityConnections(): Promise<CommunityConnectionDescriptor[]>;
+  /** Begin browser approval without returning the installation's verifier or bearer. */
+  startCommunityConnection(
+    input: CommunityConnectionStartRequest
+  ): Promise<CommunityConnectionStartResponse>;
+  /** Read one owner-scoped local connection. */
+  getCommunityConnection(ref: string): Promise<CommunityConnectionDescriptor>;
+  /** Exchange a completed approval on the local server; return only its public outcome. */
+  pollCommunityConnection(ref: string): Promise<CommunityConnectionPollResponse>;
+  /** Cancel an outstanding approval and erase the pending local proof. */
+  cancelCommunityConnection(ref: string): Promise<void>;
+  /** Disconnect this installation and discard its local credentials and cached content. */
+  disconnectCommunity(ref: string): Promise<void>;
+}
