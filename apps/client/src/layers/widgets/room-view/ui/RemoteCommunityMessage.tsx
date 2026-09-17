@@ -65,8 +65,11 @@ export function RemoteCommunityMessage({
               size="sm"
               disabled={downloading !== null}
               onClick={() => void download(file.id, file.name)}
+              className="max-w-full"
             >
-              {downloading === file.id ? 'Downloading…' : file.name}
+              <span className="min-w-0 truncate">
+                {downloading === file.id ? 'Downloading…' : file.name}
+              </span>
             </Button>
           ))}
           {error && (
