@@ -110,20 +110,40 @@ test.describe('Mobile tabs — 390×844 @smoke', { tag: SOLE_SIDEBAR_TAG }, () =
    * eight round trips through the router to earn it. The record is seeded here;
    * everything these tests assert on is downstream of it.
    *
-   * Timestamps descend from `now` so the order Today comes in is the order the
-   * caller passed, and `counts` is filled alongside `opened` because the store's
-   * own invariant is that the two maps carry the same keys.
+   * Timestamps descend from the fixture clock so the order Today comes
+   * in is the order the caller passed. They stay within the current Today window:
+   * at 04:00 there may be only milliseconds since the boundary, so one-minute
+   * steps would turn all but the newest seeded visit into yesterday. `counts` is
+   * filled alongside `opened` because the store's own invariant is that the two
+   * maps carry the same keys.
    *
    * @param page - The page, before its first navigation.
    * @param roomIds - The rooms, most recently visited first.
+   * @param now - The fixture clock, which defaults to the current time.
    */
-  async function seedVisits(page: Page, roomIds: readonly string[]): Promise<void> {
+  async function seedVisits(
+    page: Page,
+    roomIds: readonly string[],
+    now: number = Date.now()
+  ): Promise<void> {
     await page.addInitScript(
       (payload: { ids: string[]; now: number }) => {
+        const boundary = new Date(payload.now);
+        boundary.setHours(4, 0, 0, 0);
+        if (boundary.getTime() > payload.now) boundary.setDate(boundary.getDate() - 1);
+
+        // Keep the usual one-minute spacing unless the current Today window is
+        // younger than the seed. A zero step at the exact boundary is deliberate:
+        // tied timestamps still meet the inclusive boundary and every room remains
+        // eligible for the scenario this fixture is preparing.
+        const step = Math.min(
+          60_000,
+          Math.floor((payload.now - boundary.getTime()) / Math.max(1, payload.ids.length))
+        );
         const opened: Record<string, string> = {};
         const counts: Record<string, number> = {};
         payload.ids.forEach((id, index) => {
-          opened[`room:${id}`] = new Date(payload.now - index * 60_000).toISOString();
+          opened[`room:${id}`] = new Date(payload.now - index * step).toISOString();
           counts[`room:${id}`] = 1;
         });
         window.localStorage.setItem(
@@ -131,7 +151,7 @@ test.describe('Mobile tabs — 390×844 @smoke', { tag: SOLE_SIDEBAR_TAG }, () =
           JSON.stringify({ state: { opened, counts }, version: 0 })
         );
       },
-      { ids: [...roomIds], now: Date.now() }
+      { ids: [...roomIds], now }
     );
   }
 
@@ -337,6 +357,13 @@ test.describe('Mobile tabs — 390×844 @smoke', { tag: SOLE_SIDEBAR_TAG }, () =
     roomsApi,
     teamRoomApi,
   }) => {
+    // At 04:00, one-minute fixture offsets used to put eight of these rooms
+    // before Today's overnight boundary. Keep this case on that edge so the
+    // scroll precondition proves the fixture is still preparing the stated UI.
+    const fourOClock = new Date();
+    fourOClock.setHours(4, 0, 5, 0);
+    await page.clock.setFixedTime(fourOClock);
+
     // **Seeded until Home genuinely overflows, and it takes both halves.** A
     // panel that fits has no scroll offset to lose, so "the offset survived"
     // would be true of a build that remounted the panel on every switch — the
@@ -353,7 +380,8 @@ test.describe('Mobile tabs — 390×844 @smoke', { tag: SOLE_SIDEBAR_TAG }, () =
     await teamRoomApi.seedApproval();
     await seedVisits(
       page,
-      rooms.map((room) => room.id)
+      rooms.map((room) => room.id),
+      fourOClock.getTime()
     );
     await basePage.goto();
     await basePage.waitForAppReady();
@@ -478,6 +506,11 @@ test.describe('Mobile tabs — 390×844 @smoke', { tag: SOLE_SIDEBAR_TAG }, () =
     basePage,
     roomsApi,
   }) => {
+    // The smaller three-room seed caught the same boundary bug at 04:02.
+    const fourOClock = new Date();
+    fourOClock.setHours(4, 0, 2, 0);
+    await page.clock.setFixedTime(fourOClock);
+
     const rooms: SeededRoom[] = [];
     for (let i = 0; i < 3; i += 1) {
       rooms.push(await seedChannel(roomsApi, `e2e-mobile-catchup-${i}-${roomsApi.runId}`));
@@ -485,7 +518,8 @@ test.describe('Mobile tabs — 390×844 @smoke', { tag: SOLE_SIDEBAR_TAG }, () =
     for (const room of rooms) await roomsApi.waitForUnread(room.id, 1);
     await seedVisits(
       page,
-      rooms.map((room) => room.id)
+      rooms.map((room) => room.id),
+      fourOClock.getTime()
     );
     await basePage.goto();
     await basePage.waitForAppReady();
