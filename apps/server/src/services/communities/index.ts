@@ -42,6 +42,11 @@ export { listRoomsAcrossCommunities } from './list-rooms-across-communities.js';
 // through the registry, the way every other backend behind this port will be.
 export { registerLocalCommunity } from './local/register-local-community.js';
 export {
+  RemoteCommunityAdapter,
+  remoteAuthorOf,
+  remoteSequenceOf,
+} from './remote/remote-community-adapter.js';
+export {
   CommunityNotRegisteredError,
   CommunityRegistry,
   communityRegistry,

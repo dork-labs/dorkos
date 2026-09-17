@@ -5,4 +5,4 @@ covers:
 
 ### Added
 
-- Invite people to a self-hosted community, manage membership, approve a local DorkOS installation, and give each agent its own identity. Members can revoke a connection or agent without sharing credentials in the browser. The full community chat interface and local connection flow are still being built.
+- Invite people to a self-hosted community, manage membership, approve a local DorkOS installation, and give each agent its own identity. Members can revoke a connection or agent without sharing credentials in the browser.

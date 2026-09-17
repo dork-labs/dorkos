@@ -242,6 +242,34 @@ jobs:
             apps/community/test-results/
           if-no-files-found: ignore
 
+  # The real packaged local-agent journey runs on the queue's combined tree.
+  # PRs report an explicit pass-through, as the shared browser suite does.
+  community-packaged:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Packaged proof runs on the merge queue
+        if: github.event_name != 'merge_group'
+        run: echo "The merge queue runs the sealed packaged community proof."
+      - uses: actions/checkout@v7
+        if: github.event_name == 'merge_group'
+      - name: Build and test without public network access
+        if: github.event_name == 'merge_group'
+        run: bash apps/community/acceptance/run.sh
+      - name: Preserve packaged community reports
+        if: always() && github.event_name == 'merge_group'
+        uses: actions/upload-artifact@v7
+        with:
+          name: community-packaged-evidence
+          path: |
+            .temp/community-acceptance/**/network-proof.json
+            .temp/community-acceptance/**/playwright-report.json
+            .temp/community-acceptance/**/playwright-artifacts/**/*.png
+            .temp/community-acceptance/**/playwright-artifacts/**/*.webm
+            .temp/community-acceptance/**/playwright-artifacts/**/*.yml
+          include-hidden-files: true
+          if-no-files-found: ignore
+
   # The suite, split four ways at the vitest file level (see the header), on
   # BOTH events: the full monorepo sweep on `merge_group`, the affected-only
   # sweep on `pull_request`. What differs between the two is one `run:` step
@@ -512,7 +540,7 @@ jobs:
   # `always()` is still what lets it report when a shard is red — without it
   # GitHub skips this job, and a SKIPPED check run satisfies a required check.
   test:
-    needs: [test-shard, community-pg]
+    needs: [test-shard, community-pg, community-packaged]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     # This job runs no tests any more, so this is a ceiling on a gate, an
@@ -591,6 +619,12 @@ jobs:
         run: |
           result="${{ needs.test-shard.result }}"
           echo "shard matrix result: $result"
+          [ "$result" = "success" ]
+
+      - name: Require packaged community proof green
+        run: |
+          result="${{ needs.community-packaged.result }}"
+          echo "packaged community result: $result"
           [ "$result" = "success" ]
 
       - name: Require real community Postgres tests green

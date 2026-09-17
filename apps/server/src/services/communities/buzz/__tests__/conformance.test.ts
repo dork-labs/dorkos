@@ -269,8 +269,8 @@ describe('BuzzCommunityAdapter fixtures', () => {
   });
 
   it('refuses to stream a channel the relay has never shown it', async () => {
-    // The eager-throw path over a poll-shaped backend: a room the cache has
-    // never seen is refused at call time, awaiting nothing.
+    // This poll-shaped adapter validates against its local cache, so a room it
+    // has never seen is refused synchronously.
     const adapter = makeAdapterOn('buzz-primary', 'newest');
     await adapter.connect();
     expect(() => adapter.subscribeRoom('00000000-0000-4000-8000-000000009999')).toThrow(

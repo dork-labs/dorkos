@@ -19,6 +19,7 @@ import type { AuthorRegistry } from '../author-registry.js';
 import { RoomError } from '../room-errors.js';
 import type { RoomCore } from './room-core.js';
 import type { RoomStore } from '../room-store.js';
+import type { RoomMirrorAccess } from './room-service-deps.js';
 
 /** The visibility and read-access rules every room verb is gated on. */
 export class RoomVisibility {
@@ -26,11 +27,13 @@ export class RoomVisibility {
   private readonly authors: AuthorRegistry;
   /** Whether an author is the install's owner. Read per check, never captured. */
   private readonly isOwnerAuthor: (authorId: string) => boolean;
+  private readonly mirrorAccess: RoomMirrorAccess | undefined;
 
   constructor(core: RoomCore) {
     this.store = core.store;
     this.authors = core.authors;
     this.isOwnerAuthor = core.isOwnerAuthor;
+    this.mirrorAccess = core.mirrorAccess;
   }
 
   /**
@@ -72,8 +75,29 @@ export class RoomVisibility {
    * everybody else only the ones they belong to.
    */
   canSee(roomId: string, viewerAuthorId: string): boolean {
+    // A mirror is still a local row, but never a local-authority grant. This
+    // check has to precede the owner-wide branch below or a guessed cached id
+    // would expose remote history through every ordinary room read surface.
+    const mirrored = this.mirrorAccess?.canRead(roomId, viewerAuthorId);
+    if (mirrored !== undefined && mirrored !== null) return mirrored;
     if (this.seesEveryRoom(viewerAuthorId)) return true;
     return this.store.getMember(roomId, viewerAuthorId) !== null;
+  }
+
+  /** Whether this is an ordinary local room that may appear in generic room lists. */
+  canList(roomId: string, viewerAuthorId: string): boolean {
+    // A mirror is an implementation cache for a connected community. Its local
+    // id must stay readable by native delivery code, but generic room lists have
+    // no community coordinate and must not offer an unopenable duplicate.
+    const mirrored = this.mirrorAccess?.canRead(roomId, viewerAuthorId);
+    if (mirrored !== undefined && mirrored !== null) return false;
+    if (this.seesEveryRoom(viewerAuthorId)) return true;
+    return this.store.getMember(roomId, viewerAuthorId) !== null;
+  }
+
+  /** Whether owner-wide list/search calls must enumerate through `canSee`. */
+  hasRestrictedMirrors(): boolean {
+    return this.mirrorAccess?.hasMirrors() ?? false;
   }
 
   /**

@@ -208,6 +208,8 @@ export const CommunityWireEntrySchema = z.strictObject({
   seq: z.number().int().positive(),
   authorMemberId: id,
   authorDisplayName: z.string().min(1),
+  /** Immutable author principal kind, retained after a member or agent becomes inactive. */
+  authorKind: z.enum(['human', 'agent']),
   text: z.string(),
   /** Member IDs resolved from handles at write time against the joined roster. */
   mentions,
@@ -217,12 +219,16 @@ export const CommunityWireEntrySchema = z.strictObject({
   /** Server-minted cursor for room-event resume immediately after this entry. */
   cursor,
   attachments: z.array(CommunityWireAttachmentSchema).max(8),
+  /** Owner-authorized agent-post correlation key; absent for every other reader. */
+  originIdempotencyKey: idempotencyKey.optional(),
 });
 /** One committed entry. */
 export type CommunityWireEntry = z.infer<typeof CommunityWireEntrySchema>;
 /** Post as the bearer or cookie identity; agent selection is by private bearer. */
 export const CommunityWireEntryPostRequestSchema = z.strictObject({
   text: z.string().min(1),
+  /** Member ids resolved by the local caller, checked against the joined roster. */
+  mentions: mentions.optional(),
   parentEntryId: id.optional(),
   idempotencyKey,
   attachmentIds: attachmentIds.optional(),
@@ -258,6 +264,14 @@ export const CommunityWireEventSchema = z.discriminatedUnion('type', [
     type: z.literal('snapshot'),
     channel: CommunityWireChannelSchema,
     entries: z.array(CommunityWireEntrySchema).max(100),
+    /** Authoritative channel sequence captured before this subscription's replay query. */
+    capturedSeq: z.number().int().nonnegative(),
+    cursor,
+  }),
+  /** Native consumers use this durable boundary to distinguish bounded replay from new work. */
+  z.strictObject({
+    type: z.literal('replay_complete'),
+    capturedSeq: z.number().int().nonnegative(),
     cursor,
   }),
   z.strictObject({ type: z.literal('entry'), entry: CommunityWireEntrySchema, cursor }),
@@ -380,7 +394,9 @@ export const CommunityWireAgentSchema = z.strictObject({
 export type CommunityWireAgent = z.infer<typeof CommunityWireAgentSchema>;
 /** Enrollment request made under a scoped personal grant. */
 export const CommunityWireAgentEnrollRequestSchema = z.strictObject({
-  localAgentId: id,
+  // A local harness owns this identifier. It is deliberately not constrained
+  // to the community service's UUID vocabulary.
+  localAgentId: z.string().min(1).max(256),
   displayName: z.string().min(1),
   /** The server derives a collision-safe handle when omitted. */
   handle: CommunityWireHandleSchema.optional(),

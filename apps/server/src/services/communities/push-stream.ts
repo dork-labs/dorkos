@@ -2,12 +2,12 @@
  * A push-driven async iterable, for the `CommunityAdapter` streams whose
  * events arrive from somewhere other than the consumer's own pull.
  *
- * The port requires `subscribeRoom` to validate its cursor **synchronously** and
- * only then hand back a stream, which rules out writing either stream as an
- * `async function*`: a generator body does not run until the first `next()`, so
- * the eager throw would arrive one pull too late and the opening snapshot would
- * be composed against a room that had already moved. A plain method that
- * arranges everything up front and returns one of these satisfies both.
+ * An in-process adapter can validate its cursor synchronously before it hands
+ * back a stream. An HTTP adapter may need its authoritative server to validate
+ * an opaque token on the first pull. Both forms must refuse before emitting a
+ * snapshot or entry; a partial replay is never a valid refusal. This push
+ * stream supports the in-process form by letting a plain method arrange work
+ * up front before it returns one.
  *
  * Events queue until a consumer pulls them, so nothing pushed before the first
  * `next()` is lost — which is the whole reason the snapshot can be composed at

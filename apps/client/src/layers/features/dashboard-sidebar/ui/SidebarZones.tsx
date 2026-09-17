@@ -1,3 +1,4 @@
+import { CommunityChannelGroups } from './CommunityChannelGroups';
 /**
  * The zones, in the order the model put them in.
  *
@@ -269,6 +270,7 @@ export function SidebarZones({
                   )}
                 </motion.div>
               ))}
+            {draws('library') && <CommunityChannelGroups />}
             {/* There is no empty-Library branch on purpose. `AgentOnboardingCard`
                 used to hang off `library === undefined`, and that condition is
                 reachable — but only in the wrong moment. `useSidebarState`

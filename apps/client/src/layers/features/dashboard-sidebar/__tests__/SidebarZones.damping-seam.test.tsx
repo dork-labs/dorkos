@@ -38,6 +38,10 @@ vi.mock('@/layers/entities/config', () => ({
   setGroupCollapsed: (prefs: unknown) => prefs,
 }));
 
+// Remote groups have their own transport-backed tests; this fixture exercises
+// the local zone stack's return and interaction holds.
+vi.mock('../ui/CommunityChannelGroups', () => ({ CommunityChannelGroups: () => null }));
+
 import {
   ZONE_LABEL,
   type SidebarModel,

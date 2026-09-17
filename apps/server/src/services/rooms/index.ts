@@ -49,6 +49,7 @@ import type { RoomMergeService } from './repo/room-merge-service.js';
 import type { RoomAgentLookup } from './room-errors.js';
 import { resolveRoomLimits, type RoomLimitsResolver } from './limits/room-limits.js';
 import { RoomService } from './room-service.js';
+import type { RoomMirrorAccess, RoomMirrorWritePolicy } from './service/room-service-deps.js';
 import { RoomStore } from './room-store.js';
 import { RoomBroadcaster } from './room-stream.js';
 import type { RoomTurnRunner } from './room-trigger.js';
@@ -98,6 +99,12 @@ export interface RoomSubsystem {
    * registered is the thing no agent path can write through.
    */
   canvas: CanvasService;
+}
+
+/** Builds persisted remote-mirror policy only after room stores and authors exist. */
+export interface RoomMirrorRuntime {
+  mirrorAccess: RoomMirrorAccess;
+  mirrorWrites: RoomMirrorWritePolicy;
 }
 
 /**
@@ -412,6 +419,13 @@ function safeJson(raw: string): unknown {
  *   transport, not as a second source of truth.
  * @param opts.canvasNow - The clock the canvas judges an edit lock against, so a
  *   test can move past its 45-second TTL without waiting.
+ * @param opts.mirrorAccess - Persisted remote-mirror authorization. This is
+ *   consulted before local owner-wide room visibility.
+ * @param opts.mirrorWrites - Trusted remote-mirror outbox policy. The writer
+ *   derives it from persisted mirror and enrollment state; callers cannot
+ *   suppress dispatch themselves.
+ * @param opts.createMirrorRuntime - Production composition hook for a mirror
+ *   runtime that needs this factory's one store and author registry.
  */
 export function createRoomSubsystem(opts: {
   db: Db;
@@ -420,6 +434,13 @@ export function createRoomSubsystem(opts: {
   budget?: RoomTurnBudget;
   readCursors?: ReadCursorService;
   canvasNow?: () => number;
+  mirrorAccess?: RoomMirrorAccess;
+  mirrorWrites?: RoomMirrorWritePolicy;
+  createMirrorRuntime?: (deps: {
+    store: RoomStore;
+    authors: AuthorRegistry;
+    attachments: AttachmentRowStore;
+  }) => RoomMirrorRuntime;
   /**
    * Whether this subsystem sits on a database it may not write (DOR-1563).
    *
@@ -437,6 +458,7 @@ export function createRoomSubsystem(opts: {
   const attachments = new AttachmentRowStore(opts.db);
   const agentLookup = opts.agents ?? createAgentLookup(opts.db);
   const authors = new AuthorRegistry(opts.db, agentLookup);
+  const mirrorRuntime = opts.createMirrorRuntime?.({ store, authors, attachments });
   const broadcaster = new RoomBroadcaster();
   // **One canvas service per process, built here and registered here.** It is
   // the single writer for every scope (spec `canvas-agent-seat` §1.2), and this
@@ -478,6 +500,12 @@ export function createRoomSubsystem(opts: {
   const readCursors = opts.readCursors ?? new ReadCursorService(new ReadCursorStore(opts.db));
   const service = new RoomService({
     store,
+    ...((mirrorRuntime?.mirrorAccess ?? opts.mirrorAccess)
+      ? { mirrorAccess: mirrorRuntime?.mirrorAccess ?? opts.mirrorAccess }
+      : {}),
+    ...((mirrorRuntime?.mirrorWrites ?? opts.mirrorWrites)
+      ? { mirrorWrites: mirrorRuntime?.mirrorWrites ?? opts.mirrorWrites }
+      : {}),
     reactions,
     canvasDocuments,
     canvas,

@@ -12,6 +12,16 @@ import { createCommunityApp } from '../src/app.js';
 import { parseConfig } from '../src/config.js';
 import { migrate } from '../src/migrate.js';
 
+declare global {
+  interface Window {
+    /** Test-owned event stream used to exercise the reconnect state. */
+    __communityStream?: {
+      fail(): void;
+      emit(type: string, value: unknown): void;
+    };
+  }
+}
+
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
 if (!adminUrl)
   throw new Error('COMMUNITY_TEST_DATABASE_URL is required for community browser tests');
@@ -59,8 +69,10 @@ test.beforeAll(async () => {
   await new Promise<void>((resolve) => server.once('listening', resolve));
 });
 test.afterAll(async () => {
-  server?.closeAllConnections();
-  await new Promise<void>((resolve) => server?.close(() => resolve()));
+  if (server) {
+    if ('closeAllConnections' in server) server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
   await pool?.end();
   await admin.query(`DROP DATABASE IF EXISTS ${dbName}`);
   await admin.end();
@@ -253,8 +265,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
         onerror: ((event: Event) => void) | null = null;
         private listeners = new Map<string, Listener[]>();
         constructor() {
-          (window as Window & { __communityStream?: ControlledEventSource }).__communityStream =
-            this;
+          window.__communityStream = this;
         }
         addEventListener(type: string, listener: Listener) {
           this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
@@ -308,14 +319,14 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
         .id as string;
     });
     let releaseGeneralHistory: (() => void) | undefined;
-    let generalHistoryRequest!: Promise<void>;
+    let generalHistoryRequest!: () => void;
     const generalHistorySeen = new Promise<void>((resolve) => {
       generalHistoryRequest = resolve;
     });
     const generalHistoryGate = new Promise<void>((resolve) => {
       releaseGeneralHistory = resolve;
     });
-    let generalHistoryFulfilled!: Promise<void>;
+    let generalHistoryFulfilled!: () => void;
     const generalHistoryReleased = new Promise<void>((resolve) => {
       generalHistoryFulfilled = resolve;
     });
@@ -378,14 +389,14 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
       window.EventSource = ObservedEventSource;
     });
     let releaseHistory: (() => void) | undefined;
-    let historyRequest!: Promise<void>;
+    let historyRequest!: () => void;
     const historySeen = new Promise<void>((resolve) => {
       historyRequest = resolve;
     });
     const historyGate = new Promise<void>((resolve) => {
       releaseHistory = resolve;
     });
-    let historyFulfilled!: Promise<void>;
+    let historyFulfilled!: () => void;
     const historyReleased = new Promise<void>((resolve) => {
       historyFulfilled = resolve;
     });

@@ -1,6 +1,6 @@
 # Community server development
 
-The independent service lives in `apps/community`. It owns its PostgreSQL schema, Better Auth instance, HTTP API, and browser build. Do not import the local SQLite schema or the local server's session state here. Public request and response shapes come from `@dorkos/shared/community-wire`; private enrollment secrets use `@dorkos/shared/community-private-wire` when those routes are added.
+The independent service lives in `apps/community`. It owns its PostgreSQL schema, Better Auth instance, HTTP API, and browser build. Do not import the local SQLite schema or the local server's session state here. Public request and response shapes, including browser-safe pairing and cached Community data, come from `@dorkos/shared/community-wire`. `@dorkos/shared/community-private-wire` is limited to server-to-server pairing and enrollment material. It must never reach browser DTOs, logs, or local entry projections.
 
 ## Start and inspect it
 
@@ -10,11 +10,11 @@ Set every required `COMMUNITY_*` variable listed in `apps/community/README.md`. 
 
 ## Admission and roles
 
-A valid Better Auth session alone grants no community access. `requireMember` reads an active member row on each protected request. Owner bootstrap takes a deployment secret, a short-lived row-backed cookie grant, an authenticated account, and the same secret again at claim time. The claim locks and consumes the grant in one transaction. Ordinary accounts need an invitation admission before they can become members; those invitation routes are in a later tranche.
+A valid Better Auth session alone grants no community access. `requireMember` reads an active member row on each protected request. Owner bootstrap takes a deployment secret, a short-lived row-backed cookie grant, an authenticated account, and the same secret again at claim time. The claim locks and consumes the grant in one transaction. Ordinary accounts need a valid invitation admission before they can become members. Invite preflight creates a short-lived, row-backed browser grant, and redeeming it after sign-in consumes one seat. A signed token by itself never grants membership.
 
 The channel rows are the authority for visibility and membership. Public channels can be discovered before joining; private channels return 404 to anyone who has not joined, including an owner or admin. Owner and admin may manage channels, but only the owner can promote another admin. All channel writes lock the channel first, then check and lock the actor's live member row, then any target member row. Channel creation inserts a provisional channel row before checking the live actor role so a demotion that finishes while the insert waits cannot authorize a commit. Posting uses the same order to allocate a commit-ordered sequence and enforce a cross-channel author quota. An idempotency key returns the original receipt only for the original payload.
 
-A post stores resolved member IDs for `@handle` mentions, so later display-name changes do not retarget it. History cursors bind the channel and thread selector. Each entry also carries a separate opaque cursor that resumes the room event stream after that entry, including on a final history page. SSE reads committed rows after its snapshot watermark, polls while idle, and checks membership again before delivery. Check this path with a real PostgreSQL HTTP test whenever its authorization or ordering changes.
+A post stores resolved member IDs for `@handle` mentions, so later display-name changes do not retarget it. The remote entry ID is an opaque identity, not a local room sequence or a cursor. History cursors bind the channel and thread selector. Each entry also carries a separate opaque cursor that resumes the room event stream after that entry, including on a final history page. Never decode, compare, or synthesize either cursor. SSE reads committed rows after its snapshot watermark, polls while idle, and checks membership again before delivery. Check this path with a real PostgreSQL HTTP test whenever its authorization or ordering changes.
 
 ## Packaging
 

@@ -32,6 +32,7 @@ export default defineConfig({
     './src/schema/room-coordination.ts',
     './src/schema/read-cursors.ts',
     './src/schema/bridges.ts',
+    './src/schema/communities/community-mirrors.ts',
     './src/schema/search.ts',
     './src/schema/notifications.ts',
   ],

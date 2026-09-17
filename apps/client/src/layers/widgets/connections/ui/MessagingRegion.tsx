@@ -11,6 +11,7 @@ import { TOUR_ANCHORS } from '@/layers/shared/config';
 import { useRelayEnabledState, useRelayEventStream } from '@/layers/entities/relay';
 import { MessagingConnections, ActivityFeed, RelayHealthBar } from '@/layers/features/relay';
 import { ClaimFeed, MessagePolicyCard } from '@/layers/features/connections';
+import { CommunityConnections } from '@/layers/features/community-connections';
 
 /**
  * Where people and platforms reach your agents.
@@ -39,6 +40,8 @@ export function MessagingRegion() {
         </p>
       </header>
 
+      <CommunityConnections />
+
       {relay.isLoading ? (
         <div className="space-y-3" aria-label="Loading Messaging">
           <Skeleton className="h-24 w-full rounded-xl" />
@@ -46,14 +49,14 @@ export function MessagingRegion() {
         </div>
       ) : relay.isError ? (
         <QueryErrorState
-          title="Couldn’t check Messaging"
+          title="Couldn’t check chat apps"
           description="Check that DorkOS is running, then try again."
           onRetry={relay.retry}
           isRetrying={relay.isRetrying}
         />
       ) : relay.initError ? (
         <QueryErrorState
-          title="Messaging didn’t start"
+          title="Chat app connections didn’t start"
           description="Restart DorkOS, then try again."
           onRetry={relay.retry}
           isRetrying={relay.isRetrying}
@@ -78,8 +81,8 @@ export function MessagingRegion() {
       ) : (
         <FeatureDisabledState
           icon={Route}
-          name="Messaging"
-          description="Turn on Messaging so people can reach your agents from Telegram, Slack and elsewhere."
+          name="Chat app messaging"
+          description="Turn on chat app connections so people can reach your agents from Telegram, Slack and other chat apps."
           command="DORKOS_RELAY_ENABLED=true dorkos"
         />
       )}

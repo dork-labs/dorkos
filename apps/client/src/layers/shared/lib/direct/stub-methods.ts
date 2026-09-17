@@ -31,6 +31,7 @@ import {
   profileStubs,
 } from '../embedded-mode-stubs';
 import { createLocalReadCursorMethods } from './read-cursor-methods';
+import { communityStubs } from './community-stubs';
 
 /** Create the stubbed Transport surface for server-only subsystems. */
 export function createEmbeddedStubMethods() {
@@ -53,6 +54,7 @@ export function createEmbeddedStubMethods() {
     // browser, so the unread rule works there too (see the module's TSDoc).
     ...createLocalReadCursorMethods(),
     ...cloudStubs,
+    ...communityStubs,
     ...connectorStubs,
     ...mcpManagementStubs,
     ...teamStubs,

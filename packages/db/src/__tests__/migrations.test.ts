@@ -146,6 +146,13 @@ describe('Database Migrations', () => {
       // them.
       'canvas_documents',
       'codex_threads',
+      // Remote community enrollment, mirrored history, and durable delivery.
+      'community_agent_enrollments',
+      'community_entry_origins',
+      'community_mirror_access',
+      'community_mirror_entries',
+      'community_outbox',
+      'community_room_mirrors',
       // Derived cache binding a ConnectionId → owning connector provider
       // (connector-gateway spec §Detailed Design 2, migration 0029).
       'connected_accounts',

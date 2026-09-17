@@ -110,6 +110,13 @@ describe('registerRightPanelTabs', () => {
     // absent everywhere else — which is what `isGlobal` would break.
     expect(room?.isGlobal).toBeUndefined();
     expect(room?.visibleWhen?.({ ...ctx(true), pathname: '/channels' })).toBe(true);
+    expect(
+      room?.visibleWhen?.({
+        ...ctx(true),
+        pathname: '/channels',
+        isRemoteCommunityRoom: true,
+      })
+    ).toBe(false);
     expect(room?.visibleWhen?.({ ...ctx(true), pathname: '/' })).toBe(true);
     expect(room?.visibleWhen?.(ctx(true))).toBe(false); // /session
     expect(room?.visibleWhen?.({ ...ctx(true), pathname: '/team' })).toBe(false);

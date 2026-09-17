@@ -163,10 +163,19 @@ describe('attachments over real HTTP and Postgres', () => {
         (await pool.query('SELECT count(*)::int AS count FROM pending_blob_deletions')).rows[0]
           .count
       ).toBe(1);
+      expect(
+        (
+          await pool.query<{ attempts: number; delayed: boolean }>(
+            'SELECT attempts,next_attempt_at>now() AS delayed FROM pending_blob_deletions'
+          )
+        ).rows[0]
+      ).toEqual({ attempts: 1, delayed: true });
     } finally {
       failDelete.mockRestore();
       errorLog.mockRestore();
     }
+    expect(await sweepPendingBlobDeletions(pool, blobStore)).toEqual({ deleted: 0, failed: 0 });
+    await pool.query("UPDATE pending_blob_deletions SET next_attempt_at=now()-interval '1 second'");
     expect(await sweepPendingBlobDeletions(pool, blobStore)).toEqual({ deleted: 1, failed: 0 });
     expect((await upload(channelId, ownerCookie, 'files-one', 'world')).status).toBe(409);
     const posted = await post(
@@ -206,6 +215,54 @@ describe('attachments over real HTTP and Postgres', () => {
       (await request(`/api/v1/attachments/${metadata.id}`, { headers: { cookie: bobCookie } }))
         .status
     ).toBe(403);
+  });
+
+  it('lets due blob cleanup work pass an older backed-off row', async () => {
+    const delayedKey = 'a'.repeat(64);
+    const dueKey = 'b'.repeat(64);
+    const failingKey = 'c'.repeat(64);
+    await pool.query(
+      `INSERT INTO pending_blob_deletions(blob_key,attempts,next_attempt_at,created_at)
+       VALUES($1,7,now()+interval '1 hour',now()-interval '1 day'),
+             ($2,0,now()-interval '1 second',now()),
+             ($3,6,now()-interval '1 second',now())`,
+      [delayedKey, dueKey, failingKey]
+    );
+    const remove = vi.spyOn(blobStore, 'delete').mockResolvedValue();
+    try {
+      expect(await sweepPendingBlobDeletions(pool, blobStore, 1)).toEqual({
+        deleted: 1,
+        failed: 0,
+      });
+      expect(remove).toHaveBeenCalledExactlyOnceWith(dueKey);
+      expect(
+        (await pool.query('SELECT 1 FROM pending_blob_deletions WHERE blob_key=$1', [delayedKey]))
+          .rowCount
+      ).toBe(1);
+    } finally {
+      remove.mockRestore();
+    }
+    const fail = vi
+      .spyOn(blobStore, 'delete')
+      .mockRejectedValue(new Error('persistent deletion interruption'));
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      expect(await sweepPendingBlobDeletions(pool, blobStore, 1)).toEqual({
+        deleted: 0,
+        failed: 1,
+      });
+      expect(
+        (
+          await pool.query<{ attempts: number; backoff_seconds: number }>(
+            'SELECT attempts,EXTRACT(EPOCH FROM next_attempt_at-last_error_at)::int AS backoff_seconds FROM pending_blob_deletions WHERE blob_key=$1',
+            [failingKey]
+          )
+        ).rows[0]
+      ).toEqual({ attempts: 7, backoff_seconds: 3600 });
+    } finally {
+      fail.mockRestore();
+      errorLog.mockRestore();
+    }
   });
 
   it('rejects wrong byte claims and forbidden types without keeping rows', async () => {
@@ -386,6 +443,19 @@ describe('attachments over real HTTP and Postgres', () => {
       expect(
         (await pool.query('SELECT 1 FROM attachments WHERE id=$1', [agentFileId])).rowCount
       ).toBe(1);
+      expect(
+        (
+          await pool.query<{ attempts: number; delayed: boolean }>(
+            'SELECT cleanup_attempts AS attempts,cleanup_next_attempt_at>now() AS delayed FROM attachments WHERE id=$1',
+            [agentFileId]
+          )
+        ).rows[0]
+      ).toEqual({ attempts: 1, delayed: true });
+      expect(await sweepExpiredAttachments(pool, blobStore)).toEqual({ deleted: 0, failed: 0 });
+      await pool.query(
+        "UPDATE attachments SET cleanup_next_attempt_at=now()-interval '1 second' WHERE id=$1",
+        [agentFileId]
+      );
       expect(await sweepExpiredAttachments(pool, blobStore)).toEqual({ deleted: 1, failed: 0 });
       expect(
         (await pool.query('SELECT 1 FROM attachments WHERE id=$1', [agentFileId])).rowCount
@@ -627,6 +697,40 @@ describe('private archives and recoverable leave', () => {
     expect(
       (await request(`/api/v1/exports/${personalId}`, { headers: { cookie: ownerCookie } })).status
     ).toBe(404);
+
+    const retry = await post('/api/v1/me/export', {}, ownerCookie);
+    expect(retry.status).toBe(201);
+    const retryId = (await retry.json()).archiveId;
+    await pool.query(
+      "UPDATE export_archives SET expires_at=now()-interval '1 second' WHERE id=$1",
+      [retryId]
+    );
+    const originalDelete = blobStore.delete.bind(blobStore);
+    const failOnce = vi
+      .spyOn(blobStore, 'delete')
+      .mockRejectedValueOnce(new Error('disposable archive deletion interruption'))
+      .mockImplementation(originalDelete);
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      expect(await sweepExpiredExports(pool, blobStore)).toEqual({ deleted: 0, failed: 1 });
+      expect(
+        (
+          await pool.query<{ attempts: number; delayed: boolean }>(
+            'SELECT cleanup_attempts AS attempts,cleanup_next_attempt_at>now() AS delayed FROM export_archives WHERE id=$1',
+            [retryId]
+          )
+        ).rows[0]
+      ).toEqual({ attempts: 1, delayed: true });
+      expect(await sweepExpiredExports(pool, blobStore)).toEqual({ deleted: 0, failed: 0 });
+      await pool.query(
+        "UPDATE export_archives SET cleanup_next_attempt_at=now()-interval '1 second' WHERE id=$1",
+        [retryId]
+      );
+      expect(await sweepExpiredExports(pool, blobStore)).toEqual({ deleted: 1, failed: 0 });
+    } finally {
+      failOnce.mockRestore();
+      errorLog.mockRestore();
+    }
   });
 
   it('requires ownership transfer before leave, then revokes the former member’s session', async () => {

@@ -115,8 +115,23 @@ export class RoomDirectory {
   ): RoomSummary[] {
     const cursors = this.cursorsFor(viewerAuthorId);
     const visible = this.visibility.seesEveryRoom(viewerAuthorId)
-      ? this.store.listRooms(filter)
-      : this.store.listRoomsForMember(viewerAuthorId, filter);
+      ? this.store
+          .listRooms(filter)
+          // Cached remote rows share this table, but remote membership is not
+          // owner-wide local authority. Keep the local fast path unless a
+          // mirror exists, then ask the one list predicate per row.
+          .filter(
+            (room) =>
+              !this.visibility.hasRestrictedMirrors() ||
+              this.visibility.canList(room.id, viewerAuthorId)
+          )
+      : this.store
+          .listRoomsForMember(viewerAuthorId, filter)
+          // A revoked remote mirror retains its normal room-members row so its
+          // cache can be reconciled without recreating a local room. Membership
+          // alone is therefore insufficient here. Cached remote rooms belong
+          // to their qualified community list, never this local directory.
+          .filter((room) => this.visibility.canList(room.id, viewerAuthorId));
     // Only the DMs are asked about, so a room of any other kind is simply
     // absent from the map and reads as `null` below — "not carried" rather
     // than "empty", which is the distinction the schema promises.
@@ -202,22 +217,25 @@ export class RoomDirectory {
     // column: it is the one cursor that certainly exists for a member, and a
     // caller with no author row has no rows to list anyway.
     const cursor = this.authors.getById(viewerAuthorId)?.kind === 'human' ? 'user' : 'membership';
-    return this.store.listThreadsForMember(viewerAuthorId, limit, cursor).map((row) => ({
-      roomId: row.roomId,
-      roomKind: row.roomKind as RoomKind,
-      roomSlug: row.roomSlug,
-      roomTitle: row.roomTitle,
-      rootEntryId: row.rootEntryId,
-      rootAuthorId: row.rootAuthorId,
-      // Truncated here rather than in the row: a root can be as long as anyone
-      // cared to type, and a sidebar draws one line of it. Cut without an
-      // ellipsis — the row clamps its own text, and a server-side "…" inside a
-      // box that also clamps gives you two of them.
-      rootPreview: parseEntryBody(row.rootBody).text.slice(0, THREAD_PREVIEW_MAX_CHARS),
-      replyCount: row.replyCount,
-      unreadCount: row.unreadCount,
-      lastActivityAt: row.lastActivityAt,
-    }));
+    return this.store
+      .listThreadsForMember(viewerAuthorId, limit, cursor)
+      .filter((row) => this.visibility.canSee(row.roomId, viewerAuthorId))
+      .map((row) => ({
+        roomId: row.roomId,
+        roomKind: row.roomKind as RoomKind,
+        roomSlug: row.roomSlug,
+        roomTitle: row.roomTitle,
+        rootEntryId: row.rootEntryId,
+        rootAuthorId: row.rootAuthorId,
+        // Truncated here rather than in the row: a root can be as long as anyone
+        // cared to type, and a sidebar draws one line of it. Cut without an
+        // ellipsis — the row clamps its own text, and a server-side "…" inside a
+        // box that also clamps gives you two of them.
+        rootPreview: parseEntryBody(row.rootBody).text.slice(0, THREAD_PREVIEW_MAX_CHARS),
+        replyCount: row.replyCount,
+        unreadCount: row.unreadCount,
+        lastActivityAt: row.lastActivityAt,
+      }));
   }
 
   /**

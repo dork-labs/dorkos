@@ -11,6 +11,7 @@ import { CommunityAgentEnrollmentSecretResponseSchema } from '@dorkos/shared/com
 import type { CommunityAuth } from '../auth.js';
 import type { CommunityConfig } from '../config.js';
 import {
+  assertConnectionGrantCurrent,
   lockChannel,
   requireConnectionGrant,
   requireLiveRole,
@@ -59,11 +60,11 @@ export function registerAgentRoutes(
       );
       if (!grant.rowCount)
         throw new ApiError(401, 'UNAUTHENTICATED', 'This connection is unavailable.');
-      const existing = await client.query(
-        'SELECT 1 FROM agents WHERE owner_member_id=$1 AND local_agent_id=$2',
+      const existing = await client.query<AgentRow>(
+        'SELECT id,display_name,handle,owner_member_id,active FROM agents WHERE owner_member_id=$1 AND local_agent_id=$2 FOR UPDATE',
         [member.id, body.localAgentId]
       );
-      if (existing.rowCount)
+      if (existing.rows[0]?.active)
         throw new ApiError(409, 'STATE_CONFLICT', 'This local agent is already enrolled.');
       const count = await client.query<{ n: string }>(
         'SELECT count(*)::text AS n FROM agents WHERE owner_member_id=$1 AND active',
@@ -71,15 +72,30 @@ export function registerAgentRoutes(
       );
       if (Number(count.rows[0].n) >= config.limits.agentsPerOwner)
         throw new ApiError(429, 'RATE_LIMITED', 'Active agent limit reached.');
-      const handle =
-        body.handle ?? (await mintHandle(client, member.community_id, body.displayName));
-      const agent = await client.query<AgentRow>(
-        'INSERT INTO agents(community_id,owner_member_id,display_name,handle,local_agent_id) VALUES($1,$2,$3,$4,$5) RETURNING id,display_name,handle,owner_member_id,active',
-        [member.community_id, member.id, body.displayName, handle, body.localAgentId]
-      );
+      const agent = existing.rows[0]
+        ? await client.query<AgentRow>(
+            'UPDATE agents SET active=true,revoked_at=NULL,display_name=$2 WHERE id=$1 RETURNING id,display_name,handle,owner_member_id,active',
+            [existing.rows[0].id, body.displayName]
+          )
+        : await (async () => {
+            const handle =
+              body.handle ?? (await mintHandle(client, member.community_id, body.displayName));
+            const created = await client.query<AgentRow>(
+              'INSERT INTO agents(community_id,owner_member_id,display_name,handle,local_agent_id) VALUES($1,$2,$3,$4,$5) RETURNING id,display_name,handle,owner_member_id,active',
+              [member.community_id, member.id, body.displayName, handle, body.localAgentId]
+            );
+            await client.query(
+              'INSERT INTO community_handles(community_id,handle,agent_id) VALUES($1,$2,$3)',
+              [member.community_id, handle, created.rows[0].id]
+            );
+            return created;
+          })();
+      // Reactivation is a new authority: old room memberships and credentials
+      // cannot survive an ejection or a lost initial response.
+      await client.query('DELETE FROM agent_channel_members WHERE agent_id=$1', [agent.rows[0].id]);
       await client.query(
-        'INSERT INTO community_handles(community_id,handle,agent_id) VALUES($1,$2,$3)',
-        [member.community_id, handle, agent.rows[0].id]
+        'UPDATE agent_credentials SET revoked_at=now() WHERE agent_id=$1 AND revoked_at IS NULL',
+        [agent.rows[0].id]
       );
       const token = randomToken();
       await client.query('INSERT INTO agent_credentials(agent_id,token_hash) VALUES($1,$2)', [
@@ -98,12 +114,49 @@ export function registerAgentRoutes(
   });
 
   app.get('/api/v1/agents', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const grant = c.req.header('authorization')
+      ? await requireConnectionGrant(c, pool, 'enroll-agent')
+      : undefined;
+    const actor = grant?.member ?? (await requireMember(c, auth, pool));
     const rows = await pool.query<AgentRow>(
       'SELECT id,display_name,handle,owner_member_id,active FROM agents WHERE community_id=$1 AND owner_member_id=$2 AND active ORDER BY created_at,id',
       [actor.community_id, actor.id]
     );
     return json(c, CommunityWireAgentListResponseSchema, { agents: rows.rows.map(project) });
+  });
+
+  // A client can lose the one-time enrollment response after the transaction
+  // commits. The owner-scoped local id is the recovery key; this endpoint is
+  // deliberately distinct from ordinary enrollment so retries never rotate a
+  // still-working credential.
+  app.post('/api/v1/agents/recover', async (c) => {
+    const { member, tokenHash } = await requireConnectionGrant(c, pool, 'enroll-agent');
+    const body = await readJson(c, CommunityWireAgentEnrollRequestSchema);
+    const result = await transaction(pool, async (client) => {
+      await assertConnectionGrantCurrent(client, member.id, tokenHash, 'enroll-agent');
+      const agent = await client.query<AgentRow>(
+        'SELECT id,display_name,handle,owner_member_id,active FROM agents WHERE owner_member_id=$1 AND local_agent_id=$2 AND active FOR UPDATE',
+        [member.id, body.localAgentId]
+      );
+      if (!agent.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Active agent not found.');
+      await client.query(
+        'UPDATE agent_credentials SET revoked_at=now() WHERE agent_id=$1 AND revoked_at IS NULL',
+        [agent.rows[0].id]
+      );
+      const token = randomToken();
+      await client.query('INSERT INTO agent_credentials(agent_id,token_hash) VALUES($1,$2)', [
+        agent.rows[0].id,
+        hashSecret(token),
+      ]);
+      await client.query(
+        'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
+        [member.community_id, member.id, 'agent.recover', agent.rows[0].id]
+      );
+      return { token, agent: project(agent.rows[0]) };
+    });
+    const out = json(c, CommunityAgentEnrollmentSecretResponseSchema, result);
+    out.headers.set('Cache-Control', 'no-store');
+    return out;
   });
 
   app.post('/api/v1/agents/:id/rotate', async (c) => {
@@ -146,9 +199,14 @@ export function registerAgentRoutes(
   });
 
   app.delete('/api/v1/agents/:id', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const grant = c.req.header('authorization')
+      ? await requireConnectionGrant(c, pool, 'enroll-agent')
+      : undefined;
+    const actor = grant?.member ?? (await requireMember(c, auth, pool));
     const id = uuid.parse(c.req.param('id'));
     await transaction(pool, async (client) => {
+      if (grant)
+        await assertConnectionGrantCurrent(client, actor.id, grant.tokenHash, 'enroll-agent');
       const role = await requireLiveRole(client, actor, ['owner', 'admin', 'member']);
       const candidate = await client.query<{ owner_member_id: string; owner_role: Member['role'] }>(
         'SELECT a.owner_member_id,m.role AS owner_role FROM agents a JOIN members m ON m.id=a.owner_member_id WHERE a.id=$1 AND a.community_id=$2 AND a.active AND m.active',
@@ -199,10 +257,15 @@ export function registerAgentRoutes(
   });
 
   app.post('/api/v1/channels/:id/agents', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const grant = c.req.header('authorization')
+      ? await requireConnectionGrant(c, pool, 'enroll-agent')
+      : undefined;
+    const actor = grant?.member ?? (await requireMember(c, auth, pool));
     const { agentId } = await readJson(c, CommunityWireAgentChannelMembershipRequestSchema);
     await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), actor);
+      if (grant)
+        await assertConnectionGrantCurrent(client, actor.id, grant.tokenHash, 'enroll-agent');
       const role = await requireLiveRole(client, actor, ['owner', 'admin', 'member']);
       const agent = await client.query<{ owner_member_id: string }>(
         'SELECT owner_member_id FROM agents WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
@@ -221,10 +284,15 @@ export function registerAgentRoutes(
   });
 
   app.delete('/api/v1/channels/:id/agents/:agentId', async (c) => {
-    const actor = await requireMember(c, auth, pool);
+    const grant = c.req.header('authorization')
+      ? await requireConnectionGrant(c, pool, 'enroll-agent')
+      : undefined;
+    const actor = grant?.member ?? (await requireMember(c, auth, pool));
     const agentId = uuid.parse(c.req.param('agentId'));
     await transaction(pool, async (client) => {
       const channel = await lockChannel(client, c.req.param('id'), actor);
+      if (grant)
+        await assertConnectionGrantCurrent(client, actor.id, grant.tokenHash, 'enroll-agent');
       const role = await requireLiveRole(client, actor, ['owner', 'admin', 'member']);
       const agent = await client.query<{ owner_member_id: string }>(
         'SELECT owner_member_id FROM agents WHERE id=$1 AND community_id=$2 AND active FOR SHARE',

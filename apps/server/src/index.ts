@@ -321,6 +321,7 @@ import {
   startApprovalVerdictDelivery,
 } from './services/core/approvals/index.js';
 import { createMcpRouter } from './routes/mcp.js';
+import { setRemoteCommunitySubscriptionProbe } from './routes/test-control.js';
 import { createMcpAuth } from './middleware/mcp-auth.js';
 import { validateMcpOrigin } from './middleware/mcp-origin.js';
 import { requireMcpEnabled } from './middleware/mcp-enabled.js';
@@ -336,6 +337,21 @@ import {
   agents,
   type Db,
 } from '@dorkos/db';
+import {
+  getRemoteCommunityAdapter,
+  publishRemoteCommunityDeliveryChanges,
+  setRemoteCommunityDb,
+  setRemoteCommunityDeliveryProjection,
+  setRemoteCommunityEnrollmentStore,
+  setRemoteCommunityLifecycle,
+  setRemoteCommunityDeliveryRetry,
+  setRemoteCommunityLocalAgentResolver,
+} from './services/communities/remote/state.js';
+import { CommunityOutboxRuntime } from './services/communities/remote/community-outbox-runtime.js';
+import { RemoteRoomSubscriptionBridge } from './services/communities/remote/remote-room-subscription-bridge.js';
+import { RemoteRoomSubscriptionRuntime } from './services/communities/remote/remote-room-subscription-runtime.js';
+import { registerRemoteCommunityUnregisterCascade } from './services/communities/remote/mesh-unregister-cascade.js';
+import { isCurrentLocalMeshAgent } from './services/communities/remote/local-agent-authority.js';
 import { INTERVALS } from './config/constants.js';
 import { resolveDorkHome } from './lib/dork-home.js';
 import { acquireInstanceLock } from './lib/instance-lock.js';
@@ -489,6 +505,8 @@ let traceStore: TraceStore | undefined;
 let meshCore: MeshCore | undefined;
 let agentMcpServerService: AgentMcpServerService | undefined;
 let agentMcpOAuthService: AgentMcpOAuthService | undefined;
+let remoteCommunityRuntime: CommunityOutboxRuntime | undefined;
+let remoteCommunitySubscriptions: RemoteRoomSubscriptionRuntime | undefined;
 let extensionManager: ExtensionManager | undefined;
 let connectorRuntimeMcpListener: ConnectorRuntimeMcpListener | undefined;
 let testComposioFixture:
@@ -816,6 +834,7 @@ async function start() {
   // (and, on first boot, persists into) a 0600 file there — a fresh install
   // signs in with zero manual `BETTER_AUTH_SECRET` setup (DOR-242).
   initAuth(db, dorkHome);
+  setRemoteCommunityDb(db);
 
   // One-time migration: fold a pre-auth global `mcp.apiKey` into an owner-owned
   // Better Auth API key so existing MCP clients keep working after the rewrite to
@@ -1292,6 +1311,13 @@ async function start() {
   const readCursorService = new ReadCursorService(new ReadCursorStore(db));
   setReadCursorService(readCursorService);
 
+  const roomAttachmentBytes = new LocalRoomAttachmentStore(dorkHome);
+  // Both the worker and native stream lifecycle must remain inert until Mesh
+  // has reconciled the on-disk manifest registry for this process boot.
+  let meshStartupReconciled = false;
+  const remoteCommunityBridge: { current: RemoteRoomSubscriptionBridge | undefined } = {
+    current: undefined,
+  };
   const {
     service: roomService,
     store: roomStore,
@@ -1299,8 +1325,79 @@ async function start() {
     authors: roomAuthors,
     bridges: roomBridges,
     welcomeBack: welcomeBackGreeter,
-  } = createRoomSubsystem({ db, readCursors: readCursorService });
+  } = createRoomSubsystem({
+    db,
+    readCursors: readCursorService,
+    createMirrorRuntime: ({ store, authors, attachments }) => {
+      remoteCommunityRuntime = new CommunityOutboxRuntime({
+        db,
+        roomStore: store,
+        authors,
+        attachmentRows: attachments,
+        attachmentBytes: roomAttachmentBytes,
+        adapters: (communityRef, ownerAuthorId) =>
+          getRemoteCommunityAdapter(communityRef, ownerAuthorId),
+        isLocalAgentCurrent: (localAgentId) =>
+          meshStartupReconciled && meshCore
+            ? isCurrentLocalMeshAgent(meshCore, localAgentId)
+            : false,
+        changes: { changed: publishRemoteCommunityDeliveryChanges },
+      });
+      return {
+        mirrorAccess: remoteCommunityRuntime.mirrorAccess,
+        mirrorWrites: remoteCommunityRuntime.mirrorWrites,
+      };
+    },
+  });
   setRoomService(roomService);
+  if (!remoteCommunityRuntime) throw new Error('Remote community runtime was not composed');
+  setRemoteCommunityEnrollmentStore(remoteCommunityRuntime.enrollments);
+  setRemoteCommunityDeliveryProjection(remoteCommunityRuntime.projection);
+  setRemoteCommunityDeliveryRetry((input) => remoteCommunityRuntime!.retryNow(input));
+  // The public native-community API names an agent by its Mesh manifest id.
+  // Resolve that id through Mesh to its server-only project path before the
+  // author registry mints or reads the local room principal; neither the
+  // browser nor a remote community supplies a path or opaque author id.
+  const resolveRemoteLocalAgent = (localAgentId: string) => {
+    const agent = meshCore?.get(localAgentId);
+    const projectPath = meshCore?.getProjectPath(localAgentId);
+    if (!agent || !projectPath) return null;
+    const author = roomAuthors.resolveAgent(projectPath, agent.displayName ?? agent.name);
+    return { authorId: author.id, displayName: author.displayName };
+  };
+  setRemoteCommunityLocalAgentResolver(resolveRemoteLocalAgent);
+  remoteCommunityBridge.current = new RemoteRoomSubscriptionBridge(
+    remoteCommunityRuntime.mirrors,
+    roomService,
+    remoteCommunityRuntime.enrollments,
+    (localAgentId) => resolveRemoteLocalAgent(localAgentId)?.authorId ?? null,
+    undefined,
+    remoteCommunityRuntime.outbox,
+    remoteCommunityRuntime
+  );
+  remoteCommunitySubscriptions = new RemoteRoomSubscriptionRuntime({
+    bridge: remoteCommunityBridge.current,
+    enrollments: remoteCommunityRuntime.enrollments,
+    adapters: (communityRef, ownerAuthorId) =>
+      getRemoteCommunityAdapter(communityRef, ownerAuthorId),
+    resolveLocalAgentAuthor: (localAgentId) =>
+      resolveRemoteLocalAgent(localAgentId)?.authorId ?? null,
+    isReady: () => meshStartupReconciled && meshCore !== undefined,
+  });
+  setRemoteCommunityLifecycle(remoteCommunitySubscriptions);
+  // Native room streams need Mesh's trusted manifest-to-path registry. Start
+  // them only after startup reconciliation below, so a cold boot never treats
+  // an as-yet-unavailable registry as an authoritative empty agent directory.
+  if (env.DORKOS_TEST_RUNTIME) {
+    setRemoteCommunitySubscriptionProbe(
+      (ref, roomId) =>
+        remoteCommunitySubscriptions?.observation(
+          ref as import('@dorkos/shared/community-adapter').CommunityRef,
+          roomId,
+          resolveOperatorAuthor(roomAuthors).id
+        ) ?? null
+    );
+  }
   // What your agents may say when you come back (team-room-home §D5.2). The
   // read-state route is what tells it somebody is here, so it is registered
   // beside the service that route already reaches for.
@@ -1311,7 +1408,7 @@ async function start() {
   // those bytes live somewhere other than this machine, this line is what
   // changes. Same doctrine as the avatar store below.
   setRoomAttachmentStores({
-    attachments: new LocalRoomAttachmentStore(dorkHome),
+    attachments: roomAttachmentBytes,
     rows: roomAttachmentRows,
   });
   logger.info('[Rooms] RoomService registered');
@@ -1731,6 +1828,13 @@ async function start() {
     // removal, exactly like the sibling cascades below.
     meshCore.onUnregister(createAgentIdentityUnregisterCascade(getAgentIdentityService, logger));
 
+    // A removed Mesh manifest no longer owns any remote enrollment. The
+    // cascade stops and aborts held delivery before the next network boundary,
+    // then closes only that manifest's native streams.
+    if (remoteCommunitySubscriptions) {
+      registerRemoteCommunityUnregisterCascade(meshCore, roomAuthors, remoteCommunitySubscriptions);
+    }
+
     // Wire the cwd -> agent lookup notification emitters read from (session
     // lifecycle, ask resolution): both fire from module-level projector
     // subscriptions registered before this line runs, so they read this
@@ -1751,6 +1855,7 @@ async function start() {
     try {
       const result = await meshCore.reconcileOnStartup();
       logger.info('[Mesh] Startup reconciliation complete', result);
+      meshStartupReconciled = true;
     } catch (err) {
       logger.error('[Mesh] Startup reconciliation failed', logError(err));
     }
@@ -1760,6 +1865,10 @@ async function start() {
       await ensureDorkBot(meshCore, dorkHome);
     } catch (err) {
       logger.warn('[Mesh] Failed to ensure DorkBot system agent', logError(err));
+    }
+    if (meshStartupReconciled) {
+      remoteCommunityRuntime?.start();
+      remoteCommunitySubscriptions?.start();
     }
 
     // Bring every agent workspace DorkOS owns up to the current Operating DorkOS
@@ -4635,6 +4744,11 @@ async function start() {
 // Extracted so the admin router can invoke it before a restart.
 async function shutdownServices() {
   logger.info('[DorkOS] shutting down services');
+  remoteCommunitySubscriptions?.stop();
+  remoteCommunitySubscriptions = undefined;
+  setRemoteCommunitySubscriptionProbe(undefined);
+  remoteCommunityRuntime?.stop();
+  remoteCommunityRuntime = undefined;
   await testComposioFixture?.close();
   testComposioFixture = undefined;
   await connectorRuntimeMcpListener?.close();

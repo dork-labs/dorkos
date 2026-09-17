@@ -18,7 +18,7 @@ import {
 } from '../data.js';
 import { ApiError, json } from '../http.js';
 import { BlobStoreError, downloadHeaders, type BlobStore } from '../storage/index.js';
-import { deleteUnreferencedBlob } from '../storage/pending-deletions.js';
+import { cleanupBackoffSql, deleteUnreferencedBlob } from '../storage/pending-deletions.js';
 
 interface AttachmentRow {
   id: string;
@@ -121,30 +121,55 @@ export async function sweepExpiredAttachments(
   if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 100)
     throw new Error('Invalid attachment sweep batch size');
   const candidates = await pool.query<{ id: string }>(
-    'SELECT id FROM attachments WHERE entry_id IS NULL AND uploaded_at<$1 ORDER BY uploaded_at,id LIMIT $2',
+    'SELECT id FROM attachments WHERE entry_id IS NULL AND uploaded_at<$1 AND cleanup_next_attempt_at<=now() ORDER BY cleanup_next_attempt_at,uploaded_at,id LIMIT $2',
     [olderThan, batchSize]
   );
   let deleted = 0;
   let failed = 0;
   for (const candidate of candidates.rows) {
+    const attempt: { outcome: 'deleted' | 'failed' | 'skipped'; error?: unknown } = {
+      outcome: 'skipped',
+    };
     try {
       await transaction(pool, async (client) => {
         const result = await client.query<{ blob_key: string }>(
-          'SELECT blob_key FROM attachments WHERE id=$1 AND entry_id IS NULL AND uploaded_at<$2 FOR UPDATE',
+          'SELECT blob_key FROM attachments WHERE id=$1 AND entry_id IS NULL AND uploaded_at<$2 AND cleanup_next_attempt_at<=now() FOR UPDATE',
           [candidate.id, olderThan]
         );
         if (!result.rows[0]) return;
-        await blobStore.delete(result.rows[0].blob_key);
+        try {
+          await blobStore.delete(result.rows[0].blob_key);
+        } catch (error) {
+          await client.query(
+            `UPDATE attachments
+             SET cleanup_attempts=cleanup_attempts+1,cleanup_next_attempt_at=now() + ${cleanupBackoffSql('cleanup_attempts')}
+             WHERE id=$1 AND entry_id IS NULL AND uploaded_at<$2`,
+            [candidate.id, olderThan]
+          );
+          attempt.outcome = 'failed';
+          attempt.error = error;
+          return;
+        }
         await client.query('DELETE FROM attachments WHERE id=$1 AND entry_id IS NULL', [
           candidate.id,
         ]);
-        deleted++;
+        attempt.outcome = 'deleted';
       });
     } catch (error) {
       failed++;
       console.error('Community attachment cleanup failed', {
         attachmentId: candidate.id,
         error: error instanceof Error ? error.name : 'unknown',
+      });
+      continue;
+    }
+    if (attempt.outcome === 'deleted') {
+      deleted++;
+    } else if (attempt.outcome === 'failed') {
+      failed++;
+      console.error('Community attachment cleanup failed', {
+        attachmentId: candidate.id,
+        error: attempt.error instanceof Error ? attempt.error.name : 'unknown',
       });
     }
   }
