@@ -1,0 +1,24 @@
+flowchart TB
+  accTitle: Local rooms and independent Community channels
+  accDescr: Local rooms live in local SQLite. Community channels have separate authentication, PostgreSQL and blob storage. The local app's remote-community connection is still being built. Messaging bridges project platform conversations into local rooms.
+  subgraph local["Local DorkOS"]
+    localUI["DorkOS client"]
+    roomService["RoomService<br/>Per-caller room visibility"]
+    sqlite[("Local SQLite rooms")]
+    seam{{"CommunityAdapter<br/>CommunityRegistry"}}
+    localUI -->|"HTTP + WebSocket"| roomService
+    roomService --> sqlite
+    localUI -->|"GET /api/rooms<br/>checks remotes;<br/>reports warnings today"| seam
+  end
+  messaging["Slack / Telegram / other messaging"] -->|"RelayAdapter + bridge<br/>project into local rooms"| roomService
+  subgraph remote["Independent Community · separate deployment"]
+    browser["Community browser"]
+    api["Hono API<br/>Own sign-in + membership checks"]
+    db[("PostgreSQL<br/>Members · channels · posts · cursors")]
+    blobs{{"BlobStore"}}
+    storage[("Filesystem or S3<br/>Attachments + private exports")]
+    browser <-->|"HTTP commands + files<br/>SSE snapshot + resumable events"| api
+    api --> db
+    api --> blobs --> storage
+  end
+  seam -.->|"In development<br/>HTTP + SSE, scoped bearer credentials"| api

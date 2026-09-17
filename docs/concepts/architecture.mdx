@@ -1,6 +1,6 @@
 ---
 title: Architecture
-description: How DorkOS connects your browser to your coding agent, in plain language
+description: Where DorkOS runs, where your data lives, and how its pieces connect
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
@@ -8,50 +8,67 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Architecture
 
-DorkOS looks the same whether it's running as a website or tucked inside Obsidian, and it works with Claude Code, Codex, or OpenCode without you changing a thing. That's the whole idea: one place, any agent, wherever you happen to be working.
+DorkOS gives you one place for the agents you run. Its main app runs on your computer or a server you control. Community and Cloud are separate services with different jobs.
 
 ## The big picture
 
-Three things talk to each other:
+[![DorkOS client and local server, independent Community, optional Cloud, and marketplace sources](/diagrams/architecture/system-context.svg)](/diagrams/architecture/system-context.svg)
 
-```
-Your browser  ->  DorkOS  ->  Your coding agent
-```
+The arrows name how data travels. HTTP carries requests such as sending a message. WebSockets keep the local app up to date. SSE (Server-Sent Events) carries updates from Community to its browser. The dashed connection is still being built.
 
-You open DorkOS in a browser tab (or inside Obsidian). It shows you your sessions, lets you send messages, and streams back what your agent is doing in real time. Underneath, DorkOS swaps out which agent it's talking to (Claude Code, Codex, or OpenCode) without you having to reconfigure anything. That swap is the headline trick: pick a runtime per project, and the interface doesn't change under you.
+The diagram reflects source reviewed on September 16, 2026. Community and Cloud are under active development; code in the repository does not by itself confirm a hosted service is ready.
 
-## Two ways to run it
+## The app on your machine
 
-**As a website.** This is the default, and the one most people should use. DorkOS runs a small server on your machine and you open it in any modern browser. Multiple browser tabs (or people) can watch the same session at once.
+The **client** is what you see: conversations, rooms, tasks, files, and settings. The **server** runs the work behind them. It starts agent turns, schedules tasks, routes messages, and keeps connected windows up to date.
 
-**Inside Obsidian.** DorkOS also ships as an Obsidian plugin that runs in the same process as your notes, no separate server involved. This mode is early and still getting hardened, so treat it as a preview rather than a finished surface: expect rough edges, and prefer the web app if you want the most polished experience.
+You can open the client in a browser, the desktop app, or the installed phone web app. The desktop app manages a local server for you. A phone connects to your server over the network, optionally through the built-in tunnel.
 
-Both modes read the same sessions from disk, so a session you started from the terminal shows up in whichever one you open next.
+Claude Code, Codex, and OpenCode each have their own execution engine, called a runtime. DorkOS gives them a common interface. Each session stays with the runtime that created it; choosing another runtime does not move an existing conversation into it.
 
-## Why this matters to you
+The Obsidian plugin uses a separate path inside Obsidian, without an HTTP server. It supports a limited set of features and remains a preview.
 
-Two things fall out of this design that are worth knowing:
+## Community: shared channels with their own home
 
-- **You can change agents without losing your setup.** Switching a project from Claude Code to Codex (or back) doesn't mean starting over. DorkOS talks to each agent through the same interface, so your sessions and workflow carry over. Note that multi-agent coordination features (agents messaging each other, discovering one another across a project) are newer and still being proven out in real use.
-- **Your sessions live in ordinary files, not a hidden database.** Each coding agent keeps its own session history on disk in its own way. That means restarting DorkOS never loses a conversation, since DorkOS is just reading files that were already there. It also means you can't accidentally "delete" a session from inside DorkOS: it's gone only if the underlying files are gone.
+The independent Community server owns shared channels, membership, posts, and files. It has its own sign-in and database. It can run without a Cloud account or a local DorkOS server.
+
+Its browser interface, chat, file sharing, invitations, and exports are implemented. Connecting those channels to the local DorkOS app is still being built. Local rooms and Community channels therefore appear as separate parts of the diagram.
+
+Messaging connections such as Slack and Telegram bring conversations into local rooms. They follow a different path from joining an independent Community.
+
+## Cloud: optional hosted services
+
+DorkOS Cloud is an optional hosted service. The app's public agreement with it covers accounts, linked installations, managed services, usage, remote access, and access to models.
+
+Cloud is still under development. A defined request format does not mean every feature is available. The local app and Community can both run without Cloud.
+
+## Marketplace: packages that run in your setup
+
+Marketplace sources hold packages and their descriptions. The website helps you discover them. Your local DorkOS server downloads, checks, and installs the package you choose.
+
+Installed packages can add skills, agents, shapes, messaging connections, or app features. Agent-facing files are placed where the selected coding tool can read them. The marketplace website does not run your agents.
+
+## Where your data lives
+
+History is stored differently for each coding tool. Claude Code keeps transcript files, and OpenCode owns its session store. For Codex, DorkOS saves thread mappings and the conversation events it observed. DorkOS also stores local room messages, queued work, settings, and other app state.
+
+Community stores shared posts and files in its own database and file storage. Connecting to Cloud does not turn all local history into a Cloud transcript store.
 
 <Callout type="info">
-  Because DorkOS reads sessions straight from disk, a session you start with the Claude Code CLI
-  shows up in DorkOS too, and vice versa.
+  Local storage does not mean every action stays on your machine. An agent can call a hosted model,
+  use an external service, or post to a Community. Each action has its own data path.
 </Callout>
 
-## For the curious
-
-This page keeps things at the "how do I think about this" level. If you want the engineering detail, the docs below go deeper.
+## For contributors
 
 <Cards>
+  <Card title="Architecture reference" href="/docs/contributing/architecture">
+    Deployment boundaries, replaceable interfaces, and the path from a message to an agent turn.
+  </Card>
   <Card title="Sessions" href="/docs/concepts/sessions">
-    How sessions are created, stored, and kept in sync across clients.
+    How conversations are created, stored, and kept in sync.
   </Card>
-  <Card title="Architecture (developer reference)" href="/docs/contributing/architecture">
-    Interfaces, service layout, and message-flow internals, for anyone reading the source.
-  </Card>
-  <Card title="SSE Protocol" href="/docs/integrations/sse-protocol">
-    The streaming event protocol behind the real-time updates you see.
+  <Card title="SSE and WebSocket protocol" href="/docs/integrations/sse-protocol">
+    The request and event formats used by tools that communicate with DorkOS.
   </Card>
 </Cards>

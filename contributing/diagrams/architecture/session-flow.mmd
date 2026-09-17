@@ -1,0 +1,24 @@
+sequenceDiagram
+  accTitle: A session turn uses separate command and event channels
+  accDescr: The client subscribes to a resumable stream, posts a message, and receives a 202 receipt. A dispatcher queues or starts the turn. Runtime events reach every subscriber independently of the POST response.
+  participant C as DorkOS client
+  participant H as HTTP + stream routes
+  participant D as MessageDispatcher
+  participant R as AgentRuntime
+  C->>H: Open /api/sessions/:id/events (WebSocket)
+  H->>R: Snapshot + subscribe
+  R-->>H: Snapshot + live event subscription
+  H-->>C: Snapshot, then live events
+  C->>H: POST /api/sessions/:id/messages
+  H->>D: Dispatch message
+  D->>D: Persist queue when needed
+  D-->>H: Acceptance receipt
+  H-->>C: 202 + canonical sessionId + receipt
+  Note over C,D: 202 means accepted. turn_start means running.<br/>Receipt and live events can race.
+  D->>R: Start when session can accept a turn
+  R-->>H: turn_start → deltas / tools → turn_end
+  H-->>C: Forward ordered events
+  Note over H,C: Route fans events out to all subscribed clients
+  C->>H: Reconnect with opaque resume cursor
+  H-->>C: Replay gap, or fresh snapshot if cursor is stale
+  Note over C,H: App: WebSocket ?resume= · HTTP consumers: SSE Last-Event-ID

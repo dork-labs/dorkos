@@ -7,7 +7,7 @@ description: Server-Sent Events streaming protocol reference
 
 Read this before building any client that talks to a DorkOS session over HTTP.
 
-DorkOS delivers all real-time state over two durable streams: a per-session event stream (`GET /api/sessions/:id/events`) that carries everything about one session, and a global stream (`GET /api/events`) that carries session-list changes and system events. Sending a message does not stream anything back. It triggers a turn whose output arrives on the session event stream, a bit like ordering a coffee and getting a text when it's ready.
+DorkOS delivers session state over two durable streams: a per-session event stream (`GET /api/sessions/:id/events`) that carries everything about one session, and a global stream (`GET /api/events`) that carries session-list changes and system events. Local rooms have a separate `/api/rooms/:id/events` stream. Independent Community uses its own `/api/v1/channels/:id/events` protocol; this page describes local DorkOS sessions. Sending a message does not stream anything back. It triggers a turn whose output arrives on the session event stream, a bit like ordering a coffee and getting a text when it's ready.
 
 <Callout type="info">
   **Both streams are also WebSocket endpoints, at the same URLs.** Server-Sent Events is the
@@ -52,7 +52,7 @@ The endpoint is trigger-only, and it never waits: it validates the request, give
 }
 ```
 
-**A `202` means the server has your message, not that a turn is running.** If the session was idle, the turn started. If a turn was already in flight, your message joined the session's queue and runs when that turn ends. `queuePosition` tells you which happened: `1` means nothing was ahead of it. If you previously treated the 202 as "the turn has begun" — starting a timer, or polling from that moment — take the real start from the `turn_start` event instead.
+**A `202` means the server has your message, not that a turn is running.** If the session was idle, the turn started. If a turn was already in flight, your message joined the session's queue and runs when that turn ends. `queuePosition` does not tell you which happened: `1` can mean either an immediate start or the first waiting message. If you previously treated the 202 as "the turn has begun" — starting a timer, or polling from that moment — take the real start from the `turn_start` event instead.
 
 `messageId` is the server's id for this message, and it is what the queue is keyed by. Keep it if you want to reword or withdraw the message before it runs. `outcome` reports what the server did with it: `requested` is what you asked for, `applied` is what happened, and a `degradedBecause` appears only when the two differ. Ask for `queue` and it is always what you get — the server owns the queue, so every runtime can do it. Ask for `steer` or `stage` and you may get `queue` back with a reason: `unsupported` (this runtime cannot do it at all), `not-steerable` (this runtime can steer, but the session you asked about cannot take a message mid-task), `turn-owned-elsewhere` (a turn is running and a different client started it, so this one may not write into it), `pending-interaction` (the agent is waiting on a person), or `session-idle` (nothing was running, so your message just ran — the one reason not worth reporting to anybody).
 
