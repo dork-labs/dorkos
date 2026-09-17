@@ -48,6 +48,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       // member of Community A. Community B exists to prove that pairing identities
       // stay isolated; it is not the second participant in A's shared channel.
       await pageA.getByRole('button', { name: 'Manage' }).click();
+      await pageA.locator('#invite-channel').selectOption({ label: '#general' });
       await pageA.getByRole('button', { name: 'Create invite' }).click();
       const inviteUrl = await pageA.getByLabel('One-time invite link').inputValue();
       await pageMemberA.goto(inviteUrl);
@@ -94,9 +95,19 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       const roomA = roomsA.rooms.find(
         (room) => room.title === 'General' || room.title === 'general'
       );
+      const roomsB = await json<{ rooms: Array<{ roomId: string; title: string }> }>(
+        `${env.local}/api/communities/${refB}/rooms`
+      );
+      const roomB = roomsB.rooms.find(
+        (room) => room.title === 'General' || room.title === 'general'
+      );
       expect(
         roomA,
         'the browser-created general channel was not visible to the native connection'
+      ).toBeTruthy();
+      expect(
+        roomB,
+        'Community B general channel was not visible to its native connection'
       ).toBeTruthy();
 
       const agentPath = join(env.root, 'agents', 'community-attachment-agent');
@@ -283,6 +294,33 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         'restart did not preserve a live Community subscription without replaying history'
       );
       expect(afterRestart).toHaveLength(2);
+
+      // Both remotes use a channel named general. A real B browser post using
+      // A's handle must not reach A's enrollment or create a third A reply.
+      const dispatchesBeforeB = afterFreshMention?.dispatchesSinceBoot;
+      const composerB = pageB.getByLabel(/Message #general/i);
+      await composerB.fill(`@${handle} this belongs only to Community B`);
+      await pageB.getByRole('button', { name: 'Send' }).click();
+      await eventually(
+        () =>
+          pageJson<{ entries: Entry[] }>(
+            pageB,
+            `/api/v1/channels/${roomB!.roomId}/entries?limit=100`
+          ),
+        (page) => page.entries.some((entry) => entry.text.includes('only to Community B')),
+        'the Community B browser post did not commit'
+      );
+      const afterB = await eventually(
+        subscriptionBarrier,
+        (result) =>
+          result !== null &&
+          result.snapshotComplete &&
+          result.replayComplete &&
+          result.dispatchesSinceBoot === dispatchesBeforeB,
+        'a Community B post changed Community A dispatch state'
+      );
+      expect(afterB?.dispatchesSinceBoot).toBe(dispatchesBeforeB);
+      expect(await agentEntries()).toHaveLength(2);
     } finally {
       await ownerA.close();
       await ownerB.close();
