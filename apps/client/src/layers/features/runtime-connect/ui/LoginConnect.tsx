@@ -160,10 +160,12 @@ function PasteKeyForm({
 
   const saved = status.data?.key.saved ? status.data.key : null;
   const hasKey = key.trim().length > 0;
-  // Read-only while a check or save is in flight, but the form STAYS on screen:
-  // swapping it for a spinner collapses the panel and throws the scroll to the
-  // top, so the refusal that comes back lands off-screen.
-  const busy = store.isPending;
+  // Read-only while EITHER request is in flight — a Test's answer is about the
+  // field as it stood when it was sent, so editing mid-flight would leave an
+  // answer on screen about a key that is no longer there. The form STAYS on
+  // screen either way: swapping it for a spinner collapses the panel and throws
+  // the scroll to the top, so the refusal that comes back lands off-screen.
+  const busy = store.isPending || test.isPending;
   /** Drop a stale answer the moment the key it was about changes. */
   const invalidateAnswers = () => {
     test.reset();
@@ -241,10 +243,8 @@ function PasteKeyForm({
       </div>
       {/* One slot for every answer, and the form never leaves the page to show
           one — see DirectProviderPath for the scroll-jump this avoids. */}
-      {busy || test.isPending ? (
-        <ConnectProgressRow
-          message={busy && store.phase === 'saving' ? 'Saving…' : 'Checking your key…'}
-        />
+      {busy ? (
+        <ConnectProgressRow message={store.phase === 'saving' ? 'Saving…' : 'Checking your key…'} />
       ) : test.result?.ok === true ? (
         // Say WHICH key works: with a blank field the answer is about the key
         // already saved, not about what is on screen.

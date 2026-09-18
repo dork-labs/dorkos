@@ -478,6 +478,29 @@ describe('LoginConnect — the key form stays put while it works', () => {
     });
   });
 
+  it('is just as read-only while a Test is in flight', async () => {
+    const user = userEvent.setup();
+    const gate = deferred<{ ok: true }>();
+    renderFlow(<LoginConnect type="claude-code" />, {
+      checkRuntimeCredential: vi.fn(() => gate.promise),
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Use an API key instead' }));
+    await user.type(await screen.findByLabelText('Anthropic API key'), 'sk-ant-being-tested');
+    await user.click(screen.getByRole('button', { name: 'Test key' }));
+
+    expect(await screen.findByTestId('connect-progress')).toHaveTextContent('Checking your key…');
+    expect(screen.getByLabelText('Anthropic API key')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Test key' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save key' })).toBeDisabled();
+
+    await act(async () => {
+      gate.resolve({ ok: true });
+    });
+    expect(await screen.findByText('Key works')).toBeInTheDocument();
+    expect(screen.getByLabelText('Anthropic API key')).toBeEnabled();
+  });
+
   it('shows one message at a time, and refocuses the key field after a refusal', async () => {
     const user = userEvent.setup();
     renderFlow(<LoginConnect type="claude-code" />, {

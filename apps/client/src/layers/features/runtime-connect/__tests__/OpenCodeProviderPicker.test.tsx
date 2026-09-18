@@ -1089,6 +1089,33 @@ describe('DirectProviderPath — the form stays put while it works', () => {
     });
   });
 
+  it('is just as read-only while a Test is in flight', async () => {
+    // A Test's answer is about the fields as they stood when it was sent, so
+    // editing them mid-flight would leave an answer on screen about values that
+    // are no longer there.
+    const user = userEvent.setup();
+    const gate = deferred<{ ok: true }>();
+    renderDirect({ checkProviderCredential: vi.fn(() => gate.promise) });
+
+    await user.type(await screen.findByLabelText('API key'), 'sk-being-tested');
+    await user.click(screen.getByRole('button', { name: 'Test key' }));
+
+    expect(await screen.findByTestId('connect-progress')).toHaveTextContent('Checking your key…');
+    expect(screen.getByTestId('direct-provider')).toBeInTheDocument();
+    expect(screen.getByLabelText('API key')).toBeDisabled();
+    expect(screen.getByRole('combobox')).toHaveAttribute('data-disabled');
+    expect(screen.getByRole('button', { name: 'Test key' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save & connect' })).toBeDisabled();
+
+    await act(async () => {
+      gate.resolve({ ok: true });
+    });
+    // And everything is usable again once the answer lands.
+    expect(await screen.findByText('Key works')).toBeInTheDocument();
+    expect(screen.getByLabelText('API key')).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Save & connect' })).toBeEnabled();
+  });
+
   it('replaces a failed Test result with the save’s answer, never both at once', async () => {
     const user = userEvent.setup();
     const refusal = {

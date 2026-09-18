@@ -224,9 +224,12 @@ function DirectProviderForm({
   const insecure = effective.startsWith('http://');
 
   const input = { providerId, key, baseURL: submittedBaseURL };
-  // Everything is read-only while a check or a save is in flight, but the form
-  // STAYS on screen (see the progress row below for why).
-  const busy = connect.isPending;
+  // Everything is read-only while EITHER request is in flight — a Test is as
+  // much a request whose answer is about the fields as a save is, so editing
+  // them mid-flight would leave an answer on screen about values that are no
+  // longer there. The form STAYS on screen either way (see the progress row
+  // below for why).
+  const busy = connect.isPending || test.isPending;
   const keyField = useRef<HTMLInputElement>(null);
 
   /** Drop a stale answer the moment the thing it was about changes. */
@@ -406,9 +409,9 @@ function DirectProviderForm({
           one. Swapping the whole form out for a spinner collapsed the panel's
           height, which threw the scroll position to the top — so the refusal
           that came back was off-screen, below a form that looked untouched. */}
-      {busy || test.isPending ? (
+      {busy ? (
         <ConnectProgressRow
-          message={busy && connect.phase === 'saving' ? 'Saving…' : 'Checking your key…'}
+          message={connect.phase === 'saving' ? 'Saving…' : 'Checking your key…'}
         />
       ) : test.result?.ok === true ? (
         // Say WHICH key works. With a blank field the answer is about the key
