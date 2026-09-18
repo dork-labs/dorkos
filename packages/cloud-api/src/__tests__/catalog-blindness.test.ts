@@ -245,10 +245,13 @@ function unwrap(node: z.ZodTypeAny): z.ZodTypeAny {
  * It reuses {@link isEnumeration}, so a union of bare literals — the first shape
  * the header of this file names — counts as well as a union containing an enum.
  *
- * One level is the deliberate limit. A union nested inside a union still dodges
- * this, and the answer to that is not more recursion: it is that nothing in this
- * package has any reason to publish one, and a reviewer who sees one should ask
- * why rather than trust a guard to have walked it.
+ * One level is the deliberate limit, and it reaches slightly further than that
+ * sounds: a union of bare literals nested inside a union is caught anyway,
+ * because {@link isEnumeration} handles literal-unions itself. What still dodges
+ * is a union containing a union containing an ENUM. The answer to that is not
+ * more recursion: nothing in this package has any reason to publish one, and a
+ * reviewer who meets one should ask why rather than trust a guard to have
+ * walked it.
  *
  * @param schema - An exported schema.
  */
@@ -557,37 +560,56 @@ describe('catalog blindness: the emitted declarations', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('publishes no threshold in a doc comment', () => {
+  it('writes no number into a doc comment, because a threshold is a number', () => {
     // The catalog rule's quieter sibling. This package deliberately names the
     // REFUSAL a threshold produces — `topup_below_minimum`, `first_purchase_cap`,
-    // `daily_limit_reached` — because a person has to be told what happened. The
-    // threshold itself is server policy and belongs nowhere here.
+    // `refund_window_closed`, `daily_limit_reached` — because a person has to be
+    // told what happened. The threshold itself is server policy and belongs
+    // nowhere here.
     //
     // A `.describe()` is not where that would leak. TSDoc is: it is prose,
     // nobody writes a test against prose, and it is emitted into the `.d.ts`
-    // this package publishes to public npm. So the check reads the comments
-    // rather than the descriptions, and looks for a number standing next to a
-    // word that would make it a policy value.
-    const threshold =
-      /(minimum|maximum|ceiling|cap|caps|capped|limit|limits|price|prices|cost|costs|rate|rates|budget|allowance|quota|threshold|at least|at most|up to|per month|per day)[^.]{0,60}?\d|\d[^.]{0,20}?(micro-?unit|credit|dollar|cent|usd|eur|%)/i;
-    // A route path, an exponent and a standards reference are not amounts.
-    const strip = (line: string): string =>
-      line
-        .replace(/\/v\d+/g, '/v')
-        .replace(/\d+\^\d+/g, '')
-        .replace(/\b(iso|rfc|utf|http)-?\s?\d+/gi, '')
-        .replace(/base-\d+/gi, '');
+    // this package publishes to public npm.
+    //
+    // So the rule is the blunt one rather than a list of English words. An
+    // earlier version of this case looked for a policy word near a digit, and it
+    // was worse than useless in both directions: Prettier wraps these comments
+    // at 80 columns, so "The refund window is" and "30 days" land on different
+    // lines and no same-line pattern can see them — while `cap` inside
+    // "capability" and `rate` inside "enumerate" made ordinary prose a
+    // liability. A threshold is a NUMBER, wrapped or not, spelled however the
+    // author likes. The whole emitted surface carries six digits today, and
+    // every one of them is in the list below with its reason, which is the same
+    // bargain MECHANISM_ENUMS strikes: the exception is cheap, and a person
+    // writes it down.
+    const allowed: Array<[RegExp, string]> = [
+      [/^\s*\*\s*\d+\.\s/, 'an ordered-list marker in a doc comment'],
+      [/\/v\d+/g, 'the wire version in a route path'],
+      [/\d+\^\d+/g, 'an exponent, e.g. the precision limit of a float'],
+      [/\b(iso|rfc|utf|http)-?\s?\d+/gi, 'a standards reference'],
+      [/base-\d+/gi, 'the base a number is written in, as in base-10'],
+      [/X-DorkOS-Wire: \d+/g, 'this contract`s own header value'],
+      [/\b[1-5]\d{2}\b/g, 'an HTTP status code'],
+      [/\b\d{1,2}(st|nd|rd|th)\b/gi, 'a day of the month'],
+      [/\b\d{1,2}-day\b/gi, 'a length of a calendar month'],
+    ];
 
     const offenders: string[] = [];
     for (const [file, text] of emitted) {
       for (const [index, line] of text.split('\n').entries()) {
         if (!/^\s*(\/\*\*|\*)/.test(line)) continue;
-        if (threshold.test(strip(line))) {
-          offenders.push(`${path.basename(file)}:${index + 1} ${line.trim()}`);
-        }
+        let rest = line;
+        for (const [pattern] of allowed) rest = rest.replace(pattern, ' ');
+        if (/\d/.test(rest)) offenders.push(`${path.basename(file)}:${index + 1} ${line.trim()}`);
       }
     }
     expect(offenders).toEqual([]);
+    // The allowlist is the precision, so it has to stay a list somebody reads.
+    for (const [pattern, reason] of allowed) {
+      expect(reason.length, `${pattern} needs a real reason, not a placeholder`).toBeGreaterThan(
+        15
+      );
+    }
   });
 
   it('carries no @example tag, which would publish a value in a comment', () => {

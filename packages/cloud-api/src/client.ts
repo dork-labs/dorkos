@@ -59,7 +59,14 @@ export class CloudApiResponseError extends Error {
   /** The HTTP status the service answered with. */
   readonly status: number;
 
-  /** The raw body, for a bug report. */
+  /**
+   * The raw body, exactly as it arrived.
+   *
+   * Worth reading rather than only quoting in a bug report: when this error is
+   * a refusal whose `code` this release does not know, the body still carries
+   * that `code` and its `title`, and rendering them beats showing a person a
+   * broken-response message.
+   */
   readonly body: unknown;
 
   /**
