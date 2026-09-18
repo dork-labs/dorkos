@@ -82,6 +82,9 @@ import type { MemoryProviderStatus } from './memory-provider.js';
 import type { UnattendedAutonomyState } from './permission-semantics.js';
 import type { RuntimeCommandIntentId } from './command-intents.js';
 import type {
+  CredentialCheckResult,
+  OpenCodeDirectSetup,
+  RuntimeKeyStatus,
   StoreCredentialResult,
   DelegateLoginOptions,
   DelegatedLoginResult,
@@ -1588,8 +1591,13 @@ export interface Transport
    * secret is encrypted at rest and only its REFERENCE is persisted; the response
    * returns the reference, never the secret. Loopback-only server action.
    *
+   * The key is tried against the service before anything is stored, so a key the
+   * service refuses rejects instead of saving and failing later.
+   *
    * @param providerId - OpenAI-compatible provider id (e.g. `openai`).
-   * @param secret - The raw provider API key. Sent once; never returned or logged.
+   * @param secret - The raw provider API key. Sent once; never returned or
+   *   logged. An EMPTY string means "keep the key already saved" — how a
+   *   base-URL-only change is expressed without re-pasting a key.
    * @param baseURL - Optional base URL override; `null` clears a stored override.
    */
   storeProviderCredential(
@@ -1597,6 +1605,44 @@ export interface Transport
     secret: string,
     baseURL?: string | null
   ): Promise<StoreCredentialResult>;
+  /**
+   * Read back what the OpenCode "your own key" form should show when it is
+   * reopened: the saved service, its base URL, and whether a key is saved (its
+   * last FOUR characters, never more). Loopback-only server action.
+   */
+  getOpenCodeDirectSetup(): Promise<OpenCodeDirectSetup>;
+  /**
+   * Try a key against the service it belongs to WITHOUT saving anything — the
+   * Test action, and the same check a save runs. A refused key resolves to
+   * `{ ok: false, … }` with a plain-language line; it does not reject.
+   * Loopback-only server action.
+   *
+   * @param providerId - Service id (e.g. `openai`, `anthropic`).
+   * @param secret - The key to try, or `null` to try the one already saved.
+   * @param baseURL - Base URL override to try the key against; `null` uses the
+   *   service's own address.
+   */
+  checkProviderCredential(
+    providerId: string,
+    secret: string | null,
+    baseURL?: string | null
+  ): Promise<CredentialCheckResult>;
+  /**
+   * Whether this runtime's own key is already saved, and its last FOUR
+   * characters when it is. Loopback-only server action.
+   *
+   * @param type - Runtime type (`'claude-code'` | `'codex'`).
+   */
+  getRuntimeKeyStatus(type: string): Promise<RuntimeKeyStatus>;
+  /**
+   * Try this runtime's key against the service that issues it, saving nothing.
+   * Loopback-only server action.
+   *
+   * @param type - Runtime type (`'claude-code'` | `'codex'`).
+   * @param secret - The key to try, or `null` to try the saved one (which only
+   *   Claude Code holds — Codex's key lives in Codex's own login store).
+   */
+  checkRuntimeCredential(type: string, secret: string | null): Promise<CredentialCheckResult>;
   /**
    * Delegate a vendor CLI login (`claude auth login` / `codex login`), spawned
    * terminal-free, resolving once the CLI reports a completed login. Bounded by a
