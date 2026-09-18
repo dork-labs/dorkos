@@ -383,16 +383,23 @@ export interface RuntimeKeyStatus {
  * sign-in, and offering it here twice would be two doors to one room.
  */
 export interface OpenCodeDirectProvider {
-  /** Stable id persisted in config and used as the credential-store name. */
+  /** Stable id for this entry — what the picker offers and what a person names. */
   id: string;
+  /**
+   * The id actually stored in config and handed to the sidecar env mapping. It
+   * differs from {@link id} for a service that speaks someone else's wire format:
+   * Vault Cloud is OpenAI-compatible, so on the wire it IS `openai` plus a base
+   * URL, which is what makes it work with no change to the env-var mapping.
+   */
+  wireId: string;
   /** Plain name shown in the picker, e.g. `OpenAI`. */
   label: string;
   /** Address DorkOS talks to when no base URL is entered. */
   defaultBaseURL: string;
   /** Format hint for the key field — a shape, never a real key. */
   keyPlaceholder: string;
-  /** Where a person gets a key for this service. */
-  getKeyUrl: string;
+  /** Where a person gets a key for this service, when there is such a page. */
+  getKeyUrl?: string;
 }
 
 /**
@@ -406,6 +413,7 @@ export interface OpenCodeDirectProvider {
 export const OPENCODE_DIRECT_PROVIDERS: readonly OpenCodeDirectProvider[] = [
   {
     id: 'openai',
+    wireId: 'openai',
     label: 'OpenAI',
     defaultBaseURL: 'https://api.openai.com/v1',
     keyPlaceholder: 'sk-…',
@@ -413,9 +421,38 @@ export const OPENCODE_DIRECT_PROVIDERS: readonly OpenCodeDirectProvider[] = [
   },
   {
     id: 'anthropic',
+    wireId: 'anthropic',
     label: 'Anthropic',
     defaultBaseURL: 'https://api.anthropic.com',
     keyPlaceholder: 'sk-ant-…',
     getKeyUrl: 'https://console.anthropic.com/settings/keys',
   },
+  {
+    // Plain http on purpose: the address serves no TLS at all, so https fails to
+    // connect outright. The form says so under the address rather than pretending.
+    id: 'vault-cloud',
+    wireId: 'openai',
+    label: 'Vault Cloud',
+    defaultBaseURL: 'http://176.9.158.22:8000/v1',
+    keyPlaceholder: 'Your Vault Cloud key',
+  },
 ] as const;
+
+/**
+ * The listed service for `providerId`, matched on its own {@link
+ * OpenCodeDirectProvider.id} first and then on its
+ * {@link OpenCodeDirectProvider.wireId}, or `undefined` when the list serves
+ * nothing by that name.
+ *
+ * Both halves matter. The client names a service by its own id, while what is
+ * saved in config is the wire id — so this one lookup answers "what did they
+ * pick" and "what is saved" without either side keeping its own table.
+ *
+ * @param providerId - A listed service id, or the id one uses on the wire.
+ */
+export function findOpenCodeDirectProvider(providerId: string): OpenCodeDirectProvider | undefined {
+  return (
+    OPENCODE_DIRECT_PROVIDERS.find((entry) => entry.id === providerId) ??
+    OPENCODE_DIRECT_PROVIDERS.find((entry) => entry.wireId === providerId)
+  );
+}

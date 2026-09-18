@@ -196,3 +196,54 @@ describe('checkRuntimeKey', () => {
     await expect(checkRuntimeKey('opencode', SECRET)).rejects.toBeInstanceOf(ConnectError);
   });
 });
+
+describe('checkProviderKey — a service named by its own id, not its wire id', () => {
+  it('accepts `vault-cloud` and checks it at ITS address, not OpenAI’s', async () => {
+    // The client sends the wire id, so this is the stale-client / curl path. It
+    // must not degrade into "openai with no address", which is a different
+    // service holding a different key.
+    const { fetchImpl, seen } = fakeFetch(200);
+    const result = await checkProviderKey(
+      { providerId: 'vault-cloud', secret: SECRET },
+      { fetchImpl }
+    );
+
+    expect(result).toEqual({ ok: true });
+    expect(seen[0].url).toBe('http://176.9.158.22:8000/v1/models');
+    expect(seen[0].headers).toEqual({ Authorization: `Bearer ${SECRET}` });
+  });
+
+  it('still lets an explicit address win over the service’s own', async () => {
+    const { fetchImpl, seen } = fakeFetch(200);
+    await checkProviderKey(
+      { providerId: 'vault-cloud', secret: SECRET, baseURL: 'http://192.0.2.10:9000/v1' },
+      { fetchImpl }
+    );
+    expect(seen[0].url).toBe('http://192.0.2.10:9000/v1/models');
+  });
+});
+
+describe('OPENCODE_DIRECT_PROVIDERS — the one list both sides read', () => {
+  it('lists OpenAI, Anthropic and Vault Cloud, each with a wire id the env mapping knows', async () => {
+    const { OPENCODE_DIRECT_PROVIDERS } = await import('@dorkos/shared/runtime-connect');
+    expect(OPENCODE_DIRECT_PROVIDERS.map((entry) => entry.id)).toEqual([
+      'openai',
+      'anthropic',
+      'vault-cloud',
+    ]);
+    // Every entry speaks a wire the sidecar env mapping already has a variable
+    // for — that is what lets a new service be added with no server change.
+    expect(new Set(OPENCODE_DIRECT_PROVIDERS.map((entry) => entry.wireId))).toEqual(
+      new Set(['openai', 'anthropic'])
+    );
+    const vault = OPENCODE_DIRECT_PROVIDERS.find((entry) => entry.id === 'vault-cloud');
+    expect(vault).toMatchObject({
+      wireId: 'openai',
+      label: 'Vault Cloud',
+      defaultBaseURL: 'http://176.9.158.22:8000/v1',
+    });
+    // Plain http on purpose: the address serves no TLS at all, so an https
+    // default would fail to connect rather than merely being slower.
+    expect(vault?.defaultBaseURL.startsWith('http://')).toBe(true);
+  });
+});

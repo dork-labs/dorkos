@@ -579,3 +579,78 @@ describe('reading back what is saved (the form remembers)', () => {
     await expect(readRuntimeKeyStatus('opencode')).rejects.toBeInstanceOf(ConnectError);
   });
 });
+
+describe('a service named by its own id normalises to the wire (DOR-2123 follow-up)', () => {
+  it('stores `vault-cloud` as openai + ITS address, so the env mapping needs no new entry', async () => {
+    // What the person ended up doing by hand is now what the name means: Vault
+    // Cloud is OpenAI-compatible, so on the wire it IS openai plus a base URL.
+    const store = fakeStore();
+    const config = fakeConfig();
+    const checkKey = vi.fn(acceptEverything);
+
+    await storeProviderCredential(
+      { providerId: 'vault-cloud', secret: SECRET },
+      { store, config, checkKey }
+    );
+
+    expect(store.put).toHaveBeenCalledWith('openai', SECRET);
+    expect(config.state.providers).toEqual({ openai: 'file:openai' });
+    expect(config.state.runtimes?.opencode.provider).toBe('openai');
+    expect(config.state.runtimes?.opencode.baseURL).toBe('http://176.9.158.22:8000/v1');
+    // And the check ran against Vault Cloud, never against OpenAI.
+    expect(checkKey).toHaveBeenCalledWith({
+      providerId: 'openai',
+      secret: SECRET,
+      baseURL: 'http://176.9.158.22:8000/v1',
+    });
+  });
+
+  it('lets an explicit address win over the named service’s own', async () => {
+    const store = fakeStore();
+    const config = fakeConfig();
+
+    await storeProviderCredential(
+      { providerId: 'vault-cloud', secret: SECRET, baseURL: 'http://192.0.2.10:9000/v1' },
+      { store, config, checkKey: acceptEverything }
+    );
+
+    expect(config.state.runtimes?.opencode.baseURL).toBe('http://192.0.2.10:9000/v1');
+  });
+
+  it('checks the saved key under the WIRE id when the service is named by its own', async () => {
+    const config = fakeConfig();
+    config.state.providers = { openai: 'file:openai' };
+    const checkKey = vi.fn(acceptEverything);
+
+    await checkProviderCredential(
+      { providerId: 'vault-cloud', secret: null },
+      { config, checkKey, credentials: fakeCredentials({ 'file:openai': SECRET }) }
+    );
+
+    expect(checkKey).toHaveBeenCalledWith({
+      providerId: 'openai',
+      secret: SECRET,
+      baseURL: 'http://176.9.158.22:8000/v1',
+    });
+  });
+
+  it('reads a saved Vault Cloud back as openai plus its address, which is what it is', async () => {
+    const config = fakeConfig();
+    config.state.providers = { openai: 'file:openai' };
+    config.state.runtimes!.opencode.provider = 'openai';
+    config.state.runtimes!.opencode.baseURL = 'http://176.9.158.22:8000/v1';
+
+    const setup = await readOpenCodeDirectSetup({
+      config,
+      credentials: fakeCredentials({ 'file:openai': SECRET }),
+    });
+
+    // The client turns this pair back into "Vault Cloud"; the server stores no
+    // second name for it, so there is nothing that can drift out of step.
+    expect(setup).toEqual({
+      providerId: 'openai',
+      baseURL: 'http://176.9.158.22:8000/v1',
+      key: { saved: true, last4: SECRET.slice(-4) },
+    });
+  });
+});

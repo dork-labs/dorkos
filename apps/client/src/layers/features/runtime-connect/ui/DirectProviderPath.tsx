@@ -46,35 +46,63 @@ import { DIRECT_CONNECT_SUCCESS } from '../lib/connect-success';
 import { ConnectErrorRow, ConnectProgressRow, ConnectedRow } from './connect-feedback';
 
 /**
- * What the person picked in the power-source list. `other` is a CLIENT-side
- * choice that submits `openai` with a required address, because an
- * OpenAI-compatible server speaks the OpenAI wire format by definition.
+ * What the person picked in the power-source list: a listed service's own id, or
+ * {@link OTHER_CHOICE}.
+ *
+ * Not a hand-written union, because the list is rendered from
+ * {@link OPENCODE_DIRECT_PROVIDERS} — adding a service there adds it here, with
+ * nothing to keep in step.
  */
-type SourceChoice = 'openai' | 'anthropic' | 'other';
+type SourceChoice = string;
 
-/** The service id a choice submits. */
-function providerIdFor(choice: SourceChoice): string {
-  return choice === 'anthropic' ? 'anthropic' : 'openai';
+/**
+ * The choice for an OpenAI-compatible server DorkOS does not name. It submits
+ * `openai` with a REQUIRED address, because an OpenAI-compatible server speaks
+ * the OpenAI wire format by definition and the address is the only thing that
+ * identifies it.
+ */
+const OTHER_CHOICE = 'other';
+
+/** The listed service a choice refers to, or `undefined` for {@link OTHER_CHOICE}. */
+function entryFor(choice: SourceChoice) {
+  return OPENCODE_DIRECT_PROVIDERS.find((entry) => entry.id === choice);
 }
 
-/** The shared entry describing a choice's placeholder, address, and key link. */
-function specFor(choice: SourceChoice) {
-  const id = providerIdFor(choice);
-  return OPENCODE_DIRECT_PROVIDERS.find((entry) => entry.id === id) ?? OPENCODE_DIRECT_PROVIDERS[0];
+/** The id a choice submits — a listed service's wire id, or `openai` for Other. */
+function wireIdFor(choice: SourceChoice): string {
+  return entryFor(choice)?.wireId ?? 'openai';
+}
+
+/** The address the wire service answers on when nothing overrides it. */
+function wireDefaultBaseURL(wireId: string): string {
+  return (
+    OPENCODE_DIRECT_PROVIDERS.find((entry) => entry.id === wireId)?.defaultBaseURL ??
+    OPENCODE_DIRECT_PROVIDERS[0].defaultBaseURL
+  );
 }
 
 /**
- * Which power source a saved setup means. A saved `openai` pointing somewhere
- * other than OpenAI's own address is an OpenAI-compatible server, so it reopens
- * as "Other" rather than silently claiming to be OpenAI.
+ * Which power source a saved setup means.
+ *
+ * Saved config only records the WIRE id and an address, so the address is what
+ * tells two services on the same wire apart. The rule, in order:
+ *
+ * 1. Anthropic is its own wire, so a saved `anthropic` is always Anthropic —
+ *    including with a custom address, which stays an Anthropic connection
+ *    rather than being re-read as an OpenAI-compatible one.
+ * 2. An address that exactly matches a listed service's own is that service, so
+ *    `openai` + Vault Cloud's address reopens as Vault Cloud.
+ * 3. No address at all is the plain wire service (`openai` → OpenAI).
+ * 4. Anything else is an OpenAI-compatible server DorkOS does not name.
  */
 function choiceFor(setup: OpenCodeDirectSetup): SourceChoice {
   if (setup.providerId === 'anthropic') return 'anthropic';
-  const openai = OPENCODE_DIRECT_PROVIDERS[0];
-  if (setup.providerId === 'openai' && setup.baseURL && setup.baseURL !== openai.defaultBaseURL) {
-    return 'other';
-  }
-  return 'openai';
+  const named = OPENCODE_DIRECT_PROVIDERS.find(
+    (entry) => entry.wireId === setup.providerId && entry.defaultBaseURL === setup.baseURL
+  );
+  if (named) return named.id;
+  if (setup.baseURL === null) return 'openai';
+  return OTHER_CHOICE;
 }
 
 /** The "bring your own key" connect path: power source + key + optional address. */
@@ -114,29 +142,52 @@ function DirectProviderForm({
 }) {
   const [choice, setChoice] = useState<SourceChoice>(() => choiceFor(setup));
   const [key, setKey] = useState('');
-  const [baseURL, setBaseURL] = useState(setup.baseURL ?? '');
-  // Advanced starts open only when there is already an address to see there.
-  const [advancedOpen, setAdvancedOpen] = useState(
-    () => choiceFor(setup) !== 'other' && Boolean(setup.baseURL)
+  // A named service fills its own address in, so the field always shows the
+  // address DorkOS will actually talk to rather than leaving it to be guessed.
+  const [baseURL, setBaseURL] = useState(
+    () => setup.baseURL ?? entryFor(choiceFor(setup))?.defaultBaseURL ?? ''
   );
+  // Advanced starts open only when the saved address OVERRIDES the chosen
+  // service's own — a service sitting at its own address has nothing to explain.
+  const [advancedOpen, setAdvancedOpen] = useState(() => {
+    const initial = choiceFor(setup);
+    return (
+      initial !== OTHER_CHOICE &&
+      setup.baseURL !== null &&
+      setup.baseURL !== entryFor(initial)?.defaultBaseURL
+    );
+  });
   const connect = useConnectDirectProvider();
   const test = useCheckProviderCredential();
 
-  const spec = specFor(choice);
-  const providerId = providerIdFor(choice);
+  const entry = entryFor(choice);
+  const wireId = wireIdFor(choice);
   // The saved hint belongs to the saved service. Switch the list to Anthropic
   // while an OpenAI key is saved and there is no saved key for what is on screen.
-  const savedLast4 = setup.key.saved && setup.providerId === providerId ? setup.key.last4 : null;
+  const savedLast4 = setup.key.saved && setup.providerId === wireId ? setup.key.last4 : null;
 
   const address = baseURL.trim();
-  const needsAddress = choice === 'other';
+  const needsAddress = choice === OTHER_CHOICE;
   const addressReady = !needsAddress || address.length > 0;
-  const changed = providerId !== setup.providerId || (address || null) !== setup.baseURL;
+  // The address DorkOS would talk to, with the field's own default filled in —
+  // the honest thing to compare, warn about, and submit.
+  const wireDefault = wireDefaultBaseURL(wireId);
+  const effective = address || wireDefault;
+  // Only an address that DIFFERS from the wire service's own is an override
+  // worth storing. `OPENAI_BASE_URL` is set from whatever is stored, so writing
+  // Anthropic's own address here would point an OpenAI variable at Anthropic.
+  const submittedBaseURL = effective === wireDefault ? '' : effective;
+  // Compare like with like: a saved `null` address means the wire service's own,
+  // so "OpenAI with nothing saved" is not a change when OpenAI is on screen.
+  const savedEffective =
+    setup.providerId === null ? null : (setup.baseURL ?? wireDefaultBaseURL(setup.providerId));
+  const changed = wireId !== setup.providerId || effective !== savedEffective;
   const hasKey = key.trim().length > 0;
   const canTest = (hasKey || savedLast4 !== null) && addressReady;
   const canSave = (hasKey || (savedLast4 !== null && changed)) && addressReady;
+  const insecure = effective.startsWith('http://');
 
-  const input = { providerId, key, baseURL: address };
+  const input = { providerId: wireId, key, baseURL: submittedBaseURL };
 
   /** Drop a stale answer the moment the thing it was about changes. */
   const invalidateAnswers = () => {
@@ -173,7 +224,13 @@ function DirectProviderForm({
         <Select
           value={choice}
           onValueChange={(value) => {
-            setChoice(value as SourceChoice);
+            setChoice(value);
+            // Picking a named service fills in its address, so nobody has to know
+            // one to use it. Advanced still shows the value and still overrides it.
+            // Picking Other CLEARS it instead: carrying the last service's address
+            // into "not that service" would both look wrong and quietly satisfy
+            // the address this choice is supposed to insist on.
+            setBaseURL(entryFor(value)?.defaultBaseURL ?? '');
             invalidateAnswers();
           }}
         >
@@ -181,9 +238,12 @@ function DirectProviderForm({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="openai">OpenAI</SelectItem>
-            <SelectItem value="anthropic">Anthropic</SelectItem>
-            <SelectItem value="other">Other (OpenAI-compatible)</SelectItem>
+            {OPENCODE_DIRECT_PROVIDERS.map((option) => (
+              <SelectItem key={option.id} value={option.id}>
+                {option.label}
+              </SelectItem>
+            ))}
+            <SelectItem value={OTHER_CHOICE}>Other (OpenAI-compatible)</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -216,6 +276,14 @@ function DirectProviderForm({
           Advanced
         </button>
       )}
+      {/* Shown whether or not the address field is on screen: a service that
+          happens to sit on plain http is exactly the case where nobody opened
+          Advanced, and it is the case they most need to be told about. */}
+      {insecure && (
+        <p className="text-muted-foreground text-xs" data-testid="direct-provider-insecure">
+          This address isn’t encrypted. Your key travels in the open.
+        </p>
+      )}
 
       <div className="space-y-1.5">
         <Label htmlFor="direct-provider-key" className="text-xs">
@@ -230,7 +298,7 @@ function DirectProviderForm({
           }}
           placeholder={
             savedLast4 === null
-              ? spec.keyPlaceholder
+              ? (entry?.keyPlaceholder ?? OPENCODE_DIRECT_PROVIDERS[0].keyPlaceholder)
               : `Saved · ends in ${savedLast4} — paste a new key to replace it`
           }
           autoComplete="off"
@@ -245,11 +313,11 @@ function DirectProviderForm({
       )}
 
       <div className="flex items-center justify-between gap-2">
-        {needsAddress ? (
+        {entry?.getKeyUrl === undefined ? (
           <span />
         ) : (
           <a
-            href={spec.getKeyUrl}
+            href={entry.getKeyUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs transition-colors"

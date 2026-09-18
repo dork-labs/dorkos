@@ -33,6 +33,7 @@
  * @module services/runtimes/connect/credentials
  */
 import type { UserConfig } from '@dorkos/shared/config-schema';
+import { findOpenCodeDirectProvider } from '@dorkos/shared/runtime-connect';
 import type {
   CredentialCheckResult,
   DelegatedLoginResult,
@@ -276,6 +277,37 @@ export async function persistProviderCredential(
 }
 
 /**
+ * What a named service means on the wire: the id that is actually stored and
+ * handed to the sidecar env mapping, plus the address that goes with it.
+ *
+ * The client already sends the wire id, so in practice this is a no-op. It
+ * exists for everything that is not the current client: a stale one, or a
+ * hand-written request, naming a listed service by its own id. Normalising
+ * rather than refusing is what keeps `vault-cloud` working — but only if the
+ * service's own ADDRESS comes along with the rename, otherwise the request
+ * would land as a bare `openai` pointed at OpenAI, which is a different service
+ * holding a different key.
+ *
+ * @param providerId - A listed service id, or the id one uses on the wire.
+ * @param baseURL - The base URL as given: a string, `null` to clear it, or
+ *   `undefined` to leave whatever is saved alone.
+ */
+function resolveDirectTarget(
+  providerId: string,
+  baseURL: string | null | undefined
+): { providerId: string; baseURL: string | null | undefined } {
+  const entry = findOpenCodeDirectProvider(providerId);
+  if (!entry) return { providerId, baseURL };
+  // A blank address is "no override", not an empty string — a field someone
+  // cleared should read back as cleared, not as a base URL of `""`.
+  const address = baseURL?.trim() ? baseURL.trim() : null;
+  if (entry.id !== entry.wireId && address === null) {
+    return { providerId: entry.wireId, baseURL: entry.defaultBaseURL };
+  }
+  return { providerId: entry.wireId, baseURL: baseURL === undefined ? undefined : address };
+}
+
+/**
  * Store an OpenCode Direct-provider key: validate inputs, try the key against
  * the service it belongs to, and only then persist via
  * {@link persistProviderCredential}. Backs `POST /api/runtimes/opencode/provider/credential`.
@@ -297,10 +329,11 @@ export async function storeProviderCredential(
   input: ProviderCredentialInput,
   deps: ProviderCredentialDeps = {}
 ): Promise<StoreCredentialResult> {
-  const providerId = input.providerId?.trim() ?? '';
-  if (providerId.length === 0) {
+  const named = input.providerId?.trim() ?? '';
+  if (named.length === 0) {
     throw new ConnectError('A provider id is required.', 400);
   }
+  const { providerId, baseURL } = resolveDirectTarget(named, input.baseURL);
 
   const typed = input.secret?.trim() ? input.secret : null;
   const saved = typed === null ? await readSavedSecret(providerId, deps) : null;
@@ -308,9 +341,6 @@ export async function storeProviderCredential(
     throw new ConnectError('A non-empty API key is required.', 400);
   }
 
-  // A blank address is stored as "no override", not as an empty string — a field
-  // someone cleared should read back as cleared, not as a base URL of `""`.
-  const baseURL = input.baseURL === undefined ? undefined : input.baseURL?.trim() || null;
   const check = await (deps.checkKey ?? checkProviderKey)({
     providerId,
     secret: typed ?? (saved as string),
@@ -342,10 +372,11 @@ export async function checkProviderCredential(
   input: { providerId: string; secret: string | null; baseURL?: string | null },
   deps: ProviderCredentialDeps = {}
 ): Promise<CredentialCheckResult> {
-  const providerId = input.providerId?.trim() ?? '';
-  if (providerId.length === 0) {
+  const named = input.providerId?.trim() ?? '';
+  if (named.length === 0) {
     throw new ConnectError('A provider id is required.', 400);
   }
+  const { providerId, baseURL } = resolveDirectTarget(named, input.baseURL);
   const secret = input.secret?.trim() ? input.secret : await readSavedSecret(providerId, deps);
   if (secret === null) {
     throw new ConnectError('Paste the key to check it.', 400);
@@ -353,7 +384,7 @@ export async function checkProviderCredential(
   return (deps.checkKey ?? checkProviderKey)({
     providerId,
     secret,
-    baseURL: input.baseURL ?? null,
+    baseURL: baseURL ?? null,
   });
 }
 

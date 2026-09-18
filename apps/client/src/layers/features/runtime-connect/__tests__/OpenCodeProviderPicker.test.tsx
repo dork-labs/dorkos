@@ -257,6 +257,8 @@ describe('OpenCodeProviderPicker — Direct provider (spec §5)', () => {
     await user.click(screen.getByTestId('power-source-direct'));
     await user.type(await screen.findByLabelText('API key'), SECRET);
     await user.click(screen.getByTestId('direct-provider-advanced'));
+    // The field is prefilled with OpenAI's own address, so an override replaces it.
+    await user.clear(screen.getByLabelText(/base url/i));
     await user.type(screen.getByLabelText(/base url/i), 'https://api.example.com/v1');
     await user.click(screen.getByRole('button', { name: 'Save & connect' }));
 
@@ -564,7 +566,9 @@ describe('DirectProviderPath — the form remembers what you entered', () => {
     await user.click(screen.getByRole('combobox'));
     await user.click(await screen.findByRole('option', { name: 'Other (OpenAI-compatible)' }));
 
-    // The address is now shown, required, and both actions wait for it.
+    // The address is now shown, empty (the last service's address is not carried
+    // into "not that service"), required, and both actions wait for it.
+    expect(screen.getByLabelText(/base url/i)).toHaveValue('');
     expect(screen.getByRole('button', { name: 'Save & connect' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Test key' })).toBeDisabled();
     await user.type(screen.getByLabelText(/base url/i), 'https://lm.example.com:8000/v1');
@@ -685,6 +689,7 @@ describe('DirectProviderPath — nothing is saved until the key is accepted', ()
     });
 
     await user.click(await screen.findByTestId('direct-provider-advanced'));
+    await user.clear(screen.getByLabelText(/base url/i));
     await user.type(screen.getByLabelText(/base url/i), 'https://moved.example.com/v1');
     await user.click(screen.getByRole('button', { name: 'Save & connect' }));
 
@@ -713,6 +718,206 @@ describe('DirectProviderPath — nothing is saved until the key is accepted', ()
     });
 
     // Nothing to save — but the saved key can still be tested.
+    expect(await screen.findByRole('button', { name: 'Save & connect' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Test key' })).toBeEnabled();
+  });
+});
+
+// The operator asked for Vault Cloud as a named, one-click power source: no
+// remembering an address, no typing a service name into a box.
+describe('DirectProviderPath — Vault Cloud is a named choice', () => {
+  function renderDirect(overrides: Partial<Parameters<typeof createMockTransport>[0]> = {}) {
+    const transport = createMockTransport(overrides);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <DirectProviderPath />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+    return transport;
+  }
+
+  /** Pick a power source from the list by its visible label. */
+  async function pick(user: ReturnType<typeof userEvent.setup>, label: string) {
+    await user.click(await screen.findByRole('combobox'));
+    await user.click(await screen.findByRole('option', { name: label }));
+  }
+
+  it('offers all four choices, with the named ones read from the shared list', async () => {
+    const user = userEvent.setup();
+    renderDirect();
+
+    await user.click(await screen.findByRole('combobox'));
+    const names = screen.getAllByRole('option').map((option) => option.textContent);
+    expect(names).toEqual(['OpenAI', 'Anthropic', 'Vault Cloud', 'Other (OpenAI-compatible)']);
+  });
+
+  it('fills in its address and saves it as openai — what the person did by hand', async () => {
+    const user = userEvent.setup();
+    const transport = renderDirect({
+      checkProviderCredential: vi.fn().mockResolvedValue({ ok: true }),
+      storeProviderCredential: vi.fn().mockResolvedValue({ ref: 'file:openai' }),
+    });
+
+    await pick(user, 'Vault Cloud');
+    // The address came with the name — the field shows it without being typed.
+    await user.click(screen.getByTestId('direct-provider-advanced'));
+    expect(screen.getByLabelText(/base url/i)).toHaveValue('http://176.9.158.22:8000/v1');
+
+    await user.type(screen.getByLabelText('API key'), 'vault-key-123');
+    await user.click(screen.getByRole('button', { name: 'Save & connect' }));
+
+    await waitFor(() =>
+      expect(transport.storeProviderCredential).toHaveBeenCalledWith(
+        'openai',
+        'vault-key-123',
+        'http://176.9.158.22:8000/v1'
+      )
+    );
+  });
+
+  it('says plainly that the key travels in the open, without opening Advanced', async () => {
+    const user = userEvent.setup();
+    renderDirect();
+
+    // Nothing to warn about while the address is an https one.
+    expect(await screen.findByLabelText('API key')).toBeInTheDocument();
+    expect(screen.queryByTestId('direct-provider-insecure')).not.toBeInTheDocument();
+
+    await pick(user, 'Vault Cloud');
+
+    // Visible on the face of the form: the person who never opens Advanced is
+    // exactly the one who needs telling.
+    expect(screen.getByTestId('direct-provider-insecure')).toHaveTextContent(
+      'This address isn’t encrypted. Your key travels in the open.'
+    );
+    expect(screen.queryByLabelText(/base url/i)).not.toBeInTheDocument();
+  });
+
+  it('offers no "Get an API key" link for a service with no such page', async () => {
+    const user = userEvent.setup();
+    renderDirect();
+
+    expect(await screen.findByRole('link', { name: /Get an API key/ })).toBeInTheDocument();
+    await pick(user, 'Vault Cloud');
+    expect(screen.queryByRole('link', { name: /Get an API key/ })).not.toBeInTheDocument();
+  });
+
+  it('does not send a base URL for a service that already sits at its own address', async () => {
+    const user = userEvent.setup();
+    const transport = renderDirect({
+      checkProviderCredential: vi.fn().mockResolvedValue({ ok: true }),
+      storeProviderCredential: vi.fn().mockResolvedValue({ ref: 'file:anthropic' }),
+    });
+
+    await pick(user, 'Anthropic');
+    await user.type(screen.getByLabelText('API key'), 'sk-ant-key');
+    await user.click(screen.getByRole('button', { name: 'Save & connect' }));
+
+    // `OPENAI_BASE_URL` is set from whatever is stored, so storing Anthropic's
+    // own address here would point an OpenAI variable at Anthropic.
+    await waitFor(() =>
+      expect(transport.storeProviderCredential).toHaveBeenCalledWith(
+        'anthropic',
+        'sk-ant-key',
+        null
+      )
+    );
+  });
+});
+
+describe('DirectProviderPath — reopening tells the services apart by address', () => {
+  function renderWith(setup: OpenCodeDirectSetup) {
+    const transport = createMockTransport({
+      getOpenCodeDirectSetup: vi.fn().mockResolvedValue(setup),
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <DirectProviderPath />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+    return transport;
+  }
+
+  const CASES: Array<{ name: string; setup: OpenCodeDirectSetup; expected: string }> = [
+    {
+      name: 'openai with Vault Cloud’s address is Vault Cloud',
+      setup: {
+        providerId: 'openai',
+        baseURL: 'http://176.9.158.22:8000/v1',
+        key: { saved: true, last4: 'ab12' },
+      },
+      expected: 'Vault Cloud',
+    },
+    {
+      name: 'openai with no address is OpenAI',
+      setup: { providerId: 'openai', baseURL: null, key: { saved: true, last4: 'ab12' } },
+      expected: 'OpenAI',
+    },
+    {
+      name: 'openai at its own address is still OpenAI',
+      setup: {
+        providerId: 'openai',
+        baseURL: 'https://api.openai.com/v1',
+        key: { saved: false },
+      },
+      expected: 'OpenAI',
+    },
+    {
+      name: 'openai anywhere else is an OpenAI-compatible server',
+      setup: {
+        providerId: 'openai',
+        baseURL: 'https://lm.example.com:8000/v1',
+        key: { saved: false },
+      },
+      expected: 'Other (OpenAI-compatible)',
+    },
+    {
+      name: 'anthropic is Anthropic, address or not',
+      setup: {
+        providerId: 'anthropic',
+        baseURL: 'https://proxy.example.com',
+        key: { saved: false },
+      },
+      expected: 'Anthropic',
+    },
+    {
+      name: 'nothing saved opens on OpenAI',
+      setup: { providerId: null, baseURL: null, key: { saved: false } },
+      expected: 'OpenAI',
+    },
+  ];
+
+  it.each(CASES)('$name', async ({ setup, expected }) => {
+    renderWith(setup);
+    expect(await screen.findByRole('combobox')).toHaveTextContent(expected);
+  });
+
+  it('warns about the open address on a reopened Vault Cloud too', async () => {
+    renderWith({
+      providerId: 'openai',
+      baseURL: 'http://176.9.158.22:8000/v1',
+      key: { saved: true, last4: 'ab12' },
+    });
+    expect(await screen.findByTestId('direct-provider-insecure')).toBeInTheDocument();
+  });
+
+  it('leaves Save off for a reopened Vault Cloud with nothing changed', async () => {
+    renderWith({
+      providerId: 'openai',
+      baseURL: 'http://176.9.158.22:8000/v1',
+      key: { saved: true, last4: 'ab12' },
+    });
+    // Its saved address IS its own, so reopening is not a change to save.
     expect(await screen.findByRole('button', { name: 'Save & connect' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Test key' })).toBeEnabled();
   });
