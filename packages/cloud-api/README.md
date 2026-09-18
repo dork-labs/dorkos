@@ -71,6 +71,26 @@ Removing a field, or making an optional field required, is a `/v2` change, serve
 for at least two releases. A change to a field's meaning is the same thing wearing a disguise:
 if code that was correct before is wrong after, it is not additive.
 
+A route may accept **more than one request shape**. Publishing a second one beside the first is
+additive; withdrawing the first is not. `POST /v1/topup` is the worked example: it takes
+`TopupRequestSchema`, which names an amount, and still takes the `HostedPageRequestSchema` body
+it took before.
+
+**The response direction has its own rule, and it is the one that bites.** New members appear on
+existing enums in a minor — a new `Problem` code, a new refusal reason — so **a consumer must
+tolerate a value it has never seen**: show it rather than treat the response as broken. Parse the
+envelope, render `title` and `detail`, and branch only on the members you recognise. A client
+that hard-fails on an unknown member is a client that breaks on a release that added one, and
+this package cannot stop that from the schema side, because refusing to enumerate the members
+would leave a consumer with nothing to branch on at all.
+
+The thin client cannot soften this for you today: a body whose `code` is not in the published set
+fails `ProblemSchema` and arrives as `CloudApiResponseError` rather than `CloudApiProblemError`.
+The raw body is attached, so `error.body` still carries the `code` and the `title` the service
+sent. Widening `code` to an open string, so an unrecognised one stays a `Problem`, is a real
+improvement and a deliberate `/v2`-shaped decision about a published type, not something to slip
+into a minor.
+
 **What that looks like in practice.** A new field arrives optional, even when the service needs
 it: `AddressCreateRequestSchema.subject` and `SeatAssignRequestSchema.handle` are things the
 server cannot do without, and they are still optional here, because a client one release behind

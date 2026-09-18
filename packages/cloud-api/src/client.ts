@@ -48,6 +48,12 @@ export interface RequestOptions {
  * different follow-up: a malformed problem envelope is a service bug, and a
  * success body that fails its schema usually means the client is older than the
  * contract the service is serving.
+ *
+ * A refusal carrying a `code` this release has never heard of lands here too,
+ * for the same reason: the envelope did not parse. That is the ordinary shape
+ * of a service one release ahead, not a bug. {@link body} holds the raw payload,
+ * so `code` and `title` are still there to render — do that rather than showing
+ * a person a broken-response message.
  */
 export class CloudApiResponseError extends Error {
   /** The HTTP status the service answered with. */

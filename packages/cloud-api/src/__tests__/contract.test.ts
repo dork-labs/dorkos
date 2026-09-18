@@ -519,10 +519,11 @@ describe('the inference refusal reasons', () => {
     expect(contract.InferenceRefusalReasonSchema.options).toContain('turn_budget_exhausted');
   });
 
-  it('says what to do about each limit and nothing about how either is computed', () => {
-    // The reason a caller can act on is published. The threshold behind it is
-    // server policy and is published nowhere.
-    expect(contract.InferenceRefusalReasonSchema.description).not.toMatch(/\d/);
+  it('refuses a reason it does not publish', () => {
+    // The threshold behind each of these is server policy and is published
+    // nowhere. That claim is checked where the prose actually ships — the
+    // emitted doc comments — by `catalog-blindness.test.ts`, because a
+    // `.describe()` is not where a threshold would ever be written down.
     expect(contract.InferenceRefusalReasonSchema.safeParse('made_up').success).toBe(false);
   });
 });

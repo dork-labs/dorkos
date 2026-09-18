@@ -210,30 +210,6 @@ function isEnumeration(node: z.ZodTypeAny): boolean {
   return false;
 }
 
-/**
- * Whether an exported schema publishes a set of literals under its own name.
- *
- * Looks one level into a union, and that is the whole point of it. `unwrap`
- * reaches through `optional`, `nullable` and the rest, but never into a union's
- * options — so `z.union([z.enum(['a', 'b']), z.string()])` publishes two
- * literals under an export name and sails past a filter that only reads the top
- * node. A union is the most natural shape an enum takes when somebody widens
- * it, which makes it the one shape this registry could least afford to miss.
- *
- * @param schema - An exported schema.
- */
-function publishesEnum(schema: z.ZodTypeAny): boolean {
-  const core = unwrap(schema);
-  const def = (core as unknown as { def: { type: string; options?: z.ZodTypeAny[] } }).def;
-  if (def.type === 'enum') return true;
-  if (def.type === 'union' && Array.isArray(def.options)) {
-    return def.options.some(
-      (option) => (unwrap(option) as unknown as { def: { type: string } }).def.type === 'enum'
-    );
-  }
-  return false;
-}
-
 /** Strips the wrappers that sit between a field and the type it really is. */
 function unwrap(node: z.ZodTypeAny): z.ZodTypeAny {
   let current = node;
@@ -254,6 +230,36 @@ function unwrap(node: z.ZodTypeAny): z.ZodTypeAny {
     return current;
   }
   return current;
+}
+
+/**
+ * Whether an exported schema publishes a set of literals under its own name.
+ *
+ * Looks one level into a union, and that is the whole point of it. `unwrap`
+ * reaches through `optional`, `nullable` and the rest, but never into a union's
+ * options — so `z.union([z.enum(['a', 'b']), z.string()])` publishes two
+ * literals under an export name and sails past a filter that only reads the top
+ * node. A union is the most natural shape an enum takes when somebody widens
+ * it, which makes it the one shape this registry could least afford to miss.
+ *
+ * It reuses {@link isEnumeration}, so a union of bare literals — the first shape
+ * the header of this file names — counts as well as a union containing an enum.
+ *
+ * One level is the deliberate limit. A union nested inside a union still dodges
+ * this, and the answer to that is not more recursion: it is that nothing in this
+ * package has any reason to publish one, and a reviewer who sees one should ask
+ * why rather than trust a guard to have walked it.
+ *
+ * @param schema - An exported schema.
+ */
+function publishesEnum(schema: z.ZodTypeAny): boolean {
+  const core = unwrap(schema);
+  const def = (core as unknown as { def: { type: string; options?: z.ZodTypeAny[] } }).def;
+  if (def.type === 'enum') return true;
+  if (def.type === 'union' && Array.isArray(def.options)) {
+    return def.options.some((option) => isEnumeration(unwrap(option)));
+  }
+  return false;
 }
 
 /** One node found by the walk, with the dotted path that reached it. */
@@ -545,6 +551,39 @@ describe('catalog blindness: the emitted declarations', () => {
         const [, , , name, body] = match;
         if (/^(["'][^"']*["']\s*\|\s*)+["'][^"']*["']$/.test(body.trim())) {
           offenders.push(`${path.basename(file)}: type ${name} = ${body.trim()}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('publishes no threshold in a doc comment', () => {
+    // The catalog rule's quieter sibling. This package deliberately names the
+    // REFUSAL a threshold produces — `topup_below_minimum`, `first_purchase_cap`,
+    // `daily_limit_reached` — because a person has to be told what happened. The
+    // threshold itself is server policy and belongs nowhere here.
+    //
+    // A `.describe()` is not where that would leak. TSDoc is: it is prose,
+    // nobody writes a test against prose, and it is emitted into the `.d.ts`
+    // this package publishes to public npm. So the check reads the comments
+    // rather than the descriptions, and looks for a number standing next to a
+    // word that would make it a policy value.
+    const threshold =
+      /(minimum|maximum|ceiling|cap|caps|capped|limit|limits|price|prices|cost|costs|rate|rates|budget|allowance|quota|threshold|at least|at most|up to|per month|per day)[^.]{0,60}?\d|\d[^.]{0,20}?(micro-?unit|credit|dollar|cent|usd|eur|%)/i;
+    // A route path, an exponent and a standards reference are not amounts.
+    const strip = (line: string): string =>
+      line
+        .replace(/\/v\d+/g, '/v')
+        .replace(/\d+\^\d+/g, '')
+        .replace(/\b(iso|rfc|utf|http)-?\s?\d+/gi, '')
+        .replace(/base-\d+/gi, '');
+
+    const offenders: string[] = [];
+    for (const [file, text] of emitted) {
+      for (const [index, line] of text.split('\n').entries()) {
+        if (!/^\s*(\/\*\*|\*)/.test(line)) continue;
+        if (threshold.test(strip(line))) {
+          offenders.push(`${path.basename(file)}:${index + 1} ${line.trim()}`);
         }
       }
     }

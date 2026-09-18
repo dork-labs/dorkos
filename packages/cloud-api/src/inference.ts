@@ -138,6 +138,11 @@ export const InferenceTokenRevokeResponseSchema = z
  *     which are answered by waiting and retrying the same work unchanged.
  *
  * What either limit is, and how it is arrived at, is not published here.
+ *
+ * This is a published vocabulary rather than a field: no response shape in this
+ * contract references it yet. Both sides can agree on the words before the row
+ * that carries them exists, and a reader should expect the field it eventually
+ * appears on to arrive in a later release.
  */
 export const InferenceRefusalReasonSchema = z
   .enum([

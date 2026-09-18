@@ -3,6 +3,7 @@ covers:
   - 'feat(cloud-api): additive contract rows — top-up, refunds, member display name, remote windows, seat activity (DOR-2090)'
   - 'fix(cloud-api): keep the command outcome narrowable and make the enum registry read through a union (DOR-2090)'
   - 'feat(cloud-api): two inference refusal reasons — a daily limit and a spent turn budget (DOR-2090)'
+  - 'docs(cloud-api): write down what a consumer owes an enum member it has never seen (DOR-2090)'
 ---
 
 ### Added
@@ -15,4 +16,5 @@ covers:
 
 ### Note for people upgrading
 
-- Every one of these is a new optional field, a new shape or a new value. Anything already built against the contract keeps working, and nothing was renamed or removed (DOR-2090)
+- No field was renamed or removed, and nothing you already send stops being accepted (DOR-2090)
+- **New values can turn up on existing lists.** This release adds five: three new refusal codes and two new reasons an inference request can be turned down. Code that was built against an older release will meet a value it does not recognise, so show it rather than treating the answer as broken — the contract says what a consumer owes an unknown value, and the package README explains how the bundled client behaves until it can carry one (DOR-2090)
