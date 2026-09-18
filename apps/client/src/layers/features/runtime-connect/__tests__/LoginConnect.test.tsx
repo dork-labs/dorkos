@@ -341,3 +341,91 @@ describe('LoginConnect — Claude (task 2.5)', () => {
     expect(surface.queryByLabelText('Anthropic API key')).not.toBeInTheDocument();
   });
 });
+
+// DOR-2123 (report FB-48): check the key before saving it, give me a Test
+// button, and tell me whether a key is already saved.
+describe('LoginConnect — the key form checks, tests, and remembers', () => {
+  it('says a key is already saved by its last four characters, for Claude', async () => {
+    const user = userEvent.setup();
+    renderFlow(<LoginConnect type="claude-code" />, {
+      getRuntimeKeyStatus: vi.fn().mockResolvedValue({ key: { saved: true, last4: 'cho1' } }),
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Use an API key instead' }));
+
+    expect(await screen.findByLabelText('Anthropic API key')).toHaveAttribute(
+      'placeholder',
+      'Saved · ends in cho1 — paste a new key to replace it'
+    );
+  });
+
+  it('shows no saved hint for Codex, whose key DorkOS never holds a copy of', async () => {
+    const user = userEvent.setup();
+    renderFlow(<LoginConnect type="codex" />, {
+      getRuntimeKeyStatus: vi.fn().mockResolvedValue({ key: { saved: false } }),
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Use an API key instead' }));
+
+    expect(await screen.findByLabelText('OpenAI API key')).toHaveAttribute('placeholder', 'sk-…');
+    // With nothing saved and nothing typed there is nothing to test yet.
+    expect(screen.getByRole('button', { name: 'Test key' })).toBeDisabled();
+  });
+
+  it('tests a pasted key without saving it', async () => {
+    const user = userEvent.setup();
+    const transport = renderFlow(<LoginConnect type="claude-code" />, {
+      checkRuntimeCredential: vi.fn().mockResolvedValue({ ok: true }),
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Use an API key instead' }));
+    await user.type(await screen.findByLabelText('Anthropic API key'), 'sk-ant-good');
+    await user.click(screen.getByRole('button', { name: 'Test key' }));
+
+    expect(await screen.findByText('Key works')).toBeInTheDocument();
+    expect(transport.checkRuntimeCredential).toHaveBeenCalledWith('claude-code', 'sk-ant-good');
+    expect(transport.storeRuntimeCredential).not.toHaveBeenCalled();
+  });
+
+  it('reports a refused key in the service’s own words, with a way to try again', async () => {
+    const user = userEvent.setup();
+    renderFlow(<LoginConnect type="claude-code" />, {
+      checkRuntimeCredential: vi.fn().mockResolvedValue({
+        ok: false,
+        reason: 'rejected',
+        message: 'That key was not accepted. Check it and try again.',
+      }),
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Use an API key instead' }));
+    await user.type(await screen.findByLabelText('Anthropic API key'), 'sk-ant-bad');
+    await user.click(screen.getByRole('button', { name: 'Test key' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'That key was not accepted. Check it and try again.'
+    );
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+  });
+
+  it('saves nothing when the key is refused, and keeps it on screen to fix', async () => {
+    const user = userEvent.setup();
+    const SECRET = 'sk-ant-typo-123';
+    const transport = renderFlow(<LoginConnect type="claude-code" />, {
+      checkRuntimeCredential: vi.fn().mockResolvedValue({
+        ok: false,
+        reason: 'unreachable',
+        message: 'Couldn’t reach api.anthropic.com. Check the base URL and whether you’re online.',
+      }),
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Use an API key instead' }));
+    await user.type(await screen.findByLabelText('Anthropic API key'), SECRET);
+    await user.click(screen.getByRole('button', { name: 'Save key' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Couldn’t reach api.anthropic.com. Check the base URL and whether you’re online.'
+    );
+    expect(transport.storeRuntimeCredential).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Anthropic API key')).toHaveValue(SECRET);
+  });
+});

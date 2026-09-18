@@ -15,7 +15,9 @@ import { Button, Label, PasswordInput } from '@/layers/shared/ui';
 import {
   getLoginCopy,
   getRuntimeDescriptor,
+  useCheckRuntimeCredential,
   useDelegateRuntimeLogin,
+  useRuntimeKeyStatus,
   useStoreRuntimeCredential,
   type LoginCopy,
   type RuntimeConnectSuccess,
@@ -110,7 +112,17 @@ export function LoginConnect({
   );
 }
 
-/** The paste-key half of the login flow — a password field that never echoes the key. */
+/**
+ * The paste-key half of the login flow — a password field that never echoes the
+ * key.
+ *
+ * The key is tried against the service that issues it before anything is saved,
+ * a Test button tries it on demand, and a key that is already saved says so by
+ * its last four characters instead of showing an empty field that reads as
+ * "nothing is connected" (DOR-2123). Codex never shows that hint, and that is
+ * the truth rather than a gap: its key is written to Codex's own login store,
+ * so DorkOS holds no copy to describe.
+ */
 function PasteKeyForm({
   type,
   copy,
@@ -122,6 +134,8 @@ function PasteKeyForm({
 }) {
   const [key, setKey] = useState('');
   const store = useStoreRuntimeCredential(type);
+  const status = useRuntimeKeyStatus(type);
+  const test = useCheckRuntimeCredential(type);
   // Once only, for the same reason the sign-in half latches (see above).
   const reported = useRef(false);
 
@@ -132,13 +146,23 @@ function PasteKeyForm({
   }, [store.isSuccess, onConnected, type]);
 
   if (store.isPending) {
-    return <ConnectProgressRow message="Saving your API key…" />;
+    return (
+      <ConnectProgressRow message={store.phase === 'saving' ? 'Saving…' : 'Checking your key…'} />
+    );
   }
   // On success the whole form (and its password field) unmounts, so the pasted
   // key leaves the DOM entirely — the surface reads "Connected", never the key.
   if (store.isSuccess) {
     return <ConnectedRow />;
   }
+
+  const saved = status.data?.key.saved ? status.data.key : null;
+  const hasKey = key.trim().length > 0;
+  /** Drop a stale answer the moment the key it was about changes. */
+  const invalidateAnswers = () => {
+    test.reset();
+    store.reset();
+  };
 
   return (
     <form
@@ -154,8 +178,15 @@ function PasteKeyForm({
       <PasswordInput
         id={`api-key-${type}`}
         value={key}
-        onChange={(e) => setKey(e.target.value)}
-        placeholder={copy.keyPlaceholder}
+        onChange={(e) => {
+          setKey(e.target.value);
+          invalidateAnswers();
+        }}
+        placeholder={
+          saved
+            ? `Saved · ends in ${saved.last4} — paste a new key to replace it`
+            : copy.keyPlaceholder
+        }
         autoComplete="off"
         spellCheck={false}
       />
@@ -177,10 +208,32 @@ function PasteKeyForm({
         ) : (
           <span />
         )}
-        <Button type="submit" size="sm" variant="outline" disabled={key.trim().length === 0}>
-          Save key
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={!hasKey && saved === null}
+            data-testid={`api-key-test-${type}`}
+            onClick={() => {
+              store.reset();
+              test.check(key);
+            }}
+          >
+            Test key
+          </Button>
+          <Button type="submit" size="sm" variant="outline" disabled={!hasKey}>
+            Save key
+          </Button>
+        </div>
       </div>
+      {test.isPending ? (
+        <ConnectProgressRow message="Checking your key…" />
+      ) : test.result?.ok === true ? (
+        <ConnectedRow message="Key works" />
+      ) : test.result ? (
+        <ConnectErrorRow message={test.result.message} onRetry={() => test.check(key)} />
+      ) : null}
     </form>
   );
 }

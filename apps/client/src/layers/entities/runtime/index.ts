@@ -25,10 +25,18 @@ export {
 export type { RuntimeReadiness, ExpiringSignIn } from './model/use-runtime-requirements';
 export { useProvisionRuntime } from './model/use-provision-runtime';
 export type { UseProvisionRuntime } from './model/use-provision-runtime';
-export { useStoreRuntimeCredential, useDelegateRuntimeLogin } from './model/use-credential-connect';
+export {
+  useStoreRuntimeCredential,
+  useDelegateRuntimeLogin,
+  useRuntimeKeyStatus,
+  useCheckRuntimeCredential,
+  runtimeKeyStatusKey,
+} from './model/use-credential-connect';
 export type {
   UseStoreRuntimeCredential,
   UseDelegateRuntimeLogin,
+  UseCheckRuntimeCredential,
+  RuntimeKeyPhase,
 } from './model/use-credential-connect';
 export {
   RUNTIME_DESCRIPTORS,

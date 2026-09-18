@@ -18,28 +18,116 @@
  *
  * @module entities/runtime/model/use-credential-connect
  */
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   useMutation,
   useMutationState,
+  useQuery,
   useQueryClient,
   type MutationState,
   type QueryClient,
+  type UseQueryResult,
 } from '@tanstack/react-query';
-import type { DelegateLoginOptions, DelegatedLoginResult } from '@dorkos/shared/runtime-connect';
+import type {
+  CredentialCheckResult,
+  DelegateLoginOptions,
+  DelegatedLoginResult,
+  RuntimeKeyStatus,
+} from '@dorkos/shared/runtime-connect';
 import { MODELS_KEY } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import { REQUIREMENTS_KEY } from './use-runtime-requirements';
 
-/** The native paste-key connect: store an API key, flip the runtime to Ready. */
-export interface UseStoreRuntimeCredential {
-  /** Store the pasted key. No-op on empty input; re-callable after a failure. */
-  store: (secret: string) => void;
-  /** True while the key is being stored. */
+/**
+ * TanStack Query key factory for "is this runtime's key already saved". Shared
+ * so a completed save can invalidate the exact key the form reads.
+ *
+ * @param type - Runtime type the status belongs to.
+ */
+export function runtimeKeyStatusKey(type: string): readonly [string, string] {
+  return ['runtime-key-status', type] as const;
+}
+
+/**
+ * Whether this runtime's own key is already saved, and its last four characters.
+ *
+ * The form used to reopen with an empty field and no way to tell a saved key
+ * from none at all (DOR-2123). Only fetched when the key form is actually on
+ * screen, because that is the only place the answer is shown.
+ *
+ * @param type - Runtime type (`'claude-code'` | `'codex'`).
+ * @param enabled - Whether to ask (true when the key form is visible).
+ */
+export function useRuntimeKeyStatus(
+  type: string,
+  enabled = true
+): UseQueryResult<RuntimeKeyStatus> {
+  const transport = useTransport();
+  return useQuery<RuntimeKeyStatus>({
+    queryKey: runtimeKeyStatusKey(type),
+    queryFn: () => transport.getRuntimeKeyStatus(type),
+    enabled,
+    staleTime: 30_000,
+  });
+}
+
+/** The Test action for a runtime's own key: try it, save nothing. */
+export interface UseCheckRuntimeCredential {
+  /** Try the pasted key, or the saved one when nothing is pasted. */
+  check: (secret: string) => void;
+  /** True while the service is being asked. */
   isPending: boolean;
+  /** The answer, or `null` when nothing has been tried since the last reset. */
+  result: CredentialCheckResult | null;
+  /** Forget the last answer — called when the key field is edited. */
+  reset: () => void;
+}
+
+/**
+ * Try a runtime's own key against the service that issues it, saving nothing.
+ * Runs the SAME server check a save runs, so what a person tests is what a save
+ * will do.
+ *
+ * @param type - Runtime type (`'claude-code'` | `'codex'`).
+ */
+export function useCheckRuntimeCredential(type: string): UseCheckRuntimeCredential {
+  const transport = useTransport();
+
+  const mutation = useMutation({
+    mutationFn: (secret: string) =>
+      transport.checkRuntimeCredential(type, secret.trim().length > 0 ? secret : null),
+  });
+
+  return {
+    check: (secret: string) => mutation.mutate(secret),
+    isPending: mutation.isPending,
+    result:
+      mutation.data ??
+      (mutation.isError
+        ? {
+            ok: false,
+            reason: 'unexpected',
+            message: (mutation.error as Error).message || 'Couldn’t check the key.',
+          }
+        : null),
+    reset: mutation.reset,
+  };
+}
+
+/** Which half of a save is running: the check, or the write. */
+export type RuntimeKeyPhase = 'checking' | 'saving';
+
+/** The native paste-key connect: check an API key, store it, flip the runtime to Ready. */
+export interface UseStoreRuntimeCredential {
+  /** Check and store the pasted key. No-op on empty input; re-callable after a failure. */
+  store: (secret: string) => void;
+  /** True while the key is being checked or stored. */
+  isPending: boolean;
+  /** Which half is running, so the progress line can say which. */
+  phase: RuntimeKeyPhase | null;
   /** True once the key was stored (before the requirements refetch flips Ready). */
   isSuccess: boolean;
-  /** True when storing the key failed (network/HTTP or a rejected key). */
+  /** True when the key was refused, or could not be stored. */
   isError: boolean;
   /** Honest failure message, or `null` when not failed. */
   errorMessage: string | null;
@@ -50,33 +138,54 @@ export interface UseStoreRuntimeCredential {
 /**
  * Store a runtime's native API key (`claude-code` / `codex` paste-key path).
  *
+ * The key is checked against the service that issues it FIRST, and nothing is
+ * stored when the service refuses it (DOR-2123). The check is its own call so
+ * the surface can say "Checking your key…" and then "Saving…" truthfully and
+ * show the service's own plain-language line; the server re-checks on the save
+ * regardless, so this is the progress report, never the enforcement.
+ *
  * @param type - Runtime type whose credential is being stored.
  */
 export function useStoreRuntimeCredential(type: string): UseStoreRuntimeCredential {
   const transport = useTransport();
   const queryClient = useQueryClient();
+  const [phase, setPhase] = useState<RuntimeKeyPhase | null>(null);
 
   const mutation = useMutation({
-    mutationFn: (secret: string) => transport.storeRuntimeCredential(type, secret),
-    onSuccess: () => {
+    mutationFn: async (secret: string) => {
+      setPhase('checking');
+      const check = await transport.checkRuntimeCredential(type, secret);
+      if (!check.ok) return { saved: false as const, message: check.message };
+      setPhase('saving');
+      await transport.storeRuntimeCredential(type, secret);
+      return { saved: true as const, message: null };
+    },
+    onSettled: () => setPhase(null),
+    onSuccess: (result) => {
+      if (!result.saved) return;
       void queryClient.invalidateQueries({ queryKey: [...REQUIREMENTS_KEY] });
       // The catalog changed with the connection: a new provider's models are
       // now offered, and the old ones may not be (DOR-1660).
       void queryClient.invalidateQueries({ queryKey: [...MODELS_KEY] });
+      void queryClient.invalidateQueries({ queryKey: [...runtimeKeyStatusKey(type)] });
     },
   });
 
+  const refused = mutation.data?.saved === false;
   return {
     store: (secret: string) => {
       if (secret.trim().length === 0) return;
       mutation.mutate(secret);
     },
     isPending: mutation.isPending,
-    isSuccess: mutation.isSuccess,
-    isError: mutation.isError,
-    errorMessage: mutation.isError
-      ? ((mutation.error as Error).message ?? 'Couldn’t save the API key.')
-      : null,
+    phase,
+    isSuccess: mutation.data?.saved === true,
+    isError: mutation.isError || refused,
+    errorMessage: refused
+      ? (mutation.data?.message ?? null)
+      : mutation.isError
+        ? ((mutation.error as Error).message ?? 'Couldn’t save the API key.')
+        : null,
     reset: mutation.reset,
   };
 }

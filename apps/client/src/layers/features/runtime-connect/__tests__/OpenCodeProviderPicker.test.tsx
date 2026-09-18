@@ -6,14 +6,26 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { SystemRequirements } from '@dorkos/shared/agent-runtime';
+import type { OpenCodeDirectSetup } from '@dorkos/shared/runtime-connect';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { setPlatformAdapter } from '@/layers/shared/lib';
 import { RuntimeSetupDialog } from '@/layers/entities/runtime';
 import { renderRuntimeConnect } from '../ui/RuntimeConnectFlow';
 import { OpenCodeProviderPicker } from '../ui/OpenCodeProviderPicker';
+import { DirectProviderPath } from '../ui/DirectProviderPath';
 
 beforeAll(() => {
+  // Radix Select needs DOM APIs jsdom lacks to open its listbox under userEvent.
+  const proto = Element.prototype as unknown as Record<string, unknown>;
+  if (!proto.hasPointerCapture) proto.hasPointerCapture = vi.fn();
+  if (!proto.releasePointerCapture) proto.releasePointerCapture = vi.fn();
+  if (!proto.scrollIntoView) proto.scrollIntoView = vi.fn();
+  global.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation((query: string) => ({
@@ -213,6 +225,10 @@ describe('OpenCodeProviderPicker — in-dialog step navigation (spec §5)', () =
 
     await user.click(screen.getByTestId('power-source-direct'));
     expect(await screen.findByLabelText('API key')).toBeInTheDocument();
+    // The address is behind Advanced for a named service — it is noise for the
+    // person who picked OpenAI and only matters to the one who did not.
+    expect(screen.queryByLabelText(/base url/i)).not.toBeInTheDocument();
+    await user.click(screen.getByTestId('direct-provider-advanced'));
     expect(screen.getByLabelText(/base url/i)).toBeInTheDocument();
 
     await user.click(screen.getByTestId('connect-step-back'));
@@ -240,8 +256,9 @@ describe('OpenCodeProviderPicker — Direct provider (spec §5)', () => {
 
     await user.click(screen.getByTestId('power-source-direct'));
     await user.type(await screen.findByLabelText('API key'), SECRET);
+    await user.click(screen.getByTestId('direct-provider-advanced'));
     await user.type(screen.getByLabelText(/base url/i), 'https://api.example.com/v1');
-    await user.click(screen.getByRole('button', { name: 'Connect provider' }));
+    await user.click(screen.getByRole('button', { name: 'Save & connect' }));
 
     expect(transport.storeProviderCredential).toHaveBeenCalledWith(
       'openai',
@@ -347,7 +364,7 @@ describe('OpenCodeProviderPicker — flips OpenCode to Ready (spec §6)', () => 
 
     await user.click(await screen.findByTestId('power-source-direct'));
     await user.type(await screen.findByLabelText('API key'), 'sk-direct-xyz');
-    await user.click(screen.getByRole('button', { name: 'Connect provider' }));
+    await user.click(screen.getByRole('button', { name: 'Save & connect' }));
 
     await waitFor(() => {
       expect(screen.getByTestId('runtime-ready-opencode')).toBeInTheDocument();
@@ -366,7 +383,7 @@ describe('OpenCodeProviderPicker — flips OpenCode to Ready (spec §6)', () => 
 
     await user.click(await screen.findByTestId('power-source-direct'));
     await user.type(await screen.findByLabelText('API key'), 'sk-direct-xyz');
-    await user.click(screen.getByRole('button', { name: 'Connect provider' }));
+    await user.click(screen.getByRole('button', { name: 'Save & connect' }));
 
     const panel = await screen.findByTestId('runtime-connected-panel');
     expect(panel).toHaveTextContent('OpenCode is connected.');
@@ -452,7 +469,7 @@ describe('RuntimeSetupDialog — Change a connected OpenCode (spec §9)', () => 
     // Switch to a Direct provider and complete the connect.
     await user.click(await screen.findByTestId('power-source-direct'));
     await user.type(await screen.findByLabelText('API key'), 'sk-direct-xyz');
-    await user.click(screen.getByRole('button', { name: 'Connect provider' }));
+    await user.click(screen.getByRole('button', { name: 'Save & connect' }));
 
     // The success panel replaces the change UI; the cancel affordance is gone.
     const panel = await screen.findByTestId('runtime-connected-panel');
@@ -477,5 +494,226 @@ describe('RuntimeSetupDialog — Change a connected OpenCode (spec §9)', () => 
     expect(screen.queryByTestId('runtime-change-opencode')).not.toBeInTheDocument();
     // Guard the assertion isn't vacuous.
     expect(user).toBeDefined();
+  });
+});
+
+// DOR-2123 (report FB-48): check the key before saving it, give me a Test
+// button, and show me what I entered last time.
+describe('DirectProviderPath — the form remembers what you entered', () => {
+  /** Render the key form on its own, with a given saved setup. */
+  function renderDirect(overrides: Partial<Parameters<typeof createMockTransport>[0]> = {}) {
+    const transport = createMockTransport(overrides);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <DirectProviderPath />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+    return transport;
+  }
+
+  it('reopens with the saved source, address, and a hint naming the last four of the key', async () => {
+    renderDirect({
+      getOpenCodeDirectSetup: vi.fn().mockResolvedValue({
+        providerId: 'openai',
+        baseURL: 'https://lm.example.com:8000/v1',
+        key: { saved: true, last4: 'ab12' },
+      }),
+    });
+
+    // A saved `openai` pointing somewhere other than OpenAI reopens as "Other",
+    // with its address on screen rather than hidden behind Advanced.
+    expect(await screen.findByRole('combobox')).toHaveTextContent('Other (OpenAI-compatible)');
+    expect(screen.getByLabelText(/base url/i)).toHaveValue('https://lm.example.com:8000/v1');
+    expect(screen.getByLabelText('API key')).toHaveAttribute(
+      'placeholder',
+      'Saved · ends in ab12 — paste a new key to replace it'
+    );
+  });
+
+  it('shows a progress row rather than a flash of empty fields while it loads', () => {
+    renderDirect({
+      getOpenCodeDirectSetup: vi.fn(() => new Promise<OpenCodeDirectSetup>(() => {})),
+    });
+    expect(screen.getByTestId('connect-progress')).toBeInTheDocument();
+    expect(screen.queryByLabelText('API key')).not.toBeInTheDocument();
+  });
+
+  it('follows the chosen source with its own key format hint', async () => {
+    const user = userEvent.setup();
+    renderDirect();
+
+    expect(await screen.findByLabelText('API key')).toHaveAttribute('placeholder', 'sk-…');
+    await user.click(screen.getByRole('combobox'));
+    await user.click(await screen.findByRole('option', { name: 'Anthropic' }));
+
+    expect(screen.getByLabelText('API key')).toHaveAttribute('placeholder', 'sk-ant-…');
+  });
+
+  it('requires an address for an OpenAI-compatible server, and nothing else does', async () => {
+    const user = userEvent.setup();
+    renderDirect();
+
+    await user.type(await screen.findByLabelText('API key'), 'sk-test-key');
+    expect(screen.getByRole('button', { name: 'Save & connect' })).toBeEnabled();
+
+    await user.click(screen.getByRole('combobox'));
+    await user.click(await screen.findByRole('option', { name: 'Other (OpenAI-compatible)' }));
+
+    // The address is now shown, required, and both actions wait for it.
+    expect(screen.getByRole('button', { name: 'Save & connect' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Test key' })).toBeDisabled();
+    await user.type(screen.getByLabelText(/base url/i), 'https://lm.example.com:8000/v1');
+    expect(screen.getByRole('button', { name: 'Save & connect' })).toBeEnabled();
+  });
+});
+
+describe('DirectProviderPath — the Test button', () => {
+  function renderDirect(overrides: Partial<Parameters<typeof createMockTransport>[0]> = {}) {
+    const transport = createMockTransport(overrides);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <DirectProviderPath />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+    return transport;
+  }
+
+  it('says the key works, and saves nothing', async () => {
+    const user = userEvent.setup();
+    const transport = renderDirect({
+      checkProviderCredential: vi.fn().mockResolvedValue({ ok: true }),
+    });
+
+    await user.type(await screen.findByLabelText('API key'), 'sk-good-key');
+    await user.click(screen.getByRole('button', { name: 'Test key' }));
+
+    expect(await screen.findByText('Key works')).toBeInTheDocument();
+    expect(transport.checkProviderCredential).toHaveBeenCalledWith('openai', 'sk-good-key', null);
+    expect(transport.storeProviderCredential).not.toHaveBeenCalled();
+  });
+
+  it('shows the service’s own words when the key is refused, with a way to try again', async () => {
+    const user = userEvent.setup();
+    renderDirect({
+      checkProviderCredential: vi.fn().mockResolvedValue({
+        ok: false,
+        reason: 'rejected',
+        message: 'That key was not accepted. Check it and try again.',
+      }),
+    });
+
+    await user.type(await screen.findByLabelText('API key'), 'sk-bad-key');
+    await user.click(screen.getByRole('button', { name: 'Test key' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'That key was not accepted. Check it and try again.'
+    );
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+  });
+
+  it('forgets a stale answer as soon as the key is edited', async () => {
+    const user = userEvent.setup();
+    renderDirect({ checkProviderCredential: vi.fn().mockResolvedValue({ ok: true }) });
+
+    await user.type(await screen.findByLabelText('API key'), 'sk-good-key');
+    await user.click(screen.getByRole('button', { name: 'Test key' }));
+    expect(await screen.findByText('Key works')).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('API key'), 'x');
+    await waitFor(() => expect(screen.queryByText('Key works')).not.toBeInTheDocument());
+  });
+});
+
+describe('DirectProviderPath — nothing is saved until the key is accepted', () => {
+  function renderDirect(overrides: Partial<Parameters<typeof createMockTransport>[0]> = {}) {
+    const transport = createMockTransport(overrides);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <DirectProviderPath />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+    return transport;
+  }
+
+  it('keeps the form and the typed key on screen when the key is refused', async () => {
+    const user = userEvent.setup();
+    const SECRET = 'sk-typo-key-999';
+    const transport = renderDirect({
+      checkProviderCredential: vi.fn().mockResolvedValue({
+        ok: false,
+        reason: 'rejected',
+        message: 'That key was not accepted. Check it and try again.',
+      }),
+    });
+
+    await user.type(await screen.findByLabelText('API key'), SECRET);
+    await user.click(screen.getByRole('button', { name: 'Save & connect' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'That key was not accepted. Check it and try again.'
+    );
+    // Nothing was stored, and the key is still there to fix rather than retype.
+    expect(transport.storeProviderCredential).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('API key')).toHaveValue(SECRET);
+  });
+
+  it('keeps the saved key when only the address changed, submitting an empty key', async () => {
+    const user = userEvent.setup();
+    const transport = renderDirect({
+      getOpenCodeDirectSetup: vi.fn().mockResolvedValue({
+        providerId: 'openai',
+        baseURL: null,
+        key: { saved: true, last4: 'ab12' },
+      }),
+      checkProviderCredential: vi.fn().mockResolvedValue({ ok: true }),
+      storeProviderCredential: vi.fn().mockResolvedValue({ ref: 'file:openai' }),
+    });
+
+    await user.click(await screen.findByTestId('direct-provider-advanced'));
+    await user.type(screen.getByLabelText(/base url/i), 'https://moved.example.com/v1');
+    await user.click(screen.getByRole('button', { name: 'Save & connect' }));
+
+    // An empty key is how "keep the one you already have" is said on the wire.
+    await waitFor(() =>
+      expect(transport.storeProviderCredential).toHaveBeenCalledWith(
+        'openai',
+        '',
+        'https://moved.example.com/v1'
+      )
+    );
+    expect(transport.checkProviderCredential).toHaveBeenCalledWith(
+      'openai',
+      null,
+      'https://moved.example.com/v1'
+    );
+  });
+
+  it('leaves Save off when a key is saved and nothing has changed', async () => {
+    renderDirect({
+      getOpenCodeDirectSetup: vi.fn().mockResolvedValue({
+        providerId: 'openai',
+        baseURL: null,
+        key: { saved: true, last4: 'ab12' },
+      }),
+    });
+
+    // Nothing to save — but the saved key can still be tested.
+    expect(await screen.findByRole('button', { name: 'Save & connect' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Test key' })).toBeEnabled();
   });
 });
