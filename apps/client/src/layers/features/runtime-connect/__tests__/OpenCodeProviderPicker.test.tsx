@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { act, render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -606,7 +606,7 @@ describe('DirectProviderPath — the Test button', () => {
     expect(transport.storeProviderCredential).not.toHaveBeenCalled();
   });
 
-  it('shows the service’s own words when the key is refused, with a way to try again', async () => {
+  it('shows the service’s own words when the key is refused, as a plain line', async () => {
     const user = userEvent.setup();
     renderDirect({
       checkProviderCredential: vi.fn().mockResolvedValue({
@@ -622,7 +622,10 @@ describe('DirectProviderPath — the Test button', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'That key was not accepted. Check it and try again.'
     );
-    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    // No Retry: there is nothing to retry blindly. The key or the address is
+    // wrong, both are fixed in the fields above, and Test is still right there.
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Test key' })).toBeEnabled();
   });
 
   it('forgets a stale answer as soon as the key is edited', async () => {
@@ -1032,4 +1035,99 @@ describe('DirectProviderPath — another path’s saved source is not this form�
       expect(screen.getByRole('button', { name: 'Save & connect' })).toBeDisabled();
     }
   );
+});
+
+// Browser-found on the real app (Settings → Runtimes → OpenCode → Change →
+// I have my own API key): the form left the page while a save was in flight,
+// the panel lost its height, and the refusal came back off-screen.
+describe('DirectProviderPath — the form stays put while it works', () => {
+  function renderDirect(overrides: Partial<Parameters<typeof createMockTransport>[0]> = {}) {
+    const transport = createMockTransport(overrides);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <DirectProviderPath />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+    return transport;
+  }
+
+  /** A promise this test decides when to settle. */
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((res) => {
+      resolve = res;
+    });
+    return { promise, resolve };
+  }
+
+  it('keeps the fields mounted (and read-only) while the save is in flight', async () => {
+    const user = userEvent.setup();
+    const gate = deferred<{ ok: true }>();
+    renderDirect({ checkProviderCredential: vi.fn(() => gate.promise) });
+
+    await user.type(await screen.findByLabelText('API key'), 'sk-in-flight');
+    await user.click(screen.getByRole('button', { name: 'Save & connect' }));
+
+    // The form is still on the page, so the panel keeps its height and the
+    // scroll position — which is what put the refusal off-screen before.
+    expect(await screen.findByTestId('connect-progress')).toHaveTextContent('Checking your key…');
+    expect(screen.getByTestId('direct-provider')).toBeInTheDocument();
+    expect(screen.getByLabelText('API key')).toHaveValue('sk-in-flight');
+    // Read-only rather than gone: nothing can be changed out from under the
+    // request that is already running.
+    expect(screen.getByLabelText('API key')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save & connect' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Test key' })).toBeDisabled();
+
+    await act(async () => {
+      gate.resolve({ ok: true });
+    });
+  });
+
+  it('replaces a failed Test result with the save’s answer, never both at once', async () => {
+    const user = userEvent.setup();
+    const refusal = {
+      ok: false as const,
+      reason: 'rejected' as const,
+      message: 'That key was not accepted. Check it and try again.',
+    };
+    renderDirect({ checkProviderCredential: vi.fn().mockResolvedValue(refusal) });
+
+    await user.type(await screen.findByLabelText('API key'), 'sk-bad-key');
+    await user.click(screen.getByRole('button', { name: 'Test key' }));
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Save & connect' }));
+
+    // Exactly one message on screen — the same refusal twice, once from the
+    // stale Test row and once from the save, is what this prevents.
+    await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(1));
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'That key was not accepted. Check it and try again.'
+    );
+  });
+
+  it('puts the cursor back in the key field after a refusal', async () => {
+    const user = userEvent.setup();
+    renderDirect({
+      checkProviderCredential: vi.fn().mockResolvedValue({
+        ok: false,
+        reason: 'rejected',
+        message: 'That key was not accepted. Check it and try again.',
+      }),
+    });
+
+    await user.type(await screen.findByLabelText('API key'), 'sk-typo');
+    await user.click(screen.getByRole('button', { name: 'Save & connect' }));
+
+    await screen.findByRole('alert');
+    // Reading a message and then hunting for the field it is about is the thing
+    // this avoids: the fix happens where the cursor already is.
+    await waitFor(() => expect(screen.getByLabelText('API key')).toHaveFocus());
+  });
 });

@@ -387,7 +387,7 @@ describe('LoginConnect — the key form checks, tests, and remembers', () => {
     expect(transport.storeRuntimeCredential).not.toHaveBeenCalled();
   });
 
-  it('reports a refused key in the service’s own words, with a way to try again', async () => {
+  it('reports a refused key in the service’s own words, as a plain line', async () => {
     const user = userEvent.setup();
     renderFlow(<LoginConnect type="claude-code" />, {
       checkRuntimeCredential: vi.fn().mockResolvedValue({
@@ -404,7 +404,8 @@ describe('LoginConnect — the key form checks, tests, and remembers', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'That key was not accepted. Check it and try again.'
     );
-    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    // No Retry: the key is fixed in the field above, then Test again.
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
   });
 
   it('saves nothing when the key is refused, and keeps it on screen to fix', async () => {
@@ -450,5 +451,51 @@ describe('LoginConnect — the Test result says WHICH key it is about', () => {
 
     expect(await screen.findByText('Key works')).toBeInTheDocument();
     expect(screen.queryByText('Your saved key works')).not.toBeInTheDocument();
+  });
+});
+
+describe('LoginConnect — the key form stays put while it works', () => {
+  it('keeps the field mounted and read-only while the save is in flight', async () => {
+    const user = userEvent.setup();
+    const gate = deferred<{ ok: true }>();
+    renderFlow(<LoginConnect type="claude-code" />, {
+      checkRuntimeCredential: vi.fn(() => gate.promise),
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Use an API key instead' }));
+    await user.type(await screen.findByLabelText('Anthropic API key'), 'sk-ant-in-flight');
+    await user.click(screen.getByRole('button', { name: 'Save key' }));
+
+    // Still on the page, so the panel keeps its height and scroll position.
+    expect(await screen.findByTestId('connect-progress')).toHaveTextContent('Checking your key…');
+    expect(screen.getByLabelText('Anthropic API key')).toHaveValue('sk-ant-in-flight');
+    expect(screen.getByLabelText('Anthropic API key')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save key' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Test key' })).toBeDisabled();
+
+    await act(async () => {
+      gate.resolve({ ok: true });
+    });
+  });
+
+  it('shows one message at a time, and refocuses the key field after a refusal', async () => {
+    const user = userEvent.setup();
+    renderFlow(<LoginConnect type="claude-code" />, {
+      checkRuntimeCredential: vi.fn().mockResolvedValue({
+        ok: false,
+        reason: 'rejected',
+        message: 'That key was not accepted. Check it and try again.',
+      }),
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Use an API key instead' }));
+    await user.type(await screen.findByLabelText('Anthropic API key'), 'sk-ant-typo');
+    await user.click(screen.getByRole('button', { name: 'Test key' }));
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Save key' }));
+
+    await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(1));
+    await waitFor(() => expect(screen.getByLabelText('Anthropic API key')).toHaveFocus());
   });
 });

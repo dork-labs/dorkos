@@ -107,21 +107,24 @@ export function useCheckRuntimeCredential(type: string): UseCheckRuntimeCredenti
     meta: { suppressErrorToast: true },
   });
 
+  const result: CredentialCheckResult | null =
+    mutation.data ??
+    (mutation.isError
+      ? {
+          ok: false,
+          reason: 'unexpected',
+          message: (mutation.error as Error).message || 'Couldn’t check the key.',
+        }
+      : null);
+
   return {
     check: (secret: string) => mutation.mutate(secret),
     isPending: mutation.isPending,
-    // Read off the request that produced the answer, not off the field as it
-    // stands now — the field may have been edited since.
-    checkedSavedKey: (mutation.variables ?? '').trim().length === 0,
-    result:
-      mutation.data ??
-      (mutation.isError
-        ? {
-            ok: false,
-            reason: 'unexpected',
-            message: (mutation.error as Error).message || 'Couldn’t check the key.',
-          }
-        : null),
+    result,
+    // Derived BESIDE the answer, so it is false when there is no answer. Read
+    // off the request that produced it rather than off the field as it stands
+    // now, because the field may have been edited since.
+    checkedSavedKey: result !== null && (mutation.variables ?? '').trim().length === 0,
     reset: mutation.reset,
   };
 }

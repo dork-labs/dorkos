@@ -19,7 +19,7 @@
  *
  * @module features/runtime-connect/ui/DirectProviderPath
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import {
   OPENCODE_DIRECT_PROVIDERS,
@@ -224,6 +224,10 @@ function DirectProviderForm({
   const insecure = effective.startsWith('http://');
 
   const input = { providerId, key, baseURL: submittedBaseURL };
+  // Everything is read-only while a check or a save is in flight, but the form
+  // STAYS on screen (see the progress row below for why).
+  const busy = connect.isPending;
+  const keyField = useRef<HTMLInputElement>(null);
 
   /** Drop a stale answer the moment the thing it was about changes. */
   const invalidateAnswers = () => {
@@ -235,11 +239,13 @@ function DirectProviderForm({
     if (connect.isSuccess) onConnected?.(DIRECT_CONNECT_SUCCESS);
   }, [connect.isSuccess, onConnected]);
 
-  if (connect.isPending) {
-    return (
-      <ConnectProgressRow message={connect.phase === 'saving' ? 'Saving…' : 'Checking your key…'} />
-    );
-  }
+  // Put the cursor back where the fix happens. A refusal is almost always a
+  // mistyped key, and the alternative is reading a message and then hunting for
+  // the field it is about.
+  useEffect(() => {
+    if (connect.isError) keyField.current?.focus();
+  }, [connect.isError]);
+
   if (connect.isSuccess) {
     return <ConnectedRow />;
   }
@@ -250,6 +256,9 @@ function DirectProviderForm({
       data-testid="direct-provider"
       onSubmit={(e) => {
         e.preventDefault();
+        // One message at a time: a save's answer replaces a test's, rather than
+        // both refusals sitting on screen saying the same thing twice.
+        test.reset();
         connect.connect(input);
       }}
     >
@@ -259,6 +268,7 @@ function DirectProviderForm({
         </Label>
         <Select
           value={choice}
+          disabled={busy}
           onValueChange={(value) => {
             setChoice(value);
             // Picking a named service fills in its address, so nobody has to know
@@ -292,6 +302,7 @@ function DirectProviderForm({
           <Input
             id="direct-provider-base-url"
             value={baseURL}
+            disabled={busy}
             onChange={(e) => {
               setBaseURL(e.target.value);
               invalidateAnswers();
@@ -306,6 +317,7 @@ function DirectProviderForm({
         <button
           type="button"
           onClick={() => setAdvancedOpen(true)}
+          disabled={busy}
           data-testid="direct-provider-advanced"
           className="text-muted-foreground hover:text-foreground text-xs underline decoration-dotted underline-offset-2 transition-colors"
         >
@@ -327,7 +339,9 @@ function DirectProviderForm({
         </Label>
         <PasswordInput
           id="direct-provider-key"
+          ref={keyField}
           value={key}
+          disabled={busy}
           onChange={(e) => {
             setKey(e.target.value);
             invalidateAnswers();
@@ -371,30 +385,43 @@ function DirectProviderForm({
             type="button"
             size="sm"
             variant="outline"
-            disabled={!canTest}
+            disabled={!canTest || busy}
             data-testid="direct-provider-test"
             onClick={() => {
+              // One message at a time, in both directions.
               connect.reset();
+              test.reset();
               test.check(input);
             }}
           >
             Test key
           </Button>
-          <Button type="submit" size="sm" disabled={!canSave}>
+          <Button type="submit" size="sm" disabled={!canSave || busy}>
             Save & connect
           </Button>
         </div>
       </div>
 
-      {test.isPending ? (
-        <ConnectProgressRow message="Checking your key…" />
+      {/* One slot for every answer, and the form never leaves the page to show
+          one. Swapping the whole form out for a spinner collapsed the panel's
+          height, which threw the scroll position to the top — so the refusal
+          that came back was off-screen, below a form that looked untouched. */}
+      {busy || test.isPending ? (
+        <ConnectProgressRow
+          message={busy && connect.phase === 'saving' ? 'Saving…' : 'Checking your key…'}
+        />
       ) : test.result?.ok === true ? (
         // Say WHICH key works. With a blank field the answer is about the key
         // already saved, and "Key works" would read as being about what is on
         // screen — which is nothing.
         <ConnectedRow message={test.checkedSavedKey ? 'Your saved key works' : 'Key works'} />
       ) : test.result ? (
-        <ConnectErrorRow message={test.result.message} onRetry={() => test.check(input)} />
+        // A plain line, not a row with a Retry button: there is nothing to retry
+        // blindly. The key is wrong or the address is, and both are fixed in the
+        // fields right above before pressing Test again.
+        <p className="text-destructive text-xs" role="alert">
+          {test.result.message}
+        </p>
       ) : null}
     </form>
   );
