@@ -216,3 +216,108 @@ describe('OPENCODE_DIRECT_PROVIDERS — the one list both sides read', () => {
     expect(findOpenCodeDirectProvider('Valut Cloud')).toBeUndefined();
   });
 });
+
+describe('checkProviderKey — the key must not leave the address it was sent to', () => {
+  it('does not follow a redirect, and reports it as an address problem', async () => {
+    // The request carries the key in a header, and `fetch` re-sends headers on a
+    // cross-origin redirect — so following one would bounce the key to a host the
+    // person never named.
+    const { fetchImpl, seen } = fakeFetch(302);
+    const result = await checkProviderKey(
+      { providerId: 'openai', secret: SECRET, baseURL: 'https://redirector.example.com/v1' },
+      { fetchImpl }
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      reason: 'unexpected',
+      message: 'redirector.example.com answered with 302. Check the base URL.',
+    });
+    // One request, and no second one to wherever it pointed.
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(seen).toHaveLength(1);
+  });
+
+  it('asks fetch not to follow redirects at all', async () => {
+    const fetchImpl = vi.fn(async () => new Response('{}', { status: 200 })) as unknown as FetchFn;
+    await checkProviderKey({ providerId: 'openai', secret: SECRET }, { fetchImpl });
+
+    const init = vi.mocked(fetchImpl).mock.calls[0][1] as RequestInit;
+    expect(init.redirect).toBe('manual');
+  });
+
+  it('refuses a base URL that is not an http(s) address, before attaching the key', async () => {
+    const { fetchImpl } = fakeFetch(200);
+    const result = await checkProviderKey(
+      { providerId: 'openai', secret: SECRET, baseURL: 'file:///etc' },
+      { fetchImpl }
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      reason: 'unreachable',
+      message: 'The base URL must start with http:// or https://',
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('allows a loopback and a private address on purpose', async () => {
+    // People run model servers on localhost and on a LAN box. This endpoint is
+    // loopback-gated and driven by the machine's own operator, so blocking those
+    // would break the honest case to defend against one that does not exist here.
+    const { fetchImpl, seen } = fakeFetch(200);
+    await checkProviderKey(
+      { providerId: 'openai', secret: SECRET, baseURL: 'http://127.0.0.1:1234/v1' },
+      { fetchImpl }
+    );
+    await checkProviderKey(
+      { providerId: 'openai', secret: SECRET, baseURL: 'http://192.168.1.50:8080/v1' },
+      { fetchImpl }
+    );
+
+    expect(seen.map((request) => request.url)).toEqual([
+      'http://127.0.0.1:1234/v1/models',
+      'http://192.168.1.50:8080/v1/models',
+    ]);
+  });
+});
+
+describe('checkProviderKey — the bound actually fires', () => {
+  it('aborts a fetch that never resolves, and clears its timer either way', async () => {
+    vi.useFakeTimers();
+    const clearSpy = vi.spyOn(globalThis, 'clearTimeout');
+    try {
+      // A fetch that only ever settles by being aborted — what a black-holed
+      // address looks like from here.
+      const fetchImpl = vi.fn(
+        (_url: string | URL | Request, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+          })
+      ) as unknown as FetchFn;
+
+      const pending = checkProviderKey({ providerId: 'openai', secret: SECRET }, { fetchImpl });
+      // Nothing has given up yet one tick before the bound.
+      await vi.advanceTimersByTimeAsync(7_999);
+      let settled = false;
+      void pending.then(() => {
+        settled = true;
+      });
+      await Promise.resolve();
+      expect(settled).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(2);
+      await expect(pending).resolves.toEqual({
+        ok: false,
+        reason: 'unreachable',
+        message: 'Couldn’t reach api.openai.com. Check the base URL and whether you’re online.',
+      });
+      // The timer is cleared on every path, so a resolved check leaves nothing
+      // holding the event loop open.
+      expect(clearSpy).toHaveBeenCalled();
+    } finally {
+      clearSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+});

@@ -429,3 +429,26 @@ describe('LoginConnect — the key form checks, tests, and remembers', () => {
     expect(screen.getByLabelText('Anthropic API key')).toHaveValue(SECRET);
   });
 });
+
+describe('LoginConnect — the Test result says WHICH key it is about', () => {
+  it('says "Your saved key works" when the field is empty, "Key works" when typed', async () => {
+    const user = userEvent.setup();
+    const transport = renderFlow(<LoginConnect type="claude-code" />, {
+      getRuntimeKeyStatus: vi.fn().mockResolvedValue({ key: { saved: true, last4: 'cho1' } }),
+      checkRuntimeCredential: vi.fn().mockResolvedValue({ ok: true }),
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Use an API key instead' }));
+    await screen.findByLabelText('Anthropic API key');
+    await user.click(await screen.findByRole('button', { name: 'Test key' }));
+
+    expect(await screen.findByText('Your saved key works')).toBeInTheDocument();
+    expect(transport.checkRuntimeCredential).toHaveBeenCalledWith('claude-code', null);
+
+    await user.type(screen.getByLabelText('Anthropic API key'), 'sk-ant-typed');
+    await user.click(screen.getByRole('button', { name: 'Test key' }));
+
+    expect(await screen.findByText('Key works')).toBeInTheDocument();
+    expect(screen.queryByText('Your saved key works')).not.toBeInTheDocument();
+  });
+});

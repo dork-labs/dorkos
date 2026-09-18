@@ -79,6 +79,12 @@ export interface UseCheckRuntimeCredential {
   isPending: boolean;
   /** The answer, or `null` when nothing has been tried since the last reset. */
   result: CredentialCheckResult | null;
+  /**
+   * Whether the answer is about the key ALREADY SAVED rather than a typed one.
+   * The surface says which, because "it works" about the wrong key is worse
+   * than no answer at all.
+   */
+  checkedSavedKey: boolean;
   /** Forget the last answer — called when the key field is edited. */
   reset: () => void;
 }
@@ -96,11 +102,17 @@ export function useCheckRuntimeCredential(type: string): UseCheckRuntimeCredenti
   const mutation = useMutation({
     mutationFn: (secret: string) =>
       transport.checkRuntimeCredential(type, secret.trim().length > 0 ? secret : null),
+    // A refused key is rendered in the form, right where it can be fixed. A
+    // toast on top of that is the same news twice, one copy of it out of context.
+    meta: { suppressErrorToast: true },
   });
 
   return {
     check: (secret: string) => mutation.mutate(secret),
     isPending: mutation.isPending,
+    // Read off the request that produced the answer, not off the field as it
+    // stands now — the field may have been edited since.
+    checkedSavedKey: (mutation.variables ?? '').trim().length === 0,
     result:
       mutation.data ??
       (mutation.isError
@@ -161,6 +173,8 @@ export function useStoreRuntimeCredential(type: string): UseStoreRuntimeCredenti
       return { saved: true as const, message: null };
     },
     onSettled: () => setPhase(null),
+    // The refusal is shown under the key field, where it can be acted on.
+    meta: { suppressErrorToast: true },
     onSuccess: (result) => {
       if (!result.saved) return;
       void queryClient.invalidateQueries({ queryKey: [...REQUIREMENTS_KEY] });

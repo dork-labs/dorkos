@@ -15,6 +15,9 @@ export function ConnectProgressRow({ message }: { message: string }) {
   const reducedMotion = useReducedMotion();
   return (
     <motion.div
+      // A spinner nobody can hear is a surface that just stops for a screen
+      // reader. `status` announces politely, without stealing focus mid-typing.
+      role="status"
       className="bg-muted flex items-center gap-2 rounded-lg px-3 py-2.5"
       initial={reducedMotion ? false : { opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -46,6 +49,7 @@ export function ConnectProgressRow({ message }: { message: string }) {
 export function ConnectedRow({ message = 'Connected' }: { message?: string }) {
   return (
     <div
+      role="status"
       className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-xs text-emerald-500"
       data-testid="connect-connected"
     >

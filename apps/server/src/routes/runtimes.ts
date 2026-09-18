@@ -24,8 +24,8 @@ import {
   readRuntimeKeyStatus,
   checkProviderCredential,
   checkRuntimeCredential,
-  ConnectError,
 } from '../services/runtimes/connect/credentials.js';
+import { ConnectError } from '../services/runtimes/connect/connect-error.js';
 import {
   delegateRuntimeLogin,
   LOGIN_RUNTIME_TYPES,

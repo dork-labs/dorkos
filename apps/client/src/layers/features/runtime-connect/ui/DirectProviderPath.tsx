@@ -82,6 +82,24 @@ function wireDefaultBaseURL(wireId: string): string {
 }
 
 /**
+ * Whether what is saved belongs to THIS form at all.
+ *
+ * `runtimes.opencode.provider` is shared with the cloud and on-your-computer
+ * paths, so it can read `openrouter` or `ollama` — neither of which this form
+ * owns, and whose address (if any) means nothing here. Treating those as
+ * "nothing saved" is what stops the form prefilling someone else's settings and
+ * offering to overwrite them from a field the person never filled in.
+ *
+ * @param setup - What the server says is saved.
+ */
+function ownedSetup(setup: OpenCodeDirectSetup): boolean {
+  return (
+    setup.providerId !== null &&
+    OPENCODE_DIRECT_PROVIDERS.some((entry) => entry.wireId === setup.providerId)
+  );
+}
+
+/**
  * Which power source a saved setup means.
  *
  * Saved config only records the WIRE id and an address, so the address is what
@@ -96,6 +114,7 @@ function wireDefaultBaseURL(wireId: string): string {
  * 4. Anything else is an OpenAI-compatible server DorkOS does not name.
  */
 function choiceFor(setup: OpenCodeDirectSetup): SourceChoice {
+  if (!ownedSetup(setup)) return 'openai';
   if (setup.providerId === 'anthropic') return 'anthropic';
   const named = OPENCODE_DIRECT_PROVIDERS.find(
     (entry) => entry.wireId === setup.providerId && entry.defaultBaseURL === setup.baseURL
@@ -114,6 +133,17 @@ export function DirectProviderPath({
 }) {
   const setup = useOpenCodeDirectSetup();
 
+  // A read that failed is not a read still running. Without this the form sits
+  // on its spinner for good, which looks like DorkOS hanging rather than like
+  // something a person can retry.
+  if (setup.isError && !setup.data) {
+    return (
+      <ConnectErrorRow
+        message="Couldn’t load your saved settings."
+        onRetry={() => void setup.refetch()}
+      />
+    );
+  }
   // Never flash empty fields at someone who HAS saved something — the whole
   // complaint was a form that looked blank when it was not.
   if (!setup.data) {
@@ -140,12 +170,15 @@ function DirectProviderForm({
   /** Reports the connect landing so the dialog can show its success moment. */
   onConnected?: (success: RuntimeConnectSuccess) => void;
 }) {
+  // What is saved for ANOTHER path (the cloud or on-your-computer one) is not
+  // this form's to prefill from, so it reads as nothing saved here.
+  const owned = ownedSetup(setup) ? setup : null;
   const [choice, setChoice] = useState<SourceChoice>(() => choiceFor(setup));
   const [key, setKey] = useState('');
   // A named service fills its own address in, so the field always shows the
   // address DorkOS will actually talk to rather than leaving it to be guessed.
   const [baseURL, setBaseURL] = useState(
-    () => setup.baseURL ?? entryFor(choiceFor(setup))?.defaultBaseURL ?? ''
+    () => owned?.baseURL ?? entryFor(choiceFor(setup))?.defaultBaseURL ?? ''
   );
   // Advanced starts open only when the saved address OVERRIDES the chosen
   // service's own — a service sitting at its own address has nothing to explain.
@@ -153,8 +186,9 @@ function DirectProviderForm({
     const initial = choiceFor(setup);
     return (
       initial !== OTHER_CHOICE &&
-      setup.baseURL !== null &&
-      setup.baseURL !== entryFor(initial)?.defaultBaseURL
+      owned !== null &&
+      owned.baseURL !== null &&
+      owned.baseURL !== entryFor(initial)?.defaultBaseURL
     );
   });
   const connect = useConnectDirectProvider();
@@ -164,7 +198,7 @@ function DirectProviderForm({
   const wireId = wireIdFor(choice);
   // The saved hint belongs to the saved service. Switch the list to Anthropic
   // while an OpenAI key is saved and there is no saved key for what is on screen.
-  const savedLast4 = setup.key.saved && setup.providerId === wireId ? setup.key.last4 : null;
+  const savedLast4 = owned?.key.saved && owned.providerId === wireId ? owned.key.last4 : null;
 
   const address = baseURL.trim();
   const needsAddress = choice === OTHER_CHOICE;
@@ -180,11 +214,18 @@ function DirectProviderForm({
   // Compare like with like: a saved `null` address means the wire service's own,
   // so "OpenAI with nothing saved" is not a change when OpenAI is on screen.
   const savedEffective =
-    setup.providerId === null ? null : (setup.baseURL ?? wireDefaultBaseURL(setup.providerId));
-  const changed = wireId !== setup.providerId || effective !== savedEffective;
+    owned === null ? null : (owned.baseURL ?? wireDefaultBaseURL(owned.providerId as string));
+  const changed = wireId !== (owned?.providerId ?? null) || effective !== savedEffective;
   const hasKey = key.trim().length > 0;
-  const canTest = (hasKey || savedLast4 !== null) && addressReady;
-  const canSave = (hasKey || (savedLast4 !== null && changed)) && addressReady;
+  // A saved key is only ever sent to the address it is already saved for, so
+  // there is nothing honest to do with one at a NEW address. The server enforces
+  // this by ignoring a caller's address on that path; the form says why instead
+  // of letting someone press a button that quietly does something else.
+  const savedKeyUsable = savedLast4 !== null && !changed;
+  const canTest = (hasKey || savedKeyUsable) && addressReady;
+  // Blank field means "keep what is saved", which is not something to save.
+  const canSave = hasKey && addressReady;
+  const needsRepaste = !hasKey && savedLast4 !== null && changed;
   const insecure = effective.startsWith('http://');
 
   const input = { providerId: wireId, key, baseURL: submittedBaseURL };
@@ -311,6 +352,11 @@ function DirectProviderForm({
           {connect.errorMessage}
         </p>
       )}
+      {needsRepaste && (
+        <p className="text-muted-foreground text-xs" data-testid="direct-provider-repaste">
+          Paste your key again to change the address.
+        </p>
+      )}
 
       <div className="flex items-center justify-between gap-2">
         {entry?.getKeyUrl === undefined ? (
@@ -348,7 +394,10 @@ function DirectProviderForm({
       {test.isPending ? (
         <ConnectProgressRow message="Checking your key…" />
       ) : test.result?.ok === true ? (
-        <ConnectedRow message="Key works" />
+        // Say WHICH key works. With a blank field the answer is about the key
+        // already saved, and "Key works" would read as being about what is on
+        // screen — which is nothing.
+        <ConnectedRow message={test.checkedSavedKey ? 'Your saved key works' : 'Key works'} />
       ) : test.result ? (
         <ConnectErrorRow message={test.result.message} onRetry={() => test.check(input)} />
       ) : null}

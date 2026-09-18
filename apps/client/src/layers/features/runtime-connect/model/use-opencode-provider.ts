@@ -144,6 +144,12 @@ export interface UseCheckProviderCredential {
   isPending: boolean;
   /** The answer, or `null` when nothing has been tried since the last reset. */
   result: CredentialCheckResult | null;
+  /**
+   * Whether the answer is about the key ALREADY SAVED rather than a typed one.
+   * The surface says which, because "it works" about the wrong key is worse
+   * than no answer at all.
+   */
+  checkedSavedKey: boolean;
   /** Forget the last answer — called when the key field is edited. */
   reset: () => void;
 }
@@ -164,11 +170,17 @@ export function useCheckProviderCredential(): UseCheckProviderCredential {
         key.trim().length > 0 ? key : null,
         baseURL?.trim() || null
       ),
+    // A refused key is rendered in the form, right where it can be fixed. A
+    // toast on top of that is the same news twice, one copy of it out of context.
+    meta: { suppressErrorToast: true },
   });
 
   return {
     check: (input: DirectProviderInput) => mutation.mutate(input),
     isPending: mutation.isPending,
+    // Read off the request that produced the answer, not off the field as it
+    // stands now — the field may have been edited since.
+    checkedSavedKey: (mutation.variables?.key ?? '').trim().length === 0,
     // A transport/HTTP failure is still an answer the person needs, so it is
     // reported in the same shape rather than as a separate error channel.
     result:
@@ -239,6 +251,8 @@ export function useConnectDirectProvider(): UseConnectDirectProvider {
       return { saved: true as const, message: null };
     },
     onSettled: () => setPhase(null),
+    // The refusal is shown under the key field, where it can be acted on.
+    meta: { suppressErrorToast: true },
     onSuccess: (result) => {
       if (!result.saved) return;
       void queryClient.invalidateQueries({ queryKey: [...REQUIREMENTS_KEY] });

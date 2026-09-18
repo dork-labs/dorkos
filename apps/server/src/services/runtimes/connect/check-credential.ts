@@ -129,6 +129,16 @@ function hostOf(url: string): string {
  * the timeout firing — is reported as unreachable rather than propagating, so a
  * key check always resolves to an answer a person can act on.
  *
+ * Redirects are NOT followed (`redirect: 'manual'`). The request carries the
+ * key in a header, and `fetch` re-sends headers on a cross-origin redirect, so
+ * following one would let any address a person was talked into entering bounce
+ * their key to a host they never named. A 3xx is reported as an address problem,
+ * which is what it is.
+ *
+ * The response body is never read: the status is the whole answer, and not
+ * reading means an enormous or slow body cannot hold the check open past its
+ * bound.
+ *
  * @param fetchImpl - The `fetch` seam to call.
  * @param url - Fully-formed probe URL (never carries the key).
  * @param headers - Auth headers for the probe.
@@ -142,7 +152,12 @@ async function probe(
   const timer = setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
   let response: Response;
   try {
-    response = await fetchImpl(url, { method: 'GET', headers, signal: controller.signal });
+    response = await fetchImpl(url, {
+      method: 'GET',
+      headers,
+      redirect: 'manual',
+      signal: controller.signal,
+    });
   } catch {
     return {
       ok: false,
@@ -161,11 +176,40 @@ async function probe(
       message: 'That key was not accepted. Check it and try again.',
     };
   }
+  if (response.status >= 300 && response.status < 400) {
+    return {
+      ok: false,
+      reason: 'unexpected',
+      message: `${hostOf(url)} answered with ${response.status}. Check the base URL.`,
+    };
+  }
   return {
     ok: false,
     reason: 'unexpected',
     message: `${hostOf(url)} answered with ${response.status}. Try again in a minute.`,
   };
+}
+
+/**
+ * Whether `url` is something DorkOS will send a key to: an `http:` or `https:`
+ * address. Anything else — `file:`, `gopher:`, a typo that parsed as a scheme —
+ * is refused before a key is attached to it.
+ *
+ * Private and loopback addresses are DELIBERATELY allowed. People run model
+ * servers on `localhost`, on a LAN box, and inside Docker networks, and this is
+ * a local-only, loopback-gated endpoint driven by the machine's own operator —
+ * blocking those would break the honest case to defend against a case that does
+ * not exist here.
+ *
+ * @param url - The fully-formed probe URL.
+ */
+function isWebAddress(url: string): boolean {
+  try {
+    const scheme = new URL(url).protocol;
+    return scheme === 'http:' || scheme === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -224,7 +268,15 @@ export async function checkProviderKey(
   // own address rather than at the address of the wire it happens to speak.
   const entered = input.baseURL ? normalizeBaseURL(input.baseURL) : '';
   const base = entered.length > 0 ? entered : (entry?.defaultBaseURL ?? spec.defaultBaseURL);
-  return probe(deps.fetchImpl ?? fetch, `${base}${spec.probePath}`, spec.headers(input.secret));
+  const url = `${base}${spec.probePath}`;
+  if (!isWebAddress(url)) {
+    return {
+      ok: false,
+      reason: 'unreachable',
+      message: 'The base URL must start with http:// or https://',
+    };
+  }
+  return probe(deps.fetchImpl ?? fetch, url, spec.headers(input.secret));
 }
 
 /**

@@ -35,7 +35,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import type { OpenRouterOAuthStatus, StoreCredentialResult } from '@dorkos/shared/runtime-connect';
 import { type CredentialStore } from '../../../core/credential-provider.js';
-import { persistProviderCredential } from '../../connect/credentials.js';
+import { persistProviderCredential } from '../../connect/persist-provider-credential.js';
 import { logger } from '../../../../lib/logger.js';
 
 /** OpenRouter API + auth origins (single source so tests and prod agree). */

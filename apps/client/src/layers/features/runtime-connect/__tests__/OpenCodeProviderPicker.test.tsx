@@ -676,7 +676,33 @@ describe('DirectProviderPath — nothing is saved until the key is accepted', ()
     expect(screen.getByLabelText('API key')).toHaveValue(SECRET);
   });
 
-  it('keeps the saved key when only the address changed, submitting an empty key', async () => {
+  it('will not move a saved key to a new address — it asks for the key again', async () => {
+    const user = userEvent.setup();
+    const transport = renderDirect({
+      getOpenCodeDirectSetup: vi.fn().mockResolvedValue({
+        providerId: 'openai',
+        baseURL: null,
+        key: { saved: true, last4: 'ab12' },
+      }),
+    });
+
+    await user.click(await screen.findByTestId('direct-provider-advanced'));
+    await user.clear(screen.getByLabelText(/base url/i));
+    await user.type(screen.getByLabelText(/base url/i), 'https://moved.example.com/v1');
+
+    // The server would ignore a caller-named address for a saved key, so the
+    // form says why rather than offering a button that quietly does otherwise.
+    expect(screen.getByTestId('direct-provider-repaste')).toHaveTextContent(
+      'Paste your key again to change the address.'
+    );
+    expect(screen.getByRole('button', { name: 'Save & connect' })).toBeDisabled();
+    // Testing the saved key against an address it was never saved for would
+    // answer a question nobody asked, so that is off too.
+    expect(screen.getByRole('button', { name: 'Test key' })).toBeDisabled();
+    expect(transport.storeProviderCredential).not.toHaveBeenCalled();
+  });
+
+  it('saves to the new address once the key is pasted again', async () => {
     const user = userEvent.setup();
     const transport = renderDirect({
       getOpenCodeDirectSetup: vi.fn().mockResolvedValue({
@@ -691,20 +717,17 @@ describe('DirectProviderPath — nothing is saved until the key is accepted', ()
     await user.click(await screen.findByTestId('direct-provider-advanced'));
     await user.clear(screen.getByLabelText(/base url/i));
     await user.type(screen.getByLabelText(/base url/i), 'https://moved.example.com/v1');
+    await user.type(screen.getByLabelText('API key'), 'sk-pasted-again');
+
+    expect(screen.queryByTestId('direct-provider-repaste')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Save & connect' }));
 
-    // An empty key is how "keep the one you already have" is said on the wire.
     await waitFor(() =>
       expect(transport.storeProviderCredential).toHaveBeenCalledWith(
         'openai',
-        '',
+        'sk-pasted-again',
         'https://moved.example.com/v1'
       )
-    );
-    expect(transport.checkProviderCredential).toHaveBeenCalledWith(
-      'openai',
-      null,
-      'https://moved.example.com/v1'
     );
   });
 
@@ -885,4 +908,128 @@ describe('DirectProviderPath — reopening tells the services apart by address',
     });
     expect(await screen.findByTestId('direct-provider-insecure')).toBeInTheDocument();
   });
+});
+
+describe('DirectProviderPath — when the saved settings cannot be read', () => {
+  it('offers a retry instead of spinning for good', async () => {
+    const user = userEvent.setup();
+    const getOpenCodeDirectSetup = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValue({ providerId: null, baseURL: null, key: { saved: false } });
+    const transport = createMockTransport({ getOpenCodeDirectSetup });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <DirectProviderPath />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+
+    // A failed read is not a read still running: no permanent spinner.
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Couldn’t load your saved settings.'
+    );
+    expect(screen.queryByTestId('connect-progress')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByLabelText('API key')).toBeInTheDocument();
+  });
+});
+
+describe('DirectProviderPath — the Test result says WHICH key it is about', () => {
+  function renderDirect(overrides: Partial<Parameters<typeof createMockTransport>[0]> = {}) {
+    const transport = createMockTransport(overrides);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <DirectProviderPath />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+    return transport;
+  }
+
+  const SAVED = {
+    getOpenCodeDirectSetup: vi.fn().mockResolvedValue({
+      providerId: 'openai',
+      baseURL: null,
+      key: { saved: true, last4: 'ab12' },
+    }),
+    checkProviderCredential: vi.fn().mockResolvedValue({ ok: true }),
+  };
+
+  it('says "Your saved key works" when the field is empty', async () => {
+    const user = userEvent.setup();
+    const transport = renderDirect({ ...SAVED });
+
+    await user.click(await screen.findByRole('button', { name: 'Test key' }));
+
+    expect(await screen.findByText('Your saved key works')).toBeInTheDocument();
+    expect(transport.checkProviderCredential).toHaveBeenCalledWith('openai', null, null);
+  });
+
+  it('treats a field holding only whitespace as empty', async () => {
+    const user = userEvent.setup();
+    const transport = renderDirect({ ...SAVED });
+
+    await user.type(await screen.findByLabelText('API key'), '   ');
+    await user.click(screen.getByRole('button', { name: 'Test key' }));
+
+    expect(await screen.findByText('Your saved key works')).toBeInTheDocument();
+    expect(transport.checkProviderCredential).toHaveBeenCalledWith('openai', null, null);
+  });
+
+  it('says "Key works" about a key that was actually typed', async () => {
+    const user = userEvent.setup();
+    renderDirect({ ...SAVED });
+
+    await user.type(await screen.findByLabelText('API key'), 'sk-typed-key');
+    await user.click(screen.getByRole('button', { name: 'Test key' }));
+
+    expect(await screen.findByText('Key works')).toBeInTheDocument();
+    expect(screen.queryByText('Your saved key works')).not.toBeInTheDocument();
+  });
+});
+
+describe('DirectProviderPath — another path’s saved source is not this form’s', () => {
+  function renderWithProvider(providerId: string) {
+    const transport = createMockTransport({
+      getOpenCodeDirectSetup: vi
+        .fn()
+        .mockResolvedValue({ providerId, baseURL: null, key: { saved: true, last4: 'ab12' } }),
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <DirectProviderPath />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+  }
+
+  it.each(['openrouter', 'ollama'])(
+    'treats a saved %s as nothing saved here — no prefill, no saved-key hint',
+    async (providerId) => {
+      renderWithProvider(providerId);
+
+      // `runtimes.opencode.provider` is shared with the cloud and local paths,
+      // so it can name a source this form does not own. Prefilling from it would
+      // claim a key that is not this form's and offer to overwrite it.
+      expect(await screen.findByRole('combobox')).toHaveTextContent('OpenAI');
+      expect(screen.getByLabelText('API key')).toHaveAttribute('placeholder', 'sk-…');
+      expect(screen.queryByLabelText(/base url/i)).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Test key' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Save & connect' })).toBeDisabled();
+    }
+  );
 });

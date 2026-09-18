@@ -15,9 +15,9 @@ import {
   readOpenCodeDirectSetup,
   readRuntimeKeyStatus,
   applyCodexApiKey,
-  ConnectError,
-  type ConfigReadWrite,
 } from '../credentials.js';
+import { ConnectError } from '../connect-error.js';
+import type { ConfigReadWrite } from '../persist-provider-credential.js';
 import type { SpawnFn } from '../delegated-login.js';
 
 /** In-memory encrypted-store double: `put` returns a `file:<name>` reference. */
@@ -388,48 +388,110 @@ describe('the key is checked BEFORE anything is saved (DOR-2123)', () => {
   });
 });
 
-describe('storeProviderCredential — keeping the key you already saved', () => {
-  it('re-checks and keeps the saved key when only the base URL changed', async () => {
-    // The person reopened the form, changed the address, and left the key field
-    // empty because they should not have to re-paste a key DorkOS already holds.
+describe('a saved key only ever goes to the address it is saved for', () => {
+  it('IGNORES a caller-named address and checks the saved key at the stored one', async () => {
+    // The exfiltration shape this refuses: name any address, send no key, and
+    // have DorkOS deliver the key it already holds to the address you named.
     const store = fakeStore();
     const config = fakeConfig();
     config.state.providers = { openai: 'file:openai' };
+    config.state.runtimes!.opencode.provider = 'openai';
+    config.state.runtimes!.opencode.baseURL = 'https://api.example.com/v1';
     const checkKey = vi.fn(acceptEverything);
 
-    const result = await storeProviderCredential(
-      { providerId: 'openai', secret: '', baseURL: 'https://moved.example.com/v1' },
-      {
-        store,
-        config,
-        checkKey,
-        credentials: fakeCredentials({ 'file:openai': SECRET }),
-      }
+    await storeProviderCredential(
+      { providerId: 'openai', secret: '', baseURL: 'https://attacker.example.com/v1' },
+      { store, config, checkKey, credentials: fakeCredentials({ 'file:openai': SECRET }) }
     );
 
-    // The saved key was the one checked — against the NEW address.
+    // The stored address, never the requested one.
     expect(checkKey).toHaveBeenCalledWith({
       providerId: 'openai',
       secret: SECRET,
-      baseURL: 'https://moved.example.com/v1',
+      baseURL: 'https://api.example.com/v1',
     });
-    // And it was kept rather than re-encrypted under a new reference, so a key
-    // held in a keychain or an env var is not silently copied into the file store.
+    expect(config.state.runtimes?.opencode.baseURL).toBe('https://api.example.com/v1');
+    // And the key was kept rather than re-encrypted under a new reference.
     expect(store.put).not.toHaveBeenCalled();
-    expect(config.state.providers).toEqual({ openai: 'file:openai' });
-    expect(config.state.runtimes?.opencode.provider).toBe('openai');
-    expect(config.state.runtimes?.opencode.baseURL).toBe('https://moved.example.com/v1');
-    expect(result).toEqual({ ref: 'file:openai' });
   });
 
-  it('saves nothing when the key it kept no longer works at the new address', async () => {
+  it('does the same on the Test path, which would otherwise be the same hole', async () => {
+    const config = fakeConfig();
+    config.state.providers = { openai: 'file:openai' };
+    config.state.runtimes!.opencode.provider = 'openai';
+    config.state.runtimes!.opencode.baseURL = 'https://api.example.com/v1';
+    const checkKey = vi.fn(acceptEverything);
+
+    await checkProviderCredential(
+      { providerId: 'openai', secret: null, baseURL: 'https://attacker.example.com/v1' },
+      { config, checkKey, credentials: fakeCredentials({ 'file:openai': SECRET }) }
+    );
+
+    expect(checkKey).toHaveBeenCalledWith({
+      providerId: 'openai',
+      secret: SECRET,
+      baseURL: 'https://api.example.com/v1',
+    });
+  });
+
+  it('honours a caller-named address once the key is actually pasted', async () => {
+    // Pasting the key is the person's own deliberate act, so the address they
+    // name with it is theirs to name. That is what makes the rule above a
+    // speed bump for a person and a wall for anyone else.
+    const store = fakeStore();
+    const config = fakeConfig();
+    config.state.providers = { openai: 'file:openai' };
+    config.state.runtimes!.opencode.provider = 'openai';
+    config.state.runtimes!.opencode.baseURL = 'https://api.example.com/v1';
+    const checkKey = vi.fn(acceptEverything);
+
+    await storeProviderCredential(
+      {
+        providerId: 'openai',
+        secret: 'sk-freshly-pasted',
+        baseURL: 'https://moved.example.com/v1',
+      },
+      { store, config, checkKey, credentials: fakeCredentials({ 'file:openai': SECRET }) }
+    );
+
+    expect(checkKey).toHaveBeenCalledWith({
+      providerId: 'openai',
+      secret: 'sk-freshly-pasted',
+      baseURL: 'https://moved.example.com/v1',
+    });
+    expect(config.state.runtimes?.opencode.baseURL).toBe('https://moved.example.com/v1');
+  });
+
+  it('does not inherit another service’s address when switching with a saved key', async () => {
+    const store = fakeStore();
+    const config = fakeConfig();
+    config.state.providers = { anthropic: 'file:anthropic' };
+    config.state.runtimes!.opencode.provider = 'openai';
+    config.state.runtimes!.opencode.baseURL = 'https://api.example.com/v1';
+    const checkKey = vi.fn(acceptEverything);
+
+    await storeProviderCredential(
+      { providerId: 'anthropic', secret: '' },
+      { store, config, checkKey, credentials: fakeCredentials({ 'file:anthropic': SECRET }) }
+    );
+
+    // The stored address belonged to OpenAI, so Anthropic gets none of it.
+    expect(checkKey).toHaveBeenCalledWith({
+      providerId: 'anthropic',
+      secret: SECRET,
+      baseURL: null,
+    });
+    expect(config.state.runtimes?.opencode.baseURL).toBeNull();
+  });
+
+  it('saves nothing when the saved key no longer works', async () => {
     const store = fakeStore();
     const config = fakeConfig();
     config.state.providers = { openai: 'file:openai' };
 
     await expect(
       storeProviderCredential(
-        { providerId: 'openai', secret: '', baseURL: 'https://moved.example.com/v1' },
+        { providerId: 'openai', secret: '' },
         {
           store,
           config,
@@ -439,7 +501,7 @@ describe('storeProviderCredential — keeping the key you already saved', () => 
       )
     ).rejects.toBeInstanceOf(ConnectError);
 
-    expect(config.state.runtimes?.opencode.baseURL).toBeNull();
+    expect(config.state.runtimes?.opencode.provider).toBeNull();
   });
 
   it('still refuses an empty key when nothing is saved for that service', async () => {
@@ -577,5 +639,82 @@ describe('reading back what is saved (the form remembers)', () => {
 
   it('refuses a runtime with no native key path', async () => {
     await expect(readRuntimeKeyStatus('opencode')).rejects.toBeInstanceOf(ConnectError);
+  });
+});
+
+describe('the real check runs on a save, not just an injected stand-in', () => {
+  it('refuses to store a key the service itself turns down, with only fetch stubbed', async () => {
+    // Every other test here injects `checkKey`, which proves the wiring but not
+    // the check. This one drives the GENUINE checker and stubs only the network,
+    // so a stub that happened to agree with the test cannot carry the assertion.
+    const store = fakeStore();
+    const config = fakeConfig();
+    const fetchImpl = vi.fn(
+      async () => new Response('', { status: 401 })
+    ) as unknown as typeof fetch;
+
+    await expect(
+      storeProviderCredential(
+        { providerId: 'openai', secret: SECRET },
+        { store, config, fetchImpl }
+      )
+    ).rejects.toThrow('That key was not accepted. Check it and try again.');
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(store.put).not.toHaveBeenCalled();
+    expect(config.state.providers).toEqual({});
+    expect(config.state.runtimes?.opencode.provider).toBeNull();
+  });
+
+  it('stores it when the genuine check passes', async () => {
+    const store = fakeStore();
+    const config = fakeConfig();
+    const fetchImpl = vi.fn(
+      async () => new Response('{"data":[]}', { status: 200 })
+    ) as unknown as typeof fetch;
+
+    await storeProviderCredential(
+      { providerId: 'openai', secret: SECRET },
+      { store, config, fetchImpl }
+    );
+
+    expect(store.put).toHaveBeenCalledWith('openai', SECRET);
+    expect(config.state.runtimes?.opencode.provider).toBe('openai');
+  });
+
+  it('runs the genuine check on a runtime key too', async () => {
+    const store = fakeStore();
+    const config = fakeConfig();
+    const fetchImpl = vi.fn(
+      async () => new Response('', { status: 401 })
+    ) as unknown as typeof fetch;
+
+    await expect(
+      storeRuntimeCredential('claude-code', SECRET, { store, config, fetchImpl })
+    ).rejects.toThrow('That key was not accepted. Check it and try again.');
+
+    expect(store.put).not.toHaveBeenCalled();
+    expect(config.state.providers).toEqual({});
+  });
+});
+
+describe('the last-4 hint never becomes the whole key', () => {
+  it('reports a short key as saved with no hint at all', async () => {
+    const config = fakeConfig();
+    config.state.providers = { openai: 'file:openai' };
+    config.state.runtimes!.opencode.provider = 'openai';
+
+    // Exactly four characters: "the last four" would BE the key.
+    const setup = await readOpenCodeDirectSetup({
+      config,
+      credentials: fakeCredentials({ 'file:openai': 'abcd' }),
+    });
+    expect(setup.key).toEqual({ saved: true, last4: '' });
+
+    const longer = await readOpenCodeDirectSetup({
+      config,
+      credentials: fakeCredentials({ 'file:openai': 'abcde' }),
+    });
+    expect(longer.key).toEqual({ saved: true, last4: 'bcde' });
   });
 });

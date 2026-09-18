@@ -230,7 +230,9 @@ function PasteKeyForm({
       {test.isPending ? (
         <ConnectProgressRow message="Checking your key…" />
       ) : test.result?.ok === true ? (
-        <ConnectedRow message="Key works" />
+        // Say WHICH key works: with a blank field the answer is about the key
+        // already saved, not about what is on screen.
+        <ConnectedRow message={test.checkedSavedKey ? 'Your saved key works' : 'Key works'} />
       ) : test.result ? (
         <ConnectErrorRow message={test.result.message} onRetry={() => test.check(key)} />
       ) : null}
