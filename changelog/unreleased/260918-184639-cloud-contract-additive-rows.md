@@ -5,6 +5,7 @@ covers:
   - 'feat(cloud-api): two inference refusal reasons — a daily limit and a spent turn budget (DOR-2090)'
   - 'docs(cloud-api): write down what a consumer owes an enum member it has never seen (DOR-2090)'
   - 'fix(cloud-api): make the doc-comment threshold guard a rule about numbers, not about English (DOR-2090)'
+  - 'fix(cloud-api): the seat activity event names its organization orgId, like the rest of the package (DOR-2090)'
 ---
 
 ### Added

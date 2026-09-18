@@ -409,7 +409,7 @@ describe('the seat reconciliation additions', () => {
 describe('the seat activity event', () => {
   const event = {
     eventId: 'sae_0001',
-    billingAccountId: 'bacct_0001',
+    orgId: 'org_0001',
     seatId: 'seat_0001',
     periodStart: '2026-08-31T00:00:00.000Z',
     periodEnd: '2026-09-30T00:00:00.000Z',
@@ -423,7 +423,7 @@ describe('the seat activity event', () => {
     expect(contract.SeatActivityEventSchema.safeParse(event).success).toBe(true);
     expect(Object.keys(contract.SeatActivityEventSchema.shape)).toEqual([
       'eventId',
-      'billingAccountId',
+      'orgId',
       'seatId',
       'periodStart',
       'periodEnd',

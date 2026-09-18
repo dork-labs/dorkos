@@ -505,9 +505,7 @@ export const SeatActivityEventSchema = z
     eventId: IdSchema.describe(
       'Idempotency key. A redelivery with the same key is a complete no-op.'
     ),
-    billingAccountId: IdSchema.describe(
-      'The account this activity is billed to, as an opaque identifier. A consumer groups by it and never parses it.'
-    ),
+    orgId: IdSchema.describe('The organization the seat belongs to. Opaque.'),
     seatId: IdSchema.describe(
       'Agent seats only. A person seat never produces a seat-activity event.'
     ),
