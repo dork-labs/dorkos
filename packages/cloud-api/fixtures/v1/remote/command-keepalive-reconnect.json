@@ -1,0 +1,5 @@
+{
+  "kind": "keepalive",
+  "id": "cmd_0003",
+  "reconnectAfterMs": 15000
+}

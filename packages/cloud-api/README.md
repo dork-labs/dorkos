@@ -42,9 +42,9 @@ body is neither.
 | Device link               | `POST /v1/device/code`, `POST /v1/device/token` (RFC 8628)                                                                                                               |
 | Instances                 | heartbeat, revoke, list, organization re-link                                                                                                                            |
 | Managed connections       | catalog, toolkits, connections, authentication flows, authority commands, executions, the lease-based event pull and acknowledgement, usage                              |
-| Billing                   | `GET /v1/entitlements`, `/v1/balance`, `/v1/usage`, `/v1/price-list`, `/v1/nudge`, `POST /v1/checkout`, `/v1/topup`, `/v1/portal`, `GET /v1/statement`                   |
+| Billing                   | `GET /v1/entitlements`, `/v1/balance`, `/v1/usage`, `/v1/price-list`, `/v1/nudge`, `POST /v1/checkout`, `/v1/topup`, `/v1/refunds`, `/v1/portal`, `GET /v1/statement`    |
 | Inference                 | `POST /v1/inference/tokens`, `GET /v1/inference/models`, token revocation                                                                                                |
-| Seats, orgs and addresses | organizations, membership, invitations, agents and claims, seats, addresses, grants, add-ons, the seat inbox, presence                                                   |
+| Seats, orgs and addresses | organizations, membership, invitations, agents and claims, seats, addresses, grants, add-ons, the seat inbox, presence, the seat activity event                          |
 | Remote access             | status, open/close, wake tokens, enrolment, canonical and custom addresses, designation, instance credentials, the command stream and its acknowledgement, event batches |
 | Shared                    | the `Problem` envelope, bearer auth, cursor pagination, the `X-DorkOS-Wire: 1` header                                                                                    |
 
@@ -71,13 +71,43 @@ Removing a field, or making an optional field required, is a `/v2` change, serve
 for at least two releases. A change to a field's meaning is the same thing wearing a disguise:
 if code that was correct before is wrong after, it is not additive.
 
+A route may accept **more than one request shape**. Publishing a second one beside the first is
+additive; withdrawing the first is not. `POST /v1/topup` is the worked example: it takes
+`TopupRequestSchema`, which names an amount, and still takes the `HostedPageRequestSchema` body
+it took before.
+
+**The response direction has its own rule, and it is the one that bites.** New members appear on
+existing enums in a minor — a new `Problem` code, a new refusal reason — so **a consumer must
+tolerate a value it has never seen**: show it rather than treat the response as broken. Parse the
+envelope, render `title` and `detail`, and branch only on the members you recognise. A client
+that hard-fails on an unknown member is a client that breaks on a release that added one, and
+this package cannot stop that from the schema side, because refusing to enumerate the members
+would leave a consumer with nothing to branch on at all.
+
+The thin client cannot soften this for you today: a body whose `code` is not in the published set
+fails `ProblemSchema` and arrives as `CloudApiResponseError` rather than `CloudApiProblemError`.
+The raw body is attached, so `error.body` still carries the `code` and the `title` the service
+sent. Widening `code` to an open string, so an unrecognised one stays a `Problem`, is a real
+improvement and a deliberate `/v2`-shaped decision about a published type, not something to slip
+into a minor.
+
+**What that looks like in practice.** A new field arrives optional, even when the service needs
+it: `AddressCreateRequestSchema.subject` and `SeatAssignRequestSchema.handle` are things the
+server cannot do without, and they are still optional here, because a client one release behind
+has to keep working while the row lands. Equally, a grammar the service already enforces is
+published as its own export (`HandleSchema`) rather than applied to a field a caller already
+sends — narrowing `handle` would make a request that parsed before fail afterwards, which is a
+`/v2` change however sensible it looks.
+
 ### Catalog blindness
 
 **No type here enumerates the subscription catalog or the model catalog.** `planId`, `skuId`,
 `modelId`, add-on kinds, `catalogVersion` and every other catalog-shaped identifier are opaque
 strings. Not a `z.enum`, and equally not a union of literals, a `z.nativeEnum`, a hand-written
 string-literal union, a `const` array a schema is derived from, or a value named in a
-`.describe()`, a `.default()` or an `@example`.
+`.describe()`, a `.default()` or an `@example`. "A new exported enum" reads through a union,
+because a union is how a named export would otherwise publish a set of literals without ever
+being asked to justify them.
 
 A _value_ a caller happens to be on is fine. The _set_ is not: this package publishes to public
 npm, and a `.d.ts` that enumerates the ladder publishes it permanently.
@@ -125,6 +155,11 @@ would be a comfortable claim and a false one:
 Nothing else carries an amount. In particular, no inference route does: not a rate, not a
 multiplier, not a unit cost. And no route anywhere carries a supplier's terms.
 
+`POST /v1/topup` carries an amount in the request (`TopupRequestSchema`), and `POST /v1/refunds`
+answers with the amount that came back. Neither publishes a minimum, a first-purchase ceiling or
+a refund window: those are server policy, and a request that misses one is refused with
+`topup_below_minimum`, `first_purchase_cap` or `refund_window_closed` rather than described here.
+
 Fields typed `SecretValueSchema` are returned **once**: hold them as credential references, never
 as configuration strings, and never log them.
 
@@ -135,8 +170,9 @@ naming the exported schema that validates each one. Both sides of the wire can i
 the same examples; `src/__tests__/fixtures.test.ts` proves every example is valid and that the
 manifest and the directory have not drifted apart.
 
-Every example is synthetic: opaque identifiers, RFC 2606 `.invalid` hosts, and no real catalog
-value anywhere.
+The corpus covers responses, stream events, and the request shapes a caller has to build itself
+(a top-up, a refund, a command acknowledgement). Every example is synthetic: opaque identifiers,
+RFC 2606 `.invalid` hosts, and no real catalog value anywhere.
 
 ```ts
 import entitlements from '@dork-labs/cloud-api/fixtures/v1/billing/entitlements-free.json' with { type: 'json' };

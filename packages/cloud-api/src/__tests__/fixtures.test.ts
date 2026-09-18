@@ -82,6 +82,25 @@ describe('conformance fixtures', () => {
     });
   }
 
+  it('holds payloads, not bare values', () => {
+    // Every fixture is an example of something a request or a response carries,
+    // which is always an object or an array. A bare JSON scalar would validate
+    // happily against a standalone enum and be a payload nothing sends.
+    //
+    // It would also be the one way a catalog value could reach this package
+    // unseen: `src/__tests__/catalog-blindness.test.ts` walks the schemas and
+    // the emitted declarations and never reads this directory, so a file
+    // containing the single string of a plan identifier would pass every check
+    // there is. Refusing the shape closes that door rather than trusting nobody
+    // to open it.
+    const offenders: string[] = [];
+    for (const rel of fixtureFiles()) {
+      const value: unknown = JSON.parse(readFileSync(path.join(fixturesRoot, rel), 'utf8'));
+      if (typeof value !== 'object' || value === null) offenders.push(`${rel}: ${typeof value}`);
+    }
+    expect(offenders).toEqual([]);
+  });
+
   it('reaches no real host, so nothing here can be mistaken for a live endpoint', () => {
     // RFC 2606 reserves `.invalid`: every URL in the corpus resolves nowhere on
     // purpose, so a fixture pasted into a test cannot accidentally call out.

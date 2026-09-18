@@ -59,6 +59,29 @@ export const MicroAmountSchema = z
   );
 
 /**
+ * A strictly positive integer count of micro-units carried as a string.
+ *
+ * The same unit and the same spelling as {@link MicroAmountSchema}, narrowed to
+ * the amounts a purchase can be made of: no zero, no negative, no leading zero.
+ * A request that names an amount uses this; a balance that reports one uses
+ * {@link MicroAmountSchema}, because a reported position can legitimately be
+ * zero or negative.
+ *
+ * The contract publishes no minimum and no ceiling. Both are server policy, and
+ * a request under or over one is refused with a `Problem` rather than described
+ * here.
+ */
+export const PositiveMicroAmountSchema = z
+  .string()
+  .regex(
+    /^[1-9][0-9]*$/,
+    'must be a positive base-10 integer count of micro-units carried as a string'
+  )
+  .describe(
+    'A strictly positive exact integer count of micro-units, carried as a string so no amount goes through a JavaScript number.'
+  );
+
+/**
  * A value returned once and never again.
  *
  * Marks a field the caller must persist at the moment it is received: a token,

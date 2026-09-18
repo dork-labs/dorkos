@@ -1,0 +1,14 @@
+{
+  "items": [
+    {
+      "id": "cmd_0001",
+      "leaseToken": "lt_0003",
+      "outcome": "applied"
+    },
+    {
+      "id": "cmd_0004",
+      "leaseToken": "lt_0004",
+      "outcome": "refused:enrolment-withdrawn"
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { IdSchema, SecretValueSchema, TimestampSchema } from './primitives.js';
+import { HandleSchema } from './seats.js';
 
 /**
  * How remote access is arranged for an instance.
@@ -32,6 +33,22 @@ export const RemoteStatusSchema = z
     url: z.string().url().optional().describe('The full URL, when the tunnel is open.'),
     openedAt: TimestampSchema.optional(),
     idleClosesAt: TimestampSchema.optional().describe('When an idle tunnel will close itself.'),
+    idleWindowSeconds: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe(
+        'How long the tunnel may sit idle before it closes itself. The window the instance is told to honour, in seconds.'
+      ),
+    drainDeadlineSeconds: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe(
+        'How long the instance has to finish work already in flight once it is asked to close, in seconds.'
+      ),
     lastActivityAt: TimestampSchema.optional(),
     alwaysAvailable: z
       .boolean()
@@ -231,6 +248,30 @@ export const RemoteCommandSchema = z
         id: IdSchema,
         leaseToken: z.string().min(1),
         wakeId: IdSchema,
+        leaseId: IdSchema.optional().describe(
+          'The lease the instance echoes when it reconnects. Opaque: the instance stores it and sends it back, and reads nothing from it.'
+        ),
+        address: z
+          .string()
+          .optional()
+          .describe('The address this instance is reachable at once the tunnel is open.'),
+        host: z.string().optional().describe('The host part of that address.'),
+        idleWindowSeconds: z
+          .number()
+          .int()
+          .nonnegative()
+          .optional()
+          .describe(
+            'How long the tunnel may sit idle before it closes itself, in seconds. The same window `RemoteStatusSchema` reports.'
+          ),
+        drainDeadlineSeconds: z
+          .number()
+          .int()
+          .nonnegative()
+          .optional()
+          .describe(
+            'How long the instance has to finish work already in flight once it is asked to close, in seconds.'
+          ),
       })
       .describe('Open the tunnel.'),
     z
@@ -266,7 +307,18 @@ export const RemoteCommandSchema = z
       })
       .describe('There is mail waiting for a seat.'),
     z
-      .object({ kind: z.literal('keepalive'), id: IdSchema })
+      .object({
+        kind: z.literal('keepalive'),
+        id: IdSchema,
+        reconnectAfterMs: z
+          .number()
+          .int()
+          .nonnegative()
+          .optional()
+          .describe(
+            'How long to wait before reconnecting if the stream drops. A convenience rather than a gap: the server-sent-events `retry:` field already carries the same number, and an instance that honours it needs nothing here.'
+          ),
+      })
       .describe('Nothing to do. Sent so a silent stream can be told from a dead one.'),
   ])
   .describe(
@@ -276,6 +328,35 @@ export const RemoteCommandSchema = z
 /** One event on the instance command stream. */
 export type RemoteCommand = z.infer<typeof RemoteCommandSchema>;
 
+/**
+ * What an instance did with one command it leased.
+ *
+ * Three settled outcomes, plus an open `refused:<slug>` family for a command an
+ * instance declined and can say why. The slug is bounded by {@link HandleSchema},
+ * so a refusal reason is a single lower-case routing token a log and a dashboard
+ * can group by without parsing prose.
+ *
+ * The family is open on purpose, and it is mechanism rather than catalog: a new
+ * reason to refuse a command is something the server learns to say without a
+ * package release, and no refusal names a subscription, a supplier or an
+ * amount. A client that does not recognise a slug shows the whole string.
+ *
+ * Built from the handle grammar itself rather than from a copy of its pattern,
+ * for two reasons. The two cannot drift apart while the doc above claims they
+ * match. And a template literal keeps the three settled outcomes narrowable: a
+ * plain `z.string()` branch would infer as `string`, which swallows the union
+ * and silently turns an exhaustive switch over this field into one TypeScript
+ * can no longer check.
+ */
+export const RemoteCommandOutcomeSchema = z
+  .union([z.enum(['applied', 'ignored', 'failed']), z.templateLiteral(['refused:', HandleSchema])])
+  .describe(
+    'What the instance did with a command: applied, ignored, failed, or refused with a slug bounded by the handle grammar.'
+  );
+
+/** What an instance did with one command it leased. */
+export type RemoteCommandOutcome = z.infer<typeof RemoteCommandOutcomeSchema>;
+
 /** `POST /v1/remote/commands/ack`. */
 export const RemoteCommandAckRequestSchema = z
   .object({
@@ -284,9 +365,7 @@ export const RemoteCommandAckRequestSchema = z
         z.object({
           id: IdSchema,
           leaseToken: z.string().min(1),
-          outcome: z
-            .enum(['applied', 'ignored', 'failed'])
-            .describe('What the instance did with the command.'),
+          outcome: RemoteCommandOutcomeSchema.describe('What the instance did with the command.'),
         })
       )
       .min(1)

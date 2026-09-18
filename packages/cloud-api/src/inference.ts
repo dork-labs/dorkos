@@ -123,6 +123,26 @@ export const InferenceTokenRevokeResponseSchema = z
  *
  * Mechanism: each value names a condition a caller can act on, and none of them
  * names a subscription, a model or a supplier.
+ *
+ * Two of them are easy to mistake for a neighbour, and the difference is the
+ * whole reason they are separate values rather than one:
+ *
+ *   - `daily_limit_reached` — the account's daily spending limit is reached.
+ *     The action is to wait for the reset, or to ask an administrator to raise
+ *     it. That is a different action from `balance_exhausted`, which is
+ *     answered by buying credit, so answering one with the other sends a person
+ *     to a checkout page that will not help them.
+ *   - `turn_budget_exhausted` — a single turn's extension budget or run width
+ *     bound was reached. The action is to end the turn, or to run less at once.
+ *     That is a different action from `rate_limited` or `concurrency_exceeded`,
+ *     which are answered by waiting and retrying the same work unchanged.
+ *
+ * What either limit is, and how it is arrived at, is not published here.
+ *
+ * This is a published vocabulary rather than a field: no response shape in this
+ * contract references it yet. Both sides can agree on the words before the row
+ * that carries them exists, and a reader should expect the field it eventually
+ * appears on to arrive in a later release.
  */
 export const InferenceRefusalReasonSchema = z
   .enum([
@@ -133,6 +153,8 @@ export const InferenceRefusalReasonSchema = z
     'token_revoked',
     'token_expired',
     'entitlement_required',
+    'daily_limit_reached',
+    'turn_budget_exhausted',
   ])
   .describe(
     'Why an inference request was refused. Conditions a caller can act on; nothing about what they bought.'

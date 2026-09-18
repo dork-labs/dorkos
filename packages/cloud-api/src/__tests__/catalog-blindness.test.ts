@@ -24,7 +24,9 @@
  * refusal reasons, `groupBy`, the RFC 8628 error set. Each says how the thing
  * works, not what anybody bought, and each named one is listed in
  * MECHANISM_ENUMS below with its reason, so adding a new one is a deliberate
- * edit rather than a silent widening.
+ * edit rather than a silent widening. "Exports an enum" reads through a union,
+ * because a union is how a named export would otherwise publish a set of
+ * literals without ever being asked to justify them.
  *
  * HOW THIS FILE CHECKS IT, in three layers:
  *
@@ -177,6 +179,7 @@ const MECHANISM_ENUMS: Record<string, string> = {
   RemoteStateSchema: 'where the tunnel is in its lifecycle',
   CustomAddressStatusSchema: 'where a hostname is in its setup',
   CertificateStateSchema: 'where a certificate is in its issuance',
+  RemoteCommandOutcomeSchema: 'what an instance did with a command it leased',
 };
 
 /**
@@ -227,6 +230,39 @@ function unwrap(node: z.ZodTypeAny): z.ZodTypeAny {
     return current;
   }
   return current;
+}
+
+/**
+ * Whether an exported schema publishes a set of literals under its own name.
+ *
+ * Looks one level into a union, and that is the whole point of it. `unwrap`
+ * reaches through `optional`, `nullable` and the rest, but never into a union's
+ * options — so `z.union([z.enum(['a', 'b']), z.string()])` publishes two
+ * literals under an export name and sails past a filter that only reads the top
+ * node. A union is the most natural shape an enum takes when somebody widens
+ * it, which makes it the one shape this registry could least afford to miss.
+ *
+ * It reuses {@link isEnumeration}, so a union of bare literals — the first shape
+ * the header of this file names — counts as well as a union containing an enum.
+ *
+ * One level is the deliberate limit, and it reaches slightly further than that
+ * sounds: a union of bare literals nested inside a union is caught anyway,
+ * because {@link isEnumeration} handles literal-unions itself. What still dodges
+ * is a union containing a union containing an ENUM. The answer to that is not
+ * more recursion: nothing in this package has any reason to publish one, and a
+ * reviewer who meets one should ask why rather than trust a guard to have
+ * walked it.
+ *
+ * @param schema - An exported schema.
+ */
+function publishesEnum(schema: z.ZodTypeAny): boolean {
+  const core = unwrap(schema);
+  const def = (core as unknown as { def: { type: string; options?: z.ZodTypeAny[] } }).def;
+  if (def.type === 'enum') return true;
+  if (def.type === 'union' && Array.isArray(def.options)) {
+    return def.options.some((option) => isEnumeration(unwrap(option)));
+  }
+  return false;
 }
 
 /** One node found by the walk, with the dotted path that reached it. */
@@ -355,10 +391,7 @@ describe('catalog blindness: the runtime schema tree', () => {
     // take, and it is the shape a person can be asked about. Anything new here
     // stays red until somebody writes down why it is mechanism.
     const exportedEnums = exportedSchemas()
-      .filter(([, schema]) => {
-        const def = (unwrap(schema) as unknown as { def: { type: string } }).def;
-        return def.type === 'enum';
-      })
+      .filter(([, schema]) => publishesEnum(schema))
       .map(([name]) => name)
       .sort();
 
@@ -525,6 +558,58 @@ describe('catalog blindness: the emitted declarations', () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it('writes no number into a doc comment, because a threshold is a number', () => {
+    // The catalog rule's quieter sibling. This package deliberately names the
+    // REFUSAL a threshold produces — `topup_below_minimum`, `first_purchase_cap`,
+    // `refund_window_closed`, `daily_limit_reached` — because a person has to be
+    // told what happened. The threshold itself is server policy and belongs
+    // nowhere here.
+    //
+    // A `.describe()` is not where that would leak. TSDoc is: it is prose,
+    // nobody writes a test against prose, and it is emitted into the `.d.ts`
+    // this package publishes to public npm.
+    //
+    // So the rule is the blunt one rather than a list of English words. An
+    // earlier version of this case looked for a policy word near a digit, and it
+    // was worse than useless in both directions: Prettier wraps these comments
+    // at 80 columns, so "The refund window is" and "30 days" land on different
+    // lines and no same-line pattern can see them — while `cap` inside
+    // "capability" and `rate` inside "enumerate" made ordinary prose a
+    // liability. A threshold is a NUMBER, wrapped or not, spelled however the
+    // author likes. The whole emitted surface carries six digits today, and
+    // every one of them is in the list below with its reason, which is the same
+    // bargain MECHANISM_ENUMS strikes: the exception is cheap, and a person
+    // writes it down.
+    const allowed: Array<[RegExp, string]> = [
+      [/^\s*\*\s*\d+\.\s/, 'an ordered-list marker in a doc comment'],
+      [/\/v\d+/g, 'the wire version in a route path'],
+      [/\d+\^\d+/g, 'an exponent, e.g. the precision limit of a float'],
+      [/\b(iso|rfc|utf|http)-?\s?\d+/gi, 'a standards reference'],
+      [/base-\d+/gi, 'the base a number is written in, as in base-10'],
+      [/X-DorkOS-Wire: \d+/g, 'this contract`s own header value'],
+      [/\b[1-5]\d{2}\b/g, 'an HTTP status code'],
+      [/\b\d{1,2}(st|nd|rd|th)\b/gi, 'a day of the month'],
+      [/\b\d{1,2}-day\b/gi, 'a length of a calendar month'],
+    ];
+
+    const offenders: string[] = [];
+    for (const [file, text] of emitted) {
+      for (const [index, line] of text.split('\n').entries()) {
+        if (!/^\s*(\/\*\*|\*)/.test(line)) continue;
+        let rest = line;
+        for (const [pattern] of allowed) rest = rest.replace(pattern, ' ');
+        if (/\d/.test(rest)) offenders.push(`${path.basename(file)}:${index + 1} ${line.trim()}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+    // The allowlist is the precision, so it has to stay a list somebody reads.
+    for (const [pattern, reason] of allowed) {
+      expect(reason.length, `${pattern} needs a real reason, not a placeholder`).toBeGreaterThan(
+        15
+      );
+    }
   });
 
   it('carries no @example tag, which would publish a value in a comment', () => {

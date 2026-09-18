@@ -5,6 +5,8 @@
   "url": "https://example-instance.remote.invalid",
   "openedAt": "2026-09-15T12:00:00.000Z",
   "idleClosesAt": "2026-10-15T12:00:00.000Z",
+  "idleWindowSeconds": 900,
+  "drainDeadlineSeconds": 30,
   "lastActivityAt": "2026-09-15T12:00:00.000Z",
   "alwaysAvailable": false
 }
