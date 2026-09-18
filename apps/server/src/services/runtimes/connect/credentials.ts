@@ -16,6 +16,14 @@
  *   needless secret-at-rest); `codex login status` (the requirements probe) is the
  *   single source of truth, so the store result carries no reference (`ref: null`).
  *
+ * Every save here runs the key past its own service FIRST
+ * ({@link checkRuntimeKey} / {@link checkProviderKey}) and stores nothing when
+ * it comes back refused — the fix for keys that saved cleanly and then failed on
+ * the first turn, far from the form that caused it (DOR-2123). The same module
+ * answers the read side, {@link readOpenCodeDirectSetup} and
+ * {@link readRuntimeKeyStatus}, so a reopened form shows what is already saved
+ * with a last-4 hint and nothing more of the secret.
+ *
  * This module also hosts the ONE way to persist an OpenCode provider credential
  * ({@link persistProviderCredential} / {@link storeProviderCredential}, task 2.8):
  * encrypt the secret to a reference, record it under `providers[providerId]`, and
@@ -25,12 +33,29 @@
  * @module services/runtimes/connect/credentials
  */
 import type { UserConfig } from '@dorkos/shared/config-schema';
-import type { StoreCredentialResult, DelegatedLoginResult } from '@dorkos/shared/runtime-connect';
-import { credentialStore, type CredentialStore } from '../../core/credential-provider.js';
+import type {
+  CredentialCheckResult,
+  DelegatedLoginResult,
+  OpenCodeDirectSetup,
+  RuntimeKeyStatus,
+  SavedKeyState,
+  StoreCredentialResult,
+} from '@dorkos/shared/runtime-connect';
+import {
+  credentialProvider,
+  credentialStore,
+  type CredentialProvider,
+  type CredentialStore,
+} from '../../core/credential-provider.js';
 import { configManager } from '../../core/config-manager.js';
+import { ANTHROPIC_PROVIDER_ID } from '../../core/credential-env.js';
 import { resolveCodexBinaryPath } from '../codex/check-dependencies.js';
 import { openCodeServerManager } from '../opencode/server-manager.js';
+import { checkProviderKey, checkRuntimeKey } from './check-credential.js';
+import { ConnectError } from './connect-error.js';
 import { pipeSecretToChild, type SpawnFn } from './delegated-login.js';
+
+export { ConnectError } from './connect-error.js';
 
 /** Runtime types the native paste-key endpoint accepts. */
 export const CREDENTIAL_RUNTIME_TYPES = ['claude-code', 'codex'] as const;
@@ -53,20 +78,18 @@ export interface StoreCredentialDeps {
   spawn?: SpawnFn;
   /** Codex binary resolver (tests inject; defaults to the adapter resolver). */
   resolveCodexBinary?: () => Promise<string | null>;
-}
-
-/**
- * A connect failure with an HTTP status hint. Carries an honest, secret-free
- * message the route surfaces to the Connect UI.
- */
-export class ConnectError extends Error {
-  /** HTTP status the route should map this failure to. */
-  readonly status: number;
-  constructor(message: string, status = 400) {
-    super(message);
-    this.name = 'ConnectError';
-    this.status = status;
-  }
+  /**
+   * Try the key against its own service before anything is stored (defaults to
+   * {@link checkRuntimeKey}). Injected in tests so a unit test never reaches the
+   * network — and so a test can prove nothing persists when the check says no.
+   */
+  checkKey?: (type: string, secret: string) => Promise<CredentialCheckResult>;
+  /**
+   * Credential read port used to resolve a stored reference back to its secret
+   * (defaults to the module singleton). Only ever used to compute a last-4 hint
+   * or to re-check a key the person kept — the secret never leaves the server.
+   */
+  credentials?: CredentialProvider;
 }
 
 /** Whether `type` is a runtime that supports the native paste-key path. */
@@ -101,6 +124,14 @@ export async function storeRuntimeCredential(
 
   const store = deps.store ?? credentialStore;
   const config = deps.config ?? configManager;
+
+  // Check BEFORE anything is written. A key that the service itself refuses used
+  // to save cleanly and then fail on the first turn, where nothing connected the
+  // failure back to the form that caused it (DOR-2123).
+  const check = await (deps.checkKey ?? checkRuntimeKey)(type, secret);
+  if (!check.ok) {
+    throw new ConnectError(check.message, 400);
+  }
 
   if (type === 'claude-code') {
     const ref = await store.put('anthropic', secret);
@@ -155,14 +186,35 @@ export type ProviderCredentialDeps = Pick<StoreCredentialDeps, 'store' | 'config
    * without spawning a process.
    */
   recycleSidecar?: () => Promise<void> | void;
+  /**
+   * Try the key against its own service before anything is stored (defaults to
+   * {@link checkProviderKey}). Injected in tests so a unit test never reaches
+   * the network.
+   */
+  checkKey?: (input: {
+    providerId: string;
+    secret: string;
+    baseURL?: string | null;
+  }) => Promise<CredentialCheckResult>;
+  /**
+   * Credential read port used to resolve a stored reference back to its secret
+   * (defaults to the module singleton), for the last-4 hint and for re-checking
+   * a key the person chose to keep.
+   */
+  credentials?: CredentialProvider;
 };
 
 /** A provider id + secret (+ optional base URL) to persist for OpenCode. */
 export interface ProviderCredentialInput {
   /** OpenAI-compatible provider id, e.g. `openai` or `openrouter`. */
   providerId: string;
-  /** The raw provider API key. Stored encrypted; never returned or logged. */
-  secret: string;
+  /**
+   * The raw provider API key — stored encrypted, never returned or logged — or
+   * `null` to KEEP the reference already recorded for this provider id. `null`
+   * is how "I only changed the base URL" is expressed: the person should not have
+   * to re-paste a key DorkOS already holds just to move it to another address.
+   */
+  secret: string | null;
   /**
    * Optional OpenAI-compatible base URL. When present (a string OR `null`) it is
    * written to `runtimes.opencode.baseURL` — `null` clears a stale override; when
@@ -190,8 +242,17 @@ export async function persistProviderCredential(
 ): Promise<StoreCredentialResult> {
   const store = deps.store ?? credentialStore;
   const config = deps.config ?? configManager;
-  const ref = await store.put(input.providerId, input.secret);
-  config.set('providers', { ...config.get('providers'), [input.providerId]: ref });
+  const providers = config.get('providers');
+  // A `null` secret keeps whatever reference is already recorded — deliberately
+  // WITHOUT re-storing it, so a key held in the OS keychain or an env var is not
+  // silently copied into the encrypted file store by a base-URL edit.
+  const ref =
+    input.secret === null
+      ? (providers[input.providerId] ?? null)
+      : await store.put(input.providerId, input.secret);
+  if (ref !== null) {
+    config.set('providers', { ...providers, [input.providerId]: ref });
+  }
   const runtimes = config.get('runtimes');
   const opencode = { ...runtimes.opencode, provider: input.providerId };
   if (input.baseURL !== undefined) {
@@ -215,23 +276,208 @@ export async function persistProviderCredential(
 }
 
 /**
- * Store an OpenCode Direct-provider key: validate inputs, then persist via
+ * Store an OpenCode Direct-provider key: validate inputs, try the key against
+ * the service it belongs to, and only then persist via
  * {@link persistProviderCredential}. Backs `POST /api/runtimes/opencode/provider/credential`.
  *
+ * An EMPTY secret means "keep the key you already have": the saved key is
+ * resolved, re-checked against the (possibly new) base URL, and the service +
+ * base URL are persisted without re-storing the secret. That is the path behind
+ * changing only an address — with nothing saved, an empty secret is still the
+ * 400 it always was.
+ *
  * @param input - Provider id + secret (+ optional base URL).
- * @param deps - Injectable store/config seams (production defaults).
+ * @param deps - Injectable store/config/check seams (production defaults).
  * @returns The stored credential reference (never the secret).
- * @throws {ConnectError} 400 when the provider id or secret is empty.
+ * @throws {ConnectError} 400 when the provider id is empty, when no key is
+ *   given and none is saved, or when the key is not accepted. Nothing is
+ *   persisted on any of those.
  */
 export async function storeProviderCredential(
   input: ProviderCredentialInput,
   deps: ProviderCredentialDeps = {}
 ): Promise<StoreCredentialResult> {
-  if (!input.providerId || input.providerId.trim().length === 0) {
+  const providerId = input.providerId?.trim() ?? '';
+  if (providerId.length === 0) {
     throw new ConnectError('A provider id is required.', 400);
   }
-  if (!input.secret || input.secret.trim().length === 0) {
+
+  const typed = input.secret?.trim() ? input.secret : null;
+  const saved = typed === null ? await readSavedSecret(providerId, deps) : null;
+  if (typed === null && saved === null) {
     throw new ConnectError('A non-empty API key is required.', 400);
   }
-  return persistProviderCredential(input, deps);
+
+  // A blank address is stored as "no override", not as an empty string — a field
+  // someone cleared should read back as cleared, not as a base URL of `""`.
+  const baseURL = input.baseURL === undefined ? undefined : input.baseURL?.trim() || null;
+  const check = await (deps.checkKey ?? checkProviderKey)({
+    providerId,
+    secret: typed ?? (saved as string),
+    baseURL: baseURL ?? null,
+  });
+  if (!check.ok) {
+    throw new ConnectError(check.message, 400);
+  }
+
+  return persistProviderCredential({ ...input, providerId, secret: typed, baseURL }, deps);
+}
+
+/**
+ * Try an OpenCode Direct-provider key without saving anything — the Test button,
+ * and the same check every save runs. Backs
+ * `POST /api/runtimes/opencode/provider/credential/check`.
+ *
+ * A `null` secret tries the key ALREADY saved for that service, which is what
+ * "Test" means on a reopened form where the key field is deliberately empty.
+ *
+ * @param input - Service id, the key to try (or `null` for the saved one), and
+ *   an optional base URL override.
+ * @param deps - Injectable config/credential-read/check seams.
+ * @returns Accepted, or an honest reason and a line a person can act on.
+ * @throws {ConnectError} 400 when the service id is unknown, or when there is no
+ *   key to try at all.
+ */
+export async function checkProviderCredential(
+  input: { providerId: string; secret: string | null; baseURL?: string | null },
+  deps: ProviderCredentialDeps = {}
+): Promise<CredentialCheckResult> {
+  const providerId = input.providerId?.trim() ?? '';
+  if (providerId.length === 0) {
+    throw new ConnectError('A provider id is required.', 400);
+  }
+  const secret = input.secret?.trim() ? input.secret : await readSavedSecret(providerId, deps);
+  if (secret === null) {
+    throw new ConnectError('Paste the key to check it.', 400);
+  }
+  return (deps.checkKey ?? checkProviderKey)({
+    providerId,
+    secret,
+    baseURL: input.baseURL ?? null,
+  });
+}
+
+/**
+ * Try a runtime's own key without saving anything. Backs
+ * `POST /api/runtimes/:type/credential/check`.
+ *
+ * A `null` secret tries the key already saved — which only Claude Code can do,
+ * because Codex's key lives in Codex's own login store and DorkOS holds no copy
+ * to try. Codex therefore asks for the key to be pasted.
+ *
+ * @param type - Runtime type (`'claude-code'` | `'codex'`).
+ * @param secret - The key to try, or `null` to try the saved one.
+ * @param deps - Injectable config/credential-read/check seams.
+ * @returns Accepted, or an honest reason and a line a person can act on.
+ * @throws {ConnectError} 400 when the runtime has no native key path, or when
+ *   there is no key to try at all.
+ */
+export async function checkRuntimeCredential(
+  type: string,
+  secret: string | null,
+  deps: StoreCredentialDeps = {}
+): Promise<CredentialCheckResult> {
+  if (!isCredentialRuntimeType(type)) {
+    throw new ConnectError(`"${type}" does not support a native API key.`, 400);
+  }
+  let candidate = secret?.trim() ? secret : null;
+  if (candidate === null && type === 'claude-code') {
+    candidate = await readSavedSecret(ANTHROPIC_PROVIDER_ID, deps);
+  }
+  if (candidate === null) {
+    throw new ConnectError('Paste the key to check it.', 400);
+  }
+  return (deps.checkKey ?? checkRuntimeKey)(type, candidate);
+}
+
+/**
+ * Resolve the secret behind the reference recorded for `providerId`, or `null`
+ * when none is recorded or the reference no longer resolves. Used only to
+ * re-check a key the person kept and to compute a last-4 hint; the plaintext
+ * never leaves this module.
+ *
+ * @param providerId - The provider id whose reference to resolve.
+ * @param deps - Injectable config/credential-read seams.
+ */
+async function readSavedSecret(
+  providerId: string,
+  deps: Pick<ProviderCredentialDeps, 'config' | 'credentials'>
+): Promise<string | null> {
+  const config = deps.config ?? configManager;
+  const ref = config.get('providers')[providerId];
+  if (!ref) return null;
+  const resolved = await (deps.credentials ?? credentialProvider).resolve(ref);
+  return resolved.ok ? resolved.secret : null;
+}
+
+/**
+ * The last four characters of a saved key, or "nothing saved". Four characters
+ * is the industry-standard masking a person recognizes their own key by; the
+ * hint is computed at read time and never stored, so there is no second copy of
+ * anything to keep in step.
+ *
+ * A key shorter than four characters would be echoed whole by a naive slice, so
+ * it reports as saved with an empty hint rather than leaking itself.
+ *
+ * @param secret - The resolved secret, or `null` when none is saved.
+ */
+function toSavedKeyState(secret: string | null): SavedKeyState {
+  if (secret === null) return { saved: false };
+  return { saved: true, last4: secret.length >= 4 ? secret.slice(-4) : '' };
+}
+
+/**
+ * What the OpenCode "your own key" form should show when it is reopened: the
+ * saved service, its base URL, and whether a key is already saved (last four
+ * characters only). Backs `GET /api/runtimes/opencode/provider`.
+ *
+ * Reopening the form used to show three empty fields, which reads as "nothing is
+ * connected" even though something was (DOR-2123). Nothing here is a new stored
+ * field — every value is read back from the config and credential store that
+ * already held it.
+ *
+ * @param deps - Injectable config/credential-read seams (production defaults).
+ */
+export async function readOpenCodeDirectSetup(
+  deps: Pick<ProviderCredentialDeps, 'config' | 'credentials'> = {}
+): Promise<OpenCodeDirectSetup> {
+  const config = deps.config ?? configManager;
+  const opencode = config.get('runtimes').opencode;
+  const providerId = opencode.provider ?? null;
+  const baseURL = opencode.baseURL ?? null;
+  if (providerId === null) {
+    return { providerId: null, baseURL, key: { saved: false } };
+  }
+  return {
+    providerId,
+    baseURL,
+    key: toSavedKeyState(await readSavedSecret(providerId, deps)),
+  };
+}
+
+/**
+ * Whether a runtime's own pasted key is already saved, for the key form's
+ * "Saved · ends in …" hint. Backs `GET /api/runtimes/:type/credential`.
+ *
+ * Claude Code reads the shared `providers.anthropic` reference — the same one
+ * its message-sender env seam resolves. Codex always reports nothing saved, and
+ * that is the truth rather than a gap: its key is written to Codex's own login
+ * store (`$CODEX_HOME/auth.json`) and DorkOS deliberately keeps no copy, so
+ * there is no hint it could honestly show.
+ *
+ * @param type - Runtime type (`'claude-code'` | `'codex'`).
+ * @param deps - Injectable config/credential-read seams (production defaults).
+ * @throws {ConnectError} 400 when the runtime has no native key path.
+ */
+export async function readRuntimeKeyStatus(
+  type: string,
+  deps: Pick<ProviderCredentialDeps, 'config' | 'credentials'> = {}
+): Promise<RuntimeKeyStatus> {
+  if (!isCredentialRuntimeType(type)) {
+    throw new ConnectError(`"${type}" does not support a native API key.`, 400);
+  }
+  if (type === 'codex') {
+    return { key: { saved: false } };
+  }
+  return { key: toSavedKeyState(await readSavedSecret(ANTHROPIC_PROVIDER_ID, deps)) };
 }

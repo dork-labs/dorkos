@@ -304,3 +304,118 @@ export interface OllamaPullResult {
   /** Honest failure message when not `ok`. */
   error?: string;
 }
+
+/**
+ * Why a pasted key was not accepted. Three outcomes, because a person fixes
+ * each one differently: `rejected` means the key itself is wrong, `unreachable`
+ * means nothing answered at that address, and `unexpected` means the server
+ * answered with something other than a yes or a no.
+ */
+export type CredentialCheckFailureReason = 'rejected' | 'unreachable' | 'unexpected';
+
+/** A key that was tried against its own service and accepted. */
+export interface CredentialCheckOk {
+  /** Always `true` — the service accepted the key. */
+  ok: true;
+}
+
+/** A key that was tried against its own service and not accepted. */
+export interface CredentialCheckFailure {
+  /** Always `false` — the key was not accepted, or nothing answered. */
+  ok: false;
+  /** Which kind of failure this was, so a caller can branch without parsing prose. */
+  reason: CredentialCheckFailureReason;
+  /**
+   * One plain-language line a non-developer can act on, e.g. "That key was not
+   * accepted. Check it and try again." Never contains the key.
+   */
+  message: string;
+}
+
+/**
+ * The result of trying a key against the service it belongs to, before anything
+ * is saved. Returned by both the explicit Test action and the check that runs
+ * ahead of every save.
+ */
+export type CredentialCheckResult = CredentialCheckOk | CredentialCheckFailure;
+
+/**
+ * Whether a key is already saved, and the last four characters of it when it is.
+ *
+ * Four characters is the industry-standard masking a person recognizes their own
+ * key by; nothing more of the secret ever leaves the server.
+ */
+export type SavedKeyState = { saved: false } | { saved: true; last4: string };
+
+/**
+ * What the OpenCode "your own key" form should show when it is reopened: the
+ * service that was chosen, the base URL that was entered, and whether a key is
+ * already saved. Secret-free by construction — only the last four characters of
+ * a saved key are ever included.
+ */
+export interface OpenCodeDirectSetup {
+  /** The saved service id (`openai`/`anthropic`/…), or `null` when none is saved. */
+  providerId: string | null;
+  /** The saved base URL override, or `null` when none was entered. */
+  baseURL: string | null;
+  /** Whether a key is saved for {@link providerId}, and its last four characters. */
+  key: SavedKeyState;
+}
+
+/**
+ * Whether a runtime's own pasted key is already saved, for the Claude/Codex key
+ * form's "Saved · ends in …" hint. Secret-free: last four characters at most.
+ */
+export interface RuntimeKeyStatus {
+  /** Whether a key is saved for this runtime, and its last four characters. */
+  key: SavedKeyState;
+}
+
+/**
+ * One service DorkOS can point OpenCode straight at with your own key.
+ *
+ * The client's picker and the server's allow-list both read this list, so the
+ * two cannot drift into a state where the form offers something the server
+ * refuses — the failure that let a free-text service id be saved and then fail
+ * at run time with no key mapping at all.
+ *
+ * OpenRouter is deliberately absent: it has its own cloud path with an OAuth
+ * sign-in, and offering it here twice would be two doors to one room.
+ */
+export interface OpenCodeDirectProvider {
+  /** Stable id persisted in config and used as the credential-store name. */
+  id: string;
+  /** Plain name shown in the picker, e.g. `OpenAI`. */
+  label: string;
+  /** Address DorkOS talks to when no base URL is entered. */
+  defaultBaseURL: string;
+  /** Format hint for the key field — a shape, never a real key. */
+  keyPlaceholder: string;
+  /** Where a person gets a key for this service. */
+  getKeyUrl: string;
+}
+
+/**
+ * The services the OpenCode "your own key" path offers, shared by the client
+ * picker and the server allow-list (see {@link OpenCodeDirectProvider}).
+ *
+ * "Other, OpenAI-compatible" is a CLIENT-side choice, not an entry here: it
+ * submits `openai` with a required base URL, because an OpenAI-compatible
+ * server speaks the OpenAI wire format by definition.
+ */
+export const OPENCODE_DIRECT_PROVIDERS: readonly OpenCodeDirectProvider[] = [
+  {
+    id: 'openai',
+    label: 'OpenAI',
+    defaultBaseURL: 'https://api.openai.com/v1',
+    keyPlaceholder: 'sk-…',
+    getKeyUrl: 'https://platform.openai.com/api-keys',
+  },
+  {
+    id: 'anthropic',
+    label: 'Anthropic',
+    defaultBaseURL: 'https://api.anthropic.com',
+    keyPlaceholder: 'sk-ant-…',
+    getKeyUrl: 'https://console.anthropic.com/settings/keys',
+  },
+] as const;

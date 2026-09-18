@@ -3,12 +3,17 @@ import { EventEmitter } from 'node:events';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import {
   DefaultCredentialProvider,
+  type CredentialProvider,
   type CredentialStore,
 } from '../../../core/credential-provider.js';
 import { resolveOpenCodeProviderEnv } from '../../../core/credential-env.js';
 import {
   storeRuntimeCredential,
   storeProviderCredential,
+  checkProviderCredential,
+  checkRuntimeCredential,
+  readOpenCodeDirectSetup,
+  readRuntimeKeyStatus,
   applyCodexApiKey,
   ConnectError,
   type ConfigReadWrite,
@@ -74,11 +79,47 @@ function fakeConfig(): ConfigReadWrite & { state: Partial<UserConfig> } {
 
 const SECRET = 'sk-ant-secret-do-not-echo';
 
+/**
+ * A key check that always accepts. Injected everywhere a test is about STORAGE
+ * rather than the check itself, so no unit test reaches the network — and so the
+ * tests that DO pin the refusal are unmistakable.
+ */
+const acceptEverything = () => Promise.resolve({ ok: true as const });
+
+/**
+ * A key check that always refuses, with the plain-language line the form shows.
+ */
+const refuseEverything = () =>
+  Promise.resolve({
+    ok: false as const,
+    reason: 'rejected' as const,
+    message: 'That key was not accepted. Check it and try again.',
+  });
+
+/** A credential read port over a fixed `ref → secret` map. */
+function fakeCredentials(secrets: Record<string, string>): CredentialProvider {
+  return {
+    resolve: async (ref: string) =>
+      ref in secrets
+        ? { ok: true as const, secret: secrets[ref] }
+        : {
+            ok: false as const,
+            reason: 'unresolved' as const,
+            ref,
+            message: 'No secret is stored for that reference.',
+          },
+  };
+}
+
 describe('storeRuntimeCredential', () => {
   it('stores a Claude key as a reference in providers.anthropic and never echoes the secret', async () => {
     const store = fakeStore();
     const config = fakeConfig();
-    const result = await storeRuntimeCredential('claude-code', SECRET, { store, config });
+    const result = await storeRuntimeCredential('claude-code', SECRET, {
+      store,
+      config,
+      checkKey: acceptEverything,
+    });
 
     expect(store.put).toHaveBeenCalledWith('anthropic', SECRET);
     expect(config.state.providers).toEqual({ anthropic: 'file:anthropic' });
@@ -91,7 +132,12 @@ describe('storeRuntimeCredential', () => {
     const store = fakeStore();
     const config = fakeConfig();
     const applyCodex = vi.fn(async () => ({ ok: true }));
-    const result = await storeRuntimeCredential('codex', SECRET, { store, config, applyCodex });
+    const result = await storeRuntimeCredential('codex', SECRET, {
+      store,
+      config,
+      applyCodex,
+      checkKey: acceptEverything,
+    });
 
     expect(applyCodex).toHaveBeenCalledWith(SECRET);
     // The key lives in $CODEX_HOME/auth.json; DorkOS keeps no encrypted copy and
@@ -107,7 +153,12 @@ describe('storeRuntimeCredential', () => {
     const applyCodex = vi.fn(async () => ({ ok: false, error: 'invalid key' }));
 
     await expect(
-      storeRuntimeCredential('codex', SECRET, { store, config, applyCodex })
+      storeRuntimeCredential('codex', SECRET, {
+        store,
+        config,
+        applyCodex,
+        checkKey: acceptEverything,
+      })
     ).rejects.toBeInstanceOf(ConnectError);
 
     // Nothing was stored, so there is nothing to roll back, and config is untouched.
@@ -118,13 +169,21 @@ describe('storeRuntimeCredential', () => {
 
   it('rejects an unknown runtime type', async () => {
     await expect(
-      storeRuntimeCredential('opencode', SECRET, { store: fakeStore(), config: fakeConfig() })
+      storeRuntimeCredential('opencode', SECRET, {
+        store: fakeStore(),
+        config: fakeConfig(),
+        checkKey: acceptEverything,
+      })
     ).rejects.toBeInstanceOf(ConnectError);
   });
 
   it('rejects an empty secret', async () => {
     await expect(
-      storeRuntimeCredential('claude-code', '   ', { store: fakeStore(), config: fakeConfig() })
+      storeRuntimeCredential('claude-code', '   ', {
+        store: fakeStore(),
+        config: fakeConfig(),
+        checkKey: acceptEverything,
+      })
     ).rejects.toBeInstanceOf(ConnectError);
   });
 });
@@ -169,7 +228,7 @@ describe('storeProviderCredential', () => {
     const config = fakeConfig();
     const result = await storeProviderCredential(
       { providerId: 'openai', secret: SECRET, baseURL: 'https://api.example.com/v1' },
-      { store, config }
+      { store, config, checkKey: acceptEverything }
     );
 
     expect(store.put).toHaveBeenCalledWith('openai', SECRET);
@@ -186,12 +245,15 @@ describe('storeProviderCredential', () => {
     const config = fakeConfig();
     config.state.runtimes!.opencode.baseURL = 'https://stale.example.com';
 
-    await storeProviderCredential({ providerId: 'openai', secret: SECRET }, { store, config });
+    await storeProviderCredential(
+      { providerId: 'openai', secret: SECRET },
+      { store, config, checkKey: acceptEverything }
+    );
     expect(config.state.runtimes?.opencode.baseURL).toBe('https://stale.example.com');
 
     await storeProviderCredential(
       { providerId: 'openai', secret: SECRET, baseURL: null },
-      { store, config }
+      { store, config, checkKey: acceptEverything }
     );
     expect(config.state.runtimes?.opencode.baseURL).toBeNull();
   });
@@ -205,7 +267,7 @@ describe('storeProviderCredential', () => {
 
     await storeProviderCredential(
       { providerId: 'openrouter', secret: SECRET },
-      { store, config, recycleSidecar }
+      { store, config, recycleSidecar, checkKey: acceptEverything }
     );
 
     expect(recycleSidecar).toHaveBeenCalledTimes(1);
@@ -214,12 +276,15 @@ describe('storeProviderCredential', () => {
   it('rejects an empty provider id or empty secret without storing', async () => {
     const store = fakeStore();
     await expect(
-      storeProviderCredential({ providerId: '  ', secret: SECRET }, { store, config: fakeConfig() })
+      storeProviderCredential(
+        { providerId: '  ', secret: SECRET },
+        { store, config: fakeConfig(), checkKey: acceptEverything }
+      )
     ).rejects.toBeInstanceOf(ConnectError);
     await expect(
       storeProviderCredential(
         { providerId: 'openai', secret: '  ' },
-        { store, config: fakeConfig() }
+        { store, config: fakeConfig(), checkKey: acceptEverything }
       )
     ).rejects.toBeInstanceOf(ConnectError);
     expect(store.put).not.toHaveBeenCalled();
@@ -244,7 +309,7 @@ describe('storeProviderCredential → resolveOpenCodeProviderEnv (end-to-end env
 
     await storeProviderCredential(
       { providerId: 'openai', secret: SECRET, baseURL: 'https://api.example.com/v1' },
-      { store, config }
+      { store, config, checkKey: acceptEverything }
     );
 
     // The same store backs the read port that resolves the `file:` reference.
@@ -255,5 +320,262 @@ describe('storeProviderCredential → resolveOpenCodeProviderEnv (end-to-end env
       OPENAI_API_KEY: SECRET,
       OPENAI_BASE_URL: 'https://api.example.com/v1',
     });
+  });
+});
+
+describe('the key is checked BEFORE anything is saved (DOR-2123)', () => {
+  it('refuses to store a runtime key the service will not accept, and writes nothing', async () => {
+    const store = fakeStore();
+    const config = fakeConfig();
+
+    await expect(
+      storeRuntimeCredential('claude-code', SECRET, {
+        store,
+        config,
+        checkKey: refuseEverything,
+      })
+    ).rejects.toThrow('That key was not accepted. Check it and try again.');
+
+    expect(store.put).not.toHaveBeenCalled();
+    expect(config.state.providers).toEqual({});
+  });
+
+  it('refuses to store a provider key the service will not accept, and writes nothing', async () => {
+    const store = fakeStore();
+    const config = fakeConfig();
+
+    await expect(
+      storeProviderCredential(
+        { providerId: 'openai', secret: SECRET, baseURL: 'https://api.example.com/v1' },
+        { store, config, checkKey: refuseEverything }
+      )
+    ).rejects.toBeInstanceOf(ConnectError);
+
+    expect(store.put).not.toHaveBeenCalled();
+    expect(config.state.providers).toEqual({});
+    expect(config.state.runtimes?.opencode.provider).toBeNull();
+    expect(config.state.runtimes?.opencode.baseURL).toBeNull();
+  });
+
+  it('checks the key against the base URL being saved, not the one already stored', async () => {
+    const store = fakeStore();
+    const config = fakeConfig();
+    const checkKey = vi.fn(acceptEverything);
+
+    await storeProviderCredential(
+      { providerId: 'openai', secret: SECRET, baseURL: 'https://new.example.com/v1' },
+      { store, config, checkKey }
+    );
+
+    expect(checkKey).toHaveBeenCalledWith({
+      providerId: 'openai',
+      secret: SECRET,
+      baseURL: 'https://new.example.com/v1',
+    });
+  });
+
+  it('stores a blank base URL as no override rather than as an empty address', async () => {
+    const store = fakeStore();
+    const config = fakeConfig();
+    config.state.runtimes!.opencode.baseURL = 'https://stale.example.com';
+
+    await storeProviderCredential(
+      { providerId: 'openai', secret: SECRET, baseURL: '   ' },
+      { store, config, checkKey: acceptEverything }
+    );
+
+    expect(config.state.runtimes?.opencode.baseURL).toBeNull();
+  });
+});
+
+describe('storeProviderCredential — keeping the key you already saved', () => {
+  it('re-checks and keeps the saved key when only the base URL changed', async () => {
+    // The person reopened the form, changed the address, and left the key field
+    // empty because they should not have to re-paste a key DorkOS already holds.
+    const store = fakeStore();
+    const config = fakeConfig();
+    config.state.providers = { openai: 'file:openai' };
+    const checkKey = vi.fn(acceptEverything);
+
+    const result = await storeProviderCredential(
+      { providerId: 'openai', secret: '', baseURL: 'https://moved.example.com/v1' },
+      {
+        store,
+        config,
+        checkKey,
+        credentials: fakeCredentials({ 'file:openai': SECRET }),
+      }
+    );
+
+    // The saved key was the one checked — against the NEW address.
+    expect(checkKey).toHaveBeenCalledWith({
+      providerId: 'openai',
+      secret: SECRET,
+      baseURL: 'https://moved.example.com/v1',
+    });
+    // And it was kept rather than re-encrypted under a new reference, so a key
+    // held in a keychain or an env var is not silently copied into the file store.
+    expect(store.put).not.toHaveBeenCalled();
+    expect(config.state.providers).toEqual({ openai: 'file:openai' });
+    expect(config.state.runtimes?.opencode.provider).toBe('openai');
+    expect(config.state.runtimes?.opencode.baseURL).toBe('https://moved.example.com/v1');
+    expect(result).toEqual({ ref: 'file:openai' });
+  });
+
+  it('saves nothing when the key it kept no longer works at the new address', async () => {
+    const store = fakeStore();
+    const config = fakeConfig();
+    config.state.providers = { openai: 'file:openai' };
+
+    await expect(
+      storeProviderCredential(
+        { providerId: 'openai', secret: '', baseURL: 'https://moved.example.com/v1' },
+        {
+          store,
+          config,
+          checkKey: refuseEverything,
+          credentials: fakeCredentials({ 'file:openai': SECRET }),
+        }
+      )
+    ).rejects.toBeInstanceOf(ConnectError);
+
+    expect(config.state.runtimes?.opencode.baseURL).toBeNull();
+  });
+
+  it('still refuses an empty key when nothing is saved for that service', async () => {
+    const store = fakeStore();
+    await expect(
+      storeProviderCredential(
+        { providerId: 'openai', secret: '' },
+        {
+          store,
+          config: fakeConfig(),
+          checkKey: acceptEverything,
+          credentials: fakeCredentials({}),
+        }
+      )
+    ).rejects.toThrow('A non-empty API key is required.');
+    expect(store.put).not.toHaveBeenCalled();
+  });
+});
+
+describe('checkProviderCredential / checkRuntimeCredential (the Test button)', () => {
+  it('tries a typed key and saves nothing', async () => {
+    const store = fakeStore();
+    const config = fakeConfig();
+
+    const result = await checkProviderCredential(
+      { providerId: 'openai', secret: SECRET, baseURL: null },
+      { store, config, checkKey: acceptEverything }
+    );
+
+    expect(result).toEqual({ ok: true });
+    expect(store.put).not.toHaveBeenCalled();
+    expect(config.state.runtimes?.opencode.provider).toBeNull();
+  });
+
+  it('tries the SAVED key when the key field is empty', async () => {
+    const config = fakeConfig();
+    config.state.providers = { openai: 'file:openai' };
+    const checkKey = vi.fn(acceptEverything);
+
+    await checkProviderCredential(
+      { providerId: 'openai', secret: null },
+      { config, checkKey, credentials: fakeCredentials({ 'file:openai': SECRET }) }
+    );
+
+    expect(checkKey).toHaveBeenCalledWith({
+      providerId: 'openai',
+      secret: SECRET,
+      baseURL: null,
+    });
+  });
+
+  it('asks for a key when there is nothing typed and nothing saved', async () => {
+    await expect(
+      checkProviderCredential(
+        { providerId: 'openai', secret: null },
+        { config: fakeConfig(), checkKey: acceptEverything, credentials: fakeCredentials({}) }
+      )
+    ).rejects.toThrow('Paste the key to check it.');
+  });
+
+  it('tries Claude Code’s saved key, and asks Codex for a pasted one', async () => {
+    const config = fakeConfig();
+    config.state.providers = { anthropic: 'file:anthropic' };
+    const credentials = fakeCredentials({ 'file:anthropic': SECRET });
+    const checkKey = vi.fn(() => Promise.resolve({ ok: true as const }));
+
+    await expect(
+      checkRuntimeCredential('claude-code', null, { config, credentials, checkKey })
+    ).resolves.toEqual({ ok: true });
+    expect(checkKey).toHaveBeenCalledWith('claude-code', SECRET);
+
+    // Codex's key lives in Codex's own login store, so DorkOS holds no copy to try.
+    await expect(
+      checkRuntimeCredential('codex', null, { config, credentials, checkKey })
+    ).rejects.toThrow('Paste the key to check it.');
+  });
+
+  it('refuses a runtime with no key of its own', async () => {
+    await expect(checkRuntimeCredential('opencode', SECRET)).rejects.toBeInstanceOf(ConnectError);
+  });
+});
+
+describe('reading back what is saved (the form remembers)', () => {
+  it('reports the saved service, base URL, and the last FOUR characters of the key', async () => {
+    const config = fakeConfig();
+    config.state.providers = { openai: 'file:openai' };
+    config.state.runtimes!.opencode.provider = 'openai';
+    config.state.runtimes!.opencode.baseURL = 'https://api.example.com/v1';
+
+    const setup = await readOpenCodeDirectSetup({
+      config,
+      credentials: fakeCredentials({ 'file:openai': SECRET }),
+    });
+
+    expect(setup).toEqual({
+      providerId: 'openai',
+      baseURL: 'https://api.example.com/v1',
+      key: { saved: true, last4: SECRET.slice(-4) },
+    });
+    // Everything BUT the last four characters stays on the server.
+    expect(JSON.stringify(setup)).not.toContain(SECRET);
+  });
+
+  it('reports nothing saved when no service has been chosen', async () => {
+    const setup = await readOpenCodeDirectSetup({
+      config: fakeConfig(),
+      credentials: fakeCredentials({}),
+    });
+    expect(setup).toEqual({ providerId: null, baseURL: null, key: { saved: false } });
+  });
+
+  it('reports nothing saved when the stored reference no longer resolves', async () => {
+    const config = fakeConfig();
+    config.state.providers = { openai: 'file:openai' };
+    config.state.runtimes!.opencode.provider = 'openai';
+
+    const setup = await readOpenCodeDirectSetup({ config, credentials: fakeCredentials({}) });
+    expect(setup.key).toEqual({ saved: false });
+  });
+
+  it('reports Claude Code’s saved key by its last four, and Codex as never saved', async () => {
+    const config = fakeConfig();
+    config.state.providers = { anthropic: 'file:anthropic' };
+    const credentials = fakeCredentials({ 'file:anthropic': SECRET });
+
+    await expect(readRuntimeKeyStatus('claude-code', { config, credentials })).resolves.toEqual({
+      key: { saved: true, last4: SECRET.slice(-4) },
+    });
+    // Codex's key is written to $CODEX_HOME/auth.json and DorkOS keeps no copy,
+    // so "not saved" is the truth here, not a gap.
+    await expect(readRuntimeKeyStatus('codex', { config, credentials })).resolves.toEqual({
+      key: { saved: false },
+    });
+  });
+
+  it('refuses a runtime with no native key path', async () => {
+    await expect(readRuntimeKeyStatus('opencode')).rejects.toBeInstanceOf(ConnectError);
   });
 });
