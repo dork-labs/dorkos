@@ -147,11 +147,15 @@ export const AgentClaimRequestSchema = z
     authEnabled: z
       .boolean()
       .optional()
-      .describe('Whether the reporting instance has a local sign-in. Absent reads as false.'),
+      .describe(
+        'Whether the reporting instance has a local sign-in. The server reads absent as false; the parsed value is still undefined, because a default here would be a claim about what the client sent.'
+      ),
     hasUsers: z
       .boolean()
       .optional()
-      .describe('Whether the reporting instance has any local users. Absent reads as false.'),
+      .describe(
+        'Whether the reporting instance has any local users. The server reads absent as false; the parsed value is still undefined.'
+      ),
   })
   .describe(
     'An instance asserting a claim to an agent identity. Mints nothing until a person approves it.'
@@ -250,7 +254,7 @@ export const AddressCreateRequestSchema = z
       .boolean()
       .optional()
       .describe(
-        'Somebody accepting, explicitly, that an agent is being given an address while the reporting machine has no local sign-in. Spelled in full on purpose: a shorter name invites a default, and defaulting it would be the whole problem. Absent reads as not accepted.'
+        'Somebody accepting, explicitly, that an agent is being given an address while the reporting machine has no local sign-in. Spelled in full on purpose: a shorter name invites a default, and defaulting it would be the whole problem. The server reads absent as not accepted; the parsed value is still undefined.'
       ),
   })
   .describe('Issue an address to a seat.');
@@ -501,7 +505,9 @@ export const SeatActivityEventSchema = z
     eventId: IdSchema.describe(
       'Idempotency key. A redelivery with the same key is a complete no-op.'
     ),
-    billingAccountId: IdSchema,
+    billingAccountId: IdSchema.describe(
+      'The account this activity is billed to, as an opaque identifier. A consumer groups by it and never parses it.'
+    ),
     seatId: IdSchema.describe(
       'Agent seats only. A person seat never produces a seat-activity event.'
     ),
@@ -523,7 +529,9 @@ export const SeatActivityEventSchema = z
       .describe('What made the seat active. Mechanism: it names a kind of activity, nothing else.'),
     sourceKind: z
       .enum(['seat', 'connected-channel', 'addon'])
-      .describe('What kind of thing the activity came from.'),
+      .describe(
+        'What kind of thing the activity came from. Deliberately not the inbox`s own source kinds: `addon` is not a place mail arrives from, and `email` is absent because no mail source is ever named here. Do not reuse inbox handling on this field.'
+      ),
     sourceRef: z.string().describe('Opaque. Never a sender, never anything from a message.'),
   })
   .describe(

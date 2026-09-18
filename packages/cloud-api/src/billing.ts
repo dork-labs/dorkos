@@ -319,7 +319,7 @@ export const HostedPageRequestSchema = z
       .optional()
       .describe('Where to send the person when the hosted page is done.'),
   })
-  .describe('A request for a hosted checkout, top-up or billing-portal page.');
+  .describe('A request for a hosted checkout or billing-portal page.');
 
 /**
  * The hosted page to open.
@@ -358,6 +358,14 @@ export const StatementResponseSchema = z
  *
  * {@link HostedPageRequestSchema} stays the shape for `POST /v1/checkout` and
  * `POST /v1/portal`, which name a hosted page rather than an amount.
+ *
+ * `amountMicro` is required, because a top-up request that names no amount is
+ * not a top-up request. That does not make this row breaking: this shape is
+ * published BESIDE the hosted-page request the route accepted before, not in
+ * place of it. Within `/v1` a request shape this package has already published
+ * keeps being accepted — withdrawing one is a `/v2` change — so a caller on the
+ * older release keeps working, and a caller that wants to name an amount sends
+ * this.
  */
 export const TopupRequestSchema = z
   .object({

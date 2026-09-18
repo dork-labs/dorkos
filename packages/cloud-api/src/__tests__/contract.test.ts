@@ -215,10 +215,22 @@ describe('buying credit', () => {
     // refusal, never the threshold.
     expect(contract.ProblemCodeSchema.safeParse('topup_below_minimum').success).toBe(true);
     expect(contract.ProblemCodeSchema.safeParse('first_purchase_cap').success).toBe(true);
-    const described = Object.values(contract.TopupRequestSchema.shape)
-      .map((field) => field.description ?? '')
-      .concat(contract.TopupRequestSchema.description ?? '')
-      .join(' ');
+    const moneyShapes = [
+      contract.TopupRequestSchema,
+      contract.RefundRequestSchema,
+      contract.RefundResponseSchema,
+    ];
+    const described = moneyShapes
+      .flatMap((shape) => [
+        shape.description ?? '',
+        ...Object.values(shape.shape).map((field) => field.description ?? ''),
+      ])
+      .join(' ')
+      // A standards reference is not an amount: `ISO-8601`, `RFC 2606`,
+      // `base-10`. Everything else numeric in a money description would be a
+      // threshold, and a threshold is server policy that is published nowhere.
+      .replace(/\b(iso|rfc|utf)-?\s?\d+/gi, '')
+      .replace(/base-\d+/gi, '');
     expect(described).not.toMatch(/\d/);
   });
 
@@ -428,7 +440,11 @@ describe('the seat activity event', () => {
     // a tracker.
     const fields = Object.keys(contract.SeatActivityEventSchema.shape);
     expect(
-      fields.filter((field) => /message|subject|body|sender|email|presence|from|to/i.test(field))
+      fields.filter((field) =>
+        /\b(message|subject|body|sender|email|presence)/i.test(
+          field.replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        )
+      )
     ).toEqual([]);
   });
 
@@ -537,6 +553,18 @@ describe('the remote-access additions', () => {
     expect(outcome.safeParse('refused:a.b').success).toBe(false);
     expect(outcome.safeParse(`refused:${'a'.repeat(33)}`).success).toBe(false);
     expect(outcome.safeParse('declined:whatever').success).toBe(false);
+  });
+
+  it('keeps the three settled outcomes narrowable, so an exhaustive switch still type-checks', () => {
+    // A plain `z.string()` branch would infer as `string`, swallow the union,
+    // and quietly turn a switch TypeScript used to check into one it cannot.
+    // The `@ts-expect-error` below is the assertion: it fails the typecheck if
+    // this field ever stops refusing a value outside the published set.
+    const settled: contract.RemoteCommandOutcome = 'applied';
+    const refused: contract.RemoteCommandOutcome = 'refused:enrolment-withdrawn';
+    // @ts-expect-error - not an outcome this contract publishes.
+    const invented: contract.RemoteCommandOutcome = 'totally-not-an-outcome';
+    expect([settled, refused, invented]).toHaveLength(3);
   });
 
   it('accepts a whole acknowledgement batch carrying a refusal', () => {

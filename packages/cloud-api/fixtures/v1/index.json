@@ -35,6 +35,8 @@
     "inference/token.json": "InferenceTokenSchema",
     "inference/models.json": "InferenceModelsResponseSchema",
     "inference/token-revoke.json": "InferenceTokenRevokeResponseSchema",
+    "inference/refusal-daily-limit-reached.json": "InferenceRefusalReasonSchema",
+    "inference/refusal-turn-budget-exhausted.json": "InferenceRefusalReasonSchema",
     "seats/org.json": "OrgSchema",
     "seats/members.json": "MemberListResponseSchema",
     "seats/invitation.json": "InvitationSchema",

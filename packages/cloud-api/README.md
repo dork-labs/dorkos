@@ -85,7 +85,9 @@ sends — narrowing `handle` would make a request that parsed before fail afterw
 `modelId`, add-on kinds, `catalogVersion` and every other catalog-shaped identifier are opaque
 strings. Not a `z.enum`, and equally not a union of literals, a `z.nativeEnum`, a hand-written
 string-literal union, a `const` array a schema is derived from, or a value named in a
-`.describe()`, a `.default()` or an `@example`.
+`.describe()`, a `.default()` or an `@example`. "A new exported enum" reads through a union,
+because a union is how a named export would otherwise publish a set of literals without ever
+being asked to justify them.
 
 A _value_ a caller happens to be on is fine. The _set_ is not: this package publishes to public
 npm, and a `.d.ts` that enumerates the ladder publishes it permanently.

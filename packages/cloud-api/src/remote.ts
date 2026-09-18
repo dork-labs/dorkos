@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { IdSchema, SecretValueSchema, TimestampSchema } from './primitives.js';
+import { HandleSchema } from './seats.js';
 
 /**
  * How remote access is arranged for an instance.
@@ -331,25 +332,24 @@ export type RemoteCommand = z.infer<typeof RemoteCommandSchema>;
  * What an instance did with one command it leased.
  *
  * Three settled outcomes, plus an open `refused:<slug>` family for a command an
- * instance declined and can say why. The slug is bounded by the handle grammar
- * (`HandleSchema` in the seats module), so a refusal reason is a single lower-case routing
- * token a log and a dashboard can group by without parsing prose.
+ * instance declined and can say why. The slug is bounded by {@link HandleSchema},
+ * so a refusal reason is a single lower-case routing token a log and a dashboard
+ * can group by without parsing prose.
  *
  * The family is open on purpose, and it is mechanism rather than catalog: a new
  * reason to refuse a command is something the server learns to say without a
  * package release, and no refusal names a subscription, a supplier or an
  * amount. A client that does not recognise a slug shows the whole string.
+ *
+ * Built from the handle grammar itself rather than from a copy of its pattern,
+ * for two reasons. The two cannot drift apart while the doc above claims they
+ * match. And a template literal keeps the three settled outcomes narrowable: a
+ * plain `z.string()` branch would infer as `string`, which swallows the union
+ * and silently turns an exhaustive switch over this field into one TypeScript
+ * can no longer check.
  */
 export const RemoteCommandOutcomeSchema = z
-  .union([
-    z.enum(['applied', 'ignored', 'failed']),
-    z
-      .string()
-      .regex(
-        /^refused:[a-z0-9][a-z0-9_-]{0,30}[a-z0-9]$/,
-        'must be `refused:` followed by a slug in the handle grammar'
-      ),
-  ])
+  .union([z.enum(['applied', 'ignored', 'failed']), z.templateLiteral(['refused:', HandleSchema])])
   .describe(
     'What the instance did with a command: applied, ignored, failed, or refused with a slug bounded by the handle grammar.'
   );

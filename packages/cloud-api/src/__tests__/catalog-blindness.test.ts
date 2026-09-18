@@ -24,7 +24,9 @@
  * refusal reasons, `groupBy`, the RFC 8628 error set. Each says how the thing
  * works, not what anybody bought, and each named one is listed in
  * MECHANISM_ENUMS below with its reason, so adding a new one is a deliberate
- * edit rather than a silent widening.
+ * edit rather than a silent widening. "Exports an enum" reads through a union,
+ * because a union is how a named export would otherwise publish a set of
+ * literals without ever being asked to justify them.
  *
  * HOW THIS FILE CHECKS IT, in three layers:
  *
@@ -177,6 +179,7 @@ const MECHANISM_ENUMS: Record<string, string> = {
   RemoteStateSchema: 'where the tunnel is in its lifecycle',
   CustomAddressStatusSchema: 'where a hostname is in its setup',
   CertificateStateSchema: 'where a certificate is in its issuance',
+  RemoteCommandOutcomeSchema: 'what an instance did with a command it leased',
 };
 
 /**
@@ -203,6 +206,30 @@ function isEnumeration(node: z.ZodTypeAny): boolean {
       const optionDef = (option as unknown as { def: { type: string } }).def;
       return optionDef.type === 'literal';
     });
+  }
+  return false;
+}
+
+/**
+ * Whether an exported schema publishes a set of literals under its own name.
+ *
+ * Looks one level into a union, and that is the whole point of it. `unwrap`
+ * reaches through `optional`, `nullable` and the rest, but never into a union's
+ * options — so `z.union([z.enum(['a', 'b']), z.string()])` publishes two
+ * literals under an export name and sails past a filter that only reads the top
+ * node. A union is the most natural shape an enum takes when somebody widens
+ * it, which makes it the one shape this registry could least afford to miss.
+ *
+ * @param schema - An exported schema.
+ */
+function publishesEnum(schema: z.ZodTypeAny): boolean {
+  const core = unwrap(schema);
+  const def = (core as unknown as { def: { type: string; options?: z.ZodTypeAny[] } }).def;
+  if (def.type === 'enum') return true;
+  if (def.type === 'union' && Array.isArray(def.options)) {
+    return def.options.some(
+      (option) => (unwrap(option) as unknown as { def: { type: string } }).def.type === 'enum'
+    );
   }
   return false;
 }
@@ -355,10 +382,7 @@ describe('catalog blindness: the runtime schema tree', () => {
     // take, and it is the shape a person can be asked about. Anything new here
     // stays red until somebody writes down why it is mechanism.
     const exportedEnums = exportedSchemas()
-      .filter(([, schema]) => {
-        const def = (unwrap(schema) as unknown as { def: { type: string } }).def;
-        return def.type === 'enum';
-      })
+      .filter(([, schema]) => publishesEnum(schema))
       .map(([name]) => name)
       .sort();
 
