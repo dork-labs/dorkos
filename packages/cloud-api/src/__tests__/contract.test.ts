@@ -481,6 +481,52 @@ describe('the seat activity event', () => {
   });
 });
 
+describe('the inference refusal reasons', () => {
+  it('keeps every reason it published before, which is what additive means', () => {
+    for (const reason of [
+      'balance_exhausted',
+      'rate_limited',
+      'concurrency_exceeded',
+      'model_unavailable',
+      'token_revoked',
+      'token_expired',
+      'entitlement_required',
+    ]) {
+      expect(contract.InferenceRefusalReasonSchema.safeParse(reason).success).toBe(true);
+    }
+  });
+
+  it('separates a daily limit from an empty balance, because the action differs', () => {
+    // `balance_exhausted` is answered by buying credit. A daily limit is
+    // answered by waiting for the reset or asking an administrator to raise it,
+    // and answering one with the other sends a person to a checkout page that
+    // will not help them.
+    expect(contract.InferenceRefusalReasonSchema.safeParse('daily_limit_reached').success).toBe(
+      true
+    );
+    expect(contract.InferenceRefusalReasonSchema.options).toContain('balance_exhausted');
+    expect(contract.InferenceRefusalReasonSchema.options).toContain('daily_limit_reached');
+  });
+
+  it('separates a spent turn budget from a busy account, for the same reason', () => {
+    // `concurrency_exceeded` is answered by waiting and retrying the same work.
+    // A spent turn budget is answered by ending the turn or running less at
+    // once, which is a different thing to tell somebody.
+    expect(contract.InferenceRefusalReasonSchema.safeParse('turn_budget_exhausted').success).toBe(
+      true
+    );
+    expect(contract.InferenceRefusalReasonSchema.options).toContain('concurrency_exceeded');
+    expect(contract.InferenceRefusalReasonSchema.options).toContain('turn_budget_exhausted');
+  });
+
+  it('says what to do about each limit and nothing about how either is computed', () => {
+    // The reason a caller can act on is published. The threshold behind it is
+    // server policy and is published nowhere.
+    expect(contract.InferenceRefusalReasonSchema.description).not.toMatch(/\d/);
+    expect(contract.InferenceRefusalReasonSchema.safeParse('made_up').success).toBe(false);
+  });
+});
+
 describe('the remote-access additions', () => {
   const status = {
     mode: 'managed',
