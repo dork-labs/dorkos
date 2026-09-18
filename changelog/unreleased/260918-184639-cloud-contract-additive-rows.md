@@ -4,6 +4,7 @@ covers:
   - 'fix(cloud-api): keep the command outcome narrowable and make the enum registry read through a union (DOR-2090)'
   - 'feat(cloud-api): two inference refusal reasons — a daily limit and a spent turn budget (DOR-2090)'
   - 'docs(cloud-api): write down what a consumer owes an enum member it has never seen (DOR-2090)'
+  - 'fix(cloud-api): make the doc-comment threshold guard a rule about numbers, not about English (DOR-2090)'
 ---
 
 ### Added
