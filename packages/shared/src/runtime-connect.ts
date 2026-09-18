@@ -386,10 +386,12 @@ export interface OpenCodeDirectProvider {
   /** Stable id for this entry — what the picker offers and what a person names. */
   id: string;
   /**
-   * The id actually stored in config and handed to the sidecar env mapping. It
-   * differs from {@link id} for a service that speaks someone else's wire format:
-   * Vault Cloud is OpenAI-compatible, so on the wire it IS `openai` plus a base
-   * URL, which is what makes it work with no change to the env-var mapping.
+   * The id actually stored in config and handed to the sidecar env mapping.
+   *
+   * It is the same as {@link id} for a service that speaks its own wire format,
+   * and differs for one that speaks someone else's: an OpenAI-compatible service
+   * IS `openai` plus a base URL on the wire, which is what lets such a service be
+   * listed here with no change to the env-var mapping at all.
    */
   wireId: string;
   /** Plain name shown in the picker, e.g. `OpenAI`. */
@@ -426,15 +428,6 @@ export const OPENCODE_DIRECT_PROVIDERS: readonly OpenCodeDirectProvider[] = [
     defaultBaseURL: 'https://api.anthropic.com',
     keyPlaceholder: 'sk-ant-…',
     getKeyUrl: 'https://console.anthropic.com/settings/keys',
-  },
-  {
-    // Plain http on purpose: the address serves no TLS at all, so https fails to
-    // connect outright. The form says so under the address rather than pretending.
-    id: 'vault-cloud',
-    wireId: 'openai',
-    label: 'Vault Cloud',
-    defaultBaseURL: 'http://176.9.158.22:8000/v1',
-    keyPlaceholder: 'Your Vault Cloud key',
   },
 ] as const;
 

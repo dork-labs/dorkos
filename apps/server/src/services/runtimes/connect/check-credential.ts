@@ -183,10 +183,10 @@ export async function checkProviderKey(
   deps: CheckCredentialDeps = {}
 ): Promise<CredentialCheckResult> {
   const named = input.providerId.trim();
-  // A listed service is accepted under EITHER name — its own (`vault-cloud`) or
-  // the one it uses on the wire (`openai`). The client sends the wire id, but a
-  // stale client or a hand-written request may name the service itself, and
-  // refusing that would be a refusal of something DorkOS plainly supports.
+  // A listed service is accepted under EITHER name — its own id or the one it
+  // uses on the wire. The client sends the wire id, but a stale client or a
+  // hand-written request may name the service itself, and refusing that would be
+  // a refusal of something DorkOS plainly supports.
   const entry = findOpenCodeDirectProvider(named);
   const providerId = entry?.wireId ?? named;
   if (!entry && providerId !== OPENROUTER_ID) {
@@ -220,8 +220,8 @@ export async function checkProviderKey(
   const spec = CHECK_SPECS[providerId];
   // A blank address is not an address: an empty Advanced field means "use the
   // service's own", not "probe nothing". The NAMED service's address wins over
-  // the wire service's, so a check for `vault-cloud` with no address given is a
-  // check of Vault Cloud rather than of OpenAI.
+  // the wire service's, so a service listed under its own id is checked at its
+  // own address rather than at the address of the wire it happens to speak.
   const entered = input.baseURL ? normalizeBaseURL(input.baseURL) : '';
   const base = entered.length > 0 ? entered : (entry?.defaultBaseURL ?? spec.defaultBaseURL);
   return probe(deps.fetchImpl ?? fetch, `${base}${spec.probePath}`, spec.headers(input.secret));

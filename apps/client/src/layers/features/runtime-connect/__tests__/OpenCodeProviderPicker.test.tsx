@@ -723,9 +723,8 @@ describe('DirectProviderPath — nothing is saved until the key is accepted', ()
   });
 });
 
-// The operator asked for Vault Cloud as a named, one-click power source: no
-// remembering an address, no typing a service name into a box.
-describe('DirectProviderPath — Vault Cloud is a named choice', () => {
+// Picking a power source fills its own address in, so nobody has to know one.
+describe('DirectProviderPath — a named source brings its own address', () => {
   function renderDirect(overrides: Partial<Parameters<typeof createMockTransport>[0]> = {}) {
     const transport = createMockTransport(overrides);
     const queryClient = new QueryClient({
@@ -747,40 +746,25 @@ describe('DirectProviderPath — Vault Cloud is a named choice', () => {
     await user.click(await screen.findByRole('option', { name: label }));
   }
 
-  it('offers all four choices, with the named ones read from the shared list', async () => {
+  it('offers the named sources from the shared list, plus Other', async () => {
     const user = userEvent.setup();
     renderDirect();
 
     await user.click(await screen.findByRole('combobox'));
     const names = screen.getAllByRole('option').map((option) => option.textContent);
-    expect(names).toEqual(['OpenAI', 'Anthropic', 'Vault Cloud', 'Other (OpenAI-compatible)']);
+    expect(names).toEqual(['OpenAI', 'Anthropic', 'Other (OpenAI-compatible)']);
   });
 
-  it('fills in its address and saves it as openai — what the person did by hand', async () => {
+  it('fills the chosen source’s own address into the field', async () => {
     const user = userEvent.setup();
-    const transport = renderDirect({
-      checkProviderCredential: vi.fn().mockResolvedValue({ ok: true }),
-      storeProviderCredential: vi.fn().mockResolvedValue({ ref: 'file:openai' }),
-    });
+    renderDirect();
 
-    await pick(user, 'Vault Cloud');
-    // The address came with the name — the field shows it without being typed.
+    await pick(user, 'Anthropic');
     await user.click(screen.getByTestId('direct-provider-advanced'));
-    expect(screen.getByLabelText(/base url/i)).toHaveValue('http://176.9.158.22:8000/v1');
-
-    await user.type(screen.getByLabelText('API key'), 'vault-key-123');
-    await user.click(screen.getByRole('button', { name: 'Save & connect' }));
-
-    await waitFor(() =>
-      expect(transport.storeProviderCredential).toHaveBeenCalledWith(
-        'openai',
-        'vault-key-123',
-        'http://176.9.158.22:8000/v1'
-      )
-    );
+    expect(screen.getByLabelText(/base url/i)).toHaveValue('https://api.anthropic.com');
   });
 
-  it('says plainly that the key travels in the open, without opening Advanced', async () => {
+  it('says plainly when an address is not encrypted, without opening Advanced', async () => {
     const user = userEvent.setup();
     renderDirect();
 
@@ -788,26 +772,26 @@ describe('DirectProviderPath — Vault Cloud is a named choice', () => {
     expect(await screen.findByLabelText('API key')).toBeInTheDocument();
     expect(screen.queryByTestId('direct-provider-insecure')).not.toBeInTheDocument();
 
-    await pick(user, 'Vault Cloud');
+    await pick(user, 'Other (OpenAI-compatible)');
+    await user.type(screen.getByLabelText(/base url/i), 'http://lm.example.com:8000/v1');
 
-    // Visible on the face of the form: the person who never opens Advanced is
-    // exactly the one who needs telling.
+    // On the face of the form: the person who never opens Advanced is exactly
+    // the one who needs telling.
     expect(screen.getByTestId('direct-provider-insecure')).toHaveTextContent(
       'This address isn’t encrypted. Your key travels in the open.'
     );
-    expect(screen.queryByLabelText(/base url/i)).not.toBeInTheDocument();
   });
 
-  it('offers no "Get an API key" link for a service with no such page', async () => {
+  it('offers no "Get an API key" link for a source with no such page', async () => {
     const user = userEvent.setup();
     renderDirect();
 
     expect(await screen.findByRole('link', { name: /Get an API key/ })).toBeInTheDocument();
-    await pick(user, 'Vault Cloud');
+    await pick(user, 'Other (OpenAI-compatible)');
     expect(screen.queryByRole('link', { name: /Get an API key/ })).not.toBeInTheDocument();
   });
 
-  it('does not send a base URL for a service that already sits at its own address', async () => {
+  it('does not send a base URL for a source that already sits at its own address', async () => {
     const user = userEvent.setup();
     const transport = renderDirect({
       checkProviderCredential: vi.fn().mockResolvedValue({ ok: true }),
@@ -849,15 +833,6 @@ describe('DirectProviderPath — reopening tells the services apart by address',
   }
 
   const CASES: Array<{ name: string; setup: OpenCodeDirectSetup; expected: string }> = [
-    {
-      name: 'openai with Vault Cloud’s address is Vault Cloud',
-      setup: {
-        providerId: 'openai',
-        baseURL: 'http://176.9.158.22:8000/v1',
-        key: { saved: true, last4: 'ab12' },
-      },
-      expected: 'Vault Cloud',
-    },
     {
       name: 'openai with no address is OpenAI',
       setup: { providerId: 'openai', baseURL: null, key: { saved: true, last4: 'ab12' } },
@@ -902,23 +877,12 @@ describe('DirectProviderPath — reopening tells the services apart by address',
     expect(await screen.findByRole('combobox')).toHaveTextContent(expected);
   });
 
-  it('warns about the open address on a reopened Vault Cloud too', async () => {
+  it('warns about an unencrypted address on reopen too', async () => {
     renderWith({
       providerId: 'openai',
-      baseURL: 'http://176.9.158.22:8000/v1',
+      baseURL: 'http://lm.example.com:8000/v1',
       key: { saved: true, last4: 'ab12' },
     });
     expect(await screen.findByTestId('direct-provider-insecure')).toBeInTheDocument();
-  });
-
-  it('leaves Save off for a reopened Vault Cloud with nothing changed', async () => {
-    renderWith({
-      providerId: 'openai',
-      baseURL: 'http://176.9.158.22:8000/v1',
-      key: { saved: true, last4: 'ab12' },
-    });
-    // Its saved address IS its own, so reopening is not a change to save.
-    expect(await screen.findByRole('button', { name: 'Save & connect' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Test key' })).toBeEnabled();
   });
 });

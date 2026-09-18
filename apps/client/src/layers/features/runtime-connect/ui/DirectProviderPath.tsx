@@ -90,8 +90,8 @@ function wireDefaultBaseURL(wireId: string): string {
  * 1. Anthropic is its own wire, so a saved `anthropic` is always Anthropic —
  *    including with a custom address, which stays an Anthropic connection
  *    rather than being re-read as an OpenAI-compatible one.
- * 2. An address that exactly matches a listed service's own is that service, so
- *    `openai` + Vault Cloud's address reopens as Vault Cloud.
+ * 2. An address that exactly matches a listed service's own is that service,
+ *    which is how two services sharing one wire are told apart.
  * 3. No address at all is the plain wire service (`openai` → OpenAI).
  * 4. Anything else is an OpenAI-compatible server DorkOS does not name.
  */

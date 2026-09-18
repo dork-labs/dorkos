@@ -283,10 +283,10 @@ export async function persistProviderCredential(
  * The client already sends the wire id, so in practice this is a no-op. It
  * exists for everything that is not the current client: a stale one, or a
  * hand-written request, naming a listed service by its own id. Normalising
- * rather than refusing is what keeps `vault-cloud` working — but only if the
- * service's own ADDRESS comes along with the rename, otherwise the request
- * would land as a bare `openai` pointed at OpenAI, which is a different service
- * holding a different key.
+ * rather than refusing is what keeps such a request working — but only if the
+ * service's own ADDRESS comes along with the rename, otherwise a service listed
+ * under its own id would land as the bare wire service pointed at ITS address,
+ * which is a different service holding a different key.
  *
  * @param providerId - A listed service id, or the id one uses on the wire.
  * @param baseURL - The base URL as given: a string, `null` to clear it, or
