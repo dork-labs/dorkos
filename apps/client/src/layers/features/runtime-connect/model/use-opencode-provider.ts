@@ -10,8 +10,13 @@
  *
  * @module features/runtime-connect/model/use-opencode-provider
  */
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { OllamaStatus } from '@dorkos/shared/runtime-connect';
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
+import type {
+  CredentialCheckResult,
+  OllamaStatus,
+  OpenCodeDirectSetup,
+} from '@dorkos/shared/runtime-connect';
 import { REQUIREMENTS_KEY } from '@/layers/entities/runtime';
 import { MODELS_KEY } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
@@ -98,58 +103,184 @@ export function useConnectOllama(): UseConnectOllama {
 export interface DirectProviderInput {
   /** OpenAI-compatible provider id, e.g. `openai`. */
   providerId: string;
-  /** The raw provider API key. Stored by reference; never returned or cached. */
+  /**
+   * The raw provider API key. Stored by reference; never returned or cached. An
+   * EMPTY string means "keep the key already saved" — how a base-URL-only change
+   * is expressed without making someone re-paste a key DorkOS already holds.
+   */
   key: string;
   /** Optional OpenAI-compatible base URL override. */
   baseURL?: string;
 }
 
-/** The Direct-provider connect: store a provider key + optional base URL. */
-export interface UseConnectDirectProvider {
-  /** Store the key and record the provider + base URL. No-op on empty key. */
-  connect: (input: DirectProviderInput) => void;
-  /** True while storing. */
+/**
+ * TanStack Query key for what the "your own key" form already has saved. Shared
+ * so a completed save can invalidate the exact key the form reads.
+ */
+export const OPENCODE_DIRECT_SETUP_KEY = ['runtime-connect', 'opencode', 'direct'] as const;
+
+/**
+ * Read back what the "your own key" form should show when it is reopened: the
+ * saved service, its base URL, and whether a key is saved (last four characters
+ * only). Reopening that form used to show three empty fields, which reads as
+ * "nothing is saved" even when something was (DOR-2123).
+ */
+export function useOpenCodeDirectSetup(): UseQueryResult<OpenCodeDirectSetup> {
+  const transport = useTransport();
+  return useQuery<OpenCodeDirectSetup>({
+    queryKey: OPENCODE_DIRECT_SETUP_KEY,
+    queryFn: () => transport.getOpenCodeDirectSetup(),
+    // What is saved only changes when this form changes it, and the save
+    // invalidates this key — so a re-open inside a session is instant.
+    staleTime: 30_000,
+  });
+}
+
+/** The Test action: try a key against its service, saving nothing. */
+export interface UseCheckProviderCredential {
+  /** Try the key (or, on an empty key, the saved one). */
+  check: (input: DirectProviderInput) => void;
+  /** True while the service is being asked. */
   isPending: boolean;
+  /** The answer, or `null` when nothing has been tried since the last reset. */
+  result: CredentialCheckResult | null;
+  /**
+   * Whether the answer is about the key ALREADY SAVED rather than a typed one.
+   * The surface says which, because "it works" about the wrong key is worse
+   * than no answer at all.
+   */
+  checkedSavedKey: boolean;
+  /** Forget the last answer — called when the key field is edited. */
+  reset: () => void;
+}
+
+/**
+ * Try a Direct-provider key without saving anything.
+ *
+ * It calls the SAME server check a save runs, which is the point: a Test that
+ * exercised a different code path would be a Test of nothing.
+ */
+export function useCheckProviderCredential(): UseCheckProviderCredential {
+  const transport = useTransport();
+
+  const mutation = useMutation({
+    mutationFn: ({ providerId, key, baseURL }: DirectProviderInput) =>
+      transport.checkProviderCredential(
+        providerId,
+        key.trim().length > 0 ? key : null,
+        baseURL?.trim() || null
+      ),
+    // A refused key is rendered in the form, right where it can be fixed. A
+    // toast on top of that is the same news twice, one copy of it out of context.
+    meta: { suppressErrorToast: true },
+  });
+
+  // A transport/HTTP failure is still an answer the person needs, so it is
+  // reported in the same shape rather than as a separate error channel.
+  const result: CredentialCheckResult | null =
+    mutation.data ??
+    (mutation.isError
+      ? {
+          ok: false,
+          reason: 'unexpected',
+          message: (mutation.error as Error).message || 'Couldn’t check the key.',
+        }
+      : null);
+
+  return {
+    check: (input: DirectProviderInput) => mutation.mutate(input),
+    isPending: mutation.isPending,
+    result,
+    // Derived BESIDE the answer, so it is false when there is no answer. Read
+    // off the request that produced it rather than off the field as it stands
+    // now, because the field may have been edited since.
+    checkedSavedKey: result !== null && (mutation.variables?.key ?? '').trim().length === 0,
+    reset: mutation.reset,
+  };
+}
+
+/** Which half of a save is running: the check, or the write. */
+export type DirectConnectPhase = 'checking' | 'saving';
+
+/** The Direct-provider connect: check the key, then store it + the base URL. */
+export interface UseConnectDirectProvider {
+  /** Check the key and, if the service accepts it, store it. */
+  connect: (input: DirectProviderInput) => void;
+  /** True while checking or storing. */
+  isPending: boolean;
+  /** Which half is running, so the progress line can say which. */
+  phase: DirectConnectPhase | null;
   /** True once stored (before the requirements refetch flips Ready). */
   isSuccess: boolean;
-  /** True when the key could not be stored. */
+  /** True when the key was refused, or could not be stored. */
   isError: boolean;
   /** Honest failure message, or `null` when not failed. */
   errorMessage: string | null;
+  /** Forget the last failure — called when the key field is edited. */
+  reset: () => void;
 }
 
 /**
  * Connect OpenCode to a direct provider with a pasted key + optional base URL.
  *
- * A single server call stores the key by reference AND records the provider id +
- * base URL (never secrets) in config — one atomic write, not two. On success
- * `['requirements']` is invalidated so OpenCode flips to Ready.
+ * The key is checked against its own service FIRST and nothing is stored when
+ * the service refuses it (DOR-2123). The check is a separate call rather than
+ * something inferred from the save's failure, for one reason worth the extra
+ * round trip: it lets the surface say "Checking your key…" and then "Saving…"
+ * truthfully, and it hands back the service's own plain-language line instead of
+ * an HTTP error. The server re-checks on the save regardless — this is the
+ * honest progress report, never the enforcement.
+ *
+ * On success `['requirements']` is invalidated so OpenCode flips to Ready, and
+ * the saved-setup query so a reopened form shows what was just saved.
  */
 export function useConnectDirectProvider(): UseConnectDirectProvider {
   const transport = useTransport();
   const queryClient = useQueryClient();
+  const [phase, setPhase] = useState<DirectConnectPhase | null>(null);
 
   const mutation = useMutation({
-    mutationFn: ({ providerId, key, baseURL }: DirectProviderInput) =>
-      transport.storeProviderCredential(providerId, key, baseURL?.trim() || null),
-    onSuccess: () => {
+    mutationFn: async ({ providerId, key, baseURL }: DirectProviderInput) => {
+      const address = baseURL?.trim() || null;
+      setPhase('checking');
+      const check = await transport.checkProviderCredential(
+        providerId,
+        key.trim().length > 0 ? key : null,
+        address
+      );
+      if (!check.ok) return { saved: false as const, message: check.message };
+      setPhase('saving');
+      await transport.storeProviderCredential(providerId, key, address);
+      return { saved: true as const, message: null };
+    },
+    onSettled: () => setPhase(null),
+    // The refusal is shown under the key field, where it can be acted on.
+    meta: { suppressErrorToast: true },
+    onSuccess: (result) => {
+      if (!result.saved) return;
       void queryClient.invalidateQueries({ queryKey: [...REQUIREMENTS_KEY] });
       // The catalog changed with the connection: a new provider's models are
       // now offered, and the old ones may not be (DOR-1660).
       void queryClient.invalidateQueries({ queryKey: [...MODELS_KEY] });
+      void queryClient.invalidateQueries({ queryKey: [...OPENCODE_DIRECT_SETUP_KEY] });
     },
   });
 
+  const refused = mutation.data?.saved === false;
   return {
     connect: (input: DirectProviderInput) => {
-      if (input.key.trim().length === 0 || input.providerId.trim().length === 0) return;
+      if (input.providerId.trim().length === 0) return;
       mutation.mutate(input);
     },
     isPending: mutation.isPending,
-    isSuccess: mutation.isSuccess,
-    isError: mutation.isError,
-    errorMessage: mutation.isError
-      ? ((mutation.error as Error).message ?? 'Couldn’t save the provider key.')
-      : null,
+    phase,
+    isSuccess: mutation.data?.saved === true,
+    isError: mutation.isError || refused,
+    errorMessage: refused
+      ? (mutation.data?.message ?? null)
+      : mutation.isError
+        ? ((mutation.error as Error).message ?? 'Couldn’t save your key.')
+        : null,
+    reset: mutation.reset,
   };
 }

@@ -812,6 +812,12 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // Runtime connect (terminal-free auth)
     storeRuntimeCredential: vi.fn().mockResolvedValue({ ref: 'file:mock' }),
     storeProviderCredential: vi.fn().mockResolvedValue({ ref: 'file:mock' }),
+    getOpenCodeDirectSetup: vi
+      .fn()
+      .mockResolvedValue({ providerId: null, baseURL: null, key: { saved: false } }),
+    checkProviderCredential: vi.fn().mockResolvedValue({ ok: true }),
+    getRuntimeKeyStatus: vi.fn().mockResolvedValue({ key: { saved: false } }),
+    checkRuntimeCredential: vi.fn().mockResolvedValue({ ok: true }),
     delegateRuntimeLogin: vi.fn().mockResolvedValue({ ok: true }),
     storeOpenRouterKey: vi.fn().mockResolvedValue({ ok: true }),
     startOpenRouterOAuth: vi

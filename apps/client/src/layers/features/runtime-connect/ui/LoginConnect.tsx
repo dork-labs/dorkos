@@ -15,7 +15,9 @@ import { Button, Label, PasswordInput } from '@/layers/shared/ui';
 import {
   getLoginCopy,
   getRuntimeDescriptor,
+  useCheckRuntimeCredential,
   useDelegateRuntimeLogin,
+  useRuntimeKeyStatus,
   useStoreRuntimeCredential,
   type LoginCopy,
   type RuntimeConnectSuccess,
@@ -110,7 +112,17 @@ export function LoginConnect({
   );
 }
 
-/** The paste-key half of the login flow — a password field that never echoes the key. */
+/**
+ * The paste-key half of the login flow — a password field that never echoes the
+ * key.
+ *
+ * The key is tried against the service that issues it before anything is saved,
+ * a Test button tries it on demand, and a key that is already saved says so by
+ * its last four characters instead of showing an empty field that reads as
+ * "nothing is connected" (DOR-2123). Codex never shows that hint, and that is
+ * the truth rather than a gap: its key is written to Codex's own login store,
+ * so DorkOS holds no copy to describe.
+ */
 function PasteKeyForm({
   type,
   copy,
@@ -122,8 +134,11 @@ function PasteKeyForm({
 }) {
   const [key, setKey] = useState('');
   const store = useStoreRuntimeCredential(type);
+  const status = useRuntimeKeyStatus(type);
+  const test = useCheckRuntimeCredential(type);
   // Once only, for the same reason the sign-in half latches (see above).
   const reported = useRef(false);
+  const keyField = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!store.isSuccess || reported.current) return;
@@ -131,20 +146,39 @@ function PasteKeyForm({
     onConnected?.(loginConnectSuccess(getRuntimeDescriptor(type).label));
   }, [store.isSuccess, onConnected, type]);
 
-  if (store.isPending) {
-    return <ConnectProgressRow message="Saving your API key…" />;
-  }
+  // Put the cursor back where the fix happens — a refusal is almost always a
+  // mistyped key.
+  useEffect(() => {
+    if (store.isError) keyField.current?.focus();
+  }, [store.isError]);
+
   // On success the whole form (and its password field) unmounts, so the pasted
   // key leaves the DOM entirely — the surface reads "Connected", never the key.
   if (store.isSuccess) {
     return <ConnectedRow />;
   }
 
+  const saved = status.data?.key.saved ? status.data.key : null;
+  const hasKey = key.trim().length > 0;
+  // Read-only while EITHER request is in flight — a Test's answer is about the
+  // field as it stood when it was sent, so editing mid-flight would leave an
+  // answer on screen about a key that is no longer there. The form STAYS on
+  // screen either way: swapping it for a spinner collapses the panel and throws
+  // the scroll to the top, so the refusal that comes back lands off-screen.
+  const busy = store.isPending || test.isPending;
+  /** Drop a stale answer the moment the key it was about changes. */
+  const invalidateAnswers = () => {
+    test.reset();
+    store.reset();
+  };
+
   return (
     <form
       className="space-y-2"
       onSubmit={(e) => {
         e.preventDefault();
+        // One message at a time: a save's answer replaces a test's.
+        test.reset();
         store.store(key);
       }}
     >
@@ -153,9 +187,18 @@ function PasteKeyForm({
       </Label>
       <PasswordInput
         id={`api-key-${type}`}
+        ref={keyField}
         value={key}
-        onChange={(e) => setKey(e.target.value)}
-        placeholder={copy.keyPlaceholder}
+        disabled={busy}
+        onChange={(e) => {
+          setKey(e.target.value);
+          invalidateAnswers();
+        }}
+        placeholder={
+          saved
+            ? `Saved · ends in ${saved.last4} — paste a new key to replace it`
+            : copy.keyPlaceholder
+        }
         autoComplete="off"
         spellCheck={false}
       />
@@ -177,10 +220,42 @@ function PasteKeyForm({
         ) : (
           <span />
         )}
-        <Button type="submit" size="sm" variant="outline" disabled={key.trim().length === 0}>
-          Save key
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={(!hasKey && saved === null) || busy}
+            data-testid={`api-key-test-${type}`}
+            onClick={() => {
+              // One message at a time, in both directions.
+              store.reset();
+              test.reset();
+              test.check(key);
+            }}
+          >
+            Test key
+          </Button>
+          <Button type="submit" size="sm" variant="outline" disabled={!hasKey || busy}>
+            Save key
+          </Button>
+        </div>
       </div>
+      {/* One slot for every answer, and the form never leaves the page to show
+          one — see DirectProviderPath for the scroll-jump this avoids. */}
+      {busy ? (
+        <ConnectProgressRow message={store.phase === 'saving' ? 'Saving…' : 'Checking your key…'} />
+      ) : test.result?.ok === true ? (
+        // Say WHICH key works: with a blank field the answer is about the key
+        // already saved, not about what is on screen.
+        <ConnectedRow message={test.checkedSavedKey ? 'Your saved key works' : 'Key works'} />
+      ) : test.result ? (
+        // A plain line, not a row with a Retry button: there is nothing to retry
+        // blindly — the key is fixed in the field above, then Test again.
+        <p className="text-destructive text-xs" role="alert">
+          {test.result.message}
+        </p>
+      ) : null}
     </form>
   );
 }

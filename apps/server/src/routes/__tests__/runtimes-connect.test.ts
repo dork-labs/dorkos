@@ -17,7 +17,15 @@ vi.mock('../../services/runtimes/opencode/providers/provision.js', () => ({
 // Preserve ConnectError (a real class the route branches on); mock the actions.
 vi.mock('../../services/runtimes/connect/credentials.js', async (orig) => {
   const actual = await orig<typeof import('../../services/runtimes/connect/credentials.js')>();
-  return { ...actual, storeRuntimeCredential: vi.fn(), storeProviderCredential: vi.fn() };
+  return {
+    ...actual,
+    storeRuntimeCredential: vi.fn(),
+    storeProviderCredential: vi.fn(),
+    readOpenCodeDirectSetup: vi.fn(),
+    readRuntimeKeyStatus: vi.fn(),
+    checkProviderCredential: vi.fn(),
+    checkRuntimeCredential: vi.fn(),
+  };
 });
 
 // Preserve LOGIN_RUNTIME_TYPES; mock the login action.
@@ -59,8 +67,12 @@ import { logger } from '../../lib/logger.js';
 import {
   storeRuntimeCredential,
   storeProviderCredential,
-  ConnectError,
+  readOpenCodeDirectSetup,
+  readRuntimeKeyStatus,
+  checkProviderCredential,
+  checkRuntimeCredential,
 } from '../../services/runtimes/connect/credentials.js';
+import { ConnectError } from '../../services/runtimes/connect/connect-error.js';
 import { delegateRuntimeLogin } from '../../services/runtimes/connect/delegated-login.js';
 import { resolveAccountRootForSession } from '../../services/runtimes/connect/resolve-session-account.js';
 import {
@@ -216,6 +228,169 @@ describe('runtime connect endpoints', () => {
         .send({ providerId: 'openai', secret: SECRET });
       expect(res.status).toBe(403);
       expect(storeProviderCredential).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('GET /api/runtimes/opencode/provider — the form remembers (DOR-2123)', () => {
+    it('returns the saved service, base URL, and only the last four of the key', async () => {
+      vi.mocked(readOpenCodeDirectSetup).mockResolvedValue({
+        providerId: 'openai',
+        baseURL: 'https://api.example.com/v1',
+        key: { saved: true, last4: 'ab12' },
+      });
+
+      const res = await request(server).get('/api/runtimes/opencode/provider');
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        providerId: 'openai',
+        baseURL: 'https://api.example.com/v1',
+        key: { saved: true, last4: 'ab12' },
+      });
+      // Assert on the SERIALIZED body: a hint is four characters, never a key.
+      expect(res.text).not.toContain(SECRET);
+    });
+
+    it('answers a generic 500 when the store cannot be read, leaking no detail', async () => {
+      const spy = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
+      vi.mocked(readOpenCodeDirectSetup).mockRejectedValue(new Error('/Users/someone/.dork boom'));
+
+      const res = await request(server).get('/api/runtimes/opencode/provider');
+
+      expect(res.status).toBe(500);
+      expect(res.text).not.toContain('/Users/someone');
+      spy.mockRestore();
+    });
+  });
+
+  describe('POST /api/runtimes/opencode/provider/credential/check', () => {
+    it('answers 200 with the refusal when the key is not accepted — a "no" is not an error', async () => {
+      vi.mocked(checkProviderCredential).mockResolvedValue({
+        ok: false,
+        reason: 'rejected',
+        message: 'That key was not accepted. Check it and try again.',
+      });
+
+      const res = await request(server)
+        .post('/api/runtimes/opencode/provider/credential/check')
+        .send({ providerId: 'openai', secret: SECRET, baseURL: null });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        ok: false,
+        reason: 'rejected',
+        message: 'That key was not accepted. Check it and try again.',
+      });
+      expect(res.text).not.toContain(SECRET);
+    });
+
+    it('passes a missing secret through as null, so the SAVED key is checked', async () => {
+      vi.mocked(checkProviderCredential).mockResolvedValue({ ok: true });
+
+      const res = await request(server)
+        .post('/api/runtimes/opencode/provider/credential/check')
+        .send({ providerId: 'openai' });
+
+      expect(res.status).toBe(200);
+      expect(checkProviderCredential).toHaveBeenCalledWith({
+        providerId: 'openai',
+        secret: null,
+        baseURL: null,
+      });
+    });
+
+    it('maps a ConnectError to its status — an unknown service is a 400, not a "no"', async () => {
+      vi.mocked(checkProviderCredential).mockRejectedValue(
+        new ConnectError('DorkOS can’t pass a key to "Valut Cloud".', 400)
+      );
+
+      const res = await request(server)
+        .post('/api/runtimes/opencode/provider/credential/check')
+        .send({ providerId: 'Valut Cloud', secret: SECRET });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/Valut Cloud/);
+      expect(res.text).not.toContain(SECRET);
+    });
+
+    it('rejects a request with no service id', async () => {
+      const res = await request(server)
+        .post('/api/runtimes/opencode/provider/credential/check')
+        .send({ secret: SECRET });
+      expect(res.status).toBe(400);
+      expect(checkProviderCredential).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /api/runtimes/opencode/provider/credential — an empty key keeps the saved one', () => {
+    it('forwards an empty secret rather than refusing it at the schema', async () => {
+      vi.mocked(storeProviderCredential).mockResolvedValue({ ref: 'file:openai' });
+
+      const res = await request(server)
+        .post('/api/runtimes/opencode/provider/credential')
+        .send({ providerId: 'openai', secret: '', baseURL: 'https://moved.example.com/v1' });
+
+      expect(res.status).toBe(200);
+      expect(storeProviderCredential).toHaveBeenCalledWith({
+        providerId: 'openai',
+        secret: '',
+        baseURL: 'https://moved.example.com/v1',
+      });
+    });
+  });
+
+  describe('GET /api/runtimes/:type/credential', () => {
+    it('reports a saved key by its last four characters only', async () => {
+      vi.mocked(readRuntimeKeyStatus).mockResolvedValue({ key: { saved: true, last4: 'cho1' } });
+
+      const res = await request(server).get('/api/runtimes/claude-code/credential');
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ key: { saved: true, last4: 'cho1' } });
+      expect(res.text).not.toContain(SECRET);
+    });
+
+    it('maps a ConnectError for a runtime with no key of its own', async () => {
+      vi.mocked(readRuntimeKeyStatus).mockRejectedValue(
+        new ConnectError('"opencode" does not support a native API key.', 400)
+      );
+      const res = await request(server).get('/api/runtimes/opencode/credential');
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe('POST /api/runtimes/:type/credential/check', () => {
+    it('answers 200 with the refusal and never echoes the key', async () => {
+      vi.mocked(checkRuntimeCredential).mockResolvedValue({
+        ok: false,
+        reason: 'unreachable',
+        message: 'Couldn’t reach api.anthropic.com. Check the base URL and whether you’re online.',
+      });
+
+      const res = await request(server)
+        .post('/api/runtimes/claude-code/credential/check')
+        .send({ secret: SECRET });
+
+      expect(res.status).toBe(200);
+      expect(res.body.reason).toBe('unreachable');
+      expect(res.text).not.toContain(SECRET);
+      expect(checkRuntimeCredential).toHaveBeenCalledWith('claude-code', SECRET);
+    });
+
+    it('passes a missing secret through as null (Express 5 leaves an empty body undefined)', async () => {
+      vi.mocked(checkRuntimeCredential).mockResolvedValue({ ok: true });
+      const res = await request(server).post('/api/runtimes/claude-code/credential/check');
+      expect(res.status).toBe(200);
+      expect(checkRuntimeCredential).toHaveBeenCalledWith('claude-code', null);
+    });
+
+    it('maps a ConnectError to its status', async () => {
+      vi.mocked(checkRuntimeCredential).mockRejectedValue(
+        new ConnectError('Paste the key to check it.', 400)
+      );
+      const res = await request(server).post('/api/runtimes/codex/credential/check').send({});
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('Paste the key to check it.');
     });
   });
 
@@ -665,6 +840,34 @@ describe('runtime connect endpoints', () => {
         path: '/api/runtimes/opencode/provider/credential',
         body: { providerId: 'anthropic', secret: SECRET },
         action: () => storeProviderCredential,
+        carriesSecret: true,
+      },
+      {
+        name: 'GET /opencode/provider',
+        method: 'get',
+        path: '/api/runtimes/opencode/provider',
+        action: () => readOpenCodeDirectSetup,
+      },
+      {
+        name: 'POST /opencode/provider/credential/check',
+        method: 'post',
+        path: '/api/runtimes/opencode/provider/credential/check',
+        body: { providerId: 'openai', secret: SECRET },
+        action: () => checkProviderCredential,
+        carriesSecret: true,
+      },
+      {
+        name: 'GET /:type/credential',
+        method: 'get',
+        path: '/api/runtimes/claude-code/credential',
+        action: () => readRuntimeKeyStatus,
+      },
+      {
+        name: 'POST /:type/credential/check',
+        method: 'post',
+        path: '/api/runtimes/claude-code/credential/check',
+        body: { secret: SECRET },
+        action: () => checkRuntimeCredential,
         carriesSecret: true,
       },
       {

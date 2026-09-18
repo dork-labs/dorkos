@@ -49,6 +49,9 @@ import type {
   VapidPublicKeyResponse,
 } from '@dorkos/shared/notification-schemas';
 import type {
+  CredentialCheckResult,
+  OpenCodeDirectSetup,
+  RuntimeKeyStatus,
   StoreCredentialResult,
   DelegateLoginOptions,
   DelegatedLoginResult,
@@ -746,6 +749,39 @@ export const serverOnlyStubs = {
     _baseURL?: string | null
   ): Promise<StoreCredentialResult> {
     throw new Error('Connecting a provider is not supported in Obsidian plugin mode.');
+  },
+
+  async getOpenCodeDirectSetup(): Promise<OpenCodeDirectSetup> {
+    // Nothing is connectable from the embedding, so nothing is ever saved here —
+    // an honest empty form rather than a thrown error the picker cannot render.
+    return { providerId: null, baseURL: null, key: { saved: false } };
+  },
+
+  async checkProviderCredential(
+    _providerId: string,
+    _secret: string | null,
+    _baseURL?: string | null
+  ): Promise<CredentialCheckResult> {
+    return {
+      ok: false,
+      reason: 'unexpected',
+      message: 'Checking a key is not supported in Obsidian plugin mode.',
+    };
+  },
+
+  async getRuntimeKeyStatus(_type: string): Promise<RuntimeKeyStatus> {
+    return { key: { saved: false } };
+  },
+
+  async checkRuntimeCredential(
+    _type: string,
+    _secret: string | null
+  ): Promise<CredentialCheckResult> {
+    return {
+      ok: false,
+      reason: 'unexpected',
+      message: 'Checking a key is not supported in Obsidian plugin mode.',
+    };
   },
 
   async delegateRuntimeLogin(

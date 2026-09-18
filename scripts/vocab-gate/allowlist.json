@@ -193,7 +193,7 @@
     {
       "path": "apps/client/src/layers/features/runtime-connect/",
       "terms": ["provider", "providers"],
-      "reason": "The OpenCode model-provider connect path — \"Provider\", \"Connect provider\", \"Saving your provider key…\". ADR 260804-021140's registry allows `provider` in OpenCode's model-provider picker, which never co-renders with the Connections page; the word here means whoever serves the model, not a service an agent acts on."
+      "reason": "The OpenCode model-provider connect path — the cloud card's trade-off line, \"Your prompts and code are sent to the model’s provider.\" (the key form itself now says \"Power source\", \"Save & connect\" and \"Saving…\", so it no longer relies on this). ADR 260804-021140's registry allows `provider` in OpenCode's model-provider picker, which never co-renders with the Connections page; the word here means whoever serves the model, not a service an agent acts on."
     },
     {
       "path": "apps/client/src/layers/features/status/ui/ModelSelectionList.tsx",

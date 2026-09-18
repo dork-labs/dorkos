@@ -35,6 +35,9 @@ import type {
   ClientErrorReport,
 } from '@dorkos/shared/transport';
 import type {
+  CredentialCheckResult,
+  OpenCodeDirectSetup,
+  RuntimeKeyStatus,
   StoreCredentialResult,
   DelegateLoginOptions,
   DelegatedLoginResult,
@@ -500,6 +503,47 @@ export function createSystemMethods(baseUrl: string) {
         method: 'POST',
         body: JSON.stringify({ providerId, secret, baseURL: baseURL ?? null }),
       });
+    },
+
+    getOpenCodeDirectSetup(): Promise<OpenCodeDirectSetup> {
+      return fetchJSON<OpenCodeDirectSetup>(baseUrl, '/runtimes/opencode/provider');
+    },
+
+    checkProviderCredential(
+      providerId: string,
+      secret: string | null,
+      baseURL?: string | null
+    ): Promise<CredentialCheckResult> {
+      // A null secret is OMITTED rather than sent as null: the server reads an
+      // absent key as "check the one you already have", and its schema takes a
+      // non-empty string or nothing at all.
+      return fetchJSON<CredentialCheckResult>(
+        baseUrl,
+        '/runtimes/opencode/provider/credential/check',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            providerId,
+            ...(secret === null ? {} : { secret }),
+            baseURL: baseURL ?? null,
+          }),
+        }
+      );
+    },
+
+    getRuntimeKeyStatus(type: string): Promise<RuntimeKeyStatus> {
+      return fetchJSON<RuntimeKeyStatus>(
+        baseUrl,
+        `/runtimes/${encodeURIComponent(type)}/credential`
+      );
+    },
+
+    checkRuntimeCredential(type: string, secret: string | null): Promise<CredentialCheckResult> {
+      return fetchJSON<CredentialCheckResult>(
+        baseUrl,
+        `/runtimes/${encodeURIComponent(type)}/credential/check`,
+        { method: 'POST', body: JSON.stringify(secret === null ? {} : { secret }) }
+      );
     },
 
     delegateRuntimeLogin(

@@ -20,8 +20,12 @@ import { provisionClaudeCode } from '../services/runtimes/claude-code/tooling/pr
 import {
   storeRuntimeCredential,
   storeProviderCredential,
-  ConnectError,
+  readOpenCodeDirectSetup,
+  readRuntimeKeyStatus,
+  checkProviderCredential,
+  checkRuntimeCredential,
 } from '../services/runtimes/connect/credentials.js';
+import { ConnectError } from '../services/runtimes/connect/connect-error.js';
 import {
   delegateRuntimeLogin,
   LOGIN_RUNTIME_TYPES,
@@ -134,9 +138,20 @@ const SecretBodySchema = z.object({ secret: z.string().min(1) });
 const OpenRouterKeyBodySchema = z.object({ key: z.string().min(1) });
 const ProviderCredentialBodySchema = z.object({
   providerId: z.string().min(1),
-  secret: z.string().min(1),
+  // An EMPTY string is a real request, not a malformed one: it means "keep the
+  // key you already have, I only changed the address". The service decides
+  // whether there is a saved key to keep, and 400s when there is not.
+  secret: z.string(),
   baseURL: z.string().nullable().optional(),
 });
+/** A key to TRY: omitted means "try the key that is already saved". */
+const CheckProviderBodySchema = z.object({
+  providerId: z.string().min(1),
+  secret: z.string().min(1).optional(),
+  baseURL: z.string().nullable().optional(),
+});
+/** A runtime key to TRY: omitted means "try the key that is already saved". */
+const CheckSecretBodySchema = z.object({ secret: z.string().min(1).optional() });
 const OllamaPullBodySchema = z.object({
   // Any syntactically valid Ollama tag — DorkOS pulls what you name, curated or
   // not (spec §3). The regex only rejects malformed input, never uncurated tags.
@@ -368,6 +383,57 @@ router.post('/opencode/ollama/provision', async (req, res) => {
 });
 
 /**
+ * GET /api/runtimes/opencode/provider — what the "your own key" form should show
+ * when it is reopened: the saved service, its base URL, and whether a key is
+ * already saved (last FOUR characters only, never more). Loopback-only.
+ *
+ * Reopening that form used to show three empty fields, which reads as "nothing
+ * is saved" even when something was (DOR-2123, report FB-48).
+ */
+router.get('/opencode/provider', async (req, res) => {
+  if (rejectNonLoopback(req, res)) return;
+  try {
+    res.json(await readOpenCodeDirectSetup());
+  } catch {
+    // Never surface a store/config failure's detail — it can carry a path.
+    logger.error('[Runtimes] Reading the saved key setup failed unexpectedly');
+    res.status(500).json({ error: 'Could not read your saved settings.' });
+  }
+});
+
+/**
+ * POST /api/runtimes/opencode/provider/credential/check — try a key against the
+ * service it belongs to and save NOTHING. Backs the Test button, and runs the
+ * same check a save runs. An omitted `secret` tries the key already saved for
+ * that service. Loopback-only; the response never echoes the key.
+ *
+ * A key that is not accepted is a 200 carrying `{ ok: false, … }`, not an error
+ * status: the request succeeded and the answer is "no", which is exactly what
+ * the person asked for.
+ */
+router.post('/opencode/provider/credential/check', async (req, res) => {
+  if (rejectNonLoopback(req, res)) return;
+  const parsed = CheckProviderBodySchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'A provider id is required.' });
+  }
+  try {
+    const result = await checkProviderCredential({
+      providerId: parsed.data.providerId,
+      secret: parsed.data.secret ?? null,
+      baseURL: parsed.data.baseURL ?? null,
+    });
+    res.json(result);
+  } catch (err) {
+    if (err instanceof ConnectError) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    logger.error('[Runtimes] Provider key check failed unexpectedly');
+    res.status(500).json({ error: 'Could not check the key.' });
+  }
+});
+
+/**
  * POST /api/runtimes/opencode/provider/credential — the OpenCode Direct-provider
  * path: store an OpenAI-compatible provider's key by reference, select it as
  * OpenCode's provider, and record an optional base URL. Persists only the
@@ -399,6 +465,47 @@ router.post('/opencode/provider/credential', async (req, res) => {
 });
 
 // --- Generic per-runtime connect (Claude, Codex) ---------------------------
+
+/**
+ * GET /api/runtimes/:type/credential — whether this runtime's own key is already
+ * saved, and its last FOUR characters when it is. Never more of the key than
+ * that. Loopback-only.
+ */
+router.get('/:type/credential', async (req, res) => {
+  if (rejectNonLoopback(req, res)) return;
+  try {
+    res.json(await readRuntimeKeyStatus(req.params.type));
+  } catch (err) {
+    if (err instanceof ConnectError) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    logger.error('[Runtimes] Reading the saved key status failed unexpectedly');
+    res.status(500).json({ error: 'Could not read your saved key.' });
+  }
+});
+
+/**
+ * POST /api/runtimes/:type/credential/check — try this runtime's key against the
+ * service that issues it and save NOTHING. An omitted `secret` tries the saved
+ * key, which only Claude Code holds. Loopback-only; never echoes the key.
+ */
+router.post('/:type/credential/check', async (req, res) => {
+  if (rejectNonLoopback(req, res)) return;
+  const parsed = CheckSecretBodySchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'An API key must be a string.' });
+  }
+  try {
+    const result = await checkRuntimeCredential(req.params.type, parsed.data.secret ?? null);
+    res.json(result);
+  } catch (err) {
+    if (err instanceof ConnectError) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    logger.error('[Runtimes] Credential check failed unexpectedly', { type: req.params.type });
+    res.status(500).json({ error: 'Could not check the API key.' });
+  }
+});
 
 /**
  * POST /api/runtimes/:type/credential — store a runtime's native API key
