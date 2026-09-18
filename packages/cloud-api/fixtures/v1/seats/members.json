@@ -5,7 +5,8 @@
       "orgId": "org_0001",
       "userId": "acct_0001",
       "role": "owner",
-      "createdAt": "2026-09-15T12:00:00.000Z"
+      "createdAt": "2026-09-15T12:00:00.000Z",
+      "displayName": "Ada"
     }
   ],
   "nextCursor": null

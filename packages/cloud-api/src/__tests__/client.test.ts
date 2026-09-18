@@ -14,6 +14,7 @@ import {
   createCloudApiClient,
   isCloudApiProblemError,
 } from '../client.js';
+import { HostedPageResponseSchema, RefundResponseSchema } from '../billing.js';
 import { V1_ROUTES } from '../routes.js';
 import { SessionSchema } from '../session.js';
 import { WIRE_VERSION_HEADER } from '../primitives.js';
@@ -175,6 +176,60 @@ describe('createCloudApiClient', () => {
     ]);
     expect(headers.authorization).toBe('Bearer tok_caller');
     expect(headers.accept).toBe('application/problem+json');
+  });
+
+  it('posts a top-up amount as the contract spells it, and gets a hosted page back', async () => {
+    // The amount crosses the wire as an exact integer of micro-units in a
+    // string. A client that hands the body a number never reaches the service:
+    // the request schema refuses it first.
+    const fetchMock = respondWith(200, { url: 'https://pay.example.invalid/session/0001' });
+    const client = createCloudApiClient({ baseUrl: 'https://example.invalid', fetch: fetchMock });
+
+    const page = await client.post(V1_ROUTES.topup, HostedPageResponseSchema, {
+      body: { amountMicro: '20000000' },
+    });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://example.invalid/v1/topup');
+    expect(init.body).toBe('{"amountMicro":"20000000"}');
+    expect(page.url).toBe('https://pay.example.invalid/session/0001');
+  });
+
+  it('surfaces a refusal below the minimum as the contract`s own code', async () => {
+    // `topup_below_minimum` replaces the stand-ins a client used to have to
+    // interpret, so an interface can say what actually happened.
+    const fetchMock = respondWith(422, {
+      code: 'topup_below_minimum',
+      status: 422,
+      title: 'That is under the smallest top-up.',
+    });
+    const client = createCloudApiClient({ baseUrl: 'https://example.invalid', fetch: fetchMock });
+
+    const error = await client
+      .post(V1_ROUTES.topup, HostedPageResponseSchema, { body: { amountMicro: '1' } })
+      .catch((caught) => caught);
+
+    expect(isCloudApiProblemError(error)).toBe(true);
+    expect((error as CloudApiProblemError).problem.code).toBe('topup_below_minimum');
+  });
+
+  it('asks for a refund by opaque charge identifier', async () => {
+    const fetchMock = respondWith(200, {
+      refundId: 'rfnd_0001',
+      chargeId: 'chg_0001',
+      refundedMicro: '20000000',
+      refundedAt: '2026-09-15T12:00:00.000Z',
+    });
+    const client = createCloudApiClient({ baseUrl: 'https://example.invalid', fetch: fetchMock });
+
+    const refund = await client.post(V1_ROUTES.refunds, RefundResponseSchema, {
+      body: { chargeId: 'chg_0001' },
+    });
+
+    expect((fetchMock.mock.calls[0] as [string, RequestInit])[0]).toBe(
+      'https://example.invalid/v1/refunds'
+    );
+    expect(refund.refundId).toBe('rfnd_0001');
   });
 
   it('sets a JSON content type only when there is a body', async () => {

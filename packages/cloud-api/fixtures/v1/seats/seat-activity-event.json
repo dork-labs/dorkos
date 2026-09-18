@@ -1,0 +1,11 @@
+{
+  "eventId": "sae_0001",
+  "billingAccountId": "bacct_0001",
+  "seatId": "seat_0001",
+  "periodStart": "2026-08-31T00:00:00.000Z",
+  "periodEnd": "2026-09-30T00:00:00.000Z",
+  "occurredAt": "2026-09-15T12:00:00.000Z",
+  "reason": "inbound-from-connected-channel",
+  "sourceKind": "connected-channel",
+  "sourceRef": "src_0001"
+}

@@ -2,5 +2,10 @@
   "kind": "open",
   "id": "cmd_0001",
   "leaseToken": "lt_0003",
-  "wakeId": "wk_0001"
+  "wakeId": "wk_0001",
+  "leaseId": "lease_0001",
+  "address": "example-instance.remote.invalid",
+  "host": "remote.invalid",
+  "idleWindowSeconds": 900,
+  "drainDeadlineSeconds": 30
 }

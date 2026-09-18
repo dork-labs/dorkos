@@ -1,6 +1,11 @@
 import { z } from 'zod';
 
-import { IdSchema, MicroAmountSchema, TimestampSchema } from './primitives.js';
+import {
+  IdSchema,
+  MicroAmountSchema,
+  PositiveMicroAmountSchema,
+  TimestampSchema,
+} from './primitives.js';
 
 /**
  * How remote access works for the caller.
@@ -120,7 +125,20 @@ export const BalanceSchema = z
       remainingMicro: MicroAmountSchema,
       resetsAt: TimestampSchema,
     }),
-    purchased: z.object({ remainingMicro: MicroAmountSchema }),
+    purchased: z.object({
+      remainingMicro: MicroAmountSchema,
+      holds: z
+        .number()
+        .int()
+        .nonnegative()
+        .optional()
+        .describe(
+          'How many first-purchase holds are in force. Absent means the server did not say; zero means none.'
+        ),
+    }),
+    pendingMicro: MicroAmountSchema.optional().describe(
+      'Credit the caller has paid for that is not spendable yet, because a hold is still in force. Absent means the server did not say.'
+    ),
     heldMicro: MicroAmountSchema.describe('Reserved against turns currently running.'),
     owedMicro: MicroAmountSchema.describe(
       'Debt from a turn that overran its reservation. May be "0"; when it is not, show it.'
@@ -328,3 +346,61 @@ export const StatementResponseSchema = z
     expiresAt: TimestampSchema.describe('When the download link stops working.'),
   })
   .describe('A short-lived download link for the caller`s own itemised usage statement.');
+
+/**
+ * `POST /v1/topup` — buy credit, answered with {@link HostedPageResponseSchema}.
+ *
+ * The amount is opaque to this contract beyond being a positive integer of the
+ * contract`s own micro-unit: the minimum, the first-purchase ceiling and
+ * anything either of them is worth are server policy and appear nowhere here. A
+ * request under the minimum is refused with `topup_below_minimum`, and one over
+ * the first-purchase ceiling with `first_purchase_cap`.
+ *
+ * {@link HostedPageRequestSchema} stays the shape for `POST /v1/checkout` and
+ * `POST /v1/portal`, which name a hosted page rather than an amount.
+ */
+export const TopupRequestSchema = z
+  .object({
+    amountMicro: PositiveMicroAmountSchema.describe('How much credit to buy, in micro-units.'),
+    returnUrl: z
+      .string()
+      .url()
+      .optional()
+      .describe('Where to send the person when the hosted page is done.'),
+  })
+  .describe(
+    'A request to buy credit. Carries an amount and nothing about what an amount is worth.'
+  );
+
+/** A request to buy credit. */
+export type TopupRequest = z.infer<typeof TopupRequestSchema>;
+
+/**
+ * `POST /v1/refunds` — ask for one charge to be refunded.
+ *
+ * Opaque identifiers only. The amount is the charge`s own, so the request never
+ * names one, and a refund asked for after the window has closed is refused with
+ * `refund_window_closed`. How long the window is is server policy and is not
+ * published here.
+ */
+export const RefundRequestSchema = z
+  .object({
+    chargeId: IdSchema.describe('The charge to refund, as an opaque identifier the server issued.'),
+  })
+  .describe('Ask for one charge to be refunded. Opaque identifiers only, and no amount.');
+
+/** Ask for one charge to be refunded. */
+export type RefundRequest = z.infer<typeof RefundRequestSchema>;
+
+/** `POST /v1/refunds` — the accepted refund. */
+export const RefundResponseSchema = z
+  .object({
+    refundId: IdSchema,
+    chargeId: IdSchema,
+    refundedMicro: MicroAmountSchema.describe('How much came back, in micro-units.'),
+    refundedAt: TimestampSchema,
+  })
+  .describe('The accepted refund: which charge it settles, how much came back, and when.');
+
+/** The accepted refund. */
+export type RefundResponse = z.infer<typeof RefundResponseSchema>;

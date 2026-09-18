@@ -33,6 +33,7 @@ export const V1_ROUTES = {
   checkout: '/v1/checkout',
   topup: '/v1/topup',
   portal: '/v1/portal',
+  refunds: '/v1/refunds',
   statement: '/v1/statement',
   inferenceTokens: '/v1/inference/tokens',
   inferenceModels: '/v1/inference/models',

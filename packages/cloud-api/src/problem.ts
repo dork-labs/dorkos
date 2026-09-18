@@ -36,6 +36,9 @@ export const ProblemCodeSchema = z
     'entitlement_required',
     'balance_exhausted',
     'quota_exceeded',
+    'topup_below_minimum',
+    'first_purchase_cap',
+    'refund_window_closed',
     // Remote access.
     'enrolment_required',
     'remote_disabled',

@@ -49,6 +49,12 @@ export const MemberSchema = z
     orgId: IdSchema,
     userId: IdSchema,
     role: MemberRoleSchema,
+    displayName: z
+      .string()
+      .optional()
+      .describe(
+        'The name to show for this person, taken from their account profile. Never their email address, and absent when they have set no name.'
+      ),
     createdAt: TimestampSchema,
   })
   .describe('One person`s membership of one organization.');
@@ -124,6 +130,28 @@ export const AgentClaimRequestSchema = z
     instanceId: IdSchema,
     emoji: z.string().optional(),
     color: z.string().optional(),
+    principalKind: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'What kind of local principal `naturalKey` belongs to, as a server-recognised token. Optional here so a client one release behind keeps working; the server needs it to register anything.'
+      ),
+    naturalKey: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'The raw local key that identifies the principal, sent once and hashed with a per-organization key on receipt. The server discards the input, so no response can be turned back into it. A client never hashes this itself: a client that could compute the hash could forge any identity.'
+      ),
+    authEnabled: z
+      .boolean()
+      .optional()
+      .describe('Whether the reporting instance has a local sign-in. Absent reads as false.'),
+    hasUsers: z
+      .boolean()
+      .optional()
+      .describe('Whether the reporting instance has any local users. Absent reads as false.'),
   })
   .describe(
     'An instance asserting a claim to an agent identity. Mints nothing until a person approves it.'
@@ -176,9 +204,55 @@ export const AddressSchema = z
 /** A routable address issued to a seat. */
 export type Address = z.infer<typeof AddressSchema>;
 
-/** `POST /v1/addresses`. */
+/**
+ * The grammar every handle in this contract obeys.
+ *
+ * Published so the app can refuse a bad name before a request goes out, and so
+ * the command acknowledgement can bound its refusal slugs by the same rule. It
+ * is a strict subset of the handle grammar DorkOS uses locally, with the dot
+ * removed so a handle is a single routing token.
+ *
+ * Lower case by grammar. The server refuses a mixed-case handle rather than
+ * folding it, because the routing token is compared case-sensitively
+ * downstream: a folded handle would pass every validator and then silently fail
+ * to match its own subscription.
+ *
+ * Nothing in this contract is narrowed to it yet. Narrowing a field a caller
+ * already sends would make a request that parsed before fail afterwards, which
+ * is a `/v2` change however sensible it looks.
+ */
+export const HandleSchema = z
+  .string()
+  .regex(
+    /^[a-z0-9][a-z0-9_-]{0,30}[a-z0-9]$/,
+    'must be lower-case, start and end with a letter or digit, and contain only letters, digits, hyphens and underscores'
+  )
+  .describe(
+    'The grammar every handle obeys: lower case, 2 to 32 characters, starting and ending with a letter or a digit.'
+  );
+
+/**
+ * `POST /v1/addresses`.
+ *
+ * `subject` is optional only so a client one release behind keeps working. The
+ * seat being given an address has no holder yet, so the server needs it to know
+ * who the holder will be.
+ */
 export const AddressCreateRequestSchema = z
-  .object({ seatId: IdSchema, handle: z.string().min(1) })
+  .object({
+    seatId: IdSchema,
+    handle: z.string().min(1),
+    subject: z
+      .object({ kind: z.enum(['user', 'agent']), id: IdSchema })
+      .optional()
+      .describe('Who or what will hold the seat this address belongs to.'),
+    acknowledgeUnauthenticatedExposure: z
+      .boolean()
+      .optional()
+      .describe(
+        'Somebody accepting, explicitly, that an agent is being given an address while the reporting machine has no local sign-in. Spelled in full on purpose: a shorter name invites a default, and defaulting it would be the whole problem. Absent reads as not accepted.'
+      ),
+  })
   .describe('Issue an address to a seat.');
 
 /** One seat in an organization. */
@@ -205,10 +279,24 @@ export type Seat = z.infer<typeof SeatSchema>;
 /** `GET /v1/orgs/{orgId}/seats`. */
 export const SeatListResponseSchema = pageOf(SeatSchema, 'A page of an organization`s seats.');
 
-/** `POST /v1/seats/{seatId}/assign`. */
+/**
+ * `POST /v1/seats/{seatId}/assign`.
+ *
+ * Assignment binds the holder and issues the address together, in one
+ * transaction, so the request carries both. Two calls would make a seat with a
+ * holder and no address observable, which is not a state this service has.
+ * `handle` is optional only so a client one release behind keeps working.
+ */
 export const SeatAssignRequestSchema = z
-  .object({ subject: z.object({ kind: z.enum(['user', 'agent']), id: IdSchema }) })
-  .describe('Put a person or an agent into a seat.');
+  .object({
+    subject: z.object({ kind: z.enum(['user', 'agent']), id: IdSchema }),
+    handle: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('The name the seat`s address gets, written once and never renamed in place.'),
+  })
+  .describe('Put a person or an agent into a seat, and give it its address.');
 
 /** Who may reach a seat, and for what. */
 export const GrantSchema = z
@@ -238,10 +326,34 @@ export const GrantReplaceRequestSchema = z
     'Replace a seat`s entire grant set. A partial update is not offered, so no two clients can interleave.'
   );
 
-/** `GET /v1/seats/{seatId}/grants`. */
+/**
+ * `GET /v1/seats/{seatId}/grants`.
+ *
+ * **An empty `grants` list is not an empty permission set.** Zero stored rows
+ * means the organization`s default, which the server resolves. `effective` is
+ * how a client can show that: it carries the resolved verdict per grantee kind
+ * and capability, so an interface can say what removing every rule actually
+ * did. Absent when the server did not resolve it.
+ */
 export const GrantListResponseSchema = z
-  .object({ grants: z.array(GrantSchema) })
-  .describe('A seat`s entire grant set.');
+  .object({
+    grants: z.array(GrantSchema),
+    effective: z
+      .array(
+        z
+          .object({
+            granteeKind: GrantSchema.shape.granteeKind,
+            capability: GrantSchema.shape.capability,
+            effect: GrantSchema.shape.effect,
+          })
+          .describe('One resolved verdict: what a kind of grantee may do, after the default.')
+      )
+      .optional()
+      .describe(
+        'The resolved verdict per grantee kind and capability, including whatever the organization`s default supplies. Absent when the server did not resolve it.'
+      ),
+  })
+  .describe('A seat`s entire grant set, and optionally what it resolves to.');
 
 /** Something attached to a seat beyond what it includes by default. */
 export const AddonSchema = z
@@ -357,3 +469,66 @@ export const PresenceSchema = z
 
 /** How reachable a seat is right now. */
 export type Presence = z.infer<typeof PresenceSchema>;
+
+/**
+ * One seat became active in one subscription period.
+ *
+ * The wire event a fair-billing consumer subscribes to. It says that an agent
+ * seat did something that counts, once, and it carries nothing else.
+ *
+ * Four properties are the whole design, and each is load-bearing:
+ *
+ *   - **At most one event per seat per subscription period.** The first
+ *     qualifying event is kept. A second is a no-op, not an update, so a
+ *     consumer that sees one has seen everything there is for that seat in that
+ *     period.
+ *   - **`eventId` is an idempotency key.** A redelivery with the same key is a
+ *     complete no-op. A consumer may be delivered the same event more than once
+ *     and must not count it twice.
+ *   - **The period is the organization`s subscription period, not a calendar
+ *     month.** It is clamped on a short month rather than rolled over, so a
+ *     period that starts on the 31st ends on the last day of a 30-day month and
+ *     does not spill into the next one.
+ *   - **Nothing from a message ever appears here.** No message, subject, body,
+ *     sender or email field, and no presence value. `sourceRef` is opaque: it
+ *     says which source, never who sent anything.
+ *
+ * Person seats never produce one of these. A person seat is not billed for
+ * being active.
+ */
+export const SeatActivityEventSchema = z
+  .object({
+    eventId: IdSchema.describe(
+      'Idempotency key. A redelivery with the same key is a complete no-op.'
+    ),
+    billingAccountId: IdSchema,
+    seatId: IdSchema.describe(
+      'Agent seats only. A person seat never produces a seat-activity event.'
+    ),
+    periodStart: TimestampSchema.describe(
+      'The start of the organization`s subscription period — NOT a calendar month.'
+    ),
+    periodEnd: TimestampSchema.describe(
+      'The end of the organization`s subscription period — NOT a calendar month. Clamped on a short month rather than rolled over.'
+    ),
+    occurredAt: TimestampSchema.describe('When the qualifying activity happened.'),
+    reason: z
+      .enum([
+        'inbound-from-org-seat',
+        'inbound-from-connected-channel',
+        'turn-triggered-by-qualifying-message',
+        'turn-triggered-by-attached-addon',
+        'addon-attached',
+      ])
+      .describe('What made the seat active. Mechanism: it names a kind of activity, nothing else.'),
+    sourceKind: z
+      .enum(['seat', 'connected-channel', 'addon'])
+      .describe('What kind of thing the activity came from.'),
+    sourceRef: z.string().describe('Opaque. Never a sender, never anything from a message.'),
+  })
+  .describe(
+    'One agent seat became active in one subscription period. At most one per seat per period; a redelivery is a no-op. Carries no message and no presence.'
+  );
+
+/** One agent seat became active in one subscription period. */
+export type SeatActivityEvent = z.infer<typeof SeatActivityEventSchema>;
