@@ -383,25 +383,19 @@ export interface RuntimeKeyStatus {
  * sign-in, and offering it here twice would be two doors to one room.
  */
 export interface OpenCodeDirectProvider {
-  /** Stable id for this entry — what the picker offers and what a person names. */
-  id: string;
   /**
-   * The id actually stored in config and handed to the sidecar env mapping.
-   *
-   * It is the same as {@link id} for a service that speaks its own wire format,
-   * and differs for one that speaks someone else's: an OpenAI-compatible service
-   * IS `openai` plus a base URL on the wire, which is what lets such a service be
-   * listed here with no change to the env-var mapping at all.
+   * Stable id — what the picker offers, what is stored in config, and what the
+   * sidecar env mapping keys on. One id, everywhere.
    */
-  wireId: string;
+  id: string;
   /** Plain name shown in the picker, e.g. `OpenAI`. */
   label: string;
   /** Address DorkOS talks to when no base URL is entered. */
   defaultBaseURL: string;
   /** Format hint for the key field — a shape, never a real key. */
   keyPlaceholder: string;
-  /** Where a person gets a key for this service, when there is such a page. */
-  getKeyUrl?: string;
+  /** Where a person gets a key for this service. */
+  getKeyUrl: string;
 }
 
 /**
@@ -410,12 +404,12 @@ export interface OpenCodeDirectProvider {
  *
  * "Other, OpenAI-compatible" is a CLIENT-side choice, not an entry here: it
  * submits `openai` with a required base URL, because an OpenAI-compatible
- * server speaks the OpenAI wire format by definition.
+ * server speaks the OpenAI wire format by definition — which is the whole reason
+ * a service DorkOS does not name still works.
  */
 export const OPENCODE_DIRECT_PROVIDERS: readonly OpenCodeDirectProvider[] = [
   {
     id: 'openai',
-    wireId: 'openai',
     label: 'OpenAI',
     defaultBaseURL: 'https://api.openai.com/v1',
     keyPlaceholder: 'sk-…',
@@ -423,7 +417,6 @@ export const OPENCODE_DIRECT_PROVIDERS: readonly OpenCodeDirectProvider[] = [
   },
   {
     id: 'anthropic',
-    wireId: 'anthropic',
     label: 'Anthropic',
     defaultBaseURL: 'https://api.anthropic.com',
     keyPlaceholder: 'sk-ant-…',
@@ -432,20 +425,13 @@ export const OPENCODE_DIRECT_PROVIDERS: readonly OpenCodeDirectProvider[] = [
 ] as const;
 
 /**
- * The listed service for `providerId`, matched on its own {@link
- * OpenCodeDirectProvider.id} first and then on its
- * {@link OpenCodeDirectProvider.wireId}, or `undefined` when the list serves
- * nothing by that name.
+ * The listed service for `providerId`, or `undefined` when the list serves
+ * nothing by that name — the one allow-list the server checks a key against and
+ * the client builds its picker from, so neither can offer what the other
+ * refuses.
  *
- * Both halves matter. The client names a service by its own id, while what is
- * saved in config is the wire id — so this one lookup answers "what did they
- * pick" and "what is saved" without either side keeping its own table.
- *
- * @param providerId - A listed service id, or the id one uses on the wire.
+ * @param providerId - A service id as the client sends it and config stores it.
  */
 export function findOpenCodeDirectProvider(providerId: string): OpenCodeDirectProvider | undefined {
-  return (
-    OPENCODE_DIRECT_PROVIDERS.find((entry) => entry.id === providerId) ??
-    OPENCODE_DIRECT_PROVIDERS.find((entry) => entry.wireId === providerId)
-  );
+  return OPENCODE_DIRECT_PROVIDERS.find((entry) => entry.id === providerId);
 }

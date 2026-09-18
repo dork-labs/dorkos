@@ -31,7 +31,6 @@
  *
  * @module services/runtimes/connect/credentials
  */
-import { findOpenCodeDirectProvider } from '@dorkos/shared/runtime-connect';
 import type {
   CredentialCheckResult,
   DelegatedLoginResult,
@@ -209,34 +208,24 @@ export type ProviderCredentialDeps = PersistProviderDeps & {
 };
 
 /**
- * What a named service means on the wire: the id that is actually stored and
- * handed to the sidecar env mapping, plus the address that goes with it.
+ * The base URL as it should be STORED: trimmed, with a blank one recorded as
+ * "no override" rather than as an address of `""`.
  *
- * The client already sends the wire id, so in practice this is a no-op. It
- * exists for everything that is not the current client: a stale one, or a
- * hand-written request, naming a listed service by its own id. Normalising
- * rather than refusing is what keeps such a request working — but only if the
- * service's own ADDRESS comes along with the rename, otherwise a service listed
- * under its own id would land as the bare wire service pointed at ITS address,
- * which is a different service holding a different key.
+ * `undefined` is passed through as `undefined`, which means "leave whatever is
+ * saved alone" — a different instruction from "clear it", and the two must not
+ * collapse into each other.
  *
- * @param providerId - A listed service id, or the id one uses on the wire.
+ * Every provider id goes through this, listed or not. An id the list does not
+ * serve is refused later, by the key check's allow-list — but "later" still
+ * leaves this function running first, and an unlisted id that skipped the trim
+ * could write `"   "` into `opencode.baseURL` on its way to that refusal.
+ *
  * @param baseURL - The base URL as given: a string, `null` to clear it, or
  *   `undefined` to leave whatever is saved alone.
  */
-function resolveDirectTarget(
-  providerId: string,
-  baseURL: string | null | undefined
-): { providerId: string; baseURL: string | null | undefined } {
-  const entry = findOpenCodeDirectProvider(providerId);
-  if (!entry) return { providerId, baseURL };
-  // A blank address is "no override", not an empty string — a field someone
-  // cleared should read back as cleared, not as a base URL of `""`.
-  const address = baseURL?.trim() ? baseURL.trim() : null;
-  if (entry.id !== entry.wireId && address === null) {
-    return { providerId: entry.wireId, baseURL: entry.defaultBaseURL };
-  }
-  return { providerId: entry.wireId, baseURL: baseURL === undefined ? undefined : address };
+function normalizeStoredBaseURL(baseURL: string | null | undefined): string | null | undefined {
+  if (baseURL === undefined) return undefined;
+  return baseURL?.trim() ? baseURL.trim() : null;
 }
 
 /**
@@ -263,11 +252,11 @@ export async function storeProviderCredential(
   input: ProviderCredentialInput,
   deps: ProviderCredentialDeps = {}
 ): Promise<StoreCredentialResult> {
-  const named = input.providerId?.trim() ?? '';
-  if (named.length === 0) {
+  const providerId = input.providerId?.trim() ?? '';
+  if (providerId.length === 0) {
     throw new ConnectError('A provider id is required.', 400);
   }
-  const { providerId, baseURL } = resolveDirectTarget(named, input.baseURL);
+  const baseURL = normalizeStoredBaseURL(input.baseURL);
 
   const typed = input.secret?.trim() ? input.secret : null;
   const saved = typed === null ? await readSavedSecret(providerId, deps) : null;
@@ -313,11 +302,11 @@ export async function checkProviderCredential(
   input: { providerId: string; secret: string | null; baseURL?: string | null },
   deps: ProviderCredentialDeps = {}
 ): Promise<CredentialCheckResult> {
-  const named = input.providerId?.trim() ?? '';
-  if (named.length === 0) {
+  const providerId = input.providerId?.trim() ?? '';
+  if (providerId.length === 0) {
     throw new ConnectError('A provider id is required.', 400);
   }
-  const { providerId, baseURL } = resolveDirectTarget(named, input.baseURL);
+  const baseURL = normalizeStoredBaseURL(input.baseURL);
   const typed = input.secret?.trim() ? input.secret : null;
   const secret = typed ?? (await readSavedSecret(providerId, deps));
   if (secret === null) {

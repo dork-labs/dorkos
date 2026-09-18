@@ -68,18 +68,21 @@ function entryFor(choice: SourceChoice) {
   return OPENCODE_DIRECT_PROVIDERS.find((entry) => entry.id === choice);
 }
 
-/** The id a choice submits — a listed service's wire id, or `openai` for Other. */
-function wireIdFor(choice: SourceChoice): string {
-  return entryFor(choice)?.wireId ?? 'openai';
+/** The service id a choice submits — a listed one, or `openai` for Other. */
+function providerIdFor(choice: SourceChoice): string {
+  return entryFor(choice)?.id ?? 'openai';
 }
 
-/** The address the wire service answers on when nothing overrides it. */
-function wireDefaultBaseURL(wireId: string): string {
+/** The address a listed service answers on when nothing overrides it. */
+function defaultBaseURLFor(id: string): string {
   return (
-    OPENCODE_DIRECT_PROVIDERS.find((entry) => entry.id === wireId)?.defaultBaseURL ??
+    OPENCODE_DIRECT_PROVIDERS.find((entry) => entry.id === id)?.defaultBaseURL ??
     OPENCODE_DIRECT_PROVIDERS[0].defaultBaseURL
   );
 }
+
+/** A saved setup this form owns — its service is one the picker offers. */
+type OwnedSetup = OpenCodeDirectSetup & { providerId: string };
 
 /**
  * Whether what is saved belongs to THIS form at all.
@@ -92,35 +95,27 @@ function wireDefaultBaseURL(wireId: string): string {
  *
  * @param setup - What the server says is saved.
  */
-function ownedSetup(setup: OpenCodeDirectSetup): boolean {
-  return (
-    setup.providerId !== null &&
-    OPENCODE_DIRECT_PROVIDERS.some((entry) => entry.wireId === setup.providerId)
-  );
+function ownedSetup(setup: OpenCodeDirectSetup): setup is OwnedSetup {
+  return OPENCODE_DIRECT_PROVIDERS.some((entry) => entry.id === setup.providerId);
 }
 
 /**
- * Which power source a saved setup means.
+ * Which power source a saved setup means. The rule, in order:
  *
- * Saved config only records the WIRE id and an address, so the address is what
- * tells two services on the same wire apart. The rule, in order:
- *
- * 1. Anthropic is its own wire, so a saved `anthropic` is always Anthropic —
- *    including with a custom address, which stays an Anthropic connection
- *    rather than being re-read as an OpenAI-compatible one.
- * 2. An address that exactly matches a listed service's own is that service,
- *    which is how two services sharing one wire are told apart.
- * 3. No address at all is the plain wire service (`openai` → OpenAI).
+ * 1. Something this form does not own (the cloud or on-your-computer path's
+ *    service) is nothing saved here, so the form opens on its default.
+ * 2. Anthropic stays Anthropic, custom address or not — it speaks its own
+ *    format, so an address cannot turn it into an OpenAI-compatible server.
+ * 3. An `openai` connection at OpenAI's own address, or at none at all, is
+ *    OpenAI.
  * 4. Anything else is an OpenAI-compatible server DorkOS does not name.
  */
 function choiceFor(setup: OpenCodeDirectSetup): SourceChoice {
   if (!ownedSetup(setup)) return 'openai';
   if (setup.providerId === 'anthropic') return 'anthropic';
-  const named = OPENCODE_DIRECT_PROVIDERS.find(
-    (entry) => entry.wireId === setup.providerId && entry.defaultBaseURL === setup.baseURL
-  );
-  if (named) return named.id;
-  if (setup.baseURL === null) return 'openai';
+  if (setup.baseURL === null || setup.baseURL === defaultBaseURLFor(setup.providerId)) {
+    return setup.providerId;
+  }
   return OTHER_CHOICE;
 }
 
@@ -195,27 +190,27 @@ function DirectProviderForm({
   const test = useCheckProviderCredential();
 
   const entry = entryFor(choice);
-  const wireId = wireIdFor(choice);
+  const providerId = providerIdFor(choice);
   // The saved hint belongs to the saved service. Switch the list to Anthropic
   // while an OpenAI key is saved and there is no saved key for what is on screen.
-  const savedLast4 = owned?.key.saved && owned.providerId === wireId ? owned.key.last4 : null;
+  const savedLast4 = owned?.key.saved && owned.providerId === providerId ? owned.key.last4 : null;
 
   const address = baseURL.trim();
   const needsAddress = choice === OTHER_CHOICE;
   const addressReady = !needsAddress || address.length > 0;
   // The address DorkOS would talk to, with the field's own default filled in —
   // the honest thing to compare, warn about, and submit.
-  const wireDefault = wireDefaultBaseURL(wireId);
-  const effective = address || wireDefault;
-  // Only an address that DIFFERS from the wire service's own is an override
-  // worth storing. `OPENAI_BASE_URL` is set from whatever is stored, so writing
+  const serviceDefault = defaultBaseURLFor(providerId);
+  const effective = address || serviceDefault;
+  // Only an address that DIFFERS from the service's own is an override worth
+  // storing. `OPENAI_BASE_URL` is set from whatever is stored, so writing
   // Anthropic's own address here would point an OpenAI variable at Anthropic.
-  const submittedBaseURL = effective === wireDefault ? '' : effective;
-  // Compare like with like: a saved `null` address means the wire service's own,
-  // so "OpenAI with nothing saved" is not a change when OpenAI is on screen.
+  const submittedBaseURL = effective === serviceDefault ? '' : effective;
+  // Compare like with like: a saved `null` address means the service's own, so
+  // "OpenAI with nothing saved" is not a change when OpenAI is on screen.
   const savedEffective =
-    owned === null ? null : (owned.baseURL ?? wireDefaultBaseURL(owned.providerId as string));
-  const changed = wireId !== (owned?.providerId ?? null) || effective !== savedEffective;
+    owned === null ? null : (owned.baseURL ?? defaultBaseURLFor(owned.providerId));
+  const changed = providerId !== (owned?.providerId ?? null) || effective !== savedEffective;
   const hasKey = key.trim().length > 0;
   // A saved key is only ever sent to the address it is already saved for, so
   // there is nothing honest to do with one at a NEW address. The server enforces
@@ -228,7 +223,7 @@ function DirectProviderForm({
   const needsRepaste = !hasKey && savedLast4 !== null && changed;
   const insecure = effective.startsWith('http://');
 
-  const input = { providerId: wireId, key, baseURL: submittedBaseURL };
+  const input = { providerId, key, baseURL: submittedBaseURL };
 
   /** Drop a stale answer the moment the thing it was about changes. */
   const invalidateAnswers = () => {
@@ -359,7 +354,7 @@ function DirectProviderForm({
       )}
 
       <div className="flex items-center justify-between gap-2">
-        {entry?.getKeyUrl === undefined ? (
+        {entry === undefined ? (
           <span />
         ) : (
           <a

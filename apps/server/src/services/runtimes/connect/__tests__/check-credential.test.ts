@@ -199,21 +199,29 @@ describe('checkRuntimeKey', () => {
 });
 
 describe('OPENCODE_DIRECT_PROVIDERS — the one list both sides read', () => {
-  it('lists OpenAI and Anthropic, each with a wire id the env mapping knows', async () => {
+  it('is the allow-list: every listed service is checkable, and nothing else is', async () => {
+    // Asserted OVER the list rather than against a copy of it, so adding a
+    // service cannot leave this test passing about services that no longer exist.
     const { OPENCODE_DIRECT_PROVIDERS } = await import('@dorkos/shared/runtime-connect');
-    expect(OPENCODE_DIRECT_PROVIDERS.map((entry) => entry.id)).toEqual(['openai', 'anthropic']);
-    // Every entry speaks a wire the sidecar env mapping already has a variable
-    // for — that is what lets a service be added with no server change.
-    expect(new Set(OPENCODE_DIRECT_PROVIDERS.map((entry) => entry.wireId))).toEqual(
-      new Set(['openai', 'anthropic'])
-    );
-    // Every listed service is reachable under its own id AND under its wire id,
-    // so neither the client nor a hand-written request has to guess which to use.
+    expect(OPENCODE_DIRECT_PROVIDERS.length).toBeGreaterThan(0);
+
     for (const entry of OPENCODE_DIRECT_PROVIDERS) {
       expect(findOpenCodeDirectProvider(entry.id)).toBe(entry);
-      expect(findOpenCodeDirectProvider(entry.wireId)?.wireId).toBe(entry.wireId);
+      // Every listed service has an address and a way to get a key, because the
+      // picker renders both without asking whether they are there.
+      expect(entry.defaultBaseURL).toMatch(/^https?:\/\//);
+      expect(entry.getKeyUrl).toMatch(/^https:\/\//);
+
+      const { fetchImpl } = fakeFetch(200);
+      await expect(
+        checkProviderKey({ providerId: entry.id, secret: SECRET }, { fetchImpl })
+      ).resolves.toEqual({ ok: true });
     }
+
     expect(findOpenCodeDirectProvider('Valut Cloud')).toBeUndefined();
+    await expect(
+      checkProviderKey({ providerId: 'Valut Cloud', secret: SECRET }, fakeFetch(200))
+    ).rejects.toBeInstanceOf(ConnectError);
   });
 });
 

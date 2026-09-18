@@ -226,16 +226,14 @@ export async function checkProviderKey(
   input: ProviderKeyCheckInput,
   deps: CheckCredentialDeps = {}
 ): Promise<CredentialCheckResult> {
-  const named = input.providerId.trim();
-  // A listed service is accepted under EITHER name — its own id or the one it
-  // uses on the wire. The client sends the wire id, but a stale client or a
-  // hand-written request may name the service itself, and refusing that would be
-  // a refusal of something DorkOS plainly supports.
-  const entry = findOpenCodeDirectProvider(named);
-  const providerId = entry?.wireId ?? named;
+  const providerId = input.providerId.trim();
+  // The shared list IS the allow-list, so the picker cannot offer a service the
+  // check would refuse, and a hand-written request cannot name one that has no
+  // key mapping at all — the failure that used to wait until the first turn.
+  const entry = findOpenCodeDirectProvider(providerId);
   if (!entry && providerId !== OPENROUTER_ID) {
     throw new ConnectError(
-      `DorkOS can’t pass a key to "${named}". Choose OpenAI or Anthropic, or use an OpenAI-compatible base URL.`,
+      `DorkOS can’t pass a key to "${providerId}". Choose OpenAI or Anthropic, or use an OpenAI-compatible base URL.`,
       400
     );
   }
@@ -263,11 +261,9 @@ export async function checkProviderKey(
 
   const spec = CHECK_SPECS[providerId];
   // A blank address is not an address: an empty Advanced field means "use the
-  // service's own", not "probe nothing". The NAMED service's address wins over
-  // the wire service's, so a service listed under its own id is checked at its
-  // own address rather than at the address of the wire it happens to speak.
+  // service's own", not "probe nothing".
   const entered = input.baseURL ? normalizeBaseURL(input.baseURL) : '';
-  const base = entered.length > 0 ? entered : (entry?.defaultBaseURL ?? spec.defaultBaseURL);
+  const base = entered.length > 0 ? entered : spec.defaultBaseURL;
   const url = `${base}${spec.probePath}`;
   if (!isWebAddress(url)) {
     return {

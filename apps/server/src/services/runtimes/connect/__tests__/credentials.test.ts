@@ -374,18 +374,25 @@ describe('the key is checked BEFORE anything is saved (DOR-2123)', () => {
     });
   });
 
-  it('stores a blank base URL as no override rather than as an empty address', async () => {
-    const store = fakeStore();
-    const config = fakeConfig();
-    config.state.runtimes!.opencode.baseURL = 'https://stale.example.com';
+  // Listed AND unlisted: the trim has to happen before anything branches on
+  // whether the list serves this id, or an id headed for a refusal could write
+  // `"   "` into the stored address on its way there.
+  it.each(['openai', 'openrouter'])(
+    'stores a blank base URL as no override rather than as an empty address (%s)',
+    async (providerId) => {
+      const store = fakeStore();
+      const config = fakeConfig();
+      config.state.runtimes!.opencode.baseURL = 'https://stale.example.com';
 
-    await storeProviderCredential(
-      { providerId: 'openai', secret: SECRET, baseURL: '   ' },
-      { store, config, checkKey: acceptEverything }
-    );
+      await storeProviderCredential(
+        { providerId, secret: SECRET, baseURL: '   ' },
+        { store, config, checkKey: acceptEverything }
+      );
 
-    expect(config.state.runtimes?.opencode.baseURL).toBeNull();
-  });
+      expect(config.state.runtimes?.opencode.baseURL).toBeNull();
+      expect(config.state.runtimes?.opencode.provider).toBe(providerId);
+    }
+  );
 });
 
 describe('a saved key only ever goes to the address it is saved for', () => {
