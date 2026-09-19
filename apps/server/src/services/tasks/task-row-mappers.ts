@@ -89,6 +89,29 @@ export function mapRunRow(row: typeof pulseRuns.$inferSelect): TaskRun {
     trigger: row.trigger as TaskRunTrigger,
     resolvedRuntime: row.resolvedRuntime ?? null,
     resolvedModel: row.resolvedModel ?? null,
+    refusedTools: readRefusedTools(row.refusedTools),
     createdAt: row.createdAt,
   };
+}
+
+/**
+ * Read the stored refused-tool list off a run row.
+ *
+ * Parsed defensively and never thrown from: this mapper is on the read path of
+ * every run-history page, and a row whose JSON somebody corrupted by hand must
+ * cost that one field rather than the whole list of runs. A value that is not
+ * an array of strings is treated as absent, which reads exactly as a run
+ * recorded before the column existed.
+ *
+ * @param raw - The column as stored: JSON text, or null.
+ */
+function readRefusedTools(raw: string | null): string[] | null {
+  if (raw === null) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    return parsed.every((name) => typeof name === 'string') ? (parsed as string[]) : null;
+  } catch {
+    return null;
+  }
 }

@@ -108,6 +108,7 @@ function makeRun(overrides: Partial<TaskRun> = {}): TaskRun {
     trigger: 'scheduled',
     resolvedRuntime: null,
     resolvedModel: null,
+    refusedTools: null,
     createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
     ...overrides,
   };
@@ -213,6 +214,82 @@ describe('FailedRunDetailSheet', () => {
     renderSheet();
 
     expect(screen.queryByText('Error')).not.toBeInTheDocument();
+  });
+
+  describe('a run that was blocked, not broken (DOR-2101)', () => {
+    const REFUSAL = 'Skipped Bash — nobody was there to approve it on a scheduled run.';
+
+    /** Show the sheet for a blocked run, as the terminal write persists one. */
+    function renderBlocked() {
+      mockUseRun.mockReturnValue({
+        data: makeRun({ status: 'blocked', error: REFUSAL, refusedTools: ['Bash'] }),
+        isLoading: false,
+        isError: false,
+      });
+      renderSheet();
+    }
+
+    it('never calls it Failed', () => {
+      // The defect: the badge was a hardcoded destructive "Failed", so a run
+      // that broke nothing was reported to the operator as a breakage. The
+      // notification that opens this sheet cannot tell the two apart — the run
+      // row can, and the sheet already has it.
+      renderBlocked();
+
+      expect(screen.getByText('Blocked')).toBeInTheDocument();
+      expect(screen.queryByText('Failed')).not.toBeInTheDocument();
+    });
+
+    it('titles it as a run that could not act, not one that did not finish', () => {
+      renderBlocked();
+
+      expect(screen.getByText('Run that couldn’t use its tools')).toBeInTheDocument();
+      expect(screen.queryByText('Run that didn’t finish')).not.toBeInTheDocument();
+    });
+
+    it('explains what it needed, and not in the failure red', () => {
+      renderBlocked();
+
+      expect(screen.getByText('What it needed')).toBeInTheDocument();
+      expect(screen.queryByText('Error')).not.toBeInTheDocument();
+      expect(screen.getByText(REFUSAL)).toBeInTheDocument();
+      expect(screen.getByText(REFUSAL).className).not.toContain('destructive');
+    });
+
+    it('titles every other outcome honestly too', () => {
+      // A sheet headed "Run that didn't finish" over a run that finished is
+      // the same small lie the hardcoded Failed badge was.
+      for (const [status, title] of [
+        ['completed', 'Run that finished'],
+        ['cancelled', 'Run that was stopped'],
+        ['skipped', 'Run that never started'],
+        ['running', 'Run that is still going'],
+      ] as const) {
+        cleanup();
+        mockUseRun.mockReturnValue({
+          data: makeRun({ status }),
+          isLoading: false,
+          isError: false,
+        });
+        renderSheet();
+
+        expect(screen.getByText(title)).toBeInTheDocument();
+        expect(screen.queryByText('Run that didn’t finish')).not.toBeInTheDocument();
+      }
+    });
+
+    it('still says Failed, in red, for a run that really did break', () => {
+      mockUseRun.mockReturnValue({
+        data: makeRun({ status: 'failed', error: 'exit 1' }),
+        isLoading: false,
+        isError: false,
+      });
+      renderSheet();
+
+      expect(screen.getByText('Failed')).toBeInTheDocument();
+      expect(screen.getByText('Error')).toBeInTheDocument();
+      expect(screen.getByText('exit 1').className).toContain('destructive');
+    });
   });
 
   it('renders output summary when present', () => {
@@ -348,10 +425,13 @@ describe('FailedRunDetailSheet', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it('renders the sheet title and itemId truncated to 8 chars', () => {
+  it('renders a neutral sheet title before the run loads, and the itemId truncated to 8 chars', () => {
+    // No run yet, so nothing is known about how it ended. The title used to
+    // say "Run that didn't finish" regardless, which is the same small lie as
+    // the old hardcoded Failed badge — it just took a status to expose it.
     renderSheet({ itemId: 'run-abc123-full-id' });
 
-    expect(screen.getByText('Run that didn’t finish')).toBeInTheDocument();
+    expect(screen.getByText('Run that needs a look')).toBeInTheDocument();
     expect(screen.getByText('run-abc1')).toBeInTheDocument();
   });
 

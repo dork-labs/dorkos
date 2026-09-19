@@ -610,6 +610,7 @@ describe('TaskSchedulerService', () => {
           toolCallId: id,
           toolName,
           reasonType: 'no_approval_surface',
+          askKind: 'tool',
           reason: 'nobody was available to approve this tool',
           message: 'Nobody is available to approve this on a scheduled run.',
         },
@@ -652,9 +653,22 @@ describe('TaskSchedulerService', () => {
       await service.stop();
     });
 
+    /** A tool call that ended having actually done its job. */
+    function toolWorked(toolName: string, id: string): StreamEvent {
+      return {
+        type: 'tool_result',
+        data: { toolCallId: id, toolName, result: 'ok', status: 'complete' },
+      } as StreamEvent;
+    }
+
     it('leads the run summary with the tools it could not use', async () => {
       vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
         yield nobodyThere('Bash', 't1');
+        // The successful call is load-bearing since DOR-2101: it is what makes
+        // this the run that lost ONE tool and carried on, rather than the run
+        // that was never allowed to do anything. Without it the same stream is
+        // the blocked case, and text alone is the agent talking, not evidence.
+        yield toolWorked('Read', 't2');
         yield { type: 'text_delta', data: { text: 'Checked what I could.' } } as StreamEvent;
       });
       const task = store.createTask(
@@ -674,6 +688,89 @@ describe('TaskSchedulerService', () => {
       expect(finished.outputSummary).toContain('Checked what I could.');
       // Being refused a tool is not the run failing: it carried on without it.
       expect(finished.status).toBe('completed');
+      // The tool it lost is kept on the row either way, so history can name it
+      // without anybody cross-referencing the activity feed (DOR-2101).
+      expect(finished.refusedTools).toEqual(['Bash']);
+
+      await service.stop();
+    });
+
+    /** A refusal of something that is NOT a tool — a question, an elicitation. */
+    function nobodyThereFor(
+      askKind: 'question' | 'elicitation',
+      toolName: string,
+      id: string
+    ): StreamEvent {
+      return {
+        type: 'permission_denied',
+        data: {
+          toolCallId: id,
+          toolName,
+          reasonType: 'no_approval_surface',
+          askKind,
+          reason: 'nobody was available to answer this question',
+          message: 'Nobody is available to answer this on a scheduled run.',
+        },
+      } as StreamEvent;
+    }
+
+    it('keeps only the TOOLS on the run row, not the questions', async () => {
+      // The row's own line says "could not use …", so a question nobody could
+      // answer has no business being named there as a tool (DOR-2101 review).
+      // The summary sentence still folds all three.
+      vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
+        yield nobodyThere('Bash', 't1');
+        yield nobodyThereFor('question', 'AskUserQuestion', 't2');
+        yield nobodyThereFor('elicitation', 'stripe-mcp', 't3');
+        yield toolWorked('Read', 't4');
+      });
+      const task = store.createTask(
+        taskInput({ name: 'Mixed', prompt: 'test', cron: '0 * * * *' })
+      );
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+
+      const run = await service.triggerManualRun(task.id);
+      await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true));
+
+      const finished = store.getRun(run!.id)!;
+      expect(finished.refusedTools).toEqual(['Bash']);
+      // …and the summary line still names all three, because it answers the
+      // wider question of what went unanswered.
+      expect(finished.outputSummary?.split('\n')[0]).toContain('AskUserQuestion');
+
+      await service.stop();
+    });
+
+    it('records a run refused every tool as blocked, not as a success', async () => {
+      // The defect (DOR-2101): a mailbox schedule fired twice, was refused four
+      // tools, read nothing, said so in prose — and left two green rows and two
+      // `tasks.run_success` entries behind it.
+      vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
+        yield nobodyThere('Bash', 't1');
+        yield nobodyThere('mcp__gmail__search', 't2');
+        yield {
+          type: 'text_delta',
+          data: { text: 'I could not read the mail.' },
+        } as StreamEvent;
+      });
+      const task = store.createTask(
+        taskInput({ name: 'Mailroom', prompt: 'test', cron: '0 * * * *' })
+      );
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+
+      const run = await service.triggerManualRun(task.id);
+      await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true));
+
+      const finished = store.getRun(run!.id)!;
+      expect(finished.status).toBe('blocked');
+      // The row's own explanation line, so the history says why without the
+      // reader having to open anything. The terminal activity event for it
+      // rides the TaskStore run-terminal hook, which the composition root wires
+      // — `run-activity.test.ts` is where that half is pinned.
+      expect(finished.error).toBe(
+        'Skipped Bash and gmail: search — nobody was there to approve them on a scheduled run.'
+      );
+      expect(finished.refusedTools).toEqual(['Bash', 'mcp__gmail__search']);
 
       await service.stop();
     });
@@ -3193,6 +3290,7 @@ describe('buildTaskAppend', () => {
       trigger: 'scheduled',
       resolvedRuntime: null,
       resolvedModel: null,
+      refusedTools: null,
       createdAt: '2026-01-01T02:00:00Z',
     };
 
@@ -3274,6 +3372,7 @@ describe('buildTaskAppend', () => {
       trigger,
       resolvedRuntime: null,
       resolvedModel: null,
+      refusedTools: null,
       createdAt: '2026-01-01T02:00:00Z',
     };
   }

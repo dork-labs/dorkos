@@ -91,6 +91,7 @@ function testRunTransport(outcome: TaskRunStatus): Transport {
     trigger: 'manual',
     resolvedRuntime: null,
     resolvedModel: null,
+    refusedTools: null,
     createdAt: minutesFromLoad(-2),
   });
 

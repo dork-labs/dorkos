@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { CheckCircle2, XCircle, MinusCircle, SkipForward, Clock } from 'lucide-react';
+import { CheckCircle2, XCircle, MinusCircle, SkipForward, Clock, Lock } from 'lucide-react';
 import {
   useTasks,
   useActiveTaskRunCount,
@@ -46,6 +46,10 @@ function RunStatusIcon({ status }: { status: TaskRun['status'] }) {
       return <MinusCircle className="text-muted-foreground size-3 shrink-0" aria-hidden />;
     case 'skipped':
       return <SkipForward className="text-muted-foreground size-3 shrink-0" aria-hidden />;
+    case 'blocked':
+      // Ran and got nowhere — every tool it reached for needed an approval
+      // nobody was there to give (DOR-2101). Amber, because nothing broke.
+      return <Lock className="text-status-warning-dot size-3 shrink-0" aria-hidden />;
     default:
       return null;
   }

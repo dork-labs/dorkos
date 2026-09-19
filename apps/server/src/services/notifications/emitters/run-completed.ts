@@ -46,14 +46,14 @@ const PUBLISH_TTL_MS = 30_000;
  */
 export async function notifyRunCompleted(run: TaskRun, task: Task | null): Promise<void> {
   // Cancellations are the operator's own action — they already know.
-  if (run.status !== 'completed' && run.status !== 'failed') return;
+  if (run.status !== 'completed' && run.status !== 'failed' && run.status !== 'blocked') return;
 
   const taskName = task?.displayName?.trim() || task?.name || 'Scheduled task';
   const duration = run.durationMs != null ? formatDuration(run.durationMs) : undefined;
   const detail =
-    run.status === 'failed'
-      ? (firstLine(run.error) ?? firstLine(run.outputSummary))
-      : firstLine(run.outputSummary);
+    run.status === 'completed'
+      ? firstLine(run.outputSummary)
+      : (firstLine(run.error) ?? firstLine(run.outputSummary));
 
   await notify(
     'run.completed',
@@ -98,10 +98,10 @@ function firstLine(text: string | null | undefined): string | undefined {
  * tone).
  *
  * Shape: one status emoji + task name + duration + the first line of output (on
- * success) or error (on failure), truncated to keep it glanceable. Kept exactly
- * as DOR-240 shipped it rather than rebuilt from the inbox row's title and body:
- * a phone message and an inbox row are not the same sentence, and this one is
- * already tuned.
+ * success) or error (on a failed or blocked run), truncated to keep it
+ * glanceable. Kept exactly as DOR-240 shipped it rather than rebuilt from the
+ * inbox row's title and body: a phone message and an inbox row are not the same
+ * sentence, and this one is already tuned.
  *
  * @param task - The run's task, for its display name (may be null).
  * @param run - The finished run, for status, duration, and output/error.
@@ -115,6 +115,18 @@ export function formatCompletionMessage(task: Task | null, run: TaskRun): string
     const detail = firstLine(run.error) ?? firstLine(run.outputSummary);
     body =
       `⚠️ ${name} — failed${duration ? ` after ${duration}` : ''}.` + (detail ? ` ${detail}` : '');
+  } else if (run.status === 'blocked') {
+    // Not the tick and not the warning triangle: the run did not break, and it
+    // did not work either. What it needs is permission, so the sentence says
+    // that and nothing else (DOR-2101).
+    // The detail is the run's own refusal sentence, which already ends "nobody
+    // was there to approve them" — so the lead says what happened and lets the
+    // detail name the tools, instead of saying the same thing twice
+    // (DOR-2101 review).
+    const detail = firstLine(run.error) ?? firstLine(run.outputSummary);
+    body =
+      `🔒 ${name} — used none of its tools${duration ? ` in ${duration}` : ''}.` +
+      (detail ? ` ${detail}` : '');
   } else {
     const detail = firstLine(run.outputSummary);
     body = `✅ ${name} — done${duration ? ` in ${duration}` : ''}.` + (detail ? ` ${detail}` : '');

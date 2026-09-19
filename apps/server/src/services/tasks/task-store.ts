@@ -173,6 +173,12 @@ interface RunUpdate {
   outputSummary?: string;
   error?: string;
   sessionId?: string;
+  /**
+   * The tools this run was refused for want of somebody to approve them, in
+   * the order they were first refused. Omitted leaves the stored list alone;
+   * `[]` is a real answer and clears it.
+   */
+  refusedTools?: string[];
 }
 
 /**
@@ -188,6 +194,9 @@ const TERMINAL_RUN_STATUSES: ReadonlySet<TaskRunStatus> = new Set([
   'completed',
   'failed',
   'cancelled',
+  // A run that ran and was refused every tool it reached for (DOR-2101). It is
+  // over, and it is not a failure — it was simply never allowed to do its job.
+  'blocked',
   // A skipped tick never started, so it is over the instant it is written
   // (DOR-1482) — and being terminal is what stops anything from later
   // "finishing" a run that was never run.
@@ -713,6 +722,15 @@ export class TaskStore {
         output: update.outputSummary ?? existing.outputSummary,
         error: update.error ?? existing.error,
         sessionId: update.sessionId ?? existing.sessionId,
+        // Serialized here rather than by the caller, so the one shape this
+        // column holds is decided in one place. An absent list leaves the
+        // stored value alone, exactly as every field above does.
+        refusedTools:
+          update.refusedTools !== undefined
+            ? JSON.stringify(update.refusedTools)
+            : existing.refusedTools !== null
+              ? JSON.stringify(existing.refusedTools)
+              : null,
       })
       .where(eq(pulseRuns.id, id))
       .run();
