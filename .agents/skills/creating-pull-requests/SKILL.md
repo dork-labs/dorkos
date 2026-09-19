@@ -167,8 +167,7 @@ it), add or edit one file under `ci/ledger/` in the same squashed commit.
 - Never write `verified`, `failed` or `inconclusive` as a status. Those are verdicts
   the machine computes, and the ledger check rejects them on `main`.
 - The coverage step ("CI Steward ledger coverage" in the required `typecheck` job)
-  warns until 2026-09-27, then it blocks; the date is in `ci/config.yaml` and the
-  switch happens by itself.
+  fails the PR when a pipeline change has no ledger entry.
 
 The full protocol is in `contributing/ci.md` and the `stewarding-ci-pipeline` skill.
 

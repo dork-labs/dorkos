@@ -92,14 +92,8 @@ describe('ci-steward cli', () => {
     git(root, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qam', 'raise timeout');
 
     const cov = ['ledger-check', '--coverage', '--base', base, '--branch', 'feat/x'];
-    // The fixture config switches coverage to blocking on 2026-09-27.
-    const warned = run([...cov, '--now', '2026-09-26T23:59:59Z'], root);
-    expect(warned.code).toBe(0);
-    expect(warned.out).toContain('warning only until 2026-09-27');
-    expect(warned.out).toContain(
-      '::warning file=ci/ledger,title=ci-steward coverage/missing-entry::'
-    );
-    const miss = run([...cov, '--now', '2026-09-27T00:00:00Z'], root);
+    // A missing entry fails the PR from the first day; there is no warn-only mode.
+    const miss = run(cov, root);
     expect(miss.code).toBe(1);
     expect(miss.err).toContain('coverage/missing-entry');
     expect(miss.err).toContain('.github/workflows/lint.yml');

@@ -38,8 +38,9 @@ quality control in machine gates that run on every PR and every merge group. Con
   admin merge will be the mechanically bounded break-glass path of CI Steward phase 1b, backed
   by a server-side detector and automatic revert.
 - No admin credential lives in GitHub Actions, so no automated change can edit the ruleset or
-  un-require a check. The one exception today, `MERGE_TAIL_TOKEN` (an admin-account PAT), is
-  replaced by a token without Administration in phase 0.
+  un-require a check. Phase 0 replaces the one exception, the admin-account PAT
+  `MERGE_TAIL_TOKEN`, with the `dorkos-merge-tail` GitHub App (no Administration); the
+  old secret is deleted right after that PR merges.
 - The Claude review becomes a blocking machine gate (a required `review-gate` job, red on an
   open Important finding) in phase 2, on the existing subscription, with no paid reviewer.
 

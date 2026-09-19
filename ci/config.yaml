@@ -54,13 +54,7 @@ ledger_dir: ci/ledger
 # paths: a PR touching any of these must add or edit a ledger entry. Every
 # workflow file, lefthook.yml, .claude/settings.json and each repo script a
 # gate invokes are added on top of this list by the engine (derived from the
-# run: lines and hook commands).
-#
-# blocking_from: before this date (00:00 UTC) a missing entry prints GitHub
-# warnings and the check exits 0; from it, the check fails the PR. The tool
-# reads the date itself, so the switch lands with no PR and no moment when
-# every open PR turns red. This file is on the fence list, so an unattended
-# ci-improve change cannot move it.
+# run: lines and hook commands). A missing entry fails the PR.
 coverage:
   paths:
     - .github/workflows/**
@@ -70,7 +64,6 @@ coverage:
     - ci/**
     - packages/ci-steward/**
     - .agents/skills/creating-pull-requests/**
-  blocking_from: 2026-09-27
 
 # A branch with this prefix is an unattended ci-improve change and may not
 # touch ci/steward-owned-paths.json (plan §4.7).

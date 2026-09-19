@@ -18,7 +18,7 @@ import { existsSync, mkdirSync, readdirSync, realpathSync, writeFileSync } from 
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { runCensus, discoverGates } from './census.ts';
-import { checkCoverage, splitByBlocking, type ChangedFile } from './coverage.ts';
+import { checkCoverage, type ChangedFile } from './coverage.ts';
 import { readRootScripts } from './discover.ts';
 import { formatFindings, type Finding } from './finding.ts';
 import { allocateId } from './ids.ts';
@@ -42,17 +42,16 @@ commands:
       Validate every ci/ledger entry.
   ledger-check --coverage --base <sha> [--branch <name>]
       Pull-request check: a pipeline change must add or edit a ledger entry, and a
-      ci-improve/* branch may not touch the steward's own files. Warns before
-      coverage.blocking_from in ci/config.yaml, fails from that date.
+      ci-improve/* branch may not touch the steward's own files.
   ledger-new --slug <kebab-slug> [--kind experiment|incident-fix|hygiene] [--title <text>]
       Scaffold ci/ledger/<YYMMDD-HHMMSS>-<slug>.md with a fresh id and print its path.
       --kind defaults to experiment; hygiene entries get no hypothesis block.
 
 every command:
   --root <dir>   repo root (default: the nearest directory up holding ci/config.yaml)
-  --now <iso>    the clock (default: now); decides allowlist expiry and the coverage switch
+  --now <iso>    the clock (default: now); decides allowlist expiry and new ledger ids
 
-exit codes: 0 clean (or only warnings), 1 findings, 2 bad usage or an internal error
+exit codes: 0 clean, 1 findings, 2 bad usage or an internal error
 root aliases: pnpm ci:census, pnpm ci:ledger-check, pnpm ci:ledger-new
 `;
 
@@ -85,15 +84,9 @@ function report(io: Io, tool: string, findings: Finding[]): number {
   return findings.length ? 1 : 0;
 }
 
-function annotation(f: Finding): string {
-  const text = `${f.message} Fix: ${f.fix}`.replace(/%/g, '%25').replace(/\r?\n/g, '%0A');
-  return `::warning file=${f.file},title=ci-steward ${f.code}::${text}\n`;
-}
-
 function ledgerCheck(
   root: string,
   io: Io,
-  now: Date,
   opts: { coverage: boolean; base?: string; branch?: string }
 ): number {
   const { files, findings } = loadHandFiles(root);
@@ -111,14 +104,7 @@ function ledgerCheck(
   );
   const rootScripts = readRootScripts(root, files.config.root_package_json);
   const coverage = checkCoverage({ root, files, workflows, gates, rootScripts, changed, branch });
-  const from = files.config.coverage.blocking_from;
-  const { blocking, advisory } = splitByBlocking(coverage, now, from);
-  if (advisory.length > 0) {
-    io.out(formatFindings(`ledger-check --coverage (warning only until ${from})`, advisory));
-    for (const f of advisory) io.out(annotation(f));
-  }
-  if (advisory.length > 0 && blocking.length === 0 && findings.length === 0) return 0;
-  return report(io, 'ledger-check --coverage', [...findings, ...blocking]);
+  return report(io, 'ledger-check --coverage', [...findings, ...coverage]);
 }
 
 function ledgerNew(
@@ -233,7 +219,7 @@ export function main(argv: readonly string[], io: Io, cwd: string = process.cwd(
       return report(io, 'census', result.findings);
     }
     case 'ledger-check':
-      return ledgerCheck(root, io, now, {
+      return ledgerCheck(root, io, {
         coverage: values.coverage === true,
         base: values.base,
         branch: values.branch,

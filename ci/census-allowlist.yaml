@@ -18,9 +18,9 @@
 # An expired entry fails the census, and so does an entry that excuses
 # nothing. That makes an expiry a deadline for a person, never a switch:
 # an expired entry turns EVERY PR's census red until a PR removes it, so never
-# use one to schedule a behaviour change (put the date in ci/config.yaml and
-# let the tool read it, as coverage.blocking_from does). Give an expiry only
-# to an exception that is genuinely temporary, and remove it before the date.
+# use one to schedule a behaviour change (put a date the tool reads in
+# ci/config.yaml instead). Give an expiry only to an exception that is
+# genuinely temporary, and remove it before the date.
 # Conditions true on both events on a green run (e.g. `!cancelled()`) need no
 # entry. Schema: AllowlistSchema in packages/ci-steward/src/schemas.ts.
 entries:

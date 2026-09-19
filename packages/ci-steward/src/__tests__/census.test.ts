@@ -282,7 +282,7 @@ describe('census: required jobs cannot hide a failure', () => {
         job: 'lint',
         step: 'Lint',
         kind: 'continue-on-error',
-        reason: 'Advisory for its first week; the expiry is the flip.',
+        reason: 'Temporary while a flaky upload is fixed.',
         expires: '2026-09-27',
       }
     );

@@ -133,7 +133,7 @@ Admin bypass is narrowed to `pull_request`: nobody pushes to `main` directly, ad
 
 The guard is the paved road, not the fence. It reads command text only, so a script on disk, `curl` with `gh auth token`, or a harness that does not run the hook walks past it (Codex reads a generated, trust-gated `.codex/hooks.json`; whether this guard fires there is unverified). The fence arrives in phase 1b: a detector for any commit on `main` with no merge-queue provenance, and an automatic revert.
 
-**Invariant: no admin credential exists in GitHub Actions.** Nothing automated may be able to edit the ruleset, so no automated change can un-require a check. **Status: not yet true.** `MERGE_TAIL_TOKEN` is a `repo`-scoped PAT from the admin account (`merge-tail.yml`). Phase 0's exit gate replaces it with a GitHub App or a fine-grained token with contents, pull-requests and actions write and **no** Administration, and proves two things: a REST merge of a blocked PR with the new token is refused, and a merge group the new token enqueues receives check runs (groups created by `GITHUB_TOKEN` get none and jam the queue).
+**Invariant: no admin credential exists in GitHub Actions.** Nothing automated may be able to edit the ruleset, so no automated change can un-require a check. **Status: true once the phase-0 PR merges and the old `MERGE_TAIL_TOKEN` secret is deleted, which happens right after that merge.** `merge-tail.yml` and `dependabot-lockfile-repair.yml` mint a short-lived token for the `dorkos-merge-tail` GitHub App (`actions/create-github-app-token`), which has contents, pull-requests and actions write and **no** Administration, in place of the admin-account PAT. Phase 0's exit gate proves two things about it: a REST merge of a blocked PR with the app token is refused, and a merge group the app token enqueues receives check runs (groups created by `GITHUB_TOKEN` get none and jam the queue).
 
 ## CI Steward: how the pipeline itself changes
 
@@ -175,7 +175,7 @@ Why, what was tried, what would make us revert. Short.
 
 - `node packages/ci-steward/src/cli.ts ledger-new --slug <kebab-slug> [--kind experiment|incident-fix|hygiene]` scaffolds an entry with a fresh id and prints its path (`--help` lists every command and flag); `ledger-check` validates every entry. Root aliases: `pnpm ci:census`, `pnpm ci:ledger-check`, `pnpm ci:ledger-new`. The engine's schema is the authority; the example above is the plan's shape.
 - `verified`, `failed` and `inconclusive` are **verdicts**, computed by code on the data branch after the window closes (phase 1). They never appear on `main`; the validity check rejects them.
-- **Coverage:** a PR that touches any gate source, any script a gate invokes, `turbo.json`, `lefthook.yml`, `.claude/settings.json`, a `ci/` hand file, `packages/ci-steward/**` or the `creating-pull-requests` skill must add or edit a ledger entry. The PR-only `typecheck` step "CI Steward ledger coverage" checks it. Before `coverage.blocking_from` in `ci/config.yaml` (2026-09-27) it prints GitHub warnings and passes; from that day it fails the PR. The tool reads the date itself, so the switch needs no PR and no open PR turns red because of the calendar. `ci/config.yaml` is fenced, so an unattended change cannot move the date. On a `ci-improve/*` branch, touching a fenced path fails from day one.
+- **Coverage:** a PR that touches any gate source, any script a gate invokes, `turbo.json`, `lefthook.yml`, `.claude/settings.json`, a `ci/` hand file, `packages/ci-steward/**` or the `creating-pull-requests` skill must add or edit a ledger entry. The PR-only `typecheck` step "CI Steward ledger coverage" checks it. A missing entry fails the PR. On a `ci-improve/*` branch, touching a fenced path fails it too.
 - **Ratchet releases block by default.** A `ratchet-release` lowers a quality floor on its own say-so, so the review treats it as blocking unless the reason is specific. `field-changes` is required when a required gate's retry, shards, timeout or required status changes.
 
 ### The census and the deadlock invariant
@@ -191,7 +191,7 @@ Why, what was tried, what would make us revert. Short.
 
 It runs as a step of the required `typecheck` job on every PR and every merge group, so it adds no new required context and no deadlock exposure of its own.
 
-**An expiry is a deadline for a person, never a switch.** When an allowlist entry expires, the census fails on every PR, whatever the PR touches, until a PR removes the entry. That is correct for an exception that has genuinely gone stale (a `no-timeout` job that now has data, a `continue-on-error` that was meant to be temporary), and it is an outage if the date was used to schedule a behaviour change. So a scheduled change goes in `ci/config.yaml` as a date the tool reads and acts on by itself (the coverage switch, `coverage.blocking_from`, is the model), and an entry gets an `expires:` only when a person should act before then. Event-branching `step-if` and `job-if` entries are permanent design and carry no expiry.
+**An expiry is a deadline for a person, never a switch.** When an allowlist entry expires, the census fails on every PR, whatever the PR touches, until a PR removes the entry. That is correct for an exception that has genuinely gone stale (a `no-timeout` job that now has data, a `continue-on-error` that was meant to be temporary), and it is an outage if the date was used to schedule a behaviour change. So never schedule a behaviour change with an expiry: if a change must happen on a date, put the date in `ci/config.yaml` and have the tool read it. An entry gets an `expires:` only when a person should act before then. Event-branching `step-if` and `job-if` entries are permanent design and carry no expiry.
 
 ### Ledger release first, ruleset edit second
 
@@ -209,15 +209,15 @@ The steward may change gates, never the steward or the judge. When the unattende
 
 ### What exists now
 
-| Piece                                                                                            | Phase | Status             |
-| ------------------------------------------------------------------------------------------------ | ----- | ------------------ |
-| `ci/` hand files, `census`, `ledger-check`, `ledger-new`, typecheck steps                        | 0     | this change        |
-| Merge guard, de-staled `creating-pull-requests` skill and watcher                                | 0     | this change        |
-| `MERGE_TAIL_TOKEN` replaced by a token without Administration                                    | 0     | pending (operator) |
-| Daily collector, data branch, verdicts, weekly report, `/ci:status`, `/ci:pulse`, `/ci:record`   | 1     | not built          |
-| Incident mode: sentinel, freeze, quarantine, `/ci:incident`, `/ci:break-glass`, `ci-steward arm` | 1b    | not built          |
-| Ratchet assertions, the blocking `review-gate`                                                   | 2     | not built          |
-| `/ci:improve`, `ci-improve-tick`, fence enforcement                                              | 3     | not built          |
+| Piece                                                                                            | Phase | Status      |
+| ------------------------------------------------------------------------------------------------ | ----- | ----------- |
+| `ci/` hand files, `census`, `ledger-check`, `ledger-new`, typecheck steps                        | 0     | this change |
+| Merge guard, de-staled `creating-pull-requests` skill and watcher                                | 0     | this change |
+| `MERGE_TAIL_TOKEN` replaced by the `dorkos-merge-tail` app                                       | 0     | this change |
+| Daily collector, data branch, verdicts, weekly report, `/ci:status`, `/ci:pulse`, `/ci:record`   | 1     | not built   |
+| Incident mode: sentinel, freeze, quarantine, `/ci:incident`, `/ci:break-glass`, `ci-steward arm` | 1b    | not built   |
+| Ratchet assertions, the blocking `review-gate`                                                   | 2     | not built   |
+| `/ci:improve`, `ci-improve-tick`, fence enforcement                                              | 3     | not built   |
 
 Never document a later-phase command as if it works; name its phase.
 
@@ -260,9 +260,9 @@ gh api repos/{owner}/{repo}/rules/branches/main
 
 **Cause:** YAML and the `ci/` hand files disagree (a new job with no `ci/gates.yaml` entry, a missing `timeout-minutes`, a generated block out of date, a required check that can deadlock). **Fix:** read the step log, which names the gate. `node packages/ci-steward/src/cli.ts census --fix` regenerates the blocks; gates and timeouts are hand edits.
 
-### "CI Steward ledger coverage" is red or warns
+### "CI Steward ledger coverage" is red
 
-**Cause:** the PR touches a pipeline path and adds no `ci/ledger/` entry. Before 2026-09-27 this is a warning on a green step; from then it fails. **Fix:** `node packages/ci-steward/src/cli.ts ledger-new --slug <what-changed>`, fill in the hypothesis, amend it into the commit.
+**Cause:** the PR touches a pipeline path and adds no `ci/ledger/` entry. **Fix:** `node packages/ci-steward/src/cli.ts ledger-new --slug <what-changed>`, fill in the hypothesis, amend it into the commit.
 
 ### `fragment-present` red on a `skip-changelog` PR
 

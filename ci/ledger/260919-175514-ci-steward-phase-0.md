@@ -58,9 +58,8 @@ closes the admin-merge path.
 
 - `packages/ci-steward` with `census`, `ledger-check` and `ledger-new`, and the `ci/` hand files.
 - Three steps in the required `typecheck` job: the census and ledger validity on every event, and
-  ledger coverage on pull_request only. Coverage warns until `coverage.blocking_from` in
-  `ci/config.yaml` (2026-09-27) and blocks from that day by itself, so the switch needs no PR and
-  never turns every open PR red at once. No new required context.
+  ledger coverage on pull_request only, blocking from day one (operator decision: no trial week).
+  No new required context.
 
 **Timeouts:** `timeout-minutes` on the 13 jobs that had none and had at least 5 runs in the last
 30 days, each max(10, ceil(3 × p95)) of measured job durations: fragment-present 10,
@@ -82,6 +81,12 @@ review (same action, same subscription) instead of an expiring exception.
   `STALLED_IN_QUEUE` by queue age, `HELD_BY_LABEL`, `CANCELLED`, and a loud `WATCHER BLIND`
   when its `gh` calls keep failing. The skill's required-checks list is now generated from
   `ci/required-checks.json`.
+
+**Credentials:**
+
+- merge-tail and the Dependabot lockfile repair hold the `dorkos-merge-tail` GitHub App key (no
+  Administration) instead of the admin PAT `MERGE_TAIL_TOKEN`; the old secret is deleted right
+  after this merges, which makes "no admin credential in Actions" true.
 
 **On GitHub (operator-approved, applied by the orchestrator on 2026-09-19, recorded here because
 no file shows them):**

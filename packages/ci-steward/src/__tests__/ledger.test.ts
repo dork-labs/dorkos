@@ -4,7 +4,7 @@
 import { rmSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { discoverGates } from '../census.ts';
-import { checkCoverage, splitByBlocking, type ChangedFile } from '../coverage.ts';
+import { checkCoverage, type ChangedFile } from '../coverage.ts';
 import { readRootScripts } from '../discover.ts';
 import { checkLedger } from '../ledger.ts';
 import { loadHandFiles } from '../load.ts';
@@ -233,28 +233,5 @@ describe('ledger-check --coverage', () => {
         'ci-improve/x'
       ).map((f) => f.code)
     ).toEqual(['fence/steward-owned']);
-  });
-
-  it('warns before coverage.blocking_from and blocks from 00:00 UTC that day; the fence always blocks', () => {
-    const findings = [
-      ...coverage([{ status: 'M', path: '.github/workflows/lint.yml' }]),
-      ...coverage([{ status: 'M', path: 'ci/config.yaml' }], 'ci-improve/x'),
-    ];
-    const codes = (r: { blocking: { code: string }[]; advisory: { code: string }[] }) => ({
-      blocking: r.blocking.map((f) => f.code),
-      advisory: r.advisory.map((f) => f.code),
-    });
-    expect(
-      codes(splitByBlocking(findings, new Date('2026-09-26T23:59:59Z'), '2026-09-27'))
-    ).toEqual({
-      blocking: ['fence/steward-owned'],
-      advisory: ['coverage/missing-entry', 'coverage/missing-entry'],
-    });
-    expect(
-      codes(splitByBlocking(findings, new Date('2026-09-27T00:00:00Z'), '2026-09-27'))
-    ).toEqual({
-      blocking: ['coverage/missing-entry', 'coverage/missing-entry', 'fence/steward-owned'],
-      advisory: [],
-    });
   });
 });
