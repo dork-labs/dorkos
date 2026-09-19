@@ -50,6 +50,26 @@ describe('emitTerminalRunActivity (DOR-1573)', () => {
     );
   });
 
+  it('emits run_blocked, in words that say what to do about it', () => {
+    // The defect (DOR-2101): this exact run used to emit `tasks.run_success`,
+    // so the feed reported a schedule that read nothing as healthy.
+    emitTerminalRunActivity(
+      activityService,
+      task,
+      terminalRun('blocked', {
+        error: 'Skipped Bash — nobody was there to approve it on a scheduled run.',
+      })
+    );
+    expect(emit).toHaveBeenCalledTimes(1);
+    expect(emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'tasks.run_blocked',
+        summary:
+          'digest ran, but could not use any of its tools — nobody was there to approve them (1s)',
+      })
+    );
+  });
+
   it('does NOT emit for a cancelled run', () => {
     emitTerminalRunActivity(
       activityService,

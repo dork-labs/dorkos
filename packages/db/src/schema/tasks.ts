@@ -137,8 +137,13 @@ export const pulseRuns = sqliteTable(
     status: text('status', {
       // `skipped` is a tick the scheduler deliberately did not run — the cap was
       // full when it came round (DOR-1482). `timeout` predates it and no writer
-      // produces it; both are terminal, neither is a failure.
-      enum: ['running', 'completed', 'failed', 'cancelled', 'timeout', 'skipped'],
+      // produces it; both are terminal, neither is a failure. `blocked` is a run
+      // that ran and was refused every tool it reached for, because nobody was
+      // there to approve them (DOR-2101) — also terminal, also not a failure.
+      //
+      // Drizzle's `enum` is a TYPE, not a CHECK constraint: SQLite stores this
+      // column as plain TEXT, so widening the list needs no SQL migration.
+      enum: ['running', 'completed', 'failed', 'cancelled', 'timeout', 'skipped', 'blocked'],
     }).notNull(),
     startedAt: text('started_at').notNull(), // ISO 8601 TEXT
     finishedAt: text('finished_at'),
@@ -170,6 +175,18 @@ export const pulseRuns = sqliteTable(
      * why it is model-only.
      */
     resolvedModel: text('resolved_model'),
+    /**
+     * The tools this run reached for and could not have, because nobody was
+     * there to approve them — a JSON array of runtime tool names (DOR-2101).
+     *
+     * JSON in a TEXT column rather than its own table: it is a short list read
+     * only with its own run, never queried across runs, and a second table
+     * would cost a join on every page of run history to answer a question
+     * nobody asks of it. NULL on every run written before this column; a run
+     * written since stores `[]` when it was refused nothing, which is a real
+     * answer rather than an absent one.
+     */
+    refusedTools: text('refused_tools'),
     trigger: text('trigger', {
       enum: ['scheduled', 'manual', 'agent'],
     })

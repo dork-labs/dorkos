@@ -97,11 +97,38 @@ export function notificationTone(notification: NotificationDTO): NotificationTon
 }
 
 /**
- * A failed run reads as an error even though its tier is only `notable`.
+ * A run that ended badly reads as an error even though its tier is only
+ * `notable`.
  *
- * The one place tone and tier part company, and it is deliberate: `run.completed`
- * carries both outcomes under one kind, and `notable` is exactly how the registry
- * spells "this one failed" (a success is `quiet`). See the registry entry.
+ * The one place tone and tier part company, and it is deliberate:
+ * `run.completed` carries every outcome under one kind, and `notable` is
+ * exactly how the registry spells "this one did not work" (a success is
+ * `quiet`). See the registry entry.
+ *
+ * Two outcomes answer yes, not one. A run that FAILED, and — since DOR-2101 —
+ * a run that was BLOCKED, refused every tool it reached for because nobody was
+ * there to approve them. A blocked run earning attention is the point: a
+ * schedule that quietly does nothing every night is the one thing a person
+ * cannot notice for themselves.
+ *
+ * **What this function must NOT be used for is saying which of the two it
+ * was.** The DTO carries kind and tier and no status, so this cannot tell
+ * them apart.
+ *
+ * So the two surfaces deliberately do not match, and this is the note saying
+ * so out loud rather than leaving somebody to find it: **the inbox ROW draws a
+ * blocked run in the error tone (red), while the detail sheet it opens draws
+ * the same run in amber.** The row only has kind and tier, and it uses them
+ * for one thing — "this one wants a look" — which is true of both outcomes.
+ * The sheet has the RUN, so it reads `run.status` and can afford to be exact
+ * (`runVerdict` in `features/dashboard-attention`). The row's own title
+ * already says which outcome it was, so the red is loudness, not a claim.
+ *
+ * No status was denormalized onto the notification to close the gap, and that
+ * is the choice rather than an omission: the run row is the ground truth, the
+ * sheet already reads it, and a copy on the notification would be a second
+ * home for the same fact and a second thing to go stale. If the row ever has
+ * to be exact too, give the DTO a status and delete this paragraph.
  *
  * @param notification - The row.
  */

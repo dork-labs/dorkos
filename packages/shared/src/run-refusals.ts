@@ -69,12 +69,60 @@ export function readableToolName(toolName: string): string {
   return server === 'dorkos' ? tool : `${server}: ${tool}`;
 }
 
+/**
+ * What kind of ask DorkOS refused for want of a person.
+ *
+ * Only `tool` is a run losing the ability to ACT. A `question` or an
+ * `elicitation` is the run trying to talk to somebody, which a run that did
+ * all its work can still end up doing — see `run-outcome`'s `blocked` rule,
+ * the one reader that cares about the difference (DOR-2101).
+ */
+export type RefusedAskKind = 'tool' | 'question' | 'elicitation';
+
 /** One ask a run's runtime refused because the session had nobody to answer it. */
 export interface RefusedAsk {
   /** The tool, or the MCP server that asked, as the runtime named it. */
   toolName: string;
-  /** What kind of ask it was, when the record says. */
+  /** Why it was refused, in words, when the record says. */
   reason?: string;
+  /**
+   * What was being asked, when the record says.
+   *
+   * Absent only on a frame written before this field existed. Readers that
+   * need it must say what an unknown kind means for them rather than guessing
+   * — see {@link isRefusedTool}.
+   */
+  askKind?: RefusedAskKind;
+}
+
+/**
+ * Just the TOOLS, by name, out of a run's refusals — what a run row keeps.
+ *
+ * The row's own line says "could not use …", so a question nobody could answer
+ * has no business in it (DOR-2101 review). The summary sentence and the
+ * activity feed still fold all three kinds: they are about what went
+ * unanswered, which is the wider question.
+ *
+ * @param asks - Every refusal the run's log collected, in order.
+ */
+export function refusedToolNames(asks: readonly RefusedAsk[]): string[] {
+  return asks.filter(isRefusedTool).map((ask) => ask.toolName);
+}
+
+/**
+ * Whether this refusal is a TOOL the run was not allowed to use.
+ *
+ * Unknown is NOT a tool, deliberately. The stamp is written in the same
+ * statement as the reason it rides beside, by the single function that writes
+ * either, so a refusal with no kind cannot come from a DorkOS that has this
+ * field — and calling an unclassified ask a tool is how a run that merely
+ * asked a question would be reported as one that could not use its tools,
+ * under copy that says exactly that.
+ *
+ * @param ask - The refusal, as the runtime recorded it.
+ */
+export function isRefusedTool(ask: RefusedAsk): boolean {
+  return ask.askKind === 'tool';
 }
 
 /** Folds a run's event stream into the list of asks nobody could answer. */
@@ -116,6 +164,27 @@ export interface RefusedAskLog {
  * @returns The sentence, or `null` for an empty list.
  */
 export function describeRefusedAsks(toolNames: readonly string[]): string | null {
+  const named = listRefusedTools(toolNames);
+  if (named === null) return null;
+  return `Skipped ${named.list} — nobody was there to approve ${named.them} on a scheduled run.`;
+}
+
+/**
+ * The tools, as a phrase a sentence can be built around, plus the pronoun that
+ * agrees with it.
+ *
+ * Extracted from {@link describeRefusedAsks} (DOR-2101) because the run-history
+ * row names the same tools in a different sentence, and had its own `join(', ')`
+ * with no cap: a run refused thirty things printed all thirty into a row that
+ * truncates, while the summary line above it said "and 25 more". Two spellings
+ * of one list is a bug a reader has to notice for themselves.
+ *
+ * @param toolNames - The tools that were refused, already readable, in order.
+ * @returns The list and its pronoun, or `null` for an empty list.
+ */
+export function listRefusedTools(
+  toolNames: readonly string[]
+): { list: string; them: 'it' | 'them' } | null {
   const unique = [...new Set(toolNames)];
   if (unique.length === 0) return null;
   const shown = unique.slice(0, MAX_NAMED_TOOLS);
@@ -124,9 +193,10 @@ export function describeRefusedAsks(toolNames: readonly string[]): string | null
     shown.length === 1
       ? shown[0]
       : `${shown.slice(0, -1).join(', ')} and ${shown[shown.length - 1]}`;
-  const named = rest > 0 ? `${listed} and ${rest} more` : listed;
-  const them = unique.length === 1 ? 'it' : 'them';
-  return `Skipped ${named} — nobody was there to approve ${them} on a scheduled run.`;
+  return {
+    list: rest > 0 ? `${listed} and ${rest} more` : listed,
+    them: unique.length === 1 ? 'it' : 'them',
+  };
 }
 
 /**
@@ -146,6 +216,51 @@ export function withRefusedAsks(line: string | null, summary: string): string {
 }
 
 /**
+ * The unattended refusal this event describes, or `undefined` when it describes
+ * none.
+ *
+ * The one place the "what counts" rule in this module's doc is implemented, and
+ * it is exported because two folds ask it now: {@link createRefusedAskLog},
+ * which collects the names, and the run-outcome tracker
+ * (`@dorkos/shared/run-outcome`), which only needs to know THAT a run was
+ * refused for want of a person. Two copies of this predicate would be two
+ * answers to "was anybody there?", and the run row would be written from the
+ * wrong one half the time.
+ *
+ * @param event - The event to read.
+ */
+export function readRefusedAsk(event: StreamEvent): RefusedAsk | undefined {
+  if (event.type !== 'permission_denied') return undefined;
+  const data = event.data as {
+    toolName?: unknown;
+    reasonType?: unknown;
+    reason?: unknown;
+    askKind?: unknown;
+  };
+  if (data.reasonType !== NO_APPROVAL_SURFACE) return undefined;
+  if (typeof data.toolName !== 'string' || data.toolName.length === 0) return undefined;
+  return {
+    toolName: data.toolName,
+    ...(typeof data.reason === 'string' ? { reason: data.reason } : {}),
+    ...(isRefusedAskKind(data.askKind) ? { askKind: data.askKind } : {}),
+  };
+}
+
+/**
+ * Whether a wire value is one of the three kinds of ask.
+ *
+ * Exported so the session normalizer can carry `askKind` through onto the
+ * durable stream without inventing a second copy of the enum — a replayed
+ * denial that lost the field would make this module's claim that the record
+ * reaches the transcript false (DOR-2101 review).
+ *
+ * @param value - The raw field, as it arrived on the wire.
+ */
+export function isRefusedAskKind(value: unknown): value is RefusedAskKind {
+  return value === 'tool' || value === 'question' || value === 'elicitation';
+}
+
+/**
  * Track which asks a run could not get answered, so the run row can name them.
  *
  * Feed it every event the run's stream yields. See the module doc for what
@@ -154,21 +269,9 @@ export function withRefusedAsks(line: string | null, summary: string): string {
 export function createRefusedAskLog(): RefusedAskLog {
   const refused = new Map<string, RefusedAsk>();
 
-  /** The refusal this event describes, or `undefined` when it describes none. */
-  const read = (event: StreamEvent): RefusedAsk | undefined => {
-    if (event.type !== 'permission_denied') return undefined;
-    const data = event.data as { toolName?: unknown; reasonType?: unknown; reason?: unknown };
-    if (data.reasonType !== NO_APPROVAL_SURFACE) return undefined;
-    if (typeof data.toolName !== 'string' || data.toolName.length === 0) return undefined;
-    return {
-      toolName: data.toolName,
-      ...(typeof data.reason === 'string' ? { reason: data.reason } : {}),
-    };
-  };
-
   return {
     observe(event: StreamEvent): RefusedAsk | undefined {
-      const ask = read(event);
+      const ask = readRefusedAsk(event);
       if (ask === undefined || refused.has(ask.toolName)) return undefined;
       refused.set(ask.toolName, ask);
       return ask;

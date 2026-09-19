@@ -743,6 +743,13 @@
       "when": 1789581166437,
       "tag": "0105_bumpy_kabuki",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "6",
+      "when": 1789781074964,
+      "tag": "0106_burly_scorpion",
+      "breakpoints": true
     }
   ]
 }

@@ -142,6 +142,7 @@ export function createMockRun(overrides: Partial<TaskRun> = {}): TaskRun {
     error: null,
     resolvedRuntime: null,
     resolvedModel: null,
+    refusedTools: null,
     createdAt: new Date().toISOString(),
     ...overrides,
   };

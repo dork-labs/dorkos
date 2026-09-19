@@ -2186,6 +2186,23 @@ export const PermissionDeniedEventSchema = z
     reasonType: z.string().optional(),
     /** Human-readable reason from the deciding component, when available. */
     reason: z.string().optional(),
+    /**
+     * WHAT was being asked, on a refusal DorkOS wrote itself (DOR-2101).
+     *
+     * `no_approval_surface` is stamped on three different asks — a tool
+     * wanting permission, an `AskUserQuestion`, and an MCP server's
+     * elicitation — and only the first is a TOOL the run lost. A run that did
+     * its work and then asked a question was otherwise indistinguishable from
+     * one that could not lift a finger, and the `blocked` rule
+     * (`@dorkos/shared/run-outcome`) would have recorded the first as the
+     * second, under copy that says "tools".
+     *
+     * Written in the same statement as `reasonType`, by the one function that
+     * writes either (`refuseWithNobodyToAsk`), so the pair always travels
+     * together. Absent on every OTHER kind of denial, where it would mean
+     * nothing.
+     */
+    askKind: z.enum(['tool', 'question', 'elicitation']).optional(),
     /** The rejection message returned to the model in the tool_result. */
     message: z.string(),
     ...deniedAgentShape,
@@ -4435,9 +4452,18 @@ export const TaskNameSchema = z
  * allowed to, so the occurrence was recorded and deliberately not run
  * (DOR-1482). It is terminal, and it is not a failure — nothing went wrong, the
  * server was simply busy.
+ *
+ * `blocked` is the run that ran and was never allowed to do anything: every
+ * tool it reached for was turned down because nobody was there to approve it,
+ * and none of them succeeded (DOR-2101). Not `failed`, because nothing broke
+ * and debugging it would find nothing — what it needs is the permission it was
+ * denied. Not `completed` either, which is what it used to be recorded as: a
+ * green tick on a run that read no mail is the app reporting healthy while
+ * observing nothing. The rule is `createRunOutcomeTracker` in
+ * `@dorkos/shared/run-outcome`.
  */
 export const TaskRunStatusSchema = z
-  .enum(['running', 'completed', 'failed', 'cancelled', 'skipped'])
+  .enum(['running', 'completed', 'failed', 'cancelled', 'skipped', 'blocked'])
   .openapi('TaskRunStatus');
 
 export type TaskRunStatus = z.infer<typeof TaskRunStatusSchema>;
@@ -4602,6 +4628,31 @@ export const TaskRunSchema = z
      * task's default, always create their session fresh and are exact.
      */
     resolvedModel: z.string().nullable().default(null),
+    /**
+     * The tools this run reached for and could not have, because nobody was
+     * there to approve them (DOR-2101).
+     *
+     * Runtime names, exactly as the runtime reported them (`Bash`,
+     * `mcp__gmail__search`) — the reader turns them into words with
+     * `readableToolName`. Deduplicated and in the order they were first
+     * refused.
+     *
+     * TOOLS only, which is narrower than the run's summary line. DorkOS
+     * refuses three things for want of a person, and the other two — a
+     * question, an MCP elicitation — are the run trying to TALK to somebody,
+     * not act. A row that said "could not use AskUserQuestion" would be naming
+     * a conversation as a tool. The summary sentence and `tasks.ask_refused`
+     * still fold all three, because they answer the wider question of what
+     * went unanswered.
+     *
+     * Persisted so run history can say what a `blocked` run was denied without
+     * a person cross-referencing the activity feed for it, and populated on a
+     * `completed` run too when it lost a tool and carried on.
+     *
+     * `null` on a run recorded before this column existed; `[]` on a run that
+     * was refused nothing.
+     */
+    refusedTools: z.array(z.string()).nullable().default(null),
     createdAt: z.string(),
   })
   .openapi('TaskRun');

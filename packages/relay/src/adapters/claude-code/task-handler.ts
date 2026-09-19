@@ -14,7 +14,11 @@ import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import { TaskDispatchPayloadSchema } from '@dorkos/shared/relay-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { createRunOutcomeTracker } from '@dorkos/shared/run-outcome';
-import { createRefusedAskLog, withRefusedAsks } from '@dorkos/shared/run-refusals';
+import {
+  createRefusedAskLog,
+  refusedToolNames,
+  withRefusedAsks,
+} from '@dorkos/shared/run-refusals';
 // The one sentence a run stopped by a clock is described with, written by this
 // path and by the direct-dispatch twin in `apps/server` (DOR-1786).
 import { runTimeLimitError } from '@dorkos/shared/run-time-limit';
@@ -311,7 +315,7 @@ export async function handleTasksMessage(
   }
 
   // From here until the `finally` below, this run can be stopped from the
-  // cockpit: the registry is what the stop-request subscription reaches for.
+  // app: the registry is what the stop-request subscription reaches for.
   deps.runningTasks.register(runId, controller);
 
   let outputSummary = '';
@@ -403,10 +407,15 @@ export async function handleTasksMessage(
     // The refused asks lead the summary, so the run-history row and the
     // finished-run message — both of which quote only its FIRST line — say what
     // the run could not do before they say what it did.
+    const refusalLine = refusals.summaryLine();
     const truncatedSummary = withRefusedAsks(
-      refusals.summaryLine(),
+      refusalLine,
       outputSummary.slice(0, OUTPUT_SUMMARY_MAX_CHARS)
     );
+    // Only the TOOLS: the row's line says "could not use …", and a question
+    // nobody could answer is not a tool the run lost (DOR-2101 review). The
+    // summary sentence above still names all three.
+    const refusedTools = refusedToolNames(refusals.all());
     // Both stops record `cancelled` — the run-status vocabulary has no separate
     // timeout — so the error line is what tells a person which one happened.
     //
@@ -430,22 +439,37 @@ export async function handleTasksMessage(
           durationMs,
           outputSummary: truncatedSummary,
           error: stoppedByOperator ? 'Run cancelled' : runTimeLimitError(),
+          refusedTools,
           sessionId: persistedSessionId(),
         });
       } else {
         // The stream ending is not the work having succeeded: a turn that
         // streamed a typed `error` and then ended used to be filed as a success
-        // here too (DOR-1658). The DELIVERY is still a success either way — the
+        // here too (DOR-1658), and so did one that was refused every tool it
+        // reached for and got none of them (DOR-2101, `blocked`). The
+        // direct-dispatch twin in `task-scheduler-service.ts` maps the same
+        // three answers the same way, because a run must not be recorded
+        // differently for having taken the other path.
+        // The DELIVERY is still a success either way — the
         // envelope was carried and acted on — so only the run row changes; the
         // trace span below and this handler's return value are untouched, or a
         // run that genuinely ran would be dead-lettered and redelivered.
-        const failure = outcome.settle();
+        const settlement = outcome.settle();
+        // A failure names what broke; a blocked run names the tools it was
+        // denied. The direct twin composes this line the same way.
+        const rowError =
+          settlement.outcome === 'failed'
+            ? settlement.error
+            : settlement.outcome === 'blocked'
+              ? refusalLine
+              : null;
         deps.taskStore.updateRun(runId, {
-          status: failure ? 'failed' : 'completed',
+          status: settlement.outcome,
           finishedAt: new Date().toISOString(),
           durationMs,
           outputSummary: truncatedSummary,
-          ...(failure ? { error: failure } : {}),
+          ...(rowError !== null ? { error: rowError } : {}),
+          refusedTools,
           sessionId: persistedSessionId(),
         });
       }
@@ -481,6 +505,7 @@ export async function handleTasksMessage(
           outputSummary.slice(0, OUTPUT_SUMMARY_MAX_CHARS)
         ),
         error: errorMsg,
+        refusedTools: refusedToolNames(refusals.all()),
         sessionId: persistedSessionId(),
       });
     }

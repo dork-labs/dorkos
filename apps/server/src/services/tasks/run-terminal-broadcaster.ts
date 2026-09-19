@@ -20,10 +20,16 @@ import { emitTerminalRunActivity } from './run-activity.js';
 /**
  * Broadcast `task_run_failed` on `/api/events` when a terminal run failed.
  *
- * A no-op for non-failure terminal statuses (`completed`/`cancelled`). Because
- * the run-terminal hook fires exactly once per terminal transition and never on
- * an already-terminal re-write, this cannot double-fire or fire on a poll
- * re-observation.
+ * A no-op for non-failure terminal statuses (`completed`/`cancelled`/`blocked`).
+ * Because the run-terminal hook fires exactly once per terminal transition and
+ * never on an already-terminal re-write, this cannot double-fire or fire on a
+ * poll re-observation.
+ *
+ * `blocked` is deliberately outside it (DOR-2101). This broadcast is named for
+ * what it carries, and its one client consumer treats it as the failure signal;
+ * a blocked run is not a failure, and it already reaches the person through its
+ * own activity event, its own notification and its own row. Giving it a
+ * broadcast of its own is a separate change with its own client half.
  *
  * @param run - The run as persisted at its terminal write.
  */

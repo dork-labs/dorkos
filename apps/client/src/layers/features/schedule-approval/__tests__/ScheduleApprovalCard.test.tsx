@@ -93,6 +93,7 @@ function taskRun(overrides: Partial<TaskRun> = {}): TaskRun {
     trigger: 'manual',
     resolvedRuntime: null,
     resolvedModel: null,
+    refusedTools: null,
     createdAt: minutesFromLoad(-1),
     ...overrides,
   };

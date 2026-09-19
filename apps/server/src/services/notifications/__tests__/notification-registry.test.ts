@@ -314,6 +314,52 @@ describe('notification registry', () => {
     expect(entry.body?.(payload)).toBe('Wants to run Bash');
   });
 
+  describe('a run that was never allowed to do anything (DOR-2101)', () => {
+    const blocked: (typeof PAYLOADS)['run.completed'] = {
+      ...PAYLOADS['run.completed'],
+      status: 'blocked',
+      taskName: 'Mailroom',
+      duration: '4s',
+      detail:
+        'Skipped Bash and gmail: search — nobody was there to approve them on a scheduled run.',
+    };
+
+    it('is notable, like a failure and unlike a success', () => {
+      const entry = notificationEntry('run.completed');
+      expect(entry.tier).toBeTypeOf('function');
+      expect((entry.tier as (p: typeof blocked) => string)(blocked)).toBe('notable');
+      expect(
+        (entry.tier as (p: typeof blocked) => string)({ ...blocked, status: 'completed' })
+      ).toBe('quiet');
+    });
+
+    it('says what happened rather than calling it a failure', () => {
+      const entry = notificationEntry('run.completed');
+      expect(entry.title(blocked)).toBe('Mailroom could not use its tools');
+      expect(entry.title({ ...blocked, status: 'failed' })).toBe('Mailroom failed');
+    });
+
+    it('does not say "nobody was there to approve" twice in one row', () => {
+      // The detail IS the refusal sentence and already ends in those words, so
+      // the body's own line must not repeat them (DOR-2101 review).
+      const body = notificationEntry('run.completed').body?.(blocked) ?? '';
+      expect(body).toContain('Ran for 4s and used none of its tools.');
+      expect(body).toContain(blocked.detail);
+      expect(body.match(/nobody was there to approve/g)).toHaveLength(1);
+    });
+
+    it('reaches out, because it is the outcome nobody notices for themselves', () => {
+      const entry = notificationEntry('run.completed');
+      expect((entry.relay as (p: typeof blocked) => string)(blocked)).toBe('always');
+      expect((entry.relay as (p: typeof blocked) => string)({ ...blocked, status: 'failed' })).toBe(
+        'always'
+      );
+      expect(
+        (entry.relay as (p: typeof blocked) => string)({ ...blocked, status: 'completed' })
+      ).toBe('opt-in');
+    });
+  });
+
   it('offers approve and reject on a parked schedule and nothing on a quiet event', () => {
     expect(notificationEntry('schedule.parked').actions?.(PAYLOADS['schedule.parked'])).toEqual([
       { id: 'approve', label: 'Approve', style: 'primary' },
