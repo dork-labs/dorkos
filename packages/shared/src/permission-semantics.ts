@@ -350,6 +350,90 @@ export function resolveTrustStops(descriptors: readonly PermissionModeDescriptor
 }
 
 /**
+ * The mode id one runtime calls a given dial position.
+ *
+ * The single translation from a CONFIGURED stop (`'ask' | 'act' | 'autonomy'`,
+ * which is what `runtimes.defaultTrustStop` and its per-runtime override
+ * store) into an id that runtime actually declares. It reads
+ * {@link resolveTrustStops}, so it lands on exactly the mode the dial would
+ * show as selected — including the first-declared rule where a runtime files
+ * two modes at one position.
+ *
+ * **It lives here because two sides have to agree about it.** The server
+ * resolves the stop when it seeds a new session's row
+ * (`resolve-session-defaults.ts`), and the client resolves the same stop to
+ * say what a session with no row yet WOULD run at (`useSessionStartMode` in
+ * `entities/session`) — the display half of the same question (DOR-2103). Two
+ * copies of this mapping is how the dial and the seed come to disagree about
+ * which mode a position means.
+ *
+ * `undefined` — "no preference, the runtime decides" — for three inputs that
+ * are the same input: no stop configured, no descriptors in hand, or a runtime
+ * that declares no mode at that stop. A stop a runtime cannot take is not an
+ * error and not a near-miss to round off.
+ *
+ * @param stop - The configured dial position, or nullish for none.
+ * @param descriptors - The runtime's declared modes, in declared order, or
+ *   undefined when the caller has no profile yet.
+ */
+export function resolveStopMode(
+  stop: PermissionStop | null | undefined,
+  descriptors: readonly PermissionModeDescriptor[] | undefined
+): string | undefined {
+  if (!stop || !descriptors) return undefined;
+  return resolveTrustStops(descriptors).find((s) => s.stop === stop)?.mode.id;
+}
+
+/**
+ * The permission-mode declaration {@link startModeFor} reads — one runtime's
+ * declared modes plus the one it falls back to.
+ *
+ * Structurally a `RuntimeCapabilities['permissionModes']`, narrowed to the two
+ * keys this answer needs so a caller holding only a declaration (a test, a
+ * capability projection) does not have to build a whole profile.
+ */
+export interface DeclaredPermissionModes {
+  /** Every mode the runtime declares, in its declared order. */
+  values: readonly PermissionModeDescriptor[];
+  /** The mode it runs when a session has no stored preference (a NULL column). */
+  default?: string;
+}
+
+/**
+ * What a session with NOTHING stored for it will run its first turn at, on one
+ * runtime, under one configured stop.
+ *
+ * {@link resolveStopMode} plus the one translation of its `undefined`: a stop
+ * the runtime cannot take seeds no column, a NULL column means "the runtime
+ * decides", and what it decides is the mode it declares as its default. Those
+ * two steps are ONE answer and they live here rather than at each caller,
+ * because a caller that composed them itself would be a second copy of the
+ * answer the other side is checked against.
+ *
+ * Both sides of DOR-2103 call this: the client's `useSessionStartMode` renders
+ * it, and `configured-stop-on-screen.test.ts` compares it against what
+ * `resolveSessionDefaults` actually seeds, for every shipped profile and every
+ * configurable stop. That comparison is only worth anything while the test and
+ * the screen run the SAME function — which is why hand-composing the two steps
+ * anywhere is a defect, not a style choice.
+ *
+ * `undefined` means the runtime declares no default either, so there is still
+ * nothing honest to show.
+ *
+ * @param stop - The operator's configured dial position for this runtime, or
+ *   nullish when they never set one.
+ * @param modes - The runtime's own permission-mode declaration, or undefined
+ *   before its profile has loaded.
+ */
+export function startModeFor(
+  stop: PermissionStop | null | undefined,
+  modes: DeclaredPermissionModes | undefined
+): string | undefined {
+  if (!modes) return undefined;
+  return resolveStopMode(stop, modes.values) ?? modes.default;
+}
+
+/**
  * The way of working a runtime offers, if it offers one — the mode behind the
  * composer's Plan toggle.
  *

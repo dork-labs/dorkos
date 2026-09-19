@@ -18,10 +18,16 @@ vi.mock('sonner', () => ({ toast: { warning: vi.fn() } }));
 // Mock app store (selectedCwd). A resolved directory, because a session query
 // correctly refuses to fire without one (DOR-495) — `null` is the app's
 // pre-startup state, not a state any session request is made in.
+// A selector is OPTIONAL, because `useAppStore()` with no argument is a real
+// call shape in this tree: `useSessions` — which `useSessionStatus` now reaches
+// through `useSessionStartMode` — destructures the whole state. A mock that
+// only handled the selector form threw `selector is not a function` from inside
+// a hook nothing in this file is about.
 vi.mock('@/layers/shared/model/app-store', () => ({
-  useAppStore: vi.fn((selector: (s: { selectedCwd: string | null }) => unknown) =>
-    selector({ selectedCwd: '/test/cwd' })
-  ),
+  useAppStore: vi.fn((selector?: (s: { selectedCwd: string | null }) => unknown) => {
+    const state = { selectedCwd: '/test/cwd' };
+    return selector ? selector(state) : state;
+  }),
 }));
 
 function createWrapper(transport: Transport) {

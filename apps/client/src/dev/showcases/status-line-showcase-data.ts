@@ -152,6 +152,7 @@ const _EXAMPLE_SUBAGENT_SHAPE: ActiveSubagent[] = [
 
 const HEALTHY_STATUS: SessionStatusData = {
   permissionMode: 'default',
+  permissionModeKnown: true,
   model: 'claude-opus-4-6',
   effort: null,
   fastMode: false,
@@ -164,6 +165,7 @@ const HEALTHY_STATUS: SessionStatusData = {
 const DEGRADED_STATUS: SessionStatusData = {
   ...HEALTHY_STATUS,
   permissionMode: 'bypassPermissions',
+  permissionModeKnown: true,
   model: 'gpt-5.3-codex',
   costUsd: 6.12,
   contextPercent: 88,

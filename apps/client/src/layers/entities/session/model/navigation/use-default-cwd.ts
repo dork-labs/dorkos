@@ -18,6 +18,13 @@ export function useDefaultCwd() {
     staleTime: Infinity,
     refetchOnMount: false,
     refetchOnReconnect: false,
+    // **Dropped wifi is not a reason to stop asking localhost.** TanStack's
+    // default `networkMode: 'online'` PAUSES a fetch whenever
+    // `navigator.onLine` is false, and this server is not on the internet —
+    // the ruling `useConfig` states at length, applied here because the whole app
+    // waits on this one and a paused read leaves the directory null forever,
+    // which every session read is scoped by (DOR-2103).
+    networkMode: 'always',
   });
 
   useEffect(() => {

@@ -241,6 +241,10 @@ export function buildStatusItemNodes(
         mode={status.permissionMode}
         onChangeMode={input.onChangeMode}
         disabled={!sessionId}
+        // Nothing has answered what this session runs at yet, so the item says
+        // nothing rather than painting the placeholder `status.permissionMode`
+        // carries on those frames (DOR-2103).
+        pending={!status.permissionModeKnown}
         runtime={runtimeChip.runtime}
         modelSupportsAutoMode={input.modelSupportsAutoMode}
         compact={compactItems}

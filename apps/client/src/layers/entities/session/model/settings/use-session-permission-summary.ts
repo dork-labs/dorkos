@@ -56,11 +56,20 @@ export interface SessionPermissionSummary {
  * @param session - The session to summarise.
  */
 export function useSessionPermissionSummary(session: Session): SessionPermissionSummary {
+  // The row's own mode closes the `null` branch, not the literal `'default'`
+  // that used to (DOR-2103). `useSessionPermissionMode` answers `null` for one
+  // input — an empty session id — and on a row that cannot happen, so the
+  // literal was unreachable; what made it worth removing anyway is that it
+  // stated a specific safety posture as a fallback, which is the shape of the
+  // defect this ticket fixed one level up. A row always carries a mode
+  // (`SessionSchema.permissionMode` is required), including the optimistic one
+  // the composer inserts on send, which is seeded from the same start-mode
+  // resolution the dial reads.
   const permissionMode =
     useSessionPermissionMode(session.id, {
       enabled: false,
       fallback: session.permissionMode,
-    }) ?? 'default';
+    }) ?? session.permissionMode;
   const caps = useCapabilitiesForRuntime(session.runtime);
   const descriptor = caps?.permissionModes.values.find((d) => d.id === permissionMode);
   // ── A split worth knowing about ──

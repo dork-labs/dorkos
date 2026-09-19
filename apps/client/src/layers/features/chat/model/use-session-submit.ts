@@ -35,6 +35,7 @@ import {
   insertOptimisticSession,
   useSessionListStore,
   useSessionStreamStore,
+  useSessionStartMode,
   sessionKeys,
 } from '@/layers/entities/session';
 import { useRuntimeCapabilities } from '@/layers/entities/runtime';
@@ -165,6 +166,20 @@ export function useSessionSubmit({
   useEffect(() => {
     defaultRuntimeRef.current = capabilitiesData?.defaultRuntime;
   }, [capabilitiesData?.defaultRuntime]);
+
+  // The power level this conversation will actually run its first turn at, for
+  // the optimistic row below. Read HERE, before the send, because the row is
+  // inserted inside the callback and the hook stops answering the instant that
+  // insert makes the session a listed one.
+  //
+  // Resolved against the launch selection, falling back — inside the hook — to
+  // the same server-default runtime `defaultRuntimeRef` holds, so the row's
+  // mode and the row's runtime mark are two facts about ONE runtime.
+  const startMode = useSessionStartMode(sessionId, launchRuntime);
+  const startModeRef = useRef(startMode.mode);
+  useEffect(() => {
+    startModeRef.current = startMode.mode;
+  }, [startMode.mode]);
 
   const transformContentRef = useRef(transformContent);
   useEffect(() => {
@@ -348,7 +363,22 @@ export function useSessionSubmit({
           title: `Session ${targetSessionId.slice(0, 8)}`,
           createdAt: now,
           updatedAt: now,
-          permissionMode: 'default',
+          // The mode this turn will actually start at, not the literal
+          // `'default'` this used to state (DOR-2103) — which made the new row
+          // read "Default" in the rail for the whole round trip, then flip to
+          // the operator's real stop when `session_upserted` arrived.
+          //
+          // A choice the person made BEFORE sending wins, exactly as it wins at
+          // the binding write: a pre-first-message settings change writes the
+          // detail cache (and an unbound `session_metadata` row server-side),
+          // and `persistSessionRuntime` fills only columns still holding NULL.
+          // Without this read the rail would contradict the status line for one
+          // round trip on the one path where a person had said what they wanted.
+          permissionMode:
+            queryClient.getQueryData<Session>(sessionKeys.detail(targetSessionId, cwd))
+              ?.permissionMode ??
+            startModeRef.current ??
+            'default',
           // Placeholder until the server's session_upserted event replaces this
           // row: the launch selection when one exists, otherwise the server
           // default runtime, so the row's runtime mark is right from first paint.

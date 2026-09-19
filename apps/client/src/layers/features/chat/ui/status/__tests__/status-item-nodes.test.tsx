@@ -153,6 +153,7 @@ function inputWith(overrides: Partial<StatusItemNodesInput>): StatusItemNodesInp
     agent: { name: 'Ana', path: '/tmp/ana' },
     status: {
       permissionMode: 'default',
+      permissionModeKnown: true,
       model: 'claude-sonnet-4-5',
       effort: null,
       fastMode: false,
@@ -381,6 +382,7 @@ function buildLine(
     inputWith({
       status: {
         permissionMode,
+        permissionModeKnown: true,
         model: 'claude-sonnet-4-5',
         effort: null,
         fastMode: false,
@@ -485,6 +487,7 @@ describe('PermissionModeItem vs. PlanModeItem — never the same word when both 
       inputWith({
         status: {
           permissionMode: 'acceptEdits',
+          permissionModeKnown: true,
           model: 'claude-sonnet-4-5',
           effort: null,
           fastMode: false,
@@ -524,6 +527,42 @@ describe('PermissionModeItem vs. PlanModeItem — never the same word when both 
   });
 });
 
+describe('buildStatusItemNodes — the permission node before anything has answered (DOR-2103)', () => {
+  afterEach(cleanup);
+
+  /**
+   * The seam this covers, and why it needed covering: `status.permissionMode`
+   * is a non-optional string, so the frames before anything has answered still
+   * carry `resolvePermissionMode`'s placeholder — the literal `'default'`,
+   * shaped exactly like a real mode. `permissionModeKnown` is what tells the
+   * two apart, and the ONLY thing that carries it to the drawing is the
+   * `pending` prop this builder threads.
+   *
+   * Deleting that prop was measured to break nothing anywhere (DOR-2103
+   * re-review), which made the flag a value the hook computed and the screen
+   * could quietly stop reading. The pair below is the guard: one input, one
+   * field different, two different drawings.
+   */
+  it('draws the placeholder when nothing is known, and the mode when it is', () => {
+    const notKnown = buildStatusItemNodes(
+      inputWith({ status: { ...inputWith({}).status, permissionModeKnown: false } })
+    );
+    expect(notKnown.permission).toBeDefined();
+    const { unmount } = render(<TooltipProvider>{notKnown.permission}</TooltipProvider>);
+    expect(screen.getByTestId('permission-mode-pending')).toBeInTheDocument();
+    // The word the ticket is about is nowhere on the line.
+    expect(screen.queryByRole('button', { name: /^Permissions:/ })).not.toBeInTheDocument();
+    unmount();
+
+    const known = buildStatusItemNodes(
+      inputWith({ status: { ...inputWith({}).status, permissionModeKnown: true } })
+    );
+    render(<TooltipProvider>{known.permission}</TooltipProvider>);
+    expect(screen.queryByTestId('permission-mode-pending')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Permissions:/ })).toBeInTheDocument();
+  });
+});
+
 describe('buildStatusItemNodes — the runtime chip and the model item must not repeat (DOR-1971)', () => {
   afterEach(() => {
     cleanup();
@@ -540,6 +579,7 @@ describe('buildStatusItemNodes — the runtime chip and the model item must not 
       inputWith({
         status: {
           permissionMode: 'default',
+          permissionModeKnown: true,
           model: QWEN_MODEL.value,
           effort: null,
           fastMode: false,

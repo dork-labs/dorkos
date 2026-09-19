@@ -133,6 +133,12 @@ const permissionMode = { current: 'default' };
 vi.mock('@/layers/entities/session/model/settings/use-session-status', () => ({
   useSessionStatus: () => ({
     permissionMode: permissionMode.current,
+    // A SETTLED session: something has answered what it runs at, so the
+    // permissions control draws the mode rather than its loading placeholder
+    // (DOR-2103). Omitting it made every one of these trees render the
+    // placeholder, silently — `vi.mock` factories are not checked against the
+    // module's own types, so nothing said so.
+    permissionModeKnown: true,
     cwd: '/test/dir',
     model: 'claude-opus-4-8',
     costUsd: null,

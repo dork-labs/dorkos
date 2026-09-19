@@ -12,6 +12,7 @@ import type {
   SessionListResponse,
   UpdateSessionRequest,
   SessionUpdateResponse,
+  SessionSettings,
   HistoryMessage,
   TaskItem,
   SessionLockedError,
@@ -130,6 +131,27 @@ export function createDirectSessionMethods(
      */
     async getSessionRuntimeType(_sessionId: string): Promise<string> {
       return services.runtime.getCapabilities().type;
+    },
+
+    /**
+     * The settings stored for a session id — always `null` on this seam.
+     *
+     * The HTTP twin reads `session_metadata`, which is the SERVER's table; the
+     * embedded plugin runs a runtime in-process and has no such store, so there
+     * is no row here to be seen and `null` is the true answer rather than a stub
+     * (`DirectTransportServices` exposes no settings port to read one from).
+     *
+     * What that costs is bounded and known: the trust dial's pre-first-message
+     * answer falls through to the resolved configured stop (DOR-2103), and the
+     * embedded cockpit has no config behind it either — `useAutonomyAcknowledgement`
+     * reports `canRemember: false` there — so that resolution lands on the
+     * runtime's own declared default, which is exactly what this surface showed
+     * before any of this existed.
+     *
+     * @param _sessionId - Accepted for Transport parity; nothing here stores settings by id.
+     */
+    async getStoredSessionSettings(_sessionId: string): Promise<SessionSettings | null> {
+      return null;
     },
 
     async updateSession(

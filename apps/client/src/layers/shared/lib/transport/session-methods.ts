@@ -8,6 +8,8 @@ import type {
   SessionListResponse,
   UpdateSessionRequest,
   SessionUpdateResponse,
+  SessionSettings,
+  StoredSessionSettingsResponse,
   HistoryMessage,
   TaskItem,
   SessionLockedError,
@@ -109,6 +111,16 @@ export function createSessionMethods(
         `/sessions/${sessionId}/runtime-type`
       );
       return res.runtime;
+    },
+
+    async getStoredSessionSettings(sessionId: string): Promise<SessionSettings | null> {
+      // No `?cwd=`: the row is keyed by session id alone, and a session that
+      // has not started has no directory the server could place it in anyway.
+      const res = await fetchJSON<StoredSessionSettingsResponse>(
+        baseUrl,
+        `/sessions/${sessionId}/settings`
+      );
+      return res.settings;
     },
 
     updateSession(

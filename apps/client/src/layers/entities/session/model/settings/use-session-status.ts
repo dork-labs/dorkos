@@ -14,6 +14,9 @@ import {
 import { sessionKeys } from '../../api/query-keys';
 import { deriveContextPercent } from '../../lib/context-health';
 import { resolvePermissionMode } from '../../lib/permission-mode';
+import { isQuerySettled } from '../../lib/query-settled';
+import { useSessions } from '../query/use-sessions';
+import { useSessionStartMode } from './use-session-start-mode';
 import type {
   Session,
   SessionStatusEvent,
@@ -44,8 +47,28 @@ export interface SessionStatusData {
    * compared against a literal. `string` rather than `PermissionMode` so
    * every reader states that honestly instead of narrowing with a cast
    * (DOR-820).
+   *
+   * **Only meaningful while {@link SessionStatusData.permissionModeKnown} is
+   * true.** It is a non-optional string because ~a dozen readers treat it as
+   * one, so the "we do not know yet" frames have to carry SOMETHING — and what
+   * they carry is `resolvePermissionMode`'s placeholder, which is shaped
+   * exactly like a real answer. A surface that PAINTS this value must gate on
+   * the flag; one that merely passes it along need not.
    */
   permissionMode: string;
+  /**
+   * Whether {@link SessionStatusData.permissionMode} is an answer rather than a
+   * placeholder.
+   *
+   * False on the frames before anything about this session's power has
+   * arrived — a cold load, where neither the session row nor the start-mode
+   * resolution has settled. Painting the placeholder there reproduces the
+   * DOR-2103 symptom in compressed form: the dial reads "Default", then flips
+   * to the operator's real stop a few frames later. The permissions control
+   * draws a non-committal placeholder instead, and the read-only dead-end
+   * notice withholds itself, until this is true.
+   */
+  permissionModeKnown: boolean;
   model: string;
   effort: EffortLevel | null;
   fastMode: boolean;
@@ -95,7 +118,19 @@ export function useSessionStatus(
   const applyOverrides = useSessionSettingsOverridesStore((s) => s.apply);
   const clearOverrides = useSessionSettingsOverridesStore((s) => s.clear);
 
-  const { data: session } = useSessionDetail(sessionId);
+  const detailQuery = useSessionDetail(sessionId);
+  const { data: session } = detailQuery;
+  // The session's row in the LIST, which is stored truth for a started session
+  // and the only answer left when its detail read fails (DOR-2103 re-review:
+  // the rail showed Full power off this row while the status line pulsed
+  // forever off the failed one). Same cache the rail renders from, so this
+  // costs no request.
+  const { sessions } = useSessions();
+  const listRow = sessionId === null ? undefined : sessions.find((row) => row.id === sessionId);
+  // What this conversation WILL run at while nothing is stored for it yet. Only
+  // ever an answer for a session that has not started — see the hook — so it can
+  // never displace the rows above, in either direction.
+  const startMode = useSessionStartMode(sessionId, runtime);
 
   // Derive default model from useModels() data — no hardcoded fallback
   const defaultModel =
@@ -120,6 +155,38 @@ export function useSessionStatus(
   const effort = overrides.effort ?? session?.effort ?? null;
   const fastMode = overrides.fastMode ?? session?.fastMode ?? false;
 
+  // The session's power as the best source available says it is, most trusted
+  // first: a change in flight, the detail row, the list row, then what an
+  // unstarted session would start at. `undefined` means no source has one.
+  const resolvedMode =
+    overrides.permissionMode ??
+    session?.permissionMode ??
+    listRow?.permissionMode ??
+    startMode.mode;
+
+  // Is there an ANSWER about this session's power yet — or will there be?
+  //
+  // `permissionMode` below is a non-optional string, so when nothing is known
+  // it carries `resolvePermissionMode`'s placeholder, which is shaped exactly
+  // like a real answer. This is what a surface asks before painting it.
+  //
+  // **It has to have a terminal branch**, and the first version did not: it was
+  // "some source produced a value", so a session whose reads all FAILED pulsed
+  // for the lifetime of the window (DOR-2103 re-review found three such states).
+  // So the question is the honest one — is anything still coming? — and it is
+  // false only while a read genuinely is:
+  //
+  // - No session at all. Nothing to know; the control is disabled anyway, and a
+  //   disabled control is not a loading one.
+  // - A value from any source above. Nothing better is owed.
+  // - Every source has settled — succeeded, failed, or was never asked
+  //   (`isQuerySettled`). Waiting longer cannot help, so the caller falls back
+  //   to the placeholder and says so in the runtime's own words.
+  const permissionModeKnown =
+    sessionId === null ||
+    resolvedMode !== undefined ||
+    (isQuerySettled(detailQuery) && startMode.settled);
+
   const statusData: SessionStatusData = {
     // `session.permissionMode` carries any id the session's own runtime
     // reports (DOR-851; `test-mode`'s ids sit outside the `PermissionMode`
@@ -129,7 +196,15 @@ export function useSessionStatus(
     // literal `=== 'bypassPermissions'` compare against it IS a bug (the
     // session's status strip used to have one) — use `isBypassPermissionMode`
     // for any bypass check, never a raw literal.
-    permissionMode: resolvePermissionMode(overrides.permissionMode, session?.permissionMode),
+    //
+    // `startMode` is the last tier before the literal, and it is what closes
+    // DOR-2103: a conversation with no row yet used to read "Default" here
+    // whatever the operator's configured stop was, right up until the first
+    // message seeded the real value and the dial jumped. It answers `undefined`
+    // for every session that HAS a row, so the stored value still wins the
+    // moment there is one.
+    permissionMode: resolvePermissionMode(overrides.permissionMode, resolvedMode),
+    permissionModeKnown,
     model,
     effort,
     fastMode,

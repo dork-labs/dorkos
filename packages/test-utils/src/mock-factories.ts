@@ -313,6 +313,10 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       .mockResolvedValue({ days: 7, dailyCounts: [0, 0, 0, 0, 0, 0, 0], warnings: [] }),
     getSession: vi.fn(),
     getSessionRuntimeType: vi.fn().mockResolvedValue('claude-code'),
+    // Nothing stored, which is what a brand-new session id genuinely has. A
+    // test about a settings change made BEFORE the first message overrides this
+    // with the row that change would have written (DOR-2103).
+    getStoredSessionSettings: vi.fn().mockResolvedValue(null),
     getMessages: vi.fn().mockResolvedValue({ messages: [] }),
     getSessionSnapshot: vi.fn().mockResolvedValue({
       messages: [],
@@ -629,6 +633,13 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
           supportsPlugins: true,
           permissionModes: {
             supported: true,
+            // The mode a claude-code session runs when nothing is stored for it
+            // — the real profile declares it (`claude-code/runtime-constants.ts`)
+            // and the two other runtimes here already did. Its absence made this
+            // mock the one profile that could not answer "what does a session
+            // with a NULL permission column run at?", which is exactly the
+            // question the trust dial resolves before a first message (DOR-2103).
+            default: 'default',
             values: [
               {
                 id: 'default',

@@ -71,5 +71,18 @@ export function sessionListQueryOptions(deps: SessionListQueryDeps, cwd: string 
       syncSessionDetailCache(deps.queryClient, sessions, observedAt);
       return sessions;
     },
+    // **Dropped wifi is not a reason to stop asking localhost.** TanStack's
+    // default `networkMode: 'online'` PAUSES a fetch whenever
+    // `navigator.onLine` is false, and this server is not on the internet —
+    // the ruling `useConfig` states at length, applied here because the trust
+    // dial reads this and a paused read left it with nothing to say
+    // (DOR-2103).
+    //
+    // `as const` is load-bearing: this is a plain object literal rather than an
+    // inline `useQuery({...})`, so without it the value widens to `string`,
+    // stops matching TanStack's `NetworkMode` union, and collapses the inferred
+    // `data` type at every call site (measured — it made `Session[]` implicitly
+    // `any` in `ChatPanel`).
+    networkMode: 'always' as const,
   };
 }
