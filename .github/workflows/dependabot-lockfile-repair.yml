@@ -75,7 +75,7 @@ name: dependabot-lockfile-repair
 #     safety control rather than a scoping convenience. Widen the actor gate
 #     and this bullet stops being true, flags unchanged.
 #
-#     That matters because THIS job holds MERGE_TAIL_TOKEN; lint.yml's `pull_request` job
+#     That matters because THIS job holds the merge-tail app key; lint.yml's `pull_request` job
 #     does run a real `pnpm install --frozen-lockfile` against the same
 #     untrusted lockfile, but only ever holds the secret-less, read-only
 #     Dependabot token — see above.
@@ -92,7 +92,7 @@ name: dependabot-lockfile-repair
 # is also what bounds where the resolver may go — see the `.npmrc`/`git+` note
 # in the bullet above before widening it.
 #
-# WHY `secrets.MERGE_TAIL_TOKEN`, NOT `github.token`, FOR THE PUSH: this is
+# WHY THE MERGE-TAIL APP TOKEN, NOT `github.token`, FOR THE PUSH: this is
 # not a style choice, it changes whether the fix actually un-blocks the PR.
 # GitHub does not create new workflow runs for events triggered by the
 # default `GITHUB_TOKEN` (documented, and load-bearing for merge-tail.yml's
@@ -101,14 +101,12 @@ name: dependabot-lockfile-repair
 # `pull_request` triggers would NOT re-fire on the new commit — the required
 # checks would keep showing the OLD (failing) commit's result, or nothing at
 # all, and the PR would be stuck exactly as before, just less visibly. A push
-# authenticated with a real PAT is not treated as actions-originated and does
-# re-trigger `pull_request` workflows normally, which is what actually flips
-# the checks green. `MERGE_TAIL_TOKEN` is this repo's one existing "PAT with
-# repo-write scope for a bot-shaped job" secret (see merge-tail.yml); reusing
-# it avoids provisioning a second credential for the same class of problem. If
-# it is ever unset, this job fails loudly (see the guard step) rather than
-# pushing an inert commit that looks like a fix and isn't — same philosophy
-# merge-tail.yml uses for its own missing-PAT case.
+# made with a GitHub App installation token does re-trigger `pull_request`
+# workflows normally, which is what actually flips the checks green. It reuses
+# merge-tail.yml's app (`dorkos-merge-tail`: contents and pull requests write,
+# no Administration) rather than provisioning a second credential for the
+# same class of problem. If the app key is unset, the token step fails loudly
+# rather than this job pushing an inert commit that looks like a fix and isn't.
 #
 # IDEMPOTENT BY CONSTRUCTION: `--lockfile-only` against a lockfile that already
 # satisfies the manifests writes nothing, so the second run this job's own push
@@ -144,25 +142,27 @@ env:
 jobs:
   repair-lockfile:
     # Elevated-permission gate: only Dependabot's own PRs reach a job that
-    # holds `contents: write` + `MERGE_TAIL_TOKEN` under `pull_request_target`.
+    # holds `contents: write` + the merge-tail app key under `pull_request_target`.
     if: github.event.pull_request.user.login == 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Check MERGE_TAIL_TOKEN is available
-        run: |
-          if [ -z "${{ secrets.MERGE_TAIL_TOKEN }}" ]; then
-            echo "::error::MERGE_TAIL_TOKEN is not set. Pushing the repaired lockfile with the default GITHUB_TOKEN would not re-trigger the required checks (GitHub suppresses workflow runs for GITHUB_TOKEN-authored pushes), leaving the PR stuck red with no visible fix. Add a repo-scoped PAT as MERGE_TAIL_TOKEN (same secret merge-tail.yml uses) to enable this workflow."
-            exit 1
-          fi
+      # Fails the job when the app key is missing, which is the point: see
+      # the header on why a GITHUB_TOKEN push would look like a fix and isn't.
+      - name: Mint the merge-tail app token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.MERGE_TAIL_APP_ID }}
+          private-key: ${{ secrets.MERGE_TAIL_APP_PRIVATE_KEY }}
 
       # Check out the PR's exact head commit (a SHA, not the floating
-      # branch) with the PAT so the later push is pre-authenticated. Nothing
-      # from this checkout is ever executed — see the header comment.
+      # branch) with the app token so the later push is pre-authenticated.
+      # Nothing from this checkout is ever executed — see the header comment.
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-          token: ${{ secrets.MERGE_TAIL_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - uses: pnpm/action-setup@v6
 
@@ -177,7 +177,7 @@ jobs:
       # `--lockfile-only` is load-bearing and is NOT an optimisation: it is what
       # keeps this a resolver run rather than an install, so no package from the
       # PR's proposed graph is downloaded, linked or executed in the one job
-      # that holds MERGE_TAIL_TOKEN. Read the threat-model section of the header
+      # that holds the merge-tail app key. Read the threat-model section of the header
       # before touching this line. `--no-frozen-lockfile` is required because
       # pnpm freezes by default under CI, and a frozen lockfile is precisely the
       # thing being repaired.
