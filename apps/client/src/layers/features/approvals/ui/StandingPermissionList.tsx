@@ -43,7 +43,7 @@ function agentNames(permissions: StandingPermission[]): Map<string, string> {
  * The standing permissions that are live, and the button that ends each one.
  *
  * Rendered in both places a person can find one: the header panel and Settings
- * under Security. Same component in both, so what a permission looks like and how
+ * under Access. Same component in both, so what a permission looks like and how
  * it is ended cannot differ between the place somebody stumbles on it and the
  * place they go looking for it.
  *

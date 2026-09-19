@@ -77,13 +77,27 @@ export interface ApprovalCardProps {
  * The swap is optimistic, so it is also reversible: a refusal the server would
  * not accept puts the buttons back rather than leaving a checkmark over a
  * request that is still sitting there answerable.
+ *
+ * ## "Stop asking me" is offered, or explained, never silently missing
+ *
+ * The third answer opens a standing permission alongside the one-time yes. It
+ * needs two settings on and an attributable agent, so on most installs it is not
+ * there — and until DOR-2102 the card said nothing about why. That absence is
+ * the product teaching somebody the wrong thing: a person who has never seen the
+ * button concludes DorkOS has no way to stop asking, when it has one and it is
+ * two clicks away. So where the settings are the only thing missing, the card
+ * names the one place that fixes it instead of drawing a gap.
+ *
+ * It stays quiet on a request with no agent path, and that is not an oversight.
+ * Permissions key on the agent path, so no setting would help, and pointing that
+ * person at Settings would be a dead end dressed as a fix.
  */
 export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
   const now = useNow(30_000);
   const grant = useGrantApproval();
   const deny = useDenyApproval();
   const deciding = grant.isPending || deny.isPending;
-  const { canGrant, windowMinutes } = useStandingGrantPolicy();
+  const { canGrant, windowMinutes, isResolved } = useStandingGrantPolicy();
   const reducedMotion = useReducedMotion();
   // **The answer is read, never stored.** There is no local decision state here
   // on purpose: an answer belongs to the request, not to one mounted card, and
@@ -120,6 +134,24 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
   // the server refuses — permissions key on the agent path, and an anonymous
   // request has none to key on.
   const offerStanding = canGrant && approval.hasAgentPath;
+  // The same question answered the other way (DOR-2102). A card that simply drew
+  // nothing taught the wrong lesson: the person concludes there IS no way to stop
+  // being asked, when there is one and it is two clicks away. So the absence
+  // explains itself instead.
+  //
+  // Three conditions, and each rules out a DIFFERENT kind of dishonesty:
+  //
+  // - `!canGrant` is the case this exists for — a switch that is off, with a
+  //   place to turn it on.
+  // - `isResolved` because both flags read `false` until the config lands, and
+  //   the hook's own doc draws exactly this line: that default is right for
+  //   anything that OFFERS and wrong for anything that EXPLAINS. Without it the
+  //   card states a reason that may not be true and then flips.
+  // - `hasAgentPath` because on a request DorkOS cannot attribute, no setting
+  //   fixes anything: permissions key on the agent path, so Settings would be a
+  //   dead end dressed as a fix. That card already says DorkOS does not know who
+  //   asked, which is the honest whole answer there.
+  const explainStanding = !canGrant && isResolved && approval.hasAgentPath;
   const agentLabel = approval.requestedBy ? agentLabelFrom(approval.requestedBy) : 'this agent';
 
   return (
@@ -321,9 +353,24 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
               </Button>
               <p className="text-muted-foreground text-2xs max-w-xs @[34rem]/approval:text-right">
                 Covers {agentLabel} doing “{approval.capabilityTitle}”, and nothing else. End it any
-                time in Settings, under Security.
+                time in Settings, under Access.
               </p>
             </div>
+          )}
+
+          {/* No button, because there is nothing a press could do yet — but the
+              way to change that, named. One sentence and one place: both missing
+              settings live in the same panel, so pointing at the panel is the
+              whole answer and a person does not have to learn which of the two
+              switches they are short of. */}
+          {explainStanding && !decision && (
+            <p
+              data-slot="approval-standing-unavailable"
+              className="text-muted-foreground text-2xs max-w-xs @[34rem]/approval:text-right"
+            >
+              Want to stop being asked about this? Turn on Standing permissions in Settings, under
+              Access.
+            </p>
           )}
         </div>
       </div>

@@ -29,6 +29,7 @@ import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import { resolveTrustStops } from '@/layers/shared/lib';
 import {
   CANONICAL_TRUST_STOPS,
+  PermissionModeScopeNote,
   SegmentedControl,
   SegmentedControlItem,
   TRUST_TONE_TEXT,
@@ -108,6 +109,19 @@ export function GlobalTrustRow({
   // Every runtime whose own card put it at Full autonomy, whatever this row says.
   const overriddenToAutonomy = runtimes.filter((entry) => entry.stop === 'autonomy');
   const sharedAtAutonomy = selected === 'autonomy';
+  // This row is the one dial that belongs to no runtime, so the scope note below
+  // reads the CANONICAL descriptor for the stop rather than any runtime's mode.
+  //
+  // It tracks the same fact the green note above does, not merely this row's own
+  // position (DOR-2102 review). A card overridden to Full autonomy while this row
+  // reads "Pauses at big steps" is still a person whose new sessions skip the
+  // runtime's prompts — and that card may be collapsed, so this row is the only
+  // thing on screen saying so. Keying the correction to `selected` alone left
+  // exactly that case with a green line and no correction under it.
+  const autonomyInPlay = sharedAtAutonomy || overriddenToAutonomy.length > 0;
+  const noteDescriptor = stops.find(
+    (entry) => entry.stop === (autonomyInPlay ? 'autonomy' : selected)
+  )?.mode;
 
   return (
     <section className="@container/trust-row flex flex-col gap-2" data-testid="global-trust-row">
@@ -177,6 +191,16 @@ export function GlobalTrustRow({
           </span>
         </p>
       )}
+
+      {/* The correction that has to travel with the promise (DOR-2102). The
+          note above says a person got what they asked for; this one says what
+          they did NOT ask for and did not get. Both, or the green line reads as
+          "nothing will ever stop you again", which is not what this stop does.
+
+          `descriptor` alone, with no `mode`: this row's value is a dial STOP and
+          the note's fallback reads runtime mode ids, so a `mode` here would be a
+          branch that can never fire. */}
+      <PermissionModeScopeNote descriptor={noteDescriptor} className="px-1" />
     </section>
   );
 }

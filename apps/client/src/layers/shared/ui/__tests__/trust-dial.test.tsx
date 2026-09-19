@@ -4,6 +4,7 @@ import { render, screen, cleanup, within, waitFor } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
+import { needsConsentRitual } from '@dorkos/shared/permission-semantics';
 import { CANONICAL_TRUST_STOPS, TrustDial } from '../trust-dial';
 
 afterEach(cleanup);
@@ -508,7 +509,19 @@ describe('CANONICAL_TRUST_STOPS', () => {
     const autonomy = CANONICAL_TRUST_STOPS.find((stop) => stop.stop === 'autonomy');
 
     expect(autonomy?.promise).toBe(
-      'Acts on its own. It will not stop to ask you, even for risky steps.'
+      'Edits files and runs commands on its own. It will not stop to ask you.'
     );
+  });
+
+  it('earns the scope note at the autonomy stop and nowhere else', () => {
+    // `sharedRowSaysIt` in `features/settings/ui/runtimes/rows/TrustRow.tsx`
+    // lets a runtime card stay silent because the shared row below it is
+    // already carrying the scope note, and it works out whether that is true
+    // from the stop alone — which is only sound while `autonomy` is the one
+    // canonical stop the note fires on. A second one here would make cards go
+    // quiet at a stop nothing covers (DOR-2102).
+    expect(CANONICAL_TRUST_STOPS.filter(needsConsentRitual).map((stop) => stop.stop)).toEqual([
+      'autonomy',
+    ]);
   });
 });

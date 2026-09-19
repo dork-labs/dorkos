@@ -70,9 +70,9 @@ export function consentAsksNote(descriptor: PermissionModeDescriptor): string | 
  * What stops happening when a SCHEDULED run is given a mode that never asks.
  *
  * Written once because two surfaces now hand a schedule that mode — the task
- * form's Permissions control, and the approval card's "Approve at …" (DOR-2100)
- * — and a person meeting the same consequence on two screens must read the same
- * sentence. It is the one part of the dialog that is about the SURFACE rather
+ * form's Permissions control, and the SCHEDULE approval card's "Approve at …"
+ * (DOR-2100) — and a person meeting the same consequence on two screens must
+ * read the same sentence. It is the one part of the dialog that is about the SURFACE rather
  * than the mode, which is why it lives beside the mode copy instead of inside
  * {@link UnattendedAutonomyDialog}: a relay binding's consequence is a different
  * sentence and stays with its own caller.

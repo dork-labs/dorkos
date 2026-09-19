@@ -121,7 +121,7 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
         // used to end "Still asks when it needs your call" — which contradicts
         // `asks: 'never'` and read like the safer stop below it.
         promise:
-          'Acts without approval prompts, including outside this project. It will not stop to ask you.',
+          'Edits files and runs commands on its own, including outside this project. It will not stop to ask you.',
       },
       {
         // Research preview, and the middle stop's intelligence rather than a

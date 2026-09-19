@@ -84,6 +84,16 @@ export function stopLabel(stop: PermissionStop): string {
  * autonomy stop is `'everything'` because that is what the stop canonically
  * means, not because any colour hangs off it: the caption's green comes from the
  * stop itself ({@link trustToneText}).
+ *
+ * The autonomy sentence also does not claim more than the stop delivers
+ * (DOR-2102). It used to end "even for risky steps", which is the one clause on
+ * this dial that was simply false: DorkOS's own destructive actions stop for a
+ * person whatever this is set to, and a schedule deleted by an agent is about as
+ * risky a step as the product has. Overstating a promise is the same defect as
+ * softening it, pointed the other way — so the sentence now says what the stop
+ * really turns off, in the register the runtime descriptors use, and the
+ * exception travels beside it in `PermissionModeScopeNote` rather than being
+ * denied here.
  */
 export const CANONICAL_TRUST_STOPS: readonly PermissionModeDescriptor[] = [
   {
@@ -108,7 +118,7 @@ export const CANONICAL_TRUST_STOPS: readonly PermissionModeDescriptor[] = [
     stop: 'autonomy',
     asks: 'never',
     reach: 'everything',
-    promise: 'Acts on its own. It will not stop to ask you, even for risky steps.',
+    promise: 'Edits files and runs commands on its own. It will not stop to ask you.',
   },
 ];
 
