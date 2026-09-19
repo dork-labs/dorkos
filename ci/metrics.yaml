@@ -4,7 +4,10 @@
 # verdict, so `ledger-check` accepts only ids that resolve here:
 #
 #   gate.<gate-id>.<metric>   a gate_templates metric for any id in ci/gates.yaml,
-#                             e.g. gate.wf.browser-test.browser-shard.failure_rate
+#                             e.g. gate.wf.browser-test.browser-shard.failure_rate,
+#                             over every event the gate runs on; add @<event>
+#                             (an event_qualifiers entry) for one leg only, e.g.
+#                             gate.wf.test.test-shard.duration_p50@merge_group
 #   hook.<git-hook>.<metric>  a hook_templates metric for a lefthook hook,
 #                             e.g. hook.pre-push.duration_p90
 #   queue.*                   a queue-level metric below
@@ -33,6 +36,11 @@ gate_templates:
   - metric: ejections_caused
     unit: count
     definition: Queue ejections whose failing required check was this gate, in the window.
+
+# A sharded suite runs affected-only on a PR and in full in the queue, so an
+# unqualified duration mixes two different jobs. Name the leg the change is
+# about.
+event_qualifiers: [merge_group, pull_request]
 
 hook_templates:
   - metric: duration_p90
@@ -63,6 +71,9 @@ tracked:
   - id: tracked.cache-hit-rate
     unit: ratio
     definition: Share of cache restore steps (pnpm store, Playwright, turbo) that hit an existing entry.
+  - id: tracked.green-to-armed
+    unit: minutes
+    definition: Per merged PR, time from its final head's required checks all going green to the first auto-merge arming or queue entry after that; p50. Not yet computed by the collector (it needs the head SHA's check completion joined to the AUTO_MERGE_ENABLED and ADDED_TO_MERGE_QUEUE timeline events); the event-driven merge-tail experiment adds it.
   - id: tracked.review-runs-per-merged-pr
     unit: count
     definition: Automated review runs per merged PR.

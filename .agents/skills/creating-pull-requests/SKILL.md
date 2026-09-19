@@ -145,7 +145,9 @@ disappear, which is the deeper reason for the order above.
 ## Pipeline-touching PRs need a ledger entry
 
 A PR that changes the CI pipeline is an experiment, and CI Steward keeps the record.
-If your diff touches a gate source (`.github/workflows/**`, `lefthook.yml`,
+Start with `/ci-status` (`pnpm ci:status`): it names the current constraint, the SLOs
+and every open experiment's verdict, which is where a baseline comes from and whether
+another change is already moving the gate you want to touch. If your diff touches a gate source (`.github/workflows/**`, `lefthook.yml`,
 `turbo.json`, `.claude/settings.json`, `ci/**`, a script a gate invokes,
 `packages/ci-steward/src/**`, or this skill with its watcher; the coverage step's exact
 set comes from the census, and `.claude/rules/ci-pipeline.md` loads for a superset of
@@ -158,14 +160,13 @@ it), add or edit one file under `ci/ledger/` in the same squashed commit.
 - **A pipeline change carries a hypothesis.** `kind:` is `experiment`,
   `incident-fix` or `hygiene`, and every kind but `hygiene` names one metric, a
   baseline, a target and `after_days`. "Faster CI" is not a hypothesis; "this gate's
-  p90 goes from 14 to 8 minutes within 14 days" is. Until phase 1 publishes measured
-  baselines, copy the baseline by hand and say where it came from
-  (`baseline_source:`).
+  p90 goes from 14 to 8 minutes within 14 days" is. Copy the baseline from
+  `/ci-status` and say where it came from (`baseline_source:`).
 - **Ratchet releases block review by default.** An entry that lowers a quality floor
   (a `ratchet-release`, enforced from phase 2) needs a specific reason, or the review
   treats it as blocking.
-- Never write `verified`, `failed` or `inconclusive` as a status. Those are verdicts
-  the machine computes, and the ledger check rejects them on `main`.
+- Never write `verified`, `partial`, `failed` or `inconclusive` as a status. Those
+  are verdicts the machine computes, and the ledger check rejects them on `main`.
 - The coverage step ("CI Steward ledger coverage" in the required `typecheck` job)
   fails the PR when a pipeline change has no ledger entry.
 
@@ -331,7 +332,7 @@ bump) where you are the merger and have full context. Prefer `review:light` over
 Use `review:deep` for risky changes (security, migrations, broad refactors,
 deletions).
 
-## Merging: merge-tail arms it, the queue lands it
+## Merging: you arm it, the queue lands it
 
 `main` merges through a merge queue (ADR 260728-112203). GitHub builds each queued PR
 on top of `main` plus everything ahead of it in the queue, runs the required checks on
@@ -340,11 +341,14 @@ so **never update a branch to satisfy a gate**: no `gh pr update-branch`, no mer
 `main` in to be current. It starts a fresh round of 19 to 25 Actions jobs against a
 60-job pool every agent shares, and it disarms the PR.
 
-**Who arms it.** `merge-tail.yml` runs every 10 minutes and arms auto-merge on every
-finished PR: open, not a draft, no hold label (`hold`, `do-not-merge`, `wip`,
+**Who arms it.** `merge-tail.yml` arms auto-merge on every finished PR, but GitHub
+throttles its `*/10` schedule: over 200 scheduled runs (2026-08-25 to 09-19) the median
+gap was 162 minutes and the p90 305, so it runs roughly every 2-3 hours, not every 10
+minutes. It is a backstop. It arms a PR that is open, not a draft, no hold label (`hold`, `do-not-merge`, `wip`,
 `blocked`), not conflicting, no requested changes, no unresolved review threads
 (outdated ones count), and every check settled green with none cancelled. The decision
-is `scripts/should-arm-automerge.sh`. You may arm it yourself instead:
+is `scripts/should-arm-automerge.sh`. Arm your own green PR yourself instead of
+waiting for it; arming is idempotent and safe (one arming path arrives in phase 1b):
 
 ```bash
 gh pr merge --auto <number>
@@ -364,8 +368,8 @@ branch, then open the PR) is the safeguard that actually holds: arm at creation 
 branch that has already converged.
 
 **A new commit disarms auto-merge.** GitHub drops the armed state on every push to
-the PR branch, silently. merge-tail re-arms a green PR on its next tick; if you armed
-it yourself, re-arm after each push.
+the PR branch, silently. Re-arm it yourself once the new commit's checks are green;
+merge-tail's next run may be hours away.
 
 **Never an admin merge.** `gh pr merge --admin`, a REST `PUT .../pulls/<n>/merge` and
 the `mergePullRequest` mutation each land a change without the queue's checks, and
@@ -573,16 +577,18 @@ catch, which corrupts the numbers the pipeline is tuned by.
 
 - **`EJECTED(failed_checks)`, the first time: do nothing to the branch.** 85% of
   failed-checks ejections (209 of 247 over 30 days) passed with no change on
-  re-entry, and merge-tail re-queues the PR within about 10 minutes. Do not push,
-  rerun or re-arm. While you wait, if the failing merge-group job covers a package
-  you changed, run its tests locally (`pnpm vitest run <path>`) and act only if they
-  fail.
+  re-entry. Do not push and do not rerun. Read the failing merge-group job first: if
+  it covers a package you changed, run its tests locally (`pnpm vitest run <path>`)
+  and fix only if they fail. Once the evidence says it is not yours (the same job red
+  on `main` or in other groups, or a flake or infra error in its log), re-arm it
+  yourself with `gh pr merge --auto <n>`. merge-tail would re-arm it too, but only on
+  its next run, 2-3 hours away.
 - **`EJECTED_REPEAT(failed_checks,k)`: now look.** A failure counts as real only on
   a second ejection by the **same job** with no change in between. Find the job in
   each merge-group run
   (`gh run list --event merge_group -L 100 --json headBranch,name,conclusion,databaseId`,
   keeping rows whose `headBranch` contains `pr-<n>-`). Same job: reproduce, fix,
-  push. Different jobs: still likely flaky; keep waiting.
+  push. Different jobs: still likely flaky; re-arm with `gh pr merge --auto <n>`.
 - **`EJECTED(merge_conflict)`** (or `invalid_merge_commit`, `git_tree_invalid`):
   rebase onto `origin/main` and push once. **`EJECTED(manual)`**: someone removed
   it on purpose; read the timeline before re-arming. **`EJECTED(checks_timed_out)`**
@@ -595,9 +601,9 @@ catch, which corrupts the numbers the pipeline is tuned by.
   once: a rerun replays the original merge commit, so it cannot pick up the fix.
 - **`CANCELLED`**: re-run the cancelled run once (`gh run rerun <run-id>`); merge-tail
   will not arm the PR while it stands.
-- **`UNARMED_CLEAN`**: merge-tail arms it within about 10 minutes. Never merge it
-  directly. Still unarmed after 20 minutes: `gh pr merge --auto <n>`, and check
-  `gh run list -w merge-tail -L 3` to see why the tick skipped it.
+- **`UNARMED_CLEAN`**: arm it now with `gh pr merge --auto <n>`. Never merge it
+  directly. (Waiting for merge-tail made sense when it was believed to run every 10
+  minutes; it runs every 2-3 hours.)
 - **`HELD_BY_LABEL`**: not yours to lift unless you added the label.
 
 ### Clearing a STUCK_UNMERGEABLE queue entry
@@ -679,6 +685,17 @@ gh label create re-review    --description "Request another automated review pas
 ```
 
 ## Gotchas
+
+- **A `git push` killed at the tool ceiling did not necessarily fail.** The pre-push
+  test gate can outlast a 10-minute tool call; the kill takes the hook with it, and
+  CI Steward counts it as a killed `local-push` run: at once when the kill was a TERM,
+  INT or HUP (the time-wrap writes its END with 128+n), and only after the pre-push
+  watchdog's 2-hour ceiling when it was a SIGKILL, which leaves no END, because until
+  then the push might still be running. First check whether the push landed (`git ls-remote origin <branch>` against
+  `git rev-parse HEAD`). If it did not, push again in the background or with a longer
+  timeout rather than reaching for `--no-verify`: CI runs every gate anyway, but a
+  `--no-verify` push is invisible to the timing that would show the gate needs
+  bounding (the seeded `pre-push bounded to about two minutes` experiment).
 
 - **A commit made in a fresh worktree bypasses lefthook, so its formatting is never
   auto-applied.** The pre-commit and pre-push hooks shell out to `prettier`, `turbo`,

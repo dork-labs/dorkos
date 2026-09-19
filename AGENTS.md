@@ -52,7 +52,7 @@ dorkos/
 │   ├── marketplace/      # @dorkos/marketplace - Package schemas, parser, validator, scaffolder
 │   ├── icons/            # @dorkos/icons - SVG icon & logo registry
 │   ├── evals/            # @dorkos/evals - Headless outcome-oracle eval harness
-│   ├── ci-steward/       # @dorkos/ci-steward - CI Steward engine: census, ledger
+│   ├── ci-steward/       # @dorkos/ci-steward - CI Steward engine: census, ledger, collector, verdicts
 │   ├── test-utils/       # @dorkos/test-utils - Mock factories, test helpers
 │   └── eslint-config/, typescript-config/
 ├── ci/                   # CI Steward intent: gates, required checks, SLOs, ledger
@@ -186,11 +186,11 @@ Vitest with `vi.mock()`; tests in `__tests__/` alongside source. Client tests: R
 
 The full guide, written for agents, is [contributing/ci.md](contributing/ci.md): the two gates (affected-only locally and on PRs; the full suites and the Playwright shards only in the merge queue), sharding, `assert-tests-executed`, `site-build`, capacity, and CI Steward. The must-knows:
 
-- **Every pipeline change carries a ledger entry with a hypothesis.** One file in `ci/ledger/` (scaffold: `node packages/ci-steward/src/cli.ts ledger-new --slug <slug>`) naming one metric, its baseline, a target and a date; code, not a model, later computes whether it worked. Editing a workflow, `lefthook.yml`, `turbo.json`, `.claude/settings.json`, a gate script or `ci/**` loads `.claude/rules/ci-pipeline.md` with the protocol; the `stewarding-ci-pipeline` skill carries it for every harness. **Ratchet releases block review by default.**
+- **Every pipeline change carries a ledger entry with a hypothesis.** One file in `ci/ledger/` (scaffold: `node packages/ci-steward/src/cli.ts ledger-new --slug <slug>`) naming one metric, its baseline, a target and a date; code, not a model, later computes whether it worked (`/ci-status` shows the verdicts, the SLOs and the one constraint to work on, from the `ci-steward-data` branch). Editing a workflow, `lefthook.yml`, `turbo.json`, `.claude/settings.json`, a gate script or `ci/**` loads `.claude/rules/ci-pipeline.md` with the protocol; the `stewarding-ci-pipeline` skill carries it for every harness. **Ratchet releases block review by default.**
 - **`main` merges through a merge queue** (ADR 260728-112203), and merges are fully autonomous: no human approval, ever (ADR 260919-174348). **Never update a branch to satisfy a gate**: the queue tests your PR on top of `main` plus everything ahead of it, and being behind blocks nothing.
 - **Nine required checks, all from ruleset 19893973** (classic branch protection is gone); the list in `contributing/ci.md` is generated from `ci/required-checks.json`. **Every required check must report on `pull_request` and `merge_group`**, with no `paths:` filter and no job-level `if:` that can skip it, except `no-fragment-under-skip-label`, which skips on `merge_group` by design and is allowlisted in `ci/census-allowlist.yaml`; the CI Steward census step in `typecheck` enforces it.
-- **`merge-tail.yml` arms finished PRs every 10 minutes** (decision: `scripts/should-arm-automerge.sh`). Apply `hold` (or `do-not-merge`, `wip`, `blocked`) to keep a green PR from being armed. Arm your own with `gh pr merge --auto <n>`; an admin merge is never the answer (`.claude/hooks/merge-guard.mjs` refuses it).
-- **A red is not a reason to add load** (Team plan: 60 concurrent jobs, 19-25 per push). First failed-checks ejection from the queue: wait, merge-tail re-queues it (85% re-pass unchanged). A PR check that is not yours: `gh run rerun <run-id> --failed`, once. Never an empty commit.
+- **`merge-tail.yml` arms finished PRs as a backstop, roughly every 2-3 hours** (GitHub throttles its `*/10` schedule; decision: `scripts/should-arm-automerge.sh`), so arm your own green PR yourself. Apply `hold` (or `do-not-merge`, `wip`, `blocked`) to keep a green PR from being armed. Arm your own with `gh pr merge --auto <n>`; an admin merge is never the answer (`.claude/hooks/merge-guard.mjs` refuses it).
+- **A red is not a reason to add load** (Team plan: 60 concurrent jobs, 19-25 per push). First failed-checks ejection from the queue: don't push or rerun; read the failing job, and once it is plainly not yours re-arm with `gh pr merge --auto <n>` (85% re-pass unchanged). A PR check that is not yours: `gh run rerun <run-id> --failed`, once. Never an empty commit.
 
 ## Signing outward writes (agent provenance)
 

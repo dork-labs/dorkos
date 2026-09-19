@@ -1,17 +1,33 @@
+# EVERY COMMAND'S FIRST LINE IS THE CI STEWARD TIME-WRAP (plans/ci-steward-plan.md
+# §4.5). `[ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap <hook>
+# <command>` appends a START line to the clone's local-timings.jsonl and sets an
+# EXIT trap that appends the END line, so local hook times are measured instead
+# of re-measured by hand at every incident. It is sourced, not a wrapper process:
+# the command below it runs in the same shell exactly as before, with the same
+# stdin (the pre-push ref list), exit status and signals, and a broken timings
+# file can never fail a hook (the script swallows its own errors). The content
+# ratchet `lefthook-time-wrap` (ci/ratchets.yaml) and a test in
+# packages/ci-steward keep the line on every command. CI_STEWARD_TIMINGS=0
+# switches it off for one run.
 pre-commit:
   commands:
     format:
       glob: '*.{ts,tsx,mts,cts,js,jsx,mjs,cjs,json,css,md,mdx,yml,yaml}'
-      run: pnpm exec prettier --write {staged_files}
+      run: |
+        [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-commit format
+        pnpm exec prettier --write {staged_files}
       stage_fixed: true
     db-migrations:
       glob: 'packages/db/src/schema/*.ts'
       run: |
+        [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-commit db-migrations
         cd packages/db && npx drizzle-kit generate && cd ../..
         git add packages/db/drizzle/
       fail_text: 'DB schema changed — migrations generated and staged. Review and re-commit.'
     dir-size:
-      run: bash scripts/check-dir-size.sh
+      run: |
+        [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-commit dir-size
+        bash scripts/check-dir-size.sh
       fail_text: 'Directory has too many files — split into subdirectories.'
     lint:
       # AFFECTED-ONLY, on purpose (DOR-833). This command and the typecheck
@@ -62,11 +78,15 @@ pre-commit:
       # `typecheck` are required merge-queue checks and run unscoped there, so
       # a break that only appears once two branches combine is caught by the
       # queue rather than by this hook.
-      run: TURBO_SCM_BASE="$(git rev-parse --verify --quiet origin/main || echo main)" pnpm exec turbo lint --affected
+      run: |
+        [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-commit lint
+        TURBO_SCM_BASE="$(git rev-parse --verify --quiet origin/main || echo main)" pnpm exec turbo lint --affected
       fail_text: 'Lint failed — see the errors above, or turbo could not resolve the diff base / is not installed.'
     typecheck:
       # Affected-only against origin/main — see the lint command above for why.
-      run: TURBO_SCM_BASE="$(git rev-parse --verify --quiet origin/main || echo main)" pnpm exec turbo typecheck --affected
+      run: |
+        [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-commit typecheck
+        TURBO_SCM_BASE="$(git rev-parse --verify --quiet origin/main || echo main)" pnpm exec turbo typecheck --affected
       fail_text: 'Typecheck failed — see the errors above, or turbo could not resolve the diff base / is not installed.'
 
 pre-push:
@@ -124,7 +144,9 @@ pre-push:
       # against a second consumer for one pipe, and a second copy of a ref-parsing
       # loop to keep in step with the first. Worth it; noted so the next person to
       # find it does not read it as an oversight.
-      run: bash scripts/pre-push-format-check.sh
+      run: |
+        [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-push formatting
+        bash scripts/pre-push-format-check.sh
       fail_text: 'Formatting check failed — run the `prettier --write` command printed above, commit, and push again.'
     tests:
       priority: 2
@@ -257,6 +279,7 @@ pre-push:
       # watchdog.sh, named in `test:scripts` and in scripts-test.yml.
       use_stdin: true
       run: |
+        [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-push tests
         saw_ref=0
         all_deletes=1
         while read -r local_ref local_sha remote_ref remote_sha; do

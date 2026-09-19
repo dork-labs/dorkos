@@ -14,7 +14,11 @@ This guide covers everything between an agent's edit and a change on `main`: the
 | Steward-owned paths (the fence)          | `ci/steward-owned-paths.json`                                                                                             |
 | Census exceptions, each with a reason    | `ci/census-allowlist.yaml`                                                                                                |
 | One ledger entry per pipeline change     | `ci/ledger/<YYMMDD-HHMMSS>-<slug>.md`                                                                                     |
-| The engine (census, ledger)              | `packages/ci-steward` (`@dorkos/ci-steward`), entry `packages/ci-steward/src/cli.ts`                                      |
+| The engine                               | `packages/ci-steward` (`@dorkos/ci-steward`), entry `packages/ci-steward/src/cli.ts` (`--help` lists every command)       |
+| The daily collector                      | `.github/workflows/ci-steward.yml` (job `collect`, 05:00 UTC, never required)                                             |
+| Data-branch file formats                 | `packages/ci-steward/src/data.ts` (snapshots, `latest.json`, verdicts, floors, local exports)                             |
+| Local hook timings                       | `packages/ci-steward/bin/time-wrap.sh`, the first line of every `lefthook.yml` command; export via `ci-local-export`      |
+| Reading it                               | `/ci-status` (`pnpm ci:status`), `/ci-pulse` (`pnpm ci:pulse`); a SessionStart line when the collector stops or breaks    |
 | Where the census runs                    | `.github/workflows/typecheck.yml` steps "CI Steward census", "CI Steward ledger check", "CI Steward ledger coverage"      |
 | Local hooks                              | `lefthook.yml` (pre-commit, pre-push), `.claude/settings.json` (Claude Code hooks)                                        |
 | Arming merges                            | `.github/workflows/merge-tail.yml`, decision in `scripts/should-arm-automerge.sh`                                         |
@@ -36,7 +40,7 @@ This guide covers everything between an agent's edit and a change on `main`: the
 | Your PR is behind `main`                                                                                                              | Nothing                                                                                                                                                         | The queue tests the combined tree; being behind blocks nothing                    |
 | A PR check failed and it is yours                                                                                                     | Fix and push                                                                                                                                                    |                                                                                   |
 | A PR check failed and it is not yours (red elsewhere, infra)                                                                          | `gh run rerun <run-id> --failed`, once                                                                                                                          | One job, not a 19-to-25-job round                                                 |
-| Your PR was ejected from the queue for failed checks, first time                                                                      | Nothing; merge-tail re-queues it                                                                                                                                | 85% re-pass unchanged                                                             |
+| Your PR was ejected from the queue for failed checks, first time                                                                      | Read the failing job; once it is plainly not yours, `gh pr merge --auto <n>`                                                                                    | 85% re-pass unchanged; merge-tail runs only every 2-3 h                           |
 | Same job ejected it twice with no change in between                                                                                   | Treat it as real: reproduce, fix, push                                                                                                                          |                                                                                   |
 | The queue itself is broken or backed up                                                                                               | Say so; do not push, rerun or re-arm                                                                                                                            | Load is the problem. Incident mode (freeze, shed, break-glass) is phase 1b        |
 | You are tempted to merge with admin rights                                                                                            | Don't. `gh pr merge --auto <n>`                                                                                                                                 | Admin merges skip every required check; reserved for `/ci-break-glass` (phase 1b) |
@@ -49,7 +53,7 @@ TURN END prettier --write on changed files (Stop hook); checkpoint in worktrees
 COMMIT   lefthook pre-commit: prettier, drizzle generate, dir-size, turbo lint --affected, turbo typecheck --affected
 PUSH     lefthook pre-push: prettier check on changed files, turbo test --affected (TURBO_SCM_BASE pinned to origin/main)
 PR       ~19-25 Actions jobs; the 9 required checks below must pass ON THE PR before it may enter the queue
-ARM      merge-tail (every 10 min) arms finished PRs; agents may arm with gh pr merge --auto
+ARM      agents arm with gh pr merge --auto; merge-tail (every 2-3 h, throttled) is the backstop
 QUEUE    merge_group: the required checks re-run on main + everything ahead, up to 5 PRs per group, ALLGREEN
 MAIN     squash merge; a few push-to-main legs (db-check, CLI smoke, scripts-test, desktop smoke)
 ```
@@ -117,11 +121,11 @@ Admin bypass is narrowed to `pull_request`: nobody pushes to `main` directly, ad
 - **Every required check must report on `merge_group`.** A required check that fires only on `pull_request` blocks the queue forever. Any new required check needs `merge_group:` in its `on:` list, and the census enforces it (the deadlock invariant below).
 - **Some checks stay PR-only on purpose.** Fragment _coverage_ needs the PR's labels and number, which the `merge_group` payload does not carry, so it is answered before queueing and not re-asked. Fragment _validity_ does re-run in the queue. This is sound only because a PR cannot enter the queue until its required checks pass on the PR, and neither its labels nor its diff can change afterwards.
 - **A skipped job satisfies a required context.** A job-level `if:` that skips posts a _skipped_ check run, and GitHub counts skipped as passing. Never "fix" a required check by making it skip.
-- **An ejection is usually not your fault.** 22% of PRs are ejected at least once; 85% of failed-checks ejections (209 of 247 over 30 days) re-pass with no change. The first response to one is to wait for merge-tail to re-queue it. It counts as real only on a second ejection by the same job with no commit in between.
+- **An ejection is usually not your fault.** 22% of PRs are ejected at least once; 85% of failed-checks ejections (209 of 247 over 30 days) re-pass with no change. The first response to one is to read the failing job without pushing or rerunning, and to re-arm with `gh pr merge --auto <n>` once it is plainly not yours (merge-tail would re-arm it too, but only every 2-3 hours). It counts as real only on a second ejection by the same job with no commit in between.
 
 ## merge-tail: who arms a merge
 
-`merge-tail.yml` arms auto-merge every 10 minutes on PRs that are finished: open, not a draft, no hold label (`hold`, `do-not-merge`, `do not merge`, `wip`, `blocked`), not conflicting, mergeability known, no requested changes, no unresolved review threads (outdated ones count), and every check settled green with none cancelled. Its decision is `scripts/should-arm-automerge.sh`, pinned by `scripts/test-should-arm-automerge.sh`, and it is affirmative: anything unknown is a skip.
+`merge-tail.yml` arms auto-merge on PRs that are finished. Its schedule says every 10 minutes, but GitHub throttles it: over 200 scheduled runs from 2026-08-25 to 09-19 the median gap was 162 minutes (p90 305, max 748), so it runs roughly every 2-3 hours and is a backstop, not the arming path. Arm your own green PR with `gh pr merge --auto <n>`, and re-arm after a failed-checks ejection once the failing job's log shows it was not yours; arming is idempotent. A finished PR is open, not a draft, no hold label (`hold`, `do-not-merge`, `do not merge`, `wip`, `blocked`), not conflicting, mergeability known, no requested changes, no unresolved review threads (outdated ones count), and every check settled green with none cancelled. Its decision is `scripts/should-arm-automerge.sh`, pinned by `scripts/test-should-arm-automerge.sh`, and it is affirmative: anything unknown is a skip.
 
 - Apply `hold` (or `do-not-merge`, `wip`, `blocked`) to keep a green PR from being armed. The queue itself does not read labels, so a hold label on a PR that is **already** armed does nothing: disarm it with `gh pr merge --disable-auto <n>`.
 - Agents may arm their own PR: `gh pr merge --auto <n>` (no strategy flag; the queue owns it). In practice most PRs are armed at creation.
@@ -146,7 +150,7 @@ The pipeline changed about 13 times a week, each change well documented, and non
 | `main`: `ci/` hand files, `ci/ledger/` | What we want: gates and their purpose, required checks, SLOs, metrics, ratchets, the ledger | People and agents, through PRs                |
 | `ci-steward-data` (orphan branch)      | What happened: daily snapshots, computed verdicts, floors, high-water marks, weekly reports | The daily collector only, with `GITHUB_TOKEN` |
 
-Nothing the system generates ever needs a PR. Ruleset 23704437 makes `ci-steward-data` append-only (no deletion, no force-push, no bypass). The branch and its collector arrive in phase 1; once they exist, read an observation with `git fetch origin ci-steward-data` and then `git show origin/ci-steward-data:latest.json` (or `:verdicts/<ledger-id>.json`, `:reports/<YYYY-Www>.md`).
+Nothing the system generates ever needs a PR. Ruleset 23704437 makes `ci-steward-data` append-only (no deletion, no force-push, no bypass), and ruleset 23705388 makes its weekly backup tags `ci-steward-data/YYYY-Www` permanent. Read it with `/ci-status`, or by hand: `git fetch origin ci-steward-data`, then `git show origin/ci-steward-data:latest.json` (or `:verdicts/<ledger-id>.json`, `:reports/<YYYY-Www>.md`, `:snapshots/<YYYY-MM-DD>.json`). The collector's first run creates the branch; until then `/ci-status` says so and `/ci-pulse` collects into a temporary directory instead.
 
 ### The ledger
 
@@ -168,15 +172,49 @@ hypothesis: # required unless kind: hygiene
   target: 0.05
   after_days: 14 # the after-window, anchored on the merge time
 ratchet-release: []
+floor-release: [] # [{slo, stat, value, reason}]: the only way an SLO floor loosens
 field-changes: []
 ---
 Why, what was tried, what would make us revert. Short.
 ```
 
 - `node packages/ci-steward/src/cli.ts ledger-new --slug <kebab-slug> [--kind experiment|incident-fix|hygiene]` scaffolds an entry with a fresh id and prints its path (`--help` lists every command and flag); `ledger-check` validates every entry. Root aliases: `pnpm ci:census`, `pnpm ci:ledger-check`, `pnpm ci:ledger-new`. The engine's schema is the authority; the example above is the plan's shape.
-- `verified`, `failed` and `inconclusive` are **verdicts**, computed by code on the data branch after the window closes (phase 1). They never appear on `main`; the validity check rejects them.
+- `verified`, `partial`, `failed` and `inconclusive` are **verdicts**, computed by code into `verdicts/<id>.json` on the data branch once the after-window closes (the rules are under "Observing" below). They never appear on `main`; the validity check rejects them.
 - **Coverage:** a PR that touches any gate source, any script a gate invokes, `turbo.json`, `lefthook.yml`, `.claude/settings.json`, a `ci/` hand file, `packages/ci-steward/src/**` or the `creating-pull-requests` skill must add or edit a ledger entry. The PR-only `typecheck` step "CI Steward ledger coverage" checks it. Only a new entry counts, or an existing entry whose `prs:` gains this PR's number (how an implemented proposal records its PR); a typo fix in an old entry does not. A missing entry fails the PR. Dependabot PRs are exempt (the step's `if:` skips them): Dependabot cannot write an entry, and its version-bump PRs would otherwise stay red forever. On a `ci-improve/*` branch, touching a fenced path fails it too.
 - **Ratchet releases block by default.** A `ratchet-release` lowers a quality floor on its own say-so, so the review treats it as blocking unless the reason is specific. `field-changes` is required when a required gate's retry, shards, timeout or required status changes.
+
+### Observing: the collector, verdicts, floors and the report
+
+**The daily run.** `.github/workflows/ci-steward.yml` runs at 05:00 UTC (and on `workflow_dispatch`): `data-prepare` checks out `ci-steward-data`, `daily` runs `collect`, then `verdicts`, then on Mondays `report`, and `data-publish` pushes, fetching, rebasing and retrying if the local export pushed first, then tags the head `ci-steward-data/YYYY-Www` whenever this ISO week has no backup tag yet (so a failed Monday is covered by the next good run). The checkout keeps no credentials (`persist-credentials: false`), so no token sits in `.git/config` during `pnpm install`; only the publish step gets `CI_STEWARD_PUSH_TOKEN`, which the engine hands to git as an HTTP header through `GIT_CONFIG_*` variables. It is never a required check and never will be: it runs on no PR or merge-group event. Any command runs locally too; pass `--data <dir>` (a working tree of the branch) and `--now <iso>` to pin the clock.
+
+**What `collect` reads, per UTC day, all through `gh`:** every Actions run created that day, fetched in created-time windows split until each is under the API's 1,000-result cap and asserted against its `total_count`; the jobs of every head SHA (one `commits/{sha}/check-runs` call each), mapped back to gate ids and kept per event (`<gate-id>@pull_request`, `@merge_group`, ...), so a shard's PR leg and queue leg stay apart; the timelines of every PR merged that day (queue entries, removals and their reasons, new commits), paged to the end, because a timeline comes oldest first and a cut-off one loses exactly the merge and the last queue events; a sample of queue builds' test reports (`collect.artifact_builds_per_day`) for flaky-test-runs; the releases, the Actions cache, and the three rulesets. It writes `snapshots/YYYY-MM-DD.json` and `latest.json`. `latest.json` never moves back: it points at the newest complete day on disk, so a run that only backfilled August still reads as today, and it carries this run's failures even when the day it points at was healthy.
+
+**Late, never truncated.** `GITHUB_TOKEN` allows 1,000 REST requests an hour for the repository; the collector stops at `collect.api_budget` (700). A day it cannot finish is written with `complete: false` and resumed by the next run, SHA by SHA, without double counting. Days are planned yesterday first, then missing or late days in the last `collect.lookback_days`, then backfill back to `collect.backfill_from`, oldest first, because Actions keeps run data for 90 days. Measured on 2026-09-19: a quiet day costs about 35 requests, a 1,666-run day about 180.
+
+**The health block, and what turns the run red.** Every snapshot records pages fetched against `total_count`, head SHAs done, each SLO's n against its `min_n`, API requests, gaps in the series, the age of each clone's local export, the merge-queue ruleset reconciled against `ci/required-checks.json`, and whether rulesets 23704437 and 23705388 still exist, are active, still carry their rules and have no bypass actor (an admin token sees the list; any token sees whether it could bypass). A shortfall against `total_count` or against the merged-PR search's count (which also keeps that day `complete: false` and marks it `truncated`, so the next run collects it again from scratch; only a day that stopped for budget is resumed, because a truncated day's counted SHAs were filtered through a short run list), a drifted ruleset, a missing or changed safeguard, an API error, or a local export more than 3 days old (measured from the clone's `exported.json` heartbeat, which every export run writes, so an idle clone is not a stale one; a clone silent for 14 days counts as retired, reported but not red) fails the run and marks the snapshot unhealthy; the snapshot is still published so `/ci-status` shows why. A late day, a thin sample and an unmeasured SLO are warnings, never red.
+
+**Verdicts** (`verdicts/<ledger-id>.json`, for every entry with a hypothesis and a merged PR):
+
+1. The anchor is the merge time of the entry's last merged PR. The before-window is the `verdicts.before_days` × 24 hours before it (7), the after-window the `after_days` × 24 hours after it, both cut at that instant. Samples that carry a time (durations, waits) are cut exactly; metrics kept as daily counts (failure and retry rates, catches, SLO shares) read only the whole days inside each window.
+2. `pending` until the day holding the after-window's end has been collected, and while any of the window's days still lacks a complete snapshot the collector can fetch (its backfill); `inconclusive` if such a day is past Actions' 90-day retention.
+3. `inconclusive` first, naming why: another ledger entry touching one of the same gates merged inside the after-window (a confounder), or the after-window's sample is below the minimum (`verdicts.min_n`, or the SLO's own `min_n`).
+4. `verified` when the after-window's value reached `target`.
+5. `partial` when it missed the target but moved at least halfway from the baseline toward it. The baseline is the before-window's own reading when it has enough data, otherwise the ledger's `baseline` (for a gate that did not exist before the change).
+6. `failed` otherwise.
+
+The entry's `slo` is read over the same windows and reported beside the verdict as better, worse or flat, so a gate that got faster while its SLO got worse is visible. A final verdict is kept as it is unless the hypothesis changes, because Actions data older than 90 days cannot be read again. There is no automatic revert on `failed`: the verdict leads the report, and the next change decides with the numbers in front of it. The three backfilled entries are the recorded fixtures (`packages/ci-steward/src/__tests__/verdicts.test.ts`): each of #1135, #1246 and #1391 comes out `partial` on its own, and against the whole ledger #1135 and #1246 are `inconclusive`, each confounded by the next change to the same gate.
+
+**Floors** (`floors.json`, moved by `report` each Monday): when an SLO is `met` or `ok` for 4 consecutive non-overlapping weekly windows, each floor value tightens halfway to the objective, and the streak starts again. A floor never loosens except through a ledger entry's `floor-release`, applied once and recorded.
+
+**The constraint** is exactly one, by fixed precedence: (1) a tripwire, meaning a collector health failure or a `headroom` breach (ratchet violations join in phase 2); (2) a quality SLO in breach, in `ci/slos.yaml` order; (3) the SLO with the most excess wait-hours against its **objective**: the sum over the population of each item's time beyond the tail objective, plus killed pushes at the tool ceiling for `local-push` and wasted builds at (median ejected wait − median clean queue build) for `wasted-queue-builds`.
+
+**The weekly report**, `reports/YYYY-Www.md`, is deterministic Markdown (the same inputs render the same bytes): the SLO trend over four weekly windows first, then the constraint, the verdicts issued, real catches per gate (an ejection for failed checks followed by a new commit before re-queue; the rest are wasted builds), the tracked metrics, and the collector's own health.
+
+**Local hook timings.** Every `lefthook.yml` command opens with `[ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap <hook> <command>` (the guard means a checkout without the script runs the hook untimed, never broken). It is sourced, not a wrapper process, so the command runs in the same shell with the same stdin and exit status; it appends START and END lines to `$(git rev-parse --git-common-dir)/ci-steward/local-timings.jsonl`, shared by every worktree of the clone, and swallows its own errors (`CI_STEWARD_TIMINGS=0` switches it off). INT, TERM and HUP are trapped: the END gets 128+n and the hook exits with it (without the trap, macOS `/bin/sh` recorded a SIGTERM'd hook as a pass and dash wrote no END). A killed run is an END with such a status, or a START with no END older than `local.killed_after_seconds` (7500: the pre-push watchdog's own 7200-second ceiling plus margin, so a push still running is never called killed; SIGKILL runs no trap). Gate metrics may name one leg: `gate.<id>.<metric>@merge_group` or `@pull_request` (`ci/metrics.yaml` `event_qualifiers`). The `ci-local-export` scheduled skill runs `pnpm ci:local-export` daily at 04:30 UTC: it pushes one aggregate per finished day to `local/<clone>/` and a heartbeat `local/<clone>/exported.json`, then trims the file to 30 days and 5 MB (keeping any line appended while it rewrites, so an END is never lost into a phantom kill). It waits on the Schedules page as "Waiting for approval" until the operator approves it with **Approve at Full autonomy**; it runs Bash and `git push`, which a schedule that arrives in a file is held back from (DOR-2100). Runs under `--no-verify` are invisible to it.
+
+**The dead-man's switch.** `.claude/hooks/session-maintenance.sh` runs `packages/ci-steward/bin/session-line.mjs` (plain JavaScript, no type stripping) at SessionStart, only when `origin/ci-steward-data` exists locally and behind a hard 0.4-second timeout, so a slow start under load is silence rather than a slow session. It reads `latest.json` with `git cat-file` (no network) and prints one `[Harness]` line when the newest snapshot is over 2 days old (saying the collector stopped only when this checkout has fetched since; otherwise that the local copy is not fetched), its health failed, a safeguard is reported missing, a local SLO is in breach, or this clone's last hook run in the last 6 hours was killed.
+
+**If the data branch is missing.** The collector never recreates it once a backup tag exists; `data-prepare` fails and the job summary prints the restore command, which pushes the newest tag's commit back to the branch: `git fetch origin tag ci-steward-data/<YYYY-Www> && git push origin 'ci-steward-data/<YYYY-Www>^{commit}:refs/heads/ci-steward-data'`. It creates the branch only on the very first run, when neither the branch nor any tag exists. Worktree sweeps (`scripts/worktree-janitor.sh`) treat the branch as protected.
 
 ### The census and the deadlock invariant
 
@@ -212,10 +250,12 @@ The steward may change gates, never the steward or the judge. When the unattende
 
 | Piece                                                                                            | Phase | Status      |
 | ------------------------------------------------------------------------------------------------ | ----- | ----------- |
-| `ci/` hand files, `census`, `ledger-check`, `ledger-new`, typecheck steps                        | 0     | this change |
-| Merge guard, de-staled `creating-pull-requests` skill and watcher                                | 0     | this change |
-| `MERGE_TAIL_TOKEN` replaced by the `dorkos-merge-tail` app                                       | 0     | this change |
-| Daily collector, data branch, verdicts, weekly report, `/ci-status`, `/ci-pulse`, `/ci-record`   | 1     | not built   |
+| `ci/` hand files, `census`, `ledger-check`, `ledger-new`, typecheck steps                        | 0     | on `main`   |
+| Merge guard, de-staled `creating-pull-requests` skill and watcher                                | 0     | on `main`   |
+| `MERGE_TAIL_TOKEN` replaced by the `dorkos-merge-tail` app                                       | 0     | on `main`   |
+| Daily collector, data branch, verdicts, floors, weekly report, `/ci-status`, `/ci-pulse`         | 1     | this change |
+| Local hook timings (time-wrap) and the `ci-local-export` scheduled skill                         | 1     | this change |
+| `/ci-record` (writes an entry with its baseline read from `latest.json`)                         | 1     | not built   |
 | Incident mode: sentinel, freeze, quarantine, `/ci-incident`, `/ci-break-glass`, `ci-steward arm` | 1b    | not built   |
 | Ratchet assertions, the blocking `review-gate`                                                   | 2     | not built   |
 | `/ci-improve`, `ci-improve-tick`, fence enforcement                                              | 3     | not built   |
@@ -251,7 +291,7 @@ gh api repos/{owner}/{repo}/rules/branches/main
 - ❌ A job-level `if:` that skips a required check. ✅ Run and pass explicitly; a skipped run satisfies the requirement.
 - ❌ Editing the ruleset, then writing the ledger. ✅ Ledger and `ci/required-checks.json` first.
 - ❌ A pipeline change with "should be faster" as its reason. ✅ One catalogue metric, a baseline, a target, a date.
-- ❌ Pushing, rerunning or re-arming on the first failed-checks ejection. ✅ Wait for the re-queue.
+- ❌ Pushing or rerunning on the first failed-checks ejection. ✅ Read the failing job, then re-arm with `gh pr merge --auto <n>` once it is plainly not yours.
 
 ## Troubleshooting
 
@@ -270,6 +310,14 @@ gh api repos/{owner}/{repo}/rules/branches/main
 ### `fragment-present` red on a `skip-changelog` PR
 
 **Cause:** the label raced the `opened` event, whose payload is what the step reads. A re-run replays the same payload and fails again. **Fix:** reword a genuinely non-user-facing commit to `chore(`/`ci(` and force-push, or drop the label and add a fragment. See the `creating-pull-requests` skill.
+
+### The ci-steward workflow is red
+
+**Cause:** the collector's own health failed; it is never a PR's problem. **Fix:** read the job summary or `/ci-status`, where each failure names its fix: a truncated fetch (re-run the workflow), a drifted ruleset (put the ruleset back, or land a ledgered PR that matches it), a missing safeguard ruleset (restore it; `plans/ci-steward-status.md` §3 records how each was made), or a stale local export (approve or re-run `ci-local-export`).
+
+### "The ci-steward-data branch is missing"
+
+**Cause:** the branch was deleted despite ruleset 23704437, or the ruleset was removed first. **Fix:** run the restore command the job summary prints (the newest `ci-steward-data/*` tag's commit, pushed to the branch), then re-run the workflow. Never create an empty branch by hand: it would bury the history the tags still hold.
 
 ### The queue holds many PRs and nothing merges
 

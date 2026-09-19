@@ -70,11 +70,18 @@ describe('ledger-check validity', () => {
     expect(bad('hook.pre-commit.duration_p90')).toEqual(['ledger/metric']);
     expect(bad('queue.nope')).toEqual(['ledger/metric']);
     expect(bad('lint-speed')).toEqual(['ledger/metric']);
+    // Only the catalogue's event qualifiers, and only once.
+    expect(bad('gate.wf.lint.lint.duration_p90@push')).toEqual(['ledger/metric']);
+    expect(bad('gate.wf.lint.lint.duration_p90@merge_group@pull_request')).toEqual([
+      'ledger/metric',
+    ]);
   });
 
   it('accepts every catalogue family: gate, hook, queue, tracked, SLO', () => {
     for (const metric of [
       'gate.wf.lint.lint.failure_rate',
+      'gate.wf.lint.lint.failure_rate@merge_group',
+      'gate.wf.lint.lint.duration_p90@pull_request',
       'gate.lefthook.pre-push.tests.duration_p90',
       'hook.pre-push.duration_p90',
       'queue.queue_wait',

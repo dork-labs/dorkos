@@ -12,7 +12,12 @@ import { parse as parseYaml } from 'yaml';
 import type { Finding } from './finding.ts';
 import { isTimestampId } from './ids.ts';
 import type { HandFiles } from './load.ts';
-import { COMPUTED_STATUSES, LedgerFrontmatterSchema, describeZodError } from './schemas.ts';
+import {
+  COMPUTED_STATUSES,
+  LedgerFrontmatterSchema,
+  describeZodError,
+  type LedgerFrontmatter,
+} from './schemas.ts';
 
 /** `<id>-<slug>.md`, with a kebab-case slug. */
 export const LEDGER_FILE_RE = /^(\d{6}-\d{6})-([a-z0-9]+(?:-[a-z0-9]+)*)\.md$/;
@@ -49,6 +54,7 @@ interface Catalogue {
   gateIds: ReadonlySet<string>;
   hookNames: ReadonlySet<string>;
   gateMetrics: ReadonlySet<string>;
+  eventQualifiers: ReadonlySet<string>;
   hookMetrics: ReadonlySet<string>;
   otherIds: ReadonlySet<string>;
   sloIds: ReadonlySet<string>;
@@ -69,6 +75,7 @@ function buildCatalogue(files: HandFiles): Catalogue {
     gateIds,
     hookNames,
     gateMetrics: new Set((m?.gate_templates ?? []).map((t) => t.metric)),
+    eventQualifiers: new Set(m?.event_qualifiers ?? []),
     hookMetrics: new Set((m?.hook_templates ?? []).map((t) => t.metric)),
     otherIds: new Set([
       ...(m?.queue ?? []).map((q) => q.id),
@@ -88,7 +95,13 @@ function buildCatalogue(files: HandFiles): Catalogue {
  */
 function metricProblem(id: string, c: Catalogue, gatesMustExist = true): string | null {
   if (id.startsWith('gate.')) {
-    const rest = id.slice('gate.'.length);
+    const [rest, event, ...more] = id.slice('gate.'.length).split('@') as [
+      string,
+      string | undefined,
+    ];
+    if (more.length || (event !== undefined && !c.eventQualifiers.has(event))) {
+      return `"${id}" may end in @<event> only for ${[...c.eventQualifiers].join(' or ') || 'no event'}`;
+    }
     const cut = rest.lastIndexOf('.');
     const gate = rest.slice(0, cut);
     const metric = rest.slice(cut + 1);
@@ -248,6 +261,17 @@ function checkOne(file: string, text: string, files: HandFiles, c: Catalogue): F
         'ratchet-release'
       );
   }
+  const slos = new Map((files.slos?.slos ?? []).map((x) => [x.id, x]));
+  for (const r of fm['floor-release']) {
+    const slo = slos.get(r.slo);
+    if (!slo || !(slo.floor ?? []).some((t) => t.stat === r.stat))
+      f(
+        'ledger/floor-release',
+        `floor-release names ${r.slo} ${r.stat}, which is not a floor in ci/slos.yaml.`,
+        'Name an SLO id and one of its floor stats from ci/slos.yaml.',
+        'floor-release'
+      );
+  }
   for (const fc of fm['field-changes']) {
     if (live && !c.gateIds.has(fc.gate))
       f(
@@ -259,13 +283,40 @@ function checkOne(file: string, text: string, files: HandFiles, c: Catalogue): F
   }
   if (
     fm.actor === 'ci-improve-tick' &&
-    (fm['ratchet-release'].length > 0 || fm['field-changes'].length > 0)
+    (fm['ratchet-release'].length > 0 ||
+      fm['field-changes'].length > 0 ||
+      fm['floor-release'].length > 0)
   ) {
     f(
       'ledger/tick-authority',
-      'An unattended ci-improve-tick change may not author a ratchet-release or a field-changes entry (plan §4.7).',
+      'An unattended ci-improve-tick change may not author a ratchet-release, floor-release or field-changes entry (plan §4.7).',
       'Leave that change to an attended PR with actor: agent.'
     );
+  }
+  return out;
+}
+
+/**
+ * Every ledger entry that parses, oldest first. Invalid entries are skipped:
+ * `ledger-check` is what reports them, on every PR.
+ *
+ * @param root - Repo root.
+ * @param files - The loaded hand files.
+ */
+export function readLedger(root: string, files: HandFiles): LedgerFrontmatter[] {
+  const abs = path.join(root, files.config.ledger_dir);
+  if (!existsSync(abs)) return [];
+  const out: LedgerFrontmatter[] = [];
+  for (const name of readdirSync(abs).sort()) {
+    if (!LEDGER_FILE_RE.test(name)) continue;
+    const split = splitFrontmatter(readFileSync(path.join(abs, name), 'utf8'));
+    if (!split) continue;
+    try {
+      const parsed = LedgerFrontmatterSchema.safeParse(parseYaml(split.yaml));
+      if (parsed.success) out.push(parsed.data);
+    } catch {
+      // unparseable YAML: ledger-check reports it
+    }
   }
   return out;
 }
