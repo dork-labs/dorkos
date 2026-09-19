@@ -109,6 +109,36 @@ block echo "$(gh pr merge 1931 --admin)"
 block (gh pr merge 1931 --admin)
 block for p in 1 2; do gh pr merge $p --admin; done
 block eval 'gh pr merge 1931 --admin'
+# Flags between `pr` and `merge`, and before `api`: gh accepts both orders (review I3).
+block gh pr -R dork-labs/dorkos merge 12 --admin
+block gh pr --repo dork-labs/dorkos merge 12 --admin
+block gh pr --repo=x/y merge 12 --admin
+block gh -R dork-labs/dorkos pr merge 12 --admin
+block gh --repo=x/y api -X PUT repos/o/r/pulls/12/merge
+block gh -R x/y api --method PUT repos/{owner}/{repo}/pulls/12/merge
+allow gh pr -R dork-labs/dorkos merge 12 --auto
+allow gh pr --repo=x/y view 12 --json mergeStateStatus
+# Runners that execute the rest of their arguments.
+block timeout 60 gh pr merge 12 --admin
+block timeout -s KILL 60 gh api -X PUT repos/o/r/pulls/12/merge
+block exec gh pr merge 12 --admin
+block echo 12 | xargs gh pr merge --admin
+block echo 12 | xargs -n1 -I{} gh pr merge {} --admin
+block env -i PATH=/usr/bin gh pr merge 12 --admin
+block env GH_TOKEN=x gh pr merge 12 --admin
+block nice -n 5 gh pr merge 12 --admin
+block sudo -u me gh pr merge 12 --admin
+block ssh build-box gh pr merge 12 --admin
+block ssh build-box 'gh pr merge 12 --admin'
+block watch -n 60 'gh pr merge 12 --admin'
+allow timeout 60 gh pr merge 12 --auto
+allow echo 12 | xargs gh pr view
+allow env GH_TOKEN=x gh pr checks 12
+# Text piped into a shell runs (review I2, the pipe half).
+block echo 'gh pr merge 12 --admin' | bash
+block printf '%s\n' "gh api -X PUT repos/o/r/pulls/12/merge" | sh
+allow echo 'gh pr merge 12 --admin' | tee notes.md
+allow git commit -m "run gh pr merge --admin in bash? never"
 # --- the REST merge endpoint: PUT merges now and never enters the queue. ---
 block gh api -X PUT repos/dork-labs/dorkos/pulls/1931/merge
 block gh api -X PUT /repos/dork-labs/dorkos/pulls/1931/merge -f merge_method=squash
@@ -174,6 +204,30 @@ case_check 'a real admin merge after a quoted heredoc ends' block \
   $'cat > notes.md <<\'EOF\'\nsafe text\nEOF\ngh pr merge 1931 --admin'
 case_check 'a real admin merge before a quoted heredoc' block \
   $'gh pr merge 1931 --admin\ncat > notes.md <<\'EOF\'\nsafe text\nEOF'
+# A heredoc fed to a shell is commands, not data (review I2).
+case_check 'quoted heredoc into bash' block \
+  $'bash <<\'EOF\'\ngh pr merge 12 --admin\nEOF'
+case_check 'quoted heredoc into sh -s' block \
+  $'sh -s <<\'EOF\'\necho hi\ngh pr merge 12 --admin\nEOF'
+case_check 'quoted heredoc into zsh with a flag' block \
+  $'zsh -e <<"EOF"\ngh api -X PUT repos/o/r/pulls/12/merge\nEOF'
+case_check 'quoted heredoc piped into bash' block \
+  $'cat <<\'EOF\' | bash\ngh pr merge 12 --admin\nEOF'
+case_check 'quoted heredoc to a remote shell' block \
+  $'ssh build-box <<\'EOF\'\ngh pr merge 12 --admin\nEOF'
+case_check 'quoted heredoc into sudo bash' block \
+  $'sudo bash <<\'EOF\'\ngh pr merge 12 --admin\nEOF'
+case_check 'quoted heredoc into timeout sh' block \
+  $'timeout 30 sh <<\'EOF\'\ngh pr merge 12 --admin\nEOF'
+case_check 'quoted heredoc into eval via cat' block \
+  $'eval "$(cat <<\'EOF\'\ngh pr merge 12 --admin\nEOF\n)"'
+# ...while a heredoc given to a text-taker stays prose.
+case_check 'commit message from a heredoc' allow \
+  $'git commit -F - <<\'EOF\'\nchore(harness): refuse gh pr merge --admin\n\ngh api -X PUT repos/o/r/pulls/1/merge is refused too\nEOF'
+case_check 'PR body from a heredoc on stdin' allow \
+  $'gh pr create --title t --body-file - <<\'EOF\'\nThe guard refuses gh pr merge 12 --admin.\nEOF'
+case_check 'heredoc to a script file that mentions bash' allow \
+  $'cat <<\'EOF\' > notes.md\nNever run this in bash:\ngh pr merge 12 --admin\nEOF'
 # An unquoted heredoc is read strictly (its substitutions are live), so a body
 # line that is an admin merge is still refused: the documented false positive.
 case_check 'unquoted heredoc body is read strictly' block \
