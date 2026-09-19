@@ -30,7 +30,7 @@ function turn(sessionId: string) {
 }
 
 /** A scheduled-run payload, varied per call so nothing dedupes by accident. */
-function run(id: string, status: 'completed' | 'failed' = 'completed') {
+function run(id: string, status: 'completed' | 'failed' | 'blocked' = 'completed') {
   return {
     runId: id,
     taskId: 't1',
@@ -96,6 +96,26 @@ describe('composeShiftReport', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('counts a blocked run as one that needs a look, never as a success', async () => {
+    // Before DOR-2101 this run was a `completed` notification, so the shift
+    // report told a person their schedule had succeeded overnight when it had
+    // read nothing at all. `runsFailed` is a shade broader than its name now;
+    // that is the right side of the line to be imprecise on.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 7, 20, 9, 0, 0));
+    try {
+      await service.notify('run.completed', run('r1'));
+      await service.notify('run.completed', run('r2', 'blocked'));
+
+      expect(composeShiftReport(store, Date.now())).toMatchObject({
+        runsSucceeded: 1,
+        runsFailed: 1,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('reports null on an empty window — nothing to invent a moment about', () => {

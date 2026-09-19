@@ -39,6 +39,7 @@ function nobodyThere(toolName: string): StreamEvent {
       toolCallId: `call-${toolName}`,
       toolName,
       reasonType: 'no_approval_surface',
+      askKind: 'tool',
       reason: 'nobody was available to approve this tool',
       message: 'Nobody is available to approve this on a scheduled run.',
     },
@@ -107,7 +108,14 @@ describe('the refused asks a relay-dispatched run reports', () => {
     expect(onRefusedAsk).toHaveBeenNthCalledWith(1, {
       taskId: 'task-1',
       runId: 'run-1',
-      refused: { toolName: 'Bash', reason: 'nobody was available to approve this tool' },
+      refused: {
+        toolName: 'Bash',
+        reason: 'nobody was available to approve this tool',
+        // Carried through to the host untouched: the feed entry folds all three
+        // kinds of refused ask, and only the `blocked` rule narrows to tools
+        // (DOR-2101).
+        askKind: 'tool',
+      },
     });
     expect(onRefusedAsk).toHaveBeenNthCalledWith(
       2,
@@ -136,7 +144,18 @@ describe('the refused asks a relay-dispatched run reports', () => {
     // The report is an addition; the record that was already there must survive
     // it, including for a host that wires no reporter at all.
     const written = await runTurn(
-      [nobodyThere('Bash'), { type: 'text_delta', data: { text: 'x' } }],
+      [
+        nobodyThere('Bash'),
+        // The successful call is load-bearing since DOR-2101, exactly as in the
+        // direct-dispatch twin's version of this case: it is what makes this
+        // the run that lost ONE tool and carried on rather than the run that
+        // was never allowed to do anything, which is now recorded `blocked`.
+        {
+          type: 'tool_result',
+          data: { toolCallId: 't9', toolName: 'Read', result: 'ok', status: 'complete' },
+        } as StreamEvent,
+        { type: 'text_delta', data: { text: 'x' } },
+      ],
       undefined
     );
 

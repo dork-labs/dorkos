@@ -13,7 +13,8 @@ import {
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { useTaskRun, useCancelTaskRun } from '@/layers/entities/tasks';
 import { useNavigate } from '@tanstack/react-router';
-import { formatCompactAge } from '@/layers/shared/lib';
+import { cn, formatCompactAge } from '@/layers/shared/lib';
+import type { TaskRun } from '@dorkos/shared/types';
 
 interface FailedRunDetailSheetProps {
   open: boolean;
@@ -34,8 +35,110 @@ function formatDuration(ms: number): string {
 }
 
 /**
- * Detail sheet for a failed Tasks run, showing status, trigger, timeline,
- * error message, output summary, and available actions.
+ * How this run ended, in the words and the colour it earns.
+ *
+ * Derived from the RUN, never from the notification that opened the sheet. The
+ * inbox row's own signal is kind-plus-tier, which cannot tell a failure from a
+ * run that was blocked (`isFailedRun`, `entities/notifications`) — so the sheet
+ * used to print a hardcoded red "Failed" over whatever it was handed, and a
+ * blocked run arrived reported as a breakage that never happened (DOR-2101
+ * review). The run row is the ground truth and the sheet already fetches it,
+ * which is why no status is denormalized onto the notification to fix this.
+ *
+ * @param status - The run's own terminal status.
+ */
+function runVerdict(status: TaskRun['status']): {
+  label: string;
+  badge: 'destructive' | 'secondary' | 'outline';
+  /** Whether the explanation reads as a breakage (red) or a limit (amber). */
+  tone: 'error' | 'warning' | 'neutral';
+  /** The heading over the explanation box. */
+  heading: string;
+  /**
+   * The sheet's own title.
+   *
+   * Every status gets one, not just the two that used to be special-cased: a
+   * sheet headed "Run that didn't finish" over a run that finished, or over
+   * one that is still going, is the same small lie the hardcoded "Failed"
+   * badge was (DOR-2101 review).
+   */
+  title: string;
+} {
+  switch (status) {
+    case 'blocked':
+      return {
+        label: 'Blocked',
+        badge: 'outline',
+        tone: 'warning',
+        heading: 'What it needed',
+        title: 'Run that couldn’t use its tools',
+      };
+    case 'failed':
+      return {
+        label: 'Failed',
+        badge: 'destructive',
+        tone: 'error',
+        heading: 'Error',
+        title: 'Run that didn’t finish',
+      };
+    case 'cancelled':
+      return {
+        label: 'Cancelled',
+        badge: 'secondary',
+        tone: 'neutral',
+        heading: 'Stopped',
+        title: 'Run that was stopped',
+      };
+    case 'skipped':
+      return {
+        label: 'Skipped',
+        badge: 'secondary',
+        tone: 'neutral',
+        heading: 'Why',
+        title: 'Run that never started',
+      };
+    case 'running':
+      return {
+        label: 'Running',
+        badge: 'secondary',
+        tone: 'neutral',
+        heading: 'Latest',
+        title: 'Run that is still going',
+      };
+    default:
+      return {
+        label: 'Completed',
+        badge: 'secondary',
+        tone: 'neutral',
+        heading: 'Note',
+        title: 'Run that finished',
+      };
+  }
+}
+
+/** The classes the explanation box draws in, per {@link runVerdict} tone. */
+const EXPLANATION_TONE = {
+  error: {
+    box: 'bg-destructive/10 border-destructive/20',
+    heading: 'text-destructive',
+    body: 'text-destructive/80',
+  },
+  warning: {
+    box: 'bg-status-warning-bg border-status-warning-border',
+    heading: 'text-status-warning-fg',
+    body: 'text-status-warning-fg/80',
+  },
+  neutral: {
+    box: 'bg-muted border-border',
+    heading: 'text-foreground',
+    body: 'text-foreground/80',
+  },
+} as const satisfies Record<'error' | 'warning' | 'neutral', Record<string, string>>;
+
+/**
+ * Detail sheet for a Tasks run that wants a person's attention, showing status,
+ * trigger, timeline, what went wrong (or what it was not allowed to do), output
+ * summary, and available actions.
  */
 export function FailedRunDetailSheet({ open, itemId, onClose }: FailedRunDetailSheetProps) {
   const { data: run, isLoading, isError } = useTaskRun(open ? (itemId ?? null) : null);
@@ -60,11 +163,19 @@ export function FailedRunDetailSheet({ open, itemId, onClose }: FailedRunDetailS
     cancelMutation.mutate(run.id);
   };
 
+  const verdict = run ? runVerdict(run.status) : null;
+  const explanation = verdict ? EXPLANATION_TONE[verdict.tone] : null;
+
   return (
     <Sheet open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
       <SheetContent side="right">
         <SheetHeader>
-          <SheetTitle>Run that didn’t finish</SheetTitle>
+          {/* From the run, like the badge and the box below it. A blocked run
+              DID finish — it just was not allowed to do anything — and the old
+              fixed title was the second thing on this sheet that told a person
+              something untrue about it. Before the run loads there is nothing
+              to be exact about, so neutral wording stands in. */}
+          <SheetTitle>{verdict?.title ?? 'Run that needs a look'}</SheetTitle>
           <SheetDescription>{itemId ? itemId.slice(0, 8) : 'Unknown'}</SheetDescription>
         </SheetHeader>
 
@@ -91,7 +202,7 @@ export function FailedRunDetailSheet({ open, itemId, onClose }: FailedRunDetailS
             <div className="space-y-4">
               {/* Status and trigger badges */}
               <div className="flex gap-2">
-                <Badge variant="destructive">Failed</Badge>
+                <Badge variant={verdict!.badge}>{verdict!.label}</Badge>
                 <Badge variant="secondary">
                   {run.trigger === 'scheduled' ? 'Scheduled' : 'Manual'}
                 </Badge>
@@ -116,11 +227,14 @@ export function FailedRunDetailSheet({ open, itemId, onClose }: FailedRunDetailS
                 )}
               </div>
 
-              {/* Error message */}
+              {/* What went wrong — or, for a blocked run, what it was denied.
+                  Nothing broke there, so it must not draw in the failure red. */}
               {run.error && (
-                <div className="bg-destructive/10 border-destructive/20 rounded-md border p-3">
-                  <p className="text-destructive text-sm font-medium">Error</p>
-                  <p className="text-destructive/80 mt-1 text-sm">{run.error}</p>
+                <div className={cn('rounded-md border p-3', explanation!.box)}>
+                  <p className={cn('text-sm font-medium', explanation!.heading)}>
+                    {verdict!.heading}
+                  </p>
+                  <p className={cn('mt-1 text-sm', explanation!.body)}>{run.error}</p>
                 </div>
               )}
 

@@ -670,6 +670,7 @@ describe('Tasks routes', () => {
         trigger: 'manual',
         resolvedRuntime: null,
         resolvedModel: null,
+        refusedTools: null,
         createdAt: new Date().toISOString(),
       });
 

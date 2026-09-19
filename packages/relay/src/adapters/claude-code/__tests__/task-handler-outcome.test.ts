@@ -150,4 +150,64 @@ describe('a relay-dispatched run that hit an error (DOR-1658)', () => {
       expect.objectContaining({ status: 'processed' })
     );
   });
+
+  describe('a run that was never allowed to do anything (DOR-2101)', () => {
+    /** DorkOS's own unattended refusal, as the interactive handlers push it. */
+    const refused = (toolName: string, id: string): StreamEvent =>
+      ({
+        type: 'permission_denied',
+        data: {
+          toolCallId: id,
+          toolName,
+          reasonType: 'no_approval_surface',
+          askKind: 'tool',
+          reason: 'nobody was available to approve this tool',
+          message: 'Nobody is available to approve this on a scheduled run.',
+        },
+      }) as StreamEvent;
+
+    it('writes a blocked row, not a completed one, when every tool was refused', async () => {
+      // This is the path the ordinary install takes — with the relay adapter
+      // connected, a scheduled run is dispatched through here — so the green
+      // row the defect left behind was written by THIS terminal write.
+      const written = await runTurn([
+        refused('Bash', 't1'),
+        refused('mcp__gmail__search', 't2'),
+        { type: 'text_delta', data: { text: 'I could not read the mail.' } },
+        { type: 'done', data: { sessionId: 's' } },
+      ]);
+
+      expect(written).toMatchObject({
+        status: 'blocked',
+        error:
+          'Skipped Bash and gmail: search — nobody was there to approve them on a scheduled run.',
+        refusedTools: ['Bash', 'mcp__gmail__search'],
+      });
+    });
+
+    it('completes a run that lost one tool and got other work done', async () => {
+      const written = await runTurn([
+        refused('Bash', 't1'),
+        {
+          type: 'tool_result',
+          data: { toolCallId: 't2', toolName: 'Read', result: 'ok', status: 'complete' },
+        },
+        { type: 'text_delta', data: { text: 'Checked what I could.' } },
+        { type: 'done', data: { sessionId: 's' } },
+      ]);
+
+      expect(written).toMatchObject({ status: 'completed', refusedTools: ['Bash'] });
+      expect(written.error).toBeUndefined();
+    });
+
+    it('still fails a run that was refused a tool AND then broke', async () => {
+      const written = await runTurn([
+        refused('Bash', 't1'),
+        { type: 'error', data: { message: 'API Error: 500 upstream' } },
+        { type: 'done', data: { sessionId: 's' } },
+      ]);
+
+      expect(written).toMatchObject({ status: 'failed', error: 'API Error: 500 upstream' });
+    });
+  });
 });

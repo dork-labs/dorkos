@@ -109,6 +109,33 @@ describe('a finished run', () => {
     );
   });
 
+  it('tells the operator about a run that could not use any of its tools', async () => {
+    // The outcome nobody notices for themselves: the task looks like it ran,
+    // and before DOR-2101 this row said "nightly finished" (DOR-2101 review —
+    // the gate could be deleted with every notification test still green).
+    const store = new TaskStore(db);
+    store.setOnRunTerminal((r, t) => void notifyRunCompleted(r, t));
+
+    const task = store.createTask(taskInput('mailroom'));
+    const run = store.createRun(task.id, 'scheduled');
+    store.updateRun(run.id, {
+      status: 'blocked',
+      error: 'Skipped Bash — nobody was there to approve it on a scheduled run.',
+      refusedTools: ['Bash'],
+      durationMs: 4000,
+    });
+    await flush();
+
+    expect(announced()).toHaveLength(1);
+    expect(announced()[0]).toMatchObject({
+      kind: 'run.completed',
+      title: 'mailroom could not use its tools',
+    });
+    expect(service.list({ limit: 25, unread: false }).notifications[0].body).toBe(
+      'Ran for 4s and used none of its tools. Skipped Bash — nobody was there to approve it on a scheduled run.'
+    );
+  });
+
   it('stays quiet about a run the operator cancelled — they already know', async () => {
     const store = new TaskStore(db);
     store.setOnRunTerminal((r, t) => void notifyRunCompleted(r, t));

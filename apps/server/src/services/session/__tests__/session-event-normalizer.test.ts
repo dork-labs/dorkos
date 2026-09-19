@@ -634,6 +634,51 @@ describe('toRawSessionEvent', () => {
       },
     },
     {
+      // DOR-2101: the run-outcome rule reads `askKind` to tell a run that lost
+      // a TOOL from one that only asked a question, and the denial's schema
+      // says the record reaches the transcript. A whitelist that dropped the
+      // field made that claim false for every replayed event.
+      name: 'permission_denied → permission_denied (carries askKind onto the durable stream)',
+      input: {
+        type: 'permission_denied',
+        data: {
+          toolCallId: 'toolu_1',
+          toolName: 'Bash',
+          message: 'Nobody is available to approve this on a scheduled run.',
+          reasonType: 'no_approval_surface',
+          askKind: 'tool',
+        },
+      },
+      expected: {
+        type: 'permission_denied',
+        toolCallId: 'toolu_1',
+        toolName: 'Bash',
+        message: 'Nobody is available to approve this on a scheduled run.',
+        reasonType: 'no_approval_surface',
+        askKind: 'tool',
+      },
+    },
+    {
+      name: 'permission_denied → permission_denied (drops an askKind outside the enum)',
+      input: {
+        type: 'permission_denied',
+        data: {
+          toolCallId: 'toolu_2',
+          toolName: 'Bash',
+          message: 'no',
+          askKind: 'something-new',
+        },
+      },
+      // Not a new kind — no answer at all. A reader that must know which of the
+      // three this was is better told nothing than told a word it cannot map.
+      expected: {
+        type: 'permission_denied',
+        toolCallId: 'toolu_2',
+        toolName: 'Bash',
+        message: 'no',
+      },
+    },
+    {
       name: 'ui_command → ui_command (carries the command whole)',
       input: {
         type: 'ui_command',

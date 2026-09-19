@@ -197,14 +197,20 @@ A task on a timer runs while you are somewhere else, so there is nobody to answe
 
 You are told twice over. The run's own line in the run history names the tools it could not use, and each one lands in your activity feed on its own. Nothing pings your phone about it.
 
-The agent knows this before it starts, so a well-written task tells you at the end what it skipped. If the same task keeps getting turned down, you have two ways to fix it: change the task so it does not need that tool, or give the agent a higher setting in **Control Center** so the tool no longer needs asking about.
+**If every tool was turned down, the run is marked Blocked.** That is its own outcome in the run history, next to Completed, Failed and Cancelled — not a green tick. It means the run happened, took time, and got nowhere: it was never given permission to do anything. Nothing broke, so there is nothing to debug; what it needs is the permission it was denied. A blocked run also reaches your notifications, because a schedule that quietly does nothing every night is the one thing you cannot spot for yourself.
+
+A run that lost one tool and got on with the rest of its work still counts as Completed. It did what it could, and its summary line says what it skipped. So does a run that finished its work and only then asked you a question — being unable to reach you is not the same as being unable to act.
+
+The agent knows this before it starts, so a well-written task tells you at the end what it skipped. If the same task keeps getting turned down, you have two ways to fix it: change the task so it does not need that tool, or open the task and raise its own **Permissions** setting, which is the dial that decides how much its runs may do on their own.
+
+It has to be the task's own setting. A task's power is decided once, when the task is created, and stored on the task — so changing your **Control Center** level afterwards does not reach a task that already exists. That matters most for a task an agent proposed for you, which is created at the careful end of the dial and stays there until you move it.
 
 Clicking **Run now** is different. You are watching, so its cards work normally and you can answer them.
 
 <Callout type="info">
   This is only about requests that were waiting on **you**. A tool your agent is not allowed to use
   at all — because you wrote a rule against it, or because the safety check turned it down — is
-  refused the same way it would be in any other session, and raising your Control Center setting
+  refused the same way it would be in any other session, and raising the task's Permissions setting
   will not change that.
 </Callout>
 
@@ -388,6 +394,11 @@ DorkOS uses standard five-field cron expressions:
     running: { type: 'status', description: 'The agent session is currently executing' },
     completed: { type: 'status', description: 'The agent finished the run without errors' },
     failed: { type: 'status', description: 'The agent encountered an error during execution' },
+    blocked: {
+      type: 'status',
+      description:
+        'The run went ahead but was turned down at every tool it asked to use, because a task on a timer has nobody to approve one. Nothing broke, so there is nothing to debug: open the task and raise its own Permissions setting, or change the task so it does not need those tools. Clicking Run now shows you the requests it was making, since you are there to answer them',
+    },
     cancelled: { type: 'status', description: 'The run was manually cancelled' },
     skipped: {
       type: 'status',

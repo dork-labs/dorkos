@@ -2885,6 +2885,14 @@
               "reason": {
                 "type": "string"
               },
+              "askKind": {
+                "type": "string",
+                "enum": [
+                  "tool",
+                  "question",
+                  "elicitation"
+                ]
+              },
               "message": {
                 "type": "string"
               },
@@ -6188,6 +6196,16 @@
             ],
             "default": null
           },
+          "refusedTools": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "default": null
+          },
           "createdAt": {
             "type": "string"
           }
@@ -6213,7 +6231,8 @@
           "completed",
           "failed",
           "cancelled",
-          "skipped"
+          "skipped",
+          "blocked"
         ]
       },
       "TaskRunTrigger": {
@@ -13790,6 +13809,14 @@
                         },
                         "reason": {
                           "type": "string"
+                        },
+                        "askKind": {
+                          "type": "string",
+                          "enum": [
+                            "tool",
+                            "question",
+                            "elicitation"
+                          ]
                         },
                         "message": {
                           "type": "string"

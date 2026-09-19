@@ -543,6 +543,19 @@ const NOBODY_TO_ASK_REASON = {
 } as const satisfies Record<'approval' | 'question' | 'elicitation', string>;
 
 /**
+ * How each kind of refused ask is named on the wire.
+ *
+ * `approval` becomes `tool` because that is what it is to the person reading
+ * the run: the agent reached for a tool and was not allowed to use it. The
+ * internal word describes the PROMPT; the wire word describes what was lost.
+ */
+const ASK_KIND_ON_THE_WIRE = {
+  approval: 'tool',
+  question: 'question',
+  elicitation: 'elicitation',
+} as const satisfies Record<'approval' | 'question' | 'elicitation', string>;
+
+/**
  * Refuse an ask that reached a session with nobody to answer it, and leave a
  * record of it (spec `unattended-session-permission-prompts`).
  *
@@ -568,7 +581,11 @@ const NOBODY_TO_ASK_REASON = {
  *
  * A `permission_denied` StreamEvent stamped {@link NO_APPROVAL_SURFACE} — the
  * one `reasonType` DorkOS writes itself, and the reason a run summary may say
- * "nobody was there to approve it" without qualifying it. The SDK's own
+ * "nobody was there to approve it" without qualifying it. It carries `askKind`
+ * beside the reason, because this one function refuses three different asks
+ * and only a TOOL is one the run lost the ability to act with (DOR-2101); a
+ * run that did its work and closed by asking a question must not be recorded
+ * as one that could not use its tools. The SDK's own
  * denials (`classifier`, `rule`, `asyncAgent`) describe decisions that would
  * have gone the same way with a person present, so they carry other
  * discriminators and `@dorkos/shared/run-refusals` ignores them. The event rides
@@ -598,6 +615,11 @@ function refuseWithNobodyToAsk(
       toolCallId: ask.interactionId,
       toolName: ask.toolName,
       reasonType: NO_APPROVAL_SURFACE,
+      // Written in the SAME statement as the reason, so a reader can never get
+      // one without the other. `approval` is the only one of the three that is
+      // a tool the run wanted to act with; the other two are the run wanting
+      // to talk to somebody (DOR-2101).
+      askKind: ASK_KIND_ON_THE_WIRE[ask.kind],
       reason: NOBODY_TO_ASK_REASON[ask.kind],
       // The same words the model was handed, so the chip and the transcript
       // cannot describe the refusal differently from the refusal itself.

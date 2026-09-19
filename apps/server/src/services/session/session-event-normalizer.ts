@@ -27,6 +27,7 @@
  * @module services/session/session-event-normalizer
  */
 import { isNonFatalErrorCode, readStopWasRequested } from '@dorkos/shared/run-outcome';
+import { isRefusedAskKind } from '@dorkos/shared/run-refusals';
 import { AlwaysAllowScopeSchema } from '@dorkos/shared/schemas';
 import type { AlwaysAllowScope, StreamEvent, TerminalReason } from '@dorkos/shared/types';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
@@ -287,6 +288,14 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
         message: String(data.message ?? ''),
         ...(data.reasonType !== undefined ? { reasonType: String(data.reasonType) } : {}),
         ...(data.reason !== undefined ? { reason: String(data.reason) } : {}),
+        // Carried through, not stringified blind: `askKind` says WHICH of the
+        // three unanswerable asks this was, and the run-outcome rule reads it
+        // to tell a run that lost a TOOL from one that merely asked a question
+        // (DOR-2101). Dropping it here would have made the schema's claim that
+        // the record reaches the transcript false for every replayed event,
+        // and a value outside the enum is no answer at all rather than a new
+        // kind — so it is validated with the enum's own guard.
+        ...(isRefusedAskKind(data.askKind) ? { askKind: data.askKind } : {}),
         ...(data.agentId !== undefined ? { agentId: String(data.agentId) } : {}),
       };
       return denied;

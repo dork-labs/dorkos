@@ -48,6 +48,7 @@ function makeRun(createdAt: string): TaskRun {
     trigger: 'scheduled',
     resolvedRuntime: null,
     resolvedModel: null,
+    refusedTools: null,
     createdAt,
   };
 }
@@ -113,6 +114,35 @@ describe('useSystemHealth', () => {
   });
 
   it('returns healthy when no issues exist', () => {
+    const { result } = renderHook(() => useSystemHealth());
+    expect(result.current).toBe('healthy');
+  });
+
+  it('goes red for a recent BLOCKED run, not just a failed one (DOR-2101)', () => {
+    // A schedule turned down at every tool does nothing, every night, and the
+    // chip staying green over it is the same silence the run row used to keep.
+    // The hook asks for the two statuses separately, so the mock has to answer
+    // per query rather than hand the same list to both.
+    const blocked = { ...makeRun(new Date().toISOString()), status: 'blocked' as const };
+    vi.mocked(useTaskRuns).mockImplementation(
+      (query) =>
+        ({ data: query?.status === 'blocked' ? [blocked] : [] }) as ReturnType<typeof useTaskRuns>
+    );
+
+    const { result } = renderHook(() => useSystemHealth());
+    expect(result.current).toBe('error');
+  });
+
+  it('stays healthy when the only blocked run is older than a day', () => {
+    const old = {
+      ...makeRun(new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString()),
+      status: 'blocked' as const,
+    };
+    vi.mocked(useTaskRuns).mockImplementation(
+      (query) =>
+        ({ data: query?.status === 'blocked' ? [old] : [] }) as ReturnType<typeof useTaskRuns>
+    );
+
     const { result } = renderHook(() => useSystemHealth());
     expect(result.current).toBe('healthy');
   });
