@@ -30,8 +30,10 @@ name: merge-tail
 
 on:
   schedule:
-    # Every 10 minutes. The window only has to be short relative to how long a
-    # finished PR should wait, not to how fast main moves.
+    # Asks for every 10 minutes, but GitHub throttles scheduled workflows:
+    # measured over 200 runs (2026-08-25 to 09-19), the median gap was 162
+    # minutes (p90 305, max 748). This is a backstop; agents arm their own PRs,
+    # and ledger entry 260919-204500 proposes an event-driven trigger.
     - cron: '*/10 * * * *'
   workflow_dispatch:
     inputs:

@@ -23,7 +23,22 @@ import { readRootScripts } from './discover.ts';
 import { formatFindings, type Finding } from './finding.ts';
 import { allocateId } from './ids.ts';
 import { checkLedger, LEDGER_FILE_RE } from './ledger.ts';
+import {
+  cmdCollect,
+  cmdDaily,
+  cmdDataPrepare,
+  cmdDataPublish,
+  cmdLocalExport,
+  cmdPulse,
+  cmdReport,
+  cmdStatus,
+  cmdVerdicts,
+  type Env,
+} from './commands.ts';
+import { realGit, tokenGit } from './data-branch.ts';
+import { createGh } from './gh.ts';
 import { CONFIG_PATH, loadHandFiles } from './load.ts';
+import { isDay } from './time.ts';
 import { loadWorkflows } from './workflows.ts';
 
 /** Where a command writes. */
@@ -47,12 +62,39 @@ commands:
       Scaffold ci/ledger/<YYMMDD-HHMMSS>-<slug>.md with a fresh id and print its path.
       --kind defaults to experiment; hygiene entries get no hypothesis block.
 
+observe (phase 1; GitHub through the gh CLI, git for the data branch):
+  collect --data <dir> [--day YYYY-MM-DD]... [--today]
+      Snapshots for the planned days (yesterday, missing or late recent days,
+      then backfill) into a data-branch working tree, then latest.json.
+      Exit 1 when the collector's health failed.
+  verdicts --data <dir>
+      Compute verdicts/<ledger-id>.json for every entry with a hypothesis.
+  report --data <dir>
+      The weekly report for the week before --now, and the floors.
+  daily --data <dir>
+      collect, verdicts, and on Mondays report: what the workflow runs.
+  data-prepare --data <dir>
+      Check out the data branch at <dir>. Creates it only when neither the
+      branch nor any backup tag exists; refuses (and names the restore
+      command) when the branch is gone but a tag exists.
+  data-publish --data <dir> [--message <text>] [--tag-week]
+      Commit and push <dir> with fetch-rebase-retry; --tag-week tags the head
+      ci-steward-data/<YYYY-Www> when this week has no backup tag yet.
+      Pushes with CI_STEWARD_PUSH_TOKEN when it is set (the workflow's token).
+  status [--ref <ref> | --data <dir>]
+      One screen: SLOs, constraint, experiments with verdicts, health. Reads
+      origin/ci-steward-data by default (no network; fetch first).
+  pulse [--keep]
+      Collect now into a temp directory and show status from it. Pushes nothing.
+  local-export [--clone <name>] [--no-push]
+      Export this clone's lefthook timings to local/<clone>/ and rotate the file.
+
 every command:
   --root <dir>   repo root (default: the nearest directory up holding ci/config.yaml)
   --now <iso>    the clock (default: now); decides allowlist expiry and new ledger ids
 
 exit codes: 0 clean, 1 findings, 2 bad usage or an internal error
-root aliases: pnpm ci:census, pnpm ci:ledger-check, pnpm ci:ledger-new
+root aliases: pnpm ci:census, ci:ledger-check, ci:ledger-new, ci:status, ci:pulse, ci:local-export
 `;
 
 function findRoot(start: string): string | null {
@@ -190,14 +232,100 @@ function ledgerNew(
   return 0;
 }
 
+/** What the phase-1 commands reach outside the process through; tests replace it. */
+export type Deps = Partial<Pick<Env, 'gh' | 'git' | 'stepSummary' | 'cloneName'>>;
+
+const NEEDS_DATA = new Set([
+  'collect',
+  'verdicts',
+  'report',
+  'daily',
+  'data-prepare',
+  'data-publish',
+]);
+
+function observe(
+  command: string,
+  root: string,
+  now: Date,
+  io: Io,
+  values: {
+    data?: string;
+    day?: string[];
+    today?: boolean;
+    ref?: string;
+    keep?: boolean;
+    clone?: string;
+    'no-push'?: boolean;
+    message?: string;
+    'tag-week'?: boolean;
+  },
+  deps: Deps
+): number {
+  const { files, findings } = loadHandFiles(root);
+  if (!files || findings.length) return report(io, command, findings);
+  if (NEEDS_DATA.has(command) && !values.data) {
+    io.err(
+      `${command} needs --data <dir>: a working tree of the ${files.config.data_branch} branch.\n`
+    );
+    return 2;
+  }
+  const bad = (values.day ?? []).filter((d) => !isDay(d));
+  if (bad.length) {
+    io.err(`--day ${bad.join(', ')} is not a YYYY-MM-DD day.\n`);
+    return 2;
+  }
+  const env: Env = {
+    root,
+    files,
+    workflows: loadWorkflows(root, files.config.workflows_dir, () => undefined),
+    now,
+    io,
+    gh: deps.gh ?? ((budget) => createGh({ budget })),
+    git: deps.git ?? realGit,
+    stepSummary: deps.stepSummary,
+    cloneName: deps.cloneName,
+  };
+  const data = values.data ? path.resolve(values.data) : '';
+  switch (command) {
+    case 'collect':
+      return cmdCollect(env, data, { days: values.day, today: values.today });
+    case 'verdicts':
+      return cmdVerdicts(env, data);
+    case 'report':
+      return cmdReport(env, data);
+    case 'daily':
+      return cmdDaily(env, data);
+    case 'data-prepare':
+      return cmdDataPrepare(env, data);
+    case 'data-publish':
+      return cmdDataPublish(env, data, {
+        message: values.message,
+        tagWeek: values['tag-week'],
+      });
+    case 'status':
+      return cmdStatus(env, { ref: values.ref, data: values.data ? data : undefined });
+    case 'pulse':
+      return cmdPulse(env, { keep: values.keep });
+    default:
+      return cmdLocalExport(env, { clone: values.clone, push: values['no-push'] !== true });
+  }
+}
+
 /**
  * Run one command.
  *
  * @param argv - Arguments after the script path.
  * @param io - Output sinks.
  * @param cwd - Where to start looking for the repo root.
+ * @param deps - GitHub and git access for the phase-1 commands (tests inject fakes).
  */
-export function main(argv: readonly string[], io: Io, cwd: string = process.cwd()): number {
+export function main(
+  argv: readonly string[],
+  io: Io,
+  cwd: string = process.cwd(),
+  deps: Deps = {}
+): number {
   let parsed;
   try {
     parsed = parseArgs({
@@ -213,6 +341,15 @@ export function main(argv: readonly string[], io: Io, cwd: string = process.cwd(
         title: { type: 'string' },
         root: { type: 'string' },
         now: { type: 'string' },
+        data: { type: 'string' },
+        day: { type: 'string', multiple: true },
+        today: { type: 'boolean' },
+        ref: { type: 'string' },
+        keep: { type: 'boolean' },
+        clone: { type: 'string' },
+        'no-push': { type: 'boolean' },
+        message: { type: 'string' },
+        'tag-week': { type: 'boolean' },
         help: { type: 'boolean', short: 'h' },
       },
     });
@@ -249,6 +386,16 @@ export function main(argv: readonly string[], io: Io, cwd: string = process.cwd(
       });
     case 'ledger-new':
       return ledgerNew(root, io, now, values);
+    case 'collect':
+    case 'verdicts':
+    case 'report':
+    case 'daily':
+    case 'data-prepare':
+    case 'data-publish':
+    case 'status':
+    case 'pulse':
+    case 'local-export':
+      return observe(positionals[0], root, now, io, values, deps);
     default:
       io.err(USAGE);
       return 2;
@@ -258,11 +405,20 @@ export function main(argv: readonly string[], io: Io, cwd: string = process.cwd(
 const invokedDirectly =
   process.argv[1] !== undefined && realpathSync(process.argv[1]) === import.meta.filename;
 if (invokedDirectly) {
+  // The one place the engine reads the environment.
+  // eslint-disable-next-line no-restricted-syntax -- the CLI entry is this package's env boundary
+  const { GITHUB_STEP_SUMMARY, CI_STEWARD_CLONE, CI_STEWARD_PUSH_TOKEN } = process.env;
   try {
-    process.exitCode = main(process.argv.slice(2), {
-      out: (s) => process.stdout.write(s),
-      err: (s) => process.stderr.write(s),
-    });
+    process.exitCode = main(
+      process.argv.slice(2),
+      { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) },
+      process.cwd(),
+      {
+        stepSummary: GITHUB_STEP_SUMMARY,
+        cloneName: CI_STEWARD_CLONE,
+        git: CI_STEWARD_PUSH_TOKEN ? tokenGit(CI_STEWARD_PUSH_TOKEN) : undefined,
+      }
+    );
   } catch (e) {
     process.stderr.write(
       `ci-steward: ${e instanceof Error ? (e.stack ?? e.message) : String(e)}\n`

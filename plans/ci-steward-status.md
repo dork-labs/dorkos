@@ -1,6 +1,6 @@
 # CI Steward: status and handoff
 
-**As of 2026-09-19, phase 0 in review.** Read this first after a context compaction or in a new session. It holds everything that otherwise lives only in the conversation.
+**As of 2026-09-19, phase 0 in the merge queue, phase 1 built on its branch.** Read this first after a context compaction or in a new session. It holds everything that otherwise lives only in the conversation.
 
 ## 1. Where things stand
 
@@ -12,7 +12,17 @@
   - measured `timeout-minutes` on every job that had none;
   - `contributing/ci.md`, `.claude/rules/ci-pipeline.md`, the `stewarding-ci-pipeline` skill, the de-staled `creating-pull-requests` skill and watcher, the merge guard hook, and two ADRs.
   - An adversarial review (Rivet) ran; its findings are fixed on the branch.
-- **Phase 1 onward: not started.**
+- **Phase 1: built** on branch `ci-steward-phase1` (Linear DOR-2149), based on phase 0 and rebased by the orchestrator once #1928 merges. It holds:
+  - the engine's observe half in `packages/ci-steward`: `collect`, `verdicts`, `report`, `daily`, `data-prepare`, `data-publish`, `status`, `pulse`, `local-export` (root aliases `pnpm ci:status`, `ci:pulse`, `ci:local-export`); file formats in `src/data.ts`;
+  - `.github/workflows/ci-steward.yml` (job `collect`, 05:00 UTC plus dispatch, never required) with the data-branch safeguards: bootstrap only when neither branch nor tag exists, refuse and print the restore command otherwise, fetch-rebase-retry, a weekly backup tag (made whenever the week has none), the write token given to the publish step only;
+  - the POSIX time-wrap as the first line of every `lefthook.yml` command, and the `ci-local-export` DorkOS scheduled skill;
+  - the `ci-status` and `ci-pulse` skills; the SessionStart line (`bin/session-line.mjs`, wired into `session-maintenance.sh`);
+  - a `partial` verdict and a `floor-release` ledger field; verdict windows cut at the merge instant; the three fixtures pinned to data recorded from the API;
+  - follow-up E's upload half (queue shards upload `vitest-shard-report-N`), I, O and P; H moved to phase 2;
+  - the adversarial review's fixes (Plumb): truncated days stay incomplete and are re-fetched; `latest.json` never moves back; PR timelines paged to the end; a per-clone export heartbeat; signal traps in the time-wrap; per-event gate samples and `@merge_group`/`@pull_request` metric qualifiers; the SessionStart line as `.mjs` behind a timeout; bypass-actor checks on the safeguards; rotation that keeps racing appends;
+  - merge-tail's measured cadence (every 2-3 h, not 10 min) in the watcher, the PR skill, AGENTS.md and the guide, and the proposal 260919-204500 (event-driven merge-tail);
+  - docs: `contributing/ci.md` "Observing", the rule, the stewarding and creating-pull-requests skills, the plan's §4.4, ledger entry `260919-193814`.
+- **Phase 1b onward: not started.**
 
 ## 2. Tracking
 
@@ -50,14 +60,17 @@ Added during phase 0 (2026-09-19):
 
 ## 5. Waiting on the operator
 
+- After phase 1 merges: approve `ci-local-export` on the DorkOS Schedules page with **Approve at Full autonomy** (it runs Bash and `git push`; plain Approve leaves every run Blocked).
+
 - Delete the old `MERGE_TAIL_TOKEN` secret right after the phase-0 PR merges.
 - Phase 0's two token exit gates: a REST merge of a blocked PR with the app token is refused, and a merge group the app token enqueues receives check runs.
 - Optional, free: apply to Anthropic's Claude for Open Source program.
 
 ## 6. Next steps
 
-- Land phase 0 (DOR-2148) through the merge queue.
-- Then phase 1 (DOR-2149), per `plans/ci-steward-plan.md` §6: `collect`, `verdicts`, `report`, the daily workflow, the data branch and its safeguards, the local wrapper and `ci-local-export`, the SessionStart line, `/ci-status` and `/ci-pulse`.
+- Land phase 0 (DOR-2148), then phase 1 (DOR-2149), through the merge queue.
+- After phase 1 merges: dispatch `ci-steward.yml` once (`gh workflow run ci-steward.yml`); its first run creates `ci-steward-data`. Watch for 3 consecutive healthy daily snapshots (the phase-1 exit gate). The first runs spend the whole 700-request budget on the 7-day lookback and then on backfill back to 2026-08-12 (about one backfilled day per run); a few extra dispatches an hour apart speed that up. August's Actions data expires from about 2026-11-10.
+- Then phase 1b (DOR-2150).
 - Follow-ups to carry into the phase PRs: the plan's lists "Follow-ups carried into the phase PRs (from round 3)", "Follow-ups from round 5" and "Follow-ups from round 7".
 
 ## 7. The design in ten lines
@@ -105,6 +118,16 @@ Added during phase 0 (2026-09-19):
 - **Queue history:** the queue never held more than 9 PRs in 30 days. The 23-open-PR jam of 08-23 was in the runner line.
 - **Homebrew publishing** has failed 25 of 25 runs (`HOMEBREW_TAP_TOKEN` unset).
 - **The Actions cache** sits at its 10 GB cap.
+
+**Found in phase 1 (2026-09-19):**
+
+- The runs endpoint returns `total_count: 0` on a page past the 1,000-result cap, so a window over 1,000 runs must be split, never paged; 2026-09-02 had 1,666 runs.
+- Merge-queue removal reasons seen: `merged`, `failed_checks`, `checks_timed_out`, `manual`, `merge_conflict`, `invalid_merge_commit`, `git_tree_invalid`. Only the two check reasons are ejections for the SLOs.
+- The first real collector run (all 7 lookback days plus the start of backfill) spent exactly its 700-request budget in about 10 minutes; a quiet day costs about 35 requests, a 1,666-run day about 180. The 7-day readings reproduced the research: queue-green 75%, wasted-queue-builds 16%, queue-build p50 29.5 min, lead-time p50 55 min and p90 3.0 h.
+- The fixture verdicts from recorded data are partial, partial, partial (#1135, #1246, #1391), not the plan's held, partial, failed; §4.4 of the plan says why, and the adversarial review (Plumb) recomputed and agreed. Cutting verdict windows at midnight instead of the merge instant flipped #1246 to verified. The live collector will publish #1135 and #1246 as inconclusive (each confounded by the next change to the same gate).
+- **merge-tail's `*/10` cron is throttled by GitHub**: over 200 scheduled runs (2026-08-25 to 09-19) the median gap was 162 min, p90 305, max 748, min 17; about 7 runs a day, not 144. Agents arm their own PRs; the Actions-cron sentinel fallback (§4.9) is hours-grained, so the local owner is primary. Proposal 260919-204500: event-driven merge-tail.
+- Under load, node's own start is 0.15-0.6 s, so the SessionStart line is plain `.mjs`, skipped until `origin/ci-steward-data` exists, and run behind a hard 0.4 s timeout.
+- macOS `/bin/sh` (bash 3.2) runs the EXIT trap with status 0 on SIGTERM, and dash runs none; the time-wrap traps INT, TERM and HUP itself.
 
 ## 9. File index
 

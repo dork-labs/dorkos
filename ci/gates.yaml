@@ -33,6 +33,11 @@ gates:
     source: .github/workflows/changelog-fragment-check.yml
     purpose: Fails a PR labelled skip-changelog that still adds a changelog fragment.
 
+  # --- ci-steward.yml ---
+  - id: wf.ci-steward.collect
+    source: .github/workflows/ci-steward.yml
+    purpose: Daily at 05:00 UTC, records what the pipeline did, computes ledger verdicts and the weekly report, and pushes them to the ci-steward-data branch; red when its own health fails. Never required.
+
   # --- claude-code-review.yml ---
   - id: wf.claude-code-review.review
     source: .github/workflows/claude-code-review.yml
@@ -183,6 +188,12 @@ gates:
     purpose: Updates the Homebrew formula to the newly released npm version.
 
   # --- lefthook.yml ---
+  # Every command below opens with the CI Steward time-wrap
+  # (packages/ci-steward/bin/time-wrap.sh), which records START and END for
+  # local-commit and local-push. The wrapper is not a gate of its own, so it
+  # has no id here: it catches nothing and can fail nothing. The content
+  # ratchet `lefthook-time-wrap` and a packages/ci-steward test keep it on
+  # every command.
   - id: lefthook.pre-commit.format
     source: lefthook.yml
     purpose: Formats staged files with Prettier and re-stages them.

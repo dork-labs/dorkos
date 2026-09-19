@@ -63,8 +63,9 @@
 #                              included (merge-tail counts them the same way).
 #                              ",armed" means armed or queued: the queue does
 #                              not wait for threads, so it merges with them open
-#   UNARMED_CLEAN              green and unarmed; merge-tail arms it within
-#                              about 10 minutes. Never merge it directly
+#   UNARMED_CLEAN              green and unarmed; arm it yourself with
+#                              gh pr merge --auto (merge-tail runs only every
+#                              2-3 hours). Never merge it directly
 #   QUEUED(pos)                entered the merge queue (informational)
 #   PENDING                    checks running / mergeability being computed;
 #                              UNKNOWN mergeStateStatus is retry-not-terminal
@@ -195,19 +196,19 @@ remedy() {
   local token=$1 n=${2:-<n>} text=""
   case "$token" in
     'EJECTED(failed_checks)')
-      text="Ejected by a failed check in the merge queue. Most of these (85% over 30 days) pass unchanged on re-entry, and merge-tail re-queues the PR within about 10 minutes. Do not push, rerun or re-arm. If the failing job covers a package you changed, run its tests locally and act only if they fail." ;;
+      text="Ejected by a failed check in the merge queue. Most of these (85% over 30 days) pass unchanged on re-entry. Do not push and do not rerun. Read the failing merge-group job first: if it covers a package you changed, run its tests locally and fix only if they fail. If the failure is not yours (the same job red on main or in other groups, or a flaky or infra error in its log), re-arm it yourself: gh pr merge --auto $n. Arming is idempotent and safe. merge-tail would re-arm it too, but GitHub throttles its schedule to roughly every 2-3 hours." ;;
     EJECTED_REPEAT*)
-      text="Ejected again for failed checks with no new commit in between. Find the failing job in each merge-group run: gh run list --event merge_group -L 100 --json headBranch,name,conclusion,databaseId, keeping rows whose headBranch contains pr-$n-. The same job each time: treat it as real, reproduce it locally, fix and push. Different jobs: likely flaky, so keep waiting for the re-queue." ;;
+      text="Ejected again for failed checks with no new commit in between. Find the failing job in each merge-group run: gh run list --event merge_group -L 100 --json headBranch,name,conclusion,databaseId, keeping rows whose headBranch contains pr-$n-. The same job each time: treat it as real, reproduce it locally, fix and push. Different jobs: likely flaky, so re-arm it: gh pr merge --auto $n." ;;
     'EJECTED(merge_conflict)' | 'EJECTED(invalid_merge_commit)' | 'EJECTED(git_tree_invalid)')
-      text="Rebase onto origin/main and push once. merge-tail re-arms the PR once its checks are green." ;;
+      text="Rebase onto origin/main and push once, then arm it once its checks are green: gh pr merge --auto $n." ;;
     'EJECTED(manual)')
       text="Someone took this PR out of the queue on purpose. Read the timeline and comments before re-arming." ;;
     'EJECTED(checks_timed_out)')
-      text="The queue timed out waiting for checks: a queue or runner stall, not your PR. Do not push, rerun or re-arm; merge-tail re-queues it. If it repeats, check githubstatus.com." ;;
+      text="The queue timed out waiting for checks: a queue or runner stall, not your PR. Do not push and do not rerun. Re-arm it once the stall clears: gh pr merge --auto $n. If it repeats, check githubstatus.com." ;;
     EJECTED*)
       text="Read the PR timeline for the reason before acting. Do not push to re-roll the queue." ;;
     CONFLICTING)
-      text="Rebase onto origin/main and push once. A conflicting PR runs no CI and no review, so if no review has ever run on this PR, add the re-review label after the push. merge-tail re-arms it once checks are green." ;;
+      text="Rebase onto origin/main and push once. A conflicting PR runs no CI and no review, so if no review has ever run on this PR, add the re-review label after the push. Arm it once checks are green: gh pr merge --auto $n." ;;
     FAILING*)
       text="Read the failing log first. Caused by your change: fix it and push. Not yours (the same job is red on main or on other PRs, or the log shows an infra error such as a lost runner): gh run rerun <run-id> --failed, once. If main was broken when this ran and is fixed now, rebase onto origin/main and push once, because a rerun replays the old merge commit. Never push an empty commit." ;;
     CANCELLED*)
@@ -225,7 +226,7 @@ remedy() {
     UNRESOLVED_THREADS*)
       text="merge-tail will not arm this PR until every review thread is resolved, outdated ones included. Address or resolve them." ;;
     UNARMED_CLEAN)
-      text="Green and unarmed. merge-tail arms it within about 10 minutes; do not merge it directly. If it is still unarmed after 20 minutes, arm it: gh pr merge --auto $n." ;;
+      text="Green and unarmed. Arm it now: gh pr merge --auto $n. Arming is idempotent and safe; do not merge it directly. merge-tail would arm it too, but GitHub throttles its schedule to roughly every 2-3 hours." ;;
     WATCHER\ BLIND*)
       text="The watcher cannot read GitHub (auth, network or rate limit). Check gh auth status and gh api rate_limit, and look at the PR directly: gh pr checks $n." ;;
   esac

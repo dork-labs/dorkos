@@ -118,6 +118,11 @@ if [[ -z "$DEFAULT_BRANCH" ]]; then
   note "could not read origin/HEAD; assuming the default branch is '$DEFAULT_BRANCH'"
 fi
 
+# CI Steward's observations branch (plans/ci-steward-plan.md §4.4) is the only
+# copy of the pipeline's history. It is never a PR head and origin forbids its
+# deletion, but a local ref of it is kept too, so no sweep ever touches it.
+DATA_BRANCH=ci-steward-data
+
 # The primary worktree — the original clone — is never a candidate.
 PRIMARY_WT=$(git worktree list --porcelain | awk '/^worktree /{print substr($0, 10); exit}')
 
@@ -280,7 +285,7 @@ while IFS= read -r wt; do
   current=false
   [[ "$wt" == "$CURRENT_WT" ]] && current=true
   protected=false
-  [[ "$branch" == "$DEFAULT_BRANCH" ]] && protected=true
+  [[ "$branch" == "$DEFAULT_BRANCH" || "$branch" == "$DATA_BRANCH" ]] && protected=true
   [[ "$wt" == "$PRIMARY_WT" ]] && protected=true
   add_entry "$branch" "$head" "$localonly" "$dirty" "$ignored" "$current" "$protected" "$detached" "$wt" "$(is_recently_active "$wt")"
   [[ -n "$branch" ]] && SEEN_BRANCHES="$SEEN_BRANCHES $branch "
@@ -292,7 +297,7 @@ while IFS= read -r branch; do
   head=$(git rev-parse "$branch" 2>/dev/null || echo "")
   [[ -z "$head" ]] && continue
   protected=false
-  [[ "$branch" == "$DEFAULT_BRANCH" ]] && protected=true
+  [[ "$branch" == "$DEFAULT_BRANCH" || "$branch" == "$DATA_BRANCH" ]] && protected=true
   # A branch with no worktree has no working tree to be dirty.
   add_entry "$branch" "$head" "$(count_local_only "$branch")" 0 0 false "$protected" false "" false
 done < <(git for-each-ref --format='%(refname:short)' refs/heads)

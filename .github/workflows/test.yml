@@ -530,6 +530,32 @@ jobs:
           path: shard-files-${{ matrix.shard }}.txt
           if-no-files-found: error
 
+      # CI Steward (plans/ci-steward-plan.md §4.4, follow-up E): the daily
+      # collector samples these reports to measure flaky-test-runs (executions
+      # from vitest-shard-report.json, retried passes from
+      # vitest-flake-report.json), and phase 2's ratchet will read them in the
+      # fan-in. Observability only, so it can never fail the shard:
+      # `continue-on-error`, because the artifact service sometimes answers 403
+      # at finalize (browser-test.yml's 2026-09-14 note), and a missing report
+      # here costs the collector one sample, not a queue build. `overwrite`
+      # for the same reason as browser-test.yml's: a re-run replaces its attempt.
+      # `!cancelled()` so a red shard uploads too: flaky-test-runs sampled from
+      # green shards only would never see a test that failed twice.
+      - name: Upload this shard's vitest reports for CI Steward
+        if: ${{ !cancelled() && github.event_name == 'merge_group' }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: vitest-shard-report-${{ matrix.shard }}
+          path: |
+            apps/*/vitest-shard-report.json
+            apps/*/vitest-flake-report.json
+            packages/*/vitest-shard-report.json
+            packages/*/vitest-flake-report.json
+          if-no-files-found: warn
+          overwrite: true
+          retention-days: 7
+
   # THE ONE PRODUCER of the required `test` context, on both events (see ONE
   # REQUIRED CONTEXT, ONE PRODUCER in the header).
   #

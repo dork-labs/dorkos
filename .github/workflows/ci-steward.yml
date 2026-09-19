@@ -1,0 +1,106 @@
+# CI Steward, the daily collector (plans/ci-steward-plan.md §4.4, phase 1).
+#
+# Once a day it records what the pipeline did, judges each ledger entry whose
+# window has closed, and on Mondays writes the weekly report. Everything it
+# writes goes to the orphan branch `ci-steward-data`, never to `main`, so it
+# opens no PR and needs no review: observations are machine-owned, intent
+# (ci/, the ledger) is hand-owned. Read the result with `pnpm ci:status`.
+#
+# NOT A REQUIRED CHECK, and it must never become one: it runs on a schedule and
+# on demand only, never on pull_request or merge_group, so a required context
+# here would block every PR forever (the deadlock invariant, contributing/ci.md).
+#
+# It stays a GitHub Actions cron, not a DorkOS scheduled skill: it is
+# machine-only work and must run while the operator's laptop sleeps. Local hook
+# timings are the one input it cannot see; the `ci-local-export` scheduled skill
+# pushes those to `local/<clone>/` on the same branch.
+#
+# WHAT A RED RUN MEANS: the collector's own health failed (a truncated fetch, a
+# drifted ruleset, a missing data-branch safeguard, a stale local export), or
+# the data branch is missing and must be restored by hand. The snapshot is
+# still published, marked unhealthy, so /ci-status shows why. The job summary
+# names the fix.
+#
+# THE DATA BRANCH IS THE ONLY COPY OF THE HISTORY, so (§4.4 safeguards):
+#   - `data-prepare` creates it only on the very first run, when neither the
+#     branch nor any `ci-steward-data/*` backup tag exists. If the branch is
+#     gone but a tag exists, it fails and never recreates it; the job summary
+#     prints the restore command (push the newest tag's commit to the branch);
+#   - ruleset 23704437 forbids deleting or force-pushing the branch, and
+#     ruleset 23705388 makes the weekly tags permanent; the collector checks
+#     both still exist and are active, every day;
+#   - `data-publish` fetches, rebases and retries when the local export pushed
+#     first (the two writers never write the same file), and tags the week's
+#     backup `ci-steward-data/YYYY-Www` whenever that tag is still missing.
+#
+# THE WRITE TOKEN REACHES ONE STEP. The checkout does not persist credentials,
+# so no token sits in .git/config while `pnpm install` runs dependency
+# scripts. The collector reads with GH_TOKEN; only the publish step gets
+# CI_STEWARD_PUSH_TOKEN, which the engine hands to git as an HTTP header in
+# GIT_CONFIG_* variables (packages/ci-steward/src/data-branch.ts, tokenGit).
+#
+# GITHUB_TOKEN allows 1,000 REST requests an hour for this repository. The
+# collector stops at `collect.api_budget` (ci/config.yaml, 700) and writes a
+# busy day as late; the next run resumes it. Measured on 2026-09-19 against the
+# real API: a quiet day costs about 35 requests and 30 s, a 1,666-run day about
+# 180 requests and 3 min, and a first run that spends the whole budget on
+# backfill about 700 requests and 12 min.
+name: ci-steward
+
+on:
+  schedule:
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+
+# Two runs at once would race to push; queue them instead of cancelling one,
+# because a cancelled collector run leaves a day to re-fetch.
+concurrency:
+  group: ci-steward-data
+  cancel-in-progress: false
+
+permissions:
+  contents: write # push ci-steward-data and its weekly backup tags
+  actions: read # workflow runs, artifacts, cache usage
+  checks: read # commits/{sha}/check-runs
+  pull-requests: read # PR timelines (queue entries, removals, merges)
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    # The budget bounds the work: 700 requests at the ~1 s each measured
+    # locally is about 12 minutes, and the first runs, which backfill, are the
+    # longest. 3 x that, rounded up, as the census's timeout rule asks.
+    timeout-minutes: 36
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # The engine needs only zod and yaml, but the whole-workspace install is
+      # the one every other workflow proves daily; a filtered install would be
+      # a second, unproven path to save about half a minute a day.
+      - run: pnpm install --frozen-lockfile
+
+      - name: Check out the data branch (created only on the very first run)
+        id: prepare
+        run: node packages/ci-steward/src/cli.ts data-prepare --data .ci-steward-data
+
+      - name: Collect, compute verdicts, and on Mondays write the weekly report
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node packages/ci-steward/src/cli.ts daily --data .ci-steward-data
+
+      # Published even when the collector's health failed, so the unhealthy
+      # snapshot, and why, is on the branch for /ci-status and SessionStart.
+      - name: Publish to ci-steward-data, and tag the week if its backup is missing
+        if: ${{ !cancelled() && steps.prepare.outcome == 'success' }}
+        env:
+          CI_STEWARD_PUSH_TOKEN: ${{ github.token }}
+        run: node packages/ci-steward/src/cli.ts data-publish --data .ci-steward-data --tag-week

@@ -69,4 +69,27 @@ if [ -d "$RESEARCH_DIR" ]; then
   fi
 fi
 
+# --- (e) CI Steward dead-man's switch ------------------------------------------
+# One line when the daily collector's newest snapshot on origin/ci-steward-data
+# is over 2 days old, its health failed, a data-branch safeguard is missing, a
+# local SLO is breached, or this clone's last hook run was killed
+# (plans/ci-steward-plan.md §4.4). Reads git objects only, never the network.
+# Node does not even start until the data branch exists here (one rev-parse),
+# and it runs behind a hard 0.4 s timeout: a slow start under load is silence,
+# never a slow SessionStart.
+CI_LINE_SCRIPT="$REPO_ROOT/packages/ci-steward/bin/session-line.mjs"
+CI_DATA_BRANCH=$(sed -n 's/^data_branch:[[:space:]]*//p' "$REPO_ROOT/ci/config.yaml" 2>/dev/null)
+if [ -f "$CI_LINE_SCRIPT" ] && [ -n "$CI_DATA_BRANCH" ] &&
+  git -C "$REPO_ROOT" rev-parse --verify --quiet "refs/remotes/origin/$CI_DATA_BRANCH" >/dev/null 2>&1; then
+  CI_LINE=$(
+    node "$CI_LINE_SCRIPT" 2>/dev/null &
+    CI_PID=$!
+    (sleep 0.4 && kill "$CI_PID" 2>/dev/null) >/dev/null 2>&1 &
+    CI_WATCH=$!
+    wait "$CI_PID" 2>/dev/null
+    kill "$CI_WATCH" 2>/dev/null
+  )
+  [ -n "$CI_LINE" ] && printf '%s\n' "$CI_LINE" | head -1
+fi
+
 exit 0
