@@ -5,7 +5,7 @@ type: strategic
 status: active
 tags: [secrets, credentials, agents, 1password, infisical, composio, vault, security, competitors]
 searches_performed: 16
-sources_count: 34
+sources_count: 28
 ---
 
 # Agent secrets and a vault for DorkOS
@@ -22,10 +22,13 @@ and hope". Should DorkOS build a vault?
 it, and let somebody else hold the values. Between March and September 2026 the
 credential-for-agents category converged on one architecture: **the agent holds a
 reference or a placeholder, never a value, and something outside the agent's blast
-radius performs the substitution.** The company with the most to gain from owning
-custody built a vault, reached a $2.5B valuation, and then announced it was
-brokering through a password manager instead. That is the strongest available
-signal about which end of the problem is worth building.
+radius performs the substitution.** Four companies whose business depends on
+getting this right — Infisical, Composio, Auth0 and 1Password — independently
+moved the boundary away from custody, and the best-known personal-agent company
+that shipped its own vault announced on 2026-09-04 that it would broker through a
+password manager instead. That announcement is real; the valuation and adoption
+figures usually quoted alongside it are **UNVERIFIED** (section 1.6), and the
+argument does not need them.
 
 **What DorkOS should build**, in order: a **reference layer** (`op://`, `env://`,
 `bws://`, `infisical://`, with `cloud://` reserved for the hosted side), a **local
@@ -71,7 +74,7 @@ should assume its users already have.
 | **The Claude Code plugin**        | Bundles that MCP server, a skill, and a pre-Bash validation hook                                          | The agent "never receives secret values"                                      |
 | **`1Password/agent-hooks`**       | MIT repo. Currently **one** hook: validation of mounted `.env` files                                      | Validation, not prevention                                                    |
 | **Service accounts**              | Headless token, scoped per vault (`read_items`, `write_items`, `share_items`)                             | The token is a bearer credential — whoever holds it has the vault             |
-| **Agentic Autofill**              | Hands a browser agent a signed-in session rather than the password                                        | The agent gets a session, not the secret                                      |
+| **Agentic Autofill**              | Injects "only the minimum required credential data from the approved item" into the login form            | Filled from outside the agent's context; the agent never reads the value      |
 | **Unified Access**                | Governance platform: Discover and Secure shipped; Audit and runtime credential issuance "later in 2026"   | A governance layer, not a runtime one                                         |
 
 Sources: the "variable names only" claim is stated in both the Cursor Marketplace
@@ -80,7 +83,7 @@ announcement
 and the Claude Code plugin docs
 ([1Password](https://www.1password.dev/environments/claude-plugin)); `.env` files
 holding references rather than values is the documented `op run` pattern
-([1Password Developer](https://developer.1password.com/docs/cli/secrets-environment-variables));
+([1Password Developer](https://www.1password.dev/cli/secrets-environment-variables));
 Unified Access GA on 2026-03-17 with Audit and runtime issuance still forthcoming
 is from the press release
 ([1Password](https://1password.com/press/2026/mar/1password-unified-access)); the
@@ -103,7 +106,7 @@ free. The mechanism in both is the same and it is the single most copyable idea 
 this report:
 
 > The agent is configured with a **placeholder** — a literal string like
-> `__openrouter_api_key__` — and a proxy substitutes the real credential **at the
+> `__example_api_key__` — and a proxy substitutes the real credential **at the
 > network boundary**, on the way out.
 
 A prompt injection that exfiltrates the agent's whole environment exfiltrates
@@ -143,25 +146,34 @@ of their keys the agent can see.
 | ------------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **OpenAI Codex cloud**          | encrypted secrets decrypted per task             | **available only to setup scripts and removed before the agent phase starts**; the agent phase has no internet by default, with a domain allowlist |
 | **Cursor cloud agents**         | encrypted environment variables at runtime       | the three types above                                                                                                                              |
-| **GitHub Copilot coding agent** | Actions secrets in a dedicated environment       | egress firewall on by default, widened by an allowlist variable; incompatible with self-hosted runners                                             |
+| **GitHub Copilot coding agent** | Actions secrets and variables                    | egress firewall enabled by default "to prevent data exfiltration", widened by an allowlist variable set at repository-settings level               |
 | **Devin**                       | organisation- and session-scoped secrets manager | revocable, scoped per session — but **the agent can read the values**; guidance is a dedicated service account per platform                        |
 | **Claude Code**                 | `.env`, shell environment, MCP                   | `permissions.deny` rules plus hooks, with **reported enforcement gaps**                                                                            |
 
 Codex's phase separation is the strongest shipped model for a coding agent and it
 is documented
-([OpenAI](https://developers.openai.com/codex/cloud/environments),
-[internet access](https://developers.openai.com/codex/cloud/internet-access)).
-Copilot's default-deny egress is documented
-([GitHub Docs](https://docs.github.com/en/copilot/responsible-use/copilot-cloud-agent),
-[community #163374](https://github.com/orgs/community/discussions/163374)). The
+([OpenAI](https://learn.chatgpt.com/docs/environments/cloud-environment),
+[internet access](https://learn.chatgpt.com/docs/cloud/internet-access)).
+Copilot's default-deny egress is documented — "a firewall is enabled by default
+to prevent data exfiltration"
+([GitHub Docs](https://docs.github.com/en/copilot/responsible-use/copilot-cloud-agent))
+— and the allowlist variable that widens it, which must be set at
+repository-settings level rather than in a workflow, is described in
+[community #163374](https://github.com/orgs/community/discussions/163374). The
 Claude Code gap is a filed issue plus independent reproduction
 ([anthropics/claude-code#24846](https://github.com/anthropics/claude-code/issues/24846),
 [Knostic](https://www.knostic.ai/blog/claude-loads-secrets-without-permission),
-[The Register](https://www.theregister.com/2026/01/28/claude_code_ai_secrets_files/)):
-deny rules never covered `grep -r`, a `cat` of a file the rule did not name, or a
-script that opens a path it never spells out, and enforcement on `.env` itself is
-reported as broken. **Any product that tells users "the agent is not allowed to
-read `.env`" is describing an honour system.**
+[The Register](https://www.theregister.com/2026/01/28/claude_code_ai_secrets_files/)).
+Three separate reports, and each says something different: the deny-rule globs
+that are supposed to cover `.env` and `*.pem` are reported as not enforced at all
+(#24846); `.claudeignore` and `.gitignore` are reported as ignored when the agent
+reads files (The Register, 2026-01-28); and the protections that do apply are
+reported to apply only **after** a file has already been read at least once
+(Knostic, 2025-12-08). Note also what a path-matching deny rule structurally
+cannot see — a `grep -r` across a tree, or a script that opens a file it never
+names — though none of these three sources demonstrates that. **Any product that
+tells users "the agent is not allowed to read `.env`" is describing an honour
+system.**
 
 The 2026 table stakes this sets: a store outside the repo; values classified by
 whether the agent may _see_ or merely _use_ them; default-deny egress; per-task
@@ -169,47 +181,56 @@ scope with revocation; masking in transcripts and logs.
 
 ### 1.6 Who ships a vault, and what their agent actually gets
 
-| Product                      | Vault?                                                                    | What the agent gets                                                                                                                          | Confidence                                                                                                                                                            |
-| ---------------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Instinct**                 | Yes — a built-in Vault; a third of users stored account credentials in it | **Unknown.** On 2026-09-04 it announced just-in-time delivery through 1Password Unified Access instead of relying on its own store           | Product and announcement confirmed; **whether its agent ever holds plaintext is UNVERIFIED** — no spec published                                                      |
-| **Hermes Agent**             | Local vault plus a pluggable secret source                                | Secrets claimed to be fetched from an external manager at load time, with per-variable provenance and a "password-blind" fill                | Product, author, date and MIT licence confirmed at [hermes-agent.org](https://hermes-agent.org/); **the secret-source detail is UNVERIFIED — secondary sources only** |
-| **OpenClaw**                 | Opt-in **SecretRefs** with four resolvers: `env`, `file`, `exec`, `store` | Egress-time injection behind an "agent-access boundary"; plaintext is still permitted and still agent-readable                               | Confirmed in [docs.openclaw.ai/gateway/secrets](https://docs.openclaw.ai/gateway/secrets)                                                                             |
-| **Composio**                 | Server-side custody, AES-256-GCM at rest                                  | **Never the token.** Connected-account fields are redacted at the API boundary and a proxy-execute path injects server-side                  | Confirmed in [token custody docs](https://docs.composio.dev/docs/security/token-custody)                                                                              |
-| **Auth0 Token Vault**        | Yes — federated grants                                                    | A short-lived, connection-scoped access token per downstream call, then discarded; the refresh token and client secret never reach the agent | Confirmed in [Auth0 docs](https://auth0.com/docs/get-started/auth-for-genai)                                                                                          |
-| **Arcade.dev**               | Auth orchestration rather than storage                                    | Per-user, per-scope tokens as a first-class primitive, with just-in-time approval prompts for high-risk actions                              | **Partially UNVERIFIED** — described by comparison sources; Arcade's own docs not fetched                                                                             |
-| **Nango, Pipedream**         | Managed OAuth plus hosted execution                                       | Credentials injected server-side at call time                                                                                                | **UNVERIFIED** — secondary sources only                                                                                                                               |
-| **1Password**                | Yes, the original                                                         | Names not values through MCP; a signed-in session rather than a password through Agentic Autofill                                            | Confirmed, section 1.2                                                                                                                                                |
-| **ChatGPT agent**            | No vault                                                                  | "Takeover mode": the human types the password into a browser the model does not read                                                         | [OpenAI](https://openai.com/index/introducing-chatgpt-agent/); **the claim that the session cookie persists across tasks until sign-out is UNVERIFIED**               |
-| **Anthropic**                | No credential vault product                                               | Deny rules and hooks in Claude Code; a partner ships the integration on top                                                                  | Confirmed                                                                                                                                                             |
-| **Devin**                    | Yes — a secrets manager                                                   | Scoped and revocable, and **readable by the agent**                                                                                          | Confirmed via product docs                                                                                                                                            |
-| **Perplexity Comet**         | No — delegates                                                            | A password-manager extension autofills without exposing data to the model context                                                            | Confirmed via [1Password](https://1password.com/blog/1password-now-available-in-comet-the-ai-browser-by-perplexity)                                                   |
-| **Microsoft Entra Agent ID** | Identity, not secrets                                                     | Agents as first-class non-human identities under conditional access and privileged identity management; GA April 2026                        | Confirmed via [Microsoft Learn](https://learn.microsoft.com/en-us/entra/agent-id/what-is-microsoft-entra-agent-id)                                                    |
-| **Okta**                     | Identity                                                                  | Short-lived governed tokens for agents instead of static API keys                                                                            | **Partially UNVERIFIED** — secondary sources                                                                                                                          |
-| **Manus**                    | **Not found**                                                             | —                                                                                                                                            | **UNVERIFIED — stated plainly as not found rather than guessed**                                                                                                      |
-| **Browser Use**              | **Not found** as a credential product                                     | —                                                                                                                                            | **UNVERIFIED**                                                                                                                                                        |
+| Product                      | Vault?                                                                    | What the agent gets                                                                                                                          | Confidence                                                                                                                                                                                                                                                                                                                                 |
+| ---------------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Instinct**                 | A built-in Vault                                                          | **Unknown.** On 2026-09-04 it announced just-in-time delivery through 1Password Unified Access instead of relying on its own store           | **UNVERIFIED — one secondary commentary post relaying a single social-media post.** The announcement is reported; the valuation, the "third of users" figure and whether its agent ever holds plaintext are all unconfirmed, and no spec is published                                                                                      |
+| **Hermes Agent**             | **UNVERIFIED** — a local vault plus a pluggable secret source is claimed  | Secrets claimed to be fetched from an external manager at load time, with per-variable provenance and a "password-blind" fill                | Only the product, author, February 2026 date and MIT licence are confirmed, at [hermes-agent.org](https://hermes-agent.org/), whose own security copy names no vault and no secret source. **Every credential-handling detail here is UNVERIFIED — secondary sources only**                                                                |
+| **OpenClaw**                 | Opt-in **SecretRefs** with four resolvers: `env`, `file`, `exec`, `store` | Egress-time injection behind an "agent-access boundary"; plaintext is still permitted and still agent-readable                               | Confirmed in [docs.openclaw.ai/gateway/secrets](https://docs.openclaw.ai/gateway/secrets)                                                                                                                                                                                                                                                  |
+| **Composio**                 | Server-side custody, encrypted at rest                                    | **Never the token.** Connected-account fields are redacted at the API boundary and a proxy-execute path injects server-side                  | Confirmed in [token custody docs](https://docs.composio.dev/docs/security/token-custody)                                                                                                                                                                                                                                                   |
+| **Auth0 Token Vault**        | Yes — federated grants                                                    | A short-lived, connection-scoped access token per downstream call, then discarded; the refresh token and client secret never reach the agent | **Partially UNVERIFIED.** The overview page confirms only that agents fetch access tokens for external providers through it ([Auth0](https://auth0.com/docs/get-started/auth-for-genai)); the lifetime, scoping and discard clauses need [the Token Vault page](https://auth0.com/docs/secure/tokens/token-vault) checked clause by clause |
+| **Arcade.dev**               | Auth orchestration rather than storage                                    | Per-user, per-scope tokens as a first-class primitive, with just-in-time approval prompts for high-risk actions                              | **Partially UNVERIFIED** — described by comparison sources; Arcade's own docs not fetched                                                                                                                                                                                                                                                  |
+| **Nango, Pipedream**         | Managed OAuth plus hosted execution                                       | Credentials injected server-side at call time                                                                                                | **UNVERIFIED** — secondary sources only                                                                                                                                                                                                                                                                                                    |
+| **1Password**                | Yes, the original                                                         | Names not values through MCP; a form filled from outside the agent's context through Agentic Autofill                                        | Confirmed, section 1.2                                                                                                                                                                                                                                                                                                                     |
+| **ChatGPT agent**            | No vault                                                                  | "Takeover mode": the human types the password into a browser the model does not read                                                         | [OpenAI](https://openai.com/index/introducing-chatgpt-agent/); **the claim that the session cookie persists across tasks until sign-out is UNVERIFIED**                                                                                                                                                                                    |
+| **Anthropic**                | No credential vault product                                               | Deny rules and hooks in Claude Code; a partner ships the integration on top                                                                  | Confirmed                                                                                                                                                                                                                                                                                                                                  |
+| **Devin**                    | Yes — a secrets manager                                                   | Scoped and revocable, and **readable by the agent**                                                                                          | Confirmed via product docs                                                                                                                                                                                                                                                                                                                 |
+| **Perplexity Comet**         | No — delegates                                                            | A password-manager extension autofills without exposing data to the model context                                                            | Confirmed via [1Password](https://1password.com/blog/1password-now-available-in-comet-the-ai-browser-by-perplexity)                                                                                                                                                                                                                        |
+| **Microsoft Entra Agent ID** | Identity, not secrets                                                     | Agents as first-class non-human identities under conditional access and identity governance; the security extensions are licence-gated       | Available to all Entra customers per [Microsoft Learn](https://learn.microsoft.com/en-us/entra/agent-id/what-is-microsoft-entra-agent-id); **the April 2026 GA date is UNVERIFIED — inferred from the doc's publication date, which the page does not present as an announcement**                                                         |
+| **Okta**                     | Identity                                                                  | Short-lived governed tokens for agents instead of static API keys                                                                            | **Partially UNVERIFIED** — secondary sources                                                                                                                                                                                                                                                                                               |
+| **Manus**                    | **Not found**                                                             | —                                                                                                                                            | **UNVERIFIED — stated plainly as not found rather than guessed**                                                                                                                                                                                                                                                                           |
+| **Browser Use**              | **Not found** as a credential product                                     | —                                                                                                                                            | **UNVERIFIED**                                                                                                                                                                                                                                                                                                                             |
 
-**The load-bearing datum is Instinct.** A personal-agent company valued at $2.5B,
-with roughly a third of its users storing account credentials in its own Vault,
-announced on 2026-09-04 that it would broker through 1Password Unified Access
-rather than rely on that store
+**The strongest evidence is the four confirmed cases, not the famous one.**
+Composio, Auth0, 1Password and Infisical each hold or broker credentials for a
+living, and each has moved the boundary so that the agent gets an action, a
+short-lived token, a name or a placeholder rather than the value. Every one of
+those is confirmed against the vendor's own documentation, cited above.
+
+**Instinct is corroboration, and it should be read as corroboration.** A
+personal-agent company that shipped its own Vault is reported to have announced on
+2026-09-04 that it would broker through 1Password Unified Access rather than rely
+on that store. The only source is a single commentary post which itself relays one
+social-media post and states that no architecture, documentation or statement from
+either company exists
 ([explainX](https://www.explainx.ai/blog/instinct-1password-ai-agent-account-vaults-2026)).
-No technical specification accompanied it, so the central question — does its agent
-ever touch plaintext — is **open**, and the two public stories (own-vault custody,
-partner brokering) are not obviously compatible.
+So: the valuation and the adoption figure are **UNVERIFIED**, the central question
+— does its agent ever touch plaintext — is **open**, and the two public stories
+(own-vault custody, partner brokering) are not obviously compatible. The argument
+in section 4 does not rest on any of it.
 
 **The pattern across the whole table:** the products that hold credentials hand
 them to the agent (Devin, and any plaintext OpenClaw config); the products that
 _never_ hand them over do not hold them so much as _use_ them on the caller's
 behalf at a boundary the agent does not control (Composio at the API response,
-Infisical at network egress, 1Password at the MCP result, Auth0 at the token
-exchange). "Build a vault" is a 2025 answer. The 2026 answer is "hold references,
+Infisical at network egress, 1Password at the MCP result and again in the browser
+form, Auth0 at the token exchange). "Build a vault" is a 2025 answer. The 2026 answer is "hold references,
 broker the call, and let somebody whose whole business is custody own custody."
 
 ---
 
 ## 2. The one honest caveat about every claim above
 
-Five vendors say "the agent never sees the secret" and all five are telling the
+Four vendors say "the agent never sees the secret" and all four are telling the
 truth — **at five different boundaries**. None of them prevents a secret that the
 operator _deliberately_ injects into the agent's own process from being read by
 that process. A design that mixes the two, brokering some calls and injecting
@@ -273,8 +294,9 @@ Four rules make this worth building rather than decorative:
 
 The payoff is immediate and larger than it sounds: a DorkOS config file becomes
 safe to commit, screenshot, paste into an issue and hand to a support agent. It is
-also what two independent open-source agents converged on without coordinating
-(section 1.6), which is decent evidence that it is the natural shape.
+also the shape two confirmed, independent projects arrived at without
+coordinating — OpenClaw's SecretRefs and Infisical's placeholder substitution
+(section 1.6) — which is decent evidence that it is the natural one.
 
 ### 4.2 A local egress proxy, second
 
@@ -358,8 +380,10 @@ Three requirements on that UI:
 ### 4.6 What not to build
 
 **Not a DorkOS password vault.** Custody is a cryptography-and-compliance business
-with a permanent breach surface and no product differentiation, and the best-funded
-company that tried it publicly handed custody to a password manager (section 1.6).
+with a permanent breach surface and no product differentiation. The argument rests
+on the four confirmed cases in section 1.6 — Composio, Auth0, 1Password and
+Infisical all moved the boundary away from handing the agent a value — and not on
+the widely-repeated Instinct story, which is reported by a single secondary source.
 DorkOS should be the thing that _uses_ credentials correctly, not the thing that
 _holds_ them.
 
@@ -398,19 +422,19 @@ implementation.
 ## Sources
 
 - "does not read or return secret values to the agent" — [1Password on the Cursor Marketplace](https://1password.com/blog/the-1password-environments-mcp-server-is-now-on-cursor-marketplace); "only sees variable names" — [1Password Claude Code plugin docs](https://www.1password.dev/environments/claude-plugin)
-- `op run` and `.env` files holding references — [1Password Developer](https://developer.1password.com/docs/cli/secrets-environment-variables)
+- `op run` and `.env` files holding references — [1Password Developer](https://www.1password.dev/cli/secrets-environment-variables)
 - Unified Access GA 2026-03-17, Audit and runtime issuance still forthcoming — [1Password press](https://1password.com/press/2026/mar/1password-unified-access)
 - "A credential that persists is already compromised" — [1Password × OpenAI Codex](https://1password.com/press/2026/may/openai-codex-integration)
 - Agentic Autofill — [1Password Developer](https://www.1password.dev/agentic-autofill)
 - Agent hooks: MIT, one hook — [1Password/agent-hooks](https://github.com/1Password/agent-hooks)
 - Service-account vault scoping — [1Password Developer](https://developer.1password.com/docs/cli/reference/management-commands/service-account/)
 - Claude Code deny-rule enforcement gap — [anthropics/claude-code#24846](https://github.com/anthropics/claude-code/issues/24846), [Knostic](https://www.knostic.ai/blog/claude-loads-secrets-without-permission), [The Register](https://www.theregister.com/2026/01/28/claude_code_ai_secrets_files/)
-- Codex: secrets available only to setup scripts and removed before the agent phase; no agent internet by default — [OpenAI](https://developers.openai.com/codex/cloud/environments), [internet access](https://developers.openai.com/codex/cloud/internet-access)
+- Codex: secrets available only to setup scripts and removed before the agent phase; no agent internet by default — [OpenAI](https://learn.chatgpt.com/docs/environments/cloud-environment), [internet access](https://learn.chatgpt.com/docs/cloud/internet-access)
 - Cursor's three secret types — [Cursor docs](https://cursor.com/docs/cloud-agent/security-network)
-- Copilot egress firewall default-on, allowlist variable, self-hosted-runner incompatibility — [GitHub Docs](https://docs.github.com/en/copilot/responsible-use/copilot-cloud-agent), [community #163374](https://github.com/orgs/community/discussions/163374)
+- Copilot egress firewall default-on and the repository-level allowlist variable — [GitHub Docs](https://docs.github.com/en/copilot/responsible-use/copilot-cloud-agent), [community #163374](https://github.com/orgs/community/discussions/163374)
 - Infisical Agent Vault: MIT, placeholder substitution, separate-machine guidance — [GitHub](https://github.com/Infisical/agent-vault); Agent Proxy GA 2026-07-30 on all tiers — [PRWeb](https://www.prweb.com/releases/infisical-launches-agent-proxy-so-teams-can-ship-ai-agents-without-handing-over-real-credentials-302838708.html); "a single kernel exploit voids the entire threat model" — [Infisical](https://infisical.com/blog/credential-brokering-for-ai-agents)
 - Composio custody, redaction at the API boundary, server-side proxy execution — [Composio](https://docs.composio.dev/docs/security/token-custody)
-- Auth0 Token Vault — [Auth0](https://auth0.com/docs/get-started/auth-for-genai)
+- Auth0 Token Vault — [Auth0 overview](https://auth0.com/docs/get-started/auth-for-genai), [Token Vault](https://auth0.com/docs/secure/tokens/token-vault)
 - OpenClaw SecretRefs, four resolvers, egress-time injection — [OpenClaw docs](https://docs.openclaw.ai/gateway/secrets), [Auth0 blog](https://auth0.com/blog/openclaw-credential-problem/)
 - Hermes Agent: author, February 2026, MIT — [hermes-agent.org](https://hermes-agent.org/)
 - Instinct's Vault and the 2026-09-04 1Password announcement — [explainX](https://www.explainx.ai/blog/instinct-1password-ai-agent-account-vaults-2026)
@@ -424,8 +448,11 @@ implementation.
   either. Stated as not found rather than guessed.
 - **Hermes Agent's secret source** and **Arcade's scope model**: described by
   secondary sources only; neither repository nor doc set was fetched directly.
-- **Instinct's technical model**: no public specification exists. The central
-  question is open.
+- **Instinct's technical model**: no public specification exists, and the only
+  account of the partnership is one secondary commentary post. The central question
+  is open.
+- **The ChatGPT agent takeover-mode page** refused an automated fetch during this
+  review, so the claim attached to it was not re-verified here.
 - Several 2026-dated results in the search index are low-authority round-up blogs.
   Where a claim rests only on those it is marked UNVERIFIED above and should not be
   used to justify a design decision on its own.
@@ -445,6 +472,6 @@ implementation.
 3. **Does Instinct's agent see plaintext?** Its own Vault marketing implies
    custody; the 1Password partnership implies brokering. Unresolved, and the two
    stories are hard to reconcile.
-4. **"The agent never sees the secret"** is claimed by five vendors and is true for
-   all five at five different boundaries — API response, network egress, MCP tool
-   result, token exchange, browser session. Section 2.
+4. **"The agent never sees the secret"** is claimed by four vendors and is true
+   for all four, at five different boundaries — API response, network egress, MCP
+   tool result, token exchange, browser form. Section 2.
