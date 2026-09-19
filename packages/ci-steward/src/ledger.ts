@@ -28,6 +28,22 @@ function splitFrontmatter(text: string): { yaml: string; body: string } | null {
   return m ? { yaml: m[1]!, body: m[2]! } : null;
 }
 
+/**
+ * The `prs:` numbers of a ledger entry's text; empty when it does not parse.
+ *
+ * @param text - The entry's full contents.
+ */
+export function ledgerPrs(text: string): number[] {
+  const split = splitFrontmatter(text);
+  if (!split) return [];
+  try {
+    const fm = parseYaml(split.yaml) as { prs?: unknown } | null;
+    return Array.isArray(fm?.prs) ? fm.prs.filter((n): n is number => typeof n === 'number') : [];
+  } catch {
+    return [];
+  }
+}
+
 /** What a metric id must resolve against. */
 interface Catalogue {
   gateIds: ReadonlySet<string>;
@@ -68,8 +84,9 @@ function buildCatalogue(files: HandFiles): Catalogue {
  *
  * @param id - The metric id a hypothesis names.
  * @param c - The catalogue.
+ * @param gatesMustExist - False for a retired entry, whose gate may have been removed since.
  */
-function metricProblem(id: string, c: Catalogue): string | null {
+function metricProblem(id: string, c: Catalogue, gatesMustExist = true): string | null {
   if (id.startsWith('gate.')) {
     const rest = id.slice('gate.'.length);
     const cut = rest.lastIndexOf('.');
@@ -78,7 +95,8 @@ function metricProblem(id: string, c: Catalogue): string | null {
     if (cut <= 0 || !c.gateMetrics.has(metric)) {
       return `"${id}" must end in one of the per-gate metrics: ${[...c.gateMetrics].join(', ')}`;
     }
-    if (!c.gateIds.has(gate)) return `"${id}" names gate "${gate}", which is not in ci/gates.yaml`;
+    if (gatesMustExist && !c.gateIds.has(gate))
+      return `"${id}" names gate "${gate}", which is not in ci/gates.yaml`;
     return null;
   }
   if (id.startsWith('hook.')) {
@@ -146,6 +164,9 @@ function checkOne(file: string, text: string, files: HandFiles, c: Catalogue): F
     return out;
   }
   const fm = parsed.data;
+  // A withdrawn or reverted entry is history: the gates it names may since
+  // have been renamed or removed, and that must not fail today's PRs.
+  const live = fm.status !== 'withdrawn' && fm.status !== 'reverted';
   if (fm.id !== nameMatch[1]) {
     f(
       'ledger/id',
@@ -168,7 +189,7 @@ function checkOne(file: string, text: string, files: HandFiles, c: Catalogue): F
       'Say in a few lines why the change was made, what was tried, and what would make us revert it.'
     );
   }
-  for (const g of fm.gates) {
+  for (const g of live ? fm.gates : []) {
     if (!c.gateIds.has(g))
       f(
         'ledger/gate',
@@ -187,7 +208,7 @@ function checkOne(file: string, text: string, files: HandFiles, c: Catalogue): F
     );
   }
   if (h) {
-    const problem = metricProblem(h.metric, c);
+    const problem = metricProblem(h.metric, c, live);
     if (problem)
       f(
         'ledger/metric',
@@ -228,7 +249,7 @@ function checkOne(file: string, text: string, files: HandFiles, c: Catalogue): F
       );
   }
   for (const fc of fm['field-changes']) {
-    if (!c.gateIds.has(fc.gate))
+    if (live && !c.gateIds.has(fc.gate))
       f(
         'ledger/gate',
         `field-changes names gate "${fc.gate}", which is not in ci/gates.yaml.`,

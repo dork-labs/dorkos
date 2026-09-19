@@ -288,6 +288,12 @@ jobs:
       # BLOCKING FROM DAY ONE (operator decision, 2026-09-19): a missing
       # entry fails the PR, with no warn-only trial period.
       #
+      # DEPENDABOT IS EXEMPT. Its monthly actions group edits workflow files
+      # and its npm group bumps package manifests, and it cannot write a
+      # ledger entry, so without this its PRs would stay red forever. A
+      # version bump is recorded by the Dependabot PR itself; a pipeline
+      # change a person or agent makes on top of one still needs an entry.
+      #
       # The base, adapted from changelog-fragment-check.yml's "Determine the
       # base" step: that job checks out the PR head with full history and asks
       # for the merge-base. This job keeps its cheap depth-1 checkout of the
@@ -295,7 +301,7 @@ jobs:
       # against the merge commit's first parent, which is the base-branch tip
       # the PR was merged onto: the same diff, without the history.
       - name: CI Steward ledger coverage
-        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]' }}
         env:
           HEAD_REF: ${{ github.head_ref }}
         run: |

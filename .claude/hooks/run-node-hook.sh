@@ -6,7 +6,7 @@
 #
 # The four PreToolUse guards (file-guard, git-guard, process-guard,
 # merge-guard) are how AGENTS.md Hard Rules 6 and 7, and the no-admin-merge
-# rule in contributing/ci.md, are actually enforced — the stash and pathspec
+# rule in contributing/ci.md, are actually enforced: the stash and pathspec
 # checkout commands, and the kill-by-name commands, are refused by code
 # because prose did not hold. settings.json used to start each of them with a
 # bare `node`, and `#!/usr/bin/env node` on the .mjs files is the same PATH

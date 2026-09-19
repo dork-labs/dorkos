@@ -180,7 +180,12 @@ export function baseSpec(): FixtureSpec {
             if: '${{ always() }}',
             'runs-on': 'ubuntu-latest',
             'timeout-minutes': 10,
-            steps: [{ name: 'Refuse a red shard', run: 'test "$R" = success' }],
+            steps: [
+              {
+                name: 'Refuse a red shard',
+                run: 'test "${{ needs.test-shard.result }}" = success',
+              },
+            ],
           },
         },
       },

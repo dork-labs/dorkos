@@ -227,6 +227,57 @@ describe('census: the deadlock invariant', () => {
 });
 
 describe('census: required jobs cannot hide a failure', () => {
+  it('follows needs: a continue-on-error on a shard step the fan-in needs fails', () => {
+    const spec = baseSpec();
+    const steps = job(spec, 'test.yml', 'test-shard').steps as Record<string, unknown>[];
+    steps[0]!['continue-on-error'] = true;
+    const { findings } = census(spec);
+    expect(findings.map((f) => f.code)).toEqual(['required/continue-on-error']);
+    expect(findings[0]!.where).toContain('job test-shard, needed by required context "test"');
+  });
+
+  it('follows needs transitively, and applies the step-if rule there too', () => {
+    const spec = baseSpec();
+    (spec.workflows['test.yml']!.jobs as Record<string, unknown>).build = {
+      'runs-on': 'ubuntu-latest',
+      'timeout-minutes': 10,
+      steps: [{ name: 'Build', if: "${{ github.event_name == 'merge_group' }}", run: 'make' }],
+    };
+    job(spec, 'test.yml', 'test-shard').needs = ['build'];
+    spec.gates.gates.push({
+      id: 'wf.test.build',
+      source: '.github/workflows/test.yml',
+      purpose: 'Builds what the shards test.',
+    });
+    const { findings } = census(spec);
+    expect(findings.map((f) => `${f.code} ${f.where}`)).toEqual([
+      'required/step-if job build, needed by required context "test" (job test), step "Build"',
+    ]);
+  });
+
+  it('fails an always() fan-in that never reads its needs results', () => {
+    const spec = baseSpec();
+    job(spec, 'test.yml', 'test').steps = [{ name: 'Done', run: 'echo ok' }];
+    const { findings } = census(spec);
+    expect(findings.map((f) => f.code)).toEqual(['required/fan-in-unasserted']);
+    expect(findings[0]!.message).toContain('needs.test-shard.result');
+  });
+
+  it("accepts a fan-in that checks contains(needs.*.result, 'failure')", () => {
+    const spec = baseSpec();
+    job(spec, 'test.yml', 'test').steps = [
+      { name: 'Refuse', if: "${{ contains(needs.*.result, 'failure') }}", run: 'exit 1' },
+    ];
+    spec.allowlist.entries.push({
+      workflow: 'test.yml',
+      job: 'test',
+      step: 'Refuse',
+      kind: 'step-if',
+      reason: 'Fails the fan-in when any needed job failed.',
+    });
+    expect(codes(spec)).toEqual([]);
+  });
+
   it('fails on continue-on-error in a required job', () => {
     const spec = baseSpec();
     job(spec, 'lint.yml', 'lint')['continue-on-error'] = true;
@@ -307,16 +358,18 @@ describe('census: the allowlist itself', () => {
     expect(codes(spec)).toEqual(['allowlist/stale']);
   });
 
-  it('rejects a continue-on-error entry without an expiry', () => {
+  it('rejects a no-timeout entry without an expiry', () => {
     const spec = baseSpec();
+    delete job(spec, 'nightly.yml', 'report')['timeout-minutes'];
     spec.allowlist.entries.push({
-      workflow: 'lint.yml',
-      job: 'lint',
-      kind: 'continue-on-error',
+      workflow: 'nightly.yml',
+      job: 'report',
+      kind: 'no-timeout',
       reason: 'Forgot to say until when.',
     });
     const { findings } = census(spec);
-    expect(findings.map((f) => f.code)).toEqual(['schema/invalid']);
+    // The allowlist does not load, so the job it would have excused fails too.
+    expect(findings.map((f) => f.code)).toEqual(['schema/invalid', 'timeout/missing']);
     expect(findings[0]!.message).toContain('expires');
   });
 });

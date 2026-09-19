@@ -11,6 +11,7 @@ gates:
   - wf.operating-skills-version-check.version-outranks-base
   - wf.docs-openapi-check.openapi-fresh
   - wf.merge-tail.arm
+  - wf.dependabot-lockfile-repair.repair-lockfile
   - wf.scripts-test.fixtures
   - wf.scripts-test.harness
   - wf.claude.claude
@@ -59,7 +60,10 @@ closes the admin-merge path.
 - `packages/ci-steward` with `census`, `ledger-check` and `ledger-new`, and the `ci/` hand files.
 - Three steps in the required `typecheck` job: the census and ledger validity on every event, and
   ledger coverage on pull_request only, blocking from day one (operator decision: no trial week).
-  No new required context.
+  No new required context. Coverage counts a new ledger entry, or an existing entry whose `prs:`
+  gains a number; Dependabot PRs skip it, since Dependabot cannot write an entry.
+- The census follows `needs:`: `continue-on-error` and step `if:`s in every job a required context
+  depends on are checked, and an `always()` fan-in must read each needed job's result.
 
 **Timeouts:** `timeout-minutes` on the 13 jobs that had none and had at least 5 runs in the last
 30 days, each max(10, ceil(3 × p95)) of measured job durations: fragment-present 10,
@@ -86,7 +90,9 @@ review (same action, same subscription) instead of an expiring exception.
 
 - merge-tail and the Dependabot lockfile repair hold the `dorkos-merge-tail` GitHub App key (no
   Administration) instead of the admin PAT `MERGE_TAIL_TOKEN`; the old secret is deleted right
-  after this merges, which makes "no admin credential in Actions" true.
+  after this merges, which makes "no admin credential in Actions" true. The app's client id and
+  key are the secrets `MERGE_TAIL_APP_CLIENT_ID` and `MERGE_TAIL_APP_PRIVATE_KEY` (the client id is
+  a secret because secrets are proven to reach Dependabot's `pull_request_target` runs).
 
 **On GitHub (operator-approved, applied by the orchestrator on 2026-09-19, recorded here because
 no file shows them):**

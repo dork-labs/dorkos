@@ -17,6 +17,8 @@ interface StepModel {
   if?: string | boolean;
   continueOnError?: unknown;
   run?: string;
+  /** The whole step as JSON, for "does this step read X" questions. */
+  text: string;
 }
 
 /** One job of a workflow. */
@@ -117,6 +119,7 @@ function parseWorkflow(file: string, relPath: string, text: string): WorkflowMod
         if: typeof step.if === 'string' || typeof step.if === 'boolean' ? step.if : undefined,
         continueOnError: step['continue-on-error'],
         run: typeof step.run === 'string' ? step.run : undefined,
+        text: JSON.stringify(step),
       };
     });
     jobs.push({

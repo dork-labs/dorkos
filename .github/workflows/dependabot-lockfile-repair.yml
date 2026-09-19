@@ -153,12 +153,14 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ vars.MERGE_TAIL_APP_ID }}
+          # The client id is a secret, not a variable, on purpose: repo secrets
+          # are proven to reach Dependabot's pull_request_target runs; vars.* there is not.
+          client-id: ${{ secrets.MERGE_TAIL_APP_CLIENT_ID }}
           private-key: ${{ secrets.MERGE_TAIL_APP_PRIVATE_KEY }}
 
       # Check out the PR's exact head commit (a SHA, not the floating
       # branch) with the app token so the later push is pre-authenticated.
-      # Nothing from this checkout is ever executed — see the header comment.
+      # Nothing from this checkout is ever executed; see the header comment.
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}

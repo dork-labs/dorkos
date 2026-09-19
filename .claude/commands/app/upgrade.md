@@ -543,8 +543,9 @@ Read each failed run's log and classify:
 
 For each open Dependabot PR that touched `pnpm-lock.yaml`, the commit
 `chore: repair pnpm-lock.yaml for Dependabot` must be present. If it is not
-and `dependabot-lockfile-repair` failed — its guard step fails loudly when
-`MERGE_TAIL_TOKEN` is unset — that is a headline + notification: every
+and `dependabot-lockfile-repair` failed (it cannot mint its `dorkos-merge-tail`
+app token when the `MERGE_TAIL_APP_CLIENT_ID` or `MERGE_TAIL_APP_PRIVATE_KEY`
+secret is missing or wrong), that is a headline + notification: every
 Dependabot PR will be red until a person fixes the secret.
 
 ### 6.3 merge-tail

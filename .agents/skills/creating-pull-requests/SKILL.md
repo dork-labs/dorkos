@@ -147,7 +147,7 @@ disappear, which is the deeper reason for the order above.
 A PR that changes the CI pipeline is an experiment, and CI Steward keeps the record.
 If your diff touches a gate source (`.github/workflows/**`, `lefthook.yml`,
 `turbo.json`, `.claude/settings.json`, `ci/**`, a script a gate invokes,
-`packages/ci-steward/**`, or this skill with its watcher; the coverage step's exact
+`packages/ci-steward/src/**`, or this skill with its watcher; the coverage step's exact
 set comes from the census, and `.claude/rules/ci-pipeline.md` loads for a superset of
 it), add or edit one file under `ci/ledger/` in the same squashed commit.
 
@@ -373,7 +373,7 @@ every agent on this machine runs as an admin. In Claude Code the PreToolUse guar
 `.claude/hooks/merge-guard.mjs` refuses them. Other harnesses may not run it (Codex
 reads a generated, trust-gated `.codex/hooks.json`, unverified for this guard), so
 there treat this sentence as the whole rule. Admin merges are reserved for the CI Steward
-break-glass path (`/ci:break-glass`, phase 1b, not built yet); see `contributing/ci.md`.
+break-glass path (`/ci-break-glass`, phase 1b, not built yet); see `contributing/ci.md`.
 
 **Arming is not the same as walking away.** Read the next section before you treat
 an armed PR as finished.

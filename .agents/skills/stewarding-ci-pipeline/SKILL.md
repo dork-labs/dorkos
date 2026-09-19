@@ -18,7 +18,7 @@ This is the same protocol as `.claude/rules/ci-pipeline.md`. It lives here too b
 1. **Hypothesis first.** One metric from `ci/metrics.yaml`, the narrowest that can move; its baseline; a target; `after_days`. Only `kind: hygiene` is exempt.
 2. **Ledger entry in the same commit.** `node packages/ci-steward/src/cli.ts ledger-new --slug <slug>` scaffolds `ci/ledger/<YYMMDD-HHMMSS>-<slug>.md` (`--help` for flags). Kinds: `experiment`, `incident-fix`, `hygiene`. Hand statuses: `proposed`, `active`, `withdrawn`, `reverted`. Never write `verified`, `failed` or `inconclusive`: those are computed verdicts, and the ledger check rejects them on `main`. Until phase 1 publishes measured baselines, copy the baseline by hand and name its source in `baseline_source:`.
 3. **Ratchet releases block review by default.** An entry that lowers a quality floor (`ratchet-release`) must give a specific reason. A change to a required gate's retries, shards, timeout or required status needs `field-changes`.
-4. **The deadlock invariant.** A required context's job exists under that exact name, runs on `pull_request` (including `synchronize` if `types:` is set) and on `merge_group`, has no `paths:` filter, and has no job-level `if:` that can skip it: a skipped run satisfies a required context. Every job has `timeout-minutes`. `continue-on-error` in a required job needs a `ci/census-allowlist.yaml` entry with `expires:`; an event-branching step-level `if:` needs one with a reason. An expired entry turns every PR's census red, so an expiry is a deadline for a person, never a switch for a scheduled change.
+4. **The deadlock invariant.** A required context's job exists under that exact name, runs on `pull_request` (including `synchronize` if `types:` is set) and on `merge_group`, has no `paths:` filter, and has no job-level `if:` that can skip it: a skipped run satisfies a required context. Every job has `timeout-minutes`. `continue-on-error` or an event-branching step-level `if:` in a required job, or in any job it needs, needs a `ci/census-allowlist.yaml` entry with a reason (and `expires:` when temporary); an `always()` fan-in must read `needs.<job>.result` for every job it needs. An expired entry turns every PR's census red, so an expiry is a deadline for a person, never a switch for a scheduled change.
 5. **Ledger release first, ruleset edit second.** Adding or removing a required check: the PR with the job, `ci/required-checks.json` and the ledger entry merges first; the operator edits the ruleset after. The invariant is that no admin credential lives in Actions, so nothing automated can un-require a check. It holds once the phase-0 PR merges and the old `MERGE_TAIL_TOKEN` secret is deleted: merge-tail and the Dependabot lockfile repair use the `dorkos-merge-tail` GitHub App, which has no Administration permission.
 6. **The fence.** Unattended changes may change gates, never the steward or the judge (below).
 7. **Verify locally:** `node packages/ci-steward/src/cli.ts census` (`--fix` regenerates the required-checks blocks in `contributing/ci.md` and the `creating-pull-requests` skill), `node packages/ci-steward/src/cli.ts ledger-check`, and `node packages/ci-steward/src/cli.ts ledger-check --coverage --base "$(git merge-base origin/main HEAD)"`. The same three run as steps of the required `typecheck` job; a missing ledger entry fails coverage.
@@ -32,10 +32,10 @@ Say which phase a command belongs to; never describe a later one as if it works.
 | Phase | Delivers                                                                                                            | Status    |
 | ----- | ------------------------------------------------------------------------------------------------------------------- | --------- |
 | 0     | `ci/` hand files, `census`, `ledger-check`, `ledger-new`, the `typecheck` steps, the merge guard, this skill        | available |
-| 1     | Daily collector, `ci-steward-data`, computed verdicts, weekly report, `/ci:status`, `/ci:pulse`, `/ci:record`       | coming    |
-| 1b    | Incident mode: sentinel, freeze and shed, quarantine from data, `/ci:incident`, `/ci:break-glass`, `ci-steward arm` | coming    |
+| 1     | Daily collector, `ci-steward-data`, computed verdicts, weekly report, `/ci-status`, `/ci-pulse`, `/ci-record`       | coming    |
+| 1b    | Incident mode: sentinel, freeze and shed, quarantine from data, `/ci-incident`, `/ci-break-glass`, `ci-steward arm` | coming    |
 | 2     | Ratchet assertions in the queue, the blocking `review-gate`                                                         | coming    |
-| 3     | `/ci:improve` and the unattended `ci-improve-tick`, with the fence enforced                                         | coming    |
+| 3     | `/ci-improve` and the unattended `ci-improve-tick`, with the fence enforced                                         | coming    |
 
 ## PDCA, with the Check done by code
 
@@ -100,7 +100,7 @@ A verdict is only as good as the metric it names. Narrow beats broad because a b
 - Name the **gate-level** metric the change directly moves as `metric`; name the SLO you expect it to help as `slo`, which is reported but does not decide the verdict.
 - One change, one entry. Two changes to the same gate in one window confound each other; stagger them.
 - Write the revert condition in the body before you know the result.
-- A baseline you did not measure is a guess. In phase 0, cite where it came from (`baseline_source:`); from phase 1, `/ci:record` copies it from `latest.json`.
+- A baseline you did not measure is a guess. In phase 0, cite where it came from (`baseline_source:`); from phase 1, `/ci-record` copies it from `latest.json`.
 
 ## Anti-patterns in this repo
 

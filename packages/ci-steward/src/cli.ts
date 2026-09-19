@@ -69,14 +69,26 @@ function git(root: string, args: string[]): string {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8' });
 }
 
-function parseChanged(nameStatus: string): ChangedFile[] {
-  return nameStatus
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => {
-      const [status, ...rest] = line.split('\t');
-      return { status: status!.charAt(0), path: rest.at(-1)! };
+/** Parse `git diff --name-status --no-renames -z`: status, NUL, path, NUL, repeated. */
+function parseChanged(nameStatusZ: string): ChangedFile[] {
+  const parts = nameStatusZ.split('\0').filter((p) => p !== '');
+  const out: ChangedFile[] = [];
+  for (let i = 0; i + 1 < parts.length; i += 2) {
+    out.push({ status: parts[i]!.charAt(0), path: parts[i + 1]! });
+  }
+  return out;
+}
+
+function gitShow(root: string, rev: string, rel: string): string | null {
+  try {
+    return execFileSync('git', ['show', `${rev}:${rel}`], {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
     });
+  } catch {
+    return null;
+  }
 }
 
 function report(io: Io, tool: string, findings: Finding[]): number {
@@ -100,10 +112,21 @@ function ledgerCheck(
   const gates = discoverGates(root, files, workflows, findings);
   const branch = opts.branch || git(root, ['rev-parse', '--abbrev-ref', 'HEAD']).trim();
   const changed = parseChanged(
-    git(root, ['diff', '--name-status', '--no-renames', opts.base, 'HEAD'])
+    git(root, ['diff', '--name-status', '--no-renames', '-z', opts.base, 'HEAD'])
   );
   const rootScripts = readRootScripts(root, files.config.root_package_json);
-  const coverage = checkCoverage({ root, files, workflows, gates, rootScripts, changed, branch });
+  const base = opts.base;
+  const coverage = checkCoverage({
+    root,
+    files,
+    workflows,
+    gates,
+    rootScripts,
+    changed,
+    branch,
+    readBase: (rel) => gitShow(root, base, rel),
+    readHead: (rel) => gitShow(root, 'HEAD', rel),
+  });
   return report(io, 'ledger-check --coverage', [...findings, ...coverage]);
 }
 

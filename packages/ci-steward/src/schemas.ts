@@ -204,7 +204,7 @@ export type StewardOwnedPaths = z.infer<typeof StewardOwnedPathsSchema>;
 /** Kinds of census exception. */
 const ALLOWLIST_KINDS = ['continue-on-error', 'step-if', 'job-if', 'no-timeout'] as const;
 /** Kinds whose entry must carry an `expires` date. */
-const EXPIRY_REQUIRED: ReadonlySet<string> = new Set(['continue-on-error', 'no-timeout']);
+const EXPIRY_REQUIRED: ReadonlySet<string> = new Set(['no-timeout']);
 
 /** `ci/census-allowlist.yaml`: reasoned exceptions to the census rules. */
 export const AllowlistSchema = z

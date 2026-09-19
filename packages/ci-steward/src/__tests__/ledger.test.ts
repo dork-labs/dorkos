@@ -129,6 +129,25 @@ describe('ledger-check validity', () => {
     ]);
   });
 
+  it('skips gate existence for withdrawn and reverted entries, whose gates may be gone', () => {
+    const gone = {
+      gates: ['wf.lint.removed'],
+      hypothesis: {
+        metric: 'gate.wf.lint.removed.duration_p90',
+        baseline: 6,
+        baseline_source: 's',
+        target: 3,
+        after_days: 14,
+      },
+    };
+    expect(validity({ [FILE]: ledgerEntry(ID, { ...gone, status: 'reverted' }) })).toEqual([]);
+    expect(validity({ [FILE]: ledgerEntry(ID, { ...gone, status: 'withdrawn' }) })).toEqual([]);
+    expect(validity({ [FILE]: ledgerEntry(ID, { ...gone, status: 'active' }) })).toEqual([
+      'ledger/gate',
+      'ledger/metric',
+    ]);
+  });
+
   it('rejects unknown gates, unknown ratchets and unknown SLOs', () => {
     expect(validity({ [FILE]: ledgerEntry(ID, { gates: ['wf.lint.nope'] }) })).toEqual([
       'ledger/gate',
@@ -173,13 +192,27 @@ describe('ledger-check validity', () => {
   });
 });
 
-function coverage(changed: ChangedFile[], branch = 'feature/x', spec = baseSpec()) {
-  const { root, files } = repo(spec);
+function coverage(
+  changed: ChangedFile[],
+  branch = 'feature/x',
+  versions: { base?: Record<string, string>; head?: Record<string, string> } = {}
+) {
+  const { root, files } = repo(baseSpec());
   const findings: never[] = [];
   const workflows = loadWorkflows(root, files.config.workflows_dir, () => undefined);
   const gates = discoverGates(root, files, workflows, findings);
   const rootScripts = readRootScripts(root, 'package.json');
-  return checkCoverage({ root, files, workflows, gates, rootScripts, changed, branch });
+  return checkCoverage({
+    root,
+    files,
+    workflows,
+    gates,
+    rootScripts,
+    changed,
+    branch,
+    readBase: (rel) => versions.base?.[rel] ?? null,
+    readHead: (rel) => versions.head?.[rel] ?? null,
+  });
 }
 
 describe('ledger-check --coverage', () => {
@@ -208,11 +241,33 @@ describe('ledger-check --coverage', () => {
     ).toEqual(['coverage/missing-entry']);
   });
 
-  it('passes once the PR adds or edits a ledger entry, but not when it only deletes one', () => {
+  it('passes when the PR adds a ledger entry, but not when it only deletes one', () => {
     const wf = { status: 'M', path: '.github/workflows/lint.yml' };
     expect(coverage([wf, { status: 'A', path: `ci/ledger/${FILE}` }])).toEqual([]);
-    expect(coverage([wf, { status: 'M', path: `ci/ledger/${FILE}` }])).toEqual([]);
     expect(coverage([wf, { status: 'D', path: `ci/ledger/${FILE}` }]).map((f) => f.code)).toEqual([
+      'coverage/missing-entry',
+    ]);
+  });
+
+  it('counts an edited entry only when its prs: gains a number (a typo fix records nothing)', () => {
+    const wf = { status: 'M', path: '.github/workflows/lint.yml' };
+    const entry = { status: 'M', path: `ci/ledger/${FILE}` };
+    const rel = `ci/ledger/${FILE}`;
+    const before = ledgerEntry(ID, { prs: [1900] });
+    const typoFix = ledgerEntry(ID, { prs: [1900], title: 'Shard the lint job, fixed' });
+    const gained = ledgerEntry(ID, { prs: [1900, 1931], status: 'active' });
+    expect(
+      coverage([wf, entry], 'feature/x', { base: { [rel]: before }, head: { [rel]: typoFix } }).map(
+        (f) => f.code
+      )
+    ).toEqual(['coverage/missing-entry']);
+    expect(
+      coverage([wf, entry], 'feature/x', { base: { [rel]: before }, head: { [rel]: gained } })
+    ).toEqual([]);
+  });
+
+  it('fails a PR whose only change is a gate-invoked script, with no entry', () => {
+    expect(coverage([{ status: 'M', path: 'scripts/pre-push.sh' }]).map((f) => f.code)).toEqual([
       'coverage/missing-entry',
     ]);
   });

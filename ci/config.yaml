@@ -62,7 +62,7 @@ coverage:
     - lefthook.yml
     - .claude/settings.json
     - ci/**
-    - packages/ci-steward/**
+    - packages/ci-steward/src/**
     - .agents/skills/creating-pull-requests/**
 
 # A branch with this prefix is an unattended ci-improve change and may not

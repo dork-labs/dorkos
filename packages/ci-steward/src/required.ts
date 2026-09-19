@@ -153,21 +153,52 @@ function isSet(v: unknown): boolean {
   return v !== undefined && v !== false && v !== 'false';
 }
 
-function checkRequiredJobBody(
+/**
+ * Every job a required job needs, directly or transitively, in its workflow.
+ *
+ * A needed job's failure is what the fan-in reports, so a failure the needed
+ * job hides (continue-on-error, a skipped check step) is hidden from the
+ * required context too.
+ */
+function neededJobs(wf: WorkflowModel, job: JobModel): JobModel[] {
+  const byId = new Map(wf.jobs.map((j) => [j.id, j]));
+  const seen = new Set<string>();
+  const queue = [...job.needs];
+  const out: JobModel[] = [];
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const needed = byId.get(id);
+    if (!needed) continue;
+    out.push(needed);
+    queue.push(...needed.needs);
+  }
+  return out;
+}
+
+function checkJobBody(
   wf: WorkflowModel,
   job: JobModel,
   context: string,
+  requiredJob: JobModel,
   allow: AllowlistTracker
 ): Finding[] {
   const out: Finding[] = [];
+  const at =
+    job === requiredJob
+      ? where(job, context)
+      : `job ${job.id}, needed by required context "${context}" (job ${requiredJob.id})`;
+  const role =
+    job === requiredJob ? `required job ${job.id}` : `job ${job.id}, which "${context}" needs,`;
   const coe = (step?: string) =>
     allow.covers({ workflow: wf.file, job: job.id, step, kind: 'continue-on-error' });
   if (isSet(job.continueOnError) && !coe()) {
     out.push({
       code: 'required/continue-on-error',
       file: wf.path,
-      where: where(job, context),
-      message: `Required job ${job.id} sets continue-on-error, so it can report success after failing.`,
+      where: at,
+      message: `The ${role} sets continue-on-error, so it can report success after failing, and "${context}" passes with it.`,
       fix: `Remove \`continue-on-error\` from job ${job.id}, or add a ci/census-allowlist.yaml entry {workflow: ${wf.file}, job: ${job.id}, kind: continue-on-error, reason, expires}.`,
     });
   }
@@ -176,8 +207,8 @@ function checkRequiredJobBody(
       out.push({
         code: 'required/continue-on-error',
         file: wf.path,
-        where: `${where(job, context)}, step "${step.key}"`,
-        message: `A step in required job ${job.id} sets continue-on-error, so its failure cannot fail "${context}".`,
+        where: `${at}, step "${step.key}"`,
+        message: `A step in the ${role} sets continue-on-error, so its failure cannot fail "${context}".`,
         fix: `Remove \`continue-on-error\` from the step, or add a ci/census-allowlist.yaml entry {workflow: ${wf.file}, job: ${job.id}, step: "${step.key}", kind: continue-on-error, reason, expires}.`,
       });
     }
@@ -190,12 +221,31 @@ function checkRequiredJobBody(
     out.push({
       code: 'required/step-if',
       file: wf.path,
-      where: `${where(job, context)}, step "${step.key}"`,
-      message: `A step in required job ${job.id} runs only when \`${String(step.if)}\`, which is not true on both pull_request and merge_group. A check that silently skips on one event is how a required context comes to assert nothing.`,
+      where: `${at}, step "${step.key}"`,
+      message: `A step in the ${role} runs only when \`${String(step.if)}\`, which is not true on both pull_request and merge_group. A check that silently skips on one event is how a required context comes to assert nothing.`,
       fix: `Remove the condition, or add a ci/census-allowlist.yaml entry {workflow: ${wf.file}, job: ${job.id}, step: "${step.key}", kind: step-if, reason} saying why skipping is safe.`,
     });
   }
   return out;
+}
+
+/**
+ * A fan-in that runs whatever its needs concluded (`always()`) must look at
+ * what they concluded; otherwise a red shard reports a green context.
+ */
+function checkFanInAsserts(wf: WorkflowModel, job: JobModel, context: string): Finding[] {
+  if (job.needs.length === 0 || !ignoresNeedsResult(job.if)) return [];
+  const text = job.steps.map((s) => s.text).join('\n');
+  if (/needs\.\*\.result/.test(text)) return [];
+  return job.needs
+    .filter((n) => !text.includes(`needs.${n}.result`))
+    .map((n) => ({
+      code: 'required/fan-in-unasserted',
+      file: wf.path,
+      where: where(job, context),
+      message: `Job ${job.id} runs with \`if: ${String(job.if)}\` whatever its needs concluded, but no step reads \`needs.${n}.result\`. When ${n} fails, "${context}" still reports success.`,
+      fix: `Add a first step that fails unless \`needs.${n}.result\` is 'success' (see "Require all four shards green" in test.yml), or check \`contains(needs.*.result, 'failure')\`.`,
+    }));
 }
 
 /**
@@ -235,7 +285,10 @@ export function checkRequiredContexts(
     for (const { wf, job } of matches) {
       out.push(...checkTriggers(wf, job, context, defaultBranch));
       out.push(...checkJobCondition(wf, job, context, allow));
-      out.push(...checkRequiredJobBody(wf, job, context, allow));
+      out.push(...checkFanInAsserts(wf, job, context));
+      for (const j of [job, ...neededJobs(wf, job)]) {
+        out.push(...checkJobBody(wf, j, context, job, allow));
+      }
     }
   }
   return out;

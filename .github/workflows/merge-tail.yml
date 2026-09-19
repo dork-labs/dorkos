@@ -19,9 +19,9 @@ name: merge-tail
 # is silent: a refusal that stops matching keeps returning ARM and the first
 # symptom is unreviewed code on main.
 #
-# WHOSE KEY IT HOLDS: the `dorkos-merge-tail` GitHub App (app id in the
-# `MERGE_TAIL_APP_ID` variable, key in the `MERGE_TAIL_APP_PRIVATE_KEY` secret).
-# It can write code and pull requests and read checks, and it has NO
+# WHOSE KEY IT HOLDS: the `dorkos-merge-tail` GitHub App (client id in the
+# `MERGE_TAIL_APP_CLIENT_ID` secret, key in the `MERGE_TAIL_APP_PRIVATE_KEY`
+# secret). It can write code and pull requests and read checks, and it has NO
 # Administration permission, so this workflow cannot edit the ruleset or bypass
 # the merge queue (contributing/ci.md: "no admin credential in Actions"). It
 # replaced `MERGE_TAIL_TOKEN`, an admin's `repo`-scoped PAT that could do both.
@@ -75,7 +75,9 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ vars.MERGE_TAIL_APP_ID }}
+          # The client id is a secret, not a variable, on purpose: repo secrets
+          # are proven to reach Dependabot's pull_request_target runs; vars.* there is not.
+          client-id: ${{ secrets.MERGE_TAIL_APP_CLIENT_ID }}
           private-key: ${{ secrets.MERGE_TAIL_APP_PRIVATE_KEY }}
 
       - name: Arm auto-merge on finished PRs
