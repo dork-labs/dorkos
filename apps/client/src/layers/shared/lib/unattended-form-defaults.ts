@@ -15,7 +15,7 @@
 import type { PermissionModeDescriptor, PermissionStop } from '@dorkos/shared/agent-runtime';
 import type { ExecutionDefaults } from '@dorkos/shared/schemas';
 import type { PermissionMode } from '@dorkos/shared/types';
-import { resolveTrustStops } from '@dorkos/shared/permission-semantics';
+import { resolveStopMode } from '@dorkos/shared/permission-semantics';
 
 /** The mode id an unattended form falls back to when no stop is configured. */
 const FALLBACK_MODE: PermissionMode = 'acceptEdits';
@@ -47,12 +47,19 @@ export function operatorStopForRuntime(
  * The runtime mode id an unattended form should open at, given the operator's
  * configured stop and the runtime's declared modes.
  *
- * The stop is mapped through {@link resolveTrustStops} — the same function the
- * dial renders from — so a resolved default lands on exactly the mode the dial
- * would show as selected, including the first-declared rule where a runtime
- * declares two modes at one stop. Falls back to `'acceptEdits'` when no stop is
- * configured, when the runtime declares no mode at that stop, or before the
- * runtime's profile has loaded — always the old default, never a wider one.
+ * The stop is mapped through `resolveStopMode` — the one shared translation the
+ * dial renders from and the server seeds with — so a resolved default lands on
+ * exactly the mode the dial would show as selected, including the
+ * first-declared rule where a runtime declares two modes at one stop. It used
+ * to re-derive that mapping here, which made this a third copy of it
+ * (DOR-2103 review).
+ *
+ * Falls back to `'acceptEdits'` when no stop is configured, when the runtime
+ * declares no mode at that stop, or before the runtime's profile has loaded —
+ * always the old default, never a wider one. That fallback is this module's
+ * own and deliberately NOT the runtime's declared default: an unattended form
+ * is choosing a level for a turn nobody will watch, and inheriting whatever a
+ * runtime happens to start at could widen it silently.
  *
  * @param configuredStop - The operator's stop for this runtime, or null/undefined when unset.
  * @param descriptors - The runtime's declared permission modes.
@@ -61,7 +68,6 @@ export function resolveConfiguredStopMode(
   configuredStop: PermissionStop | null | undefined,
   descriptors: readonly PermissionModeDescriptor[]
 ): PermissionMode {
-  if (!configuredStop) return FALLBACK_MODE;
-  const mode = resolveTrustStops(descriptors).find((s) => s.stop === configuredStop)?.mode.id;
+  const mode = resolveStopMode(configuredStop, descriptors);
   return (mode as PermissionMode | undefined) ?? FALLBACK_MODE;
 }

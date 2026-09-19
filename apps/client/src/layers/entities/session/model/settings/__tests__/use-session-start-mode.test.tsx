@@ -22,7 +22,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { ExecutionDefaults } from '@dorkos/shared/schemas';
+import type { ExecutionDefaults, SessionSettings } from '@dorkos/shared/schemas';
+import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import { TransportProvider } from '@/layers/shared/model';
 import { createMockSession, createMockTransport } from '@dorkos/test-utils';
 import { useSessionStatus } from '../use-session-status';
@@ -71,6 +72,9 @@ function transportWith(opts: {
   defaults?: ExecutionDefaults;
   listed?: ReturnType<typeof createMockSession>[];
   detail?: ReturnType<typeof createMockSession>;
+  stored?: SessionSettings | null;
+  /** A runtime to add to the capability map, built off the shipped claude-code profile. */
+  extraRuntime?: { type: string; permissionModes: RuntimeCapabilities['permissionModes'] };
 }) {
   const base = createMockTransport();
   return createMockTransport({
@@ -80,8 +84,58 @@ function transportWith(opts: {
     })),
     listSessions: vi.fn().mockResolvedValue({ sessions: opts.listed ?? [] }),
     getSession: vi.fn().mockResolvedValue(opts.detail),
+    getStoredSessionSettings: vi.fn().mockResolvedValue(opts.stored ?? null),
+    ...(opts.extraRuntime
+      ? {
+          getCapabilities: vi.fn().mockImplementation(async () => {
+            const shipped = await base.getCapabilities();
+            const { type, permissionModes } = opts.extraRuntime!;
+            // Built off a real profile so the added runtime is complete in
+            // every field but the one the case is about.
+            const template = shipped.capabilities['claude-code'] as RuntimeCapabilities;
+            return {
+              capabilities: {
+                ...shipped.capabilities,
+                [type]: {
+                  ...template,
+                  type,
+                  permissionModes,
+                  settings: { ...template.settings, configSection: null },
+                },
+              },
+              defaultRuntime: shipped.defaultRuntime,
+            };
+          }),
+        }
+      : {}),
   });
 }
+
+/**
+ * A runtime whose declared default is NOT the word "default".
+ *
+ * This declaration is the whole reason the fallback can be tested at all. Every
+ * shipped production runtime happens to call its ask-stop mode `'default'`, so
+ * against those the honest answer and the literal the client used to print are
+ * the same string, and a case built on one of them cannot tell them apart —
+ * measured: re-introducing `?? 'default'` in the hook left 154 client test
+ * files green (DOR-2103 review). `test-mode` ships exactly this shape on
+ * purpose, and this mirrors it.
+ */
+const QUIRK_MODES: RuntimeCapabilities['permissionModes'] = {
+  supported: true,
+  default: 'always-allow',
+  values: [
+    {
+      id: 'always-allow',
+      label: 'Always allow',
+      stop: 'autonomy',
+      asks: 'never',
+      reach: 'everything',
+      promise: 'Runs everything without asking.',
+    },
+  ],
+};
 
 function createWrapper(transport: ReturnType<typeof createMockTransport>) {
   const queryClient = new QueryClient({
@@ -147,6 +201,87 @@ describe('the trust dial on a conversation nobody has written to yet', () => {
     await waitFor(() =>
       expect(result.current.permissionMode).toBe(declared?.permissionModes.default)
     );
+  });
+
+  it("shows a runtime's own declared default when that default is not called 'default'", async () => {
+    // THE case that can tell the honest answer from the literal. Nothing is
+    // configured, this runtime declares no mode at any stop but autonomy, and
+    // its declared default is `always-allow` — so the honest answer and the
+    // string the client used to print differ, and only one of them passes.
+    const transport = transportWith({
+      defaults: executionDefaults(null),
+      extraRuntime: { type: 'quirk', permissionModes: QUIRK_MODES },
+    });
+
+    const { result } = renderHook(() => useSessionStatus(SESSION_ID, null, false, 'quirk'), {
+      wrapper: createWrapper(transport),
+    });
+
+    await waitFor(() => expect(result.current.permissionMode).toBe('always-allow'));
+  });
+
+  it('prefers a choice made before the first message after a reload', async () => {
+    // THE PROBE (DOR-2103 review). A settings change made before sending writes
+    // a `session_metadata` row with no runtime (DOR-812). Nothing on the client
+    // survives a reload, and `GET /api/sessions/:id` 404s for a session with no
+    // transcript, so before `getStoredSessionSettings` existed the dial fell
+    // back to the operator's configured stop — reading Full autonomy for a
+    // conversation the person had deliberately moved DOWN to Default. Wrong in
+    // the one direction this product must never be wrong in.
+    //
+    // The reload shape exactly: list empty (never started), no detail row, a
+    // stored row present.
+    const transport = transportWith({
+      defaults: executionDefaults('autonomy'),
+      listed: [],
+      stored: { permissionMode: 'default' },
+    });
+
+    const { result } = renderHook(() => useSessionStatus(SESSION_ID, null, false, 'claude-code'), {
+      wrapper: createWrapper(transport),
+    });
+
+    await waitFor(() =>
+      expect(transport.getStoredSessionSettings).toHaveBeenCalledWith(SESSION_ID)
+    );
+    await waitFor(() => expect(result.current.permissionModeKnown).toBe(true));
+    expect(result.current.permissionMode).toBe('default');
+    expect(result.current.permissionMode).not.toBe(CLAUDE_AUTONOMY_MODE);
+  });
+
+  it('says nothing at all on the first frame of a cold load', async () => {
+    // The reported symptom, compressed: every query cold, so nothing has
+    // answered what this session runs at — and `permissionMode` carries
+    // `resolvePermissionMode`'s placeholder, which is shaped exactly like a
+    // real answer. A surface that painted it would read "Default" for a few
+    // frames and then flip, which is the same wrong sentence the ticket is
+    // about. `permissionModeKnown` is what the permissions control gates on.
+    const transport = transportWith({ defaults: executionDefaults('autonomy') });
+
+    const { result } = renderHook(() => useSessionStatus(SESSION_ID, null, false, 'claude-code'), {
+      wrapper: createWrapper(transport),
+    });
+
+    // First frame, before any query has settled.
+    expect(result.current.permissionModeKnown).toBe(false);
+    // And it resolves to the real stop rather than staying unknown.
+    await waitFor(() => expect(result.current.permissionModeKnown).toBe(true));
+    expect(result.current.permissionMode).toBe(CLAUDE_AUTONOMY_MODE);
+  });
+
+  it('does not ask for stored settings once a session has started', async () => {
+    // A rail of listed conversations must not cost one request per row: a
+    // started session's settings already ride its `Session`, overlaid
+    // server-side from the same row.
+    const started = createMockSession({ id: SESSION_ID, permissionMode: 'default' });
+    const transport = transportWith({ listed: [started], detail: started });
+
+    const { result } = renderHook(() => useSessionStatus(SESSION_ID, null, false, 'claude-code'), {
+      wrapper: createWrapper(transport),
+    });
+
+    await waitFor(() => expect(result.current.permissionModeKnown).toBe(true));
+    expect(transport.getStoredSessionSettings).not.toHaveBeenCalled();
   });
 
   it('never overrules a session that has started', async () => {

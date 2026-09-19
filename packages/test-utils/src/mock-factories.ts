@@ -312,6 +312,10 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       .mockResolvedValue({ days: 7, dailyCounts: [0, 0, 0, 0, 0, 0, 0], warnings: [] }),
     getSession: vi.fn(),
     getSessionRuntimeType: vi.fn().mockResolvedValue('claude-code'),
+    // Nothing stored, which is what a brand-new session id genuinely has. A
+    // test about a settings change made BEFORE the first message overrides this
+    // with the row that change would have written (DOR-2103).
+    getStoredSessionSettings: vi.fn().mockResolvedValue(null),
     getMessages: vi.fn().mockResolvedValue({ messages: [] }),
     getSessionSnapshot: vi.fn().mockResolvedValue({
       messages: [],

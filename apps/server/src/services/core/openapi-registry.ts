@@ -30,6 +30,7 @@ import { registerConnectorEventOpenApi } from '../connectors/events/openapi.js';
 import {
   PermissionModeSchema,
   SessionSchema,
+  StoredSessionSettingsResponseSchema,
   SessionUpdateResponseSchema,
   SessionListResponseSchema,
   RecentSessionsQuerySchema,
@@ -690,6 +691,30 @@ registry.registerPath({
     },
     404: {
       description: 'Session not found',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/sessions/{id}/settings',
+  tags: ['Sessions'],
+  summary: 'Get the settings stored for a session id',
+  description:
+    'The row `session_metadata` holds for this id, or `null` when it holds none. This is the one read that can see a session which has NOT started: every other session endpoint resolves a session out of its runtime store (ADR-0310), so a settings change made before the first message — which creates a row with no runtime (DOR-812) — is a 404 on `GET /api/sessions/{id}` and absent from the list. Deliberately not a `Session`: there is no session yet, and one would have to invent a title and report the registry inference as its `runtime`. Never writes (DOR-2103).',
+  request: {
+    params: z.object({ id: z.string().uuid() }),
+  },
+  responses: {
+    200: {
+      description: 'The stored settings, or null',
+      content: {
+        'application/json': { schema: StoredSessionSettingsResponseSchema },
+      },
+    },
+    400: {
+      description: 'Invalid session ID',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

@@ -14,6 +14,7 @@ import type {
   SessionDailyCountsResponse,
   UpdateSessionRequest,
   SessionUpdateResponse,
+  SessionSettings,
   BrowseDirectoryResponse,
   CommandRegistry,
   HealthResponse,
@@ -668,6 +669,23 @@ export interface Transport
    * @param sessionId - Session identifier
    */
   getSessionRuntimeType(sessionId: string): Promise<string>;
+  /**
+   * The settings STORED for a session id, or `null` when none are.
+   *
+   * The one read that can see a conversation which has not started. Every other
+   * session read resolves a session out of its runtime's store (ADR-0310), so a
+   * settings change made before the first message — which writes a row with no
+   * runtime (DOR-812) — is a 404 on {@link Transport.getSession} and absent from
+   * the list. That made a person's own explicit choice invisible after a reload,
+   * and the trust dial fell back to the operator's configured default over a
+   * level they had deliberately moved down (DOR-2103).
+   *
+   * Ask it only about a session the list does not carry. A started session's
+   * settings already ride its `Session`, overlaid server-side from the same row.
+   *
+   * @param sessionId - Session identifier.
+   */
+  getStoredSessionSettings(sessionId: string): Promise<SessionSettings | null>;
   /**
    * Update session settings (permission mode, model).
    *

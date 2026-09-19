@@ -43,6 +43,18 @@ export const sessionKeys = {
   detail: (sessionId: string | null, cwd: string | null) =>
     [...sessionKeys.detailRoot, sessionId, cwd] as const,
   /**
+   * The settings STORED for one session id, independent of any directory.
+   *
+   * Its own root rather than a branch of `detailRoot`, and that is load-bearing
+   * in two directions: `syncSessionDetailCache` sweeps `detailRoot` and merges
+   * `Session` rows into every entry it finds, which would corrupt a
+   * `SessionSettings | null` parked there; and the sweep's own invariant — every
+   * entry under that prefix is a session row — would stop being true.
+   *
+   * @param sessionId - The session id, or null when none is selected.
+   */
+  storedSettings: (sessionId: string | null) => ['session-stored-settings', sessionId] as const,
+  /**
    * Root of every per-directory session list. Every entry under this prefix
    * holds a `Session[]` — invalidation and the retired-session sweep both walk
    * it and assume so.

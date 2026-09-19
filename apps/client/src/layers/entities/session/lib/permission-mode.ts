@@ -17,11 +17,32 @@ export const FULL_POWER_MARK_LABEL = 'Full power: acts without approval prompts'
 
 /**
  * A session's effective permission mode: a change the person just made and the
- * server has not confirmed yet wins over the last row the server sent, and an
- * unknown session is treated as asking for everything.
+ * server has not confirmed yet wins over the last row the server sent.
  *
  * Pure so both the full status hook and the lightweight read-only hook resolve
  * it identically instead of each re-deriving the precedence.
+ *
+ * ## The trailing `'default'` is a PLACEHOLDER, not an answer (DOR-2103)
+ *
+ * It used to be described as "an unknown session is treated as asking for
+ * everything", which read as a safety posture and was not one — it is the
+ * value that comes out when nothing is known, and it happens to be shaped
+ * exactly like a real mode. Painting it is the DOR-2103 defect: a conversation
+ * whose operator configured Full autonomy read "Default" until the first
+ * message, and a cold load read it for a few frames before flipping.
+ *
+ * So callers do not paint this value on trust. `useSessionStatus` reports
+ * `permissionModeKnown` beside it — "a change, a row, or the start-mode
+ * resolution has answered" — and the two surfaces that DRAW a mode (the
+ * permissions control, the read-only dead-end notice) withhold themselves
+ * until it is true. A caller that merely passes the value along need not
+ * care; a caller that puts a word on screen must.
+ *
+ * The literal survives rather than the signature widening to
+ * `PermissionModeId | undefined` because roughly a dozen readers take it as a
+ * plain string, and an `undefined` threaded through all of them would be a
+ * larger change than the one defect warrants — the flag is what makes the
+ * unknown state legible, and it is checked by test.
  *
  * `isBypassPermissionMode` used to live here and now lives in
  * `shared/lib/permission-mode`. An integration binding is an entity and may not

@@ -233,6 +233,64 @@ describe('a standing Full-autonomy default, end to end', () => {
     expect(patched.status).toBe(428);
   });
 
+  it('lets the screen read a choice made before the first message, after a reload', async () => {
+    // THE PROBE (DOR-2103). A settings change made before sending writes an
+    // UNBOUND `session_metadata` row (DOR-812), and until this read existed
+    // nothing on this server could see one: every session endpoint resolves a
+    // session out of its RUNTIME's store (ADR-0310), so a row with no
+    // transcript is a 404 on `GET /api/sessions/:id` and absent from the list.
+    //
+    // What that cost, measured here: the operator's default is Full autonomy,
+    // the person deliberately moved THIS conversation down to `default` before
+    // sending, and after a reload the client had nothing to read and fell back
+    // to the configured stop — the dial claiming more power than the turn would
+    // run at. The direction this product must never be confidently wrong in.
+    await request(fixtureServer)
+      .patch('/api/config')
+      .send({
+        ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' },
+        runtimes: { defaultTrustStop: 'autonomy' },
+      })
+      .expect(200);
+
+    const { runtimeRegistry } = await import('../../services/core/runtime-registry.js');
+    // Exactly what the pre-launch picker's PATCH leaves behind: a row, a chosen
+    // mode, and no runtime.
+    await runtimeRegistry.saveSessionSettings(SESSION_ID, { permissionMode: 'default' });
+
+    // The reload shape: the session is in no list and has no transcript, so
+    // this is the only read that can answer.
+    expect((await request(fixtureServer).get(`/api/sessions/${SESSION_ID}`)).status).toBe(404);
+
+    const stored = await request(fixtureServer).get(`/api/sessions/${SESSION_ID}/settings`);
+    expect(stored.status).toBe(200);
+    expect(stored.body.settings.permissionMode).toBe('default');
+    // And it is NOT the operator's configured stop, which is what the screen
+    // would otherwise have shown.
+    expect(stored.body.settings.permissionMode).not.toBe(autonomyModeId());
+
+    // The choice still wins at the binding write, which is the behaviour the
+    // screen now matches rather than contradicts.
+    await runtimeRegistry.persistSessionRuntime(SESSION_ID, 'fake', { kind: 'interactive' });
+    expect((await runtimeRegistry.getSessionSettings(SESSION_ID))?.permissionMode).toBe('default');
+  });
+
+  it('answers null for an id nothing is stored under, and writes no row', async () => {
+    // A read that back-filled would mint a row for any id it was handed, and
+    // `persistSessionRuntime` is first-write-wins — so the guess would become
+    // the binding (DOR-812). `null` is the honest shape for "nothing stored",
+    // and the absence of a row afterwards is what says nothing was written.
+    const unknown = '66666666-7777-4888-8999-aaaaaaaaaaaa';
+    const res = await request(fixtureServer).get(`/api/sessions/${unknown}/settings`);
+    expect(res.status).toBe(200);
+    expect(res.body.settings).toBeNull();
+
+    const { runtimeRegistry } = await import('../../services/core/runtime-registry.js');
+    expect(await runtimeRegistry.getSessionSettings(unknown)).toBeNull();
+    // Still unbound, so the first turn is still free to decide the owner.
+    expect((await runtimeRegistry.resolveSessionRuntime(unknown)).bound).toBe(false);
+  });
+
   it('stops birthing bypassed sessions the moment the acknowledgement is Reset', async () => {
     // The composition in reverse, and the failure it exists to make unreachable:
     // clearing the record while the default stood left new sessions opening

@@ -112,6 +112,7 @@ export {
   isWorkingMode,
   resolveTrustStops,
   resolveStopMode,
+  startModeFor,
   findWorkingMode,
   type TrustStop,
 } from '@dorkos/shared/permission-semantics';

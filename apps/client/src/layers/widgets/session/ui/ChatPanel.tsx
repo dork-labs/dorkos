@@ -333,12 +333,27 @@ export function ChatPanel({
     [submitContent]
   );
 
-  const { permissionMode } = useSessionStatus(sessionId, sessionStatus, status === 'streaming');
+  const { permissionMode, permissionModeKnown } = useSessionStatus(
+    sessionId,
+    sessionStatus,
+    status === 'streaming'
+  );
 
   // Whether this session's mode can read but never change and never ask — the
   // Codex read-only dead end, decided from what the runtime declared rather than
   // from its name (DOR-2019).
-  const readOnlyHint = useReadOnlyModeHint(sessionId, runtimeChip.runtime, permissionMode);
+  //
+  // Withheld until something has actually answered what this session runs at.
+  // `permissionMode` carries a placeholder on the frames before that, and the
+  // placeholder is `'default'` — which on Codex IS the read-only dead end, so a
+  // cold load would flash the explanation at every Codex session whatever mode
+  // it was really in (DOR-2103). `undefined` matches no descriptor, which is
+  // exactly "no claim".
+  const readOnlyHint = useReadOnlyModeHint(
+    sessionId,
+    runtimeChip.runtime,
+    permissionModeKnown ? permissionMode : undefined
+  );
 
   // A picker left open on one conversation is not open on the next. The picker
   // itself is not keyed by session — one status line serves whichever session

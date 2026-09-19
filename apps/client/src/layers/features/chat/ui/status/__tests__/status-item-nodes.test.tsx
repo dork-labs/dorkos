@@ -153,6 +153,7 @@ function inputWith(overrides: Partial<StatusItemNodesInput>): StatusItemNodesInp
     agent: { name: 'Ana', path: '/tmp/ana' },
     status: {
       permissionMode: 'default',
+      permissionModeKnown: true,
       model: 'claude-sonnet-4-5',
       effort: null,
       fastMode: false,
@@ -381,6 +382,7 @@ function buildLine(
     inputWith({
       status: {
         permissionMode,
+        permissionModeKnown: true,
         model: 'claude-sonnet-4-5',
         effort: null,
         fastMode: false,
@@ -485,6 +487,7 @@ describe('PermissionModeItem vs. PlanModeItem — never the same word when both 
       inputWith({
         status: {
           permissionMode: 'acceptEdits',
+          permissionModeKnown: true,
           model: 'claude-sonnet-4-5',
           effort: null,
           fastMode: false,
@@ -540,6 +543,7 @@ describe('buildStatusItemNodes — the runtime chip and the model item must not 
       inputWith({
         status: {
           permissionMode: 'default',
+          permissionModeKnown: true,
           model: QWEN_MODEL.value,
           effort: null,
           fastMode: false,

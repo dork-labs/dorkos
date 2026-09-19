@@ -22,22 +22,27 @@
  * > the same mode — once "seeded nothing" is read as what it means, which is
  * > that the runtime's own declared default runs the turn.
  *
- * The screen's half of that is `resolveStopMode` + `permissionModes.default`,
- * exactly as `useSessionStartMode` in `entities/session` composes them. They
- * share the stop→mode mapping on purpose (one mapping, so a dial position
- * cannot mean two modes); what this file proves is that the two sides feed it
- * the same INPUTS and read its `undefined` the same way — which is the part
- * that can drift, and the part a shared function does not give for free.
+ * The screen's half of that is `startModeFor`, and this file calls THE SAME
+ * FUNCTION the dial calls — `useSessionStartMode`'s last line is
+ * `startModeFor(stop, caps.permissionModes)` and nothing else. That is the
+ * whole reason the two steps (stop→mode, then "no mode" means the runtime's
+ * declared default) live together in `@dorkos/shared/permission-semantics`
+ * rather than being composed at each caller. An earlier version of this file
+ * hand-composed them, which made it a restatement of the screen rather than a
+ * check on it: changing the hook's fallback to the literal `'default'` left
+ * this suite green (DOR-2103 review). It does not any more.
  *
  * The complementary half — that the resolved value really reaches the dial
  * instead of a literal — is an RTL test, because only the client can render:
  * `apps/client/src/layers/entities/session/model/settings/__tests__/use-session-start-mode.test.tsx`.
  */
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import type { PermissionStop, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
-import { PERMISSION_STOPS, resolveStopMode } from '@dorkos/shared/permission-semantics';
+import { PERMISSION_STOPS, startModeFor } from '@dorkos/shared/permission-semantics';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 import { CODEX_CAPABILITIES } from '../../../runtimes/codex/runtime-constants.js';
 import { OPENCODE_CAPABILITIES } from '../../../runtimes/opencode/runtime-constants.js';
@@ -83,14 +88,18 @@ function seededMode(caps: RuntimeCapabilities, stop: PermissionStop | null): str
 
 /**
  * What the dial shows for a session with no row, for the same runtime under the
- * same configured stop — `useSessionStartMode`'s body, with the two hook reads
- * (config, capability map) supplied directly.
+ * same configured stop.
+ *
+ * `startModeFor` IS the hook's last line, called here with the two values the
+ * hook reads from queries. Nothing is re-composed: if this function grows a
+ * `??` of its own, the comparison below stops being a check and becomes a
+ * restatement.
  *
  * @param caps - The runtime's declared profile.
  * @param stop - The operator's configured global trust stop.
  */
 function displayedMode(caps: RuntimeCapabilities, stop: PermissionStop | null): string | undefined {
-  return resolveStopMode(stop, caps.permissionModes.values) ?? caps.permissionModes.default;
+  return startModeFor(stop, caps.permissionModes);
 }
 
 describe('what a new conversation shows is what its first turn will run at', () => {
@@ -137,6 +146,61 @@ describe('what a new conversation shows is what its first turn will run at', () 
     // test-mode is the profile that makes the distinction visible at all: its
     // declared default is `always-allow`, an id no Claude-shaped list holds.
     expect(displayedMode(TEST_MODE_CAPABILITIES, null)).toBe('always-allow');
+  });
+
+  it('is the function the dial actually calls, not a second copy of it', () => {
+    // The comparison every case above makes is only a CHECK while the screen
+    // runs this same function. It cannot be checked from here by running the
+    // hook — that is client code, in another package, behind React — so the
+    // structural half is read off the source, the way
+    // `turn-origin-call-sites.test.ts` reads its census.
+    //
+    // This exists because the earlier version of this file hand-composed
+    // `resolveStopMode(...) ?? modes.default`, and re-introducing the literal
+    // in the hook left 159 client files and this whole suite green (DOR-2103
+    // review). The behavioural guard is an RTL case over a runtime whose
+    // declared default is NOT the word "default"; this is the structural one.
+    const hook = readFileSync(
+      fileURLToPath(
+        new URL(
+          '../../../../../../client/src/layers/entities/session/model/settings/use-session-start-mode.ts',
+          import.meta.url
+        )
+      ),
+      'utf8'
+    );
+    // It composes through the shared helper...
+    expect(hook).toMatch(/return startModeFor\(stop, caps\.permissionModes\);/);
+    // ...and nowhere in it does a permission mode fall back to a literal. The
+    // pattern is deliberately about the SHAPE of the mistake rather than one
+    // spelling of it: any `?? '<mode id>'` in this file is the defect.
+    expect(hook).not.toMatch(/\?\?\s*'[a-zA-Z][a-zA-Z0-9_.-]*'/);
+  });
+
+  it('would catch the client naming a different runtime than the session binds to', () => {
+    // The client resolves this against the launch picker's selection, falling
+    // back to the registry default. The SERVER's ladder for a new session has a
+    // tier in between — `resolveRuntimeTypeForNewSession` consults the AGENT
+    // MANIFEST's runtime when that runtime is registered — and the client has no
+    // mirror of it. So the two can name different runtimes for one session, and
+    // the mode shown would then be the wrong runtime's.
+    //
+    // Latent today, and this is the measurement that says so: every pair of
+    // shipped PRODUCTION profiles agrees on the id at every stop, so naming the
+    // wrong one of them still lands on the right id. The case is here so that
+    // stops being true loudly rather than silently — test-mode is the profile
+    // that already disagrees, and it is the shape a future runtime would take.
+    const production = PROFILES.filter((caps) => caps.type !== 'test-mode');
+    for (const stop of [null, ...PERMISSION_STOPS]) {
+      const answers = new Set(production.map((caps) => displayedMode(caps, stop)));
+      expect(answers.size).toBe(1);
+    }
+    // And the divergence is real wherever a profile files its modes
+    // differently, which is what makes the assertion above a claim about the
+    // profiles rather than about the resolver.
+    expect(displayedMode(TEST_MODE_CAPABILITIES, null)).not.toBe(
+      displayedMode(CLAUDE_CODE_CAPABILITIES, null)
+    );
   });
 
   it('honours a per-runtime override over the global stop, on both sides', () => {

@@ -703,6 +703,54 @@ describe('PermissionModeItem', () => {
     });
   });
 
+  describe('Nothing known yet (DOR-2103)', () => {
+    it('paints no mode at all, least of all a default-shaped one', () => {
+      // `mode` is a non-optional string, so the frames before any answer has
+      // arrived still carry SOMETHING — `resolvePermissionMode`'s `'default'`,
+      // which is shaped exactly like a real answer. Painting it is the reported
+      // defect in compressed form: the dial reads "Default", then flips to the
+      // operator's real stop. So `pending` draws a placeholder instead.
+      mockCapabilitiesForRuntime.mockReturnValue(CLAUDE_CAPABILITIES);
+      render(
+        <PermissionModeItem mode="default" onChangeMode={vi.fn()} runtime="claude-code" pending />
+      );
+
+      expect(screen.getByTestId('permission-mode-pending')).toBeInTheDocument();
+      // The word the ticket is about is nowhere on the control.
+      expect(screen.queryByTestId('popover-trigger')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('permission-mode-trigger')).not.toBeInTheDocument();
+      expect(screen.queryByText('Default')).not.toBeInTheDocument();
+    });
+
+    it('keeps the slot rather than vanishing, and says it is busy', () => {
+      // `null` would shuffle the status line's budgeted layout under the
+      // person's cursor, and would report "this session has no permissions"
+      // rather than "we are still asking".
+      mockCapabilitiesForRuntime.mockReturnValue(CLAUDE_CAPABILITIES);
+      render(
+        <PermissionModeItem mode="default" onChangeMode={vi.fn()} runtime="claude-code" pending />
+      );
+
+      const placeholder = screen.getByTestId('permission-mode-pending');
+      expect(placeholder).toHaveAttribute('aria-busy', 'true');
+      expect(placeholder.getAttribute('aria-label')).not.toMatch(/Default/);
+    });
+
+    it('still hides entirely for a runtime with no permission modes', () => {
+      // The honesty gate outranks the placeholder: a runtime that declares no
+      // modes has no control, pending or not.
+      mockCapabilitiesForRuntime.mockReturnValue({
+        ...CLAUDE_CAPABILITIES,
+        permissionModes: { supported: false, values: [] },
+      } as RuntimeCapabilities);
+      const { container } = render(
+        <PermissionModeItem mode="default" onChangeMode={vi.fn()} runtime="claude-code" pending />
+      );
+
+      expect(container).toBeEmptyDOMElement();
+    });
+  });
+
   describe('Loading state (capabilities undefined)', () => {
     it('names the current mode and offers no stops it cannot honour', () => {
       mockCapabilitiesForRuntime.mockReturnValue(undefined);

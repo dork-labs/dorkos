@@ -20,6 +20,7 @@ export type {
   UpdateSessionRequest,
   SessionUpdateResponse,
   SessionSettings,
+  StoredSessionSettingsResponse,
   ForkSessionRequest,
   ReloadPluginsResult,
   EffortLevel,

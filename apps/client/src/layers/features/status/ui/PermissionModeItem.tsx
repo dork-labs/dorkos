@@ -37,6 +37,20 @@ interface PermissionModeItemProps {
   /** When true, the selector is disabled and shows a tooltip explaining why. */
   disabled?: boolean;
   /**
+   * Nothing is known yet about this session's power — draw a placeholder, not a
+   * mode.
+   *
+   * `mode` is a non-optional string, so the frames before any answer arrives
+   * still carry SOMETHING, and what they carry is shaped exactly like a real
+   * answer (`resolvePermissionMode`'s `'default'`). Painting it is the DOR-2103
+   * defect in compressed form: the dial reads "Default", then flips to the
+   * operator's real stop a few frames later — which is the same wrong sentence
+   * the ticket was filed about, just shorter. So this draws a non-committal
+   * placeholder instead, and the picker cannot be opened onto a mode nobody has
+   * resolved.
+   */
+  pending?: boolean;
+  /**
    * Runtime whose capability profile drives the dial. The render site owns
    * resolution (the session row's server-authoritative runtime once started, the
    * pending pre-launch selection before that — see `useRuntimeChip`). Nullish
@@ -110,6 +124,7 @@ export function PermissionModeItem({
   mode,
   onChangeMode,
   disabled,
+  pending,
   runtime,
   modelSupportsAutoMode,
   planActive,
@@ -135,7 +150,8 @@ export function PermissionModeItem({
   // below that do not — a runtime with no modes, and a session with no first
   // turn — publish `false`, because a caller offering a way in must be told the
   // truth about whether there is one.
-  const interactive = !(caps && !caps.permissionModes.supported) && disabled !== true;
+  const interactive =
+    !(caps && !caps.permissionModes.supported) && disabled !== true && pending !== true;
   useEffect(() => {
     setAvailable(interactive);
     return () => setAvailable(false);
@@ -145,6 +161,26 @@ export function PermissionModeItem({
   // all (some runtimes have no notion of one).
   if (caps && !caps.permissionModes.supported) {
     return null;
+  }
+
+  // Nothing resolved yet: keep the slot, say nothing. A placeholder rather than
+  // `null` because the item disappearing and reappearing would shuffle the
+  // status line's budgeted layout under the person's cursor, and because the
+  // honest report here is "we are still asking", not "this session has no
+  // permissions". `aria-busy` is what says that to a screen reader; the label
+  // deliberately names no mode.
+  if (pending) {
+    return (
+      <span
+        data-testid="permission-mode-pending"
+        aria-busy="true"
+        aria-label="Permissions: still loading"
+        className={cn(STATUS_ITEM_TRIGGER_CLASS, 'items-center gap-1 opacity-40')}
+      >
+        <span className="bg-muted-foreground/30 size-(--size-icon-xs) shrink-0 animate-pulse rounded-full" />
+        <span className="bg-muted-foreground/30 h-2 w-10 animate-pulse rounded" />
+      </span>
+    );
   }
 
   const allDescriptors: PermissionModeDescriptor[] = caps?.permissionModes.values ?? [];

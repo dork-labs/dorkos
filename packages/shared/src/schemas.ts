@@ -474,6 +474,45 @@ export const SessionSettingsSchema = z.object({
 
 export type SessionSettings = z.infer<typeof SessionSettingsSchema>;
 
+/**
+ * What `GET /api/sessions/{id}/settings` answers: the settings STORED for a
+ * session id, or `null` when nothing is stored for it.
+ *
+ * ## Why this read exists at all (DOR-2103)
+ *
+ * A settings change made BEFORE the first message creates a
+ * `session_metadata` row with no runtime — the pre-launch picker's normal path
+ * (DOR-812) — and until DOR-2103 no read on this server could see one. The
+ * session endpoints all resolve a session out of its RUNTIME's store
+ * (SDK JSONL, SDK threads, the sidecar — ADR-0310), so a session with a stored
+ * row and no transcript is a 404 on `GET /api/sessions/{id}` and absent from
+ * `GET /api/sessions`. The person's own explicit choice was therefore invisible
+ * to the screen the moment the page was reloaded, which is how the trust dial
+ * came to show the operator's configured default over a level that person had
+ * deliberately moved DOWN — claiming more power than the turn would run at.
+ *
+ * So this reads the row and nothing else. It is deliberately NOT a `Session`:
+ * there is no session yet, and answering with one would mean inventing a
+ * title, a `createdAt`, and — worst — a `runtime`, which for an unbound row is
+ * the registry's INFERENCE rather than an owner (the exact costume DOR-1693
+ * took off `PATCH`'s answer). `null` is the honest shape for "nothing stored",
+ * and the caller already knows from the session list whether the conversation
+ * has started.
+ *
+ * **Never writes.** A read that back-filled would mint a row for any id it was
+ * handed, and `persistSessionRuntime` is first-write-wins, so that guess would
+ * become the binding (DOR-812).
+ */
+export const StoredSessionSettingsResponseSchema = z
+  .object({
+    /** The stored row, or `null` when this id has none. */
+    settings: SessionSettingsSchema.nullable(),
+  })
+  .openapi('StoredSessionSettingsResponse');
+
+/** See {@link StoredSessionSettingsResponseSchema}. */
+export type StoredSessionSettingsResponse = z.infer<typeof StoredSessionSettingsResponseSchema>;
+
 export const UpdateSessionRequestSchema = SessionSettingsSchema.extend({
   title: z.string().min(1).max(200).optional(),
   /**

@@ -45,8 +45,28 @@ export interface SessionStatusData {
    * compared against a literal. `string` rather than `PermissionMode` so
    * every reader states that honestly instead of narrowing with a cast
    * (DOR-820).
+   *
+   * **Only meaningful while {@link SessionStatusData.permissionModeKnown} is
+   * true.** It is a non-optional string because ~a dozen readers treat it as
+   * one, so the "we do not know yet" frames have to carry SOMETHING — and what
+   * they carry is `resolvePermissionMode`'s placeholder, which is shaped
+   * exactly like a real answer. A surface that PAINTS this value must gate on
+   * the flag; one that merely passes it along need not.
    */
   permissionMode: string;
+  /**
+   * Whether {@link SessionStatusData.permissionMode} is an answer rather than a
+   * placeholder.
+   *
+   * False on the frames before anything about this session's power has
+   * arrived — a cold load, where neither the session row nor the start-mode
+   * resolution has settled. Painting the placeholder there reproduces the
+   * DOR-2103 symptom in compressed form: the dial reads "Default", then flips
+   * to the operator's real stop a few frames later. The permissions control
+   * draws a non-committal placeholder instead, and the read-only dead-end
+   * notice withholds itself, until this is true.
+   */
+  permissionModeKnown: boolean;
   model: string;
   effort: EffortLevel | null;
   fastMode: boolean;
@@ -125,6 +145,24 @@ export function useSessionStatus(
   const effort = overrides.effort ?? session?.effort ?? null;
   const fastMode = overrides.fastMode ?? session?.fastMode ?? false;
 
+  // Is there an ANSWER about this session's power yet?
+  //
+  // Exactly the three things that can BE one: a change the person just made, a
+  // row from the server, or the resolution of what an unstarted session would
+  // start at. Anything else is a frame on the way to one, and `permissionMode`
+  // below is then `resolvePermissionMode`'s placeholder — shaped exactly like a
+  // real answer, which is why a surface that paints it has to ask here first.
+  //
+  // Deliberately NOT "the start-mode hook has settled": that is true the moment
+  // a session is known to have STARTED, whose detail row may still be loading —
+  // the one case where the placeholder would be painted over a real stored
+  // value that is seconds away. Both directions of the DOR-2103 defect are the
+  // same mistake, and this is the condition that excludes both.
+  const permissionModeKnown =
+    overrides.permissionMode !== undefined ||
+    session?.permissionMode !== undefined ||
+    startMode !== undefined;
+
   const statusData: SessionStatusData = {
     // `session.permissionMode` carries any id the session's own runtime
     // reports (DOR-851; `test-mode`'s ids sit outside the `PermissionMode`
@@ -145,6 +183,7 @@ export function useSessionStatus(
       overrides.permissionMode,
       session?.permissionMode ?? startMode
     ),
+    permissionModeKnown,
     model,
     effort,
     fastMode,
