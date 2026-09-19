@@ -51,6 +51,7 @@ import { resolveScheduleParkPayload } from '../services/notifications/emitters/s
 import { withProposerName, withProposerNames } from '../services/tasks/task-provenance.js';
 import { clampSchedulePermissionMode } from '../services/tasks/schedule-permission-clamp.js';
 import { capabilitiesForTaskRuntime } from '../services/tasks/scheduled-run-power.js';
+import { readAgentExecutionDefaults } from '../services/session/resolve-session-defaults.js';
 import {
   describeOperatorOnlyTaskRefusal,
   findOperatorOnlyTaskFields,
@@ -184,23 +185,32 @@ const UNNAMED_PERMISSION_LEVEL = 'the level saved on it';
  * The human name of the level a schedule runs at, in the vocabulary of the
  * runtime that will run it (DOR-2100).
  *
- * **Only for a task whose runtime is knowable here.** The fire-time ladder is
- * the task's own `runtime`, then its AGENT's manifest, then the registry
- * default (`resolve-run-execution.ts`), and the middle rung is a file read this
- * synchronous line cannot make. A task that inherits its agent's runtime
- * therefore gets {@link UNNAMED_PERMISSION_LEVEL} rather than a label resolved
- * through the default runtime's vocabulary — which would print Claude Code's
- * word for a level a Codex task is actually running at, and a confidently wrong
- * audit line is worse than a vague one. The id is on the event's `metadata`
- * either way, so nothing is lost for a machine reader.
+ * The runtime is resolved on the SAME ladder the create path walks
+ * (`resolveCreateRuntime`) and the fire path repeats
+ * (`resolve-run-execution.ts`): what the task names, then its AGENT's manifest,
+ * then the registry default. The agent rung costs one manifest read, once per
+ * approval click, and it is the rung that matters — a task filed under a
+ * Codex-pinned agent is the COMMON shape of an agent-proposed schedule, and
+ * labelling it through Claude Code's vocabulary would print one runtime's word
+ * for a level another runtime is actually running at.
+ *
+ * Tolerant at every rung, like every other read of a manifest here: no mesh, an
+ * unregistered agent, an unreadable file or a runtime this server does not hold
+ * all mean "no opinion", and the level is then named with
+ * {@link UNNAMED_PERMISSION_LEVEL} rather than guessed at. The id is on the
+ * event's `metadata` in every case, so nothing is lost for a machine reader.
  *
  * @param task - The schedule as it now stands.
+ * @param meshCore - Resolves the task's agent to its project path; absent when
+ *   Mesh is disabled, which is one of the ways the agent rung answers nothing.
  * @returns The runtime's label for its mode, or the neutral phrase.
  */
-function describeTaskPermissionLevel(task: Task): string {
-  const knowable = task.runtime !== null || task.agentId === null;
-  if (!knowable) return UNNAMED_PERMISSION_LEVEL;
-  const declared = capabilitiesForTaskRuntime(task.runtime)?.permissionModes?.values ?? [];
+async function describeTaskPermissionLevel(task: Task, meshCore?: MeshCore): Promise<string> {
+  const agentPath = task.agentId ? meshCore?.getProjectPath(task.agentId) : undefined;
+  const runtime =
+    task.runtime ??
+    (agentPath ? ((await readAgentExecutionDefaults(agentPath)).runtime ?? null) : null);
+  const declared = capabilitiesForTaskRuntime(runtime)?.permissionModes?.values ?? [];
   return (
     declared.find((mode) => mode.id === task.permissionMode)?.label ?? UNNAMED_PERMISSION_LEVEL
   );
@@ -548,6 +558,10 @@ export function createTasksRouter(
     if (existing.status === 'pending_approval' && updated.status === 'active') {
       const actorPrincipal = readCallerPrincipal(req, res);
       const raised = updated.permissionMode !== existing.permissionMode;
+      // Resolved before the call rather than inside its argument: it reads the
+      // agent's manifest off disk, and an await buried in a template literal
+      // reads like a synchronous format.
+      const level = await describeTaskPermissionLevel(updated, meshCore);
       activityService?.emit({
         // Read, never assumed: only a caller that cleared the agent bar reaches
         // this line, but that bar is a no-op under the shipped login-off posture
@@ -560,7 +574,7 @@ export function createTasksRouter(
         resourceLabel: updated.displayName ?? updated.name,
         summary:
           `Approved scheduled task ${updated.displayName ?? updated.name}, ` +
-          `running as ${describeTaskPermissionLevel(updated)}`,
+          `running as ${level}`,
         // The before and after both, so a reader can see a raise without
         // reconstructing what the row used to hold.
         metadata: {

@@ -13,6 +13,12 @@ covers:
   # branch could name the other's; this puts the card on the list. Nothing a
   # reader of the changelog could see either way.
   - 'test(client): the schedule approval card joins the frozen list of mode pick sites (DOR-2100)'
+  # And the second review round, folded for the same reason as the first: it
+  # corrects the door this fragment already promises rather than adding
+  # anything to it. With the door open the card's own A and D keys still
+  # answered the card underneath — nobody could have met that, because nobody
+  # has met the door.
+  - "fix(tasks): the card's A and D shortcuts go quiet while the consent door is open (DOR-2100)"
 ---
 
 ### Fixed

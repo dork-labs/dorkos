@@ -37,6 +37,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { eq, pulseSchedules, type Db } from '@dorkos/db';
 import { USER_CONFIG_DEFAULTS, type UserConfig } from '@dorkos/shared/config-schema';
 import { CLAUDE_CODE_CAPABILITIES } from '../../services/runtimes/claude-code/runtime-constants.js';
+import { CODEX_CAPABILITIES } from '../../services/runtimes/codex/runtime-constants.js';
 
 /** Mutable state the mocked config manager and registry report. */
 const state = vi.hoisted(() => ({ runtimes: undefined as unknown }));
@@ -54,8 +55,15 @@ vi.mock('../../services/core/config-manager.js', () => ({
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
     getDefaultType: () => 'claude-code',
-    has: (type: string) => type === 'claude-code',
-    getAllCapabilities: () => ({ 'claude-code': CLAUDE_CODE_CAPABILITIES }),
+    // Codex is registered so the feed label has a SECOND vocabulary to be
+    // wrong in: both runtimes call the middle stop `acceptEdits` and name it
+    // differently ("Accept edits" vs "Workspace write"), which is what makes
+    // "did it read the agent's manifest?" an answerable question.
+    has: (type: string) => type === 'claude-code' || type === 'codex',
+    getAllCapabilities: () => ({
+      'claude-code': CLAUDE_CODE_CAPABILITIES,
+      codex: CODEX_CAPABILITIES,
+    }),
   },
 }));
 
@@ -63,6 +71,7 @@ vi.mock('../../lib/boundary.js', () => ({
   isWithinBoundary: vi.fn().mockResolvedValue(true),
 }));
 
+import { writeManifest } from '@dorkos/mesh';
 import { createTasksRouter } from '../tasks.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
@@ -71,6 +80,9 @@ import type { ActivityService } from '../../services/activity/activity-service.j
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
+
+/** The agent id the one manifest-backed case files its schedule under. */
+const AGENT_ID = 'codex-agent';
 
 /** The operator's `runtimes` block, sitting at full power. */
 function autonomyRuntimes(): UserConfig['runtimes'] {
@@ -97,6 +109,13 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
   let db: Db;
   let dorkHome: string;
   let emit: ReturnType<typeof vi.fn>;
+  /**
+   * Where Mesh says {@link AGENT_ID} lives, or null for "no such agent".
+   *
+   * Mutable because only one case writes a manifest; every other case must see
+   * the mesh answer nothing, which is the ordinary shape of a global task.
+   */
+  let meshProjectPath: string | null;
 
   beforeEach(() => {
     state.runtimes = autonomyRuntimes();
@@ -104,6 +123,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     db = createTestDb();
     store = new TaskStore(db);
     emit = vi.fn();
+    meshProjectPath = null;
 
     app = express();
     app.use(express.json());
@@ -115,7 +135,9 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
         scheduler,
         new TaskRegistrar({ store, scheduler }),
         dorkHome,
-        undefined,
+        {
+          getProjectPath: (id: string) => (id === AGENT_ID ? meshProjectPath : null),
+        } as unknown as Parameters<typeof createTasksRouter>[4],
         { emit } as unknown as ActivityService
       )
     );
@@ -301,17 +323,53 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     expect(approval!.metadata).toMatchObject({ permissionMode: 'acceptEdits', raised: false });
   });
 
-  it('falls back to a neutral phrase rather than another runtime’s word', async () => {
-    // A task that INHERITS its agent's runtime cannot have its vocabulary
-    // resolved synchronously — the manifest is a file read — so the feed says
-    // something true and vague instead of confidently printing Claude Code's
-    // label for a level a Codex task is running at.
+  it('names the level in the vocabulary of the agent’s OWN runtime', async () => {
+    // The common shape of an agent-proposed schedule: no runtime of its own,
+    // filed under an agent that is pinned to one. Both runtimes spell the
+    // middle stop `acceptEdits`, so a label resolved through the DEFAULT
+    // runtime would read "Accept edits" — Claude Code's word for a level this
+    // task runs at under Codex (re-review).
     const task = await proposedByAgent();
-    // Straight to the column: the route refuses `agentId` on an update by
-    // design (it decides where the file lives), and what this case needs is a
-    // row that inherits, not a new task.
+    const agentDir = path.join(dorkHome, 'codex-agent');
+    fs.mkdirSync(agentDir, { recursive: true });
+    await writeManifest(agentDir, {
+      id: AGENT_ID,
+      name: AGENT_ID,
+      description: '',
+      runtime: 'codex',
+      capabilities: [],
+      behavior: { responseMode: 'always' },
+      registeredAt: new Date().toISOString(),
+      registeredBy: 'test',
+      personaEnabled: true,
+      enabledToolGroups: {},
+      mcpServers: [],
+    } as unknown as Parameters<typeof writeManifest>[1]);
+    meshProjectPath = agentDir;
     db.update(pulseSchedules)
-      .set({ agentId: 'some-agent' })
+      .set({ agentId: AGENT_ID })
+      .where(eq(pulseSchedules.id, task.id))
+      .run();
+
+    await request(fixtureServer)
+      .patch(`/api/tasks/${task.id}`)
+      .send({ status: 'active', enabled: true });
+
+    const approval = emit.mock.calls
+      .map(([event]) => event as Record<string, unknown>)
+      .find((event) => event.eventType === 'tasks.task_approved');
+    expect(approval!.summary).toContain('running as Workspace write');
+    expect(approval!.summary).not.toContain('Accept edits');
+  });
+
+  it('falls back to a neutral phrase rather than inventing a word for an unknown runtime', async () => {
+    // Every rung of the ladder answered nothing this server can read: the task
+    // names a runtime, and it is not one this machine holds. There is no
+    // declared mode list to take a label from, so the feed says something true
+    // and vague instead of printing the id.
+    const task = await proposedByAgent();
+    db.update(pulseSchedules)
+      .set({ runtime: 'not-installed' })
       .where(eq(pulseSchedules.id, task.id))
       .run();
 

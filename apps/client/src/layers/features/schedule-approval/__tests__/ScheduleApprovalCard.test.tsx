@@ -1102,6 +1102,37 @@ describe('ScheduleApprovalCard — granting the operator’s own level', () => {
     });
   });
 
+  it('takes the A and D shortcuts away while the consent door stands open', async () => {
+    // The dialog is a React CHILD of the card. Radix portals its DOM, but a
+    // synthetic event bubbles the REACT tree, so a keystroke typed at the
+    // focused Cancel button reached the card's own handler: `a` approved at
+    // the CLAMPED level and drew a receipt behind the modal, `d` armed the
+    // timed delete with its Undo button under the overlay (re-review).
+    const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
+    const deleteTask = vi.fn().mockResolvedValue(undefined);
+    renderCard(proposal(), { getConfig: configAtStop('autonomy'), updateTask, deleteTask });
+
+    await userEvent.click(await findSlot('schedule-approve-elevated'));
+    await waitFor(() => expect(consentDoor()).not.toBeNull());
+
+    await userEvent.keyboard('a');
+    await userEvent.keyboard('d');
+
+    // Neither answer was given, nothing was sent, and the question a person is
+    // actually being asked is still on screen.
+    expect(updateTask).not.toHaveBeenCalled();
+    expect(deleteTask).not.toHaveBeenCalled();
+    expect(slot('schedule-receipt')).toBeNull();
+    expect(consentDoor()).not.toBeNull();
+
+    // ...and the shortcut comes back once the door is out of the way.
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(consentDoor()).toBeNull());
+    card().focus();
+    await userEvent.keyboard('a');
+    await waitFor(() => expect(updateTask).toHaveBeenCalledOnce());
+  });
+
   it('keeps the A shortcut on the plain Approve even with a raise on offer', async () => {
     // The shortcut must never be the thing that grants power. `AskCard.Root`'s
     // `onAllow` is wired to the plain answer, so a fast hand lands on the safe

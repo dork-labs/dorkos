@@ -369,12 +369,33 @@ export function ScheduleApprovalCard({
     };
   };
 
+  /**
+   * Whether the card's own `A`/`D` shortcuts are live.
+   *
+   * **False while the consent door stands open**, and that is not a nicety.
+   * `UnattendedAutonomyDialog` is a React CHILD of `AskCard.Root`; Radix
+   * portals its content out of the card's DOM subtree, but a React synthetic
+   * event bubbles the REACT tree, so a keystroke typed into the dialog still
+   * reaches `AskCard.Root`'s `onKeyDown` — whose only guard is `typingInto`,
+   * which answers no for the Cancel button Radix focuses. Measured: with the
+   * door open, `a` PATCHed the approval at the CLAMPED level and drew its
+   * receipt behind the modal (and the confirm then no-opped, because `approve`
+   * returns early once answered), and `d` armed the timed DELETE with its Undo
+   * button stranded under the overlay (re-review).
+   *
+   * Guarded on the PROP rather than by stopping propagation in the dialog: the
+   * prop is what `AskCard.Root` reads to decide whether it is answerable at
+   * all, so this covers any portalled child a later edit puts inside this card,
+   * not only the one that exposed it.
+   */
+  const shortcutsLive = answered === null && pendingRaise === null;
+
   return (
     <AskCard.Root
       isActive={isActive}
       isResolved={answered !== null}
-      onAllow={answered === null ? approveAtProposedLevel : undefined}
-      onDeny={answered === null ? reject : undefined}
+      onAllow={shortcutsLive ? approveAtProposedLevel : undefined}
+      onDeny={shortcutsLive ? reject : undefined}
       data-testid="schedule-approval-card"
       data-task-id={task.id}
       className={cn('flex min-w-0 flex-col gap-2', className)}

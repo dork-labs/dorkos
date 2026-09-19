@@ -100,8 +100,9 @@ export interface PermissionModeScopeNoteProps {
  * also grant it the operator's own trust stop, and that is the moment the
  * sentence has to arrive. Called the schedule approval card in full wherever it
  * appears here, because "the approval card" above already means a different
- * surface: the capability card, which is the one that reads the config and
- * therefore carries the imperative.
+ * surface: the tool-approval card
+ * (`features/approvals/ui/ApprovalCard.tsx`), which is the one that reads the
+ * config and therefore carries the imperative.
  *
  * ## Why the condition is the door's rule, not the bypass rule
  *
