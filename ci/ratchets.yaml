@@ -1,0 +1,71 @@
+# Ratchets: quality counts that must never silently drop (plan §4.6, §4.7).
+#
+# Declared in phase 0; enforced from phase 2, when `ratchet-assert` runs inside
+# the queue's `test` and `browser-test` fan-in jobs against the high-water
+# marks the collector keeps in hwm.json on the ci-steward-data branch. Marks
+# are per workspace package (or per spec file), so a deletion in one package
+# cannot be masked by additions in another, even inside one 5-PR batch.
+#
+# A drop passes only with a valid `ratchet-release` in a ledger entry (that
+# ratchet, that package, that value, id at most 14 days old, unconsumed).
+# Schema: RatchetsSchema in packages/ci-steward/src/schemas.ts.
+ratchets:
+  - id: vitest-passed
+    kind: floor
+    scope: per-package
+    description: Vitest tests passed in the full queue sweep may not fall below the package's high-water mark.
+    measured_from: the queue test shards' vitest JSON reports, unioned in the test fan-in
+    enforced_by: ratchet-assert in wf.test.test on merge_group
+    enforced_from_phase: 2
+  - id: vitest-skipped
+    kind: ceiling
+    scope: per-package
+    description: Vitest tests skipped may not rise above the package's mark; the mark only ever moves down.
+    measured_from: the queue test shards' vitest JSON reports, unioned in the test fan-in
+    enforced_by: ratchet-assert in wf.test.test on merge_group
+    enforced_from_phase: 2
+  - id: playwright-passed
+    kind: floor
+    scope: per-spec-file
+    description: Playwright tests passed per spec file may not fall below that file's mark.
+    measured_from: the browser shards' Playwright JSON reports, unioned in the browser-test fan-in
+    enforced_by: ratchet-assert in wf.browser-test.browser-test on merge_group
+    enforced_from_phase: 2
+  - id: required-contexts
+    kind: set
+    scope: repo
+    description: The set of required contexts may only grow; removing one needs a ledger release first and the ruleset edit second.
+    measured_from: ci/required-checks.json on the merge-group tree, reconciled against the live ruleset by the collector
+    enforced_by: ratchet-assert in wf.test.test on merge_group
+    enforced_from_phase: 2
+  - id: required-contexts-on-merge-group
+    kind: floor
+    scope: repo
+    description: The number of required contexts whose workflow reports on merge_group may not fall.
+    measured_from: the census's generated atlas of workflow triggers
+    enforced_by: ratchet-assert in wf.test.test on merge_group
+    enforced_from_phase: 2
+  # Content ratchets fence typecheck.yml and lefthook.yml by content, not by
+  # path, because seeded experiments must edit both files (plan §4.7). The
+  # census cannot guard its own removal, so a different runner checks these.
+  - id: typecheck-runs-steward
+    kind: content
+    scope: repo
+    description: typecheck.yml keeps its CI Steward census and ledger-check steps.
+    measured_from: fixed-string match on the merge-group tree's .github/workflows/typecheck.yml
+    enforced_by: ratchet-assert in wf.test.test on merge_group
+    enforced_from_phase: 2
+    file: .github/workflows/typecheck.yml
+    must_contain:
+      - node packages/ci-steward/src/cli.ts census
+      - node packages/ci-steward/src/cli.ts ledger-check
+  - id: lefthook-time-wrap
+    kind: content
+    scope: repo
+    description: Every lefthook command runs through the time-wrap, so local hook timings stay measured.
+    measured_from: fixed-string match on every command's run in the merge-group tree's lefthook.yml
+    enforced_by: ratchet-assert in wf.test.test on merge_group
+    enforced_from_phase: 2
+    file: lefthook.yml
+    must_contain:
+      - time-wrap

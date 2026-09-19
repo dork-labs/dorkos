@@ -1,0 +1,14 @@
+{
+  "ruleset": 19893973,
+  "contexts": [
+    "typecheck",
+    "fragment-present",
+    "no-fragment-under-skip-label",
+    "version-outranks-base",
+    "test",
+    "browser-test",
+    "lint",
+    "credential-free-build",
+    "db-check"
+  ]
+}

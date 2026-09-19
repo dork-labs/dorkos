@@ -68,6 +68,10 @@ env:
 jobs:
   build-macos:
     runs-on: macos-latest
+    # Measured, not guessed (CI Steward phase 0, 2026-09-19): 9 completed
+    # runs over 2026-08-22..09-14, p95 18.38 min, max 18.38. Ceiling =
+    # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
+    timeout-minutes: 56
     permissions:
       contents: write
     steps:
@@ -197,6 +201,10 @@ jobs:
     # VS 2022 (v17), which node-gyp detects natively. Revisit windows-latest
     # once node-gyp ships VS 18 support.
     runs-on: windows-2022
+    # Measured, not guessed (CI Steward phase 0, 2026-09-19): 9 completed
+    # runs over 2026-08-22..09-14, p95 12.90 min, max 12.90. Ceiling =
+    # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
+    timeout-minutes: 39
     permissions:
       contents: write
     steps:
@@ -311,6 +319,10 @@ jobs:
     # packaged on.
     needs: build-macos
     runs-on: macos-latest
+    # Measured, not guessed (CI Steward phase 0, 2026-09-19): 8 completed
+    # runs over 2026-08-22..09-14, p95 2.42 min, max 2.42. Ceiling =
+    # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
+    timeout-minutes: 10
     steps:
       - name: Download macOS artifact
         uses: actions/download-artifact@v8
@@ -382,6 +394,10 @@ jobs:
     # windows-2022 for node-gyp): verification only runs an already-compiled
     # installer, it does not rebuild native modules.
     runs-on: windows-latest
+    # Measured, not guessed (CI Steward phase 0, 2026-09-19): 9 completed
+    # runs over 2026-08-22..09-14, p95 1.18 min, max 1.18. Ceiling =
+    # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
+    timeout-minutes: 10
     steps:
       - name: Download Windows artifact
         uses: actions/download-artifact@v8
@@ -455,6 +471,10 @@ jobs:
     needs: [build-macos, build-windows, verify-macos, verify-windows]
     if: ${{ always() && !cancelled() && startsWith(github.ref, 'refs/tags/') && !inputs.dry_run && needs.build-macos.result == 'success' && needs.verify-macos.result == 'success' }}
     runs-on: ubuntu-latest
+    # Measured, not guessed (CI Steward phase 0, 2026-09-19): 8 completed
+    # runs over 2026-08-22..09-14, p95 0.13 min, max 0.13. Ceiling =
+    # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:

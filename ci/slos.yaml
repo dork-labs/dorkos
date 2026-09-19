@@ -1,0 +1,224 @@
+# The pipeline's service-level objectives (plan §3).
+#
+# Each SLO carries a full `definition` so its number means one thing wherever
+# it is computed: the event source, which runs or PRs count, what is excluded,
+# how they aggregate, the window, the minimum sample, and the recorded fixture
+# that pins it. "today" is the 7-day reading from the 2026-09-19 research
+# (research/20260919_ci-pipeline-02-timings.md). Floors start at or near today,
+# so nothing is in breach on day one; they tighten halfway to the objective
+# after 4 consecutive met windows, and never loosen without a ledger entry.
+#
+# Common rules for every SLO unless its own `exclusions` say otherwise:
+#   - windows are non-overlapping 7-day windows, Monday 00:00 UTC to Monday
+#     00:00 UTC, so four weeks are four independent readings, plus a 28-day
+#     view for the trend;
+#   - draft PRs and the system's own branches (ci-steward-data) are excluded;
+#     Dependabot PRs are included.
+#
+# `kind` sets the SLO's place in the constraint precedence (plan §4.4):
+# tripwire first, then quality in file order, then speed by excess wait-hours
+# against the objective. Schema: SlosSchema in packages/ci-steward/src/schemas.ts.
+slos:
+  - id: headroom
+    kind: tripwire
+    title: Jobs finish well inside their timeouts
+    definition:
+      event_source: Actions job records (commits/{sha}/check-runs) for every job with a timeout-minutes
+      population: every completed, non-skipped job run, grouped by gate id
+      exclusions: [cancelled runs, workflow_dispatch runs]
+      aggregation: per gate, p95 job duration divided by its timeout-minutes; the SLO reads the worst gate
+      window: 7-day non-overlapping, plus 28-day trend
+      min_n: 10
+      fixture: pending; recorded from the phase-1 collector's first healthy snapshot
+    today: several jobs at or above 90% historically (typecheck, test, credential-free-build ceilings each raised after a green run was killed)
+    floor: [{ stat: p95_over_timeout, op: '<=', value: 0.9, unit: ratio }]
+    objective: [{ stat: p95_over_timeout, op: '<=', value: 0.6, unit: ratio }]
+    path: measured timeouts instead of raised ones
+
+  - id: queue-green
+    kind: quality
+    title: Merge-queue builds come back green
+    definition:
+      event_source: merge_group workflow runs of the required workflows
+      population: completed queue builds (one per gh-readonly-queue ref)
+      exclusions: [cancelled builds (dequeued or superseded)]
+      aggregation: share of builds with every required check green
+      window: 7-day non-overlapping, plus 28-day trend
+      min_n: 30
+      fixture: pending; recorded from the phase-1 collector's first healthy snapshot
+    today: 75%
+    floor: [{ stat: share, op: '>=', value: 0.75, unit: ratio }]
+    objective: [{ stat: share, op: '>=', value: 0.97, unit: ratio }]
+    path: quarantine lane plus the flaky-test-runs and wasted-queue-builds work
+
+  - id: wasted-queue-builds
+    kind: quality
+    title: Queue builds are not thrown away on flakes
+    definition:
+      event_source: PR timelines (REMOVED_FROM_MERGE_QUEUE_EVENT with reason, head commits) joined to merge_group runs
+      population: all queue builds
+      exclusions: [cancelled builds]
+      aggregation: builds ejected for failed checks whose PR later merged with no new commit, divided by all builds
+      window: 7-day non-overlapping, plus 28-day trend
+      min_n: 30
+      fixture: ledger 260824-121951 (#1246) is the recorded case this SLO must reproduce
+    today: about 17-21%
+    floor: [{ stat: share, op: '<=', value: 0.2, unit: ratio }]
+    objective: [{ stat: share, op: '<=', value: 0.03, unit: ratio }]
+    path: quarantine lane and per-test flake tickets
+
+  - id: flaky-test-runs
+    kind: quality
+    title: Tests pass without needing a retry
+    definition:
+      event_source: the queue's vitest flake-reporter output and Playwright JSON reports (retries 1 in CI)
+      population: every test execution in merge_group runs
+      exclusions: [tests skipped by design, cancelled runs]
+      aggregation: executions that failed then passed on retry, divided by all executions
+      window: 7-day non-overlapping, plus 28-day trend
+      min_n: 1000
+      fixture: pending; the floor is set after 2 weeks of collection
+    today: not yet measured
+    floor: null
+    objective: [{ stat: share, op: '<=', value: 0.015, unit: ratio }]
+    path: quarantine lane; per-test tickets
+
+  - id: main-green
+    kind: quality
+    title: main stays green
+    definition:
+      event_source: push-to-main workflow runs
+      population: runs on main after each merge
+      exclusions: [workflow_dispatch runs, cancelled runs]
+      aggregation: count of red episodes (first red run to next all-green run), plus p90 time to restore
+      window: 28-day rolling
+      min_n: 1
+      fixture: pending; recorded from the phase-1 collector's first healthy snapshot
+    today: a few red episodes per 28 days
+    floor: [{ stat: red_episodes, op: '<=', value: 3, unit: count per 28d }]
+    objective:
+      - { stat: red_episodes, op: '<=', value: 1, unit: count per 28d }
+      - { stat: restore_p90, op: '<', value: 30, unit: minutes }
+    path: retire push-main legs that re-test the queue's tree
+
+  - id: review-completes
+    kind: quality
+    title: The automated review finishes the first time
+    definition:
+      event_source: claude-code-review.yml runs, keyed by PR head SHA
+      population: PR head SHAs that started a review
+      exclusions: [subscription usage-limit stalls, drafts, forks]
+      aggregation: share of head SHAs whose first review attempt completed with a posted verdict
+      window: 7-day non-overlapping, plus 28-day trend
+      min_n: 30
+      fixture: pending; recorded from the phase-1 collector's first healthy snapshot
+    today: about 93%
+    floor: [{ stat: share, op: '>=', value: 0.9, unit: ratio }]
+    objective: [{ stat: share, op: '>=', value: 0.99, unit: ratio }]
+    path: a second credential path and automatic re-dispatch
+
+  - id: review-recovery
+    kind: quality
+    title: A failed review is re-run quickly
+    definition:
+      event_source: claude-code-review.yml runs, keyed by PR head SHA
+      population: head SHAs whose review failed for an infrastructure reason
+      exclusions: [subscription usage-limit stalls]
+      aggregation: p90 of time from the failed run's end to the next completed review on the same SHA
+      window: 7-day non-overlapping, plus 28-day trend
+      min_n: 5
+      fixture: pending; recorded from the phase-1 collector's first healthy snapshot
+    today: not measured
+    floor: [{ stat: p90, op: '<=', value: 120, unit: minutes }]
+    objective: [{ stat: p90, op: '<=', value: 30, unit: minutes }]
+    path: merge-tail re-dispatch with backoff
+
+  - id: pr-feedback
+    kind: speed
+    title: A PR hears back from CI fast
+    definition:
+      event_source: pull_request workflow runs of the required workflows
+      population: PR head SHAs whose required checks all ended green
+      exclusions: [drafts, runs cancelled by a newer push]
+      aggregation: per head SHA, first required run created to last required run completed; p50 and p90
+      window: 7-day non-overlapping, plus 28-day trend
+      min_n: 30
+      fixture: pending; recorded from the phase-1 collector's first healthy snapshot
+    today: p50 14.3 min, p90 38.6 min
+    floor: [{ stat: p90, op: '<=', value: 40, unit: minutes }]
+    objective:
+      - { stat: p50, op: '<=', value: 7, unit: minutes }
+      - { stat: p90, op: '<=', value: 12, unit: minutes }
+    path: turbo remote cache; affected-only PR typecheck and lint; review re-run scoped to the new diff
+
+  - id: queue-build
+    kind: speed
+    title: A clean queue build is quick
+    definition:
+      event_source: PR timelines (ADDED_TO_MERGE_QUEUE_EVENT, MergedEvent)
+      population: queue entries of PRs that were never ejected
+      exclusions: [ejected PRs, which wasted-queue-builds covers]
+      aggregation: entry to merged; p50 and p90
+      window: 7-day non-overlapping, plus 28-day trend
+      min_n: 20
+      fixture: ledger 260830-213616 (#1391) and 260819-235925 (#1135) move gates on this path
+    today: p50 30 min, p90 44-55 min
+    floor: [{ stat: p90, op: '<=', value: 55, unit: minutes }]
+    objective:
+      - { stat: p50, op: '<=', value: 12, unit: minutes }
+      - { stat: p90, op: '<=', value: 18, unit: minutes }
+    path: browser suite to 6 or more shards; credential-free-build cut to build and boot; remote cache
+
+  - id: lead-time
+    kind: speed
+    title: A PR merges soon after it opens
+    definition:
+      event_source: pull request records (createdAt, mergedAt)
+      population: merged PRs
+      exclusions: [drafts (clock starts at ready-for-review)]
+      aggregation: opened (or marked ready) to merged; p50 and p90
+      window: 7-day non-overlapping, plus 28-day trend
+      min_n: 30
+      fixture: pending; recorded from the phase-1 collector's first healthy snapshot
+    today: p50 58 min, p90 3.0 h
+    floor: [{ stat: p90, op: '<=', value: 180, unit: minutes }]
+    objective:
+      - { stat: p50, op: '<=', value: 30, unit: minutes }
+      - { stat: p90, op: '<=', value: 60, unit: minutes }
+    path: follows from pr-feedback and queue-build plus near-zero wasted builds; agents keep self-arming
+
+  - id: local-commit
+    kind: speed
+    title: git commit is quick
+    definition:
+      event_source: the lefthook time-wrap START/END records, exported daily per clone
+      population: pre-commit hook runs
+      exclusions: [--no-verify commits, which the wrapper cannot see]
+      aggregation: whole-hook wall time; p90
+      window: 7-day non-overlapping, plus 28-day trend
+      min_n: 20
+      fixture: pending; recorded from the first local export
+    today: about 3.5 min
+    floor: [{ stat: p90, op: '<=', value: 210, unit: seconds }]
+    objective: [{ stat: p90, op: '<=', value: 20, unit: seconds }]
+    path: typecheck leaves pre-commit (it stays at push and in CI)
+
+  - id: local-push
+    kind: speed
+    title: git push is quick and never killed
+    definition:
+      event_source: the lefthook time-wrap START/END records, exported daily per clone
+      population: pre-push hook runs
+      exclusions: [--no-verify pushes, delete-only pushes]
+      aggregation: whole-hook wall time p90, and the share of runs with a START but no END older than the ceiling (killed)
+      window: 7-day non-overlapping, plus 28-day trend
+      min_n: 20
+      fixture: pending; recorded from the first local export
+    today: p90 10 min; 13-18% of runs killed at the agent tool ceiling
+    floor:
+      - { stat: p90, op: '<=', value: 600, unit: seconds }
+      - { stat: killed_share, op: '<=', value: 0.15, unit: ratio }
+    objective:
+      - { stat: p90, op: '<=', value: 120, unit: seconds }
+      - { stat: killed_share, op: '<=', value: 0, unit: ratio }
+    path: pre-push bounded to about 2 minutes, the rest left to CI

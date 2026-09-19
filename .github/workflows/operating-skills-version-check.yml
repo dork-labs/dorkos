@@ -99,6 +99,10 @@ env:
 jobs:
   version-outranks-base:
     runs-on: ubuntu-latest
+    # Measured, not guessed (CI Steward phase 0, 2026-09-19): 300 completed
+    # runs over 2026-09-12..09-19, p95 0.37 min, max 3.93. Ceiling =
+    # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
+    timeout-minutes: 10
     env:
       # The file carrying the constant, and the directory holding the seeded
       # skill text. Every step below reads these two.

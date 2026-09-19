@@ -5754,6 +5754,36 @@
         "apps/server/src/services/relay/binding-subsystem.ts",
         "apps/server/src/services/connectors/events/session-target.ts"
       ]
+    },
+    {
+      "id": "260919-174348",
+      "slug": "merges-are-fully-autonomous-machine-gates-are-the-only-gates",
+      "title": "Merges are fully autonomous; machine gates are the only gates",
+      "status": "accepted",
+      "created": "2026-09-19",
+      "supersedes": null,
+      "affects": [
+        ".github/workflows/merge-tail.yml",
+        "scripts/should-arm-automerge.sh",
+        ".claude/hooks/merge-guard.mjs",
+        "ci/required-checks.json",
+        "contributing/ci.md"
+      ]
+    },
+    {
+      "id": "260919-174349",
+      "slug": "pipeline-changes-carry-a-hypothesis-and-a-computed-verdict",
+      "title": "Pipeline changes carry a hypothesis and a computed verdict",
+      "status": "accepted",
+      "created": "2026-09-19",
+      "supersedes": null,
+      "affects": [
+        "ci/**",
+        "packages/ci-steward/**",
+        ".github/workflows/typecheck.yml",
+        ".claude/rules/ci-pipeline.md",
+        "contributing/ci.md"
+      ]
     }
   ]
 }
