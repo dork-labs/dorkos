@@ -469,6 +469,22 @@
         "apps/client/src/layers/features/file-explorer/",
         "operating-skills/src/skills/working-in-room-repos"
       ]
+    },
+    {
+      "guide": "ci.md",
+      "description": "The CI pipeline for agents: required checks (ruleset only), the two gates, sharding, the merge queue, merge-tail, the admin-merge guard, and CI Steward (ledger, census, deadlock invariant, fence)",
+      "patterns": [
+        ".github/workflows/",
+        "lefthook.yml",
+        "turbo.json",
+        "^ci/",
+        "packages/ci-steward/",
+        "scripts/should-arm-automerge",
+        "scripts/assert-",
+        ".claude/hooks/merge-guard",
+        ".claude/rules/ci-pipeline",
+        "creating-pull-requests/"
+      ]
     }
   ],
   "externalDocs": [

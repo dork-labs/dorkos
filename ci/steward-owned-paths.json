@@ -1,0 +1,19 @@
+{
+  "description": "The fence (plan §4.7): an unattended ci-improve/* branch may change gates but never the steward or the judge. The ledger coverage step fails such a branch when it touches any path below. typecheck.yml and lefthook.yml are fenced by content instead (two content ratchets in ci/ratchets.yaml), because seeded experiments must edit them. ci/census-allowlist.yaml is fenced too: an exception to the census is a judgment about the judge.",
+  "paths": [
+    "packages/ci-steward/**",
+    "ci/slos.yaml",
+    "ci/metrics.yaml",
+    "ci/ratchets.yaml",
+    "ci/required-checks.json",
+    "ci/steward-owned-paths.json",
+    "ci/config.yaml",
+    "ci/census-allowlist.yaml",
+    ".claude/rules/ci-pipeline.md",
+    "contributing/ci.md",
+    ".github/workflows/claude-code-review.yml",
+    "REVIEW.md",
+    "scripts/should-arm-automerge.sh",
+    ".github/workflows/merge-tail.yml"
+  ]
+}

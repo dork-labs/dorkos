@@ -1,71 +1,73 @@
 # CI Steward: status and handoff
 
-**As of 2026-09-19 (session `ci-research-sep`).** Read this first after a context compaction or in a new session. It holds everything that otherwise lives only in the conversation.
+**As of 2026-09-19, phase 0 in review.** Read this first after a context compaction or in a new session. It holds everything that otherwise lives only in the conversation.
 
 ## 1. Where things stand
 
-- **Research: done.** The CI, review and merge pipeline was measured and compared to industry numbers.
-- **Plan: done and signed.** `plans/ci-steward-plan.md` v4 was signed by the adversarial reviewer (Vesper, on Fable) after 8 rounds.
-- **Implementation: not started.** Nothing is built.
-- **Committed on branch `docs/ci-steward-research`** (worktree `dorkos-wt/ci-steward-research`, docs-only PR). It is removed from the `main` checkout. If the PR hasn't merged yet, read the files from that branch or worktree.
+- **Research and plan: done.** `plans/ci-steward-plan.md` v4 was signed by the adversarial reviewer (Vesper, on Fable) after 8 rounds, and merged in #1927.
+- **Phase 0: built and in review** on branch `ci-steward-phase0` (Linear DOR-2148). It holds:
+  - `packages/ci-steward` (`census`, `ledger-check`, `ledger-new`; root aliases `pnpm ci:census`, `pnpm ci:ledger-check`, `pnpm ci:ledger-new`) and the `ci/` hand files;
+  - three steps in the required `typecheck` job (census, ledger validity, ledger coverage);
+  - 3 backfilled fixture entries (#1135, #1246, #1391), the 14 seeded proposals and the phase-0 hygiene entry in `ci/ledger/`;
+  - measured `timeout-minutes` on every job that had none;
+  - `contributing/ci.md`, `.claude/rules/ci-pipeline.md`, the `stewarding-ci-pipeline` skill, the de-staled `creating-pull-requests` skill and watcher, the merge guard hook, and two ADRs.
+  - An adversarial review (Rivet) ran; its findings are fixed on the branch.
+- **Phase 1 onward: not started.**
 
-## 2. Operator decisions (2026-09-19, binding)
+## 2. Tracking
+
+- Linear project "CI Steward": https://linear.app/dorkspace/project/ci-steward-6b7f91e53865
+- Umbrella DOR-2147. Phases: DOR-2148 (0), DOR-2149 (1), DOR-2150 (1b), DOR-2151 (2), DOR-2152 (3), DOR-2153 (4), DOR-2154 (5).
+- The 14 real defects the Claude review found on `main`: filed as DOR-2130 to DOR-2142.
+- GitHub and npm information issues: DOR-2143 to DOR-2145. Commands-to-skills migration: DOR-2146.
+
+## 3. GitHub changes applied (2026-09-19, operator-approved)
+
+- **Ruleset 19893973** ("main: merge queue"): bypass narrowed from `always` to `pull_request`; `db-check` added as a required context; `deletion` and `non_fast_forward` added; all nine required contexts pinned to the GitHub Actions app (integration 15368). The list is `ci/required-checks.json`.
+- **Classic branch protection on `main`: deleted.** The ruleset is the only source of required checks.
+- **Ruleset 23704437** keeps `ci-steward-data` append-only (no deletion, no force-push).
+- **Ruleset 23705388** makes tags matching `ci-steward-data/**` permanent (the weekly backup tags).
+- **GitHub App `dorkos-merge-tail`** (app id 5003041) replaces the admin PAT `MERGE_TAIL_TOKEN` in `merge-tail.yml` and `dependabot-lockfile-repair.yml`. Permissions: `contents` and `pull_requests` write; `checks`, `statuses` and `metadata` read; no Administration, no actions. Secrets: `MERGE_TAIL_APP_CLIENT_ID` (a secret rather than a variable because secrets are proven to reach Dependabot's `pull_request_target` runs) and `MERGE_TAIL_APP_PRIVATE_KEY`. The old `MERGE_TAIL_TOKEN` secret is deleted right after the phase-0 PR merges.
+
+## 4. Operator decisions (binding)
+
+From the research phase:
 
 1. **Merges stay fully autonomous.** No human approval before merge, ever. Quality has to come from machine gates.
 2. **Tracking and monitoring come first**, before speed work.
 3. **Targets:** CI "much faster and much higher quality than average" (elite, not average).
 4. **The system:** self-testing, self-monitoring, self-improving. Docs are written for agents first. It ships as a skill that can later become a marketplace plugin.
-5. **Zero budget.** DorkOS is open source with no revenue.
-   - **No Anthropic API key** for the AI review. It keeps running on the operator's existing Claude subscription token.
-   - The operator wrote: "We can not cover the costs of AI reviews using a subscription key." That was read as "keep the subscription, no API key", and not contradicted. Confirm if in doubt.
-   - **Copilot review is a hard no if it could cost more than $100 a month.** A cap must be a guarantee.
-   - Result: no Copilot, and no paid infrastructure (larger runners, managed review).
-6. **The adversarial reviewer:** the operator asked for a resumable **Fable** agent to review plans. This is an explicit exception to the standing "subagents Sonnet/Opus, never Fable" rule.
-7. **Style:** the operator wants ELI5 answers: short, plain words, 2 options at most with a recommendation. They also want most work done autonomously ("decide, don't ask", except for spend, access or irreversible actions).
+5. **Zero budget.** No Anthropic API key for the AI review (it keeps running on the operator's Claude subscription token); Copilot review is a hard no if it could cost more than $100 a month; no paid infrastructure.
+6. **The adversarial reviewer** is a resumable Fable agent, an explicit exception to the standing "subagents Sonnet/Opus, never Fable" rule.
+7. **Style:** short, plain answers, 2 options at most with a recommendation; decide autonomously except for spend, access or irreversible actions.
 
-## 3. Waiting on the operator
+Added during phase 0 (2026-09-19):
 
-1. **Approval to change GitHub settings with their admin `gh` session** (phase 0):
-   - replace `MERGE_TAIL_TOKEN` (a `repo`-scoped admin PAT, so Actions can probably edit the ruleset today) with a GitHub App or a fine-grained token that has no Administration permission;
-   - narrow the ruleset `bypass_mode` from `always` to `pull_request`;
-   - retire classic branch protection (move `db-check` into the ruleset);
-   - add a ruleset on `ci-steward-data` that allows no force-push and no deletion.
-2. **Go / no-go on starting phase 0** (offered, not yet answered).
-3. **Filing the 14 real defects** the Claude review found that are still on `main` (offered, not yet answered). The list is in `research/20260919_ci-pipeline-supporting/07-claude-review-effectiveness.md` (the table near line 92):
-   - #1893, #1570, #1779 (2), #1150, #1318, #1153 (2), #1462, #1638, #1229, #1146, #1173, #1507, #1676, #1791;
-   - re-verify each on current `main` before filing.
-4. **Optional, free:** apply to Anthropic's Claude for Open Source program (6 months of Max 20x). The repo doesn't qualify on stars; the operator might through 100+ merged PRs in other repos.
+8. **Everything takes effect as soon as possible.** Ledger coverage blocks from day one; the 7-day warn-only trial was dropped.
+9. **Skills, not commands.** `.claude/commands` is legacy. User entry points are skills in `.agents/skills/` with `disable-model-invocation: true`, named with a hyphen: `/ci-status`, `/ci-pulse`, `/ci-record`, `/ci-improve`, `/ci-incident`, `/ci-break-glass`. Each wraps a `pnpm ci:<verb>` engine command. Never plan `.claude/commands/ci/`.
+10. **`ci-improve-tick` and `ci-local-export` are DorkOS scheduled skills** (a `schedule:` block in the skill's frontmatter, `docs/guides/task-scheduler.mdx`), never GitHub crons. Each parks as "Waiting for approval" until the operator approves it on the Schedules page, at Full autonomy, because it runs Bash and agent-proposed schedules are clamped (DOR-2100). `ci-improve-tick` starts at `enabled: false` until the L4 gate. The daily collector stays a GitHub Actions cron: it is machine-only and must run while the laptop sleeps.
+11. **Data-branch safeguards** (plan §4.4): permanent backup tags under ruleset 23705388, a weekly `ci-steward-data/YYYY-Www` tag from phase 1, a collector that refuses to recreate a missing branch (it alerts; restore from the newest tag), a daily health check of the branch and both rulesets, and branch-cleanup sweeps that skip `ci-steward-data`.
 
-## 4. Next steps (once approved)
+## 5. Waiting on the operator
 
-**Phase 0**, per `plans/ci-steward-plan.md` §6. Do it in a worktree, one or two PRs:
+- Delete the old `MERGE_TAIL_TOKEN` secret right after the phase-0 PR merges.
+- Phase 0's two token exit gates: a REST merge of a blocked PR with the app token is refused, and a merge group the app token enqueues receives check runs.
+- Optional, free: apply to Anthropic's Claude for Open Source program.
 
-- the GitHub setting changes above;
-- the `ci/` hand files, `gates.yaml`, `packages/ci-steward` with `census` and `ledger-check` as steps in `typecheck.yml`;
-- `.claude/rules/ci-pipeline.md`, `contributing/ci.md`, the AGENTS.md pointer;
-- ADRs: "merges are fully autonomous", and "pipeline changes carry a hypothesis";
-- 3 backfilled fixture ledger entries: #1391, #1135, #1246;
-- seeded `proposed` entries;
-- the `creating-pull-requests` skill de-staled.
+## 6. Next steps
 
-**Phase 0 exit gates** (all must pass):
+- Land phase 0 (DOR-2148) through the merge queue.
+- Then phase 1 (DOR-2149), per `plans/ci-steward-plan.md` §6: `collect`, `verdicts`, `report`, the daily workflow, the data branch and its safeguards, the local wrapper and `ci-local-export`, the SessionStart line, `/ci-status` and `/ci-pulse`.
+- Follow-ups to carry into the phase PRs: the plan's lists "Follow-ups carried into the phase PRs (from round 3)", "Follow-ups from round 5" and "Follow-ups from round 7".
 
-- the census fails on each planted drift;
-- a REST merge with the new token is refused;
-- a merge group enqueued by the new token receives check runs.
-
-**Follow-ups to carry into the phase PRs:** the plan has lists at "Follow-ups carried into the phase PRs (from round 3)", "Follow-ups from round 5" and "Follow-ups from round 7".
-
-Use `/system:update` conventions for harness components: the skill `stewarding-ci-pipeline` is canonical in `.agents/skills/`, and the commands go in `.claude/commands/ci/`.
-
-## 5. The design in ten lines
+## 7. The design in ten lines
 
 1. **Intent on `main`, observations on a data branch.** Hand files are `ci/` plus `ci/ledger/`. Machine output goes to the orphan branch `ci-steward-data`. The system opens no PRs of its own.
 2. **Engine:** `packages/ci-steward` (node built-ins, `zod`, `yaml`, and `gh` through `child_process`).
 3. **Checks without new required contexts:** the census (docs can't drift, deadlock invariant) and the ledger checks run as steps in `typecheck.yml`.
 4. **Deterministic judging:** verdicts, SLO floors and the constraint ranking are computed by code, never by an LLM.
 5. **Ratchets:** per-package high-water marks, asserted in the queue.
-6. **The fence:** `/ci:improve` may change gates, never the steward or the judge.
+6. **The fence:** `/ci-improve` may change gates, never the steward or the judge.
 7. **Incident mode (§4.9):**
    - a sentinel (local owner plus an Actions fallback);
    - RED only on a targeted canary, runner starvation or a red `main`;
@@ -80,12 +82,12 @@ Use `/system:update` conventions for harness components: the skill `stewarding-c
    - the reviewer loses Bash.
 10. **Speed seeds**, including Vercel Remote Cache (free since Dec 2024).
 
-## 6. Facts verified during the work (don't re-derive)
+## 8. Facts verified during the work (don't re-derive)
 
 - **Ruleset 19893973:**
   - SQUASH, ALLGREEN, `max_entries_to_build` 5, `max_entries_to_merge` 5, `check_response_timeout` 120 min;
-  - 8 required contexts, plus `db-check` via classic protection (`enforce_admins` on, which blocks admin bypass);
-  - bypass is admin with `always`; the only ruleset, it targets `~DEFAULT_BRANCH` only.
+  - 9 required contexts since 2026-09-19 (`db-check` moved in from the deleted classic protection);
+  - bypass is admin with `pull_request` (was `always`); it targets `~DEFAULT_BRANCH` only.
 - **Plan and capacity:** the org plan is **Team**, not Free, so the "20-job cap" notes are stale. The limit is 60 concurrent jobs (macOS 5). 52 concurrent were measured with no waiting.
 - **Claude review behaviour:**
   - The check is green whenever a verdict is posted, even with "N important" findings (`claude-code-review.yml:963`).
@@ -104,7 +106,7 @@ Use `/system:update` conventions for harness components: the skill `stewarding-c
 - **Homebrew publishing** has failed 25 of 25 runs (`HOMEBREW_TAP_TOKEN` unset).
 - **The Actions cache** sits at its 10 GB cap.
 
-## 7. File index
+## 9. File index
 
 | What                                                                                                                          | Where                                                                                         |
 | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
@@ -118,6 +120,6 @@ Use `/system:update` conventions for harness components: the skill `stewarding-c
 | Linear and PR lists used for change tracking (may mention non-public work, so kept out of the public repo)                    | `.temp/ci-steward/` in the main checkout (gitignored, local only)                             |
 | Operator memory notes                                                                                                         | `project_ci_pipeline_deep_review_20260919.md`, `feedback_zero_budget_ci.md`                   |
 
-## 8. Resuming the adversarial reviewer
+## 10. Resuming the adversarial reviewer
 
 The reviewer "Vesper" ran as a Fable subagent in session `ci-research-sep`. Its whole position is recoverable from the 8 round files. For a new round, spawn a fresh Fable agent: point it at `plans/ci-steward-plan.md`, all of `plan-review/`, and the research reports, and tell it it is continuing as Vesper.

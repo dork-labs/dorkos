@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fixture suite for .claude/hooks/run-node-hook.sh, the wrapper the three
+# Fixture suite for .claude/hooks/run-node-hook.sh, the wrapper the four
 # PreToolUse guards in .claude/settings.json run through.
 #
 # It exists because the failure it prevents was invisible from inside a working
@@ -279,7 +279,7 @@ check "the real wired command still allows an innocent command" \
 # file it could not read.
 probe=$(node -e '
 const settings = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
-const guards = ["file-guard.mjs", "git-guard.mjs", "process-guard.mjs"];
+const guards = ["file-guard.mjs", "git-guard.mjs", "process-guard.mjs", "merge-guard.mjs"];
 const problems = [];
 const wired = new Set();
 for (const [event, entries] of Object.entries(settings.hooks || {})) {
@@ -314,7 +314,7 @@ for (const guard of guards) {
 }
 process.stdout.write(problems.join("\n"));
 ' "$repo_root/.claude/settings.json" 2>&1) || probe="probe failed (exit $?): $probe"
-check "all three guards are present, wrapped, and fail closed; no hook runs a bare node" "" "$probe"
+check "all four guards are present, wrapped, and fail closed; no hook runs a bare node" "" "$probe"
 
 printf 'run-node-hook fixtures: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

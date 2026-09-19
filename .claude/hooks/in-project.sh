@@ -26,7 +26,7 @@
 # change from the old behaviour is that a checkout without .claude/hooks is
 # skipped instead of erroring.
 #
-# The PreToolUse guards (file-guard, git-guard, process-guard) do NOT go
+# The PreToolUse guards (file-guard, git-guard, process-guard, merge-guard) do NOT go
 # through this wrapper: they must run whatever repo Claude is in, so
 # settings.json anchors them with `cd "${CLAUDE_PROJECT_DIR}"` directly.
 #

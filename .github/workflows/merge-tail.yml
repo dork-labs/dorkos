@@ -10,39 +10,23 @@ name: merge-tail
 # was finished, green, reviewed PRs sitting open until a human armed each one by
 # hand. This is that hand.
 #
-# What it deliberately does NOT do: update branches. Under
-# `required_status_checks.strict` an armed PR still stalls at BEHIND, and the fix
-# for that is the merge queue, not a bot. A branch update pushed with
-# GITHUB_TOKEN creates its `synchronize` run in an approval-required state, so
-# automating it here would trade one deadlock for another and need a PAT to
-# escape. The queue removes the problem instead of automating around it.
+# What it deliberately does NOT do: update branches. `main` merges through a
+# merge queue (ADR 260728-112203), which tests each PR on top of `main` itself,
+# so being behind `main` blocks nothing and a branch update only re-runs jobs.
 #
 # The arming decision lives in scripts/should-arm-automerge.sh, fixture-pinned by
 # scripts/test-should-arm-automerge.sh, because the failure mode of this workflow
 # is silent: a refusal that stops matching keeps returning ARM and the first
 # symptom is unreviewed code on main.
 #
-# KNOWN, BOUNDED COST — a merge armed here does not run the `push: main`
-# workflows. GitHub suppresses downstream runs for anything triggered by
-# GITHUB_TOKEN, and that includes the merge an armed auto-merge performs
-# (peter-evans/enable-pull-request-automerge documents the same behaviour: "if
-# you use the default GITHUB_TOKEN ... the merge will not trigger further
-# workflow runs"). So typecheck, cli-smoke-test, docs-openapi-check and
-# scripts-test lose their post-merge run on `main` for PRs armed by this
-# workflow.
-#
-# Why that is acceptable rather than a hole: while
-# `required_status_checks.strict` is on, a PR's checks already ran against a
-# branch that was up to date with `main`, so the post-merge run re-tests a tree
-# it has effectively already tested. What is genuinely lost is turbo cache
-# warming from `main` and confirmation for anything that lands by another route.
-# The merge queue closes it properly by running the suite on `merge_group`
-# against the real merged result, which is strictly better signal than either.
-#
-# The escape hatch, if the post-merge runs turn out to matter before then: give
-# this workflow a `repo`-scoped PAT instead of `github.token`. That was
-# deliberately declined here to avoid provisioning a credential for code the
-# merge queue deletes.
+# WHOSE KEY IT HOLDS: the `dorkos-merge-tail` GitHub App (client id in the
+# `MERGE_TAIL_APP_CLIENT_ID` secret, key in the `MERGE_TAIL_APP_PRIVATE_KEY`
+# secret). It can write code and pull requests and read checks, and it has NO
+# Administration permission, so this workflow cannot edit the ruleset or bypass
+# the merge queue (contributing/ci.md: "no admin credential in Actions"). It
+# replaced `MERGE_TAIL_TOKEN`, an admin's `repo`-scoped PAT that could do both.
+# An app token is not GITHUB_TOKEN, so the merge groups it creates receive their
+# check runs (see the step comment below for why that matters).
 
 on:
   schedule:
@@ -61,80 +45,48 @@ concurrency:
   group: merge-tail
   cancel-in-progress: false
 
-# `contents: read`, deliberately, even though arming under a merge queue is
-# refused for want of `contents: write`. Granting it would let the default token
-# enqueue, and a merge group created by GITHUB_TOKEN receives no checks and
-# blocks the queue for every pull request behind it (see the refusal in the step
-# below). The right key for that lock is a PAT in `MERGE_TAIL_TOKEN`, which
-# carries its own scopes; widening the workflow token would only buy the ability
-# to cause the jam.
-#
-# `pull-requests: write` is what the no-queue path needs: with no merge queue
-# configured, `gh pr merge --auto` is an ordinary auto-merge enable and this is
-# sufficient.
+# `contents: read` for the workflow's own GITHUB_TOKEN, deliberately. Arming
+# under a merge queue needs `contents: write`, and a merge group created by
+# GITHUB_TOKEN receives no checks and blocks the queue for every pull request
+# behind it. Every GitHub call in this job uses the app token below instead,
+# so GITHUB_TOKEN needs only enough to check the repo out.
 permissions:
   contents: read
-  pull-requests: write
-  checks: read
 
 jobs:
   arm:
     runs-on: ubuntu-latest
+    # Measured, not guessed (CI Steward phase 0, 2026-09-19): 299 completed
+    # runs over 2026-08-22..09-19, p95 0.67 min, max 1.45. Ceiling =
+    # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
 
+      # Never GITHUB_TOKEN for this job. GitHub suppresses workflow runs for
+      # events its own token triggered, and enqueueing is such an event: a merge
+      # group created by GITHUB_TOKEN gets ZERO check runs (verified on PR #581,
+      # whose queue branch had 0 workflow runs while #583's, enqueued by a
+      # person, had 4). The entry then sits at AWAITING_CHECKS until
+      # `check_response_timeout_minutes` expires and BLOCKS THE QUEUE for every
+      # PR behind it. With no app key this step fails, and the job stops loudly
+      # instead of jamming the queue.
+      - name: Mint the merge-tail app token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          # The client id is a secret, not a variable, on purpose: repo secrets
+          # are proven to reach Dependabot's pull_request_target runs; vars.* there is not.
+          client-id: ${{ secrets.MERGE_TAIL_APP_CLIENT_ID }}
+          private-key: ${{ secrets.MERGE_TAIL_APP_PRIVATE_KEY }}
+
       - name: Arm auto-merge on finished PRs
         env:
-          # Prefer a PAT when one exists. This is not a nicety: see the refusal
-          # below — with a merge queue configured, the default token cannot do
-          # this job at all, and doing it badly is worse than not doing it.
-          GH_TOKEN: ${{ secrets.MERGE_TAIL_TOKEN || github.token }}
-          HAS_PAT: ${{ secrets.MERGE_TAIL_TOKEN != '' }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -uo pipefail
-
-          # ---------------------------------------------------------------
-          # REFUSE TO RUN if a merge queue is configured and all we have is
-          # GITHUB_TOKEN. This is a safety stop, not a limitation we work
-          # around.
-          #
-          # GitHub suppresses workflow runs for events its own token triggered.
-          # Enqueueing is such an event, so a merge group created by
-          # GITHUB_TOKEN gets ZERO check runs — verified on PR #581, whose queue
-          # branch had 0 workflow runs while PR #583's, enqueued by a person,
-          # had 4. The required checks can then never report, so the entry sits
-          # at AWAITING_CHECKS until `check_response_timeout_minutes` expires.
-          #
-          # The damage is not that this workflow fails. It is that the entry
-          # BLOCKS THE QUEUE for every pull request behind it, so a bot nobody
-          # is watching converts "my PR did not merge" into "nothing merges".
-          # An inert bot is harmless; this is not. Hence: stop, loudly.
-          #
-          # Fix by adding a MERGE_TAIL_TOKEN secret (a PAT with repo scope).
-          # Its merge groups are attributed to a real account, so their checks
-          # run normally.
-          # ---------------------------------------------------------------
-          queue_configured=$(gh api graphql -f query='
-            query($owner:String!,$name:String!){
-              repository(owner:$owner,name:$name){ mergeQueue(branch:"main"){ id } } }' \
-            -F owner="${REPO%/*}" -F name="${REPO#*/}" \
-            --jq '.data.repository.mergeQueue != null' 2>/dev/null || echo unknown)
-
-          if [[ "$queue_configured" != "false" && "$HAS_PAT" != "true" ]]; then
-            echo "::error::merge-tail will not arm: main has a merge queue (or its state could not be read: '$queue_configured') and no MERGE_TAIL_TOKEN is set."
-            echo "::error::A merge group created by GITHUB_TOKEN receives no check runs and BLOCKS THE QUEUE for every PR behind it. Refusing rather than jamming."
-            {
-              echo "### merge-tail: refused to run"
-              echo
-              echo "A merge queue is configured and no \`MERGE_TAIL_TOKEN\` secret is available."
-              echo "Arming with the default token creates merge groups that never receive checks,"
-              echo "which blocks the queue for everyone. Add a \`repo\`-scoped PAT as"
-              echo "\`MERGE_TAIL_TOKEN\` to enable this workflow."
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
 
           # Every payload is composed from FILES with `jq -s`, never from shell
           # interpolation. A multi-line gh error captured into a shell variable

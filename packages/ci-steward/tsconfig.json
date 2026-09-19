@@ -1,0 +1,20 @@
+{
+  "extends": "@dorkos/typescript-config/node.json",
+  "compilerOptions": {
+    // Node runs this package's source directly (type stripping, no build), so
+    // every relative import names its real `.ts` file and nothing is emitted.
+    // `erasableSyntaxOnly` keeps out the TypeScript-only syntax Node cannot
+    // strip (enums, parameter properties, namespaces), so a file that passes
+    // typecheck is a file Node can run.
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "types": ["node"]
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules"]
+}

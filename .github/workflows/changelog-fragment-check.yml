@@ -64,6 +64,10 @@ env:
 jobs:
   fragment-present:
     runs-on: ubuntu-latest
+    # Measured, not guessed (CI Steward phase 0, 2026-09-19): 300 completed
+    # runs over 2026-09-14..09-19, p95 0.70 min, max 1.60. Ceiling =
+    # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
+    timeout-minutes: 10
     steps:
       # Check out the PR head (not the default merge ref) with full history so
       # the merge-base against the base branch resolves.
@@ -188,6 +192,10 @@ jobs:
     # passing it.
     if: ${{ contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}
     runs-on: ubuntu-latest
+    # Measured, not guessed (CI Steward phase 0, 2026-09-19): 99 completed
+    # runs over 2026-09-14..09-19, p95 0.37 min, max 0.83. Ceiling =
+    # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
