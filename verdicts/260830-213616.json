@@ -1,0 +1,39 @@
+{
+ "schema": 1,
+ "id": "260830-213616",
+ "verdict": "pending",
+ "reason": "Waiting for data: 13 day(s) of the after-window have no complete snapshot yet (2026-08-30, 2026-08-31, 2026-09-01, 2026-09-02, 2026-09-03, 2026-09-04, 2026-09-05, 2026-09-06, 2026-09-07, 2026-09-08, 2026-09-09, 2026-09-10, 2026-09-11); the collector's backfill reaches them first.",
+ "computed_at": "2026-09-19T22:38:36.640Z",
+ "hypothesis_hash": "0e69182f26258fb5",
+ "metric": "gate.wf.test.test-shard.duration_p50@merge_group",
+ "anchor": "2026-08-30T21:36:16Z",
+ "prs": [
+  1391
+ ],
+ "baseline": {
+  "value": 26,
+  "source": "ledger"
+ },
+ "target": 10,
+ "min_n": 10,
+ "before": {
+  "from": "2026-08-23T21:36:16Z",
+  "to": "2026-08-30T21:36:16Z",
+  "n": 0,
+  "value": null
+ },
+ "after": {
+  "from": "2026-08-30T21:36:16Z",
+  "to": "2026-09-13T21:36:16Z",
+  "n": 196,
+  "value": 14.4
+ },
+ "confounders": [],
+ "slo": {
+  "id": "queue-build",
+  "stat": "p50",
+  "before": null,
+  "after": 27,
+  "movement": "unknown"
+ }
+}

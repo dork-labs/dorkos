@@ -1,0 +1,41 @@
+{
+ "schema": 1,
+ "id": "260819-235925",
+ "verdict": "inconclusive",
+ "reason": "Confounded: 260824-121951 changed the same gate inside the after-window (2026-08-19T23:59:25Z to 2026-09-02T23:59:25Z), so the movement cannot be attributed to this change alone.",
+ "computed_at": "2026-09-19T22:38:36.640Z",
+ "hypothesis_hash": "edff6c9ed048b5d6",
+ "metric": "gate.wf.browser-test.browser-shard.duration_p50",
+ "anchor": "2026-08-19T23:59:25Z",
+ "prs": [
+  1135
+ ],
+ "baseline": {
+  "value": 43,
+  "source": "ledger"
+ },
+ "target": 17,
+ "min_n": 10,
+ "before": {
+  "from": "2026-08-12T23:59:25Z",
+  "to": "2026-08-19T23:59:25Z",
+  "n": 0,
+  "value": null
+ },
+ "after": {
+  "from": "2026-08-19T23:59:25Z",
+  "to": "2026-09-02T23:59:25Z",
+  "n": 0,
+  "value": null
+ },
+ "confounders": [
+  "260824-121951"
+ ],
+ "slo": {
+  "id": "queue-build",
+  "stat": "p50",
+  "before": null,
+  "after": null,
+  "movement": "unknown"
+ }
+}

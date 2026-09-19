@@ -1,0 +1,1772 @@
+{
+ "schema": 1,
+ "date": "2026-09-17",
+ "collected_at": "2026-09-19T22:38:36.640Z",
+ "complete": true,
+ "partial_day": false,
+ "truncated": false,
+ "healthy": true,
+ "health": {
+  "ok": true,
+  "failures": [],
+  "warnings": [],
+  "api_calls": 38,
+  "api_budget": 700,
+  "runs": {
+   "windows": [
+    {
+     "created": "2026-09-17T00:00:00Z..2026-09-17T23:59:59Z",
+     "total_count": 167,
+     "fetched": 167
+    }
+   ],
+   "total_count": 167,
+   "fetched": 167
+  },
+  "shas": {
+   "total": 11,
+   "done": 11
+  },
+  "min_n": {},
+  "series_gaps": [],
+  "local_exports": {},
+  "ruleset": {
+   "id": 19893973,
+   "ok": true,
+   "problems": []
+  },
+  "data_rulesets": [
+   {
+    "id": 23704437,
+    "ok": true,
+    "problems": []
+   },
+   {
+    "id": 23705388,
+    "ok": true,
+    "problems": []
+   }
+  ]
+ },
+ "shas_done": [
+  "ee4548f4ce60",
+  "9688d2db0616",
+  "a203bad52ea3",
+  "f4d1e36db878",
+  "13a4cab0a27b",
+  "5ed6b5af7107",
+  "58bc45e4ddeb",
+  "b6f1e3e69276",
+  "486ce6a88b09",
+  "81ee564632e8",
+  "8d7f210f4f92"
+ ],
+ "gates": {
+  "wf.claude-code-review.review@pull_request": {
+   "durations": [
+    [
+     732,
+     222
+    ],
+    [
+     13243,
+     251
+    ],
+    [
+     17646,
+     146
+    ]
+   ],
+   "conclusions": {
+    "skipped": 2,
+    "success": 3
+   },
+   "retried": 0,
+   "runs": 5
+  },
+  "wf.test.test@pull_request": {
+   "durations": [
+    [
+     701,
+     4
+    ],
+    [
+     5221,
+     2
+    ],
+    [
+     13885,
+     5
+    ],
+    [
+     18404,
+     3
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.evals.structural@pull_request": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 9
+   },
+   "retried": 0,
+   "runs": 9
+  },
+  "wf.evals.credentialed@pull_request": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 9
+   },
+   "retried": 0,
+   "runs": 9
+  },
+  "wf.browser-test.browser-shard@pull_request": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.changelog-fragment-check.fragment-present@pull_request": {
+   "durations": [
+    [
+     535,
+     26
+    ],
+    [
+     571,
+     26
+    ],
+    [
+     535,
+     26
+    ],
+    [
+     541,
+     31
+    ],
+    [
+     547,
+     38
+    ],
+    [
+     11478,
+     26
+    ],
+    [
+     11466,
+     38
+    ],
+    [
+     4255,
+     27
+    ],
+    [
+     13026,
+     32
+    ],
+    [
+     12981,
+     27
+    ],
+    [
+     17527,
+     27
+    ],
+    [
+     17526,
+     32
+    ]
+   ],
+   "conclusions": {
+    "success": 12
+   },
+   "retried": 0,
+   "runs": 12
+  },
+  "wf.changelog-fragment-check.no-fragment-under-skip-label@pull_request": {
+   "durations": [
+    [
+     526,
+     17
+    ],
+    [
+     529,
+     19
+    ],
+    [
+     532,
+     21
+    ],
+    [
+     525,
+     16
+    ],
+    [
+     543,
+     34
+    ]
+   ],
+   "conclusions": {
+    "success": 5,
+    "skipped": 7
+   },
+   "retried": 0,
+   "runs": 12
+  },
+  "wf.test.test-shard@pull_request": {
+   "durations": [
+    [
+     642,
+     132
+    ],
+    [
+     695,
+     186
+    ],
+    [
+     611,
+     101
+    ],
+    [
+     609,
+     99
+    ],
+    [
+     5089,
+     860
+    ],
+    [
+     5143,
+     915
+    ],
+    [
+     5217,
+     988
+    ],
+    [
+     5215,
+     986
+    ],
+    [
+     13713,
+     759
+    ],
+    [
+     13756,
+     802
+    ],
+    [
+     13878,
+     924
+    ],
+    [
+     13500,
+     546
+    ],
+    [
+     18266,
+     772
+    ],
+    [
+     18264,
+     770
+    ],
+    [
+     18197,
+     703
+    ],
+    [
+     18399,
+     905
+    ]
+   ],
+   "conclusions": {
+    "success": 16
+   },
+   "retried": 0,
+   "runs": 16
+  },
+  "wf.docs-openapi-check.openapi-fresh@pull_request": {
+   "durations": [
+    [
+     533,
+     22
+    ],
+    [
+     4413,
+     185
+    ],
+    [
+     13140,
+     186
+    ],
+    [
+     17679,
+     185
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.site-build.site-build@pull_request": {
+   "durations": [
+    [
+     694,
+     185
+    ],
+    [
+     4434,
+     205
+    ],
+    [
+     13112,
+     158
+    ],
+    [
+     17678,
+     184
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.test.community-pg@pull_request": {
+   "durations": [
+    [
+     622,
+     111
+    ],
+    [
+     4350,
+     121
+    ],
+    [
+     13080,
+     126
+    ],
+    [
+     17624,
+     128
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.browser-test.browser-test@pull_request": {
+   "durations": [
+    [
+     515,
+     4
+    ],
+    [
+     4233,
+     4
+    ],
+    [
+     12959,
+     5
+    ],
+    [
+     17500,
+     4
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.harness-windows.harness-windows@pull_request": {
+   "durations": [
+    [
+     675,
+     165
+    ],
+    [
+     4563,
+     334
+    ],
+    [
+     13305,
+     351
+    ],
+    [
+     17806,
+     312
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.operating-skills-version-check.version-outranks-base@pull_request": {
+   "durations": [
+    [
+     526,
+     17
+    ],
+    [
+     4246,
+     17
+    ],
+    [
+     12971,
+     17
+    ],
+    [
+     17519,
+     25
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.browser-test.copy-spec-drift@pull_request": {
+   "durations": [
+    [
+     561,
+     52
+    ],
+    [
+     4289,
+     60
+    ],
+    [
+     13013,
+     59
+    ],
+    [
+     17540,
+     46
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.lint.lint@pull_request": {
+   "durations": [
+    [
+     938,
+     429
+    ],
+    [
+     4670,
+     441
+    ],
+    [
+     13421,
+     467
+    ],
+    [
+     17924,
+     430
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.db-check.db-check@pull_request": {
+   "durations": [
+    [
+     550,
+     41
+    ],
+    [
+     4286,
+     57
+    ],
+    [
+     13015,
+     60
+    ],
+    [
+     17628,
+     134
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.credential-free-build.credential-free-build@pull_request": {
+   "durations": [
+    [
+     1038,
+     529
+    ],
+    [
+     7662,
+     3433
+    ],
+    [
+     13045,
+     90
+    ],
+    [
+     18715,
+     1221
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.scripts-test.fixtures@pull_request": {
+   "durations": [
+    [
+     578,
+     68
+    ],
+    [
+     4297,
+     69
+    ],
+    [
+     13022,
+     67
+    ],
+    [
+     17558,
+     64
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.typecheck.typecheck@pull_request": {
+   "durations": [
+    [
+     825,
+     316
+    ],
+    [
+     4589,
+     360
+    ],
+    [
+     13278,
+     322
+    ],
+    [
+     17793,
+     299
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.scripts-test.harness@pull_request": {
+   "durations": [
+    [
+     730,
+     221
+    ],
+    [
+     4476,
+     247
+    ],
+    [
+     13151,
+     197
+    ],
+    [
+     17729,
+     235
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.claude.claude@issue_comment": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 9
+   },
+   "retried": 0,
+   "runs": 9
+  },
+  "wf.merge-tail.arm@schedule": {
+   "durations": [
+    [
+     6292,
+     15
+    ],
+    [
+     82401,
+     26
+    ],
+    [
+     72986,
+     13
+    ],
+    [
+     61536,
+     11
+    ],
+    [
+     43845,
+     13
+    ],
+    [
+     24197,
+     12
+    ]
+   ],
+   "conclusions": {
+    "success": 6
+   },
+   "retried": 0,
+   "runs": 6
+  },
+  "wf.claude-code-review.review@workflow_dispatch": {
+   "durations": [
+    [
+     4613,
+     364
+    ]
+   ],
+   "conclusions": {
+    "success": 1
+   },
+   "retried": 0,
+   "runs": 1
+  },
+  "wf.cli-smoke-test.smoke-test-bare@push": {
+   "durations": [
+    [
+     2994,
+     50
+    ],
+    [
+     3000,
+     56
+    ],
+    [
+     21554,
+     48
+    ],
+    [
+     21549,
+     44
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.cli-smoke-test.smoke-test-docker@push": {
+   "durations": [
+    [
+     3001,
+     56
+    ],
+    [
+     21557,
+     52
+    ]
+   ],
+   "conclusions": {
+    "success": 2
+   },
+   "retried": 0,
+   "runs": 2
+  },
+  "wf.cli-smoke-test.integration-test@push": {
+   "durations": [
+    [
+     3010,
+     66
+    ],
+    [
+     21563,
+     58
+    ]
+   ],
+   "conclusions": {
+    "success": 2
+   },
+   "retried": 0,
+   "runs": 2
+  },
+  "wf.scripts-test.fixtures@push": {
+   "durations": [
+    [
+     2911,
+     63
+    ],
+    [
+     21465,
+     66
+    ]
+   ],
+   "conclusions": {
+    "success": 2
+   },
+   "retried": 0,
+   "runs": 2
+  },
+  "wf.scripts-test.harness@push": {
+   "durations": [
+    [
+     3092,
+     243
+    ],
+    [
+     21594,
+     196
+    ]
+   ],
+   "conclusions": {
+    "success": 2
+   },
+   "retried": 0,
+   "runs": 2
+  },
+  "wf.db-check.db-check@push": {
+   "durations": [
+    [
+     2901,
+     53
+    ],
+    [
+     21463,
+     64
+    ]
+   ],
+   "conclusions": {
+    "success": 2
+   },
+   "retried": 0,
+   "runs": 2
+  },
+  "wf.cli-smoke-test.build-tarball@push": {
+   "durations": [
+    [
+     2941,
+     93
+    ],
+    [
+     21503,
+     105
+    ]
+   ],
+   "conclusions": {
+    "success": 2
+   },
+   "retried": 0,
+   "runs": 2
+  },
+  "wf.browser-test.browser-test@merge_group": {
+   "durations": [
+    [
+     2831,
+     16
+    ],
+    [
+     9475,
+     16
+    ],
+    [
+     13160,
+     16
+    ],
+    [
+     15635,
+     2
+    ],
+    [
+     20574,
+     14
+    ]
+   ],
+   "conclusions": {
+    "success": 4,
+    "failure": 1
+   },
+   "retried": 0,
+   "runs": 5
+  },
+  "wf.test.test@merge_group": {
+   "durations": [
+    [
+     2081,
+     14
+    ],
+    [
+     8657,
+     12
+    ],
+    [
+     12442,
+     4
+    ],
+    [
+     14848,
+     12
+    ],
+    [
+     19680,
+     14
+    ]
+   ],
+   "conclusions": {
+    "success": 4,
+    "failure": 1
+   },
+   "retried": 0,
+   "runs": 5
+  },
+  "wf.changelog-fragment-check.no-fragment-under-skip-label@merge_group": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 5
+   },
+   "retried": 0,
+   "runs": 5
+  },
+  "wf.typecheck.typecheck@merge_group": {
+   "durations": [
+    [
+     1390,
+     326
+    ],
+    [
+     8045,
+     347
+    ],
+    [
+     11695,
+     305
+    ],
+    [
+     14173,
+     264
+    ],
+    [
+     19045,
+     300
+    ]
+   ],
+   "conclusions": {
+    "success": 5
+   },
+   "retried": 0,
+   "runs": 5
+  },
+  "wf.browser-test.browser-shard@merge_group": {
+   "durations": [
+    [
+     2371,
+     1307
+    ],
+    [
+     2813,
+     1748
+    ],
+    [
+     2507,
+     1442
+    ],
+    [
+     9457,
+     1759
+    ],
+    [
+     9022,
+     1324
+    ],
+    [
+     9032,
+     1334
+    ],
+    [
+     12639,
+     1249
+    ],
+    [
+     13142,
+     1752
+    ],
+    [
+     12799,
+     1408
+    ],
+    [
+     15274,
+     1365
+    ],
+    [
+     15631,
+     1722
+    ],
+    [
+     15027,
+     1118
+    ],
+    [
+     19998,
+     1253
+    ],
+    [
+     20558,
+     1813
+    ],
+    [
+     19880,
+     1135
+    ]
+   ],
+   "conclusions": {
+    "success": 14,
+    "failure": 1
+   },
+   "retried": 0,
+   "runs": 15
+  },
+  "wf.credential-free-build.credential-free-build@merge_group": {
+   "durations": [
+    [
+     1590,
+     526
+    ],
+    [
+     11158,
+     3459
+    ],
+    [
+     14531,
+     3141
+    ],
+    [
+     17896,
+     3363
+    ],
+    [
+     21362,
+     2617
+    ]
+   ],
+   "conclusions": {
+    "success": 3,
+    "failure": 2
+   },
+   "retried": 0,
+   "runs": 5
+  },
+  "wf.browser-test.copy-spec-drift@merge_group": {
+   "durations": [
+    [
+     1108,
+     44
+    ],
+    [
+     7768,
+     70
+    ],
+    [
+     11436,
+     46
+    ],
+    [
+     13953,
+     44
+    ],
+    [
+     18796,
+     51
+    ]
+   ],
+   "conclusions": {
+    "success": 5
+   },
+   "retried": 0,
+   "runs": 5
+  },
+  "wf.test.test-shard@merge_group": {
+   "durations": [
+    [
+     2064,
+     1000
+    ],
+    [
+     1925,
+     861
+    ],
+    [
+     2018,
+     954
+    ],
+    [
+     1910,
+     846
+    ],
+    [
+     8454,
+     756
+    ],
+    [
+     8629,
+     931
+    ],
+    [
+     8482,
+     784
+    ],
+    [
+     8642,
+     925
+    ],
+    [
+     12367,
+     976
+    ],
+    [
+     12330,
+     939
+    ],
+    [
+     12307,
+     909
+    ],
+    [
+     12435,
+     1045
+    ],
+    [
+     14834,
+     925
+    ],
+    [
+     14808,
+     899
+    ],
+    [
+     14688,
+     779
+    ],
+    [
+     14709,
+     800
+    ],
+    [
+     19481,
+     736
+    ],
+    [
+     19663,
+     919
+    ],
+    [
+     19645,
+     900
+    ],
+    [
+     19447,
+     702
+    ]
+   ],
+   "conclusions": {
+    "success": 20
+   },
+   "retried": 0,
+   "runs": 20
+  },
+  "wf.lint.lint@merge_group": {
+   "durations": [
+    [
+     1493,
+     428
+    ],
+    [
+     8129,
+     432
+    ],
+    [
+     11757,
+     367
+    ],
+    [
+     14225,
+     316
+    ],
+    [
+     19205,
+     424
+    ]
+   ],
+   "conclusions": {
+    "success": 5
+   },
+   "retried": 0,
+   "runs": 5
+  },
+  "wf.test.community-pg@merge_group": {
+   "durations": [
+    [
+     1169,
+     105
+    ],
+    [
+     7886,
+     152
+    ],
+    [
+     11507,
+     117
+    ],
+    [
+     14033,
+     124
+    ],
+    [
+     18872,
+     125
+    ]
+   ],
+   "conclusions": {
+    "success": 5
+   },
+   "retried": 0,
+   "runs": 5
+  },
+  "wf.operating-skills-version-check.version-outranks-base@merge_group": {
+   "durations": [
+    [
+     1084,
+     18
+    ],
+    [
+     7715,
+     18
+    ],
+    [
+     11408,
+     18
+    ],
+    [
+     13928,
+     19
+    ],
+    [
+     18761,
+     16
+    ]
+   ],
+   "conclusions": {
+    "success": 5
+   },
+   "retried": 0,
+   "runs": 5
+  },
+  "wf.changelog-fragment-check.fragment-present@merge_group": {
+   "durations": [
+    [
+     1100,
+     35
+    ],
+    [
+     7728,
+     30
+    ],
+    [
+     11420,
+     27
+    ],
+    [
+     13939,
+     29
+    ],
+    [
+     18774,
+     30
+    ]
+   ],
+   "conclusions": {
+    "success": 5
+   },
+   "retried": 0,
+   "runs": 5
+  },
+  "wf.harness-windows.harness-windows@merge_group": {
+   "durations": [
+    [
+     1399,
+     333
+    ],
+    [
+     7968,
+     270
+    ],
+    [
+     11817,
+     427
+    ],
+    [
+     14168,
+     259
+    ],
+    [
+     19062,
+     317
+    ]
+   ],
+   "conclusions": {
+    "success": 4,
+    "failure": 1
+   },
+   "retried": 0,
+   "runs": 5
+  },
+  "wf.db-check.db-check@merge_group": {
+   "durations": [
+    [
+     1110,
+     45
+    ],
+    [
+     7773,
+     75
+    ],
+    [
+     11429,
+     39
+    ],
+    [
+     13950,
+     40
+    ],
+    [
+     18790,
+     46
+    ]
+   ],
+   "conclusions": {
+    "success": 5
+   },
+   "retried": 0,
+   "runs": 5
+  },
+  "wf.docs-openapi-check.openapi-fresh@merge_group": {
+   "durations": [
+    [
+     1229,
+     165
+    ],
+    [
+     7875,
+     176
+    ],
+    [
+     11552,
+     162
+    ],
+    [
+     14086,
+     177
+    ],
+    [
+     18921,
+     176
+    ]
+   ],
+   "conclusions": {
+    "success": 5
+   },
+   "retried": 0,
+   "runs": 5
+  },
+  "wf.site-build.site-build@merge_group": {
+   "durations": [
+    [
+     1221,
+     157
+    ],
+    [
+     7873,
+     175
+    ],
+    [
+     11573,
+     183
+    ],
+    [
+     14098,
+     189
+    ],
+    [
+     18921,
+     176
+    ]
+   ],
+   "conclusions": {
+    "success": 5
+   },
+   "retried": 0,
+   "runs": 5
+  },
+  "wf.dependabot-lockfile-repair.repair-lockfile@pull_request_target": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.cli-smoke-test.smoke-test-bare@pull_request": {
+   "durations": [
+    [
+     4385,
+     42
+    ],
+    [
+     4388,
+     44
+    ],
+    [
+     13123,
+     54
+    ],
+    [
+     13115,
+     46
+    ],
+    [
+     17645,
+     45
+    ],
+    [
+     17652,
+     51
+    ]
+   ],
+   "conclusions": {
+    "success": 6
+   },
+   "retried": 0,
+   "runs": 6
+  },
+  "wf.cli-smoke-test.smoke-test-docker@pull_request": {
+   "durations": [
+    [
+     4396,
+     53
+    ],
+    [
+     13125,
+     56
+    ],
+    [
+     17660,
+     59
+    ]
+   ],
+   "conclusions": {
+    "success": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.cli-smoke-test.integration-test@pull_request": {
+   "durations": [
+    [
+     4403,
+     60
+    ],
+    [
+     13149,
+     80
+    ],
+    [
+     17662,
+     62
+    ]
+   ],
+   "conclusions": {
+    "success": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.test.community-packaged@pull_request": {
+   "durations": [
+    [
+     4231,
+     3
+    ],
+    [
+     12958,
+     4
+    ],
+    [
+     17496,
+     2
+    ]
+   ],
+   "conclusions": {
+    "success": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.desktop-smoke.packaged-runtime@pull_request": {
+   "durations": [
+    [
+     4753,
+     520
+    ],
+    [
+     13367,
+     407
+    ],
+    [
+     17813,
+     314
+    ]
+   ],
+   "conclusions": {
+    "success": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.desktop-renderer.renderer-defines@pull_request": {
+   "durations": [
+    [
+     4405,
+     176
+    ],
+    [
+     13068,
+     114
+    ],
+    [
+     17632,
+     138
+    ]
+   ],
+   "conclusions": {
+    "success": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.cli-smoke-test.build-tarball@pull_request": {
+   "durations": [
+    [
+     4341,
+     113
+    ],
+    [
+     13066,
+     112
+    ],
+    [
+     17598,
+     104
+    ]
+   ],
+   "conclusions": {
+    "success": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.test.community-packaged@merge_group": {
+   "durations": [
+    [
+     8071,
+     373
+    ],
+    [
+     11664,
+     273
+    ],
+    [
+     14264,
+     355
+    ],
+    [
+     19097,
+     352
+    ]
+   ],
+   "conclusions": {
+    "success": 3,
+    "failure": 1
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.evals.credentialed@schedule": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 1
+   },
+   "retried": 0,
+   "runs": 1
+  },
+  "wf.evals.structural@schedule": {
+   "durations": [
+    [
+     47115,
+     184
+    ]
+   ],
+   "conclusions": {
+    "success": 1
+   },
+   "retried": 0,
+   "runs": 1
+  },
+  "wf.desktop-smoke.packaged-runtime@push": {
+   "durations": [
+    [
+     21790,
+     388
+    ]
+   ],
+   "conclusions": {
+    "success": 1
+   },
+   "retried": 0,
+   "runs": 1
+  }
+ },
+ "series": {
+  "pr_feedback_min": [
+   [
+    507,
+    8.9
+   ],
+   [
+    4226,
+    57.3
+   ],
+   [
+    12952,
+    15.6
+   ],
+   [
+    17492,
+    20.4
+   ]
+  ],
+  "queue_build_min": [
+   [
+    2844,
+    30
+   ]
+  ],
+  "queue_wait_min": [
+   [
+    21395,
+    228.7
+   ],
+   [
+    2844,
+    30
+   ]
+  ],
+  "queue_wait_ejected_min": [
+   [
+    21395,
+    228.7
+   ]
+  ],
+  "lead_time_min": [
+   [
+    21395,
+    304.2
+   ],
+   [
+    2844,
+    39
+   ]
+  ],
+  "review_recovery_min": []
+ },
+ "counts": {
+  "merged_prs": 2,
+  "queue_builds": 5,
+  "queue_builds_green": 2,
+  "queue_builds_cancelled": 0,
+  "ejections_failed_checks": 3,
+  "wasted_ejections": 1,
+  "review_shas": 3,
+  "review_first_ok": 3,
+  "review_cancelled": 0,
+  "review_runs": 6,
+  "test_executions": 2079,
+  "test_flaky": 11,
+  "flaky_builds_sampled": 5,
+  "job_minutes": 1528.6
+ },
+ "real_catches": {
+  "wf.credential-free-build.credential-free-build": 1,
+  "wf.harness-windows.harness-windows": 1,
+  "wf.test.community-packaged": 1,
+  "wf.test.test": 1,
+  "wf.browser-test.browser-shard": 1,
+  "wf.browser-test.browser-test": 1
+ },
+ "ejections_caused": {
+  "wf.credential-free-build.credential-free-build": 2,
+  "wf.harness-windows.harness-windows": 1,
+  "wf.test.community-packaged": 1,
+  "wf.test.test": 1,
+  "wf.browser-test.browser-shard": 1,
+  "wf.browser-test.browser-test": 1
+ },
+ "queue_builds": [
+  {
+   "sha": "a203bad52ea3",
+   "pr": 1915,
+   "created_at": "2026-09-17T00:17:42Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "5ed6b5af7107",
+   "pr": 1916,
+   "created_at": "2026-09-17T02:08:15Z",
+   "outcome": "red",
+   "failed_gates": [
+    "wf.credential-free-build.credential-free-build"
+   ]
+  },
+  {
+   "sha": "58bc45e4ddeb",
+   "pr": 1916,
+   "created_at": "2026-09-17T03:09:47Z",
+   "outcome": "red",
+   "failed_gates": [
+    "wf.credential-free-build.credential-free-build",
+    "wf.harness-windows.harness-windows",
+    "wf.test.community-packaged",
+    "wf.test.test"
+   ]
+  },
+  {
+   "sha": "486ce6a88b09",
+   "pr": 1916,
+   "created_at": "2026-09-17T03:51:46Z",
+   "outcome": "red",
+   "failed_gates": [
+    "wf.browser-test.browser-shard",
+    "wf.browser-test.browser-test"
+   ]
+  },
+  {
+   "sha": "8d7f210f4f92",
+   "pr": 1916,
+   "created_at": "2026-09-17T05:12:22Z",
+   "outcome": "green",
+   "failed_gates": []
+  }
+ ],
+ "main": [
+  {
+   "sha": "a203bad52ea3",
+   "at": "2026-09-17T00:47:26Z",
+   "done": "2026-09-17T00:51:33Z",
+   "red": false
+  },
+  {
+   "sha": "8d7f210f4f92",
+   "at": "2026-09-17T05:56:36Z",
+   "done": "2026-09-17T06:03:11Z",
+   "red": false
+  }
+ ],
+ "releases": [],
+ "cache": {
+  "bytes": 10879398077,
+  "count": 21
+ },
+ "timeouts": {
+  "wf.browser-test.browser-shard": 45,
+  "wf.browser-test.browser-test": 10,
+  "wf.browser-test.copy-spec-drift": 10,
+  "wf.changelog-fragment-check.fragment-present": 10,
+  "wf.changelog-fragment-check.no-fragment-under-skip-label": 10,
+  "wf.ci-steward.collect": 36,
+  "wf.claude-code-review.review": 25,
+  "wf.claude.claude": 30,
+  "wf.cli-smoke-test.build-tarball": 15,
+  "wf.cli-smoke-test.smoke-test-bare": 10,
+  "wf.cli-smoke-test.smoke-test-docker": 15,
+  "wf.cli-smoke-test.integration-test": 10,
+  "wf.codeql.analyze": 90,
+  "wf.credential-free-build.credential-free-build": 110,
+  "wf.db-check.db-check": 10,
+  "wf.dependabot-lockfile-repair.repair-lockfile": 5,
+  "wf.desktop-release.build-macos": 56,
+  "wf.desktop-release.build-windows": 39,
+  "wf.desktop-release.verify-macos": 10,
+  "wf.desktop-release.verify-windows": 10,
+  "wf.desktop-release.publish-release": 10,
+  "wf.desktop-renderer.renderer-defines": 20,
+  "wf.desktop-smoke.packaged-runtime": 30,
+  "wf.docs-openapi-check.openapi-fresh": 10,
+  "wf.evals.structural": 20,
+  "wf.evals.credentialed": 45,
+  "wf.harness-windows.harness-windows": 30,
+  "wf.lint.lint": 15,
+  "wf.merge-tail.arm": 10,
+  "wf.operating-skills-version-check.version-outranks-base": 10,
+  "wf.publish-docker.build-and-push": 75,
+  "wf.publish-docker.mirror-docker-hub": 15,
+  "wf.scripts-test.fixtures": 10,
+  "wf.scripts-test.harness": 13,
+  "wf.site-build.site-build": 30,
+  "wf.test.community-pg": 15,
+  "wf.test.community-packaged": 30,
+  "wf.test.test-shard": 30,
+  "wf.test.test": 10,
+  "wf.typecheck.typecheck": 20,
+  "wf.update-homebrew.update-formula": 92
+ }
+}

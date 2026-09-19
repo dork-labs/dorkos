@@ -1,0 +1,41 @@
+{
+ "schema": 1,
+ "id": "260824-121951",
+ "verdict": "inconclusive",
+ "reason": "Confounded: 260830-213616 changed the same gate inside the after-window (2026-08-24T12:19:51Z to 2026-09-07T12:19:51Z), so the movement cannot be attributed to this change alone.",
+ "computed_at": "2026-09-19T22:38:36.640Z",
+ "hypothesis_hash": "7e1de1c6c69d7f78",
+ "metric": "queue.queue_wait",
+ "anchor": "2026-08-24T12:19:51Z",
+ "prs": [
+  1246
+ ],
+ "baseline": {
+  "value": 120,
+  "source": "ledger"
+ },
+ "target": 30,
+ "min_n": 10,
+ "before": {
+  "from": "2026-08-17T12:19:51Z",
+  "to": "2026-08-24T12:19:51Z",
+  "n": 0,
+  "value": null
+ },
+ "after": {
+  "from": "2026-08-24T12:19:51Z",
+  "to": "2026-09-07T12:19:51Z",
+  "n": 0,
+  "value": null
+ },
+ "confounders": [
+  "260830-213616"
+ ],
+ "slo": {
+  "id": "wasted-queue-builds",
+  "stat": "share",
+  "before": null,
+  "after": null,
+  "movement": "unknown"
+ }
+}

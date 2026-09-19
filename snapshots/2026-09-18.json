@@ -1,0 +1,1722 @@
+{
+ "schema": 1,
+ "date": "2026-09-18",
+ "collected_at": "2026-09-19T22:38:36.640Z",
+ "complete": true,
+ "partial_day": false,
+ "truncated": false,
+ "healthy": true,
+ "health": {
+  "ok": true,
+  "failures": [],
+  "warnings": [
+   "No snapshot for 21 day(s) in the 28 days to 2026-09-18: 2026-08-22, 2026-08-23, 2026-08-24, 2026-08-25, 2026-08-26, 2026-08-27, 2026-08-28, 2026-08-29, 2026-08-30, 2026-08-31, 2026-09-01, 2026-09-02, 2026-09-03, 2026-09-04, 2026-09-05, 2026-09-06, 2026-09-07, 2026-09-08, 2026-09-09, 2026-09-10, 2026-09-11."
+  ],
+  "api_calls": 28,
+  "api_budget": 700,
+  "runs": {
+   "windows": [
+    {
+     "created": "2026-09-18T00:00:00Z..2026-09-18T23:59:59Z",
+     "total_count": 151,
+     "fetched": 151
+    }
+   ],
+   "total_count": 151,
+   "fetched": 151
+  },
+  "shas": {
+   "total": 10,
+   "done": 10
+  },
+  "min_n": {
+   "headroom": {
+    "n": 7773,
+    "min_n": 10
+   },
+   "queue-green": {
+    "n": 160,
+    "min_n": 30
+   },
+   "wasted-queue-builds": {
+    "n": 160,
+    "min_n": 30
+   },
+   "flaky-test-runs": {
+    "n": 20507,
+    "min_n": 1000
+   },
+   "main-green": {
+    "n": 108,
+    "min_n": 1
+   },
+   "review-completes": {
+    "n": 107,
+    "min_n": 30
+   },
+   "review-recovery": {
+    "n": 5,
+    "min_n": 5
+   },
+   "pr-feedback": {
+    "n": 99,
+    "min_n": 30
+   },
+   "queue-build": {
+    "n": 85,
+    "min_n": 20
+   },
+   "lead-time": {
+    "n": 111,
+    "min_n": 30
+   },
+   "local-commit": {
+    "n": 0,
+    "min_n": 20
+   },
+   "local-push": {
+    "n": 0,
+    "min_n": 20
+   }
+  },
+  "series_gaps": [
+   "2026-08-22",
+   "2026-08-23",
+   "2026-08-24",
+   "2026-08-25",
+   "2026-08-26",
+   "2026-08-27",
+   "2026-08-28",
+   "2026-08-29",
+   "2026-08-30",
+   "2026-08-31",
+   "2026-09-01",
+   "2026-09-02",
+   "2026-09-03",
+   "2026-09-04",
+   "2026-09-05",
+   "2026-09-06",
+   "2026-09-07",
+   "2026-09-08",
+   "2026-09-09",
+   "2026-09-10",
+   "2026-09-11"
+  ],
+  "local_exports": {},
+  "ruleset": {
+   "id": 19893973,
+   "ok": true,
+   "problems": []
+  },
+  "data_rulesets": [
+   {
+    "id": 23704437,
+    "ok": true,
+    "problems": []
+   },
+   {
+    "id": 23705388,
+    "ok": true,
+    "problems": []
+   }
+  ]
+ },
+ "shas_done": [
+  "8d7f210f4f92",
+  "497d0b1139f4",
+  "3b49e3d87f11",
+  "ebeb4f45e509",
+  "5d1ab0ec7e79",
+  "03c271b19091",
+  "295ed3dbc4ec",
+  "00eaa7e8986b",
+  "17e5716fc8dc",
+  "39c059bc680c"
+ ],
+ "gates": {
+  "wf.claude.claude@issue_comment": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 6
+   },
+   "retried": 0,
+   "runs": 6
+  },
+  "wf.merge-tail.arm@schedule": {
+   "durations": [
+    [
+     52011,
+     12
+    ],
+    [
+     36264,
+     13
+    ],
+    [
+     20790,
+     14
+    ],
+    [
+     3568,
+     11
+    ],
+    [
+     72012,
+     14
+    ],
+    [
+     64030,
+     11
+    ],
+    [
+     80906,
+     14
+    ]
+   ],
+   "conclusions": {
+    "success": 7
+   },
+   "retried": 0,
+   "runs": 7
+  },
+  "wf.evals.credentialed@schedule": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 1
+   },
+   "retried": 0,
+   "runs": 1
+  },
+  "wf.evals.structural@schedule": {
+   "durations": [
+    [
+     45912,
+     202
+    ]
+   ],
+   "conclusions": {
+    "success": 1
+   },
+   "retried": 0,
+   "runs": 1
+  },
+  "wf.test.test@pull_request": {
+   "durations": [
+    [
+     60342,
+     3
+    ],
+    [
+     60632,
+     3
+    ],
+    [
+     72864,
+     6
+    ],
+    [
+     74295,
+     6
+    ],
+    [
+     77310,
+     4
+    ],
+    [
+     78504,
+     3
+    ]
+   ],
+   "conclusions": {
+    "success": 6
+   },
+   "retried": 0,
+   "runs": 6
+  },
+  "wf.claude-code-review.review@pull_request": {
+   "durations": [
+    [
+     60277,
+     71
+    ],
+    [
+     72158,
+     330
+    ],
+    [
+     76679,
+     405
+    ]
+   ],
+   "conclusions": {
+    "skipped": 3,
+    "success": 3
+   },
+   "retried": 0,
+   "runs": 6
+  },
+  "wf.evals.structural@pull_request": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 10
+   },
+   "retried": 0,
+   "runs": 10
+  },
+  "wf.evals.credentialed@pull_request": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 10
+   },
+   "retried": 0,
+   "runs": 10
+  },
+  "wf.changelog-fragment-check.fragment-present@pull_request": {
+   "durations": [
+    [
+     60245,
+     33
+    ],
+    [
+     60234,
+     26
+    ],
+    [
+     60232,
+     26
+    ],
+    [
+     60488,
+     32
+    ],
+    [
+     71853,
+     27
+    ],
+    [
+     71860,
+     32
+    ],
+    [
+     73270,
+     40
+    ],
+    [
+     76302,
+     30
+    ],
+    [
+     76306,
+     38
+    ],
+    [
+     77520,
+     33
+    ]
+   ],
+   "conclusions": {
+    "success": 10
+   },
+   "retried": 0,
+   "runs": 10
+  },
+  "wf.changelog-fragment-check.no-fragment-under-skip-label@pull_request": {
+   "durations": [
+    [
+     60226,
+     15
+    ],
+    [
+     60227,
+     20
+    ],
+    [
+     60226,
+     19
+    ],
+    [
+     60472,
+     16
+    ]
+   ],
+   "conclusions": {
+    "success": 4,
+    "skipped": 6
+   },
+   "retried": 0,
+   "runs": 10
+  },
+  "wf.typecheck.typecheck@pull_request": {
+   "durations": [
+    [
+     60770,
+     245
+    ],
+    [
+     72108,
+     280
+    ],
+    [
+     73545,
+     315
+    ],
+    [
+     76613,
+     342
+    ],
+    [
+     77806,
+     320
+    ]
+   ],
+   "conclusions": {
+    "cancelled": 1,
+    "success": 5
+   },
+   "retried": 0,
+   "runs": 6
+  },
+  "wf.docs-openapi-check.openapi-fresh@pull_request": {
+   "durations": [
+    [
+     60231,
+     22
+    ],
+    [
+     60476,
+     19
+    ],
+    [
+     71845,
+     18
+    ],
+    [
+     73248,
+     18
+    ],
+    [
+     76447,
+     173
+    ],
+    [
+     77683,
+     195
+    ]
+   ],
+   "conclusions": {
+    "success": 6
+   },
+   "retried": 0,
+   "runs": 6
+  },
+  "wf.lint.lint@pull_request": {
+   "durations": [
+    [
+     60930,
+     418
+    ],
+    [
+     72191,
+     364
+    ],
+    [
+     73639,
+     409
+    ],
+    [
+     76683,
+     413
+    ],
+    [
+     77911,
+     424
+    ]
+   ],
+   "conclusions": {
+    "cancelled": 1,
+    "success": 5
+   },
+   "retried": 0,
+   "runs": 6
+  },
+  "wf.db-check.db-check@pull_request": {
+   "durations": [
+    [
+     60252,
+     45
+    ],
+    [
+     60507,
+     52
+    ],
+    [
+     71874,
+     45
+    ],
+    [
+     73271,
+     41
+    ],
+    [
+     76314,
+     44
+    ],
+    [
+     77536,
+     48
+    ]
+   ],
+   "conclusions": {
+    "success": 6
+   },
+   "retried": 0,
+   "runs": 6
+  },
+  "wf.site-build.site-build@pull_request": {
+   "durations": [
+    [
+     60262,
+     55
+    ],
+    [
+     60513,
+     57
+    ],
+    [
+     72009,
+     182
+    ],
+    [
+     73425,
+     191
+    ],
+    [
+     76459,
+     187
+    ],
+    [
+     77683,
+     196
+    ]
+   ],
+   "conclusions": {
+    "success": 6
+   },
+   "retried": 0,
+   "runs": 6
+  },
+  "wf.browser-test.browser-shard@pull_request": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 6
+   },
+   "retried": 0,
+   "runs": 6
+  },
+  "wf.test.test-shard@pull_request": {
+   "durations": [
+    [
+     60248,
+     41
+    ],
+    [
+     60248,
+     41
+    ],
+    [
+     60261,
+     53
+    ],
+    [
+     60269,
+     62
+    ],
+    [
+     60500,
+     44
+    ],
+    [
+     60499,
+     43
+    ],
+    [
+     60502,
+     46
+    ],
+    [
+     60519,
+     63
+    ],
+    [
+     72761,
+     934
+    ],
+    [
+     72726,
+     899
+    ],
+    [
+     72855,
+     1028
+    ],
+    [
+     72735,
+     907
+    ],
+    [
+     74282,
+     1052
+    ],
+    [
+     74078,
+     848
+    ],
+    [
+     74179,
+     949
+    ],
+    [
+     74087,
+     857
+    ],
+    [
+     77082,
+     811
+    ],
+    [
+     77304,
+     1029
+    ],
+    [
+     76991,
+     720
+    ],
+    [
+     77241,
+     969
+    ],
+    [
+     78462,
+     975
+    ],
+    [
+     78186,
+     699
+    ],
+    [
+     78388,
+     901
+    ],
+    [
+     78445,
+     958
+    ]
+   ],
+   "conclusions": {
+    "success": 24
+   },
+   "retried": 0,
+   "runs": 24
+  },
+  "wf.browser-test.browser-test@pull_request": {
+   "durations": [
+    [
+     60209,
+     2
+    ],
+    [
+     60465,
+     6
+    ],
+    [
+     71831,
+     3
+    ],
+    [
+     73233,
+     3
+    ],
+    [
+     76274,
+     2
+    ],
+    [
+     77491,
+     4
+    ]
+   ],
+   "conclusions": {
+    "success": 6
+   },
+   "retried": 0,
+   "runs": 6
+  },
+  "wf.test.community-packaged@pull_request": {
+   "durations": [
+    [
+     60208,
+     2
+    ],
+    [
+     60460,
+     3
+    ],
+    [
+     71831,
+     3
+    ],
+    [
+     73232,
+     2
+    ],
+    [
+     76276,
+     4
+    ],
+    [
+     77489,
+     2
+    ]
+   ],
+   "conclusions": {
+    "success": 6
+   },
+   "retried": 0,
+   "runs": 6
+  },
+  "wf.operating-skills-version-check.version-outranks-base@pull_request": {
+   "durations": [
+    [
+     60225,
+     18
+    ],
+    [
+     60471,
+     15
+    ],
+    [
+     71846,
+     19
+    ],
+    [
+     73245,
+     15
+    ],
+    [
+     76288,
+     19
+    ],
+    [
+     77509,
+     22
+    ]
+   ],
+   "conclusions": {
+    "success": 6
+   },
+   "retried": 0,
+   "runs": 6
+  },
+  "wf.credential-free-build.credential-free-build@pull_request": {
+   "durations": [
+    [
+     60335,
+     129
+    ],
+    [
+     60507,
+     52
+    ],
+    [
+     75615,
+     2339
+    ],
+    [
+     80163,
+     2587
+    ]
+   ],
+   "conclusions": {
+    "success": 4,
+    "cancelled": 2
+   },
+   "retried": 0,
+   "runs": 6
+  },
+  "wf.browser-test.copy-spec-drift@pull_request": {
+   "durations": [
+    [
+     60260,
+     53
+    ],
+    [
+     60504,
+     47
+    ],
+    [
+     71868,
+     41
+    ],
+    [
+     73287,
+     57
+    ],
+    [
+     76315,
+     43
+    ],
+    [
+     77540,
+     53
+    ]
+   ],
+   "conclusions": {
+    "success": 6
+   },
+   "retried": 0,
+   "runs": 6
+  },
+  "wf.test.community-pg@pull_request": {
+   "durations": [
+    [
+     60337,
+     130
+    ],
+    [
+     60627,
+     171
+    ],
+    [
+     71950,
+     122
+    ],
+    [
+     73373,
+     143
+    ],
+    [
+     76387,
+     115
+    ],
+    [
+     77611,
+     124
+    ]
+   ],
+   "conclusions": {
+    "success": 6
+   },
+   "retried": 0,
+   "runs": 6
+  },
+  "wf.harness-windows.harness-windows@pull_request": {
+   "durations": [
+    [
+     60338,
+     131
+    ],
+    [
+     60601,
+     144
+    ],
+    [
+     72173,
+     344
+    ],
+    [
+     73556,
+     326
+    ],
+    [
+     76611,
+     339
+    ],
+    [
+     77802,
+     315
+    ]
+   ],
+   "conclusions": {
+    "success": 6
+   },
+   "retried": 0,
+   "runs": 6
+  },
+  "wf.cli-smoke-test.smoke-test-docker@push": {
+   "durations": [
+    [
+     62589,
+     53
+    ],
+    [
+     78395,
+     57
+    ],
+    [
+     83676,
+     59
+    ]
+   ],
+   "conclusions": {
+    "success": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.cli-smoke-test.smoke-test-bare@push": {
+   "durations": [
+    [
+     62592,
+     55
+    ],
+    [
+     62581,
+     45
+    ],
+    [
+     78378,
+     39
+    ],
+    [
+     78384,
+     47
+    ],
+    [
+     83661,
+     45
+    ],
+    [
+     83651,
+     35
+    ]
+   ],
+   "conclusions": {
+    "success": 6
+   },
+   "retried": 0,
+   "runs": 6
+  },
+  "wf.cli-smoke-test.integration-test@push": {
+   "durations": [
+    [
+     62598,
+     62
+    ],
+    [
+     78397,
+     59
+    ],
+    [
+     83672,
+     56
+    ]
+   ],
+   "conclusions": {
+    "success": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.db-check.db-check@push": {
+   "durations": [
+    [
+     62479,
+     50
+    ],
+    [
+     78278,
+     44
+    ],
+    [
+     83548,
+     44
+    ]
+   ],
+   "conclusions": {
+    "success": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.cli-smoke-test.build-tarball@push": {
+   "durations": [
+    [
+     62534,
+     105
+    ],
+    [
+     78334,
+     100
+    ],
+    [
+     83613,
+     109
+    ]
+   ],
+   "conclusions": {
+    "success": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.browser-test.browser-test@merge_group": {
+   "durations": [
+    [
+     62415,
+     23
+    ],
+    [
+     77081,
+     12
+    ],
+    [
+     81959,
+     12
+    ]
+   ],
+   "conclusions": {
+    "success": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.test.test@merge_group": {
+   "durations": [
+    [
+     62031,
+     13
+    ],
+    [
+     76686,
+     14
+    ],
+    [
+     81282,
+     11
+    ]
+   ],
+   "conclusions": {
+    "success": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.changelog-fragment-check.no-fragment-under-skip-label@merge_group": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.changelog-fragment-check.fragment-present@merge_group": {
+   "durations": [
+    [
+     60993,
+     29
+    ],
+    [
+     75668,
+     27
+    ],
+    [
+     80239,
+     29
+    ]
+   ],
+   "conclusions": {
+    "success": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.browser-test.browser-shard@merge_group": {
+   "durations": [
+    [
+     62140,
+     1177
+    ],
+    [
+     62389,
+     1426
+    ],
+    [
+     61874,
+     911
+    ],
+    [
+     77067,
+     1427
+    ],
+    [
+     76858,
+     1218
+    ],
+    [
+     77052,
+     1413
+    ],
+    [
+     81586,
+     1390
+    ],
+    [
+     81943,
+     1752
+    ],
+    [
+     81440,
+     1249
+    ]
+   ],
+   "conclusions": {
+    "success": 9
+   },
+   "retried": 0,
+   "runs": 9
+  },
+  "wf.browser-test.copy-spec-drift@merge_group": {
+   "durations": [
+    [
+     61015,
+     52
+    ],
+    [
+     75688,
+     48
+    ],
+    [
+     80239,
+     48
+    ]
+   ],
+   "conclusions": {
+    "success": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.test.test-shard@merge_group": {
+   "durations": [
+    [
+     61782,
+     818
+    ],
+    [
+     62016,
+     1053
+    ],
+    [
+     61952,
+     983
+    ],
+    [
+     61841,
+     877
+    ],
+    [
+     76669,
+     1030
+    ],
+    [
+     76591,
+     951
+    ],
+    [
+     76539,
+     900
+    ],
+    [
+     76407,
+     768
+    ],
+    [
+     81189,
+     998
+    ],
+    [
+     81269,
+     1077
+    ],
+    [
+     80798,
+     607
+    ],
+    [
+     81087,
+     896
+    ]
+   ],
+   "conclusions": {
+    "success": 12
+   },
+   "retried": 0,
+   "runs": 12
+  },
+  "wf.test.community-pg@merge_group": {
+   "durations": [
+    [
+     61075,
+     112
+    ],
+    [
+     75761,
+     122
+    ],
+    [
+     80324,
+     133
+    ]
+   ],
+   "conclusions": {
+    "success": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.lint.lint@merge_group": {
+   "durations": [
+    [
+     61399,
+     430
+    ],
+    [
+     76074,
+     435
+    ],
+    [
+     80612,
+     422
+    ]
+   ],
+   "conclusions": {
+    "success": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.docs-openapi-check.openapi-fresh@merge_group": {
+   "durations": [
+    [
+     61150,
+     187
+    ],
+    [
+     75810,
+     160
+    ],
+    [
+     80351,
+     161
+    ]
+   ],
+   "conclusions": {
+    "success": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.site-build.site-build@merge_group": {
+   "durations": [
+    [
+     61166,
+     183
+    ],
+    [
+     75832,
+     193
+    ],
+    [
+     80383,
+     192
+    ]
+   ],
+   "conclusions": {
+    "success": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.test.community-packaged@merge_group": {
+   "durations": [
+    [
+     61354,
+     389
+    ],
+    [
+     76027,
+     388
+    ],
+    [
+     80591,
+     400
+    ]
+   ],
+   "conclusions": {
+    "success": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.db-check.db-check@merge_group": {
+   "durations": [
+    [
+     61030,
+     67
+    ],
+    [
+     75686,
+     47
+    ],
+    [
+     80236,
+     45
+    ]
+   ],
+   "conclusions": {
+    "success": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.typecheck.typecheck@merge_group": {
+   "durations": [
+    [
+     61286,
+     323
+    ],
+    [
+     75967,
+     326
+    ],
+    [
+     80486,
+     295
+    ]
+   ],
+   "conclusions": {
+    "success": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.credential-free-build.credential-free-build@merge_group": {
+   "durations": [
+    [
+     61079,
+     116
+    ],
+    [
+     78196,
+     2550
+    ],
+    [
+     83468,
+     3276
+    ]
+   ],
+   "conclusions": {
+    "success": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.operating-skills-version-check.version-outranks-base@merge_group": {
+   "durations": [
+    [
+     60979,
+     16
+    ],
+    [
+     75657,
+     19
+    ],
+    [
+     80207,
+     16
+    ]
+   ],
+   "conclusions": {
+    "success": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.harness-windows.harness-windows@merge_group": {
+   "durations": [
+    [
+     61318,
+     354
+    ],
+    [
+     75935,
+     290
+    ],
+    [
+     80532,
+     341
+    ]
+   ],
+   "conclusions": {
+    "success": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.desktop-smoke.packaged-runtime@push": {
+   "durations": [
+    [
+     78832,
+     593
+    ],
+    [
+     83882,
+     375
+    ]
+   ],
+   "conclusions": {
+    "success": 2
+   },
+   "retried": 0,
+   "runs": 2
+  },
+  "wf.claude.claude@pull_request_review_comment": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 1
+   },
+   "retried": 0,
+   "runs": 1
+  },
+  "wf.claude.claude@pull_request_review": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 1
+   },
+   "retried": 0,
+   "runs": 1
+  },
+  "wf.cli-smoke-test.integration-test@pull_request": {
+   "durations": [
+    [
+     76442,
+     59
+    ],
+    [
+     77652,
+     56
+    ]
+   ],
+   "conclusions": {
+    "success": 2
+   },
+   "retried": 0,
+   "runs": 2
+  },
+  "wf.cli-smoke-test.smoke-test-docker@pull_request": {
+   "durations": [
+    [
+     76438,
+     55
+    ],
+    [
+     77663,
+     67
+    ]
+   ],
+   "conclusions": {
+    "success": 2
+   },
+   "retried": 0,
+   "runs": 2
+  },
+  "wf.cli-smoke-test.smoke-test-bare@pull_request": {
+   "durations": [
+    [
+     76426,
+     43
+    ],
+    [
+     76424,
+     41
+    ],
+    [
+     77678,
+     49
+    ],
+    [
+     77656,
+     61
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.desktop-renderer.renderer-defines@pull_request": {
+   "durations": [
+    [
+     76445,
+     172
+    ],
+    [
+     77654,
+     167
+    ]
+   ],
+   "conclusions": {
+    "success": 2
+   },
+   "retried": 0,
+   "runs": 2
+  },
+  "wf.cli-smoke-test.build-tarball@pull_request": {
+   "durations": [
+    [
+     76381,
+     108
+    ],
+    [
+     77589,
+     102
+    ]
+   ],
+   "conclusions": {
+    "success": 2
+   },
+   "retried": 0,
+   "runs": 2
+  },
+  "wf.scripts-test.harness@pull_request": {
+   "durations": [
+    [
+     76538,
+     267
+    ],
+    [
+     77734,
+     247
+    ]
+   ],
+   "conclusions": {
+    "success": 2
+   },
+   "retried": 0,
+   "runs": 2
+  },
+  "wf.scripts-test.fixtures@pull_request": {
+   "durations": [
+    [
+     76335,
+     65
+    ],
+    [
+     77553,
+     65
+    ]
+   ],
+   "conclusions": {
+    "success": 2
+   },
+   "retried": 0,
+   "runs": 2
+  },
+  "wf.scripts-test.fixtures@push": {
+   "durations": [
+    [
+     83563,
+     59
+    ]
+   ],
+   "conclusions": {
+    "success": 1
+   },
+   "retried": 0,
+   "runs": 1
+  },
+  "wf.scripts-test.harness@push": {
+   "durations": [
+    [
+     83738,
+     234
+    ]
+   ],
+   "conclusions": {
+    "success": 1
+   },
+   "retried": 0,
+   "runs": 1
+  }
+ },
+ "series": {
+  "pr_feedback_min": [
+   [
+    60452,
+    8
+   ],
+   [
+    73227,
+    39.8
+   ],
+   [
+    77484,
+    44.7
+   ]
+  ],
+  "queue_build_min": [
+   [
+    83500,
+    55.5
+   ],
+   [
+    78229,
+    43.5
+   ],
+   [
+    62422,
+    24.7
+   ]
+  ],
+  "queue_wait_min": [
+   [
+    83500,
+    55.5
+   ],
+   [
+    78229,
+    43.5
+   ],
+   [
+    62422,
+    24.7
+   ]
+  ],
+  "queue_wait_ejected_min": [],
+  "lead_time_min": [
+   [
+    83500,
+    120.6
+   ],
+   [
+    78229,
+    106.8
+   ],
+   [
+    62422,
+    37
+   ]
+  ],
+  "review_recovery_min": []
+ },
+ "counts": {
+  "merged_prs": 3,
+  "queue_builds": 3,
+  "queue_builds_green": 3,
+  "queue_builds_cancelled": 0,
+  "ejections_failed_checks": 0,
+  "wasted_ejections": 0,
+  "review_shas": 3,
+  "review_first_ok": 3,
+  "review_cancelled": 0,
+  "review_runs": 4,
+  "test_executions": 1338,
+  "test_flaky": 8,
+  "flaky_builds_sampled": 3,
+  "job_minutes": 1200.8
+ },
+ "real_catches": {},
+ "ejections_caused": {},
+ "queue_builds": [
+  {
+   "sha": "ebeb4f45e509",
+   "pr": 1917,
+   "created_at": "2026-09-18T16:56:00Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "295ed3dbc4ec",
+   "pr": 1918,
+   "created_at": "2026-09-18T21:00:36Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "39c059bc680c",
+   "pr": 1919,
+   "created_at": "2026-09-18T22:16:28Z",
+   "outcome": "green",
+   "failed_gates": []
+  }
+ ],
+ "main": [
+  {
+   "sha": "ebeb4f45e509",
+   "at": "2026-09-18T17:20:25Z",
+   "done": "2026-09-18T17:23:19Z",
+   "red": false
+  },
+  {
+   "sha": "295ed3dbc4ec",
+   "at": "2026-09-18T21:43:51Z",
+   "done": "2026-09-18T21:53:53Z",
+   "red": false
+  },
+  {
+   "sha": "39c059bc680c",
+   "at": "2026-09-18T23:11:42Z",
+   "done": "2026-09-18T23:18:03Z",
+   "red": false
+  }
+ ],
+ "releases": [],
+ "cache": {
+  "bytes": 10879398077,
+  "count": 21
+ },
+ "timeouts": {
+  "wf.browser-test.browser-shard": 45,
+  "wf.browser-test.browser-test": 10,
+  "wf.browser-test.copy-spec-drift": 10,
+  "wf.changelog-fragment-check.fragment-present": 10,
+  "wf.changelog-fragment-check.no-fragment-under-skip-label": 10,
+  "wf.ci-steward.collect": 36,
+  "wf.claude-code-review.review": 25,
+  "wf.claude.claude": 30,
+  "wf.cli-smoke-test.build-tarball": 15,
+  "wf.cli-smoke-test.smoke-test-bare": 10,
+  "wf.cli-smoke-test.smoke-test-docker": 15,
+  "wf.cli-smoke-test.integration-test": 10,
+  "wf.codeql.analyze": 90,
+  "wf.credential-free-build.credential-free-build": 110,
+  "wf.db-check.db-check": 10,
+  "wf.dependabot-lockfile-repair.repair-lockfile": 5,
+  "wf.desktop-release.build-macos": 56,
+  "wf.desktop-release.build-windows": 39,
+  "wf.desktop-release.verify-macos": 10,
+  "wf.desktop-release.verify-windows": 10,
+  "wf.desktop-release.publish-release": 10,
+  "wf.desktop-renderer.renderer-defines": 20,
+  "wf.desktop-smoke.packaged-runtime": 30,
+  "wf.docs-openapi-check.openapi-fresh": 10,
+  "wf.evals.structural": 20,
+  "wf.evals.credentialed": 45,
+  "wf.harness-windows.harness-windows": 30,
+  "wf.lint.lint": 15,
+  "wf.merge-tail.arm": 10,
+  "wf.operating-skills-version-check.version-outranks-base": 10,
+  "wf.publish-docker.build-and-push": 75,
+  "wf.publish-docker.mirror-docker-hub": 15,
+  "wf.scripts-test.fixtures": 10,
+  "wf.scripts-test.harness": 13,
+  "wf.site-build.site-build": 30,
+  "wf.test.community-pg": 15,
+  "wf.test.community-packaged": 30,
+  "wf.test.test-shard": 30,
+  "wf.test.test": 10,
+  "wf.typecheck.typecheck": 20,
+  "wf.update-homebrew.update-formula": 92
+ }
+}
