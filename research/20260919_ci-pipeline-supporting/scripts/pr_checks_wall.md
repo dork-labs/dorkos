@@ -1,0 +1,4 @@
+pull_request since 2026-08-20: all-green SHAs 917; wall to all-required-green median 16.6m p75 31.2m p90 37.9m; last-to-finish: {'test': 637, 'browser-test': 29, 'changelog-fragment-check': 40, 'typecheck': 76, 'lint': 119, 'credential-free-build': 16}
+pull_request since 2026-09-12: all-green SHAs 143; wall to all-required-green median 14.3m p75 16.9m p90 38.6m; last-to-finish: {'test': 71, 'lint': 41, 'changelog-fragment-check': 13, 'typecheck': 2, 'credential-free-build': 16}
+merge_group since 2026-08-20: all-green SHAs 864; wall to all-required-green median 25.4m p75 30.6m p90 34.2m; last-to-finish: {'test': 294, 'browser-test': 557, 'credential-free-build': 13}
+merge_group since 2026-09-12: all-green SHAs 125; wall to all-required-green median 28.7m p75 29.6m p90 37.1m; last-to-finish: {'browser-test': 112, 'credential-free-build': 13}

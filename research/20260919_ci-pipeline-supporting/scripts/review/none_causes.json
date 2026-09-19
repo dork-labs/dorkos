@@ -1,0 +1,38 @@
+{
+  "30d": {
+    "counts": {
+      "no review run at all (opened while conflicting / event dropped)": 19,
+      "run green but no verdict posted (pre-DOR-1665 silent green)": 7,
+      "skip-review label": 27,
+      "review failed (red check + notice)": 14,
+      "opened-run cancelled by a same-second labeled run (label race)": 23
+    },
+    "examples": {
+      "no review run at all (opened while conflicting / event dropped)": [
+        1136, 1152, 1166, 1167, 1177, 1294, 1309, 1325, 1352, 1390, 1438, 1484
+      ],
+      "run green but no verdict posted (pre-DOR-1665 silent green)": [
+        1148, 1261, 1353, 1359, 1410, 1527, 1681
+      ],
+      "skip-review label": [1157, 1171, 1175, 1178, 1180, 1184, 1190, 1191, 1193, 1195, 1198, 1200],
+      "review failed (red check + notice)": [
+        1207, 1407, 1577, 1603, 1698, 1721, 1722, 1723, 1724, 1730, 1735, 1736
+      ],
+      "opened-run cancelled by a same-second labeled run (label race)": [
+        1251, 1257, 1267, 1302, 1304, 1373, 1553, 1573, 1579, 1591, 1597, 1613
+      ]
+    }
+  },
+  "7d": {
+    "counts": {
+      "review failed (red check + notice)": 1,
+      "opened-run cancelled by a same-second labeled run (label race)": 3,
+      "no review run at all (opened while conflicting / event dropped)": 1
+    },
+    "examples": {
+      "review failed (red check + notice)": [1828],
+      "opened-run cancelled by a same-second labeled run (label race)": [1865, 1866, 1868],
+      "no review run at all (opened while conflicting / event dropped)": [1880]
+    }
+  }
+}

@@ -1,0 +1,53 @@
+#1252 fix(server): agents cannot undo a limit you turned down (DOR-1497)
+   - **Adversarially reviewed** (separate agent, REVIEW.md): the reviewer mutated both the carryover list and the policy table and watched the right tests go red; traced every writer of the nine leaves and found no legitimate agent flow broken; reproduced the DOR-1506 bypass; and caught the copy claiming
+#1270 fix(e2e): capture writes Prettier-clean JSON, so a release cannot redden main
+   - It also failed an unrelated Dependabot PR (#1261) that happened to run against the broken tree.
+#1412 fix(client,server): links in error messages, and no more bogus API-key log lines (DOR-1661)
+   - - Test-merged against `c1db4f426` — clean, and the one auto-merged file (`AssistantMessageContent.test.tsx`, also touched by #1406) re-verified semantically: 88 tests and a typecheck green on the merged tree.
+#1446 fix(client): stop a discarded agent pick from poisoning the task dial's consent gate (DOR-1694)
+   - The create path is unchanged — its consent machinery from #1445 (`use-agent-pick`, `use-posture-consent`) is untouched.
+#1447 fix(server,client,test-utils): the worktree scan follows shortcuts, and warns honestly (DOR-1056)
+   - Follow-up to #1440, closing its three review nits plus what the adversarial re-review surfaced.
+#1450 fix(server,db): API keys are not throttled to ten uses a day (DOR-489)
+   - The credential shipped in #457 worked in testing and failed in use, which is the worst shape for a defect.
+#1457 fix(deps): bump qs to 6.16.0 and @humanfs/node to 0.16.8 for advisories
+   - Follow-up to #1453 in the 2026-09-02 security-alert triage.
+#1469 fix(shared,skills,server,marketplace,memory): hostile strings can no longer freeze the server in a regex
+   - - `docs/api/openapi.json` absorbs drift inherited from #1461 (same regen as #1465 carries; whichever lands second is a no-op).
+#1541 fix(client): every border keeps its colour once the canvas editor loads (DOR-1024)
+   - **What #1534 introduced.** It put the rule one layer *below* the canvas editor.
+   - **What this PR closes.** DOR-1024 — the canvas regression above, plus the twin rule #1534 left behind and two leftovers from the unlayered era.
+   - It was the twin of the same default and was **still unlayered in the compiled output** after #1534, so it outranked every border utility inside the Obsidian panel exactly the way the `*` rule used to outrank them everywhere.
+#1543 fix(server): a project-scoped agent shows up in the installed list and uninstalls (DOR-994)
+   - DOR-992 fixed the update flow's copy of this blind spot in #828 and deliberately left these two.
+#1609 fix(client): the Schedules page action is a + on a phone (DOR-1747)
+   - The one remaining failure is `/connections` (`+8px`, "Google Calendar") — that route **is** in #1524's own diff (`ServiceGrid.tsx`), which is why it passes on the queue tree and fails on bare `main`.
+#1692 fix(client): the dialog close button is back in the top right
+   - It broke in **PR #1522** (`7c40619e6`, UI audit batch 02, DOR-1748, 2026-09-03).
+#1708 fix(client,e2e): API keys stay visible after login is turned off (DOR-1885)
+   - **The create/list/reload path is healthy** — that half was fixed by #1694.
+#1741 fix(codex): restore reliable sessions and agent tools
+   - The final conflict resolution moves this specification’s index entry to preserve the adjacent entry from #1746.
+#1806 fix(server): compose the connector execution domain into the docs capability registry
+   - It was softened in #1798 to record the omission; it now says the docs registry does compose every domain, and that the connector execute tools are still reached only by the connector-turn session shape — because listing is surface-gated, not because of the composer.
+#1816 fix(canvas): the two review fixes for the browser seat (DOR-2007)
+   - Follow-up to #1814, which merged before these three commits could be pushed (the local pre-push gate was refused twice by load-timing tests in packages this change never touches: `shared/atomic-write`, `memory/editor-race`, `harness/gitignore`, at load 68 to 95, the DOR-2012 pattern; the merge queue
+#1828 fix(server): an approval nobody answers now ends on its own, and says so (DOR-1932)
+   - Spec and ADR landed in #1826 (`specs/approval-expiry-notice/`, ADR `260912-190915`).
+   - That is the shared writer from #1745 earning its keep on its first extension.
+#1833 fix(evals): gap-free re-key handling and current-contract core oracles
+   - Since DOR-939/DOR-987 a destructive call **holds in-session**: the gate pushes the operator's card onto the session stream, waits, and resumes the same call — so what the model receives is the *ending* (`uninstalled` / `denied` / `approval_no_longer_valid`, the last shipped in #1828, DOR-1932), neve
+   - It wanted a `list_capabilities` tool call; since #1080 tools are taught by name in context and the agent often answers without calling the catalog.
+#1836 fix(tasks): let a "Run now" ask reach the person instead of timing the run out
+   - That contradicts the copy shipped yesterday in #1818: _"'Run now' is different: you are watching, so it asks you."_
+#1838 fix(runtimes): honest gated-tool status on reload and to extensions
+   - False since #1834.
+#1853 fix(desktop): ignore a heartbeat from the page the watchdog already reloaded (DOR-2034)
+   - Reported by @karlohlemann in #1840 with the mechanism traced in the shipped source.
+#1857 fix(client): only say the server is unreachable when nothing answered (DOR-2035)
+   - Reported by @karlohlemann in #1841.
+   - The cumulative-count half of that report was already fixed by #1707.
+#1871 fix(harness,marketplace): a skill name in two tool folders is reported per tool, and the package page says Connections (DOR-1940, 
+   - The ticket's defect (a `dir/` pattern reported as covering a symlink) turned out to be already fixed on main by #1693, so this ships tests only: two more real-`git check-ignore` cases and a census note so nobody re-opens it.
+#1873 fix(hooks): the git and process guards stop refusing a message that only mentions a blocked command
+   - - **Third adversarial review: SAFE TO PR.** It ran 187 cases through both hooks against base `13fd2bb1b` and found zero regressions (base blocked, branch allows, a shell runs it).
