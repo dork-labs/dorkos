@@ -81,8 +81,25 @@ import type { ActivityService } from '../../services/activity/activity-service.j
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
 
-/** The agent id the one manifest-backed case files its schedule under. */
+/** The agent id the manifest-backed cases file their schedule under. */
 const AGENT_ID = 'codex-agent';
+
+/** A manifest with everything but the one field a case is about. */
+function baseManifest() {
+  return {
+    id: AGENT_ID,
+    name: AGENT_ID,
+    description: '',
+    runtime: 'codex',
+    capabilities: [],
+    behavior: { responseMode: 'always' },
+    registeredAt: new Date().toISOString(),
+    registeredBy: 'test',
+    personaEnabled: true,
+    enabledToolGroups: {},
+    mcpServers: [],
+  };
+}
 
 /** The operator's `runtimes` block, sitting at full power. */
 function autonomyRuntimes(): UserConfig['runtimes'] {
@@ -332,19 +349,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     const task = await proposedByAgent();
     const agentDir = path.join(dorkHome, 'codex-agent');
     fs.mkdirSync(agentDir, { recursive: true });
-    await writeManifest(agentDir, {
-      id: AGENT_ID,
-      name: AGENT_ID,
-      description: '',
-      runtime: 'codex',
-      capabilities: [],
-      behavior: { responseMode: 'always' },
-      registeredAt: new Date().toISOString(),
-      registeredBy: 'test',
-      personaEnabled: true,
-      enabledToolGroups: {},
-      mcpServers: [],
-    } as unknown as Parameters<typeof writeManifest>[1]);
+    await writeManifest(agentDir, baseManifest() as unknown as Parameters<typeof writeManifest>[1]);
     meshProjectPath = agentDir;
     db.update(pulseSchedules)
       .set({ agentId: AGENT_ID })
@@ -362,11 +367,71 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     expect(approval!.summary).not.toContain('Accept edits');
   });
 
-  it('falls back to a neutral phrase rather than inventing a word for an unknown runtime', async () => {
-    // Every rung of the ladder answered nothing this server can read: the task
-    // names a runtime, and it is not one this machine holds. There is no
-    // declared mode list to take a label from, so the feed says something true
-    // and vague instead of printing the id.
+  it('uses the DEFAULT runtime’s word whenever the agent rung answers nothing', async () => {
+    // Five ways to get nothing out of the agent rung, and none of them is a
+    // reason to shrug: `resolveRuntimeType` falls through to the same registry
+    // default on every one, so the run really does execute in these ids and
+    // the label is the run's own vocabulary, not a guess (re-review probe).
+    const unreadable = path.join(dorkHome, 'unreadable-agent');
+    fs.mkdirSync(unreadable, { recursive: true });
+    // Written raw, because `writeManifest` validates: `runtime` is required on
+    // a manifest, so "names no runtime" only ever reaches disk as a file the
+    // reader cannot use — a hand edit, or an older format.
+    const corrupt = path.join(dorkHome, 'corrupt-agent', '.dork');
+    fs.mkdirSync(corrupt, { recursive: true });
+    fs.writeFileSync(path.join(corrupt, 'agent.json'), '{ not json', 'utf-8');
+    const unbuilt = path.join(dorkHome, 'unbuilt-runtime-agent');
+    fs.mkdirSync(unbuilt, { recursive: true });
+    await writeManifest(unbuilt, {
+      ...baseManifest(),
+      // A runtime with no adapter in THIS build. The fire path guards the
+      // agent rung with `runtimes.has(...)` and falls to the default, so the
+      // label has to do the same or it says "no idea" about a run that is
+      // perfectly well named.
+      runtime: 'opencode',
+    } as unknown as Parameters<typeof writeManifest>[1]);
+
+    const cases: Array<[string, string | null, boolean]> = [
+      // label, meshProjectPath, whether the row carries an agentId at all
+      ['no agent on the task', null, false],
+      ['mesh cannot place the agent', null, true],
+      ['agent folder holds no manifest', unreadable, true],
+      ['manifest cannot be read', path.dirname(corrupt), true],
+      ['manifest names a runtime this build has no adapter for', unbuilt, true],
+    ];
+
+    for (const [label, projectPath, filed] of cases) {
+      emit.mockClear();
+      meshProjectPath = projectPath;
+      const task = await proposedByAgent();
+      if (filed) {
+        db.update(pulseSchedules)
+          .set({ agentId: AGENT_ID })
+          .where(eq(pulseSchedules.id, task.id))
+          .run();
+      }
+
+      await request(fixtureServer)
+        .patch(`/api/tasks/${task.id}`)
+        .send({ status: 'active', enabled: true });
+
+      const approval = emit.mock.calls
+        .map(([event]) => event as Record<string, unknown>)
+        .find((event) => event.eventType === 'tasks.task_approved');
+      expect(approval!.summary, label).toContain('running as Accept edits');
+      store.deleteTask(task.id);
+      fs.rmSync(path.join(dorkHome, 'skills', 'mailroom-triage'), {
+        recursive: true,
+        force: true,
+      });
+    }
+  });
+
+  it('falls back to a neutral phrase only when the TASK names a runtime this server lacks', async () => {
+    // The one genuinely unnameable case, and the narrowness is the point. A
+    // runtime the TASK names is not substituted at fire time — the resolver
+    // refuses the run rather than picking another — so there is no vocabulary
+    // this level could honestly be named in.
     const task = await proposedByAgent();
     db.update(pulseSchedules)
       .set({ runtime: 'not-installed' })

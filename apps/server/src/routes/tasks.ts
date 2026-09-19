@@ -194,22 +194,43 @@ const UNNAMED_PERMISSION_LEVEL = 'the level saved on it';
  * labelling it through Claude Code's vocabulary would print one runtime's word
  * for a level another runtime is actually running at.
  *
- * Tolerant at every rung, like every other read of a manifest here: no mesh, an
- * unregistered agent, an unreadable file or a runtime this server does not hold
- * all mean "no opinion", and the level is then named with
- * {@link UNNAMED_PERMISSION_LEVEL} rather than guessed at. The id is on the
- * event's `metadata` in every case, so nothing is lost for a machine reader.
+ * **Where a rung that answers nothing lands, and why that is right.** No agent
+ * on the task, no mesh to place one, no manifest in the agent's folder, a
+ * manifest the reader cannot use, or one naming a runtime this build has no
+ * adapter for all fall through to the DEFAULT runtime — and the label is then
+ * the default runtime's word, not a shrug. That is not a degradation, it is the same answer the RUN gets:
+ * `resolveRuntimeType` falls through to `getDefaultType()` on every one of
+ * those, so the run really does execute in the ids being named. The last of
+ * the five is why this asks `capabilitiesForTaskRuntime` about the agent's
+ * runtime before taking it: the fire path guards the agent rung with
+ * `runtimes.has(...)`, and a label that skipped that guard would answer "no
+ * idea" about a run heading for a perfectly well-named default.
+ *
+ * {@link UNNAMED_PERMISSION_LEVEL} is therefore narrow. It is reached when the
+ * TASK itself names a runtime this server does not hold — where the fire path
+ * refuses the run rather than substituting one, so there is genuinely no
+ * vocabulary to name the level in — or when the resolved runtime declares no
+ * mode by that id. The id is on the event's `metadata` in every case, so
+ * nothing is lost for a machine reader.
  *
  * @param task - The schedule as it now stands.
  * @param meshCore - Resolves the task's agent to its project path; absent when
- *   Mesh is disabled, which is one of the ways the agent rung answers nothing.
+ *   Mesh is disabled, which is one of the five ways the agent rung answers
+ *   nothing and the default runtime's vocabulary is used instead.
  * @returns The runtime's label for its mode, or the neutral phrase.
  */
 async function describeTaskPermissionLevel(task: Task, meshCore?: MeshCore): Promise<string> {
   const agentPath = task.agentId ? meshCore?.getProjectPath(task.agentId) : undefined;
+  const agentRuntime = agentPath
+    ? ((await readAgentExecutionDefaults(agentPath)).runtime ?? null)
+    : null;
+  // The agent's runtime only when this build can actually run it — the same
+  // `has(...)` guard `resolveRuntimeType` applies, asked through the function
+  // that already answers it. Without this the label and the run disagree for
+  // an agent pinned to a runtime with no adapter here.
   const runtime =
     task.runtime ??
-    (agentPath ? ((await readAgentExecutionDefaults(agentPath)).runtime ?? null) : null);
+    (agentRuntime && capabilitiesForTaskRuntime(agentRuntime) ? agentRuntime : null);
   const declared = capabilitiesForTaskRuntime(runtime)?.permissionModes?.values ?? [];
   return (
     declared.find((mode) => mode.id === task.permissionMode)?.label ?? UNNAMED_PERMISSION_LEVEL

@@ -19,6 +19,12 @@ covers:
   # answered the card underneath — nobody could have met that, because nobody
   # has met the door.
   - "fix(tasks): the card's A and D shortcuts go quiet while the consent door is open (DOR-2100)"
+  # And the docs half of the same round, folded because it is a correction to
+  # the guide this change already edits: DOR-2101 landed a paragraph about a
+  # task's power being set once and staying there, two screens below this
+  # change's own, and the two had to be made to agree about which dial the
+  # approval writes. No behaviour, nothing new for a reader of the changelog.
+  - 'docs(tasks): reconcile the approval-card grant with DOR-2101''s "decided once, on the task" (DOR-2100)'
 ---
 
 ### Fixed
