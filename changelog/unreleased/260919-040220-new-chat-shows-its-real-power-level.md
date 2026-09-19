@@ -2,6 +2,7 @@
 covers:
   - 'fix(client,server): a new session shows the power level it will run at, not "Default" (DOR-2103)'
   - 'fix(client,server): a level chosen before the first message survives a reload (DOR-2103)'
+  - 'test(client): the settled-power flag reaches the drawing, and the fixtures say which state they mean (DOR-2103)'
 ---
 
 ### Fixed
