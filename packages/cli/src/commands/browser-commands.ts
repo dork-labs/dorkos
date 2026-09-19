@@ -545,7 +545,9 @@ export async function runBrowserForget(
         return 1;
       }
     }
-    fs.rmSync(stateFile, { force: true });
+    // Emptied, not deleted: Playwright MCP fails every browser tool on a missing
+    // session file, while an empty one simply starts signed out.
+    await writeStorageState(stateFile, { cookies: [], origins: [] });
     const warning = await cleanProfile(deps, profileDir, 'all', knownOrigins, args.chrome);
     deps.log('Forgot every saved sign-in. Agents start signed out of everything.');
     deps.log('Browsers agents already have open keep their sign-ins until they close.');

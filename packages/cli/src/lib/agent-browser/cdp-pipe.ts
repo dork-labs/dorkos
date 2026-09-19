@@ -199,10 +199,12 @@ export function launchChromeWithPipe(
       return () => listeners.delete(listener);
     },
     async close(graceMs = 30_000) {
+      // One deadline for the whole close, started before asking, so the worst
+      // case is `graceMs` and not the reply wait plus the exit wait.
+      const timer = setTimeout(() => child.kill('SIGKILL'), graceMs);
       if (!exitedFlag) {
         await send('Browser.close', {}, undefined, graceMs).catch(() => {});
       }
-      const timer = setTimeout(() => child.kill('SIGKILL'), graceMs);
       const result = await exited;
       clearTimeout(timer);
       return result;

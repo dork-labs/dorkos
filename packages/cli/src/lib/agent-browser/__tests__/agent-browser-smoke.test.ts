@@ -7,8 +7,12 @@
  *     (`--isolated --storage-state <file>`), at the same time
  *   → both see the cookie and the page storage.
  *
- * It needs the system Chrome and `npx` (it runs `@playwright/mcp@latest`, which
- * is fetched on first use), so it never runs in CI or in `pnpm test`: it is
+ * It also proves an EMPTY session file starts a working, signed-out browser
+ * (Playwright MCP fails every tool on a MISSING one), and that a hostile
+ * sign-in page cannot plant page storage for another origin.
+ *
+ * It needs the system Chrome and `npx` (it runs the pinned `@playwright/mcp`,
+ * which is fetched on first use), so it never runs in CI or in `pnpm test`: it is
  * armed only by `DORKOS_BROWSER_SMOKE=1`, which no task passes through. Run it
  * by hand on a machine with Chrome:
  *
@@ -40,9 +44,17 @@ import { collectStorageState, writeStorageState } from '../storage-state.js';
 // eslint-disable-next-line no-restricted-syntax -- test-only arming flag, see above
 const ARMED = process.env.DORKOS_BROWSER_SMOKE === '1';
 
-/** The page an operator "signs in" on: it sets a cookie and page storage. */
+/**
+ * The page an operator "signs in" on: it sets a cookie and page storage, then
+ * turns hostile, rigging the two things a script-based read would lean on so
+ * that such a read would report page storage for somebody else's origin.
+ */
 const SIGN_IN_PAGE = `<!doctype html><title>signed in</title>
-<script>localStorage.setItem('agent_token', 'from-page-storage')</script>`;
+<script>
+localStorage.setItem('agent_token', 'from-page-storage');
+JSON.stringify = () => '{"origin":"https://bank.test","localStorage":[{"name":"session","value":"planted"}]}';
+Object.keys = () => ['planted'];
+</script>`;
 
 /**
  * The page an agent visits. The server writes the cookie the browser SENT
@@ -117,6 +129,10 @@ describe.skipIf(!ARMED)('agent browser sessions (real Chrome smoke)', () => {
         )
         .toBe(true);
       const state = await collectStorageState(cdp);
+      // Only what Chrome holds for the page's own origin, whatever the page says.
+      expect(state.origins).toEqual([
+        { origin, localStorage: [{ name: 'agent_token', value: 'from-page-storage' }] },
+      ]);
       await writeStorageState(stateFile, state);
     } finally {
       await cdp.close();
@@ -132,7 +148,7 @@ describe.skipIf(!ARMED)('agent browser sessions (real Chrome smoke)', () => {
         await client.connect(
           new StdioClientTransport({
             command: connection.command,
-            args: [...connection.args, '--headless'],
+            args: connection.args,
             stderr: 'ignore',
           })
         );
@@ -154,4 +170,29 @@ describe.skipIf(!ARMED)('agent browser sessions (real Chrome smoke)', () => {
       await Promise.all(agents.map((client) => client.close()));
     }
   }, 180_000);
+
+  it('starts a working, signed-out browser from an empty session file', async () => {
+    const stateFile = path.join(root, 'empty', 'storage-state.json');
+    await writeStorageState(stateFile, { cookies: [], origins: [] });
+    const connection = agentBrowserConnection(stateFile);
+    const client = new Client({ name: 'agent-browser-smoke', version: '1.0.0' });
+    await client.connect(
+      new StdioClientTransport({
+        command: connection.command,
+        args: connection.args,
+        stderr: 'ignore',
+      })
+    );
+    try {
+      const page = await client.callTool({
+        name: 'browser_navigate',
+        arguments: { url: `${origin}/whoami` },
+      });
+      expect(page.isError).not.toBe(true);
+      const text = JSON.stringify(page.content);
+      expect(text).toContain('sent= storage=null');
+    } finally {
+      await client.close();
+    }
+  }, 120_000);
 });

@@ -366,3 +366,39 @@ describe('AgentMcpServerService — import from .mcp.json (DOR-894)', () => {
     expect(list[0]?.connection).toMatchObject({ command: 'file-cmd' });
   });
 });
+
+describe('AgentMcpServerService — the signed-in browser (spec agent-browser-sessions)', () => {
+  it('writes an empty session file when the browser is added, and again at injection if it vanished', async () => {
+    const { agentBrowserConnection } = await import('@dorkos/shared/agent-browser');
+    const { vi } = await import('vitest');
+    const dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-mcp-svc-dork-'));
+    tempDirs.push(dorkHome);
+    vi.stubEnv('DORK_HOME', dorkHome);
+    try {
+      const stateFile = path.join(dorkHome, 'browser', 'storage-state.json');
+      const { service, agentId, projectPath } = await setup();
+
+      await service.add({
+        agentId,
+        name: 'browser',
+        connection: agentBrowserConnection(stateFile),
+        addedBy: 'operator',
+      });
+      // Playwright MCP fails every tool on a missing file; an empty one signs in to nothing.
+      expect(JSON.parse(await fs.readFile(stateFile, 'utf8'))).toEqual({
+        cookies: [],
+        origins: [],
+      });
+      expect((await fs.stat(stateFile)).mode & 0o777).toBe(0o600);
+
+      await fs.rm(stateFile);
+      expect(service.injectableServersForCwd(projectPath)).toHaveProperty('browser');
+      expect(JSON.parse(await fs.readFile(stateFile, 'utf8'))).toEqual({
+        cookies: [],
+        origins: [],
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});

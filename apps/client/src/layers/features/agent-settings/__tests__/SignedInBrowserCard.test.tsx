@@ -8,7 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
-import type { AgentBrowserPreset } from '@dorkos/shared/agent-browser';
+import { agentBrowserConnection, type AgentBrowserPreset } from '@dorkos/shared/agent-browser';
 import { TransportProvider } from '@/layers/shared/model';
 import { SignedInBrowserCard } from '../ui/SignedInBrowserCard';
 
@@ -34,12 +34,7 @@ function preset(overrides: Partial<AgentBrowserPreset> = {}): AgentBrowserPreset
     loginCommand: 'dorkos browser login',
     server: {
       name: 'browser',
-      connection: {
-        transport: 'stdio',
-        command: 'npx',
-        args: ['-y', '@playwright/mcp@latest', '--isolated', '--storage-state', STATE_FILE],
-        env: {},
-      },
+      connection: agentBrowserConnection(STATE_FILE),
     },
     ...overrides,
   };
@@ -105,7 +100,7 @@ describe('SignedInBrowserCard', () => {
 
     expect(
       await screen.findByText(
-        `npx -y @playwright/mcp@latest --isolated --storage-state ${STATE_FILE}`
+        `npx -y @playwright/mcp@0.0.82 --isolated --headless --storage-state ${STATE_FILE}`
       )
     ).toBeInTheDocument();
     expect(screen.getByText('Confirm the signed-in browser for Researcher')).toBeInTheDocument();
@@ -125,5 +120,41 @@ describe('SignedInBrowserCard', () => {
         approvalToken: 'tok-1',
       })
     );
+  });
+
+  it('says so when the confirmation comes back still waiting for approval', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.getAgentBrowserPreset).mockResolvedValue(preset());
+    const approval = {
+      status: 'approval_required' as const,
+      approvalId: 'appr-1',
+      approvalToken: 'tok-1',
+      capabilityId: 'mcp.add',
+      tier: 'destructive' as const,
+      summary: 'Add a managed MCP server',
+      expiresAt: '2026-09-19T13:00:00.000Z',
+    };
+    vi.mocked(transport.addAgentMcpServer).mockResolvedValue({
+      status: 'approval_required',
+      approval,
+    } as never);
+    vi.mocked(transport.grantApproval).mockResolvedValue(undefined as never);
+    renderCard(transport);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Give it the browser' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirm & add' }));
+    expect(
+      await screen.findByText('The browser still needs approval. Try again.')
+    ).toBeInTheDocument();
+  });
+
+  it('reads an empty save as signed out, not as signed in to nothing', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.getAgentBrowserPreset).mockResolvedValue(
+      preset({ saved: false, sites: [] })
+    );
+    renderCard(transport);
+    expect(await screen.findByText(/starts signed out/)).toBeInTheDocument();
+    expect(screen.queryByText(/^Signed in to/)).not.toBeInTheDocument();
   });
 });

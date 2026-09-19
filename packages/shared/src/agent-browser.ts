@@ -23,11 +23,30 @@ import { z } from 'zod';
 export const AGENT_BROWSER_SERVER_NAME = 'browser';
 
 /**
- * The Playwright MCP package agents run. Pinned to `latest` on purpose: it is
- * fetched by `npx` on the agent's machine, the same way the bare-CLI setup does,
- * so an agent inside DorkOS and one outside it run the same thing.
+ * The exact `@playwright/mcp` release agents run, pinned rather than `@latest`.
+ *
+ * It runs through `npx` on the agent's machine, so `@latest` would let any new
+ * upstream release change, unreviewed, what every agent's browser can do. It
+ * has already moved in ways this feature depends on: which tools are always on
+ * (there is no switch to turn off `browser_run_code_unsafe` or
+ * `browser_network_request` in 0.0.82, which is why the docs spell out that an
+ * agent with the browser can read the saved sign-ins), and whether
+ * `--storage-state` tolerates a file (0.0.82 fails every browser tool when the
+ * file is missing, which is why DorkOS keeps an empty one in place).
+ *
+ * To bump it: change this string, then run the real-Chrome smoke test
+ * (`DORKOS_BROWSER_SMOKE=1`, `packages/cli/src/lib/agent-browser/__tests__/agent-browser-smoke.test.ts`),
+ * re-read `npx @playwright/mcp@<new> --help` for the flags the connection below
+ * passes, and re-check the always-on tool list the docs describe
+ * (`docs/guides/agent-browser.mdx`, "The trade-off, honestly").
  */
-export const AGENT_BROWSER_MCP_PACKAGE = '@playwright/mcp@latest';
+export const AGENT_BROWSER_MCP_VERSION = '0.0.82';
+
+/** The Playwright MCP package spec agents run: {@link AGENT_BROWSER_MCP_VERSION}, pinned. */
+export const AGENT_BROWSER_MCP_PACKAGE = `@playwright/mcp@${AGENT_BROWSER_MCP_VERSION}`;
+
+/** What an empty saved session looks like: valid for Playwright, signed in to nothing. */
+export const EMPTY_STORAGE_STATE = { cookies: [], origins: [] } as const;
 
 /** Path segments, under the DorkOS data directory, of the Chrome profile the operator signs in with. */
 export const AGENT_BROWSER_PROFILE_SEGMENTS = ['browser', 'profile'] as const;
@@ -49,10 +68,12 @@ export interface AgentBrowserConnection {
 /**
  * The managed MCP server entry that gives an agent the signed-in browser.
  *
- * `--isolated` keeps each server's browser profile in memory, so parallel
- * agents never share (and never fight over) one profile, and nothing an agent
- * does in its browser is written back. `--storage-state` seeds every one of
- * those in-memory browsers from the operator's saved session.
+ * `--isolated` keeps each server's browser profile in memory, so two servers
+ * never share (and never fight over) one profile, and nothing an agent does in
+ * its browser is written back. `--storage-state` seeds each of those in-memory
+ * browsers from the operator's saved session. `--headless` keeps a window from
+ * appearing for every session and lets it run on a machine with no screen;
+ * dropping it from the entry shows the window.
  *
  * @param stateFile - Absolute path to the saved session file.
  * @returns The stdio connection to add under {@link AGENT_BROWSER_SERVER_NAME}.
@@ -61,7 +82,14 @@ export function agentBrowserConnection(stateFile: string): AgentBrowserConnectio
   return {
     transport: 'stdio',
     command: 'npx',
-    args: ['-y', AGENT_BROWSER_MCP_PACKAGE, '--isolated', '--storage-state', stateFile],
+    args: [
+      '-y',
+      AGENT_BROWSER_MCP_PACKAGE,
+      '--isolated',
+      '--headless',
+      '--storage-state',
+      stateFile,
+    ],
     env: {},
   };
 }
@@ -316,7 +344,11 @@ export type AgentBrowserPresetSite = z.infer<typeof AgentBrowserPresetSiteSchema
 export const AgentBrowserPresetSchema = z.object({
   /** Absolute path of the saved session file on the DorkOS machine. */
   stateFile: z.string(),
-  /** Whether a readable saved session exists. */
+  /**
+   * Whether the saved session signs in to at least one site right now. False
+   * for no file, an unreadable one, an empty one, or one whose cookies have all
+   * run out.
+   */
   saved: z.boolean(),
   /** ISO time the session was last saved, or `null`. */
   savedAt: z.string().nullable(),

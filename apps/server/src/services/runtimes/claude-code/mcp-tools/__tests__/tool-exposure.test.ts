@@ -411,13 +411,8 @@ describe('in-session tool exposure', () => {
     // person saying "this is broken, can you report it" — a turn with room for a
     // search, unlike a room reply with somebody waiting. Both counts move by the
     // same one.
-    //
-    // 104 -> 105 for `mcp_browser_preset` (spec `agent-browser-sessions`), and it
-    // lands DEFERRED: no prompt block names it, and the turn that wants it is a
-    // person asking which sites their agents can reach signed in. Both counts
-    // move by the same one.
-    expect(tools).toHaveLength(105);
-    expect(deferred).toHaveLength(96);
+    expect(tools).toHaveLength(104);
+    expect(deferred).toHaveLength(95);
     const retiredConnectorTools = [
       'connector_list_accounts',
       'connector_start_connect',

@@ -27,20 +27,20 @@ export const mcpBrowserCapabilities: CapabilityDefinition[] = [
       'Report whether the operator has saved browser sign-ins (the DorkOS agent browser), ' +
       'which websites they cover and until when, and the exact managed MCP server that gives ' +
       'an agent a browser starting signed in to them. To give an agent that browser, pass the ' +
-      'two fields of the returned server object, unchanged, to the add-server tool (a person ' +
-      'approves it). Never returns a cookie or any other secret. When saved is false, or a site you ' +
+      'two fields of the returned server object, unchanged, to mcp.add (a person approves ' +
+      'it). Never returns a cookie or any other secret. When saved is false, or a site you ' +
       'need is missing, only the operator can fix it, by running the returned loginCommand ' +
       'with the site in a terminal; never ask them for a password.',
     tier: 'observe',
     input: z.object({}),
     output: AgentBrowserPresetSchema,
-    surfaces: {
-      mcp: {
-        toolName: 'mcp_browser_preset',
-        servers: ['in-session', 'external'],
-        annotations: { idempotentHint: true },
-      },
-    },
+    // No MCP surface, on purpose: the list of sites is the shape of the
+    // operator's accounts, and an ambient tool in every agent's session would
+    // hand it to agents that were never given the browser. The Tools & MCP
+    // card reads it through the invoke route; an agent that needs it asks with
+    // `dorkos call mcp.browser_preset`, which is a deliberate step, not a tool
+    // sitting in its list.
+    surfaces: {},
     invoke: async () => readAgentBrowserPreset(resolveDorkHome()),
   }),
 ];

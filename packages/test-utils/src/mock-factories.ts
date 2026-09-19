@@ -1,3 +1,4 @@
+import { agentBrowserConnection } from '@dorkos/shared/agent-browser';
 import crypto from 'node:crypto';
 import { vi } from 'vitest';
 import type {
@@ -1241,18 +1242,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       loginCommand: 'dorkos browser login',
       server: {
         name: 'browser',
-        connection: {
-          transport: 'stdio',
-          command: 'npx',
-          args: [
-            '-y',
-            '@playwright/mcp@latest',
-            '--isolated',
-            '--storage-state',
-            '/home/test/.dork/browser/storage-state.json',
-          ],
-          env: {},
-        },
+        connection: agentBrowserConnection('/home/test/.dork/browser/storage-state.json'),
       },
     }),
     addAgentMcpServer: vi.fn(),

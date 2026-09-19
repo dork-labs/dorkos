@@ -230,7 +230,13 @@ describe('dorkos browser forget', () => {
     expect(await runBrowserForget({ all: true, yes: false }, deps({ interactive: false }))).toBe(1);
     expect(fs.existsSync(stateFile)).toBe(true);
     expect(await runBrowserForget({ all: true, yes: true }, deps({ interactive: false }))).toBe(0);
-    expect(fs.existsSync(stateFile)).toBe(false);
+    // Emptied, not deleted: an agent browser on a missing file fails outright.
+    expect(JSON.parse(fs.readFileSync(stateFile, 'utf8'))).toEqual({ cookies: [], origins: [] });
+    expect(fs.statSync(stateFile).mode & 0o777).toBe(0o600);
+
+    out.length = 0;
+    expect(await runBrowserStatus({ json: false }, deps())).toBe(0);
+    expect(out.join('\n')).toContain('has no sites in it');
   });
 });
 

@@ -11,6 +11,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+  StorageStateOriginSchema,
   StorageStateSchema,
   type StorageState,
   type StorageStateCookie,
@@ -60,17 +61,19 @@ export function toStorageStateCookie(cookie: CdpCookie): StorageStateCookie {
   return copy;
 }
 
-/** The expression run in each open tab: its origin and its `localStorage`, as JSON. */
-const READ_PAGE_STORAGE = `JSON.stringify({
-  origin: location.origin,
-  localStorage: Object.keys(localStorage).map((name) => ({ name, value: localStorage.getItem(name) ?? '' })),
-})`;
-
 /**
  * Read the page storage (`localStorage`) of every open web tab. A page's own
- * storage can only be read from inside a page at that origin, which is why the
+ * storage can only be read with a page at that origin open, which is why the
  * agent browser is saved while it is open: tabs closed before saving take
  * their page storage with them (cookies are unaffected).
+ *
+ * **The page never gets a say in what is saved.** The origin comes from the
+ * tab's URL as Chrome reports it, and the items come from
+ * `DOMStorage.getDOMStorageItems`, which Chrome answers from its own storage
+ * backend. An earlier version ran a script in the page and trusted what it
+ * returned, so a hostile page could override `JSON.stringify` and plant
+ * page storage for a different origin into the file every agent starts from.
+ * What comes back is still validated against the schema before it is kept.
  *
  * A tab that refuses (a crashed renderer, a page that navigated away mid-read)
  * is skipped rather than failing the save.
@@ -82,23 +85,33 @@ async function readOpenTabStorage(cdp: CdpPipe): Promise<StorageStateOrigin[]> {
   const origins = new Map<string, StorageStateOrigin>();
   for (const target of targetInfos) {
     if (target.type !== 'page' || !/^https?:\/\//.test(target.url)) continue;
+    let origin: string;
+    try {
+      origin = new URL(target.url).origin;
+    } catch {
+      continue;
+    }
+    if (origins.has(origin)) continue;
     let sessionId: string | undefined;
     try {
       ({ sessionId } = await cdp.send<{ sessionId: string }>('Target.attachToTarget', {
         targetId: target.targetId,
         flatten: true,
       }));
-      const { result } = await cdp.send<{ result: { value?: string } }>(
-        'Runtime.evaluate',
-        { expression: READ_PAGE_STORAGE, returnByValue: true },
+      const { entries } = await cdp.send<{ entries: unknown }>(
+        'DOMStorage.getDOMStorageItems',
+        { storageId: { securityOrigin: origin, isLocalStorage: true } },
         sessionId,
         5_000
       );
-      if (!result.value) continue;
-      const read = JSON.parse(result.value) as StorageStateOrigin;
-      if (read.localStorage.length > 0 && !origins.has(read.origin)) {
-        origins.set(read.origin, read);
-      }
+      const read = StorageStateOriginSchema.parse({
+        origin,
+        localStorage: (Array.isArray(entries) ? entries : []).map((entry: unknown) => {
+          const [name, value] = Array.isArray(entry) ? entry : [];
+          return { name, value };
+        }),
+      });
+      if (read.localStorage.length > 0) origins.set(origin, read);
     } catch {
       // Skipped: see the function doc.
     } finally {

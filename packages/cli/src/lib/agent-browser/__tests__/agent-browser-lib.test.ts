@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -258,14 +258,10 @@ describe('storage state file', () => {
         ],
       }),
       'Target.attachToTarget': (params) => ({ sessionId: `s-${String(params.targetId)}` }),
-      'Runtime.evaluate': () => ({
-        result: {
-          value: JSON.stringify({
-            origin: 'https://a.test',
-            localStorage: [{ name: 'token', value: 'x' }],
-          }),
-        },
-      }),
+      'DOMStorage.getDOMStorageItems': (params) => {
+        const storageId = params.storageId as { securityOrigin: string };
+        return storageId.securityOrigin === 'https://a.test' ? { entries: [['token', 'x']] } : {};
+      },
     });
     const state = await collectStorageState(cdp);
     expect(state.cookies).toHaveLength(1);
@@ -275,6 +271,53 @@ describe('storage state file', () => {
     // Only the web tab was opened up, and it was let go afterwards.
     expect(cdp.calls.filter((c) => c.method === 'Target.attachToTarget')).toHaveLength(1);
     expect(cdp.calls.some((c) => c.method === 'Target.detachFromTarget')).toBe(true);
+  });
+});
+
+describe('collectStorageState against a hostile page', () => {
+  /** A tab whose page script would answer anything it liked, if it were asked. */
+  function hostileTab(entries: unknown) {
+    return createFakeCdp({
+      'Storage.getCookies': () => ({ cookies: [] }),
+      'Target.getTargets': () => ({
+        targetInfos: [{ targetId: 't1', type: 'page', url: 'https://evil.test/page?x=1' }],
+      }),
+      'Target.attachToTarget': () => ({ sessionId: 's1' }),
+      // What a page overriding JSON.stringify would hand back to a script read:
+      // storage planted for somebody else's origin.
+      'Runtime.evaluate': () => ({
+        result: {
+          value: JSON.stringify({
+            origin: 'https://bank.test',
+            localStorage: [{ name: 'session', value: 'planted' }],
+          }),
+        },
+      }),
+      'DOMStorage.getDOMStorageItems': () => ({ entries }),
+    });
+  }
+
+  it('never asks the page: the origin is the tab URL and the items are Chrome’s', async () => {
+    const cdp = hostileTab([['theme', 'dark']]);
+    const state = await collectStorageState(cdp);
+    expect(state.origins).toEqual([
+      { origin: 'https://evil.test', localStorage: [{ name: 'theme', value: 'dark' }] },
+    ]);
+    expect(cdp.calls.some((c) => c.method === 'Runtime.evaluate')).toBe(false);
+    const read = cdp.calls.find((c) => c.method === 'DOMStorage.getDOMStorageItems')!;
+    expect(read.params).toEqual({
+      storageId: { securityOrigin: 'https://evil.test', isLocalStorage: true },
+    });
+  });
+
+  it('drops an answer that is not the shape of page storage, instead of saving it', async () => {
+    const state = await collectStorageState(
+      hostileTab([
+        ['ok', 'fine'],
+        ['bad', { not: 'text' }],
+      ])
+    );
+    expect(state.origins).toEqual([]);
   });
 });
 
@@ -384,5 +427,25 @@ describe('launchChromeWithPipe', () => {
     await expect(cdp.exited).resolves.toEqual({ code: 0, signal: null });
     expect(cdp.hasExited()).toBe(true);
     await expect(cdp.send('Browser.getVersion')).rejects.toBeInstanceOf(ChromeExitedError);
+  });
+
+  it('forces a silent Chrome within one grace period, not two', async () => {
+    const { child } = fakeChild();
+    const signals: string[] = [];
+    (child as unknown as { kill: (signal: string) => boolean }).kill = (signal: string) => {
+      signals.push(signal);
+      child.emit('exit', null, signal);
+      return true;
+    };
+    vi.useFakeTimers();
+    try {
+      const cdp = launchChromeWithPipe('/chrome', [], () => child);
+      const closed = cdp.close(100);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(signals).toEqual(['SIGKILL']);
+      await expect(closed).resolves.toEqual({ code: null, signal: 'SIGKILL' });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

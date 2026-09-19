@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { LogIn, MoreHorizontal, Plus } from 'lucide-react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { AgentBrowserPreset } from '@dorkos/shared/agent-browser';
+import { agentBrowserConnection, type AgentBrowserPreset } from '@dorkos/shared/agent-browser';
 import type { Transport } from '@dorkos/shared/transport';
 import { TransportProvider } from '@/layers/shared/model';
 import { Button, Switch } from '@/layers/shared/ui';
@@ -548,18 +548,7 @@ function browserPreset(saved: boolean): AgentBrowserPreset {
     loginCommand: 'dorkos browser login',
     server: {
       name: 'browser',
-      connection: {
-        transport: 'stdio',
-        command: 'npx',
-        args: [
-          '-y',
-          '@playwright/mcp@latest',
-          '--isolated',
-          '--storage-state',
-          PLAYGROUND_STATE_FILE,
-        ],
-        env: {},
-      },
+      connection: agentBrowserConnection(PLAYGROUND_STATE_FILE),
     },
   };
 }

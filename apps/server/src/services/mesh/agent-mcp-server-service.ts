@@ -32,6 +32,7 @@ import type { Logger } from '@dorkos/shared/logger';
 
 import { readMcpJsonServers, resolveMcpJsonConnection } from './mcp-json.js';
 import { runProbe, settledWithin, ADD_PROBE_BUDGET_MS } from './agent-mcp-probe.js';
+import { ensureAgentBrowserStateFile } from './agent-browser-preset.js';
 
 /** The DorkOS tool server's own name — reserved so a managed server can never shadow it. */
 export const RESERVED_MCP_SERVER_NAME = 'dorkos';
@@ -600,6 +601,11 @@ export class AgentMcpServerService {
   injectableServersForCwd(cwd: string): Record<string, McpAppServerConnection> {
     const entry = this.injectionEntryFor(cwd);
     if (!entry) return {};
+    // A signed-in browser whose session file was deleted after it was added
+    // (`dorkos browser forget --all` on an older CLI, or by hand) would fail
+    // every browser tool rather than start signed out, so put an empty one
+    // back on the way out. An `existsSync` per enabled browser server.
+    for (const connection of Object.values(entry.servers)) ensureAgentBrowserStateFile(connection);
     return this.mergeOAuthHeaders(entry.agentId, entry.servers);
   }
 
@@ -847,6 +853,12 @@ export class AgentMcpServerService {
     manifest: ManagedManifest,
     mcpServers: ManagedMcpServer[]
   ): Promise<void> {
+    // Before the entry can reach a runtime: an agent browser pointed at a
+    // session file that does not exist yet gets an empty one, so it starts
+    // signed out instead of failing (spec `agent-browser-sessions`).
+    for (const server of mcpServers) {
+      if (server.enabled) ensureAgentBrowserStateFile(server.connection);
+    }
     await writeManifest(projectPath, { ...manifest, mcpServers });
     this.injectionCache.delete(projectPath);
   }

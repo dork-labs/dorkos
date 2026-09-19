@@ -50,8 +50,9 @@ export function SignedInBrowserCard({ agentId, agentLabel }: SignedInBrowserCard
           input: addInput(agentId, preset.data),
           ...(approval ? { approval } : {}),
         });
-        if (result.status === 'approval_required') setPending(result.approval);
-        else setPending(null);
+        if (result.status !== 'approval_required') setPending(null);
+        else if (approval) setError('The browser still needs approval. Try again.');
+        else setPending(result.approval);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Couldn’t add the browser.');
       }
@@ -82,7 +83,7 @@ export function SignedInBrowserCard({ agentId, agentLabel }: SignedInBrowserCard
                 ? 'This command runs on your machine whenever the agent starts a session. Each session gets its own browser, so agents working at the same time never share one.'
                 : 'A web browser that starts signed in to the sites you saved. The agent never sees your passwords.'}
             </p>
-            {sites ? (
+            {data.saved ? (
               <p className="text-xs">Signed in to {sites}.</p>
             ) : (
               <p className="text-xs text-amber-600 dark:text-amber-500">

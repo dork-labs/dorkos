@@ -39,11 +39,11 @@ Then, per agent: the agent's profile → Tools & MCP → **Signed-in browser** �
   1. Find Chrome (`--chrome`, else the platform's standard locations; Chromium accepted). Missing → a clear error naming where it looked and the `--chrome` flag.
   2. Refuse if the profile is already open (`SingletonLock` names a live pid), with the fix.
   3. Create the profile on first use with the theme (§4); a profile the prototype made, with no theme yet, gets it once.
-  4. Default: launch with `--remote-debugging-pipe` (fds 3/4, NUL-framed JSON, Node built-ins only). No TCP port. Wait for Enter (needs a TTY). Save while the browser is live: `Storage.getCookies`, plus `localStorage` from each open `http(s)` tab. Then close Chrome with `Browser.close`. Ctrl+C closes without saving. Chrome quitting first → nothing saved.
+  4. Default: launch with `--remote-debugging-pipe` (fds 3/4, NUL-framed JSON, Node built-ins only). No TCP port. Wait for Enter (needs a TTY). Save while the browser is live: `Storage.getCookies`, plus `localStorage` from each open `http(s)` tab, read with `DOMStorage.getDOMStorageItems` for the origin of the tab's URL (never a script in the page, which a hostile page could rig) and schema-validated. Then close Chrome with `Browser.close`. Ctrl+C closes without saving. Chrome quitting first → nothing saved.
   5. `--plain`: launch with no debugging channel; save after Chrome exits (Enter asks it to quit), by reopening the profile headless over a pipe. Session-only cookies do not survive the quit; the command says so.
   6. Print the saved sites (never a value), the file path, and the next step.
 - **`status [--json]`**: sites grouped by registrable host (a cookie on `.github.com` and one on `gist.github.com` are one site), cookie count, the latest expiry among live cookies or "no end date", and whether the site has page storage. Values are never printed.
-- **`forget <site> | --all`**: remove the site's cookies and origins from the file first (agents lose it at once). Then, when the profile is not open, reopen it headless and delete the same cookies and the site's page storage, so the next `login` does not bring it back. `--all` deletes the file and clears every cookie; extensions stay installed.
+- **`forget <site> | --all`**: remove the site's cookies and origins from the file first (agents lose it at once). Then, when the profile is not open, reopen it headless and delete the same cookies and the site's page storage, so the next `login` does not bring it back. `--all` writes an EMPTY file (never deletes it: see §5) and clears every cookie; extensions stay installed.
 
 ## 4) The theme
 
@@ -55,17 +55,17 @@ Verified on Chrome 153.0.8010.52 by writing preferences into a temp profile, rea
 
 ## 5) Agents inside DorkOS
 
-- `@dorkos/shared/agent-browser`: the path segments, the server entry (`npx -y @playwright/mcp@latest --isolated --storage-state <file>`), `agentBrowserStateFileOf(connection)`, the storage-state schema, and the site summary. Browser-safe (no `node:` imports).
-- Capability **`mcp.browser_preset`** (`observe`, both MCP servers, reached by the client through the generic invoke route): `{ stateFile, saved, savedAt, sites[], loginCommand, server: { name: 'browser', connection } }`. It never returns a cookie value. It is listed in `GUARDED_READ_ONLY_TOOL_NAMES`: read-only, but the list of sites is the shape of somebody's accounts, so a tokenless caller on the login-off `/mcp` surface does not get it.
+- `@dorkos/shared/agent-browser`: the path segments, the server entry (`npx -y @playwright/mcp@0.0.82 --isolated --headless --storage-state <file>`, version pinned in `AGENT_BROWSER_MCP_VERSION` so an upstream release cannot change agents' tools unreviewed; `--headless` so no window per session and headless hosts work), `agentBrowserStateFileOf(connection)`, the storage-state schema, and the site summary. Browser-safe (no `node:` imports).
+- Capability **`mcp.browser_preset`** (`observe`, **no MCP surface**, reached by the card through the generic invoke route and by agents only via `dorkos call`): `{ stateFile, saved, savedAt, sites[], loginCommand, server: { name: 'browser', connection } }`, `saved` meaning at least one live site. It never returns a cookie value. Kept out of every agent's ambient tool list because the site list is the shape of the operator's accounts.
 - Client: a **Signed-in browser** card on the Tools & MCP page (stdio-capable runtimes, i.e. all three), shown until the agent has one. Its button fetches the preset and calls the existing `mcp.add`; the confirmation shows the exact command. When nothing is saved yet it still works, and the card tells the operator to run `dorkos browser login <site>` first.
-- Context (`runtimes/shared/agent-context.ts`): when an enabled managed server is an agent browser and its file is missing, an `<agent_browser>` block tells the agent it will start signed out and to ask the operator to run `dorkos browser login`. Nothing is added when the file exists, so the relaunch digest does not churn.
-- Operating skill `using-the-agent-browser` (pack version 22), seeded to every DorkOS agent on every runtime: never type or ask for a password, hand a sign-in page back as `dorkos browser login <site>`, never save a sign-in from inside an isolated browser, check with `mcp_browser_preset`.
+- **Missing file ≠ signed out.** Playwright MCP 0.0.82 fails every tool with `ENOENT` on a missing `--storage-state` file. `ensureAgentBrowserStateFile` (server) writes an empty `{cookies:[],origins:[]}` (`0600`, dir `0700`, exclusive create, only at `<dorkHome>/browser/storage-state.json`) whenever a managed-server write persists an enabled agent browser and again at every injection. Context (`runtimes/shared/agent-context.ts`): an `<agent_browser>` block says "starts signed out" for an empty save and "will fail" for a missing or unreadable one, names no path, and is silent once a site is saved.
+- Operating skill `using-the-agent-browser` (pack version 22), seeded to every DorkOS agent on every runtime: never type or ask for a password, hand a sign-in page back as `dorkos browser login <site>`, never save a sign-in from inside an isolated browser, check with `dorkos browser status --json` / `dorkos call mcp.browser_preset`; tells the signed-in `browser` server's tools apart from DorkOS's own (unsigned) `browser_*` tools; never read or export the saved cookies.
 - Harness docs for agents working on this repo: `contributing/browser-verification.md` § The agent browser (the `--isolated` parallel-session trap), pointed at from `browser-testing` and `/debug:browser`.
-- Least privilege: nothing is injected unless the operator adds the server to that agent. Each server is `--isolated`, so parallel agents each get their own in-memory browser, and nothing an agent does is written back to the file.
+- Least privilege: nothing is injected unless the operator adds the server to that agent. Each server is `--isolated`: one in-memory browser per server process, nothing written back. Per runtime (expected from how each starts servers, not measured): Claude Code, one per session; Codex, one per turn (`codex exec`), so tabs do not survive a turn; OpenCode, one per directory sidecar, so concurrent sessions of one agent likely share a browser. An agent with the browser can read every saved cookie through Playwright's always-on `browser_run_code_unsafe` / `browser_network_request` (no switch exists in 0.0.82); the docs say so.
 
 ## 6) Bare CLIs (docs only)
 
-One server named `browser` (the official Claude Code Playwright plugin already registers `playwright`): `claude mcp add --scope user browser -- npx -y @playwright/mcp@latest --isolated --storage-state <abs path>`, `[mcp_servers.browser]` in `~/.codex/config.toml`, and an `mcp.browser` `local` entry in OpenCode's config. Syntax verified against each tool's local install.
+One server named `browser` (the official Claude Code Playwright plugin already registers `playwright`): `claude mcp add --scope user browser -- npx -y @playwright/mcp@0.0.82 --isolated --headless --storage-state <abs path>`, `[mcp_servers.browser]` in `~/.codex/config.toml`, and an `mcp.browser` `local` entry in OpenCode's config. Syntax verified against each tool's local install.
 
 ## 7) Security, stated plainly in the docs
 
@@ -74,11 +74,11 @@ The file is a bearer credential readable by anything running as the operator, ab
 ## 8) Tests
 
 - Unit: Chrome discovery per platform and the missing-Chrome error; profile creation and theme preferences (and never overwriting an operator's colour); storage-state write mode `0600`; site summary and `status` output (asserts no value is printed); `forget` on the file; the preset capability; the context block; the Toolkit button.
-- Real-Chrome smoke, gated on `DORKOS_BROWSER_SMOKE=1` (never set by CI): temp profile, local page that sets a cookie, pipe export, then `@playwright/mcp --isolated --storage-state` over MCP sees the cookie.
+- Real-Chrome smoke, gated on `DORKOS_BROWSER_SMOKE=1` (never set by CI): temp profile, a hostile local page that sets a cookie and page storage and then rigs `JSON.stringify`/`Object.keys`, pipe export (asserts only the page's own origin is saved), then two parallel `@playwright/mcp --isolated --storage-state` servers see the cookie; and one server starts and browses on an EMPTY file.
 
 ## 9) Platforms
 
-macOS verified (Chrome 153). Windows and Linux have Chrome discovery and are untested; the docs say so.
+macOS verified (Chrome 153): the CLI, the Playwright layer, and Claude Code connecting to the server (`claude mcp list`). A full agent turn inside DorkOS was not driven on any runtime. Windows and Linux have Chrome discovery and are untested; the docs say so.
 
 ## 10) Future work
 

@@ -26,28 +26,41 @@ ${TOOL_NAME_NOTE}
 
 The operator signs in to websites once, themselves, in the DorkOS "agent
 browser" (their own Chrome with an orange frame). DorkOS saves those sign-ins,
-and your browser tools start from the save. The browser server is usually named
-\`browser\`; its tools end in \`browser_navigate\`, \`browser_snapshot\`,
-\`browser_click\` and so on.
+and your signed-in browser starts from the save.
+
+## Which browser tools are which
+
+Two sets of tools can both end in \`browser_navigate\`, \`browser_click\` and so on:
+
+- **The signed-in browser** comes from a separate MCP server, usually named
+  \`browser\` (in Claude Code its tools read \`mcp__browser__browser_navigate\`).
+  It is Playwright, it runs hidden, and it starts signed in. Use it to act on
+  websites as the operator.
+- **DorkOS's own browser tools** (\`browser_navigate\`, \`browser_read_page\`,
+  \`browser_read_console\` and the rest, on the DorkOS server) drive the browser
+  a person can watch in the app. It is NOT signed in to anything.
 
 ## What you get
 
-- Every browser you open starts already signed in to the saved sites.
-- It is YOUR browser only. Each session gets its own private, in-memory copy, so
-  agents working at the same time never share tabs or collide.
+- Every signed-in browser starts signed in to the saved sites.
 - Nothing you do is saved back. Sign out, clear cookies, sign in somewhere new:
-  it all disappears when your browser closes.
+  it is all gone when that browser closes.
 - On those sites you act AS the operator. Ask before anything you cannot take
   back (paying, deleting, posting in public, sending messages) unless they
   already told you to.
+- Whether your browser is your own depends on the runtime, and only one case
+  has been checked. Do not rely on tabs surviving between turns, and do not
+  assume another session of you is not using the same browser.
 
-## Passwords: never
+## Passwords and saved sign-ins: never
 
 - Never type a password, a one-time code or a recovery code into a page.
 - Never ask the person for a password or code in chat. A transcript keeps it
   forever, and the design exists so you never hold one.
-- Never read, print or copy the saved session file
-  (\`~/.dork/browser/storage-state.json\`). It holds live sign-ins.
+- Never read, print, copy or export the saved sign-ins: not the session file
+  (\`storage-state.json\` in the DorkOS data folder), and not the cookies or
+  page storage inside your browser. Your browser tools CAN reach them (running
+  code, reading request headers); that is exactly why you must not.
 - Never start a "sign in with Google" (or similar) flow that asks for a password.
 
 ## When a page asks you to sign in
@@ -68,22 +81,21 @@ browser closes, and it would be a login made without the operator watching.
 
 ## Checking what is saved
 
-- Tool: \`mcp_browser_preset\` (observe tier, always runs). Returns \`saved\`, the
-  sites with their cookie expiry dates, and \`loginCommand\`. Site names and
-  dates only, never a value.
-- CLI: \`dorkos browser status --json\`, run with the exact CLI invocation your
-  DorkOS context gives you.
+Your DorkOS context tells you (an \`<agent_browser>\` note) when your browser has
+no saved sign-ins, or cannot start at all. Believe it.
 
-Your DorkOS context also tells you when your browser has no saved sign-ins at
-all (an \`<agent_browser>\` note). Believe it: every site will ask you to sign in.
+To see which sites are saved and until when (names and dates only), run, with
+the exact CLI prefix your DorkOS context gives you:
+\`dorkos browser status --json\`, or \`dorkos call mcp.browser_preset\`.
 
-## If you have no browser tools
+## If you have no signed-in browser
 
 The operator gives an agent the signed-in browser from the agent's profile:
 Tools & MCP, then Signed-in browser. Ask them to. You can also offer to add it:
-pass the \`server.name\` and \`server.connection\` from \`mcp_browser_preset\` to
-\`mcp_add_server\`. That is destructive tier, so the person approves it at a
-card showing the exact command, and the tools arrive on your next session.
+take \`server.name\` and \`server.connection\` from \`dorkos call mcp.browser_preset\`
+and pass them to \`mcp_add_server\`. That is destructive tier, so the person
+approves it at a card showing the exact command, and the tools arrive on your
+next session.
 
 Never set up a browser with a persistent profile (\`--user-data-dir\`) instead.
 Only one browser can use a profile at a time, so a second agent would fail.`,

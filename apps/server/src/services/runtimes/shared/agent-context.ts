@@ -25,7 +25,6 @@
  *
  * @module services/runtimes/shared/agent-context
  */
-import { existsSync } from 'node:fs';
 import os from 'node:os';
 import { readManifest } from '@dorkos/shared/manifest';
 import { agentBrowserStateFileOf } from '@dorkos/shared/agent-browser';
@@ -54,7 +53,7 @@ import { fenceUntrustedBlock } from './untrusted-fence.js';
 import { env } from '../../../env.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
 import { currentCliInvocation } from './cli-invocation.js';
-import { agentBrowserMissingNotice } from '../../mesh/agent-browser-preset.js';
+import { agentBrowserGap, agentBrowserNotice } from '../../mesh/agent-browser-preset.js';
 
 /**
  * Build the `<dorkos_context>` block: what DorkOS is, and the two commands that
@@ -375,23 +374,26 @@ async function buildEnvBlock(cwd: string): Promise<string> {
 
 /**
  * Build the `<agent_browser>` notice: said only when the agent has an enabled
- * signed-in browser (spec `agent-browser-sessions`) whose saved session file
- * does not exist yet, so its browser would start signed out with nothing but a
- * file-not-found error to explain why.
+ * signed-in browser (spec `agent-browser-sessions`) whose saved session signs
+ * in to nothing: the operator has saved no site yet (the browser starts signed
+ * out), or the file is missing or unreadable (every browser tool fails).
  *
- * Silent in every other case, including the normal one where the file exists,
- * so saving a session never changes this block's text, and the relaunch digest
- * only moves on the one transition that matters (missing to saved), when a
- * fresh session is exactly what the agent needs.
+ * Silent in the normal case, where at least one site is saved, so saving a
+ * session never churns this block, and the relaunch digest only moves on the
+ * transitions that matter, when a fresh session is what the agent needs.
  *
  * @param servers - The agent manifest's managed MCP servers.
  */
 function buildAgentBrowserBlock(servers: readonly ManagedMcpServer[]): string {
-  const missing = servers
-    .filter((server) => server.enabled)
-    .map((server) => agentBrowserStateFileOf(server.connection))
-    .filter((file): file is string => file !== undefined && !existsSync(file));
-  return agentBrowserMissingNotice([...new Set(missing)]);
+  const files = new Set(
+    servers
+      .filter((server) => server.enabled)
+      .map((server) => agentBrowserStateFileOf(server.connection))
+      .filter((file): file is string => file !== undefined)
+  );
+  const gaps = [...files].map((file) => agentBrowserGap(file));
+  if (gaps.includes('missing')) return agentBrowserNotice('missing');
+  return gaps.length > 0 && gaps.every((gap) => gap === 'empty') ? agentBrowserNotice('empty') : '';
 }
 
 /**

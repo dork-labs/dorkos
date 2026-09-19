@@ -153,11 +153,6 @@ const LEGACY_READ_ONLY_TOOL_NAMES: readonly string[] = [
  * The rule is what keeps that safe under a real identity; it is not what should
  * be deciding it for no identity at all.
  *
- * **`mcp_browser_preset` is the ninth, and the first that is not about rooms.**
- * It returns no secret, only which websites the operator keeps a saved browser
- * sign-in for. That list is the shape of somebody's accounts, which is the
- * `list_member_rooms` argument again.
- *
  * **Adding a name here needs an argument, and removing one needs a better one.**
  * The drift guard reads this list, so a tool that quietly acquires
  * `readOnlyCarveOut: true` still fails the build.
@@ -179,11 +174,6 @@ export const GUARDED_READ_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set<string>
   // other, and — for a file document — a path on this machine read as the caller.
   // See the paragraph above.
   'read_canvas',
-  // The agent browser (spec `agent-browser-sessions`): which websites the
-  // operator keeps a saved sign-in for, and where that session file lives. No
-  // cookie leaves this tool, but the list is the shape of somebody's accounts,
-  // and a tokenless caller on the login-off surface would get it for the owner.
-  'mcp_browser_preset',
 ]);
 
 export const READ_ONLY_MCP_TOOL_NAMES: ReadonlySet<string> = new Set<string>([

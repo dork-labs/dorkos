@@ -36,14 +36,39 @@ dorkos browser status         # sites and cookie expiry, never a value (--json)
 dorkos browser forget <site>  # out of the file first, then out of the profile (--all)
 ```
 
-The server an agent runs is `npx -y @playwright/mcp@latest --isolated
---storage-state <file>`. **`--isolated` is the part that matters for parallel
-work.** Without it Playwright MCP keeps one persistent profile per server on disk,
-and a profile can be open in only one browser at a time, so the second session
-(or a second agent, or you in another window) to open a browser fails on the lock.
-With it, each server gets its own in-memory browser seeded from the file, and
-nothing an agent does is written back. The same applies to the Playwright MCP you
-use in this repo: two of your sessions sharing its default profile collide.
+The server an agent runs is `npx -y @playwright/mcp@0.0.82 --isolated --headless
+--storage-state <file>` (the version is pinned in `AGENT_BROWSER_MCP_VERSION`,
+`packages/shared/src/agent-browser.ts`, whose TSDoc says what to re-check on a
+bump). **`--isolated` is the part that matters for parallel work.** Without it
+Playwright MCP keeps one persistent profile per server on disk, and a profile can
+be open in only one browser at a time, so the second session (or a second agent,
+or you in another window) to open a browser fails on the lock. With it, each
+server gets its own in-memory browser seeded from the file, and nothing an agent
+does is written back. The same applies to the Playwright MCP you use in this
+repo: two of your sessions sharing its default profile collide.
+
+Things that are easy to get wrong:
+
+- **A missing state file is not "signed out".** Playwright MCP 0.0.82 fails every
+  tool with `ENOENT`. DorkOS keeps an empty `{cookies:[],origins:[]}` file in place
+  (`ensureAgentBrowserStateFile`, on every managed-server write and injection), and
+  `forget --all` empties the file rather than deleting it.
+- **"Each session gets its own browser" is per server process, not per session.**
+  Claude Code starts one per session. Codex runs `codex exec` per turn, so the
+  browser restarts every turn. OpenCode registers servers per directory in its
+  sidecar, so concurrent sessions of one agent likely share one browser. Only the
+  Playwright layer (two isolated servers side by side) is verified by the smoke
+  test; the runtime behaviour is expected, not measured.
+- **The dev server looks somewhere else.** `pnpm dev` without `DORK_HOME` resolves
+  the data directory to `apps/server/.temp/.dork`, while the CLI defaults to
+  `~/.dork`. The Tools & MCP card then offers a state file the CLI never writes. Run
+  `DORK_HOME=apps/server/.temp/.dork dorkos browser login` (absolute path) against
+  a dev server, or set the same `DORK_HOME` for both.
+- **Agents can read the saved cookies through their own browser tools.** Playwright
+  MCP's always-on core set includes `browser_run_code_unsafe` and
+  `browser_network_request`, with no flag, capability or config key to drop them
+  (checked in 0.0.82's `filteredTools`). Give the browser only to agents trusted
+  with every account in the file.
 
 Inside DorkOS, give an agent the browser from Tools & MCP → Signed-in browser (the
 `mcp.browser_preset` read feeds the gated `mcp.add`). Outside DorkOS, register it

@@ -1427,7 +1427,7 @@ describe('AgentMcpServers', () => {
           connection: {
             transport: 'stdio',
             command: 'npx',
-            args: ['@playwright/mcp@latest', '--isolated', '--storage-state', '/s.json'],
+            args: ['@playwright/mcp@0.0.82', '--isolated', '--storage-state', '/s.json'],
             env: {},
           },
         },

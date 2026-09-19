@@ -35,8 +35,9 @@ describe('agentBrowserConnection', () => {
       command: 'npx',
       args: [
         '-y',
-        '@playwright/mcp@latest',
+        '@playwright/mcp@0.0.82',
         '--isolated',
+        '--headless',
         '--storage-state',
         '/home/me/.dork/browser/storage-state.json',
       ],
