@@ -92,13 +92,19 @@ check "CLAUDE_PROJECT_DIR pointing at a non-directory: falls back like unset" \
 # --- the anchoring rule in settings.json
 settings=$repo_root/.claude/settings.json
 anchor='"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}"'
+# `|| bad=…` matters: this probe's PASS condition is empty output, so a probe
+# that throws (unparseable settings.json, an entry with no `hooks` key) would
+# otherwise certify the file it could not read. Measured — it did.
+# `includes`, not `endsWith`: a guard command now carries a trailing
+# `|| exit 2`, so it no longer ends with its own filename.
 bad=$(node -e '
-const s=require(process.argv[1]);const anchor=process.argv[2];const guards=["file-guard.mjs","git-guard.mjs","process-guard.mjs"];
+const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const anchor=process.argv[2];
+const guards=["file-guard.mjs","git-guard.mjs","process-guard.mjs"];
 const out=[];for(const [ev,arr] of Object.entries(s.hooks||{}))for(const h of arr)for(const c of h.hooks){
-  const isGuard=guards.some(g=>c.command.endsWith(g));
+  const isGuard=guards.some(g=>c.command.includes(g));
   const ok=isGuard ? c.command.startsWith("cd "+anchor+" && ") : c.command.startsWith(anchor+"/.claude/hooks/in-project.sh ");
   if(!ok) out.push(ev+": "+c.command);}
-process.stdout.write(out.join("\n"))' "$settings" "$anchor")
+process.stdout.write(out.join("\n"))' "$settings" "$anchor" 2>&1) || bad="probe failed (exit $?): $bad"
 check "every settings.json hook is anchored (guards via cd, working-tree hooks via in-project.sh)" "" "$bad"
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
