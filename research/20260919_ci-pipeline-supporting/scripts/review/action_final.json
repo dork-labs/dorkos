@@ -1,0 +1,665 @@
+{
+  "30d": {
+    "counts": {
+      "new commits, flagged file untouched": 5,
+      "merged with zero change after finding": 23,
+      "only rebase/merge-main after; flagged file untouched": 2,
+      "acted: flagged file changed (or thread resolved with author fix reply)": 32,
+      "new commits (finding had no inline anchor)": 5,
+      "only rebase/merge-main after (no inline anchor)": 2
+    },
+    "n": 69,
+    "rows": [
+      {
+        "n": 1138,
+        "t": "2026-08-20T00:02:52Z",
+        "class": "new commits, flagged file untouched",
+        "state": "armed at verdict",
+        "min_to_merge": 174,
+        "rereviewed": false
+      },
+      {
+        "n": 1146,
+        "t": "2026-08-20T06:04:40Z",
+        "class": "new commits, flagged file untouched",
+        "state": "armed at verdict",
+        "min_to_merge": 39,
+        "rereviewed": false
+      },
+      {
+        "n": 1150,
+        "t": "2026-08-20T10:59:53Z",
+        "class": "merged with zero change after finding",
+        "state": "armed at verdict",
+        "min_to_merge": 34,
+        "rereviewed": false
+      },
+      {
+        "n": 1153,
+        "t": "2026-08-20T14:19:54Z",
+        "class": "only rebase/merge-main after; flagged file untouched",
+        "state": "armed at verdict",
+        "min_to_merge": 172,
+        "rereviewed": false
+      },
+      {
+        "n": 1164,
+        "t": "2026-08-21T23:16:15Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "armed at verdict",
+        "min_to_merge": 93,
+        "rereviewed": false
+      },
+      {
+        "n": 1168,
+        "t": "2026-08-22T02:48:14Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "armed at verdict",
+        "min_to_merge": 49,
+        "rereviewed": false
+      },
+      {
+        "n": 1173,
+        "t": "2026-08-22T04:26:43Z",
+        "class": "new commits, flagged file untouched",
+        "state": "armed at verdict",
+        "min_to_merge": 70,
+        "rereviewed": false
+      },
+      {
+        "n": 1179,
+        "t": "2026-08-22T09:13:41Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "armed at verdict",
+        "min_to_merge": 124,
+        "rereviewed": false
+      },
+      {
+        "n": 1181,
+        "t": "2026-08-22T13:56:00Z",
+        "class": "merged with zero change after finding",
+        "state": "armed at verdict",
+        "min_to_merge": 35,
+        "rereviewed": false
+      },
+      {
+        "n": 1214,
+        "t": "2026-08-23T16:48:16Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "not armed at verdict",
+        "min_to_merge": 631,
+        "rereviewed": false
+      },
+      {
+        "n": 1229,
+        "t": "2026-08-23T19:01:09Z",
+        "class": "merged with zero change after finding",
+        "state": "armed at verdict",
+        "min_to_merge": 497,
+        "rereviewed": false
+      },
+      {
+        "n": 1240,
+        "t": "2026-08-23T20:50:57Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "armed at verdict",
+        "min_to_merge": 421,
+        "rereviewed": true
+      },
+      {
+        "n": 1241,
+        "t": "2026-08-23T20:58:53Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "armed at verdict",
+        "min_to_merge": 413,
+        "rereviewed": true
+      },
+      {
+        "n": 1241,
+        "t": "2026-08-23T22:32:42Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "not armed at verdict",
+        "min_to_merge": 319,
+        "rereviewed": false
+      },
+      {
+        "n": 1266,
+        "t": "2026-08-24T16:59:07Z",
+        "class": "merged with zero change after finding",
+        "state": "armed at verdict",
+        "min_to_merge": 37,
+        "rereviewed": false
+      },
+      {
+        "n": 1269,
+        "t": "2026-08-24T18:06:54Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "not armed at verdict",
+        "min_to_merge": 90,
+        "rereviewed": true
+      },
+      {
+        "n": 1276,
+        "t": "2026-08-24T21:15:33Z",
+        "class": "new commits, flagged file untouched",
+        "state": "armed at verdict",
+        "min_to_merge": 108,
+        "rereviewed": false
+      },
+      {
+        "n": 1318,
+        "t": "2026-08-25T21:42:08Z",
+        "class": "merged with zero change after finding",
+        "state": "armed at verdict",
+        "min_to_merge": 63,
+        "rereviewed": false
+      },
+      {
+        "n": 1331,
+        "t": "2026-08-26T11:09:53Z",
+        "class": "new commits (finding had no inline anchor)",
+        "state": "not armed at verdict",
+        "min_to_merge": 113,
+        "rereviewed": false
+      },
+      {
+        "n": 1344,
+        "t": "2026-08-27T23:24:14Z",
+        "class": "merged with zero change after finding",
+        "state": "armed at verdict",
+        "min_to_merge": 43,
+        "rereviewed": false
+      },
+      {
+        "n": 1346,
+        "t": "2026-08-27T23:57:31Z",
+        "class": "new commits (finding had no inline anchor)",
+        "state": "not armed at verdict",
+        "min_to_merge": 44,
+        "rereviewed": false
+      },
+      {
+        "n": 1347,
+        "t": "2026-08-28T00:29:05Z",
+        "class": "merged with zero change after finding",
+        "state": "armed at verdict",
+        "min_to_merge": 63,
+        "rereviewed": false
+      },
+      {
+        "n": 1363,
+        "t": "2026-08-28T20:44:12Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "in queue at verdict",
+        "min_to_merge": 178,
+        "rereviewed": true
+      },
+      {
+        "n": 1364,
+        "t": "2026-08-28T20:16:07Z",
+        "class": "only rebase/merge-main after; flagged file untouched",
+        "state": "armed at verdict",
+        "min_to_merge": 147,
+        "rereviewed": false
+      },
+      {
+        "n": 1375,
+        "t": "2026-08-29T01:40:45Z",
+        "class": "merged with zero change after finding",
+        "state": "armed at verdict",
+        "min_to_merge": 99,
+        "rereviewed": false
+      },
+      {
+        "n": 1376,
+        "t": "2026-08-29T02:00:54Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "not armed at verdict",
+        "min_to_merge": 79,
+        "rereviewed": true
+      },
+      {
+        "n": 1377,
+        "t": "2026-08-29T02:30:26Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "armed at verdict",
+        "min_to_merge": 254,
+        "rereviewed": false
+      },
+      {
+        "n": 1391,
+        "t": "2026-08-29T15:15:06Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "not armed at verdict",
+        "min_to_merge": 1821,
+        "rereviewed": true
+      },
+      {
+        "n": 1433,
+        "t": "2026-09-02T01:22:01Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "not armed at verdict",
+        "min_to_merge": 275,
+        "rereviewed": true
+      },
+      {
+        "n": 1441,
+        "t": "2026-09-02T06:38:38Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "not armed at verdict",
+        "min_to_merge": 107,
+        "rereviewed": false
+      },
+      {
+        "n": 1462,
+        "t": "2026-09-02T19:40:25Z",
+        "class": "merged with zero change after finding",
+        "state": "armed at verdict",
+        "min_to_merge": 28,
+        "rereviewed": false
+      },
+      {
+        "n": 1463,
+        "t": "2026-09-02T19:50:59Z",
+        "class": "merged with zero change after finding",
+        "state": "armed at verdict",
+        "min_to_merge": 29,
+        "rereviewed": false
+      },
+      {
+        "n": 1482,
+        "t": "2026-09-03T02:37:12Z",
+        "class": "merged with zero change after finding",
+        "state": "armed at verdict",
+        "min_to_merge": 47,
+        "rereviewed": false
+      },
+      {
+        "n": 1507,
+        "t": "2026-09-03T12:57:08Z",
+        "class": "merged with zero change after finding",
+        "state": "not armed at verdict",
+        "min_to_merge": 293,
+        "rereviewed": false
+      },
+      {
+        "n": 1546,
+        "t": "2026-09-04T20:22:53Z",
+        "class": "new commits, flagged file untouched",
+        "state": "armed at verdict",
+        "min_to_merge": 2671,
+        "rereviewed": false
+      },
+      {
+        "n": 1560,
+        "t": "2026-09-05T00:09:54Z",
+        "class": "merged with zero change after finding",
+        "state": "armed at verdict",
+        "min_to_merge": 70,
+        "rereviewed": false
+      },
+      {
+        "n": 1570,
+        "t": "2026-09-05T05:02:42Z",
+        "class": "merged with zero change after finding",
+        "state": "armed at verdict",
+        "min_to_merge": 74,
+        "rereviewed": false
+      },
+      {
+        "n": 1581,
+        "t": "2026-09-05T10:10:13Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "armed at verdict",
+        "min_to_merge": 130,
+        "rereviewed": false
+      },
+      {
+        "n": 1605,
+        "t": "2026-09-06T01:38:40Z",
+        "class": "only rebase/merge-main after (no inline anchor)",
+        "state": "not armed at verdict",
+        "min_to_merge": 76,
+        "rereviewed": true
+      },
+      {
+        "n": 1612,
+        "t": "2026-09-06T09:47:50Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "not armed at verdict",
+        "min_to_merge": 121,
+        "rereviewed": true
+      },
+      {
+        "n": 1618,
+        "t": "2026-09-06T15:36:20Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "not armed at verdict",
+        "min_to_merge": 81,
+        "rereviewed": false
+      },
+      {
+        "n": 1635,
+        "t": "2026-09-06T22:46:54Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "not armed at verdict",
+        "min_to_merge": 1013,
+        "rereviewed": true
+      },
+      {
+        "n": 1638,
+        "t": "2026-09-06T23:06:38Z",
+        "class": "merged with zero change after finding",
+        "state": "armed at verdict",
+        "min_to_merge": 33,
+        "rereviewed": false
+      },
+      {
+        "n": 1676,
+        "t": "2026-09-07T21:22:21Z",
+        "class": "merged with zero change after finding",
+        "state": "armed at verdict",
+        "min_to_merge": 30,
+        "rereviewed": false
+      },
+      {
+        "n": 1690,
+        "t": "2026-09-08T07:49:30Z",
+        "class": "merged with zero change after finding",
+        "state": "armed at verdict",
+        "min_to_merge": 32,
+        "rereviewed": false
+      },
+      {
+        "n": 1700,
+        "t": "2026-09-08T12:10:00Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "armed at verdict",
+        "min_to_merge": 42,
+        "rereviewed": false
+      },
+      {
+        "n": 1716,
+        "t": "2026-09-08T20:04:02Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "not armed at verdict",
+        "min_to_merge": 37,
+        "rereviewed": true
+      },
+      {
+        "n": 1716,
+        "t": "2026-09-08T20:08:12Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "not armed at verdict",
+        "min_to_merge": 33,
+        "rereviewed": false
+      },
+      {
+        "n": 1719,
+        "t": "2026-09-08T20:50:16Z",
+        "class": "merged with zero change after finding",
+        "state": "armed at verdict",
+        "min_to_merge": 30,
+        "rereviewed": false
+      },
+      {
+        "n": 1727,
+        "t": "2026-09-09T00:36:30Z",
+        "class": "merged with zero change after finding",
+        "state": "armed at verdict",
+        "min_to_merge": 23,
+        "rereviewed": false
+      },
+      {
+        "n": 1748,
+        "t": "2026-09-09T13:24:18Z",
+        "class": "merged with zero change after finding",
+        "state": "armed at verdict",
+        "min_to_merge": 30,
+        "rereviewed": false
+      },
+      {
+        "n": 1753,
+        "t": "2026-09-09T22:21:04Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "not armed at verdict",
+        "min_to_merge": 36,
+        "rereviewed": false
+      },
+      {
+        "n": 1764,
+        "t": "2026-09-10T17:49:55Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "not armed at verdict",
+        "min_to_merge": 55,
+        "rereviewed": true
+      },
+      {
+        "n": 1769,
+        "t": "2026-09-11T01:13:15Z",
+        "class": "only rebase/merge-main after (no inline anchor)",
+        "state": "not armed at verdict",
+        "min_to_merge": 52,
+        "rereviewed": true
+      },
+      {
+        "n": 1779,
+        "t": "2026-09-11T02:54:19Z",
+        "class": "merged with zero change after finding",
+        "state": "armed at verdict",
+        "min_to_merge": 41,
+        "rereviewed": false
+      },
+      {
+        "n": 1791,
+        "t": "2026-09-11T16:54:02Z",
+        "class": "merged with zero change after finding",
+        "state": "not armed at verdict",
+        "min_to_merge": 27,
+        "rereviewed": false
+      },
+      {
+        "n": 1808,
+        "t": "2026-09-12T01:36:24Z",
+        "class": "new commits (finding had no inline anchor)",
+        "state": "armed at verdict",
+        "min_to_merge": 54,
+        "rereviewed": false
+      },
+      {
+        "n": 1809,
+        "t": "2026-09-12T03:43:41Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "armed at verdict",
+        "min_to_merge": 63,
+        "rereviewed": false
+      },
+      {
+        "n": 1814,
+        "t": "2026-09-12T07:08:37Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "armed at verdict",
+        "min_to_merge": 37,
+        "rereviewed": false
+      },
+      {
+        "n": 1818,
+        "t": "2026-09-12T09:25:54Z",
+        "class": "new commits (finding had no inline anchor)",
+        "state": "not armed at verdict",
+        "min_to_merge": 84,
+        "rereviewed": false
+      },
+      {
+        "n": 1822,
+        "t": "2026-09-12T11:55:50Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "armed at verdict",
+        "min_to_merge": 361,
+        "rereviewed": false
+      },
+      {
+        "n": 1823,
+        "t": "2026-09-12T16:26:30Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "armed at verdict",
+        "min_to_merge": 57,
+        "rereviewed": false
+      },
+      {
+        "n": 1825,
+        "t": "2026-09-12T18:27:58Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "not armed at verdict",
+        "min_to_merge": 96,
+        "rereviewed": false
+      },
+      {
+        "n": 1829,
+        "t": "2026-09-12T20:10:23Z",
+        "class": "merged with zero change after finding",
+        "state": "armed at verdict",
+        "min_to_merge": 27,
+        "rereviewed": false
+      },
+      {
+        "n": 1846,
+        "t": "2026-09-14T00:54:40Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "not armed at verdict",
+        "min_to_merge": 112,
+        "rereviewed": false
+      },
+      {
+        "n": 1852,
+        "t": "2026-09-14T13:00:40Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "armed at verdict",
+        "min_to_merge": 64,
+        "rereviewed": false
+      },
+      {
+        "n": 1886,
+        "t": "2026-09-15T21:08:45Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "not armed at verdict",
+        "min_to_merge": 88,
+        "rereviewed": true
+      },
+      {
+        "n": 1893,
+        "t": "2026-09-15T22:16:36Z",
+        "class": "new commits (finding had no inline anchor)",
+        "state": "not armed at verdict",
+        "min_to_merge": 44,
+        "rereviewed": false
+      },
+      {
+        "n": 1908,
+        "t": "2026-09-16T07:49:51Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "not armed at verdict",
+        "min_to_merge": 266,
+        "rereviewed": true
+      }
+    ]
+  },
+  "7d": {
+    "counts": {
+      "acted: flagged file changed (or thread resolved with author fix reply)": 8,
+      "new commits (finding had no inline anchor)": 2,
+      "merged with zero change after finding": 1
+    },
+    "n": 11,
+    "rows": [
+      {
+        "n": 1814,
+        "t": "2026-09-12T07:08:37Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "armed at verdict",
+        "min_to_merge": 37,
+        "rereviewed": false
+      },
+      {
+        "n": 1818,
+        "t": "2026-09-12T09:25:54Z",
+        "class": "new commits (finding had no inline anchor)",
+        "state": "not armed at verdict",
+        "min_to_merge": 84,
+        "rereviewed": false
+      },
+      {
+        "n": 1822,
+        "t": "2026-09-12T11:55:50Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "armed at verdict",
+        "min_to_merge": 361,
+        "rereviewed": false
+      },
+      {
+        "n": 1823,
+        "t": "2026-09-12T16:26:30Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "armed at verdict",
+        "min_to_merge": 57,
+        "rereviewed": false
+      },
+      {
+        "n": 1825,
+        "t": "2026-09-12T18:27:58Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "not armed at verdict",
+        "min_to_merge": 96,
+        "rereviewed": false
+      },
+      {
+        "n": 1829,
+        "t": "2026-09-12T20:10:23Z",
+        "class": "merged with zero change after finding",
+        "state": "armed at verdict",
+        "min_to_merge": 27,
+        "rereviewed": false
+      },
+      {
+        "n": 1846,
+        "t": "2026-09-14T00:54:40Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "not armed at verdict",
+        "min_to_merge": 112,
+        "rereviewed": false
+      },
+      {
+        "n": 1852,
+        "t": "2026-09-14T13:00:40Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "armed at verdict",
+        "min_to_merge": 64,
+        "rereviewed": false
+      },
+      {
+        "n": 1886,
+        "t": "2026-09-15T21:08:45Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "not armed at verdict",
+        "min_to_merge": 88,
+        "rereviewed": true
+      },
+      {
+        "n": 1893,
+        "t": "2026-09-15T22:16:36Z",
+        "class": "new commits (finding had no inline anchor)",
+        "state": "not armed at verdict",
+        "min_to_merge": 44,
+        "rereviewed": false
+      },
+      {
+        "n": 1908,
+        "t": "2026-09-16T07:49:51Z",
+        "class": "acted: flagged file changed (or thread resolved with author fix reply)",
+        "state": "not armed at verdict",
+        "min_to_merge": 266,
+        "rereviewed": true
+      }
+    ]
+  }
+}
