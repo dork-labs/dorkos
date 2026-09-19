@@ -5,7 +5,7 @@ type: strategic
 status: active
 tags: [secrets, credentials, agents, 1password, infisical, composio, vault, security, competitors]
 searches_performed: 16
-sources_count: 28
+sources_count: 29
 ---
 
 # Agent secrets and a vault for DorkOS
