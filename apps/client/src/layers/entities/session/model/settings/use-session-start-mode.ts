@@ -44,6 +44,23 @@
  * is truthy in every pre-first-message state, so id presence cannot stand in
  * for started-ness.
  *
+ * ## The one case it can be confidently wrong about
+ *
+ * "Unstarted" is `isAnswered && not in the list`, and the list is scoped to one
+ * working directory. A session that HAS started but is absent from this list —
+ * another directory, a filtered list — is read as unstarted, and the
+ * stored-settings read is what normally corrects that, because a started
+ * session has a row. If that read ALSO fails, every source of the session's own
+ * truth has failed at once, and this hook answers with the operator's
+ * configured stop: a statement about what a NEW conversation would do, asserted
+ * about one that may already be running at something else.
+ *
+ * It is left as a documented limit rather than a branch because there is
+ * nothing better to say. The alternative is the loading placeholder, and that
+ * would be the round-2 defect again — an unresolvable state drawn as a pending
+ * one. The configured stop is at least the value the seed would write if the
+ * session really is new (DOR-2103 round 3, D2).
+ *
  * ## Nothing here is written down
  *
  * This is a display answer and it stays one. The server refuses to persist the
@@ -59,7 +76,7 @@ import type { PermissionModeId } from '@dorkos/shared/types';
 import { useConfig } from '@/layers/entities/config';
 import { useCapabilitiesForRuntime, useRuntimeCapabilities } from '@/layers/entities/runtime';
 import { operatorStopForRuntime, startModeFor } from '@/layers/shared/lib';
-import { useTransport } from '@/layers/shared/model';
+import { useAppStore, useTransport } from '@/layers/shared/model';
 // Same-slice imports via sibling modules (not the entities/session barrel) to
 // avoid a self-referential barrel import within this slice.
 import { sessionKeys } from '../../api/query-keys';
@@ -138,6 +155,9 @@ export function useSessionStartMode(
   runtime?: string | null
 ): SessionStartMode {
   const transport = useTransport();
+  // The directory every read below is scoped by. `null` while it resolves at
+  // boot, which is a prerequisite rather than an absence — see the gate below.
+  const selectedCwd = useAppStore((state) => state.selectedCwd);
   // `isLoading` rather than `isAnswered` for the SETTLED question, and they are
   // not the same: a list query disabled because no directory is chosen reports
   // `isAnswered: false` forever, and reading that as "still coming" is how a
@@ -169,11 +189,26 @@ export function useSessionStartMode(
     queryFn: () => transport.getStoredSessionSettings(sessionId!),
     staleTime: STORED_SETTINGS_STALE_MS,
     enabled: unstarted,
+    // **The browser's idea of "offline" is about the internet, and this server
+    // is not on it** — the same ruling `useConfig` makes in its own words.
+    // TanStack's default `networkMode: 'online'` PAUSES this the moment
+    // `navigator.onLine` goes false, which on a desktop install means the dial
+    // stops being able to read a row from a server three inches away because
+    // the wifi dropped (DOR-2103 round 3).
+    networkMode: 'always',
   });
   const { data: stored } = storedQuery;
 
+  // **Waiting on the working directory, not on an answer.** Every read below is
+  // scoped by it, so until it lands they are all DISABLED — and disabled is
+  // indistinguishable from "nobody will ever ask" at the query
+  // (`isQuerySettled` says so). Calling this settled reports a confident
+  // `'default'` for the length of boot and then flips when the directory
+  // arrives, which is the reported defect compressed into the pre-directory
+  // round trip (DOR-2103 round 3). It is a prerequisite, so it is pending.
+  if (selectedCwd === null) return { mode: undefined, settled: false };
   // The list is still arriving, so "not in the list" is not yet a fact. The one
-  // genuinely transient answer.
+  // other genuinely transient answer.
   if (listLoading) return { mode: undefined, settled: false };
   // Started, or no session at all: its own row is the truth and this hook
   // declines. Done, not waiting.

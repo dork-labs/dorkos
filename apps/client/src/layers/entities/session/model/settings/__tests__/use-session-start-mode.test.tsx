@@ -18,8 +18,9 @@
  * pinned server-side, where a runtime's real capability profile is importable:
  * `apps/server/src/services/session/origin/__tests__/configured-stop-on-screen.test.ts`.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
+import { onlineManager } from '@tanstack/react-query';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ExecutionDefaults, SessionSettings } from '@dorkos/shared/schemas';
@@ -28,14 +29,19 @@ import { TransportProvider } from '@/layers/shared/model';
 import { createMockSession, createMockTransport } from '@dorkos/test-utils';
 import { useSessionStatus } from '../use-session-status';
 
+/**
+ * The working directory, mutable so one case can let it LAND mid-render. Every
+ * session read is scoped by it, so `null` is the app's boot state rather than
+ * an absence — see the pre-directory case below.
+ */
+const appState: { selectedCwd: string | null } = { selectedCwd: '/test/cwd' };
+
 vi.mock('@/layers/shared/model', async (importOriginal) => {
   const original = await importOriginal<typeof import('@/layers/shared/model')>();
   return {
     ...original,
-    useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-      const state = { selectedCwd: '/test/cwd' };
-      return selector ? selector(state) : state;
-    },
+    useAppStore: (selector?: (s: Record<string, unknown>) => unknown) =>
+      selector ? selector(appState) : appState,
   };
 });
 
@@ -160,6 +166,11 @@ function createWrapper(transport: ReturnType<typeof createMockTransport>) {
 describe('the trust dial on a conversation nobody has written to yet', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    appState.selectedCwd = '/test/cwd';
+  });
+
+  afterEach(() => {
+    onlineManager.setOnline(true);
   });
 
   it('shows the configured stop, not the literal Default', async () => {
@@ -344,6 +355,61 @@ describe('the trust dial on a conversation nobody has written to yet', () => {
 
     expect(result.current.permissionModeKnown).toBe(true);
     expect(result.current.permissionMode).toBe('default');
+  });
+
+  it('still reads the row when the browser says it is offline', async () => {
+    // PROBE F (DOR-2103 round 3). TanStack's default `networkMode: 'online'`
+    // PAUSES a query while `navigator.onLine` is false — `status: 'pending'`,
+    // `fetchStatus: 'paused'` — and a paused query never resolves until the
+    // BROWSER changes its mind. This server is not on the internet, so dropped
+    // wifi left the dial pulsing at a localhost server three inches away.
+    onlineManager.setOnline(false);
+    const transport = transportWith({
+      defaults: executionDefaults('autonomy'),
+      stored: { permissionMode: 'plan' },
+    });
+
+    const { result } = renderHook(() => useSessionStatus(SESSION_ID, null, false, 'claude-code'), {
+      wrapper: createWrapper(transport),
+    });
+
+    // Not merely settled — the read actually RAN and its value is on screen,
+    // which is the difference `networkMode: 'always'` makes.
+    await waitFor(() => expect(result.current.permissionMode).toBe('plan'));
+    expect(result.current.permissionModeKnown).toBe(true);
+    expect(transport.getStoredSessionSettings).toHaveBeenCalledWith(SESSION_ID);
+  });
+
+  it('says nothing until the working directory lands, then says the real stop', async () => {
+    // PROBE G (DOR-2103 round 3). Every read is scoped by the directory, so
+    // until it resolves they are all DISABLED — and disabled looks exactly like
+    // "nobody will ever ask" at the query. Counting it as settled reported a
+    // confident "Default" for the whole of boot and then flipped to Full
+    // autonomy, which is the reported defect compressed into the pre-directory
+    // round trip.
+    appState.selectedCwd = null;
+    const transport = transportWith({ defaults: executionDefaults('autonomy') });
+
+    const { result, rerender } = renderHook(
+      () => useSessionStatus(SESSION_ID, null, false, 'claude-code'),
+      { wrapper: createWrapper(transport) }
+    );
+
+    expect(result.current.permissionModeKnown).toBe(false);
+    // And it STAYS unknown — this is the window the defect lived in, not a
+    // frame on the way out of it.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    rerender();
+    expect(result.current.permissionModeKnown).toBe(false);
+
+    // The directory lands.
+    appState.selectedCwd = '/test/cwd';
+    rerender();
+
+    await waitFor(() => expect(result.current.permissionModeKnown).toBe(true));
+    // Straight to the real stop; there was never a settled 'default' frame,
+    // which is what the two assertions above establish.
+    expect(result.current.permissionMode).toBe(CLAUDE_AUTONOMY_MODE);
   });
 
   it('never overrules a session that has started', async () => {

@@ -180,6 +180,14 @@ describe('what a new conversation shows is what its first turn will run at', () 
     expect(hook).not.toMatch(/return '[a-zA-Z]/);
     // And the same shape inside the object this hook now returns.
     expect(hook).not.toMatch(/mode:\s*'[a-zA-Z]/);
+    // **This is a grep, and it does not close the hole.** A literal reached
+    // through a ternary (`caps ? undefined : ('default' as PermissionModeId)`)
+    // slips all three patterns, measured. Widening the regex until it catches
+    // every spelling is a losing game against a language; what actually guards
+    // the behaviour is the RTL case over a runtime whose declared default is
+    // `always-allow`, where the honest answer and the literal are different
+    // strings. Read these three as a cheap tripwire on the OBVIOUS spellings,
+    // not as the guarantee (DOR-2103 round 3).
   });
 
   it('would catch the client naming a different runtime than the session binds to', () => {
