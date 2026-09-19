@@ -40,6 +40,12 @@ interface PermissionModeItemProps {
    * Nothing is known yet about this session's power — draw a placeholder, not a
    * mode.
    *
+   * **`disabled` outranks this.** A control that cannot be used is not one that
+   * is about to become useful, and with no session selected the honest chip is
+   * "Send a message first" rather than a spinner for a read nobody issued. The
+   * embed's session store starts null and resets on every directory switch, so
+   * that state is ordinary rather than exotic (DOR-2103 re-review).
+   *
    * `mode` is a non-optional string, so the frames before any answer arrives
    * still carry SOMETHING, and what they carry is shaped exactly like a real
    * answer (`resolvePermissionMode`'s `'default'`). Painting it is the DOR-2103
@@ -150,6 +156,8 @@ export function PermissionModeItem({
   // below that do not — a runtime with no modes, and a session with no first
   // turn — publish `false`, because a caller offering a way in must be told the
   // truth about whether there is one.
+  // `disabled` first for the same reason the branches below run in that order:
+  // a control nobody can use is not one that is loading.
   const interactive =
     !(caps && !caps.permissionModes.supported) && disabled !== true && pending !== true;
   useEffect(() => {
@@ -161,26 +169,6 @@ export function PermissionModeItem({
   // all (some runtimes have no notion of one).
   if (caps && !caps.permissionModes.supported) {
     return null;
-  }
-
-  // Nothing resolved yet: keep the slot, say nothing. A placeholder rather than
-  // `null` because the item disappearing and reappearing would shuffle the
-  // status line's budgeted layout under the person's cursor, and because the
-  // honest report here is "we are still asking", not "this session has no
-  // permissions". `aria-busy` is what says that to a screen reader; the label
-  // deliberately names no mode.
-  if (pending) {
-    return (
-      <span
-        data-testid="permission-mode-pending"
-        aria-busy="true"
-        aria-label="Permissions: still loading"
-        className={cn(STATUS_ITEM_TRIGGER_CLASS, 'items-center gap-1 opacity-40')}
-      >
-        <span className="bg-muted-foreground/30 size-(--size-icon-xs) shrink-0 animate-pulse rounded-full" />
-        <span className="bg-muted-foreground/30 h-2 w-10 animate-pulse rounded" />
-      </span>
-    );
   }
 
   const allDescriptors: PermissionModeDescriptor[] = caps?.permissionModes.values ?? [];
@@ -230,6 +218,10 @@ export function PermissionModeItem({
     </button>
   );
 
+  // BEFORE `pending`, deliberately: a disabled control has nothing to be
+  // loading, and this is the state a session-less embed sits in permanently
+  // (DOR-2103 re-review). "Send a message first" is the honest sentence there;
+  // a spinner for a request nobody made is not.
   if (disabled) {
     return (
       <Tooltip>
@@ -238,6 +230,26 @@ export function PermissionModeItem({
         </TooltipTrigger>
         <TooltipContent side="top">Send a message first</TooltipContent>
       </Tooltip>
+    );
+  }
+
+  // Nothing resolved yet: keep the slot, say nothing. A placeholder rather than
+  // `null` because the item disappearing and reappearing would shuffle the
+  // status line's budgeted layout under the person's cursor, and because the
+  // honest report here is "we are still asking", not "this session has no
+  // permissions". `aria-busy` is what says that to a screen reader; the label
+  // deliberately names no mode.
+  if (pending) {
+    return (
+      <span
+        data-testid="permission-mode-pending"
+        aria-busy="true"
+        aria-label="Permissions: still loading"
+        className={cn(STATUS_ITEM_TRIGGER_CLASS, 'items-center gap-1 opacity-40')}
+      >
+        <span className="bg-muted-foreground/30 size-(--size-icon-xs) shrink-0 animate-pulse rounded-full" />
+        <span className="bg-muted-foreground/30 h-2 w-10 animate-pulse rounded" />
+      </span>
     );
   }
 

@@ -176,10 +176,10 @@ export function useSessionSubmit({
   // the same server-default runtime `defaultRuntimeRef` holds, so the row's
   // mode and the row's runtime mark are two facts about ONE runtime.
   const startMode = useSessionStartMode(sessionId, launchRuntime);
-  const startModeRef = useRef(startMode);
+  const startModeRef = useRef(startMode.mode);
   useEffect(() => {
-    startModeRef.current = startMode;
-  }, [startMode]);
+    startModeRef.current = startMode.mode;
+  }, [startMode.mode]);
 
   const transformContentRef = useRef(transformContent);
   useEffect(() => {

@@ -170,11 +170,16 @@ describe('what a new conversation shows is what its first turn will run at', () 
       'utf8'
     );
     // It composes through the shared helper...
-    expect(hook).toMatch(/return startModeFor\(stop, caps\.permissionModes\);/);
-    // ...and nowhere in it does a permission mode fall back to a literal. The
-    // pattern is deliberately about the SHAPE of the mistake rather than one
-    // spelling of it: any `?? '<mode id>'` in this file is the defect.
+    expect(hook).toMatch(/startModeFor\(stop, caps\.permissionModes\)/);
+    // ...and nowhere in it does a permission mode come from a literal. TWO
+    // spellings, because the first version banned only one and the other
+    // stayed green under it: `?? 'default'` is the fallback shape, and
+    // `return 'default'` is the early-exit shape that a branch like "this
+    // runtime declares no modes" reaches for (DOR-2103 re-review).
     expect(hook).not.toMatch(/\?\?\s*'[a-zA-Z][a-zA-Z0-9_.-]*'/);
+    expect(hook).not.toMatch(/return '[a-zA-Z]/);
+    // And the same shape inside the object this hook now returns.
+    expect(hook).not.toMatch(/mode:\s*'[a-zA-Z]/);
   });
 
   it('would catch the client naming a different runtime than the session binds to', () => {

@@ -70,6 +70,10 @@ function executionDefaults(
  */
 function transportWith(opts: {
   defaults?: ExecutionDefaults;
+  /** Make `GET /api/capabilities` fail, the way an unreachable server does. */
+  capabilitiesFail?: boolean;
+  /** Make `GET /api/sessions/:id` fail for a session the list already carries. */
+  detailFail?: boolean;
   listed?: ReturnType<typeof createMockSession>[];
   detail?: ReturnType<typeof createMockSession>;
   stored?: SessionSettings | null;
@@ -83,8 +87,13 @@ function transportWith(opts: {
       ...(opts.defaults ? { executionDefaults: opts.defaults } : {}),
     })),
     listSessions: vi.fn().mockResolvedValue({ sessions: opts.listed ?? [] }),
-    getSession: vi.fn().mockResolvedValue(opts.detail),
+    getSession: opts.detailFail
+      ? vi.fn().mockRejectedValue(new Error('session read failed'))
+      : vi.fn().mockResolvedValue(opts.detail),
     getStoredSessionSettings: vi.fn().mockResolvedValue(opts.stored ?? null),
+    ...(opts.capabilitiesFail
+      ? { getCapabilities: vi.fn().mockRejectedValue(new Error('capabilities read failed')) }
+      : {}),
     ...(opts.extraRuntime
       ? {
           getCapabilities: vi.fn().mockImplementation(async () => {
@@ -282,6 +291,59 @@ describe('the trust dial on a conversation nobody has written to yet', () => {
 
     await waitFor(() => expect(result.current.permissionModeKnown).toBe(true));
     expect(transport.getStoredSessionSettings).not.toHaveBeenCalled();
+  });
+
+  it('stops asking when the capability read fails, instead of pulsing forever', async () => {
+    // PROBE B (DOR-2103 re-review). `startMode` is `undefined` both while the
+    // capability map is loading and once it has failed, and the first version
+    // of the flag could not tell those apart — so a session on an unreachable
+    // server pulsed for the lifetime of the window. Settled means "nothing
+    // more is coming", which a failure satisfies.
+    const transport = transportWith({
+      defaults: executionDefaults('autonomy'),
+      capabilitiesFail: true,
+    });
+
+    const { result } = renderHook(() => useSessionStatus(SESSION_ID, null, false, 'claude-code'), {
+      wrapper: createWrapper(transport),
+    });
+
+    await waitFor(() => expect(result.current.permissionModeKnown).toBe(true));
+    // No answer to be had, so the control falls back to the placeholder and
+    // draws it — rather than claiming to still be working.
+    expect(result.current.permissionMode).toBe('default');
+  });
+
+  it('falls back to the list row when a started session detail read fails', async () => {
+    // PROBE C (DOR-2103 re-review). The rail renders this session at Full
+    // power off its LIST row while the status line waited forever on the
+    // failed detail read — one session described two ways, one of them a
+    // spinner. The list row is stored truth for a started session, so it is
+    // the answer here too.
+    const started = createMockSession({ id: SESSION_ID, permissionMode: 'bypassPermissions' });
+    const transport = transportWith({ listed: [started], detailFail: true });
+
+    const { result } = renderHook(() => useSessionStatus(SESSION_ID, null, false, 'claude-code'), {
+      wrapper: createWrapper(transport),
+    });
+
+    await waitFor(() => expect(result.current.permissionModeKnown).toBe(true));
+    expect(result.current.permissionMode).toBe('bypassPermissions');
+  });
+
+  it('has nothing to be loading when no session is selected', async () => {
+    // PROBE A (DOR-2103 re-review), at the hook. The embed's session store
+    // starts null and resets on every directory switch, so this is an ordinary
+    // resting state — and the first version reported it as "still loading"
+    // forever. Nothing is loading; there is no session to load anything for.
+    const transport = transportWith({ defaults: executionDefaults('autonomy') });
+
+    const { result } = renderHook(() => useSessionStatus(null, null, false, 'claude-code'), {
+      wrapper: createWrapper(transport),
+    });
+
+    expect(result.current.permissionModeKnown).toBe(true);
+    expect(result.current.permissionMode).toBe('default');
   });
 
   it('never overrules a session that has started', async () => {

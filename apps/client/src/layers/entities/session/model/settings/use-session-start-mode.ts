@@ -63,6 +63,7 @@ import { useTransport } from '@/layers/shared/model';
 // Same-slice imports via sibling modules (not the entities/session barrel) to
 // avoid a self-referential barrel import within this slice.
 import { sessionKeys } from '../../api/query-keys';
+import { isQuerySettled } from '../../lib/query-settled';
 import { useSessions } from '../query/use-sessions';
 
 /**
@@ -77,23 +78,43 @@ import { useSessions } from '../query/use-sessions';
  */
 const STORED_SETTINGS_STALE_MS = 5_000;
 
+/** What {@link useSessionStartMode} answers. */
+export interface SessionStartMode {
+  /**
+   * The mode an unstarted session would run its first turn at, or `undefined`
+   * when this hook has nothing to say.
+   */
+  mode: PermissionModeId | undefined;
+  /**
+   * Whether this hook is DONE — it will not change its answer without
+   * something else changing.
+   *
+   * `mode: undefined` alone cannot be read as "still working it out", and
+   * conflating the two is what left the dial pulsing forever on a failed
+   * capabilities read (DOR-2103 re-review). Three different states answer
+   * `undefined`, and only the first is transient:
+   *
+   * - **Still deliberating** (`settled: false`) — a query this answer depends
+   *   on is genuinely in flight.
+   * - **Declined** (`settled: true`) — the session has started, so its own row
+   *   is the truth and this hook must not speak over it.
+   * - **Gave up** (`settled: true`) — a read failed, or this runtime declares
+   *   no permission modes. There is no answer and there will not be one.
+   *
+   * A caller draws nothing committal while `settled` is false, and falls back
+   * to the best value it has once it is true.
+   */
+  settled: boolean;
+}
+
 /**
- * Resolve what an unstarted session will run its first turn at, or `undefined`
- * when there is nothing honest to say.
+ * Resolve what an unstarted session will run its first turn at.
  *
- * `undefined` covers two genuinely different states, and the caller does not
- * have to tell them apart because the answer is the same either way — draw
- * nothing committal:
- *
- * - **Still loading.** The session list, the config, the capability map or the
- *   stored-settings read is in flight.
- * - **Declined.** The session has started, so its own row is the truth.
- *
- * What a caller must NOT do is paint a default-shaped value here. The
- * permissions control gates on `permissionModeKnown`
- * (`useSessionStatus`), which is exactly "a row or this hook has answered";
- * painting the placeholder instead reproduces the DOR-2103 symptom in
- * compressed form — the dial reads "Default" for a few frames, then flips.
+ * What a caller must NOT do is paint a default-shaped value while this is
+ * unsettled. The permissions control gates on `permissionModeKnown`
+ * (`useSessionStatus`); painting the placeholder instead reproduces the
+ * DOR-2103 symptom in compressed form — the dial reads "Default" for a few
+ * frames, then flips.
  *
  * @param sessionId - The session on screen, or null when none is selected. A
  *   client-minted id for an unsent conversation is the case this hook is for.
@@ -115,11 +136,18 @@ const STORED_SETTINGS_STALE_MS = 5_000;
 export function useSessionStartMode(
   sessionId: string | null,
   runtime?: string | null
-): PermissionModeId | undefined {
+): SessionStartMode {
   const transport = useTransport();
-  const { sessions, isAnswered } = useSessions();
-  const { data: config, isPending: configPending } = useConfig();
-  const { data: capabilityMap, isPending: capabilitiesPending } = useRuntimeCapabilities();
+  // `isLoading` rather than `isAnswered` for the SETTLED question, and they are
+  // not the same: a list query disabled because no directory is chosen reports
+  // `isAnswered: false` forever, and reading that as "still coming" is how a
+  // surface waits on a request nobody made. `isAnswered` is still what licenses
+  // the positive claim "this session is not in the list" below.
+  const { sessions, isAnswered, isLoading: listLoading } = useSessions();
+  const configQuery = useConfig();
+  const capabilitiesQuery = useRuntimeCapabilities();
+  const { data: config } = configQuery;
+  const { data: capabilityMap } = capabilitiesQuery;
   // Resolved to a concrete runtime type ONCE, so the capability profile below
   // and the per-runtime config override are read for the same runtime. Reading
   // the default separately at each of them would compare a runtime named by
@@ -136,27 +164,53 @@ export function useSessionStartMode(
   // Asked only about an unstarted session, so a rail of listed conversations
   // never issues one of these: a started session's settings already ride its
   // `Session`, overlaid server-side from the same row.
-  const { data: stored, isPending: storedPending } = useQuery({
+  const storedQuery = useQuery({
     queryKey: sessionKeys.storedSettings(sessionId),
     queryFn: () => transport.getStoredSessionSettings(sessionId!),
     staleTime: STORED_SETTINGS_STALE_MS,
     enabled: unstarted,
   });
+  const { data: stored } = storedQuery;
 
-  // Not a session, not yet known to be unstarted, or started (its own row is
-  // the truth). The gate is the list, and `unstarted` folds all three.
-  if (!unstarted) return undefined;
-  // A disabled query reports `isPending: true` forever, so the gate above is
-  // what keeps this from reading as permanently in-flight on a started session.
-  if (storedPending || configPending || capabilitiesPending) return undefined;
+  // The list is still arriving, so "not in the list" is not yet a fact. The one
+  // genuinely transient answer.
+  if (listLoading) return { mode: undefined, settled: false };
+  // Started, or no session at all: its own row is the truth and this hook
+  // declines. Done, not waiting.
+  if (!unstarted) return { mode: undefined, settled: true };
+  // Each of these is settled once it has succeeded, FAILED, or turned out never
+  // to have been asked — see `isQuerySettled`. Reading `isPending` alone left a
+  // failed capabilities read pulsing forever (DOR-2103 re-review).
+  if (
+    !isQuerySettled(storedQuery) ||
+    !isQuerySettled(configQuery) ||
+    !isQuerySettled(capabilitiesQuery)
+  ) {
+    return { mode: undefined, settled: false };
+  }
 
   // The person's own choice for THIS conversation, made before sending. It
   // outranks the configured stop exactly as it outranks the seed.
-  if (stored?.permissionMode !== undefined) return stored.permissionMode;
+  if (stored?.permissionMode !== undefined) return { mode: stored.permissionMode, settled: true };
 
-  // A runtime that declares no permission modes has no dial and nothing to say.
-  if (!caps?.permissionModes.supported) return undefined;
+  // No runtime resolved (the capability map failed or is empty), or a runtime
+  // that declares no permission modes at all. Both are answers rather than
+  // pauses: the reads above have settled, so nothing further is coming.
+  //
+  // `!forRuntime` is stated rather than laundered into
+  // `operatorStopForRuntime(defaults, forRuntime ?? '')`, which looked up an
+  // empty-string runtime key that can never match and then called the miss a
+  // preference (DOR-2103 re-review). It is EXPRESSIVE rather than behavioural
+  // today, and deliberately so: `useCapabilitiesForRuntime` reads the same
+  // capability map, so `caps` is undefined in exactly the cases `forRuntime` is
+  // null and the second half of this condition already covers it. No test can
+  // separate them, which is why there is none — the guard is here so the code
+  // says which of the two facts it depends on, instead of relying on a
+  // coupling a future edit could break silently.
+  if (!forRuntime || !caps?.permissionModes.supported) {
+    return { mode: undefined, settled: true };
+  }
 
-  const stop = operatorStopForRuntime(config?.executionDefaults, forRuntime ?? '');
-  return startModeFor(stop, caps.permissionModes);
+  const stop = operatorStopForRuntime(config?.executionDefaults, forRuntime);
+  return { mode: startModeFor(stop, caps.permissionModes), settled: true };
 }
