@@ -1172,15 +1172,16 @@ router.post('/:id/messages', async (req, res) => {
   // session that is already bound, so a running conversation keeps whatever it
   // is running with.
   //
-  // `interactive: true` is what unlocks the trust stop, and this route is where
-  // that claim is true: a message posted to `/api/sessions/:id/messages` came
-  // from a person at a cockpit holding the session's event stream open. Rooms,
-  // tasks and bindings never pass through here.
+  // `{ kind: 'interactive' }` is what unlocks the trust stop, and this route is
+  // where that claim is true: a message posted to `/api/sessions/:id/messages`
+  // came from a person at a control panel holding the session's event stream
+  // open. Rooms, tasks and bindings never pass through here, and each names
+  // itself at its own call (DOR-2105).
   const isNewSession = await runtimeRegistry.persistSessionRuntime(
     sessionId,
     runtimeType,
-    verifiedAgentPath,
-    { interactive: true }
+    { kind: 'interactive' },
+    verifiedAgentPath
   );
   // Fire the anonymous `session_created` usage event exactly once, on the write
   // that binds the session (no-op unless usage telemetry is on).

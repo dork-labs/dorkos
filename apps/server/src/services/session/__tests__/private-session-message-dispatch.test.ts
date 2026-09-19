@@ -213,9 +213,12 @@ describe('private receipt adoption', () => {
     async (runtimeType) => {
       const firstRegistry = new RuntimeRegistry();
       firstRegistry.setDb(db);
-      await firstRegistry.persistSessionRuntime(SESSION_ID, runtimeType, '/agents/researcher', {
-        interactive: false,
-      });
+      await firstRegistry.persistSessionRuntime(
+        SESSION_ID,
+        runtimeType,
+        { kind: 'test-harness' },
+        '/agents/researcher'
+      );
       const ref = seedRequest(db, `cold-${runtimeType}`, runtimeType);
       const firstBoot = new PrivateSessionMessageAcceptanceService(
         db,

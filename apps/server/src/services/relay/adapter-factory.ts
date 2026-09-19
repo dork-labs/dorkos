@@ -183,8 +183,17 @@ export async function createAdapter(
         // no session-creation path ever ran for it. First-write-wins inside the
         // registry, so a turn on a conversation somebody already bound changes
         // nothing (DOR-1774).
+        //
+        // The origin seeds no permission mode: an agent-to-agent DM carries
+        // the grant it arrived under, and an absent grant is not consent
+        // (DOR-604, DOR-2105).
         bindSessionRuntime: async ({ sessionId, runtimeType, agentDirectory }) => {
-          await runtimeRegistry.persistSessionRuntime(sessionId, runtimeType, agentDirectory);
+          await runtimeRegistry.persistSessionRuntime(
+            sessionId,
+            runtimeType,
+            { kind: 'agent-dm' },
+            agentDirectory
+          );
         },
         // Every approval that arrives on the relay bus is checked here too,
         // before the runtime is touched (spec `ask-entitlement` §5.3).

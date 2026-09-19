@@ -1100,11 +1100,13 @@ describe('Sessions Routes', () => {
       expect(runtimeRegistry.persistSessionRuntime).toHaveBeenCalledWith(
         S1,
         'claude-code',
-        undefined,
-        // A message posted here came from a person at a cockpit, which is what
-        // unlocks the configured default trust stop (spec `trust-dial`,
-        // decision 6). Rooms, tasks and bindings never pass through this route.
-        { interactive: true }
+        // A message posted here came from a person at a control panel, which is
+        // what unlocks the configured default trust stop (spec `trust-dial`,
+        // decision 6). Rooms, tasks and bindings never pass through this route,
+        // and the origin argument is required so none of them can arrive here
+        // unlabelled (DOR-2105).
+        { kind: 'interactive' },
+        undefined
       );
     });
 
@@ -1116,10 +1118,8 @@ describe('Sessions Routes', () => {
       expect(runtimeRegistry.persistSessionRuntime).toHaveBeenCalledWith(
         S1,
         'test-mode',
-        undefined,
-        {
-          interactive: true,
-        }
+        { kind: 'interactive' },
+        undefined
       );
     });
 
@@ -1136,8 +1136,8 @@ describe('Sessions Routes', () => {
       expect(runtimeRegistry.persistSessionRuntime).toHaveBeenCalledWith(
         S1,
         'test-mode',
-        '/projects/my-agent',
-        { interactive: true }
+        { kind: 'interactive' },
+        '/projects/my-agent'
       );
     });
 
@@ -1257,9 +1257,12 @@ describe('Sessions Routes', () => {
       const res = await sendMessageOnce(S1, { content: 'hi', cwd: '/projects/seeded-agent' });
 
       expect(res.status).toBe(202);
-      expect(runtimeRegistry.persistSessionRuntime).toHaveBeenCalledWith(S1, 'fake', undefined, {
-        interactive: true,
-      });
+      expect(runtimeRegistry.persistSessionRuntime).toHaveBeenCalledWith(
+        S1,
+        'fake',
+        { kind: 'interactive' },
+        undefined
+      );
     });
 
     it('resolves via resolveForSession after persisting', async () => {

@@ -415,7 +415,16 @@ export class BindingSubsystem {
           // session runs on the runtime chosen above, and its dispatch subject
           // falls back to the inferred type.
           try {
-            await runtimeRegistry.persistSessionRuntime(id, runtimeType, cwd);
+            // The origin seeds no permission mode. The binding already chose
+            // one — it is the `permissionMode` argument above — and a grant
+            // nobody set there is not consent to the operator's own level
+            // (DOR-604, DOR-2105).
+            await runtimeRegistry.persistSessionRuntime(
+              id,
+              runtimeType,
+              { kind: 'relay-binding' },
+              cwd
+            );
           } catch (err) {
             logger.warn(
               `[BindingSubsystem] could not record that session '${id}' runs on ` +

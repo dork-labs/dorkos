@@ -127,9 +127,7 @@ describe('a standing Full-autonomy default, end to end', () => {
     // 2. A new session is created the way the cockpit creates one — the real
     //    seeding path, with no permission mode passed by anybody.
     const { runtimeRegistry } = await import('../../services/core/runtime-registry.js');
-    await runtimeRegistry.persistSessionRuntime(SESSION_ID, 'fake', undefined, {
-      interactive: true,
-    });
+    await runtimeRegistry.persistSessionRuntime(SESSION_ID, 'fake', { kind: 'interactive' });
 
     const settings = await runtimeRegistry.getSessionSettings(SESSION_ID);
     expect(settings?.permissionMode).toBe(autonomyModeId());
@@ -144,10 +142,12 @@ describe('a standing Full-autonomy default, end to end', () => {
     expect(patched.status).toBe(200);
   });
 
-  it('never seeds a session the person is not watching', async () => {
-    // The same config, the unattended path — a room turn, a scheduled run, a
-    // relay binding. They keep the runtime's own default however the cockpit's
-    // default is set.
+  it('seeds a room turn from the same standing default, and a binding from nothing', async () => {
+    // The unattended half of the same config, through the required turn origin
+    // (DOR-2105). A room FOLLOWS the operator's level — nobody is watching, and
+    // that is the reason to follow it rather than the reason not to (DOR-1917)
+    // — while a relay binding carries the grant a person set on the binding and
+    // must never inherit the operator's own (DOR-604).
     await request(fixtureServer)
       .patch('/api/config')
       .send({
@@ -157,12 +157,23 @@ describe('a standing Full-autonomy default, end to end', () => {
       .expect(200);
 
     const { runtimeRegistry } = await import('../../services/core/runtime-registry.js');
-    await runtimeRegistry.persistSessionRuntime('22222222-3333-4444-8555-666666666666', 'fake');
+    const roomSession = '22222222-3333-4444-8555-666666666666';
+    const bindingSession = '33333333-4444-4555-8666-777777777777';
+    await runtimeRegistry.persistSessionRuntime(roomSession, 'fake', {
+      kind: 'room',
+      roomId: 'room-1',
+      externalAuthor: false,
+    });
+    await runtimeRegistry.persistSessionRuntime(bindingSession, 'fake', {
+      kind: 'relay-binding',
+    });
 
-    const settings = await runtimeRegistry.getSessionSettings(
-      '22222222-3333-4444-8555-666666666666'
+    expect((await runtimeRegistry.getSessionSettings(roomSession))?.permissionMode).toBe(
+      autonomyModeId()
     );
-    expect(settings?.permissionMode).toBeUndefined();
+    expect(
+      (await runtimeRegistry.getSessionSettings(bindingSession))?.permissionMode
+    ).toBeUndefined();
   });
 
   it('refuses the default until the acknowledgement exists, and seeds nothing meanwhile', async () => {
@@ -173,9 +184,7 @@ describe('a standing Full-autonomy default, end to end', () => {
     expect(refused.body.code).toBe('AUTONOMY_ACK_REQUIRED');
 
     const { runtimeRegistry } = await import('../../services/core/runtime-registry.js');
-    await runtimeRegistry.persistSessionRuntime(SESSION_ID, 'fake', undefined, {
-      interactive: true,
-    });
+    await runtimeRegistry.persistSessionRuntime(SESSION_ID, 'fake', { kind: 'interactive' });
 
     const settings = await runtimeRegistry.getSessionSettings(SESSION_ID);
     expect(settings?.permissionMode).toBeUndefined();
@@ -208,9 +217,7 @@ describe('a standing Full-autonomy default, end to end', () => {
       .expect(200);
 
     const { runtimeRegistry } = await import('../../services/core/runtime-registry.js');
-    await runtimeRegistry.persistSessionRuntime(SESSION_ID, 'fake', undefined, {
-      interactive: true,
-    });
+    await runtimeRegistry.persistSessionRuntime(SESSION_ID, 'fake', { kind: 'interactive' });
 
     // Nothing seeded, because nothing is configured any more.
     const settings = await runtimeRegistry.getSessionSettings(SESSION_ID);
@@ -230,9 +237,7 @@ describe('a standing Full-autonomy default, end to end', () => {
       .expect(200);
 
     const { runtimeRegistry } = await import('../../services/core/runtime-registry.js');
-    await runtimeRegistry.persistSessionRuntime(SESSION_ID, 'fake', undefined, {
-      interactive: true,
-    });
+    await runtimeRegistry.persistSessionRuntime(SESSION_ID, 'fake', { kind: 'interactive' });
 
     const settings = await runtimeRegistry.getSessionSettings(SESSION_ID);
     // The runtime's own first-declared mode at that stop, never a stop word.

@@ -4349,8 +4349,8 @@ async function start() {
         await runtimeRegistry.persistSessionRuntime(
           input.sessionId,
           'claude-code',
-          input.agentPath,
-          { interactive: false }
+          { kind: 'test-harness' },
+          input.agentPath
         );
         let ownsBinding = true;
         const binding = await connectorRuntimePrincipals.openTurn(

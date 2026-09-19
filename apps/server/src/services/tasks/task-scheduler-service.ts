@@ -1308,8 +1308,17 @@ export class TaskSchedulerService {
         // same rename this run follows below, so the two stay together.
         // Best-effort: a binding that could not be written is not a reason to
         // refuse the run, and an unbound session still falls back to the default.
+        //
+        // The origin seeds no permission mode, which is what this call has
+        // always done: a run's power comes off `pulse_schedules.permission_mode`
+        // and reaches the runtime through `ensureSession`/`sendMessage` below,
+        // never through this row (DOR-2105; changing that is DOR-2100).
         await runtimeRegistry
-          .persistSessionRuntime(sessionId, execution.runtimeType)
+          .persistSessionRuntime(sessionId, execution.runtimeType, {
+            kind: 'schedule',
+            taskId: task.id,
+            runId: run.id,
+          })
           .catch((err: unknown) => {
             logger.warn(`run ${run.id}: could not bind its session to a runtime`, logError(err));
           });
