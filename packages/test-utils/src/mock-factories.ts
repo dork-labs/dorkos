@@ -628,6 +628,13 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
           supportsPlugins: true,
           permissionModes: {
             supported: true,
+            // The mode a claude-code session runs when nothing is stored for it
+            // — the real profile declares it (`claude-code/runtime-constants.ts`)
+            // and the two other runtimes here already did. Its absence made this
+            // mock the one profile that could not answer "what does a session
+            // with a NULL permission column run at?", which is exactly the
+            // question the trust dial resolves before a first message (DOR-2103).
+            default: 'default',
             values: [
               {
                 id: 'default',

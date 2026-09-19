@@ -111,6 +111,7 @@ export {
   isSilentReadOnly,
   isWorkingMode,
   resolveTrustStops,
+  resolveStopMode,
   findWorkingMode,
   type TrustStop,
 } from '@dorkos/shared/permission-semantics';

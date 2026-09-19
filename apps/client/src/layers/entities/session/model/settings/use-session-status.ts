@@ -14,6 +14,7 @@ import {
 import { sessionKeys } from '../../api/query-keys';
 import { deriveContextPercent } from '../../lib/context-health';
 import { resolvePermissionMode } from '../../lib/permission-mode';
+import { useSessionStartMode } from './use-session-start-mode';
 import type {
   Session,
   SessionStatusEvent,
@@ -96,6 +97,10 @@ export function useSessionStatus(
   const clearOverrides = useSessionSettingsOverridesStore((s) => s.clear);
 
   const { data: session } = useSessionDetail(sessionId);
+  // What this conversation WILL run at while nothing is stored for it yet. Only
+  // ever an answer for a session that has not started — see the hook — so it can
+  // never displace the row below, in either direction.
+  const startMode = useSessionStartMode(sessionId, runtime);
 
   // Derive default model from useModels() data — no hardcoded fallback
   const defaultModel =
@@ -129,7 +134,17 @@ export function useSessionStatus(
     // literal `=== 'bypassPermissions'` compare against it IS a bug (the
     // session's status strip used to have one) — use `isBypassPermissionMode`
     // for any bypass check, never a raw literal.
-    permissionMode: resolvePermissionMode(overrides.permissionMode, session?.permissionMode),
+    //
+    // `startMode` is the last tier before the literal, and it is what closes
+    // DOR-2103: a conversation with no row yet used to read "Default" here
+    // whatever the operator's configured stop was, right up until the first
+    // message seeded the real value and the dial jumped. It answers `undefined`
+    // for every session that HAS a row, so the stored value still wins the
+    // moment there is one.
+    permissionMode: resolvePermissionMode(
+      overrides.permissionMode,
+      session?.permissionMode ?? startMode
+    ),
     model,
     effort,
     fastMode,

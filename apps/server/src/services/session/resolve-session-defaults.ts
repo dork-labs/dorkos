@@ -28,7 +28,7 @@
  *
  * Config stores `'ask' | 'act' | 'autonomy'`; a session stores a runtime mode
  * id. The translation is the runtime's own capability profile, read through
- * {@link resolveTrustStops} — the SAME function the dial renders from, so the
+ * `resolveStopMode` (shared) — the SAME mapping the dial renders from, so the
  * mode a default lands on is by construction the mode the dial would show as
  * selected, including the first-declared rule where a runtime declares two modes
  * at one stop. A runtime with no mode at the configured stop contributes
@@ -91,7 +91,7 @@ import type {
   RuntimeSettingsCapability,
 } from '@dorkos/shared/agent-runtime';
 import { readManifest } from '@dorkos/shared/manifest';
-import { resolveTrustStops } from '@dorkos/shared/permission-semantics';
+import { resolveStopMode } from '@dorkos/shared/permission-semantics';
 import { configManager } from '../core/config-manager.js';
 
 /**
@@ -378,7 +378,7 @@ export async function resolveUnattendedSessionDefaults(opts: {
  * why the global tier exists at all.
  *
  * **It answers a STOP, not a mode.** Translating a stop into a runtime's own
- * mode id is {@link resolveTrustStops}'s job — the same function the dial
+ * mode id is `resolveStopMode`'s job (shared) — the same mapping the dial
  * renders from — so a caller resolves the id by asking the target runtime's
  * capability profile, exactly as {@link resolveTrustMode} does below. Never
  * re-derive that mapping: a second copy is how a default and the dial come to
@@ -474,12 +474,12 @@ export function resolveUnattendedPermissionMode(opts: {
 /**
  * Turn a configured dial position into the mode id this runtime calls it.
  *
- * The one rule, and it is not this module's: {@link resolveTrustStops} is what
- * the dial itself renders from, so a default lands on exactly the mode the dial
- * would show as selected — including where a runtime declares two modes at one
- * stop and its own declared order decides which the position means (Claude
- * Code's `acceptEdits` before `auto`). Re-deriving that here would be a second
- * answer to a question that already has one.
+ * A thin call onto `resolveStopMode` in `@dorkos/shared/permission-semantics`,
+ * kept as a named local so the tiers above read as one ladder. The mapping
+ * itself is shared rather than written here for the reason that module states:
+ * the CLIENT resolves the same stop to show what a session with no row yet
+ * would run at (DOR-2103), and a second copy is how the seed and the dial come
+ * to disagree about which mode a position means.
  *
  * Answers `undefined` — "no preference, the runtime decides" — in three cases
  * that are all the same case: nothing configured, no descriptors in hand (the
@@ -495,9 +495,7 @@ function resolveTrustMode(opts: {
   stop: PermissionStop | null;
   descriptors: readonly PermissionModeDescriptor[] | undefined;
 }): PermissionModeId | undefined {
-  if (!opts.stop || !opts.descriptors) return undefined;
-  const match = resolveTrustStops(opts.descriptors).find((s) => s.stop === opts.stop);
-  return match?.mode.id;
+  return resolveStopMode(opts.stop, opts.descriptors);
 }
 
 /**

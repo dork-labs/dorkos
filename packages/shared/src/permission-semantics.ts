@@ -350,6 +350,41 @@ export function resolveTrustStops(descriptors: readonly PermissionModeDescriptor
 }
 
 /**
+ * The mode id one runtime calls a given dial position.
+ *
+ * The single translation from a CONFIGURED stop (`'ask' | 'act' | 'autonomy'`,
+ * which is what `runtimes.defaultTrustStop` and its per-runtime override
+ * store) into an id that runtime actually declares. It reads
+ * {@link resolveTrustStops}, so it lands on exactly the mode the dial would
+ * show as selected — including the first-declared rule where a runtime files
+ * two modes at one position.
+ *
+ * **It lives here because two sides have to agree about it.** The server
+ * resolves the stop when it seeds a new session's row
+ * (`resolve-session-defaults.ts`), and the client resolves the same stop to
+ * say what a session with no row yet WOULD run at (`useSessionStartMode` in
+ * `entities/session`) — the display half of the same question (DOR-2103). Two
+ * copies of this mapping is how the dial and the seed come to disagree about
+ * which mode a position means.
+ *
+ * `undefined` — "no preference, the runtime decides" — for three inputs that
+ * are the same input: no stop configured, no descriptors in hand, or a runtime
+ * that declares no mode at that stop. A stop a runtime cannot take is not an
+ * error and not a near-miss to round off.
+ *
+ * @param stop - The configured dial position, or nullish for none.
+ * @param descriptors - The runtime's declared modes, in declared order, or
+ *   undefined when the caller has no profile yet.
+ */
+export function resolveStopMode(
+  stop: PermissionStop | null | undefined,
+  descriptors: readonly PermissionModeDescriptor[] | undefined
+): string | undefined {
+  if (!stop || !descriptors) return undefined;
+  return resolveTrustStops(descriptors).find((s) => s.stop === stop)?.mode.id;
+}
+
+/**
  * The way of working a runtime offers, if it offers one — the mode behind the
  * composer's Plan toggle.
  *

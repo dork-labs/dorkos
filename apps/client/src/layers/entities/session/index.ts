@@ -55,6 +55,9 @@ export { sessionKeys } from './api/query-keys';
 // `FULL_POWER_MARK_LABEL` is published so the row tests assert the exact shipped
 // string instead of re-hardcoding it — one source of truth for the mark's copy.
 export { FULL_POWER_MARK_LABEL } from './lib/permission-mode';
+// What a conversation nobody has written to yet WILL run at — the display twin
+// of the server's seed, for the window in which no row exists to read (DOR-2103).
+export { useSessionStartMode } from './model/settings/use-session-start-mode';
 export { useSessionDetail } from './model/query/use-session-detail';
 // The store itself is published (tests reset it between cases); the per-session
 // selector and its types stay slice-private — `useSessionStatus` is the only
