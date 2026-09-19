@@ -56,7 +56,7 @@ describe('describeDecisionRefusal', () => {
       ['operator_cookie_required', 'Only a person signed in to DorkOS can change that'],
       [
         'STANDING_GRANTS_DISABLED',
-        'Standing permissions are switched off. Turn them on in Settings, under Security, first.',
+        'Standing permissions are switched off. Turn them on in Settings, under Access, first.',
       ],
       [
         'APPROVAL_HAS_NO_AGENT',

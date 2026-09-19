@@ -160,10 +160,12 @@ Each session has a trust setting — one dial with three stops — that decides 
 Plan mode is a separate toggle next to the composer, not a stop on the dial: it puts the session in read-only planning — Claude can investigate and propose a plan but cannot execute tools — and you switch it on for a stretch of work rather than leaving a session parked at it.
 
 <Callout type="info">
-  **This covers tools inside the session, and nothing else.** Actions on DorkOS itself, like
-  removing an installed package, still ask you first even at Full autonomy. Those are a separate
-  question with its own setting: see [Action approvals](/docs/guides/action-approvals). You will see
-  the same reminder next to the permission picker whenever you choose a stop that skips prompts.
+  **This covers what an agent does in a session: editing files, running commands, and working
+  outside this project.** DorkOS's own risky actions still stop for you, like deleting a schedule or
+  removing an agent. Those are a separate question with its own setting: turn on **Standing
+  permissions** in Settings, under Access, and you can then answer "stop asking about this" straight
+  from an approval card. See [Action approvals](/docs/guides/action-approvals). You will see the
+  same reminder next to the permission picker whenever you choose a stop that skips prompts.
 </Callout>
 
 <Callout type="info">

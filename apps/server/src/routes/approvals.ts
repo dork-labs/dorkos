@@ -472,7 +472,7 @@ export function createApprovalsRouter(
       if (!readSettings().enabled) {
         return res.status(409).json({
           error:
-            'Standing permissions are switched off. Turn them on in Settings, under Security, first.',
+            'Standing permissions are switched off. Turn them on in Settings, under Access, first.',
           code: 'STANDING_GRANTS_DISABLED',
         });
       }

@@ -794,7 +794,7 @@ describe('CreateTaskDialog', () => {
       expect(note).toHaveTextContent(/Bypass All/);
       expect(note).toHaveTextContent(/saving keeps it as it is/i);
       expect(screen.queryByRole('radiogroup', { name: /how much/i })).toBeNull();
-      expect(screen.queryByText(/This covers tools inside the session/)).toBeNull();
+      expect(screen.queryByText(/This covers what an agent does in a session/)).toBeNull();
     });
 
     it('asks before it turns on full autonomy, and says what an unattended run does', async () => {

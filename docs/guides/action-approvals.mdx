@@ -188,7 +188,7 @@ Saying yes is your half of this. An agent that asks for something is never allow
   and is deliberately pretending to be you. Nothing on the same machine can, with no password in
   the way.
 
-Turn on **Require login** (Settings, under Security) and that changes: answering a request then has
+Turn on **Require login** (Settings, under Access) and that changes: answering a request then has
 to happen in DorkOS itself, in a browser you are signed in to. An API key is not enough, on purpose.
 Your agents hold one of your keys so they can run `dorkos` commands, and if a key could answer
 requests, an agent could approve its own work. So it cannot. If you run agents you don't fully
@@ -216,14 +216,14 @@ Either way, every yes and every no lands in your activity feed. With login requi
 
 Answering the same question five times a day is not safety, it is noise. So you can answer it once, for one agent and one action, for a set stretch of time.
 
-Turn it on in Settings, under Security. After that, an approval card carries a third button that names exactly what it does: **Allow, and stop asking about this for 8 hours**. Press it and that one agent does that one thing without stopping, until the time runs out.
+Turn it on in Settings, under Access. After that, an approval card carries a third button that names exactly what it does: **Allow, and stop asking about this for 8 hours**. Press it and that one agent does that one thing without stopping, until the time runs out.
 
 Some things about it are worth knowing before you use it:
 
 - **It covers one agent doing one action.** The same agent doing something else still asks, and so does a different agent doing the same thing. There is no "trust this agent with everything" button, on purpose.
 - **The clock does not reset.** Eight hours means eight hours from when you pressed the button, no matter how often the agent uses it.
 - **A day is the longest you can pick.** "Forever" is not on the list.
-- **You can find it and end it in two places.** Settings under Security lists everything that is live, and the Inbox in the top right shows it too. Either one has a **Stop trusting** button next to it.
+- **You can find it and end it in two places.** Settings under Access lists everything that is live, and the Inbox in the top right shows it too. Either one has a **Stop trusting** button next to it.
 - **Every use is still recorded.** Your activity feed says so each time the agent goes ahead without asking. Ending a permission stops the next action; it does not undo one that already ran.
 - **Turning the feature off ends everything that is live.** Nothing sits dormant waiting to wake up later.
 

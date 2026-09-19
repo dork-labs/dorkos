@@ -292,7 +292,7 @@ export function ApprovalsShowcases() {
 
       <PlaygroundSection
         title="StandingPermissionList"
-        description="Trust that is already live, and the button that ends it. Drawn in both places a person can find one — the header panel and Settings under Security — so what a permission looks like cannot differ between where you stumble on it and where you go looking."
+        description="Trust that is already live, and the button that ends it. Drawn in both places a person can find one — the header panel and Settings under Access — so what a permission looks like cannot differ between where you stumble on it and where you go looking."
       >
         <ShowcaseLabel>The same list at both widths it has to survive</ShowcaseLabel>
         <ShowcaseDemo>

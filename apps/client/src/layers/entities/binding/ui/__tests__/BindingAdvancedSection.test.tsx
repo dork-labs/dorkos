@@ -184,7 +184,9 @@ describe('BindingAdvancedSection permissions', () => {
       expect(screen.queryByRole('radiogroup', { name: /how much/i })).not.toBeInTheDocument();
       // The scope note is about a bypass mode a person just CHOSE. With no dial
       // to choose on, it is a clarification about nothing.
-      expect(screen.queryByText(/This covers tools inside the session/)).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(/This covers what an agent does in a session/)
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -316,7 +318,7 @@ describe('BindingAdvancedSection permissions', () => {
       expect(description?.textContent).toMatch(/pause to ask\.\sThis stop never pauses/);
       expect(alert).toHaveTextContent(/can’t pause to ask/);
       // The correction the strongest sentence has to arrive with (DOR-816).
-      expect(alert).toHaveTextContent(/Actions on DorkOS itself/);
+      expect(alert).toHaveTextContent(/DorkOS’s own risky actions still stop for you/);
     });
 
     it('applies it only once the person confirms', async () => {

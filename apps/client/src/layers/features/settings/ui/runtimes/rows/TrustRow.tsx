@@ -10,8 +10,8 @@
  * @module features/settings/ui/runtimes/rows/TrustRow
  */
 import type { PermissionModeDescriptor, PermissionStop } from '@dorkos/shared/agent-runtime';
-import { resolveTrustStops } from '@/layers/shared/lib';
-import { Button, TrustDial } from '@/layers/shared/ui';
+import { needsConsentRitual, resolveTrustStops } from '@/layers/shared/lib';
+import { Button, PermissionModeScopeNote, TrustDial } from '@/layers/shared/ui';
 import { SETTINGS_STOP_LABELS } from '../stop-labels';
 
 /** What the trust row needs to be told, and the one thing it says back. */
@@ -67,7 +67,30 @@ export function TrustRow({
 }: TrustRowProps) {
   const overridden = stop !== null;
   const resolved = stop ?? globalStop;
-  const mode = resolveTrustStops(descriptors).find((s) => s.stop === resolved)?.mode.id ?? '';
+  // The descriptor, not just its id: the scope note below decides from what the
+  // mode DOES (`needsConsentRitual`), which is the only way a runtime that files
+  // a never-asking mode at the MIDDLE stop still gets the note (Codex).
+  const resolvedMode = resolveTrustStops(descriptors).find((s) => s.stop === resolved)?.mode;
+  const mode = resolvedMode?.id ?? '';
+  // Whether the row beneath the cards is already saying this, for THIS stop.
+  //
+  // It is not "am I inheriting?", and getting that wrong is what the re-review
+  // caught. The shared row renders from the CANONICAL descriptor for a stop and
+  // this row renders from the RUNTIME's, and the two disagree exactly where the
+  // sentence matters most: canonical `act` asks when risky, so the row below
+  // stays quiet there, while Codex's `acceptEdits` at the same stop never asks
+  // at all. Suppressing on "inheriting" alone therefore silenced both of them
+  // on the DOR-816 case, leaving "Codex cannot stop to ask you first." with
+  // nothing underneath.
+  //
+  // The canonical stops only ever earn the sentence at `autonomy`, so that is
+  // the one stop the row below can be relied on to cover — and only when it is
+  // the stop this card is actually showing, which is either inheritance or an
+  // override that agrees with the shared setting. Anything else, the card says
+  // it itself. Counted end to end in `__tests__/scope-note-placement.test.tsx`.
+  const sharedRowSaysIt = resolved === 'autonomy' && (stop === null || stop === globalStop);
+  const saysScope =
+    resolvedMode !== undefined && needsConsentRitual(resolvedMode) && !sharedRowSaysIt;
 
   return (
     <section className="flex flex-col gap-1.5" data-testid={`runtime-trust-${runtimeType}`}>
@@ -118,6 +141,23 @@ export function TrustRow({
             if (picked) onChange(picked.stop);
           }}
         />
+      )}
+
+      {/* What this stop does NOT buy, on the card that sets it (DOR-2102).
+          Settings was the last picker without it, and it is the one that matters
+          most: a person with a standing acknowledgement never sees the consent
+          dialog that used to be the only place this sentence appeared, so
+          choosing Full autonomy here said nothing about DorkOS's own cards at
+          all.
+
+          Drawn unless the row beneath the cards is demonstrably already saying
+          it for this stop — see `sharedRowSaysIt` above for why that is a
+          narrower question than "is this card inheriting?". Getting it wrong in
+          either direction is a real defect: too eager prints the same paragraph
+          once per runtime on the shipped full-power default, too shy drops it
+          from the one case it was widened to cover. */}
+      {saysScope && (
+        <PermissionModeScopeNote mode={mode} descriptor={resolvedMode} className="px-1" />
       )}
     </section>
   );

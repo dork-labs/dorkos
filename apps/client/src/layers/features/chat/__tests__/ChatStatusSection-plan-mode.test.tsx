@@ -309,7 +309,7 @@ describe('ChatStatusSection — the door into Full autonomy', () => {
       'Runs everything without asking, including outside this project.'
     );
     // …and what it does not cover.
-    expect(screen.getByText(/covers tools inside the session/i)).toBeInTheDocument();
+    expect(screen.getByText(/covers what an agent does in a session/i)).toBeInTheDocument();
   });
 
   it('applies the mode once confirmed, and remembers the session said yes', () => {
