@@ -33,11 +33,19 @@
  * forever while the server three inches away is fine.
  *
  * The right fix for a query you OWN is `networkMode: 'always'`, so it never
- * pauses at all; the trust dial's own stored-settings read does exactly that.
- * This branch is for the queries it merely reads — `useSessionDetail`, the
- * session list and `useRuntimeCapabilities` all still take TanStack's default
- * — so that one of them pausing degrades the dial to its best available answer
- * instead of stranding it (DOR-2103 round 3).
+ * pauses at all, and every localhost read the dial depends on now sets it:
+ * its own stored-settings query, `useSessionDetail`, the session list,
+ * `useRuntimeCapabilities`, and `useDefaultCwd` (without which the directory
+ * gate below could stay null forever offline).
+ *
+ * **So this disjunct is belt-and-braces, and is kept deliberately.** No query
+ * in today's chain can reach it. It earns its place because the cost of being
+ * wrong is asymmetric and the two directions are not comparable: a query that
+ * someone adds later, or one whose `networkMode` someone removes, would strand
+ * the control in a pulsing state a person cannot dismiss — whereas treating a
+ * paused read as settled merely degrades the dial to its best available
+ * answer. A terminal branch that is currently unreachable is the cheap half of
+ * that trade (DOR-2103 rounds 3 and 4).
  *
  * @module entities/session/lib/query-settled
  */

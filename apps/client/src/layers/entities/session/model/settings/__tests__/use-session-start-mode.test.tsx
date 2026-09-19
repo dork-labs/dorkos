@@ -380,6 +380,35 @@ describe('the trust dial on a conversation nobody has written to yet', () => {
     expect(transport.getStoredSessionSettings).toHaveBeenCalledWith(SESSION_ID);
   });
 
+  it('resolves the real stop at launch with the browser offline throughout', async () => {
+    // The whole chain offline from a COLD cache, which is the launch a person
+    // on a plane or a dropped hotspot actually gets: nothing is warm, so every
+    // read the dial depends on — capabilities, the session list, the detail
+    // row, the stored settings — has to complete while `navigator.onLine` is
+    // false. Each of them sets `networkMode: 'always'` for the one reason
+    // `useConfig` states: this server is not on the internet.
+    //
+    // The assertion that matters is the NEGATIVE one. Settling on `'default'`
+    // here would be the reported defect wearing a different hat — a confident
+    // wrong answer a person would act on — so it is checked before and after
+    // the resolution rather than only at the end.
+    onlineManager.setOnline(false);
+    const transport = transportWith({ defaults: executionDefaults('autonomy') });
+
+    const { result } = renderHook(() => useSessionStatus(SESSION_ID, null, false, 'claude-code'), {
+      wrapper: createWrapper(transport),
+    });
+
+    // Never a settled 'default': while it is still working it says so.
+    expect(result.current.permissionModeKnown).toBe(false);
+
+    await waitFor(() => expect(result.current.permissionModeKnown).toBe(true));
+    expect(result.current.permissionMode).toBe(CLAUDE_AUTONOMY_MODE);
+    // And the reads genuinely ran rather than settling as paused-with-nothing.
+    expect(transport.getCapabilities).toHaveBeenCalled();
+    expect(transport.getStoredSessionSettings).toHaveBeenCalledWith(SESSION_ID);
+  });
+
   it('says nothing until the working directory lands, then says the real stop', async () => {
     // PROBE G (DOR-2103 round 3). Every read is scoped by the directory, so
     // until it resolves they are all DISABLED — and disabled looks exactly like

@@ -5,6 +5,7 @@ covers:
   - 'test(client): the settled-power flag reaches the drawing, and the fixtures say which state they mean (DOR-2103)'
   - 'fix(client): the permissions control stops loading when there is nothing left to load (DOR-2103)'
   - 'fix(client): the permissions control survives dropped wifi and waits for the directory (DOR-2103)'
+  - 'fix(client): every read the trust dial depends on keeps asking localhost when wifi drops (DOR-2103)'
 ---
 
 ### Fixed

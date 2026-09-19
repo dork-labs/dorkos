@@ -70,6 +70,13 @@ export function useSessionDetail<T = Session>(
     staleTime: 30_000,
     enabled: isSessionRequestReady(sessionId, cwd) && (options?.enabled ?? true),
     select: options?.select,
+    // **Dropped wifi is not a reason to stop asking localhost.** TanStack's
+    // default `networkMode: 'online'` PAUSES a fetch whenever
+    // `navigator.onLine` is false, and this server is not on the internet —
+    // the ruling `useConfig` states at length, applied here because the trust
+    // dial reads this and a paused read left it with nothing to say
+    // (DOR-2103).
+    networkMode: 'always',
   });
 }
 
