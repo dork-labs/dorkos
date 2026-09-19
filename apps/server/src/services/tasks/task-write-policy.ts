@@ -178,6 +178,14 @@ export const TASK_WRITE_POLICY = {
   effort: 'agent-writable',
 
   // The runtime's safety prompts, for a run nobody is watching.
+  //
+  // Operator-only is what makes the APPROVAL able to carry it (DOR-2100). A
+  // proposal is clamped on the way in because an agent may not name its own
+  // power; the person approving it may, and sends `permissionMode` alongside
+  // `status` in the one PATCH that arms the schedule. Nothing special is needed
+  // at the route for that — the same verdict that refuses the agent lets the
+  // person through, which is the point of classifying the field rather than
+  // guarding one transition.
   permissionMode: 'operator-only',
   // `pending_approval → active` is the approval itself.
   status: 'operator-only',

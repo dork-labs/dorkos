@@ -251,7 +251,14 @@ describe('ScheduleApprovalCard — what it says', () => {
     // Collapsed by default: a wall of prompt on every card is what stops anybody
     // reading any of them.
     expect(slot('schedule-prompt')).toBeNull();
-    expect(await screen.findByText(/Runs as: Accept Edits/)).toBeInTheDocument();
+    // The runtime's OWN word for the level, once its profile lands — the same
+    // word the Trust Dial shows, rather than the id-keyed fallback this card
+    // used before it resolved a profile of its own (DOR-2100). `waitFor`, not
+    // `findByText`: the fallback renders first and a query that returns on its
+    // first match would settle on it.
+    await waitFor(() =>
+      expect(slot('schedule-permission-mode')).toHaveTextContent('Runs as: Accept edits')
+    );
 
     await userEvent.click(screen.getByRole('button', { name: /Show exact instructions/ }));
 
@@ -901,5 +908,239 @@ describe('ScheduleApprovalCard — running it once', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Approve Nightly sweep' }));
     expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active', enabled: true });
+  });
+});
+
+/**
+ * Approving can also grant the operator's own trust stop, per task (DOR-2100).
+ *
+ * The clamp on an agent's proposal stays; what changes is that the person
+ * answering the card can say "yes, AND at my level" in the same click. So what
+ * is pinned here is the whole of that offer: when it appears, when it must not,
+ * what it names, and exactly what goes on the wire — because the wire is where
+ * the grant either happens or silently does not.
+ */
+describe('ScheduleApprovalCard — granting the operator’s own level', () => {
+  /**
+   * A server whose operator sits at a named stop.
+   *
+   * `perRuntime` carries the same stop for claude-code so the per-runtime
+   * override and the global default agree; a case about the override picking a
+   * DIFFERENT answer sets them apart itself.
+   *
+   * @param trustStop - The stop the operator configured, or null for none.
+   */
+  function configAtStop(trustStop: 'ask' | 'act' | 'autonomy' | null) {
+    return vi.fn().mockResolvedValue({
+      version: '1.0.0',
+      isLocalCaller: true,
+      port: 4242,
+      uptime: 0,
+      workingDirectory: '/test',
+      nodeVersion: 'v20.0.0',
+      platform: 'linux-x64',
+      runtimes: ['claude-code'],
+      claudeCliPath: null,
+      executionDefaults: {
+        runtime: 'claude-code',
+        trustStop,
+        perRuntime: [
+          {
+            runtime: 'claude-code',
+            model: null,
+            effort: null,
+            supportsEffort: true,
+            trustStop: null,
+          },
+        ],
+      },
+      tunnel: {
+        enabled: false,
+        connected: false,
+        url: null,
+        authEnabled: false,
+        tokenConfigured: false,
+      },
+      tasks: { enabled: true },
+    });
+  }
+
+  /** The elevated control, once it has had a chance to appear. */
+  function elevated(): HTMLElement | null {
+    return slot('schedule-approve-elevated');
+  }
+
+  it('offers the raise, named by the stop, when the operator sits above the clamp', async () => {
+    renderCard(proposal(), { getConfig: configAtStop('autonomy') });
+
+    const button = await findSlot('schedule-approve-elevated');
+    // The dial's own word, not the runtime's mode id: "Full autonomy" is what
+    // the person met in Settings, and two spellings of one position is how a
+    // fixed vocabulary stops being one.
+    expect(button).toHaveTextContent('Approve at Full autonomy');
+    expect(button).toHaveAttribute('aria-label', 'Approve Nightly sweep at Full autonomy');
+  });
+
+  it('says what each answer will run it at, and carries the scope caveat', async () => {
+    renderCard(proposal(), { getConfig: configAtStop('autonomy') });
+
+    const choice = await findSlot('schedule-power-choice');
+    expect(choice).toHaveTextContent('Approve runs it as Accept edits');
+    expect(choice).toHaveTextContent(
+      '“Approve at Full autonomy” runs it at the level you normally'
+    );
+    // The runtime's own promise for that mode, quoted rather than reinvented —
+    // which is why it reads as the capability profile's sentence and not as
+    // copy written into this card.
+    expect(choice).toHaveTextContent('Runs everything without asking');
+    // DOR-2102's standing caveat: a level that stops asking still does not
+    // cover DorkOS's own approvals.
+    expect(slot('permission-mode-scope-note')).not.toBeNull();
+  });
+
+  it('sends the granted mode with the approval, and nothing else changes', async () => {
+    const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
+    renderCard(proposal(), { getConfig: configAtStop('autonomy'), updateTask });
+
+    await userEvent.click(await findSlot('schedule-approve-elevated'));
+
+    expect(updateTask).toHaveBeenCalledWith('task-1', {
+      status: 'active',
+      enabled: true,
+      permissionMode: 'bypassPermissions',
+    });
+  });
+
+  it('leaves the plain Approve at the level the proposal was clamped to', async () => {
+    // The whole reason the raise is a SECOND control. `permissionMode` is
+    // operator-only, so an omitted key is the difference between "yes, run it"
+    // and "yes, run it at my level" — a plain Approve must keep meaning the
+    // first, even on an install sitting at full autonomy.
+    const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
+    renderCard(proposal(), { getConfig: configAtStop('autonomy'), updateTask });
+
+    await findSlot('schedule-approve-elevated');
+    await userEvent.click(screen.getByRole('button', { name: /^Approve Nightly sweep as/ }));
+
+    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active', enabled: true });
+  });
+
+  it('names the level on the plain Approve too, once there are two of them', async () => {
+    renderCard(proposal(), { getConfig: configAtStop('autonomy') });
+
+    await findSlot('schedule-approve-elevated');
+    expect(slot('schedule-approve')).toHaveAttribute(
+      'aria-label',
+      'Approve Nightly sweep as Accept edits'
+    );
+  });
+
+  it('offers nothing when the operator’s stop is where the schedule already sits', async () => {
+    renderCard(proposal(), { getConfig: configAtStop('act') });
+
+    // Waited for rather than read straight away: the whole point is that
+    // nothing appears, and a synchronous read would pass before the config and
+    // the capability map had a chance to produce one.
+    await findSlot('schedule-approve');
+    await waitFor(() => expect(slot('schedule-permission-mode')).toHaveTextContent('Accept edits'));
+    expect(elevated()).toBeNull();
+    expect(slot('schedule-power-choice')).toBeNull();
+    expect(slot('schedule-approve')).toHaveAttribute('aria-label', 'Approve Nightly sweep');
+  });
+
+  it('never offers to approve at LESS than the proposal asked for', async () => {
+    // "Ask first" is below the clamp. A control offering it would be an offer
+    // to lower the schedule, dressed as the raise.
+    renderCard(proposal(), { getConfig: configAtStop('ask') });
+
+    await findSlot('schedule-approve');
+    await waitFor(() => expect(slot('schedule-permission-mode')).toHaveTextContent('Accept edits'));
+    expect(elevated()).toBeNull();
+  });
+
+  it('offers nothing when the operator never set a stop', async () => {
+    renderCard(proposal(), { getConfig: configAtStop(null) });
+
+    await findSlot('schedule-approve');
+    await waitFor(() => expect(slot('schedule-permission-mode')).toHaveTextContent('Accept edits'));
+    expect(elevated()).toBeNull();
+  });
+
+  it('offers nothing for a runtime this machine does not have', async () => {
+    // A task's `runtime` is a free string. No profile means no declared modes,
+    // so there is no id to grant and no word to name it with — and guessing
+    // through the DEFAULT runtime's vocabulary would store a mode the task's
+    // actual runtime never declared (DOR-1615).
+    const { transport } = renderCard(proposal({ runtime: 'not-installed' }), {
+      getConfig: configAtStop('autonomy'),
+    });
+
+    // Both reads SETTLED before the absence is asserted. Nothing on this card
+    // moves to the unresolved state, so there is no rendered thing to wait for
+    // and a bare read would pass before either query had answered.
+    await findSlot('schedule-approve');
+    await waitFor(() => expect(transport.getConfig).toHaveBeenCalled());
+    await waitFor(() => expect(transport.getCapabilities).toHaveBeenCalled());
+    await act(async () => undefined);
+
+    expect(elevated()).toBeNull();
+  });
+
+  it('reads the stop in the vocabulary of the runtime the TASK names', async () => {
+    // A mode id is not portable: `acceptEdits` on Claude Code stops before a
+    // command, and on Codex it runs commands and cannot pause to ask at all.
+    // So the stop has to be mapped through the profile of the runtime this
+    // task will actually run on, never the default's (DOR-1615). What proves
+    // which profile answered is the prose: both levels here are quoted from
+    // Codex's own declarations, which say things Claude Code's never do.
+    renderCard(proposal({ runtime: 'codex' }), { getConfig: configAtStop('autonomy') });
+
+    expect(await findSlot('schedule-approve-elevated')).toHaveTextContent(
+      'Approve at Full autonomy'
+    );
+    const choice = slot('schedule-power-choice');
+    expect(choice).toHaveTextContent('Approve runs it as Workspace write');
+    expect(choice).toHaveTextContent('Codex can change anything on this machine');
+  });
+
+  it('confirms the level it granted, in the receipt', async () => {
+    renderCard(proposal(), {
+      getConfig: configAtStop('autonomy'),
+      updateTask: vi.fn().mockResolvedValue(proposal({ status: 'active' })),
+    });
+
+    await userEvent.click(await findSlot('schedule-approve-elevated'));
+
+    expect(await findSlot('schedule-receipt')).toHaveTextContent(
+      /^Approved at Full autonomy. First run /
+    );
+  });
+
+  it('says nothing about a level a plain approval did not change', async () => {
+    // The receipt is a record of the decision made. A plain Approve on an
+    // install sitting at full autonomy deliberately granted nothing, and a
+    // receipt naming a level would report a choice nobody took.
+    renderCard(proposal(), {
+      getConfig: configAtStop('autonomy'),
+      updateTask: vi.fn().mockResolvedValue(proposal({ status: 'active' })),
+    });
+
+    await findSlot('schedule-approve-elevated');
+    await userEvent.click(screen.getByRole('button', { name: /^Approve Nightly sweep as/ }));
+
+    expect(await findSlot('schedule-receipt')).toHaveTextContent(/^Approved. First run /);
+  });
+
+  it('hands the card back when the server refuses the raise', async () => {
+    // A package-owned schedule answers 409: DorkOS will not write the grant
+    // into somebody else's checkout, and a row-only grant would be undone by
+    // the next sweep. The offer has to survive being refused.
+    const updateTask = vi.fn().mockRejectedValue(new Error('schedule_package_owned'));
+    renderCard(proposal(), { getConfig: configAtStop('autonomy'), updateTask });
+
+    await userEvent.click(await findSlot('schedule-approve-elevated'));
+
+    await waitFor(() => expect(slot('schedule-receipt')).toBeNull());
+    expect(elevated()).not.toBeNull();
   });
 });

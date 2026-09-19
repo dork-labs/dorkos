@@ -14,12 +14,23 @@ import {
   shortenHomePath,
 } from '@/layers/shared/lib';
 import { useNow, useSafeNavigate } from '@/layers/shared/model';
-import { Button, Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/layers/shared/ui';
+import {
+  Button,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+  PermissionModeScopeNote,
+  stopLabel,
+} from '@/layers/shared/ui';
 import { useDeleteTask, useUpdateTask } from '@/layers/entities/tasks';
 import { useSessionDetail } from '@/layers/entities/session';
 import { AskCard } from '@/layers/features/ask';
 import { RequestingAgent } from '@/layers/features/approvals';
 import { formatCadence, formatFirstRuns } from '../lib/format-schedule-times';
+import {
+  useScheduleApprovalPower,
+  type ScheduleApprovalRaise,
+} from '../model/use-schedule-approval-power';
 import {
   cancelRejection,
   rejectAfterUndoWindow,
@@ -98,6 +109,24 @@ export interface ScheduleApprovalCardProps {
  * afterwards backed by evidence. Nothing about a test run arms a timer, changes
  * the status, or resolves the standing proposal.
  *
+ * ## Approving can also grant the level (DOR-2100)
+ *
+ * A schedule an agent proposed is clamped: nothing an agent says, and nothing
+ * on disk, may arm an unattended run at full power (DOR-504, DOR-607,
+ * DOR-823). The person approving it is under no such bar, and until now had no
+ * way to say so — the approving PATCH carried `status` alone, so "approve"
+ * meant "yes, run it" and never "yes, run it at my level". An operator sitting
+ * at Full autonomy approved a schedule that then ran at `acceptEdits` and was
+ * refused its own first shell call.
+ *
+ * So when the operator's own trust stop is ABOVE where this schedule sits, a
+ * second control offers exactly that stop, named, on this one task
+ * ({@link useScheduleApprovalPower}). Per task and never per install: a
+ * standing "approve at full autonomy" would hand the same power to the next
+ * schedule an agent proposes, which is the thing the clamp is for. Plain
+ * Approve stays the primary answer and keeps the keyboard shortcut, so the
+ * safe level is what a fast hand lands on.
+ *
  * Neither answer toasts on success. The receipt is the confirmation, where the
  * decision was made; the app's one failure toast (`query-client.ts`) already
  * speaks for both mutations when they fail.
@@ -116,6 +145,9 @@ export function ScheduleApprovalCard({
   const deleteTask = useDeleteTask();
   const testRun = useScheduleTestRun(task.id);
   const [decision, setDecision] = useState<Decision | null>(null);
+  // The raise that was actually granted, so the receipt can confirm the LEVEL
+  // and not merely the yes. Null for a plain approval and for a rejection.
+  const [granted, setGranted] = useState<ScheduleApprovalRaise | null>(null);
   const [revealed, setRevealed] = useState(false);
 
   // The undo window belongs to the module, not to this component: a card that
@@ -137,6 +169,18 @@ export function ScheduleApprovalCard({
   const dorkosWrote = foundInFile || task.reasonSource === 'dorkos';
   const firstRuns = formatFirstRuns(task.nextRuns, now);
   const bypasses = isBypassPermissionMode(task.permissionMode);
+  // What this schedule runs at if approved as it stands, and the raise the
+  // operator's own stop makes available — `raise` is null whenever their stop
+  // is not above it, which is the common case and draws the plain Approve
+  // alone.
+  const power = useScheduleApprovalPower(task);
+  // The runtime's own word for the level, which is the one a person met on the
+  // dial. The id-based fallback covers the frames before the capability map
+  // lands and a mode the runtime no longer declares.
+  const currentLabel = power.current?.label ?? permissionModeLabel(task.permissionMode);
+  // Lifted out of `power` so the JSX below narrows it once rather than
+  // asserting it non-null inside every closure that reads it.
+  const raise = power.raise;
 
   // The conversation this was proposed in, when there is one to name. Read
   // under the PROPOSING session's directory rather than whatever this window
@@ -167,18 +211,34 @@ export function ScheduleApprovalCard({
       : null;
   const reason = task.reason ?? fallbackReason;
 
-  const approve = () => {
+  /**
+   * Arm the schedule, optionally at a level the person names as they do it.
+   *
+   * @param raised - The raise to grant, or `undefined` to leave the schedule at
+   *   the level it was clamped to. `permissionMode` is operator-only
+   *   (`task-write-policy.ts`), so an OMITTED key is the difference between
+   *   "yes, run it" and "yes, run it at my level" — it is never sent with the
+   *   value the row already holds.
+   */
+  const approve = (raised?: ScheduleApprovalRaise) => {
     if (answered !== null) return;
     setDecision('approved');
+    setGranted(raised ?? null);
     // Hold the card on screen BEFORE the mutation settles. The race being lost
     // is the refetch that drops this task out of the parked list and unmounts
     // the group around its own receipt — waiting for the mutation would be
-    // waiting for the very thing that ends the card.
-    holdApprovedSchedule(task);
+    // waiting for the very thing that ends the card. Held at the level just
+    // granted, so the held copy does not contradict the receipt over it.
+    holdApprovedSchedule(raised ? { ...task, permissionMode: raised.mode } : task);
     // Both fields, always: `status` alone leaves a schedule that is approved and
     // still switched off, which is a schedule that will never run.
     updateTask.mutate(
-      { id: task.id, status: 'active', enabled: true },
+      {
+        id: task.id,
+        status: 'active',
+        enabled: true,
+        ...(raised && { permissionMode: raised.mode }),
+      },
       // A refusal hands the card back rather than leaving a checkmark over a
       // proposal that is still sitting there answerable — and releases the hold,
       // or the card would be drawn twice: once from the server's list and once
@@ -187,10 +247,22 @@ export function ScheduleApprovalCard({
         onError: () => {
           releaseSettledSchedule(task.id);
           setDecision(null);
+          setGranted(null);
         },
       }
     );
   };
+
+  /**
+   * Arm it at the level it was proposed at — the plain answer, and the one both
+   * the Approve button and the card's `A` shortcut call.
+   *
+   * A named function rather than `approve` passed bare: `approve` takes an
+   * optional mode, and a handler invoked with whatever a click or a shortcut
+   * hands it would read an event as a permission grant. The safe level is what
+   * a fast hand lands on, deliberately.
+   */
+  const approveAtProposedLevel = () => approve();
 
   const reject = () => {
     if (answered !== null) return;
@@ -243,7 +315,7 @@ export function ScheduleApprovalCard({
     <AskCard.Root
       isActive={isActive}
       isResolved={answered !== null}
-      onAllow={answered === null ? approve : undefined}
+      onAllow={answered === null ? approveAtProposedLevel : undefined}
       onDeny={answered === null ? reject : undefined}
       data-testid="schedule-approval-card"
       data-task-id={task.id}
@@ -359,9 +431,9 @@ export function ScheduleApprovalCard({
               card's body size, beside the instructions rather than behind them.
               A mode that acts without asking says so in words: the mode's NAME
               is not something a person should have to already know the meaning
-              of. `isBypassPermissionMode` answers from the id, which is all a
-              task row carries (no runtime descriptor is in hand here); it knows
-              every bypass mode the shipped runtimes have. */}
+              of. `isBypassPermissionMode` answers from the id, which is the
+              fallback for the frames before the runtime's profile lands; it
+              knows every bypass mode the shipped runtimes have. */}
           <span
             data-slot="schedule-permission-mode"
             className={cn(
@@ -369,7 +441,7 @@ export function ScheduleApprovalCard({
               bypasses ? 'text-status-warning-fg' : 'text-muted-foreground'
             )}
           >
-            Runs as: {permissionModeLabel(task.permissionMode)}
+            Runs as: {currentLabel}
             {bypasses && ', acts without approval prompts'}
           </span>
         </div>
@@ -383,22 +455,66 @@ export function ScheduleApprovalCard({
         </CollapsibleContent>
       </Collapsible>
 
+      {/* Only when there is a choice to explain. A schedule already sitting at
+          the operator's own level, or one whose runtime nobody can read, needs
+          no sentence about a second button that is not there.
+
+          It names BOTH levels because that is the decision: what Approve gives
+          it, and what the other control gives it instead. The scope note is the
+          standing caveat about what a never-asking level does not cover, and it
+          renders itself away for a level that still asks (DOR-2102). */}
+      {answered === null && raise && (
+        <div data-slot="schedule-power-choice" className="min-w-0 space-y-1">
+          <p className="text-muted-foreground text-xs break-words">
+            Approve runs it as {currentLabel}. “Approve at {stopLabel(raise.stop)}” runs it at the
+            level you normally use instead — {raise.descriptor.promise}
+          </p>
+          <PermissionModeScopeNote
+            mode={raise.mode}
+            descriptor={raise.descriptor}
+            className="break-words"
+          />
+        </div>
+      )}
+
       <TestRunStrip testRun={testRun} onOpenRun={openTestRun()} />
 
       {answered === null ? (
         <AskCard.Actions>
           {/* Named per card, not just "Approve". Several proposals can sit in
               one panel, and three buttons all reading "Approve" leave a screen
-              reader with no way to tell which schedule it is arming. */}
+              reader with no way to tell which schedule it is arming.
+
+              The level joins the name only when a raise is on offer beside it,
+              because then the level is the ONLY difference between two controls
+              that both say Approve. On a card with one answer the level is
+              already read out by the "Runs as" line directly above, and saying
+              it twice is the kind of padding that makes a long accessible name
+              worth skipping. */}
           <Button
             size="sm"
             data-slot="schedule-approve"
-            aria-label={`Approve ${name}`}
+            aria-label={raise ? `Approve ${name} as ${currentLabel}` : `Approve ${name}`}
             className="h-7 px-2.5 text-xs"
-            onClick={approve}
+            onClick={approveAtProposedLevel}
           >
             Approve
           </Button>
+          {/* The raise, offered on this ONE task. Outline rather than primary:
+              the safe level stays the default answer, and this is the
+              deliberate second choice beside it. */}
+          {raise && (
+            <Button
+              variant="outline"
+              size="sm"
+              data-slot="schedule-approve-elevated"
+              aria-label={`Approve ${name} at ${stopLabel(raise.stop)}`}
+              className="h-7 px-2.5 text-xs"
+              onClick={() => approve(raise)}
+            >
+              Approve at {stopLabel(raise.stop)}
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -431,7 +547,11 @@ export function ScheduleApprovalCard({
             tone={answered === 'approved' ? 'allowed' : 'denied'}
           >
             {answered === 'approved'
-              ? `Approved${firstRuns ? `. First run ${firstRuns.first}` : ''}`
+              ? // Names the level only when one was GRANTED. A plain approval
+                // changed nothing about the power, so saying it would turn the
+                // receipt into a sentence about a decision nobody made.
+                `Approved${granted ? ` at ${stopLabel(granted.stop)}` : ''}` +
+                `${firstRuns ? `. First run ${firstRuns.first}` : ''}`
               : 'Rejected'}
           </AskCard.Receipt>
           {/* Live for as long as the DELETE has not been sent. Once the window

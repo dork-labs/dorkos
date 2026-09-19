@@ -1,0 +1,316 @@
+/**
+ * Approving an agent's proposal can also grant it the operator's own trust stop
+ * (DOR-2100) — and only the operator, and only there.
+ *
+ * ## The bug this pins
+ *
+ * An agent proposes a schedule. `createScheduledTask` clamps it, because
+ * nothing an agent says may arm an unattended run at full power (DOR-504,
+ * DOR-607, DOR-823) — and that clamp stays. The operator, sitting at Full
+ * autonomy, presses Approve. The approving PATCH carried `status` and nothing
+ * else, so the schedule armed at `acceptEdits` and was refused its own first
+ * shell call at 3am, with no screen anywhere naming the level. "Approve" meant
+ * "yes, run it" and never "yes, run it at my level".
+ *
+ * ## What is asserted, and where
+ *
+ * The STORED ROW, always, because that is what the scheduler reads when it
+ * fires — the same standard `tasks-permission-escalation.test.ts` sets, and for
+ * the same reason. The other half of the chain, that the row's mode actually
+ * reaches the run, is pinned in `tasks/__tests__/task-scheduler-service.test.ts`
+ * ("a schedule approved at full autonomy launches at it").
+ *
+ * The writer, the parser and the filesystem are all real here: the grant has to
+ * survive the SKILL.md round-trip, and a mocked writer would only re-state this
+ * route's belief about that.
+ *
+ * @module routes/__tests__/tasks-approval-power
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import express from 'express';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { createTestDb } from '@dorkos/test-utils/db';
+import type { Db } from '@dorkos/db';
+import { USER_CONFIG_DEFAULTS, type UserConfig } from '@dorkos/shared/config-schema';
+import { CLAUDE_CODE_CAPABILITIES } from '../../services/runtimes/claude-code/runtime-constants.js';
+
+/** Mutable state the mocked config manager and registry report. */
+const state = vi.hoisted(() => ({ runtimes: undefined as unknown }));
+
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: {
+    get: (key: string) => {
+      if (key === 'auth') return { enabled: false };
+      if (key === 'runtimes') return state.runtimes;
+      return undefined;
+    },
+  },
+}));
+
+vi.mock('../../services/core/runtime-registry.js', () => ({
+  runtimeRegistry: {
+    getDefaultType: () => 'claude-code',
+    has: (type: string) => type === 'claude-code',
+    getAllCapabilities: () => ({ 'claude-code': CLAUDE_CODE_CAPABILITIES }),
+  },
+}));
+
+vi.mock('../../lib/boundary.js', () => ({
+  isWithinBoundary: vi.fn().mockResolvedValue(true),
+}));
+
+import { createTasksRouter } from '../tasks.js';
+import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
+import { TaskStore } from '../../services/tasks/task-store.js';
+import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
+import type { ActivityService } from '../../services/activity/activity-service.js';
+
+const fixtureTarget = swappableServer();
+const fixtureServer = fixtureTarget.server;
+
+/** The operator's `runtimes` block, sitting at full power. */
+function autonomyRuntimes(): UserConfig['runtimes'] {
+  return { ...USER_CONFIG_DEFAULTS.runtimes, defaultTrustStop: 'autonomy' };
+}
+
+function createMockScheduler(): TaskSchedulerService {
+  return {
+    isStarted: true,
+    registerTask: vi.fn(),
+    unregisterTask: vi.fn(),
+    triggerManualRun: vi.fn().mockResolvedValue(null),
+    cancelRun: vi.fn().mockResolvedValue({ state: 'not_found' }),
+    getNextRun: vi.fn().mockReturnValue(null),
+    previewNextRuns: vi.fn().mockReturnValue([]),
+    getActiveRunCount: vi.fn().mockReturnValue(0),
+    isRegistered: vi.fn().mockReturnValue(false),
+  } as unknown as TaskSchedulerService;
+}
+
+describe('approving a proposed schedule can carry the operator’s trust stop', () => {
+  let app: express.Application;
+  let store: TaskStore;
+  let db: Db;
+  let dorkHome: string;
+  let emit: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    state.runtimes = autonomyRuntimes();
+    dorkHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-approval-power-'));
+    db = createTestDb();
+    store = new TaskStore(db);
+    emit = vi.fn();
+
+    app = express();
+    app.use(express.json());
+    const scheduler = createMockScheduler();
+    app.use(
+      '/api/tasks',
+      createTasksRouter(
+        store,
+        scheduler,
+        new TaskRegistrar({ store, scheduler }),
+        dorkHome,
+        undefined,
+        { emit } as unknown as ActivityService
+      )
+    );
+
+    fixtureTarget.mount(app);
+  });
+
+  afterEach(() => {
+    store.close();
+    fs.rmSync(dorkHome, { recursive: true, force: true });
+  });
+
+  /** An agent proposes a schedule, which parks clamped. Returns the stored row. */
+  async function proposedByAgent() {
+    const res = await request(fixtureServer)
+      .post('/api/tasks')
+      .set('x-dorkos-agent', 'agent-token-abc')
+      .send({
+        name: 'mailroom-triage',
+        description: 'triage the mailroom',
+        prompt: 'Read the mailroom and file what came in.',
+        cron: '0 3 * * *',
+        target: 'global',
+        reason: 'The mailroom piles up overnight.',
+      });
+    expect(res.status).toBe(201);
+    const task = store.getTasks()[0]!;
+    // The precondition the whole file rests on, asserted rather than assumed:
+    // the operator IS at full power and the proposal was clamped anyway.
+    expect((state.runtimes as UserConfig['runtimes']).defaultTrustStop).toBe('autonomy');
+    expect(task.permissionMode).toBe('acceptEdits');
+    expect(task.status).toBe('pending_approval');
+    return task;
+  }
+
+  it('writes the granted mode un-clamped, to the row AND the file', async () => {
+    const task = await proposedByAgent();
+
+    const res = await request(fixtureServer)
+      .patch(`/api/tasks/${task.id}`)
+      .send({ status: 'active', enabled: true, permissionMode: 'bypassPermissions' });
+
+    expect(res.status).toBe(200);
+    const approved = store.getTask(task.id)!;
+    expect(approved.permissionMode).toBe('bypassPermissions');
+    expect(approved.status).toBe('active');
+    // The file too, or the next reconciler sweep puts `acceptEdits` back and
+    // the grant evaporates five minutes after the person made it.
+    expect(fs.readFileSync(approved.filePath, 'utf-8')).toContain('permissions: bypassPermissions');
+  });
+
+  it('records the approval so the grant survives the next file sync', async () => {
+    const task = await proposedByAgent();
+    await request(fixtureServer)
+      .patch(`/api/tasks/${task.id}`)
+      .send({ status: 'active', enabled: true, permissionMode: 'bypassPermissions' });
+
+    // The arm grant is what `resolveFileArmStatus` and `keepsApprovedBypass`
+    // both read. Without it the schedule re-parks — and loses its bypass — on
+    // the reconciler's next pass over unchanged content.
+    const synced = store.upsertFromFile(
+      {
+        filePath: store.getTask(task.id)!.filePath,
+        body: 'Read the mailroom and file what came in.',
+        meta: {
+          name: 'mailroom-triage',
+          description: 'triage the mailroom',
+          schedule: {
+            cron: '0 3 * * *',
+            timezone: 'UTC',
+            enabled: true,
+            permissions: 'bypassPermissions',
+          },
+        },
+      } as Parameters<TaskStore['upsertFromFile']>[0],
+      undefined,
+      { source: 'discovery' }
+    );
+    expect(synced.permissionMode).toBe('bypassPermissions');
+    expect(synced.status).toBe('active');
+
+    // The control that makes the assertion above mean something: the grant is
+    // bound to the work a person read, not to the path. Rewrite the body and
+    // the same sync clamps and re-parks.
+    const rewritten = store.upsertFromFile(
+      {
+        filePath: store.getTask(task.id)!.filePath,
+        body: 'Read the mailroom and then email everyone in it.',
+        meta: {
+          name: 'mailroom-triage',
+          description: 'triage the mailroom',
+          schedule: {
+            cron: '0 3 * * *',
+            timezone: 'UTC',
+            enabled: true,
+            permissions: 'bypassPermissions',
+          },
+        },
+      } as Parameters<TaskStore['upsertFromFile']>[0],
+      undefined,
+      { source: 'discovery' }
+    );
+    expect(rewritten.permissionMode).toBe('acceptEdits');
+    expect(rewritten.status).toBe('pending_approval');
+  });
+
+  it('refuses an agent that tries to approve itself at any level', async () => {
+    const task = await proposedByAgent();
+
+    const res = await request(fixtureServer)
+      .patch(`/api/tasks/${task.id}`)
+      .set('x-dorkos-agent', 'agent-token-abc')
+      .send({ status: 'active', enabled: true, permissionMode: 'bypassPermissions' });
+
+    // 403 with both offending fields named — not dropped, not clamped, and the
+    // whole call refused, so nothing about the schedule moved.
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('operator_only_task_field');
+    expect(res.body.fields).toEqual(['permissionMode', 'status']);
+    const untouched = store.getTask(task.id)!;
+    expect(untouched.permissionMode).toBe('acceptEdits');
+    expect(untouched.status).toBe('pending_approval');
+  });
+
+  it('refuses an agent that asks for the mode alone, on a transition that is not the approval', async () => {
+    const task = await proposedByAgent();
+
+    const res = await request(fixtureServer)
+      .patch(`/api/tasks/${task.id}`)
+      .set('x-dorkos-agent', 'agent-token-abc')
+      .send({ permissionMode: 'bypassPermissions' });
+
+    expect(res.status).toBe(403);
+    expect(res.body.fields).toEqual(['permissionMode']);
+    expect(store.getTask(task.id)!.permissionMode).toBe('acceptEdits');
+  });
+
+  it('leaves a plain approval exactly where the clamp put it', async () => {
+    const task = await proposedByAgent();
+
+    const res = await request(fixtureServer)
+      .patch(`/api/tasks/${task.id}`)
+      .send({ status: 'active', enabled: true });
+
+    expect(res.status).toBe(200);
+    // The default answer is still the safe one: an approval that names no level
+    // grants none, however high the operator's own stop sits.
+    expect(store.getTask(task.id)!.permissionMode).toBe('acceptEdits');
+  });
+
+  it('writes an activity row naming the level, and whether it was raised', async () => {
+    const task = await proposedByAgent();
+    await request(fixtureServer)
+      .patch(`/api/tasks/${task.id}`)
+      .send({ status: 'active', enabled: true, permissionMode: 'bypassPermissions' });
+
+    const approval = emit.mock.calls
+      .map(([event]) => event as Record<string, unknown>)
+      .find((event) => event.eventType === 'tasks.task_approved');
+    expect(approval).toBeDefined();
+    expect(approval!.summary).toContain('running as bypassPermissions');
+    expect(approval!.metadata).toMatchObject({
+      permissionMode: 'bypassPermissions',
+      previousPermissionMode: 'acceptEdits',
+      raised: true,
+    });
+  });
+
+  it('records a plain approval too, so a raise reads as a raise', async () => {
+    const task = await proposedByAgent();
+    await request(fixtureServer)
+      .patch(`/api/tasks/${task.id}`)
+      .send({ status: 'active', enabled: true });
+
+    const approval = emit.mock.calls
+      .map(([event]) => event as Record<string, unknown>)
+      .find((event) => event.eventType === 'tasks.task_approved');
+    expect(approval!.metadata).toMatchObject({ permissionMode: 'acceptEdits', raised: false });
+  });
+
+  it('still lets a person change the level on a schedule that is already live', async () => {
+    // The regression guard. `permissionMode` is not confined to the approval:
+    // the cockpit's own task edit form writes it on an ordinary save, and a
+    // guard that allowed it only on `pending_approval → active` would break
+    // that with nothing saying why.
+    const task = await proposedByAgent();
+    await request(fixtureServer)
+      .patch(`/api/tasks/${task.id}`)
+      .send({ status: 'active', enabled: true });
+
+    const res = await request(fixtureServer)
+      .patch(`/api/tasks/${task.id}`)
+      .send({ permissionMode: 'bypassPermissions' });
+
+    expect(res.status).toBe(200);
+    expect(store.getTask(task.id)!.permissionMode).toBe('bypassPermissions');
+  });
+});

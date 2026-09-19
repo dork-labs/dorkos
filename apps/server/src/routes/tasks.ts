@@ -493,8 +493,45 @@ export function createTasksRouter(
     // A schedule leaving `pending_approval` for `active` IS the approval — there
     // is no separate endpoint for it, so this transition is where the parked
     // condition ends and its history row is written.
+    //
+    // **And it is the one transition that may also GRANT the level** (DOR-2100).
+    // A proposal an agent made is clamped on the way in and cannot name its own
+    // power (`createScheduledTask`, DOR-504/607/823); the person approving it
+    // can, because `permissionMode` is operator-only and
+    // `refusedOperatorOnlyTaskWrite` has already 403'd anyone who did not clear
+    // the agent bar. Nothing extra is needed to let that through — `updateTask`
+    // writes the field and `applyTaskFileUpdate` puts it in the SKILL.md, so the
+    // grant survives the next sync the same way a person's own edit does. What
+    // WAS missing is the record: the approval wrote a standing resolution and no
+    // activity row at all, so a level raised here left nothing a later reader
+    // could find. It writes one now, naming the level, on every approval —
+    // raised or not, because "approved at the level it asked for" is the fact
+    // that makes a raise legible as a raise.
     if (existing.status === 'pending_approval' && updated.status === 'active') {
       const actorPrincipal = readCallerPrincipal(req, res);
+      const raised = updated.permissionMode !== existing.permissionMode;
+      activityService?.emit({
+        // Read, never assumed: only a caller that cleared the agent bar reaches
+        // this line, but that bar is a no-op under the shipped login-off posture
+        // (the documented DOR-505 residual), so the feed says who actually asked.
+        ...readActivityActor(req, res),
+        category: 'tasks',
+        eventType: 'tasks.task_approved',
+        resourceType: 'schedule',
+        resourceId: req.params.id,
+        resourceLabel: updated.displayName ?? updated.name,
+        summary:
+          `Approved scheduled task ${updated.displayName ?? updated.name}, ` +
+          `running as ${updated.permissionMode}`,
+        // The before and after both, so a reader can see a raise without
+        // reconstructing what the row used to hold.
+        metadata: {
+          permissionMode: updated.permissionMode,
+          previousPermissionMode: existing.permissionMode,
+          raised,
+        },
+        linkPath: '/',
+      });
       void resolveScheduleParkPayload(updated).then((payload) =>
         resolveStanding('schedule.parked', payload, { outcome: 'approved', actorPrincipal })
       );
