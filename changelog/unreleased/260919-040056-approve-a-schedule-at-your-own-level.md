@@ -8,6 +8,11 @@ covers:
   # the job at", which the feed wording and the packaged-schedule refusal are
   # both corrections to rather than news of their own.
   - 'fix(tasks): a raised schedule approval goes through the same consent door every other unattended level does (DOR-2100)'
+  # Folds in here too, and is test-only. DOR-2102 froze the list of places a
+  # person picks a level while this change was adding one to it, and neither
+  # branch could name the other's; this puts the card on the list. Nothing a
+  # reader of the changelog could see either way.
+  - 'test(client): the schedule approval card joins the frozen list of mode pick sites (DOR-2100)'
 ---
 
 ### Fixed

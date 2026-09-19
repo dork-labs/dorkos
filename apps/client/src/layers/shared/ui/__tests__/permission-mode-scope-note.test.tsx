@@ -34,8 +34,11 @@ const CLIENT_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
  * notice a broken one.
  *
  * The spec named the first three (a session, a binding, a schedule). DOR-2102
- * added the last three, all of which set where sessions START rather than what
- * one session is doing. They were the quietest hole in the promise: the consent
+ * added the next three, all of which set where sessions START rather than what
+ * one session is doing. DOR-2100 added the last: the SCHEDULE approval card,
+ * where approving a schedule an agent proposed can also grant it the
+ * operator's own trust stop — a pick site, not merely a warning site, and the
+ * only one where the thing being picked is somebody ELSE's proposal. They were the quietest hole in the promise: the consent
  * dialog carries the note, but a person with a standing acknowledgement never
  * opens the dialog again, so Settings and the Control Center could move somebody
  * to Full autonomy having said nothing at all about DorkOS's own cards.
@@ -47,6 +50,7 @@ const MODE_PICKERS = [
   'layers/features/settings/ui/runtimes/rows/TrustRow.tsx',
   'layers/features/settings/ui/runtimes/GlobalTrustRow.tsx',
   'layers/widgets/control-center/ui/ControlCenterDial.tsx',
+  'layers/features/schedule-approval/ui/ScheduleApprovalCard.tsx',
 ];
 
 afterEach(cleanup);
