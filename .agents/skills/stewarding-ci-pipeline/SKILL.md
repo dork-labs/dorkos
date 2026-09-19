@@ -1,6 +1,6 @@
 ---
 name: stewarding-ci-pipeline
-description: The method for changing the DorkOS CI pipeline as a measured experiment: the change protocol (hypothesis, ledger entry, census), PDCA, which constraint to work on first, the SLOs and ratchets, the fence around the steward and the judge, how to write a narrow hypothesis, and this repo's CI anti-patterns. Use when editing a workflow, lefthook.yml, turbo.json, .claude/settings.json hooks, a script a gate runs, anything under ci/ or packages/ci-steward, the required-check set or the ruleset, or when deciding what to improve in CI next.
+description: "The method for changing the DorkOS CI pipeline as a measured experiment: the change protocol (hypothesis, ledger entry, census), PDCA, which constraint to work on first, the SLOs and ratchets, the fence around the steward and the judge, how to write a narrow hypothesis, and this repo's CI anti-patterns. Use when editing a workflow, lefthook.yml, turbo.json, .claude/settings.json hooks, a script a gate runs, anything under ci/ or packages/ci-steward, the required-check set or the ruleset, or when deciding what to improve in CI next."
 ---
 
 # Stewarding the CI Pipeline
