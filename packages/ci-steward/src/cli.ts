@@ -18,7 +18,7 @@ import { existsSync, mkdirSync, readdirSync, realpathSync, writeFileSync } from 
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { runCensus, discoverGates } from './census.ts';
-import { checkCoverage, type ChangedFile } from './coverage.ts';
+import { checkCoverage, splitByBlocking, type ChangedFile } from './coverage.ts';
 import { readRootScripts } from './discover.ts';
 import { formatFindings, type Finding } from './finding.ts';
 import { allocateId } from './ids.ts';
@@ -32,7 +32,29 @@ export interface Io {
   err: (s: string) => void;
 }
 
-const USAGE = `usage: ci-steward <census [--fix] | ledger-check [--coverage --base <sha> [--branch <name>]] | ledger-new --slug <slug> [--kind experiment|incident-fix|hygiene] [--title <text>]> [--root <dir>] [--now <iso>]\n`;
+const USAGE = `usage: ci-steward <command> [options]
+
+commands:
+  census [--fix]
+      Check that ci/ matches the workflows, lefthook and Claude hooks that run.
+      --fix rewrites the generated required-checks blocks in the docs, nothing else.
+  ledger-check
+      Validate every ci/ledger entry.
+  ledger-check --coverage --base <sha> [--branch <name>]
+      Pull-request check: a pipeline change must add or edit a ledger entry, and a
+      ci-improve/* branch may not touch the steward's own files. Warns before
+      coverage.blocking_from in ci/config.yaml, fails from that date.
+  ledger-new --slug <kebab-slug> [--kind experiment|incident-fix|hygiene] [--title <text>]
+      Scaffold ci/ledger/<YYMMDD-HHMMSS>-<slug>.md with a fresh id and print its path.
+      --kind defaults to experiment; hygiene entries get no hypothesis block.
+
+every command:
+  --root <dir>   repo root (default: the nearest directory up holding ci/config.yaml)
+  --now <iso>    the clock (default: now); decides allowlist expiry and the coverage switch
+
+exit codes: 0 clean (or only warnings), 1 findings, 2 bad usage or an internal error
+root aliases: pnpm ci:census, pnpm ci:ledger-check, pnpm ci:ledger-new
+`;
 
 function findRoot(start: string): string | null {
   let dir = path.resolve(start);
@@ -63,9 +85,15 @@ function report(io: Io, tool: string, findings: Finding[]): number {
   return findings.length ? 1 : 0;
 }
 
+function annotation(f: Finding): string {
+  const text = `${f.message} Fix: ${f.fix}`.replace(/%/g, '%25').replace(/\r?\n/g, '%0A');
+  return `::warning file=${f.file},title=ci-steward ${f.code}::${text}\n`;
+}
+
 function ledgerCheck(
   root: string,
   io: Io,
+  now: Date,
   opts: { coverage: boolean; base?: string; branch?: string }
 ): number {
   const { files, findings } = loadHandFiles(root);
@@ -83,7 +111,14 @@ function ledgerCheck(
   );
   const rootScripts = readRootScripts(root, files.config.root_package_json);
   const coverage = checkCoverage({ root, files, workflows, gates, rootScripts, changed, branch });
-  return report(io, 'ledger-check --coverage', [...findings, ...coverage]);
+  const from = files.config.coverage.blocking_from;
+  const { blocking, advisory } = splitByBlocking(coverage, now, from);
+  if (advisory.length > 0) {
+    io.out(formatFindings(`ledger-check --coverage (warning only until ${from})`, advisory));
+    for (const f of advisory) io.out(annotation(f));
+  }
+  if (advisory.length > 0 && blocking.length === 0 && findings.length === 0) return 0;
+  return report(io, 'ledger-check --coverage', [...findings, ...blocking]);
 }
 
 function ledgerNew(
@@ -95,7 +130,9 @@ function ledgerNew(
   const kinds = ['experiment', 'incident-fix', 'hygiene'];
   const kind = opts.kind ?? 'experiment';
   if (!opts.slug || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(opts.slug) || !kinds.includes(kind)) {
-    io.err(`ledger-new needs --slug <kebab-case> and --kind one of ${kinds.join(', ')}.\n`);
+    io.err(
+      `ledger-new needs --slug <kebab-case> and, optionally, --kind one of ${kinds.join(', ')}. See ledger-new --help.\n`
+    );
     return 2;
   }
   const { files, findings } = loadHandFiles(root);
@@ -167,6 +204,7 @@ export function main(argv: readonly string[], io: Io, cwd: string = process.cwd(
         title: { type: 'string' },
         root: { type: 'string' },
         now: { type: 'string' },
+        help: { type: 'boolean', short: 'h' },
       },
     });
   } catch (e) {
@@ -174,6 +212,10 @@ export function main(argv: readonly string[], io: Io, cwd: string = process.cwd(
     return 2;
   }
   const { values, positionals } = parsed;
+  if (values.help || positionals[0] === 'help' || positionals.length === 0) {
+    (positionals.length === 0 && !values.help ? io.err : io.out)(USAGE);
+    return positionals.length === 0 && !values.help ? 2 : 0;
+  }
   const now = values.now ? new Date(values.now) : new Date();
   if (Number.isNaN(now.getTime())) {
     io.err(`--now ${values.now} is not a date.\n`);
@@ -191,7 +233,7 @@ export function main(argv: readonly string[], io: Io, cwd: string = process.cwd(
       return report(io, 'census', result.findings);
     }
     case 'ledger-check':
-      return ledgerCheck(root, io, {
+      return ledgerCheck(root, io, now, {
         coverage: values.coverage === true,
         base: values.base,
         branch: values.branch,

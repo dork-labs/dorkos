@@ -215,6 +215,9 @@ gates:
   - id: claude.PreToolUse.process-guard
     source: .claude/settings.json
     purpose: Refuses pkill, killall and group kills, which take down other agents' and the operator's processes.
+  - id: claude.PreToolUse.merge-guard
+    source: .claude/settings.json
+    purpose: Refuses admin merges and direct REST or GraphQL merges that step around the merge queue and its required checks.
   - id: claude.PostToolUse.typecheck-changed
     source: .claude/settings.json
     purpose: Typechecks the edited file's workspace after every edit and blocks on type errors.

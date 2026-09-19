@@ -285,10 +285,12 @@ jobs:
       # steward's own files. Like fragment coverage, it needs the PR's diff and
       # branch name, which cannot change between here and the queue.
       #
-      # ADVISORY UNTIL 2026-09-27. `continue-on-error` is excused by an entry
-      # in ci/census-allowlist.yaml that expires that day; the expiry IS the
-      # flip to blocking (plan §4.3). From then on the census fails every PR
-      # until a PR deletes both this line and the entry.
+      # WARNS, THEN BLOCKS, ON ITS OWN. Before `coverage.blocking_from` in
+      # ci/config.yaml (2026-09-27) a missing entry prints GitHub warnings and
+      # the step exits 0; from that day it fails the PR. The tool reads the
+      # date itself, so the switch needs no PR on the day and never turns
+      # every open PR red at once. No continue-on-error: an allowlist expiry
+      # used as the switch would have been exactly that outage.
       #
       # The base, adapted from changelog-fragment-check.yml's "Determine the
       # base" step: that job checks out the PR head with full history and asks
@@ -298,7 +300,6 @@ jobs:
       # the PR was merged onto: the same diff, without the history.
       - name: CI Steward ledger coverage
         if: ${{ !cancelled() && github.event_name == 'pull_request' }}
-        continue-on-error: true
         env:
           HEAD_REF: ${{ github.head_ref }}
         run: |

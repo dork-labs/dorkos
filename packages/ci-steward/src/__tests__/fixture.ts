@@ -64,7 +64,10 @@ export function baseSpec(): FixtureSpec {
         census_allowlist: 'ci/census-allowlist.yaml',
       },
       ledger_dir: 'ci/ledger',
-      coverage_paths: ['.github/workflows/**', 'lefthook.yml', 'ci/**'],
+      coverage: {
+        paths: ['.github/workflows/**', 'lefthook.yml', 'ci/**'],
+        blocking_from: '2026-09-27',
+      },
       fence_branch_prefix: 'ci-improve/',
       generated_blocks: { required_checks: ['docs/ci.md'] },
       commands: { ledger_new: 'pnpm ci:ledger-new', census_fix: 'pnpm ci:census --fix' },

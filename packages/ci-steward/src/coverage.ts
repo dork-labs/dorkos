@@ -52,7 +52,33 @@ function pipelinePaths(input: Omit<CoverageInput, 'changed' | 'branch'>): {
       input.rootScripts
     ),
   ]);
-  return { globs: config.coverage_paths, files };
+  return { globs: config.coverage.paths, files };
+}
+
+/**
+ * Split coverage findings into those that fail the run and those that only warn.
+ *
+ * A missing ledger entry warns until `blockingFrom` (00:00 UTC) and blocks from
+ * then on, so the switch to blocking happens on its own, with no PR on the day
+ * and no moment when every open PR goes red at once. The fence always blocks:
+ * nothing runs on a `ci-improve/*` branch yet, so blocking it costs nobody.
+ *
+ * @param findings - What {@link checkCoverage} returned.
+ * @param now - The clock.
+ * @param blockingFrom - `YYYY-MM-DD`, from `coverage.blocking_from` in ci/config.yaml.
+ */
+export function splitByBlocking(
+  findings: readonly Finding[],
+  now: Date,
+  blockingFrom: string
+): { blocking: Finding[]; advisory: Finding[] } {
+  const blocks = now.getTime() >= Date.parse(`${blockingFrom}T00:00:00Z`);
+  const blocking: Finding[] = [];
+  const advisory: Finding[] = [];
+  for (const f of findings) {
+    (blocks || f.code.startsWith('fence/') ? blocking : advisory).push(f);
+  }
+  return { blocking, advisory };
 }
 
 /**

@@ -31,7 +31,8 @@ We will treat every pipeline change as an experiment and have code decide the re
 - **A ledger entry per change,** `ci/ledger/<id>-<slug>.md`, carrying a hypothesis: one metric
   from the catalogue (`ci/metrics.yaml`), its baseline, a target and an after-window. Only
   `kind: hygiene` is exempt. A PR that touches a gate source must add or edit an entry; a
-  `typecheck` step checks it (advisory for its first week, then blocking by allowlist expiry).
+  `typecheck` step checks it (warnings for its first week, then blocking from the date in
+  `ci/config.yaml`, which the tool reads itself).
 - **Intent on `main`, observations on an append-only data branch.** Hand-owned `ci/` files
   state what we want; the daily collector writes what happened to `ci-steward-data`, so nothing
   the system generates needs a PR.

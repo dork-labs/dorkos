@@ -16,16 +16,15 @@
 #                      optional.
 #
 # An expired entry fails the census, and so does an entry that excuses
-# nothing. Conditions true on both events on a green run (e.g. `!cancelled()`)
-# need no entry. Schema: AllowlistSchema in packages/ci-steward/src/schemas.ts.
+# nothing. That makes an expiry a deadline for a person, never a switch:
+# an expired entry turns EVERY PR's census red until a PR removes it, so never
+# use one to schedule a behaviour change (put the date in ci/config.yaml and
+# let the tool read it, as coverage.blocking_from does). Give an expiry only
+# to an exception that is genuinely temporary, and remove it before the date.
+# Conditions true on both events on a green run (e.g. `!cancelled()`) need no
+# entry. Schema: AllowlistSchema in packages/ci-steward/src/schemas.ts.
 entries:
   # --- typecheck.yml ---
-  - workflow: typecheck.yml
-    job: typecheck
-    step: CI Steward ledger coverage
-    kind: continue-on-error
-    reason: Ledger coverage is advisory for its first week (plan §4.3). This expiry IS the flip to blocking; on that day delete this entry and the step's continue-on-error in one PR.
-    expires: 2026-09-27
   - workflow: typecheck.yml
     job: typecheck
     step: CI Steward ledger coverage
@@ -110,10 +109,3 @@ entries:
     step: Save turbo's local cache
     kind: step-if
     reason: Saves the turbo cache on pull_request only, because a cache saved under a merge-queue ref can never be read by any other ref; it asserts nothing.
-
-  # --- claude.yml ---
-  - workflow: claude.yml
-    job: claude
-    kind: no-timeout
-    reason: Every one of the last 300 runs was skipped (no @claude mention from a maintainer), so there is no duration to measure a ceiling from. Measure again once it has 5 real runs.
-    expires: 2026-10-19

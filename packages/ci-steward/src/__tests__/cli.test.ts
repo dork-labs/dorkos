@@ -47,6 +47,15 @@ describe('ci-steward cli', () => {
     expect(failed.err).toContain('FAIL [timeout/missing] .github/workflows/lint.yml (job lint)');
   });
 
+  it('prints help with exit 0, and usage with exit 2 when no command is given', () => {
+    const root = fixture();
+    const help = run(['ledger-new', '--help'], root);
+    expect(help.code).toBe(0);
+    expect(help.out).toContain('ledger-new --slug <kebab-slug>');
+    expect(run(['--help'], root).code).toBe(0);
+    expect(run([], root)).toMatchObject({ code: 2, out: '' });
+  });
+
   it('exits 2 on bad usage', () => {
     const root = fixture();
     expect(run(['nope'], root).code).toBe(2);
@@ -82,7 +91,15 @@ describe('ci-steward cli', () => {
     );
     git(root, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qam', 'raise timeout');
 
-    const miss = run(['ledger-check', '--coverage', '--base', base, '--branch', 'feat/x'], root);
+    const cov = ['ledger-check', '--coverage', '--base', base, '--branch', 'feat/x'];
+    // The fixture config switches coverage to blocking on 2026-09-27.
+    const warned = run([...cov, '--now', '2026-09-26T23:59:59Z'], root);
+    expect(warned.code).toBe(0);
+    expect(warned.out).toContain('warning only until 2026-09-27');
+    expect(warned.out).toContain(
+      '::warning file=ci/ledger,title=ci-steward coverage/missing-entry::'
+    );
+    const miss = run([...cov, '--now', '2026-09-27T00:00:00Z'], root);
     expect(miss.code).toBe(1);
     expect(miss.err).toContain('coverage/missing-entry');
     expect(miss.err).toContain('.github/workflows/lint.yml');

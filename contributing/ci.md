@@ -12,7 +12,7 @@ This guide covers everything between an agent's edit and a change on `main`: the
 | Every gate and what it is for            | `ci/gates.yaml` (`{id, source, purpose}`)                                                                                 |
 | Repo-specific steward config             | `ci/config.yaml`; SLOs `ci/slos.yaml`; metric catalogue `ci/metrics.yaml`; ratchets `ci/ratchets.yaml`                    |
 | Steward-owned paths (the fence)          | `ci/steward-owned-paths.json`                                                                                             |
-| Census exceptions, each with an expiry   | `ci/census-allowlist.yaml`                                                                                                |
+| Census exceptions, each with a reason    | `ci/census-allowlist.yaml`                                                                                                |
 | One ledger entry per pipeline change     | `ci/ledger/<YYMMDD-HHMMSS>-<slug>.md`                                                                                     |
 | The engine (census, ledger)              | `packages/ci-steward` (`@dorkos/ci-steward`), entry `packages/ci-steward/src/cli.ts`                                      |
 | Where the census runs                    | `.github/workflows/typecheck.yml` steps "CI Steward census", "CI Steward ledger check", "CI Steward ledger coverage"      |
@@ -173,9 +173,9 @@ field-changes: []
 Why, what was tried, what would make us revert. Short.
 ```
 
-- `node packages/ci-steward/src/cli.ts ledger-new` scaffolds an entry (`--help` lists its arguments); `ledger-check` validates every entry. The engine's schema is the authority; the example above is the plan's shape.
+- `node packages/ci-steward/src/cli.ts ledger-new --slug <kebab-slug> [--kind experiment|incident-fix|hygiene]` scaffolds an entry with a fresh id and prints its path (`--help` lists every command and flag); `ledger-check` validates every entry. Root aliases: `pnpm ci:census`, `pnpm ci:ledger-check`, `pnpm ci:ledger-new`. The engine's schema is the authority; the example above is the plan's shape.
 - `verified`, `failed` and `inconclusive` are **verdicts**, computed by code on the data branch after the window closes (phase 1). They never appear on `main`; the validity check rejects them.
-- **Coverage:** a PR that touches any gate source, any script a gate invokes, `turbo.json`, `lefthook.yml`, `.claude/settings.json`, a `ci/` hand file, `packages/ci-steward/**` or the `creating-pull-requests` skill must add or edit a ledger entry. The PR-only `typecheck` step "CI Steward ledger coverage" checks it. It is advisory until its `ci/census-allowlist.yaml` entry expires on 2026-09-27; that expiry **is** the flip to blocking.
+- **Coverage:** a PR that touches any gate source, any script a gate invokes, `turbo.json`, `lefthook.yml`, `.claude/settings.json`, a `ci/` hand file, `packages/ci-steward/**` or the `creating-pull-requests` skill must add or edit a ledger entry. The PR-only `typecheck` step "CI Steward ledger coverage" checks it. Before `coverage.blocking_from` in `ci/config.yaml` (2026-09-27) it prints GitHub warnings and passes; from that day it fails the PR. The tool reads the date itself, so the switch needs no PR and no open PR turns red because of the calendar. `ci/config.yaml` is fenced, so an unattended change cannot move the date. On a `ci-improve/*` branch, touching a fenced path fails from day one.
 - **Ratchet releases block by default.** A `ratchet-release` lowers a quality floor on its own say-so, so the review treats it as blocking unless the reason is specific. `field-changes` is required when a required gate's retry, shards, timeout or required status changes.
 
 ### The census and the deadlock invariant
@@ -185,10 +185,13 @@ Why, what was tried, what would make us revert. Short.
 - a gate exists in YAML but not in `ci/gates.yaml`, or the reverse (ids: `wf.<workflow-stem>.<job-id>`, `lefthook.<hook>.<command>`, `claude.<HookEvent>.<script-basename>`, `ruleset.<rule>`);
 - a job has no `timeout-minutes`;
 - **deadlock invariant:** a context in `ci/required-checks.json` has no job of that exact name, or its workflow lacks `pull_request` or `merge_group`, or has a `paths:` filter, or its `pull_request.types` (if present) omits `synchronize`, or a job-level `if:` cannot be satisfied on both events;
-- a required job contains `continue-on-error`, or a step-level `if:`, that is not in `ci/census-allowlist.yaml` with an expiry date;
+- a required job contains `continue-on-error`, or a step-level `if:` that is not true on both events on a green run (`!cancelled()` is), or its job-level `if:` can skip it, and no `ci/census-allowlist.yaml` entry excuses it. Every entry carries a reason; `continue-on-error` and `no-timeout` entries also carry `expires:`;
+- an allowlist entry has expired, or excuses nothing any more;
 - a generated block (the required-checks list here and in the `creating-pull-requests` skill) differs byte for byte from `ci/required-checks.json`. `census --fix` rewrites the blocks.
 
 It runs as a step of the required `typecheck` job on every PR and every merge group, so it adds no new required context and no deadlock exposure of its own.
+
+**An expiry is a deadline for a person, never a switch.** When an allowlist entry expires, the census fails on every PR, whatever the PR touches, until a PR removes the entry. That is correct for an exception that has genuinely gone stale (a `no-timeout` job that now has data, a `continue-on-error` that was meant to be temporary), and it is an outage if the date was used to schedule a behaviour change. So a scheduled change goes in `ci/config.yaml` as a date the tool reads and acts on by itself (the coverage switch, `coverage.blocking_from`, is the model), and an entry gets an `expires:` only when a person should act before then. Event-branching `step-if` and `job-if` entries are permanent design and carry no expiry.
 
 ### Ledger release first, ruleset edit second
 
@@ -259,7 +262,7 @@ gh api repos/{owner}/{repo}/rules/branches/main
 
 ### "CI Steward ledger coverage" is red or warns
 
-**Cause:** the PR touches a pipeline path and adds no `ci/ledger/` entry. **Fix:** `node packages/ci-steward/src/cli.ts ledger-new`, fill in the hypothesis, amend it into the commit.
+**Cause:** the PR touches a pipeline path and adds no `ci/ledger/` entry. Before 2026-09-27 this is a warning on a green step; from then it fails. **Fix:** `node packages/ci-steward/src/cli.ts ledger-new --slug <what-changed>`, fill in the hypothesis, amend it into the commit.
 
 ### `fragment-present` red on a `skip-changelog` PR
 

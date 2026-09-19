@@ -342,6 +342,28 @@ describe('census: generated doc blocks', () => {
     expect(runCensus({ root, now: NOW }).findings).toEqual([]);
   });
 
+  it('compares only the marker span, and --fix keeps a prettier-ignore wrapper around it', () => {
+    // The real docs wrap the block so prettier cannot add blank lines inside it.
+    const wrap = (inner: string) =>
+      `# CI\n\n<!-- prettier-ignore-start -->\n${inner}\n<!-- prettier-ignore-end -->\n\nEnd.\n`;
+    const block = (ctx: string[]) =>
+      [
+        '<!-- ci-steward:required-checks:start -->',
+        ...ctx.map((c) => `- \`${c}\``),
+        '<!-- ci-steward:required-checks:end -->',
+      ].join('\n');
+    const clean = baseSpec();
+    clean.docs['docs/ci.md'] = wrap(block(['lint', 'test']));
+    expect(census(clean).findings).toEqual([]);
+
+    const drifted = baseSpec();
+    drifted.docs['docs/ci.md'] = wrap(block(['lint']));
+    expect(census(drifted).findings.map((f) => f.code)).toEqual(['docs/drift']);
+    const { root, findings, fixed } = census(drifted, { fix: true });
+    expect([findings, fixed]).toEqual([[], ['docs/ci.md']]);
+    expect(readFileSync(path.join(root, 'docs/ci.md'), 'utf8')).toBe(wrap(block(['lint', 'test'])));
+  });
+
   it('fails on a listed doc with no block, and on a listed doc that does not exist', () => {
     const spec = baseSpec();
     spec.docs['docs/ci.md'] = '# CI\n';

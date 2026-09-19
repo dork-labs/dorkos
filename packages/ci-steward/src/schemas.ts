@@ -45,7 +45,15 @@ export const ConfigSchema = z
       })
       .strict(),
     ledger_dir: RepoPath,
-    coverage_paths: z.array(RepoPath).min(1),
+    coverage: z
+      .object({
+        paths: z.array(RepoPath).min(1),
+        // The day the coverage check starts failing PRs. Before it, findings
+        // print as warnings and the check exits 0. The date lives here, and
+        // the tool reads it, so the switch needs no PR on the day.
+        blocking_from: IsoDate,
+      })
+      .strict(),
     fence_branch_prefix: z.string().min(1),
     generated_blocks: z.object({ required_checks: z.array(RepoPath) }).strict(),
     commands: z.object({ ledger_new: z.string().min(1), census_fix: z.string().min(1) }).strict(),
