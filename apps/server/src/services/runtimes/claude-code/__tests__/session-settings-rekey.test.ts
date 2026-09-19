@@ -168,7 +168,7 @@ describe('claude-code session-settings re-key on canonical-id rebind (DOR-493)',
   }
 
   it('enforces the operator mode on a post-eviction turn under the canonical id', async () => {
-    await registry.persistSessionRuntime(REQUEST_ID, 'claude-code', { kind: 'test-harness' });
+    await registry.persistSessionRuntime(REQUEST_ID, 'claude-code', { kind: 'interactive' });
     // The operator sets bypassPermissions before the first turn — the PATCH
     // route's exact call, under the only id that exists yet.
     await runtime.updateSession(REQUEST_ID, { permissionMode: 'bypassPermissions' });
@@ -195,7 +195,7 @@ describe('claude-code session-settings re-key on canonical-id rebind (DOR-493)',
     await registry.persistSessionRuntime(
       REQUEST_ID,
       'claude-code',
-      { kind: 'test-harness' },
+      { kind: 'interactive' },
       '/agents/dorkbot'
     );
     await runtime.updateSession(REQUEST_ID, { permissionMode: 'plan', model: 'sonnet' });
@@ -217,7 +217,7 @@ describe('claude-code session-settings re-key on canonical-id rebind (DOR-493)',
     // The divergence a reviewer built on DOR-463: a change made before the first
     // turn landed under the request id, a later one under the canonical id, and
     // which row a read found depended on which id it arrived with.
-    await registry.persistSessionRuntime(REQUEST_ID, 'claude-code', { kind: 'test-harness' });
+    await registry.persistSessionRuntime(REQUEST_ID, 'claude-code', { kind: 'interactive' });
     await runtime.updateSession(REQUEST_ID, { permissionMode: 'plan' });
 
     await runTurn(REQUEST_ID, CANONICAL_ID);
@@ -234,7 +234,7 @@ describe('claude-code session-settings re-key on canonical-id rebind (DOR-493)',
     // and reported the transcript-derived mode, while a read arriving with the
     // retired id reached the operator's row through the extra key. With one row
     // and one key there is nothing left for two reads to disagree about.
-    await registry.persistSessionRuntime(REQUEST_ID, 'claude-code', { kind: 'test-harness' });
+    await registry.persistSessionRuntime(REQUEST_ID, 'claude-code', { kind: 'interactive' });
     await runtime.updateSession(REQUEST_ID, { permissionMode: 'plan' });
 
     await runTurn(REQUEST_ID, CANONICAL_ID);
@@ -252,7 +252,7 @@ describe('claude-code session-settings re-key on canonical-id rebind (DOR-493)',
     // and the re-key firing, so a source-wins merge would reinstate the mode the
     // operator just moved away from — an agent acting without asking, which is
     // the exact failure this ticket exists to remove.
-    await registry.persistSessionRuntime(REQUEST_ID, 'claude-code', { kind: 'test-harness' });
+    await registry.persistSessionRuntime(REQUEST_ID, 'claude-code', { kind: 'interactive' });
     await runtime.updateSession(REQUEST_ID, { permissionMode: 'bypassPermissions' });
 
     mockedQuery.mockClear();
@@ -340,7 +340,7 @@ describe('claude-code session-settings re-key on canonical-id rebind (DOR-493)',
     // id — which is every post after the client re-keys — inserted a fresh row,
     // returned true, and counted the same session twice.
     const firstPost = await registry.persistSessionRuntime(REQUEST_ID, 'claude-code', {
-      kind: 'test-harness',
+      kind: 'interactive',
     });
     expect(firstPost, 'the session was never minted — this test proved nothing').toBe(true);
 
@@ -348,7 +348,7 @@ describe('claude-code session-settings re-key on canonical-id rebind (DOR-493)',
 
     // The client re-keyed to the canonical id; this is its next message.
     const nextPost = await registry.persistSessionRuntime(CANONICAL_ID, 'claude-code', {
-      kind: 'test-harness',
+      kind: 'interactive',
     });
 
     expect(nextPost).toBe(false);
@@ -364,7 +364,7 @@ describe('claude-code session-settings re-key on canonical-id rebind (DOR-493)',
     const boom = vi
       .spyOn(registry, 'rekeySessionSettings')
       .mockRejectedValue(new Error('database is locked'));
-    await registry.persistSessionRuntime(REQUEST_ID, 'claude-code', { kind: 'test-harness' });
+    await registry.persistSessionRuntime(REQUEST_ID, 'claude-code', { kind: 'interactive' });
     await runtime.updateSession(REQUEST_ID, { permissionMode: 'plan' });
 
     mockedQuery.mockClear();
@@ -444,7 +444,7 @@ describe('claude-code session-settings re-key on canonical-id rebind (DOR-493)',
   });
 
   it('does not re-key when the SDK keeps the id it was given (resumed session)', async () => {
-    await registry.persistSessionRuntime(CANONICAL_ID, 'claude-code', { kind: 'test-harness' });
+    await registry.persistSessionRuntime(CANONICAL_ID, 'claude-code', { kind: 'interactive' });
     await runtime.updateSession(CANONICAL_ID, { permissionMode: 'acceptEdits' });
 
     await runTurn(CANONICAL_ID, CANONICAL_ID);

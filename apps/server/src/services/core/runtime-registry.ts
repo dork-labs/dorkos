@@ -14,10 +14,20 @@ import {
   readAgentExecutionDefaults,
   type AgentExecutionDefaults,
 } from '../session/resolve-session-defaults.js';
-// Same reasoning as the resolver above, and the same one-way arrow: the origin
-// union and its single power mapping are session-layer concepts, reached
-// directly rather than through the session barrel.
-import { permissionSeedForOrigin, type TurnOrigin } from '../session/origin/turn-origin.js';
+// Direct, for the same reason and by the same rule as the resolver above: this
+// is a RUNTIME import of a leaf function, so taking it through
+// `../session/index.js` would put the whole session surface on this module's
+// load path and hand the first session module that ever imports the registry a
+// cycle nobody edited. That reasoning is about THIS module, not about the
+// barrel — other callers import runtime values through it freely
+// (`room-turn-runner.ts` takes `resolveUnattendedPermissionMode` that way).
+// Both names below are also exported from the barrel, and every consumer
+// outside the session layer reaches them there.
+import {
+  permissionSeedForOrigin,
+  type OriginPermissionSeed,
+  type TurnOrigin,
+} from '../session/origin/turn-origin.js';
 import { sessionMetadata, eq, inArray, isNull, sql, type Db, type SQL } from '@dorkos/db';
 import { logger } from '../../lib/logger.js';
 import { traceRuntime, watchRuntimeSignin } from '../observability/index.js';
@@ -257,7 +267,10 @@ export class RuntimeRegistry {
    * The server's execution defaults ride the same statement (see
    * {@link RuntimeRegistry.seedForNewRow}), and only ever fill columns that are
    * still NULL — so an explicit choice made before the session started survives
-   * being claimed, exactly as it survives the INSERT.
+   * being claimed, exactly as it survives the INSERT. The permission column has
+   * one documented exception to that sentence: a stored mode the runtime being
+   * bound does not DECLARE cannot survive, because the session could not run in
+   * it ({@link RuntimeRegistry.claimedPermissionMode}).
    *
    * **The origin is REQUIRED, and it is what decides the power** (DOR-2105).
    * It used to be two optional arguments — an `interactive` flag and a mode an
@@ -273,9 +286,11 @@ export class RuntimeRegistry {
    * @param origin - What is starting this session. Required, exhaustive, and
    *   the only input to how much power the new row is seeded with — see
    *   {@link TurnOrigin} for the members and {@link permissionSeedForOrigin}
-   *   for what each one gets. Whatever it says, the seed only ever fills a
-   *   column still holding NULL, so a choice somebody already made on this
-   *   conversation always wins.
+   *   for what each one gets, including which of them may seed a row an
+   *   earlier settings change created. Whatever it says, the seed only ever
+   *   fills a column still holding NULL, or one holding a mode this runtime
+   *   does not declare and so cannot run, which is the one case where a choice
+   *   somebody made does not survive.
    * @param agentPath - Optional path to the agent that owns this session
    * @returns `true` when this call BOUND the session — whether it inserted the
    *   row or claimed an unbound one — and `false` when the session was already
@@ -295,7 +310,10 @@ export class RuntimeRegistry {
     // Read unconditionally rather than only for a row that turns out to be new:
     // the INSERT is what decides that, and it cannot await mid-statement.
     const agent = await readAgentExecutionDefaults(agentPath);
-    const seed = this.seedForNewRow(runtime, { agent, origin });
+    // Asked once, here, and handed down to both branches of the statement —
+    // they honour different halves of the same answer.
+    const seedPolicy = permissionSeedForOrigin(origin);
+    const seed = this.seedForNewRow(runtime, { agent, seedPolicy });
     const result = await db
       .insert(sessionMetadata)
       .values({
@@ -314,7 +332,18 @@ export class RuntimeRegistry {
           // with no agent never erases a path some other write knew.
           ...(agentPath !== undefined ? { agentPath } : {}),
           ...fillNullsWith(seed),
-          ...this.claimedPermissionMode(runtime, seed.permissionMode),
+          // **The UPDATE branch is a CLAIM, and not every origin may seed one.**
+          // This row already exists: something created it before the session
+          // started, which for a person is their own pre-launch settings change
+          // and for a room is evidence the conversation is not new. So an
+          // insert-only origin hands nothing down here, and the stored mode is
+          // left to stand or fall on its own (`configured-stop-on-insert` in
+          // {@link permissionSeedForOrigin}, DOR-2105 review). The INSERT branch
+          // above is unaffected: a row this call mints is new by definition.
+          ...this.claimedPermissionMode(
+            runtime,
+            seedPolicy === 'configured-stop' ? seed.permissionMode : undefined
+          ),
         },
         // The whole guard: claim a row nobody has bound, never re-bind one.
         setWhere: isNull(sessionMetadata.runtime),
@@ -622,28 +651,36 @@ export class RuntimeRegistry {
    * normal way a session starts) through the UPDATE branch, which fills only the
    * columns still holding NULL — so a person's explicit choice is never
    * overwritten, and a session that has already started is never touched at all.
+   * The permission column is the one with a further case: a stored mode the
+   * runtime being bound does not DECLARE cannot survive, because the session
+   * could not run in it ({@link RuntimeRegistry.claimedPermissionMode}).
    *
    * **The permission column is the origin's answer, and only the origin's**
    * (DOR-2105). {@link permissionSeedForOrigin} says whether this row follows
    * the operator's configured stop or is born with no opinion at all; the
    * runtime's declared modes are handed to {@link resolveSessionDefaults} only
-   * in the first case, which is what turns a configured stop into an id this
+   * when it follows one, which is what turns a configured stop into an id this
    * runtime actually knows. There is no second path into this column — an
    * earlier version let an unattended caller resolve a mode itself and pass it
    * in, which is exactly the split that let each surface answer the same
    * question differently.
    *
+   * This answers what a NEW row is born with, so the two "configured stop"
+   * policies are the same answer here. Where they differ is the UPDATE branch
+   * in {@link RuntimeRegistry.persistSessionRuntime}, which is a claim on a row
+   * that already exists.
+   *
    * @param runtime - The runtime type the row is being created for.
    * @param opts.agent - The owning agent's manifest model/effort, when the caller
    *   knows which agent that is. Omitted → the server default alone.
-   * @param opts.origin - What is starting this session, the required argument
-   *   {@link RuntimeRegistry.persistSessionRuntime} took from its caller.
+   * @param opts.seedPolicy - What the required turn origin resolved to, through
+   *   the one mapping that reads it.
    */
   private seedForNewRow(
     runtime: string,
     opts: {
       agent?: AgentExecutionDefaults;
-      origin: TurnOrigin;
+      seedPolicy: OriginPermissionSeed;
     }
   ): Partial<typeof sessionMetadata.$inferInsert> {
     // Read off the REGISTERED runtime, not a table here: a runtime that is not
@@ -654,7 +691,7 @@ export class RuntimeRegistry {
     // from a namespace it cannot read (see {@link resolveSessionDefaults}).
     const declared = this.runtimes.get(runtime)?.getCapabilities();
     // The whole of the power decision, in one word, decided somewhere else.
-    const followsOperatorStop = permissionSeedForOrigin(opts.origin) === 'configured-stop';
+    const followsOperatorStop = opts.seedPolicy !== 'none';
     return pickSettings(
       resolveSessionDefaults({
         runtimeType: runtime,

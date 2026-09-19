@@ -1018,12 +1018,18 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // The origin is the whole of what this call says about power: a room,
       // and who wrote the message that started the turn (DOR-2105). Nobody is
       // watching a room turn, which is why it FOLLOWS the operator's level
-      // rather than being denied it — the registry resolves that stop against
-      // this runtime's own profile, seeds a column still holding NULL, and can
-      // never overwrite a choice somebody made on this conversation (DOR-1917).
-      // A message bridged in from off this machine seeds nothing, because the
-      // binding it came from carries its own grant (DOR-604); the mapping in
-      // `session/origin/turn-origin.ts` is where that is written down, once.
+      // rather than being denied it (DOR-1917) — and a message bridged in from
+      // off this machine does not, because the binding it came from carries its
+      // own grant (DOR-604). Neither rule is stated here: the mapping in
+      // `session/origin/turn-origin.ts` is where both are written down, once.
+      //
+      // **A room seeds a row it MINTS and nothing else**, which is the other
+      // half the mapping holds (`configured-stop-on-insert`). A row that
+      // already exists belongs to a conversation somebody has already
+      // configured, and ADR 260908-170643 promises it is untouched. That used
+      // to be this file's `isNewSession` check guarding the argument; it is now
+      // a property of the origin, so it cannot be lost by a caller forgetting
+      // to ask.
       //
       // **BELOW the `!accepted` return, and its failure is LOGGED rather than
       // thrown.** Both halves of that are load-bearing, and it used to be one
@@ -1047,11 +1053,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         await runtimeRegistry.persistSessionRuntime(
           canonicalId,
           runtimeType,
-          {
-            kind: 'room',
-            roomId: request.room.id,
-            externalAuthor: request.externalAuthor,
-          },
+          { kind: 'room', externalAuthor: request.externalAuthor },
           request.agentPath
         );
       } catch (err) {

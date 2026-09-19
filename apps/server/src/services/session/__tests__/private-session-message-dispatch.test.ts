@@ -216,7 +216,7 @@ describe('private receipt adoption', () => {
       await firstRegistry.persistSessionRuntime(
         SESSION_ID,
         runtimeType,
-        { kind: 'test-harness' },
+        { kind: 'connector-event' },
         '/agents/researcher'
       );
       const ref = seedRequest(db, `cold-${runtimeType}`, runtimeType);

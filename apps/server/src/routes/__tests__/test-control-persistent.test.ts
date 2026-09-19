@@ -124,7 +124,7 @@ describe('the held-process controls', () => {
     // session some OTHER adapter owns would sit there unread, and the failure
     // would surface much later as a Steer row that never appeared.
     runtimeRegistry.register(new FakeAgentRuntime('not-test-mode'));
-    await runtimeRegistry.persistSessionRuntime(FOREIGN, 'not-test-mode', { kind: 'test-harness' });
+    await runtimeRegistry.persistSessionRuntime(FOREIGN, 'not-test-mode', { kind: 'interactive' });
 
     const res = await request(fixtureServer)
       .post('/api/test/persistent')

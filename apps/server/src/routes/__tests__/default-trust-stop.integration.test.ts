@@ -161,7 +161,6 @@ describe('a standing Full-autonomy default, end to end', () => {
     const bindingSession = '33333333-4444-4555-8666-777777777777';
     await runtimeRegistry.persistSessionRuntime(roomSession, 'fake', {
       kind: 'room',
-      roomId: 'room-1',
       externalAuthor: false,
     });
     await runtimeRegistry.persistSessionRuntime(bindingSession, 'fake', {
@@ -174,6 +173,44 @@ describe('a standing Full-autonomy default, end to end', () => {
     expect(
       (await runtimeRegistry.getSessionSettings(bindingSession))?.permissionMode
     ).toBeUndefined();
+  });
+
+  it('leaves a room conversation that already has a row where it was', async () => {
+    // **The case the DOR-2105 review caught**, over the real config, the real
+    // registry and a real database. A settings change made before the first
+    // message creates an UNBOUND row (DOR-812's pre-launch picker, which E3
+    // made the normal way a session starts). A person's own binding write may
+    // seed such a row — it is their row, from their sitting. A room's may not:
+    // the row is evidence the conversation already exists, and ADR
+    // 260908-170643 promises it is untouched.
+    await request(fixtureServer)
+      .patch('/api/config')
+      .send({
+        ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' },
+        runtimes: { defaultTrustStop: 'autonomy' },
+      })
+      .expect(200);
+
+    const { runtimeRegistry } = await import('../../services/core/runtime-registry.js');
+    const roomSession = '44444444-5555-4666-8777-888888888888';
+    const personSession = '55555555-6666-4777-8888-999999999999';
+    await runtimeRegistry.saveSessionSettings(roomSession, { model: 'sonnet' });
+    await runtimeRegistry.saveSessionSettings(personSession, { model: 'sonnet' });
+
+    await runtimeRegistry.persistSessionRuntime(roomSession, 'fake', {
+      kind: 'room',
+      externalAuthor: false,
+    });
+    await runtimeRegistry.persistSessionRuntime(personSession, 'fake', { kind: 'interactive' });
+
+    const room = await runtimeRegistry.getSessionSettings(roomSession);
+    const person = await runtimeRegistry.getSessionSettings(personSession);
+    expect(room?.permissionMode).toBeUndefined();
+    expect(person?.permissionMode).toBe(autonomyModeId());
+    // The choice the person actually made survives on both, which is what says
+    // the rows really were claimed rather than skipped.
+    expect(room?.model).toBe('sonnet');
+    expect(person?.model).toBe('sonnet');
   });
 
   it('refuses the default until the acknowledgement exists, and seeds nothing meanwhile', async () => {

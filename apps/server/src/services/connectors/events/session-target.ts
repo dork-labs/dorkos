@@ -8,7 +8,7 @@ import type {
   ConnectorEventSessionOrigin,
   ConnectorEventSessionTargetPort,
 } from './session-source-adapter.js';
-import type { TurnOrigin } from '../../session/origin/turn-origin.js';
+import type { TurnOrigin } from '../../session/index.js';
 
 /** Exact persisted agent snapshot; a changed registration cannot inherit an old notification. */
 export function readConnectorEventSessionOrigin(
@@ -79,7 +79,7 @@ export class CanonicalConnectorEventSessionTarget implements ConnectorEventSessi
     await this.options.sessions.persistSessionRuntime(
       sessionId,
       origin.runtime,
-      { kind: 'connector-event', agentId: origin.agentId },
+      { kind: 'connector-event' },
       origin.agentPath
     );
   }

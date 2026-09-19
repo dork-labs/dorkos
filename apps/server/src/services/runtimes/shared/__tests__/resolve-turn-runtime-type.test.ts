@@ -52,7 +52,7 @@ describe('resolveTurnRuntimeType', () => {
     await runtimeRegistry.persistSessionRuntime(
       'room-session',
       'codex',
-      { kind: 'test-harness' },
+      { kind: 'room', externalAuthor: false },
       '/repo/ana'
     );
     agentManifest = { runtime: 'claude-code' };
@@ -96,7 +96,7 @@ describe('resolveTurnRuntimeType', () => {
     await runtimeRegistry.persistSessionRuntime(
       'room-session',
       'opencode',
-      { kind: 'test-harness' },
+      { kind: 'room', externalAuthor: false },
       '/repo/ana'
     );
     agentManifest = { runtime: 'claude-code' };

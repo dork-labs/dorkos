@@ -246,5 +246,11 @@ export type { SessionOriginResolvers } from './origin/session-origin-overlays.js
 // --- "Nobody typed here" gate on userLastMessageAt (BC-16, DOR-1081) ---
 export { dropUserLastMessageAtWithoutOperator } from './origin/user-last-message-origin.js';
 
+// --- What kind of thing STARTED a session, and the one mapping from that to
+// how much power its first row is born with (DOR-2105). Different question
+// from the overlays above, which label a session that already exists. ---
+export { permissionSeedForOrigin } from './origin/turn-origin.js';
+export type { OriginPermissionSeed, TurnOrigin } from './origin/turn-origin.js';
+
 // --- Persisted per-session settings overlay (ADR-0260, DOR-463) ---
 export { overlayStoredSettings, resolveSettingsKey } from './session-settings-overlay.js';

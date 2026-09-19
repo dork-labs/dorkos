@@ -41,7 +41,7 @@
  * seeds no power says so.
  *
  * Which origins those are is not this module's rule and is not repeated here.
- * It is one exhaustive switch, {@link permissionSeedForOrigin} in
+ * It is one exhaustive switch, `permissionSeedForOrigin` in
  * `session/origin/turn-origin.ts`, and it is exhaustive on purpose: a new
  * turn-starting surface cannot compile until somebody decides what power it
  * starts at. The standing answers, in one line, are that a person watching and
@@ -390,7 +390,8 @@ export async function resolveUnattendedSessionDefaults(opts: {
  * permission mode from riding along on a question about models (spec
  * `trust-dial`, decision 6). Whether to hand them over is decided in exactly
  * one place, from the required turn origin
- * ({@link permissionSeedForOrigin}, DOR-2105). What is left HERE is the
+ * (`permissionSeedForOrigin` in `session/origin/turn-origin.ts`, DOR-2105).
+ * What is left HERE is the
  * per-TURN question: a scheduled run and a room turn's first launch both need
  * a live mode before any row exists to read one off, so they resolve it by
  * name. A relay binding still does not ask at all: it carries a grant a person
@@ -427,7 +428,7 @@ export function resolveUnattendedDefaultStop(opts?: {
  * start, and they must keep answering identically for the same runtime: a
  * scheduled run (`tasks/scheduled-run-power.ts`) and a room turn
  * (`rooms/room-turn-runner.ts`). The session ROW is seeded from the same stop
- * through {@link permissionSeedForOrigin}, so the two can agree by
+ * through `permissionSeedForOrigin`, so the two can agree by
  * construction rather than by coincidence. Before this existed the task path had its own
  * copy of the stop-to-mode mapping and the room path had none at all, so an
  * operator who chose Full autonomy got a scheduled run at full power and a room

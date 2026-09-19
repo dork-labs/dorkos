@@ -1314,11 +1314,7 @@ export class TaskSchedulerService {
         // and reaches the runtime through `ensureSession`/`sendMessage` below,
         // never through this row (DOR-2105; changing that is DOR-2100).
         await runtimeRegistry
-          .persistSessionRuntime(sessionId, execution.runtimeType, {
-            kind: 'schedule',
-            taskId: task.id,
-            runId: run.id,
-          })
+          .persistSessionRuntime(sessionId, execution.runtimeType, { kind: 'schedule' })
           .catch((err: unknown) => {
             logger.warn(`run ${run.id}: could not bind its session to a runtime`, logError(err));
           });

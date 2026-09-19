@@ -177,7 +177,7 @@ describe('resolveSessionDefaults', () => {
     const registry = new RuntimeRegistry();
     registry.setDb(createTestDb());
     return expect(
-      registry.persistSessionRuntime('cold-boot-session', 'claude-code', { kind: 'test-harness' })
+      registry.persistSessionRuntime('cold-boot-session', 'claude-code', { kind: 'interactive' })
     ).resolves.toBe(true);
   });
 

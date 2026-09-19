@@ -2,6 +2,9 @@
  * What kind of thing is starting a session, and how much power its first row
  * is born with.
  *
+ * The session-origin overlays beside this file answer a different question:
+ * which room or task a listed session belongs to, for the label the app shows.
+ *
  * ## Why this exists
  *
  * `RuntimeRegistry.persistSessionRuntime` is the one write that can seed a new
@@ -21,19 +24,17 @@
  *
  * ## The decision lives here, not at the call site
  *
- * Each member carries FACTS its caller knows — which room, which task, who
- * wrote the message — and nothing about permissions. Turning those facts into
- * a power level is this module's single job, so the answer for "an unattended
- * surface follows the operator's configured stop" is written down once instead
- * of being re-derived, differently, at each call site (which is how a room
- * agent came to stop and ask in the one place nobody is there to answer,
- * DOR-1917).
+ * Each member carries only facts its caller knows, and only facts the mapping
+ * below actually reads. Turning those facts into a power level is this
+ * module's single job, so the answer for "an unattended surface follows the
+ * operator's configured stop" is written down once instead of being
+ * re-derived, differently, at each call site (which is how a room agent came
+ * to stop and ask in the one place nobody is there to answer, DOR-1917).
  *
- * **Not the session-origin OVERLAYS beside it.** `room-origin-overlay.ts` and
- * its siblings in this directory answer a read-side question: which room or
- * task a listed session belongs to, for the label the app shows. This answers
- * a write-side one, asked once when the session is born, about how much the
- * agent may do without asking. They share the word and nothing else.
+ * A member is a bare discriminant unless a field changes the answer.
+ * `externalAuthor` is the only such field today. Ids that nothing reads are
+ * not carried "for later": a required argument nobody uses is a required
+ * argument callers guess at.
  *
  * @module services/session/origin/turn-origin
  */
@@ -41,10 +42,9 @@
 /**
  * What is starting this session, as the thing that knows describes itself.
  *
- * One member per turn-starting surface in the server. Fields are what that
- * surface actually holds at the moment it binds a session — never a value it
- * would have to invent — and none of them names a permission mode: mapping a
- * surface onto a power level is {@link permissionSeedForOrigin}'s job.
+ * One member per turn-starting surface in the server. None of them names a
+ * permission mode: mapping a surface onto a power level is
+ * {@link permissionSeedForOrigin}'s job.
  */
 export type TurnOrigin =
   /**
@@ -56,26 +56,24 @@ export type TurnOrigin =
   /**
    * A room turn — unattended, because a room triggers a turn into the dark.
    *
-   * `roomId` is the room it is answering in. `externalAuthor` says whether the
-   * message that triggered it came from somebody off this machine (a bridged
-   * Telegram or Slack chat): a bridged chat is a projection of a relay binding
-   * into a room, and a binding carries its own grant precisely because nobody
-   * picked a level for strangers (DOR-604) — so that is the one fact which
-   * changes a room's answer.
+   * `externalAuthor` says whether the message that triggered it came from
+   * somebody off this machine (a bridged Telegram or Slack chat). A bridged
+   * chat is a projection of a relay binding into a room, and a binding carries
+   * its own grant precisely because nobody picked a level for strangers
+   * (DOR-604), so that is the one fact which changes a room's answer.
    */
-  | { readonly kind: 'room'; readonly roomId: string; readonly externalAuthor: boolean }
+  | { readonly kind: 'room'; readonly externalAuthor: boolean }
   /**
    * A scheduled task's run, whether the timer fired it or a person pressed
    * "Run now".
    *
-   * The row it binds is seeded with no mode today: a run's power comes off
+   * Seeded with no mode: a run's power comes off
    * `pulse_schedules.permission_mode`, decided once at CREATE, and it reaches
    * the runtime through `ensureSession`/`sendMessage` rather than through this
-   * row. `taskId` is carried anyway because that stored mode is exactly what a
-   * later change would map here (DOR-2100, deliberately not implemented in
-   * DOR-2105). `runId` names this particular run.
+   * row. Whether it should also reach the row is DOR-2100, which will add
+   * whatever it needs to read here.
    */
-  | { readonly kind: 'schedule'; readonly taskId: string; readonly runId: string }
+  | { readonly kind: 'schedule' }
   /**
    * A chat binding created a session for an inbound message — Telegram, Slack,
    * a webhook. The binding carries the grant a person set on it, and an absent
@@ -91,34 +89,61 @@ export type TurnOrigin =
   | { readonly kind: 'agent-dm' }
   /**
    * A connector event woke an agent up (`services/connectors/events/`). Same
-   * rule as a binding: the subscription is the grant, so the row seeds no
-   * operator stop. `agentId` is the registered agent the event is notifying.
+   * rule as a binding: the subscription a person approved is the grant, so the
+   * row seeds no operator stop.
    */
-  | { readonly kind: 'connector-event'; readonly agentId: string }
+  | { readonly kind: 'connector-event' }
   /**
    * The in-process end-to-end harness, reachable only on a server started with
    * `DORKOS_TEST_RUNTIME`. It drives a runtime tool against a session it binds
-   * itself, and it is named rather than borrowed so no production surface's
-   * power decision has to describe it.
+   * itself.
+   *
+   * It is a named member rather than a borrowed one so no production surface's
+   * power decision has to describe a test. Exactly one production file uses
+   * it, and `__tests__/turn-origin-call-sites.test.ts` is what keeps that
+   * true — a unit test that just needs a session bound names the surface it is
+   * standing in for instead.
    */
   | { readonly kind: 'test-harness' };
 
 /**
- * How much power a new session row gets, given what is starting it.
+ * How much power a new session row gets, and WHEN, given what is starting it.
  *
  * - `'configured-stop'` — resolve the operator's configured trust stop against
- *   the runtime being bound and seed the mode it lands on. Nothing configured,
- *   or a runtime that declares no mode at that stop, still seeds nothing; this
- *   asks the question, it does not force an answer.
- * - `'none'` — seed nothing about power. The column stays NULL, which means
- *   "the runtime decides" everywhere else in this table.
+ *   the runtime being bound and seed the mode it lands on, whether this call
+ *   inserts the row or claims an unbound one somebody's earlier settings
+ *   change left behind.
+ * - `'configured-stop-on-insert'` — the same stop, but only on a row this call
+ *   INSERTS. A row that already exists belongs to a conversation somebody has
+ *   already touched, and this origin leaves it alone.
+ * - `'none'` — seed nothing at all. The column stays NULL, which means "the
+ *   runtime decides" everywhere else in this table.
+ *
+ * ## Why two "configured stop" values rather than one
+ *
+ * They differ on one case, and it is a real one: a row with no runtime yet,
+ * created by a settings change made before the first message (DOR-812's
+ * pre-launch picker, which E3 made the normal way a session starts).
+ *
+ * For a PERSON that row is their own, from the same sitting, and the stop they
+ * configured is the default for the session they are about to start — so the
+ * claim seeds it, and always has.
+ *
+ * For a ROOM that row is evidence the conversation already exists. ADR
+ * 260908-170643 promises that "a room conversation that already has settings
+ * is untouched", and the room runner used to hold that promise itself by
+ * asking whether the session had a row before resolving anything. Moving the
+ * decision here without moving that condition would have quietly widened it
+ * (DOR-2105 review). So the condition moved too, and it is expressed as the
+ * thing it actually is: seed a row nobody has started, never one that exists.
  *
  * Neither value can RAISE a session above what somebody chose: the seed only
- * ever fills a column still holding NULL (`claimedPermissionMode`'s `coalesce`,
- * one layer down), and the stop it reads is one the operator set through the
- * consent-gated config route.
+ * ever fills a column holding NULL, or one holding a mode the runtime being
+ * bound does not declare and therefore cannot run (`claimedPermissionMode`),
+ * and the stop it reads is one the operator set through the consent-gated
+ * config route.
  */
-export type OriginPermissionSeed = 'configured-stop' | 'none';
+export type OriginPermissionSeed = 'configured-stop' | 'configured-stop-on-insert' | 'none';
 
 /**
  * The single mapping from a turn origin to the power its session row is born
@@ -135,17 +160,18 @@ export type OriginPermissionSeed = 'configured-stop' | 'none';
 export function permissionSeedForOrigin(origin: TurnOrigin): OriginPermissionSeed {
   switch (origin.kind) {
     // A person is holding the stream open, so a stop they configured is one
-    // they can answer. This is the path the trust dial was built for.
+    // they can answer. This is the path the trust dial was built for, and the
+    // one that may also claim a row their own settings change created.
     case 'interactive':
       return 'configured-stop';
     // Nobody is watching a room turn either, and that is the reason it follows
-    // the operator's level rather than the reason it may not: a person who set
-    // every new conversation to full autonomy was getting a room agent that
-    // stopped to ask (ADR 260822-235802 as amended by 260908-170643, DOR-1917).
+    // the operator's level rather than the reason it may not (ADR
+    // 260822-235802 as amended by 260908-170643, DOR-1917). On a NEW row only
+    // — see the type's own doc for why a room and a person differ there.
     // A message from off this machine is the exception, and it belongs to the
     // binding it was bridged from.
     case 'room':
-      return origin.externalAuthor ? 'none' : 'configured-stop';
+      return origin.externalAuthor ? 'none' : 'configured-stop-on-insert';
     // Everything below seeds nothing, for two different reasons.
     //
     // A schedule's power is already decided and already stored, on the schedule

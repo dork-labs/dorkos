@@ -12,7 +12,7 @@ import { SessionSettingsSchema } from '@dorkos/shared/schemas';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { sessionMetadata, eq, type Db } from '@dorkos/db';
 import { logger } from '../../../lib/logger.js';
-import type { TurnOrigin } from '../../session/origin/turn-origin.js';
+import type { TurnOrigin } from '../../session/index.js';
 
 // Minimal mock runtime for testing
 function createMockRuntime(type: string, overrides?: Partial<RuntimeCapabilities>): AgentRuntime {
@@ -112,6 +112,17 @@ vi.mock('../../session/resolve-session-defaults.js', () => ({
   },
   readAgentExecutionDefaults: async (dir?: string) => (dir ? agentDefaults : {}),
 }));
+
+/**
+ * The origin for a case that is not about power at all.
+ *
+ * Most of this file is about binding, claiming, agent paths and the
+ * model/effort seed, and which surface started the session changes none of
+ * them. They still have to name one, because the argument is required, so they
+ * name the ordinary one: a person at the app. The cases that ARE about power
+ * name their origin inline, right where the reader needs to see it.
+ */
+const A_PERSON: TurnOrigin = { kind: 'interactive' };
 
 describe('RuntimeRegistry', () => {
   let registry: RuntimeRegistry;
@@ -480,7 +491,7 @@ describe('RuntimeRegistry', () => {
 
     describe('persistSessionRuntime', () => {
       it('inserts a new row for a new session', async () => {
-        await registry.persistSessionRuntime('session-1', 'claude-code', { kind: 'test-harness' });
+        await registry.persistSessionRuntime('session-1', 'claude-code', A_PERSON);
         const row = db
           .select()
           .from(sessionMetadata)
@@ -496,9 +507,7 @@ describe('RuntimeRegistry', () => {
         // that mints the session, without any caller passing them.
         serverDefaults = { model: 'opus', effort: 'high' };
 
-        await registry.persistSessionRuntime('session-seeded', 'claude-code', {
-          kind: 'test-harness',
-        });
+        await registry.persistSessionRuntime('session-seeded', 'claude-code', A_PERSON);
 
         const row = db
           .select()
@@ -518,7 +527,7 @@ describe('RuntimeRegistry', () => {
         await registry.persistSessionRuntime(
           'session-agent-seeded',
           'claude-code',
-          { kind: 'test-harness' },
+          A_PERSON,
           '/agents/kai'
         );
 
@@ -535,9 +544,7 @@ describe('RuntimeRegistry', () => {
         serverDefaults = { model: 'opus' };
         agentDefaults = { model: 'sonnet' };
 
-        await registry.persistSessionRuntime('session-agentless', 'claude-code', {
-          kind: 'test-harness',
-        });
+        await registry.persistSessionRuntime('session-agentless', 'claude-code', A_PERSON);
 
         const row = db
           .select()
@@ -549,15 +556,15 @@ describe('RuntimeRegistry', () => {
 
       it('never seeds over a session that already has a row', async () => {
         // "Applies to new conversations — running ones keep their settings."
-        await registry.persistSessionRuntime('session-running', 'claude-code', {
-          kind: 'test-harness',
-        });
+        await registry.persistSessionRuntime('session-running', 'claude-code', A_PERSON);
         await registry.saveSessionSettings('session-running', { model: 'sonnet' });
         serverDefaults = { model: 'opus', effort: 'high' };
 
-        const created = await registry.persistSessionRuntime('session-running', 'claude-code', {
-          kind: 'test-harness',
-        });
+        const created = await registry.persistSessionRuntime(
+          'session-running',
+          'claude-code',
+          A_PERSON
+        );
 
         expect(created).toBe(false);
         const row = db
@@ -573,7 +580,7 @@ describe('RuntimeRegistry', () => {
         await registry.persistSessionRuntime(
           'session-2',
           'claude-code',
-          { kind: 'test-harness' },
+          A_PERSON,
           '/path/to/agent'
         );
         const row = db
@@ -585,18 +592,8 @@ describe('RuntimeRegistry', () => {
       });
 
       it('is idempotent — second call does not overwrite existing row', async () => {
-        await registry.persistSessionRuntime(
-          'session-3',
-          'claude-code',
-          { kind: 'test-harness' },
-          '/first/path'
-        );
-        await registry.persistSessionRuntime(
-          'session-3',
-          'test-mode',
-          { kind: 'test-harness' },
-          '/second/path'
-        );
+        await registry.persistSessionRuntime('session-3', 'claude-code', A_PERSON, '/first/path');
+        await registry.persistSessionRuntime('session-3', 'test-mode', A_PERSON, '/second/path');
         const row = db
           .select()
           .from(sessionMetadata)
@@ -610,18 +607,18 @@ describe('RuntimeRegistry', () => {
         ['interactive', { kind: 'interactive' } as TurnOrigin, true],
         [
           'a room turn somebody here started',
-          { kind: 'room', roomId: 'room-1', externalAuthor: false } as TurnOrigin,
+          { kind: 'room', externalAuthor: false } as TurnOrigin,
           true,
         ],
         [
           'a room turn bridged from off this machine',
-          { kind: 'room', roomId: 'room-1', externalAuthor: true } as TurnOrigin,
+          { kind: 'room', externalAuthor: true } as TurnOrigin,
           false,
         ],
-        ['a scheduled run', { kind: 'schedule', taskId: 't', runId: 'r' } as TurnOrigin, false],
+        ['a scheduled run', { kind: 'schedule' } as TurnOrigin, false],
         ['a relay binding', { kind: 'relay-binding' } as TurnOrigin, false],
         ['an agent DM', { kind: 'agent-dm' } as TurnOrigin, false],
-        ['a connector event', { kind: 'connector-event', agentId: 'a' } as TurnOrigin, false],
+        ['a connector event', { kind: 'connector-event' } as TurnOrigin, false],
         ['the test harness', { kind: 'test-harness' } as TurnOrigin, false],
       ])(
         'seeds the configured stop for %s: %o → %s',
@@ -645,6 +642,73 @@ describe('RuntimeRegistry', () => {
         }
       );
 
+      it.each([
+        [
+          'a person, whose own settings change created it',
+          { kind: 'interactive' } as TurnOrigin,
+          true,
+        ],
+        [
+          'a room turn, for a conversation that already exists',
+          { kind: 'room', externalAuthor: false } as TurnOrigin,
+          false,
+        ],
+      ])(
+        'claims a row an earlier settings change left unbound — %s: %o → seeds: %s',
+        async (_label, origin: TurnOrigin, seeds: boolean) => {
+          // **The one case the two "configured stop" policies disagree on**
+          // (DOR-2105 review). A row with no runtime yet, created by a settings
+          // change made before the first message (DOR-812's pre-launch picker,
+          // which E3 made the normal way a session starts).
+          //
+          // For a PERSON that row is their own, from the same sitting, and the
+          // stop they configured is the default for the session they are about
+          // to start. For a ROOM it is evidence the conversation already
+          // exists, and ADR 260908-170643 promises such a conversation is
+          // untouched — a promise the room runner used to keep itself, by
+          // asking whether the session had a row before resolving anything.
+          // Moving the decision into the mapping without moving that condition
+          // quietly widened it, which is what this pins.
+          configuredStopDefaults = { permissionMode: 'bypassPermissions' };
+          const id = `claim-${origin.kind}-${String(seeds)}`;
+          // The row the pre-launch picker leaves: a real choice, no runtime,
+          // and nothing said about power.
+          await registry.saveSessionSettings(id, { model: 'sonnet' });
+
+          await registry.persistSessionRuntime(id, 'claude-code', origin);
+
+          const row = db
+            .select()
+            .from(sessionMetadata)
+            .where(eq(sessionMetadata.sessionId, id))
+            .get();
+          // Bound either way, and the person's own choice survives either way.
+          expect(row?.runtime).toBe('claude-code');
+          expect(row?.model).toBe('sonnet');
+          expect(row?.permissionMode).toBe(seeds ? 'bypassPermissions' : null);
+        }
+      );
+
+      it('still seeds a room turn that MINTS the row', async () => {
+        // The other side of the case above, so "a room seeds nothing" can never
+        // be the way the one above passes. A first room turn creates the row,
+        // and that row does follow the operator's level (DOR-1917).
+        configuredStopDefaults = { permissionMode: 'bypassPermissions' };
+
+        await registry.persistSessionRuntime('room-mints-it', 'claude-code', {
+          kind: 'room',
+          externalAuthor: false,
+        });
+
+        expect(
+          db
+            .select()
+            .from(sessionMetadata)
+            .where(eq(sessionMetadata.sessionId, 'room-mints-it'))
+            .get()?.permissionMode
+        ).toBe('bypassPermissions');
+      });
+
       it('never lets that seed overwrite a mode already on the row', async () => {
         // "Applies to new conversations, running ones keep their settings." A row
         // that already names a mode was written by somebody's choice, and a
@@ -664,9 +728,7 @@ describe('RuntimeRegistry', () => {
 
         configuredStopDefaults = { permissionMode: 'bypassPermissions' };
         await registry.persistSessionRuntime('session-chosen', 'claude-code', {
-          kind: 'room',
-          roomId: 'room-1',
-          externalAuthor: false,
+          kind: 'interactive',
         });
 
         expect(
@@ -699,9 +761,11 @@ describe('RuntimeRegistry', () => {
           })
         );
 
-        await registry.persistSessionRuntime('session-declared-section', 'declares-a-section', {
-          kind: 'test-harness',
-        });
+        await registry.persistSessionRuntime(
+          'session-declared-section',
+          'declares-a-section',
+          A_PERSON
+        );
 
         expect(lastResolveOpts?.configSection).toBe('codex');
       });
@@ -711,9 +775,11 @@ describe('RuntimeRegistry', () => {
         // means no per-runtime default, which is the honest answer — seeding a
         // row for a runtime that is not here would hand the fallback runtime a
         // model id from a namespace it cannot read.
-        await registry.persistSessionRuntime('session-absent-runtime', 'never-registered', {
-          kind: 'test-harness',
-        });
+        await registry.persistSessionRuntime(
+          'session-absent-runtime',
+          'never-registered',
+          A_PERSON
+        );
 
         expect(lastResolveOpts?.configSection).toBeUndefined();
       });
@@ -721,12 +787,8 @@ describe('RuntimeRegistry', () => {
       it('returns true on the first insert and false on the duplicate (the once-per-session signal)', async () => {
         // This boolean gates the once-per-session `session_created` usage event
         // at the POST /messages call site — a regression here double-fires it.
-        const first = await registry.persistSessionRuntime('session-5', 'claude-code', {
-          kind: 'test-harness',
-        });
-        const second = await registry.persistSessionRuntime('session-5', 'claude-code', {
-          kind: 'test-harness',
-        });
+        const first = await registry.persistSessionRuntime('session-5', 'claude-code', A_PERSON);
+        const second = await registry.persistSessionRuntime('session-5', 'claude-code', A_PERSON);
         expect(first).toBe(true);
         expect(second).toBe(false);
       });
@@ -734,7 +796,7 @@ describe('RuntimeRegistry', () => {
 
     describe('getSessionRuntimeType', () => {
       it('returns the stored runtime string for an existing row', async () => {
-        await registry.persistSessionRuntime('session-4', 'test-mode', { kind: 'test-harness' });
+        await registry.persistSessionRuntime('session-4', 'test-mode', A_PERSON);
         expect(await registry.getSessionRuntimeType('session-4')).toBe('test-mode');
       });
 
@@ -764,7 +826,7 @@ describe('RuntimeRegistry', () => {
 
     describe('getSessionBindings (DOR-1436)', () => {
       it('answers only for sessions that are actually bound', async () => {
-        await registry.persistSessionRuntime('started', 'test-mode', { kind: 'test-harness' });
+        await registry.persistSessionRuntime('started', 'test-mode', A_PERSON);
         // A settings write before the first turn: the row exists, the owner does
         // not (DOR-812).
         await registry.saveSessionSettings('picked-a-mode', { permissionMode: 'default' });
@@ -793,7 +855,7 @@ describe('RuntimeRegistry', () => {
         // that was not the one the row was written on, which is the one defect
         // this assertion exists to catch.
         const before = Date.now();
-        await registry.persistSessionRuntime('timed', 'test-mode', { kind: 'test-harness' });
+        await registry.persistSessionRuntime('timed', 'test-mode', A_PERSON);
         const after = Date.now();
 
         const boundAt = registry.getSessionBindings(['timed']).get('timed')?.boundAt;
@@ -825,7 +887,7 @@ describe('RuntimeRegistry', () => {
         // the WHOLE read — which for the boot reconcile means every candidate
         // looks unbound. 1200 ids, the count this test used first, never came
         // near it and the chunking could be deleted with the test still green.
-        await registry.persistSessionRuntime('needle', 'test-mode', { kind: 'test-harness' });
+        await registry.persistSessionRuntime('needle', 'test-mode', A_PERSON);
         const ids = [...Array.from({ length: 40_000 }, (_, i) => `bulk-${i}`), 'needle'];
 
         const bindings = registry.getSessionBindings(ids);
@@ -852,9 +914,7 @@ describe('RuntimeRegistry', () => {
       });
 
       it('returns the runtime matching an existing row', async () => {
-        await registry.persistSessionRuntime('existing-session', 'test-mode', {
-          kind: 'test-harness',
-        });
+        await registry.persistSessionRuntime('existing-session', 'test-mode', A_PERSON);
         const runtime = await registry.resolveForSession('existing-session');
         expect(runtime.type).toBe('test-mode');
       });
@@ -926,12 +986,7 @@ describe('RuntimeRegistry', () => {
     });
 
     it('updates only provided columns and leaves identity intact on conflict', async () => {
-      await registry.persistSessionRuntime(
-        's2',
-        'test-mode',
-        { kind: 'test-harness' },
-        '/agent/path'
-      );
+      await registry.persistSessionRuntime('s2', 'test-mode', A_PERSON, '/agent/path');
       await registry.saveSessionSettings('s2', { permissionMode: 'acceptEdits' });
       const row = db
         .select()
@@ -1021,9 +1076,7 @@ describe('RuntimeRegistry', () => {
     it('never lets a default reach a row that already exists', async () => {
       // The UPDATE branch carries the patch alone: an existing row is a running
       // session, whatever the server default now says.
-      await registry.persistSessionRuntime('already-running', 'claude-code', {
-        kind: 'test-harness',
-      });
+      await registry.persistSessionRuntime('already-running', 'claude-code', A_PERSON);
       serverDefaults = { model: 'opus', effort: 'high' };
 
       await registry.saveSessionSettings('already-running', { permissionMode: 'plan' });
@@ -1102,9 +1155,7 @@ describe('RuntimeRegistry', () => {
       // by the act of changing a setting before sending anything.
       await registry.saveSessionSettings('pre-launch-codex', { model: 'sonnet' });
 
-      await registry.persistSessionRuntime('pre-launch-codex', 'test-mode', {
-        kind: 'test-harness',
-      });
+      await registry.persistSessionRuntime('pre-launch-codex', 'test-mode', A_PERSON);
 
       expect(await registry.getSessionRuntimeType('pre-launch-codex')).toBe('test-mode');
       expect(read('pre-launch-codex')?.runtime).toBe('test-mode');
@@ -1135,7 +1186,7 @@ describe('RuntimeRegistry', () => {
       // run their model. `bound` is the one bit that makes the two readable
       // apart; `getSessionRuntimeType` cannot carry it and says so.
       await registry.saveSessionSettings('unbound-flag', { model: 'sonnet' });
-      await registry.persistSessionRuntime('bound-flag', 'test-mode', { kind: 'test-harness' });
+      await registry.persistSessionRuntime('bound-flag', 'test-mode', A_PERSON);
 
       expect(await registry.resolveSessionRuntime('row-less-flag')).toEqual({
         type: 'claude-code',
@@ -1165,9 +1216,7 @@ describe('RuntimeRegistry', () => {
       await registry.saveSessionSettings('seed-at-binding', { model: 'sonnet' });
       serverDefaults = { model: 'opus', effort: 'high' };
 
-      await registry.persistSessionRuntime('seed-at-binding', 'test-mode', {
-        kind: 'test-harness',
-      });
+      await registry.persistSessionRuntime('seed-at-binding', 'test-mode', A_PERSON);
 
       expect(lastResolveOpts?.runtimeType).toBe('test-mode');
       // The person's explicit choice survives the claim...
@@ -1185,7 +1234,7 @@ describe('RuntimeRegistry', () => {
         kind: 'interactive',
       });
       await registry.persistSessionRuntime('stop-unattended', 'claude-code', {
-        kind: 'test-harness',
+        kind: 'relay-binding',
       });
 
       expect(read('stop-at-binding')?.permissionMode).toBe('bypassPermissions');
@@ -1200,7 +1249,7 @@ describe('RuntimeRegistry', () => {
       await registry.persistSessionRuntime(
         'agent-at-binding',
         'test-mode',
-        { kind: 'test-harness' },
+        A_PERSON,
         '/agents/kai'
       );
 
@@ -1212,12 +1261,8 @@ describe('RuntimeRegistry', () => {
       // Binding an unbound row IS that session starting; the turn after is not.
       await registry.saveSessionSettings('claim-signal', { model: 'sonnet' });
 
-      const first = await registry.persistSessionRuntime('claim-signal', 'test-mode', {
-        kind: 'test-harness',
-      });
-      const second = await registry.persistSessionRuntime('claim-signal', 'test-mode', {
-        kind: 'test-harness',
-      });
+      const first = await registry.persistSessionRuntime('claim-signal', 'test-mode', A_PERSON);
+      const second = await registry.persistSessionRuntime('claim-signal', 'test-mode', A_PERSON);
 
       expect(first).toBe(true);
       expect(second).toBe(false);
@@ -1249,7 +1294,7 @@ describe('RuntimeRegistry', () => {
       );
       await registry.saveSessionSettings('mode-undeclared', { permissionMode: 'plan' });
 
-      await registry.persistSessionRuntime('mode-undeclared', 'narrow', { kind: 'test-harness' });
+      await registry.persistSessionRuntime('mode-undeclared', 'narrow', A_PERSON);
 
       expect(read('mode-undeclared')?.permissionMode).toBeNull();
     });
@@ -1326,7 +1371,7 @@ describe('RuntimeRegistry', () => {
       );
       await registry.saveSessionSettings('mode-modeless', { permissionMode: 'plan' });
 
-      await registry.persistSessionRuntime('mode-modeless', 'modeless', { kind: 'test-harness' });
+      await registry.persistSessionRuntime('mode-modeless', 'modeless', A_PERSON);
 
       expect(read('mode-modeless')?.permissionMode).toBeNull();
     });
@@ -1338,9 +1383,7 @@ describe('RuntimeRegistry', () => {
       // deleting the person's choice would only lose it.
       await registry.saveSessionSettings('mode-unknown-runtime', { permissionMode: 'plan' });
 
-      await registry.persistSessionRuntime('mode-unknown-runtime', 'codex', {
-        kind: 'test-harness',
-      });
+      await registry.persistSessionRuntime('mode-unknown-runtime', 'codex', A_PERSON);
 
       expect(read('mode-unknown-runtime')?.permissionMode).toBe('plan');
     });
@@ -1351,14 +1394,10 @@ describe('RuntimeRegistry', () => {
       registry.register(
         createMockRuntime('modeless', { permissionModes: { supported: false, values: [] } })
       );
-      await registry.persistSessionRuntime('already-bound-mode', 'modeless', {
-        kind: 'test-harness',
-      });
+      await registry.persistSessionRuntime('already-bound-mode', 'modeless', A_PERSON);
       await registry.saveSessionSettings('already-bound-mode', { permissionMode: 'plan' });
 
-      await registry.persistSessionRuntime('already-bound-mode', 'modeless', {
-        kind: 'test-harness',
-      });
+      await registry.persistSessionRuntime('already-bound-mode', 'modeless', A_PERSON);
 
       expect(read('already-bound-mode')?.permissionMode).toBe('plan');
     });
@@ -1366,18 +1405,13 @@ describe('RuntimeRegistry', () => {
     it('never re-binds a session whose runtime is already set (ADR-0255)', async () => {
       // The invariant the fix must not spend: the first AUTHORITATIVE write wins.
       // Only an inference is negotiable.
-      await registry.persistSessionRuntime(
-        'bound',
-        'test-mode',
-        { kind: 'test-harness' },
-        '/first/path'
-      );
+      await registry.persistSessionRuntime('bound', 'test-mode', A_PERSON, '/first/path');
       serverDefaults = { model: 'opus' };
 
       const created = await registry.persistSessionRuntime(
         'bound',
         'claude-code',
-        { kind: 'test-harness' },
+        A_PERSON,
         '/second/path'
       );
 
@@ -1404,12 +1438,7 @@ describe('RuntimeRegistry', () => {
     }
 
     it('moves the whole row, identity columns included', async () => {
-      await registry.persistSessionRuntime(
-        'old',
-        'test-mode',
-        { kind: 'test-harness' },
-        '/agent/path'
-      );
+      await registry.persistSessionRuntime('old', 'test-mode', A_PERSON, '/agent/path');
       await registry.saveSessionSettings('old', { permissionMode: 'plan', fastMode: true });
       const createdAt = allRows()[0]?.createdAt;
 
@@ -1428,9 +1457,9 @@ describe('RuntimeRegistry', () => {
     });
 
     it('merges into an existing destination row without changing its owner', async () => {
-      await registry.persistSessionRuntime('new', 'claude-code', { kind: 'test-harness' });
+      await registry.persistSessionRuntime('new', 'claude-code', A_PERSON);
       await registry.saveSessionSettings('new', { model: 'sonnet' });
-      await registry.persistSessionRuntime('old', 'test-mode', { kind: 'test-harness' });
+      await registry.persistSessionRuntime('old', 'test-mode', A_PERSON);
       await registry.saveSessionSettings('old', { permissionMode: 'bypassPermissions' });
 
       await registry.rekeySessionSettings('old', 'new');
@@ -1453,7 +1482,7 @@ describe('RuntimeRegistry', () => {
       // minted by a settings change owns no runtime, so there is nothing there
       // to protect and the source's binding travels with the row it describes.
       await registry.saveSessionSettings('new', { model: 'sonnet' });
-      await registry.persistSessionRuntime('old', 'test-mode', { kind: 'test-harness' });
+      await registry.persistSessionRuntime('old', 'test-mode', A_PERSON);
 
       await registry.rekeySessionSettings('old', 'new');
 
