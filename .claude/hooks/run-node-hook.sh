@@ -4,8 +4,9 @@
 #
 # WHY THIS EXISTS
 #
-# The three PreToolUse guards (file-guard, git-guard, process-guard) are how
-# AGENTS.md Hard Rules 6 and 7 are actually enforced — the stash and pathspec
+# The four PreToolUse guards (file-guard, git-guard, process-guard,
+# merge-guard) are how AGENTS.md Hard Rules 6 and 7, and the no-admin-merge
+# rule in contributing/ci.md, are actually enforced — the stash and pathspec
 # checkout commands, and the kill-by-name commands, are refused by code
 # because prose did not hold. settings.json used to start each of them with a
 # bare `node`, and `#!/usr/bin/env node` on the .mjs files is the same PATH
@@ -86,7 +87,7 @@
 #
 #   - A guard entry DELETED from settings.json is not something any running
 #     hook can notice; only scripts/test-run-node-hook.sh can, and it asserts
-#     all three are present and wrapped.
+#     all four are present and wrapped.
 #   - An absolute PATH directory is trusted. If someone can write a `node`
 #     into /usr/local/bin they own the machine already, but say it plainly:
 #     the walk below rejects the current directory, not a compromised system

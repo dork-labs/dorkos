@@ -85,7 +85,7 @@ describe('credential-free-build workflow', () => {
     expect(
       /^\s+merge_group:/m.test(onBlock),
       `${WORKFLOW_REL} lost its \`merge_group:\` trigger. A required check that never reports ` +
-        `INSIDE the queue stalls the queue for an hour on every entry (AGENTS.md, CI).`
+        `INSIDE the queue stalls the queue for an hour on every entry (contributing/ci.md).`
     ).toBe(true);
     // Having both triggers is not enough, and this is the half a "did it
     // declare merge_group?" check misses: a workflow SKIPPED by a path filter

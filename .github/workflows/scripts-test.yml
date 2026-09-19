@@ -270,6 +270,14 @@ jobs:
       - name: Process-guard hook fixtures
         run: bash scripts/test-process-guard.sh
 
+      # merge-guard refuses admin merges (`gh pr merge --admin`, a REST PUT on
+      # pulls/<n>/merge, the mergePullRequest mutation): with merges fully
+      # autonomous, the queue's required checks are the only gate, and every
+      # agent here runs as an admin. Same parser, same reason to pin it here,
+      # and its ALLOW half matters most: `gh pr merge --auto` must keep working.
+      - name: Merge-guard hook fixtures
+        run: bash scripts/test-merge-guard.sh
+
       # in-project.sh is the wrapper every working-tree hook in settings.json
       # runs through; it decides whether a hook runs at all once a session has
       # cd-ed into a sibling repo. Hermetic (throwaway git checkouts in a temp

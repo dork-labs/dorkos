@@ -1,14 +1,15 @@
 /**
  * Shell command-line parsing shared by the PreToolUse(Bash) guard hooks.
  *
- * `git-guard.mjs` and `process-guard.mjs` both need the same three things
- * before they can decide anything: split a command line into the commands it
- * runs (respecting quotes), pull out `$(...)` / backtick bodies so a command
- * hiding inside a substitution is still inspected, and turn one segment into
- * unquoted argument tokens with the `sudo`/`env`/loop-keyword prefixes
- * stripped. Keeping one copy here means a hole found in one guard's parsing is
- * fixed for both — the fixture suites in `scripts/test-git-guard.sh` and
- * `scripts/test-process-guard.sh` both run against this module.
+ * `git-guard.mjs`, `process-guard.mjs` and `merge-guard.mjs` all need the
+ * same three things before they can decide anything: split a command line
+ * into the commands it runs (respecting quotes), pull out `$(...)` / backtick
+ * bodies so a command hiding inside a substitution is still inspected, and
+ * turn one segment into unquoted argument tokens with the
+ * `sudo`/`env`/loop-keyword prefixes stripped. Keeping one copy here means a hole found in one guard's parsing is
+ * fixed for all of them: the fixture suites in `scripts/test-git-guard.sh`,
+ * `scripts/test-process-guard.sh` and `scripts/test-merge-guard.sh` all run
+ * against this module.
  *
  * QUOTED TEXT IS TRUSTED BY ALLOWLIST, NEVER BY DEFAULT
  *
@@ -567,6 +568,7 @@ export {
   SHELL_WRAPPERS,
   COMMAND_PREFIXES,
   splitSegments,
+  maskUnexpandedText,
   extractSubstitutions,
   tokenize,
   stripCommandPrefixes,
