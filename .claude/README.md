@@ -63,38 +63,38 @@ Skills load their description into every session (the retrieval index) and their
 
 **Two-tier commands & portable skills.** Some workflows exist as both a slash command and a portable skill: the command carries project-specific orchestration, the skill carries the portable methodology — e.g. `/debug:test` defers to `debugging-test-failures`. The pairing used to be recorded in `.agents/harness.manifest.json` `commandMappings`, a key nothing read and DOR-1858 retired; the pairing itself is still intentional, so keep the two halves consistent when editing either one.
 
-| Skill                            | Expertise / When Applied                                                  |
-| -------------------------------- | ------------------------------------------------------------------------- |
-| `adding-config-fields`           | Config field lifecycle (Zod → conf migration)                             |
-| `browser-testing`                | Playwright browser-test methodology (apps/e2e)                            |
-| `capturing-product-media`        | Regenerate the marketing site's product stills + loops (apps/e2e/capture) |
-| `clarifying-requirements`        | AskUserQuestion discipline for vague/ambiguous requests                   |
-| `creating-pull-requests`         | PR flow + automated-review labels                                         |
-| `debugging-systematically`       | Debugging methodology + DorkOS ground-truth paths                         |
-| `debugging-test-failures`        | Test-failure diagnosis (portable twin of `/debug:test`)                   |
-| `debugging-typescript-errors`    | Type-error tracing (portable twin of `/debug:types`)                      |
-| `designing-frontend`             | Calm Tech design language, UI decisions                                   |
-| `maintaining-dev-playground`     | Dev playground coverage when editing UI components                        |
-| `managing-specs`                 | Spec file management, timestamp ids, archive lifecycle                    |
-| `marketplace-dev`                | Marketplace package development                                           |
-| `opensrc`                        | Fetching dependency source for implementation context                     |
-| `orchestrating-parallel-work`    | Agent-tool fan-out, batching, background agents                           |
-| `organizing-fsd-architecture`    | FSD layer placement (defers to rules/fsd-layers.md for the import matrix) |
-| `reading-session-transcripts`    | DorkOS session URL → JSONL resolution (claude-code runtime)               |
-| `receiving-code-review`          | Technical evaluation of inbound review feedback                           |
-| `requesting-code-review`         | Dispatching code-reviewer for batch-level verification                    |
-| `styling-with-tailwind-shadcn`   | Tailwind v4 + shadcn/Radix implementation patterns                        |
-| `syncing-agent-skills`           | Cross-harness skill sync (`dorkos harness sync` first)                    |
-| `test-driven-development`        | TDD iron law + repo test commands                                         |
-| `upgrading-runtime-dependencies` | Runtime SDK changelog analysis                                            |
-| `verification-before-completion` | Evidence before completion claims                                         |
-| `visual-companion`               | Browser-based visual mockups/diagrams                                     |
-| `working-in-worktrees`           | Worktree isolation decision + mechanics                                   |
-| `writing-adrs`                   | ADR quality, significance rubric, lifecycle                               |
-| `writing-blog-posts`             | Non-release blog posts (release posts belong to `/system:release` 6.7)    |
-| `writing-changelogs`             | Human-friendly changelog entries                                          |
-| `writing-developer-guides`       | Guide structure for AI consumption (contributing/)                        |
-| `writing-for-humans`             | Plain-language standard for all user-facing prose (9th-grade readability) |
+| Skill                            | Expertise / When Applied                                                                                             |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `adding-config-fields`           | Config field lifecycle (Zod → conf migration)                                                                        |
+| `browser-testing`                | Playwright browser-test methodology (apps/e2e); parallel/signed-in browsers → `contributing/browser-verification.md` |
+| `capturing-product-media`        | Regenerate the marketing site's product stills + loops (apps/e2e/capture)                                            |
+| `clarifying-requirements`        | AskUserQuestion discipline for vague/ambiguous requests                                                              |
+| `creating-pull-requests`         | PR flow + automated-review labels                                                                                    |
+| `debugging-systematically`       | Debugging methodology + DorkOS ground-truth paths                                                                    |
+| `debugging-test-failures`        | Test-failure diagnosis (portable twin of `/debug:test`)                                                              |
+| `debugging-typescript-errors`    | Type-error tracing (portable twin of `/debug:types`)                                                                 |
+| `designing-frontend`             | Calm Tech design language, UI decisions                                                                              |
+| `maintaining-dev-playground`     | Dev playground coverage when editing UI components                                                                   |
+| `managing-specs`                 | Spec file management, timestamp ids, archive lifecycle                                                               |
+| `marketplace-dev`                | Marketplace package development                                                                                      |
+| `opensrc`                        | Fetching dependency source for implementation context                                                                |
+| `orchestrating-parallel-work`    | Agent-tool fan-out, batching, background agents                                                                      |
+| `organizing-fsd-architecture`    | FSD layer placement (defers to rules/fsd-layers.md for the import matrix)                                            |
+| `reading-session-transcripts`    | DorkOS session URL → JSONL resolution (claude-code runtime)                                                          |
+| `receiving-code-review`          | Technical evaluation of inbound review feedback                                                                      |
+| `requesting-code-review`         | Dispatching code-reviewer for batch-level verification                                                               |
+| `styling-with-tailwind-shadcn`   | Tailwind v4 + shadcn/Radix implementation patterns                                                                   |
+| `syncing-agent-skills`           | Cross-harness skill sync (`dorkos harness sync` first)                                                               |
+| `test-driven-development`        | TDD iron law + repo test commands                                                                                    |
+| `upgrading-runtime-dependencies` | Runtime SDK changelog analysis                                                                                       |
+| `verification-before-completion` | Evidence before completion claims                                                                                    |
+| `visual-companion`               | Browser-based visual mockups/diagrams                                                                                |
+| `working-in-worktrees`           | Worktree isolation decision + mechanics                                                                              |
+| `writing-adrs`                   | ADR quality, significance rubric, lifecycle                                                                          |
+| `writing-blog-posts`             | Non-release blog posts (release posts belong to `/system:release` 6.7)                                               |
+| `writing-changelogs`             | Human-friendly changelog entries                                                                                     |
+| `writing-developer-guides`       | Guide structure for AI consumption (contributing/)                                                                   |
+| `writing-for-humans`             | Plain-language standard for all user-facing prose (9th-grade readability)                                            |
 
 ## Rules (Path-Triggered)
 
@@ -162,6 +162,8 @@ Naming: commands `verb`/`noun`; agents `domain-expert`; skills `verb-ing-noun` (
 **Feature development** runs through the `/flow` plugin (capture → triage → ideate → specify → decompose → execute → verify → done), installed from the DorkOS Marketplace and projected into `.claude/` by Harness Sync (`.claude/commands/flow/`, `.claude/skills/flow__*`). Without the plugin installed, use specs in `specs/<slug>/` + `/worktree:create` for execution isolation; there is no in-repo fallback skill.
 
 **Debugging**: `/debug:browser|types|test|api|data|logs|performance` — each defers methodology to its twin skill and carries the project-specific entry points.
+
+**Browsing third-party sites signed in** (as the operator, never with a password): the agent browser, `dorkos browser login|status|forget` + Playwright MCP `--isolated --storage-state`. How-to and the parallel-session trap: `contributing/browser-verification.md` § The agent browser. DorkOS agents get the same guidance from the seeded `using-the-agent-browser` operating skill.
 
 **Harness maintenance**: `/system:ask` (how do I…), `/system:learn` (experiment, then codify), `/system:update` (add/change a process), `/system:review` (audit for staleness/consistency/Opus-fit), `/system:release` (release + harness-maintenance phase).
 

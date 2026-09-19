@@ -3,7 +3,8 @@
  * agent-facing verbs that let a user (or an agent acting for one) manage the MCP
  * servers a specific agent runs — list, add, import, update, remove, enable,
  * disable, and test — plus the sign-in verbs, which are declared next door in
- * `mcp-signin-capabilities.ts` and spread in here.
+ * `mcp-signin-capabilities.ts`, and the signed-in browser read
+ * (`mcp-browser-capabilities.ts`), both spread in here.
  *
  * Every verb is a thin wrapper over `AgentMcpServerService`, which owns the
  * manifest CRUD and the trust model (spec §4). The domain declares each verb once
@@ -44,6 +45,7 @@ import {
   serverNameField,
 } from './mcp-capability-deps.js';
 import { mcpSigninCapabilities } from './mcp-signin-capabilities.js';
+import { mcpBrowserCapabilities } from './mcp-browser-capabilities.js';
 
 /** The updated managed-server list every mutating verb returns. */
 const ManagedServerListOutput = z.array(ManagedMcpServerSchema);
@@ -348,5 +350,6 @@ export const mcpDomain: CapabilityDomain = {
       },
     }),
     ...mcpSigninCapabilities,
+    ...mcpBrowserCapabilities,
   ],
 };

@@ -11,12 +11,14 @@ import {
 } from '@/layers/entities/agent';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import type { AgentManifest, AgentRuntime } from '@dorkos/shared/mesh-schemas';
+import { agentBrowserStateFileOf } from '@dorkos/shared/agent-browser';
 import type { McpServerEntry } from '@dorkos/shared/transport';
 import { AddMcpServerForm, TRANSPORTS, type TransportKind } from './AddMcpServerForm';
 import type { StampedTestResult } from '../lib/mcp-server-state';
 import { useFrozenCardOrder } from '../model/use-frozen-card-order';
 import { ManagedMcpServerCard } from './ManagedMcpServerCard';
 import { DiscoveredMcpServerCard } from './DiscoveredMcpServerCard';
+import { SignedInBrowserCard } from './SignedInBrowserCard';
 
 /**
  * Transport kinds each runtime can actually run a managed server over.
@@ -155,6 +157,16 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
   const liveByName = new Map((liveConfig?.servers ?? []).map((s) => [s.name, s]));
   const discovered = (liveConfig?.servers ?? []).filter((s) => !managedNames.has(s.name));
   const busy = enableServer.isPending || disableServer.isPending || removeServer.isPending;
+  // The signed-in browser is offered until the agent has one (by shape, so a
+  // renamed or hand-added one counts), and only where a local server can run.
+  const hasSignedInBrowser = managedServers.some(
+    (server) => agentBrowserStateFileOf(server.connection) !== undefined
+  );
+  const offerSignedInBrowser =
+    canAdd &&
+    !managed.isPending &&
+    !hasSignedInBrowser &&
+    supportedTransportsFor(agent.runtime).includes('stdio');
 
   // The freeze itself: the first render where BOTH queries have settled captures
   // the order, and every render after replays it. See `useFrozenCardOrder`.
@@ -222,6 +234,10 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
       </div>
 
       <InboundMcpCrossLink />
+
+      {offerSignedInBrowser && (
+        <SignedInBrowserCard agentId={agent.id} agentLabel={agent.displayName ?? agent.name} />
+      )}
 
       {!canAdd && (
         <p className="text-muted-foreground text-xs">

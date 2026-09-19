@@ -1152,3 +1152,45 @@ describe('what each block costs', () => {
     expect(memory).toContain(atCap);
   });
 });
+
+describe('buildAgentBlock <agent_browser> notice', () => {
+  const browserServer = (stateFile: string, enabled = true) => ({
+    name: 'browser',
+    enabled,
+    connection: {
+      transport: 'stdio' as const,
+      command: 'npx',
+      args: ['-y', '@playwright/mcp@latest', '--isolated', '--storage-state', stateFile],
+      env: {},
+    },
+    addedAt: '2026-09-19T00:00:00.000Z',
+    addedBy: 'operator',
+  });
+
+  it('tells the agent to ask for `dorkos browser login` when its session file is missing', async () => {
+    vi.mocked(readManifest).mockResolvedValue(
+      createTestManifest({ mcpServers: [browserServer('/nowhere/storage-state.json')] })
+    );
+    vi.mocked(readConventionFile).mockResolvedValue(null);
+
+    const { text, stable } = await buildAgentBlock('/test');
+    expect(text).toContain('<agent_browser>');
+    expect(text).toContain('dorkos browser login <site>');
+    expect(text).toContain('/nowhere/storage-state.json');
+    expect(text).toContain('Never type a password');
+    // A fact about the machine, not agent-written: it belongs in the pinned half.
+    expect(stable).toContain('<agent_browser>');
+  });
+
+  it('says nothing when the file exists or the server is switched off', async () => {
+    const present = __filename;
+    vi.mocked(readManifest).mockResolvedValue(
+      createTestManifest({
+        mcpServers: [browserServer(present), browserServer('/nowhere/x.json', false)],
+      })
+    );
+    vi.mocked(readConventionFile).mockResolvedValue(null);
+
+    expect((await buildAgentBlock('/test')).text).not.toContain('<agent_browser>');
+  });
+});

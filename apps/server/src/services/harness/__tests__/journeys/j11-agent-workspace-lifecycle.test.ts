@@ -88,7 +88,7 @@ describe('J-11 — an agent workspace across three boots', () => {
     // The template leaves a directory and nothing else — the state 12 of the 13
     // agents on the machine that motivated this pass were actually in.
     expect(readdirSync(agentDir)).toEqual([]);
-    expect(PACK_NAMES).toHaveLength(7);
+    expect(PACK_NAMES).toHaveLength(8);
 
     expect(await boot()).toEqual({ seeded: 1, projected: 1 });
 

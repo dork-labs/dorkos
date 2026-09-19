@@ -1233,6 +1233,28 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // The list reads honest-empty; the writes must be stated by a test that
     // exercises them (an add can resolve to `{ status: 'approval_required' }`).
     listAgentMcpServers: vi.fn().mockResolvedValue([]),
+    getAgentBrowserPreset: vi.fn().mockResolvedValue({
+      stateFile: '/home/test/.dork/browser/storage-state.json',
+      saved: false,
+      savedAt: null,
+      sites: [],
+      loginCommand: 'dorkos browser login',
+      server: {
+        name: 'browser',
+        connection: {
+          transport: 'stdio',
+          command: 'npx',
+          args: [
+            '-y',
+            '@playwright/mcp@latest',
+            '--isolated',
+            '--storage-state',
+            '/home/test/.dork/browser/storage-state.json',
+          ],
+          env: {},
+        },
+      },
+    }),
     addAgentMcpServer: vi.fn(),
     importAgentMcpServer: vi.fn(),
     updateAgentMcpServer: vi.fn(),

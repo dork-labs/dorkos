@@ -10,14 +10,54 @@ behaviour was already correct.
 
 ## Which tool
 
-| You want to                       | Use                                                                              |
-| --------------------------------- | -------------------------------------------------------------------------------- |
-| prove a known bug stays fixed     | a spec in `apps/e2e/tests/`, running in CI against the test-mode runtime         |
-| go looking, with real agent turns | `pnpm --filter @dorkos/e2e multi-window` (see `apps/e2e/multi-window/README.md`) |
-| regenerate marketing/docs media   | `apps/e2e/capture/`                                                              |
+| You want to                                           | Use                                                                              |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------- |
+| prove a known bug stays fixed                         | a spec in `apps/e2e/tests/`, running in CI against the test-mode runtime         |
+| go looking, with real agent turns                     | `pnpm --filter @dorkos/e2e multi-window` (see `apps/e2e/multi-window/README.md`) |
+| regenerate marketing/docs media                       | `apps/e2e/capture/`                                                              |
+| act on a third-party site as the operator (signed in) | the agent browser: [below](#the-agent-browser-signed-in-third-party-sites)       |
 
 The first spends nothing and is deterministic. The second costs model time and
-is not. Reach for the second when you do not yet know what is wrong.
+is not. Reach for the second when you do not yet know what is wrong. The fourth
+is not about testing DorkOS at all: it is how an agent uses GitHub, Linear or any
+other site as the operator without ever holding a password.
+
+## The agent browser (signed-in third-party sites)
+
+The operator signs in once, in their own Chrome on a dedicated, orange-framed
+profile (`<dorkHome>/browser/profile`), and saves the session as a Playwright
+storage-state file (`<dorkHome>/browser/storage-state.json`, `0600`). Every agent
+browser then starts from that file. User guide: `docs/guides/agent-browser.mdx`;
+design: `specs/agent-browser-sessions/`.
+
+```bash
+dorkos browser login <site>   # sign in, press Enter; raw CDP over --remote-debugging-pipe, no port
+dorkos browser status         # sites and cookie expiry, never a value (--json)
+dorkos browser forget <site>  # out of the file first, then out of the profile (--all)
+```
+
+The server an agent runs is `npx -y @playwright/mcp@latest --isolated
+--storage-state <file>`. **`--isolated` is the part that matters for parallel
+work.** Without it Playwright MCP keeps one persistent profile per server on disk,
+and a profile can be open in only one browser at a time, so the second session
+(or a second agent, or you in another window) to open a browser fails on the lock.
+With it, each server gets its own in-memory browser seeded from the file, and
+nothing an agent does is written back. The same applies to the Playwright MCP you
+use in this repo: two of your sessions sharing its default profile collide.
+
+Inside DorkOS, give an agent the browser from Tools & MCP → Signed-in browser (the
+`mcp.browser_preset` read feeds the gated `mcp.add`). Outside DorkOS, register it
+under a name other than `playwright` (the Claude Code Playwright plugin owns that
+one); the guide has the exact `claude`, `codex` and `opencode` config.
+
+Claude in Chrome drives the operator's everyday browser instead. It works, but it
+shares their real tabs and accounts with the agent, and it is not the recommended
+path here; prefer the agent browser.
+
+To verify the whole chain on a Mac with Chrome (temp profile, local cookie page,
+two parallel isolated servers):
+`DORKOS_BROWSER_SMOKE=1 pnpm vitest run packages/cli/src/lib/agent-browser/__tests__/agent-browser-smoke.test.ts`.
+It is never run by CI.
 
 ## Standing up an instance
 

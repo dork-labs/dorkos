@@ -1,0 +1,9 @@
+{
+  "id": "260919-180529",
+  "slug": "agent-browser-sessions",
+  "title": "Agent browser sessions: sign in once, every agent browser starts signed in",
+  "created": "2026-09-19",
+  "status": "specified",
+  "project": "Agent secrets and vault",
+  "linearIssue": "DOR-2155"
+}

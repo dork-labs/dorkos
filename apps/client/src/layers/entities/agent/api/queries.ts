@@ -9,4 +9,6 @@ export const agentKeys = {
   resolved: (paths: string[]) => ['agents', 'resolved', ...paths] as const,
   /** An agent's DorkOS-managed MCP servers (spec `mcp-server-management`). */
   mcpServers: (agentId: string) => ['agents', 'mcp-servers', agentId] as const,
+  /** The operator's saved agent-browser sign-ins (spec `agent-browser-sessions`). */
+  browserPreset: () => ['agents', 'browser-preset'] as const,
 };

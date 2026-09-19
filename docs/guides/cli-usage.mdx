@@ -181,6 +181,19 @@ dorkos cache prune [--keep-last-n <N>] # Remove older cached package versions (d
 dorkos cache clear                     # Wipe the entire cache
 ```
 
+#### Signed-in browser
+
+**`dorkos browser`**: sign in to websites once, in a separate Chrome with an orange frame, so your agents' browsers start already signed in. Agents get the saved sign-ins, never your passwords. These commands work on their own and do not need DorkOS running. Tested on macOS; Windows and Linux are not tested yet.
+
+```bash
+dorkos browser login [site]      # Open the agent browser, sign in, press Enter to save
+dorkos browser login --plain     # For a site that refuses to sign you in otherwise
+dorkos browser status [--json]   # Which sites are saved, and how long their cookies last
+dorkos browser forget <site>     # Take one site away from your agents (--all for every site)
+```
+
+The full guide, including setup for the `claude`, `codex` and `opencode` command-line tools, is [Signed-in Browser](/docs/guides/agent-browser).
+
 #### Agent files
 
 **`dorkos harness`**: share one set of skills, instructions, and hooks with every coding agent you run. You keep them in `.agents/` in your project, and DorkOS copies or links them into the folders Claude Code, Codex, Cursor, Gemini, Copilot, and OpenCode each read.

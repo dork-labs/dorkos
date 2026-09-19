@@ -457,7 +457,11 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     //
     // 103 -> 104 for `feedback_draft` (DOR-2056), on the same terms: no prompt
     // block names it, so it stays deferred and unprefixed too.
-    expect(advertised.size).toBe(104);
+    //
+    // 104 -> 105 for `mcp_browser_preset` (spec `agent-browser-sessions`), on
+    // the same terms again: the `<agent_browser>` notice describes the
+    // situation and names no tool, so it stays deferred and unprefixed.
+    expect(advertised.size).toBe(105);
     expect(advertised.has('react_to_room_entry')).toBe(true);
     expect(
       [
@@ -936,6 +940,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       'operating-dorkos',
       'reading-activity',
       'scheduling-tasks',
+      'using-the-agent-browser',
       'using-the-marketplace',
       'working-in-room-repos',
     ]);

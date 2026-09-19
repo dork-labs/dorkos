@@ -77,6 +77,7 @@ import type {
   ManagedMcpServerView,
   McpServerTransport,
 } from './mesh-schemas.js';
+import type { AgentBrowserPreset } from './agent-browser.js';
 import type { CapabilityCatalog, CapabilityTier } from './capabilities.js';
 import type { RuntimeCapabilities, SystemRequirements } from './agent-runtime.js';
 import type { MemoryProviderStatus } from './memory-provider.js';
@@ -2061,6 +2062,15 @@ export interface Transport
    * @param agentId - ULID of the agent whose managed servers to read.
    */
   listAgentMcpServers(agentId: string): Promise<ManagedMcpServerView[]>;
+
+  /**
+   * Read the agent browser (the observe-tier `mcp.browser_preset` capability):
+   * whether the operator has saved browser sign-ins, which sites they cover
+   * (names and dates only, never a value), and the exact managed server that
+   * gives an agent a browser starting from them. Pass that server to
+   * {@link addAgentMcpServer} to give an agent the signed-in browser.
+   */
+  getAgentBrowserPreset(): Promise<AgentBrowserPreset>;
 
   /**
    * Add a managed MCP server to an agent (the destructive `mcp.add` capability).

@@ -25,8 +25,11 @@
  *
  * @module services/runtimes/shared/agent-context
  */
+import { existsSync } from 'node:fs';
 import os from 'node:os';
 import { readManifest } from '@dorkos/shared/manifest';
+import { agentBrowserStateFileOf } from '@dorkos/shared/agent-browser';
+import type { ManagedMcpServer } from '@dorkos/shared/mesh-schemas';
 import {
   extractCustomProse,
   buildSoulContent,
@@ -51,6 +54,7 @@ import { fenceUntrustedBlock } from './untrusted-fence.js';
 import { env } from '../../../env.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
 import { currentCliInvocation } from './cli-invocation.js';
+import { agentBrowserMissingNotice } from '../../mesh/agent-browser-preset.js';
 
 /**
  * Build the `<dorkos_context>` block: what DorkOS is, and the two commands that
@@ -370,6 +374,27 @@ async function buildEnvBlock(cwd: string): Promise<string> {
 }
 
 /**
+ * Build the `<agent_browser>` notice: said only when the agent has an enabled
+ * signed-in browser (spec `agent-browser-sessions`) whose saved session file
+ * does not exist yet, so its browser would start signed out with nothing but a
+ * file-not-found error to explain why.
+ *
+ * Silent in every other case, including the normal one where the file exists,
+ * so saving a session never changes this block's text, and the relaunch digest
+ * only moves on the one transition that matters (missing to saved), when a
+ * fresh session is exactly what the agent needs.
+ *
+ * @param servers - The agent manifest's managed MCP servers.
+ */
+function buildAgentBrowserBlock(servers: readonly ManagedMcpServer[]): string {
+  const missing = servers
+    .filter((server) => server.enabled)
+    .map((server) => agentBrowserStateFileOf(server.connection))
+    .filter((file): file is string => file !== undefined && !existsSync(file));
+  return agentBrowserMissingNotice([...new Set(missing)]);
+}
+
+/**
  * Build agent identity, persona, and safety boundary blocks from `.dork/`
  * convention files.
  *
@@ -451,6 +476,10 @@ async function buildAgentBlock(cwd: string): Promise<AgentContextAppend> {
   if (conventions?.dorkosKnowledge !== false) {
     tail.push(buildDorkosContextBlock());
   }
+
+  // --- Agent browser notice (only when its saved session is missing) ---
+  const browserBlock = buildAgentBrowserBlock(manifest.mcpServers ?? []);
+  if (browserBlock) tail.push(browserBlock);
 
   // Two independent assemblies over the same block arrays, and this is the
   // whole mechanism of the fingerprint split (spec D2 §Pinned, review C2).

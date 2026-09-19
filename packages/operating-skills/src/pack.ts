@@ -12,6 +12,7 @@ import { usingTheMarketplace } from './skills/using-the-marketplace.js';
 import { readingActivity } from './skills/reading-activity.js';
 import { answeringDorkosQuestions } from './skills/answering-dorkos-questions.js';
 import { workingInRoomRepos } from './skills/working-in-room-repos.js';
+import { usingTheAgentBrowser } from './skills/using-the-agent-browser.js';
 
 /** One authored skill in the pack: its kebab-case name, discovery description, and body. */
 export interface OperatingSkill {
@@ -236,8 +237,14 @@ export interface OperatingSkill {
  *   branch was in review, taking 18, 19 and 20 between them. `seed.ts` upgrades
  *   only on a strictly LOWER stored stamp, so a version merely EQUAL to what
  *   `main` ships delivers none of the four pages. Re-bump, never keep-mine.
+ * - 22: `using-the-agent-browser` joins the pack (spec `agent-browser-sessions`,
+ *   DOR-2155). Agents can now be given a browser that starts signed in to the
+ *   sites the operator saved, and the one thing that undoes the design is an
+ *   agent that meets a sign-in page and asks for the password in chat. Versions
+ *   1 to 21 had no page on it, so the bump is what seeds the new skill into an
+ *   agent that already holds the pack.
  */
-export const OPERATING_SKILLS_VERSION = 21;
+export const OPERATING_SKILLS_VERSION = 22;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the
@@ -251,4 +258,5 @@ export const OPERATING_SKILLS_PACK: readonly OperatingSkill[] = [
   readingActivity,
   answeringDorkosQuestions,
   workingInRoomRepos,
+  usingTheAgentBrowser,
 ];
