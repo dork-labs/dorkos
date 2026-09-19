@@ -1,0 +1,78 @@
+# Repo specifics for the CI Steward engine (packages/ci-steward).
+#
+# The engine reads nothing about this repo from anywhere else: every path,
+# branch, id and command it needs is here, so the package can move to a
+# marketplace plugin unchanged (plan §4.1). Schema: ConfigSchema in
+# packages/ci-steward/src/schemas.ts.
+version: 1
+
+default_branch: main
+workflows_dir: .github/workflows
+lefthook: lefthook.yml
+claude_settings: .claude/settings.json
+
+# Hook commands in .claude/settings.json route through these wrappers; the gate
+# is the script the wrapper runs, not the wrapper itself.
+claude_hook_wrappers:
+  - .claude/hooks/in-project.sh
+  - .claude/hooks/run-node-hook.sh
+
+root_package_json: package.json
+
+# The orphan, append-only branch the phase-1 collector writes observations to.
+# Protected by ruleset `data_ruleset_id` (non_fast_forward + deletion only).
+data_branch: ci-steward-data
+data_ruleset_id: 23704437
+
+# The "main: merge queue" ruleset: the only source of required checks since
+# classic branch protection was deleted on 2026-09-19. `rules` names the rule
+# and setting gates recorded as `ruleset.<rule>` in ci/gates.yaml; the
+# collector reconciles them against the live ruleset from phase 1.
+ruleset:
+  id: 19893973
+  integration_id: 15368 # GitHub Actions: every required context is pinned to it
+  rules:
+    - merge_queue
+    - required_status_checks
+    - deletion
+    - non_fast_forward
+    - bypass
+
+hand_files:
+  required_checks: ci/required-checks.json
+  gates: ci/gates.yaml
+  slos: ci/slos.yaml
+  metrics: ci/metrics.yaml
+  ratchets: ci/ratchets.yaml
+  steward_owned_paths: ci/steward-owned-paths.json
+  census_allowlist: ci/census-allowlist.yaml
+
+ledger_dir: ci/ledger
+
+# A PR touching any of these must add or edit a ledger entry. Every workflow
+# file, lefthook.yml, .claude/settings.json and each repo script a gate invokes
+# are added on top of this list by the engine (derived from the run: lines).
+coverage_paths:
+  - .github/workflows/**
+  - turbo.json
+  - lefthook.yml
+  - .claude/settings.json
+  - ci/**
+  - packages/ci-steward/**
+  - .agents/skills/creating-pull-requests/**
+
+# A branch with this prefix is an unattended ci-improve change and may not
+# touch ci/steward-owned-paths.json (plan §4.7).
+fence_branch_prefix: ci-improve/
+
+# Docs that carry a block generated from ci/required-checks.json. The census
+# fails when one drifts; `census --fix` rewrites it.
+generated_blocks:
+  required_checks:
+    - .agents/skills/creating-pull-requests/SKILL.md
+    - contributing/ci.md
+
+# Commands quoted in failure messages, so the fix an agent reads is runnable.
+commands:
+  ledger_new: pnpm ci:ledger-new
+  census_fix: pnpm ci:census --fix

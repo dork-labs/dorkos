@@ -1,0 +1,258 @@
+# Every gate in the pipeline: what it is, where it lives, what it is for.
+#
+# Hand-owned and deliberately thin: {id, source, purpose} only. Everything
+# else about a gate (triggers, events it reports on, required, timeout,
+# retries, shards, invoked scripts) is generated from the real YAML, never
+# copied here, so it cannot drift. `ci-steward census` fails when a gate runs
+# but has no entry here, or an entry names a gate that no longer runs.
+#
+# Id scheme:
+#   wf.<workflow-file-stem>.<job-id>     every job in .github/workflows/*.yml
+#   lefthook.<hook>.<command-name>       every lefthook command
+#   claude.<HookEvent>.<script-basename> every Claude Code hook script
+#   ruleset.<rule-name>                  settings of the "main: merge queue" ruleset
+#
+# A purpose is one plain sentence saying what the gate catches or does.
+gates:
+  # --- browser-test.yml ---
+  - id: wf.browser-test.browser-shard
+    source: .github/workflows/browser-test.yml
+    purpose: Runs one third of the Playwright browser suite against the merge queue's combined tree.
+  - id: wf.browser-test.browser-test
+    source: .github/workflows/browser-test.yml
+    purpose: The required browser-test check; fails the queue build unless every shard passed and the suite provably executed, and passes through on PRs.
+  - id: wf.browser-test.copy-spec-drift
+    source: .github/workflows/browser-test.yml
+    purpose: Warns when a copy change will break a browser spec's expected text, so it is fixed before the queue finds it.
+
+  # --- changelog-fragment-check.yml ---
+  - id: wf.changelog-fragment-check.fragment-present
+    source: .github/workflows/changelog-fragment-check.yml
+    purpose: Fails a PR whose user-facing commits have no changelog fragment, and any PR that adds a malformed fragment.
+  - id: wf.changelog-fragment-check.no-fragment-under-skip-label
+    source: .github/workflows/changelog-fragment-check.yml
+    purpose: Fails a PR labelled skip-changelog that still adds a changelog fragment.
+
+  # --- claude-code-review.yml ---
+  - id: wf.claude-code-review.review
+    source: .github/workflows/claude-code-review.yml
+    purpose: Automated Claude review of a PR against REVIEW.md; a red result stops merge-tail from arming until the next push.
+
+  # --- claude.yml ---
+  - id: wf.claude.claude
+    source: .github/workflows/claude.yml
+    purpose: Answers @claude mentions from maintainers in PR and issue threads, and can push fixes when asked.
+
+  # --- cli-smoke-test.yml ---
+  - id: wf.cli-smoke-test.build-tarball
+    source: .github/workflows/cli-smoke-test.yml
+    purpose: Packs the dorkos CLI tarball exactly as npm would publish it, for the smoke jobs to install.
+  - id: wf.cli-smoke-test.smoke-test-bare
+    source: .github/workflows/cli-smoke-test.yml
+    purpose: Installs the packed CLI on a bare runner (Node 22 and 24) and proves it starts and answers.
+  - id: wf.cli-smoke-test.smoke-test-docker
+    source: .github/workflows/cli-smoke-test.yml
+    purpose: Installs the packed CLI in the Docker smoke image and proves it starts there.
+  - id: wf.cli-smoke-test.integration-test
+    source: .github/workflows/cli-smoke-test.yml
+    purpose: Runs the Docker integration image end to end against the packed CLI.
+
+  # --- codeql.yml ---
+  - id: wf.codeql.analyze
+    source: .github/workflows/codeql.yml
+    purpose: Weekly CodeQL security scan of main for injection, path traversal and similar bug classes.
+
+  # --- credential-free-build.yml ---
+  - id: wf.credential-free-build.credential-free-build
+    source: .github/workflows/credential-free-build.yml
+    purpose: Proves the app builds, tests and boots with no cloud credentials or private-repo variables present.
+
+  # --- db-check.yml ---
+  - id: wf.db-check.db-check
+    source: .github/workflows/db-check.yml
+    purpose: Fails when a Drizzle schema change ships without the migration it implies.
+
+  # --- dependabot-lockfile-repair.yml ---
+  - id: wf.dependabot-lockfile-repair.repair-lockfile
+    source: .github/workflows/dependabot-lockfile-repair.yml
+    purpose: Restores the pnpm overrides block Dependabot drops from pnpm-lock.yaml, so its PRs can install at all.
+
+  # --- desktop-release.yml ---
+  - id: wf.desktop-release.build-macos
+    source: .github/workflows/desktop-release.yml
+    purpose: Builds, signs and notarizes the macOS desktop app on a release tag and attaches it to the release.
+  - id: wf.desktop-release.build-windows
+    source: .github/workflows/desktop-release.yml
+    purpose: Builds the unsigned Windows installer on a release tag and attaches it, without blocking the release.
+  - id: wf.desktop-release.verify-macos
+    source: .github/workflows/desktop-release.yml
+    purpose: Checks the attached macOS artifacts are present and well-formed before the release is published.
+  - id: wf.desktop-release.verify-windows
+    source: .github/workflows/desktop-release.yml
+    purpose: Checks the attached Windows artifacts are present and well-formed, advisory only.
+  - id: wf.desktop-release.publish-release
+    source: .github/workflows/desktop-release.yml
+    purpose: Publishes the draft GitHub release once the macOS build and its verification passed.
+
+  # --- desktop-renderer.yml ---
+  - id: wf.desktop-renderer.renderer-defines
+    source: .github/workflows/desktop-renderer.yml
+    purpose: Builds the desktop renderer and fails if a build define was left unsubstituted (the v0.63.0 black-window class).
+
+  # --- desktop-smoke.yml ---
+  - id: wf.desktop-smoke.packaged-runtime
+    source: .github/workflows/desktop-smoke.yml
+    purpose: Packages and launches the macOS app and proves its bundled server answers and shuts down cleanly.
+
+  # --- docs-openapi-check.yml ---
+  - id: wf.docs-openapi-check.openapi-fresh
+    source: .github/workflows/docs-openapi-check.yml
+    purpose: Fails when the committed OpenAPI spec or generated API reference has drifted from the Zod schemas.
+
+  # --- evals.yml ---
+  - id: wf.evals.structural
+    source: .github/workflows/evals.yml
+    purpose: Runs the credential-free agent eval suites in test mode, daily and on PRs labelled run-evals.
+  - id: wf.evals.credentialed
+    source: .github/workflows/evals.yml
+    purpose: Runs the credentialed eval suite against a real model on manual dispatch, under a hard spend ceiling.
+
+  # --- harness-windows.yml ---
+  - id: wf.harness-windows.harness-windows
+    source: .github/workflows/harness-windows.yml
+    purpose: Runs the harness projection engine and CLI harness-sync suites on a real Windows runner.
+
+  # --- lint.yml ---
+  - id: wf.lint.lint
+    source: .github/workflows/lint.yml
+    purpose: Full-monorepo Prettier check, ESLint for every package, and ESLint for the repo-root scripts and hooks.
+
+  # --- merge-tail.yml ---
+  - id: wf.merge-tail.arm
+    source: .github/workflows/merge-tail.yml
+    purpose: Every 10 minutes, arms auto-merge on PRs that are finished, green and unblocked.
+
+  # --- operating-skills-version-check.yml ---
+  - id: wf.operating-skills-version-check.version-outranks-base
+    source: .github/workflows/operating-skills-version-check.yml
+    purpose: Fails a change to the seeded skill pack unless its version is strictly higher than the base branch's.
+
+  # --- publish-docker.yml ---
+  - id: wf.publish-docker.build-and-push
+    source: .github/workflows/publish-docker.yml
+    purpose: Builds the multi-arch Docker image from the published npm package on a release tag and pushes it to GHCR.
+  - id: wf.publish-docker.mirror-docker-hub
+    source: .github/workflows/publish-docker.yml
+    purpose: Mirrors the released image to Docker Hub when the mirror is switched on.
+
+  # --- scripts-test.yml ---
+  - id: wf.scripts-test.fixtures
+    source: .github/workflows/scripts-test.yml
+    purpose: Runs the shell fixture suites that pin the repo's guard hooks, gate scripts and assert scripts.
+  - id: wf.scripts-test.harness
+    source: .github/workflows/scripts-test.yml
+    purpose: Typechecks and tests the TypeScript under scripts/, which no workspace package covers.
+
+  # --- site-build.yml ---
+  - id: wf.site-build.site-build
+    source: .github/workflows/site-build.yml
+    purpose: Runs the marketing site's real next build so a build-time break fails here, not at the Vercel deploy.
+
+  # --- test.yml ---
+  - id: wf.test.community-pg
+    source: .github/workflows/test.yml
+    purpose: Runs the community service's tests against a real Postgres and a real browser.
+  - id: wf.test.community-packaged
+    source: .github/workflows/test.yml
+    purpose: Proves the packaged local-agent community journey on the queue's combined tree, with no public network.
+  - id: wf.test.test-shard
+    source: .github/workflows/test.yml
+    purpose: Runs one quarter of the unit suites (affected-only on PRs, the full sweep in the merge queue).
+  - id: wf.test.test
+    source: .github/workflows/test.yml
+    purpose: The required test check; fails unless every shard and community job passed and the shards together covered every package.
+
+  # --- typecheck.yml ---
+  - id: wf.typecheck.typecheck
+    source: .github/workflows/typecheck.yml
+    purpose: Full-monorepo typecheck, plus the policy gates (retired words, boundary, NUL bytes, dead doc paths) and the CI Steward census and ledger checks.
+
+  # --- update-homebrew.yml ---
+  - id: wf.update-homebrew.update-formula
+    source: .github/workflows/update-homebrew.yml
+    purpose: Updates the Homebrew formula to the newly released npm version.
+
+  # --- lefthook.yml ---
+  - id: lefthook.pre-commit.format
+    source: lefthook.yml
+    purpose: Formats staged files with Prettier and re-stages them.
+  - id: lefthook.pre-commit.db-migrations
+    source: lefthook.yml
+    purpose: Generates and stages Drizzle migrations when a DB schema file is staged.
+  - id: lefthook.pre-commit.dir-size
+    source: lefthook.yml
+    purpose: Fails a commit that grows a directory to 25 or more files.
+  - id: lefthook.pre-commit.lint
+    source: lefthook.yml
+    purpose: Lints the packages the branch affects against origin/main.
+  - id: lefthook.pre-commit.typecheck
+    source: lefthook.yml
+    purpose: Typechecks the packages the branch affects against origin/main.
+  - id: lefthook.pre-push.formatting
+    source: lefthook.yml
+    purpose: Fails a push whose changed files are not Prettier-clean, and prints the fix command.
+  - id: lefthook.pre-push.tests
+    source: lefthook.yml
+    purpose: Runs the affected packages' tests under a stall and time watchdog before a push leaves the machine.
+
+  # --- .claude/settings.json ---
+  - id: claude.PreToolUse.file-guard
+    source: .claude/settings.json
+    purpose: Refuses a Bash command that reads or writes a path the permissions deny list protects.
+  - id: claude.PreToolUse.git-guard
+    source: .claude/settings.json
+    purpose: Refuses git stash and path-scoped checkout or restore, which silently destroy uncommitted work.
+  - id: claude.PreToolUse.process-guard
+    source: .claude/settings.json
+    purpose: Refuses pkill, killall and group kills, which take down other agents' and the operator's processes.
+  - id: claude.PostToolUse.typecheck-changed
+    source: .claude/settings.json
+    purpose: Typechecks the edited file's workspace after every edit and blocks on type errors.
+  - id: claude.PostToolUse.lint-changed
+    source: .claude/settings.json
+    purpose: Lints the edited file after every edit and blocks on lint errors.
+  - id: claude.PostToolUse.check-any-changed
+    source: .claude/settings.json
+    purpose: Warns when an edit introduces an explicit any type.
+  - id: claude.PostToolUse.spec-status-sync
+    source: .claude/settings.json
+    purpose: Keeps a spec's manifest status in step with its files after a write, and reminds about ADRs.
+  - id: claude.Stop.create-checkpoint
+    source: .claude/settings.json
+    purpose: Saves a recoverable checkpoint of a worktree's uncommitted work at the end of each turn.
+  - id: claude.Stop.check-docs-changed
+    source: .claude/settings.json
+    purpose: Reminds at the end of a turn when changed code has developer docs that may need updating.
+  - id: claude.Stop.format-changed
+    source: .claude/settings.json
+    purpose: Runs Prettier over the files changed in the turn, once, at turn end.
+  - id: claude.SessionStart.session-maintenance
+    source: .claude/settings.json
+    purpose: Prints short nags at session start about ADR drift, backlog and stale state.
+
+  # --- ruleset 19893973 "main: merge queue" ---
+  - id: ruleset.merge_queue
+    source: github:ruleset/19893973
+    purpose: Every change to main goes through the merge queue, which re-runs the required checks on the combined tree before merging.
+  - id: ruleset.required_status_checks
+    source: github:ruleset/19893973
+    purpose: The nine contexts in ci/required-checks.json must pass, from the GitHub Actions app, before a PR can merge.
+  - id: ruleset.deletion
+    source: github:ruleset/19893973
+    purpose: Nobody can delete the main branch.
+  - id: ruleset.non_fast_forward
+    source: github:ruleset/19893973
+    purpose: Nobody can force-push to main and rewrite its history.
+  - id: ruleset.bypass
+    source: github:ruleset/19893973
+    purpose: Only repository admins may bypass the rules, and only through a pull request, never by a direct push.

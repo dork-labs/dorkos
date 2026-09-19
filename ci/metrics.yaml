@@ -1,0 +1,88 @@
+# The metric catalogue: every metric id a ledger hypothesis may name (plan §3).
+#
+# A hypothesis that names a metric the collector cannot compute can never get a
+# verdict, so `ledger-check` accepts only ids that resolve here:
+#
+#   gate.<gate-id>.<metric>   a gate_templates metric for any id in ci/gates.yaml,
+#                             e.g. gate.wf.browser-test.browser-shard.failure_rate
+#   hook.<git-hook>.<metric>  a hook_templates metric for a lefthook hook,
+#                             e.g. hook.pre-push.duration_p90
+#   queue.*                   a queue-level metric below
+#   tracked.*                 a tracked metric below (reported weekly, never scored)
+#   <slo-id>                  any SLO in ci/slos.yaml (slo_metrics must list them all)
+#
+# Name the narrowest metric the change can move; put the SLO it serves in the
+# hypothesis's `slo:` field. Ids follow OpenTelemetry CI/CD naming where one
+# exists. Schema: MetricsSchema in packages/ci-steward/src/schemas.ts.
+gate_templates:
+  - metric: duration_p50
+    unit: minutes
+    definition: Median job duration (started to completed) of the gate's completed, non-skipped runs in the window.
+  - metric: duration_p90
+    unit: minutes
+    definition: 90th-percentile job duration of the gate's completed, non-skipped runs in the window.
+  - metric: failure_rate
+    unit: ratio
+    definition: Failed runs divided by completed, non-cancelled runs of the gate in the window.
+  - metric: retry_rate
+    unit: ratio
+    definition: Runs that were re-run (run_attempt > 1) divided by all runs of the gate in the window.
+  - metric: real_catches
+    unit: count
+    definition: Queue ejections for this gate's failure that were followed by a new commit before re-queue (a real defect caught), in the window.
+  - metric: ejections_caused
+    unit: count
+    definition: Queue ejections whose failing required check was this gate, in the window.
+
+hook_templates:
+  - metric: duration_p90
+    unit: seconds
+    definition: 90th-percentile whole-hook wall time from the time-wrap START/END records.
+  - metric: killed_share
+    unit: ratio
+    definition: Share of hook runs with a START and no END older than the pre-push ceiling (killed by the agent tool ceiling).
+
+queue:
+  - id: queue.batch_wasted_share
+    unit: ratio
+    definition: Share of queue builds (batches of up to 5 entries) that were discarded because one entry failed, among all completed queue builds.
+  - id: queue.queue_wait
+    unit: minutes
+    definition: Per merged PR, time from its first ADDED_TO_MERGE_QUEUE_EVENT to its merge, ejections and re-entries included; reported as p50 and p90, the verdict reads p50.
+
+tracked:
+  - id: tracked.escaped
+    unit: count
+    definition: Fix PRs citing a regression from a PR merged at most 7 days earlier (a prose match, too gameable to score).
+  - id: tracked.merged-to-released
+    unit: hours
+    definition: Time from a PR's merge to the first release tag that contains it; p50.
+  - id: tracked.job-minutes-per-merged-pr
+    unit: minutes
+    definition: Runner minutes of every workflow run attributable to a merged PR (its PR runs and its queue builds), per merged PR.
+  - id: tracked.cache-hit-rate
+    unit: ratio
+    definition: Share of cache restore steps (pnpm store, Playwright, turbo) that hit an existing entry.
+  - id: tracked.review-runs-per-merged-pr
+    unit: count
+    definition: Automated review runs per merged PR.
+  - id: tracked.review-red-rate
+    unit: ratio
+    definition: Share of first reviews that raise at least one Important finding; under 0.04 for 2 weeks is a health tripwire (baseline 0.097).
+  - id: tracked.review-findings-unfixed-share
+    unit: ratio
+    definition: Share of real Important review findings whose PR merged without a fix or a written rebuttal (baseline 0.58, plan §5.1).
+
+slo_metrics:
+  - headroom
+  - queue-green
+  - wasted-queue-builds
+  - flaky-test-runs
+  - main-green
+  - review-completes
+  - review-recovery
+  - pr-feedback
+  - queue-build
+  - lead-time
+  - local-commit
+  - local-push

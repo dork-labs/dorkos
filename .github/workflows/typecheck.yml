@@ -247,6 +247,66 @@ jobs:
         if: ${{ !cancelled() }}
         run: bash scripts/check-dead-doc-paths.sh
 
+      # CI Steward census (plans/ci-steward-plan.md §4.2). Proves that ci/, the
+      # pipeline's stated intent, matches the workflows, lefthook commands and
+      # Claude hooks that actually run: every gate has a stated purpose in
+      # ci/gates.yaml, every job has a timeout, every required context in
+      # ci/required-checks.json can report on both pull_request and
+      # merge_group with no path filter and no pass-by-skip (the deadlock
+      # invariant), no required job hides a failure behind continue-on-error
+      # or an unexplained step `if:`, and the generated required-checks blocks
+      # in the docs match. Rides THIS job for the same reason the gates above
+      # do: `typecheck` is required and reports on `merge_group`, so this needs
+      # no new required context and adds no deadlock exposure. Plain Node over
+      # a few dozen small files, about a second, no build.
+      #
+      # Invoked by path, never through a package.json script, on purpose: the
+      # content ratchet `typecheck-runs-steward` in ci/ratchets.yaml matches
+      # these exact command strings, and the root package.json sits outside
+      # the steward's fence (ci/steward-owned-paths.json), so an alias there
+      # could be quietly rewritten to a no-op.
+      - name: CI Steward census
+        if: ${{ !cancelled() }}
+        run: node packages/ci-steward/src/cli.ts census
+
+      # Validity of every ci/ledger entry (plan §4.3): frontmatter schema, id
+      # equal to the file-name prefix, only hand states on main (verdicts live
+      # on the ci-steward-data branch), a hypothesis naming a metric the
+      # collector can compute, gates that exist. Runs on pull_request AND in
+      # the queue, so a malformed entry cannot land.
+      - name: CI Steward ledger check
+        if: ${{ !cancelled() }}
+        run: node packages/ci-steward/src/cli.ts ledger-check
+
+      # Ledger COVERAGE, pull_request only: a PR that touches a gate source, a
+      # script a gate invokes, turbo.json, lefthook.yml, .claude/settings.json,
+      # ci/** or the creating-pull-requests skill must add or edit a
+      # ci/ledger entry, and a `ci-improve/*` branch may not touch the
+      # steward's own files. Like fragment coverage, it needs the PR's diff and
+      # branch name, which cannot change between here and the queue.
+      #
+      # ADVISORY UNTIL 2026-09-27. `continue-on-error` is excused by an entry
+      # in ci/census-allowlist.yaml that expires that day; the expiry IS the
+      # flip to blocking (plan §4.3). From then on the census fails every PR
+      # until a PR deletes both this line and the entry.
+      #
+      # The base, adapted from changelog-fragment-check.yml's "Determine the
+      # base" step: that job checks out the PR head with full history and asks
+      # for the merge-base. This job keeps its cheap depth-1 checkout of the
+      # PR's test-merge commit instead, fetches one more level, and diffs
+      # against the merge commit's first parent, which is the base-branch tip
+      # the PR was merged onto: the same diff, without the history.
+      - name: CI Steward ledger coverage
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        continue-on-error: true
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
+          base="$(git rev-parse HEAD^1)"
+          echo "base: $base"
+          node packages/ci-steward/src/cli.ts ledger-check --coverage --base "$base" --branch "$HEAD_REF"
+
       # `!cancelled()` so an earlier gate's failure still reports every type
       # error in the same run, for the same reason the step below passes
       # `--continue`.

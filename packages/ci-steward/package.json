@@ -1,0 +1,25 @@
+{
+  "name": "@dorkos/ci-steward",
+  "version": "0.0.0",
+  "description": "CI Steward engine: checks that the pipeline's hand-owned intent in ci/ matches the real workflows, hooks and ledger. Plain TypeScript run directly by Node; no build step.",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "ci-steward": "./src/cli.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "yaml": "^2.9.0",
+    "zod": "^4.6.2"
+  },
+  "devDependencies": {
+    "@dorkos/eslint-config": "workspace:*",
+    "@dorkos/typescript-config": "workspace:*",
+    "@types/node": "^24",
+    "vitest": "^4.1.10"
+  }
+}

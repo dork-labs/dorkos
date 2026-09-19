@@ -1,0 +1,119 @@
+# Reasoned exceptions to the census (packages/ci-steward/src/required.ts).
+#
+# Each entry excuses exactly one site: {workflow, job, step?, kind}. `step` is
+# the step's `name:`, else its `id:`, else its `uses:` without the @ref.
+#
+#   continue-on-error  a required job or step that can fail without failing
+#                      its context. `expires` REQUIRED.
+#   no-timeout         a job with no timeout-minutes because there is no run
+#                      data to measure one from. `expires` REQUIRED.
+#   step-if            a step in a required job whose `if:` is not true on
+#                      both pull_request and merge_group. `expires` optional:
+#                      deliberate event branching is permanent design, and a
+#                      fake date would only red every PR at once.
+#   job-if             a required job whose job-level `if:` can be false on an
+#                      event (a skipped required check PASSES). `expires`
+#                      optional.
+#
+# An expired entry fails the census, and so does an entry that excuses
+# nothing. Conditions true on both events on a green run (e.g. `!cancelled()`)
+# need no entry. Schema: AllowlistSchema in packages/ci-steward/src/schemas.ts.
+entries:
+  # --- typecheck.yml ---
+  - workflow: typecheck.yml
+    job: typecheck
+    step: CI Steward ledger coverage
+    kind: continue-on-error
+    reason: Ledger coverage is advisory for its first week (plan §4.3). This expiry IS the flip to blocking; on that day delete this entry and the step's continue-on-error in one PR.
+    expires: 2026-09-27
+  - workflow: typecheck.yml
+    job: typecheck
+    step: CI Steward ledger coverage
+    kind: step-if
+    reason: Coverage needs the PR's diff and branch name, which only pull_request carries; it cannot change between the PR and the queue, where ledger validity re-runs.
+
+  # --- changelog-fragment-check.yml ---
+  - workflow: changelog-fragment-check.yml
+    job: fragment-present
+    step: Require a changelog fragment for every user-facing commit
+    kind: step-if
+    reason: Coverage needs the PR's labels and number, absent from merge_group; it is decided on the PR, which must pass before queueing. Validity re-runs in the queue unconditionally.
+  - workflow: changelog-fragment-check.yml
+    job: fragment-present
+    step: Note where coverage was decided
+    kind: step-if
+    reason: An echo-only step that says on merge_group runs where coverage was decided; it checks nothing.
+  - workflow: changelog-fragment-check.yml
+    job: no-fragment-under-skip-label
+    kind: job-if
+    reason: Reconciles the skip-changelog LABEL against the diff; the label exists only on the PR, so on merge_group the job skips (a pass) by design. It already ran on the PR, which could not enter the queue without passing it.
+
+  # --- operating-skills-version-check.yml ---
+  - workflow: operating-skills-version-check.yml
+    job: version-outranks-base
+    step: Compare the pack version against the base branch tip
+    kind: step-if
+    reason: Runs only when the scope step finds the seeded skill-pack content changed; on both events the same scope step decides, so nothing is skipped by event.
+  - workflow: operating-skills-version-check.yml
+    job: version-outranks-base
+    step: Require a history entry for the new version
+    kind: step-if
+    reason: Same scope decision as the version comparison; runs on both events whenever the seeded pack content changed.
+
+  # --- test.yml ---
+  - workflow: test.yml
+    job: test
+    step: actions/checkout
+    kind: step-if
+    reason: The fan-in checks out code only for the merge_group shard-union proof; on pull_request the shards run affected-only and there is no full union to prove.
+  - workflow: test.yml
+    job: test
+    step: actions/download-artifact
+    kind: step-if
+    reason: Collects the shards' collected-file lists, which only the merge_group full sweep uploads.
+  - workflow: test.yml
+    job: test
+    step: Prove the shards' union covers every package
+    kind: step-if
+    reason: The union is only complete on the merge_group full sweep; on pull_request each shard is affected-only by design.
+
+  # --- browser-test.yml ---
+  - workflow: browser-test.yml
+    job: browser-test
+    step: Defer to the merge queue on pull_request events
+    kind: step-if
+    reason: The browser suite runs in the merge queue only (ADR 260728-112203, #1246); on pull_request the fan-in reports a named pass-through.
+  - workflow: browser-test.yml
+    job: browser-test
+    step: Refuse a run whose shards did not all pass
+    kind: step-if
+    reason: The shards run only on merge_group, so their result is only meaningful there; this is the step that fails the queue build on a red shard.
+  - workflow: browser-test.yml
+    job: browser-test
+    step: actions/checkout
+    kind: step-if
+    reason: Checks out code for the merge_group executed-count proof only; the PR leg is a pass-through.
+  - workflow: browser-test.yml
+    job: browser-test
+    step: Collect every shard's JSON report
+    kind: step-if
+    reason: Only merge_group shards produce JSON reports to collect.
+  - workflow: browser-test.yml
+    job: browser-test
+    step: Prove the browser suite actually executed
+    kind: step-if
+    reason: Proves the queue's shards really ran the suite; there is no PR run to prove.
+
+  # --- credential-free-build.yml ---
+  - workflow: credential-free-build.yml
+    job: credential-free-build
+    step: Save turbo's local cache
+    kind: step-if
+    reason: Saves the turbo cache on pull_request only, because a cache saved under a merge-queue ref can never be read by any other ref; it asserts nothing.
+
+  # --- claude.yml ---
+  - workflow: claude.yml
+    job: claude
+    kind: no-timeout
+    reason: Every one of the last 300 runs was skipped (no @claude mention from a maintainer), so there is no duration to measure a ceiling from. Measure again once it has 5 real runs.
+    expires: 2026-10-19

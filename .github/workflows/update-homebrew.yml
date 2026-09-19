@@ -32,6 +32,10 @@ env:
 jobs:
   update-formula:
     runs-on: ubuntu-latest
+    # Measured, not guessed (CI Steward phase 0, 2026-09-19): 10 completed
+    # runs over 2026-08-22..09-14, p95 30.38 min, max 30.38. Ceiling =
+    # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
+    timeout-minutes: 92
     steps:
       - name: Get version
         id: version

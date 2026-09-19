@@ -245,6 +245,10 @@ permissions:
 jobs:
   fixtures:
     runs-on: ubuntu-latest
+    # Measured, not guessed (CI Steward phase 0, 2026-09-19): 298 completed
+    # runs over 2026-09-07..09-19, p95 1.12 min, max 1.30. Ceiling =
+    # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
 
@@ -481,6 +485,10 @@ jobs:
   # would have no automated gate at all.
   harness:
     runs-on: ubuntu-latest
+    # Measured, not guessed (CI Steward phase 0, 2026-09-19): 291 completed
+    # runs over 2026-09-07..09-19, p95 4.13 min, max 4.58. Ceiling =
+    # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
+    timeout-minutes: 13
     steps:
       - uses: actions/checkout@v7
 

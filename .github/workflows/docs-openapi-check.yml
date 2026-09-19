@@ -75,6 +75,10 @@ jobs:
   # shape whose required-check semantics are pinned down.
   openapi-fresh:
     runs-on: ubuntu-latest
+    # Measured, not guessed (CI Steward phase 0, 2026-09-19): 299 completed
+    # runs over 2026-09-12..09-19, p95 3.12 min, max 4.67. Ceiling =
+    # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
+    timeout-minutes: 10
     steps:
       # fetch-depth: 0 so `origin/<base>` exists locally for the scope step. At
       # the default depth 1 the diff below cannot resolve the base at all.
