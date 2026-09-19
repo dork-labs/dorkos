@@ -29,7 +29,7 @@ slos:
       aggregation: per gate, p95 job duration divided by its timeout-minutes; the SLO reads the worst gate
       window: 7-day non-overlapping, plus 28-day trend
       min_n: 10
-      fixture: pending; recorded from the phase-1 collector's first healthy snapshot
+      fixture: packages/ci-steward/src/__tests__/fixtures/week-2026-09-12.snapshots.json.gz, pinned in slo.test.ts
     today: several jobs at or above 90% historically (typecheck, test, credential-free-build ceilings each raised after a green run was killed)
     floor: [{ stat: p95_over_timeout, op: '<=', value: 0.9, unit: ratio }]
     objective: [{ stat: p95_over_timeout, op: '<=', value: 0.6, unit: ratio }]
@@ -45,7 +45,7 @@ slos:
       aggregation: share of builds with every required check green
       window: 7-day non-overlapping, plus 28-day trend
       min_n: 30
-      fixture: pending; recorded from the phase-1 collector's first healthy snapshot
+      fixture: packages/ci-steward/src/__tests__/fixtures/week-2026-09-12.snapshots.json.gz, pinned in slo.test.ts
     today: 75%
     floor: [{ stat: share, op: '>=', value: 0.75, unit: ratio }]
     objective: [{ stat: share, op: '>=', value: 0.97, unit: ratio }]
@@ -61,7 +61,7 @@ slos:
       aggregation: builds ejected for failed checks whose PR later merged with no new commit, divided by all builds
       window: 7-day non-overlapping, plus 28-day trend
       min_n: 30
-      fixture: ledger 260824-121951 (#1246) is the recorded case this SLO must reproduce
+      fixture: packages/ci-steward/src/__tests__/fixtures/week-2026-09-12.snapshots.json.gz, pinned in slo.test.ts; and ledger 260824-121951 (#1246), whose recorded windows read 3.7% before and 18.4% after (verdicts.test.ts)
     today: about 17-21%
     floor: [{ stat: share, op: '<=', value: 0.2, unit: ratio }]
     objective: [{ stat: share, op: '<=', value: 0.03, unit: ratio }]
@@ -77,7 +77,7 @@ slos:
       aggregation: executions that failed then passed on retry, divided by all executions
       window: 7-day non-overlapping, plus 28-day trend
       min_n: 1000
-      fixture: pending; the floor is set after 2 weeks of collection
+      fixture: packages/ci-steward/src/__tests__/fixtures/week-2026-09-12.snapshots.json.gz, pinned in slo.test.ts (the floor is still set after 2 weeks of collection)
     today: not yet measured
     floor: null
     objective: [{ stat: share, op: '<=', value: 0.015, unit: ratio }]
@@ -93,7 +93,7 @@ slos:
       aggregation: count of red episodes (first red run to next all-green run), plus p90 time to restore
       window: 28-day rolling
       min_n: 1
-      fixture: pending; recorded from the phase-1 collector's first healthy snapshot
+      fixture: packages/ci-steward/src/__tests__/fixtures/week-2026-09-12.snapshots.json.gz, pinned in slo.test.ts
     today: a few red episodes per 28 days
     floor: [{ stat: red_episodes, op: '<=', value: 3, unit: count per 28d }]
     objective:
@@ -107,11 +107,15 @@ slos:
     definition:
       event_source: claude-code-review.yml runs, keyed by PR head SHA
       population: PR head SHAs that started a review
-      exclusions: [subscription usage-limit stalls, drafts, forks]
+      exclusions:
+        - subscription usage-limit stalls (not yet separable in phase 1; counted as failures until the classifier exists)
+        - drafts
+        - forks
+        - head SHAs whose first review was cancelled before it finished (superseded by a newer push, or the label race), counted separately as review_cancelled
       aggregation: share of head SHAs whose first review attempt completed with a posted verdict
       window: 7-day non-overlapping, plus 28-day trend
       min_n: 30
-      fixture: pending; recorded from the phase-1 collector's first healthy snapshot
+      fixture: packages/ci-steward/src/__tests__/fixtures/week-2026-09-12.snapshots.json.gz, pinned in slo.test.ts
     today: about 93%
     floor: [{ stat: share, op: '>=', value: 0.9, unit: ratio }]
     objective: [{ stat: share, op: '>=', value: 0.99, unit: ratio }]
@@ -127,7 +131,7 @@ slos:
       aggregation: p90 of time from the failed run's end to the next completed review on the same SHA
       window: 7-day non-overlapping, plus 28-day trend
       min_n: 5
-      fixture: pending; recorded from the phase-1 collector's first healthy snapshot
+      fixture: packages/ci-steward/src/__tests__/fixtures/week-2026-09-12.snapshots.json.gz, pinned in slo.test.ts
     today: not measured
     floor: [{ stat: p90, op: '<=', value: 120, unit: minutes }]
     objective: [{ stat: p90, op: '<=', value: 30, unit: minutes }]
@@ -143,7 +147,7 @@ slos:
       aggregation: per head SHA, first required run created to last required run completed; p50 and p90
       window: 7-day non-overlapping, plus 28-day trend
       min_n: 30
-      fixture: pending; recorded from the phase-1 collector's first healthy snapshot
+      fixture: packages/ci-steward/src/__tests__/fixtures/week-2026-09-12.snapshots.json.gz, pinned in slo.test.ts
     today: p50 14.3 min, p90 38.6 min
     floor: [{ stat: p90, op: '<=', value: 40, unit: minutes }]
     objective:
@@ -161,7 +165,7 @@ slos:
       aggregation: entry to merged; p50 and p90
       window: 7-day non-overlapping, plus 28-day trend
       min_n: 20
-      fixture: ledger 260830-213616 (#1391) and 260819-235925 (#1135) move gates on this path
+      fixture: packages/ci-steward/src/__tests__/fixtures/week-2026-09-12.snapshots.json.gz, pinned in slo.test.ts
     today: p50 30 min, p90 44-55 min
     floor: [{ stat: p90, op: '<=', value: 55, unit: minutes }]
     objective:
@@ -179,7 +183,7 @@ slos:
       aggregation: opened (or marked ready) to merged; p50 and p90
       window: 7-day non-overlapping, plus 28-day trend
       min_n: 30
-      fixture: pending; recorded from the phase-1 collector's first healthy snapshot
+      fixture: packages/ci-steward/src/__tests__/fixtures/week-2026-09-12.snapshots.json.gz, pinned in slo.test.ts
     today: p50 58 min, p90 3.0 h
     floor: [{ stat: p90, op: '<=', value: 180, unit: minutes }]
     objective:

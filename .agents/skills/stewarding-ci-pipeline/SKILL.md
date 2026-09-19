@@ -16,13 +16,13 @@ Why it exists: about 94 pipeline changes in 14 weeks, each well documented, and 
 This is the same protocol as `.claude/rules/ci-pipeline.md`. It lives here too because path rules load only in Claude Code, and this skill is what Codex and the other harnesses see.
 
 1. **Hypothesis first.** One metric from `ci/metrics.yaml`, the narrowest that can move; its baseline; a target; `after_days`. Only `kind: hygiene` is exempt.
-2. **Ledger entry in the same commit.** `node packages/ci-steward/src/cli.ts ledger-new --slug <slug>` scaffolds `ci/ledger/<YYMMDD-HHMMSS>-<slug>.md` (`--help` for flags). Kinds: `experiment`, `incident-fix`, `hygiene`. Hand statuses: `proposed`, `active`, `withdrawn`, `reverted`. Never write `verified`, `failed` or `inconclusive`: those are computed verdicts, and the ledger check rejects them on `main`. Until phase 1 publishes measured baselines, copy the baseline by hand and name its source in `baseline_source:`.
+2. **Ledger entry in the same commit.** `node packages/ci-steward/src/cli.ts ledger-new --slug <slug>` scaffolds `ci/ledger/<YYMMDD-HHMMSS>-<slug>.md` (`--help` for flags). Kinds: `experiment`, `incident-fix`, `hygiene`. Hand statuses: `proposed`, `active`, `withdrawn`, `reverted`. Never write `verified`, `partial`, `failed` or `inconclusive`: those are computed verdicts, and the ledger check rejects them on `main`. Read the baseline from `/ci-status` (`latest.json`) and name its source in `baseline_source:`.
 3. **Ratchet releases block review by default.** An entry that lowers a quality floor (`ratchet-release`) must give a specific reason. A change to a required gate's retries, shards, timeout or required status needs `field-changes`.
 4. **The deadlock invariant.** A required context's job exists under that exact name, runs on `pull_request` (including `synchronize` if `types:` is set) and on `merge_group`, has no `paths:` filter, and has no job-level `if:` that can skip it: a skipped run satisfies a required context. Every job has `timeout-minutes`. `continue-on-error` or an event-branching step-level `if:` in a required job, or in any job it needs, needs a `ci/census-allowlist.yaml` entry with a reason (and `expires:` when temporary); an `always()` fan-in must read `needs.<job>.result` for every job it needs. An expired entry turns every PR's census red, so an expiry is a deadline for a person, never a switch for a scheduled change.
 5. **Ledger release first, ruleset edit second.** Adding or removing a required check: the PR with the job, `ci/required-checks.json` and the ledger entry merges first; the operator edits the ruleset after. The invariant is that no admin credential lives in Actions, so nothing automated can un-require a check. It holds once the phase-0 PR merges and the old `MERGE_TAIL_TOKEN` secret is deleted: merge-tail and the Dependabot lockfile repair use the `dorkos-merge-tail` GitHub App, which has no Administration permission.
 6. **The fence.** Unattended changes may change gates, never the steward or the judge (below).
 7. **Verify locally:** `node packages/ci-steward/src/cli.ts census` (`--fix` regenerates the required-checks blocks in `contributing/ci.md` and the `creating-pull-requests` skill), `node packages/ci-steward/src/cli.ts ledger-check`, and `node packages/ci-steward/src/cli.ts ledger-check --coverage --base "$(git merge-base origin/main HEAD)"`. The same three run as steps of the required `typecheck` job; a missing ledger entry fails coverage.
-8. **Read observations from the data branch** (phase 1 on): `git fetch origin ci-steward-data`, then `git show origin/ci-steward-data:latest.json`, `:verdicts/<ledger-id>.json`, `:reports/<YYYY-Www>.md`.
+8. **Read observations from the data branch:** `/ci-status` (`pnpm ci:status`) shows the SLOs, the constraint, every experiment's verdict and the collector's health; `/ci-pulse` collects now into a temp directory. By hand: `git fetch origin ci-steward-data`, then `git show origin/ci-steward-data:latest.json`, `:verdicts/<ledger-id>.json`, `:reports/<YYYY-Www>.md`. Only the daily workflow and `ci-local-export` write that branch; never push to it or its `ci-steward-data/*` tags. Every `lefthook.yml` command keeps its time-wrap first line (it measures local-commit and local-push).
 9. **Never** push an empty commit, update a branch, or merge with `--admin` to get a pipeline change through.
 
 ## What exists in each phase
@@ -32,19 +32,20 @@ Say which phase a command belongs to; never describe a later one as if it works.
 | Phase | Delivers                                                                                                            | Status    |
 | ----- | ------------------------------------------------------------------------------------------------------------------- | --------- |
 | 0     | `ci/` hand files, `census`, `ledger-check`, `ledger-new`, the `typecheck` steps, the merge guard, this skill        | available |
-| 1     | Daily collector, `ci-steward-data`, computed verdicts, weekly report, `/ci-status`, `/ci-pulse`, `/ci-record`       | coming    |
+| 1     | Daily collector, `ci-steward-data`, verdicts, floors, weekly report, `/ci-status`, `/ci-pulse`, `ci-local-export`   | available |
+| 1     | `/ci-record` (an entry with its baseline copied from `latest.json`)                                                 | coming    |
 | 1b    | Incident mode: sentinel, freeze and shed, quarantine from data, `/ci-incident`, `/ci-break-glass`, `ci-steward arm` | coming    |
 | 2     | Ratchet assertions in the queue, the blocking `review-gate`                                                         | coming    |
 | 3     | `/ci-improve` and the unattended `ci-improve-tick`, with the fence enforced                                         | coming    |
 
 ## PDCA, with the Check done by code
 
-| Step  | What it means here                                                                                                                                                                                                                                                                                                            | Who            |
-| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| Plan  | Pick the constraint (below). Write a `proposed` ledger entry: the hypothesis, and what would make you revert.                                                                                                                                                                                                                 | agent          |
-| Do    | Implement in a worktree; the entry goes `active` and names the PR. It merges like any other PR.                                                                                                                                                                                                                               | agent          |
-| Check | After `after_days`, the collector computes the metric over a 7-day before-window and the after-window, both anchored on the merge time: `inconclusive` first (a confounding entry on the same gate, or n below the minimum), else `verified` if it reached the target, else `failed`. The SLO movement is reported beside it. | code (phase 1) |
-| Act   | Read the verdict. Keep, revert (`status: reverted`, with the revert PR), or propose the next experiment.                                                                                                                                                                                                                      | agent          |
+| Step  | What it means here                                                                                                                                                                                                                                                                                                                                                                         | Who   |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----- |
+| Plan  | Pick the constraint (below). Write a `proposed` ledger entry: the hypothesis, and what would make you revert.                                                                                                                                                                                                                                                                              | agent |
+| Do    | Implement in a worktree; the entry goes `active` and names the PR. It merges like any other PR.                                                                                                                                                                                                                                                                                            | agent |
+| Check | After `after_days`, the collector computes the metric over a 7-day before-window and the after-window, both cut at the merge instant: `inconclusive` first (a confounding entry on the same gate, or n below the minimum), else `verified` if it reached the target, else `partial` if it moved at least halfway from the baseline, else `failed`. The SLO movement is reported beside it. | code  |
+| Act   | Read the verdict. Keep, revert (`status: reverted`, with the revert PR), or propose the next experiment.                                                                                                                                                                                                                                                                                   | agent |
 
 The repo's habit before this was Do without Check. A change that "obviously" helped is exactly the one to measure: three did the opposite.
 
@@ -80,7 +81,7 @@ Floors start near today and tighten halfway to the objective after four consecut
 
 ## Ratchets (phase 2)
 
-Quality counts that must never drop silently are asserted inside the queue against per-package high-water marks: vitest tests passed and skipped (a ceiling), Playwright tests passed per spec file, the required-context set, and the count of required contexts reporting on `merge_group`. A drop fails the queue's `test` fan-in unless the merged tree carries a valid, unspent `ratchet-release` for that ratchet, package and value, at most 14 days old. Per-package marks stop a deletion in one package hiding behind additions in another. Deterministic failures like these never pass on retry, so they are exempt from "wait for the re-queue".
+Quality counts that must never drop silently are asserted inside the queue against per-package high-water marks: vitest tests passed and skipped (a ceiling), Playwright tests passed per spec file, the required-context set, and the count of required contexts reporting on `merge_group`. A drop fails the queue's `test` fan-in unless the merged tree carries a valid, unspent `ratchet-release` for that ratchet, package and value, at most 14 days old. Per-package marks stop a deletion in one package hiding behind additions in another. Deterministic failures like these never pass on retry, so they are exempt from "re-arm after a flaky ejection".
 
 ## The fence
 
@@ -88,7 +89,7 @@ The steward may change gates, never the steward or the judge. An unattended `ci-
 
 ## Writing a narrow hypothesis
 
-A verdict is only as good as the metric it names. Narrow beats broad because a broad metric moves for a hundred reasons, and the verdict turns `inconclusive`.
+A verdict is only as good as the metric it names. Narrow beats broad because a broad metric moves for a hundred reasons, and the verdict turns `inconclusive`. The recorded fixtures show both failure shapes: #1246 named queue wait, which improved (`partial`), while the thing it actually broke, wasted queue builds, went from about 4% to 18%; and #1135 and #1246 confound each other because each changed `browser-test` or `test` inside the other's window. One change per gate per window, and name the metric the change could make worse.
 
 | ❌ Too broad or unmeasurable    | ✅ Narrow and computable                                                            |
 | ------------------------------- | ----------------------------------------------------------------------------------- |
@@ -100,7 +101,7 @@ A verdict is only as good as the metric it names. Narrow beats broad because a b
 - Name the **gate-level** metric the change directly moves as `metric`; name the SLO you expect it to help as `slo`, which is reported but does not decide the verdict.
 - One change, one entry. Two changes to the same gate in one window confound each other; stagger them.
 - Write the revert condition in the body before you know the result.
-- A baseline you did not measure is a guess. In phase 0, cite where it came from (`baseline_source:`); from phase 1, `/ci-record` copies it from `latest.json`.
+- A baseline you did not measure is a guess. Copy it from `/ci-status` and cite it in `baseline_source:`; the verdict prefers the before-window's own measurement anyway, and falls back to your number only when the before-window has too little data (a gate that did not exist yet).
 
 ## Anti-patterns in this repo
 

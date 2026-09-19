@@ -9,7 +9,7 @@ gates:
   - wf.test.test
 prs: [1391]
 hypothesis:
-  metric: 'gate.wf.test.test-shard.duration_p50'
+  metric: 'gate.wf.test.test-shard.duration_p50@merge_group'
   slo: 'queue-build'
   baseline: 26
   baseline_source: 'PR #1391 body: the serialized queue sweep took 19-29 min wall clock, "~26 min"'
@@ -27,5 +27,7 @@ What changed: the queue's full `turbo test` sweep runs as four vitest file shard
 proving every package executed, behind a fan-in that keeps the `test` check name.
 
 What was seen later, by accident: #1646 (2026-09-07) measured the queue shards at 8-13 min each.
-The expected verdict is "held"; the engine computes it. Revert if the shards' union ever stops
+The expected verdict was "held"; the engine computes it (phase 1: partial, see the plan's §4.4).
+The metric names the queue leg (`@merge_group`): the hypothesis is about the queue build, and from
+#1646 (2026-09-07) the same shards also run affected-only on PRs, which would otherwise mix in. Revert if the shards' union ever stops
 covering every package.

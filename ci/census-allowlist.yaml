@@ -145,6 +145,16 @@ entries:
     kind: step-if
     reason: Uploads the collected-file list for the merge_group shard-union proof.
   - workflow: test.yml
+    job: test-shard
+    step: Upload this shard's vitest reports for CI Steward
+    kind: step-if
+    reason: Only the merge_group full sweep writes the vitest shard and flake reports; on a PR there is nothing to upload.
+  - workflow: test.yml
+    job: test-shard
+    step: Upload this shard's vitest reports for CI Steward
+    kind: continue-on-error
+    reason: Observability for the CI Steward collector (flaky-test-runs); an artifact-service 403 must cost one sample, never a queue build. Phase 2's ratchet will read these in the fan-in and fail closed there instead.
+  - workflow: test.yml
     job: community-packaged
     step: Packaged proof runs on the merge queue
     kind: step-if

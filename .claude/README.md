@@ -10,15 +10,15 @@ This directory contains the **Claude Code Harness** — the customization framew
 | ------------- | ----- | ---------------------------------------------------------------------------- |
 | Commands      | 42    | `.claude/commands/`                                                          |
 | Agents        | 7     | `.claude/agents/`                                                            |
-| Skills        | 31    | `.claude/skills/` (13 Claude-only dirs + 18 symlinks into `.agents/skills/`) |
-| Shared Skills | 18    | `.agents/skills/` (canonical, projected to other harnesses)                  |
+| Skills        | 37    | `.claude/skills/` (14 Claude-only dirs + 23 symlinks into `.agents/skills/`) |
+| Shared Skills | 23    | `.agents/skills/` (canonical, projected to other harnesses)                  |
 | Rules         | 14    | `.claude/rules/`                                                             |
 | Claude Hooks  | 12    | `.claude/hooks/`, wired in `.claude/settings.json`                           |
 | Git Hooks     | —     | `lefthook.yml` (pre-commit/pre-push) + `.claude/git-hooks/` (post-commit)    |
 | ADRs          | 251   | `decisions/` (+87 archived)                                                  |
 | Guides        | 29    | `contributing/` (+ INDEX.md)                                                 |
 
-Both Skills rows are derived, not independent: the table in [Skills (Model-Invoked)](#skills-model-invoked) lists every skill by name and is the source of truth. **Skills** = that table's row count, which you can check by counting without leaving the section. **Shared Skills** = the subset that lives in `.agents/skills/`, which the table does not mark, so that one still needs `git ls-tree HEAD .agents/skills/` to confirm. They drifted by 2 before 2026-07-28 because nothing tied them to the list at all. Marking the shared rows in the table would make the second number self-checking too, and is worth doing the next time this table is edited for another reason.
+Both Skills rows are derived, not independent: the table in [Skills (Model-Invoked)](#skills-model-invoked) lists every skill by name and is the source of truth. **Skills** = the row count of that table plus the person-invoked table under it, which you can check by counting without leaving the section. **Shared Skills** = the subset that lives in `.agents/skills/`, which the table does not mark, so that one still needs `git ls-tree HEAD .agents/skills/` to confirm. They drifted by 2 before 2026-07-28 because nothing tied them to the list at all. Marking the shared rows in the table would make the second number self-checking too, and is worth doing the next time this table is edited for another reason.
 
 The `/flow` workflow engine (commands + stage skills) is **not** in this repo — it lives in the external marketplace plugin (`dork-labs/marketplace`, `plugins/flow/`; ADR-0297) and its commands exist only when loaded via `--plugin-dir`.
 
@@ -66,6 +66,7 @@ Skills load their description into every session (the retrieval index) and their
 | Skill                            | Expertise / When Applied                                                  |
 | -------------------------------- | ------------------------------------------------------------------------- |
 | `adding-config-fields`           | Config field lifecycle (Zod → conf migration)                             |
+| `auditing-ui`                    | Lens-based UI/UX audits and how findings become tracked work              |
 | `browser-testing`                | Playwright browser-test methodology (apps/e2e)                            |
 | `capturing-product-media`        | Regenerate the marketing site's product stills + loops (apps/e2e/capture) |
 | `clarifying-requirements`        | AskUserQuestion discipline for vague/ambiguous requests                   |
@@ -76,6 +77,7 @@ Skills load their description into every session (the retrieval index) and their
 | `designing-frontend`             | Calm Tech design language, UI decisions                                   |
 | `maintaining-dev-playground`     | Dev playground coverage when editing UI components                        |
 | `managing-specs`                 | Spec file management, timestamp ids, archive lifecycle                    |
+| `maintaining-dependencies`       | Unattended dependency patching, advisories, red Dependabot PRs            |
 | `marketplace-dev`                | Marketplace package development                                           |
 | `opensrc`                        | Fetching dependency source for implementation context                     |
 | `orchestrating-parallel-work`    | Agent-tool fan-out, batching, background agents                           |
@@ -96,6 +98,15 @@ Skills load their description into every session (the retrieval index) and their
 | `writing-changelogs`             | Human-friendly changelog entries                                          |
 | `writing-developer-guides`       | Guide structure for AI consumption (contributing/)                        |
 | `writing-for-humans`             | Plain-language standard for all user-facing prose (9th-grade readability) |
+| `writing-to-users`               | Direct replies to one person about their own report or question           |
+
+**Person-invoked skills** (`disable-model-invocation: true`: a person types them, the model never loads them on its own). They replace `.claude/commands/` for new entry points; each is a thin wrapper over one `pnpm ci:<verb>` engine command.
+
+| Skill             | What it runs                                                                                        |
+| ----------------- | --------------------------------------------------------------------------------------------------- |
+| `ci-status`       | `pnpm ci:status`: SLOs, the constraint, ledger verdicts and collector health from `ci-steward-data` |
+| `ci-pulse`        | `pnpm ci:pulse`: collect now into a temp directory and show the same screen; pushes nothing         |
+| `ci-local-export` | `pnpm ci:local-export`, daily, as a DorkOS scheduled skill (approve it at Full autonomy)            |
 
 ## Rules (Path-Triggered)
 

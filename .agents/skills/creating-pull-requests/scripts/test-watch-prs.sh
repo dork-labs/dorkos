@@ -116,17 +116,19 @@ for token in MERGED CLOSED 'QUEUED(2)' PENDING; do
   [ -z "$(remedy_of "$token")" ] || { echo "FAIL remedy_absent: '$token' has a remedy" >&2; fail=1; }
 done
 # The first failed-checks ejection is a WAIT, never an action on the branch.
-remedy_has wait_on_first_ejection 'EJECTED(failed_checks)' 'Do not push, rerun or re-arm'
+remedy_has wait_on_first_ejection 'EJECTED(failed_checks)' 'Do not push and do not rerun'
+remedy_has rearm_after_flake 'EJECTED(failed_checks)' 'gh pr merge --auto 1931'
 remedy_has first_ejection_cites_rate 'EJECTED(failed_checks)' '85%'
 remedy_has repeat_is_real 'EJECTED_REPEAT(failed_checks,2)' 'treat it as real'
 remedy_has repeat_names_pr 'EJECTED_REPEAT(failed_checks,2)' 'pr-1931-'
-remedy_has timeout_is_not_yours 'EJECTED(checks_timed_out)' 'Do not push, rerun or re-arm'
+remedy_has timeout_is_not_yours 'EJECTED(checks_timed_out)' 'Do not push and do not rerun'
 remedy_has stall_is_not_yours 'STALLED_IN_QUEUE(120)' 'Do not push, rerun or re-arm'
 # FAILING: rerun one job for a failure that is not yours; never an empty commit.
 remedy_has failing_rerun 'FAILING(test)' 'gh run rerun <run-id> --failed'
 remedy_has failing_never_empty 'FAILING(test)' 'Never push an empty commit'
-# UNARMED_CLEAN hands arming to merge-tail and names only the sanctioned command.
-remedy_has unarmed_waits_for_tail 'UNARMED_CLEAN' 'merge-tail arms it'
+# UNARMED_CLEAN arms right away (merge-tail's schedule is throttled to hours)
+# and names only the sanctioned command.
+remedy_has unarmed_arms_now 'UNARMED_CLEAN' 'Arm it now'
 remedy_has unarmed_never_direct 'UNARMED_CLEAN' 'do not merge it directly'
 remedy_has unarmed_arm_command 'UNARMED_CLEAN' 'gh pr merge --auto 1931'
 remedy_has held_armed_disarm 'HELD_BY_LABEL(hold,armed)' 'gh pr merge --disable-auto 1931'

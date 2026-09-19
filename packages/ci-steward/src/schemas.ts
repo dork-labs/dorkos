@@ -14,6 +14,32 @@ const IsoDate = z
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'expected a date as YYYY-MM-DD')
   .refine((s) => !Number.isNaN(Date.parse(`${s}T00:00:00Z`)), 'not a real calendar date');
 
+/** The `collect:` block of `ci/config.yaml`. */
+const CollectConfigSchema = z
+  .object({
+    /** Requests one run may make. GITHUB_TOKEN allows 1,000 an hour; keep well under. */
+    api_budget: z.number().int().positive(),
+    /** Missing or late days this far back are collected again before anything older. */
+    lookback_days: z.number().int().min(1),
+    /** Leftover budget fills older days back to this date, oldest first (Actions keeps 90 days). */
+    backfill_from: IsoDate.nullable(),
+    /** Queue builds per day whose test reports are downloaded for flaky-test-runs. */
+    artifact_builds_per_day: z.number().int().min(0),
+    /** Workflow file of the automated review, for review-completes and review-recovery. */
+    review_workflow: z.string().min(1),
+    /** Queue-build artifacts that carry per-test results, and the report format inside each. */
+    artifacts: z.array(
+      z
+        .object({
+          workflow: z.string().min(1),
+          pattern: z.string().min(1),
+          format: z.enum(['playwright', 'vitest']),
+        })
+        .strict()
+    ),
+  })
+  .strict();
+
 /** `ci/config.yaml`: everything repo-specific the engine needs. */
 export const ConfigSchema = z
   .object({
@@ -25,6 +51,11 @@ export const ConfigSchema = z
     claude_hook_wrappers: z.array(RepoPath),
     root_package_json: RepoPath,
     data_branch: z.string().min(1),
+    /** `owner/name`, for every `gh api` call. */
+    github_repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/, 'owner/name'),
+    /** Weekly backup tags are `<prefix>YYYY-Www`, protected by `data_tag_ruleset_id`. */
+    data_tag_prefix: z.string().min(1),
+    data_tag_ruleset_id: z.number().int().positive(),
     ruleset: z
       .object({
         id: z.number().int().positive(),
@@ -49,6 +80,31 @@ export const ConfigSchema = z
     fence_branch_prefix: z.string().min(1),
     generated_blocks: z.object({ required_checks: z.array(RepoPath) }).strict(),
     commands: z.object({ ledger_new: z.string().min(1), census_fix: z.string().min(1) }).strict(),
+    collect: CollectConfigSchema,
+    verdicts: z
+      .object({
+        /** Length of the before-window, anchored on the merge time. */
+        before_days: z.number().int().min(1),
+        /** Minimum sample for a gate, hook or queue metric; an SLO metric uses its own min_n. */
+        min_n: z.number().int().min(1),
+      })
+      .strict(),
+    local: z
+      .object({
+        /** Under `git rev-parse --git-common-dir`, so every worktree of a clone shares it. */
+        timings_file: RepoPath,
+        /** A START with no END older than this is a killed run: the agent tool ceiling. */
+        killed_after_seconds: z.number().int().positive(),
+        /** The agent tool ceiling: what a killed push cost, for the constraint's wait-hours. */
+        tool_ceiling_seconds: z.number().int().positive(),
+        retention_days: z.number().int().positive(),
+        max_bytes: z.number().int().positive(),
+        /** An export older than this is a health failure... */
+        stale_after_days: z.number().int().positive(),
+        /** ...until this old, when the clone is treated as retired and only reported. */
+        retired_after_days: z.number().int().positive(),
+      })
+      .strict(),
   })
   .strict();
 /** Parsed `ci/config.yaml`. */
@@ -141,6 +197,8 @@ const MetricTemplate = z
 export const MetricsSchema = z
   .object({
     gate_templates: z.array(MetricTemplate).min(1),
+    /** Events a gate metric may be narrowed to: `gate.<id>.<metric>@<event>`. */
+    event_qualifiers: z.array(z.string().regex(/^[a-z_]+$/)).default([]),
     hook_templates: z.array(MetricTemplate).min(1),
     queue: z.array(
       z
@@ -237,7 +295,7 @@ export type AllowlistEntry = Allowlist['entries'][number];
 /** Hand states a ledger entry may carry on `main`. */
 const LEDGER_STATUSES = ['proposed', 'active', 'withdrawn', 'reverted'] as const;
 /** Computed states, which live only on the data branch. */
-export const COMPUTED_STATUSES = ['verified', 'failed', 'inconclusive'] as const;
+export const COMPUTED_STATUSES = ['verified', 'partial', 'failed', 'inconclusive'] as const;
 
 /** Frontmatter of one `ci/ledger/<id>-<slug>.md` entry (plan §4.3). */
 export const LedgerFrontmatterSchema = z
@@ -273,6 +331,22 @@ export const LedgerFrontmatterSchema = z
           .strict()
       )
       .default([]),
+    /**
+     * Loosening an SLO floor (plan §4.4: floors never loosen without a ledger
+     * entry). Applied once by the collector, then recorded in floors.json.
+     */
+    'floor-release': z
+      .array(
+        z
+          .object({
+            slo: z.string().min(1),
+            stat: z.string().min(1),
+            value: z.number(),
+            reason: z.string().min(1),
+          })
+          .strict()
+      )
+      .default([]),
     'field-changes': z
       .array(
         z
@@ -287,6 +361,9 @@ export const LedgerFrontmatterSchema = z
       .default([]),
   })
   .strict();
+
+/** A parsed ledger entry. */
+export type LedgerFrontmatter = z.infer<typeof LedgerFrontmatterSchema>;
 
 /**
  * Flatten a zod error into one line per issue, each naming its path.

@@ -24,6 +24,15 @@ root_package_json: package.json
 data_branch: ci-steward-data
 data_ruleset_id: 23704437
 
+# Every `gh api` call names this repository.
+github_repo: dork-labs/dorkos
+
+# Each Monday the collector tags the data branch's head `<prefix>YYYY-Www`.
+# Ruleset `data_tag_ruleset_id` makes those tags permanent (no deletion, no
+# update, no force-push), so they are the restore points if the branch is lost.
+data_tag_prefix: ci-steward-data/
+data_tag_ruleset_id: 23705388
+
 # The "main: merge queue" ruleset: the only source of required checks since
 # classic branch protection was deleted on 2026-09-19. `rules` names the rule
 # and setting gates recorded as `ruleset.<rule>` in ci/gates.yaml; the
@@ -80,3 +89,49 @@ generated_blocks:
 commands:
   ledger_new: pnpm ci:ledger-new
   census_fix: pnpm ci:census --fix
+
+# The daily collector (ci-steward collect, .github/workflows/ci-steward.yml).
+collect:
+  # Requests one run may make. The workflow runs on GITHUB_TOKEN, which allows
+  # 1,000 REST requests an hour per repository; a day that needs more is
+  # written as late and resumed by the next run, never cut short.
+  api_budget: 700
+  # Missing or late days this far back are collected again first.
+  lookback_days: 7
+  # Budget left after the recent days fills older days back to this date,
+  # oldest first, while Actions still keeps them (90 days). This is how the
+  # backfilled ledger entries (#1135, #1246, #1391) get live verdicts.
+  backfill_from: '2026-08-12'
+  # Queue builds a day whose test reports are downloaded for flaky-test-runs.
+  # Each costs about nine requests (two listings, seven artifacts).
+  artifact_builds_per_day: 10
+  review_workflow: claude-code-review.yml
+  # Playwright's JSON reporter counts flaky tests (failed, then passed on the
+  # retry); the vitest shard reports carry executions and the flake list.
+  artifacts:
+    - { workflow: browser-test.yml, pattern: browser-results-shard-*, format: playwright }
+    - { workflow: test.yml, pattern: vitest-shard-report-*, format: vitest }
+
+# The verdict engine (ci-steward verdicts, plan §4.4).
+verdicts:
+  before_days: 7
+  # The minimum sample for a gate, hook or queue metric. An SLO metric uses
+  # its own min_n from ci/slos.yaml.
+  min_n: 10
+
+# Local hook timings (plan §4.5): the lefthook time-wrap and ci-local-export.
+local:
+  timings_file: ci-steward/local-timings.jsonl
+  # A START with no END older than this was killed. It is the pre-push
+  # watchdog's own ceiling (DORKOS_PREPUSH_MAX_SECONDS, 7200, in
+  # scripts/pre-push-watchdog.sh) plus 5 minutes, so a push that is still
+  # running is never called killed. A hook stopped by INT, TERM or HUP is
+  # known at once: the time-wrap writes its END with 128+n.
+  killed_after_seconds: 7500
+  # The agent tool ceiling: the wait a killed push cost, in local-push's
+  # excess wait-hours.
+  tool_ceiling_seconds: 600
+  retention_days: 30
+  max_bytes: 5000000
+  stale_after_days: 3
+  retired_after_days: 14
