@@ -104,7 +104,7 @@ export const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
         // carries (DOR-1754): the consent dialog reads this sentence out, and
         // "Still asks when it needs your call" contradicted `asks: 'never'`.
         promise:
-          'Acts without approval prompts, including outside this project. It will not stop to ask you.',
+          'Edits files and runs commands on its own, including outside this project. It will not stop to ask you.',
       },
     ],
     // `POST /session/{id}/permissions/{permissionID}` takes `once`/`reject`

@@ -62,7 +62,7 @@ const CLAUDE: PermissionModeDescriptor[] = [
     asks: 'never',
     reach: 'everything',
     promise:
-      'Acts without approval prompts, including outside this project. It will not stop to ask you.',
+      'Edits files and runs commands on its own, including outside this project. It will not stop to ask you.',
   },
   {
     id: 'auto',
@@ -133,7 +133,7 @@ const OPENCODE: PermissionModeDescriptor[] = [
     asks: 'never',
     reach: 'everything',
     promise:
-      'Acts without approval prompts, including outside this project. It will not stop to ask you.',
+      'Edits files and runs commands on its own, including outside this project. It will not stop to ask you.',
   },
 ];
 

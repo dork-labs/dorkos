@@ -12,7 +12,7 @@
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
+import { act, render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -330,6 +330,130 @@ describe('the third button on an approval card', () => {
     expect(standingButton()).not.toBeInTheDocument();
   });
 
+  it('explains the one door instead of drawing nothing, with the switch off', async () => {
+    // DOR-2102. A card that simply omitted the button taught the wrong lesson:
+    // the person concludes there is no way to stop being asked, when there is
+    // one and it is two clicks away.
+    renderWith(
+      <>
+        <PolicyProbe />
+        <LiveApprovals />
+      </>,
+      {
+        listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
+        getConfig: configWith({ standingGrants: false }),
+      }
+    );
+
+    await screen.findByText('cannot:480');
+    expect(
+      await screen.findByText(
+        'Want to stop being asked about this? Turn on Standing permissions in Settings, under Access.'
+      )
+    ).toBeInTheDocument();
+    // The explanation replaces the button; it never sits beside one.
+    expect(standingButton()).not.toBeInTheDocument();
+  });
+
+  it('explains it with Require login off too, naming the same one place', async () => {
+    // Two different missing settings, one sentence. Both live in the same panel,
+    // so a person does not have to learn which of the two they are short of
+    // before they can go and fix it.
+    renderWith(
+      <>
+        <PolicyProbe />
+        <LiveApprovals />
+      </>,
+      {
+        listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
+        getConfig: configWith({ loginEnabled: false }),
+      }
+    );
+
+    await screen.findByText('cannot:480');
+    expect(
+      await screen.findByText(/Turn on Standing permissions in Settings, under Access/)
+    ).toBeInTheDocument();
+  });
+
+  it('offers the button rather than the explanation when a permission is possible', async () => {
+    // The two states are exclusive. A card showing both would be telling somebody
+    // to go and switch on the thing whose button is right in front of them.
+    renderWith(
+      <>
+        <PolicyProbe />
+        <LiveApprovals />
+      </>,
+      {
+        listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
+        getConfig: configWith(),
+      }
+    );
+
+    await screen.findByText('can:480');
+    expect(await screen.findByRole('button', { name: /stop asking about this/i })).toBeVisible();
+    expect(screen.queryByText(/Turn on Standing permissions in Settings/)).not.toBeInTheDocument();
+  });
+
+  it('stays quiet on a request DorkOS cannot attribute, because no setting fixes it', async () => {
+    // Permissions key on the agent path. Pointing this person at Settings would
+    // be a dead end dressed as a fix: they could turn both switches on and the
+    // button still would not appear. The card already says DorkOS does not know
+    // who asked, which is the honest whole answer here.
+    renderWith(
+      <>
+        <PolicyProbe />
+        <LiveApprovals />
+      </>,
+      {
+        listPendingApprovals: vi.fn().mockResolvedValue({
+          approvals: [buildApproval({ hasAgentPath: false, requestedBy: 'the marketplace' })],
+        }),
+        // BOTH settings off, so the only reason to stay quiet that remains is the
+        // missing agent path — otherwise this case would pass on `canGrant`.
+        getConfig: configWith({ standingGrants: false, loginEnabled: false }),
+      }
+    );
+
+    await screen.findByRole('button', { name: 'Allow' });
+    await screen.findByText('cannot:480');
+    expect(screen.queryByText(/Turn on Standing permissions in Settings/)).not.toBeInTheDocument();
+  });
+
+  it('says nothing at all until the config has actually been read', async () => {
+    // The policy hook reads both flags `false` while the config is in flight, so
+    // an explanation gated on `canGrant` alone would state a reason that may not
+    // be true and then vanish. Say nothing rather than the wrong thing.
+    let landConfig: (value: unknown) => void = () => {};
+    const pending = new Promise((resolve) => {
+      landConfig = resolve;
+    });
+    renderWith(
+      <>
+        <PolicyProbe />
+        <LiveApprovals />
+      </>,
+      {
+        listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
+        getConfig: vi.fn().mockReturnValue(pending),
+      }
+    );
+
+    // The card is up and answerable while the config is still in flight — which
+    // is the only window this case is about.
+    await screen.findByRole('button', { name: 'Allow' });
+    expect(screen.queryByText(/Turn on Standing permissions in Settings/)).not.toBeInTheDocument();
+    expect(standingButton()).not.toBeInTheDocument();
+
+    // And once it lands saying the feature is off, the sentence arrives.
+    await act(async () => {
+      landConfig(await configWith({ standingGrants: false })());
+    });
+    expect(
+      await screen.findByText(/Turn on Standing permissions in Settings, under Access/)
+    ).toBeInTheDocument();
+  });
+
   it('asks for the permission and the one-time yes together', async () => {
     const grantApproval = vi
       .fn()
@@ -385,7 +509,7 @@ describe('the third button on an approval card', () => {
 
   it('shows the server’s own reason when the permission is refused', async () => {
     const failure = new Error(
-      'Standing permissions are switched off. Turn them on in Settings, under Security, first.'
+      'Standing permissions are switched off. Turn them on in Settings, under Access, first.'
     ) as Error & { code?: string };
     failure.code = 'STANDING_GRANTS_DISABLED';
 
@@ -405,7 +529,7 @@ describe('the third button on an approval card', () => {
 
     await waitFor(() => expect(toast.error).toHaveBeenCalled());
     expect(vi.mocked(toast.error).mock.calls[0][0]).toBe(
-      'Standing permissions are switched off. Turn them on in Settings, under Security, first.'
+      'Standing permissions are switched off. Turn them on in Settings, under Access, first.'
     );
     // Exactly one toast: the specific refusal, not that plus a generic "Action
     // failed" from the app-wide handler.
@@ -435,7 +559,7 @@ describe('the third button on an approval card', () => {
   });
 });
 
-describe('standing permissions in Settings, under Security', () => {
+describe('standing permissions in Settings, under Access', () => {
   it('is visible and disabled with a plain reason when Require login is off', async () => {
     // Visible, not hidden: somebody looking for the feature has to find out WHY
     // it is unavailable, and the fix is the toggle directly above it.

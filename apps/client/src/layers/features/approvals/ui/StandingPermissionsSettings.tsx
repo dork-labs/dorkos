@@ -32,7 +32,7 @@ import { StandingPermissionsUnavailable } from './StandingPermissionsUnavailable
 const WINDOW_CHOICES = [30, 60, 120, 240, 480, 720, 1440];
 
 /**
- * Standing permissions in Settings, under Security — the canonical home
+ * Standing permissions in Settings, under Access — the canonical home
  * (spec `agent-approval-settings` §3.7).
  *
  * Three things live here: the master switch, how long a new permission lasts, and

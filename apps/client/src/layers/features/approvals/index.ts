@@ -11,7 +11,7 @@
  * The same two surfaces carry standing permissions — the operator's answer to
  * "stop asking about this agent doing this thing" (spec
  * `agent-approval-settings`). {@link StandingPermissionsSettings} is the canonical
- * home in Settings under Security, and the header panel mirrors the live list
+ * home in Settings under Access, and the header panel mirrors the live list
  * through {@link StandingPermissionList}. Both, because a permission a person
  * cannot find is a dark pattern.
  *
