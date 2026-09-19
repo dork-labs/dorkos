@@ -99,7 +99,7 @@ anchor='"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}"'
 # `|| exit 2`, so it no longer ends with its own filename.
 bad=$(node -e '
 const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const anchor=process.argv[2];
-const guards=["file-guard.mjs","git-guard.mjs","process-guard.mjs"];
+const guards=["file-guard.mjs","git-guard.mjs","process-guard.mjs","merge-guard.mjs"];
 const out=[];for(const [ev,arr] of Object.entries(s.hooks||{}))for(const h of arr)for(const c of h.hooks){
   const isGuard=guards.some(g=>c.command.includes(g));
   const ok=isGuard ? c.command.startsWith("cd "+anchor+" && ") : c.command.startsWith(anchor+"/.claude/hooks/in-project.sh ");
