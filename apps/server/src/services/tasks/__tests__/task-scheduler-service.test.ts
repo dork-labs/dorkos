@@ -1946,6 +1946,35 @@ describe('TaskSchedulerService', () => {
       await service.stop();
     });
 
+    it('carries a raised level onto the wire, not the one the clamp put there (DOR-2100)', async () => {
+      // The relay path is the OTHER launch path, and it builds its own
+      // envelope. A grant that reached `executeRunDirect` and not this would be
+      // a schedule that runs at the operator's level on one machine and at the
+      // clamped one the moment the bus is enabled — with nothing saying which.
+      const task = store.createTask(taskInput({ name: 'Raised on the bus' }));
+      expect(task.permissionMode).toBe('acceptEdits');
+      // The approval, as `PATCH /api/tasks/:id` performs it.
+      const approved = store.updateTask(task.id, {
+        status: 'active',
+        permissionMode: 'bypassPermissions',
+      })!;
+
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: singleRuntimeSource(mockAgent),
+        config: DEFAULT_CONFIG,
+        relay: mockRelay as unknown as RelayCore,
+      });
+
+      await (service as unknown as Dispatchable).dispatch(approved, new Date(1_700_000_000_000));
+      await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
+
+      const [, payload] = mockRelay.publish.mock.calls[0];
+      expect((payload as TaskDispatchPayload).permissionMode).toBe('bypassPermissions');
+
+      await service.stop();
+    });
+
     it('marks run as failed when deliveredTo is 0', async () => {
       mockRelay.publish.mockResolvedValue({ messageId: 'msg-2', deliveredTo: 0 });
 

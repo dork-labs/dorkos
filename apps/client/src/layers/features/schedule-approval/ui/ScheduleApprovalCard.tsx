@@ -8,6 +8,7 @@ import { ChevronRight, FileCode2 } from 'lucide-react';
 import type { Task } from '@dorkos/shared/types';
 import {
   cn,
+  needsConsentRitual,
   permissionModeLabel,
   isBypassPermissionMode,
   formatCompactAge,
@@ -20,7 +21,9 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
   PermissionModeScopeNote,
+  SCHEDULED_RUN_CONSENT_CONSEQUENCE,
   stopLabel,
+  UnattendedAutonomyDialog,
 } from '@/layers/shared/ui';
 import { useDeleteTask, useUpdateTask } from '@/layers/entities/tasks';
 import { useSessionDetail } from '@/layers/entities/session';
@@ -127,6 +130,12 @@ export interface ScheduleApprovalCardProps {
  * Approve stays the primary answer and keeps the keyboard shortcut, so the
  * safe level is what a fast hand lands on.
  *
+ * **And the raise goes through the consent door.** It is the fourth route into
+ * a never-asking posture on an unattended surface, and it meets the same
+ * `UnattendedAutonomyDialog` the task form and the relay binding open — see
+ * {@link requestRaise}, which also says why the rule is the door's and not the
+ * dial's top position.
+ *
  * Neither answer toasts on success. The receipt is the confirmation, where the
  * decision was made; the app's one failure toast (`query-client.ts`) already
  * speaks for both mutations when they fail.
@@ -148,6 +157,10 @@ export function ScheduleApprovalCard({
   // The raise that was actually granted, so the receipt can confirm the LEVEL
   // and not merely the yes. Null for a plain approval and for a rejection.
   const [granted, setGranted] = useState<ScheduleApprovalRaise | null>(null);
+  // A raise waiting at the consent door. Nothing is sent while it sits here.
+  const [pendingRaise, setPendingRaise] = useState<ScheduleApprovalRaise | null>(null);
+  // A raise the server turned down, kept so the card can say which half failed.
+  const [refusedRaise, setRefusedRaise] = useState<ScheduleApprovalRaise | null>(null);
   const [revealed, setRevealed] = useState(false);
 
   // The undo window belongs to the module, not to this component: a card that
@@ -224,6 +237,7 @@ export function ScheduleApprovalCard({
     if (answered !== null) return;
     setDecision('approved');
     setGranted(raised ?? null);
+    setRefusedRaise(null);
     // Hold the card on screen BEFORE the mutation settles. The race being lost
     // is the refetch that drops this task out of the parked list and unmounts
     // the group around its own receipt — waiting for the mutation would be
@@ -248,6 +262,11 @@ export function ScheduleApprovalCard({
           releaseSettledSchedule(task.id);
           setDecision(null);
           setGranted(null);
+          // Which half failed is the thing to say. A packaged schedule answers
+          // 409 on the level and not on the approval, so a card that only put
+          // the buttons back would leave a person clicking the same refused
+          // button (adversarial review).
+          setRefusedRaise(raised ?? null);
         },
       }
     );
@@ -263,6 +282,45 @@ export function ScheduleApprovalCard({
    * a fast hand lands on, deliberately.
    */
   const approveAtProposedLevel = () => approve();
+
+  /**
+   * Ask for the raise — through the consent door when the level it grants is
+   * one nobody would be there to be asked by.
+   *
+   * **The fourth route into a never-asking posture, and it gets the same gate
+   * as the other three.** A scheduled run has nobody watching, so a mode that
+   * never asks is something a person agrees to rather than arrives at
+   * (`use-posture-consent.ts`: "a gate on one path is not a gate";
+   * `needsConsentRitual` is the rule the server's session door and every dial
+   * apply). The rule is the DOOR's, not the dial's top position: a runtime can
+   * file a never-asking mode at the MIDDLE stop — Codex's does — and
+   * "Approve at Act" would otherwise hand a schedule a level that cannot pause,
+   * with no dialog anywhere (adversarial review).
+   *
+   * The door is not composed from `usePostureConsent`: that hook lives in
+   * `features/tasks` and a feature may not import a sibling's internals. What is
+   * shared is the RULE and the dialog, both of which are below this layer.
+   *
+   * Plain Approve stays ungated — it grants nothing, so there is nothing to
+   * consent to.
+   *
+   * @param raised - The raise the person clicked.
+   */
+  const requestRaise = (raised: ScheduleApprovalRaise) => {
+    if (answered !== null) return;
+    if (needsConsentRitual(raised.descriptor)) {
+      setPendingRaise(raised);
+      return;
+    }
+    approve(raised);
+  };
+
+  /** Apply what the door held, and close it. */
+  const confirmRaise = () => {
+    const held = pendingRaise;
+    setPendingRaise(null);
+    if (held) approve(held);
+  };
 
   const reject = () => {
     if (answered !== null) return;
@@ -477,6 +535,22 @@ export function ScheduleApprovalCard({
         </div>
       )}
 
+      {/* Which half was turned down. The app's one failure toast carries the
+          server's own sentence, and it has already gone by the time somebody
+          looks back at the card — so the card keeps the part that changes what
+          they do next: the level did not land, the approval is still there to
+          give. The live case is a schedule an installed package owns, whose
+          settings DorkOS will not write (adversarial review). */}
+      {answered === null && refusedRaise && (
+        <p
+          data-slot="schedule-raise-refused"
+          className="text-status-warning-fg min-w-0 text-xs break-words"
+        >
+          DorkOS could not give this schedule {stopLabel(refusedRaise.stop)}. Approve still works,
+          and it will run as {currentLabel}.
+        </p>
+      )}
+
       <TestRunStrip testRun={testRun} onOpenRun={openTestRun()} />
 
       {answered === null ? (
@@ -510,7 +584,7 @@ export function ScheduleApprovalCard({
               data-slot="schedule-approve-elevated"
               aria-label={`Approve ${name} at ${stopLabel(raise.stop)}`}
               className="h-7 px-2.5 text-xs"
-              onClick={() => approve(raise)}
+              onClick={() => requestRaise(raise)}
             >
               Approve at {stopLabel(raise.stop)}
             </Button>
@@ -570,6 +644,17 @@ export function ScheduleApprovalCard({
           )}
         </AskCard.Actions>
       )}
+
+      {/* The door itself. `descriptor: null` keeps it shut, the same open/closed
+          convention the task form and the relay binding use, and the
+          consequence sentence is the one written once for this surface — a
+          schedule reads the same warning wherever its level is chosen. */}
+      <UnattendedAutonomyDialog
+        descriptor={pendingRaise?.descriptor ?? null}
+        consequence={SCHEDULED_RUN_CONSENT_CONSEQUENCE}
+        onCancel={() => setPendingRaise(null)}
+        onConfirm={confirmRaise}
+      />
     </AskCard.Root>
   );
 }

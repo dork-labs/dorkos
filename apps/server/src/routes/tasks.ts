@@ -50,6 +50,7 @@ import { raiseStanding } from '../services/notifications/standing-events.js';
 import { resolveScheduleParkPayload } from '../services/notifications/emitters/schedule-park.js';
 import { withProposerName, withProposerNames } from '../services/tasks/task-provenance.js';
 import { clampSchedulePermissionMode } from '../services/tasks/schedule-permission-clamp.js';
+import { capabilitiesForTaskRuntime } from '../services/tasks/scheduled-run-power.js';
 import {
   describeOperatorOnlyTaskRefusal,
   findOperatorOnlyTaskFields,
@@ -166,6 +167,43 @@ function refusedOperatorOnlyTaskWrite(req: Request, res: Response, trusted: bool
     message: describeOperatorOnlyTaskRefusal(operatorOnly),
   });
   return true;
+}
+
+/**
+ * What the activity feed says a schedule runs at, when nobody can be told the
+ * runtime's own word for it.
+ *
+ * Deliberately not the mode id. An id is the runtime's internal spelling —
+ * `bypassPermissions`, `danger-full-access`, `workspace-write` — and a feed a
+ * person reads months later to answer "who gave this thing that much power?"
+ * is the last place to print one.
+ */
+const UNNAMED_PERMISSION_LEVEL = 'the level saved on it';
+
+/**
+ * The human name of the level a schedule runs at, in the vocabulary of the
+ * runtime that will run it (DOR-2100).
+ *
+ * **Only for a task whose runtime is knowable here.** The fire-time ladder is
+ * the task's own `runtime`, then its AGENT's manifest, then the registry
+ * default (`resolve-run-execution.ts`), and the middle rung is a file read this
+ * synchronous line cannot make. A task that inherits its agent's runtime
+ * therefore gets {@link UNNAMED_PERMISSION_LEVEL} rather than a label resolved
+ * through the default runtime's vocabulary — which would print Claude Code's
+ * word for a level a Codex task is actually running at, and a confidently wrong
+ * audit line is worse than a vague one. The id is on the event's `metadata`
+ * either way, so nothing is lost for a machine reader.
+ *
+ * @param task - The schedule as it now stands.
+ * @returns The runtime's label for its mode, or the neutral phrase.
+ */
+function describeTaskPermissionLevel(task: Task): string {
+  const knowable = task.runtime !== null || task.agentId === null;
+  if (!knowable) return UNNAMED_PERMISSION_LEVEL;
+  const declared = capabilitiesForTaskRuntime(task.runtime)?.permissionModes?.values ?? [];
+  return (
+    declared.find((mode) => mode.id === task.permissionMode)?.label ?? UNNAMED_PERMISSION_LEVEL
+  );
 }
 
 /**
@@ -522,7 +560,7 @@ export function createTasksRouter(
         resourceLabel: updated.displayName ?? updated.name,
         summary:
           `Approved scheduled task ${updated.displayName ?? updated.name}, ` +
-          `running as ${updated.permissionMode}`,
+          `running as ${describeTaskPermissionLevel(updated)}`,
         // The before and after both, so a reader can see a raise without
         // reconstructing what the row used to hold.
         metadata: {

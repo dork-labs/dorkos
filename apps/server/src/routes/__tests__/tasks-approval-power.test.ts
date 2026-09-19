@@ -34,7 +34,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { createTestDb } from '@dorkos/test-utils/db';
-import type { Db } from '@dorkos/db';
+import { eq, pulseSchedules, type Db } from '@dorkos/db';
 import { USER_CONFIG_DEFAULTS, type UserConfig } from '@dorkos/shared/config-schema';
 import { CLAUDE_CODE_CAPABILITIES } from '../../services/runtimes/claude-code/runtime-constants.js';
 
@@ -276,7 +276,12 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
       .map(([event]) => event as Record<string, unknown>)
       .find((event) => event.eventType === 'tasks.task_approved');
     expect(approval).toBeDefined();
-    expect(approval!.summary).toContain('running as bypassPermissions');
+    // The runtime's own WORD for the level, never the id. This line is read
+    // months later by somebody asking who gave a 3am job that much power, and
+    // `bypassPermissions` is an internal spelling (adversarial review). The id
+    // is still on `metadata` below, for a machine reader.
+    expect(approval!.summary).toContain('running as Bypass permissions');
+    expect(approval!.summary).not.toContain('bypassPermissions');
     expect(approval!.metadata).toMatchObject({
       permissionMode: 'bypassPermissions',
       previousPermissionMode: 'acceptEdits',
@@ -294,6 +299,32 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
       .map(([event]) => event as Record<string, unknown>)
       .find((event) => event.eventType === 'tasks.task_approved');
     expect(approval!.metadata).toMatchObject({ permissionMode: 'acceptEdits', raised: false });
+  });
+
+  it('falls back to a neutral phrase rather than another runtime’s word', async () => {
+    // A task that INHERITS its agent's runtime cannot have its vocabulary
+    // resolved synchronously — the manifest is a file read — so the feed says
+    // something true and vague instead of confidently printing Claude Code's
+    // label for a level a Codex task is running at.
+    const task = await proposedByAgent();
+    // Straight to the column: the route refuses `agentId` on an update by
+    // design (it decides where the file lives), and what this case needs is a
+    // row that inherits, not a new task.
+    db.update(pulseSchedules)
+      .set({ agentId: 'some-agent' })
+      .where(eq(pulseSchedules.id, task.id))
+      .run();
+
+    await request(fixtureServer)
+      .patch(`/api/tasks/${task.id}`)
+      .send({ status: 'active', enabled: true });
+
+    const approval = emit.mock.calls
+      .map(([event]) => event as Record<string, unknown>)
+      .find((event) => event.eventType === 'tasks.task_approved');
+    expect(approval!.summary).toContain('running as the level saved on it');
+    // And the id is still recorded, so nothing is lost.
+    expect(approval!.metadata).toMatchObject({ permissionMode: 'acceptEdits' });
   });
 
   it('still lets a person change the level on a schedule that is already live', async () => {

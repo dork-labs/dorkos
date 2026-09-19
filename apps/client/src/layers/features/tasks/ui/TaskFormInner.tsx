@@ -12,6 +12,7 @@ import {
   Switch,
   TrustDial,
   UnattendedAutonomyDialog,
+  SCHEDULED_RUN_CONSENT_CONSEQUENCE,
 } from '@/layers/shared/ui';
 import { useAppForm } from '@/layers/shared/lib/form';
 import { isBypassPermissionMode, permissionModeLabel } from '@/layers/shared/lib';
@@ -499,13 +500,7 @@ export function ScheduleForm({
           is exactly the case that has to be asked about. */}
       <UnattendedAutonomyDialog
         descriptor={consent.pendingDescriptor}
-        consequence={
-          <>
-            A scheduled run has nobody to ask, so nothing is asked: no approval card, no message, no
-            record of a decision anybody made. At a stop that asks, an action it cannot take is
-            refused and the run works around it. Here it simply happens.
-          </>
-        }
+        consequence={SCHEDULED_RUN_CONSENT_CONSEQUENCE}
         onCancel={consent.dismiss}
         onConfirm={consent.confirm}
       />

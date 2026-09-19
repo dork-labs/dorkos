@@ -386,6 +386,38 @@ describe('a schedule that came with an installed package', () => {
     expect(row.prompt).toBe('Drain the queue.');
   });
 
+  it('refuses a raised approval, in words about the LEVEL, and grants nothing (DOR-2100)', async () => {
+    // Approving at the operator's own trust stop sends `permissionMode`
+    // alongside `status`, and that field lives in the package's file. DorkOS
+    // will not write it, and the row cannot hold it either — `file-sync-gates`
+    // reads the level back off the file on every sweep, so a row-only grant
+    // would be undone within five minutes with nothing saying why. Refusing is
+    // the honest answer; what it must not do is talk only about editing a
+    // package, which is not the question that was asked.
+    const task = await sweep();
+
+    const refused = await patch(task, {
+      status: 'active',
+      enabled: true,
+      permissionMode: 'bypassPermissions',
+    });
+
+    expect(refused.ok).toBe(false);
+    expect(refused.code).toBe('schedule_package_owned');
+    expect(refused.error).toContain('did not change how much it may do');
+    expect(refused.error).toContain('You can still approve it as it stands');
+    // Whole-request refusal: the approval did not half-land either.
+    const row = store.getTask(task.id)!;
+    expect(row.status).toBe('pending_approval');
+    expect(row.permissionMode).not.toBe('bypassPermissions');
+    expect(await fs.readFile(packagedFile, 'utf-8')).toBe(PACKAGED_SKILL);
+
+    // ...and the plain approval the refusal promises still works.
+    const plain = await patch(task, { status: 'active', enabled: true });
+    expect(plain.ok).toBe(true);
+    expect(plain.task?.status).toBe('active');
+  });
+
   it('refuses a switch that rides along with a change to what it does', async () => {
     // The mixed request. `enabled` alone lands on the row, but it must not be a
     // way to smuggle a cron edit into a package's checkout.

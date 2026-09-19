@@ -179,14 +179,32 @@ async function rewriteTaskFile(
     // (FB-26). The row is then authoritative for that switch, and the sync
     // keeps it (`file-sync-gates.ts`).
     if (landsOnRowAlone(changed)) return { ok: true, changesFile: false };
+    // **When the refused request was a grant, say so about the grant** (DOR-2100).
+    // Approving a packaged schedule at the operator's own trust stop arrives
+    // here as an ordinary `permissionMode` change, and the sentence below is
+    // about editing a package — true, and an answer to a question nobody asked.
+    // Naming the level is what tells the person that the approval is what was
+    // refused, and that the plain one still works.
+    //
+    // The level cannot be written to the row alone either, which is why it is
+    // not in {@link ROW_ONLY_WHEN_PACKAGE_OWNED}: `permissionMode` is read back
+    // from the file on every sync (`file-sync-gates.ts`), so a row-only grant
+    // would be undone by the next sweep with nothing saying why. A refusal a
+    // person can read beats a grant that quietly expires.
+    const refusedGrant = changed.includes('permissionMode');
     return {
       ok: false,
       status: 409,
-      error:
-        `This file lives inside an installed package's folder, so DorkOS did not change it — ` +
-        `the next update of that package would wipe the change out. You can switch this ` +
-        `schedule on or off here; to change what it does, edit the package or make your own ` +
-        `copy of the skill.`,
+      error: refusedGrant
+        ? `This schedule came with an installed package, so DorkOS did not change how much it ` +
+          `may do — its settings live in the package's own folder, and the next update of that ` +
+          `package would wipe the change out. You can still approve it as it stands, and it will ` +
+          `run at the level the package asks for. To give it more, edit the package or make your ` +
+          `own copy of the skill.`
+        : `This file lives inside an installed package's folder, so DorkOS did not change it — ` +
+          `the next update of that package would wipe the change out. You can switch this ` +
+          `schedule on or off here; to change what it does, edit the package or make your own ` +
+          `copy of the skill.`,
       code: 'schedule_package_owned',
     };
   }

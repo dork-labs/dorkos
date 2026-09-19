@@ -29,12 +29,13 @@ export interface PermissionModeScopeNoteProps {
  * had switched asking off has been misled by the product, even though every
  * individual screen was accurate.
  *
- * So the sentence appears at the moment of the choice, in all three places a
- * permission mode is actually picked: the session status line, an integration
- * binding, and a scheduled task. One component and one condition, so the three
- * cannot drift into saying different things — {@link needsConsentRitual} where
- * the runtime's profile is at hand, {@link isBypassPermissionMode} on the name
- * where it is not.
+ * So the sentence appears at the moment of the choice, in every place a
+ * permission mode is actually picked: the session status line, a relay binding,
+ * a scheduled task's form, and — since DOR-2100 — the approval card, where
+ * arming a proposed schedule can also grant it the operator's own trust stop.
+ * One component and one condition, so they cannot drift into saying different
+ * things — {@link needsConsentRitual} where the runtime's profile is at hand,
+ * {@link isBypassPermissionMode} on the name where it is not.
  *
  * ## Why the condition is the door's rule, not the bypass rule
  *
@@ -52,8 +53,9 @@ export interface PermissionModeScopeNoteProps {
  * nothing to read `asks` off, and a mode id is only evidence about the ids
  * somebody once listed.
  *
- * All three pass a descriptor today: the binding dialog and the task form
- * resolve a runtime profile of their own to build the Trust Dial from. The
+ * They all pass a descriptor today: the binding dialog, the task form and the
+ * approval card each resolve a runtime profile of their own — the first two to
+ * build a Trust Dial from, the card to name the level it is offering. The
  * name-based fallback stays for the frames before that profile lands, and for a
  * mode the runtime no longer declares.
  *
