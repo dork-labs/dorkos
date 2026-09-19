@@ -121,6 +121,10 @@ function testRunPhase({ triggering, triggerFailed, runId, run }: PhaseInput): Sc
   if (run === null || run.status === 'running') return 'running';
   if (run.status === 'completed') return 'finished';
   if (run.status === 'cancelled') return 'stopped';
+  // `blocked` cannot arrive here and lands in the catch-all deliberately: a
+  // test run is one a person clicked and is watching, so its approval cards
+  // are answerable and nothing is ever refused for want of somebody to ask
+  // (DOR-2101). If that ever changes, this needs its own phase, not this line.
   return 'failed';
 }
 

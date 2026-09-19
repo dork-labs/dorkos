@@ -464,6 +464,113 @@ describe('TaskRunHistoryPanel', () => {
     });
   });
 
+  describe('a run that was never allowed to do anything (DOR-2101)', () => {
+    const REFUSAL =
+      'Skipped Bash and gmail: search — nobody was there to approve them on a scheduled run.';
+
+    /**
+     * Render one blocked run, as the scheduler writes it.
+     *
+     * The `outputSummary` is REALISTIC on purpose: `withRefusedAsks` leads
+     * every refused run's summary with the refusal sentence, so a `null` here
+     * could not catch the row printing that sentence twice (DOR-2101 review).
+     */
+    async function renderBlocked(overrides: Partial<TaskRun> = {}) {
+      const transport = createMockTransport({
+        listTaskRuns: vi.fn().mockResolvedValue([
+          createMockRun({
+            id: 'run-blocked',
+            status: 'blocked',
+            trigger: 'scheduled',
+            durationMs: 4000,
+            error: REFUSAL,
+            outputSummary: `${REFUSAL}\nI could not read the mail.`,
+            refusedTools: ['Bash', 'mcp__gmail__search'],
+            ...overrides,
+          }),
+        ]),
+      });
+      const Wrapper = createWrapper(transport);
+      render(
+        <Wrapper>
+          <TaskRunHistoryPanel scheduleId="sched-1" scheduleCwd="/test/cwd" />
+        </Wrapper>
+      );
+      await waitFor(() => expect(screen.getByTitle(/Blocked/)).toBeTruthy());
+    }
+
+    it('shows a blocked marker instead of a green tick', async () => {
+      // The defect: this run was rendered with the completed tick, so a
+      // schedule that read nothing looked healthy in its own history.
+      await renderBlocked();
+
+      expect(screen.queryByTitle('Completed')).toBeNull();
+      expect(screen.getByTitle('Blocked: nobody was there to approve its tools')).toBeTruthy();
+    });
+
+    it('names the tools it could not use, on the row', async () => {
+      await renderBlocked();
+
+      expect(
+        screen.getByText('Could not use Bash and gmail: search — nobody was there to approve them.')
+      ).toBeTruthy();
+    });
+
+    it('falls back to the stored line for a run recorded before the tools were kept', async () => {
+      await renderBlocked({ refusedTools: null, outputSummary: null });
+
+      expect(
+        screen.getByText(/Skipped Bash and gmail: search — nobody was there to approve them/)
+      ).toBeTruthy();
+    });
+
+    it('says the refusal once, and still shows what the agent said', async () => {
+      // The row rendered the summary's first line AND its own tools line, and
+      // the summary's first line IS the refusal sentence — so a blocked row
+      // printed the same fact twice, once grey and once amber.
+      await renderBlocked();
+
+      expect(screen.queryByText(REFUSAL)).toBeNull();
+      expect(screen.getByText('I could not read the mail.')).toBeTruthy();
+      expect(
+        screen.getByText('Could not use Bash and gmail: search — nobody was there to approve them.')
+      ).toBeTruthy();
+    });
+
+    it('shows nothing extra when the refusal was the whole summary', async () => {
+      await renderBlocked({ outputSummary: REFUSAL });
+
+      expect(screen.queryByText(REFUSAL)).toBeNull();
+      expect(
+        screen.getByText('Could not use Bash and gmail: search — nobody was there to approve them.')
+      ).toBeTruthy();
+    });
+
+    it('can be filtered for on its own', async () => {
+      const user = userEvent.setup();
+      const listTaskRuns = vi.fn().mockResolvedValue([]);
+      const transport = createMockTransport({ listTaskRuns });
+      const Wrapper = createWrapper(transport);
+      render(
+        <Wrapper>
+          <TaskRunHistoryPanel scheduleId="sched-1" scheduleCwd="/test/cwd" />
+        </Wrapper>
+      );
+      await screen.findByText('No runs yet');
+      listTaskRuns.mockClear();
+
+      await user.click(screen.getByRole('combobox'));
+      const listbox = await screen.findByRole('listbox');
+      await user.click(within(listbox).getByRole('option', { name: 'Blocked' }));
+
+      await waitFor(() => {
+        expect(listTaskRuns).toHaveBeenCalledWith(
+          expect.objectContaining({ status: 'blocked' } as Partial<ListTaskRunsQuery>)
+        );
+      });
+    });
+  });
+
   it('shows loading state', () => {
     const transport = createMockTransport({
       listTaskRuns: vi.fn().mockReturnValue(new Promise(() => {})),

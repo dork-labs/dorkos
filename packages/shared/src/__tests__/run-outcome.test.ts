@@ -1,12 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import type { StreamEvent } from '../schemas.js';
-import { createRunOutcomeTracker, isUnrequestedAbortFailure } from '../run-outcome.js';
+import {
+  createRunOutcomeTracker,
+  isUnrequestedAbortFailure,
+  type RunSettlement,
+} from '../run-outcome.js';
 
 /** Feed a whole stream to a fresh tracker and settle it, the way a run does. */
-function settle(events: StreamEvent[]): string | null {
+function settleRun(events: StreamEvent[]): RunSettlement {
   const tracker = createRunOutcomeTracker();
   for (const event of events) tracker.observe(event);
   return tracker.settle();
+}
+
+/**
+ * The failure line, or `null` when the run did not settle to one — the shape
+ * every DOR-1658 case in this file was written against, kept so the settlement
+ * rule's third answer could be added without rewriting them.
+ */
+function settle(events: StreamEvent[]): string | null {
+  const settlement = settleRun(events);
+  return settlement.outcome === 'failed' ? settlement.error : null;
 }
 
 const text = (t: string): StreamEvent => ({ type: 'text_delta', data: { text: t } });
@@ -309,7 +323,185 @@ describe('createRunOutcomeTracker', () => {
   it('answers the same thing however many times it is asked', () => {
     const tracker = createRunOutcomeTracker();
     tracker.observe(error({ message: 'boom' }));
-    expect(tracker.settle()).toBe('boom');
-    expect(tracker.settle()).toBe('boom');
+    expect(tracker.settle()).toEqual({ outcome: 'failed', error: 'boom' });
+    expect(tracker.settle()).toEqual({ outcome: 'failed', error: 'boom' });
+  });
+
+  describe('a run that was never allowed to do anything (DOR-2101)', () => {
+    /** DorkOS's own unattended refusal of a TOOL, as the handlers push it. */
+    const refused = (toolName: string, id = 't1'): StreamEvent =>
+      ({
+        type: 'permission_denied',
+        data: {
+          toolCallId: id,
+          toolName,
+          reasonType: 'no_approval_surface',
+          askKind: 'tool',
+          reason: 'nobody was available to approve this tool',
+          message: 'Nobody is available to approve this on a scheduled run.',
+        },
+      }) as StreamEvent;
+
+    /** The same refusal, for an ask that was not a tool at all. */
+    const refusedAsk = (askKind: 'question' | 'elicitation', toolName: string): StreamEvent =>
+      ({
+        type: 'permission_denied',
+        data: {
+          toolCallId: 'a1',
+          toolName,
+          reasonType: 'no_approval_surface',
+          askKind,
+          reason: 'nobody was available to answer this question',
+          message: 'Nobody is available to answer this on a scheduled run.',
+        },
+      }) as StreamEvent;
+
+    /** A tool call that ended having done its job, in the claude-code shape. */
+    const toolWorked = (toolName: string, id = 't9'): StreamEvent =>
+      ({
+        type: 'tool_result',
+        data: { toolCallId: id, toolName, result: 'ok', status: 'complete' },
+      }) as StreamEvent;
+
+    it('blocks a run whose every tool was refused, even though it talked about it', () => {
+      // The exact defect: two real fires of one mailbox schedule refused four
+      // tools, read no mail, narrated the fact in prose, and left two green
+      // rows behind. Text is the agent talking, never evidence it did anything.
+      expect(
+        settleRun([
+          refused('Bash', 't1'),
+          refused('mcp__gmail__search', 't2'),
+          text('I could not check the mail.'),
+          done(),
+        ])
+      ).toEqual({ outcome: 'blocked' });
+    });
+
+    it('blocks a run that was refused and then said nothing at all', () => {
+      expect(settleRun([refused('Bash'), done()])).toEqual({ outcome: 'blocked' });
+    });
+
+    it('completes a run that lost one tool and got other work done', () => {
+      expect(
+        settleRun([refused('Bash'), toolWorked('Read'), text('Checked what I could.'), done()])
+      ).toEqual({ outcome: 'completed' });
+    });
+
+    it('completes a run where the success came in an earlier window', () => {
+      // The latches are run-scoped on purpose: where the runtime split the turn
+      // must not decide whether the run did any work.
+      expect(
+        settleRun([toolWorked('Read'), status('completed'), done(), text('more'), refused('Bash')])
+      ).toEqual({ outcome: 'completed' });
+    });
+
+    it('reads a codex/opencode tool_call_end as the work having happened', () => {
+      expect(
+        settleRun([
+          refused('Bash'),
+          {
+            type: 'tool_call_end',
+            data: { toolCallId: 't9', toolName: 'shell', status: 'complete' },
+          } as StreamEvent,
+          done(),
+        ])
+      ).toEqual({ outcome: 'completed' });
+    });
+
+    it('does not count a tool call that ended in an error as work done', () => {
+      expect(
+        settleRun([
+          refused('Bash'),
+          {
+            type: 'tool_call_end',
+            data: { toolCallId: 't9', toolName: 'shell', status: 'error' },
+          } as StreamEvent,
+          done(),
+        ])
+      ).toEqual({ outcome: 'blocked' });
+    });
+
+    it("does not count claude-code's in-flight tool_call_end as work done", () => {
+      // `tool_call_end` reports `running` on that runtime — the model finished
+      // typing the arguments, and the permission prompt has not happened yet
+      // (DOR-2011). Counting it would absolve the very call about to be refused.
+      expect(
+        settleRun([
+          {
+            type: 'tool_call_end',
+            data: { toolCallId: 't1', toolName: 'Bash', status: 'running' },
+          } as StreamEvent,
+          refused('Bash'),
+          done(),
+        ])
+      ).toEqual({ outcome: 'blocked' });
+    });
+
+    it('leaves a failure a failure, whatever else was refused', () => {
+      expect(
+        settleRun([refused('Bash'), error({ message: 'API Error: 500 upstream' }), done()])
+      ).toEqual({ outcome: 'failed', error: 'API Error: 500 upstream' });
+    });
+
+    it("ignores a denial that was somebody else's decision", () => {
+      // The safety classifier, a deny rule, a backgrounded subagent — all of
+      // those would have been refused with a person sitting right there, so
+      // none of them means the run had nobody to ask.
+      expect(
+        settleRun([
+          {
+            type: 'permission_denied',
+            data: { toolCallId: 't1', toolName: 'Bash', reasonType: 'classifier', message: 'no' },
+          } as StreamEvent,
+          done(),
+        ])
+      ).toEqual({ outcome: 'completed' });
+    });
+
+    it('completes a run that was refused nothing and used nothing', () => {
+      expect(settleRun([text('All good.'), done()])).toEqual({ outcome: 'completed' });
+    });
+
+    it('does not block a run that only asked a question nobody could answer', () => {
+      // DorkOS stamps `no_approval_surface` on three different asks. A run that
+      // did its work and closed by asking a question has not lost a TOOL, and
+      // recording it blocked would be a lie told in copy that says "tools".
+      expect(
+        settleRun([text('Wrote the digest.'), refusedAsk('question', 'AskUserQuestion'), done()])
+      ).toEqual({ outcome: 'completed' });
+    });
+
+    it('does not block a run whose only refusal was an MCP elicitation', () => {
+      expect(settleRun([refusedAsk('elicitation', 'linear'), done()])).toEqual({
+        outcome: 'completed',
+      });
+    });
+
+    it('still blocks when a refused TOOL rides beside a refused question', () => {
+      expect(
+        settleRun([refusedAsk('question', 'AskUserQuestion'), refused('Bash'), done()])
+      ).toEqual({ outcome: 'blocked' });
+    });
+
+    it('does not block on a refusal whose kind nothing recorded', () => {
+      // The kind is written in the same statement as the reason, by the one
+      // function that writes either, so this frame cannot come from a DorkOS
+      // that has the field — and an unclassified ask is not evidence a tool
+      // was lost.
+      expect(
+        settleRun([
+          {
+            type: 'permission_denied',
+            data: {
+              toolCallId: 't1',
+              toolName: 'Bash',
+              reasonType: 'no_approval_surface',
+              message: 'no',
+            },
+          } as StreamEvent,
+          done(),
+        ])
+      ).toEqual({ outcome: 'completed' });
+    });
   });
 });

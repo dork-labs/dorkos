@@ -77,6 +77,43 @@
  * an unclassified error is reported, because being told about a survivable
  * failure costs a retry while being told nothing about a real one costs the run.
  *
+ * ## A run that was never allowed to do anything
+ *
+ * A third answer joined the two above (DOR-2101). A scheduled run has nobody to
+ * approve a tool, so the runtime refuses every ask the moment it is raised
+ * (`run-refusals`) — and a run whose tool calls were ALL refused settled to no
+ * error at all, so it was written down as a success. Two real fires of one
+ * mailbox schedule read nothing, refused four tools, and left two green rows;
+ * a monitoring agent reporting healthy while observing nothing is worse than
+ * one that plainly broke.
+ *
+ * So a window that latched no failure is asked a second question: was anything
+ * refused for want of a person, and did NOTHING the agent actually reached for
+ * succeed? Both halves are required, and both are read off the stream rather
+ * than guessed:
+ *
+ * - **Refused** is {@link readRefusedAsk}, the same predicate the refusal log
+ *   folds, so "nobody was there" means exactly one thing in both places —
+ *   narrowed by {@link isRefusedTool} to the asks that are TOOLS. DorkOS
+ *   refuses three things for want of a person, and a run that did all its work
+ *   and then asked a question, or answered an MCP elicitation, has not lost
+ *   the ability to act. Only a refused tool has. The refusal LOG still folds
+ *   all three: the summary line and `tasks.ask_refused` are about what nobody
+ *   answered, which is a wider question than this one.
+ * - **Succeeded** is a tool frame that reports `complete` — every runtime
+ *   stamps its terminal tool frame with an outcome (`tool_result` on
+ *   claude-code, `tool_call_end` plus `tool_result` on codex and opencode), and
+ *   a call the operator's absence refused comes back `error`, never `complete`.
+ *   claude-code's `tool_call_end` says `running` on purpose (DOR-2011), so it
+ *   cannot mistake a call that was about to be refused for one that worked.
+ *
+ * `blocked`, not `failed`, because the two need different things done about
+ * them: a failed run wants debugging, and a blocked one wants the power it was
+ * denied. Nothing broke — the run was simply never allowed to do its job.
+ *
+ * A run refused one tool that still got other work done stays `completed`: it
+ * did what it could, and the refusal already leads its summary line.
+ *
  * ## What this rule cannot see
  *
  * OpenCode emits no `terminalReason` anywhere — not on `session_status`, not on
@@ -93,6 +130,7 @@
  */
 import type { ErrorCategory, StreamEvent } from './schemas.js';
 import { isInterruptedTerminalReason } from './schemas.js';
+import { isRefusedTool, readRefusedAsk } from './run-refusals.js';
 
 /**
  * The codebase-wide turn-failure signal: the `terminalReason` every runtime and
@@ -292,8 +330,48 @@ const TURN_REOPENING_EVENT_TYPES: ReadonlySet<StreamEvent['type']> = new Set([
   'tool_call_start',
 ]);
 
+/**
+ * The frames that can report a tool call having ENDED, whichever runtime is
+ * speaking. Both carry a `status`, and only `complete` on one of them is a tool
+ * that did its job — see the module doc for why `tool_call_end` alone would be
+ * wrong on claude-code and right on the other two.
+ */
+const TOOL_OUTCOME_EVENT_TYPES: ReadonlySet<StreamEvent['type']> = new Set([
+  'tool_call_end',
+  'tool_result',
+]);
+
+/** The `status` a tool frame carries when the call actually did its job. */
+const TOOL_STATUS_COMPLETE = 'complete';
+
 /** The line a run row shows when the runtime named nothing of its own. */
 const UNNAMED_FAILURE = 'Run stopped with an error';
+
+/**
+ * How a run ended, as its row is written from.
+ *
+ * Three answers rather than the two this module started with, because a run
+ * that was never allowed to use a tool is neither a success nor a breakage —
+ * see the module doc. `cancelled` is absent on purpose: a stop is decided by
+ * the caller, which knows whether DorkOS raised the abort, and never by this
+ * fold.
+ */
+export type RunSettlement =
+  /** The turn did its work, or did enough of it. */
+  | { outcome: 'completed' }
+  /**
+   * The turn settled to an error.
+   *
+   * @property error - The line to write on the run row, already written for a
+   *   person.
+   */
+  | { outcome: 'failed'; error: string }
+  /**
+   * Every tool the run reached for was refused because nobody was there to
+   * approve it, and nothing it reached for succeeded. Nothing broke; the run
+   * was never given the power to do its job.
+   */
+  | { outcome: 'blocked' };
 
 /**
  * Folds a run's event stream into the one answer a run row needs.
@@ -313,11 +391,12 @@ export interface RunOutcomeTracker {
    * Idempotent — asking twice gives the same answer, because settling a window
    * closes it.
    *
-   * @returns The error line to write on the run row, already written for a
-   *   person, or `null` when the run did not settle to a failure (a clean turn,
-   *   a recovered mid-turn error, or a stop).
+   * @returns How the run ended. A stop is NOT one of the answers: it reports
+   *   `completed` for a clean turn, a recovered mid-turn error, or a turn cut
+   *   short that nobody had to be told about, and the caller records a run it
+   *   stopped as `cancelled` without asking.
    */
-  settle(): string | null;
+  settle(): RunSettlement;
 }
 
 /**
@@ -376,11 +455,31 @@ export function createRunOutcomeTracker(): RunOutcomeTracker {
   let latched: { message?: string; category?: ErrorCategory } | null = null;
   /** How the last CLOSED window settled. */
   let settled: string | null = null;
+  /**
+   * Whether this RUN — not this window — was refused a TOOL because nobody was
+   * there to approve it.
+   *
+   * Run-scoped, and deliberately not reset when a window reopens. A refusal in
+   * the first window and a successful tool in the second describe one run that
+   * lost a tool and carried on, which is the `completed` case; forgetting the
+   * refusal at the window boundary would make the answer depend on where the
+   * runtime happened to split the turn.
+   */
+  let refusedAToolForWantOfAPerson = false;
+  /** Whether any tool call in this RUN ended having actually done its job. */
+  let toolSucceeded = false;
 
   const close = (): void => {
     if (!open) return;
     open = false;
     settled = decide();
+  };
+
+  /** Whether this event reports a tool call that ended having done its job. */
+  const isToolSuccess = (event: StreamEvent): boolean => {
+    if (!TOOL_OUTCOME_EVENT_TYPES.has(event.type)) return false;
+    const status = (event.data as { status?: unknown } | undefined)?.status;
+    return status === TOOL_STATUS_COMPLETE;
   };
 
   /** Apply the settlement rule to the window that is closing. */
@@ -451,11 +550,20 @@ export function createRunOutcomeTracker(): RunOutcomeTracker {
           };
         }
       }
+      const refused = readRefusedAsk(event);
+      if (refused !== undefined && isRefusedTool(refused)) refusedAToolForWantOfAPerson = true;
+      if (isToolSuccess(event)) toolSucceeded = true;
       if (event.type === 'done') close();
     },
-    settle(): string | null {
+    settle(): RunSettlement {
       close();
-      return settled;
+      // A failure outranks everything: a run that broke is a run that broke,
+      // whatever it was also refused along the way.
+      if (settled !== null) return { outcome: 'failed', error: settled };
+      // Nothing broke, so the second question: was this run ever allowed to do
+      // anything? See the module doc for why both halves are required.
+      if (refusedAToolForWantOfAPerson && !toolSucceeded) return { outcome: 'blocked' };
+      return { outcome: 'completed' };
     },
   };
 }

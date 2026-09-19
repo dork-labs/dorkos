@@ -15,8 +15,29 @@ import type { TaskStore } from './task-store.js';
 import { formatDuration } from '../../lib/format-duration.js';
 import { logger } from '../../lib/logger.js';
 
+/** How the feed names each way a run can end. */
+const TERMINAL_EVENT_TYPE = {
+  completed: 'tasks.run_success',
+  failed: 'tasks.run_failed',
+  cancelled: 'tasks.run_cancelled',
+  blocked: 'tasks.run_blocked',
+} as const satisfies Record<'completed' | 'failed' | 'cancelled' | 'blocked', string>;
+
 /**
- * Emit an activity event for a completed, failed, or cancelled run.
+ * What the feed says the run did, in the person's words.
+ *
+ * The blocked line names the remedy by naming the cause: there was nobody to
+ * approve the tools, so the fix is to stop needing one (`writing-for-humans`).
+ */
+const TERMINAL_VERB = {
+  completed: 'ran successfully',
+  failed: 'failed',
+  cancelled: 'was cancelled',
+  blocked: 'ran, but could not use any of its tools — nobody was there to approve them',
+} as const satisfies Record<'completed' | 'failed' | 'cancelled' | 'blocked', string>;
+
+/**
+ * Emit an activity event for a completed, failed, cancelled or blocked run.
  *
  * NOTE: the Pulse attention broadcast (`task_run_failed`, DOR-403) is NOT
  * emitted here. This covers scheduler-side terminal paths only; a
@@ -29,6 +50,14 @@ import { logger } from '../../lib/logger.js';
  * of something that did NOT happen, and the feed is for things that did. Its
  * own run row, in the task's history, is where a person finds it (DOR-1482).
  *
+ * `blocked` IS here, and the difference between the two is the same rule read
+ * twice (DOR-2101): a blocked run happened — it started, took time, and was
+ * turned down at every tool it reached for. The feed said `tasks.run_success`
+ * about exactly that run until this event existed, which is the whole defect.
+ * It gets its own `eventType` rather than sharing `tasks.run_failed` because
+ * the two need different things done about them, and a feed a person filters
+ * should not make them read prose to tell which.
+ *
  * @param activityService - The feed to write to; nothing is emitted without one.
  * @param task - The run's task, for its name.
  * @param run - The run that ended.
@@ -40,28 +69,18 @@ export function emitRunActivity(
   activityService: ActivityService | null,
   task: Task,
   run: TaskRun,
-  status: 'completed' | 'failed' | 'cancelled',
+  status: 'completed' | 'failed' | 'cancelled' | 'blocked',
   durationMs: number,
   error?: string
 ): void {
   if (!activityService) return;
 
-  const eventType =
-    status === 'completed'
-      ? 'tasks.run_success'
-      : status === 'cancelled'
-        ? 'tasks.run_cancelled'
-        : 'tasks.run_failed';
+  const eventType = TERMINAL_EVENT_TYPE[status];
 
   const actorType = run.trigger === 'scheduled' ? 'tasks' : 'user';
   const actorLabel = run.trigger === 'scheduled' ? 'Scheduler' : 'You';
 
-  const verb =
-    status === 'completed'
-      ? 'ran successfully'
-      : status === 'cancelled'
-        ? 'was cancelled'
-        : 'failed';
+  const verb = TERMINAL_VERB[status];
   const duration = durationMs ? ` (${formatDuration(durationMs)})` : '';
 
   activityService.emit({
@@ -93,7 +112,7 @@ export function emitRunActivity(
  * Every argument is reconstructed from the persisted run row, which `updateRun`
  * writes BEFORE it fires the hook, so the values are final.
  *
- * **Only `completed` and `failed` are emitted here.** A `cancelled` run is
+ * **Only `completed`, `failed` and `blocked` are emitted here.** A `cancelled` run is
  * deliberately left to the path that ended it, because the run row cannot say
  * whether somebody asked for the cancel or a deadline did — and the two carry
  * different actors. The cancel route reads its own caller
@@ -133,7 +152,7 @@ export function emitTerminalRunActivity(
   run: TaskRun
 ): void {
   if (!activityService || !task) return;
-  if (run.status !== 'completed' && run.status !== 'failed') return;
+  if (run.status !== 'completed' && run.status !== 'failed' && run.status !== 'blocked') return;
   emitRunActivity(
     activityService,
     task,

@@ -22,7 +22,11 @@ import {
 import { taskDispatchSubject } from '@dorkos/shared/relay-schemas';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { createRunOutcomeTracker } from '@dorkos/shared/run-outcome';
-import { createRefusedAskLog, withRefusedAsks } from '@dorkos/shared/run-refusals';
+import {
+  createRefusedAskLog,
+  refusedToolNames,
+  withRefusedAsks,
+} from '@dorkos/shared/run-refusals';
 import { runTimeLimitError } from '@dorkos/shared/run-time-limit';
 import { createTaggedLogger, logError } from '../../lib/logger.js';
 import { runInDispatch } from '../../lib/dispatch-context.js';
@@ -1434,8 +1438,8 @@ export class TaskSchedulerService {
       // The refused asks lead the summary, so the run-history row and the
       // finished-run message — both of which quote only its FIRST line — say
       // what the run could not do before they say what it did.
-      const summaryForRow = (): string =>
-        withRefusedAsks(refusals.summaryLine(), outputSummary.slice(0, 500));
+      const refusalLine = refusals.summaryLine();
+      const summaryForRow = (): string => withRefusedAsks(refusalLine, outputSummary.slice(0, 500));
 
       if (stopped) {
         // Both stops record `cancelled` — the run-status vocabulary has no
@@ -1459,6 +1463,7 @@ export class TaskSchedulerService {
             timedOut && task.maxRuntime
               ? runTimeLimitError(formatDuration(task.maxRuntime))
               : 'Run cancelled',
+          refusedTools: refusedToolNames(refusals.all()),
           sessionId: persistedSessionId(),
         });
         // A cancel is the one terminal status that does NOT ride the run-terminal
@@ -1478,14 +1483,31 @@ export class TaskSchedulerService {
         // The stream ended on its own, which is NOT the same as the work having
         // succeeded: a turn can stream a typed `error` and then end normally,
         // and every such run used to be filed as a success (DOR-1658). Ask the
-        // tracker how the turn actually settled instead.
-        const failure = outcome.settle();
+        // tracker how the turn actually settled instead. It answers a third way
+        // since DOR-2101 — `blocked`, the run that was refused every tool it
+        // reached for and got none of them — and the relay-dispatched twin in
+        // `packages/relay/src/adapters/claude-code/task-handler.ts` maps the
+        // same three answers the same way, because a run must not be recorded
+        // differently for having taken the other path.
+        const settlement = outcome.settle();
+        // The line a person reads on the row. A failure names what broke; a
+        // blocked run names the tools it was denied — the same sentence that
+        // leads its summary, repeated here because the row's explanation line
+        // is where the reader's eye goes, and because a blocked run's summary
+        // may be nothing but that sentence.
+        const rowError =
+          settlement.outcome === 'failed'
+            ? settlement.error
+            : settlement.outcome === 'blocked'
+              ? refusalLine
+              : null;
         this.store.updateRun(run.id, {
-          status: failure ? 'failed' : 'completed',
+          status: settlement.outcome,
           finishedAt: new Date().toISOString(),
           durationMs,
           outputSummary: summaryForRow(),
-          ...(failure ? { error: failure } : {}),
+          ...(rowError !== null ? { error: rowError } : {}),
+          refusedTools: refusedToolNames(refusals.all()),
           sessionId: persistedSessionId(),
         });
         // The activity-feed event for either outcome rides the TaskStore
@@ -1505,6 +1527,7 @@ export class TaskSchedulerService {
         durationMs,
         outputSummary: withRefusedAsks(refusals.summaryLine(), outputSummary.slice(0, 500)),
         error: errorMsg,
+        refusedTools: refusedToolNames(refusals.all()),
         sessionId: persistedSessionId(),
       });
       logger.error(`run ${run.id} failed:`, err);

@@ -1626,6 +1626,10 @@ describe('an ask nobody can answer is refused the moment it is raised', () => {
       toolCallId: 'deny-2',
       toolName: 'Bash',
       reasonType: 'no_approval_surface',
+      // Stamped beside the reason, and load-bearing: this is the one of the
+      // three refused asks that is a TOOL the run lost, and the only one the
+      // `blocked` run outcome counts (DOR-2101).
+      askKind: 'tool',
       reason: 'nobody was available to approve this tool',
       message: DENIAL,
     });
@@ -1659,6 +1663,13 @@ describe('an ask nobody can answer is refused the moment it is raised', () => {
     expect(session.eventQueue.map((e) => (e.data as { toolName: string }).toolName)).toEqual([
       'AskUserQuestion',
       'stripe-mcp',
+    ]);
+    // NEITHER is stamped as a tool, and that is what keeps a run that did its
+    // work and then asked a question from being recorded as one that could not
+    // use its tools (DOR-2101).
+    expect(session.eventQueue.map((e) => (e.data as { askKind?: string }).askKind)).toEqual([
+      'question',
+      'elicitation',
     ]);
     expect(session.pendingInteractions.size).toBe(0);
   });
