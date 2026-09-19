@@ -50,6 +50,8 @@ import { raiseStanding } from '../services/notifications/standing-events.js';
 import { resolveScheduleParkPayload } from '../services/notifications/emitters/schedule-park.js';
 import { withProposerName, withProposerNames } from '../services/tasks/task-provenance.js';
 import { clampSchedulePermissionMode } from '../services/tasks/schedule-permission-clamp.js';
+import { capabilitiesForTaskRuntime } from '../services/tasks/scheduled-run-power.js';
+import { readAgentExecutionDefaults } from '../services/session/resolve-session-defaults.js';
 import {
   describeOperatorOnlyTaskRefusal,
   findOperatorOnlyTaskFields,
@@ -166,6 +168,73 @@ function refusedOperatorOnlyTaskWrite(req: Request, res: Response, trusted: bool
     message: describeOperatorOnlyTaskRefusal(operatorOnly),
   });
   return true;
+}
+
+/**
+ * What the activity feed says a schedule runs at, when nobody can be told the
+ * runtime's own word for it.
+ *
+ * Deliberately not the mode id. An id is the runtime's internal spelling —
+ * `bypassPermissions`, `danger-full-access`, `workspace-write` — and a feed a
+ * person reads months later to answer "who gave this thing that much power?"
+ * is the last place to print one.
+ */
+const UNNAMED_PERMISSION_LEVEL = 'the level saved on it';
+
+/**
+ * The human name of the level a schedule runs at, in the vocabulary of the
+ * runtime that will run it (DOR-2100).
+ *
+ * The runtime is resolved on the SAME ladder the create path walks
+ * (`resolveCreateRuntime`) and the fire path repeats
+ * (`resolve-run-execution.ts`): what the task names, then its AGENT's manifest,
+ * then the registry default. The agent rung costs one manifest read, once per
+ * approval click, and it is the rung that matters — a task filed under a
+ * Codex-pinned agent is the COMMON shape of an agent-proposed schedule, and
+ * labelling it through Claude Code's vocabulary would print one runtime's word
+ * for a level another runtime is actually running at.
+ *
+ * **Where a rung that answers nothing lands, and why that is right.** No agent
+ * on the task, no mesh to place one, no manifest in the agent's folder, a
+ * manifest the reader cannot use, or one naming a runtime this build has no
+ * adapter for all fall through to the DEFAULT runtime — and the label is then
+ * the default runtime's word, not a shrug. That is not a degradation, it is the same answer the RUN gets:
+ * `resolveRuntimeType` falls through to `getDefaultType()` on every one of
+ * those, so the run really does execute in the ids being named. The last of
+ * the five is why this asks `capabilitiesForTaskRuntime` about the agent's
+ * runtime before taking it: the fire path guards the agent rung with
+ * `runtimes.has(...)`, and a label that skipped that guard would answer "no
+ * idea" about a run heading for a perfectly well-named default.
+ *
+ * {@link UNNAMED_PERMISSION_LEVEL} is therefore narrow. It is reached when the
+ * TASK itself names a runtime this server does not hold — where the fire path
+ * refuses the run rather than substituting one, so there is genuinely no
+ * vocabulary to name the level in — or when the resolved runtime declares no
+ * mode by that id. The id is on the event's `metadata` in every case, so
+ * nothing is lost for a machine reader.
+ *
+ * @param task - The schedule as it now stands.
+ * @param meshCore - Resolves the task's agent to its project path; absent when
+ *   Mesh is disabled, which is one of the five ways the agent rung answers
+ *   nothing and the default runtime's vocabulary is used instead.
+ * @returns The runtime's label for its mode, or the neutral phrase.
+ */
+async function describeTaskPermissionLevel(task: Task, meshCore?: MeshCore): Promise<string> {
+  const agentPath = task.agentId ? meshCore?.getProjectPath(task.agentId) : undefined;
+  const agentRuntime = agentPath
+    ? ((await readAgentExecutionDefaults(agentPath)).runtime ?? null)
+    : null;
+  // The agent's runtime only when this build can actually run it — the same
+  // `has(...)` guard `resolveRuntimeType` applies, asked through the function
+  // that already answers it. Without this the label and the run disagree for
+  // an agent pinned to a runtime with no adapter here.
+  const runtime =
+    task.runtime ??
+    (agentRuntime && capabilitiesForTaskRuntime(agentRuntime) ? agentRuntime : null);
+  const declared = capabilitiesForTaskRuntime(runtime)?.permissionModes?.values ?? [];
+  return (
+    declared.find((mode) => mode.id === task.permissionMode)?.label ?? UNNAMED_PERMISSION_LEVEL
+  );
 }
 
 /**
@@ -493,8 +562,49 @@ export function createTasksRouter(
     // A schedule leaving `pending_approval` for `active` IS the approval — there
     // is no separate endpoint for it, so this transition is where the parked
     // condition ends and its history row is written.
+    //
+    // **And it is the one transition that may also GRANT the level** (DOR-2100).
+    // A proposal an agent made is clamped on the way in and cannot name its own
+    // power (`createScheduledTask`, DOR-504/607/823); the person approving it
+    // can, because `permissionMode` is operator-only and
+    // `refusedOperatorOnlyTaskWrite` has already 403'd anyone who did not clear
+    // the agent bar. Nothing extra is needed to let that through — `updateTask`
+    // writes the field and `applyTaskFileUpdate` puts it in the SKILL.md, so the
+    // grant survives the next sync the same way a person's own edit does. What
+    // WAS missing is the record: the approval wrote a standing resolution and no
+    // activity row at all, so a level raised here left nothing a later reader
+    // could find. It writes one now, naming the level, on every approval —
+    // raised or not, because "approved at the level it asked for" is the fact
+    // that makes a raise legible as a raise.
     if (existing.status === 'pending_approval' && updated.status === 'active') {
       const actorPrincipal = readCallerPrincipal(req, res);
+      const raised = updated.permissionMode !== existing.permissionMode;
+      // Resolved before the call rather than inside its argument: it reads the
+      // agent's manifest off disk, and an await buried in a template literal
+      // reads like a synchronous format.
+      const level = await describeTaskPermissionLevel(updated, meshCore);
+      activityService?.emit({
+        // Read, never assumed: only a caller that cleared the agent bar reaches
+        // this line, but that bar is a no-op under the shipped login-off posture
+        // (the documented DOR-505 residual), so the feed says who actually asked.
+        ...readActivityActor(req, res),
+        category: 'tasks',
+        eventType: 'tasks.task_approved',
+        resourceType: 'schedule',
+        resourceId: req.params.id,
+        resourceLabel: updated.displayName ?? updated.name,
+        summary:
+          `Approved scheduled task ${updated.displayName ?? updated.name}, ` +
+          `running as ${level}`,
+        // The before and after both, so a reader can see a raise without
+        // reconstructing what the row used to hold.
+        metadata: {
+          permissionMode: updated.permissionMode,
+          previousPermissionMode: existing.permissionMode,
+          raised,
+        },
+        linkPath: '/',
+      });
       void resolveScheduleParkPayload(updated).then((payload) =>
         resolveStanding('schedule.parked', payload, { outcome: 'approved', actorPrincipal })
       );

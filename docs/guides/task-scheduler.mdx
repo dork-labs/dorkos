@@ -150,6 +150,18 @@ Your approval is tied to what the task actually says. Change its prompt or its t
 
 Anything you create yourself in DorkOS starts armed. Clicking save **is** the approval.
 
+### Approving can also set how much it may do
+
+A schedule you did not create yourself is held back to the careful setting, whatever the file or the agent asked for: it may edit files on its own and stops before anything riskier. That is deliberate — nothing an agent writes should be able to hand a job that runs at 3am more power than the agent has itself.
+
+You can lift it, one job at a time, as you approve it. DorkOS looks at your own level in **Control Center** to work out what to offer: if it is higher than the one the job was held to, the approval card puts a second button beside the plain Approve naming that level — "Approve at Full autonomy", say. The card tells you what each one will run the job at.
+
+What the button changes is the **job's own Permissions setting**, not your Control Center level and not anything about the next job. Approving at a higher level is a shortcut for opening the task afterwards and raising that setting by hand — the same dial, set at the moment you were already looking.
+
+Because a job on a timer runs with nobody watching, giving it a level that never stops to ask puts one confirmation in front of you first, the same one you get when you choose that level anywhere else. Plain Approve asks nothing, because it changes nothing. And lifting one job never lifts the next one: the next schedule an agent proposes arrives held back exactly the same way.
+
+One thing it cannot do: a schedule that came inside an installed package lives in that package's folder, which DorkOS will not write to. Approving it works; approving it at a higher level is turned down with a note saying why.
+
 ## Create one in DorkOS
 
 Prefer buttons to files? The Schedules tab builds the same thing for you.
@@ -204,6 +216,8 @@ A run that lost one tool and got on with the rest of its work still counts as Co
 The agent knows this before it starts, so a well-written task tells you at the end what it skipped. If the same task keeps getting turned down, you have two ways to fix it: change the task so it does not need that tool, or open the task and raise its own **Permissions** setting, which is the dial that decides how much its runs may do on their own.
 
 It has to be the task's own setting. A task's power is decided once, when the task is created, and stored on the task — so changing your **Control Center** level afterwards does not reach a task that already exists. That matters most for a task an agent proposed for you, which is created at the careful end of the dial and stays there until you move it.
+
+There is one moment you can move it without opening the task: the approval itself. The card that asks you to approve an agent's proposal can also set the task's Permissions in the same click — see [Approving can also set how much it may do](#approving-can-also-set-how-much-it-may-do). That still writes the task's own setting; it is only a quicker way to reach it.
 
 Clicking **Run now** is different. You are watching, so its cards work normally and you can answer them.
 

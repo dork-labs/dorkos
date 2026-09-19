@@ -107,6 +107,12 @@ export {
   isDivergent,
   isBypassSemantics,
   isAutonomyStop,
+  // The one rule for "is this level above that one", used by the schedule
+  // approval card to decide whether the operator's own stop is a RAISE on the
+  // mode a proposed schedule was clamped to (DOR-2100). Read from the shared
+  // semantics rather than compared as ids, for the reason that module exists:
+  // an id table is right until a runtime ships a mode nobody added to it.
+  isTightening,
   needsConsentRitual,
   isSilentReadOnly,
   isWorkingMode,

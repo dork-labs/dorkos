@@ -305,7 +305,11 @@ export { TrustDial, TrustModeIcon, stopLabel, CANONICAL_TRUST_STOPS } from './tr
 export type { TrustDialProps } from './trust-dial';
 export { TRUST_TONE_TEXT, trustTone, trustToneAccent, trustToneText } from './trust-tone';
 export type { TrustTone } from './trust-tone';
-export { consentActionLabel, consentAsksNote } from './consent-ritual-copy';
+export {
+  consentActionLabel,
+  consentAsksNote,
+  SCHEDULED_RUN_CONSENT_CONSEQUENCE,
+} from './consent-ritual-copy';
 export { UnattendedAutonomyDialog } from './unattended-autonomy-dialog';
 export type { UnattendedAutonomyDialogProps } from './unattended-autonomy-dialog';
 export {

@@ -2043,6 +2043,35 @@ describe('TaskSchedulerService', () => {
       await service.stop();
     });
 
+    it('carries a raised level onto the wire, not the one the clamp put there (DOR-2100)', async () => {
+      // The relay path is the OTHER launch path, and it builds its own
+      // envelope. A grant that reached `executeRunDirect` and not this would be
+      // a schedule that runs at the operator's level on one machine and at the
+      // clamped one the moment the bus is enabled — with nothing saying which.
+      const task = store.createTask(taskInput({ name: 'Raised on the bus' }));
+      expect(task.permissionMode).toBe('acceptEdits');
+      // The approval, as `PATCH /api/tasks/:id` performs it.
+      const approved = store.updateTask(task.id, {
+        status: 'active',
+        permissionMode: 'bypassPermissions',
+      })!;
+
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: singleRuntimeSource(mockAgent),
+        config: DEFAULT_CONFIG,
+        relay: mockRelay as unknown as RelayCore,
+      });
+
+      await (service as unknown as Dispatchable).dispatch(approved, new Date(1_700_000_000_000));
+      await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
+
+      const [, payload] = mockRelay.publish.mock.calls[0];
+      expect((payload as TaskDispatchPayload).permissionMode).toBe('bypassPermissions');
+
+      await service.stop();
+    });
+
     it('marks run as failed when deliveredTo is 0', async () => {
       mockRelay.publish.mockResolvedValue({ messageId: 'msg-2', deliveredTo: 0 });
 
@@ -2902,6 +2931,64 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
       expect.any(String),
       expect.any(String),
       expect.objectContaining({ model: 'claude-opus-4-6', effort: 'xhigh' })
+    );
+    await service.stop();
+  });
+
+  /**
+   * The run-time half of DOR-2100: a schedule approved at the operator's own
+   * trust stop actually LAUNCHES at it.
+   *
+   * The approval writes one column (`pulse_schedules.permission_mode`, through
+   * `TaskStore.updateTask` — the same call `PATCH /api/tasks/:id` makes), and
+   * that column is the only place a scheduled run's power lives. It is not
+   * seeded through `TurnOrigin`: the scheduler's origin row carries `kind:
+   * 'schedule'` and no mode at all (DOR-2105), so a test in
+   * `services/session/origin` would pin nothing about this. The launch path is
+   * where the claim is true or false, so the test is here.
+   *
+   * Both seams, for the reason the model/effort case beside it gives: claude-code
+   * reads the session record at launch, and a runtime that holds no sessions in
+   * memory sees only the send. A grant that reached one and not the other would
+   * be a run that is half-approved.
+   */
+  it('launches a schedule approved at full autonomy at the mode the row holds', async () => {
+    const task = store.createTask(taskInput({ name: 'Approved high' }));
+    // The clamp an agent's proposal lands on, asserted so the raise below is a
+    // real change rather than the value the row already had.
+    expect(task.permissionMode).toBe('acceptEdits');
+
+    // The approval, exactly as the route performs it: status and mode in one
+    // write, which is what makes it the operator's grant rather than a file's.
+    store.updateTask(task.id, { status: 'active', permissionMode: 'bypassPermissions' });
+
+    const service = scheduler(['claude-code']);
+    await runToCompletion(service, task.id);
+
+    expect(managers['claude-code']!.ensureSession).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ permissionMode: 'bypassPermissions' })
+    );
+    expect(managers['claude-code']!.sendMessage).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      expect.objectContaining({ permissionMode: 'bypassPermissions' })
+    );
+    await service.stop();
+  });
+
+  it('launches an un-raised schedule at the mode the clamp left it on', async () => {
+    // The control. Without it the case above could pass on a scheduler that
+    // hands every run `bypassPermissions` for some entirely different reason.
+    const task = store.createTask(taskInput({ name: 'Approved plain' }));
+    store.updateTask(task.id, { status: 'active' });
+
+    const service = scheduler(['claude-code']);
+    await runToCompletion(service, task.id);
+
+    expect(managers['claude-code']!.ensureSession).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ permissionMode: 'acceptEdits' })
     );
     await service.stop();
   });

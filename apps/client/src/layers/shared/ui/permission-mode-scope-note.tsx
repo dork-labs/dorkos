@@ -95,6 +95,15 @@ export interface PermissionModeScopeNoteProps {
  * name where it is not. The picker list is frozen as a test beside this file,
  * which is what notices when a new picker appears without the note.
  *
+ * DOR-2100 added the seventh: the SCHEDULE approval card, which is a pick site
+ * and not merely a warning site — approving a schedule an agent proposed can
+ * also grant it the operator's own trust stop, and that is the moment the
+ * sentence has to arrive. Called the schedule approval card in full wherever it
+ * appears here, because "the approval card" above already means a different
+ * surface: the tool-approval card
+ * (`features/approvals/ui/ApprovalCard.tsx`), which is the one that reads the
+ * config and therefore carries the imperative.
+ *
  * ## Why the condition is the door's rule, not the bypass rule
  *
  * It was `isBypassSemantics` (never asks AND reaches everything) until DOR-816.
@@ -111,8 +120,9 @@ export interface PermissionModeScopeNoteProps {
  * nothing to read `asks` off, and a mode id is only evidence about the ids
  * somebody once listed.
  *
- * All three pass a descriptor today: the binding dialog and the task form
- * resolve a runtime profile of their own to build the Trust Dial from. The
+ * All four pass a descriptor today: the binding dialog and the task form
+ * resolve a runtime profile of their own to build the Trust Dial from, and the
+ * schedule approval card resolves one to name the level it is offering. The
  * name-based fallback stays for the frames before that profile lands, and for a
  * mode the runtime no longer declares.
  *
