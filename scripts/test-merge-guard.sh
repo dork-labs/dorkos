@@ -244,7 +244,7 @@ message=$(MERGE_GUARD_FIXTURE_COMMAND='gh pr merge 1 --admin' node -e '
   require("fs").writeFileSync(process.env.MERGE_GUARD_FIXTURE_PAYLOAD,
     JSON.stringify({ tool_name: "Bash", tool_input: { command: process.env.MERGE_GUARD_FIXTURE_COMMAND } }));
 ' && node "$guard" <"$MERGE_GUARD_FIXTURE_PAYLOAD" 2>&1 >/dev/null)
-for needle in '/ci:break-glass' 'contributing/ci.md' 'gh pr merge --auto <number>'; do
+for needle in '/ci-break-glass' 'contributing/ci.md' 'gh pr merge --auto <number>'; do
   case "$message" in
     *"$needle"*) check "refusal names $needle" yes yes ;;
     *) check "refusal names $needle" yes no ;;

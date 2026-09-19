@@ -54,7 +54,7 @@
  * WHERE THE REAL PATH IS
  *
  * An admin merge is reserved for the break-glass path of CI Steward phase 1b
- * (`/ci:break-glass`), which does not exist yet. Until it does, no agent has a
+ * (`/ci-break-glass`), which does not exist yet. Until it does, no agent has a
  * sanctioned admin merge at all. The guide is `contributing/ci.md`.
  *
  * WHY THIS IS A HOOK AND NOT `permissions.deny`
@@ -150,7 +150,7 @@ are the only thing standing between a change and main. Your gh account is an
 admin, and --admin (or the REST merge endpoint, or the mergePullRequest
 mutation) lands the change without any of those checks.
 
-Admin merges are reserved for the CI Steward break-glass path (/ci:break-glass,
+Admin merges are reserved for the CI Steward break-glass path (/ci-break-glass,
 phase 1b, not built yet). Until it exists, no agent has a sanctioned admin
 merge.
 
