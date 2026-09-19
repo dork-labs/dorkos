@@ -519,7 +519,7 @@ describe('PermissionModeItem', () => {
         <PermissionModeItem mode="bypassPermissions" onChangeMode={vi.fn()} runtime="codex" />
       );
 
-      expect(screen.getByText(/covers tools inside the session/i)).toBeInTheDocument();
+      expect(screen.getByText(/covers what an agent does in a session/i)).toBeInTheDocument();
     });
 
     it('appears for a bounded mode that never asks, too (DOR-816)', () => {
@@ -531,7 +531,7 @@ describe('PermissionModeItem', () => {
       mockCapabilitiesForRuntime.mockReturnValue(CODEX_CAPABILITIES);
       render(<PermissionModeItem mode="acceptEdits" onChangeMode={vi.fn()} runtime="codex" />);
 
-      expect(screen.getByText(/covers tools inside the session/i)).toBeInTheDocument();
+      expect(screen.getByText(/covers what an agent does in a session/i)).toBeInTheDocument();
     });
 
     it('stays away from a mode that still stops to ask', () => {
@@ -540,7 +540,7 @@ describe('PermissionModeItem', () => {
         <PermissionModeItem mode="acceptEdits" onChangeMode={vi.fn()} runtime="claude-code" />
       );
 
-      expect(screen.queryByText(/covers tools inside the session/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/covers what an agent does in a session/i)).not.toBeInTheDocument();
     });
   });
 

@@ -16,19 +16,48 @@
  *   `services/core/approvals/` mentions `permissionMode`. That grep returns nothing
  *   today; freezing it as a test is what stops somebody wiring it in later.
  *
- * ## Why this matters more than the reason it was raised for
+ * ## Why the firewall stays (operator decision, 2026-09-18, DOR-2102)
  *
- * `operator.update_agent` does not expose `permissionMode`, so the obvious door is
- * shut. But it is not the only door: an agent can already set `bypassPermissions` on
- * a scheduled task through the `tasks_update` MCP tool, which is `act` tier, so the
- * gate lets it through without asking anybody (DOR-468 gave every hand-registered
- * tool a tier; it did not make every tool ask). If the gate ever honored permission
- * mode, that would be a no-approval path for an agent to switch off its own
- * destructive gate.
+ * The reason this file used to give has expired, and saying so matters more than
+ * quietly leaving it: the hole it pointed at was an agent setting
+ * `bypassPermissions` on a schedule through the `tasks_update` MCP tool, and
+ * DOR-504 closed it. `task-write-policy.ts` now classifies `permissionMode` as
+ * `operator-only` and refuses the field outright, so that door is shut at the
+ * door rather than here. A guard justified only by a fixed bug is a guard the
+ * next reader deletes.
  *
- * The one supported way to stop being asked is a standing permission, which needs a
- * signed-in person and a clock. Permission mode governs tools INSIDE a session and
- * is deliberately a different control.
+ * It was re-examined on its merits and kept. Three grounds, in the order they
+ * actually decided it:
+ *
+ * 1. **It costs this operator nothing.** The thing a merge would buy is fewer
+ *    interruptions, and the tier gate is not where the interruptions are. Of 43
+ *    recorded since 2026-09-10 on the reporting machine, 35 were the runtime's
+ *    own permission prompts and 8 were schedule cards; the capability card gate
+ *    had fired zero times. Full autonomy already removes the 35. The other 8 are
+ *    a different mechanism again — a parked `Task`, not a tier-gated capability
+ *    hold — so merging permission mode into THIS gate would not remove them
+ *    either. The change buys zero fewer interruptions and is paid for with
+ *    grounds 2 and 3.
+ * 2. **The two gates have different blast radii.** A runtime prompt guards a
+ *    recoverable question — "did you mean to run this command" — in a working
+ *    tree with a git history behind it. The tier gate guards permanent, outward
+ *    actions: `mesh_unregister` deletes an agent's file and tears down its relay
+ *    endpoint, `marketplace.uninstall` removes a package. One switch for both
+ *    means a dial flipped for convenience also disarms the irreversible half,
+ *    and the person flipping it is thinking about the first kind.
+ * 3. **The reversal cost is asymmetric.** Keeping the firewall and opening it
+ *    later is cheap: the wire is one field, and the evidence for wanting it
+ *    would be a card count that is no longer zero. Opening it and then
+ *    discovering what it was for is not cheap, because what that discovery
+ *    looks like is a deleted agent nobody approved.
+ *
+ * So the supported way to stop being asked at this gate is still a standing
+ * permission, which needs a signed-in person and a clock, and the approval card
+ * now offers one in place. Permission mode governs the runtime's own prompts
+ * INSIDE a session and is deliberately a different control. The product says so
+ * out loud wherever the stop is chosen (`PermissionModeScopeNote`), which is the
+ * other half of this decision: a firewall a person cannot see is indistinguishable
+ * from a broken promise.
  *
  * @vitest-environment node
  */

@@ -33,6 +33,52 @@ function renderRow(props: Partial<Parameters<typeof GlobalTrustRow>[0]> = {}) {
   return { onChange, onChangeRuntime };
 }
 
+/** The scope note, found by its slot rather than by a sentence that may be reworded. */
+const scopeNote = () => document.querySelector('[data-slot="permission-mode-scope-note"]');
+
+describe('GlobalTrustRow — what the stop does not cover (DOR-2102)', () => {
+  it('carries the note when the shared setting is Full autonomy', () => {
+    renderRow({ stop: 'autonomy', effectiveStop: 'autonomy' });
+    expect(scopeNote()).toBeInTheDocument();
+    expect(scopeNote()).toHaveTextContent(/DorkOS’s own risky actions still stop for you/);
+    expect(scopeNote()).toHaveTextContent(/Standing permissions, in Settings under Access/);
+  });
+
+  it('says nothing at a stop that still asks', () => {
+    renderRow({ stop: 'ask', effectiveStop: 'ask' });
+    expect(scopeNote()).not.toBeInTheDocument();
+  });
+
+  it('carries it when only a CARD is at Full autonomy, not this row', () => {
+    // The gap the review found. The green line above fires on the same
+    // condition, and a card overridden to autonomy can be collapsed out of
+    // sight — so keying the correction to this row's own stop left a green
+    // "runs at full power" line with nothing under it saying what still asks.
+    renderRow({
+      stop: 'act',
+      effectiveStop: 'act',
+      runtimes: [
+        { runtime: 'claude-code', label: 'Claude Code', stop: null },
+        { runtime: 'codex', label: 'Codex', stop: 'autonomy' },
+      ],
+    });
+    expect(screen.getByTestId('default-trust-stop-standing-note')).toBeInTheDocument();
+    expect(scopeNote()).toBeInTheDocument();
+  });
+
+  it('draws the correction exactly where it draws the green line, and nowhere else', () => {
+    // The two are one fact stated twice, so they must never disagree. With no
+    // autonomy anywhere, neither appears.
+    renderRow({
+      stop: 'act',
+      effectiveStop: 'act',
+      runtimes: [{ runtime: 'claude-code', label: 'Claude Code', stop: 'ask' }],
+    });
+    expect(screen.queryByTestId('default-trust-stop-standing-note')).not.toBeInTheDocument();
+    expect(scopeNote()).not.toBeInTheDocument();
+  });
+});
+
 describe('GlobalTrustRow', () => {
   it('asks the question once, in the design’s words, and says what it governs', () => {
     renderRow();

@@ -329,7 +329,7 @@ function TierCeilingCard({ agent }: { agent: AgentManifest }) {
             edge is unstated reads as a sandbox, and this is not one. */}
         <p className="text-muted-foreground text-sm">
           This covers what the agent asks DorkOS to do. An agent that can run terminal commands can
-          still act outside DorkOS. Turn on Require login, in Settings under Security, to close that
+          still act outside DorkOS. Turn on Require login, in Settings under Access, to close that
           door too.
         </p>
       </FieldCardContent>

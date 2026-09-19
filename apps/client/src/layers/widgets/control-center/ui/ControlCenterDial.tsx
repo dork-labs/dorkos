@@ -1,5 +1,5 @@
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
-import { CANONICAL_TRUST_STOPS, TrustDial } from '@/layers/shared/ui';
+import { CANONICAL_TRUST_STOPS, PermissionModeScopeNote, TrustDial } from '@/layers/shared/ui';
 import { useConfig } from '@/layers/entities/config';
 import { useRuntimeCapabilities } from '@/layers/entities/runtime';
 import { AutonomyConfirmDialog } from '@/layers/features/status';
@@ -48,6 +48,25 @@ export function ControlCenterDial() {
         mode={globalStop}
         descriptors={CANONICAL_TRUST_STOPS}
         onChangeMode={(next) => trust.changeTrustStop(null, next as PermissionStop)}
+      />
+
+      {/* What the top stop does not cover (DOR-2102). The Control Center is
+          where a person comes to flip power on without reading a dialog, and a
+          standing acknowledgement means no dialog opens — so without this line
+          the one sentence correcting the promise never reaches them here.
+
+          `descriptor` alone, with no `mode`: this dial's value is a dial STOP,
+          and the note's name-based fallback reads runtime mode ids. Passing
+          'autonomy' there would look like a safety net and be a branch that can
+          never fire (DOR-2102 review).
+
+          It points at the switch BELOW rather than at Settings, because
+          `ControlCenterBody` renders `ControlCenterSwitches` — which owns the
+          live Standing permissions switch — directly under this section. */}
+      <PermissionModeScopeNote
+        descriptor={CANONICAL_TRUST_STOPS.find((stop) => stop.id === globalStop)}
+        standingPermissionsAt="below"
+        className="px-1"
       />
 
       {trust.writeError && (

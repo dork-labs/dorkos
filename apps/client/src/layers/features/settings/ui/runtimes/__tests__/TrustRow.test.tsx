@@ -55,6 +55,93 @@ function renderRow(props: Partial<Parameters<typeof TrustRow>[0]> = {}) {
   return { onChange };
 }
 
+/** The scope note, found by its slot rather than by a sentence that may be reworded. */
+const scopeNote = () => document.querySelector('[data-slot="permission-mode-scope-note"]');
+
+describe('TrustRow — what the stop does not cover (DOR-2102)', () => {
+  it('carries the note on a card that chose Full autonomy itself', () => {
+    renderRow({ stop: 'autonomy' });
+    expect(scopeNote()).toBeInTheDocument();
+    expect(scopeNote()).toHaveTextContent(/DorkOS’s own risky actions still stop for you/);
+  });
+
+  it('says nothing at a stop that still asks', () => {
+    renderRow({ stop: 'ask' });
+    expect(scopeNote()).not.toBeInTheDocument();
+  });
+
+  it('carries it for a runtime that never asks at the MIDDLE stop', () => {
+    // Codex's workspace-write. The note follows what the mode DOES, so a
+    // never-asking mode filed below the top stop is covered too (DOR-816).
+    renderRow({
+      stop: 'act',
+      descriptors: [
+        {
+          id: 'acceptEdits',
+          label: 'Workspace write',
+          stop: 'act',
+          asks: 'never',
+          reach: 'workspace',
+          promise: 'Codex cannot stop to ask you first.',
+        },
+      ],
+    });
+    expect(scopeNote()).toBeInTheDocument();
+  });
+
+  it('stays silent inheriting Full autonomy, because the row below says that one', () => {
+    // The shipped full-power default is global autonomy with every card
+    // inheriting. Drawing this per card printed the same paragraph once per
+    // runtime plus once more under the cards (DOR-2102 review).
+    renderRow({ stop: null, globalStop: 'autonomy' });
+    expect(scopeNote()).not.toBeInTheDocument();
+  });
+
+  it('stays silent when its own override AGREES with the shared Full autonomy', () => {
+    // Same sentence, same stop, same row below. An override that happens to
+    // match is not a second thing to say (DOR-2102 re-review).
+    renderRow({ stop: 'autonomy', globalStop: 'autonomy' });
+    expect(scopeNote()).not.toBeInTheDocument();
+  });
+
+  it('speaks up inheriting a middle stop THIS runtime never asks at', () => {
+    // The re-review's regression, at component scale. The row below renders the
+    // canonical middle stop, which asks when risky, so it says nothing here —
+    // suppressing this card on "inheriting" alone left Codex's "cannot stop to
+    // ask you first" with no correction anywhere on the tab.
+    renderRow({
+      stop: null,
+      globalStop: 'act',
+      descriptors: [
+        {
+          id: 'default',
+          label: 'Read only',
+          stop: 'ask',
+          asks: 'never',
+          reach: 'read',
+          promise: 'Codex can read files but not change them.',
+        },
+        {
+          id: 'acceptEdits',
+          label: 'Workspace write',
+          stop: 'act',
+          asks: 'never',
+          reach: 'workspace',
+          promise: 'Codex cannot stop to ask you first.',
+        },
+      ],
+    });
+    expect(scopeNote()).toBeInTheDocument();
+  });
+
+  it('still says nothing inheriting a middle stop that does stop to ask', () => {
+    // The other side of the same rule: Claude's middle stop asks about
+    // commands, so there is nothing to correct.
+    renderRow({ stop: null, globalStop: 'act' });
+    expect(scopeNote()).not.toBeInTheDocument();
+  });
+});
+
 describe('TrustRow', () => {
   it('words the stops the way the rest of the tab does, not the way a session does', () => {
     // One vocabulary per surface (`SETTINGS_STOP_LABELS`): the row beneath the
