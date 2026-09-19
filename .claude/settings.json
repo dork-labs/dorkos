@@ -47,15 +47,15 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd \"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}\" && node .claude/hooks/file-guard.mjs"
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}\" && .claude/hooks/run-node-hook.sh .claude/hooks/file-guard.mjs || exit 2"
           },
           {
             "type": "command",
-            "command": "cd \"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}\" && node .claude/hooks/git-guard.mjs"
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}\" && .claude/hooks/run-node-hook.sh .claude/hooks/git-guard.mjs || exit 2"
           },
           {
             "type": "command",
-            "command": "cd \"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}\" && node .claude/hooks/process-guard.mjs"
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}\" && .claude/hooks/run-node-hook.sh .claude/hooks/process-guard.mjs || exit 2"
           }
         ]
       }
@@ -74,7 +74,7 @@
           },
           {
             "type": "command",
-            "command": "\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}\"/.claude/hooks/in-project.sh node .claude/hooks/check-any-changed.mjs"
+            "command": "\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}\"/.claude/hooks/in-project.sh .claude/hooks/run-node-hook.sh --warn-only .claude/hooks/check-any-changed.mjs"
           }
         ]
       },

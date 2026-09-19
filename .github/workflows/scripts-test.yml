@@ -273,6 +273,16 @@ jobs:
       - name: In-project hook wrapper fixtures
         run: bash scripts/test-in-project-hook.sh
 
+      # run-node-hook.sh is what makes the three guards above fail CLOSED when
+      # node cannot be resolved. Without it a nvm-managed node off a stripped
+      # PATH made each guard exit 127, which Claude Code treats as a
+      # NON-blocking error: the tool call proceeded and Hard Rules 6 and 7 were
+      # enforced by nothing (DOR-2121). Hermetic — it empties PATH, points HOME
+      # at a temp dir and uses fake `node` binaries, so the verdicts do not
+      # depend on where node lives on the runner.
+      - name: Node-hook wrapper fail-closed fixtures
+        run: bash scripts/test-run-node-hook.sh
+
       # assert-tests-executed.sh decides whether the `test` workflow's green
       # means anything — it is what stops a 280ms turbo cache replay being
       # reported as a passing suite. Same argument as the two suites above: the

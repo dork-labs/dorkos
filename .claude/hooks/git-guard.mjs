@@ -111,6 +111,18 @@
  * lines can still be refused for merely naming a blocked command; that is the
  * chosen cost.
  *
+ * Stated once more because it surprises people: THE MATCHER SEES COMMAND TEXT
+ * AND NOTHING ELSE. Outside the text-taker exemption above, a Bash line that
+ * merely NAMES a refused command is refused exactly as if it were about to run
+ * it — writing documentation about this guard, or a heredoc containing a
+ * fixture payload, will be blocked. That is a deliberately coarse trade, not a
+ * bug. A matcher that tried to tell "about to run it" from "writing about it"
+ * is a matcher that can be talked out of blocking, and this guard exists
+ * because the softer version (prose in a brief) already failed. When you need
+ * to write the words, write the file with the Write tool or from a payload
+ * file on disk, where there is no Bash line for this hook to read — that is
+ * what scripts/test-git-guard.sh and scripts/test-run-node-hook.sh do.
+ *
  * It also never sees commands run by OTHER hooks: PreToolUse fires on tool
  * calls in the agentic loop only. That is why `create-checkpoint.sh` can keep
  * calling `git stash create` / `git stash store` from the Stop hook even though
@@ -120,6 +132,14 @@
  * containing the edit. scripts/test-git-guard.sh pins the half it can reach
  * (that the script still produces a checkpoint); the hook wiring itself needs a
  * real session, so re-prove that if you ever change the PreToolUse matcher.
+ *
+ * IT FAILS CLOSED WHEN IT CANNOT START. settings.json runs this file through
+ * .claude/hooks/run-node-hook.sh, which resolves node explicitly and refuses
+ * the tool call (exit 2) when there is none. A bare `node` used to exit 127
+ * instead, and Claude Code treats 127 as a NON-blocking error — the tool call
+ * proceeds — so on any machine without node on the launching PATH this guard
+ * was silently absent, which is worse than noisy (DOR-2121).
+ * Fixtures: scripts/test-run-node-hook.sh.
  */
 
 import path from 'path';

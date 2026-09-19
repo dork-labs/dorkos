@@ -57,9 +57,26 @@
  * alone on purpose), or substitutions nested more than one level deep. If you
  * find another hole, add it here even if you do not fix it.
  *
+ * THE MATCHER SEES COMMAND TEXT AND NOTHING ELSE, and that cuts the other way
+ * too: a Bash line that merely NAMES one of these commands is refused exactly
+ * as if it were about to run it. Writing a document about this guard, or a
+ * heredoc holding a fixture payload, gets blocked. That is a deliberately
+ * coarse trade, not a bug — a matcher that tried to tell "about to run it"
+ * from "writing about it" is a matcher that can be talked out of blocking,
+ * and this guard exists because the softer version (an instruction in a
+ * brief) already failed. When you need to write the words, use the Write tool
+ * or a payload file on disk, where no Bash line exists for this hook to read.
+ *
+ * It fails CLOSED when it cannot start. settings.json runs it through
+ * .claude/hooks/run-node-hook.sh, which resolves node explicitly and refuses
+ * the tool call (exit 2) when there is none. A bare `node` used to exit 127
+ * instead, and Claude Code treats 127 as a NON-blocking error — the tool call
+ * proceeds — so on any machine without node on the launching PATH this guard
+ * was silently absent (DOR-2121).
+ *
  * Fixtures: scripts/test-process-guard.sh runs every block/allow case through
  * this file's real entry point (a PreToolUse payload on stdin, exit 2 to
- * block).
+ * block); scripts/test-run-node-hook.sh covers the fail-closed wrapper.
  */
 
 import path from 'path';

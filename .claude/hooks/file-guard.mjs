@@ -2,6 +2,23 @@
 /**
  * File Guard Hook
  * Enforces file access restrictions based on deny patterns from settings.json
+ *
+ * Like the other two PreToolUse guards, it reads the command TEXT and nothing
+ * else. It does not require the command to actually open the file: a denied
+ * path is refused whenever `extractPathsFromBashCommand` below recognises it,
+ * which takes one of a listed read/write verb (`cat`, `rm`, `source`, …), a
+ * redirection, or a leading `./` or `/`. So `echo ./.env` is refused though it
+ * opens nothing, while a bare `echo .env` is not seen at all. Coarse in one
+ * direction and porous in the other, deliberately: tightening the first costs
+ * real blocks, and closing the second needs a shell, not a matcher.
+ *
+ * settings.json starts it through .claude/hooks/run-node-hook.sh, which
+ * resolves node explicitly and refuses the tool call (exit 2) when there is
+ * none: a bare `node` exited 127, which Claude Code treats as a NON-blocking
+ * error, so the guard was silently absent wherever node was off the launching
+ * PATH (DOR-2121). Note the difference from the fail-open `catch` at the
+ * bottom of this file, which is about a malformed payload rather than a
+ * missing interpreter.
  */
 
 import { readFileSync, existsSync } from 'fs';
