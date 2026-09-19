@@ -133,6 +133,27 @@ describe('collect on a recorded day', () => {
     expect(second.snap.health.runs).toMatchObject({ total_count: 7, fetched: 7 });
   });
 
+  it('starts a truncated day over instead of resuming it, so no job is lost', () => {
+    const fresh = runCollect(dayRecording()).snap;
+    const s = setup();
+    const bad = dayRecording();
+    // The failing queue run (202) is missing from the list: its check runs are
+    // filtered out of bbb's jobs, though bbb itself is fetched and marked done.
+    bad.rest[`${RUNS_PATH}&page=1`] = {
+      total_count: RUNS.length,
+      workflow_runs: RUNS.filter((r) => r.id !== 202),
+    };
+    const first = runCollect(bad, 700, s.data);
+    expect(first.snap).toMatchObject({ complete: false, truncated: true, healthy: false });
+    expect(first.snap.shas_done).toContain('bbb');
+    const second = runCollect(dayRecording(), 700, s.data);
+    expect(second.snap).toMatchObject({ complete: true, truncated: false, healthy: true });
+    expect(second.snap.gates).toEqual(fresh.gates);
+    expect(second.snap.counts.job_minutes).toBe(fresh.counts.job_minutes);
+    expect(second.snap.real_catches).toEqual({ 'wf.test.test': 1, 'wf.test.test-shard': 1 });
+    expect(second.snap.queue_builds).toEqual(fresh.queue_builds);
+  });
+
   it('reads a PR timeline past its first 100 events, so the merge and last queue events count', () => {
     const rec = dayRecording();
     const q = Object.keys(rec.graphql!)[0]!;

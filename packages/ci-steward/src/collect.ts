@@ -304,7 +304,13 @@ function collectDay(
   const { config } = files;
   const repo = config.github_repo;
   const existing = readData(dataDir, snapshotPath(day), SnapshotSchema);
-  const resume = existing && !existing.complete && !existing.partial_day ? existing : null;
+  // Resume only a day that stopped because the budget ran out. A day whose own
+  // data was truncated filtered its check runs through an incomplete run list,
+  // so its shas_done cannot be trusted: that day starts again from scratch.
+  const resume =
+    existing && !existing.complete && !existing.partial_day && !existing.truncated
+      ? existing
+      : null;
   const snap = emptySnapshot(day, now.toISOString(), gh.budget);
   const callsAtStart = gh.calls;
   snap.partial_day = partial;
@@ -432,7 +438,8 @@ function collectDay(
   const backfilled = day < addDays(dayOf(now), -files.config.collect.lookback_days);
   snap.timeouts = backfilled ? {} : gateTimeouts(workflows);
   failures.push(...dayFailures);
-  snap.complete = !late && !partial && dayFailures.length === 0;
+  snap.truncated = dayFailures.length > 0;
+  snap.complete = !late && !partial && !snap.truncated;
   snap.health.ruleset = global.ruleset;
   snap.health.data_rulesets = global.dataRulesets;
   snap.health.failures = failures;

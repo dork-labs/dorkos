@@ -121,6 +121,12 @@ export const SnapshotSchema = z
     complete: z.boolean(),
     /** Collected for a day still in progress (a pulse), never published. */
     partial_day: z.boolean(),
+    /**
+     * This day's own data came back short (runs below total_count, or the
+     * merged-PR search below its count). Never resumed: the next run starts the
+     * day over, because what it already counted was filtered through a short list.
+     */
+    truncated: z.boolean().default(false),
     healthy: z.boolean(),
     health: HealthSchema,
     /** Short SHAs whose jobs are already counted, so a late day resumes without double counting. */
@@ -514,6 +520,7 @@ export function emptySnapshot(day: string, collectedAt: string, budget: number):
     collected_at: collectedAt,
     complete: false,
     partial_day: false,
+    truncated: false,
     healthy: false,
     health: {
       ok: false,
