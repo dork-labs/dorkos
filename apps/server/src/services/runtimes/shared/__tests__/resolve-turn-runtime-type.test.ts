@@ -49,7 +49,12 @@ describe('resolveTurnRuntimeType', () => {
     // claude-code. That change is about the agent's NEXT session — this
     // conversation's history lives in codex, and a turn handed to claude-code
     // answers it from nothing.
-    await runtimeRegistry.persistSessionRuntime('room-session', 'codex', '/repo/ana');
+    await runtimeRegistry.persistSessionRuntime(
+      'room-session',
+      'codex',
+      { kind: 'room', externalAuthor: false },
+      '/repo/ana'
+    );
     agentManifest = { runtime: 'claude-code' };
 
     expect(
@@ -88,7 +93,12 @@ describe('resolveTurnRuntimeType', () => {
     // a program holding none of its transcript — the same re-decision DOR-764 is
     // about, arrived at from the other side. The caller's `runtimeRegistry.get`
     // is what turns this into the refusal.
-    await runtimeRegistry.persistSessionRuntime('room-session', 'opencode', '/repo/ana');
+    await runtimeRegistry.persistSessionRuntime(
+      'room-session',
+      'opencode',
+      { kind: 'room', externalAuthor: false },
+      '/repo/ana'
+    );
     agentManifest = { runtime: 'claude-code' };
 
     expect(

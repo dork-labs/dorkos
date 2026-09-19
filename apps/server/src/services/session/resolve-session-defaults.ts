@@ -34,20 +34,30 @@
  * at one stop. A runtime with no mode at the configured stop contributes
  * nothing and starts at its own default.
  *
- * **THIS function answers the permission tier for interactive sessions only.**
- * It answers one when the caller passes the runtime's declared modes, and only
- * the interactive session-creation path does
- * (`RuntimeRegistry.persistSessionRuntime` with `interactive: true`).
+ * **THIS function answers the permission tier only when it is handed the
+ * runtime's declared modes**, and one caller decides whether to hand them
+ * over: `RuntimeRegistry.seedForNewRow`, on the strength of the required turn
+ * origin its caller passed (DOR-2105). Withholding them is how an origin that
+ * seeds no power says so.
  *
- * That is a rule about this entry point, not about who may follow the operator's
- * level. A surface nobody is watching asks {@link resolveUnattendedPermissionMode}
- * BY NAME instead, so the asking is visible in the diff — scheduled runs
- * (`tasks/scheduled-run-power.ts`) and room turns (`rooms/room-turn-runner.ts`)
- * both do. Relay bindings and agent-to-agent DMs still do not: those carry a
- * grant a person set on the binding, and an absent one there is not consent
- * (DOR-604). The bypass clamp on file-sourced schedules is untouched by any of
- * it — content power and operator power stay separate ladders (ADR
- * 260822-235802, amended by 260908-170643).
+ * Which origins those are is not this module's rule and is not repeated here.
+ * It is one exhaustive switch, `permissionSeedForOrigin` in
+ * `session/origin/turn-origin.ts`, and it is exhaustive on purpose: a new
+ * turn-starting surface cannot compile until somebody decides what power it
+ * starts at. The standing answers, in one line, are that a person watching and
+ * a room turn somebody here started follow the operator's stop, while a
+ * schedule, a relay binding, an agent-to-agent DM and a connector event seed
+ * nothing — each of those last three carries a grant a person set on the thing
+ * that triggered it, and an absent one there is not consent (DOR-604).
+ *
+ * A per-TURN answer is a different question and still asked by name:
+ * {@link resolveUnattendedPermissionMode} is what a scheduled run
+ * (`tasks/scheduled-run-power.ts`) and a room turn's FIRST launch
+ * (`rooms/room-turn-runner.ts`) resolve their live mode with, because neither
+ * can read it off a row that does not exist yet. The bypass clamp on
+ * file-sourced schedules is untouched by any of it — content power and
+ * operator power stay separate ladders (ADR 260822-235802, amended by
+ * 260908-170643).
  *
  * ## Where the answer lands
  *
@@ -319,11 +329,13 @@ export function resolveSessionDefaults(opts: {
  * both surfaces want the same answer to, and a permission mode arriving as a
  * side effect of asking about a model would be an escalation nobody wrote down.
  *
- * A caller that wants the operator's power level says so separately, with
- * {@link resolveUnattendedPermissionMode} — the room runner does and the relay
- * resolver does not, which is exactly the difference between the two surfaces: a
- * relay binding carries a grant a person set on it, and this must never displace
- * one (DOR-604).
+ * A caller that wants the operator's power level FOR THE TURN IT IS ABOUT TO
+ * START says so separately, with {@link resolveUnattendedPermissionMode} — the
+ * room runner does and the relay resolver does not, which is exactly the
+ * difference between the two surfaces: a relay binding carries a grant a person
+ * set on it, and this must never displace one (DOR-604). What the session ROW
+ * is seeded with is neither call's business; that is the turn origin handed to
+ * `persistSessionRuntime` (DOR-2105).
  *
  * **New sessions only.** A session that already has settings is a running
  * conversation and keeps them — "applies to new conversations, running ones keep
@@ -376,10 +388,14 @@ export async function resolveUnattendedSessionDefaults(opts: {
  * on it.** That function deliberately answers a permission tier only for a
  * caller that hands it the runtime's declared modes, which is what keeps a
  * permission mode from riding along on a question about models (spec
- * `trust-dial`, decision 6). Unattended surfaces that DO want the operator's
- * level — a scheduled run, and a room turn — ask for it here, by name, so the
- * asking is visible in the diff rather than hidden in an argument. A relay
- * binding still does not ask: it carries a grant a person set on it (DOR-604).
+ * `trust-dial`, decision 6). Whether to hand them over is decided in exactly
+ * one place, from the required turn origin
+ * (`permissionSeedForOrigin` in `session/origin/turn-origin.ts`, DOR-2105).
+ * What is left HERE is the
+ * per-TURN question: a scheduled run and a room turn's first launch both need
+ * a live mode before any row exists to read one off, so they resolve it by
+ * name. A relay binding still does not ask at all: it carries a grant a person
+ * set on it (DOR-604).
  *
  * @param opts.configSection - Which `runtimes.*` key holds the target runtime's
  *   own defaults, from its declared `settings.configSection`. Omitted, `null`,
@@ -408,10 +424,12 @@ export function resolveUnattendedDefaultStop(opts?: {
  * surface nobody is watching — {@link resolveUnattendedDefaultStop}'s answer put
  * through that runtime's capability profile.
  *
- * Two unattended surfaces ask for this by name, and they must keep answering
- * identically for the same runtime: a scheduled run
- * (`tasks/scheduled-run-power.ts`) and a room turn
- * (`rooms/room-turn-runner.ts`). Before this existed the task path had its own
+ * Two unattended surfaces ask for this by name, for the turn they are about to
+ * start, and they must keep answering identically for the same runtime: a
+ * scheduled run (`tasks/scheduled-run-power.ts`) and a room turn
+ * (`rooms/room-turn-runner.ts`). The session ROW is seeded from the same stop
+ * through `permissionSeedForOrigin`, so the two can agree by
+ * construction rather than by coincidence. Before this existed the task path had its own
  * copy of the stop-to-mode mapping and the room path had none at all, so an
  * operator who chose Full autonomy got a scheduled run at full power and a room
  * agent that stopped to ask — in the one place nobody is there to answer

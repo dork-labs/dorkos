@@ -249,7 +249,15 @@ describe('BindingSubsystem.init runtime selection', () => {
 
       const session = await createSessionThrough(subsystem, agentDir);
 
-      expect(persistSessionRuntime).toHaveBeenCalledWith(session.id, 'codex', agentDir);
+      expect(persistSessionRuntime).toHaveBeenCalledWith(
+        session.id,
+        'codex',
+        // A binding declares itself, and the mapping gives it no power: the
+        // grant a person set on the binding is the only one it runs under
+        // (DOR-604, DOR-2105).
+        { kind: 'relay-binding' },
+        agentDir
+      );
     } finally {
       await rm(agentDir, { recursive: true, force: true });
     }

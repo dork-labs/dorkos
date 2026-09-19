@@ -78,7 +78,7 @@ describe('the session canvas routes', () => {
     // The session exists as far as this server is concerned: it has taken a
     // turn, so the runtime registry holds its binding. That is what the POST
     // asks before it mints a scope.
-    await runtimeRegistry.persistSessionRuntime(SESSION, 'claude-code');
+    await runtimeRegistry.persistSessionRuntime(SESSION, 'claude-code', { kind: 'interactive' });
   });
 
   afterEach(() => {

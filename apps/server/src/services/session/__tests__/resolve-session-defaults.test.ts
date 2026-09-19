@@ -176,9 +176,9 @@ describe('resolveSessionDefaults', () => {
     // registry consults this on every row it creates.
     const registry = new RuntimeRegistry();
     registry.setDb(createTestDb());
-    return expect(registry.persistSessionRuntime('cold-boot-session', 'claude-code')).resolves.toBe(
-      true
-    );
+    return expect(
+      registry.persistSessionRuntime('cold-boot-session', 'claude-code', { kind: 'interactive' })
+    ).resolves.toBe(true);
   });
 
   it('answers nothing for a runtime that declares no config section', () => {

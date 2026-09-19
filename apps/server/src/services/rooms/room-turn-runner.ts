@@ -621,6 +621,16 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // Full autonomy was getting a room agent that stopped to ask, in the one
       // place nobody is there to answer. Unset config resolves to `undefined`
       // and the runtime's own default stands, byte-for-byte as before.
+      //
+      // **This copy is for THIS TURN, not for the row** (DOR-2105). The
+      // `session_metadata` seed asks the same question through the required
+      // turn origin handed to `persistSessionRuntime` below, so the room no
+      // longer decides its own power for the row. What is still needed here is
+      // the mode this first turn LAUNCHES at: the row is written after the turn
+      // starts (deliberately — see the comment on that call), so the very first
+      // turn cannot inherit a posture the ordinary way and every later one
+      // must. Both copies ask `resolveUnattendedPermissionMode` against this
+      // same runtime's profile, so they cannot disagree.
       const isNewSession = (await runtimeRegistry.getSessionSettings(sessionId)) === null;
       // **And only for a message somebody on this machine wrote.** A bridged
       // Telegram or Slack chat is a projection of a relay binding into a room,
@@ -629,6 +639,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // off this machine (DOR-604). Seeding the operator's level here would make
       // the bridged path strictly looser than the binding beside it, for the
       // same sender, which is the one thing the amended ADR promises it is not.
+      // The row half of that rule is `externalAuthor` on the turn origin.
       const unattendedMode =
         isNewSession && !request.externalAuthor
           ? resolveUnattendedPermissionMode({ capabilities: runtime.getCapabilities() })
@@ -1004,12 +1015,21 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // The registry binds a session that has no runtime yet and leaves a bound
       // one untouched, so a resumed session is a no-op.
       //
-      // Still no `interactive` flag: nobody is watching a room turn, and that
-      // flag says they are. The power level travels the other way instead — the
-      // mode resolved above, handed over explicitly, so the ROW carries what
-      // this turn is already running with and every turn after it inherits the
-      // ordinary way (DOR-1917). It seeds a column still holding NULL and can
-      // never overwrite a choice somebody made on this conversation.
+      // The origin is the whole of what this call says about power: a room,
+      // and who wrote the message that started the turn (DOR-2105). Nobody is
+      // watching a room turn, which is why it FOLLOWS the operator's level
+      // rather than being denied it (DOR-1917) — and a message bridged in from
+      // off this machine does not, because the binding it came from carries its
+      // own grant (DOR-604). Neither rule is stated here: the mapping in
+      // `session/origin/turn-origin.ts` is where both are written down, once.
+      //
+      // **A room seeds a row it MINTS and nothing else**, which is the other
+      // half the mapping holds (`configured-stop-on-insert`). A row that
+      // already exists belongs to a conversation somebody has already
+      // configured, and ADR 260908-170643 promises it is untouched. That used
+      // to be this file's `isNewSession` check guarding the argument; it is now
+      // a property of the origin, so it cannot be lost by a caller forgetting
+      // to ask.
       //
       // **BELOW the `!accepted` return, and its failure is LOGGED rather than
       // thrown.** Both halves of that are load-bearing, and it used to be one
@@ -1033,12 +1053,8 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         await runtimeRegistry.persistSessionRuntime(
           canonicalId,
           runtimeType,
-          request.agentPath,
-          // Omitted, never passed as `{ permissionMode: undefined }`, when
-          // nothing is configured: the argument's absence is what says "no
-          // preference" here, and an object holding an undefined key would
-          // announce an opinion this call does not have.
-          ...(unattendedMode !== undefined ? [{ permissionMode: unattendedMode }] : [])
+          { kind: 'room', externalAuthor: request.externalAuthor },
+          request.agentPath
         );
       } catch (err) {
         logger.warn('[rooms] could not record which runtime owns this session', {

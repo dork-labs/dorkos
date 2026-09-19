@@ -8,6 +8,7 @@ import type {
   ConnectorEventSessionOrigin,
   ConnectorEventSessionTargetPort,
 } from './session-source-adapter.js';
+import type { TurnOrigin } from '../../session/index.js';
 
 /** Exact persisted agent snapshot; a changed registration cannot inherit an old notification. */
 export function readConnectorEventSessionOrigin(
@@ -36,8 +37,8 @@ export interface ConnectorEventSessionTargetOptions {
     persistSessionRuntime(
       sessionId: string,
       runtime: string,
-      agentPath: string,
-      options: { interactive: boolean }
+      origin: TurnOrigin,
+      agentPath: string
     ): Promise<boolean>;
   };
 }
@@ -66,11 +67,21 @@ export class CanonicalConnectorEventSessionTarget implements ConnectorEventSessi
     return origin;
   }
 
-  /** Bind local metadata only, preserving registry defaults and first-write-wins ownership. */
+  /**
+   * Bind local metadata only, preserving registry defaults and first-write-wins
+   * ownership.
+   *
+   * The turn origin seeds no permission mode: the subscription a person
+   * approved is the grant an event notification runs under, and the operator's
+   * own default level is not a second one (DOR-604, DOR-2105).
+   */
   async bind(sessionId: string, origin: ConnectorEventSessionOrigin): Promise<void> {
-    await this.options.sessions.persistSessionRuntime(sessionId, origin.runtime, origin.agentPath, {
-      interactive: false,
-    });
+    await this.options.sessions.persistSessionRuntime(
+      sessionId,
+      origin.runtime,
+      { kind: 'connector-event' },
+      origin.agentPath
+    );
   }
 
   /** Synchronous same-transaction origin check used immediately before protected runtime dispatch. */

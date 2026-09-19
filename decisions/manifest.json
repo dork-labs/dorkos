@@ -5735,6 +5735,25 @@
         "packages/shared/src/agent-runtime.ts",
         "packages/shared/src/session-stream.ts"
       ]
+    },
+    {
+      "id": "260919-010733",
+      "slug": "a-session-binding-declares-what-started-it",
+      "title": "A session binding declares what started it, and one mapping turns that into power",
+      "status": "accepted",
+      "created": "2026-09-19",
+      "amends": ["260908-170643"],
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/session/origin/turn-origin.ts",
+        "apps/server/src/services/core/runtime-registry.ts",
+        "apps/server/src/routes/sessions.ts",
+        "apps/server/src/services/rooms/room-turn-runner.ts",
+        "apps/server/src/services/tasks/task-scheduler-service.ts",
+        "apps/server/src/services/relay/adapter-factory.ts",
+        "apps/server/src/services/relay/binding-subsystem.ts",
+        "apps/server/src/services/connectors/events/session-target.ts"
+      ]
     }
   ]
 }

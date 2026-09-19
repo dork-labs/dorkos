@@ -29,6 +29,10 @@ import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
 import type { RoomTurnRequest, RoomTurnWaiting } from '../room-trigger.js';
 import { USER_CONFIG_DEFAULTS, type UserConfig } from '@dorkos/shared/config-schema';
+// The REAL mapping, not a copy: what a room's origin means for the row is the
+// claim these cases make, and re-stating it here would be asserting a
+// duplicate rather than the rule (DOR-2105).
+import { permissionSeedForOrigin, type TurnOrigin } from '../../session/index.js';
 
 const persistSessionRuntime = vi.fn().mockResolvedValue(true);
 /** What `session_metadata` holds for the session under test — `null` = no row. */
@@ -334,6 +338,17 @@ function settle(): Promise<void> {
 }
 
 /**
+ * The turn origin a room turn is required to declare (DOR-2105).
+ *
+ * @param externalAuthor - Whether the triggering message came from off this
+ *   machine. It is the one fact the power mapping reads, so it is always
+ *   matched exactly.
+ */
+function roomOrigin(externalAuthor = false): TurnOrigin {
+  return { kind: 'room', externalAuthor };
+}
+
+/**
  * A trigger request for a room nothing else is using.
  *
  * @param overrides - Fields to replace, plus `entryText` for the message body,
@@ -502,6 +517,7 @@ describe('createSessionRoomTurnRunner', () => {
       expect(persistSessionRuntime).toHaveBeenLastCalledWith(
         'room-session-on-codex',
         'codex',
+        roomOrigin(),
         '/repo/ana'
       );
     });
@@ -520,6 +536,7 @@ describe('createSessionRoomTurnRunner', () => {
       expect(persistSessionRuntime).toHaveBeenLastCalledWith(
         expect.any(String),
         'codex',
+        roomOrigin(),
         '/repo/ana'
       );
     });
@@ -1309,6 +1326,7 @@ describe('createSessionRoomTurnRunner', () => {
     expect(persistSessionRuntime).toHaveBeenLastCalledWith(
       'session-already-bound',
       'claude-code',
+      roomOrigin(),
       '/repo/ana'
     );
   });
@@ -1327,9 +1345,15 @@ describe('createSessionRoomTurnRunner', () => {
     );
 
     expect(result.sessionId).toBe(canonical);
-    expect(persistSessionRuntime).toHaveBeenCalledWith(canonical, 'claude-code', '/repo/ana');
+    expect(persistSessionRuntime).toHaveBeenCalledWith(
+      canonical,
+      'claude-code',
+      roomOrigin(),
+      '/repo/ana'
+    );
     expect(persistSessionRuntime).not.toHaveBeenCalledWith(
       'room-placeholder',
+      expect.anything(),
       expect.anything(),
       expect.anything()
     );
@@ -2187,6 +2211,7 @@ describe('what a room turn runs with (execution defaults)', () => {
     expect(persistSessionRuntime).toHaveBeenLastCalledWith(
       expect.any(String),
       'claude-code',
+      roomOrigin(),
       '/repo/ana'
     );
   });
@@ -2248,6 +2273,7 @@ describe('what a room turn runs with (execution defaults)', () => {
     expect(persistSessionRuntime).toHaveBeenLastCalledWith(
       expect.any(String),
       'claude-code',
+      roomOrigin(),
       '/repo/ana'
     );
   });
@@ -2322,14 +2348,25 @@ describe('what a room turn runs with (execution defaults)', () => {
  * 260822-235802 wired tasks and bindings; a room has no per-surface permission
  * control of its own, so the grant had nowhere to land at all.
  *
+ * **Half of it moved in DOR-2105.** The ROW's power is no longer resolved here
+ * at all: `persistSessionRuntime` takes a required turn origin, and the one
+ * mapping in `services/session/origin/turn-origin.ts` reads the operator's stop off
+ * `{ kind: 'room' }` — so what these cases pin about the row is the
+ * DECLARATION, and that the fact deciding it (`externalAuthor`) travels with
+ * it. What the row is then born with is pinned where it is decided
+ * (`core/__tests__/runtime-registry.test.ts`) and end to end over a real
+ * config and a real registry (`routes/__tests__/default-trust-stop.integration.test.ts`).
+ * The per-TURN mode below is still this file's, because the row is written
+ * after the turn starts and cannot seed the turn that matters.
+ *
  * Seeded defects, each red before the code stood:
  *
  * - Dropping `permissionMode` from the room's per-turn seed reddens "the FIRST
  *   turn already runs at it" — the row is written after the turn starts, so a
  *   fix that only seeds the row leaves the turn that matters at ask-first.
- * - Dropping the fourth argument to `persistSessionRuntime` reddens "and the row
- *   carries it, so every turn after inherits it" — turn one is right and turn
- *   two silently falls back.
+ * - Dropping `externalAuthor` from the turn origin reddens "never lets a
+ *   stranger on a bridged chat start a session at that level" — the fact that
+ *   holds DOR-604 on the bridged path is the one the mapping reads.
  * - Resolving the stop for a session that already has a row reddens "leaves a
  *   room conversation that already has settings alone".
  */
@@ -2368,11 +2405,15 @@ describe('what power a room turn runs at (DOR-1917)', () => {
 
     await createSessionRoomTurnRunner().run(request());
 
+    // The room no longer resolves a mode for the row: it declares what it IS,
+    // and the one mapping in `session/origin/turn-origin.ts` reads the operator's stop
+    // off that (DOR-2105). What this pins is the declaration — that the call
+    // names a room, with the fact that decides its power.
     expect(persistSessionRuntime).toHaveBeenLastCalledWith(
       expect.any(String),
       'claude-code',
-      '/repo/ana',
-      { permissionMode: 'bypassPermissions' }
+      roomOrigin(),
+      '/repo/ana'
     );
   });
 
@@ -2412,6 +2453,7 @@ describe('what power a room turn runs at (DOR-1917)', () => {
     expect(persistSessionRuntime).toHaveBeenLastCalledWith(
       expect.any(String),
       'claude-code',
+      roomOrigin(),
       '/repo/ana'
     );
   });
@@ -2431,8 +2473,21 @@ describe('what power a room turn runs at (DOR-1917)', () => {
     expect(persistSessionRuntime).toHaveBeenLastCalledWith(
       expect.any(String),
       'claude-code',
+      roomOrigin(),
       '/repo/ana'
     );
+    // **And the ROW is left alone too** (DOR-2105 review). The registry is a
+    // mock here, so this cannot read a row — but it can read the origin the
+    // runner actually passed through the REAL mapping, and that answer is what
+    // the registry acts on. `configured-stop-on-insert` is the guarantee: a row
+    // that already exists is never seeded, which is ADR 260908-170643's
+    // "a room conversation that already has settings is untouched". The row
+    // itself is asserted over a real database in
+    // `core/__tests__/runtime-registry.test.ts` ("claims a row an earlier
+    // settings change left unbound") and end to end over a real config in
+    // `routes/__tests__/default-trust-stop.integration.test.ts`.
+    const origin = persistSessionRuntime.mock.lastCall?.[2] as TurnOrigin;
+    expect(permissionSeedForOrigin(origin)).toBe('configured-stop-on-insert');
   });
 
   it('never lets a stranger on a bridged chat start a session at that level', async () => {
@@ -2447,9 +2502,13 @@ describe('what power a room turn runs at (DOR-1917)', () => {
     await createSessionRoomTurnRunner().run(request({ externalAuthor: true }));
 
     expect(triggered[0].newSessionPermissionMode).toBeUndefined();
+    // And the row half of the same rule travels in the origin, where the one
+    // mapping reads it (DOR-2105): the call is made, and it declares that this
+    // message came from off this machine.
     expect(persistSessionRuntime).toHaveBeenLastCalledWith(
       expect.any(String),
       'claude-code',
+      roomOrigin(true),
       '/repo/ana'
     );
   });

@@ -168,7 +168,7 @@ describe('claude-code session-settings re-key on canonical-id rebind (DOR-493)',
   }
 
   it('enforces the operator mode on a post-eviction turn under the canonical id', async () => {
-    await registry.persistSessionRuntime(REQUEST_ID, 'claude-code');
+    await registry.persistSessionRuntime(REQUEST_ID, 'claude-code', { kind: 'interactive' });
     // The operator sets bypassPermissions before the first turn — the PATCH
     // route's exact call, under the only id that exists yet.
     await runtime.updateSession(REQUEST_ID, { permissionMode: 'bypassPermissions' });
@@ -192,7 +192,12 @@ describe('claude-code session-settings re-key on canonical-id rebind (DOR-493)',
   });
 
   it('leaves the settings under exactly one key after the rebind', async () => {
-    await registry.persistSessionRuntime(REQUEST_ID, 'claude-code', '/agents/dorkbot');
+    await registry.persistSessionRuntime(
+      REQUEST_ID,
+      'claude-code',
+      { kind: 'interactive' },
+      '/agents/dorkbot'
+    );
     await runtime.updateSession(REQUEST_ID, { permissionMode: 'plan', model: 'sonnet' });
 
     await runTurn(REQUEST_ID, CANONICAL_ID);
@@ -212,7 +217,7 @@ describe('claude-code session-settings re-key on canonical-id rebind (DOR-493)',
     // The divergence a reviewer built on DOR-463: a change made before the first
     // turn landed under the request id, a later one under the canonical id, and
     // which row a read found depended on which id it arrived with.
-    await registry.persistSessionRuntime(REQUEST_ID, 'claude-code');
+    await registry.persistSessionRuntime(REQUEST_ID, 'claude-code', { kind: 'interactive' });
     await runtime.updateSession(REQUEST_ID, { permissionMode: 'plan' });
 
     await runTurn(REQUEST_ID, CANONICAL_ID);
@@ -229,7 +234,7 @@ describe('claude-code session-settings re-key on canonical-id rebind (DOR-493)',
     // and reported the transcript-derived mode, while a read arriving with the
     // retired id reached the operator's row through the extra key. With one row
     // and one key there is nothing left for two reads to disagree about.
-    await registry.persistSessionRuntime(REQUEST_ID, 'claude-code');
+    await registry.persistSessionRuntime(REQUEST_ID, 'claude-code', { kind: 'interactive' });
     await runtime.updateSession(REQUEST_ID, { permissionMode: 'plan' });
 
     await runTurn(REQUEST_ID, CANONICAL_ID);
@@ -247,7 +252,7 @@ describe('claude-code session-settings re-key on canonical-id rebind (DOR-493)',
     // and the re-key firing, so a source-wins merge would reinstate the mode the
     // operator just moved away from — an agent acting without asking, which is
     // the exact failure this ticket exists to remove.
-    await registry.persistSessionRuntime(REQUEST_ID, 'claude-code');
+    await registry.persistSessionRuntime(REQUEST_ID, 'claude-code', { kind: 'interactive' });
     await runtime.updateSession(REQUEST_ID, { permissionMode: 'bypassPermissions' });
 
     mockedQuery.mockClear();
@@ -282,16 +287,14 @@ describe('claude-code session-settings re-key on canonical-id rebind (DOR-493)',
     // loses the other direction. The fix is not a better merge rule: the row
     // moves before the id is ever announced, so the rival is never minted.
     serverConfig.runtimes = { defaultTrustStop: 'act' };
-    await registry.persistSessionRuntime(REQUEST_ID, 'claude-code', undefined, {
-      interactive: true,
-    });
+    await registry.persistSessionRuntime(REQUEST_ID, 'claude-code', { kind: 'interactive' });
     await runtime.updateSession(REQUEST_ID, { permissionMode: 'plan', model: 'opus' });
 
     // The control: this config really does seed `acceptEdits` for an id nobody
     // has touched. Without it, every assertion below could pass because the
     // fixture never armed the seed at all.
-    await registry.persistSessionRuntime('unrelated-session', 'claude-code', undefined, {
-      interactive: true,
+    await registry.persistSessionRuntime('unrelated-session', 'claude-code', {
+      kind: 'interactive',
     });
     expect(
       (await registry.getSessionSettings('unrelated-session'))?.permissionMode,
@@ -308,12 +311,9 @@ describe('claude-code session-settings re-key on canonical-id rebind (DOR-493)',
       // — exactly what `POST /api/sessions/:id/messages` does.
       if (!posted && runtime.getInternalSessionId(REQUEST_ID) === CANONICAL_ID) {
         posted = true;
-        countedAsNew = await registry.persistSessionRuntime(
-          CANONICAL_ID,
-          'claude-code',
-          undefined,
-          { interactive: true }
-        );
+        countedAsNew = await registry.persistSessionRuntime(CANONICAL_ID, 'claude-code', {
+          kind: 'interactive',
+        });
       }
     }
     expect(posted, 'the interleaving never happened — this test proved nothing').toBe(true);
@@ -339,13 +339,17 @@ describe('claude-code session-settings re-key on canonical-id rebind (DOR-493)',
     // used to stay under the request id, so the FIRST post under the canonical
     // id — which is every post after the client re-keys — inserted a fresh row,
     // returned true, and counted the same session twice.
-    const firstPost = await registry.persistSessionRuntime(REQUEST_ID, 'claude-code');
+    const firstPost = await registry.persistSessionRuntime(REQUEST_ID, 'claude-code', {
+      kind: 'interactive',
+    });
     expect(firstPost, 'the session was never minted — this test proved nothing').toBe(true);
 
     await runTurn(REQUEST_ID, CANONICAL_ID);
 
     // The client re-keyed to the canonical id; this is its next message.
-    const nextPost = await registry.persistSessionRuntime(CANONICAL_ID, 'claude-code');
+    const nextPost = await registry.persistSessionRuntime(CANONICAL_ID, 'claude-code', {
+      kind: 'interactive',
+    });
 
     expect(nextPost).toBe(false);
     expect(db.select().from(sessionMetadata).all()).toHaveLength(1);
@@ -360,7 +364,7 @@ describe('claude-code session-settings re-key on canonical-id rebind (DOR-493)',
     const boom = vi
       .spyOn(registry, 'rekeySessionSettings')
       .mockRejectedValue(new Error('database is locked'));
-    await registry.persistSessionRuntime(REQUEST_ID, 'claude-code');
+    await registry.persistSessionRuntime(REQUEST_ID, 'claude-code', { kind: 'interactive' });
     await runtime.updateSession(REQUEST_ID, { permissionMode: 'plan' });
 
     mockedQuery.mockClear();
@@ -397,8 +401,50 @@ describe('claude-code session-settings re-key on canonical-id rebind (DOR-493)',
     boom.mockRestore();
   });
 
+  it('carries a mode nobody typed from the turn origin all the way into the SDK', async () => {
+    // **The one thing types cannot check** (DOR-2105). Everything between the
+    // origin and the row is compile-enforced: the argument is required, the
+    // mapping is exhaustive, and a surface that forgets to decide does not
+    // build. What no signature can promise is that the mode the mapping
+    // resolved is the mode the model actually runs under — that journey runs
+    // through `session_metadata`, the settings overlay and
+    // `launch-resolver.ts`, and every step of it is a plain read that a
+    // refactor can quietly drop.
+    //
+    // So: an operator's configured stop, a session bound by an origin the
+    // mapping says follows it, and then the value handed to the SDK's
+    // `query()`. Nobody chose `acceptEdits` for this session; the only reason
+    // it can appear at the bottom is that the whole chain held.
+    serverConfig.runtimes = { defaultTrustStop: 'act' };
+
+    await registry.persistSessionRuntime(CANONICAL_ID, 'claude-code', { kind: 'interactive' });
+    expect(
+      (await registry.getSessionSettings(CANONICAL_ID))?.permissionMode,
+      'the origin seeded nothing — the rest of this test proves nothing'
+    ).toBe('acceptEdits');
+
+    await runTurn(CANONICAL_ID, CANONICAL_ID);
+
+    expect(enforcedMode()).toBe('acceptEdits');
+  });
+
+  it('hands the SDK nothing extra for an origin that seeds no power', async () => {
+    // The other direction of the same journey, and the reason the case above
+    // is not just asserting a runtime default: with the SAME configured stop,
+    // an origin the mapping gives no power leaves the runtime's own default in
+    // place all the way down.
+    serverConfig.runtimes = { defaultTrustStop: 'act' };
+
+    await registry.persistSessionRuntime(CANONICAL_ID, 'claude-code', { kind: 'relay-binding' });
+    expect((await registry.getSessionSettings(CANONICAL_ID))?.permissionMode).toBeUndefined();
+
+    await runTurn(CANONICAL_ID, CANONICAL_ID);
+
+    expect(enforcedMode()).not.toBe('acceptEdits');
+  });
+
   it('does not re-key when the SDK keeps the id it was given (resumed session)', async () => {
-    await registry.persistSessionRuntime(CANONICAL_ID, 'claude-code');
+    await registry.persistSessionRuntime(CANONICAL_ID, 'claude-code', { kind: 'interactive' });
     await runtime.updateSession(CANONICAL_ID, { permissionMode: 'acceptEdits' });
 
     await runTurn(CANONICAL_ID, CANONICAL_ID);

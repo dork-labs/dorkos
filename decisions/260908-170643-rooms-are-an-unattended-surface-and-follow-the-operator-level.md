@@ -15,6 +15,37 @@ amends: 260822-235802
 Accepted. Amends ADR `260822-235802` (unattended surfaces follow the operator's
 power level) by adding the surface that decision's enumeration left out.
 
+**Amended 2026-09-19 by**
+[260919-010733](260919-010733-a-session-binding-declares-what-started-it.md)
+(A session binding declares what started it, and one mapping turns that into
+power). **What is retired is the MECHANISM, not the decision.** Two passages
+below describe wiring that no longer exists:
+
+- "the `interactive: true` flag on `persistSessionRuntime`" — there is no such
+  flag. `persistSessionRuntime` takes a required `TurnOrigin` union, and
+  `{ kind: 'interactive' }` is the member the chat send path passes.
+- "an explicit `permissionMode` seed on `persistSessionRuntime`" — the room
+  runner no longer resolves a mode for the row at all. It passes
+  `{ kind: 'room', externalAuthor }`, and one mapping
+  (`permissionSeedForOrigin`) turns that into the operator's stop. The per-TURN
+  seed this ADR describes is unchanged and still the runner's, because the row
+  is written after the turn starts.
+
+Read those two phrases as history. **Everything this ADR decided still
+governs**, now enforced rather than convention: a room turn follows the
+operator's configured trust stop through the runtime it landed on; a bridged
+stranger's message is clamped, and `externalAuthor` is the one field the origin
+union carries because it is the one fact that changes the answer; an agent's
+mention is not clamped; relay bindings and agent-to-agent DMs outside a room
+still resolve from their own grant; an unset config still resolves to nothing.
+
+The Consequence "A room conversation that already has settings is untouched"
+also stands, and 260919-010733 is what makes it structural: a room origin is
+`configured-stop-on-insert`, so it seeds a row it mints and never one that
+already exists. (The first cut of that change lost the promise by dropping the
+condition along with the caller that held it; the review caught it, and the
+policy is the fix.)
+
 ## Context
 
 ADR `260822-235802` moved scheduled tasks and relay bindings onto the operator's
