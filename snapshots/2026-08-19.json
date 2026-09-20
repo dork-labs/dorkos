@@ -1,0 +1,2544 @@
+{
+ "schema": 1,
+ "date": "2026-08-19",
+ "collected_at": "2026-09-20T09:42:52.896Z",
+ "complete": false,
+ "partial_day": false,
+ "truncated": false,
+ "healthy": true,
+ "health": {
+  "ok": true,
+  "failures": [],
+  "warnings": [
+   "Late: the request budget ran out after 24 of 126 head SHAs; the next run resumes this day where it stopped.",
+   "Late: the request budget ran out before the merged PRs were read; the next run resumes this day."
+  ],
+  "api_calls": 39,
+  "api_budget": 700,
+  "runs": {
+   "windows": [
+    {
+     "created": "2026-08-19T00:00:00Z..2026-08-19T11:59:59Z",
+     "total_count": 945,
+     "fetched": 945
+    },
+    {
+     "created": "2026-08-19T12:00:00Z..2026-08-19T23:59:59Z",
+     "total_count": 343,
+     "fetched": 343
+    }
+   ],
+   "total_count": 1288,
+   "fetched": 1288
+  },
+  "shas": {
+   "total": 126,
+   "done": 24
+  },
+  "min_n": {},
+  "series_gaps": [],
+  "local_exports": {},
+  "ruleset": {
+   "id": 19893973,
+   "ok": true,
+   "problems": []
+  },
+  "data_rulesets": [
+   {
+    "id": 23704437,
+    "ok": true,
+    "problems": []
+   },
+   {
+    "id": 23705388,
+    "ok": true,
+    "problems": []
+   }
+  ]
+ },
+ "shas_done": [
+  "52399058d90c",
+  "310a69113210",
+  "e04698dfd075",
+  "229fa0b50eab",
+  "586d1552faf2",
+  "b84dfd8fc8fb",
+  "a0e257942ac5",
+  "1bd76a621e1f",
+  "ebd7cae450b3",
+  "320aa6e6558f",
+  "b5fad32eda0d",
+  "dbdb61edb3b1",
+  "18639a69cc3e",
+  "c5094cbaf7d2",
+  "7561889e6267",
+  "10211d97dd26",
+  "08f7d3b76c40",
+  "1a8a3f6f9cb8",
+  "9439c6c0309b",
+  "b63aa152653d",
+  "6b9579d1ae30",
+  "bc9a846091b9",
+  "4c8069d6071f",
+  "8c4fde404fbb"
+ ],
+ "gates": {
+  "wf.claude.claude@issue_comment": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 18
+   },
+   "retried": 0,
+   "runs": 18
+  },
+  "wf.merge-tail.arm@schedule": {
+   "durations": [
+    [
+     55,
+     10
+    ],
+    [
+     6652,
+     9
+    ],
+    [
+     9945,
+     13
+    ]
+   ],
+   "conclusions": {
+    "failure": 3
+   },
+   "retried": 0,
+   "runs": 3
+  },
+  "wf.cli-smoke-test.smoke-test-bare@pull_request": {
+   "durations": [
+    [
+     480,
+     46
+    ],
+    [
+     477,
+     44
+    ],
+    [
+     703,
+     41
+    ],
+    [
+     703,
+     40
+    ],
+    [
+     1141,
+     58
+    ],
+    [
+     1133,
+     49
+    ],
+    [
+     1545,
+     45
+    ],
+    [
+     1535,
+     36
+    ],
+    [
+     1949,
+     50
+    ],
+    [
+     1937,
+     38
+    ],
+    [
+     2522,
+     50
+    ],
+    [
+     2491,
+     40
+    ],
+    [
+     5438,
+     42
+    ],
+    [
+     5431,
+     35
+    ],
+    [
+     6534,
+     41
+    ],
+    [
+     6543,
+     43
+    ],
+    [
+     6532,
+     47
+    ],
+    [
+     6483,
+     39
+    ],
+    [
+     6383,
+     37
+    ],
+    [
+     6577,
+     33
+    ],
+    [
+     6673,
+     44
+    ],
+    [
+     6627,
+     48
+    ],
+    [
+     8023,
+     120
+    ],
+    [
+     8370,
+     45
+    ],
+    [
+     8023,
+     120
+    ],
+    [
+     8300,
+     90
+    ],
+    [
+     8326,
+     194
+    ],
+    [
+     8743,
+     57
+    ],
+    [
+     8733,
+     92
+    ]
+   ],
+   "conclusions": {
+    "success": 29,
+    "cancelled": 1
+   },
+   "retried": 2,
+   "runs": 30
+  },
+  "wf.cli-smoke-test.integration-test@pull_request": {
+   "durations": [
+    [
+     487,
+     54
+    ],
+    [
+     718,
+     56
+    ],
+    [
+     1161,
+     79
+    ],
+    [
+     1560,
+     60
+    ],
+    [
+     1953,
+     55
+    ],
+    [
+     2531,
+     61
+    ],
+    [
+     5459,
+     62
+    ],
+    [
+     6491,
+     60
+    ],
+    [
+     6593,
+     59
+    ],
+    [
+     6229,
+     54
+    ],
+    [
+     6658,
+     68
+    ],
+    [
+     8087,
+     55
+    ],
+    [
+     8087,
+     55
+    ],
+    [
+     8370,
+     54
+    ],
+    [
+     8690,
+     50
+    ]
+   ],
+   "conclusions": {
+    "success": 15
+   },
+   "retried": 1,
+   "runs": 15
+  },
+  "wf.cli-smoke-test.smoke-test-docker@pull_request": {
+   "durations": [
+    [
+     494,
+     61
+    ],
+    [
+     708,
+     46
+    ],
+    [
+     1135,
+     53
+    ],
+    [
+     1552,
+     52
+    ],
+    [
+     1955,
+     55
+    ],
+    [
+     2548,
+     55
+    ],
+    [
+     5443,
+     47
+    ],
+    [
+     6393,
+     49
+    ],
+    [
+     6552,
+     67
+    ],
+    [
+     6588,
+     52
+    ],
+    [
+     6641,
+     47
+    ],
+    [
+     7718,
+     55
+    ],
+    [
+     7718,
+     55
+    ],
+    [
+     8273,
+     53
+    ],
+    [
+     8719,
+     55
+    ]
+   ],
+   "conclusions": {
+    "success": 15
+   },
+   "retried": 1,
+   "runs": 15
+  },
+  "wf.evals.structural@pull_request": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 22
+   },
+   "retried": 0,
+   "runs": 22
+  },
+  "wf.evals.credentialed@pull_request": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 22
+   },
+   "retried": 0,
+   "runs": 22
+  },
+  "wf.db-check.db-check@pull_request": {
+   "durations": [
+    [
+     372,
+     43
+    ],
+    [
+     598,
+     33
+    ],
+    [
+     1037,
+     49
+    ],
+    [
+     1442,
+     43
+    ],
+    [
+     1833,
+     49
+    ],
+    [
+     2403,
+     47
+    ],
+    [
+     5345,
+     49
+    ],
+    [
+     5938,
+     39
+    ],
+    [
+     5961,
+     44
+    ],
+    [
+     6425,
+     41
+    ],
+    [
+     6191,
+     42
+    ],
+    [
+     7472,
+     53
+    ],
+    [
+     7647,
+     49
+    ],
+    [
+     7690,
+     41
+    ],
+    [
+     8548,
+     41
+    ],
+    [
+     9717,
+     39
+    ]
+   ],
+   "conclusions": {
+    "success": 16
+   },
+   "retried": 0,
+   "runs": 16
+  },
+  "wf.claude-code-review.review@pull_request": {
+   "durations": [
+    [
+     450,
+     120
+    ],
+    [
+     1350,
+     362
+    ],
+    [
+     1632,
+     214
+    ],
+    [
+     2618,
+     262
+    ],
+    [
+     5451,
+     155
+    ],
+    [
+     7255,
+     92
+    ],
+    [
+     7661,
+     253
+    ],
+    [
+     8739,
+     362
+    ]
+   ],
+   "conclusions": {
+    "success": 8,
+    "skipped": 7
+   },
+   "retried": 0,
+   "runs": 15
+  },
+  "wf.changelog-fragment-check.no-fragment-under-skip-label@pull_request": {
+   "durations": [
+    [
+     1416,
+     17
+    ],
+    [
+     1417,
+     18
+    ],
+    [
+     1802,
+     19
+    ],
+    [
+     6410,
+     16
+    ],
+    [
+     7467,
+     18
+    ],
+    [
+     7406,
+     16
+    ],
+    [
+     8291,
+     16
+    ],
+    [
+     8318,
+     19
+    ],
+    [
+     8208,
+     17
+    ],
+    [
+     8298,
+     20
+    ],
+    [
+     7737,
+     18
+    ],
+    [
+     9678,
+     19
+    ],
+    [
+     9674,
+     15
+    ],
+    [
+     9692,
+     31
+    ],
+    [
+     9679,
+     20
+    ],
+    [
+     9676,
+     18
+    ]
+   ],
+   "conclusions": {
+    "skipped": 11,
+    "success": 16
+   },
+   "retried": 0,
+   "runs": 27
+  },
+  "wf.test.test@pull_request": {
+   "durations": [
+    [
+     2213,
+     1632
+    ],
+    [
+     2696,
+     1708
+    ],
+    [
+     3091,
+     1692
+    ],
+    [
+     3522,
+     1739
+    ],
+    [
+     3955,
+     1599
+    ],
+    [
+     7447,
+     1564
+    ],
+    [
+     7251,
+     1303
+    ],
+    [
+     7735,
+     1772
+    ],
+    [
+     9228,
+     1744
+    ],
+    [
+     7332,
+     1321
+    ],
+    [
+     8663,
+     1306
+    ],
+    [
+     9097,
+     1623
+    ],
+    [
+     9329,
+     1592
+    ],
+    [
+     10191,
+     1724
+    ],
+    [
+     11385,
+     1724
+    ]
+   ],
+   "conclusions": {
+    "cancelled": 2,
+    "success": 14,
+    "failure": 1
+   },
+   "retried": 1,
+   "runs": 17
+  },
+  "wf.cli-smoke-test.build-tarball@pull_request": {
+   "durations": [
+    [
+     431,
+     102
+    ],
+    [
+     660,
+     95
+    ],
+    [
+     1080,
+     91
+    ],
+    [
+     1497,
+     98
+    ],
+    [
+     1896,
+     93
+    ],
+    [
+     2448,
+     93
+    ],
+    [
+     5394,
+     98
+    ],
+    [
+     6009,
+     98
+    ],
+    [
+     6004,
+     88
+    ],
+    [
+     6147,
+     99
+    ],
+    [
+     6483,
+     98
+    ],
+    [
+     7575,
+     96
+    ],
+    [
+     7575,
+     96
+    ],
+    [
+     7960,
+     93
+    ],
+    [
+     8639,
+     90
+    ]
+   ],
+   "conclusions": {
+    "success": 15
+   },
+   "retried": 1,
+   "runs": 15
+  },
+  "wf.typecheck.typecheck@pull_request": {
+   "durations": [
+    [
+     1019,
+     436
+    ],
+    [
+     1338,
+     350
+    ],
+    [
+     1823,
+     424
+    ],
+    [
+     2248,
+     464
+    ],
+    [
+     2716,
+     360
+    ],
+    [
+     5747,
+     451
+    ],
+    [
+     6326,
+     439
+    ],
+    [
+     6345,
+     406
+    ],
+    [
+     6442,
+     436
+    ],
+    [
+     6806,
+     400
+    ],
+    [
+     7577,
+     436
+    ],
+    [
+     7902,
+     415
+    ],
+    [
+     8165,
+     426
+    ],
+    [
+     8845,
+     439
+    ],
+    [
+     10132,
+     456
+    ]
+   ],
+   "conclusions": {
+    "cancelled": 1,
+    "success": 15
+   },
+   "retried": 0,
+   "runs": 16
+  },
+  "wf.browser-test.browser-test@pull_request": {
+   "durations": [
+    [
+     3157,
+     2571
+    ],
+    [
+     3509,
+     2521
+    ],
+    [
+     4334,
+     2934
+    ],
+    [
+     4202,
+     2419
+    ],
+    [
+     4660,
+     2304
+    ],
+    [
+     8465,
+     2567
+    ],
+    [
+     7970,
+     2016
+    ],
+    [
+     8813,
+     2751
+    ],
+    [
+     8684,
+     2463
+    ],
+    [
+     9905,
+     2571
+    ],
+    [
+     10297,
+     2719
+    ],
+    [
+     10721,
+     3029
+    ],
+    [
+     10991,
+     2592
+    ],
+    [
+     12450,
+     2791
+    ]
+   ],
+   "conclusions": {
+    "cancelled": 2,
+    "success": 14
+   },
+   "retried": 0,
+   "runs": 16
+  },
+  "wf.docs-openapi-check.openapi-fresh@pull_request": {
+   "durations": [
+    [
+     461,
+     131
+    ],
+    [
+     694,
+     129
+    ],
+    [
+     1140,
+     153
+    ],
+    [
+     2504,
+     147
+    ],
+    [
+     6021,
+     139
+    ],
+    [
+     6405,
+     141
+    ],
+    [
+     8119,
+     146
+    ],
+    [
+     8504,
+     127
+    ]
+   ],
+   "conclusions": {
+    "failure": 1,
+    "success": 7
+   },
+   "retried": 0,
+   "runs": 8
+  },
+  "wf.changelog-fragment-check.fragment-present@pull_request": {
+   "durations": [
+    [
+     357,
+     28
+    ],
+    [
+     597,
+     32
+    ],
+    [
+     1015,
+     27
+    ],
+    [
+     1424,
+     25
+    ],
+    [
+     1432,
+     33
+    ],
+    [
+     1810,
+     27
+    ],
+    [
+     2385,
+     29
+    ],
+    [
+     5328,
+     32
+    ],
+    [
+     5909,
+     27
+    ],
+    [
+     5929,
+     25
+    ],
+    [
+     6060,
+     36
+    ],
+    [
+     6261,
+     30
+    ],
+    [
+     7451,
+     28
+    ],
+    [
+     7417,
+     27
+    ],
+    [
+     7281,
+     27
+    ],
+    [
+     7482,
+     29
+    ],
+    [
+     8327,
+     26
+    ],
+    [
+     8318,
+     30
+    ],
+    [
+     8218,
+     32
+    ],
+    [
+     8025,
+     31
+    ],
+    [
+     7638,
+     25
+    ],
+    [
+     8404,
+     27
+    ],
+    [
+     9711,
+     33
+    ],
+    [
+     9684,
+     25
+    ],
+    [
+     9683,
+     24
+    ],
+    [
+     9689,
+     29
+    ],
+    [
+     9687,
+     29
+    ]
+   ],
+   "conclusions": {
+    "success": 27
+   },
+   "retried": 0,
+   "runs": 27
+  },
+  "wf.operating-skills-version-check.version-outranks-base@pull_request": {
+   "durations": [
+    [
+     347,
+     17
+    ],
+    [
+     583,
+     18
+    ],
+    [
+     1004,
+     17
+    ],
+    [
+     1419,
+     19
+    ],
+    [
+     1814,
+     31
+    ],
+    [
+     2376,
+     20
+    ],
+    [
+     5316,
+     20
+    ],
+    [
+     5902,
+     19
+    ],
+    [
+     5946,
+     15
+    ],
+    [
+     6343,
+     16
+    ],
+    [
+     6430,
+     19
+    ],
+    [
+     7486,
+     18
+    ],
+    [
+     7596,
+     18
+    ],
+    [
+     7659,
+     20
+    ],
+    [
+     8396,
+     19
+    ],
+    [
+     9675,
+     16
+    ]
+   ],
+   "conclusions": {
+    "success": 16
+   },
+   "retried": 0,
+   "runs": 16
+  },
+  "wf.claude.claude@pull_request_review": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.claude.claude@pull_request_review_comment": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.cli-smoke-test.smoke-test-bare@push": {
+   "durations": [
+    [
+     4089,
+     41
+    ],
+    [
+     4081,
+     35
+    ],
+    [
+     5185,
+     38
+    ],
+    [
+     5187,
+     40
+    ],
+    [
+     5877,
+     37
+    ],
+    [
+     5885,
+     46
+    ],
+    [
+     7355,
+     72
+    ],
+    [
+     7395,
+     139
+    ]
+   ],
+   "conclusions": {
+    "success": 8
+   },
+   "retried": 0,
+   "runs": 8
+  },
+  "wf.cli-smoke-test.integration-test@push": {
+   "durations": [
+    [
+     4103,
+     56
+    ],
+    [
+     5207,
+     60
+    ],
+    [
+     5895,
+     56
+    ],
+    [
+     7388,
+     55
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.cli-smoke-test.smoke-test-docker@push": {
+   "durations": [
+    [
+     4103,
+     56
+    ],
+    [
+     5195,
+     48
+    ],
+    [
+     5898,
+     58
+    ],
+    [
+     7323,
+     72
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.test.test@push": {
+   "durations": [
+    [
+     5748,
+     1795
+    ],
+    [
+     6807,
+     1749
+    ],
+    [
+     7477,
+     1736
+    ],
+    [
+     8621,
+     1766
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.browser-test.browser-test@push": {
+   "durations": [
+    [
+     6464,
+     2511
+    ],
+    [
+     7250,
+     2193
+    ],
+    [
+     8287,
+     2546
+    ],
+    [
+     9553,
+     2699
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.typecheck.typecheck@push": {
+   "durations": [
+    [
+     4370,
+     419
+    ],
+    [
+     5416,
+     359
+    ],
+    [
+     6174,
+     434
+    ],
+    [
+     7332,
+     449
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.db-check.db-check@push": {
+   "durations": [
+    [
+     3985,
+     34
+    ],
+    [
+     5097,
+     40
+    ],
+    [
+     5775,
+     35
+    ],
+    [
+     6892,
+     38
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.cli-smoke-test.build-tarball@push": {
+   "durations": [
+    [
+     4044,
+     93
+    ],
+    [
+     5145,
+     89
+    ],
+    [
+     5837,
+     97
+    ],
+    [
+     6971,
+     90
+    ]
+   ],
+   "conclusions": {
+    "success": 4
+   },
+   "retried": 0,
+   "runs": 4
+  },
+  "wf.scripts-test.harness@push": {
+   "durations": [
+    [
+     4055,
+     104
+    ],
+    [
+     6975,
+     121
+    ]
+   ],
+   "conclusions": {
+    "success": 2
+   },
+   "retried": 0,
+   "runs": 2
+  },
+  "wf.scripts-test.fixtures@push": {
+   "durations": [
+    [
+     3978,
+     27
+    ],
+    [
+     6879,
+     25
+    ]
+   ],
+   "conclusions": {
+    "success": 2
+   },
+   "retried": 0,
+   "runs": 2
+  },
+  "wf.changelog-fragment-check.no-fragment-under-skip-label@merge_group": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 7
+   },
+   "retried": 0,
+   "runs": 7
+  },
+  "wf.typecheck.typecheck@merge_group": {
+   "durations": [
+    [
+     1646,
+     320
+    ],
+    [
+     2868,
+     445
+    ],
+    [
+     3619,
+     441
+    ],
+    [
+     4693,
+     449
+    ],
+    [
+     5103,
+     421
+    ],
+    [
+     6881,
+     453
+    ],
+    [
+     8762,
+     442
+    ]
+   ],
+   "conclusions": {
+    "success": 7
+   },
+   "retried": 0,
+   "runs": 7
+  },
+  "wf.browser-test.browser-test@merge_group": {
+   "durations": [
+    [
+     3914,
+     2588
+    ],
+    [
+     5020,
+     2598
+    ],
+    [
+     5711,
+     2533
+    ],
+    [
+     6817,
+     2573
+    ],
+    [
+     7156,
+     2474
+    ],
+    [
+     9890,
+     2566
+    ]
+   ],
+   "conclusions": {
+    "success": 6,
+    "cancelled": 1
+   },
+   "retried": 0,
+   "runs": 7
+  },
+  "wf.test.test@merge_group": {
+   "durations": [
+    [
+     2952,
+     1626
+    ],
+    [
+     4035,
+     1613
+    ],
+    [
+     4819,
+     1641
+    ],
+    [
+     5952,
+     1708
+    ],
+    [
+     6365,
+     1683
+    ],
+    [
+     8189,
+     1635
+    ],
+    [
+     9726,
+     1605
+    ]
+   ],
+   "conclusions": {
+    "success": 5,
+    "failure": 2
+   },
+   "retried": 0,
+   "runs": 7
+  },
+  "wf.changelog-fragment-check.fragment-present@merge_group": {
+   "durations": [
+    [
+     1375,
+     49
+    ],
+    [
+     2449,
+     27
+    ],
+    [
+     3205,
+     27
+    ],
+    [
+     4275,
+     32
+    ],
+    [
+     4709,
+     27
+    ],
+    [
+     6219,
+     26
+    ],
+    [
+     8314,
+     22
+    ]
+   ],
+   "conclusions": {
+    "success": 7
+   },
+   "retried": 0,
+   "runs": 7
+  },
+  "wf.db-check.db-check@merge_group": {
+   "durations": [
+    [
+     1362,
+     36
+    ],
+    [
+     2470,
+     48
+    ],
+    [
+     3215,
+     38
+    ],
+    [
+     4286,
+     42
+    ],
+    [
+     4720,
+     38
+    ],
+    [
+     6498,
+     33
+    ],
+    [
+     8130,
+     41
+    ]
+   ],
+   "conclusions": {
+    "success": 7
+   },
+   "retried": 0,
+   "runs": 7
+  },
+  "wf.operating-skills-version-check.version-outranks-base@merge_group": {
+   "durations": [
+    [
+     1345,
+     19
+    ],
+    [
+     2468,
+     18
+    ],
+    [
+     3193,
+     16
+    ],
+    [
+     4263,
+     18
+    ],
+    [
+     4704,
+     21
+    ],
+    [
+     6381,
+     14
+    ],
+    [
+     8184,
+     17
+    ]
+   ],
+   "conclusions": {
+    "success": 7
+   },
+   "retried": 0,
+   "runs": 7
+  },
+  "wf.scripts-test.harness@pull_request": {
+   "durations": [
+    [
+     1898,
+     114
+    ]
+   ],
+   "conclusions": {
+    "success": 1
+   },
+   "retried": 0,
+   "runs": 1
+  },
+  "wf.scripts-test.fixtures@pull_request": {
+   "durations": [
+    [
+     1809,
+     25
+    ]
+   ],
+   "conclusions": {
+    "success": 1
+   },
+   "retried": 0,
+   "runs": 1
+  },
+  "wf.desktop-smoke.packaged-runtime@pull_request": {
+   "durations": [
+    [
+     2123,
+     340
+    ]
+   ],
+   "conclusions": {
+    "success": 1
+   },
+   "retried": 0,
+   "runs": 1
+  },
+  "wf.docs-openapi-check.openapi-fresh@push": {
+   "durations": [
+    [
+     5879,
+     139
+    ]
+   ],
+   "conclusions": {
+    "success": 1
+   },
+   "retried": 0,
+   "runs": 1
+  },
+  "wf.desktop-smoke.packaged-runtime@push": {
+   "durations": [
+    [
+     6046,
+     306
+    ],
+    [
+     7139,
+     285
+    ]
+   ],
+   "conclusions": {
+    "success": 2
+   },
+   "retried": 0,
+   "runs": 2
+  },
+  "wf.desktop-release.publish-release@push": {
+   "durations": [
+    [
+     8030,
+     5
+    ]
+   ],
+   "conclusions": {
+    "success": 1
+   },
+   "retried": 0,
+   "runs": 1
+  },
+  "wf.desktop-release.verify-macos@push": {
+   "durations": [
+    [
+     7992,
+     31
+    ]
+   ],
+   "conclusions": {
+    "success": 1
+   },
+   "retried": 0,
+   "runs": 1
+  },
+  "wf.desktop-release.verify-windows@push": {
+   "durations": [
+    [
+     7866,
+     47
+    ]
+   ],
+   "conclusions": {
+    "success": 1
+   },
+   "retried": 0,
+   "runs": 1
+  },
+  "wf.publish-docker.mirror-docker-hub@push": {
+   "durations": [
+    [
+     7421,
+     25
+    ]
+   ],
+   "conclusions": {
+    "success": 1
+   },
+   "retried": 0,
+   "runs": 1
+  },
+  "wf.update-homebrew.update-formula@push": {
+   "durations": [
+    [
+     6950,
+     57
+    ]
+   ],
+   "conclusions": {
+    "failure": 1
+   },
+   "retried": 0,
+   "runs": 1
+  },
+  "wf.publish-docker.build-and-push@push": {
+   "durations": [
+    [
+     7389,
+     416
+    ]
+   ],
+   "conclusions": {
+    "success": 1
+   },
+   "retried": 0,
+   "runs": 1
+  },
+  "wf.desktop-release.build-macos@push": {
+   "durations": [
+    [
+     7817,
+     840
+    ]
+   ],
+   "conclusions": {
+    "success": 1
+   },
+   "retried": 0,
+   "runs": 1
+  },
+  "wf.desktop-release.build-windows@push": {
+   "durations": [
+    [
+     7612,
+     660
+    ]
+   ],
+   "conclusions": {
+    "success": 1
+   },
+   "retried": 0,
+   "runs": 1
+  }
+ },
+ "series": {
+  "pr_feedback_min": [
+   [
+    563,
+    43.3
+   ],
+   [
+    985,
+    42.1
+   ],
+   [
+    1397,
+    49
+   ],
+   [
+    1781,
+    40.4
+   ],
+   [
+    2353,
+    38.5
+   ],
+   [
+    5880,
+    43.1
+   ],
+   [
+    5898,
+    34.6
+   ],
+   [
+    5954,
+    47.7
+   ],
+   [
+    7092,
+    46.9
+   ],
+   [
+    7385,
+    48.6
+   ],
+   [
+    7603,
+    52
+   ],
+   [
+    8375,
+    43.6
+   ],
+   [
+    9657,
+    46.6
+   ],
+   [
+    12408,
+    42.5
+   ],
+   [
+    12409,
+    48.6
+   ],
+   [
+    12414,
+    51.3
+   ],
+   [
+    17536,
+    44.8
+   ],
+   [
+    17918,
+    45.5
+   ],
+   [
+    20256,
+    47.4
+   ],
+   [
+    21577,
+    36.5
+   ],
+   [
+    21829,
+    46.7
+   ],
+   [
+    22461,
+    43.8
+   ],
+   [
+    28717,
+    43.6
+   ],
+   [
+    30732,
+    43
+   ],
+   [
+    30737,
+    36.9
+   ],
+   [
+    30745,
+    68.1
+   ],
+   [
+    30751,
+    36
+   ],
+   [
+    30758,
+    71
+   ],
+   [
+    35487,
+    40.2
+   ],
+   [
+    35493,
+    38
+   ],
+   [
+    38817,
+    43.9
+   ],
+   [
+    38864,
+    51.5
+   ],
+   [
+    38865,
+    53.2
+   ],
+   [
+    38975,
+    55.6
+   ],
+   [
+    44050,
+    44.5
+   ],
+   [
+    44590,
+    43.3
+   ],
+   [
+    57277,
+    44.9
+   ],
+   [
+    76071,
+    44.8
+   ],
+   [
+    78179,
+    43.3
+   ],
+   [
+    80566,
+    43.3
+   ],
+   [
+    82195,
+    28.2
+   ],
+   [
+    82251,
+    44.1
+   ],
+   [
+    86285,
+    35
+   ]
+  ],
+  "queue_build_min": [],
+  "queue_wait_min": [],
+  "queue_wait_ejected_min": [],
+  "lead_time_min": [],
+  "review_recovery_min": [
+   [
+    19302,
+    8.6
+   ]
+  ]
+ },
+ "counts": {
+  "merged_prs": 0,
+  "queue_builds": 59,
+  "queue_builds_green": 40,
+  "queue_builds_cancelled": 10,
+  "ejections_failed_checks": 0,
+  "wasted_ejections": 0,
+  "review_shas": 20,
+  "review_first_ok": 19,
+  "review_cancelled": 6,
+  "review_runs": 38,
+  "test_executions": 0,
+  "test_flaky": 0,
+  "flaky_builds_sampled": 0,
+  "job_minutes": 2279.1
+ },
+ "real_catches": {},
+ "ejections_caused": {},
+ "queue_builds": [
+  {
+   "sha": "586d1552faf2",
+   "pr": 1110,
+   "created_at": "2026-08-19T00:22:04Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "ebd7cae450b3",
+   "pr": 1112,
+   "created_at": "2026-08-19T00:40:20Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "320aa6e6558f",
+   "pr": 1113,
+   "created_at": "2026-08-19T00:52:55Z",
+   "outcome": "green",
+   "failed_gates": [
+    "wf.merge-tail.arm"
+   ]
+  },
+  {
+   "sha": "b5fad32eda0d",
+   "pr": 1111,
+   "created_at": "2026-08-19T01:10:41Z",
+   "outcome": "red",
+   "failed_gates": [
+    "wf.merge-tail.arm",
+    "wf.test.test",
+    "wf.update-homebrew.update-formula"
+   ]
+  },
+  {
+   "sha": "dbdb61edb3b1",
+   "pr": 1116,
+   "created_at": "2026-08-19T01:17:59Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "1a8a3f6f9cb8",
+   "pr": 1116,
+   "created_at": "2026-08-19T01:39:31Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "bc9a846091b9",
+   "pr": 1117,
+   "created_at": "2026-08-19T02:13:10Z",
+   "outcome": "red",
+   "failed_gates": [
+    "wf.test.test"
+   ]
+  },
+  {
+   "sha": "0108390348ff",
+   "pr": 1117,
+   "created_at": "2026-08-19T02:42:41Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "b528009ccedc",
+   "pr": 1118,
+   "created_at": "2026-08-19T02:46:14Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "531d16576498",
+   "pr": 1116,
+   "created_at": "2026-08-19T02:46:48Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "d33754cd9e64",
+   "pr": 1120,
+   "created_at": "2026-08-19T02:59:02Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "90cf8bc90736",
+   "pr": 1121,
+   "created_at": "2026-08-19T03:03:30Z",
+   "outcome": "cancelled",
+   "failed_gates": []
+  },
+  {
+   "sha": "bf13595e713a",
+   "pr": 1122,
+   "created_at": "2026-08-19T03:27:49Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "d50e542b38f5",
+   "pr": 1122,
+   "created_at": "2026-08-19T04:04:23Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "e650504bd789",
+   "pr": 1121,
+   "created_at": "2026-08-19T04:08:27Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "547dc760b3a6",
+   "pr": 1114,
+   "created_at": "2026-08-19T04:09:38Z",
+   "outcome": "red",
+   "failed_gates": []
+  },
+  {
+   "sha": "e21cb63e7182",
+   "pr": 1114,
+   "created_at": "2026-08-19T04:52:29Z",
+   "outcome": "red",
+   "failed_gates": []
+  },
+  {
+   "sha": "5a21932e9f03",
+   "pr": 1115,
+   "created_at": "2026-08-19T05:37:21Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "8e07c22f460c",
+   "pr": 1124,
+   "created_at": "2026-08-19T06:25:20Z",
+   "outcome": "cancelled",
+   "failed_gates": []
+  },
+  {
+   "sha": "37b588a5f5b1",
+   "pr": 1127,
+   "created_at": "2026-08-19T06:58:28Z",
+   "outcome": "cancelled",
+   "failed_gates": []
+  },
+  {
+   "sha": "b9c30f083ad3",
+   "pr": 1119,
+   "created_at": "2026-08-19T07:11:29Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "288cae588ee1",
+   "pr": 1127,
+   "created_at": "2026-08-19T07:27:35Z",
+   "outcome": "cancelled",
+   "failed_gates": []
+  },
+  {
+   "sha": "89bbb6a4b4d9",
+   "pr": 1119,
+   "created_at": "2026-08-19T07:27:35Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "19fad63d1ee2",
+   "pr": 1124,
+   "created_at": "2026-08-19T07:29:59Z",
+   "outcome": "cancelled",
+   "failed_gates": []
+  },
+  {
+   "sha": "8159f3d573e7",
+   "pr": 1119,
+   "created_at": "2026-08-19T08:28:31Z",
+   "outcome": "cancelled",
+   "failed_gates": []
+  },
+  {
+   "sha": "1386f1915364",
+   "pr": 1124,
+   "created_at": "2026-08-19T08:28:31Z",
+   "outcome": "cancelled",
+   "failed_gates": []
+  },
+  {
+   "sha": "2205d3201233",
+   "pr": 1114,
+   "created_at": "2026-08-19T08:32:18Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "9d5d71171d95",
+   "pr": 1124,
+   "created_at": "2026-08-19T08:32:25Z",
+   "outcome": "cancelled",
+   "failed_gates": []
+  },
+  {
+   "sha": "c6c2afb0a922",
+   "pr": 1114,
+   "created_at": "2026-08-19T08:32:37Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "071c26320335",
+   "pr": 1124,
+   "created_at": "2026-08-19T08:32:39Z",
+   "outcome": "cancelled",
+   "failed_gates": []
+  },
+  {
+   "sha": "045688713aa8",
+   "pr": 1127,
+   "created_at": "2026-08-19T08:32:41Z",
+   "outcome": "cancelled",
+   "failed_gates": []
+  },
+  {
+   "sha": "28ad92e255c8",
+   "pr": 1129,
+   "created_at": "2026-08-19T08:42:31Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "d00f06dfab26",
+   "pr": 1123,
+   "created_at": "2026-08-19T09:08:47Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "0f083b0560e8",
+   "pr": 1127,
+   "created_at": "2026-08-19T09:48:35Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "2ba72b12babd",
+   "pr": 1129,
+   "created_at": "2026-08-19T09:48:35Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "15c53037fa8e",
+   "pr": 1123,
+   "created_at": "2026-08-19T09:48:36Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "4f966fd667a6",
+   "pr": 1124,
+   "created_at": "2026-08-19T10:29:54Z",
+   "outcome": "red",
+   "failed_gates": []
+  },
+  {
+   "sha": "2ec1f18e9e54",
+   "pr": 1119,
+   "created_at": "2026-08-19T10:31:48Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "059a6fe70b41",
+   "pr": 1119,
+   "created_at": "2026-08-19T10:41:18Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "c4d9304bec79",
+   "pr": 1119,
+   "created_at": "2026-08-19T10:47:45Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "f40246892953",
+   "pr": 1130,
+   "created_at": "2026-08-19T11:31:10Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "0abbed8ef684",
+   "pr": 1126,
+   "created_at": "2026-08-19T11:41:15Z",
+   "outcome": "red",
+   "failed_gates": []
+  },
+  {
+   "sha": "1dc69a965765",
+   "pr": 1124,
+   "created_at": "2026-08-19T12:23:28Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "e7c5585459b3",
+   "pr": 1128,
+   "created_at": "2026-08-19T12:23:29Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "572e82d7e848",
+   "pr": 1125,
+   "created_at": "2026-08-19T12:58:58Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "39a17bd4245f",
+   "pr": 1126,
+   "created_at": "2026-08-19T14:29:13Z",
+   "outcome": "red",
+   "failed_gates": []
+  },
+  {
+   "sha": "66aaaf2ca89e",
+   "pr": 1126,
+   "created_at": "2026-08-19T15:06:42Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "4eba5b2dcb5a",
+   "pr": 1131,
+   "created_at": "2026-08-19T16:39:49Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "1cdd6774b19c",
+   "pr": 1132,
+   "created_at": "2026-08-19T21:52:58Z",
+   "outcome": "red",
+   "failed_gates": []
+  },
+  {
+   "sha": "75bed73f1818",
+   "pr": 1133,
+   "created_at": "2026-08-19T22:26:35Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "6a7b5bce72c8",
+   "pr": 1133,
+   "created_at": "2026-08-19T22:29:51Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "b554bb695689",
+   "pr": 1134,
+   "created_at": "2026-08-19T23:06:24Z",
+   "outcome": "red",
+   "failed_gates": []
+  },
+  {
+   "sha": "215c2edd364f",
+   "pr": 1135,
+   "created_at": "2026-08-19T23:09:53Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "b30a50fb11b1",
+   "pr": 1132,
+   "created_at": "2026-08-19T23:15:23Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "93bafb54bdbf",
+   "pr": 1136,
+   "created_at": "2026-08-19T23:35:08Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "ba0efb278a1f",
+   "pr": 1135,
+   "created_at": "2026-08-19T23:39:36Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "4be29ef0044a",
+   "pr": 1132,
+   "created_at": "2026-08-19T23:39:36Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "06ce6903d665",
+   "pr": 1136,
+   "created_at": "2026-08-19T23:39:37Z",
+   "outcome": "green",
+   "failed_gates": []
+  },
+  {
+   "sha": "85aa494dd9ea",
+   "pr": 1134,
+   "created_at": "2026-08-19T23:41:57Z",
+   "outcome": "green",
+   "failed_gates": []
+  }
+ ],
+ "main": [
+  {
+   "sha": "586d1552faf2",
+   "at": "2026-08-19T01:05:49Z",
+   "done": "2026-08-19T01:47:44Z",
+   "red": false
+  },
+  {
+   "sha": "ebd7cae450b3",
+   "at": "2026-08-19T01:24:14Z",
+   "done": "2026-08-19T02:00:50Z",
+   "red": false
+  },
+  {
+   "sha": "320aa6e6558f",
+   "at": "2026-08-19T01:35:37Z",
+   "done": "2026-08-19T02:18:07Z",
+   "red": false
+  },
+  {
+   "sha": "b5fad32eda0d",
+   "at": "2026-08-19T01:54:12Z",
+   "done": "2026-08-19T02:39:13Z",
+   "red": false
+  },
+  {
+   "sha": "0108390348ff",
+   "at": "2026-08-19T03:23:37Z",
+   "done": "2026-08-19T04:05:48Z",
+   "red": false
+  },
+  {
+   "sha": "b528009ccedc",
+   "at": "2026-08-19T03:24:42Z",
+   "done": "2026-08-19T04:06:04Z",
+   "red": false
+  },
+  {
+   "sha": "531d16576498",
+   "at": "2026-08-19T03:31:41Z",
+   "done": "2026-08-19T04:20:13Z",
+   "red": false
+  },
+  {
+   "sha": "d33754cd9e64",
+   "at": "2026-08-19T03:50:20Z",
+   "done": "2026-08-19T04:32:16Z",
+   "red": false
+  },
+  {
+   "sha": "d50e542b38f5",
+   "at": "2026-08-19T04:46:57Z",
+   "done": "2026-08-19T05:47:19Z",
+   "red": false
+  },
+  {
+   "sha": "e650504bd789",
+   "at": "2026-08-19T04:50:28Z",
+   "done": "2026-08-19T05:17:46Z",
+   "red": true
+  },
+  {
+   "sha": "5a21932e9f03",
+   "at": "2026-08-19T06:21:21Z",
+   "done": "2026-08-19T06:59:20Z",
+   "red": false
+  },
+  {
+   "sha": "c6c2afb0a922",
+   "at": "2026-08-19T09:48:33Z",
+   "done": "2026-08-19T10:31:44Z",
+   "red": true
+  },
+  {
+   "sha": "0f083b0560e8",
+   "at": "2026-08-19T10:32:44Z",
+   "done": "2026-08-19T11:33:12Z",
+   "red": false
+  },
+  {
+   "sha": "2ba72b12babd",
+   "at": "2026-08-19T10:33:00Z",
+   "done": "2026-08-19T11:15:53Z",
+   "red": false
+  },
+  {
+   "sha": "15c53037fa8e",
+   "at": "2026-08-19T10:33:01Z",
+   "done": "2026-08-19T11:18:55Z",
+   "red": false
+  },
+  {
+   "sha": "c4d9304bec79",
+   "at": "2026-08-19T12:08:40Z",
+   "done": "2026-08-19T12:49:40Z",
+   "red": false
+  },
+  {
+   "sha": "f40246892953",
+   "at": "2026-08-19T12:11:18Z",
+   "done": "2026-08-19T12:55:45Z",
+   "red": false
+  },
+  {
+   "sha": "1dc69a965765",
+   "at": "2026-08-19T13:07:07Z",
+   "done": "2026-08-19T13:47:51Z",
+   "red": true
+  },
+  {
+   "sha": "e7c5585459b3",
+   "at": "2026-08-19T13:07:08Z",
+   "done": "2026-08-19T13:49:48Z",
+   "red": false
+  },
+  {
+   "sha": "572e82d7e848",
+   "at": "2026-08-19T13:44:02Z",
+   "done": "2026-08-19T14:28:56Z",
+   "red": false
+  },
+  {
+   "sha": "66aaaf2ca89e",
+   "at": "2026-08-19T15:50:15Z",
+   "done": "2026-08-19T16:33:41Z",
+   "red": false
+  },
+  {
+   "sha": "4eba5b2dcb5a",
+   "at": "2026-08-19T17:28:01Z",
+   "done": "2026-08-19T18:10:28Z",
+   "red": false
+  },
+  {
+   "sha": "6a7b5bce72c8",
+   "at": "2026-08-19T23:13:29Z",
+   "done": "2026-08-19T23:56:41Z",
+   "red": false
+  },
+  {
+   "sha": "ba0efb278a1f",
+   "at": "2026-08-19T23:59:27Z",
+   "done": "2026-08-20T00:27:55Z",
+   "red": false
+  }
+ ],
+ "releases": [
+  {
+   "tag": "v0.62.0",
+   "published_at": "2026-08-19T02:13:48Z"
+  }
+ ],
+ "cache": {
+  "bytes": 10640225159,
+  "count": 20
+ },
+ "timeouts": {}
+}

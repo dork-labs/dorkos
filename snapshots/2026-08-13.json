@@ -1,0 +1,204 @@
+{
+ "schema": 1,
+ "date": "2026-08-13",
+ "collected_at": "2026-09-20T09:42:52.896Z",
+ "complete": true,
+ "partial_day": false,
+ "truncated": false,
+ "healthy": true,
+ "health": {
+  "ok": true,
+  "failures": [],
+  "warnings": [],
+  "api_calls": 3,
+  "api_budget": 700,
+  "runs": {
+   "windows": [
+    {
+     "created": "2026-08-13T00:00:00Z..2026-08-13T23:59:59Z",
+     "total_count": 22,
+     "fetched": 22
+    }
+   ],
+   "total_count": 22,
+   "fetched": 22
+  },
+  "shas": {
+   "total": 1,
+   "done": 1
+  },
+  "min_n": {},
+  "series_gaps": [],
+  "local_exports": {},
+  "ruleset": {
+   "id": 19893973,
+   "ok": true,
+   "problems": []
+  },
+  "data_rulesets": [
+   {
+    "id": 23704437,
+    "ok": true,
+    "problems": []
+   },
+   {
+    "id": 23705388,
+    "ok": true,
+    "problems": []
+   }
+  ]
+ },
+ "shas_done": [
+  "e370557f8d94"
+ ],
+ "gates": {
+  "wf.merge-tail.arm@schedule": {
+   "durations": [
+    [
+     85776,
+     11
+    ],
+    [
+     82710,
+     10
+    ],
+    [
+     79550,
+     12
+    ],
+    [
+     76417,
+     11
+    ],
+    [
+     73408,
+     16
+    ],
+    [
+     71025,
+     11
+    ],
+    [
+     67201,
+     11
+    ],
+    [
+     63645,
+     14
+    ],
+    [
+     59913,
+     13
+    ],
+    [
+     56512,
+     12
+    ],
+    [
+     53023,
+     11
+    ],
+    [
+     49201,
+     10
+    ],
+    [
+     43320,
+     11
+    ],
+    [
+     40217,
+     10
+    ],
+    [
+     36567,
+     10
+    ],
+    [
+     32229,
+     12
+    ],
+    [
+     28119,
+     13
+    ],
+    [
+     21845,
+     11
+    ],
+    [
+     16307,
+     14
+    ],
+    [
+     9813,
+     14
+    ],
+    [
+     393,
+     11
+    ]
+   ],
+   "conclusions": {
+    "failure": 21
+   },
+   "retried": 0,
+   "runs": 21
+  },
+  "wf.evals.credentialed@schedule": {
+   "durations": [],
+   "conclusions": {
+    "skipped": 1
+   },
+   "retried": 0,
+   "runs": 1
+  },
+  "wf.evals.structural@schedule": {
+   "durations": [
+    [
+     33086,
+     116
+    ]
+   ],
+   "conclusions": {
+    "success": 1
+   },
+   "retried": 0,
+   "runs": 1
+  }
+ },
+ "series": {
+  "pr_feedback_min": [],
+  "queue_build_min": [],
+  "queue_wait_min": [],
+  "queue_wait_ejected_min": [],
+  "lead_time_min": [],
+  "review_recovery_min": []
+ },
+ "counts": {
+  "merged_prs": 0,
+  "queue_builds": 0,
+  "queue_builds_green": 0,
+  "queue_builds_cancelled": 0,
+  "ejections_failed_checks": 0,
+  "wasted_ejections": 0,
+  "review_shas": 0,
+  "review_first_ok": 0,
+  "review_cancelled": 0,
+  "review_runs": 0,
+  "test_executions": 0,
+  "test_flaky": 0,
+  "flaky_builds_sampled": 0,
+  "job_minutes": 6.1
+ },
+ "real_catches": {},
+ "ejections_caused": {},
+ "queue_builds": [],
+ "main": [],
+ "releases": [],
+ "cache": {
+  "bytes": 10640225159,
+  "count": 20
+ },
+ "timeouts": {}
+}
