@@ -5832,6 +5832,24 @@
         "packages/shared/src/agent-runtime.ts",
         "packages/shared/src/room-schemas.ts"
       ]
+    },
+    {
+      "id": "260920-201101",
+      "slug": "separate-community-retention-from-permanent-tenant-deletion",
+      "title": "Separate community retention from permanent tenant deletion",
+      "status": "proposed",
+      "created": "2026-09-20",
+      "extractedFrom": "spec",
+      "specSlug": "community-administration-contract",
+      "supersedes": null,
+      "affects": [
+        "apps/community/src/schema.ts",
+        "apps/community/src/app.ts",
+        "apps/community/src/routes/members.ts",
+        "apps/community/src/routes/exports.ts",
+        "apps/community/src/storage/pending-deletions.ts",
+        "packages/shared/src/community-wire.ts"
+      ]
     }
   ]
 }

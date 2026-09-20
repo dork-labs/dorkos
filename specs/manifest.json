@@ -3045,6 +3045,15 @@
       "status": "specified",
       "project": "Community Self-Hosting",
       "linearIssue": "DOR-2167"
+    },
+    {
+      "id": "260920-201100",
+      "slug": "community-administration-contract",
+      "title": "Community administration lifecycle contract",
+      "created": "2026-09-20",
+      "status": "specified",
+      "project": "Community Administration",
+      "linearIssue": "DOR-2175"
     }
   ]
 }
