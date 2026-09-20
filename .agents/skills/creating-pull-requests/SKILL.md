@@ -268,14 +268,15 @@ their own group and cannot evict one that will, and the group is keyed by head
 SHA, so one commit gets exactly one review.
 
 **A review lost to an infrastructure failure is re-requested for you.**
-merge-tail applies `re-review` on your behalf when the check is red, waiting at
-least 10, then 20, then 40 minutes between tries and stopping after three per
-head SHA (`scripts/should-redispatch-review.sh`). "At least" is the operative
-word: GitHub throttles scheduled workflows, and the median gap between
-merge-tail ticks is about 2.7 hours, so do not wait on it if you want a review
-now — apply `re-review` yourself. It leaves a `skip-review` label alone, and it
-never retries a PR that edits the review workflow, because that one cannot be
-reviewed by it at all.
+merge-tail applies `re-review` on your behalf when the check is red, up to three
+times per head SHA (`scripts/should-redispatch-review.sh`). Do not wait on it if
+you want a review now: GitHub throttles scheduled workflows and the median gap
+between merge-tail ticks is about 2.7 hours, so apply `re-review` yourself. It
+leaves a `skip-review` label alone, never retries a PR that edits the review
+workflow (that one cannot be reviewed by it at all), and stops when the last
+attempt died against the Claude subscription's quota, where waiting is the only
+remedy. If your PR is conflicting and `re-review` seems stuck on it, merge-tail
+removes it for you — a conflicting PR produces no run, so nothing else can.
 
 ## Rebase before you expect a review
 
@@ -303,8 +304,17 @@ gh workflow run claude-code-review.yml -f pr=<number>
 
 Manual dispatch reviews the PR's head directly. It ignores `skip-review` and draft
 state (you asked for it explicitly), refuses fork PRs, and clears `re-review` if
-the PR is carrying it. Two differences from an automatic run, because the Claude
-action treats a manual trigger as having no PR identity:
+the PR is carrying it.
+
+**Since the concurrency rework it runs _beside_ an automatic review rather than
+replacing one.** A dispatch has no head SHA in its payload, so it is keyed by PR
+number and shares no group with the automatic run. If a review is already in
+flight, dispatching gets you two reviewers, two verdicts and double the
+subscription spend. Check for a running `review` check first; the hatch exists
+for PRs that have no run at all.
+
+Two more differences from an automatic run, because the Claude action treats a
+manual trigger as having no PR identity:
 
 - It posts its line-level findings through the GitHub API instead of the action's
   inline-comment tool. Same result, slightly more turns spent.

@@ -31,15 +31,27 @@
 # back up. The cost is that the resulting run's ACTOR is the merge-tail app, so
 # that app has to be in the review workflow's `allowed_bots`.
 #
-# THE BACKOFF IS A MINIMUM, NEVER A SCHEDULE. plans/ci-steward-plan.md §5.3 asks
-# for 10, 20, 40 minutes up to two hours. Those numbers are here, but GitHub
+# THE BACKOFF IS INERT TODAY, AND SAYING SO IS THE POINT.
+# plans/ci-steward-plan.md §5.3 asks for 10, 20, 40 minutes up to two hours, and
+# those numbers are here — but every rung is shorter than one tick. GitHub
 # throttles scheduled workflows hard: over 200 merge-tail runs (2026-08-25 to
-# 09-19) the MEDIAN gap between ticks was 162 minutes, p90 305, max 748. So a
-# "10 minute" backoff means "not before 10 minutes", and in practice the first
-# retry usually lands hours later. Do not write "retries within 10 minutes"
-# anywhere; it is not true and never was. What the backoff actually buys is that
-# a systematic failure (a revoked token, a spent weekly window) cannot burn the
-# ceiling in three consecutive ticks.
+# 09-19) the MEDIAN gap between ticks was 162 minutes, p90 305, max 748. So the
+# longest rung, 40 minutes, has always elapsed by the time anything asks, and
+# `SKIP backoff` will essentially never fire. Do not describe this as "retries
+# after 10 minutes"; it is a FLOOR, and on today's trigger it is not a binding
+# one.
+#
+# WHAT THAT MEANS FOR THE THING THE BACKOFF WAS SUPPOSED TO STOP — a systematic
+# failure burning every PR's ceiling in three consecutive ticks. The backoff does
+# not stop it, so two other limiters do:
+#   * MAX_RUNS, which bounds the damage per head SHA at three retries; and
+#   * the quota skip below, which refuses to retry at all when the last attempt
+#     died against the Claude subscription's own limit. A spent weekly window is
+#     the exact case where the ladder would otherwise spend three runs and post
+#     three more red comments on every open PR, none of which could have
+#     succeeded.
+# The rungs become meaningful the day this runs on an event rather than a cron;
+# ledger 260919-204500 proposes exactly that trigger.
 #
 # Usage:
 #   scripts/should-redispatch-review.sh <pr.json>
@@ -47,6 +59,8 @@
 #
 # Prints exactly one line:
 #   RETRY             apply the `re-review` label to this PR
+#   CLEAR <reason>    REMOVE a `re-review` label that can never be cleared by a
+#                     run, because no run will ever happen (see the DIRTY arm)
 #   SKIP <reason>     leave it alone; <reason> is a stable machine-readable slug
 #
 # Exit status is 0 for a readable verdict and 2 only when the input could not be
@@ -58,18 +72,26 @@
 #     "number": 537,
 #     "state": "OPEN",
 #     "isDraft": false,
+#     "mergeStateStatus": "CLEAN",
 #     "labels": [{"name": "re-review"}],
 #     "files": [{"path": ".github/workflows/claude-code-review.yml"}],
-#     "checks": [{"name": "claude-code-review", "bucket": "fail"}],
+#     "checks": [{"name": "review", "bucket": "fail"}],
 #     "reviewRuns": [{"status": "completed", "conclusion": "failure",
 #                     "updated_at": "2026-09-20T11:00:00Z"}],
+#     "reviewClass": "turn_budget",
 #     "now": "2026-09-20T12:00:00Z"
 #   }
 #
 # `reviewRuns` is every claude-code-review run for THIS PR's CURRENT head SHA,
 # newest or oldest order, it does not matter. The head SHA is what makes the
 # attempt count mean something: a new push is new code and starts its own ladder,
-# which is the same unit `review-completes` is keyed by.
+# which is the same unit `review-completes` is keyed by. `conclusion` is read,
+# not decoration: a `skipped` or `cancelled` run never reviewed anything and must
+# not count against the ceiling (see `def runs`).
+#
+# `reviewClass` is the newest attempt's `review-outcome-class`, as the review
+# workflow records it. Only the `quota_*` values change anything; everything
+# else, including an absent value, leaves the ladder to decide.
 #
 # `now` is passed in rather than read from the clock so the fixtures can pin the
 # backoff. A missing or unparseable `now` is a SKIP, never an implicit "now".
@@ -128,7 +150,24 @@ verdict=$(jq -r \
   def review_buckets: [(.checks // [])[]
                        | select(((.name // "") | ascii_downcase) == $check)
                        | (.bucket // "") | ascii_downcase];
-  def runs: (.reviewRuns // []);
+  # ATTEMPTS, NOT RUNS, and the difference is the whole ceiling. Over 30 days
+  # this workflow logged 519 SKIPPED and 258 CANCELLED review runs against 740
+  # successes: the skipped ones are label events that never reviewed, and the
+  # cancelled ones are the concurrency dedupe doing its job. Counting either
+  # against the ladder means a PR opened with two labels arrives with three runs
+  # on its head SHA and gets ONE retry instead of three — or none, once a
+  # cancellation is in the mix. The collector for this very metric already draws
+  # the same line (`packages/ci-steward/src/series.ts`: skipped runs are filtered
+  # out of the population and a cancelled first run is counted separately).
+  #
+  # A run still in flight has a null conclusion and is therefore an attempt,
+  # which is correct: `run-in-flight` below refuses on it before the ladder is
+  # ever consulted, and it uses `all_runs` so that an in-flight run destined to
+  # skip still blocks a retry that would race it.
+  def all_runs: (.reviewRuns // []);
+  def runs: [all_runs[]
+             | select(((.conclusion // "") | ascii_downcase)
+                      | (. == "skipped" or . == "cancelled") | not)];
   def parse_time: (try (. | fromdateiso8601) catch null);
   def now_t: ((.now // "") | parse_time);
   # The newest completed run decides when the clock started. `null` propagates
@@ -138,6 +177,21 @@ verdict=$(jq -r \
 
   if (.state // "") != "OPEN"                         then "SKIP not-open"
   elif (.isDraft // false)                            then "SKIP draft"
+
+  # A CONFLICTING PR STRANDS THE BUTTON, so it gets its own arm above every
+  # other one. GitHub builds the test-merge ref of a PR before it creates any
+  # `pull_request` workflow run, and when the branch conflicts that ref cannot
+  # be built, so labelling produces NO RUN AT ALL — not a failed one, nothing.
+  # The review workflow clears `re-review` from inside a run, so a label applied
+  # to a conflicting PR is never cleared and the human button stays pressed
+  # down: the author fixes the conflict, wants a review, applies a label that is
+  # already there, and nothing happens. Meanwhile the stale red review check
+  # from before the conflict is still showing, so the gate would keep saying
+  # RETRY. Both halves have to be handled, in this order.
+  elif ((.mergeStateStatus // "") | ascii_upcase) == "DIRTY"
+    then (if ((labels) | index("re-review")) != null
+          then "CLEAR stranded-label"
+          else "SKIP conflicting" end)
 
   # The button is already down. Asking again would be a no-op at best, and at
   # worst it races the review workflow clearing the label.
@@ -165,9 +219,23 @@ verdict=$(jq -r \
 
   # An unfinished run on this SHA means a review is already happening; the check
   # bucket can lag behind it by a minute or two.
-  elif (runs | any((.status // "") != "completed"))   then "SKIP run-in-flight"
+  elif (all_runs | any((.status // "") != "completed")) then "SKIP run-in-flight"
 
   elif (runs | length) == 0                           then "SKIP no-runs"
+
+  # THE LAST ATTEMPT DIED AGAINST THE SUBSCRIPTION, NOT AGAINST THIS REPO.
+  # Retrying spends another slice of the same spent quota, fails the same way,
+  # and posts another red comment — three times per PR, across every open PR,
+  # for as long as the window is closed. The remedy for a quota stall is to
+  # wait, and the wait is not ours to shorten. The class comes from the review
+  # `review-outcome-class` annotation of the newest run, which is derived from
+  # the error fields of the SDK result message and never from model prose
+  # (scripts/classify-review-failure.sh). An absent or unreadable class is
+  # empty, which does not match, so the ladder proceeds — the safe direction is
+  # one wasted run, not a stalled gate.
+  elif ((.reviewClass // "") | ascii_downcase | startswith("quota_"))
+                                                      then "SKIP quota"
+
   elif (runs | length) >= $maxruns                    then "SKIP retry-ceiling"
   elif (now_t == null or last_end == null)            then "SKIP unreadable-time"
 

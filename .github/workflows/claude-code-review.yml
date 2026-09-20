@@ -140,14 +140,16 @@ name: claude-code-review
 # sat red until a person noticed and applied `re-review`, which is why
 # `review-completes` reads 88.5% against a 90% floor and nothing ever moved.
 # merge-tail now re-requests one on a schedule, by applying `re-review` — the
-# same reusable button a person uses — backing off 10, 20 then 40 minutes and
-# stopping after three tries per head SHA. The decision is
-# scripts/should-redispatch-review.sh, fixture-pinned like every other decision
-# merge-tail makes. Two consequences for this file: the run it produces is a
-# `labeled` event whose ACTOR is the merge-tail app, which is why that app is in
-# `allowed_bots` below; and the backoff is a MINIMUM wait, never a promise,
-# because GitHub throttles cron hard (measured p50 2.7 h between merge-tail
-# ticks, p90 5 h).
+# same reusable button a person uses — at most three times per head SHA, and
+# never when the last attempt died against the subscription's own quota. The
+# decision is scripts/should-redispatch-review.sh, fixture-pinned like every
+# other decision merge-tail makes. Two consequences for this file: the run it
+# produces is a `labeled` event whose ACTOR is the merge-tail app, which is why
+# that app is in `allowed_bots` below; and the ladder reads the
+# `review-outcome-class` this job emits, which is what makes that annotation
+# load-bearing rather than decorative. The script's 10/20/40-minute backoff does
+# NOT bound anything today — GitHub throttles cron so hard (p50 2.7 h between
+# merge-tail ticks) that every rung has elapsed before anything asks.
 #
 # EVERY RUN SAYS WHAT KIND OF OUTCOME IT WAS, in one word, in the job summary
 # and as a `review-outcome-class` notice annotation: a real review, a spent

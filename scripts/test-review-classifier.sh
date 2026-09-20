@@ -121,16 +121,22 @@ done
 # `review-completes` is supposed to measure our infrastructure rather than our
 # quota (ci/slos.yaml). Three properties, in order of how badly each fails:
 #
-#   1. A CLEAN RUN IS NEVER ASKED. On `completed`, `.result` is the MODEL's
-#      closing text, and the model has just read a PR's diff. `limit-model-prose`
-#      is a successful review whose summary quotes all three phrases; if this
-#      ever answers anything but empty, a PR can excuse its own failed review by
-#      putting a sentence in its diff. This is the injection case, so it is
-#      first.
+#   1. MODEL TEXT IS NEVER READ. `.result` is consulted only on a run that took
+#      at most one turn and spent nothing, which is the arithmetic way of saying
+#      no model turn happened. `limit-model-prose` is a successful review whose
+#      summary quotes all three phrases, because the PR it read contained them;
+#      `died-mid-run` is a REAL log whose limit string sits in `.result` after
+#      24 turns of work. Both must answer empty. This is the injection case, and
+#      it now has teeth: `SKIP quota` stops the retry ladder, so an answer a PR
+#      could forge would be a PR suppressing its own re-review.
+#      `died-mid-run` is the price, and it is a deliberate one — a genuine quota
+#      stall at turn 24 now falls back to `died` and costs one wasted retry.
+#      Under-detecting is cheap; over-detecting is not.
 #   2. The window is named when the error names it, and `unknown` when it does
-#      not. `never-started` and `died-mid-run` are REAL logs, both carrying
-#      "Claude AI usage limit reached|<epoch>" — proof that today's `no` and
-#      `died` classes already contain quota stalls with no way to see them.
+#      not. `never-started` is a REAL log carrying
+#      "Claude AI usage limit reached|<epoch>" at one turn for $0 — proof both
+#      that today's `no` class already contains quota stalls with no way to see
+#      them, and that clause 1 does not cost us that case.
 #   3. Anything unrecognised prints nothing, so the run keeps the class it
 #      already had. An API "rate limit" is deliberately in that group: it is
 #      throughput, not quota, and waiting it out is the wrong remedy.
@@ -142,10 +148,10 @@ while read -r fixture expected; do
 done <<'LIMITS'
 limit-model-prose.json
 clean-success.json
+died-mid-run.json
 limit-session.json          session
 limit-weekly.json           weekly
 never-started.json          unknown
-died-mid-run.json           unknown
 error-during-execution.json
 max-turns.json
 no-result-message.json
@@ -641,6 +647,38 @@ under_runner_temp() {
 }
 check "workflow: the helper is materialized under runner.temp, not the checkout" yes \
   "$(under_runner_temp "$helper_dir")"
+
+# WHO MAY TRIGGER THE REVIEWER AT ALL, which is a power exactly like the tool
+# lists above and was not fenced until 2026-09-20. `allowed_bots` decides which
+# non-human actors the action will start for
+# (src/github/validation/actor.ts). Its own documentation warns that `*` on a
+# public repository lets external Apps invoke the action with prompts they
+# control — so a ONE-WORD edit here, `'*'` in place of the two names, is a
+# strictly larger change to the reviewer's exposure than adding a sixth tool to
+# the allow-list, and every gate in this repo would have passed it. Pinned to
+# the exact string, like the claude_args block, so widening it is a deliberate
+# act that fails this suite first. The two names are this repo's own automation:
+# the Dependabot author, and the merge-tail app, which re-requests a lost review
+# by label and is therefore the ACTOR of the run it causes.
+check "workflow: allowed_bots is exactly these two bots" \
+  "dependabot[bot],dorkos-merge-tail[bot]" \
+  "$(sed -n "s/^ *allowed_bots: *'\(.*\)'$/\1/p" "$workflow")"
+
+# THE TURN BUDGET AND THE JOB TIMEOUT ARE ONE DECISION, and nothing but this
+# check ties them together. `--max-turns` bounds a runaway loop; `timeout-minutes`
+# bounds wall clock; raising the first without the second silently converts a
+# turn-budget failure into a wall-clock KILL, which is strictly worse because the
+# action never writes a result message and the failure comes out as `infra` with
+# no cause named. Measured rate: successful runs took 3.7 min median and 6.8 min
+# p90 for roughly 32 and 49 turns, i.e. 7-8 s a turn; 10 s is the conservative
+# figure, and 5 minutes covers checkout, the two `git show` materializations and
+# the action's own startup.
+max_turns_ceiling=$(sed -n "s/^ *REVIEW_MAX_TURNS_MAX: *'\([0-9]*\)'$/\1/p" "$workflow")
+job_timeout=$(sed -n 's/^ *timeout-minutes: *\([0-9]*\)$/\1/p' "$workflow")
+check "workflow: the turn ceiling was found" yes \
+  "$([ -n "$max_turns_ceiling" ] && [ -n "$job_timeout" ] && echo yes || echo no)"
+check "workflow: the job timeout covers the turn ceiling at 10s a turn" yes \
+  "$([ $(( max_turns_ceiling * 10 / 60 + 5 )) -le "${job_timeout:-0}" ] && echo yes || echo no)"
 
 # Defence in depth for the `diff.external` route, asserted so it is not dropped by
 # accident. NOT the control — the control is that the set above grants no `git`.

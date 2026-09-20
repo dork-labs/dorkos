@@ -127,13 +127,24 @@ Admin bypass is narrowed to `pull_request`: nobody pushes to `main` directly, ad
 
 `merge-tail.yml` has two duties. The second one, added 2026-09-20 (ledger
 `260920-175925`): on the same tick it re-requests the automated Claude review on
-any open PR whose `review` check is red, by applying the `re-review` label. It
-waits at least 10, then 20, then 40 minutes between tries and stops after three
-per head SHA; the decision is `scripts/should-redispatch-review.sh`, pinned by
-`scripts/test-should-redispatch-review.sh`. It leaves `skip-review` PRs alone
-and never retries a PR that edits `claude-code-review.yml`, because the action
-refuses to review a PR that changes its own workflow. Given the throttling
-described below, treat those waits as minimums measured in hours, not minutes.
+any open PR whose `review` check is red, by applying the `re-review` label. The
+decision is `scripts/should-redispatch-review.sh`, pinned by
+`scripts/test-should-redispatch-review.sh`. **What actually bounds it is a
+ceiling of three retries per head SHA**, not the 10/20/40-minute backoff in the
+script: every rung is shorter than one tick (median gap 162 minutes below), so
+the backoff never fires on today's trigger and only becomes real under an
+event-driven one. It counts attempts, not runs — a `skipped` or `cancelled` run
+never reviewed anything — and it refuses when the last attempt died against the
+Claude subscription's own quota, when the PR carries `skip-review`, and when the
+PR edits `claude-code-review.yml`, because the action refuses to review a PR
+that changes its own workflow. It also **removes** a `re-review` label stranded
+on a conflicting PR: GitHub creates no run for a conflicting PR, so nothing
+inside a run can clear it and the human button would stay pressed down.
+One consequence of that rework for people: `gh workflow run claude-code-review.yml -f pr=N`
+is keyed by PR number, not head SHA, so it now runs **beside** an automatic
+review instead of cancelling it — two verdicts and double the spend if one is
+already in flight. Dispatch when there is no run, not when one is slow.
+
 The mechanism is a label rather than a workflow dispatch because dispatching
 needs `actions: write`, which the merge-tail app does not hold, and GITHUB_TOKEN
 cannot substitute: GitHub creates no workflow run for an event its own token

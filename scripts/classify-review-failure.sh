@@ -63,16 +63,25 @@
 # and a quota stall is neither our bug nor a review that could have finished
 # (ci/slos.yaml, whose exclusions list has been waiting for this).
 #
-# THREE THINGS BOUND WHAT IT WILL BELIEVE, and they are the point:
-#   1. It reads only the RESULT message's own error fields — `.result` on the
-#      success-shaped error, `.errors` on the error shape — never the log, never
-#      an assistant message. The reviewer reads a PR's diff, so a diff that
-#      contains the words "weekly limit reached" must not be able to excuse a
-#      failed review.
-#   2. It refuses to answer at all for a `completed` run. On that shape
-#      `.result` is the MODEL's closing text, which is exactly the
-#      attacker-influenced string clause 1 is about; on every other shape it is
-#      the SDK's or the action's own error.
+# THREE THINGS BOUND WHAT IT WILL BELIEVE, and they are the point. The stakes
+# rose when the retry ladder started reading this: `SKIP quota` stops
+# merge-tail re-requesting a review, so a PR able to forge this answer could
+# suppress its own retry. It still cannot merge — the check stays red — but the
+# read has to be narrow enough that the question does not arise.
+#   1. `.errors` is read unconditionally. It exists only on SDKResultError, is
+#      written by the SDK, and never carries model text.
+#   2. `.result` is read ONLY when the run took at most one turn and spent
+#      nothing. That is the arithmetic statement "no model turn happened", so
+#      there is no model text for it to contain; what is there is the action's
+#      own error string. On any run that DID work — including the `died` shape,
+#      where `subtype: success` + `is_error: true` can arrive after 24 turns —
+#      `.result` is the model's closing summary, written after reading the PR's
+#      diff, and it is not read at all.
+#      THE PRICE, paid deliberately: `died-mid-run.json` is a real log of a
+#      usage limit crossed at turn 24, and its limit string lives in `.result`,
+#      so that case is no longer detected and falls back to `died`. Under-
+#      detecting costs one wasted retry. Over-detecting would let a diff stop
+#      its own PR being re-reviewed. The cheap failure is the right one.
 #   3. It matches anchored phrases, and anything it does not recognise prints
 #      nothing — so an unknown error stays whatever `class` called it, which is
 #      the fail-closed direction.
@@ -85,7 +94,8 @@
 #     "Claude AI usage limit reached|<epoch>" — a subscription limit, named,
 #     with its reset time, in the shape the classifier calls `no`. So today's
 #     `no` class already conflates "the token is bad" with "the quota is spent",
-#     which is precisely what this mode separates.
+#     which is precisely what this mode separates. That fixture is also the
+#     shape clause 2 above allows `.result` to be read on: one turn, zero spend.
 #   * `session` and `weekly` are NOT. The 30-day reliability read found no
 #     failure it could attribute to a usage limit
 #     (research/20260919_ci-pipeline-supporting/07-claude-review-effectiveness.md
@@ -188,13 +198,27 @@ readonly REPORTED_PROGRAM='
     end
 '
 
-# The result message's own error text, flattened to one line and lowercased,
-# for `limit` to match phrases in. Deliberately NOT the `reported` pipeline:
-# that one redacts and truncates for publication, and truncation could cut a
-# phrase in half and silently turn a weekly limit into no limit at all.
+# What `limit` is allowed to look at, per clauses 1 and 2 of the header:
+# `.errors` always, `.result` only on a run that took no model turn. This is
+# deliberately NOT the `reported` pipeline — that one redacts and truncates for
+# publication, and truncation could cut a phrase in half and silently turn a
+# weekly limit into no limit at all — and deliberately not REPORTED_PROGRAM,
+# which reads `.result` on any shape.
+# shellcheck disable=SC2016
+readonly LIMIT_SOURCE_PROGRAM='
+  [.[]? | select(.type == "result")] | last
+  | if . == null then ""
+    else
+      (((.errors // []) | map(tostring) | join("; "))) as $e
+      | (if ((.num_turns // 0) <= 1 and (.total_cost_usd // 0) == 0)
+         then ((.result // "") | tostring) else "" end) as $r
+      | ($e + " " + $r)
+    end
+'
+
 error_text() {
   [ -f "$1" ] || return 0
-  LC_ALL=C jq -r "$REPORTED_PROGRAM" "$1" 2>/dev/null |
+  LC_ALL=C jq -r "$LIMIT_SOURCE_PROGRAM" "$1" 2>/dev/null |
     LC_ALL=C tr '\n\r\t' '   ' |
     LC_ALL=C tr '[:upper:]' '[:lower:]'
 }

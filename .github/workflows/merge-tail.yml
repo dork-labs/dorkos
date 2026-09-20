@@ -86,6 +86,43 @@ jobs:
           # are proven to reach Dependabot's pull_request_target runs; vars.* there is not.
           client-id: ${{ secrets.MERGE_TAIL_APP_CLIENT_ID }}
           private-key: ${{ secrets.MERGE_TAIL_APP_PRIVATE_KEY }}
+          # NO `permission-*` INPUTS HERE, deliberately, and the reason is the
+          # opposite of what it looks like. Those inputs are a SCOPE-DOWN, not an
+          # addition: the action's own README says the token "inherits all of the
+          # installation's permissions" by default, and naming even one permission
+          # replaces that inheritance with exactly the named set. So adding
+          # `permission-actions: read` to make the review-retry ladder work would
+          # have silently stripped the `contents: write` and `pull-requests: write`
+          # this job needs to ARM anything — trading an inert ladder for an inert
+          # workflow. The Actions: read grant is an installation-level change the
+          # operator makes on the app; the probe below is what makes its absence
+          # loud instead of silent.
+
+      # THE LADDER'S ONE PREREQUISITE, checked once per tick instead of being
+      # discovered per PR. Listing a workflow's runs needs Actions: read, which
+      # is not among the app's original grants (contents and pull requests write,
+      # checks read). Without it every review retry would report
+      # `could-not-read-review-runs` and the ladder would be a silent no-op —
+      # the exact shape in which this workflow once sat broken for weeks with
+      # correct verdicts, zero actions and nothing red.
+      #
+      # It does NOT fail the job. Arming is this workflow's primary duty and
+      # works without Actions: read, so a missing grant must cost the retries
+      # and nothing else.
+      - name: Check the token can read workflow runs
+        id: actions-read
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          if gh api "repos/$REPO/actions/workflows/claude-code-review.yml/runs?per_page=1" \
+               --jq '.total_count' >/dev/null 2>&1; then
+            echo "ok=yes" >> "$GITHUB_OUTPUT"
+            echo "the merge-tail app can read workflow runs; the review-retry ladder is live"
+          else
+            echo "ok=no" >> "$GITHUB_OUTPUT"
+            echo "::error::The merge-tail app cannot list claude-code-review runs, so no lost review will be re-requested this tick. Grant the dorkos-merge-tail GitHub App the Actions: read permission. Arming is unaffected."
+          fi
 
       - name: Arm auto-merge on finished PRs
         env:
@@ -101,7 +138,7 @@ jobs:
           # unreadable payload, which is indistinguishable from a real refusal.
           work=$(mktemp -d)
           armed=0; skipped=0; failed=0; perm_denied=0
-          rereviewed=0; review_failed=0; review_unreadable=0
+          rereviewed=0; cleared=0; review_failed=0; review_unreadable=0
 
           gh pr list --repo "$REPO" --state open --limit 100 \
             --json number --jq '.[].number' > "$work/prs.txt" || {
@@ -113,12 +150,16 @@ jobs:
           while read -r pr; do
             [[ -n "$pr" ]] || continue
 
-            # `files` and `headRefOid` are for the review-retry block below, not
-            # for arming: the first says whether this PR edits the workflow that
-            # would review it, the second keys the retry ladder to the code that
-            # was actually reviewed.
+            # `headRefOid` is for the review-retry block below, not for arming:
+            # it keys the retry ladder to the code that was actually reviewed.
+            # The changed-file list is deliberately NOT taken from here —
+            # `gh pr view --json files` caps at 100 entries with no indication
+            # that it truncated, so a large PR editing the review workflow would
+            # slip past the refusal that exists for it. The retry block fetches
+            # a complete, paginated list instead, and only for the handful of
+            # PRs that reach it.
             if ! gh pr view "$pr" --repo "$REPO" \
-                 --json number,state,isDraft,mergeStateStatus,autoMergeRequest,reviewDecision,labels,files,headRefOid \
+                 --json number,state,isDraft,mergeStateStatus,autoMergeRequest,reviewDecision,labels,headRefOid \
                  > "$work/meta.json" 2>"$work/err.txt"; then
               echo "PR #$pr -> SKIP could-not-read-pr ($(tr '\n' ' ' < "$work/err.txt" | cut -c1-120))"
               skipped=$(( skipped + 1 )); continue
@@ -162,7 +203,19 @@ jobs:
             review_bucket=$(jq -r 'first(.[]? | select(.name == "review") | .bucket) // ""' \
                             "$work/checks.json" 2>/dev/null) || review_bucket=
             head_sha=$(jq -r '.headRefOid // ""' "$work/meta.json" 2>/dev/null) || head_sha=
-            if [[ "$review_bucket" == "fail" && -n "$head_sha" ]]; then
+
+            # Two ways in. The ordinary one is a red review check. The other is
+            # a PR that is CONFLICTING and still carries `re-review`: GitHub
+            # builds no run at all while a PR conflicts, so that label can never
+            # be cleared from inside a run and the human button stays pressed
+            # down forever. Such a PR may have no review check whatsoever — it
+            # was opened conflicted and nothing ever ran — so the red-check
+            # condition alone would never look at it.
+            stranded=$(jq -r 'if ((.mergeStateStatus // "") | ascii_upcase) == "DIRTY"
+                                 and ([(.labels // [])[] | (if type == "object" then (.name // "") else tostring end) | ascii_downcase] | index("re-review")) != null
+                              then "yes" else "no" end' \
+                       "$work/meta.json" 2>/dev/null) || stranded=no
+            if [[ ( "$review_bucket" == "fail" || "$stranded" == "yes" ) && -n "$head_sha" ]]; then
               # Every review run for THIS head, which is what the ladder counts.
               # `actions: read` on the app token is what makes this call work; if
               # it is missing, the call fails and the block below says so loudly
@@ -174,28 +227,93 @@ jobs:
               # ceiling of 4 could ever need.
               if gh api \
                    "repos/$REPO/actions/workflows/claude-code-review.yml/runs?head_sha=$head_sha&per_page=50" \
-                   --jq '[.workflow_runs[]? | {status, conclusion, updated_at}]' \
+                   --jq '[.workflow_runs[]? | {id, status, conclusion, updated_at}]' \
                    > "$work/runs.json" 2>/dev/null \
                  && jq -e 'type == "array"' "$work/runs.json" >/dev/null 2>&1; then
-                jq -s --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-                  '.[0] + {checks: .[1], reviewRuns: .[2], now: $now}' \
-                  "$work/meta.json" "$work/checks.json" "$work/runs.json" \
-                  > "$work/review-payload.json"
-                rverdict=$(./scripts/should-redispatch-review.sh "$work/review-payload.json") \
-                  || rverdict="SKIP unreadable-payload"
-                if [[ "$rverdict" == "RETRY" && "$DRY_RUN" == "true" ]]; then
-                  echo "PR #$pr -> review-retry RETRY (dry run, no label applied)"
-                  rereviewed=$(( rereviewed + 1 ))
-                elif [[ "$rverdict" == "RETRY" ]]; then
-                  if gh pr edit "$pr" --repo "$REPO" --add-label re-review >/dev/null 2>&1; then
-                    echo "PR #$pr -> review-retry REQUESTED"
-                    rereviewed=$(( rereviewed + 1 ))
-                  else
-                    echo "PR #$pr -> review-retry could-not-label"
-                    review_failed=$(( review_failed + 1 ))
-                  fi
+
+                # The COMPLETE changed-file list, paginated. `gh pr view --json
+                # files` stops at 100 and says nothing about it, which would let
+                # a large PR editing the review workflow past the one refusal
+                # that is guaranteed correct. `--jq` emitting one name per line
+                # rather than an array is deliberate: `--paginate` concatenates
+                # whatever the filter produces per page, so an array filter
+                # would yield a stream of arrays instead of one document. Git
+                # cannot store a newline in a path, so splitting on newlines is
+                # exact.
+                files_ok=no
+                if gh api --paginate "repos/$REPO/pulls/$pr/files?per_page=100" \
+                     --jq '.[].filename' 2>/dev/null \
+                   | jq -R -s 'split("\n") | map(select(length > 0))' \
+                   > "$work/files.json" \
+                   && jq -e 'type == "array"' "$work/files.json" >/dev/null 2>&1; then
+                  files_ok=yes
+                fi
+
+                # NOT `continue`: this block is a passenger on the arming
+                # loop, and skipping the rest of the iteration would refuse to
+                # ARM a PR because its review retry could not be evaluated. An
+                # unreadable file list must not read as "edits nothing" either,
+                # so the whole retry is abandoned for this PR and counted.
+                if [[ "$files_ok" != yes ]]; then
+                  echo "PR #$pr -> review-retry SKIP could-not-read-files"
+                  review_unreadable=$(( review_unreadable + 1 ))
                 else
-                  echo "PR #$pr -> review-retry $rverdict"
+
+                  # The newest attempt's outcome class, from its own
+                  # `review-outcome-class` notice annotation. For an Actions job
+                  # the check-run id IS the job id, so this is two calls, and only
+                  # for a PR that already has a red review. Anything unreadable
+                  # stays empty, which the gate treats as "decide without me".
+                  review_class=
+                  newest_run=$(jq -r '[.[] | select(.id != null)] | max_by(.updated_at // "") | .id // ""' \
+                               "$work/runs.json" 2>/dev/null) || newest_run=
+                  if [[ -n "$newest_run" ]]; then
+                    job_id=$(gh api "repos/$REPO/actions/runs/$newest_run/jobs" \
+                             --jq '.jobs[0].id // ""' 2>/dev/null) || job_id=
+                    if [[ -n "$job_id" ]]; then
+                      review_class=$(gh api "repos/$REPO/check-runs/$job_id/annotations" \
+                        --jq 'first(.[] | select(.title == "review-outcome-class") | .message) // ""' \
+                        2>/dev/null) || review_class=
+                    fi
+                  fi
+
+                  jq -s --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                    --arg class "$review_class" \
+                    '.[0] + {checks: .[1], reviewRuns: .[2], files: .[3],
+                             reviewClass: $class, now: $now}' \
+                    "$work/meta.json" "$work/checks.json" "$work/runs.json" "$work/files.json" \
+                    > "$work/review-payload.json"
+                  rverdict=$(./scripts/should-redispatch-review.sh "$work/review-payload.json") \
+                    || rverdict="SKIP unreadable-payload"
+                  if [[ "$rverdict" == "RETRY" && "$DRY_RUN" == "true" ]]; then
+                    echo "PR #$pr -> review-retry RETRY (dry run, no label applied)"
+                    rereviewed=$(( rereviewed + 1 ))
+                  elif [[ "$rverdict" == "RETRY" ]]; then
+                    if gh pr edit "$pr" --repo "$REPO" --add-label re-review >/dev/null 2>&1; then
+                      echo "PR #$pr -> review-retry REQUESTED"
+                      rereviewed=$(( rereviewed + 1 ))
+                    else
+                      echo "PR #$pr -> review-retry could-not-label"
+                      review_failed=$(( review_failed + 1 ))
+                    fi
+                  # A conflicting PR produces no workflow run at all, so a
+                  # `re-review` label on one is never cleared by the review
+                  # workflow and the human button stays pressed down for good.
+                  # Removing it is the only way anyone gets to press it again.
+                  elif [[ "$rverdict" == CLEAR* && "$DRY_RUN" == "true" ]]; then
+                    echo "PR #$pr -> review-retry $rverdict (dry run, label left in place)"
+                    cleared=$(( cleared + 1 ))
+                  elif [[ "$rverdict" == CLEAR* ]]; then
+                    if gh pr edit "$pr" --repo "$REPO" --remove-label re-review >/dev/null 2>&1; then
+                      echo "PR #$pr -> review-retry $rverdict, label removed"
+                      cleared=$(( cleared + 1 ))
+                    else
+                      echo "PR #$pr -> review-retry could-not-clear-label"
+                      review_failed=$(( review_failed + 1 ))
+                    fi
+                  else
+                    echo "PR #$pr -> review-retry $rverdict"
+                  fi
                 fi
               else
                 echo "PR #$pr -> review-retry SKIP could-not-read-review-runs"
@@ -279,7 +397,7 @@ jobs:
 
           echo
           echo "armed=$armed skipped=$skipped failed=$failed perm_denied=$perm_denied"
-          echo "reviews re-requested=$rereviewed label-failed=$review_failed unreadable=$review_unreadable"
+          echo "reviews re-requested=$rereviewed stranded-labels-cleared=$cleared label-failed=$review_failed unreadable=$review_unreadable"
 
           # The summary is written BEFORE the failure exit, not after. The
           # permission-denied bullet below only ever prints when perm_denied > 0,
@@ -300,6 +418,9 @@ jobs:
             echo "- skipped: $skipped"
             echo "- arm failed: $failed"
             echo "- reviews re-requested: $rereviewed"
+            if [[ "$cleared" -gt 0 ]]; then
+              echo "- stranded re-review labels cleared: $cleared"
+            fi
             # Two different shapes of not-retrying, and only one of them is a
             # bug. `could-not-read-review-runs` on every candidate means the app
             # token is missing `actions: read`, which makes the whole retry
