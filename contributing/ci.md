@@ -123,7 +123,23 @@ Admin bypass is narrowed to `pull_request`: nobody pushes to `main` directly, ad
 - **A skipped job satisfies a required context.** A job-level `if:` that skips posts a _skipped_ check run, and GitHub counts skipped as passing. Never "fix" a required check by making it skip.
 - **An ejection is usually not your fault.** 22% of PRs are ejected at least once; 85% of failed-checks ejections (209 of 247 over 30 days) re-pass with no change. The first response to one is to read the failing job without pushing or rerunning, and to re-arm with `gh pr merge --auto <n>` once it is plainly not yours (merge-tail would re-arm it too, but only every 2-3 hours). It counts as real only on a second ejection by the same job with no commit in between.
 
-## merge-tail: who arms a merge
+## merge-tail: who arms a merge, and who asks for a lost review again
+
+`merge-tail.yml` has two duties. The second one, added 2026-09-20 (ledger
+`260920-175925`): on the same tick it re-requests the automated Claude review on
+any open PR whose `review` check is red, by applying the `re-review` label. It
+waits at least 10, then 20, then 40 minutes between tries and stops after three
+per head SHA; the decision is `scripts/should-redispatch-review.sh`, pinned by
+`scripts/test-should-redispatch-review.sh`. It leaves `skip-review` PRs alone
+and never retries a PR that edits `claude-code-review.yml`, because the action
+refuses to review a PR that changes its own workflow. Given the throttling
+described below, treat those waits as minimums measured in hours, not minutes.
+The mechanism is a label rather than a workflow dispatch because dispatching
+needs `actions: write`, which the merge-tail app does not hold, and GITHUB_TOKEN
+cannot substitute: GitHub creates no workflow run for an event its own token
+triggered. Reading the review's runs does need `actions: read`; if the app lacks
+it, the tick says so in its summary and in a warning rather than quietly
+retrying nothing.
 
 `merge-tail.yml` arms auto-merge on PRs that are finished. Its schedule says every 10 minutes, but GitHub throttles it: over 200 scheduled runs from 2026-08-25 to 09-19 the median gap was 162 minutes (p90 305, max 748), so it runs roughly every 2-3 hours and is a backstop, not the arming path. Arm your own green PR with `gh pr merge --auto <n>`, and re-arm after a failed-checks ejection once the failing job's log shows it was not yours; arming is idempotent. A finished PR is open, not a draft, no hold label (`hold`, `do-not-merge`, `do not merge`, `wip`, `blocked`), not conflicting, mergeability known, no requested changes, no unresolved review threads (outdated ones count), and every check settled green with none cancelled. Its decision is `scripts/should-arm-automerge.sh`, pinned by `scripts/test-should-arm-automerge.sh`, and it is affirmative: anything unknown is a skip.
 

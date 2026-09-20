@@ -1,5 +1,10 @@
 name: merge-tail
 
+# Two duties, one tick over the open pull requests: arm auto-merge on the ones
+# that are finished, and re-request the automated Claude review on the ones that
+# lost theirs to an infrastructure failure. They share this loop because they
+# need the same two reads per PR.
+#
 # Arm auto-merge on pull requests that are finished.
 #
 # Why this exists: nothing in this repo ever armed auto-merge. ADR-0276's
@@ -96,6 +101,7 @@ jobs:
           # unreadable payload, which is indistinguishable from a real refusal.
           work=$(mktemp -d)
           armed=0; skipped=0; failed=0; perm_denied=0
+          rereviewed=0; review_failed=0; review_unreadable=0
 
           gh pr list --repo "$REPO" --state open --limit 100 \
             --json number --jq '.[].number' > "$work/prs.txt" || {
@@ -107,8 +113,12 @@ jobs:
           while read -r pr; do
             [[ -n "$pr" ]] || continue
 
+            # `files` and `headRefOid` are for the review-retry block below, not
+            # for arming: the first says whether this PR edits the workflow that
+            # would review it, the second keys the retry ladder to the code that
+            # was actually reviewed.
             if ! gh pr view "$pr" --repo "$REPO" \
-                 --json number,state,isDraft,mergeStateStatus,autoMergeRequest,reviewDecision,labels \
+                 --json number,state,isDraft,mergeStateStatus,autoMergeRequest,reviewDecision,labels,files,headRefOid \
                  > "$work/meta.json" 2>"$work/err.txt"; then
               echo "PR #$pr -> SKIP could-not-read-pr ($(tr '\n' ' ' < "$work/err.txt" | cut -c1-120))"
               skipped=$(( skipped + 1 )); continue
@@ -119,6 +129,79 @@ jobs:
             # the gate judge it; only an unparseable body is a real failure.
             gh pr checks "$pr" --repo "$REPO" --json name,bucket > "$work/checks.json" 2>/dev/null
             jq -e . "$work/checks.json" >/dev/null 2>&1 || echo '[]' > "$work/checks.json"
+
+            # ── re-request a lost automated review ──────────────────────────
+            #
+            # A second job for this loop, deliberately sharing its two reads
+            # rather than getting a workflow of its own: it needs exactly the PR
+            # metadata and check list already on disk here, and a separate
+            # workflow would double every API call to answer the same question.
+            #
+            # WHY AT ALL: `review-completes` sits at 88.5% against a 90% floor
+            # because a failed review is never retried by anything. Nobody
+            # notices, so about one PR in nine merges having been looked at by
+            # nothing. See scripts/should-redispatch-review.sh for the decision
+            # and the measurements; the mechanism is the `re-review` label,
+            # which is the same button a person presses and needs only the
+            # `pull-requests: write` this app already holds.
+            #
+            # It runs BEFORE the arming block on purpose, and independently of
+            # it: a PR with a red review will never arm, so putting this after
+            # the arm verdict's `continue` would make it dead code for exactly
+            # the PRs it exists for.
+            #
+            # Nothing here may fail the tick. Arming is this workflow's primary
+            # duty and a broken review-retry must not stop it, so every failure
+            # in this block is a counted skip.
+            # `|| x=` on every capture, and on the gate call below. GitHub runs
+            # this block with `bash -e`, under which an assignment from a
+            # failing command substitution exits the STEP — and the gate exits 2
+            # on an unreadable payload by design. Without these, a single
+            # malformed payload would stop the tick and take the arming half
+            # down with it.
+            review_bucket=$(jq -r 'first(.[]? | select(.name == "review") | .bucket) // ""' \
+                            "$work/checks.json" 2>/dev/null) || review_bucket=
+            head_sha=$(jq -r '.headRefOid // ""' "$work/meta.json" 2>/dev/null) || head_sha=
+            if [[ "$review_bucket" == "fail" && -n "$head_sha" ]]; then
+              # Every review run for THIS head, which is what the ladder counts.
+              # `actions: read` on the app token is what makes this call work; if
+              # it is missing, the call fails and the block below says so loudly
+              # rather than reporting a quiet "nothing to retry" forever. That
+              # silent shape is how this workflow sat inert once already.
+              # No `--paginate`: it would emit one array per page, and a stream
+              # of arrays is not the single JSON document the payload build
+              # below splices in. One page of 50 is far more than the ladder's
+              # ceiling of 4 could ever need.
+              if gh api \
+                   "repos/$REPO/actions/workflows/claude-code-review.yml/runs?head_sha=$head_sha&per_page=50" \
+                   --jq '[.workflow_runs[]? | {status, conclusion, updated_at}]' \
+                   > "$work/runs.json" 2>/dev/null \
+                 && jq -e 'type == "array"' "$work/runs.json" >/dev/null 2>&1; then
+                jq -s --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                  '.[0] + {checks: .[1], reviewRuns: .[2], now: $now}' \
+                  "$work/meta.json" "$work/checks.json" "$work/runs.json" \
+                  > "$work/review-payload.json"
+                rverdict=$(./scripts/should-redispatch-review.sh "$work/review-payload.json") \
+                  || rverdict="SKIP unreadable-payload"
+                if [[ "$rverdict" == "RETRY" && "$DRY_RUN" == "true" ]]; then
+                  echo "PR #$pr -> review-retry RETRY (dry run, no label applied)"
+                  rereviewed=$(( rereviewed + 1 ))
+                elif [[ "$rverdict" == "RETRY" ]]; then
+                  if gh pr edit "$pr" --repo "$REPO" --add-label re-review >/dev/null 2>&1; then
+                    echo "PR #$pr -> review-retry REQUESTED"
+                    rereviewed=$(( rereviewed + 1 ))
+                  else
+                    echo "PR #$pr -> review-retry could-not-label"
+                    review_failed=$(( review_failed + 1 ))
+                  fi
+                else
+                  echo "PR #$pr -> review-retry $rverdict"
+                fi
+              else
+                echo "PR #$pr -> review-retry SKIP could-not-read-review-runs"
+                review_unreadable=$(( review_unreadable + 1 ))
+              fi
+            fi
 
             # `mergeQueueEntry` rides along here rather than in `gh pr view`
             # because it is GraphQL-only. It is not optional: a pull request in
@@ -196,6 +279,7 @@ jobs:
 
           echo
           echo "armed=$armed skipped=$skipped failed=$failed perm_denied=$perm_denied"
+          echo "reviews re-requested=$rereviewed label-failed=$review_failed unreadable=$review_unreadable"
 
           # The summary is written BEFORE the failure exit, not after. The
           # permission-denied bullet below only ever prints when perm_denied > 0,
@@ -215,6 +299,19 @@ jobs:
             echo "- armed: $armed"
             echo "- skipped: $skipped"
             echo "- arm failed: $failed"
+            echo "- reviews re-requested: $rereviewed"
+            # Two different shapes of not-retrying, and only one of them is a
+            # bug. `could-not-read-review-runs` on every candidate means the app
+            # token is missing `actions: read`, which makes the whole retry
+            # ladder a silent no-op — the same failure shape as the
+            # permission-denied arm below, and the reason that one is shouted
+            # about rather than counted quietly.
+            if [[ "$review_failed" -gt 0 ]]; then
+              echo "- review re-request failed: $review_failed"
+            fi
+            if [[ "$review_unreadable" -gt 0 ]]; then
+              echo "- **could not read review runs on $review_unreadable PR(s) — the retry ladder is inert; the app token likely lacks \`actions: read\`**"
+            fi
             if [[ "$DRY_RUN" == "true" ]]; then
               echo "- (dry run: nothing was actually armed)"
             fi
@@ -226,6 +323,15 @@ jobs:
           # A workflow that evaluates everything correctly and then arms nothing
           # because it is not allowed to looks identical to a quiet day. Fail
           # loudly instead of reporting a green no-op.
+          # A retry ladder that can never read a review run is inert in exactly
+          # the way the arming path was once inert: correct verdicts, zero
+          # actions, nothing red. It is a WARNING rather than a failure because
+          # arming is this workflow's primary duty and still worked — but it must
+          # not be discoverable only by reading a log nobody opens.
+          if [[ "$review_unreadable" -gt 0 ]]; then
+            echo "::warning::merge-tail could not read claude-code-review runs on $review_unreadable pull request(s), so no lost review was re-requested. The merge-tail app probably needs the Actions: read permission."
+          fi
+
           if [[ "$perm_denied" -gt 0 ]]; then
             echo "::error::merge-tail is inert: $perm_denied arm attempt(s) refused for lack of permission."
             exit 1

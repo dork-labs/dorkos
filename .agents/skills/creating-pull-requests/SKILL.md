@@ -259,6 +259,24 @@ This mirrors how human teams work: pushes are work-in-progress, and the author
 pulls the reviewer back in with an explicit "ready again" signal. It avoids
 re-reviewing five or six times while you address feedback.
 
+**You no longer lose the review by creating a PR with labels on it.** Until
+2026-09-20, `gh pr create --label ...` fired `opened` plus one `labeled` event
+per label within the same second; the labeled runs evicted the still-pending
+`opened` run from its concurrency group and then skipped, so about 3% of merged
+PRs were never reviewed and nothing was red. Runs that will not review now sit in
+their own group and cannot evict one that will, and the group is keyed by head
+SHA, so one commit gets exactly one review.
+
+**A review lost to an infrastructure failure is re-requested for you.**
+merge-tail applies `re-review` on your behalf when the check is red, waiting at
+least 10, then 20, then 40 minutes between tries and stopping after three per
+head SHA (`scripts/should-redispatch-review.sh`). "At least" is the operative
+word: GitHub throttles scheduled workflows, and the median gap between
+merge-tail ticks is about 2.7 hours, so do not wait on it if you want a review
+now — apply `re-review` yourself. It leaves a `skip-review` label alone, and it
+never retries a PR that edits the review workflow, because that one cannot be
+reviewed by it at all.
+
 ## Rebase before you expect a review
 
 **A pull request with merge conflicts gets no CI at all — no review, and no red

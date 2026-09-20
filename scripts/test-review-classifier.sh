@@ -115,6 +115,46 @@ for shape in 'sk-ant-' 'ghs_'; do
 done
 
 # ─────────────────────────────────────────────────────────────────────────────
+# `limit` — a spent subscription is not a broken reviewer
+#
+# The workflow reports one of these as the run's outcome class, and
+# `review-completes` is supposed to measure our infrastructure rather than our
+# quota (ci/slos.yaml). Three properties, in order of how badly each fails:
+#
+#   1. A CLEAN RUN IS NEVER ASKED. On `completed`, `.result` is the MODEL's
+#      closing text, and the model has just read a PR's diff. `limit-model-prose`
+#      is a successful review whose summary quotes all three phrases; if this
+#      ever answers anything but empty, a PR can excuse its own failed review by
+#      putting a sentence in its diff. This is the injection case, so it is
+#      first.
+#   2. The window is named when the error names it, and `unknown` when it does
+#      not. `never-started` and `died-mid-run` are REAL logs, both carrying
+#      "Claude AI usage limit reached|<epoch>" — proof that today's `no` and
+#      `died` classes already contain quota stalls with no way to see them.
+#   3. Anything unrecognised prints nothing, so the run keeps the class it
+#      already had. An API "rate limit" is deliberately in that group: it is
+#      throughput, not quota, and waiting it out is the wrong remedy.
+limit() { bash "$classifier" limit "$1"; }
+
+while read -r fixture expected; do
+  [ -n "${fixture:-}" ] || continue
+  check "limit($fixture)" "${expected:-}" "$(limit "$fixtures/$fixture")"
+done <<'LIMITS'
+limit-model-prose.json
+clean-success.json
+limit-session.json          session
+limit-weekly.json           weekly
+never-started.json          unknown
+died-mid-run.json           unknown
+error-during-execution.json
+max-turns.json
+no-result-message.json
+empty-array.json
+malformed.json
+does-not-exist.json
+LIMITS
+
+# ─────────────────────────────────────────────────────────────────────────────
 # `stands` — both facts required before any review outcome may pass
 #
 # The stakes are asymmetric and this table is where that asymmetry is written

@@ -18,6 +18,7 @@
 # Usage:
 #   scripts/classify-review-failure.sh class    <execution-file>
 #   scripts/classify-review-failure.sh reported <execution-file>
+#   scripts/classify-review-failure.sh limit    <execution-file>
 #   scripts/classify-review-failure.sh stands   <execution-file> <verdict-posted>
 #
 # `class` prints exactly one word:
@@ -54,6 +55,47 @@
 # `errors`. Without the fallback every error_* subtype — the whole `died` and
 # `max_turns` space after DOR-457's re-ordering — would report nothing.
 #
+# `limit` says whether the run ended against a Claude SUBSCRIPTION limit, and
+# which one: `session` (the 5-hour window), `weekly`, `unknown` (a limit, but it
+# did not say which), or nothing at all when there is no sign of one. The
+# workflow uses it to separate "the reviewer hit its quota" from "the reviewer
+# is broken", because `review-completes` is meant to measure our infrastructure
+# and a quota stall is neither our bug nor a review that could have finished
+# (ci/slos.yaml, whose exclusions list has been waiting for this).
+#
+# THREE THINGS BOUND WHAT IT WILL BELIEVE, and they are the point:
+#   1. It reads only the RESULT message's own error fields — `.result` on the
+#      success-shaped error, `.errors` on the error shape — never the log, never
+#      an assistant message. The reviewer reads a PR's diff, so a diff that
+#      contains the words "weekly limit reached" must not be able to excuse a
+#      failed review.
+#   2. It refuses to answer at all for a `completed` run. On that shape
+#      `.result` is the MODEL's closing text, which is exactly the
+#      attacker-influenced string clause 1 is about; on every other shape it is
+#      the SDK's or the action's own error.
+#   3. It matches anchored phrases, and anything it does not recognise prints
+#      nothing — so an unknown error stays whatever `class` called it, which is
+#      the fail-closed direction.
+#
+# HOW MUCH OF THIS IS BACKED BY REAL DATA (2026-09-20), because the three
+# branches are not equally well evidenced and a reader should not have to guess
+# which:
+#   * `unknown` IS real. `never-started.json` is copied from the nine DOR-457
+#     runs and its result string is literally
+#     "Claude AI usage limit reached|<epoch>" — a subscription limit, named,
+#     with its reset time, in the shape the classifier calls `no`. So today's
+#     `no` class already conflates "the token is bad" with "the quota is spent",
+#     which is precisely what this mode separates.
+#   * `session` and `weekly` are NOT. The 30-day reliability read found no
+#     failure it could attribute to a usage limit
+#     (research/20260919_ci-pipeline-supporting/07-claude-review-effectiveness.md
+#     §6), so `limit-session.json` and `limit-weekly.json` are SYNTHETIC, written
+#     from the wording Claude Code uses for the 5-hour and weekly windows. They
+#     pin the parsing, not the wording. Replace them with the first real one that
+#     appears. If the real wording differs, the failure mode is that the run
+#     reports `quota_unknown` instead of naming the window — a worse message, not
+#     a wrong decision.
+#
 # `stands` answers the question every review outcome must pass (DOR-1665,
 # DOR-1877): did the review finish, and is its verdict really on the PR? It
 # prints `yes` only when both halves hold — the class is `completed`, and the
@@ -80,7 +122,7 @@
 set -uo pipefail
 
 usage() {
-  echo "usage: $(basename "$0") class|reported <execution-file>" >&2
+  echo "usage: $(basename "$0") class|reported|limit <execution-file>" >&2
   echo "       $(basename "$0") stands <execution-file> <verdict-posted>" >&2
   exit 2
 }
@@ -146,9 +188,38 @@ readonly REPORTED_PROGRAM='
     end
 '
 
+# The result message's own error text, flattened to one line and lowercased,
+# for `limit` to match phrases in. Deliberately NOT the `reported` pipeline:
+# that one redacts and truncates for publication, and truncation could cut a
+# phrase in half and silently turn a weekly limit into no limit at all.
+error_text() {
+  [ -f "$1" ] || return 0
+  LC_ALL=C jq -r "$REPORTED_PROGRAM" "$1" 2>/dev/null |
+    LC_ALL=C tr '\n\r\t' '   ' |
+    LC_ALL=C tr '[:upper:]' '[:lower:]'
+}
+
 case "$mode" in
   class)
     classify "$file"
+    ;;
+  limit)
+    # Clause 2 of the header: on a clean run `.result` is the model's own text,
+    # so it is never consulted. Print nothing and exit 0 — "no limit seen" is an
+    # answer, not an error.
+    [ "$(classify "$file")" = completed ] && exit 0
+    text=$(error_text "$file")
+    case "$text" in
+      *'weekly limit'*) echo weekly ;;
+      *'5-hour limit'* | *'5 hour limit'* | *'session limit'*) echo session ;;
+      # A limit that did not say which. Still worth separating from a broken
+      # reviewer: the remedy is to wait, not to fix anything.
+      *'usage limit'*) echo unknown ;;
+      # Everything else, INCLUDING an API "rate limit": that is throughput, not
+      # the subscription's quota, and calling it a quota stall would excuse a
+      # failure nobody should be waiting out.
+      *) ;;
+    esac
     ;;
   stands)
     # Both halves, and nothing less. The literal `yes` is the caller's assertion
