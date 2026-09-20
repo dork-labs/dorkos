@@ -2,6 +2,15 @@
   "version": 1,
   "specs": [
     {
+      "id": "260920-192428",
+      "slug": "community-tenancy-contract",
+      "title": "Community tenant identity, authorization, and migration contracts",
+      "created": "2026-09-20",
+      "status": "specified",
+      "linearIssue": "DOR-2171",
+      "project": "Multi-Community Hosting"
+    },
+    {
       "id": "260915-202248",
       "slug": "warm-process-lifecycle",
       "title": "A warm agent process keeps its background work",
