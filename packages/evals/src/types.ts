@@ -260,6 +260,21 @@ export interface EvalSandbox {
   projectCwd: string;
   /** Fresh temporary `DORK_HOME` the runtime and oracles read/write. */
   dorkHome: string;
+  /**
+   * The runtime this run was asked for (`--runtime`), when it named one.
+   *
+   * A seed reads it because some state a case lays down before the boot DECIDES
+   * which runtime serves a turn: a room turn's session is minted by the room
+   * runner, so the only input `resolveAgentRuntimeType` reads is the seeded
+   * agent manifest on disk (file-first, ADR-0043). Without this field a rooms
+   * case could only ever be measured on whatever its seed hard-coded — which is
+   * exactly how `--suite rooms --runtime opencode` ran every turn on
+   * claude-code (DOR-2207).
+   *
+   * Absent on `test-mode`, which registers no such runtime and leaves the
+   * server default in charge.
+   */
+  runtime?: EvalRuntime;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

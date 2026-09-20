@@ -369,7 +369,10 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
   result.isolation = isolation;
   if (opts.runtime) result.runtime = opts.runtime;
 
-  const sandbox = await createSandbox();
+  // The run's runtime rides the sandbox into `evalCase.seed`, because some state
+  // a case lays down before the boot is what DECIDES which runtime serves its
+  // turns — a rooms case's seeded agent manifest is the whole of DOR-2207.
+  const sandbox = await createSandbox(opts.runtime ? { runtime: opts.runtime } : {});
   let server: HarnessServer | undefined;
   let frames: SseFrame[] = [];
   let room: RoomFacts | undefined;
