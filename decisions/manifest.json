@@ -5784,6 +5784,24 @@
         ".claude/rules/ci-pipeline.md",
         "contributing/ci.md"
       ]
+    },
+    {
+      "id": "260920-203201",
+      "slug": "exchange-invitation-fragments-for-server-side-admission-transactions",
+      "title": "Exchange invitation fragments for server-side admission transactions",
+      "status": "proposed",
+      "created": "2026-09-20",
+      "extractedFrom": "spec",
+      "specSlug": "community-membership-journeys",
+      "supersedes": null,
+      "affects": [
+        "apps/community/src/routes/invites.ts",
+        "apps/community/src/auth.ts",
+        "apps/community/src/browser/CommunityApp.tsx",
+        "apps/community/src/browser/components/Admission.tsx",
+        "apps/server/src/services/communities/remote/pairing-service.ts",
+        "packages/shared/src/community-connections.ts"
+      ]
     }
   ]
 }
