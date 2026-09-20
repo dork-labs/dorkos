@@ -1,0 +1,41 @@
+# Copy to .temp/community-fly.toml and replace the app, origin, bucket and region.
+# Run fly deploy from the monorepo root, with --ha=false.
+app = "your-community-app"
+primary_region = "ord"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "apps/community/Dockerfile"
+
+[deploy]
+  strategy = "rolling"
+
+[env]
+  COMMUNITY_PORT = "6481"
+  COMMUNITY_PUBLIC_URL = "https://your-community-app.fly.dev"
+  COMMUNITY_STORAGE_DRIVER = "s3"
+  COMMUNITY_S3_BUCKET = "your-private-community-bucket"
+  COMMUNITY_S3_REGION = "auto"
+  COMMUNITY_S3_ENDPOINT = "https://t3.storage.dev"
+
+[http_service]
+  internal_port = 6481
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+
+  [http_service.http_options]
+    idle_timeout = 600
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "30s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "1gb"

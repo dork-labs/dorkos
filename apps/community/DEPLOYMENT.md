@@ -1,6 +1,6 @@
 # Deploy DorkOS Community
 
-DorkOS Community runs as its own service. It keeps its sign-in, PostgreSQL database, and file storage separate from a local DorkOS installation. Docker Compose is the portable setup. This guide also shows how to run the same image on Render.
+DorkOS Community runs as its own service. It keeps its sign-in, PostgreSQL database, and file storage separate from a local DorkOS installation. Docker Compose is the portable setup. For Fly.io, follow the [Fly deployment guide](FLY.md). This guide also shows how to run the same image on Render.
 
 ## Settings and limits
 
