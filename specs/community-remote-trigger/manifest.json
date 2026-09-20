@@ -3,7 +3,7 @@
   "slug": "community-remote-trigger",
   "title": "The remote trigger path — turning a mention in someone else's community into a turn on my machine",
   "created": "2026-08-14",
-  "status": "ideation",
+  "status": "superseded",
   "linearIssue": "DOR-1204",
-  "notes": "Seeded by DOR-1204 alongside ADR 260814-024525. The build itself belongs to the community program — C2 is DOR-596, the port is DOR-595 backend #3. Open Question 1 (an agent cannot be the author of a CommunityAdapter.post) has to be answered before this leaves ideation; it is a hole in the port, not in this spec."
+  "notes": "Historical ideation seeded by DOR-1204 alongside ADR 260814-024525. Superseded by specs/community-server/02-specification.md and its implemented C2 delivery (DOR-596), merged in PR #1916. See specs/community-server/04-implementation.md for the delivered behavior and verification; this sketch is not an active implementation plan."
 }
