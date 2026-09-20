@@ -3019,6 +3019,15 @@
       "status": "specified",
       "project": "Agent secrets and vault",
       "linearIssue": "DOR-2155"
+    },
+    {
+      "id": "260920-201100",
+      "slug": "community-administration-contract",
+      "title": "Community administration lifecycle contract",
+      "created": "2026-09-20",
+      "status": "specified",
+      "project": "Community Administration",
+      "linearIssue": "DOR-2175"
     }
   ]
 }
