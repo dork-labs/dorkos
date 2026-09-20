@@ -40,6 +40,7 @@
     "ci:ledger-new": "node packages/ci-steward/src/cli.ts ledger-new",
     "ci:status": "node packages/ci-steward/src/cli.ts status",
     "ci:pulse": "node packages/ci-steward/src/cli.ts pulse",
+    "ci:report": "node packages/ci-steward/src/cli.ts daily-report",
     "ci:local-export": "node packages/ci-steward/src/cli.ts local-export",
     "measure:agent-hours": "tsx scripts/measure-agent-hours.ts",
     "search:bench": "DORKOS_SEARCH_BENCH=1 tsx scripts/search-corpus-bench.ts",

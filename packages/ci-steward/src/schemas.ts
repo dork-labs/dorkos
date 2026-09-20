@@ -40,6 +40,49 @@ const CollectConfigSchema = z
   })
   .strict();
 
+/**
+ * The `triage:` block of `ci/config.yaml`: one threshold per improvement
+ * trigger (`packages/ci-steward/src/triggers.ts`). It lives in a file the
+ * fence covers, so an unattended change cannot widen a threshold to make its
+ * own trigger stop firing.
+ */
+const TriageConfigSchema = z
+  .object({
+    /** Rule 4: this week's failure rate against last week's, e.g. 1.5 for "half again as often". */
+    failure_spike_ratio: z.number().gt(1),
+    /** Rule 4: completed runs a gate needs in each week before the ratio means anything. */
+    failure_spike_min_n: z.number().int().positive(),
+    /** Rule 4's second arm: a failure rate this high fires on its own, so 0% to 50% is not silent. */
+    failure_spike_absolute: z.number().gt(0).lte(1),
+    /**
+     * Rules 4 and 5: days that must have a snapshot in EACH of the two weeks
+     * before they may be compared. Without it, 7 days against 1 backfilled day
+     * reads as a week-over-week spike.
+     */
+    spike_min_days: z.number().int().positive(),
+    /** Rule 5: fractional growth in a gate's p90 duration week over week, e.g. 0.25. */
+    duration_growth: z.number().positive(),
+    /** Rule 5: fractional growth in job minutes per merged pull request, e.g. 0.2. */
+    minutes_growth: z.number().positive(),
+    /** Rule 6: failed-checks ejections one job must cause before it is a class. */
+    repeat_ejection_min: z.number().int().positive(),
+    /** Rule 6: the window those ejections are counted over, in days. */
+    repeat_ejection_days: z.number().int().positive(),
+    /** Rule 8: p95 duration over timeout-minutes at or above which a job has no headroom. */
+    headroom_ratio: z.number().positive(),
+    /** Rule 9: how many recent days are checked for a collector health failure. */
+    collector_health_days: z.number().int().positive(),
+    /** Rule 10: days past an after-window's close before a missing verdict is stale. */
+    stale_verdict_days: z.number().int().positive(),
+    /** Rule 10: days a `proposed` entry may sit untouched. */
+    stale_proposed_days: z.number().int().positive(),
+    /** The report calls out a trigger that has been open this many days or more. */
+    open_days_warning: z.number().int().positive(),
+    /** Days of history the daily report's sparklines draw. */
+    sparkline_days: z.number().int().min(2),
+  })
+  .strict();
+
 /** `ci/config.yaml`: everything repo-specific the engine needs. */
 export const ConfigSchema = z
   .object({
@@ -89,6 +132,7 @@ export const ConfigSchema = z
         min_n: z.number().int().min(1),
       })
       .strict(),
+    triage: TriageConfigSchema,
     local: z
       .object({
         /** Under `git rev-parse --git-common-dir`, so every worktree of a clone shares it. */

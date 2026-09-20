@@ -26,6 +26,8 @@ import { checkLedger, LEDGER_FILE_RE } from './ledger.ts';
 import {
   cmdCollect,
   cmdDaily,
+  cmdDailyReport,
+  cmdTriage,
   cmdDataPrepare,
   cmdDataPublish,
   cmdLocalExport,
@@ -69,10 +71,18 @@ observe (phase 1; GitHub through the gh CLI, git for the data branch):
       Exit 1 when the collector's health failed.
   verdicts --data <dir>
       Compute verdicts/<ledger-id>.json for every entry with a hypothesis.
+  triage --data <dir>
+      The improvement triggers: what is worth doing something about, from the
+      data alone. Writes triggers.json and the summary in latest.json.
   report --data <dir>
-      The weekly report for the week before --now, and the floors.
+      The Monday deep summary for the week before --now, and the floors.
+  daily-report [--day YYYY-MM-DD] [--data <dir>] [--open]
+      Build the day's HTML report. Without --data it copies origin/<data
+      branch> to a temp directory first; it never writes to the branch and
+      never pushes. Prints the page's path.
   daily --data <dir>
-      collect, verdicts, and on Mondays report: what the workflow runs.
+      collect, verdicts, triage, the day's HTML report, and on Mondays the
+      weekly deep summary: what the workflow runs.
   data-prepare --data <dir>
       Check out the data branch at <dir>. Creates it only when neither the
       branch nor any backup tag exists; refuses (and names the restore
@@ -94,7 +104,8 @@ every command:
   --now <iso>    the clock (default: now); decides allowlist expiry and new ledger ids
 
 exit codes: 0 clean, 1 findings, 2 bad usage or an internal error
-root aliases: pnpm ci:census, ci:ledger-check, ci:ledger-new, ci:status, ci:pulse, ci:local-export
+root aliases: pnpm ci:census, ci:ledger-check, ci:ledger-new, ci:status, ci:pulse,
+              ci:report (daily-report), ci:local-export
 `;
 
 function findRoot(start: string): string | null {
@@ -238,6 +249,7 @@ export type Deps = Partial<Pick<Env, 'gh' | 'git' | 'stepSummary' | 'cloneName'>
 const NEEDS_DATA = new Set([
   'collect',
   'verdicts',
+  'triage',
   'report',
   'daily',
   'data-prepare',
@@ -255,6 +267,7 @@ function observe(
     today?: boolean;
     ref?: string;
     keep?: boolean;
+    open?: boolean;
     clone?: string;
     'no-push'?: boolean;
     message?: string;
@@ -292,6 +305,14 @@ function observe(
       return cmdCollect(env, data, { days: values.day, today: values.today });
     case 'verdicts':
       return cmdVerdicts(env, data);
+    case 'triage':
+      return cmdTriage(env, data);
+    case 'daily-report':
+      return cmdDailyReport(env, {
+        day: values.day?.[0],
+        data: values.data ? data : undefined,
+        open: values.open,
+      });
     case 'report':
       return cmdReport(env, data);
     case 'daily':
@@ -346,6 +367,7 @@ export function main(
         today: { type: 'boolean' },
         ref: { type: 'string' },
         keep: { type: 'boolean' },
+        open: { type: 'boolean' },
         clone: { type: 'string' },
         'no-push': { type: 'boolean' },
         message: { type: 'string' },
@@ -388,7 +410,9 @@ export function main(
       return ledgerNew(root, io, now, values);
     case 'collect':
     case 'verdicts':
+    case 'triage':
     case 'report':
+    case 'daily-report':
     case 'daily':
     case 'data-prepare':
     case 'data-publish':

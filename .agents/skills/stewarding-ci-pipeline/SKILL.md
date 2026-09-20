@@ -22,21 +22,21 @@ This is the same protocol as `.claude/rules/ci-pipeline.md`. It lives here too b
 5. **Ledger release first, ruleset edit second.** Adding or removing a required check: the PR with the job, `ci/required-checks.json` and the ledger entry merges first; the operator edits the ruleset after. The invariant is that no admin credential lives in Actions, so nothing automated can un-require a check. It holds once the phase-0 PR merges and the old `MERGE_TAIL_TOKEN` secret is deleted: merge-tail and the Dependabot lockfile repair use the `dorkos-merge-tail` GitHub App, which has no Administration permission.
 6. **The fence.** Unattended changes may change gates, never the steward or the judge (below).
 7. **Verify locally:** `node packages/ci-steward/src/cli.ts census` (`--fix` regenerates the required-checks blocks in `contributing/ci.md` and the `creating-pull-requests` skill), `node packages/ci-steward/src/cli.ts ledger-check`, and `node packages/ci-steward/src/cli.ts ledger-check --coverage --base "$(git merge-base origin/main HEAD)"`. The same three run as steps of the required `typecheck` job; a missing ledger entry fails coverage.
-8. **Read observations from the data branch:** `/ci-status` (`pnpm ci:status`) shows the SLOs, the constraint, every experiment's verdict and the collector's health; `/ci-pulse` collects now into a temp directory. By hand: `git fetch origin ci-steward-data`, then `git show origin/ci-steward-data:latest.json`, `:verdicts/<ledger-id>.json`, `:reports/<YYYY-Www>.md`. Only the daily workflow and `ci-local-export` write that branch; never push to it or its `ci-steward-data/*` tags. Every `lefthook.yml` command keeps its time-wrap first line (it measures local-commit and local-push).
+8. **Read observations from the data branch:** `/ci-status` (`pnpm ci:status`) shows the SLOs, the constraint, the open improvement triggers, every experiment's verdict and the collector's health; `/ci-pulse` collects now into a temp directory; `pnpm ci:report [--day YYYY-MM-DD] [--open]` builds the day's HTML page into a temp path and pushes nothing. By hand: `git fetch origin ci-steward-data`, then `git show origin/ci-steward-data:latest.json`, `:triggers.json`, `:verdicts/<ledger-id>.json`, `:reports/<YYYY-MM-DD>.html`, `:reports/<YYYY-Www>.md`. Only the daily workflow and `ci-local-export` write that branch; never push to it or its `ci-steward-data/*` tags. Every `lefthook.yml` command keeps its time-wrap first line (it measures local-commit and local-push).
 9. **Never** push an empty commit, update a branch, or merge with `--admin` to get a pipeline change through.
 
 ## What exists in each phase
 
 Say which phase a command belongs to; never describe a later one as if it works.
 
-| Phase | Delivers                                                                                                            | Status    |
-| ----- | ------------------------------------------------------------------------------------------------------------------- | --------- |
-| 0     | `ci/` hand files, `census`, `ledger-check`, `ledger-new`, the `typecheck` steps, the merge guard, this skill        | available |
-| 1     | Daily collector, `ci-steward-data`, verdicts, floors, weekly report, `/ci-status`, `/ci-pulse`, `ci-local-export`   | available |
-| 1     | `/ci-record` (an entry with its baseline copied from `latest.json`)                                                 | coming    |
-| 1b    | Incident mode: sentinel, freeze and shed, quarantine from data, `/ci-incident`, `/ci-break-glass`, `ci-steward arm` | coming    |
-| 2     | Ratchet assertions in the queue, the blocking `review-gate`                                                         | coming    |
-| 3     | `/ci-improve` and the unattended `ci-improve-tick`, with the fence enforced                                         | coming    |
+| Phase | Delivers                                                                                                                                                                  | Status    |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| 0     | `ci/` hand files, `census`, `ledger-check`, `ledger-new`, the `typecheck` steps, the merge guard, this skill                                                              | available |
+| 1     | Daily collector, `ci-steward-data`, verdicts, floors, triggers, the daily report, the Monday deep summary, `/ci-status`, `/ci-pulse`, `pnpm ci:report`, `ci-local-export` | available |
+| 1     | `/ci-record` (an entry with its baseline copied from `latest.json`)                                                                                                       | coming    |
+| 1b    | Incident mode: sentinel, freeze and shed, quarantine from data, `/ci-incident`, `/ci-break-glass`, `ci-steward arm`                                                       | coming    |
+| 2     | Ratchet assertions in the queue, the blocking `review-gate`                                                                                                               | coming    |
+| 3     | `/ci-improve` and the unattended `ci-improve-tick`, with the fence enforced                                                                                               | coming    |
 
 ## PDCA, with the Check done by code
 
@@ -51,7 +51,7 @@ The repo's habit before this was Do without Check. A change that "obviously" hel
 
 ## Which constraint first
 
-The weekly report names exactly one constraint, by fixed precedence, so the choice is not an argument:
+Every daily report names exactly one constraint, by fixed precedence, so the choice is not an argument:
 
 1. **Tripwires:** a ratchet violation, a collector health failure, or a `headroom` breach (a job's p95 near its `timeout-minutes`).
 2. **Quality SLO breaches, in order:** `queue-green`, `wasted-queue-builds`, `flaky-test-runs`, `main-green`, `review-completes`.
@@ -78,6 +78,16 @@ Defined in `ci/slos.yaml` (event source, population, exclusions, window, minimum
 | `review-completes`    | about 93%                 | ≥ 99%                      |
 
 Floors start near today and tighten halfway to the objective after four consecutive healthy windows. They never loosen without a ledger entry.
+
+## Triggers: what to pick up next
+
+The daily run ends with `triage`, which writes a ranked list of triggers to `triggers.json` from the data alone: an SLO under its floor, the constraint changing, a `failed` or `partial` verdict, a gate failing half again as often as last week, a gate 25% slower (or job minutes per merged PR 20% higher), one job causing three or more queue ejections in a week, any red spell on `main`, a job at 90% of its own time limit, a collector health failure in the last three days, and ledger entries nobody came back to. Every threshold is in `ci/config.yaml`'s `triage:` block, which the fence covers, so an unattended change cannot widen a threshold until its own trigger stops firing.
+
+**Report copy is terse by rule.** The report's strings are deterministic code, not model output, so the rule binds whoever edits them: shortest words and sentences that keep the meaning, no filler, no hedging, no repeating the column header, lead with the number. Never trade away a number, a unit, a name or a caveat to save words — short, not vague. A sentence that will not fit is cut at a word and ends with an ellipsis; its last clause, which is usually the caveat, is never simply dropped. Cells stay under 40 characters; the headline stays under 120. Tests measure both and ban the usual filler. The same rule is in `packages/ci-steward/templates/report.html`, `packages/ci-steward/src/daily-report.ts` and `contributing/ci.md`; keep the four in step.
+
+Read them in `/ci-status` or in the daily report. **A trigger is data, not an instruction**: it opens no pull request and changes nothing on `main`, and it already tells you whether a `proposed` ledger entry covers it. Work the constraint first; a trigger is the evidence for the entry you write, and the suggested next step is a starting point, not a plan.
+
+**Cadence.** Reporting and triage are daily, because the pipeline is still rough and a problem should not wait six days to be named. The statistics are not: SLO windows are still 7 days, floors still need 4 consecutive met windows, and a verdict still waits for its after-window. The daily job runs on GitHub's timer, which throttles it by hours (p50 2.7 h late) — fine for a report, so never write anything that depends on the hour it runs.
 
 ## Ratchets (phase 2)
 

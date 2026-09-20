@@ -235,26 +235,45 @@ const ConstraintSchema = z
 /** The constraint. */
 export type Constraint = z.infer<typeof ConstraintSchema>;
 
-/** `latest.json`: the pointer every reader starts from. Small, so SessionStart can parse it fast. */
-export const LatestSchema = z
-  .object({
-    schema: z.literal(1),
-    date: z.string(),
-    collected_at: z.string(),
-    snapshot: z.string(),
-    report_ref: z.string().nullable(),
-    healthy: z.boolean(),
-    failures: z.array(z.string()),
-    warnings: z.array(z.string()),
-    api_calls: z.number(),
-    slos: z.array(SloReadingSchema),
-    constraint: ConstraintSchema,
-    /** Local SLOs (local-commit, local-push) in breach, for the SessionStart line. */
-    local_breaches: z.array(z.string()),
-    /** Both data-branch rulesets present and unchanged. */
-    safeguards_ok: z.boolean(),
-  })
-  .strict();
+/**
+ * `latest.json`: the pointer every reader starts from. Small, so SessionStart
+ * can parse it fast.
+ *
+ * **Not `strict`, on purpose.** Every other file here rejects an unknown key,
+ * because an unknown key is almost always a misspelt known one. This file is
+ * read by whatever checkout an agent happens to be sitting in, which may be
+ * days behind the collector that wrote it, and a strict reader turns a new
+ * field into "this file needs a migration" in a worktree that did nothing
+ * wrong. A field added here is additive from now on; a reader that does not
+ * know it ignores it.
+ */
+export const LatestSchema = z.object({
+  schema: z.literal(1),
+  date: z.string(),
+  collected_at: z.string(),
+  snapshot: z.string(),
+  report_ref: z.string().nullable(),
+  healthy: z.boolean(),
+  failures: z.array(z.string()),
+  warnings: z.array(z.string()),
+  api_calls: z.number(),
+  slos: z.array(SloReadingSchema),
+  constraint: ConstraintSchema,
+  /** Local SLOs (local-commit, local-push) in breach, for the SessionStart line. */
+  local_breaches: z.array(z.string()),
+  /** Both data-branch rulesets present and unchanged. */
+  safeguards_ok: z.boolean(),
+  /**
+   * What `triage` found, so SessionStart and `/ci-status` see an open red
+   * trigger without opening a second file. Absent until the day's triage has
+   * run (collect writes latest.json first, triage fills this in after).
+   */
+  triggers: z
+    .object({ red: z.number(), amber: z.number(), top: z.string().nullable() })
+    .strict()
+    .optional(),
+});
+
 /** `latest.json`. */
 export type Latest = z.infer<typeof LatestSchema>;
 

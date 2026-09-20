@@ -10,6 +10,9 @@
  *   has not fetched since, it says the local copy is old instead, because the
  *   collector may be fine;
  * - that snapshot's health failed, or it reports a data-branch safeguard missing;
+ * - the day's triage left a red trigger open (the summary `triage` writes into
+ *   latest.json, so this still reads exactly one file). Suppressed when health
+ *   already failed, because the health failure is itself the first trigger;
  * - a local SLO (local-commit, local-push) is in breach;
  * - this clone's most recent hook run in the last 6 hours was killed: an END
  *   with a signal status (128 + HUP, INT or TERM), or a START with no END older
@@ -93,8 +96,15 @@ export function sessionLine(inp) {
             : `the local copy of ci-steward-data (${l.date ?? 'unknown'}) was not fetched in over 2 days; run git fetch origin ci-steward-data`
         );
       }
-      if (l.healthy === false)
-        problems.push(`collector health failed (${(l.failures ?? []).length} problem(s))`);
+      if (l.healthy === false) {
+        const n = (l.failures ?? []).length;
+        problems.push(`collector health failed (${n} problem${n === 1 ? '' : 's'})`);
+      } else if (l.triggers && l.triggers.red > 0) {
+        const top = String(l.triggers.top ?? '').slice(0, 120);
+        problems.push(
+          `${l.triggers.red} red CI trigger${l.triggers.red === 1 ? '' : 's'} open${top ? `: ${top}` : ''}`
+        );
+      }
       if (l.safeguards_ok === false)
         problems.push('a ci-steward-data safeguard ruleset is missing or changed');
       if ((l.local_breaches ?? []).length)

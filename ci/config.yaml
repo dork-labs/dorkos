@@ -119,6 +119,45 @@ verdicts:
   # its own min_n from ci/slos.yaml.
   min_n: 10
 
+# The improvement triggers (ci-steward triage, plan §4.4). One threshold per
+# rule, in the order packages/ci-steward/src/triggers.ts implements them.
+#
+# This file is inside the fence (ci/steward-owned-paths.json), so an unattended
+# ci-improve change cannot widen a threshold until its own trigger stops
+# firing. Moving any number here is a hand change with a ledger entry.
+triage:
+  # 4. A gate whose failure rate is at least this much of the week before's,
+  #    with at least this many completed runs in each week.
+  #    Its second arm fires on the absolute rate alone, so a gate going from
+  #    no failures at all to half of them is not silent (no ratio against zero
+  #    can say that). Both arms need spike_min_days days of data in EACH week:
+  #    7 days against 1 backfilled day is not a week-over-week comparison.
+  failure_spike_ratio: 1.5
+  failure_spike_min_n: 20
+  failure_spike_absolute: 0.1
+  spike_min_days: 5
+  # 5. A gate whose p90 duration grew by this fraction week over week, and the
+  #    same for job minutes per merged pull request.
+  duration_growth: 0.25
+  minutes_growth: 0.2
+  # 6. The same job causing this many failed-checks ejections in this window.
+  repeat_ejection_min: 3
+  repeat_ejection_days: 7
+  # 8. p95 duration over timeout-minutes at or above which a job has no room
+  #    left. The same 0.9 as the `headroom` SLO's floor, deliberately: the SLO
+  #    reads the worst gate, this names every gate that is there.
+  headroom_ratio: 0.9
+  # 9. How many recent days are checked for a collector health failure.
+  collector_health_days: 3
+  # 10. Days past an after-window's close before a missing verdict is stale,
+  #     and days a `proposed` entry may sit before nobody is going to do it.
+  stale_verdict_days: 7
+  stale_proposed_days: 30
+  # The report says how long a trigger has been open once it reaches this.
+  open_days_warning: 14
+  # Days of history each sparkline in the daily report draws.
+  sparkline_days: 14
+
 # Local hook timings (plan §4.5): the lefthook time-wrap and ci-local-export.
 local:
   timings_file: ci-steward/local-timings.jsonl

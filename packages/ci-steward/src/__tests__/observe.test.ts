@@ -4,7 +4,7 @@
  * tag) against a temporary bare origin.
  */
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -189,6 +189,13 @@ describe('the daily workflow sequence, end to end against a bare origin', () => 
     const daily = run(w.root, ['daily', '--data', w.data, '--now', SAT]);
     expect(daily).toMatchObject({ code: 0 });
     expect(daily.out).toContain(`collected ${DAY}`);
+    // The daily run also triages and writes the day's human-readable page.
+    expect(daily.out).toContain('triggers:');
+    expect(daily.out).toContain(`wrote reports/${DAY}.html`);
+    expect(readFileSync(path.join(w.data, `reports/${DAY}.html`), 'utf8')).toContain(
+      `<title>CI report for ${DAY}</title>`
+    );
+    expect(readFileSync(path.join(w.data, 'reports/index.html'), 'utf8')).toContain(`${DAY}.html`);
     const sat = run(w.root, ['data-publish', '--data', w.data, '--tag-week', '--now', SAT]).out;
     expect(sat).toContain('pushed');
     // Any day tags a week that has no backup yet, not only Monday.
@@ -230,7 +237,34 @@ describe('the daily workflow sequence, end to end against a bare origin', () => 
     const status = run(w.root, ['status', '--now', '2026-09-21T06:00:00Z']).out;
     expect(status).toContain('CI Steward status: data for 2026-09-18 from origin/ci-steward-data');
     expect(status).toContain('Health: OK');
-    expect(status).toContain('Weekly report: git show origin/ci-steward-data:reports/2026-W38.md');
+    expect(status).toContain(
+      'Weekly deep summary: git show origin/ci-steward-data:reports/2026-W38.md'
+    );
+    expect(status).toContain('Triggers (');
+  });
+
+  it('keeps a failing step to itself, so the exit code still means the collector', () => {
+    const w = world();
+    const SAT = '2026-09-19T05:00:00Z';
+    run(w.root, ['data-prepare', '--data', w.data, '--now', SAT]);
+    // `reports` as a FILE makes every write under it fail, so the daily page
+    // cannot be written. Nothing else about the run should change. Each step
+    // of `daily` is wrapped on its own (triage, the page, and on Mondays the
+    // weekly deep summary), so one failing never skips the next.
+    mkdirSync(w.data, { recursive: true });
+    writeFileSync(path.join(w.data, 'reports'), 'not a directory');
+    const daily = run(w.root, ['daily', '--data', w.data, '--now', SAT]);
+    // The exit code is the collector's health, not the renderer's luck.
+    expect(daily.code).toBe(0);
+    expect(daily.err).toContain('the daily report failed:');
+    expect(daily.err).not.toContain('triage failed:');
+    // Everything that did not depend on it still landed.
+    expect(daily.out).toContain('triggers:');
+    expect(existsSync(path.join(w.data, 'triggers.json'))).toBe(true);
+    expect(existsSync(path.join(w.data, 'latest.json'))).toBe(true);
+    expect(
+      JSON.parse(readFileSync(path.join(w.data, 'latest.json'), 'utf8')) as { triggers?: unknown }
+    ).toHaveProperty('triggers');
   });
 
   it('writes a heartbeat on every local export, so an idle clone never reads as stale', () => {
@@ -244,7 +278,7 @@ describe('the daily workflow sequence, end to end against a bare origin', () => 
       '--now',
       '2026-09-19T04:30:00Z',
     ]).out;
-    expect(out).toContain('clone clone-x: 0 finished day(s)');
+    expect(out).toContain('clone clone-x: 0 finished days');
     expect(
       JSON.parse(w.g(w.origin, 'show', 'ci-steward-data:local/clone-x/exported.json'))
     ).toEqual({

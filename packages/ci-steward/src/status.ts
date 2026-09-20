@@ -1,8 +1,8 @@
 /**
  * `ci-steward status` (`pnpm ci:status`, the `/ci-status` skill): one screen
  * joining the ledger on `main` with what the data branch computed. The SLO
- * table, the constraint, every experiment with its verdict, and the
- * collector's health.
+ * table, the constraint, the open improvement triggers, every experiment with
+ * its verdict, and the collector's health.
  *
  * It reads the data branch through git (`git show origin/ci-steward-data:...`),
  * with no network, so it shows what the last fetch brought. `ci:pulse` renders
@@ -12,6 +12,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { LatestSchema, VerdictSchema, type Latest, type Verdict } from './data.ts';
+import { openDays, TriggersSchema } from './triggers.ts';
 import type { LedgerEntry } from './verdicts.ts';
 
 /** Reads data-branch files from somewhere. */
@@ -132,7 +133,26 @@ export function renderStatus(
       `SLOs, 7 days to ${l.date}:`
     );
     out.push(...sloTable(l));
-    if (l.report_ref) out.push('', `Weekly report: git show ${reader!.label}:${l.report_ref}`);
+    if (l.report_ref)
+      out.push('', `Weekly deep summary: git show ${reader!.label}:${l.report_ref}`);
+    out.push(`Daily report: git show ${reader!.label}:reports/${l.date}.html, or pnpm ci:report`);
+  }
+  const triggersText = reader?.read('triggers.json') ?? null;
+  const triggers = triggersText ? TriggersSchema.safeParse(JSON.parse(triggersText)) : null;
+  if (triggers?.success) {
+    const t = triggers.data;
+    out.push('', `Triggers (${t.open.length} open, computed ${t.date}):`);
+    if (t.open.length === 0) out.push('  nothing is asking for attention');
+    for (const x of t.open) {
+      const age = openDays(x, t.date);
+      out.push(
+        `  [${x.severity}] ${x.id}${age > 0 ? ` (open ${age}d)` : ''}${x.ledger_entry ? ` (proposed: ${x.ledger_entry})` : ''}`,
+        `      ${x.what}`,
+        `      -> ${x.action}`
+      );
+    }
+    if (t.cleared.length)
+      out.push(`  cleared since the last run: ${t.cleared.map((c) => c.id).join(', ')}`);
   }
   const live = ledger.filter((e) => e.kind !== 'hygiene' && e.status !== 'withdrawn');
   const started = live.filter((e) => e.status !== 'proposed');
