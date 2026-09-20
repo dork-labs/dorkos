@@ -97,6 +97,22 @@ jobs:
           # workflow. The Actions: read grant is an installation-level change the
           # operator makes on the app; the probe below is what makes its absence
           # loud instead of silent.
+          #
+          # WHAT THE END STATE SHOULD BE, so the next reader does not "fix" this
+          # by deleting the paragraph above. Once the app actually holds Actions:
+          # read, the right thing IS to enumerate — least privilege, and the
+          # action's own README recommends it — as all four at once:
+          #   permission-actions: read
+          #   permission-checks: read
+          #   permission-contents: write
+          #   permission-pull-requests: write
+          # Enumerating them BEFORE the grant lands does not degrade gracefully:
+          # requesting a permission the installation does not have fails the
+          # mint, and this job stops arming entirely. So the order is grant
+          # first, enumerate second, and each of the four has to be verified
+          # against what the job actually calls — in particular, check whether
+          # labelling a pull request needs `issues: write` as well before
+          # trusting this list.
 
       # THE LADDER'S ONE PREREQUISITE, checked once per tick instead of being
       # discovered per PR. Listing a workflow's runs needs Actions: read, which
@@ -121,7 +137,7 @@ jobs:
             echo "the merge-tail app can read workflow runs; the review-retry ladder is live"
           else
             echo "ok=no" >> "$GITHUB_OUTPUT"
-            echo "::error::The merge-tail app cannot list claude-code-review runs, so no lost review will be re-requested this tick. Grant the dorkos-merge-tail GitHub App the Actions: read permission. Arming is unaffected."
+            echo "::error::The merge-tail app cannot list claude-code-review runs. No lost review will be re-requested this tick, and a re-review label stranded on a conflicting pull request will not be cleared either, because both go through this call. Grant the dorkos-merge-tail GitHub App the Actions: read permission. Arming still works."
           fi
 
       - name: Arm auto-merge on finished PRs
@@ -129,6 +145,12 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}
           DRY_RUN: ${{ inputs.dry_run }}
+          # Consumed, not decorative: the probe above already said, once and
+          # loudly, that the ladder cannot run. Without this the same fact would
+          # be repeated per pull request as `could-not-read-review-runs` and
+          # counted into the warning at the end, burying the one message that
+          # names the fix under N copies of its symptom.
+          CAN_READ_RUNS: ${{ steps.actions-read.outputs.ok }}
         run: |
           set -uo pipefail
 
@@ -215,7 +237,9 @@ jobs:
                                  and ([(.labels // [])[] | (if type == "object" then (.name // "") else tostring end) | ascii_downcase] | index("re-review")) != null
                               then "yes" else "no" end' \
                        "$work/meta.json" 2>/dev/null) || stranded=no
-            if [[ ( "$review_bucket" == "fail" || "$stranded" == "yes" ) && -n "$head_sha" ]]; then
+            if [[ "$CAN_READ_RUNS" != "yes" ]]; then
+              : # the probe already said why, once; do not repeat it per PR
+            elif [[ ( "$review_bucket" == "fail" || "$stranded" == "yes" ) && -n "$head_sha" ]]; then
               # Every review run for THIS head, which is what the ladder counts.
               # `actions: read` on the app token is what makes this call work; if
               # it is missing, the call fails and the block below says so loudly
@@ -259,20 +283,42 @@ jobs:
                   review_unreadable=$(( review_unreadable + 1 ))
                 else
 
-                  # The newest attempt's outcome class, from its own
+                  # The newest ATTEMPT's outcome class, from its own
                   # `review-outcome-class` notice annotation. For an Actions job
                   # the check-run id IS the job id, so this is two calls, and only
                   # for a PR that already has a red review. Anything unreadable
                   # stays empty, which the gate treats as "decide without me".
+                  #
+                  # ATTEMPT, NOT RUN, and the filter has to be the same one the
+                  # gate applies or the two halves of the decision disagree about
+                  # what a run is: a `skipped` label run or a `cancelled` dedupe
+                  # landing AFTER the failure would otherwise be the newest row,
+                  # and its job carries no class, so the answer would silently be
+                  # empty exactly when the class mattered most.
                   review_class=
-                  newest_run=$(jq -r '[.[] | select(.id != null)] | max_by(.updated_at // "") | .id // ""' \
+                  newest_run=$(jq -r '
+                      [ .[]
+                        | select(.id != null)
+                        | select(((.conclusion // "") | ascii_downcase)
+                                 | (. == "skipped" or . == "cancelled") | not) ]
+                      | max_by(.updated_at // "") | .id // ""' \
                                "$work/runs.json" 2>/dev/null) || newest_run=
                   if [[ -n "$newest_run" ]]; then
                     job_id=$(gh api "repos/$REPO/actions/runs/$newest_run/jobs" \
                              --jq '.jobs[0].id // ""' 2>/dev/null) || job_id=
                     if [[ -n "$job_id" ]]; then
+                      # The LAST matching notice, not the first. The trusted
+                      # emitter is the final step of that job, so anything else
+                      # bearing this title got there earlier — and since this
+                      # value can now stop a retry, letting an earlier
+                      # annotation win would be handing that lever to whatever
+                      # wrote it. `annotation_level` is checked for the same
+                      # reason. Hardening, not a demonstrated hole: nothing is
+                      # known to echo PR-authored text into an annotation.
                       review_class=$(gh api "repos/$REPO/check-runs/$job_id/annotations" \
-                        --jq 'first(.[] | select(.title == "review-outcome-class") | .message) // ""' \
+                        --jq 'last(.[] | select(.title == "review-outcome-class")
+                                       | select(.annotation_level == "notice")
+                                       | .message) // ""' \
                         2>/dev/null) || review_class=
                     fi
                   fi
@@ -304,7 +350,25 @@ jobs:
                     echo "PR #$pr -> review-retry $rverdict (dry run, label left in place)"
                     cleared=$(( cleared + 1 ))
                   elif [[ "$rverdict" == CLEAR* ]]; then
-                    if gh pr edit "$pr" --repo "$REPO" --remove-label re-review >/dev/null 2>&1; then
+                    # Re-read the labels immediately before writing. The review
+                    # workflow clears `re-review` itself from inside a run, and
+                    # the PR metadata this decision was made from is seconds to
+                    # minutes old, so the label can legitimately be gone
+                    # already. `gh pr edit --remove-label` errors on a label the
+                    # PR does not carry, and counting that as `review_failed`
+                    # would report a benign race in the same bucket as a
+                    # permissions refusal — which is the bucket that tells the
+                    # operator something is broken.
+                    # Into a file, never through `grep -q`: grep exits at its
+                    # first match and closes the pipe, `pipefail` then makes the
+                    # SIGPIPE the status of the whole pipeline, and the read
+                    # would report "no label" for a PR that has one.
+                    gh pr view "$pr" --repo "$REPO" --json labels \
+                      --jq '.labels[].name' > "$work/labels.txt" 2>/dev/null \
+                      || : > "$work/labels.txt"
+                    if ! grep -qx 're-review' "$work/labels.txt"; then
+                      echo "PR #$pr -> review-retry $rverdict, label already gone"
+                    elif gh pr edit "$pr" --repo "$REPO" --remove-label re-review >/dev/null 2>&1; then
                       echo "PR #$pr -> review-retry $rverdict, label removed"
                       cleared=$(( cleared + 1 ))
                     else

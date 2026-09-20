@@ -134,10 +134,14 @@ ceiling of three retries per head SHA**, not the 10/20/40-minute backoff in the
 script: every rung is shorter than one tick (median gap 162 minutes below), so
 the backoff never fires on today's trigger and only becomes real under an
 event-driven one. It counts attempts, not runs — a `skipped` or `cancelled` run
-never reviewed anything — and it refuses when the last attempt died against the
-Claude subscription's own quota, when the PR carries `skip-review`, and when the
-PR edits `claude-code-review.yml`, because the action refuses to review a PR
-that changes its own workflow. It also **removes** a `re-review` label stranded
+never reviewed anything, and it counts `run_attempt` rather than rows, because
+GitHub reuses a run id when a run is re-run by hand. It holds off while the
+subscription window the last attempt died against is plausibly still shut (300
+minutes for a session limit, 360 for a weekly one) and then tries again: a
+pause, not a terminus, because the class never changes on its own and only this
+gate creates new attempts. It refuses outright when the PR carries
+`skip-review`, and when the PR edits `claude-code-review.yml`, because the
+action refuses to review a PR that changes its own workflow. It also **removes** a `re-review` label stranded
 on a conflicting PR: GitHub creates no run for a conflicting PR, so nothing
 inside a run can clear it and the human button would stay pressed down.
 One consequence of that rework for people: `gh workflow run claude-code-review.yml -f pr=N`

@@ -45,11 +45,12 @@
 # failure burning every PR's ceiling in three consecutive ticks. The backoff does
 # not stop it, so two other limiters do:
 #   * MAX_RUNS, which bounds the damage per head SHA at three retries; and
-#   * the quota skip below, which refuses to retry at all when the last attempt
-#     died against the Claude subscription's own limit. A spent weekly window is
-#     the exact case where the ladder would otherwise spend three runs and post
-#     three more red comments on every open PR, none of which could have
-#     succeeded.
+#   * the quota rung below, which holds off a retry for roughly the length of the
+#     window the last attempt died against. A spent weekly window is the exact
+#     case where the ladder would otherwise spend three runs and post three more
+#     red comments on every open PR, none of which could have succeeded. It is a
+#     rung and not a terminus, and that distinction is load-bearing: see
+#     QUOTA_WAIT_MINUTES.
 # The rungs become meaningful the day this runs on an event rather than a cron;
 # ledger 260919-204500 proposes exactly that trigger.
 #
@@ -130,15 +131,46 @@ REVIEW_WORKFLOW='.github/workflows/claude-code-review.yml'
 # the ceiling and forgets to think about the tail.
 BACKOFF_MINUTES='[10,20,40,80,120]'
 
-# A ceiling on runs per head SHA, not on retries, because runs are what the API
-# reports and what costs money: 4 runs is the first review plus three retries.
+# A ceiling on ATTEMPTS per head SHA, not on retries: 4 attempts is the first
+# review plus three retries. An attempt is a run that tried to review, counted
+# by `run_attempt` rather than by row, because GitHub REUSES a run id when a run
+# is re-run by hand — three hand re-runs are three reviews that spent three
+# slices of the subscription and one row in the API response.
 MAX_RUNS=4
+
+# HOW LONG A SPENT SUBSCRIPTION WINDOW IS A REASON TO WAIT, in minutes, keyed by
+# the window the run named. This is a RUNG, NOT A TERMINUS, and the distinction
+# is the whole point: a quota stall that never retried again would strand every
+# open PR at once for the duration of a subscription outage and leave a person
+# pressing the button by hand, which is the exact failure this gate exists to
+# remove.
+#   session 300  The 5-hour window, plus nothing. Waiting slightly past a reset
+#                costs one tick; retrying before it costs a wasted run and a red
+#                comment. 300 is the window itself because the clock starts at
+#                the FAILED RUN, which is at or after the moment the window was
+#                already spent — so the true remaining wait is always shorter
+#                than 300, never longer.
+#   weekly  360  Six hours, which is plan §5.3's default hold for a weekly
+#                limit. A weekly window can be days from resetting and no wait
+#                this gate could pick would cover it, so the honest design is a
+#                short-ish rung plus the attempt ceiling: at most three more
+#                runs per head SHA for the whole outage, each of which also
+#                re-reads the class and re-arms the wait.
+#   unknown 300  A limit that did not name its window. Treated as the shorter
+#                one on purpose: under-waiting costs a wasted run bounded by the
+#                ceiling, over-waiting strands the PR.
+# NOT YET USED, and worth knowing: the SDK's own error string carries the reset
+# time — `Claude AI usage limit reached|<epoch>` — so a later change can make
+# this wait exact instead of nominal. It would have to travel through the
+# outcome-class annotation, which today carries only the class.
+QUOTA_WAIT_MINUTES='{"session":300,"weekly":360,"unknown":300}'
 
 verdict=$(jq -r \
   --arg check "$REVIEW_CHECK" \
   --arg wf "$REVIEW_WORKFLOW" \
   --argjson backoff "$BACKOFF_MINUTES" \
-  --argjson maxruns "$MAX_RUNS" '
+  --argjson maxruns "$MAX_RUNS" \
+  --argjson quotawait "$QUOTA_WAIT_MINUTES" '
   # gh emits labels as objects; some callers pass bare strings. Indexing a
   # string with .name is a jq error rather than a null, which would turn the
   # whole gate into unreadable-payload.
@@ -174,6 +206,19 @@ verdict=$(jq -r \
   # out of max_by on an empty list, and every branch below treats null as
   # "cannot tell", which is a SKIP.
   def last_end: ([runs[] | (.updated_at // "") | parse_time | select(. != null)] | max);
+  # Minutes since the newest attempt ended. Only ever evaluated after the
+  # null-time arm below, because jq errors on `null - number` rather than
+  # returning null.
+  def elapsed: ((now_t - last_end) / 60);
+  # Attempts, counted by `run_attempt` (default 1) rather than by row: GitHub
+  # reuses a run id when a run is re-run, so three hand re-runs are one row and
+  # three reviews. Under-counting would quietly hand out more retries than the
+  # ceiling says.
+  def attempts: ([runs[] | ((.run_attempt // 1) | if type == "number" then . else 1 end)] | add // 0);
+  # "session", "weekly", "unknown" — or null when the newest attempt did not die
+  # against the subscription at all.
+  def quota_window: ((.reviewClass // "") | ascii_downcase
+                     | if startswith("quota_") then .[6:] else null end);
 
   if (.state // "") != "OPEN"                         then "SKIP not-open"
   elif (.isDraft // false)                            then "SKIP draft"
@@ -223,30 +268,38 @@ verdict=$(jq -r \
 
   elif (runs | length) == 0                           then "SKIP no-runs"
 
-  # THE LAST ATTEMPT DIED AGAINST THE SUBSCRIPTION, NOT AGAINST THIS REPO.
-  # Retrying spends another slice of the same spent quota, fails the same way,
-  # and posts another red comment — three times per PR, across every open PR,
-  # for as long as the window is closed. The remedy for a quota stall is to
-  # wait, and the wait is not ours to shorten. The class comes from the review
-  # `review-outcome-class` annotation of the newest run, which is derived from
-  # the error fields of the SDK result message and never from model prose
-  # (scripts/classify-review-failure.sh). An absent or unreadable class is
-  # empty, which does not match, so the ladder proceeds — the safe direction is
-  # one wasted run, not a stalled gate.
-  elif ((.reviewClass // "") | ascii_downcase | startswith("quota_"))
-                                                      then "SKIP quota"
-
-  elif (runs | length) >= $maxruns                    then "SKIP retry-ceiling"
+  # Time has to be readable before anything below can weigh it, so this moved
+  # above the ceiling: every remaining arm is a comparison against the clock.
   elif (now_t == null or last_end == null)            then "SKIP unreadable-time"
 
-  # Elapsed minutes since the newest completed run, against the step of the
-  # ladder that the attempt count picks: one run so far waits 10 minutes, two
-  # wait 20, three wait 40. A shorter elapsed time is a SKIP, so the wait is a
-  # floor. `// ($backoff | last)` covers a ceiling raised past the end of the
-  # ladder, which would otherwise index past it and yield null — and a null
-  # comparison in jq is not an error, it is `true`, i.e. retry immediately.
-  elif (((now_t - last_end) / 60)
-        < ($backoff[(runs | length) - 1] // ($backoff | last)))
+  # THE LAST ATTEMPT DIED AGAINST THE SUBSCRIPTION, NOT AGAINST THIS REPO — so
+  # wait out the window and then ask again. Retrying immediately spends another
+  # slice of the same spent quota, fails the same way and posts another red
+  # comment, three times per PR across every open PR. But refusing FOREVER is
+  # worse than that and was this gate shipped wrong once: the class is
+  # immutable, only this gate creates new attempts, so an unconditional skip
+  # means the 5-hour window reopens and nothing ever notices. Every open PR
+  # would lose its ladder at once for a whole outage, and the only exit would be
+  # a human pressing the button — which is what this exists to remove.
+  #
+  # The class comes from the `review-outcome-class` annotation of the newest
+  # ATTEMPT, derived from the error fields of the SDK result message and never
+  # from model prose (scripts/classify-review-failure.sh). An absent or
+  # unreadable class is empty, which matches nothing, so the ladder proceeds:
+  # the safe direction is one wasted run, not a stalled gate.
+  elif ((quota_window) != null
+        and (elapsed < ($quotawait[quota_window] // ($quotawait.unknown))))
+                                                      then "SKIP quota"
+
+  elif (attempts) >= $maxruns                         then "SKIP retry-ceiling"
+
+  # Elapsed minutes since the newest attempt, against the step of the ladder
+  # that the attempt count picks: one attempt so far waits 10 minutes, two wait
+  # 20, three wait 40. A shorter elapsed time is a SKIP, so the wait is a floor.
+  # `// ($backoff | last)` covers a ceiling raised past the end of the ladder,
+  # which would otherwise index past it and yield null — and a null comparison
+  # in jq is not an error, it is `true`, i.e. retry immediately.
+  elif (elapsed < ($backoff[(attempts) - 1] // ($backoff | last)))
                                                       then "SKIP backoff"
   else "RETRY"
   end

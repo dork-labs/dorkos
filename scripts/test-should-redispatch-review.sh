@@ -172,6 +172,46 @@ check "an unreadable class is retriable" "RETRY"                      '.reviewCl
 # reported because it is the one a person can act on (by waiting).
 check "quota outranks the ceiling"      "SKIP quota"                  '.reviewClass = "quota_weekly" | .reviewRuns[0] as $r | .reviewRuns = [$r,$r,$r,$r]'
 
+# A QUOTA SKIP IS A RUNG, NOT A TERMINUS, and this is the block that says so.
+# The gate shipped it as a terminus once: the class is immutable and only this
+# gate creates new attempts, so an unconditional skip meant the 5-hour window
+# reopened and nothing ever noticed — every open PR losing its ladder at once
+# for a whole outage, with a human pressing the button as the only exit. Each
+# pair below is one minute short of the window and one minute past it.
+# session and unknown wait 300 minutes, weekly 360.
+check "session, 299 min after"          "SKIP quota"                  '.reviewClass = "quota_session" | .now = "2026-09-20T15:59:00Z"'
+check "session, 300 min after"          "RETRY"                       '.reviewClass = "quota_session" | .now = "2026-09-20T16:00:00Z"'
+check "unknown window, 299 min after"   "SKIP quota"                  '.reviewClass = "quota_unknown" | .now = "2026-09-20T15:59:00Z"'
+check "unknown window, 300 min after"   "RETRY"                       '.reviewClass = "quota_unknown" | .now = "2026-09-20T16:00:00Z"'
+check "weekly, 359 min after"           "SKIP quota"                  '.reviewClass = "quota_weekly" | .now = "2026-09-20T16:59:00Z"'
+check "weekly, 360 min after"           "RETRY"                       '.reviewClass = "quota_weekly" | .now = "2026-09-20T17:00:00Z"'
+# A window nobody has taught the gate about must still age out rather than
+# stranding the PR: it falls back to the shortest wait, not to forever.
+check "an unrecognised quota window"    "SKIP quota"                  '.reviewClass = "quota_fortnightly" | .now = "2026-09-20T15:59:00Z"'
+check "unrecognised window ages out"    "RETRY"                       '.reviewClass = "quota_fortnightly" | .now = "2026-09-20T16:00:00Z"'
+# And the ceiling still ends it. Aging past the window does not resurrect a
+# head SHA that has already had its three retries.
+check "aged-out quota, ceiling reached" "SKIP retry-ceiling"          '.reviewClass = "quota_session" | .now = "2026-09-20T16:00:00Z" | .reviewRuns[0] as $r | .reviewRuns = [$r,$r,$r,$r]'
+# Time that cannot be read outranks the quota rung, because every arm below it
+# is a comparison against the clock.
+check "quota with unreadable time"      "SKIP unreadable-time"        '.reviewClass = "quota_session" | .now = "whenever"'
+
+# ATTEMPTS ARE COUNTED BY `run_attempt`, NOT BY ROW. GitHub reuses a run id
+# when a run is re-run by hand, so three hand re-runs are three reviews that
+# each spent a slice of the subscription and ONE row in the runs API. Counting
+# rows hands out more retries than the ceiling says.
+check "one row, four attempts"          "SKIP retry-ceiling"          '.reviewRuns[0].run_attempt = 4'
+check "one row, three attempts"         "RETRY"                       '.reviewRuns[0].run_attempt = 3'
+check "attempts sum across rows"        "SKIP retry-ceiling"          '.reviewRuns[0].run_attempt = 2 | .reviewRuns += [{"status":"completed","conclusion":"failure","run_attempt":2,"updated_at":"2026-09-20T11:00:00Z"}]'
+check "a missing run_attempt is 1"      "RETRY"                       'del(.reviewRuns[0].run_attempt)'
+check "a bogus run_attempt is 1"        "RETRY"                       '.reviewRuns[0].run_attempt = "three"'
+# The backoff rung is picked by the attempt count too, so a re-run run moves to
+# the next rung rather than repeating the first.
+check "2 attempts in one row, 19 min"   "SKIP backoff"                '.reviewRuns[0].run_attempt = 2 | .now = "2026-09-20T11:19:00Z"'
+check "2 attempts in one row, 20 min"   "RETRY"                       '.reviewRuns[0].run_attempt = 2 | .now = "2026-09-20T11:20:00Z"'
+# A skipped run is not an attempt however many times it was re-run.
+check "re-run noop still not an attempt" "SKIP no-runs"               '.reviewRuns = [{"status":"completed","conclusion":"skipped","run_attempt":3,"updated_at":"2026-09-20T11:00:00Z"}]'
+
 # The ladder itself: 10, 20, 40 minutes after the first, second and third run.
 # Each pair is one minute short and one minute past, so the boundary is pinned
 # rather than approximated.

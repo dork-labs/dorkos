@@ -273,9 +273,9 @@ times per head SHA (`scripts/should-redispatch-review.sh`). Do not wait on it if
 you want a review now: GitHub throttles scheduled workflows and the median gap
 between merge-tail ticks is about 2.7 hours, so apply `re-review` yourself. It
 leaves a `skip-review` label alone, never retries a PR that edits the review
-workflow (that one cannot be reviewed by it at all), and stops when the last
-attempt died against the Claude subscription's quota, where waiting is the only
-remedy. If your PR is conflicting and `re-review` seems stuck on it, merge-tail
+workflow (that one cannot be reviewed by it at all), and waits out the Claude
+subscription window when the last attempt died against a quota (about 5 hours,
+6 for a weekly limit) before trying again — a pause, not a give-up. If your PR is conflicting and `re-review` seems stuck on it, merge-tail
 removes it for you — a conflicting PR produces no run, so nothing else can.
 
 ## Rebase before you expect a review

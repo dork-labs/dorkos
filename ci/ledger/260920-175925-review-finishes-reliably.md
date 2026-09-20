@@ -40,10 +40,11 @@ for before; making it blocking is 260919-175511 (DOR-2151) and needs the
    `quota_session`, `quota_weekly`, `quota_unknown`, `no_credentials`, `fork`,
    `infra`.
 5. **A retry ladder.** merge-tail re-requests a red review with the `re-review`
-   label, stopping after three tries per head SHA, skipping a PR whose last
-   attempt died against the subscription's own quota, and clearing a `re-review`
-   label stranded on a conflicting PR. The 10/20/40-minute rungs are in the
-   script, but see the assumptions below: they do not bind on a cron trigger.
+   label, stopping after three attempts per head SHA, holding off while the
+   subscription window the last attempt died against is plausibly still shut,
+   and clearing a `re-review` label stranded on a conflicting PR. The
+   10/20/40-minute rungs are in the script, but see the assumptions below: they
+   do not bind on a cron trigger.
 
 ## Operator prerequisites
 
@@ -111,6 +112,22 @@ and the reported-success-but-no-verdict class (4 of 52).
   should, once a classifier exists) inside the same window as the changes it is
   measuring would make the before/after comparison meaningless. Emit now,
   re-base in a later entry with its own baseline.
+- **The quota wait is nominal, not exact: 300 minutes for `quota_session` and
+  for an unnamed window, 360 for `quota_weekly`.** 300 is the 5-hour window
+  itself, and it is an over-estimate on purpose in the safe direction — the
+  clock starts at the failed run, which is at or after the moment the window was
+  already spent, so the true remaining wait is always shorter. 360 is plan
+  §5.3's default hold for a weekly limit; no wait this gate could pick would
+  actually cover a weekly window, so what bounds the cost there is the attempt
+  ceiling: at most three more runs per head SHA for the whole outage. An unnamed
+  window takes the shorter wait, because under-waiting costs a bounded number of
+  wasted runs while over-waiting strands the PR. **The wait is a rung, never a
+  terminus** — an earlier draft skipped unconditionally, which would have
+  stranded every open PR for the length of an outage with a human as the only
+  exit, since the class is immutable and only this gate creates new attempts.
+  The obvious improvement, not taken here: the SDK error string carries the
+  reset epoch (`Claude AI usage limit reached|<epoch>`), so a later change can
+  make the wait exact by carrying it through the outcome-class annotation.
 - **The 10/20/40-minute backoff is not a binding limiter today.** Every rung is
   shorter than one merge-tail tick (median gap 162 minutes), so `SKIP backoff`
   will essentially never fire. What bounds the retry cost is the ceiling of
